@@ -55,6 +55,20 @@ See [docs/development.md](docs/development.md) for the full list.
 - Superuser Settings page for runtime OCR/AI/worker config
 - First-launch setup wizard (admin account + required OCR/AI keys)
 
+### Screenshots
+
+Documents list with AI-extracted titles, summaries, and tags:
+
+![Documents](docs/screenshots/documents.png)
+
+Document detail with editable metadata, summary, and OCR text:
+
+![Document detail](docs/screenshots/document-detail.png)
+
+Deep Search with natural-language queries:
+
+![Deep Search](docs/screenshots/deep-search.png)
+
 ## Tests
 
 ```bash
