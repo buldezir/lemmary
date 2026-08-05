@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -90,6 +91,40 @@ func TestMailStatusAndAccountCRUD(t *testing.T) {
 	}
 
 	status, _ = h.doJSON(t, http.MethodDelete, "/api/app/mail/accounts/"+account.ID, tok, nil)
+	if status != http.StatusNoContent {
+		t.Fatalf("delete %d", status)
+	}
+}
+
+func TestMailSuperuserCanLinkByEmail(t *testing.T) {
+	h := StartShared(t)
+	superTok := h.superToken(t)
+
+	status, raw := h.doJSON(t, http.MethodPost, "/api/app/mail/accounts", superTok, map[string]any{
+		"email":         UserEmail,
+		"refresh_token": "e2e-super-link-token",
+	})
+	if status != http.StatusOK {
+		t.Fatalf("superuser create account %d: %s", status, raw)
+	}
+	var account mail.AccountDTO
+	if err := json.Unmarshal([]byte(raw), &account); err != nil {
+		t.Fatal(err)
+	}
+	if account.Email != UserEmail {
+		t.Fatalf("%+v", account)
+	}
+
+	// Superuser should see the account in the list.
+	status, raw = h.doJSON(t, http.MethodGet, "/api/app/mail/accounts", superTok, nil)
+	if status != http.StatusOK {
+		t.Fatalf("list %d: %s", status, raw)
+	}
+	if !strings.Contains(string(raw), account.ID) {
+		t.Fatalf("expected account in list: %s", raw)
+	}
+
+	status, _ = h.doJSON(t, http.MethodDelete, "/api/app/mail/accounts/"+account.ID, superTok, nil)
 	if status != http.StatusNoContent {
 		t.Fatalf("delete %d", status)
 	}

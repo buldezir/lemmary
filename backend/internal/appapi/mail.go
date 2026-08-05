@@ -3,12 +3,12 @@ package appapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
-	"paperless-go/backend/internal/config"
 	"paperless-go/backend/internal/mail"
 )
 
@@ -17,10 +17,8 @@ type mailAPI struct {
 	svc *mail.Service
 }
 
-func registerMailRoutes(g *router.RouterGroup[*core.RequestEvent], app core.App, rt *config.Runtime) {
-	svc := mail.NewService(app, rt)
-	mail.RegisterCron(app, svc)
-	api := &mailAPI{app: app, svc: svc}
+func registerMailRoutes(g *router.RouterGroup[*core.RequestEvent], svc *mail.Service) {
+	api := &mailAPI{app: svc.App(), svc: svc}
 
 	g.GET("/mail/status", bindAuth(api.handleStatus))
 	g.GET("/mail/accounts", bindAuth(api.handleListAccounts))
@@ -43,6 +41,36 @@ type createAccountRequest struct {
 	Email        string `json:"email"`
 }
 
+// resolveMailOwnerUserID returns the users-collection record id that should own the mailbox.
+// mail_accounts.user is a relation to users (not _superusers). After Google OAuth the Gmail
+// identity always exists as a users row; admins often stay signed in as superuser, so we
+// resolve by email instead of using e.Auth.Id blindly.
+func (a *mailAPI) resolveMailOwnerUserID(e *core.RequestEvent, email string) (string, error) {
+	owner, err := a.app.FindAuthRecordByEmail("users", email)
+	if err != nil {
+		return "", fmt.Errorf("no users account for %s; complete Google sign-in first so PocketBase can create it", email)
+	}
+
+	if e.HasSuperuserAuth() {
+		return owner.Id, nil
+	}
+
+	if e.Auth.Collection().Name != "users" {
+		return "", fmt.Errorf("sign in with a users account (or as superuser) to connect Gmail")
+	}
+
+	authEmail := strings.ToLower(strings.TrimSpace(e.Auth.GetString("email")))
+	if e.Auth.Id != owner.Id && authEmail != email {
+		return "", fmt.Errorf("Gmail address must match the signed-in user email")
+	}
+	// Same person: either OAuth linked to this user, or emails match after OAuth created/linked the row.
+	if e.Auth.Id != owner.Id && authEmail == email {
+		// Prefer the users row that matches the Gmail address (the OAuth identity).
+		return owner.Id, nil
+	}
+	return owner.Id, nil
+}
+
 func (a *mailAPI) handleCreateAccount(e *core.RequestEvent) error {
 	var req createAccountRequest
 	if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
@@ -53,12 +81,13 @@ func (a *mailAPI) handleCreateAccount(e *core.RequestEvent) error {
 	if email == "" || token == "" {
 		return writeError(e, http.StatusBadRequest, "email and refresh_token are required.")
 	}
-	authEmail := strings.ToLower(strings.TrimSpace(e.Auth.GetString("email")))
-	if authEmail != "" && email != authEmail {
-		return writeError(e, http.StatusBadRequest, "Gmail address must match the signed-in user email.")
-	}
 	if !mail.GoogleOAuthConfigured(a.app) {
 		return writeError(e, http.StatusBadRequest, "Google OAuth2 is not configured on the users collection.")
+	}
+
+	ownerID, err := a.resolveMailOwnerUserID(e, email)
+	if err != nil {
+		return writeError(e, http.StatusBadRequest, err.Error())
 	}
 
 	existing, err := a.app.FindRecordsByFilter(
@@ -67,7 +96,7 @@ func (a *mailAPI) handleCreateAccount(e *core.RequestEvent) error {
 		"",
 		1,
 		0,
-		map[string]any{"user": e.Auth.Id, "email": email},
+		map[string]any{"user": ownerID, "email": email},
 	)
 	if err != nil {
 		return writeError(e, http.StatusInternalServerError, err.Error())
@@ -84,7 +113,7 @@ func (a *mailAPI) handleCreateAccount(e *core.RequestEvent) error {
 			return writeError(e, http.StatusInternalServerError, err.Error())
 		}
 		record = core.NewRecord(collection)
-		record.Set("user", e.Auth.Id)
+		record.Set("user", ownerID)
 		record.Set("email", email)
 		record.Set("refresh_token", token)
 		record.Set("enabled", true)
@@ -100,14 +129,22 @@ func (a *mailAPI) handleCreateAccount(e *core.RequestEvent) error {
 }
 
 func (a *mailAPI) handleListAccounts(e *core.RequestEvent) error {
-	records, err := a.app.FindRecordsByFilter(
-		"mail_accounts",
-		"user = {:user}",
-		"-created",
-		100,
-		0,
-		map[string]any{"user": e.Auth.Id},
+	var (
+		records []*core.Record
+		err     error
 	)
+	if e.HasSuperuserAuth() {
+		records, err = a.app.FindRecordsByFilter("mail_accounts", "id != ''", "-created", 100, 0, nil)
+	} else {
+		records, err = a.app.FindRecordsByFilter(
+			"mail_accounts",
+			"user = {:user}",
+			"-created",
+			100,
+			0,
+			map[string]any{"user": e.Auth.Id},
+		)
+	}
 	if err != nil {
 		return writeError(e, http.StatusInternalServerError, err.Error())
 	}
@@ -125,12 +162,15 @@ type patchAccountRequest struct {
 	TriageMode       *string `json:"triage_mode"`
 }
 
-func (a *mailAPI) findOwnedAccount(userID, id string) (*core.Record, error) {
+func (a *mailAPI) findOwnedAccount(e *core.RequestEvent, id string) (*core.Record, error) {
 	record, err := a.app.FindRecordById("mail_accounts", id)
 	if err != nil {
 		return nil, err
 	}
-	if record.GetString("user") != userID {
+	if e.HasSuperuserAuth() {
+		return record, nil
+	}
+	if record.GetString("user") != e.Auth.Id {
 		return nil, errAccountNotFound
 	}
 	return record, nil
@@ -139,7 +179,7 @@ func (a *mailAPI) findOwnedAccount(userID, id string) (*core.Record, error) {
 var errAccountNotFound = errors.New("account not found")
 
 func (a *mailAPI) handlePatchAccount(e *core.RequestEvent) error {
-	record, err := a.findOwnedAccount(e.Auth.Id, e.Request.PathValue("id"))
+	record, err := a.findOwnedAccount(e, e.Request.PathValue("id"))
 	if err != nil {
 		return writeError(e, http.StatusNotFound, "Account not found.")
 	}
@@ -177,7 +217,7 @@ func (a *mailAPI) handlePatchAccount(e *core.RequestEvent) error {
 }
 
 func (a *mailAPI) handleDeleteAccount(e *core.RequestEvent) error {
-	record, err := a.findOwnedAccount(e.Auth.Id, e.Request.PathValue("id"))
+	record, err := a.findOwnedAccount(e, e.Request.PathValue("id"))
 	if err != nil {
 		return writeError(e, http.StatusNotFound, "Account not found.")
 	}
@@ -195,7 +235,7 @@ type createScanRequest struct {
 }
 
 func (a *mailAPI) handleCreateScan(e *core.RequestEvent) error {
-	account, err := a.findOwnedAccount(e.Auth.Id, e.Request.PathValue("id"))
+	account, err := a.findOwnedAccount(e, e.Request.PathValue("id"))
 	if err != nil {
 		return writeError(e, http.StatusNotFound, "Account not found.")
 	}
@@ -215,7 +255,9 @@ func (a *mailAPI) handleCreateScan(e *core.RequestEvent) error {
 	if mode == "" {
 		mode = account.GetString("triage_mode")
 	}
-	scan, err := mail.CreateScan(a.app, e.Auth.Id, account.Id, mail.TriggerManual, mode, dateFrom, dateTo)
+	// Documents must be owned by the users-collection owner of the mailbox, not a superuser id.
+	ownerID := account.GetString("user")
+	scan, err := mail.CreateScan(a.app, ownerID, account.Id, mail.TriggerManual, mode, dateFrom, dateTo)
 	if err != nil {
 		return writeError(e, http.StatusBadRequest, err.Error())
 	}
@@ -224,14 +266,22 @@ func (a *mailAPI) handleCreateScan(e *core.RequestEvent) error {
 }
 
 func (a *mailAPI) handleListScans(e *core.RequestEvent) error {
-	records, err := a.app.FindRecordsByFilter(
-		"mail_scans",
-		"user = {:user}",
-		"-created",
-		50,
-		0,
-		map[string]any{"user": e.Auth.Id},
+	var (
+		records []*core.Record
+		err     error
 	)
+	if e.HasSuperuserAuth() {
+		records, err = a.app.FindRecordsByFilter("mail_scans", "id != ''", "-created", 50, 0, nil)
+	} else {
+		records, err = a.app.FindRecordsByFilter(
+			"mail_scans",
+			"user = {:user}",
+			"-created",
+			50,
+			0,
+			map[string]any{"user": e.Auth.Id},
+		)
+	}
 	if err != nil {
 		return writeError(e, http.StatusInternalServerError, err.Error())
 	}
@@ -244,7 +294,10 @@ func (a *mailAPI) handleListScans(e *core.RequestEvent) error {
 
 func (a *mailAPI) handleGetScan(e *core.RequestEvent) error {
 	record, err := a.app.FindRecordById("mail_scans", e.Request.PathValue("id"))
-	if err != nil || record.GetString("user") != e.Auth.Id {
+	if err != nil {
+		return writeError(e, http.StatusNotFound, "Scan not found.")
+	}
+	if !e.HasSuperuserAuth() && record.GetString("user") != e.Auth.Id {
 		return writeError(e, http.StatusNotFound, "Scan not found.")
 	}
 	return writeJSON(e, http.StatusOK, mail.ScanFromRecord(record))

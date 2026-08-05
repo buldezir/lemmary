@@ -128,7 +128,7 @@ Import invoice (and similar) attachments from Gmail via AI triage.
 
 **Simple** mode sends subject/from/date/filenames to the AI; **deep** also includes truncated email body. The model returns which attachments to import; files become normal `documents` and go through the existing OCR/metadata pipeline. Duplicate Gmail attachments are skipped via `mail_imports`.
 
-The connected Gmail address must match the signed-in user’s email.
+The connected Gmail address is stored against the matching PocketBase **users** record (created/linked by Google OAuth). Superusers can connect as well; the mailbox is still owned by that users row so imported documents stay under the Gmail identity.
 
 ## OCR setup
 

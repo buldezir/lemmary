@@ -37,6 +37,11 @@ func NewService(app core.App, rt *config.Runtime) *Service {
 	return &Service{app: app, rt: rt}
 }
 
+// App returns the underlying PocketBase app.
+func (s *Service) App() core.App {
+	return s.app
+}
+
 // StartScanAsync marks the scan running and processes it in a background goroutine.
 func (s *Service) StartScanAsync(scanID string) {
 	go func() {

@@ -21,7 +21,7 @@ const labelTextClassName = 'text-xs font-medium text-stone-500'
 const sectionClassName = 'rounded-lg border border-stone-200 bg-stone-50 p-5'
 const sectionTitleClassName = 'mb-4 text-sm font-semibold text-stone-950'
 const buttonClassName =
-  'rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50'
+  'rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50 cursor-pointer'
 const secondaryButtonClassName =
   'rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-100 disabled:opacity-50'
 
@@ -120,17 +120,25 @@ export function MailPage() {
         previousRecord?.email ||
         ''
 
-      // Restore prior session if OAuth switched auth identity unexpectedly.
-      if (previousToken && previousRecord && authData.record?.id !== previousRecord.id) {
-        pb.authStore.save(previousToken, previousRecord)
-      }
-
       if (!refreshToken) {
+        // Restore prior session before surfacing the error.
+        if (previousToken && previousRecord && authData.record?.id !== previousRecord.id) {
+          pb.authStore.save(previousToken, previousRecord)
+        }
         throw new Error(
           'Google did not return a refresh token. Revoke app access in Google Account settings and try again with consent.',
         )
       }
+
+      // Persist the mailbox while still authenticated as the Google users record
+      // (mail_accounts.user must reference users, not _superusers).
       await connectGmailAccount(refreshToken, String(email))
+
+      // Restore the prior admin/user session for the rest of the UI when OAuth switched identity.
+      if (previousToken && previousRecord && authData.record?.id !== previousRecord.id) {
+        pb.authStore.save(previousToken, previousRecord)
+      }
+
       setSuccess('Gmail connected.')
       await refresh()
     } catch (err) {
