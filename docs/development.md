@@ -52,6 +52,7 @@ All variables live in `.env` at the project root (see `.env.example`).
 | Variable | Default | Description |
 | --- | --- | --- |
 | `WORKER_CRON_EXPR` | `* * * * *` | Cron expression for sweeping stuck pending jobs (registered once at startup) |
+| `MAIL_CRON_EXPR` | `0 */6 * * *` | Cron expression for automatic Gmail sync of accounts with cron enabled |
 | `VITE_POCKETBASE_URL` | `http://127.0.0.1:8090` | PocketBase API URL (frontend) |
 | `VITE_DEV_USER_EMAIL` | — | Dev auto-login email (`users` collection) |
 | `VITE_DEV_USER_PASSWORD` | — | Dev auto-login password |
@@ -115,6 +116,19 @@ Prefer **Settings** in the UI (superuser). For a fresh install you can also put 
 Without an API key, AI extraction, document chat, and Deep Search return a configuration error.
 
 Deep Search (`/search`) uses a tool-calling agent over keyword search. Configure **Search model** and **Deep search languages** in Settings.
+
+## Gmail mail import
+
+Import invoice (and similar) attachments from Gmail via AI triage.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create an OAuth client (Web application), enable the **Gmail API**, and set the redirect URI to `{your-origin}/api/oauth2-redirect` (PocketBase default).
+2. In PocketBase Admin → Collections → **users** → Options → **OAuth2**, enable **Google** and paste the client ID/secret.
+3. In the app, open **Mail**, click **Connect Gmail**, and approve access (offline consent). The refresh token is stored on `mail_accounts` (never returned by the API).
+4. Run a **manual scan** with a date range and simple/deep mode, or enable **Automatic sync** (`MAIL_CRON_EXPR`, default every 6 hours).
+
+**Simple** mode sends subject/from/date/filenames to the AI; **deep** also includes truncated email body. The model returns which attachments to import; files become normal `documents` and go through the existing OCR/metadata pipeline. Duplicate Gmail attachments are skipped via `mail_imports`.
+
+The connected Gmail address must match the signed-in user’s email.
 
 ## OCR setup
 

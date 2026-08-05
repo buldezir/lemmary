@@ -104,6 +104,7 @@ func Start(opts Options) (*Harness, error) {
 	_ = os.Setenv("WORKER_TIMEOUT_SEC", "120")
 	_ = os.Setenv("WORKER_MAX_RETRIES", "0")
 	_ = os.Setenv("WORKER_CRON_EXPR", "0 0 1 1 *") // effectively never during short tests
+	_ = os.Setenv("MAIL_CRON_EXPR", "0 0 1 1 *")
 	_ = os.Setenv("DEEP_SEARCH_LANGUAGES", "en")
 	_ = os.Unsetenv("VITE_DEV_USER_EMAIL")
 	_ = os.Unsetenv("VITE_DEV_USER_PASSWORD")
@@ -160,6 +161,16 @@ func Start(opts Options) (*Harness, error) {
 		mocks.Close()
 		_ = os.RemoveAll(dataDir)
 		return nil, fmt.Errorf("save app settings: %w", err)
+	}
+
+	if err := enableGoogleOAuth(app); err != nil {
+		_ = app.ResetBootstrapState()
+		if listener != nil {
+			_ = listener.Close()
+		}
+		mocks.Close()
+		_ = os.RemoveAll(dataDir)
+		return nil, fmt.Errorf("enable google oauth: %w", err)
 	}
 
 	// EmptyAPIKeys only affects first-boot seed; restore mock keys so other harnesses
@@ -302,6 +313,20 @@ func createAuthRecord(app core.App, collectionName, email, password string) (str
 		return "", err
 	}
 	return record.Id, nil
+}
+
+func enableGoogleOAuth(app core.App) error {
+	users, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		return err
+	}
+	users.OAuth2.Enabled = true
+	users.OAuth2.Providers = []core.OAuth2ProviderConfig{{
+		Name:         "google",
+		ClientId:     "e2e-google-client",
+		ClientSecret: "e2e-google-secret",
+	}}
+	return app.Save(users)
 }
 
 func waitReady(client *http.Client, baseURL string, timeout time.Duration) error {

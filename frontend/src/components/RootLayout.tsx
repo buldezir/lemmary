@@ -238,6 +238,13 @@ export function RootLayout() {
                 Deep Search
               </Link>
               <Link
+                to="/mail"
+                className={navLinkClass}
+                activeProps={{ className: `${navLinkClass} ${navLinkActiveClass}` }}
+              >
+                Mail
+              </Link>
+              <Link
                 to="/ocr-test"
                 className={navLinkClass}
                 activeProps={{ className: `${navLinkClass} ${navLinkActiveClass}` }}

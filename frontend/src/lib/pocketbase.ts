@@ -440,6 +440,125 @@ export async function updateAppSettings(patch: AppSettingsPatch) {
   return data as AppSettings
 }
 
+export type MailAccount = {
+  id: string
+  email: string
+  enabled: boolean
+  cron_enabled: boolean
+  cron_lookback_days: number
+  triage_mode: 'simple' | 'deep'
+  last_synced_at?: string
+  created: string
+  updated: string
+}
+
+export type MailScanProgress = {
+  listed: number
+  fetched: number
+  triaged: number
+  imported: number
+  skipped: number
+  duplicates: number
+  errors: number
+}
+
+export type MailScan = {
+  id: string
+  account_id: string
+  trigger: 'manual' | 'cron'
+  mode: 'simple' | 'deep'
+  date_from: string
+  date_to: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  progress: MailScanProgress
+  error?: string
+  created: string
+  updated: string
+}
+
+export type MailStatus = {
+  google_oauth_configured: boolean
+}
+
+async function mailFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  await ensureAuth()
+  const response = await fetch(`${pbUrl}/api/app/mail${path}`, {
+    ...init,
+    headers: {
+      Authorization: pb.authStore.token,
+      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+      ...init?.headers,
+    },
+  })
+  if (response.status === 204) {
+    return undefined as T
+  }
+  const data = (await response.json()) as T & { detail?: string }
+  if (!response.ok) {
+    throw new Error(data.detail ?? 'Mail request failed')
+  }
+  return data
+}
+
+export async function getMailStatus() {
+  return mailFetch<MailStatus>('/status')
+}
+
+export async function getMailAccounts() {
+  const data = await mailFetch<{ items: MailAccount[] }>('/accounts')
+  return data.items
+}
+
+export async function connectGmailAccount(refreshToken: string, email: string) {
+  return mailFetch<MailAccount>('/accounts', {
+    method: 'POST',
+    body: JSON.stringify({ refresh_token: refreshToken, email }),
+  })
+}
+
+export async function patchMailAccount(
+  id: string,
+  patch: {
+    enabled?: boolean
+    cron_enabled?: boolean
+    cron_lookback_days?: number
+    triage_mode?: 'simple' | 'deep'
+  },
+) {
+  return mailFetch<MailAccount>(`/accounts/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+}
+
+export async function deleteMailAccount(id: string) {
+  return mailFetch<void>(`/accounts/${id}`, { method: 'DELETE' })
+}
+
+export async function startMailScan(
+  accountId: string,
+  body: { date_from: string; date_to: string; mode: 'simple' | 'deep' },
+) {
+  return mailFetch<MailScan>(`/accounts/${accountId}/scans`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function getMailScans() {
+  const data = await mailFetch<{ items: MailScan[] }>('/scans')
+  return data.items
+}
+
+export async function getMailScan(id: string) {
+  return mailFetch<MailScan>(`/scans/${id}`)
+}
+
+export async function listAuthOAuth2Providers() {
+  const methods = await pb.collection('users').listAuthMethods()
+  return methods.oauth2?.providers ?? []
+}
+
 export async function ensureAuth() {
   if (pb.authStore.isValid) {
     return

@@ -105,7 +105,10 @@ func (m *mockServers) openAIResponseFromBody(body string) map[string]any {
 	var req map[string]any
 	_ = json.Unmarshal([]byte(body), &req)
 
-	// Metadata extraction requests JSON object response format.
+	// Mail triage and metadata extraction both request JSON object responses.
+	if strings.Contains(strings.ToLower(body), "triage email messages") {
+		return chatCompletion(mockMailTriageJSON(body), nil)
+	}
 	if strings.Contains(body, `"json_object"`) || strings.Contains(body, `"type":"json_object"`) {
 		return chatCompletion(mockExtractionJSON, nil)
 	}
@@ -170,6 +173,42 @@ func chatCompletion(content string, toolCalls []map[string]any) map[string]any {
 			"finish_reason": finish,
 		}},
 	}
+}
+
+// mockMailTriageJSON imports PDF attachments from the triage user payload when present.
+func mockMailTriageJSON(body string) string {
+	type item struct {
+		MessageID string   `json:"message_id"`
+		Filenames []string `json:"filenames"`
+	}
+	var req struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	_ = json.Unmarshal([]byte(body), &req)
+	var payload []item
+	for _, m := range req.Messages {
+		if m.Role != "user" {
+			continue
+		}
+		_ = json.Unmarshal([]byte(m.Content), &payload)
+	}
+	imports := make([]item, 0)
+	for _, it := range payload {
+		var pdfs []string
+		for _, f := range it.Filenames {
+			if strings.HasSuffix(strings.ToLower(f), ".pdf") {
+				pdfs = append(pdfs, f)
+			}
+		}
+		if len(pdfs) > 0 {
+			imports = append(imports, item{MessageID: it.MessageID, Filenames: pdfs})
+		}
+	}
+	raw, _ := json.Marshal(map[string]any{"import": imports})
+	return string(raw)
 }
 
 func toolChoiceIsNone(toolChoice any) bool {
