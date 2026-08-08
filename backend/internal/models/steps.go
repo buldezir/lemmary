@@ -1,14 +1,15 @@
 package models
 
 const (
-	StepPreview         = "preview"
-	StepOCR             = "ocr"
-	StepExtractMetadata = "extract_metadata"
-	StepApplyMetadata   = "apply_metadata"
+	StepPreview           = "preview"
+	StepOCR               = "ocr"
+	StepDetectDuplicates  = "detect_duplicates"
+	StepExtractMetadata   = "extract_metadata"
+	StepApplyMetadata     = "apply_metadata"
 )
 
 var (
-	FullPipelineSteps       = []string{StepPreview, StepOCR, StepExtractMetadata, StepApplyMetadata}
+	FullPipelineSteps       = []string{StepPreview, StepOCR, StepDetectDuplicates, StepExtractMetadata, StepApplyMetadata}
 	ExtractionPipelineSteps = []string{StepExtractMetadata, StepApplyMetadata}
 )
 

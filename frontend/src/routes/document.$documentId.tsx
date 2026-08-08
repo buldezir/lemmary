@@ -41,7 +41,7 @@ export function DocumentDetailPage() {
         await ensureAuth()
 
         const doc = await pb.collection('documents').getOne<DocumentRecord>(documentId, {
-          expand: 'tags,document_type,correspondent',
+          expand: 'tags,document_type,correspondent,duplicate_of',
         })
 
         const jobs = await pb.collection('processing_jobs').getList<ProcessingJobRecord>(1, 1, {
@@ -109,7 +109,7 @@ export function DocumentDetailPage() {
     if (!canReprocess) {
       return false
     }
-    if (step === 'extract_metadata') {
+    if (step === 'extract_metadata' || step === 'detect_duplicates') {
       return hasOcrText || reprocessSteps.includes('ocr')
     }
     return true
@@ -249,7 +249,7 @@ export function DocumentDetailPage() {
       setMessage('Metadata saved.')
       setEditing(false)
       const refreshed = await pb.collection('documents').getOne<DocumentRecord>(document.id, {
-        expand: 'tags,document_type,correspondent',
+        expand: 'tags,document_type,correspondent,duplicate_of',
       })
       setDocument(refreshed)
       setDocumentTypeInput(refreshed.expand?.document_type?.name ?? '')
@@ -278,6 +278,19 @@ export function DocumentDetailPage() {
 
   return (
     <section className="flex flex-col gap-6">
+      {document.duplicate_of && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Possible duplicate of{' '}
+          <Link
+            to="/document/$documentId"
+            params={{ documentId: document.duplicate_of }}
+            className="font-medium underline"
+          >
+            {document.expand?.duplicate_of?.title?.trim() || document.duplicate_of}
+          </Link>
+          . Review both documents and delete the one you do not need.
+        </div>
+      )}
       <div className="flex items-start justify-between gap-4">
         <div>
           <Link to="/" className="text-sm text-stone-500 hover:text-stone-950">

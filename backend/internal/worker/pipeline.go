@@ -142,7 +142,15 @@ func (r *PipelineRunner) Run(ctx context.Context, jobID string) error {
 		logger.Info("step completed", "step", stepName)
 	}
 
-	if job.GetString("status") == models.JobStatusRunning {
+	if document.GetString("duplicate_of") != "" {
+		document.Set("processing_status", models.DocStatusNeedsReview)
+		if err := r.App.Save(document); err != nil {
+			return err
+		}
+		if job.GetString("status") == models.JobStatusRunning || job.GetString("status") == models.JobStatusCompleted {
+			job.Set("status", models.JobStatusNeedsReview)
+		}
+	} else if job.GetString("status") == models.JobStatusRunning {
 		job.Set("status", models.JobStatusCompleted)
 	}
 	job.Set("finished_at", nowTimestamp())
@@ -221,7 +229,17 @@ func failJob(app core.App, job *core.Record, document *core.Record, err error) e
 }
 
 func finalizeDocumentWithoutApply(app core.App, document *core.Record, steps []string) error {
+	if document.GetString("duplicate_of") != "" {
+		document.Set("processing_status", models.DocStatusNeedsReview)
+		return app.Save(document)
+	}
 	if slices.Contains(steps, models.StepApplyMetadata) {
+		// Apply step sets status when it runs; if it was skipped (e.g. duplicate),
+		// leave whatever status was already set above / by earlier steps.
+		if document.GetString("processing_status") == models.DocStatusProcessing {
+			document.Set("processing_status", models.DocStatusCompleted)
+			return app.Save(document)
+		}
 		return nil
 	}
 	document.Set("processing_status", models.DocStatusCompleted)

@@ -16,24 +16,26 @@ const (
 )
 
 type Config struct {
-	OCRProvider              string
-	GoogleVisionAPIKey       string
-	MistralAPIKey            string
-	MistralOCRModel          string
-	MistralAPIBaseURL        string
-	OCRTimeout               time.Duration
-	ProcessingResultLanguage string
-	DeepSearchLanguages      string
-	OpenAIAPIKey             string
-	OpenAIModel              string
-	OpenAIChatModel          string
-	OpenAISearchModel        string
-	OpenAIBaseURL            string
-	OpenAITimeout            time.Duration
-	WorkerCronExpr           string
-	WorkerTimeout            time.Duration
-	WorkerMaxRetries         int
-	ExtractionPromptVer      string
+	OCRProvider                     string
+	GoogleVisionAPIKey              string
+	MistralAPIKey                   string
+	MistralOCRModel                 string
+	MistralAPIBaseURL               string
+	OCRTimeout                      time.Duration
+	ProcessingResultLanguage        string
+	DeepSearchLanguages             string
+	OpenAIAPIKey                    string
+	OpenAIModel                     string
+	OpenAIChatModel                 string
+	OpenAISearchModel               string
+	OpenAIBaseURL                   string
+	OpenAITimeout                   time.Duration
+	WorkerCronExpr                  string
+	WorkerTimeout                   time.Duration
+	WorkerMaxRetries                int
+	ExtractionPromptVer             string
+	NearDuplicateDetectionEnabled   bool
+	NearDuplicateThreshold          float64
 }
 
 // DefaultsFromEnv builds a Config from environment variables (and code defaults).
@@ -50,26 +52,30 @@ func DefaultsFromEnv() Config {
 	chatModel := getEnv("OPENAI_CHAT_MODEL", openAIModel)
 
 	return Config{
-		OCRProvider:              getEnv("OCR_PROVIDER", "google_vision"),
-		GoogleVisionAPIKey:       os.Getenv("GOOGLE_VISION_API_KEY"),
-		MistralAPIKey:            os.Getenv("MISTRAL_API_KEY"),
-		MistralOCRModel:          getEnv("MISTRAL_OCR_MODEL", "mistral-ocr-latest"),
-		MistralAPIBaseURL:        getEnv("MISTRAL_API_BASE_URL", "https://api.mistral.ai/v1"),
-		OCRTimeout:               time.Duration(ocrTimeoutSec) * time.Second,
-		ProcessingResultLanguage: strings.ToLower(strings.TrimSpace(os.Getenv("PROCESSING_RESULT_LANGUAGE"))),
-		DeepSearchLanguages:      normalizeLanguageList(os.Getenv("DEEP_SEARCH_LANGUAGES")),
-		OpenAIAPIKey:             os.Getenv("OPENAI_API_KEY"),
-		OpenAIModel:              openAIModel,
-		OpenAIChatModel:          chatModel,
-		OpenAISearchModel:        getEnv("OPENAI_SEARCH_MODEL", chatModel),
-		OpenAIBaseURL:            getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-		OpenAITimeout:            time.Duration(timeoutSec) * time.Second,
-		WorkerCronExpr:           WorkerCronFromEnv(),
-		WorkerTimeout:            time.Duration(workerTimeoutSec) * time.Second,
-		WorkerMaxRetries:         maxRetries,
-		ExtractionPromptVer:      getEnv("EXTRACTION_PROMPT_VERSION", "v1"),
+		OCRProvider:                   getEnv("OCR_PROVIDER", "google_vision"),
+		GoogleVisionAPIKey:            os.Getenv("GOOGLE_VISION_API_KEY"),
+		MistralAPIKey:                 os.Getenv("MISTRAL_API_KEY"),
+		MistralOCRModel:               getEnv("MISTRAL_OCR_MODEL", "mistral-ocr-latest"),
+		MistralAPIBaseURL:             getEnv("MISTRAL_API_BASE_URL", "https://api.mistral.ai/v1"),
+		OCRTimeout:                    time.Duration(ocrTimeoutSec) * time.Second,
+		ProcessingResultLanguage:      strings.ToLower(strings.TrimSpace(os.Getenv("PROCESSING_RESULT_LANGUAGE"))),
+		DeepSearchLanguages:           normalizeLanguageList(os.Getenv("DEEP_SEARCH_LANGUAGES")),
+		OpenAIAPIKey:                  os.Getenv("OPENAI_API_KEY"),
+		OpenAIModel:                   openAIModel,
+		OpenAIChatModel:               chatModel,
+		OpenAISearchModel:             getEnv("OPENAI_SEARCH_MODEL", chatModel),
+		OpenAIBaseURL:                 getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+		OpenAITimeout:                 time.Duration(timeoutSec) * time.Second,
+		WorkerCronExpr:                WorkerCronFromEnv(),
+		WorkerTimeout:                 time.Duration(workerTimeoutSec) * time.Second,
+		WorkerMaxRetries:              maxRetries,
+		ExtractionPromptVer:           getEnv("EXTRACTION_PROMPT_VERSION", "v1"),
+		NearDuplicateDetectionEnabled: getEnvBool("NEAR_DUPLICATE_DETECTION_ENABLED", false),
+		NearDuplicateThreshold:        getEnvFloat("NEAR_DUPLICATE_THRESHOLD", DefaultNearDuplicateThreshold),
 	}
 }
+
+const DefaultNearDuplicateThreshold = 0.92
 
 func WorkerCronFromEnv() string {
 	return getEnv("WORKER_CRON_EXPR", "* * * * *")
@@ -101,6 +107,8 @@ func EnsureCollection(app core.App) (*core.Collection, error) {
 		&core.NumberField{Name: "worker_timeout_sec", OnlyInt: true},
 		&core.NumberField{Name: "worker_max_retries", OnlyInt: true},
 		&core.TextField{Name: "extraction_prompt_version", Max: 50},
+		&core.BoolField{Name: "near_duplicate_detection_enabled"},
+		&core.NumberField{Name: "near_duplicate_threshold"},
 		&core.AutodateField{Name: "created", OnCreate: true},
 		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
 	)
@@ -123,6 +131,14 @@ func EnsureCollectionFields(app core.App) error {
 	}
 	if collection.Fields.GetByName("openai_search_model") == nil {
 		collection.Fields.Add(&core.TextField{Name: "openai_search_model", Max: 200})
+		changed = true
+	}
+	if collection.Fields.GetByName("near_duplicate_detection_enabled") == nil {
+		collection.Fields.Add(&core.BoolField{Name: "near_duplicate_detection_enabled"})
+		changed = true
+	}
+	if collection.Fields.GetByName("near_duplicate_threshold") == nil {
+		collection.Fields.Add(&core.NumberField{Name: "near_duplicate_threshold"})
 		changed = true
 	}
 	if !changed {
@@ -211,25 +227,32 @@ func configFromRecord(record *core.Record) Config {
 		ocrProvider = "google_vision"
 	}
 
+	threshold := record.GetFloat("near_duplicate_threshold")
+	if threshold <= 0 || threshold > 1 {
+		threshold = DefaultNearDuplicateThreshold
+	}
+
 	return Config{
-		OCRProvider:              ocrProvider,
-		GoogleVisionAPIKey:       record.GetString("google_vision_api_key"),
-		MistralAPIKey:            record.GetString("mistral_api_key"),
-		MistralOCRModel:          firstNonEmpty(record.GetString("mistral_ocr_model"), "mistral-ocr-latest"),
-		MistralAPIBaseURL:        firstNonEmpty(record.GetString("mistral_api_base_url"), "https://api.mistral.ai/v1"),
-		OCRTimeout:               time.Duration(ocrTimeoutSec) * time.Second,
-		ProcessingResultLanguage: strings.ToLower(strings.TrimSpace(record.GetString("processing_result_language"))),
-		DeepSearchLanguages:      normalizeLanguageList(record.GetString("deep_search_languages")),
-		OpenAIAPIKey:             record.GetString("openai_api_key"),
-		OpenAIModel:              openAIModel,
-		OpenAIChatModel:          chatModel,
-		OpenAISearchModel:        searchModel,
-		OpenAIBaseURL:            firstNonEmpty(record.GetString("openai_base_url"), "https://api.openai.com/v1"),
-		OpenAITimeout:            time.Duration(openAITimeoutSec) * time.Second,
-		WorkerCronExpr:           WorkerCronFromEnv(),
-		WorkerTimeout:            time.Duration(workerTimeoutSec) * time.Second,
-		WorkerMaxRetries:         int(record.GetFloat("worker_max_retries")),
-		ExtractionPromptVer:      firstNonEmpty(record.GetString("extraction_prompt_version"), "v1"),
+		OCRProvider:                   ocrProvider,
+		GoogleVisionAPIKey:            record.GetString("google_vision_api_key"),
+		MistralAPIKey:                 record.GetString("mistral_api_key"),
+		MistralOCRModel:               firstNonEmpty(record.GetString("mistral_ocr_model"), "mistral-ocr-latest"),
+		MistralAPIBaseURL:             firstNonEmpty(record.GetString("mistral_api_base_url"), "https://api.mistral.ai/v1"),
+		OCRTimeout:                    time.Duration(ocrTimeoutSec) * time.Second,
+		ProcessingResultLanguage:      strings.ToLower(strings.TrimSpace(record.GetString("processing_result_language"))),
+		DeepSearchLanguages:           normalizeLanguageList(record.GetString("deep_search_languages")),
+		OpenAIAPIKey:                  record.GetString("openai_api_key"),
+		OpenAIModel:                   openAIModel,
+		OpenAIChatModel:               chatModel,
+		OpenAISearchModel:             searchModel,
+		OpenAIBaseURL:                 firstNonEmpty(record.GetString("openai_base_url"), "https://api.openai.com/v1"),
+		OpenAITimeout:                 time.Duration(openAITimeoutSec) * time.Second,
+		WorkerCronExpr:                WorkerCronFromEnv(),
+		WorkerTimeout:                 time.Duration(workerTimeoutSec) * time.Second,
+		WorkerMaxRetries:              int(record.GetFloat("worker_max_retries")),
+		ExtractionPromptVer:           firstNonEmpty(record.GetString("extraction_prompt_version"), "v1"),
+		NearDuplicateDetectionEnabled: record.GetBool("near_duplicate_detection_enabled"),
+		NearDuplicateThreshold:        threshold,
 	}
 }
 
@@ -251,6 +274,12 @@ func applyConfigToRecord(record *core.Record, cfg Config) {
 	record.Set("worker_timeout_sec", int(cfg.WorkerTimeout.Seconds()))
 	record.Set("worker_max_retries", cfg.WorkerMaxRetries)
 	record.Set("extraction_prompt_version", cfg.ExtractionPromptVer)
+	record.Set("near_duplicate_detection_enabled", cfg.NearDuplicateDetectionEnabled)
+	threshold := cfg.NearDuplicateThreshold
+	if threshold <= 0 || threshold > 1 {
+		threshold = DefaultNearDuplicateThreshold
+	}
+	record.Set("near_duplicate_threshold", threshold)
 }
 
 func getEnv(key, fallback string) string {
@@ -258,6 +287,30 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(v)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func getEnvFloat(key string, fallback float64) float64 {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseFloat(v, 64)
+	if err != nil || parsed <= 0 || parsed > 1 {
+		return fallback
+	}
+	return parsed
 }
 
 func firstNonEmpty(values ...string) string {

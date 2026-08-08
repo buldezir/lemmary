@@ -18,3 +18,11 @@ test('superuser can load and save settings', async ({ page }) => {
   await page.getByRole('button', { name: 'Save settings' }).click()
   await expect(page.getByText('Settings saved. Runtime reloaded.')).toBeVisible({ timeout: 15_000 })
 })
+
+test('superuser can scan for duplicates', async ({ page }) => {
+  await loginAsSuper(page)
+  await page.getByRole('link', { name: 'Settings' }).click()
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
+  await page.getByRole('button', { name: 'Scan for duplicates' }).click()
+  await expect(page.getByText(/Scan finished:/i)).toBeVisible({ timeout: 30_000 })
+})

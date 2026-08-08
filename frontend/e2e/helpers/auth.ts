@@ -1,4 +1,7 @@
 import { type Page, expect } from '@playwright/test'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export const credentials = {
   user: {
@@ -10,6 +13,8 @@ export const credentials = {
     password: process.env.E2E_SUPER_PASSWORD ?? 'adminpassword123',
   },
 }
+
+const fixturesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'fixtures')
 
 export async function login(page: Page, email: string, password: string) {
   await page.goto('/')
@@ -37,9 +42,43 @@ export async function logout(page: Page) {
 export async function uploadFixture(page: Page, fixtureName: string) {
   await page.getByRole('link', { name: 'Upload', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Upload document' })).toBeVisible()
-  await page.locator('input[type="file"]').setInputFiles(`e2e/fixtures/${fixtureName}`)
+
+  const fixturePath = path.join(fixturesDir, fixtureName)
+  const original = fs.readFileSync(fixturePath)
+  const unique = Buffer.concat([
+    original,
+    Buffer.from(`\n#e2e-${Date.now()}-${Math.random().toString(16).slice(2)}\n`),
+  ])
+  await page.locator('input[type="file"]').setInputFiles({
+    name: fixtureName,
+    mimeType: mimeForFixture(fixtureName),
+    buffer: unique,
+  })
   await page.getByRole('button', { name: 'Upload and process' }).click()
   await expect(page).toHaveURL(/\/document\//)
+}
+
+function mimeForFixture(fixtureName: string): string {
+  const ext = path.extname(fixtureName).toLowerCase()
+  switch (ext) {
+    case '.pdf':
+      return 'application/pdf'
+    case '.png':
+      return 'image/png'
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg'
+    case '.webp':
+      return 'image/webp'
+    case '.csv':
+      return 'text/csv'
+    case '.docx':
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    case '.xlsx':
+      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    default:
+      return 'text/plain'
+  }
 }
 
 export async function waitForProcessing(page: Page) {

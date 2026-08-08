@@ -6,7 +6,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"testing"
 )
 
@@ -50,19 +49,14 @@ func TestNgxTokenAndDocuments(t *testing.T) {
 		t.Fatalf("create document type: %s", formatErr(status, raw))
 	}
 
-	// Upload via post_document.
+	// Upload via post_document (unique bytes to avoid checksum collisions across shared harness).
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 	part, err := w.CreateFormFile("document", "sample.png")
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, err := os.Open(fixturePath("sample.png"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	if _, err := io.Copy(part, f); err != nil {
+	if _, err := part.Write(uniquifyFixture(t, fixturePath("sample.png"))); err != nil {
 		t.Fatal(err)
 	}
 	_ = w.Close()

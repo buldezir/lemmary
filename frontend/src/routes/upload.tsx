@@ -1,6 +1,6 @@
 import { type DragEvent, type SubmitEvent, useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
-import { ensureAuth, pb } from '../lib/pocketbase'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { ensureAuth, parseDuplicateOfId, pb } from '../lib/pocketbase'
 
 const ACCEPTED_EXTENSIONS = new Set([
   '.pdf',
@@ -32,12 +32,36 @@ function isAcceptedFile(file: File) {
   return ACCEPTED_MIME_TYPES.has(file.type)
 }
 
+function uploadErrorMessage(err: unknown): string {
+  if (err && typeof err === 'object') {
+    const withResponse = err as {
+      message?: string
+      response?: { message?: string; data?: { duplicate_of?: string } }
+    }
+    if (withResponse.response?.message) return withResponse.response.message
+    if (typeof withResponse.message === 'string' && withResponse.message) return withResponse.message
+  }
+  if (err instanceof Error) return err.message
+  return 'Upload failed'
+}
+
+function duplicateIdFromError(err: unknown, message: string): string | null {
+  if (err && typeof err === 'object') {
+    const data = (err as { response?: { data?: { duplicate_of?: string } } }).response?.data
+    if (typeof data?.duplicate_of === 'string' && data.duplicate_of) {
+      return data.duplicate_of
+    }
+  }
+  return parseDuplicateOfId(message)
+}
+
 export function UploadPage() {
   const navigate = useNavigate()
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState('')
+  const [duplicateOfId, setDuplicateOfId] = useState<string | null>(null)
 
   function selectFile(next: File | null) {
     if (!next) {
@@ -46,9 +70,11 @@ export function UploadPage() {
     }
     if (!isAcceptedFile(next)) {
       setError(`Unsupported file type. Use ${SUPPORTED_FORMATS_LABEL}.`)
+      setDuplicateOfId(null)
       return
     }
     setError('')
+    setDuplicateOfId(null)
     setFile(next)
   }
 
@@ -83,6 +109,7 @@ export function UploadPage() {
     try {
       setUploading(true)
       setError('')
+      setDuplicateOfId(null)
       await ensureAuth()
 
       const formData = new FormData()
@@ -93,7 +120,9 @@ export function UploadPage() {
       const record = await pb.collection('documents').create(formData)
       navigate({ to: '/document/$documentId', params: { documentId: record.id } })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed')
+      const message = uploadErrorMessage(err)
+      setError(message)
+      setDuplicateOfId(duplicateIdFromError(err, message))
     } finally {
       setUploading(false)
     }
@@ -130,7 +159,20 @@ export function UploadPage() {
           {!file && <span className="text-xs text-stone-400">or drop it here</span>}
         </label>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && (
+          <div className="flex flex-col gap-1 text-sm text-red-600">
+            <p>{error}</p>
+            {duplicateOfId && (
+              <Link
+                to="/document/$documentId"
+                params={{ documentId: duplicateOfId }}
+                className="font-medium text-gray-900 underline"
+              >
+                Open existing document
+              </Link>
+            )}
+          </div>
+        )}
 
         <button
           type="submit"
