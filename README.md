@@ -45,9 +45,9 @@ See [docs/development.md](docs/development.md) for the full list.
 
 ## Features
 
-- Upload PDF, image, or plain text documents
+- Upload PDF, image, plain text, CSV, Word (.docx), or Excel (.xlsx) documents
 - Async processing jobs with status tracking
-- OCR text extraction
+- OCR text extraction (native text extraction for TXT/CSV/DOCX/XLSX)
 - AI metadata extraction: title, purpose, date, type, tags, summary
 - Document list with search and status filters
 - Deep Search chat (`/search`) with optional multi-step refine mode

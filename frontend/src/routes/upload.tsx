@@ -2,15 +2,34 @@ import { type DragEvent, type SubmitEvent, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { ensureAuth, pb } from '../lib/pocketbase'
 
-const ACCEPTED_EXTENSIONS = new Set(['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.txt'])
-const ACCEPTED_MIME_PREFIXES = ['image/', 'text/plain']
-const ACCEPTED_MIME_TYPES = new Set(['application/pdf'])
+const ACCEPTED_EXTENSIONS = new Set([
+  '.pdf',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.txt',
+  '.csv',
+  '.docx',
+  '.xlsx',
+])
+const ACCEPTED_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'text/plain',
+  'text/csv',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+])
+const SUPPORTED_FORMATS_LABEL =
+  'PDF, JPEG, PNG, WebP, plain text, CSV, Word (.docx), or Excel (.xlsx)'
 
 function isAcceptedFile(file: File) {
   const extension = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')).toLowerCase() : ''
   if (ACCEPTED_EXTENSIONS.has(extension)) return true
-  if (ACCEPTED_MIME_TYPES.has(file.type)) return true
-  return ACCEPTED_MIME_PREFIXES.some((prefix) => file.type.startsWith(prefix))
+  return ACCEPTED_MIME_TYPES.has(file.type)
 }
 
 export function UploadPage() {
@@ -26,7 +45,7 @@ export function UploadPage() {
       return
     }
     if (!isAcceptedFile(next)) {
-      setError('Unsupported file type. Use PDF, JPEG, PNG, WebP, or plain text.')
+      setError(`Unsupported file type. Use ${SUPPORTED_FORMATS_LABEL}.`)
       return
     }
     setError('')
@@ -84,7 +103,7 @@ export function UploadPage() {
     <section className="mx-auto flex max-w-xl flex-col gap-6">
       <div>
         <h2 className="text-xl font-semibold text-stone-950">Upload document</h2>
-        <p className="text-sm text-stone-500">Supported formats: PDF, JPEG, PNG, WebP, plain text.</p>
+        <p className="text-sm text-stone-500">Supported formats: {SUPPORTED_FORMATS_LABEL}.</p>
       </div>
 
       <form className="flex flex-col gap-4" onSubmit={onSubmit}>
@@ -101,7 +120,7 @@ export function UploadPage() {
         >
           <input
             type="file"
-            accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,application/pdf,image/*,text/plain"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv,.docx,.xlsx,application/pdf,image/jpeg,image/png,image/webp,text/plain,text/csv,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
             className="hidden"
           />

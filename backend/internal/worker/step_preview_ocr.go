@@ -8,6 +8,7 @@ import (
 	"paperless-go/backend/internal/models"
 	"paperless-go/backend/internal/ocr"
 	"paperless-go/backend/internal/preview"
+	"paperless-go/backend/internal/textextract"
 )
 
 type PreviewStep struct{}
@@ -72,10 +73,7 @@ func (s *OCRStep) Run(ctx context.Context, state *StepState) error {
 		return err
 	}
 
-	ocrCtx, cancel := context.WithTimeout(ctx, state.Cfg.OCRTimeout)
-	defer cancel()
-
-	ocrText, err := s.Provider.ExtractText(ocrCtx, state.TmpPath, state.MimeType)
+	ocrText, providerName, err := resolveOCRText(ctx, state, s.Provider)
 	if err != nil {
 		return fmt.Errorf("ocr: %w", err)
 	}
@@ -87,11 +85,32 @@ func (s *OCRStep) Run(ctx context.Context, state *StepState) error {
 	}
 
 	state.Logger.Info("OCR complete",
-		"provider", s.Provider.Name(),
+		"provider", providerName,
 		"mime", state.MimeType,
 		"chars", len(ocrText),
 	)
 	return nil
+}
+
+// resolveOCRText extracts text via native parsers for born-digital formats,
+// otherwise calls the configured OCR provider.
+func resolveOCRText(ctx context.Context, state *StepState, provider ocr.Provider) (text, providerName string, err error) {
+	if textextract.Supports(state.MimeType) {
+		text, err = textextract.Extract(state.TmpPath, state.MimeType)
+		if err != nil {
+			return "", "", err
+		}
+		return text, "native", nil
+	}
+
+	ocrCtx, cancel := context.WithTimeout(ctx, state.Cfg.OCRTimeout)
+	defer cancel()
+
+	text, err = provider.ExtractText(ocrCtx, state.TmpPath, state.MimeType)
+	if err != nil {
+		return "", "", err
+	}
+	return text, provider.Name(), nil
 }
 
 func ensureTempFile(state *StepState) error {

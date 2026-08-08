@@ -102,9 +102,14 @@ You can also create the admin via CLI (`go run . superuser upsert EMAIL PASS` fr
 1. User uploads a document from `/upload`
 2. PocketBase stores the file and creates a `processing_jobs` record via Go hook
 3. An `OnRecordAfterCreateSuccess` hook dispatches the job immediately; a cron job (`process_pending_jobs`) sweeps any stuck pending jobs
-4. Worker generates a PNG preview from the first PDF page (via `pdftoppm`), then runs OCR and AI extraction
+4. Worker generates a PNG preview from the first PDF page (via `pdftoppm`), then extracts text and runs AI metadata extraction
 5. Extracted metadata is saved on the document
 6. UI shows status on list and detail pages
+
+Text extraction:
+
+- **PDF and images** — configured OCR provider (Google Vision or Mistral)
+- **TXT, CSV, DOCX, XLSX** — native parsers (no OCR API call); preview is skipped for these formats
 
 Cron jobs are visible and manually triggerable in PocketBase Admin → Settings → Crons.
 

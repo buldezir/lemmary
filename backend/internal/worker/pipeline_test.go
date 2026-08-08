@@ -1,12 +1,25 @@
 package worker
 
 import (
+	"context"
+	"errors"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
 	"paperless-go/backend/internal/models"
+	"paperless-go/backend/internal/textextract"
 )
+
+type failingOCRProvider struct{}
+
+func (failingOCRProvider) Name() string { return "failing" }
+
+func (failingOCRProvider) ExtractText(context.Context, string, string) (string, error) {
+	return "", errors.New("provider should not be called")
+}
 
 func TestNextRunnableIndexSkipsCompleted(t *testing.T) {
 	runs := []models.StepRun{
@@ -167,5 +180,24 @@ func TestOCRShouldNotSkipWhenForced(t *testing.T) {
 	}
 	if skipped {
 		t.Fatal("expected forced OCR not to skip")
+	}
+}
+
+func TestResolveOCRTextNativeBypassesProvider(t *testing.T) {
+	csvPath := filepath.Join("..", "textextract", "testdata", "sample.csv")
+	state := &StepState{
+		TmpPath:  csvPath,
+		MimeType: textextract.MIMECSV,
+	}
+
+	text, providerName, err := resolveOCRText(context.Background(), state, failingOCRProvider{})
+	if err != nil {
+		t.Fatalf("resolveOCRText: %v", err)
+	}
+	if providerName != "native" {
+		t.Fatalf("providerName=%q want native", providerName)
+	}
+	if !strings.Contains(text, "Paper") {
+		t.Fatalf("unexpected text %q", text)
 	}
 }

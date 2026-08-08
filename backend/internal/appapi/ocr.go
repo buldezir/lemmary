@@ -12,6 +12,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"paperless-go/backend/internal/config"
 	"paperless-go/backend/internal/ocr"
+	"paperless-go/backend/internal/textextract"
 )
 
 const ocrTestMaxFileBytes = 10 * 1024 * 1024
@@ -85,22 +86,31 @@ func handleOCRTest(app core.App, rt *config.Runtime) func(*core.RequestEvent) er
 			return writeError(e, 400, fmt.Sprintf("File exceeds %d byte limit.", ocrTestMaxFileBytes))
 		}
 
-		ocrProvider, err := ocr.NewProvider(provider, providerCfg)
-		if err != nil {
-			return writeError(e, 400, err.Error())
-		}
-
-		ctx, cancel := context.WithTimeout(e.Request.Context(), cfg.OCRTimeout)
-		defer cancel()
-
+		mimeType := ocr.GuessMimeType(header.Filename)
 		start := time.Now()
-		text, err := ocrProvider.ExtractText(ctx, tmpPath, ocr.GuessMimeType(header.Filename))
+
+		var text, providerName string
+		if textextract.Supports(mimeType) {
+			text, err = textextract.Extract(tmpPath, mimeType)
+			providerName = "native"
+		} else {
+			ocrProvider, providerErr := ocr.NewProvider(provider, providerCfg)
+			if providerErr != nil {
+				return writeError(e, 400, providerErr.Error())
+			}
+
+			ctx, cancel := context.WithTimeout(e.Request.Context(), cfg.OCRTimeout)
+			defer cancel()
+
+			text, err = ocrProvider.ExtractText(ctx, tmpPath, mimeType)
+			providerName = ocrProvider.Name()
+		}
 		if err != nil {
 			return writeError(e, 500, err.Error())
 		}
 
 		return writeJSON(e, 200, ocrTestResponse{
-			Provider:  ocrProvider.Name(),
+			Provider:  providerName,
 			Text:      text,
 			CharCount: len(text),
 			Duration:  time.Since(start).Round(time.Millisecond).String(),
