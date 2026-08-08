@@ -43,6 +43,7 @@ func buildRegistry(ocrProvider ocr.Provider, aiExtractor ai.Extractor) map[strin
 	steps := []Step{
 		&PreviewStep{},
 		&OCRStep{Provider: ocrProvider},
+		&DetectDuplicatesStep{},
 		&ExtractMetadataStep{Extractor: aiExtractor},
 		&ApplyMetadataStep{},
 	}

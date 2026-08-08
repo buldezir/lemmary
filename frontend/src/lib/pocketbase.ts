@@ -40,10 +40,14 @@ export type DocumentRecord = {
   confidence: number
   people_or_organizations: string[]
   tags: string[]
+  checksum?: string
+  text_fingerprint?: string
+  duplicate_of?: string
   expand?: {
     tags?: TagRecord[]
     document_type?: DocumentTypeRecord
     correspondent?: CorrespondentRecord
+    duplicate_of?: DocumentRecord
   }
 }
 
@@ -52,7 +56,12 @@ export type TagRecord = {
   name: string
 }
 
-export type ProcessingStep = 'preview' | 'ocr' | 'extract_metadata' | 'apply_metadata'
+export type ProcessingStep =
+  | 'preview'
+  | 'ocr'
+  | 'detect_duplicates'
+  | 'extract_metadata'
+  | 'apply_metadata'
 
 export type StepRunRecord = {
   name: ProcessingStep
@@ -69,6 +78,7 @@ export type StepRunRecord = {
 export const FULL_PIPELINE_STEPS: ProcessingStep[] = [
   'preview',
   'ocr',
+  'detect_duplicates',
   'extract_metadata',
   'apply_metadata',
 ]
@@ -78,6 +88,7 @@ export const EXTRACTION_PIPELINE_STEPS: ProcessingStep[] = ['extract_metadata', 
 export const PROCESSING_STEP_LABELS: Record<ProcessingStep, string> = {
   preview: 'Preview',
   ocr: 'OCR',
+  detect_duplicates: 'Detect duplicates',
   extract_metadata: 'Extract metadata',
   apply_metadata: 'Apply metadata',
 }
@@ -85,6 +96,7 @@ export const PROCESSING_STEP_LABELS: Record<ProcessingStep, string> = {
 export const PROCESSING_STEP_DESCRIPTIONS: Record<ProcessingStep, string> = {
   preview: 'Regenerate the first-page preview image (PDF only)',
   ocr: 'Re-run text extraction on the original file',
+  detect_duplicates: 'Compare OCR text for near-duplicates (when enabled in Settings)',
   extract_metadata: 'Re-run AI metadata extraction from OCR text',
   apply_metadata: 'Write extracted metadata onto the document',
 }
@@ -383,6 +395,8 @@ export type AppSettings = {
   worker_timeout_sec: number
   worker_max_retries: number
   extraction_prompt_version: string
+  near_duplicate_detection_enabled: boolean
+  near_duplicate_threshold: number
 }
 
 export type AppSettingsPatch = {
@@ -403,6 +417,8 @@ export type AppSettingsPatch = {
   worker_timeout_sec?: number
   worker_max_retries?: number
   extraction_prompt_version?: string
+  near_duplicate_detection_enabled?: boolean
+  near_duplicate_threshold?: number
 }
 
 export async function getAppSettings() {
@@ -438,6 +454,36 @@ export async function updateAppSettings(patch: AppSettingsPatch) {
     throw new Error(data.detail ?? 'Failed to save settings')
   }
   return data as AppSettings
+}
+
+export type DuplicateScanResult = {
+  scanned: number
+  checksum_backfilled: number
+  exact_marked: number
+  near_marked: number
+  fingerprints_filled: number
+}
+
+export async function scanDuplicates() {
+  await ensureAuth()
+
+  const response = await fetch(`${pbUrl}/api/app/duplicates/scan`, {
+    method: 'POST',
+    headers: {
+      Authorization: pb.authStore.token,
+    },
+  })
+
+  const data = (await response.json()) as DuplicateScanResult & { detail?: string }
+  if (!response.ok) {
+    throw new Error(data.detail ?? 'Duplicate scan failed')
+  }
+  return data as DuplicateScanResult
+}
+
+export function parseDuplicateOfId(message: string): string | null {
+  const match = message.match(/duplicate of ([a-z0-9]{15})/i)
+  return match?.[1] ?? null
 }
 
 export async function ensureAuth() {

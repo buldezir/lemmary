@@ -47,6 +47,8 @@ func mapDocument(app core.App, record *core.Record) map[string]any {
 		"archive_serial_number": nil,
 		"original_file_name":    fileName,
 		"archived_file_name":    fileName,
+		"checksum":              record.GetString("checksum"),
+		"archive_checksum":      nil,
 		"owner":                 owner,
 		"user_can_change":       true,
 		"notes":                 []any{},

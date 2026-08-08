@@ -18,6 +18,9 @@ type ExtractMetadataStep struct {
 func (s *ExtractMetadataStep) Name() string { return models.StepExtractMetadata }
 
 func (s *ExtractMetadataStep) ShouldSkip(state *StepState) (bool, error) {
+	if state.Document != nil && state.Document.GetString("duplicate_of") != "" {
+		return true, nil
+	}
 	if state.forced(models.StepExtractMetadata) {
 		return false, nil
 	}
@@ -83,6 +86,9 @@ type ApplyMetadataStep struct{}
 func (s *ApplyMetadataStep) Name() string { return models.StepApplyMetadata }
 
 func (s *ApplyMetadataStep) ShouldSkip(state *StepState) (bool, error) {
+	if state.Document != nil && state.Document.GetString("duplicate_of") != "" {
+		return true, nil
+	}
 	return false, nil
 }
 

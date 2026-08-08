@@ -102,9 +102,15 @@ You can also create the admin via CLI (`go run . superuser upsert EMAIL PASS` fr
 1. User uploads a document from `/upload`
 2. PocketBase stores the file and creates a `processing_jobs` record via Go hook
 3. An `OnRecordAfterCreateSuccess` hook dispatches the job immediately; a cron job (`process_pending_jobs`) sweeps any stuck pending jobs
-4. Worker generates a PNG preview from the first PDF page (via `pdftoppm`), then extracts text and runs AI metadata extraction
+4. Worker generates a PNG preview from the first PDF page (via `pdftoppm`), then extracts text, optionally checks for near-duplicates, and runs AI metadata extraction
 5. Extracted metadata is saved on the document
 6. UI shows status on list and detail pages
+
+### Duplicate detection
+
+- **Exact duplicates** — on create, the uploaded file is hashed (SHA-256) into `documents.checksum`. A second upload with the same checksum for the same user is **rejected**, with an error pointing at the existing document id. Uniqueness is enforced with a per-user unique index on non-empty checksums so concurrent uploads cannot both succeed.
+- **Near-duplicates (optional)** — after OCR, a `detect_duplicates` step can compare normalized OCR text (SimHash + Jaccard). This is controlled by Settings → **Enable near-duplicate detection after OCR** (off by default). Matches are marked `needs_review` with `duplicate_of` set to the earlier document (never a newer one); AI extract/apply steps are skipped.
+- **Bulk scan** — Settings → **Scan for duplicates** (superuser) backfills missing checksums/fingerprints and marks exact (and, if enabled, near) duplicates among existing documents.
 
 Text extraction:
 

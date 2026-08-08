@@ -4,8 +4,10 @@ import {
   ensureAuth,
   getAppSettings,
   isSuperuser,
+  scanDuplicates,
   updateAppSettings,
   type AppSettings,
+  type DuplicateScanResult,
 } from '../lib/pocketbase'
 
 const inputClassName =
@@ -33,6 +35,8 @@ type FormState = {
   worker_timeout_sec: string
   worker_max_retries: string
   extraction_prompt_version: string
+  near_duplicate_detection_enabled: boolean
+  near_duplicate_threshold: string
 }
 
 function formFromSettings(settings: AppSettings): FormState {
@@ -54,6 +58,8 @@ function formFromSettings(settings: AppSettings): FormState {
     worker_timeout_sec: String(settings.worker_timeout_sec),
     worker_max_retries: String(settings.worker_max_retries),
     extraction_prompt_version: settings.extraction_prompt_version,
+    near_duplicate_detection_enabled: settings.near_duplicate_detection_enabled,
+    near_duplicate_threshold: String(settings.near_duplicate_threshold ?? 0.92),
   }
 }
 
@@ -67,6 +73,8 @@ export function SettingsPage() {
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [scanning, setScanning] = useState(false)
+  const [scanResult, setScanResult] = useState<DuplicateScanResult | null>(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -120,6 +128,7 @@ export function SettingsPage() {
     const openAITimeout = Number(form.openai_timeout_sec)
     const workerTimeout = Number(form.worker_timeout_sec)
     const maxRetries = Number(form.worker_max_retries)
+    const nearThreshold = Number(form.near_duplicate_threshold)
 
     if (!Number.isFinite(ocrTimeout) || ocrTimeout <= 0) {
       setError('OCR timeout must be a positive number')
@@ -135,6 +144,10 @@ export function SettingsPage() {
     }
     if (!Number.isFinite(maxRetries) || maxRetries < 0) {
       setError('Worker max retries must be >= 0')
+      return
+    }
+    if (!Number.isFinite(nearThreshold) || nearThreshold <= 0 || nearThreshold > 1) {
+      setError('Near-duplicate threshold must be between 0 and 1')
       return
     }
 
@@ -158,6 +171,8 @@ export function SettingsPage() {
         worker_timeout_sec: workerTimeout,
         worker_max_retries: maxRetries,
         extraction_prompt_version: form.extraction_prompt_version,
+        near_duplicate_detection_enabled: form.near_duplicate_detection_enabled,
+        near_duplicate_threshold: nearThreshold,
         ...(form.google_vision_api_key.trim()
           ? { google_vision_api_key: form.google_vision_api_key.trim() }
           : {}),
@@ -176,6 +191,23 @@ export function SettingsPage() {
       setError(err instanceof Error ? err.message : 'Failed to save settings')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function onScanDuplicates() {
+    try {
+      setScanning(true)
+      setError('')
+      setScanResult(null)
+      const result = await scanDuplicates()
+      setScanResult(result)
+      setSuccess(
+        `Scan finished: ${result.scanned} scanned, ${result.exact_marked} exact marked, ${result.near_marked} near marked.`,
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Duplicate scan failed')
+    } finally {
+      setScanning(false)
     }
   }
 
@@ -382,6 +414,52 @@ export function SettingsPage() {
             Worker cron schedule stays in <code className="font-mono">WORKER_CRON_EXPR</code> in{' '}
             <code className="font-mono">.env</code>.
           </p>
+        </section>
+
+        <section className={sectionClassName}>
+          <h2 className={sectionTitleClassName}>Duplicates</h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="flex items-center gap-2 text-sm text-stone-700 sm:col-span-2">
+              <input
+                type="checkbox"
+                checked={form.near_duplicate_detection_enabled}
+                onChange={(e) => updateField('near_duplicate_detection_enabled', e.target.checked)}
+              />
+              Enable near-duplicate detection after OCR (re-scans)
+            </label>
+            <label className={labelClassName}>
+              <span className={labelTextClassName}>Near-duplicate threshold (0–1)</span>
+              <input
+                type="number"
+                min={0.01}
+                max={1}
+                step={0.01}
+                className={inputClassName}
+                value={form.near_duplicate_threshold}
+                onChange={(e) => updateField('near_duplicate_threshold', e.target.value)}
+              />
+            </label>
+          </div>
+          <p className="mt-3 text-xs text-stone-500">
+            Exact file duplicates (same checksum) are always rejected on upload. Near-duplicate
+            matching compares OCR text and is off by default.
+          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              disabled={scanning}
+              onClick={() => void onScanDuplicates()}
+              className="rounded-md border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-950 transition-colors hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {scanning ? 'Scanning...' : 'Scan for duplicates'}
+            </button>
+            {scanResult && (
+              <p className="text-xs text-stone-500">
+                Backfilled {scanResult.checksum_backfilled} checksums,{' '}
+                {scanResult.fingerprints_filled} fingerprints.
+              </p>
+            )}
+          </div>
         </section>
 
         {error && <p className="text-sm text-red-600">{error}</p>}

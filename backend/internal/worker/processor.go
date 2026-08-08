@@ -2,13 +2,16 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
 
 	"github.com/google/uuid"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/router"
 	"paperless-go/backend/internal/config"
+	"paperless-go/backend/internal/duplicates"
 	"paperless-go/backend/internal/models"
 )
 
@@ -41,7 +44,21 @@ func (p *Processor) registerHooks() {
 		if record.GetString("processing_status") == "" {
 			record.Set("processing_status", models.DocStatusPending)
 		}
+		if err := duplicates.AssignChecksumFromUpload(e.App, record); err != nil {
+			var dupErr *duplicates.ErrDuplicate
+			if errors.As(err, &dupErr) {
+				return router.NewBadRequestError(dupErr.Error(), map[string]any{
+					"duplicate_of": dupErr.ExistingID,
+				})
+			}
+			return err
+		}
 		if err := e.Next(); err != nil {
+			if dupErr := duplicates.ErrDuplicateFromSaveConflict(e.App, record, err); dupErr != nil {
+				return router.NewBadRequestError(dupErr.Error(), map[string]any{
+					"duplicate_of": dupErr.ExistingID,
+				})
+			}
 			return err
 		}
 

@@ -1,5 +1,10 @@
 import { test, expect } from '@playwright/test'
-import { loginAsUser, uploadFixture } from './helpers/auth'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { loginAsSuper, loginAsUser, uploadFixture } from './helpers/auth'
+
+const fixturesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures')
 
 test('upload txt document and see it on list', async ({ page }) => {
   await loginAsUser(page)
@@ -19,4 +24,30 @@ test('edit document title on detail page', async ({ page }) => {
   await page.getByLabel('Title', { exact: true }).fill('E2E Edited Title')
   await page.getByRole('button', { name: 'Save corrections' }).click()
   await expect(page.getByRole('heading', { name: 'E2E Edited Title' })).toBeVisible()
+})
+
+test('reject duplicate file upload', async ({ page }) => {
+  await loginAsUser(page)
+
+  const fixturePath = path.join(fixturesDir, 'sample.txt')
+  const exactBytes = fs.readFileSync(fixturePath)
+  const payload = {
+    name: 'sample.txt',
+    mimeType: 'text/plain',
+    buffer: exactBytes,
+  }
+
+  await page.getByRole('link', { name: 'Upload', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Upload document' })).toBeVisible()
+  await page.locator('input[type="file"]').setInputFiles(payload)
+  await page.getByRole('button', { name: 'Upload and process' }).click()
+  await expect(page).toHaveURL(/\/document\//)
+  const firstURL = page.url()
+
+  await page.getByRole('link', { name: 'Upload', exact: true }).click()
+  await page.locator('input[type="file"]').setInputFiles(payload)
+  await page.getByRole('button', { name: 'Upload and process' }).click()
+  await expect(page.getByText(/duplicate/i)).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('link', { name: 'Open existing document' })).toBeVisible()
+  await expect(page).not.toHaveURL(firstURL)
 })

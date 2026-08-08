@@ -10,43 +10,47 @@ import (
 )
 
 type settingsResponse struct {
-	OCRProvider              string `json:"ocr_provider"`
-	GoogleVisionAPIKeySet    bool   `json:"google_vision_api_key_set"`
-	MistralAPIKeySet         bool   `json:"mistral_api_key_set"`
-	MistralOCRModel          string `json:"mistral_ocr_model"`
-	MistralAPIBaseURL        string `json:"mistral_api_base_url"`
-	OCRTimeoutSec            int    `json:"ocr_timeout_sec"`
-	ProcessingResultLanguage string `json:"processing_result_language"`
-	DeepSearchLanguages      string `json:"deep_search_languages"`
-	OpenAIAPIKeySet          bool   `json:"openai_api_key_set"`
-	OpenAIModel              string `json:"openai_model"`
-	OpenAIChatModel          string `json:"openai_chat_model"`
-	OpenAISearchModel        string `json:"openai_search_model"`
-	OpenAIBaseURL            string `json:"openai_base_url"`
-	OpenAITimeoutSec         int    `json:"openai_timeout_sec"`
-	WorkerTimeoutSec         int    `json:"worker_timeout_sec"`
-	WorkerMaxRetries         int    `json:"worker_max_retries"`
-	ExtractionPromptVersion  string `json:"extraction_prompt_version"`
+	OCRProvider                     string  `json:"ocr_provider"`
+	GoogleVisionAPIKeySet           bool    `json:"google_vision_api_key_set"`
+	MistralAPIKeySet                bool    `json:"mistral_api_key_set"`
+	MistralOCRModel                 string  `json:"mistral_ocr_model"`
+	MistralAPIBaseURL               string  `json:"mistral_api_base_url"`
+	OCRTimeoutSec                   int     `json:"ocr_timeout_sec"`
+	ProcessingResultLanguage        string  `json:"processing_result_language"`
+	DeepSearchLanguages             string  `json:"deep_search_languages"`
+	OpenAIAPIKeySet                 bool    `json:"openai_api_key_set"`
+	OpenAIModel                     string  `json:"openai_model"`
+	OpenAIChatModel                 string  `json:"openai_chat_model"`
+	OpenAISearchModel               string  `json:"openai_search_model"`
+	OpenAIBaseURL                   string  `json:"openai_base_url"`
+	OpenAITimeoutSec                int     `json:"openai_timeout_sec"`
+	WorkerTimeoutSec                int     `json:"worker_timeout_sec"`
+	WorkerMaxRetries                int     `json:"worker_max_retries"`
+	ExtractionPromptVersion         string  `json:"extraction_prompt_version"`
+	NearDuplicateDetectionEnabled   bool    `json:"near_duplicate_detection_enabled"`
+	NearDuplicateThreshold          float64 `json:"near_duplicate_threshold"`
 }
 
 type settingsPatchRequest struct {
-	OCRProvider              *string `json:"ocr_provider"`
-	GoogleVisionAPIKey       *string `json:"google_vision_api_key"`
-	MistralAPIKey            *string `json:"mistral_api_key"`
-	MistralOCRModel          *string `json:"mistral_ocr_model"`
-	MistralAPIBaseURL        *string `json:"mistral_api_base_url"`
-	OCRTimeoutSec            *int    `json:"ocr_timeout_sec"`
-	ProcessingResultLanguage *string `json:"processing_result_language"`
-	DeepSearchLanguages      *string `json:"deep_search_languages"`
-	OpenAIAPIKey             *string `json:"openai_api_key"`
-	OpenAIModel              *string `json:"openai_model"`
-	OpenAIChatModel          *string `json:"openai_chat_model"`
-	OpenAISearchModel        *string `json:"openai_search_model"`
-	OpenAIBaseURL            *string `json:"openai_base_url"`
-	OpenAITimeoutSec         *int    `json:"openai_timeout_sec"`
-	WorkerTimeoutSec         *int    `json:"worker_timeout_sec"`
-	WorkerMaxRetries         *int    `json:"worker_max_retries"`
-	ExtractionPromptVersion  *string `json:"extraction_prompt_version"`
+	OCRProvider                   *string  `json:"ocr_provider"`
+	GoogleVisionAPIKey            *string  `json:"google_vision_api_key"`
+	MistralAPIKey                 *string  `json:"mistral_api_key"`
+	MistralOCRModel               *string  `json:"mistral_ocr_model"`
+	MistralAPIBaseURL             *string  `json:"mistral_api_base_url"`
+	OCRTimeoutSec                 *int     `json:"ocr_timeout_sec"`
+	ProcessingResultLanguage      *string  `json:"processing_result_language"`
+	DeepSearchLanguages           *string  `json:"deep_search_languages"`
+	OpenAIAPIKey                  *string  `json:"openai_api_key"`
+	OpenAIModel                   *string  `json:"openai_model"`
+	OpenAIChatModel               *string  `json:"openai_chat_model"`
+	OpenAISearchModel             *string  `json:"openai_search_model"`
+	OpenAIBaseURL                 *string  `json:"openai_base_url"`
+	OpenAITimeoutSec              *int     `json:"openai_timeout_sec"`
+	WorkerTimeoutSec              *int     `json:"worker_timeout_sec"`
+	WorkerMaxRetries              *int     `json:"worker_max_retries"`
+	ExtractionPromptVersion       *string  `json:"extraction_prompt_version"`
+	NearDuplicateDetectionEnabled *bool    `json:"near_duplicate_detection_enabled"`
+	NearDuplicateThreshold        *float64 `json:"near_duplicate_threshold"`
 }
 
 func handleGetSettings(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
@@ -92,24 +96,30 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 }
 
 func settingsResponseFromConfig(cfg config.Config) settingsResponse {
+	threshold := cfg.NearDuplicateThreshold
+	if threshold <= 0 || threshold > 1 {
+		threshold = config.DefaultNearDuplicateThreshold
+	}
 	return settingsResponse{
-		OCRProvider:              cfg.OCRProvider,
-		GoogleVisionAPIKeySet:    cfg.GoogleVisionAPIKey != "",
-		MistralAPIKeySet:         cfg.MistralAPIKey != "",
-		MistralOCRModel:          cfg.MistralOCRModel,
-		MistralAPIBaseURL:        cfg.MistralAPIBaseURL,
-		OCRTimeoutSec:            int(cfg.OCRTimeout.Seconds()),
-		ProcessingResultLanguage: cfg.ProcessingResultLanguage,
-		DeepSearchLanguages:      cfg.DeepSearchLanguages,
-		OpenAIAPIKeySet:          cfg.OpenAIAPIKey != "",
-		OpenAIModel:              cfg.OpenAIModel,
-		OpenAIChatModel:          cfg.OpenAIChatModel,
-		OpenAISearchModel:        cfg.OpenAISearchModel,
-		OpenAIBaseURL:            cfg.OpenAIBaseURL,
-		OpenAITimeoutSec:         int(cfg.OpenAITimeout.Seconds()),
-		WorkerTimeoutSec:         int(cfg.WorkerTimeout.Seconds()),
-		WorkerMaxRetries:         cfg.WorkerMaxRetries,
-		ExtractionPromptVersion:  cfg.ExtractionPromptVer,
+		OCRProvider:                   cfg.OCRProvider,
+		GoogleVisionAPIKeySet:         cfg.GoogleVisionAPIKey != "",
+		MistralAPIKeySet:              cfg.MistralAPIKey != "",
+		MistralOCRModel:               cfg.MistralOCRModel,
+		MistralAPIBaseURL:             cfg.MistralAPIBaseURL,
+		OCRTimeoutSec:                 int(cfg.OCRTimeout.Seconds()),
+		ProcessingResultLanguage:      cfg.ProcessingResultLanguage,
+		DeepSearchLanguages:           cfg.DeepSearchLanguages,
+		OpenAIAPIKeySet:               cfg.OpenAIAPIKey != "",
+		OpenAIModel:                   cfg.OpenAIModel,
+		OpenAIChatModel:               cfg.OpenAIChatModel,
+		OpenAISearchModel:             cfg.OpenAISearchModel,
+		OpenAIBaseURL:                 cfg.OpenAIBaseURL,
+		OpenAITimeoutSec:              int(cfg.OpenAITimeout.Seconds()),
+		WorkerTimeoutSec:              int(cfg.WorkerTimeout.Seconds()),
+		WorkerMaxRetries:              cfg.WorkerMaxRetries,
+		ExtractionPromptVersion:       cfg.ExtractionPromptVer,
+		NearDuplicateDetectionEnabled: cfg.NearDuplicateDetectionEnabled,
+		NearDuplicateThreshold:        threshold,
 	}
 }
 
@@ -180,6 +190,15 @@ func applySettingsPatch(record *core.Record, req settingsPatchRequest) error {
 	}
 	if req.ExtractionPromptVersion != nil {
 		record.Set("extraction_prompt_version", strings.TrimSpace(*req.ExtractionPromptVersion))
+	}
+	if req.NearDuplicateDetectionEnabled != nil {
+		record.Set("near_duplicate_detection_enabled", *req.NearDuplicateDetectionEnabled)
+	}
+	if req.NearDuplicateThreshold != nil {
+		if *req.NearDuplicateThreshold <= 0 || *req.NearDuplicateThreshold > 1 {
+			return errInvalid("near_duplicate_threshold must be between 0 and 1")
+		}
+		record.Set("near_duplicate_threshold", *req.NearDuplicateThreshold)
 	}
 	return nil
 }
