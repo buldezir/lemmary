@@ -1,21 +1,16 @@
 import { test, expect } from '@playwright/test'
-import { loginAsUser, uploadFixture } from './helpers/auth'
+import { loginAsUser, uploadFixture, waitForProcessing } from './helpers/auth'
 
 test('pipeline reaches completed with OCR text', async ({ page }) => {
   await loginAsUser(page)
   await uploadFixture(page, 'sample.png')
-
-  await expect
-    .poll(
-      async () => {
-        const status = await page.getByText(/Status:/i).innerText()
-        if (/completed|needs_review/i.test(status)) return 'done'
-        if (/failed/i.test(status)) return 'failed'
-        return 'pending'
-      },
-      { timeout: 90_000, intervals: [500, 1000, 2000] },
-    )
-    .toBe('done')
-
+  await waitForProcessing(page)
   await expect(page.getByLabel('OCR text')).toContainText(/Acme Plumbing/i)
+})
+
+test('csv upload uses native text extraction', async ({ page }) => {
+  await loginAsUser(page)
+  await uploadFixture(page, 'sample.csv')
+  await waitForProcessing(page)
+  await expect(page.getByLabel('OCR text')).toContainText(/Paper/i)
 })

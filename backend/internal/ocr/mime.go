@@ -25,6 +25,10 @@ func GuessMimeType(fileName string) string {
 		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 	case ".pptx":
 		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+	case ".xlsx":
+		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	case ".csv":
+		return "text/csv"
 	case ".txt":
 		return "text/plain"
 	default:

@@ -41,3 +41,17 @@ export async function uploadFixture(page: Page, fixtureName: string) {
   await page.getByRole('button', { name: 'Upload and process' }).click()
   await expect(page).toHaveURL(/\/document\//)
 }
+
+export async function waitForProcessing(page: Page) {
+  await expect
+    .poll(
+      async () => {
+        const status = await page.getByText(/Status:/i).innerText()
+        if (/completed|needs_review/i.test(status)) return 'done'
+        if (/failed/i.test(status)) return 'failed'
+        return 'pending'
+      },
+      { timeout: 90_000, intervals: [500, 1000, 2000] },
+    )
+    .toBe('done')
+}
