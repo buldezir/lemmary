@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"paperless-go/backend/internal/appapi"
 	"paperless-go/backend/internal/appwire"
 	"paperless-go/backend/internal/config"
 
@@ -43,6 +44,7 @@ func main() {
 
 	rt := config.NewRuntime()
 	appwire.Register(app, rt, publicDir, indexFallback)
+	appapi.RegisterSuperuserCLIHooks(app)
 
 	if err := app.Start(); err != nil {
 		log.Fatal(err)

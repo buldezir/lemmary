@@ -84,16 +84,16 @@ These seed `app_settings` when the singleton record does not exist yet. After th
 
 On a fresh install the SPA hard-gates until setup is complete:
 
-1. **Create admin** — email + password for the first PocketBase `_superusers` account (replaces PocketBase’s browser installer UI).
+1. **Create admin** — email + password. Creates a PocketBase `_superusers` account **and** a matching `users` account (same credentials) so the admin can own documents. Replaces PocketBase’s browser installer UI.
 2. **OCR** — provider + matching API key.
 3. **OpenAI** — API key for extraction, chat, and Deep Search.
 
-You can also create the admin via CLI (`go run . superuser upsert EMAIL PASS` from `backend/`) and/or seed OCR/AI keys in `.env` before first boot; the wizard skips steps that are already done. Until keys are present, regular users see a “setup incomplete” screen; only a superuser can finish configuration.
+You can also create the admin via CLI (`go run . superuser upsert EMAIL PASS` from `backend/`; this also upserts the paired `users` account) and/or seed OCR/AI keys in `.env` before first boot; the wizard skips steps that are already done. Until keys are present, regular users see a “setup incomplete” screen; only an admin can finish configuration.
 
 ## Settings (admin UI)
 
-1. Sign in with a **superuser** email/password (login tries `users`, then `_superusers`).
-2. Open **Settings** in the nav. Changes save to `app_settings` and hot-reload the in-process OCR/AI clients (no restart).
+1. Sign in with the **admin** email/password (login prefers the `users` account; legacy `_superusers`-only installs are linked automatically).
+2. Open **Settings** in the nav (shown when `/api/app/me` reports `is_admin`). Changes save to `app_settings` and hot-reload the in-process OCR/AI clients (no restart).
 
 `WORKER_CRON_EXPR` is not editable there; change `.env` and restart, or use PocketBase Admin → Settings → Crons.
 
@@ -110,7 +110,7 @@ You can also create the admin via CLI (`go run . superuser upsert EMAIL PASS` fr
 
 - **Exact duplicates** — on create, the uploaded file is hashed (SHA-256) into `documents.checksum`. A second upload with the same checksum for the same user is **rejected**, with an error pointing at the existing document id. Uniqueness is enforced with a per-user unique index on non-empty checksums so concurrent uploads cannot both succeed.
 - **Near-duplicates (optional)** — after OCR, a `detect_duplicates` step can compare normalized OCR text (SimHash + Jaccard). This is controlled by Settings → **Enable near-duplicate detection after OCR** (off by default). Matches are marked `needs_review` with `duplicate_of` set to the earlier document (never a newer one); AI extract/apply steps are skipped.
-- **Bulk scan** — Settings → **Scan for duplicates** (superuser) backfills missing checksums/fingerprints and marks exact (and, if enabled, near) duplicates among existing documents.
+- **Bulk scan** — Settings → **Scan for duplicates** (admin) backfills missing checksums/fingerprints and marks exact (and, if enabled, near) duplicates among existing documents.
 
 Text extraction:
 
@@ -121,7 +121,7 @@ Cron jobs are visible and manually triggerable in PocketBase Admin → Settings 
 
 ## OpenAI setup
 
-Prefer **Settings** in the UI (superuser). For a fresh install you can also put `OPENAI_API_KEY` (and optional model/base URL) in `.env` so they seed `app_settings` on first boot.
+Prefer **Settings** in the UI (admin). For a fresh install you can also put `OPENAI_API_KEY` (and optional model/base URL) in `.env` so they seed `app_settings` on first boot.
 
 Without an API key, AI extraction, document chat, and Deep Search return a configuration error.
 
@@ -171,7 +171,7 @@ cd frontend && npm run build
 # Create a new migration
 cd backend && go run . migrate create "your_migration_name"
 
-# Create / update a PocketBase superuser
+# Create / update admin (PocketBase superuser + paired users account)
 cd backend && go run . superuser upsert admin@example.com 'your-password'
 ```
 
@@ -179,7 +179,7 @@ cd backend && go run . superuser upsert admin@example.com 'your-password'
 
 - API and browser e2e use **mocked** Mistral OCR and OpenAI-compatible APIs (no real keys).
 - Browser e2e serves the built SPA from `public/` on `http://127.0.0.1:18090` via [`backend/cmd/e2eserver`](../backend/cmd/e2eserver).
-- Seeded accounts: `e2e@paperless.local` / `e2epassword123` (user) and `admin@paperless.local` / `adminpassword123` (superuser).
+- Seeded accounts: `e2e@paperless.local` / `e2epassword123` (regular user) and `admin@paperless.local` / `adminpassword123` (paired admin: `_superusers` + `users`).
 - `go test ./...` from `backend/` includes the e2e package.
 
 ## Paperless-ngx API compatibility
@@ -202,9 +202,9 @@ API versions 9 and 10 are accepted via the `Accept` header (`application/json; v
 
 ## Troubleshooting
 
-- **Stuck on setup wizard:** create the admin account and provide OCR + OpenAI API keys (or seed keys in `.env` before first boot / use `superuser upsert`). Clearing required keys later brings the config steps back for superusers.
+- **Stuck on setup wizard:** create the admin account and provide OCR + OpenAI API keys (or seed keys in `.env` before first boot / use `superuser upsert`). Clearing required keys later brings the config steps back for admins.
 - **Upload succeeds but stays pending:** ensure the backend server is running; the worker starts with `serve`.
 - **OCR fails:** configure the OCR provider and API key in Settings (or seed `.env` before first boot). For Google Vision, ensure the Vision API is enabled for your project.
 - **AI extraction fails:** configure OpenAI settings in Settings. Check the processing job error on the document detail page.
-- **Settings page missing:** log in with a PocketBase `_superusers` account (not a regular `users` account).
+- **Settings page missing:** log in with the admin email (the account created at setup / `superuser upsert`). Regular non-admin users do not see Settings.
 - **Auth errors in frontend:** delete PocketBase data dir (`backend/pb_data`) and restart to recreate collections, then reload the app.

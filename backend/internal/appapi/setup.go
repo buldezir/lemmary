@@ -100,9 +100,16 @@ func handlePostSetupAdmin(app core.App) func(*core.RequestEvent) error {
 			return writeError(e, http.StatusBadRequest, "Failed to create admin account: "+err.Error())
 		}
 
+		userRecord, err := UpsertPairedUser(app, email, req.Password)
+		if err != nil {
+			_ = app.Delete(record)
+			return writeError(e, http.StatusBadRequest, "Failed to create paired user account: "+err.Error())
+		}
+
 		return writeJSON(e, http.StatusCreated, map[string]string{
-			"email": email,
-			"id":    record.Id,
+			"email":   email,
+			"id":      record.Id,
+			"user_id": userRecord.Id,
 		})
 	}
 }

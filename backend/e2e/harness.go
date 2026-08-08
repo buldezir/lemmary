@@ -37,8 +37,9 @@ type Harness struct {
 	HTTP      *http.Client
 	Mocks     *mockServers
 
-	UserID  string
-	SuperID string
+	UserID      string
+	SuperID     string
+	AdminUserID string
 
 	cancelServe func()
 }
@@ -169,7 +170,7 @@ func Start(opts Options) (*Harness, error) {
 		_ = os.Setenv("OPENAI_API_KEY", "e2e-openai-key")
 	}
 
-	var userID, superID string
+	var userID, superID, adminUserID string
 	if !opts.SkipAuthSeed {
 		var err error
 		userID, err = createAuthRecord(app, "users", UserEmail, UserPassword)
@@ -191,6 +192,16 @@ func Start(opts Options) (*Harness, error) {
 			mocks.Close()
 			_ = os.RemoveAll(dataDir)
 			return nil, fmt.Errorf("create superuser: %w", err)
+		}
+		adminUserID, err = createAuthRecord(app, "users", SuperEmail, SuperPassword)
+		if err != nil {
+			_ = app.ResetBootstrapState()
+			if listener != nil {
+				_ = listener.Close()
+			}
+			mocks.Close()
+			_ = os.RemoveAll(dataDir)
+			return nil, fmt.Errorf("create paired admin user: %w", err)
 		}
 	}
 
@@ -224,8 +235,9 @@ func Start(opts Options) (*Harness, error) {
 		App:       app,
 		HTTP:      client,
 		Mocks:     mocks,
-		UserID:    userID,
-		SuperID:   superID,
+		UserID:      userID,
+		SuperID:     superID,
+		AdminUserID: adminUserID,
 		cancelServe: func() {
 			_ = app.OnTerminate().Trigger(&core.TerminateEvent{App: app}, func(e *core.TerminateEvent) error {
 				return e.Next()

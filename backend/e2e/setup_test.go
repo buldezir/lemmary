@@ -74,9 +74,19 @@ func TestSetupAdminCreateOnce(t *testing.T) {
 		t.Fatalf("second admin create status %d want 409 body %s", status, raw)
 	}
 
-	// New admin can authenticate and finish config via settings.
-	auth := h.authWithPassword(t, "_superusers", "fresh-admin@paperless.local", "freshpassword123")
-	status, raw = h.doJSON(t, http.MethodPatch, "/api/app/settings", auth.Token, map[string]any{
+	// Paired users account exists and can finish config via settings (is_admin).
+	userAuth := h.authWithPassword(t, "users", "fresh-admin@paperless.local", "freshpassword123")
+	status, raw = h.doJSON(t, http.MethodGet, "/api/app/me", userAuth.Token, nil)
+	requireStatus(t, status, http.StatusOK, raw)
+	var me map[string]any
+	if err := json.Unmarshal([]byte(raw), &me); err != nil {
+		t.Fatalf("decode me: %v", err)
+	}
+	if me["is_admin"] != true {
+		t.Fatalf("is_admin=%v want true body %s", me["is_admin"], raw)
+	}
+
+	status, raw = h.doJSON(t, http.MethodPatch, "/api/app/settings", userAuth.Token, map[string]any{
 		"ocr_provider":         "mistral",
 		"mistral_api_key":      "setup-mistral-key",
 		"openai_api_key":       "setup-openai-key",

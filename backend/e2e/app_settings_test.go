@@ -73,3 +73,35 @@ func TestAppSettingsSuperuserOnly(t *testing.T) {
 	})
 	requireStatus(t, status, http.StatusOK, raw)
 }
+
+func TestAppSettingsPairedAdminUser(t *testing.T) {
+	h := StartShared(t)
+
+	adminTok := h.adminUserToken(t)
+	status, raw := h.doJSON(t, http.MethodGet, "/api/app/me", adminTok, nil)
+	requireStatus(t, status, http.StatusOK, raw)
+	var me map[string]any
+	if err := json.Unmarshal([]byte(raw), &me); err != nil {
+		t.Fatalf("decode me: %v", err)
+	}
+	if me["is_admin"] != true {
+		t.Fatalf("paired admin is_admin=%v want true", me["is_admin"])
+	}
+
+	status, raw = h.doJSON(t, http.MethodGet, "/api/app/settings", adminTok, nil)
+	requireStatus(t, status, http.StatusOK, raw)
+}
+
+func TestAppMeRegularUserNotAdmin(t *testing.T) {
+	h := StartShared(t)
+	userTok := h.userToken(t)
+	status, raw := h.doJSON(t, http.MethodGet, "/api/app/me", userTok, nil)
+	requireStatus(t, status, http.StatusOK, raw)
+	var me map[string]any
+	if err := json.Unmarshal([]byte(raw), &me); err != nil {
+		t.Fatalf("decode me: %v", err)
+	}
+	if me["is_admin"] != false {
+		t.Fatalf("regular user is_admin=%v want false", me["is_admin"])
+	}
+}

@@ -25,6 +25,40 @@ func TestAuthSuperuserLogin(t *testing.T) {
 	}
 }
 
+func TestEnsureUserCreatesPairedAccount(t *testing.T) {
+	h, err := Start(Options{SkipAuthSeed: true, EmptyAPIKeys: true})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer h.Close()
+
+	superID, err := createAuthRecord(h.App, "_superusers", "legacy-admin@paperless.local", "legacypassword1")
+	if err != nil {
+		t.Fatalf("create super only: %v", err)
+	}
+	_ = superID
+
+	superAuth := h.authWithPassword(t, "_superusers", "legacy-admin@paperless.local", "legacypassword1")
+	status, raw := h.doJSON(t, http.MethodPost, "/api/app/ensure-user", superAuth.Token, map[string]any{
+		"password": "legacypassword1",
+	})
+	requireStatus(t, status, http.StatusOK, raw)
+
+	userAuth := h.authWithPassword(t, "users", "legacy-admin@paperless.local", "legacypassword1")
+	if userAuth.Token == "" {
+		t.Fatal("expected users token after ensure-user")
+	}
+	status, raw = h.doJSON(t, http.MethodGet, "/api/app/me", userAuth.Token, nil)
+	requireStatus(t, status, http.StatusOK, raw)
+	var me map[string]any
+	if err := json.Unmarshal([]byte(raw), &me); err != nil {
+		t.Fatalf("decode me: %v", err)
+	}
+	if me["is_admin"] != true {
+		t.Fatalf("is_admin=%v want true", me["is_admin"])
+	}
+}
+
 func TestAuthBadPassword(t *testing.T) {
 	h := StartShared(t)
 	status, raw := h.doJSON(t, http.MethodPost, "/api/collections/users/auth-with-password", "", map[string]string{
