@@ -86,3 +86,7 @@ cd frontend && npm run test:e2e
 ```
 
 First browser run may need Chromium: `cd frontend && npx playwright install chromium`.
+
+## Recommended: Opencode Go
+
+[Opencode Go](https://opencode.ai/go?ref=84VDFS18QN) is a perfect plan to use with this project as AI provider. See the [docs](https://opencode.ai/docs/go/).
