@@ -13,6 +13,29 @@ When the user asks to resolve a GitHub issue:
 
 Do not consider the issue resolved until the PR exists and verification has passed. Leave the PR for the user to review and merge; do not merge it yourself.
 
+## Reviewing GitHub pull requests
+
+When the user asks to review a GitHub pull request:
+
+1. Read the PR and its diff (`gh pr view <number|url> --json title,body,files,commits` and `gh pr diff <number|url>`).
+2. Perform the review (code quality, correctness, tests, and anything the user asked for).
+3. Post the results as a GitHub PR review with `gh pr review`, not only in chat. Include a clear summary and concrete findings.
+
+Use `gh pr review` with an appropriate event (`--comment`, `--request-changes`, or `--approve`) and a HEREDOC body, for example:
+
+```bash
+gh pr review <number|url> --comment --body "$(cat <<'EOF'
+## Review
+
+- Finding 1
+- Finding 2
+
+EOF
+)"
+```
+
+Do not approve or request changes unless the user asked for that outcome; default to `--comment` when posting findings. `gh pr review` posts one top-level review body and cannot attach inline comments, so cite locations as text (e.g. `backend/api/handler.go:42`) next to each finding. Leave merging to the user.
+
 ## Verification (required)
 
 Before considering a task done, run the full verification stack and fix failures:
