@@ -145,6 +145,71 @@ func TestClientPagination(t *testing.T) {
 	}
 }
 
+func TestDownloadRejectsOversized(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/documents/", func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/download") {
+			http.NotFound(w, r)
+			return
+		}
+		// One byte over the limit.
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(make([]byte, maxDownloadBytes+1))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client, err := NewClient(srv.URL, "k", srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.DownloadDocument(1)
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("expected exceeds error, got %v", err)
+	}
+}
+
+func TestForEachDocumentsPages(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/documents/", func(w http.ResponseWriter, r *http.Request) {
+		page := r.URL.Query().Get("page")
+		if page == "" || page == "1" {
+			next := "/api/documents/?page=2&page_size=25"
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"count":    2,
+				"next":     next,
+				"previous": nil,
+				"results":  []ngxDocument{{ID: 1, Title: "A"}},
+			})
+			return
+		}
+		writePage(w, []ngxDocument{{ID: 2, Title: "B"}})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client, err := NewClient(srv.URL, "k", srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []int
+	if err := client.ForEachDocuments(func(docs []ngxDocument) error {
+		for _, d := range docs {
+			ids = append(ids, d.ID)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 2 || ids[0] != 1 || ids[1] != 2 {
+		t.Fatalf("ids=%v", ids)
+	}
+}
+
 func TestDocumentDate(t *testing.T) {
 	t.Parallel()
 	corr := 1

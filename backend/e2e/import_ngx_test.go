@@ -1,11 +1,14 @@
 package e2e
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestImportNgxForbiddenForUser(t *testing.T) {
@@ -53,6 +56,7 @@ func TestImportNgxPreserveMetadata(t *testing.T) {
 	corrID := 2
 	typeID := 3
 	payload := []byte("imported-file-body-" + t.Name())
+	checksum := sha256Hex(payload)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/tags/", func(w http.ResponseWriter, r *http.Request) {
@@ -87,19 +91,9 @@ func TestImportNgxPreserveMetadata(t *testing.T) {
 	t.Cleanup(remote.Close)
 
 	token := h.adminUserToken(t)
-	status, raw := h.doJSON(t, http.MethodPost, "/api/app/import/ngx", token, map[string]any{
-		"url":     remote.URL,
-		"api_key": "remote-token",
-		"mode":    "preserve",
-	})
-	requireStatus(t, status, http.StatusOK, raw)
-
-	var result map[string]any
-	if err := json.Unmarshal([]byte(raw), &result); err != nil {
-		t.Fatalf("decode: %v body %s", err, raw)
-	}
+	result := runImportNgx(t, h, token, remote.URL, "remote-token", "preserve")
 	if intFromAny(result["imported"]) != 1 {
-		t.Fatalf("imported=%v body=%s", result["imported"], raw)
+		t.Fatalf("imported=%v body=%v", result["imported"], result)
 	}
 	if intFromAny(result["tags_upserted"]) != 1 {
 		t.Fatalf("tags_upserted=%v", result["tags_upserted"])
@@ -109,21 +103,16 @@ func TestImportNgxPreserveMetadata(t *testing.T) {
 	}
 
 	// Second import of same bytes should skip as duplicate.
-	status, raw = h.doJSON(t, http.MethodPost, "/api/app/import/ngx", token, map[string]any{
-		"url":     remote.URL,
-		"api_key": "remote-token",
-		"mode":    "preserve",
-	})
-	requireStatus(t, status, http.StatusOK, raw)
-	if err := json.Unmarshal([]byte(raw), &result); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
+	result = runImportNgx(t, h, token, remote.URL, "remote-token", "preserve")
 	if intFromAny(result["imported"]) != 0 || intFromAny(result["skipped_duplicates"]) != 1 {
-		t.Fatalf("second import result=%s", raw)
+		t.Fatalf("second import result=%v", result)
+	}
+	if intFromAny(result["tags_upserted"]) != 0 {
+		t.Fatalf("second import should not count existing tags as upserted: %v", result["tags_upserted"])
 	}
 
 	docsStatus, docsRaw := h.doJSON(t, http.MethodGet,
-		`/api/collections/documents/records?filter=title="RemoteInvoice"&perPage=50`, token, nil)
+		`/api/collections/documents/records?filter=checksum="`+checksum+`"&perPage=50`, token, nil)
 	requireStatus(t, docsStatus, http.StatusOK, docsRaw)
 	var docs struct {
 		Items []map[string]any `json:"items"`
@@ -157,6 +146,7 @@ func TestImportNgxReprocessFilesOnly(t *testing.T) {
 	h := StartShared(t)
 
 	payload := []byte("imported-reprocess-body-" + t.Name())
+	checksum := sha256Hex(payload)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/tags/", func(w http.ResponseWriter, r *http.Request) {
 		writeNgxPage(w, []map[string]any{{"id": 1, "name": "ShouldNotImport"}})
@@ -191,28 +181,18 @@ func TestImportNgxReprocessFilesOnly(t *testing.T) {
 	t.Cleanup(remote.Close)
 
 	token := h.adminUserToken(t)
-	status, raw := h.doJSON(t, http.MethodPost, "/api/app/import/ngx", token, map[string]any{
-		"url":     remote.URL,
-		"api_key": "remote-token",
-		"mode":    "reprocess",
-	})
-	requireStatus(t, status, http.StatusOK, raw)
-
-	var result map[string]any
-	if err := json.Unmarshal([]byte(raw), &result); err != nil {
-		t.Fatalf("decode: %v body %s", err, raw)
-	}
+	result := runImportNgx(t, h, token, remote.URL, "remote-token", "reprocess")
 	if intFromAny(result["imported"]) != 1 {
-		t.Fatalf("imported=%v body=%s", result["imported"], raw)
+		t.Fatalf("imported=%v body=%v", result["imported"], result)
 	}
 	if intFromAny(result["tags_upserted"]) != 0 ||
 		intFromAny(result["correspondents_upserted"]) != 0 ||
 		intFromAny(result["document_types_upserted"]) != 0 {
-		t.Fatalf("reprocess should not upsert taxonomy: %s", raw)
+		t.Fatalf("reprocess should not upsert taxonomy: %v", result)
 	}
 
 	docsStatus, docsRaw := h.doJSON(t, http.MethodGet,
-		`/api/collections/documents/records?filter=file~"reprocess"&perPage=50&sort=-created`, token, nil)
+		`/api/collections/documents/records?filter=checksum="`+checksum+`"&perPage=50`, token, nil)
 	requireStatus(t, docsStatus, http.StatusOK, docsRaw)
 	var docs struct {
 		Items []map[string]any `json:"items"`
@@ -230,6 +210,53 @@ func TestImportNgxReprocessFilesOnly(t *testing.T) {
 	if ocr, _ := doc["ocr_text"].(string); ocr == "ShouldNotKeepOCR" {
 		t.Fatalf("reprocess mode should not keep ngx OCR text, got %q", ocr)
 	}
+}
+
+func runImportNgx(t *testing.T, h *Harness, token, url, apiKey, mode string) map[string]any {
+	t.Helper()
+	status, raw := h.doJSON(t, http.MethodPost, "/api/app/import/ngx", token, map[string]any{
+		"url":     url,
+		"api_key": apiKey,
+		"mode":    mode,
+	})
+	requireStatus(t, status, http.StatusAccepted, raw)
+
+	var start map[string]any
+	if err := json.Unmarshal([]byte(raw), &start); err != nil {
+		t.Fatalf("decode start: %v body %s", err, raw)
+	}
+	jobID, _ := start["job_id"].(string)
+	if jobID == "" {
+		t.Fatalf("missing job_id in %s", raw)
+	}
+
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		status, raw = h.doJSON(t, http.MethodGet, "/api/app/import/ngx/status?job_id="+jobID, token, nil)
+		requireStatus(t, status, http.StatusOK, raw)
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+			t.Fatalf("decode status: %v body %s", err, raw)
+		}
+		switch payload["status"] {
+		case "completed":
+			result, _ := payload["result"].(map[string]any)
+			if result == nil {
+				t.Fatalf("completed without result: %s", raw)
+			}
+			return result
+		case "failed":
+			t.Fatalf("import failed: %s", raw)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("import timed out for job %s", jobID)
+	return nil
+}
+
+func sha256Hex(payload []byte) string {
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
 }
 
 func assertToken(t *testing.T, r *http.Request, want string) {

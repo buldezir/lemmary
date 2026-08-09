@@ -559,10 +559,27 @@ export type NgxImportResult = {
   errors: string[]
 }
 
+type NgxImportJobStart = {
+  job_id: string
+  status: string
+  detail?: string
+}
+
+type NgxImportJobStatus = {
+  job_id: string
+  status: 'running' | 'completed' | 'failed' | string
+  error?: string
+  result?: NgxImportResult
+  detail?: string
+}
+
+const importPollIntervalMs = 500
+const importPollMaxAttempts = 600
+
 export async function importFromNgx(url: string, apiKey: string, mode: NgxImportMode = 'preserve') {
   await ensureAuth()
 
-  const response = await fetch(`${pbUrl}/api/app/import/ngx`, {
+  const startResponse = await fetch(`${pbUrl}/api/app/import/ngx`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -571,14 +588,44 @@ export async function importFromNgx(url: string, apiKey: string, mode: NgxImport
     body: JSON.stringify({ url, api_key: apiKey, mode }),
   })
 
-  const data = (await response.json()) as NgxImportResult & { detail?: string }
-  if (!response.ok) {
-    throw new Error(data.detail ?? 'Import failed')
+  const startData = (await startResponse.json()) as NgxImportJobStart
+  if (!startResponse.ok) {
+    throw new Error(startData.detail ?? 'Import failed to start')
   }
-  return {
-    ...data,
-    errors: data.errors ?? [],
-  } as NgxImportResult
+  if (!startData.job_id) {
+    throw new Error('Import job id missing from server response')
+  }
+
+  for (let attempt = 0; attempt < importPollMaxAttempts; attempt++) {
+    const statusResponse = await fetch(
+      `${pbUrl}/api/app/import/ngx/status?job_id=${encodeURIComponent(startData.job_id)}`,
+      {
+        headers: {
+          Authorization: pb.authStore.token,
+        },
+      },
+    )
+    const statusData = (await statusResponse.json()) as NgxImportJobStatus
+    if (!statusResponse.ok) {
+      throw new Error(statusData.detail ?? 'Failed to poll import status')
+    }
+    if (statusData.status === 'completed') {
+      const result = statusData.result
+      if (!result) {
+        throw new Error('Import completed without a result')
+      }
+      return {
+        ...result,
+        errors: result.errors ?? [],
+      } as NgxImportResult
+    }
+    if (statusData.status === 'failed') {
+      throw new Error(statusData.error ?? 'Import failed')
+    }
+    await new Promise((resolve) => setTimeout(resolve, importPollIntervalMs))
+  }
+
+  throw new Error('Import timed out while waiting for completion')
 }
 
 export function parseDuplicateOfId(message: string): string | null {

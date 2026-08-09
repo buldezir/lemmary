@@ -62,6 +62,30 @@ func Run(app core.App, ownerUserID, baseURL, apiKey, mode string) (Result, error
 
 // RunWithClient is like Run but accepts a prebuilt client (for tests).
 func RunWithClient(app core.App, ownerUserID, baseURL, apiKey, mode string, client *Client) (Result, error) {
+	if err := acquireImport(); err != nil {
+		return Result{}, err
+	}
+	defer releaseImport()
+	return runImport(app, ownerUserID, baseURL, apiKey, mode, client)
+}
+
+func acquireImport() error {
+	importMu.Lock()
+	defer importMu.Unlock()
+	if importBusy {
+		return ErrImportInProgress
+	}
+	importBusy = true
+	return nil
+}
+
+func releaseImport() {
+	importMu.Lock()
+	importBusy = false
+	importMu.Unlock()
+}
+
+func runImport(app core.App, ownerUserID, baseURL, apiKey, mode string, client *Client) (Result, error) {
 	if strings.TrimSpace(ownerUserID) == "" {
 		return Result{}, fmt.Errorf("owner user id is required")
 	}
@@ -69,19 +93,6 @@ func RunWithClient(app core.App, ownerUserID, baseURL, apiKey, mode string, clie
 	if err != nil {
 		return Result{}, err
 	}
-
-	importMu.Lock()
-	if importBusy {
-		importMu.Unlock()
-		return Result{}, ErrImportInProgress
-	}
-	importBusy = true
-	importMu.Unlock()
-	defer func() {
-		importMu.Lock()
-		importBusy = false
-		importMu.Unlock()
-	}()
 
 	if client == nil {
 		client, err = NewClient(baseURL, apiKey, nil)
@@ -112,23 +123,24 @@ func RunWithClient(app core.App, ownerUserID, baseURL, apiKey, mode string, clie
 		tagMap, corrMap, typeMap = map[int]string{}, map[int]string{}, map[int]string{}
 	}
 
-	docs, err := client.ListDocuments()
-	if err != nil {
-		return result, fmt.Errorf("list documents: %w", err)
-	}
-
-	for _, doc := range docs {
-		if err := importOneDocument(app, client, ownerUserID, parsedMode, doc, tagMap, corrMap, typeMap); err != nil {
-			var dup *duplicates.ErrDuplicate
-			if errors.As(err, &dup) {
-				result.SkippedDuplicates++
+	err = client.ForEachDocuments(func(docs []ngxDocument) error {
+		for _, doc := range docs {
+			if err := importOneDocument(app, client, ownerUserID, parsedMode, doc, tagMap, corrMap, typeMap); err != nil {
+				var dup *duplicates.ErrDuplicate
+				if errors.As(err, &dup) {
+					result.SkippedDuplicates++
+					continue
+				}
+				result.Failed++
+				appendError(&result, fmt.Sprintf("document %d (%s): %v", doc.ID, strings.TrimSpace(doc.Title), err))
 				continue
 			}
-			result.Failed++
-			appendError(&result, fmt.Sprintf("document %d (%s): %v", doc.ID, strings.TrimSpace(doc.Title), err))
-			continue
+			result.Imported++
 		}
-		result.Imported++
+		return nil
+	})
+	if err != nil {
+		return result, fmt.Errorf("list documents: %w", err)
 	}
 
 	return result, nil
@@ -140,67 +152,37 @@ func importNamedEntities(app core.App, collection string, list func() ([]namedEn
 		return nil, 0, err
 	}
 	idMap := make(map[int]string, len(entities))
-	upserted := 0
+	createdCount := 0
 	for _, entity := range entities {
 		name := strings.TrimSpace(entity.Name)
 		if entity.ID == 0 || name == "" {
 			continue
 		}
-		localID, err := ensureNamed(app, collection, name)
+		localID, created, err := ensureNamed(app, collection, name)
 		if err != nil {
-			return nil, upserted, err
+			return nil, createdCount, err
 		}
 		idMap[entity.ID] = localID
-		upserted++
+		if created {
+			createdCount++
+		}
 	}
-	return idMap, upserted, nil
+	return idMap, createdCount, nil
 }
 
-func ensureNamed(app core.App, collection, name string) (string, error) {
+func ensureNamed(app core.App, collection, name string) (id string, created bool, err error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return "", nil
+		return "", false, nil
 	}
-
-	existing, err := app.FindRecordsByFilter(
-		collection,
-		"name = {:name}",
-		"",
-		1,
-		0,
-		map[string]any{"name": name},
-	)
-	if err != nil {
-		return "", err
+	switch collection {
+	case "tags":
+		return worker.EnsureTag(app, name)
+	case "correspondents", "document_types":
+		return worker.EnsureNamedEntity(app, collection, name, name)
+	default:
+		return "", false, fmt.Errorf("unsupported collection %q", collection)
 	}
-	if len(existing) > 0 {
-		return existing[0].Id, nil
-	}
-
-	coll, err := app.FindCollectionByNameOrId(collection)
-	if err != nil {
-		return "", err
-	}
-	record := core.NewRecord(coll)
-	record.Set("name", name)
-	if collection == "correspondents" || collection == "document_types" {
-		record.Set("name_original", name)
-	}
-	if err := app.Save(record); err != nil {
-		existing, findErr := app.FindRecordsByFilter(
-			collection,
-			"name = {:name}",
-			"",
-			1,
-			0,
-			map[string]any{"name": name},
-		)
-		if findErr == nil && len(existing) > 0 {
-			return existing[0].Id, nil
-		}
-		return "", err
-	}
-	return record.Id, nil
 }
 
 func importOneDocument(
@@ -295,11 +277,11 @@ func importOneDocument(
 		if errors.As(err, &dup) {
 			return dup
 		}
-		if dup := duplicates.ErrDuplicateFromSaveConflict(app, record, err); dup != nil {
+		if dup := duplicates.ErrDuplicateFromAPIError(err); dup != nil {
 			return dup
 		}
-		if strings.Contains(err.Error(), "document already exists") {
-			return &duplicates.ErrDuplicate{}
+		if dup := duplicates.ErrDuplicateFromSaveConflict(app, record, err); dup != nil {
+			return dup
 		}
 		return err
 	}

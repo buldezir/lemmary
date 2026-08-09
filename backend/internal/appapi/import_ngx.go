@@ -18,7 +18,7 @@ type importNgxRequest struct {
 }
 
 func handlePostImportNgx(app core.App) func(*core.RequestEvent) error {
-	return bindAdmin(func(e *core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
 		var req importNgxRequest
 		if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
 			return writeError(e, http.StatusBadRequest, "Invalid request body.")
@@ -39,15 +39,43 @@ func handlePostImportNgx(app core.App) func(*core.RequestEvent) error {
 			return writeError(e, http.StatusBadRequest, err.Error())
 		}
 
-		result, err := ngximport.Run(app, ownerID, req.URL, req.APIKey, mode)
+		jobID, err := ngximport.Start(app, ownerID, req.URL, req.APIKey, mode)
 		if errors.Is(err, ngximport.ErrImportInProgress) {
 			return writeError(e, http.StatusConflict, "An import is already in progress.")
 		}
 		if err != nil {
-			return writeError(e, http.StatusBadRequest, "Import failed: "+err.Error())
+			return writeError(e, http.StatusBadRequest, "Import failed to start: "+err.Error())
 		}
-		return writeJSON(e, http.StatusOK, result)
-	})
+		return writeJSON(e, http.StatusAccepted, map[string]any{
+			"job_id": jobID,
+			"status": ngximport.JobStatusRunning,
+		})
+	}
+}
+
+func handleGetImportNgxStatus(app core.App) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		_ = app
+		jobID := strings.TrimSpace(e.Request.URL.Query().Get("job_id"))
+		if jobID == "" {
+			return writeError(e, http.StatusBadRequest, "job_id is required.")
+		}
+		job, ok := ngximport.GetJob(jobID)
+		if !ok {
+			return writeError(e, http.StatusNotFound, "Import job not found.")
+		}
+		payload := map[string]any{
+			"job_id": job.ID,
+			"status": job.Status,
+		}
+		if job.Error != "" {
+			payload["error"] = job.Error
+		}
+		if job.Result != nil {
+			payload["result"] = job.Result
+		}
+		return writeJSON(e, http.StatusOK, payload)
+	}
 }
 
 func resolveImportOwnerID(app core.App, e *core.RequestEvent) (string, error) {

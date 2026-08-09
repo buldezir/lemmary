@@ -99,6 +99,34 @@ func ErrDuplicateFromSaveConflict(app core.App, record *core.Record, saveErr err
 	}
 }
 
+// DuplicateOfFromError extracts an ExistingID from a PocketBase ApiError that
+// carries {"duplicate_of": id} in its raw data (as returned by the documents create hook).
+// Returns "" when err is not such an ApiError.
+func DuplicateOfFromError(err error) string {
+	type rawDataCarrier interface {
+		RawData() any
+	}
+	var carrier rawDataCarrier
+	if !errors.As(err, &carrier) {
+		return ""
+	}
+	data, ok := carrier.RawData().(map[string]any)
+	if !ok {
+		return ""
+	}
+	id, _ := data["duplicate_of"].(string)
+	return strings.TrimSpace(id)
+}
+
+// ErrDuplicateFromAPIError maps a create-hook ApiError with duplicate_of into ErrDuplicate.
+func ErrDuplicateFromAPIError(err error) *ErrDuplicate {
+	id := DuplicateOfFromError(err)
+	if id == "" {
+		return nil
+	}
+	return &ErrDuplicate{ExistingID: id}
+}
+
 // AssignChecksumFromUpload hashes the unsaved upload, sets checksum, and rejects duplicates.
 // Callers should still handle unique-constraint failures from Save via ErrDuplicateFromSaveConflict
 // so concurrent uploads cannot both succeed.

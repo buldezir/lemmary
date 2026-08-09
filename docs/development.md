@@ -214,7 +214,7 @@ Admins can migrate an existing Paperless-ngx library into Paperless Go:
    - **Import files only and reprocess** (`reprocess`): downloads only the original files and queues the full OCR + AI pipeline as for a new upload.
 4. Start the import. Exact file duplicates (same checksum) are skipped.
 
-The same flow is available as `POST /api/app/import/ngx` with JSON body `{ "url": "...", "api_key": "...", "mode": "preserve" | "reprocess" }`. `mode` defaults to `preserve`. The API key is not persisted.
+The same flow is available as `POST /api/app/import/ngx` with JSON body `{ "url": "...", "api_key": "...", "mode": "preserve" | "reprocess" }`. The request returns `202 Accepted` with `{ "job_id", "status": "running" }`. Poll `GET /api/app/import/ngx/status?job_id=...` until `status` is `completed` (with `result`) or `failed` (with `error`). Job state is kept in memory for the running process only. `mode` defaults to `preserve`. The API key is not persisted.
 
 ### swift-paperless (iOS)
 
