@@ -17,24 +17,68 @@ Do not consider the issue resolved until the PR exists and verification has pass
 
 When the user asks to review a GitHub pull request:
 
-1. Read the PR and its diff (`gh pr view <number|url> --json title,body,files,commits` and `gh pr diff <number|url>`).
+1. Read the PR and its diff (`gh pr view <number|url> --json title,body,files,commits` and `gh pr diff <number|url>`). Resolve `OWNER`, `REPO`, `PULL_NUMBER`, and the head `commit_id` (SHA) from that metadata.
 2. Perform the review (code quality, correctness, tests, and anything the user asked for).
-3. Post the results as a GitHub PR review with `gh pr review`, not only in chat. Include a clear summary and concrete findings.
+3. Post the results on GitHub, not only in chat. Prefer inline comments on the changed lines (via `gh api`); use a top-level-only `gh pr review` only when there are no line-specific findings.
 
-Use `gh pr review` with an appropriate event (`--comment`, `--request-changes`, or `--approve`) and a HEREDOC body, for example:
+`gh pr review` supports only review-level actions (`--approve`, `--comment`, `--request-changes`, `--body` / `--body-file`). It cannot attach `path` / `line` / `side` / `start_line` inline comments. Use the REST API via `gh api` instead.
+
+### Submitted review with grouped inline comments (preferred for a full review)
 
 ```bash
-gh pr review <number|url> --comment --body "$(cat <<'EOF'
-## Review
-
-- Finding 1
-- Finding 2
-
+gh api repos/OWNER/REPO/pulls/PULL_NUMBER/reviews \
+  --method POST \
+  --input - <<'EOF'
+{
+  "commit_id": "<HEAD_SHA>",
+  "event": "COMMENT",
+  "body": "## Review\n\nSummary of findings.",
+  "comments": [
+    {
+      "path": "backend/api/handler.go",
+      "line": 42,
+      "side": "RIGHT",
+      "body": "Concrete finding on this line."
+    }
+  ]
+}
 EOF
-)"
 ```
 
-Do not approve or request changes unless the user asked for that outcome; default to `--comment` when posting findings. `gh pr review` posts one top-level review body and cannot attach inline comments, so cite locations as text (e.g. `backend/api/handler.go:42`) next to each finding. Leave merging to the user.
+- `event`: `COMMENT` by default; use `REQUEST_CHANGES` or `APPROVE` only when the user asked for that outcome.
+- `line` / `side` refer to the diff on the PR head commit (`RIGHT` for the new file side). For a multi-line range in a review comment object, also set `start_line` and `start_side`.
+
+### Individual inline comments (direct comments endpoint)
+
+For one-off inline comments without a review summary, POST to the pull request comments endpoint:
+
+Single-line:
+
+```bash
+gh api repos/OWNER/REPO/pulls/PULL_NUMBER/comments \
+  --method POST \
+  -f body='Inline comment body' \
+  -f commit_id='<HEAD_SHA>' \
+  -f path='backend/api/handler.go' \
+  -F line=42 \
+  -f side='RIGHT'
+```
+
+Multi-line range:
+
+```bash
+gh api repos/OWNER/REPO/pulls/PULL_NUMBER/comments \
+  --method POST \
+  -f body='Inline comment body' \
+  -f commit_id='<HEAD_SHA>' \
+  -f path='backend/api/handler.go' \
+  -F start_line=40 \
+  -f start_side='RIGHT' \
+  -F line=42 \
+  -f side='RIGHT'
+```
+
+Line coordinates must land on the PR diff; if GitHub rejects them, fix the path/line/side (or use a multi-line range) and retry. Leave merging to the user.
 
 ## Verification (required)
 
