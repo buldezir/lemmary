@@ -10,25 +10,25 @@ import (
 )
 
 type settingsResponse struct {
-	OCRProvider                     string  `json:"ocr_provider"`
-	GoogleVisionAPIKeySet           bool    `json:"google_vision_api_key_set"`
-	MistralAPIKeySet                bool    `json:"mistral_api_key_set"`
-	MistralOCRModel                 string  `json:"mistral_ocr_model"`
-	MistralAPIBaseURL               string  `json:"mistral_api_base_url"`
-	OCRTimeoutSec                   int     `json:"ocr_timeout_sec"`
-	ProcessingResultLanguage        string  `json:"processing_result_language"`
-	DeepSearchLanguages             string  `json:"deep_search_languages"`
-	OpenAIAPIKeySet                 bool    `json:"openai_api_key_set"`
-	OpenAIModel                     string  `json:"openai_model"`
-	OpenAIChatModel                 string  `json:"openai_chat_model"`
-	OpenAISearchModel               string  `json:"openai_search_model"`
-	OpenAIBaseURL                   string  `json:"openai_base_url"`
-	OpenAITimeoutSec                int     `json:"openai_timeout_sec"`
-	WorkerTimeoutSec                int     `json:"worker_timeout_sec"`
-	WorkerMaxRetries                int     `json:"worker_max_retries"`
-	ExtractionPromptVersion         string  `json:"extraction_prompt_version"`
-	NearDuplicateDetectionEnabled   bool    `json:"near_duplicate_detection_enabled"`
-	NearDuplicateThreshold          float64 `json:"near_duplicate_threshold"`
+	OCRProvider                   string  `json:"ocr_provider"`
+	GoogleVisionAPIKeySet         bool    `json:"google_vision_api_key_set"`
+	MistralAPIKeySet              bool    `json:"mistral_api_key_set"`
+	MistralOCRModel               string  `json:"mistral_ocr_model"`
+	MistralAPIBaseURL             string  `json:"mistral_api_base_url"`
+	OCRTimeoutSec                 int     `json:"ocr_timeout_sec"`
+	ProcessingResultLanguage      string  `json:"processing_result_language"`
+	DeepSearchLanguages           string  `json:"deep_search_languages"`
+	OpenAIAPIKeySet               bool    `json:"openai_api_key_set"`
+	OpenAIModel                   string  `json:"openai_model"`
+	OpenAIChatModel               string  `json:"openai_chat_model"`
+	OpenAISearchModel             string  `json:"openai_search_model"`
+	OpenAIBaseURL                 string  `json:"openai_base_url"`
+	OpenAITimeoutSec              int     `json:"openai_timeout_sec"`
+	WorkerTimeoutSec              int     `json:"worker_timeout_sec"`
+	WorkerMaxRetries              int     `json:"worker_max_retries"`
+	ExtractionPromptVersion       string  `json:"extraction_prompt_version"`
+	NearDuplicateDetectionEnabled bool    `json:"near_duplicate_detection_enabled"`
+	NearDuplicateThreshold        float64 `json:"near_duplicate_threshold"`
 }
 
 type settingsPatchRequest struct {

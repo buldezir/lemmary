@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"paperless-go/backend/internal/appapi"
 	"paperless-go/backend/internal/appwire"
 	"paperless-go/backend/internal/config"
 
@@ -193,7 +194,7 @@ func Start(opts Options) (*Harness, error) {
 			_ = os.RemoveAll(dataDir)
 			return nil, fmt.Errorf("create superuser: %w", err)
 		}
-		adminUserID, err = createAuthRecord(app, "users", SuperEmail, SuperPassword)
+		adminRec, err := appapi.UpsertPairedUser(app, SuperEmail, SuperPassword)
 		if err != nil {
 			_ = app.ResetBootstrapState()
 			if listener != nil {
@@ -203,6 +204,7 @@ func Start(opts Options) (*Harness, error) {
 			_ = os.RemoveAll(dataDir)
 			return nil, fmt.Errorf("create paired admin user: %w", err)
 		}
+		adminUserID = adminRec.Id
 	}
 
 	serveErr := make(chan error, 1)
@@ -229,12 +231,12 @@ func Start(opts Options) (*Harness, error) {
 	}
 
 	h := &Harness{
-		BaseURL:   baseURL,
-		DataDir:   dataDir,
-		PublicDir: publicDir,
-		App:       app,
-		HTTP:      client,
-		Mocks:     mocks,
+		BaseURL:     baseURL,
+		DataDir:     dataDir,
+		PublicDir:   publicDir,
+		App:         app,
+		HTTP:        client,
+		Mocks:       mocks,
 		UserID:      userID,
 		SuperID:     superID,
 		AdminUserID: adminUserID,

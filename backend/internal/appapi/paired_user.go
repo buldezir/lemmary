@@ -1,7 +1,9 @@
 package appapi
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -9,8 +11,10 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// UpsertPairedUser creates or updates a users-collection record with the given
-// email and password so a superuser can own documents via a users session.
+// UpsertPairedUser creates or updates the paired admin users-collection record
+// for a superuser email so the SPA can own documents via a users session.
+//
+// Existing non-admin users with the same email are not overwritten.
 func UpsertPairedUser(app core.App, email, password string) (*core.Record, error) {
 	email = strings.TrimSpace(email)
 	if email == "" {
@@ -26,16 +30,47 @@ func UpsertPairedUser(app core.App, email, password string) (*core.Record, error
 	}
 
 	record, err := app.FindAuthRecordByEmail("users", email)
-	if err != nil {
+	switch {
+	case err == nil:
+		if !record.GetBool(pairedAdminField) {
+			return nil, fmt.Errorf("a non-admin user already exists for %q", email)
+		}
+	case errors.Is(err, sql.ErrNoRows):
 		record = core.NewRecord(collection)
 		record.SetEmail(email)
+	default:
+		return nil, err
 	}
+
 	record.SetPassword(password)
 	record.SetVerified(true)
+	record.Set(pairedAdminField, true)
 	if err := app.Save(record); err != nil {
 		return nil, err
 	}
 	return record, nil
+}
+
+// RevokePairedAdmin clears the paired-admin flag for the users account with the
+// given email (used when deleting a superuser). The users record is kept so
+// owned documents remain accessible.
+func RevokePairedAdmin(app core.App, email string) error {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return nil
+	}
+	record, err := app.FindAuthRecordByEmail("users", email)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if !record.GetBool(pairedAdminField) {
+		return nil
+	}
+	record.Set(pairedAdminField, false)
+	return app.Save(record)
 }
 
 type ensureUserRequest struct {

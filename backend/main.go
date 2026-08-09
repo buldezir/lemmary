@@ -44,9 +44,11 @@ func main() {
 
 	rt := config.NewRuntime()
 	appwire.Register(app, rt, publicDir, indexFallback)
-	appapi.RegisterSuperuserCLIHooks(app)
+	// Register serve/superuser before Execute so CLI hooks can wrap them.
+	// Do not call app.Start() — it would re-add the same commands.
+	appapi.RegisterSystemCommands(app, true)
 
-	if err := app.Start(); err != nil {
+	if err := app.Execute(); err != nil {
 		log.Fatal(err)
 	}
 }

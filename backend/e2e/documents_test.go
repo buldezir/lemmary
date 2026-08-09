@@ -49,7 +49,6 @@ func TestDocumentsUploadListGetPatchDelete(t *testing.T) {
 	}
 	doc = patched
 
-
 	// Download original file via PocketBase files API.
 	fileName := jsonGetString(doc, "file")
 	status, body, _ := h.doRaw(t, http.MethodGet, "/api/files/documents/"+id+"/"+fileName, token, nil, "")

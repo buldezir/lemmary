@@ -92,7 +92,7 @@ You can also create the admin via CLI (`go run . superuser upsert EMAIL PASS` fr
 
 ## Settings (admin UI)
 
-1. Sign in with the **admin** email/password (login prefers the `users` account; legacy `_superusers`-only installs are linked automatically).
+1. Sign in with the **admin** email/password (login prefers the `users` account; legacy `_superusers`-only installs are linked automatically via `/api/app/ensure-user`, which sets a hidden `is_app_admin` flag on the paired `users` record).
 2. Open **Settings** in the nav (shown when `/api/app/me` reports `is_admin`). Changes save to `app_settings` and hot-reload the in-process OCR/AI clients (no restart).
 
 `WORKER_CRON_EXPR` is not editable there; change `.env` and restart, or use PocketBase Admin → Settings → Crons.

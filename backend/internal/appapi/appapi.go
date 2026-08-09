@@ -20,9 +20,9 @@ func Register(app core.App, rt *config.Runtime) {
 			g.POST("/search", bindAuth(handleDeepSearch(app, rt)))
 			g.GET("/ocr/providers", bindAuth(handleOCRProviders(rt)))
 			g.POST("/ocr/test", bindAuth(handleOCRTest(app, rt)))
-			g.GET("/settings", bindAdmin(app, handleGetSettings(app, rt)))
-			g.PATCH("/settings", bindAdmin(app, handlePatchSettings(app, rt)))
-			g.POST("/duplicates/scan", bindAdmin(app, handlePostDuplicatesScan(app, rt)))
+			g.GET("/settings", bindAdmin(handleGetSettings(app, rt)))
+			g.PATCH("/settings", bindAdmin(handlePatchSettings(app, rt)))
+			g.POST("/duplicates/scan", bindAdmin(handlePostDuplicatesScan(app, rt)))
 			return e.Next()
 		},
 	})

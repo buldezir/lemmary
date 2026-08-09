@@ -29,13 +29,13 @@ func bindSuperuser(handler func(*core.RequestEvent) error) func(*core.RequestEve
 }
 
 // bindAdmin allows PocketBase superuser auth or a paired users session
-// (email also present in _superusers).
-func bindAdmin(app core.App, handler func(*core.RequestEvent) error) func(*core.RequestEvent) error {
+// (users record with is_app_admin).
+func bindAdmin(handler func(*core.RequestEvent) error) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		if e.Auth == nil {
 			return writeError(e, http.StatusUnauthorized, "Authentication required.")
 		}
-		if !isAppAdmin(app, e) {
+		if !isAppAdmin(e) {
 			return writeError(e, http.StatusForbidden, "Admin access required.")
 		}
 		return handler(e)
