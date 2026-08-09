@@ -16,6 +16,13 @@ test('upload txt document and see it on list', async ({ page }) => {
   await expect(page.locator('main a[href*="/document/"]').first()).toBeVisible()
 })
 
+test('admin can upload documents', async ({ page }) => {
+  await loginAsSuper(page)
+  await expect(page.getByRole('link', { name: 'Settings' })).toBeVisible()
+  await uploadFixture(page, 'sample.txt')
+  await expect(page).toHaveURL(/\/document\//)
+})
+
 test('edit document title on detail page', async ({ page }) => {
   await loginAsUser(page)
   await uploadFixture(page, 'sample.txt')

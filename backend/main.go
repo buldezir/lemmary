@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"paperless-go/backend/internal/appapi"
 	"paperless-go/backend/internal/appwire"
 	"paperless-go/backend/internal/config"
 
@@ -43,8 +44,11 @@ func main() {
 
 	rt := config.NewRuntime()
 	appwire.Register(app, rt, publicDir, indexFallback)
+	// Register serve/superuser before Execute so CLI hooks can wrap them.
+	// Do not call app.Start() — it would re-add the same commands.
+	appapi.RegisterSystemCommands(app, true)
 
-	if err := app.Start(); err != nil {
+	if err := app.Execute(); err != nil {
 		log.Fatal(err)
 	}
 }

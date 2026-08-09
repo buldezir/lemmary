@@ -49,7 +49,6 @@ func TestDocumentsUploadListGetPatchDelete(t *testing.T) {
 	}
 	doc = patched
 
-
 	// Download original file via PocketBase files API.
 	fileName := jsonGetString(doc, "file")
 	status, body, _ := h.doRaw(t, http.MethodGet, "/api/files/documents/"+id+"/"+fileName, token, nil, "")
@@ -63,6 +62,27 @@ func TestDocumentsUploadListGetPatchDelete(t *testing.T) {
 	status, _ = h.doJSON(t, http.MethodGet, "/api/collections/documents/records/"+id, token, nil)
 	if status == http.StatusOK {
 		t.Fatal("document still exists after delete")
+	}
+}
+
+// TestAdminUserCanUpload covers #7: paired admin users session owns documents.
+func TestAdminUserCanUpload(t *testing.T) {
+	h := StartShared(t)
+	token := h.adminUserToken(t)
+	if h.AdminUserID == "" {
+		t.Fatal("missing AdminUserID")
+	}
+	rec := h.uploadDocument(t, token, h.AdminUserID, fixturePath("sample.txt"))
+	id := jsonGetString(rec, "id")
+	if id == "" {
+		t.Fatal("missing document id")
+	}
+	if jsonGetString(rec, "user") != h.AdminUserID {
+		t.Fatalf("user=%q want %q", jsonGetString(rec, "user"), h.AdminUserID)
+	}
+	status, raw := h.doJSON(t, http.MethodDelete, "/api/collections/documents/records/"+id, token, nil)
+	if status != http.StatusNoContent && status != http.StatusOK {
+		t.Fatalf("delete: %s", formatErr(status, raw))
 	}
 }
 

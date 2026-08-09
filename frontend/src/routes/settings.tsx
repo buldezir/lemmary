@@ -3,7 +3,7 @@ import { Navigate } from '@tanstack/react-router'
 import {
   ensureAuth,
   getAppSettings,
-  isSuperuser,
+  isAdmin,
   scanDuplicates,
   updateAppSettings,
   type AppSettings,
@@ -84,7 +84,8 @@ export function SettingsPage() {
     async function load() {
       try {
         await ensureAuth()
-        if (!isSuperuser()) {
+        const admin = await isAdmin()
+        if (!admin) {
           if (active) setAllowed(false)
           return
         }
@@ -102,7 +103,7 @@ export function SettingsPage() {
       } catch (err) {
         if (active) {
           setError(err instanceof Error ? err.message : 'Failed to load settings')
-          setAllowed(isSuperuser())
+          setAllowed(await isAdmin())
         }
       } finally {
         if (active) setLoading(false)

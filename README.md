@@ -41,7 +41,7 @@ For local development without Docker, see [docs/development.md](docs/development
 See [docs/development.md](docs/development.md) for the full list.
 
 - `WORKER_CRON_EXPR` and frontend `VITE_*` vars stay in `.env`
-- OCR/AI keys, models, and worker timeouts live in the DB (`app_settings`); seed from `.env` on first boot, complete via the first-launch wizard, then edit in **Settings** as a PocketBase superuser
+- OCR/AI keys, models, and worker timeouts live in the DB (`app_settings`); seed from `.env` on first boot, complete via the first-launch wizard, then edit in **Settings** as admin
 
 ## Features
 
@@ -52,7 +52,7 @@ See [docs/development.md](docs/development.md) for the full list.
 - Document list with search and status filters
 - Deep Search chat (`/search`) with optional multi-step refine mode
 - Detail page for reviewing OCR text and correcting metadata
-- Superuser Settings page for runtime OCR/AI/worker config
+- Admin Settings page for runtime OCR/AI/worker config
 - First-launch setup wizard (admin account + required OCR/AI keys)
 
 ### Screenshots
