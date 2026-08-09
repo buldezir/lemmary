@@ -193,7 +193,7 @@ cd backend && go run . superuser upsert admin@example.com 'your-password'
 
 Paperless Go exposes a paperless-ngx-compatible REST API on the same host as PocketBase (for example `http://127.0.0.1:8090/api/`). The backend implements the endpoints third-party clients expect for authentication, documents, tags, correspondents, document types, and related metadata.
 
-Compatibility is intentionally partial: common read/write flows work, but not every paperless-ngx feature is available (for example, some list endpoints return empty stubs where the MVP has no equivalent data).
+Compatibility is intentionally partial: common read/write flows work, but not every paperless-ngx feature is available (for example, some list endpoints return empty stubs where Paperless Go has no equivalent data).
 
 ### Connecting external clients
 
