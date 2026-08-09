@@ -7,6 +7,7 @@ import { DocumentAskPage } from './routes/document.$documentId.ask'
 import { OCRTestPage } from './routes/ocr-test'
 import { SearchPage } from './routes/search'
 import { SettingsPage } from './routes/settings'
+import { ImportPage } from './routes/import'
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -42,6 +43,12 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 })
 
+const importRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/import',
+  component: ImportPage,
+})
+
 const documentRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/document/$documentId',
@@ -60,6 +67,7 @@ const routeTree = rootRoute.addChildren([
   searchRoute,
   ocrTestRoute,
   settingsRoute,
+  importRoute,
   documentRoute,
   documentAskRoute,
 ])

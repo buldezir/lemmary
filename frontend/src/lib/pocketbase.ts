@@ -547,6 +547,38 @@ export async function scanDuplicates() {
   return data as DuplicateScanResult
 }
 
+export type NgxImportResult = {
+  imported: number
+  skipped_duplicates: number
+  failed: number
+  tags_upserted: number
+  correspondents_upserted: number
+  document_types_upserted: number
+  errors: string[]
+}
+
+export async function importFromNgx(url: string, apiKey: string) {
+  await ensureAuth()
+
+  const response = await fetch(`${pbUrl}/api/app/import/ngx`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: pb.authStore.token,
+    },
+    body: JSON.stringify({ url, api_key: apiKey }),
+  })
+
+  const data = (await response.json()) as NgxImportResult & { detail?: string }
+  if (!response.ok) {
+    throw new Error(data.detail ?? 'Import failed')
+  }
+  return {
+    ...data,
+    errors: data.errors ?? [],
+  } as NgxImportResult
+}
+
 export function parseDuplicateOfId(message: string): string | null {
   const match = message.match(/duplicate of ([a-z0-9]{15})/i)
   return match?.[1] ?? null
