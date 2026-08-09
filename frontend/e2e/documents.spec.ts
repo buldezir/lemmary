@@ -34,6 +34,22 @@ test('edit document title on detail page', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'E2E Edited Title' })).toBeVisible()
 })
 
+test('delete document from detail page', async ({ page }) => {
+  await loginAsUser(page)
+  await uploadFixture(page, 'sample.txt')
+
+  const documentURL = page.url()
+  const documentId = documentURL.match(/\/document\/([^/?#]+)/)?.[1]
+  expect(documentId).toBeTruthy()
+
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Delete' }).click()
+
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible()
+  await expect(page.locator(`main a[href="/document/${documentId}"]`)).toHaveCount(0)
+})
+
 test('reject duplicate file upload', async ({ page }) => {
   await loginAsUser(page)
 
