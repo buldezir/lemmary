@@ -1,5 +1,18 @@
 # Agent instructions
 
+## Resolving GitHub issues
+
+When the user asks to resolve a GitHub issue:
+
+1. Read the issue first (`gh issue view 123`) so the fix matches what was actually reported.
+2. Update local `main` so it matches the remote (`git checkout main && git pull`). Stash or commit any work in progress first; do not carry a dirty tree onto `main`.
+3. Create a new branch from that up-to-date `main`, named `fix/123-short-description` (or `feat/123-short-description` for enhancements).
+4. Implement the fix on that branch; do not commit directly to `main`.
+5. Run the full verification stack (below) and fix failures before finishing.
+6. Open a pull request targeting `main` (push the branch if needed, then `gh pr create`). Link the issue in the PR body (e.g. `Fixes #123` / `Closes #123`).
+
+Do not consider the issue resolved until the PR exists and verification has passed. Leave the PR for the user to review and merge; do not merge it yourself.
+
 ## Verification (required)
 
 Before considering a task done, run the full verification stack and fix failures:
