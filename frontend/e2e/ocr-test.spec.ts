@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test'
-import { loginAsUser } from './helpers/auth'
+import { loginAsUser, openMoreMenu } from './helpers/auth'
 
 test('ocr test page extracts text via mock provider', async ({ page }) => {
   await loginAsUser(page)
-  await page.getByRole('link', { name: 'OCR test' }).click()
+  await openMoreMenu(page)
+  await page.getByRole('menuitem', { name: 'OCR test' }).click()
   await expect(page.getByRole('heading', { name: /OCR/i })).toBeVisible()
 
   await page.locator('input[type="file"]').setInputFiles('e2e/fixtures/sample.png')

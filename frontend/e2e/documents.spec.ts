@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { loginAsSuper, loginAsUser, uploadFixture } from './helpers/auth'
+import { loginAsSuper, loginAsUser, openMoreMenu, uploadFixture } from './helpers/auth'
 
 const fixturesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures')
 
@@ -18,7 +18,8 @@ test('upload txt document and see it on list', async ({ page }) => {
 
 test('admin can upload documents', async ({ page }) => {
   await loginAsSuper(page)
-  await expect(page.getByRole('link', { name: 'Settings' })).toBeVisible()
+  await openMoreMenu(page)
+  await expect(page.getByRole('menuitem', { name: 'Settings' })).toBeVisible()
   await uploadFixture(page, 'sample.txt')
   await expect(page).toHaveURL(/\/document\//)
 })

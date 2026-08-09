@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Link, Outlet } from '@tanstack/react-router'
+import { useEffect, useRef, useState } from 'react'
+import { Link, Outlet, useMatchRoute } from '@tanstack/react-router'
 import {
   accentContrastText,
   ensureAuth,
@@ -21,6 +21,8 @@ const navLinkClass =
 const navLinkActiveClass = 'bg-gray-900 text-white hover:bg-gray-900 hover:text-white'
 const iconButtonClass =
   'rounded-md p-1.5 text-stone-500 transition-colors hover:bg-stone-200/70 hover:text-stone-950 cursor-pointer'
+const menuItemClass =
+  'block w-full rounded-md px-3 py-1.5 text-left text-sm font-medium text-stone-600 transition-colors hover:bg-stone-200/70 hover:text-stone-950'
 
 function LogoutIcon() {
   return (
@@ -39,6 +41,108 @@ function LogoutIcon() {
       <polyline points="16 17 21 12 16 7" />
       <line x1="21" y1="12" x2="9" y2="12" />
     </svg>
+  )
+}
+
+function MoreIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-4 w-4"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+    </svg>
+  )
+}
+
+function MoreNavMenu({ admin }: { admin: boolean }) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const matchRoute = useMatchRoute()
+  const settingsActive = Boolean(matchRoute({ to: '/settings' }))
+  const ocrTestActive = Boolean(matchRoute({ to: '/ocr-test' }))
+  const menuActive = settingsActive || ocrTestActive
+
+  useEffect(() => {
+    if (!open) return
+
+    function onPointerDown(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  return (
+    <div className="relative" ref={rootRef}>
+      <button
+        type="button"
+        className={`${iconButtonClass} ${menuActive ? navLinkActiveClass : ''}`}
+        aria-label="More"
+        title="More"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <MoreIcon />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 z-20 mt-1 min-w-40 rounded-md border border-stone-200 bg-stone-50 p-1 shadow-sm"
+        >
+          <Link
+            to="/ocr-test"
+            role="menuitem"
+            className={`${menuItemClass} ${ocrTestActive ? navLinkActiveClass : ''}`}
+            onClick={() => setOpen(false)}
+          >
+            OCR test
+          </Link>
+          {admin && (
+            <Link
+              to="/settings"
+              role="menuitem"
+              className={`${menuItemClass} ${settingsActive ? navLinkActiveClass : ''}`}
+              onClick={() => setOpen(false)}
+            >
+              Settings
+            </Link>
+          )}
+          <a
+            href={pbAdminUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            role="menuitem"
+            className={menuItemClass}
+            onClick={() => setOpen(false)}
+          >
+            Admin
+          </a>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -237,30 +341,7 @@ export function RootLayout() {
               >
                 Deep Search
               </Link>
-              <Link
-                to="/ocr-test"
-                className={navLinkClass}
-                activeProps={{ className: `${navLinkClass} ${navLinkActiveClass}` }}
-              >
-                OCR test
-              </Link>
-              {admin && (
-                <Link
-                  to="/settings"
-                  className={navLinkClass}
-                  activeProps={{ className: `${navLinkClass} ${navLinkActiveClass}` }}
-                >
-                  Settings
-                </Link>
-              )}
-              <a
-                href={pbAdminUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={navLinkClass}
-              >
-                Admin
-              </a>
+              <MoreNavMenu admin={admin} />
             </nav>
             <div className="flex items-center gap-2 border-l border-stone-200 pl-4">
               {userDisplayName && (

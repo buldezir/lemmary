@@ -39,6 +39,17 @@ export async function logout(page: Page) {
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
 }
 
+export async function openMoreMenu(page: Page) {
+  await page.getByRole('button', { name: 'More' }).click()
+  await expect(page.getByRole('menu')).toBeVisible()
+}
+
+export async function openSettings(page: Page) {
+  await openMoreMenu(page)
+  await page.getByRole('menuitem', { name: 'Settings' }).click()
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
+}
+
 export async function uploadFixture(page: Page, fixtureName: string) {
   await page.getByRole('link', { name: 'Upload', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Upload document' })).toBeVisible()
