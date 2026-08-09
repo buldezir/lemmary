@@ -281,18 +281,84 @@ export function hasDevCredentials() {
 }
 
 export async function loginWithPassword(email: string, password: string) {
+  clearMeCache()
   try {
     await pb.collection('users').authWithPassword(email, password)
+    return
   } catch {
-    await pb.collection('_superusers').authWithPassword(email, password)
+    // Fall through to superuser (legacy installs / PocketBase admin accounts).
+  }
+
+  await pb.collection('_superusers').authWithPassword(email, password)
+  const response = await fetch(`${pbUrl}/api/app/ensure-user`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: pb.authStore.token,
+    },
+    body: JSON.stringify({ password }),
+  })
+  const data = (await response.json()) as { detail?: string }
+  if (!response.ok) {
+    pb.authStore.clear()
+    throw new Error(data.detail ?? 'Failed to create paired user account')
+  }
+  // App sessions must be users-collection so documents.user relations validate.
+  await pb.collection('users').authWithPassword(email, password)
+}
+
+export type MeInfo = {
+  email: string
+  is_admin: boolean
+}
+
+let meCache: MeInfo | null = null
+
+export function clearMeCache() {
+  meCache = null
+}
+
+pb.authStore.onChange(() => {
+  meCache = null
+})
+
+export async function getMe(): Promise<MeInfo> {
+  await ensureAuth()
+  if (meCache) {
+    return meCache
+  }
+
+  const response = await fetch(`${pbUrl}/api/app/me`, {
+    headers: {
+      Authorization: pb.authStore.token,
+    },
+  })
+  const data = (await response.json()) as MeInfo & { detail?: string }
+  if (!response.ok) {
+    throw new Error(data.detail ?? 'Failed to load account info')
+  }
+  meCache = {
+    email: typeof data.email === 'string' ? data.email : '',
+    is_admin: Boolean(data.is_admin),
+  }
+  return meCache
+}
+
+/** True when the current users session is a paired admin (or rare superuser JWT). */
+export async function isAdmin() {
+  if (!pb.authStore.isValid) {
+    return false
+  }
+  try {
+    const me = await getMe()
+    return me.is_admin
+  } catch {
+    return false
   }
 }
 
-export function isSuperuser() {
-  return pb.authStore.record?.collectionName === '_superusers'
-}
-
 export function logout() {
+  clearMeCache()
   pb.authStore.clear()
 }
 

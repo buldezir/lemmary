@@ -52,6 +52,11 @@ func (h *Harness) superToken(t testing.TB) string {
 	return h.authWithPassword(t, "_superusers", SuperEmail, SuperPassword).Token
 }
 
+func (h *Harness) adminUserToken(t testing.TB) string {
+	t.Helper()
+	return h.authWithPassword(t, "users", SuperEmail, SuperPassword).Token
+}
+
 func (h *Harness) doJSON(t testing.TB, method, path, token string, body any) (int, string) {
 	t.Helper()
 	var reader io.Reader

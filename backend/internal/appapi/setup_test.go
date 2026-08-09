@@ -26,9 +26,9 @@ func TestNeedsConfigSetup(t *testing.T) {
 		{
 			name: "ready mistral",
 			cfg: config.Config{
-				OCRProvider:  "mistral",
+				OCRProvider:   "mistral",
 				MistralAPIKey: "m",
-				OpenAIAPIKey: "o",
+				OpenAIAPIKey:  "o",
 			},
 			want: false,
 		},
@@ -59,9 +59,9 @@ func TestNeedsConfigSetup(t *testing.T) {
 		{
 			name: "wrong provider key ignored",
 			cfg: config.Config{
-				OCRProvider:  "mistral",
+				OCRProvider:        "mistral",
 				GoogleVisionAPIKey: "g",
-				OpenAIAPIKey: "o",
+				OpenAIAPIKey:       "o",
 			},
 			want: true,
 		},

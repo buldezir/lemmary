@@ -5,7 +5,7 @@ import {
   ensureAuth,
   getSetupStatus,
   getUserDisplayName,
-  isSuperuser,
+  isAdmin,
   logout,
   pb,
   pbAdminUrl,
@@ -48,7 +48,7 @@ type Gate =
   | { kind: 'setup'; status: SetupStatus }
   | { kind: 'login'; status: SetupStatus }
   | { kind: 'blocked'; status: SetupStatus }
-  | { kind: 'app'; status: SetupStatus; superuser: boolean }
+  | { kind: 'app'; status: SetupStatus; admin: boolean }
 
 export function RootLayout() {
   const [gate, setGate] = useState<Gate>({ kind: 'loading' })
@@ -56,7 +56,7 @@ export function RootLayout() {
   const userDisplayName = gate.kind === 'app' ? getUserDisplayName() : ''
   const appInitial = appName.trim().charAt(0).toUpperCase() || 'P'
   const logoStyle = { backgroundColor: accent, color: accentContrastText(accent) }
-  const superuser = gate.kind === 'app' ? gate.superuser : false
+  const admin = gate.kind === 'app' ? gate.admin : false
 
   async function resolveGate(): Promise<Gate> {
     const status = await getSetupStatus()
@@ -78,13 +78,13 @@ export function RootLayout() {
     }
 
     if (status.needs_config) {
-      if (isSuperuser()) {
+      if (await isAdmin()) {
         return { kind: 'setup', status }
       }
       return { kind: 'blocked', status }
     }
 
-    return { kind: 'app', status, superuser: isSuperuser() }
+    return { kind: 'app', status, admin: await isAdmin() }
   }
 
   useEffect(() => {
@@ -244,7 +244,7 @@ export function RootLayout() {
               >
                 OCR test
               </Link>
-              {superuser && (
+              {admin && (
                 <Link
                   to="/settings"
                   className={navLinkClass}
