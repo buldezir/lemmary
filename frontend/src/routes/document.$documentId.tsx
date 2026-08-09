@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react'
-import { Link, useParams } from '@tanstack/react-router'
+import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import {
   defaultReprocessSteps,
   ensureAuth,
@@ -18,6 +18,7 @@ import {
 
 export function DocumentDetailPage() {
   const { documentId } = useParams({ from: '/document/$documentId' })
+  const navigate = useNavigate()
   const [document, setDocument] = useState<DocumentRecord | null>(null)
   const [job, setJob] = useState<ProcessingJobRecord | null>(null)
   const [tagInput, setTagInput] = useState('')
@@ -27,6 +28,7 @@ export function DocumentDetailPage() {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [reprocessing, setReprocessing] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [reprocessSteps, setReprocessSteps] = useState<ProcessingStep[]>([])
   const [showProcessingJob, setShowProcessingJob] = useState(false)
   const [error, setError] = useState('')
@@ -72,7 +74,10 @@ export function DocumentDetailPage() {
 
     let unsubscribe: (() => void) | undefined
 
-    void pb.collection('documents').subscribe(documentId, () => {
+    void pb.collection('documents').subscribe(documentId, (event) => {
+      if (event.action === 'delete') {
+        return
+      }
       load()
     }).then((fn) => {
       unsubscribe = fn
@@ -167,6 +172,33 @@ export function DocumentDetailPage() {
     } finally {
       setReprocessing(false)
     }
+  }
+
+  async function onDelete() {
+    if (!document || deleting) {
+      return
+    }
+
+    const title = document.title?.trim() || 'Untitled document'
+    const confirmed = window.confirm(
+      `Delete "${title}"?\n\nThis permanently removes the document and cannot be undone.`,
+    )
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      setDeleting(true)
+      setMessage('')
+      setError('')
+      await pb.collection('documents').delete(document.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete document')
+      setDeleting(false)
+      return
+    }
+
+    await navigate({ to: '/' })
   }
 
   async function onSave(event: FormEvent) {
@@ -329,6 +361,14 @@ export function DocumentDetailPage() {
               Open file
             </a>
           )}
+          <button
+            type="button"
+            onClick={() => void onDelete()}
+            disabled={deleting}
+            className="rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+          >
+            {deleting ? 'Deleting...' : 'Delete'}
+          </button>
           {job ? (
             <button
               type="button"
