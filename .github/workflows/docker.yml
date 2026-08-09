@@ -4,8 +4,34 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    paths-ignore:
+      - "**/*.md"
+      - "!docs/**"
+      - "LICENSE"
+      - ".gitignore"
+      - ".env.example"
+      - "docker-compose.yml"
+      - "scripts/**"
+      - "frontend/e2e/**"
+      - "frontend/playwright.config.*"
+      - "backend/e2e/**"
+      - "**/testdata/**"
+      - "**/*_test.go"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "!docs/**"
+      - "LICENSE"
+      - ".gitignore"
+      - ".env.example"
+      - "docker-compose.yml"
+      - "scripts/**"
+      - "frontend/e2e/**"
+      - "frontend/playwright.config.*"
+      - "backend/e2e/**"
+      - "**/testdata/**"
+      - "**/*_test.go"
   workflow_dispatch:
 
 env:
