@@ -30,6 +30,7 @@ On first run, migrations create:
 - `documents`
 - `processing_jobs`
 - `app_settings` (singleton; seeded from `.env` on first boot)
+- `outbound_emails` (outbound mail log when SMTP is not configured; superuser-only)
 
 ### 2. Start React frontend
 
@@ -96,6 +97,12 @@ You can also create the admin via CLI (`go run . superuser upsert EMAIL PASS` fr
 2. Open **Settings** in the nav. Changes save to `app_settings` and hot-reload the in-process OCR/AI clients (no restart).
 
 `WORKER_CRON_EXPR` is not editable there; change `.env` and restart, or use PocketBase Admin → Settings → Crons.
+
+## Outbound mail (SMTP / `outbound_emails`)
+
+Configure SMTP under PocketBase Admin → Settings → Mail. When SMTP is **disabled** (the default), PocketBase would normally fall back to local `sendmail`. This app replaces that fallback: messages are written to the `outbound_emails` collection instead (password reset, verification, OTP, auth alerts, etc.).
+
+Browse them in PocketBase Admin as a superuser. Enable SMTP when you want real delivery; the DB sink is skipped while SMTP is on.
 
 ## Processing flow
 
