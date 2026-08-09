@@ -89,4 +89,4 @@ First browser run may need Chromium: `cd frontend && npx playwright install chro
 
 ## Recommended: Opencode Go
 
-[Opencode Go](https://opencode.ai/go?ref=84VDFS18QN) is a perfect plan to use with this project for AI-assisted development. See the [docs](https://opencode.ai/docs/go/).
+[Opencode Go](https://opencode.ai/go?ref=84VDFS18QN) is a perfect plan to use with this project as AI provider. See the [docs](https://opencode.ai/docs/go/).
