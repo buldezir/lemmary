@@ -158,6 +158,38 @@ func TestDocumentDate(t *testing.T) {
 	}
 }
 
+func TestParseMode(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"", ModePreserve, false},
+		{"preserve", ModePreserve, false},
+		{"Preserve", ModePreserve, false},
+		{"reprocess", ModeReprocess, false},
+		{"REPROCESS", ModeReprocess, false},
+		{"full", "", true},
+		{"other", "", true},
+	}
+	for _, tc := range cases {
+		got, err := ParseMode(tc.in)
+		if tc.wantErr {
+			if err == nil {
+				t.Fatalf("ParseMode(%q) expected error", tc.in)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("ParseMode(%q): %v", tc.in, err)
+		}
+		if got != tc.want {
+			t.Fatalf("ParseMode(%q)=%q want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func writePage[T any](w http.ResponseWriter, results []T) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"count":    len(results),

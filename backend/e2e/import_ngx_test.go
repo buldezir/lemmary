@@ -37,9 +37,17 @@ func TestImportNgxValidation(t *testing.T) {
 	if status != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", status, raw)
 	}
+	status, raw = h.doJSON(t, http.MethodPost, "/api/app/import/ngx", token, map[string]any{
+		"url":     "http://example.com",
+		"api_key": "x",
+		"mode":    "nope",
+	})
+	if status != http.StatusBadRequest {
+		t.Fatalf("invalid mode status=%d body=%s", status, raw)
+	}
 }
 
-func TestImportNgxFromRemote(t *testing.T) {
+func TestImportNgxPreserveMetadata(t *testing.T) {
 	h := StartShared(t)
 
 	corrID := 2
@@ -82,6 +90,7 @@ func TestImportNgxFromRemote(t *testing.T) {
 	status, raw := h.doJSON(t, http.MethodPost, "/api/app/import/ngx", token, map[string]any{
 		"url":     remote.URL,
 		"api_key": "remote-token",
+		"mode":    "preserve",
 	})
 	requireStatus(t, status, http.StatusOK, raw)
 
@@ -103,6 +112,7 @@ func TestImportNgxFromRemote(t *testing.T) {
 	status, raw = h.doJSON(t, http.MethodPost, "/api/app/import/ngx", token, map[string]any{
 		"url":     remote.URL,
 		"api_key": "remote-token",
+		"mode":    "preserve",
 	})
 	requireStatus(t, status, http.StatusOK, raw)
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
@@ -113,7 +123,7 @@ func TestImportNgxFromRemote(t *testing.T) {
 	}
 
 	docsStatus, docsRaw := h.doJSON(t, http.MethodGet,
-		`/api/collections/documents/records?filter=title~"RemoteInvoice"&perPage=50`, token, nil)
+		`/api/collections/documents/records?filter=title="RemoteInvoice"&perPage=50`, token, nil)
 	requireStatus(t, docsStatus, http.StatusOK, docsRaw)
 	var docs struct {
 		Items []map[string]any `json:"items"`
@@ -124,9 +134,101 @@ func TestImportNgxFromRemote(t *testing.T) {
 	if len(docs.Items) != 1 {
 		t.Fatalf("expected 1 document, got %d: %s", len(docs.Items), docsRaw)
 	}
-	ocr, _ := docs.Items[0]["ocr_text"].(string)
+	doc := docs.Items[0]
+	ocr, _ := doc["ocr_text"].(string)
 	if ocr != "Imported OCR content for AI" {
 		t.Fatalf("ocr_text=%q", ocr)
+	}
+	if title, _ := doc["title"].(string); title != "RemoteInvoice" {
+		t.Fatalf("title=%q", title)
+	}
+	if date, _ := doc["document_date"].(string); !strings.HasPrefix(date, "2024-06-15") {
+		t.Fatalf("document_date=%q", date)
+	}
+	if corr, _ := doc["correspondent"].(string); corr == "" {
+		t.Fatal("expected correspondent to be set")
+	}
+	if dtype, _ := doc["document_type"].(string); dtype == "" {
+		t.Fatal("expected document_type to be set")
+	}
+}
+
+func TestImportNgxReprocessFilesOnly(t *testing.T) {
+	h := StartShared(t)
+
+	payload := []byte("imported-reprocess-body-" + t.Name())
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/tags/", func(w http.ResponseWriter, r *http.Request) {
+		writeNgxPage(w, []map[string]any{{"id": 1, "name": "ShouldNotImport"}})
+	})
+	mux.HandleFunc("/api/correspondents/", func(w http.ResponseWriter, r *http.Request) {
+		writeNgxPage(w, []map[string]any{{"id": 2, "name": "ShouldNotImportCorp"}})
+	})
+	mux.HandleFunc("/api/document_types/", func(w http.ResponseWriter, r *http.Request) {
+		writeNgxPage(w, []map[string]any{{"id": 3, "name": "ShouldNotImportType"}})
+	})
+	mux.HandleFunc("/api/documents/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/download") {
+			w.Header().Set("Content-Disposition", `attachment; filename="reprocess.txt"`)
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write(payload)
+			return
+		}
+		corr := 2
+		dtype := 3
+		writeNgxPage(w, []map[string]any{{
+			"id":                 99,
+			"title":              "ShouldNotKeepTitle",
+			"content":            "ShouldNotKeepOCR",
+			"tags":               []int{1},
+			"correspondent":      corr,
+			"document_type":      dtype,
+			"created_date":       "2023-01-01",
+			"original_file_name": "reprocess.txt",
+		}})
+	})
+	remote := httptest.NewServer(mux)
+	t.Cleanup(remote.Close)
+
+	token := h.adminUserToken(t)
+	status, raw := h.doJSON(t, http.MethodPost, "/api/app/import/ngx", token, map[string]any{
+		"url":     remote.URL,
+		"api_key": "remote-token",
+		"mode":    "reprocess",
+	})
+	requireStatus(t, status, http.StatusOK, raw)
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		t.Fatalf("decode: %v body %s", err, raw)
+	}
+	if intFromAny(result["imported"]) != 1 {
+		t.Fatalf("imported=%v body=%s", result["imported"], raw)
+	}
+	if intFromAny(result["tags_upserted"]) != 0 ||
+		intFromAny(result["correspondents_upserted"]) != 0 ||
+		intFromAny(result["document_types_upserted"]) != 0 {
+		t.Fatalf("reprocess should not upsert taxonomy: %s", raw)
+	}
+
+	docsStatus, docsRaw := h.doJSON(t, http.MethodGet,
+		`/api/collections/documents/records?filter=file~"reprocess"&perPage=50&sort=-created`, token, nil)
+	requireStatus(t, docsStatus, http.StatusOK, docsRaw)
+	var docs struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(docsRaw), &docs); err != nil {
+		t.Fatalf("decode docs: %v", err)
+	}
+	if len(docs.Items) < 1 {
+		t.Fatalf("expected imported document, got %s", docsRaw)
+	}
+	doc := docs.Items[0]
+	if title, _ := doc["title"].(string); title == "ShouldNotKeepTitle" {
+		t.Fatalf("reprocess mode should not keep ngx title, got %q", title)
+	}
+	if ocr, _ := doc["ocr_text"].(string); ocr == "ShouldNotKeepOCR" {
+		t.Fatalf("reprocess mode should not keep ngx OCR text, got %q", ocr)
 	}
 }
 

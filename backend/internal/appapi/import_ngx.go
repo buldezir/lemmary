@@ -14,6 +14,7 @@ import (
 type importNgxRequest struct {
 	URL    string `json:"url"`
 	APIKey string `json:"api_key"`
+	Mode   string `json:"mode"`
 }
 
 func handlePostImportNgx(app core.App) func(*core.RequestEvent) error {
@@ -28,13 +29,17 @@ func handlePostImportNgx(app core.App) func(*core.RequestEvent) error {
 		if strings.TrimSpace(req.APIKey) == "" {
 			return writeError(e, http.StatusBadRequest, "API key is required.")
 		}
+		mode, err := ngximport.ParseMode(req.Mode)
+		if err != nil {
+			return writeError(e, http.StatusBadRequest, err.Error())
+		}
 
 		ownerID, err := resolveImportOwnerID(app, e)
 		if err != nil {
 			return writeError(e, http.StatusBadRequest, err.Error())
 		}
 
-		result, err := ngximport.Run(app, ownerID, req.URL, req.APIKey)
+		result, err := ngximport.Run(app, ownerID, req.URL, req.APIKey, mode)
 		if errors.Is(err, ngximport.ErrImportInProgress) {
 			return writeError(e, http.StatusConflict, "An import is already in progress.")
 		}

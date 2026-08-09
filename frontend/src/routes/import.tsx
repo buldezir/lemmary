@@ -4,6 +4,7 @@ import {
   ensureAuth,
   importFromNgx,
   isAdmin,
+  type NgxImportMode,
   type NgxImportResult,
 } from '../lib/pocketbase'
 
@@ -12,10 +13,26 @@ const inputClassName =
 const labelClassName = 'flex flex-col gap-1'
 const labelTextClassName = 'text-xs font-medium text-stone-500'
 
+const modeOptions: { value: NgxImportMode; label: string; description: string }[] = [
+  {
+    value: 'preserve',
+    label: 'Keep Paperless-ngx metadata',
+    description:
+      'Import title, tags, correspondent, document type, date, and OCR text. Preview and duplicate detection still run; AI does not overwrite metadata.',
+  },
+  {
+    value: 'reprocess',
+    label: 'Import files only and reprocess',
+    description:
+      'Import only the original files, then run the full OCR and AI pipeline as if they were newly uploaded.',
+  },
+]
+
 export function ImportPage() {
   const [allowed, setAllowed] = useState<boolean | null>(null)
   const [url, setUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
+  const [mode, setMode] = useState<NgxImportMode>('preserve')
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
@@ -56,7 +73,7 @@ export function ImportPage() {
       setRunning(true)
       setError('')
       setResult(null)
-      const summary = await importFromNgx(url.trim(), apiKey.trim())
+      const summary = await importFromNgx(url.trim(), apiKey.trim(), mode)
       setResult(summary)
       setApiKey('')
     } catch (err) {
@@ -78,9 +95,9 @@ export function ImportPage() {
       <div>
         <h1 className="text-2xl font-semibold text-stone-950">Import from Paperless-ngx</h1>
         <p className="mt-1 text-sm text-stone-500">
-          Pull documents, tags, correspondents, and document types from an existing Paperless-ngx
-          instance using its URL and API token. Remote OCR text is kept; AI metadata extraction
-          runs afterward. The API key is not stored.
+          Pull documents from an existing Paperless-ngx instance using its URL and API token. Choose
+          whether to keep remote metadata or reprocess files through OCR and AI. The API key is not
+          stored.
         </p>
       </div>
 
@@ -109,6 +126,34 @@ export function ImportPage() {
             autoComplete="off"
           />
         </label>
+        <fieldset className="space-y-2" disabled={running}>
+          <legend className={labelTextClassName}>Import mode</legend>
+          {modeOptions.map((option) => (
+            <label
+              key={option.value}
+              className={`flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 text-sm ${
+                mode === option.value
+                  ? 'border-stone-400 bg-white text-stone-800'
+                  : 'border-stone-200 bg-stone-50 text-stone-700'
+              }`}
+            >
+              <input
+                type="radio"
+                className="mt-0.5"
+                name="import-mode"
+                value={option.value}
+                checked={mode === option.value}
+                onChange={() => setMode(option.value)}
+              />
+              <span>
+                <span className="font-medium">{option.label}</span>
+                <span className="mt-0.5 block text-xs font-normal text-stone-500">
+                  {option.description}
+                </span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
         <button
           type="submit"
           disabled={running}

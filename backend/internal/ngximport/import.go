@@ -12,9 +12,16 @@ import (
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 	"paperless-go/backend/internal/duplicates"
 	"paperless-go/backend/internal/models"
+	"paperless-go/backend/internal/worker"
 )
 
 const maxReportedErrors = 25
+
+// Import mode values accepted by the API.
+const (
+	ModePreserve  = "preserve"
+	ModeReprocess = "reprocess"
+)
 
 var (
 	importMu   sync.Mutex
@@ -35,16 +42,32 @@ type Result struct {
 	Errors                 []string `json:"errors"`
 }
 
+// ParseMode validates an import mode; empty defaults to preserve.
+func ParseMode(raw string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", ModePreserve:
+		return ModePreserve, nil
+	case ModeReprocess:
+		return ModeReprocess, nil
+	default:
+		return "", fmt.Errorf("mode must be %q or %q", ModePreserve, ModeReprocess)
+	}
+}
+
 // Run imports taxonomy and documents from a remote Paperless-ngx instance.
 // Only one import may run at a time.
-func Run(app core.App, ownerUserID, baseURL, apiKey string) (Result, error) {
-	return RunWithClient(app, ownerUserID, baseURL, apiKey, nil)
+func Run(app core.App, ownerUserID, baseURL, apiKey, mode string) (Result, error) {
+	return RunWithClient(app, ownerUserID, baseURL, apiKey, mode, nil)
 }
 
 // RunWithClient is like Run but accepts a prebuilt client (for tests).
-func RunWithClient(app core.App, ownerUserID, baseURL, apiKey string, client *Client) (Result, error) {
+func RunWithClient(app core.App, ownerUserID, baseURL, apiKey, mode string, client *Client) (Result, error) {
 	if strings.TrimSpace(ownerUserID) == "" {
 		return Result{}, fmt.Errorf("owner user id is required")
+	}
+	parsedMode, err := ParseMode(mode)
+	if err != nil {
+		return Result{}, err
 	}
 
 	importMu.Lock()
@@ -60,7 +83,6 @@ func RunWithClient(app core.App, ownerUserID, baseURL, apiKey string, client *Cl
 		importMu.Unlock()
 	}()
 
-	var err error
 	if client == nil {
 		client, err = NewClient(baseURL, apiKey, nil)
 		if err != nil {
@@ -70,23 +92,25 @@ func RunWithClient(app core.App, ownerUserID, baseURL, apiKey string, client *Cl
 
 	result := Result{Errors: []string{}}
 
-	tagMap, n, err := importNamedEntities(app, "tags", client.ListTags)
-	if err != nil {
-		return result, fmt.Errorf("import tags: %w", err)
-	}
-	result.TagsUpserted = n
+	var tagMap, corrMap, typeMap map[int]string
+	if parsedMode == ModePreserve {
+		tagMap, result.TagsUpserted, err = importNamedEntities(app, "tags", client.ListTags)
+		if err != nil {
+			return result, fmt.Errorf("import tags: %w", err)
+		}
 
-	corrMap, n, err := importNamedEntities(app, "correspondents", client.ListCorrespondents)
-	if err != nil {
-		return result, fmt.Errorf("import correspondents: %w", err)
-	}
-	result.CorrespondentsUpserted = n
+		corrMap, result.CorrespondentsUpserted, err = importNamedEntities(app, "correspondents", client.ListCorrespondents)
+		if err != nil {
+			return result, fmt.Errorf("import correspondents: %w", err)
+		}
 
-	typeMap, n, err := importNamedEntities(app, "document_types", client.ListDocumentTypes)
-	if err != nil {
-		return result, fmt.Errorf("import document types: %w", err)
+		typeMap, result.DocumentTypesUpserted, err = importNamedEntities(app, "document_types", client.ListDocumentTypes)
+		if err != nil {
+			return result, fmt.Errorf("import document types: %w", err)
+		}
+	} else {
+		tagMap, corrMap, typeMap = map[int]string{}, map[int]string{}, map[int]string{}
 	}
-	result.DocumentTypesUpserted = n
 
 	docs, err := client.ListDocuments()
 	if err != nil {
@@ -94,7 +118,7 @@ func RunWithClient(app core.App, ownerUserID, baseURL, apiKey string, client *Cl
 	}
 
 	for _, doc := range docs {
-		if err := importOneDocument(app, client, ownerUserID, doc, tagMap, corrMap, typeMap); err != nil {
+		if err := importOneDocument(app, client, ownerUserID, parsedMode, doc, tagMap, corrMap, typeMap); err != nil {
 			var dup *duplicates.ErrDuplicate
 			if errors.As(err, &dup) {
 				result.SkippedDuplicates++
@@ -183,6 +207,7 @@ func importOneDocument(
 	app core.App,
 	client *Client,
 	ownerUserID string,
+	mode string,
 	doc ngxDocument,
 	tagMap, corrMap, typeMap map[int]string,
 ) error {
@@ -229,35 +254,40 @@ func importOneDocument(
 	record.Set("user", ownerUserID)
 	record.Set("file", fsFile)
 	record.Set("processing_status", models.DocStatusPending)
-	if title := strings.TrimSpace(doc.Title); title != "" {
-		record.Set("title", title)
-	}
-	if ocr := strings.TrimSpace(doc.Content); ocr != "" {
-		record.Set("ocr_text", ocr)
-	}
-	if date := documentDate(doc); date != "" {
-		record.Set("document_date", date)
-	}
-	if doc.Correspondent != nil {
-		if id := corrMap[*doc.Correspondent]; id != "" {
-			record.Set("correspondent", id)
+
+	if mode == ModePreserve {
+		if title := strings.TrimSpace(doc.Title); title != "" {
+			record.Set("title", title)
 		}
-	}
-	if doc.DocumentType != nil {
-		if id := typeMap[*doc.DocumentType]; id != "" {
-			record.Set("document_type", id)
+		if ocr := strings.TrimSpace(doc.Content); ocr != "" {
+			record.Set("ocr_text", ocr)
 		}
-	}
-	if len(doc.Tags) > 0 {
-		tagIDs := make([]string, 0, len(doc.Tags))
-		for _, ngxTagID := range doc.Tags {
-			if id := tagMap[ngxTagID]; id != "" {
-				tagIDs = append(tagIDs, id)
+		if date := documentDate(doc); date != "" {
+			record.Set("document_date", date)
+		}
+		if doc.Correspondent != nil {
+			if id := corrMap[*doc.Correspondent]; id != "" {
+				record.Set("correspondent", id)
 			}
 		}
-		if len(tagIDs) > 0 {
-			record.Set("tags", tagIDs)
+		if doc.DocumentType != nil {
+			if id := typeMap[*doc.DocumentType]; id != "" {
+				record.Set("document_type", id)
+			}
 		}
+		if len(doc.Tags) > 0 {
+			tagIDs := make([]string, 0, len(doc.Tags))
+			for _, ngxTagID := range doc.Tags {
+				if id := tagMap[ngxTagID]; id != "" {
+					tagIDs = append(tagIDs, id)
+				}
+			}
+			if len(tagIDs) > 0 {
+				record.Set("tags", tagIDs)
+			}
+		}
+		worker.RegisterCreateStepsForChecksum(checksum, models.ImportPreserveSteps)
+		defer worker.ClearCreateStepsForChecksum(checksum)
 	}
 
 	if err := app.Save(record); err != nil {

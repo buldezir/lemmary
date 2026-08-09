@@ -1,16 +1,19 @@
 package models
 
 const (
-	StepPreview           = "preview"
-	StepOCR               = "ocr"
-	StepDetectDuplicates  = "detect_duplicates"
-	StepExtractMetadata   = "extract_metadata"
-	StepApplyMetadata     = "apply_metadata"
+	StepPreview          = "preview"
+	StepOCR              = "ocr"
+	StepDetectDuplicates = "detect_duplicates"
+	StepExtractMetadata  = "extract_metadata"
+	StepApplyMetadata    = "apply_metadata"
 )
 
 var (
 	FullPipelineSteps       = []string{StepPreview, StepOCR, StepDetectDuplicates, StepExtractMetadata, StepApplyMetadata}
 	ExtractionPipelineSteps = []string{StepExtractMetadata, StepApplyMetadata}
+	// ImportPreserveSteps runs preview/OCR/near-dup detection without AI metadata
+	// overwrite, so ngx title/tags/correspondent/type survive import.
+	ImportPreserveSteps = []string{StepPreview, StepOCR, StepDetectDuplicates}
 )
 
 const (

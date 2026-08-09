@@ -547,6 +547,8 @@ export async function scanDuplicates() {
   return data as DuplicateScanResult
 }
 
+export type NgxImportMode = 'preserve' | 'reprocess'
+
 export type NgxImportResult = {
   imported: number
   skipped_duplicates: number
@@ -557,7 +559,7 @@ export type NgxImportResult = {
   errors: string[]
 }
 
-export async function importFromNgx(url: string, apiKey: string) {
+export async function importFromNgx(url: string, apiKey: string, mode: NgxImportMode = 'preserve') {
   await ensureAuth()
 
   const response = await fetch(`${pbUrl}/api/app/import/ngx`, {
@@ -566,7 +568,7 @@ export async function importFromNgx(url: string, apiKey: string) {
       'Content-Type': 'application/json',
       Authorization: pb.authStore.token,
     },
-    body: JSON.stringify({ url, api_key: apiKey }),
+    body: JSON.stringify({ url, api_key: apiKey, mode }),
   })
 
   const data = (await response.json()) as NgxImportResult & { detail?: string }

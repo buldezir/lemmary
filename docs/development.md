@@ -209,9 +209,12 @@ Admins can migrate an existing Paperless-ngx library into Paperless Go:
 
 1. Open **Import** in the More menu (or go to `/import`).
 2. Enter the remote Paperless-ngx base URL and an API token from that instance’s profile.
-3. Start the import. Tags, correspondents, and document types are upserted by name; documents are downloaded with their OCR `content` and then queued for the normal AI pipeline (OCR is skipped when text is already present).
+3. Choose an import mode:
+   - **Keep Paperless-ngx metadata** (`preserve`): upserts tags, correspondents, and document types by name; downloads each document with its OCR `content`, title, date, and taxonomy links. Preview and duplicate detection still run; AI metadata extraction is skipped so remote metadata is kept.
+   - **Import files only and reprocess** (`reprocess`): downloads only the original files and queues the full OCR + AI pipeline as for a new upload.
+4. Start the import. Exact file duplicates (same checksum) are skipped.
 
-The same flow is available as `POST /api/app/import/ngx` with JSON body `{ "url": "...", "api_key": "..." }`. The API key is not persisted. Exact file duplicates (same checksum) are skipped.
+The same flow is available as `POST /api/app/import/ngx` with JSON body `{ "url": "...", "api_key": "...", "mode": "preserve" | "reprocess" }`. `mode` defaults to `preserve`. The API key is not persisted.
 
 ### swift-paperless (iOS)
 
