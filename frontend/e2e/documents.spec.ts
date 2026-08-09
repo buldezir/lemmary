@@ -47,7 +47,23 @@ test('delete document from detail page', async ({ page }) => {
 
   await expect(page).toHaveURL(/\/$/)
   await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible()
+  await expect(page.getByText('Loading documents...')).toHaveCount(0)
   await expect(page.locator(`main a[href="/document/${documentId}"]`)).toHaveCount(0)
+})
+
+test('cancel document delete keeps detail page', async ({ page }) => {
+  await loginAsUser(page)
+  await uploadFixture(page, 'sample.txt')
+
+  const documentURL = page.url()
+  const documentId = documentURL.match(/\/document\/([^/?#]+)/)?.[1]
+  expect(documentId).toBeTruthy()
+
+  page.once('dialog', (dialog) => dialog.dismiss())
+  await page.getByRole('button', { name: 'Delete' }).click()
+
+  await expect(page).toHaveURL(new RegExp(`/document/${documentId}`))
+  await expect(page.getByRole('button', { name: 'Delete' })).toBeEnabled()
 })
 
 test('reject duplicate file upload', async ({ page }) => {

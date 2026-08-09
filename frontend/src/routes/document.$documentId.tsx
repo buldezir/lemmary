@@ -74,7 +74,10 @@ export function DocumentDetailPage() {
 
     let unsubscribe: (() => void) | undefined
 
-    void pb.collection('documents').subscribe(documentId, () => {
+    void pb.collection('documents').subscribe(documentId, (event) => {
+      if (event.action === 'delete') {
+        return
+      }
       load()
     }).then((fn) => {
       unsubscribe = fn
@@ -189,11 +192,13 @@ export function DocumentDetailPage() {
       setMessage('')
       setError('')
       await pb.collection('documents').delete(document.id)
-      await navigate({ to: '/' })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete document')
       setDeleting(false)
+      return
     }
+
+    await navigate({ to: '/' })
   }
 
   async function onSave(event: FormEvent) {
