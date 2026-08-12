@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
+
+	"paperless-go/backend/internal/aiprovider"
 )
 
 type Provider interface {
@@ -12,46 +15,34 @@ type Provider interface {
 	ExtractText(ctx context.Context, filePath string, mimeType string) (string, error)
 }
 
-type ProviderConfig struct {
-	GoogleVisionAPIKey string
-	MistralAPIKey      string
-	MistralModel       string
-	MistralBaseURL     string
-	OCRTimeout         time.Duration
-	Logger             *slog.Logger
-}
-
 type ProviderInfo struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	SDK  string `json:"sdk"`
 }
 
-func AvailableProviders(cfg ProviderConfig) []ProviderInfo {
-	providers := make([]ProviderInfo, 0, 2)
-	if cfg.GoogleVisionAPIKey != "" {
-		providers = append(providers, ProviderInfo{ID: "google_vision", Name: "Google Cloud Vision"})
+func NewFromAIProvider(p aiprovider.Provider, model string, timeout time.Duration, logger *slog.Logger) (Provider, error) {
+	if p.APIKey == "" {
+		return nil, fmt.Errorf("provider %q has no API key", p.Alias)
 	}
-	if cfg.MistralAPIKey != "" {
-		providers = append(providers, ProviderInfo{ID: "mistral", Name: "Mistral OCR"})
+	if logger == nil {
+		logger = slog.Default()
 	}
-	return providers
-}
+	if aiprovider.RequiresOCRModel(p.SDK) && strings.TrimSpace(model) == "" {
+		return nil, fmt.Errorf("OCR model is required for sdk %s", p.SDK)
+	}
 
-func NewProvider(name string, cfg ProviderConfig) (Provider, error) {
-	switch name {
-	case "google_vision":
-		if cfg.GoogleVisionAPIKey == "" {
-			return nil, fmt.Errorf("GOOGLE_VISION_API_KEY is required when OCR_PROVIDER=google_vision")
-		}
-		cfg.Logger.Info("using provider", "provider", "google_vision")
-		return NewGoogleVisionProvider(cfg.GoogleVisionAPIKey, cfg.Logger), nil
-	case "mistral":
-		if cfg.MistralAPIKey == "" {
-			return nil, fmt.Errorf("MISTRAL_API_KEY is required when OCR_PROVIDER=mistral")
-		}
-		cfg.Logger.Info("using provider", "provider", "mistral", "model", cfg.MistralModel)
-		return NewMistralProvider(cfg.MistralAPIKey, cfg.MistralModel, cfg.MistralBaseURL, cfg.OCRTimeout, cfg.Logger), nil
+	switch p.SDK {
+	case aiprovider.SDKGoogleVision:
+		logger.Info("using provider", "provider", p.Alias, "sdk", p.SDK)
+		return NewGoogleVisionProvider(p.APIKey, logger), nil
+	case aiprovider.SDKMistral:
+		logger.Info("using provider", "provider", p.Alias, "sdk", p.SDK, "model", model)
+		return NewMistralProvider(p.APIKey, model, p.BaseURL, timeout, logger), nil
+	case aiprovider.SDKOpenAI, aiprovider.SDKOpenRouter:
+		logger.Info("using provider", "provider", p.Alias, "sdk", p.SDK, "model", model)
+		return NewLLMProvider(p, model, timeout, logger), nil
 	default:
-		return nil, fmt.Errorf("unsupported OCR provider %q (supported: google_vision, mistral)", name)
+		return nil, fmt.Errorf("unsupported OCR sdk %q", p.SDK)
 	}
 }

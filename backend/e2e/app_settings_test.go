@@ -23,36 +23,25 @@ func TestAppSettingsSuperuserOnly(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if settings["ocr_provider"] != "mistral" {
-		t.Fatalf("ocr_provider=%v", settings["ocr_provider"])
+	if settings["extract_model"] != "e2e-mock" {
+		t.Fatalf("extract_model=%v", settings["extract_model"])
 	}
-	// API keys should be masked as *_set booleans, not raw secrets.
 	if _, ok := settings["openai_api_key"]; ok {
 		t.Fatal("raw openai_api_key should not be exposed")
 	}
-	if settings["openai_api_key_set"] != true && settings["openai_api_key_set"] != false {
-		// field might be named differently — check presence of any *_set
-		foundSet := false
-		for k := range settings {
-			if len(k) > 4 && k[len(k)-4:] == "_set" {
-				foundSet = true
-				break
-			}
-		}
-		if !foundSet {
-			t.Fatalf("expected masked key flags in %v", settings)
-		}
+	if settings["extract_provider_id"] == nil || settings["extract_provider_id"] == "" {
+		t.Fatalf("expected extract_provider_id in %v", settings)
 	}
 
 	status, raw = h.doJSON(t, http.MethodPatch, "/api/app/settings", userTok, map[string]any{
-		"openai_model": "should-fail",
+		"extract_model": "should-fail",
 	})
 	if status == http.StatusOK {
 		t.Fatalf("regular user should not patch settings: %s", raw)
 	}
 
 	status, raw = h.doJSON(t, http.MethodPatch, "/api/app/settings", superTok, map[string]any{
-		"openai_model":               "e2e-mock-updated",
+		"extract_model":              "e2e-mock-updated",
 		"deep_search_languages":      "en,de",
 		"processing_result_language": "en",
 	})
@@ -61,13 +50,12 @@ func TestAppSettingsSuperuserOnly(t *testing.T) {
 	status, raw = h.doJSON(t, http.MethodGet, "/api/app/settings", superTok, nil)
 	requireStatus(t, status, http.StatusOK, raw)
 	_ = json.Unmarshal([]byte(raw), &settings)
-	if settings["openai_model"] != "e2e-mock-updated" {
-		t.Fatalf("openai_model not updated: %v", settings["openai_model"])
+	if settings["extract_model"] != "e2e-mock-updated" {
+		t.Fatalf("extract_model not updated: %v", settings["extract_model"])
 	}
 
-	// Restore defaults so later shared-harness tests are not affected.
 	status, raw = h.doJSON(t, http.MethodPatch, "/api/app/settings", superTok, map[string]any{
-		"openai_model":               "e2e-mock",
+		"extract_model":              "e2e-mock",
 		"deep_search_languages":      "en",
 		"processing_result_language": "",
 	})
@@ -104,4 +92,74 @@ func TestAppMeRegularUserNotAdmin(t *testing.T) {
 	if me["is_admin"] != false {
 		t.Fatalf("regular user is_admin=%v want false", me["is_admin"])
 	}
+}
+
+func TestAppProvidersCRUD(t *testing.T) {
+	h := StartShared(t)
+	superTok := h.superToken(t)
+	userTok := h.userToken(t)
+
+	status, raw := h.doJSON(t, http.MethodGet, "/api/app/providers", userTok, nil)
+	if status == http.StatusOK {
+		t.Fatalf("regular user should not list providers: %s", raw)
+	}
+
+	status, raw = h.doJSON(t, http.MethodGet, "/api/app/providers", superTok, nil)
+	requireStatus(t, status, http.StatusOK, raw)
+	var body map[string]any
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	providers, _ := body["providers"].([]any)
+	if len(providers) < 2 {
+		t.Fatalf("expected seeded providers, got %s", raw)
+	}
+
+	status, raw = h.doJSON(t, http.MethodPost, "/api/app/providers", superTok, map[string]any{
+		"sdk":      "openrouter",
+		"alias":    "E2E OpenRouter",
+		"base_url": h.Mocks.OpenAI.URL + "/v1",
+		"api_key":  "e2e-or-key",
+	})
+	requireStatus(t, status, http.StatusCreated, raw)
+	var created map[string]any
+	_ = json.Unmarshal([]byte(raw), &created)
+	id, _ := created["id"].(string)
+	if id == "" {
+		t.Fatalf("missing id: %s", raw)
+	}
+	if created["api_key_set"] != true {
+		t.Fatalf("api_key_set=%v", created["api_key_set"])
+	}
+	if _, ok := created["api_key"]; ok {
+		t.Fatal("raw api_key should not be exposed")
+	}
+
+	status, raw = h.doJSON(t, http.MethodGet, "/api/app/providers/"+id+"/models?for=llm", superTok, nil)
+	requireStatus(t, status, http.StatusOK, raw)
+	requireContains(t, raw, "e2e-mock")
+
+	status, raw = h.doJSON(t, http.MethodPatch, "/api/app/providers/"+id, superTok, map[string]any{
+		"alias": "E2E OpenRouter renamed",
+	})
+	requireStatus(t, status, http.StatusOK, raw)
+	requireContains(t, raw, "E2E OpenRouter renamed")
+
+	status, raw = h.doJSON(t, http.MethodGet, "/api/app/settings", superTok, nil)
+	requireStatus(t, status, http.StatusOK, raw)
+	var settings map[string]any
+	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
+		t.Fatalf("decode settings: %v", err)
+	}
+	inUse, _ := settings["extract_provider_id"].(string)
+	if inUse == "" {
+		t.Fatal("expected extract_provider_id")
+	}
+	status, raw = h.doJSON(t, http.MethodDelete, "/api/app/providers/"+inUse, superTok, nil)
+	if status != http.StatusConflict {
+		t.Fatalf("expected 409 deleting in-use provider, got %d: %s", status, raw)
+	}
+
+	status, raw = h.doJSON(t, http.MethodDelete, "/api/app/providers/"+id, superTok, nil)
+	requireStatus(t, status, http.StatusOK, raw)
 }

@@ -42,6 +42,15 @@ func startMockServers() *mockServers {
 	m := &mockServers{}
 
 	m.OCR = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/models") {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": "mistral-ocr-latest", "name": "mistral-ocr-latest"},
+				},
+			})
+			return
+		}
 		if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/ocr") {
 			http.NotFound(w, r)
 			return
@@ -55,11 +64,21 @@ func startMockServers() *mockServers {
 	}))
 
 	m.OpenAI = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		if r.Method == http.MethodGet && strings.HasSuffix(path, "/models") {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": "e2e-mock", "name": "e2e-mock"},
+					{"id": "e2e-mock-updated", "name": "e2e-mock-updated"},
+				},
+			})
+			return
+		}
 		if r.Method != http.MethodPost {
 			http.NotFound(w, r)
 			return
 		}
-		path := r.URL.Path
 		if !strings.HasSuffix(path, "/chat/completions") {
 			http.NotFound(w, r)
 			return
@@ -104,6 +123,10 @@ func (m *mockServers) ResetOpenAIBodies() {
 func (m *mockServers) openAIResponseFromBody(body string) map[string]any {
 	var req map[string]any
 	_ = json.Unmarshal([]byte(body), &req)
+
+	if strings.Contains(body, `"image_url"`) || strings.Contains(body, `"file_data"`) || strings.Contains(body, `"type":"file"`) {
+		return chatCompletion(mockOCRText, nil)
+	}
 
 	// Metadata extraction requests JSON object response format.
 	if strings.Contains(body, `"json_object"`) || strings.Contains(body, `"type":"json_object"`) {

@@ -15,6 +15,8 @@ test('superuser can load and save settings', async ({ page }) => {
   await loginAsSuper(page)
   await openSettings(page)
 
+  await expect(page.getByRole('heading', { name: 'Providers' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Models' })).toBeVisible()
   await page.getByLabel('Extraction model').fill('e2e-browser-model')
   await page.getByRole('button', { name: 'Save settings' }).click()
   await expect(page.getByText('Settings saved. Runtime reloaded.')).toBeVisible({ timeout: 15_000 })

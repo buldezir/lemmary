@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
+	"paperless-go/backend/internal/aiprovider"
 )
 
 const (
@@ -16,26 +17,30 @@ const (
 )
 
 type Config struct {
-	OCRProvider                     string
-	GoogleVisionAPIKey              string
-	MistralAPIKey                   string
-	MistralOCRModel                 string
-	MistralAPIBaseURL               string
-	OCRTimeout                      time.Duration
-	ProcessingResultLanguage        string
-	DeepSearchLanguages             string
-	OpenAIAPIKey                    string
-	OpenAIModel                     string
-	OpenAIChatModel                 string
-	OpenAISearchModel               string
-	OpenAIBaseURL                   string
-	OpenAITimeout                   time.Duration
-	WorkerCronExpr                  string
-	WorkerTimeout                   time.Duration
-	WorkerMaxRetries                int
-	ExtractionPromptVer             string
-	NearDuplicateDetectionEnabled   bool
-	NearDuplicateThreshold          float64
+	OCRProviderID     string
+	OCRModel          string
+	ExtractProviderID string
+	ExtractModel      string
+	ChatProviderID    string
+	ChatModel         string
+	SearchProviderID  string
+	SearchModel       string
+
+	OCRProvider     *aiprovider.Provider
+	ExtractProvider *aiprovider.Provider
+	ChatProvider    *aiprovider.Provider
+	SearchProvider  *aiprovider.Provider
+
+	OCRTimeout                    time.Duration
+	ProcessingResultLanguage      string
+	DeepSearchLanguages           string
+	OpenAITimeout                 time.Duration
+	WorkerCronExpr                string
+	WorkerTimeout                 time.Duration
+	WorkerMaxRetries              int
+	ExtractionPromptVer           string
+	NearDuplicateDetectionEnabled bool
+	NearDuplicateThreshold        float64
 }
 
 // DefaultsFromEnv builds a Config from environment variables (and code defaults).
@@ -48,23 +53,16 @@ func DefaultsFromEnv() Config {
 	maxRetries, _ := strconv.Atoi(getEnv("WORKER_MAX_RETRIES", "0"))
 
 	openAIModel := getEnv("OPENAI_MODEL", "gpt-4o-mini")
-
 	chatModel := getEnv("OPENAI_CHAT_MODEL", openAIModel)
 
 	return Config{
-		OCRProvider:                   getEnv("OCR_PROVIDER", "google_vision"),
-		GoogleVisionAPIKey:            os.Getenv("GOOGLE_VISION_API_KEY"),
-		MistralAPIKey:                 os.Getenv("MISTRAL_API_KEY"),
-		MistralOCRModel:               getEnv("MISTRAL_OCR_MODEL", "mistral-ocr-latest"),
-		MistralAPIBaseURL:             getEnv("MISTRAL_API_BASE_URL", "https://api.mistral.ai/v1"),
+		OCRModel:                      getEnv("MISTRAL_OCR_MODEL", "mistral-ocr-latest"),
+		ExtractModel:                  openAIModel,
+		ChatModel:                     chatModel,
+		SearchModel:                   getEnv("OPENAI_SEARCH_MODEL", chatModel),
 		OCRTimeout:                    time.Duration(ocrTimeoutSec) * time.Second,
 		ProcessingResultLanguage:      strings.ToLower(strings.TrimSpace(os.Getenv("PROCESSING_RESULT_LANGUAGE"))),
 		DeepSearchLanguages:           normalizeLanguageList(os.Getenv("DEEP_SEARCH_LANGUAGES")),
-		OpenAIAPIKey:                  os.Getenv("OPENAI_API_KEY"),
-		OpenAIModel:                   openAIModel,
-		OpenAIChatModel:               chatModel,
-		OpenAISearchModel:             getEnv("OPENAI_SEARCH_MODEL", chatModel),
-		OpenAIBaseURL:                 getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
 		OpenAITimeout:                 time.Duration(timeoutSec) * time.Second,
 		WorkerCronExpr:                WorkerCronFromEnv(),
 		WorkerTimeout:                 time.Duration(workerTimeoutSec) * time.Second,
@@ -79,6 +77,19 @@ const DefaultNearDuplicateThreshold = 0.92
 
 func WorkerCronFromEnv() string {
 	return getEnv("WORKER_CRON_EXPR", "* * * * *")
+}
+
+func bindingFields() []core.Field {
+	return []core.Field{
+		&core.TextField{Name: "ocr_provider_id", Max: 15},
+		&core.TextField{Name: "ocr_model", Max: 200},
+		&core.TextField{Name: "extract_provider_id", Max: 15},
+		&core.TextField{Name: "extract_model", Max: 200},
+		&core.TextField{Name: "chat_provider_id", Max: 15},
+		&core.TextField{Name: "chat_model", Max: 200},
+		&core.TextField{Name: "search_provider_id", Max: 15},
+		&core.TextField{Name: "search_model", Max: 200},
+	}
 }
 
 // EnsureCollection creates the app_settings collection if it does not exist yet.
@@ -109,6 +120,11 @@ func EnsureCollection(app core.App) (*core.Collection, error) {
 		&core.TextField{Name: "extraction_prompt_version", Max: 50},
 		&core.BoolField{Name: "near_duplicate_detection_enabled"},
 		&core.NumberField{Name: "near_duplicate_threshold"},
+	)
+	for _, field := range bindingFields() {
+		settings.Fields.Add(field)
+	}
+	settings.Fields.Add(
 		&core.AutodateField{Name: "created", OnCreate: true},
 		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
 	)
@@ -141,6 +157,12 @@ func EnsureCollectionFields(app core.App) error {
 		collection.Fields.Add(&core.NumberField{Name: "near_duplicate_threshold"})
 		changed = true
 	}
+	for _, field := range bindingFields() {
+		if collection.Fields.GetByName(field.GetName()) == nil {
+			collection.Fields.Add(field)
+			changed = true
+		}
+	}
 	if !changed {
 		return nil
 	}
@@ -149,12 +171,15 @@ func EnsureCollectionFields(app core.App) error {
 
 // EnsureDefaults creates the app_settings collection + singleton from env if missing.
 func EnsureDefaults(app core.App) error {
+	if _, err := aiprovider.EnsureCollection(app); err != nil {
+		return err
+	}
 	if err := EnsureCollectionFields(app); err != nil {
 		return err
 	}
 
-	if _, err := app.FindRecordById(CollectionName, SingletonID); err == nil {
-		return nil
+	if record, err := app.FindRecordById(CollectionName, SingletonID); err == nil {
+		return bindProviders(app, record)
 	}
 
 	collection, err := EnsureCollection(app)
@@ -163,8 +188,8 @@ func EnsureDefaults(app core.App) error {
 	}
 
 	// Re-check after ensuring collection (race / concurrent bootstrap).
-	if _, err := app.FindRecordById(CollectionName, SingletonID); err == nil {
-		return nil
+	if record, err := app.FindRecordById(CollectionName, SingletonID); err == nil {
+		return bindProviders(app, record)
 	}
 
 	cfg := DefaultsFromEnv()
@@ -172,11 +197,37 @@ func EnsureDefaults(app core.App) error {
 	record.Id = SingletonID
 	record.MarkAsNew()
 	applyConfigToRecord(record, cfg)
+	// Keep legacy columns populated so upgrades/migrations can copy them.
+	record.Set("ocr_provider", getEnv("OCR_PROVIDER", "google_vision"))
+	record.Set("google_vision_api_key", os.Getenv("GOOGLE_VISION_API_KEY"))
+	record.Set("mistral_api_key", os.Getenv("MISTRAL_API_KEY"))
+	record.Set("mistral_ocr_model", cfg.OCRModel)
+	record.Set("mistral_api_base_url", getEnv("MISTRAL_API_BASE_URL", aiprovider.DefaultBaseURL(aiprovider.SDKMistral)))
+	record.Set("openai_api_key", os.Getenv("OPENAI_API_KEY"))
+	record.Set("openai_model", cfg.ExtractModel)
+	record.Set("openai_chat_model", cfg.ChatModel)
+	record.Set("openai_search_model", cfg.SearchModel)
+	record.Set("openai_base_url", getEnv("OPENAI_BASE_URL", aiprovider.DefaultBaseURL(aiprovider.SDKOpenAI)))
+	if err := aiprovider.SeedFromEnv(app, record); err != nil {
+		return err
+	}
 	if err := app.Save(record); err != nil {
 		return fmt.Errorf("seed %s: %w", CollectionName, err)
 	}
 	app.Logger().Info("seeded app_settings singleton from env defaults")
 	return nil
+}
+
+func bindProviders(app core.App, record *core.Record) error {
+	before := record.GetString("ocr_provider_id") + "|" + record.GetString("extract_provider_id")
+	if err := aiprovider.MigrateLegacySettings(app, record); err != nil {
+		return err
+	}
+	after := record.GetString("ocr_provider_id") + "|" + record.GetString("extract_provider_id")
+	if before == after {
+		return nil
+	}
+	return app.Save(record)
 }
 
 // Load reads runtime settings from the DB singleton. WorkerCronExpr is always from env.
@@ -185,7 +236,7 @@ func Load(app core.App) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("load %s: %w", CollectionName, err)
 	}
-	return configFromRecord(record), nil
+	return configFromRecord(app, record)
 }
 
 func FindSettingsRecord(app core.App) (*core.Record, error) {
@@ -195,20 +246,7 @@ func FindSettingsRecord(app core.App) (*core.Record, error) {
 	return app.FindRecordById(CollectionName, SingletonID)
 }
 
-func configFromRecord(record *core.Record) Config {
-	openAIModel := strings.TrimSpace(record.GetString("openai_model"))
-	if openAIModel == "" {
-		openAIModel = "gpt-4o-mini"
-	}
-	chatModel := strings.TrimSpace(record.GetString("openai_chat_model"))
-	if chatModel == "" {
-		chatModel = openAIModel
-	}
-	searchModel := strings.TrimSpace(record.GetString("openai_search_model"))
-	if searchModel == "" {
-		searchModel = chatModel
-	}
-
+func configFromRecord(app core.App, record *core.Record) (Config, error) {
 	ocrTimeoutSec := int(record.GetFloat("ocr_timeout_sec"))
 	if ocrTimeoutSec <= 0 {
 		ocrTimeoutSec = 40
@@ -222,30 +260,23 @@ func configFromRecord(record *core.Record) Config {
 		workerTimeoutSec = 300
 	}
 
-	ocrProvider := strings.TrimSpace(record.GetString("ocr_provider"))
-	if ocrProvider == "" {
-		ocrProvider = "google_vision"
-	}
-
 	threshold := record.GetFloat("near_duplicate_threshold")
 	if threshold <= 0 || threshold > 1 {
 		threshold = DefaultNearDuplicateThreshold
 	}
 
-	return Config{
-		OCRProvider:                   ocrProvider,
-		GoogleVisionAPIKey:            record.GetString("google_vision_api_key"),
-		MistralAPIKey:                 record.GetString("mistral_api_key"),
-		MistralOCRModel:               firstNonEmpty(record.GetString("mistral_ocr_model"), "mistral-ocr-latest"),
-		MistralAPIBaseURL:             firstNonEmpty(record.GetString("mistral_api_base_url"), "https://api.mistral.ai/v1"),
+	cfg := Config{
+		OCRProviderID:                 strings.TrimSpace(record.GetString("ocr_provider_id")),
+		OCRModel:                      strings.TrimSpace(record.GetString("ocr_model")),
+		ExtractProviderID:             strings.TrimSpace(record.GetString("extract_provider_id")),
+		ExtractModel:                  strings.TrimSpace(record.GetString("extract_model")),
+		ChatProviderID:                strings.TrimSpace(record.GetString("chat_provider_id")),
+		ChatModel:                     strings.TrimSpace(record.GetString("chat_model")),
+		SearchProviderID:              strings.TrimSpace(record.GetString("search_provider_id")),
+		SearchModel:                   strings.TrimSpace(record.GetString("search_model")),
 		OCRTimeout:                    time.Duration(ocrTimeoutSec) * time.Second,
 		ProcessingResultLanguage:      strings.ToLower(strings.TrimSpace(record.GetString("processing_result_language"))),
 		DeepSearchLanguages:           normalizeLanguageList(record.GetString("deep_search_languages")),
-		OpenAIAPIKey:                  record.GetString("openai_api_key"),
-		OpenAIModel:                   openAIModel,
-		OpenAIChatModel:               chatModel,
-		OpenAISearchModel:             searchModel,
-		OpenAIBaseURL:                 firstNonEmpty(record.GetString("openai_base_url"), "https://api.openai.com/v1"),
 		OpenAITimeout:                 time.Duration(openAITimeoutSec) * time.Second,
 		WorkerCronExpr:                WorkerCronFromEnv(),
 		WorkerTimeout:                 time.Duration(workerTimeoutSec) * time.Second,
@@ -254,22 +285,84 @@ func configFromRecord(record *core.Record) Config {
 		NearDuplicateDetectionEnabled: record.GetBool("near_duplicate_detection_enabled"),
 		NearDuplicateThreshold:        threshold,
 	}
+
+	if err := resolveProviders(app, &cfg); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
+}
+
+func resolveProviders(app core.App, cfg *Config) error {
+	ocr, err := lookupProvider(app, cfg.OCRProviderID)
+	if err != nil {
+		return err
+	}
+	extract, err := lookupProvider(app, cfg.ExtractProviderID)
+	if err != nil {
+		return err
+	}
+
+	chatID := cfg.ChatProviderID
+	chatModel := cfg.ChatModel
+	if chatID == "" {
+		chatID = cfg.ExtractProviderID
+	}
+	if chatModel == "" {
+		chatModel = cfg.ExtractModel
+	}
+	chat, err := lookupProvider(app, chatID)
+	if err != nil {
+		return err
+	}
+
+	searchID := cfg.SearchProviderID
+	searchModel := cfg.SearchModel
+	if searchID == "" {
+		searchID = chatID
+	}
+	if searchModel == "" {
+		searchModel = chatModel
+	}
+	search, err := lookupProvider(app, searchID)
+	if err != nil {
+		return err
+	}
+
+	cfg.OCRProvider = ocr
+	cfg.ExtractProvider = extract
+	cfg.ChatProvider = chat
+	cfg.SearchProvider = search
+	cfg.ChatProviderID = chatID
+	cfg.ChatModel = chatModel
+	cfg.SearchProviderID = searchID
+	cfg.SearchModel = searchModel
+	return nil
+}
+
+func lookupProvider(app core.App, id string) (*aiprovider.Provider, error) {
+	p, err := aiprovider.FindByID(app, id)
+	if err != nil {
+		if strings.TrimSpace(id) == "" {
+			return nil, nil
+		}
+		// Missing record is a soft miss so the process stays up.
+		return nil, nil
+	}
+	return p, nil
 }
 
 func applyConfigToRecord(record *core.Record, cfg Config) {
-	record.Set("ocr_provider", cfg.OCRProvider)
-	record.Set("google_vision_api_key", cfg.GoogleVisionAPIKey)
-	record.Set("mistral_api_key", cfg.MistralAPIKey)
-	record.Set("mistral_ocr_model", cfg.MistralOCRModel)
-	record.Set("mistral_api_base_url", cfg.MistralAPIBaseURL)
+	record.Set("ocr_provider_id", cfg.OCRProviderID)
+	record.Set("ocr_model", cfg.OCRModel)
+	record.Set("extract_provider_id", cfg.ExtractProviderID)
+	record.Set("extract_model", cfg.ExtractModel)
+	record.Set("chat_provider_id", cfg.ChatProviderID)
+	record.Set("chat_model", cfg.ChatModel)
+	record.Set("search_provider_id", cfg.SearchProviderID)
+	record.Set("search_model", cfg.SearchModel)
 	record.Set("ocr_timeout_sec", int(cfg.OCRTimeout.Seconds()))
 	record.Set("processing_result_language", cfg.ProcessingResultLanguage)
 	record.Set("deep_search_languages", cfg.DeepSearchLanguages)
-	record.Set("openai_api_key", cfg.OpenAIAPIKey)
-	record.Set("openai_model", cfg.OpenAIModel)
-	record.Set("openai_chat_model", cfg.OpenAIChatModel)
-	record.Set("openai_search_model", cfg.OpenAISearchModel)
-	record.Set("openai_base_url", cfg.OpenAIBaseURL)
 	record.Set("openai_timeout_sec", int(cfg.OpenAITimeout.Seconds()))
 	record.Set("worker_timeout_sec", int(cfg.WorkerTimeout.Seconds()))
 	record.Set("worker_max_retries", cfg.WorkerMaxRetries)
@@ -339,4 +432,23 @@ func normalizeLanguageList(raw string) string {
 		out = append(out, code)
 	}
 	return strings.Join(out, ",")
+}
+
+func HasLLM(cfg Config) bool {
+	p := cfg.ExtractProvider
+	if p == nil {
+		p = cfg.ChatProvider
+	}
+	return p != nil && p.APIKey != "" && aiprovider.IsLLM(p.SDK)
+}
+
+func HasOCR(cfg Config) bool {
+	p := cfg.OCRProvider
+	if p == nil || p.APIKey == "" {
+		return false
+	}
+	if aiprovider.RequiresOCRModel(p.SDK) && strings.TrimSpace(cfg.OCRModel) == "" {
+		return false
+	}
+	return true
 }

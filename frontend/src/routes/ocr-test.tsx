@@ -1,5 +1,13 @@
 import { type DragEvent, type SubmitEvent, useEffect, useState } from 'react'
-import { ensureAuth, listOCRProviders, testOCR, type OCRProviderInfo } from '../lib/pocketbase'
+import {
+  ensureAuth,
+  listOCRProviders,
+  listProviderModels,
+  testOCR,
+  type CatalogModel,
+  type OCRProviderInfo,
+} from '../lib/pocketbase'
+import { OCR_MODEL_WARNING } from '../components/ProviderModelFields'
 
 const ACCEPTED_EXTENSIONS = new Set([
   '.pdf',
@@ -31,6 +39,8 @@ function isAcceptedFile(file: File) {
 export function OCRTestPage() {
   const [providers, setProviders] = useState<OCRProviderInfo[]>([])
   const [provider, setProvider] = useState('')
+  const [model, setModel] = useState('')
+  const [models, setModels] = useState<CatalogModel[]>([])
   const [file, setFile] = useState<File | null>(null)
   const [dragging, setDragging] = useState(false)
   const [loadingProviders, setLoadingProviders] = useState(true)
@@ -68,6 +78,32 @@ export function OCRTestPage() {
       active = false
     }
   }, [])
+
+  const selected = providers.find((item) => item.id === provider)
+  const hideModel = selected?.sdk === 'google_vision'
+  const showWarning = Boolean(selected && selected.sdk !== 'openrouter')
+
+  useEffect(() => {
+    if (!provider || hideModel) {
+      setModels([])
+      return
+    }
+    let active = true
+    async function loadModels() {
+      try {
+        const next = await listProviderModels(provider, 'ocr')
+        if (!active) return
+        setModels(next.models)
+        setModel((current) => current || next.models[0]?.id || '')
+      } catch {
+        if (active) setModels([])
+      }
+    }
+    void loadModels()
+    return () => {
+      active = false
+    }
+  }, [provider, hideModel])
 
   function selectFile(next: File | null) {
     if (!next) {
@@ -120,7 +156,7 @@ export function OCRTestPage() {
       setResult('')
       setMeta('')
 
-      const response = await testOCR(file, provider)
+      const response = await testOCR(file, provider, hideModel ? undefined : model)
       setResult(response.text)
       setMeta(`${response.char_count.toLocaleString()} characters · ${response.provider} · ${response.duration}`)
     } catch (err) {
@@ -144,7 +180,10 @@ export function OCRTestPage() {
           Provider
           <select
             value={provider}
-            onChange={(event) => setProvider(event.target.value)}
+            onChange={(event) => {
+              setProvider(event.target.value)
+              setModel('')
+            }}
             disabled={loadingProviders || providers.length === 0 || running}
             className="w-full rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm font-normal text-stone-950 outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -161,6 +200,27 @@ export function OCRTestPage() {
             )}
           </select>
         </label>
+
+        {!hideModel && provider && (
+          <label className="flex flex-col gap-1.5 text-sm font-medium text-stone-700">
+            Model
+            <input
+              list="ocr-test-models"
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              placeholder="Model id"
+              className="w-full rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm font-normal text-stone-950 outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
+            />
+            <datalist id="ocr-test-models">
+              {models.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </datalist>
+          </label>
+        )}
+        {showWarning && <p className="text-xs text-amber-800">{OCR_MODEL_WARNING}</p>}
 
         <label
           className={`flex min-h-44 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed p-6 text-center transition-colors ${

@@ -147,39 +147,39 @@ func createProcessingJob(app core.App, documentID string, steps []string, forceS
 }
 
 func (p *Processor) dispatch(jobID string) {
-	if !p.processing.TryLock() {
-		return
-	}
-	go func() {
-		defer p.processing.Unlock()
-		if err := p.runJob(jobID); err != nil {
-			p.app.Logger().Error("job error", "job", jobID, slog.Any("error", err))
+	_ = jobID
+	go p.drainPending()
+}
+
+func (p *Processor) drainPending() {
+	p.processing.Lock()
+	defer p.processing.Unlock()
+
+	for {
+		jobs, err := p.app.FindRecordsByFilter(
+			"processing_jobs",
+			"status = {:status}",
+			"created",
+			1,
+			0,
+			map[string]any{"status": models.JobStatusPending},
+		)
+		if err != nil {
+			p.app.Logger().Error("list pending jobs", slog.Any("error", err))
+			return
 		}
-	}()
+		if len(jobs) == 0 {
+			return
+		}
+		if err := p.runJob(jobs[0].Id); err != nil {
+			p.app.Logger().Error("job error", "job", jobs[0].Id, slog.Any("error", err))
+		}
+	}
 }
 
 func (p *Processor) processNextPending() error {
-	if !p.processing.TryLock() {
-		return nil
-	}
-	defer p.processing.Unlock()
-
-	jobs, err := p.app.FindRecordsByFilter(
-		"processing_jobs",
-		"status = {:status}",
-		"created",
-		1,
-		0,
-		map[string]any{"status": models.JobStatusPending},
-	)
-	if err != nil {
-		return err
-	}
-	if len(jobs) == 0 {
-		return nil
-	}
-
-	return p.runJob(jobs[0].Id)
+	p.drainPending()
+	return nil
 }
 
 func (p *Processor) runJob(jobID string) error {

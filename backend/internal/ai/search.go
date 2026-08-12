@@ -56,9 +56,9 @@ type openAISearchAgent struct {
 	resultLanguage string
 }
 
-func NewSearchAgent(apiKey, model, baseURL string, timeout time.Duration, languages, resultLanguage string, logger *slog.Logger) SearchAgent {
+func NewSearchAgent(sdk, apiKey, model, baseURL string, timeout time.Duration, languages, resultLanguage string, logger *slog.Logger) SearchAgent {
 	return &openAISearchAgent{
-		client:         NewOpenAIClient(apiKey, model, baseURL, "", "", timeout, logger),
+		client:         NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", timeout, logger),
 		languages:      strings.TrimSpace(languages),
 		resultLanguage: strings.TrimSpace(resultLanguage),
 	}
@@ -66,7 +66,7 @@ func NewSearchAgent(apiKey, model, baseURL string, timeout time.Duration, langua
 
 func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, mode SearchMode, availableTags []string, search DocumentSearcher) (string, []DocumentHit, error) {
 	if a.client.apiKey == "" {
-		return "", nil, fmt.Errorf("OPENAI_API_KEY is not configured")
+		return "", nil, fmt.Errorf("AI API key is not configured")
 	}
 	if search == nil {
 		return "", nil, fmt.Errorf("document searcher is required")

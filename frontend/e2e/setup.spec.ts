@@ -6,10 +6,9 @@ async function mockSetupStatus(
   status: {
     needs_admin: boolean
     needs_config: boolean
-    ocr_provider?: string
-    google_vision_api_key_set?: boolean
-    mistral_api_key_set?: boolean
-    openai_api_key_set?: boolean
+    has_ocr?: boolean
+    has_llm?: boolean
+    provider_count?: number
   },
 ) {
   await page.route('**/api/app/setup/status', async (route) => {
@@ -19,10 +18,9 @@ async function mockSetupStatus(
       body: JSON.stringify({
         needs_admin: status.needs_admin,
         needs_config: status.needs_config,
-        ocr_provider: status.ocr_provider ?? 'mistral',
-        google_vision_api_key_set: status.google_vision_api_key_set ?? false,
-        mistral_api_key_set: status.mistral_api_key_set ?? false,
-        openai_api_key_set: status.openai_api_key_set ?? false,
+        has_ocr: status.has_ocr ?? false,
+        has_llm: status.has_llm ?? false,
+        provider_count: status.provider_count ?? 0,
       }),
     })
   })
@@ -43,19 +41,17 @@ test('needs_admin shows create admin wizard', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Sign in' })).toHaveCount(0)
 })
 
-test('needs_config after superuser login shows OCR step', async ({ page }) => {
+test('needs_config after superuser login shows provider step', async ({ page }) => {
   await mockSetupStatus(page, {
     needs_admin: false,
     needs_config: true,
-    ocr_provider: 'mistral',
-    mistral_api_key_set: false,
-    openai_api_key_set: false,
+    provider_count: 0,
   })
   await page.goto('/')
   await page.getByLabel('Email').fill(credentials.super.email)
   await page.getByLabel('Password').fill(credentials.super.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByRole('heading', { name: 'Configure OCR' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Add a provider' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Documents', exact: true })).toHaveCount(0)
 })
 
@@ -63,8 +59,7 @@ test('needs_config blocks regular user', async ({ page }) => {
   await mockSetupStatus(page, {
     needs_admin: false,
     needs_config: true,
-    mistral_api_key_set: false,
-    openai_api_key_set: false,
+    provider_count: 0,
   })
   await page.goto('/')
   await page.getByLabel('Email').fill(credentials.user.email)

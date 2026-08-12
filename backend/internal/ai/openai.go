@@ -48,6 +48,7 @@ Do not include markdown or explanation.`
 }
 
 type OpenAIClient struct {
+	sdk            string
 	apiKey         string
 	model          string
 	baseURL        string
@@ -57,17 +58,22 @@ type OpenAIClient struct {
 	logger         *slog.Logger
 }
 
-func NewOpenAIClient(apiKey, model, baseURL, promptVer, resultLanguage string, timeout time.Duration, logger *slog.Logger) *OpenAIClient {
+func NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage string, timeout time.Duration, logger *slog.Logger) *OpenAIClient {
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithHTTPClient(&http.Client{Timeout: timeout}),
 		option.WithRequestTimeout(timeout),
+		option.WithMaxRetries(0),
 	}
 	if strings.TrimSpace(baseURL) != "" {
 		opts = append(opts, option.WithBaseURL(strings.TrimRight(baseURL, "/")))
 	}
+	if strings.TrimSpace(sdk) == "" {
+		sdk = "openai"
+	}
 
 	return &OpenAIClient{
+		sdk:            sdk,
 		apiKey:         apiKey,
 		model:          model,
 		baseURL:        strings.TrimRight(baseURL, "/"),
@@ -79,7 +85,7 @@ func NewOpenAIClient(apiKey, model, baseURL, promptVer, resultLanguage string, t
 }
 
 func (c *OpenAIClient) Name() string {
-	return "openai"
+	return c.sdk
 }
 
 func (c *OpenAIClient) Model() string {
@@ -88,7 +94,7 @@ func (c *OpenAIClient) Model() string {
 
 func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string) (*models.ExtractedMetadata, error) {
 	if c.apiKey == "" {
-		return nil, fmt.Errorf("OPENAI_API_KEY is not configured")
+		return nil, fmt.Errorf("AI API key is not configured")
 	}
 
 	inputChars := len(ocrText)
@@ -169,6 +175,6 @@ func truncateForLog(s string, max int) string {
 	return s[:max] + "…"
 }
 
-func NewExtractor(apiKey, model, baseURL, promptVer, resultLanguage string, timeout time.Duration, logger *slog.Logger) Extractor {
-	return NewOpenAIClient(apiKey, model, baseURL, promptVer, resultLanguage, timeout, logger)
+func NewExtractor(sdk, apiKey, model, baseURL, promptVer, resultLanguage string, timeout time.Duration, logger *slog.Logger) Extractor {
+	return NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage, timeout, logger)
 }

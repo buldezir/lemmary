@@ -32,7 +32,7 @@ Document OCR text:
 
 func (c *OpenAIClient) Chat(ctx context.Context, ocrText string, messages []ChatMessage) (string, error) {
 	if c.apiKey == "" {
-		return "", fmt.Errorf("OPENAI_API_KEY is not configured")
+		return "", fmt.Errorf("AI API key is not configured")
 	}
 
 	apiMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages)+1)
@@ -83,6 +83,6 @@ func (c *OpenAIClient) Chat(ctx context.Context, ocrText string, messages []Chat
 	return strings.TrimSpace(chatResp.Choices[0].Message.Content), nil
 }
 
-func NewChatter(apiKey, model, baseURL string, timeout time.Duration, logger *slog.Logger) Chatter {
-	return NewOpenAIClient(apiKey, model, baseURL, "", "", timeout, logger)
+func NewChatter(sdk, apiKey, model, baseURL string, timeout time.Duration, logger *slog.Logger) Chatter {
+	return NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", timeout, logger)
 }

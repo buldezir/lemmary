@@ -152,6 +152,7 @@ func setStepRunExecutionDetails(run *models.StepRun, state *StepState) {
 		if state.OCR != nil {
 			run.Provider = state.OCR.Name()
 		}
+		run.Model = state.Cfg.OCRModel
 	case models.StepExtractMetadata:
 		if state.AI != nil {
 			run.Provider = state.AI.Name()

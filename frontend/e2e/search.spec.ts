@@ -1,16 +1,10 @@
 import { test, expect } from '@playwright/test'
-import { loginAsUser, uploadFixture } from './helpers/auth'
+import { loginAsUser, uploadFixture, waitForProcessing } from './helpers/auth'
 
 test('deep search returns document hits', async ({ page }) => {
   await loginAsUser(page)
   await uploadFixture(page, 'sample.png')
-
-  await expect
-    .poll(async () => page.getByText(/Status:/i).innerText(), {
-      timeout: 90_000,
-      intervals: [1000, 2000],
-    })
-    .toMatch(/completed|needs_review/i)
+  await waitForProcessing(page)
 
   await page.getByRole('link', { name: 'Deep Search' }).click()
   await expect(page.getByRole('heading', { name: 'Deep Search' })).toBeVisible()
