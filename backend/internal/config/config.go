@@ -1,6 +1,8 @@
 package config
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -342,11 +344,10 @@ func resolveProviders(app core.App, cfg *Config) error {
 func lookupProvider(app core.App, id string) (*aiprovider.Provider, error) {
 	p, err := aiprovider.FindByID(app, id)
 	if err != nil {
-		if strings.TrimSpace(id) == "" {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
-		// Missing record is a soft miss so the process stays up.
-		return nil, nil
+		return nil, fmt.Errorf("lookup provider %s: %w", id, err)
 	}
 	return p, nil
 }

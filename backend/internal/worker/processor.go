@@ -152,7 +152,9 @@ func (p *Processor) dispatch(jobID string) {
 }
 
 func (p *Processor) drainPending() {
-	p.processing.Lock()
+	if !p.processing.TryLock() {
+		return
+	}
 	defer p.processing.Unlock()
 
 	for {

@@ -27,7 +27,7 @@ func Register(app core.App, rt *config.Runtime) {
 			g.POST("/providers", bindAdmin(handleCreateProvider(app, rt)))
 			g.PATCH("/providers/{id}", bindAdmin(handlePatchProvider(app, rt)))
 			g.DELETE("/providers/{id}", bindAdmin(handleDeleteProvider(app, rt)))
-			g.GET("/providers/{id}/models", bindAuth(handleListProviderModels(app)))
+			g.GET("/providers/{id}/models", bindAdmin(handleListProviderModels(app)))
 			g.POST("/duplicates/scan", bindAdmin(handlePostDuplicatesScan(app, rt)))
 			g.POST("/import/ngx", bindAdmin(handlePostImportNgx(app)))
 			g.GET("/import/ngx/status", bindAdmin(handleGetImportNgxStatus(app)))

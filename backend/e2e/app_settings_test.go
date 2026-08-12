@@ -135,6 +135,11 @@ func TestAppProvidersCRUD(t *testing.T) {
 		t.Fatal("raw api_key should not be exposed")
 	}
 
+	status, raw = h.doJSON(t, http.MethodGet, "/api/app/providers/"+id+"/models?for=llm", userTok, nil)
+	if status == http.StatusOK {
+		t.Fatalf("regular user should not list provider models: %s", raw)
+	}
+
 	status, raw = h.doJSON(t, http.MethodGet, "/api/app/providers/"+id+"/models?for=llm", superTok, nil)
 	requireStatus(t, status, http.StatusOK, raw)
 	requireContains(t, raw, "e2e-mock")
@@ -155,10 +160,21 @@ func TestAppProvidersCRUD(t *testing.T) {
 	if inUse == "" {
 		t.Fatal("expected extract_provider_id")
 	}
+	status, raw = h.doJSON(t, http.MethodPatch, "/api/app/providers/"+inUse, superTok, map[string]any{
+		"sdk": "mistral",
+	})
+	if status != http.StatusConflict {
+		t.Fatalf("expected 409 changing sdk of in-use LLM provider, got %d: %s", status, raw)
+	}
 	status, raw = h.doJSON(t, http.MethodDelete, "/api/app/providers/"+inUse, superTok, nil)
 	if status != http.StatusConflict {
 		t.Fatalf("expected 409 deleting in-use provider, got %d: %s", status, raw)
 	}
+
+	status, raw = h.doJSON(t, http.MethodPatch, "/api/app/providers/"+id, superTok, map[string]any{
+		"sdk": "mistral",
+	})
+	requireStatus(t, status, http.StatusOK, raw)
 
 	status, raw = h.doJSON(t, http.MethodDelete, "/api/app/providers/"+id, superTok, nil)
 	requireStatus(t, status, http.StatusOK, raw)

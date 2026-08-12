@@ -2,6 +2,7 @@ package appapi
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -122,6 +123,15 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 			if !aiprovider.ValidSDK(sdk) {
 				return writeError(e, http.StatusBadRequest, "sdk must be openai, openrouter, google_vision, or mistral.")
 			}
+			if !aiprovider.IsLLM(sdk) {
+				if settings, err := config.FindSettingsRecord(app); err == nil {
+					for _, field := range []string{"extract_provider_id", "chat_provider_id", "search_provider_id"} {
+						if strings.TrimSpace(settings.GetString(field)) == record.Id {
+							return writeError(e, http.StatusConflict, "Provider is bound to extraction, chat, or search and must stay openai or openrouter.")
+						}
+					}
+				}
+			}
 			record.Set("sdk", sdk)
 		}
 		if req.Alias != nil {
@@ -177,7 +187,8 @@ func handleListProviderModels(app core.App) func(*core.RequestEvent) error {
 		forOCR := strings.EqualFold(strings.TrimSpace(e.Request.URL.Query().Get("for")), "ocr")
 		models, err := aiprovider.ListModels(e.Request.Context(), *p, forOCR, nil)
 		if err != nil {
-			return writeError(e, http.StatusBadGateway, err.Error())
+			app.Logger().Warn("list provider models", "provider", p.ID, slog.Any("error", err))
+			return writeError(e, http.StatusBadGateway, "Failed to load models from the provider.")
 		}
 		return writeJSON(e, http.StatusOK, map[string]any{
 			"models":  models,

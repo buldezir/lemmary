@@ -100,9 +100,14 @@ export function ProviderModelFields({
         <select
           className={inputClassName}
           value={providerId}
-          onChange={(event) => onProviderChange(event.target.value)}
+          onChange={(event) => {
+            onProviderChange(event.target.value)
+            onModelChange('')
+          }}
         >
-          {allowEmpty || providers.length === 0 ? <option value="">Select a provider</option> : null}
+          {allowEmpty || providers.length === 0 || !providerId ? (
+            <option value="">Select a provider</option>
+          ) : null}
           {providers.map((item) => (
             <option key={item.id} value={item.id}>
               {item.alias} ({sdkLabel(item.sdk)})
