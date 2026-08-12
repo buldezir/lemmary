@@ -46,13 +46,13 @@ func TestWriteExportZipModes(t *testing.T) {
 		"tags":              []string{"finance"},
 		"document_type":     "Invoice",
 		"correspondent":     "Acme",
-		"ocr_text":          ocrText,
 		"original_filename": "invoice.pdf",
 	}
 
 	docs := []ExportDocument{
 		{
 			ID:               "doc1",
+			Title:            "Invoice",
 			OriginalFilename: "invoice.pdf",
 			OpenFile: func() (io.ReadCloser, error) {
 				return io.NopCloser(strings.NewReader("PDFBYTES")), nil
@@ -62,6 +62,7 @@ func TestWriteExportZipModes(t *testing.T) {
 		},
 		{
 			ID:               "doc2",
+			Title:            "Note",
 			OriginalFilename: "note.txt",
 			OpenFile: func() (io.ReadCloser, error) {
 				return io.NopCloser(strings.NewReader("note body")), nil
@@ -71,27 +72,33 @@ func TestWriteExportZipModes(t *testing.T) {
 		},
 	}
 
+	orig1 := "paperless-export/[doc1] Invoice.pdf"
+	ocr1 := "paperless-export/[doc1] Invoice.ocr.txt"
+	meta1 := "paperless-export/[doc1] Invoice.metadata.json"
+	orig2 := "paperless-export/[doc2] Note.txt"
+	meta2 := "paperless-export/[doc2] Note.metadata.json"
+
 	t.Run("originals", func(t *testing.T) {
 		entries := mustZipEntries(t, ExportModeOriginals, docs)
-		assertHas(t, entries, "doc1/invoice.pdf", "PDFBYTES")
-		assertHas(t, entries, "doc2/note.txt", "note body")
-		assertMissing(t, entries, "doc1/invoice.ocr.txt")
-		assertMissing(t, entries, "doc1/invoice.metadata.json")
+		assertHas(t, entries, orig1, "PDFBYTES")
+		assertHas(t, entries, orig2, "note body")
+		assertMissing(t, entries, ocr1)
+		assertMissing(t, entries, meta1)
 	})
 
 	t.Run("ocr", func(t *testing.T) {
 		entries := mustZipEntries(t, ExportModeOCR, docs)
-		assertHas(t, entries, "doc1/invoice.pdf", "PDFBYTES")
-		assertHas(t, entries, "doc1/invoice.ocr.txt", ocrText)
-		assertMissing(t, entries, "doc2/note.ocr.txt") // empty OCR
-		assertMissing(t, entries, "doc1/invoice.metadata.json")
+		assertHas(t, entries, orig1, "PDFBYTES")
+		assertHas(t, entries, ocr1, ocrText)
+		assertMissing(t, entries, "paperless-export/[doc2] Note.ocr.txt")
+		assertMissing(t, entries, meta1)
 	})
 
 	t.Run("metadata", func(t *testing.T) {
 		entries := mustZipEntries(t, ExportModeMetadata, docs)
-		assertHas(t, entries, "doc1/invoice.pdf", "PDFBYTES")
-		assertHas(t, entries, "doc1/invoice.ocr.txt", ocrText)
-		raw, ok := entries["doc1/invoice.metadata.json"]
+		assertHas(t, entries, orig1, "PDFBYTES")
+		assertHas(t, entries, ocr1, ocrText)
+		raw, ok := entries[meta1]
 		if !ok {
 			t.Fatal("missing metadata json")
 		}
@@ -105,10 +112,10 @@ func TestWriteExportZipModes(t *testing.T) {
 		if decoded["original_filename"] != "invoice.pdf" {
 			t.Fatalf("original_filename=%v", decoded["original_filename"])
 		}
-		if decoded["ocr_text"] != ocrText {
-			t.Fatalf("ocr_text=%v", decoded["ocr_text"])
+		if _, hasOCR := decoded["ocr_text"]; hasOCR {
+			t.Fatal("metadata json must not include ocr_text")
 		}
-		assertHas(t, entries, "doc2/note.metadata.json", "")
+		assertHas(t, entries, meta2, "")
 	})
 }
 
@@ -116,6 +123,7 @@ func TestWriteExportZipSkipsFailedOpen(t *testing.T) {
 	docs := []ExportDocument{
 		{
 			ID:               "missing",
+			Title:            "Gone",
 			OriginalFilename: "gone.pdf",
 			OpenFile: func() (io.ReadCloser, error) {
 				return nil, io.ErrUnexpectedEOF
@@ -123,6 +131,7 @@ func TestWriteExportZipSkipsFailedOpen(t *testing.T) {
 		},
 		{
 			ID:               "ok",
+			Title:            "Ok",
 			OriginalFilename: "ok.txt",
 			OpenFile: func() (io.ReadCloser, error) {
 				return io.NopCloser(strings.NewReader("ok")), nil
@@ -130,17 +139,20 @@ func TestWriteExportZipSkipsFailedOpen(t *testing.T) {
 		},
 	}
 	entries := mustZipEntries(t, ExportModeOriginals, docs)
-	if _, ok := entries["missing/gone.pdf"]; ok {
+	if _, ok := entries["paperless-export/[missing] Gone.pdf"]; ok {
 		t.Fatal("expected missing file to be skipped")
 	}
-	assertHas(t, entries, "ok/ok.txt", "ok")
+	assertHas(t, entries, "paperless-export/[ok] Ok.txt", "ok")
 }
 
-func TestFileStem(t *testing.T) {
-	if got := fileStem("invoice.pdf"); got != "invoice" {
+func TestExportEntryBase(t *testing.T) {
+	if got := exportEntryBase("abc", "Invoice / Q1"); got != "[abc] Invoice Q1" {
 		t.Fatalf("got %q", got)
 	}
-	if got := fileStem("archive"); got != "archive" {
+	if got := exportEntryBase("abc", "  "); got != "[abc] Untitled" {
+		t.Fatalf("got %q", got)
+	}
+	if got := sanitizeExportTitle(`bad:name*?<>|`); got != "badname" {
 		t.Fatalf("got %q", got)
 	}
 }

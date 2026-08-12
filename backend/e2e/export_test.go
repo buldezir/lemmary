@@ -49,7 +49,10 @@ func TestDocumentsExportArchive(t *testing.T) {
 	if fileName == "" {
 		t.Fatal("missing file name")
 	}
-	stem := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+	ext := filepath.Ext(fileName)
+	origPath := "paperless-export/[" + id + "] " + wantTitle + ext
+	ocrPath := "paperless-export/[" + id + "] " + wantTitle + ".ocr.txt"
+	metaPath := "paperless-export/[" + id + "] " + wantTitle + ".metadata.json"
 
 	t.Run("unauthenticated", func(t *testing.T) {
 		status, body, _ := h.doRaw(t, http.MethodGet, "/api/app/documents/export?mode=originals", "", nil, "")
@@ -63,29 +66,28 @@ func TestDocumentsExportArchive(t *testing.T) {
 
 	t.Run("originals", func(t *testing.T) {
 		entries := fetchExportZip(t, h, token, "originals")
-		assertZipHas(t, entries, id+"/"+fileName)
-		assertZipMissing(t, entries, id+"/"+stem+".ocr.txt")
-		assertZipMissing(t, entries, id+"/"+stem+".metadata.json")
-		if !strings.Contains(entries[id+"/"+fileName], "Acme Plumbing") {
+		assertZipHas(t, entries, origPath)
+		assertZipMissing(t, entries, ocrPath)
+		assertZipMissing(t, entries, metaPath)
+		if !strings.Contains(entries[origPath], "Acme Plumbing") {
 			t.Fatalf("original content missing fixture text")
 		}
 	})
 
 	t.Run("ocr", func(t *testing.T) {
 		entries := fetchExportZip(t, h, token, "ocr")
-		assertZipHas(t, entries, id+"/"+fileName)
-		assertZipHas(t, entries, id+"/"+stem+".ocr.txt")
-		if entries[id+"/"+stem+".ocr.txt"] != wantOCR {
-			t.Fatalf("ocr sidecar=%q", entries[id+"/"+stem+".ocr.txt"])
+		assertZipHas(t, entries, origPath)
+		assertZipHas(t, entries, ocrPath)
+		if entries[ocrPath] != wantOCR {
+			t.Fatalf("ocr sidecar=%q", entries[ocrPath])
 		}
-		assertZipMissing(t, entries, id+"/"+stem+".metadata.json")
+		assertZipMissing(t, entries, metaPath)
 	})
 
 	t.Run("metadata", func(t *testing.T) {
 		entries := fetchExportZip(t, h, token, "metadata")
-		assertZipHas(t, entries, id+"/"+fileName)
-		assertZipHas(t, entries, id+"/"+stem+".ocr.txt")
-		metaPath := id + "/" + stem + ".metadata.json"
+		assertZipHas(t, entries, origPath)
+		assertZipHas(t, entries, ocrPath)
 		assertZipHas(t, entries, metaPath)
 		var meta map[string]any
 		if err := json.Unmarshal([]byte(entries[metaPath]), &meta); err != nil {
@@ -94,8 +96,8 @@ func TestDocumentsExportArchive(t *testing.T) {
 		if meta["title"] != wantTitle {
 			t.Fatalf("title=%v", meta["title"])
 		}
-		if meta["ocr_text"] != wantOCR {
-			t.Fatalf("ocr_text=%v", meta["ocr_text"])
+		if _, hasOCR := meta["ocr_text"]; hasOCR {
+			t.Fatal("metadata json must not include ocr_text")
 		}
 		if meta["original_filename"] != fileName {
 			t.Fatalf("original_filename=%v", meta["original_filename"])
@@ -125,7 +127,6 @@ func TestDocumentsExportOwnerIsolation(t *testing.T) {
 	rec := h.uploadDocument(t, tokenA, h.UserID, fixturePath("sample.txt"))
 	idA := jsonGetString(rec, "id")
 	h.settleDocuments(t, idA)
-	fileA := jsonGetString(h.getDocument(t, tokenA, idA), "file")
 
 	otherEmail := "export-other-e2e@paperless.local"
 	otherPass := "otherpassword123"
@@ -155,15 +156,14 @@ func TestDocumentsExportOwnerIsolation(t *testing.T) {
 	recB := h.uploadDocument(t, tokenB, otherID, fixturePath("sample.txt"))
 	idB := jsonGetString(recB, "id")
 	h.settleDocuments(t, idA, idB)
-	fileB := jsonGetString(h.getDocument(t, tokenB, idB), "file")
 
 	entriesA := fetchExportZip(t, h, tokenA, "originals")
-	assertZipHas(t, entriesA, idA+"/"+fileA)
-	assertZipMissing(t, entriesA, idB+"/"+fileB)
+	assertZipHasID(t, entriesA, idA)
+	assertZipMissingID(t, entriesA, idB)
 
 	entriesB := fetchExportZip(t, h, tokenB, "originals")
-	assertZipHas(t, entriesB, idB+"/"+fileB)
-	assertZipMissing(t, entriesB, idA+"/"+fileA)
+	assertZipHasID(t, entriesB, idB)
+	assertZipMissingID(t, entriesB, idA)
 
 	t.Cleanup(func() {
 		_, _ = h.doJSON(t, http.MethodDelete, "/api/collections/documents/records/"+idA, tokenA, nil)
@@ -218,6 +218,31 @@ func assertZipMissing(t *testing.T, entries map[string]string, name string) {
 	t.Helper()
 	if _, ok := entries[name]; ok {
 		t.Fatalf("unexpected zip entry %q", name)
+	}
+}
+
+func assertZipHasID(t *testing.T, entries map[string]string, id string) {
+	t.Helper()
+	prefix := "paperless-export/[" + id + "]"
+	for name := range entries {
+		if strings.HasPrefix(name, prefix) {
+			return
+		}
+	}
+	keys := make([]string, 0, len(entries))
+	for k := range entries {
+		keys = append(keys, k)
+	}
+	t.Fatalf("missing zip entry for document %s; have %v", id, keys)
+}
+
+func assertZipMissingID(t *testing.T, entries map[string]string, id string) {
+	t.Helper()
+	prefix := "paperless-export/[" + id + "]"
+	for name := range entries {
+		if strings.HasPrefix(name, prefix) {
+			t.Fatalf("unexpected zip entry for document %s: %q", id, name)
+		}
 	}
 }
 

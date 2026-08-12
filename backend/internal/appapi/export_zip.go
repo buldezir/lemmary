@@ -8,7 +8,10 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"unicode"
 )
+
+const exportZipRoot = "paperless-export"
 
 // ExportMode controls which sidecar files are included in the archive.
 type ExportMode string
@@ -37,6 +40,7 @@ func ParseExportMode(raw string) (ExportMode, error) {
 // OpenFile is called when packing; it may return an error to skip the document.
 type ExportDocument struct {
 	ID               string
+	Title            string
 	OriginalFilename string
 	OpenFile         func() (io.ReadCloser, error)
 	OCRText          string
@@ -44,6 +48,7 @@ type ExportDocument struct {
 }
 
 // WriteExportZip streams a zip of the given documents for mode into w.
+// Entries are flattened under paperless-export/ as "[id] title.ext".
 // Documents that fail OpenFile or lack an ID/filename are skipped.
 // Empty OCR text omits the OCR sidecar.
 func WriteExportZip(w io.Writer, mode ExportMode, docs []ExportDocument) (err error) {
@@ -64,9 +69,9 @@ func WriteExportZip(w io.Writer, mode ExportMode, docs []ExportDocument) (err er
 			continue
 		}
 
-		baseName := path.Base(doc.OriginalFilename)
-		dir := doc.ID
-		originalPath := path.Join(dir, baseName)
+		ext := filepath.Ext(path.Base(doc.OriginalFilename))
+		base := exportEntryBase(doc.ID, doc.Title)
+		originalPath := path.Join(exportZipRoot, base+ext)
 
 		copyErr := writeZipFile(zw, originalPath, reader)
 		_ = reader.Close()
@@ -74,11 +79,10 @@ func WriteExportZip(w io.Writer, mode ExportMode, docs []ExportDocument) (err er
 			return fmt.Errorf("write original %s: %w", originalPath, copyErr)
 		}
 
-		stem := fileStem(baseName)
 		includeOCR := mode == ExportModeOCR || mode == ExportModeMetadata
 		if includeOCR {
 			if text := strings.TrimSpace(doc.OCRText); text != "" {
-				ocrPath := path.Join(dir, stem+".ocr.txt")
+				ocrPath := path.Join(exportZipRoot, base+".ocr.txt")
 				if err = writeZipBytes(zw, ocrPath, []byte(doc.OCRText)); err != nil {
 					return fmt.Errorf("write ocr %s: %w", ocrPath, err)
 				}
@@ -95,7 +99,7 @@ func WriteExportZip(w io.Writer, mode ExportMode, docs []ExportDocument) (err er
 			if err != nil {
 				return fmt.Errorf("marshal metadata for %s: %w", doc.ID, err)
 			}
-			metaPath := path.Join(dir, stem+".metadata.json")
+			metaPath := path.Join(exportZipRoot, base+".metadata.json")
 			if err = writeZipBytes(zw, metaPath, payload); err != nil {
 				return fmt.Errorf("write metadata %s: %w", metaPath, err)
 			}
@@ -105,13 +109,46 @@ func WriteExportZip(w io.Writer, mode ExportMode, docs []ExportDocument) (err er
 	return nil
 }
 
-func fileStem(filename string) string {
-	base := path.Base(filename)
-	ext := filepath.Ext(base)
-	if ext == "" {
-		return base
+// exportEntryBase returns "[id] title" with a filesystem-safe title.
+func exportEntryBase(id, title string) string {
+	safeTitle := sanitizeExportTitle(title)
+	return "[" + id + "] " + safeTitle
+}
+
+func sanitizeExportTitle(title string) string {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return "Untitled"
 	}
-	return strings.TrimSuffix(base, ext)
+	var b strings.Builder
+	b.Grow(len(title))
+	prevSpace := false
+	for _, r := range title {
+		switch {
+		case r == '/' || r == '\\' || r == ':' || r == '*' || r == '?' || r == '"' || r == '<' || r == '>' || r == '|':
+			continue
+		case r == 0 || unicode.IsControl(r):
+			continue
+		case unicode.IsSpace(r):
+			if prevSpace || b.Len() == 0 {
+				continue
+			}
+			b.WriteByte(' ')
+			prevSpace = true
+		default:
+			b.WriteRune(r)
+			prevSpace = false
+		}
+	}
+	out := strings.TrimSpace(b.String())
+	if out == "" {
+		return "Untitled"
+	}
+	// Avoid names that are only "." / ".." after sanitizing.
+	if out == "." || out == ".." {
+		return "Untitled"
+	}
+	return out
 }
 
 func writeZipFile(zw *zip.Writer, name string, r io.Reader) error {

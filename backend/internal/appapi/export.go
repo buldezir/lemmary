@@ -43,6 +43,7 @@ func handleExportDocuments(app core.App) func(*core.RequestEvent) error {
 			fileKey := rec.BaseFilesPath() + "/" + name
 			docs = append(docs, ExportDocument{
 				ID:               rec.Id,
+				Title:            firstNonEmpty(rec.GetString("title"), rec.GetString("title_original"), "Untitled"),
 				OriginalFilename: name,
 				OpenFile: func() (io.ReadCloser, error) {
 					reader, err := fsys.GetReader(fileKey)
@@ -141,7 +142,6 @@ func buildExportMetadata(app core.App, record *core.Record, originalFilename str
 		"checksum":                record.GetString("checksum"),
 		"created":                 record.GetString("created"),
 		"updated":                 record.GetString("updated"),
-		"ocr_text":                record.GetString("ocr_text"),
 		"original_filename":       originalFilename,
 	}
 }
