@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestParseExportMode(t *testing.T) {
@@ -154,6 +155,35 @@ func TestExportEntryBase(t *testing.T) {
 	}
 	if got := sanitizeExportTitle(`bad:name*?<>|`); got != "badname" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestSanitizeExportTitleTruncates(t *testing.T) {
+	long := strings.Repeat("a", maxExportTitleBytes+50)
+	got := sanitizeExportTitle(long)
+	if len(got) != maxExportTitleBytes {
+		t.Fatalf("len=%d want %d", len(got), maxExportTitleBytes)
+	}
+
+	// Multi-byte runes must not be split.
+	multi := strings.Repeat("é", maxExportTitleBytes)
+	got = sanitizeExportTitle(multi)
+	if len(got) > maxExportTitleBytes {
+		t.Fatalf("len=%d exceeds %d", len(got), maxExportTitleBytes)
+	}
+	if !utf8.ValidString(got) {
+		t.Fatal("truncated title is not valid UTF-8")
+	}
+	if got == "" {
+		t.Fatal("expected non-empty truncated title")
+	}
+
+	// Entry with longest sidecar suffix stays under 255 bytes.
+	id := strings.Repeat("x", 15)
+	base := exportEntryBase(id, strings.Repeat("t", 300))
+	metaName := base + ".metadata.json"
+	if len(metaName) > 255 {
+		t.Fatalf("metadata entry name len=%d exceeds 255: %q", len(metaName), metaName)
 	}
 }
 

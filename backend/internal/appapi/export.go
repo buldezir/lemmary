@@ -23,15 +23,18 @@ func handleExportDocuments(app core.App) func(*core.RequestEvent) error {
 		userID := e.Auth.Id
 		records, err := listOwnedDocuments(app, userID)
 		if err != nil {
+			app.Logger().Error("export list documents failed", "error", err)
 			return writeError(e, http.StatusInternalServerError, "Failed to list documents.")
 		}
 
 		fsys, err := app.NewFilesystem()
 		if err != nil {
+			app.Logger().Error("export open storage failed", "error", err)
 			return writeError(e, http.StatusInternalServerError, "Failed to open storage.")
 		}
 		defer fsys.Close()
 
+		includeMetadata := mode == ExportModeMetadata
 		docs := make([]ExportDocument, 0, len(records))
 		for _, record := range records {
 			fileName := record.GetString("file")
@@ -41,7 +44,7 @@ func handleExportDocuments(app core.App) func(*core.RequestEvent) error {
 			rec := record
 			name := fileName
 			fileKey := rec.BaseFilesPath() + "/" + name
-			docs = append(docs, ExportDocument{
+			doc := ExportDocument{
 				ID:               rec.Id,
 				Title:            firstNonEmpty(rec.GetString("title"), rec.GetString("title_original"), "Untitled"),
 				OriginalFilename: name,
@@ -53,9 +56,12 @@ func handleExportDocuments(app core.App) func(*core.RequestEvent) error {
 					}
 					return reader, nil
 				},
-				OCRText:  rec.GetString("ocr_text"),
-				Metadata: buildExportMetadata(app, rec, name),
-			})
+				OCRText: rec.GetString("ocr_text"),
+			}
+			if includeMetadata {
+				doc.Metadata = buildExportMetadata(app, rec, name)
+			}
+			docs = append(docs, doc)
 		}
 
 		e.Response.Header().Set("Content-Type", "application/zip")

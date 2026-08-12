@@ -9,9 +9,14 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 const exportZipRoot = "paperless-export"
+
+// Max length of the sanitized title portion of an export entry name.
+// Keeps "[id] title.metadata.json" under common 255-byte filesystem limits.
+const maxExportTitleBytes = 120
 
 // ExportMode controls which sidecar files are included in the archive.
 type ExportMode string
@@ -148,7 +153,19 @@ func sanitizeExportTitle(title string) string {
 	if out == "." || out == ".." {
 		return "Untitled"
 	}
-	return out
+	return truncateUTF8Bytes(out, maxExportTitleBytes)
+}
+
+// truncateUTF8Bytes shortens s to at most maxBytes without splitting a rune.
+func truncateUTF8Bytes(s string, maxBytes int) string {
+	if maxBytes <= 0 || len(s) <= maxBytes {
+		return s
+	}
+	truncated := s[:maxBytes]
+	for len(truncated) > 0 && !utf8.ValidString(truncated) {
+		truncated = truncated[:len(truncated)-1]
+	}
+	return strings.TrimSpace(truncated)
 }
 
 func writeZipFile(zw *zip.Writer, name string, r io.Reader) error {
