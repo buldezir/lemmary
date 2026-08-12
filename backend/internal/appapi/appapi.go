@@ -23,6 +23,8 @@ func Register(app core.App, rt *config.Runtime) {
 			g.GET("/settings", bindAdmin(handleGetSettings(app, rt)))
 			g.PATCH("/settings", bindAdmin(handlePatchSettings(app, rt)))
 			g.POST("/duplicates/scan", bindAdmin(handlePostDuplicatesScan(app, rt)))
+			g.POST("/import/ngx", bindAdmin(handlePostImportNgx(app)))
+			g.GET("/import/ngx/status", bindAdmin(handleGetImportNgxStatus(app)))
 			return e.Next()
 		},
 	})

@@ -62,7 +62,8 @@ func (p *Processor) registerHooks() {
 			return err
 		}
 
-		_, err := createProcessingJob(e.App, record.Id, models.FullPipelineSteps, nil)
+		steps := takeCreateStepsForChecksum(record.GetString("checksum"))
+		_, err := createProcessingJob(e.App, record.Id, steps, nil)
 		return err
 	})
 

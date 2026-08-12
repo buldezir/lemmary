@@ -203,6 +203,19 @@ Compatibility is intentionally partial: common read/write flows work, but not ev
 
 API versions 9 and 10 are accepted via the `Accept` header (`application/json; version=9`).
 
+### Importing from Paperless-ngx
+
+Admins can migrate an existing Paperless-ngx library into Paperless Go:
+
+1. Open **Import** in the More menu (or go to `/import`).
+2. Enter the remote Paperless-ngx base URL and an API token from that instance’s profile.
+3. Choose an import mode:
+   - **Keep Paperless-ngx metadata** (`preserve`): upserts tags, correspondents, and document types by name; downloads each document with its OCR `content`, title, date, and taxonomy links. Preview and duplicate detection still run; AI metadata extraction is skipped so remote metadata is kept.
+   - **Import files only and reprocess** (`reprocess`): downloads only the original files and queues the full OCR + AI pipeline as for a new upload.
+4. Start the import. Exact file duplicates (same checksum) are skipped.
+
+The same flow is available as `POST /api/app/import/ngx` with JSON body `{ "url": "...", "api_key": "...", "mode": "preserve" | "reprocess" }`. The request returns `202 Accepted` with `{ "job_id", "status": "running" }`. Poll `GET /api/app/import/ngx/status?job_id=...` until `status` is `completed` (with `result`) or `failed` (with `error`). Job state is kept in memory for the running process only. `mode` defaults to `preserve`. The API key is not persisted.
+
 ### swift-paperless (iOS)
 
 [swift-paperless](https://github.com/paulgessinger/swift-paperless) is the main mobile client exercised against this API. Browsing documents, viewing details, and uploading generally work. Some paperless-ngx-specific settings or advanced features may be missing or no-ops because Paperless Go does not implement the full paperless-ngx surface area.

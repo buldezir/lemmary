@@ -6,40 +6,49 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-func ensureNamedEntity(app core.App, collection, displayName, originalName string) (string, error) {
+// EnsureNamedEntity finds or creates a named entity (correspondent / document type).
+// Lookup prefers name_original, then name. created is true only when a new record is inserted.
+func EnsureNamedEntity(app core.App, collection, displayName, originalName string) (id string, created bool, err error) {
 	displayName = strings.TrimSpace(displayName)
 	originalName = strings.TrimSpace(originalName)
 	if displayName == "" {
-		return "", nil
+		return "", false, nil
 	}
 	if originalName == "" {
 		originalName = displayName
 	}
 
-	if id, err := findNamedEntity(app, collection, "name_original", originalName); err != nil {
-		return "", err
-	} else if id != "" {
-		return updateNamedEntity(app, collection, id, displayName, originalName)
+	if existingID, err := findNamedEntity(app, collection, "name_original", originalName); err != nil {
+		return "", false, err
+	} else if existingID != "" {
+		id, err := updateNamedEntity(app, collection, existingID, displayName, originalName)
+		return id, false, err
 	}
 
-	if id, err := findNamedEntity(app, collection, "name", displayName); err != nil {
-		return "", err
-	} else if id != "" {
-		return updateNamedEntity(app, collection, id, displayName, originalName)
+	if existingID, err := findNamedEntity(app, collection, "name", displayName); err != nil {
+		return "", false, err
+	} else if existingID != "" {
+		id, err := updateNamedEntity(app, collection, existingID, displayName, originalName)
+		return id, false, err
 	}
 
 	coll, err := app.FindCollectionByNameOrId(collection)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	record := core.NewRecord(coll)
 	record.Set("name", displayName)
 	record.Set("name_original", originalName)
 	if err := app.Save(record); err != nil {
-		return "", err
+		return "", false, err
 	}
-	return record.Id, nil
+	return record.Id, true, nil
+}
+
+func ensureNamedEntity(app core.App, collection, displayName, originalName string) (string, error) {
+	id, _, err := EnsureNamedEntity(app, collection, displayName, originalName)
+	return id, err
 }
 
 func findNamedEntity(app core.App, collection, field, value string) (string, error) {
@@ -127,4 +136,50 @@ func ensureTags(app core.App, names []string) ([]string, error) {
 	}
 
 	return tagIDs, nil
+}
+
+// EnsureTag finds or creates a tag by exact name. created is true only when inserted.
+func EnsureTag(app core.App, name string) (id string, created bool, err error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", false, nil
+	}
+
+	existing, err := app.FindRecordsByFilter(
+		"tags",
+		"name = {:name}",
+		"",
+		1,
+		0,
+		map[string]any{"name": name},
+	)
+	if err != nil {
+		return "", false, err
+	}
+	if len(existing) > 0 {
+		return existing[0].Id, false, nil
+	}
+
+	tagsCollection, err := app.FindCollectionByNameOrId("tags")
+	if err != nil {
+		return "", false, err
+	}
+	tag := core.NewRecord(tagsCollection)
+	tag.Set("name", name)
+	if err := app.Save(tag); err != nil {
+		// Race: another create may have won; re-find.
+		existing, findErr := app.FindRecordsByFilter(
+			"tags",
+			"name = {:name}",
+			"",
+			1,
+			0,
+			map[string]any{"name": name},
+		)
+		if findErr == nil && len(existing) > 0 {
+			return existing[0].Id, false, nil
+		}
+		return "", false, err
+	}
+	return tag.Id, true, nil
 }
