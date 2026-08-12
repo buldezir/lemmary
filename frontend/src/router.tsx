@@ -8,6 +8,7 @@ import { OCRTestPage } from './routes/ocr-test'
 import { SearchPage } from './routes/search'
 import { SettingsPage } from './routes/settings'
 import { ImportPage } from './routes/import'
+import { ExportPage } from './routes/export'
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -49,6 +50,12 @@ const importRoute = createRoute({
   component: ImportPage,
 })
 
+const exportRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/export',
+  component: ExportPage,
+})
+
 const documentRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/document/$documentId',
@@ -68,6 +75,7 @@ const routeTree = rootRoute.addChildren([
   ocrTestRoute,
   settingsRoute,
   importRoute,
+  exportRoute,
   documentRoute,
   documentAskRoute,
 ])
