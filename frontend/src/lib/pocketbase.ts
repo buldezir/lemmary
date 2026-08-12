@@ -628,6 +628,46 @@ export async function importFromNgx(url: string, apiKey: string, mode: NgxImport
   throw new Error('Import timed out while waiting for completion')
 }
 
+export type ExportArchiveMode = 'originals' | 'ocr' | 'metadata'
+
+export async function downloadDocumentsArchive(mode: ExportArchiveMode = 'originals') {
+  await ensureAuth()
+
+  const response = await fetch(
+    `${pbUrl}/api/app/documents/export?mode=${encodeURIComponent(mode)}`,
+    {
+      headers: {
+        Authorization: pb.authStore.token,
+      },
+    },
+  )
+
+  if (!response.ok) {
+    let detail = 'Failed to download archive'
+    try {
+      const data = (await response.json()) as { detail?: string }
+      if (data.detail) detail = data.detail
+    } catch {
+      // response may be non-JSON on some errors
+    }
+    throw new Error(detail)
+  }
+
+  const blob = await response.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  try {
+    const anchor = document.createElement('a')
+    anchor.href = objectUrl
+    anchor.download = 'paperless-export.zip'
+    anchor.rel = 'noopener'
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
+
 export function parseDuplicateOfId(message: string): string | null {
   const match = message.match(/duplicate of ([a-z0-9]{15})/i)
   return match?.[1] ?? null

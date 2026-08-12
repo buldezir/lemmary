@@ -69,8 +69,9 @@ function MoreNavMenu({ admin }: { admin: boolean }) {
   const matchRoute = useMatchRoute()
   const settingsActive = Boolean(matchRoute({ to: '/settings' }))
   const importActive = Boolean(matchRoute({ to: '/import' }))
+  const exportActive = Boolean(matchRoute({ to: '/export' }))
   const ocrTestActive = Boolean(matchRoute({ to: '/ocr-test' }))
-  const menuActive = settingsActive || importActive || ocrTestActive
+  const menuActive = settingsActive || importActive || exportActive || ocrTestActive
 
   useEffect(() => {
     if (!open) return
@@ -120,6 +121,14 @@ function MoreNavMenu({ admin }: { admin: boolean }) {
             onClick={() => setOpen(false)}
           >
             OCR test
+          </Link>
+          <Link
+            to="/export"
+            role="menuitem"
+            className={`${menuItemClass} ${exportActive ? navLinkActiveClass : ''}`}
+            onClick={() => setOpen(false)}
+          >
+            Export
           </Link>
           {admin && (
             <Link
