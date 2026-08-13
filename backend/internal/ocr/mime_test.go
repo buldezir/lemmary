@@ -23,3 +23,17 @@ func TestGuessMimeType(t *testing.T) {
 		}
 	}
 }
+
+func TestEffectiveMimeType(t *testing.T) {
+	t.Parallel()
+
+	if got := effectiveMimeType("image/png", "doc.pdf"); got != "image/png" {
+		t.Errorf("keeps explicit mime: got %q", got)
+	}
+	if got := effectiveMimeType("", "doc.pdf"); got != "application/pdf" {
+		t.Errorf("guesses from path when empty: got %q", got)
+	}
+	if got := effectiveMimeType("application/octet-stream", "photo.jpg"); got != "image/jpeg" {
+		t.Errorf("guesses from path when octet-stream: got %q", got)
+	}
+}

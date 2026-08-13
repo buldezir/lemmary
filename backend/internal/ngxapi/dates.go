@@ -40,3 +40,16 @@ func formatNgxCreatedDate(docDate string) string {
 	}
 	return formatNgxDateTime(docDate)
 }
+
+func createdDateOnly(datetime string) string {
+	if datetime == "" {
+		return ""
+	}
+	if t, err := time.Parse("2006-01-02 15:04:05.000Z", datetime); err == nil {
+		return t.Format("2006-01-02")
+	}
+	if len(datetime) >= 10 {
+		return datetime[:10]
+	}
+	return datetime
+}

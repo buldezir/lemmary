@@ -48,3 +48,10 @@ func setNgxHeaders(e *core.RequestEvent) {
 	e.Response.Header().Set("X-Api-Version", strconv.Itoa(ngxAPIVersion))
 	e.Response.Header().Set("X-Version", ngxAppVersion)
 }
+
+func handleRemoteVersion(e *core.RequestEvent) error {
+	return writeJSON(e, http.StatusOK, map[string]any{
+		"version":          "v" + ngxAppVersion,
+		"update_available": false,
+	})
+}

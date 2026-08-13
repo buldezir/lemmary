@@ -86,35 +86,6 @@ func (p *MistralProvider) ExtractText(ctx context.Context, filePath string, mime
 	return text, nil
 }
 
-func effectiveMimeType(mimeType, filePath string) string {
-	if mimeType != "" && mimeType != "application/octet-stream" {
-		return mimeType
-	}
-
-	switch strings.ToLower(filepath.Ext(filePath)) {
-	case ".pdf":
-		return "application/pdf"
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".png":
-		return "image/png"
-	case ".webp":
-		return "image/webp"
-	case ".avif":
-		return "image/avif"
-	case ".tif", ".tiff":
-		return "image/tiff"
-	case ".gif":
-		return "image/gif"
-	case ".docx":
-		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-	case ".pptx":
-		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-	default:
-		return mimeType
-	}
-}
-
 func mistralDocumentInput(mimeType string, data []byte) (docType, dataURL string, err error) {
 	encoded := base64.StdEncoding.EncodeToString(data)
 

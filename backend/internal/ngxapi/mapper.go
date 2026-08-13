@@ -3,12 +3,14 @@ package ngxapi
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 )
+
+var htmlTagRE = regexp.MustCompile(`<[^>]*>`)
 
 func mapDocument(app core.App, record *core.Record) map[string]any {
 	created := record.GetString("created")
@@ -37,8 +39,8 @@ func mapDocument(app core.App, record *core.Record) map[string]any {
 		"title":                 record.GetString("title"),
 		"content":               content,
 		"tags":                  tagIDs,
-		"document_type":         relationID(record, "document_type"),
-		"correspondent":         relationID(record, "correspondent"),
+		"document_type":         ngxRelationID(record, "document_type"),
+		"correspondent":         ngxRelationID(record, "correspondent"),
 		"storage_path":          nil,
 		"created":               createdFormatted,
 		"created_date":          createdDateOnly(docDate),
@@ -188,42 +190,13 @@ func latestStepError(job *core.Record) string {
 	return ""
 }
 
-func createdDateOnly(datetime string) string {
-	if datetime == "" {
-		return ""
-	}
-	if t, err := time.Parse("2006-01-02 15:04:05.000Z", datetime); err == nil {
-		return t.Format("2006-01-02")
-	}
-	if len(datetime) >= 10 {
-		return datetime[:10]
-	}
-	return datetime
+func stripHTML(s string) string {
+	return strings.TrimSpace(htmlTagRE.ReplaceAllString(s, ""))
 }
 
-func documentSortField(ordering string) string {
-	if ordering == "" {
-		return "-created"
-	}
-	field := strings.TrimPrefix(strings.TrimPrefix(ordering, "-"), "+")
-	desc := strings.HasPrefix(ordering, "-")
-
-	var pbField string
-	switch field {
-	case "created", "created_date":
-		pbField = "document_date"
-	case "added":
-		pbField = "created"
-	case "modified":
-		pbField = "updated"
-	case "title":
-		pbField = "title"
-	default:
-		pbField = "created"
-	}
-
-	if desc || strings.HasPrefix(ordering, "-") {
-		return "-" + pbField
-	}
-	return pbField
+func slugify(name string) string {
+	s := strings.ToLower(strings.TrimSpace(name))
+	s = strings.ReplaceAll(s, " ", "-")
+	s = regexp.MustCompile(`[^a-z0-9-]`).ReplaceAllString(s, "")
+	return s
 }

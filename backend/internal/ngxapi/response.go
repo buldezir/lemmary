@@ -4,21 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
-	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
 )
 
-var htmlTagRE = regexp.MustCompile(`<[^>]*>`)
-
 type paginatedResponse struct {
-	Count    int64    `json:"count"`
-	Next     *string  `json:"next"`
-	Previous *string  `json:"previous"`
-	Results  []any    `json:"results"`
+	Count    int64   `json:"count"`
+	Next     *string `json:"next"`
+	Previous *string `json:"previous"`
+	Results  []any   `json:"results"`
 }
 
 func writeJSON(e *core.RequestEvent, status int, data any) error {
@@ -124,31 +119,7 @@ func paginatedList(e *core.RequestEvent, total int64, page, pageSize int, result
 	})
 }
 
-func stripHTML(s string) string {
-	return strings.TrimSpace(htmlTagRE.ReplaceAllString(s, ""))
-}
-
-func slugify(name string) string {
-	s := strings.ToLower(strings.TrimSpace(name))
-	s = strings.ReplaceAll(s, " ", "-")
-	s = regexp.MustCompile(`[^a-z0-9-]`).ReplaceAllString(s, "")
-	return s
-}
-
-func relationID(record *core.Record, field string) any {
-	return ngxRelationID(record, field)
-}
-
-func parseTagIDs(form url.Values) []string {
-	var ids []string
-	for _, v := range form["tags"] {
-		if strings.TrimSpace(v) != "" {
-			ids = append(ids, v)
-		}
-	}
-	return ids
-}
-
-func expandTagIDs(app core.App, ids []string) []string {
-	return resolveTagPBIDs(app, ids)
+func handleEmptyList(e *core.RequestEvent) error {
+	page, pageSize := paginationParams(e)
+	return paginatedList(e, 0, page, pageSize, []any{})
 }

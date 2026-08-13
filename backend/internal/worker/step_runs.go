@@ -3,72 +3,10 @@ package worker
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 	"paperless-go/backend/internal/models"
 )
-
-const pbTimeLayout = "2006-01-02 15:04:05.000Z"
-
-func nowTimestamp() string {
-	return time.Now().UTC().Format(pbTimeLayout)
-}
-
-func parseSteps(job *core.Record) ([]string, error) {
-	raw := job.Get("steps")
-	if raw == nil {
-		return nil, nil
-	}
-
-	switch v := raw.(type) {
-	case []string:
-		return v, nil
-	case []any:
-		steps := make([]string, 0, len(v))
-		for _, item := range v {
-			name, ok := item.(string)
-			if !ok || name == "" {
-				continue
-			}
-			steps = append(steps, name)
-		}
-		return steps, nil
-	default:
-		data, err := json.Marshal(raw)
-		if err != nil {
-			return nil, fmt.Errorf("marshal steps: %w", err)
-		}
-		var steps []string
-		if err := json.Unmarshal(data, &steps); err != nil {
-			return nil, fmt.Errorf("unmarshal steps: %w", err)
-		}
-		return steps, nil
-	}
-}
-
-func parseForceSteps(job *core.Record) map[string]bool {
-	forced := make(map[string]bool)
-	raw := job.Get("force_steps")
-	if raw == nil {
-		return forced
-	}
-
-	var names []string
-	data, err := json.Marshal(raw)
-	if err != nil {
-		return forced
-	}
-	if err := json.Unmarshal(data, &names); err != nil {
-		return forced
-	}
-	for _, name := range names {
-		if name != "" {
-			forced[name] = true
-		}
-	}
-	return forced
-}
 
 func parseStepRuns(job *core.Record) ([]models.StepRun, error) {
 	raw := job.Get("step_runs")
@@ -178,33 +116,4 @@ func markStepFailed(run *models.StepRun, err error) {
 	run.Status = models.StepStatusFailed
 	run.FinishedAt = now
 	run.Error = truncateError(err.Error(), 1900)
-}
-
-func loadMetadataJSON(job *core.Record) (*models.ExtractedMetadata, error) {
-	raw := job.Get("metadata_json")
-	if raw == nil {
-		return nil, nil
-	}
-
-	data, err := json.Marshal(raw)
-	if err != nil {
-		return nil, fmt.Errorf("marshal metadata_json: %w", err)
-	}
-
-	var metadata models.ExtractedMetadata
-	if err := json.Unmarshal(data, &metadata); err != nil {
-		return nil, fmt.Errorf("unmarshal metadata_json: %w", err)
-	}
-	if !metadata.Populated() {
-		return nil, nil
-	}
-	return &metadata, nil
-}
-
-func saveMetadataJSON(job *core.Record, metadata *models.ExtractedMetadata) {
-	if metadata == nil {
-		job.Set("metadata_json", nil)
-		return
-	}
-	job.Set("metadata_json", metadata)
 }

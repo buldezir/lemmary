@@ -64,7 +64,7 @@ func DefaultsFromEnv() Config {
 		SearchModel:                   getEnv("OPENAI_SEARCH_MODEL", chatModel),
 		OCRTimeout:                    time.Duration(ocrTimeoutSec) * time.Second,
 		ProcessingResultLanguage:      strings.ToLower(strings.TrimSpace(os.Getenv("PROCESSING_RESULT_LANGUAGE"))),
-		DeepSearchLanguages:           normalizeLanguageList(os.Getenv("DEEP_SEARCH_LANGUAGES")),
+		DeepSearchLanguages:           NormalizeLanguageList(os.Getenv("DEEP_SEARCH_LANGUAGES")),
 		OpenAITimeout:                 time.Duration(timeoutSec) * time.Second,
 		WorkerCronExpr:                WorkerCronFromEnv(),
 		WorkerTimeout:                 time.Duration(workerTimeoutSec) * time.Second,
@@ -278,7 +278,7 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 		SearchModel:                   strings.TrimSpace(record.GetString("search_model")),
 		OCRTimeout:                    time.Duration(ocrTimeoutSec) * time.Second,
 		ProcessingResultLanguage:      strings.ToLower(strings.TrimSpace(record.GetString("processing_result_language"))),
-		DeepSearchLanguages:           normalizeLanguageList(record.GetString("deep_search_languages")),
+		DeepSearchLanguages:           NormalizeLanguageList(record.GetString("deep_search_languages")),
 		OpenAITimeout:                 time.Duration(openAITimeoutSec) * time.Second,
 		WorkerCronExpr:                WorkerCronFromEnv(),
 		WorkerTimeout:                 time.Duration(workerTimeoutSec) * time.Second,
@@ -416,8 +416,8 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// normalizeLanguageList cleans a comma-separated ISO 639-1 list (e.g. "de, en, uk").
-func normalizeLanguageList(raw string) string {
+// NormalizeLanguageList cleans a comma-separated ISO 639-1 list (e.g. "de, en, uk").
+func NormalizeLanguageList(raw string) string {
 	parts := strings.Split(raw, ",")
 	out := make([]string, 0, len(parts))
 	seen := map[string]struct{}{}

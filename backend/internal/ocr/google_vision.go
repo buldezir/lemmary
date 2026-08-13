@@ -63,7 +63,7 @@ func (p *GoogleVisionProvider) ExtractText(ctx context.Context, filePath string,
 	effectiveMime := mimeType
 	mode := "image"
 	if isVisionFileInput(mimeType, filePath) {
-		effectiveMime = visionFileMimeType(mimeType, filePath)
+		effectiveMime = effectiveMimeType(mimeType, filePath)
 		mode = "file"
 	}
 	p.logger.Info("google vision starting",
@@ -107,23 +107,6 @@ func isVisionFileInput(mimeType, filePath string) bool {
 		return true
 	default:
 		return false
-	}
-}
-
-func visionFileMimeType(mimeType, filePath string) string {
-	if mimeType != "" && mimeType != "application/octet-stream" {
-		return mimeType
-	}
-
-	switch strings.ToLower(filepath.Ext(filePath)) {
-	case ".pdf":
-		return "application/pdf"
-	case ".tif", ".tiff":
-		return "image/tiff"
-	case ".gif":
-		return "image/gif"
-	default:
-		return mimeType
 	}
 }
 

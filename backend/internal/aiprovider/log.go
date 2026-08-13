@@ -16,11 +16,3 @@ func LogRequest(logger *slog.Logger, sdk, method, url, model string, extra ...an
 	}
 	logger.Info("ai request", append(attrs, extra...)...)
 }
-
-func ChatCompletionsURL(baseURL string) string {
-	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	if base == "" {
-		base = DefaultBaseURL(SDKOpenAI)
-	}
-	return base + "/chat/completions"
-}

@@ -35,3 +35,10 @@ func GuessMimeType(fileName string) string {
 		return "application/octet-stream"
 	}
 }
+
+func effectiveMimeType(mimeType, filePath string) string {
+	if mimeType != "" && mimeType != "application/octet-stream" {
+		return mimeType
+	}
+	return GuessMimeType(filePath)
+}

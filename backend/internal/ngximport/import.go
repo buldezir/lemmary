@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -21,11 +20,6 @@ const maxReportedErrors = 25
 const (
 	ModePreserve  = "preserve"
 	ModeReprocess = "reprocess"
-)
-
-var (
-	importMu   sync.Mutex
-	importBusy bool
 )
 
 // ErrImportInProgress is returned when another import is already running.
@@ -67,22 +61,6 @@ func RunWithClient(app core.App, ownerUserID, baseURL, apiKey, mode string, clie
 	}
 	defer releaseImport()
 	return runImport(app, ownerUserID, baseURL, apiKey, mode, client)
-}
-
-func acquireImport() error {
-	importMu.Lock()
-	defer importMu.Unlock()
-	if importBusy {
-		return ErrImportInProgress
-	}
-	importBusy = true
-	return nil
-}
-
-func releaseImport() {
-	importMu.Lock()
-	importBusy = false
-	importMu.Unlock()
 }
 
 func runImport(app core.App, ownerUserID, baseURL, apiKey, mode string, client *Client) (Result, error) {

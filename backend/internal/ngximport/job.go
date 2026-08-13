@@ -27,9 +27,27 @@ type Job struct {
 }
 
 var (
-	jobsMu sync.Mutex
-	jobs   = map[string]*Job{}
+	jobsMu     sync.Mutex
+	jobs       = map[string]*Job{}
+	importMu   sync.Mutex
+	importBusy bool
 )
+
+func acquireImport() error {
+	importMu.Lock()
+	defer importMu.Unlock()
+	if importBusy {
+		return ErrImportInProgress
+	}
+	importBusy = true
+	return nil
+}
+
+func releaseImport() {
+	importMu.Lock()
+	importBusy = false
+	importMu.Unlock()
+}
 
 // Start begins an import in a background goroutine and returns the job id.
 // Only one import may run at a time.

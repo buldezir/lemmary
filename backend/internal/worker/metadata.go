@@ -1,6 +1,8 @@
 package worker
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -118,4 +120,33 @@ func applyDocumentType(app core.App, document *core.Record, metadata *models.Ext
 	}
 	document.Set("document_type", typeID)
 	return nil
+}
+
+func loadMetadataJSON(job *core.Record) (*models.ExtractedMetadata, error) {
+	raw := job.Get("metadata_json")
+	if raw == nil {
+		return nil, nil
+	}
+
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("marshal metadata_json: %w", err)
+	}
+
+	var metadata models.ExtractedMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return nil, fmt.Errorf("unmarshal metadata_json: %w", err)
+	}
+	if !metadata.Populated() {
+		return nil, nil
+	}
+	return &metadata, nil
+}
+
+func saveMetadataJSON(job *core.Record, metadata *models.ExtractedMetadata) {
+	if metadata == nil {
+		job.Set("metadata_json", nil)
+		return
+	}
+	job.Set("metadata_json", metadata)
 }

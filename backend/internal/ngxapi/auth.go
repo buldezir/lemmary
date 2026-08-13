@@ -128,18 +128,22 @@ func findUserByField(app core.App, collection *core.Collection, field, value str
 	return record, nil
 }
 
-func ownerFilter(authID string) string {
-	return "user = {:userId}"
-}
-
-func ownerParams(authID string) map[string]any {
-	return map[string]any{"userId": authID}
-}
-
-func findOwnedDocument(app core.App, authID, id string) (*core.Record, error) {
-	ngxID, err := parseNgxID(id)
-	if err != nil {
-		return nil, err
+func bindAuth(handler func(*core.RequestEvent) error) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		if err := checkAPIVersion(e); err != nil {
+			return err
+		}
+		if err := requireAuth(e); err != nil {
+			return err
+		}
+		return handler(e)
 	}
-	return findOwnedDocumentByNgxID(app, authID, ngxID)
+}
+
+func normalizePaperlessAuthHeader(e *core.RequestEvent) error {
+	header := e.Request.Header.Get("Authorization")
+	if len(header) > 6 && strings.EqualFold(header[:6], "Token ") {
+		e.Request.Header.Set("Authorization", strings.TrimSpace(header[6:]))
+	}
+	return e.Next()
 }

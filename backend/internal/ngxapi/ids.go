@@ -49,6 +49,22 @@ func findOwnedDocumentByNgxID(app core.App, authID string, ngxID int) (*core.Rec
 	return findRecordByNgxID(app, "documents", ngxID, ownerFilter(authID), ownerParams(authID))
 }
 
+func ownerFilter(authID string) string {
+	return "user = {:userId}"
+}
+
+func ownerParams(authID string) map[string]any {
+	return map[string]any{"userId": authID}
+}
+
+func findOwnedDocument(app core.App, authID, id string) (*core.Record, error) {
+	ngxID, err := parseNgxID(id)
+	if err != nil {
+		return nil, err
+	}
+	return findOwnedDocumentByNgxID(app, authID, ngxID)
+}
+
 func ngxRelationID(record *core.Record, field string) any {
 	id := record.GetString(field)
 	if id == "" {

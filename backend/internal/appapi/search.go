@@ -3,6 +3,7 @@ package appapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -72,4 +73,18 @@ func handleDeepSearch(app core.App, rt *config.Runtime) func(*core.RequestEvent)
 			Documents: hits,
 		})
 	}
+}
+
+func listAvailableTagNames(app core.App) ([]string, error) {
+	records, err := app.FindRecordsByFilter("tags", "", "name", 500, 0)
+	if err != nil {
+		return nil, fmt.Errorf("list tags: %w", err)
+	}
+	names := make([]string, 0, len(records))
+	for _, record := range records {
+		if name := strings.TrimSpace(record.GetString("name")); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names, nil
 }

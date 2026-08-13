@@ -70,3 +70,11 @@ func NormalizeBaseURL(sdk, baseURL string) string {
 	}
 	return strings.TrimRight(DefaultBaseURL(sdk), "/")
 }
+
+func ChatCompletionsURL(baseURL string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		base = DefaultBaseURL(SDKOpenAI)
+	}
+	return base + "/chat/completions"
+}

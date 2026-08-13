@@ -139,29 +139,9 @@ func itemPath(base, segment string) string {
 	return base + "/" + segment
 }
 
-func bindAuth(handler func(*core.RequestEvent) error) func(*core.RequestEvent) error {
-	return func(e *core.RequestEvent) error {
-		if err := checkAPIVersion(e); err != nil {
-			return err
-		}
-		if err := requireAuth(e); err != nil {
-			return err
-		}
-		return handler(e)
-	}
-}
-
 func handleAPIRoot(e *core.RequestEvent) error {
 	if err := checkAPIVersion(e); err != nil {
 		return err
 	}
 	return e.Redirect(http.StatusFound, "/api/schema/")
-}
-
-func normalizePaperlessAuthHeader(e *core.RequestEvent) error {
-	header := e.Request.Header.Get("Authorization")
-	if len(header) > 6 && strings.EqualFold(header[:6], "Token ") {
-		e.Request.Header.Set("Authorization", strings.TrimSpace(header[6:]))
-	}
-	return e.Next()
 }

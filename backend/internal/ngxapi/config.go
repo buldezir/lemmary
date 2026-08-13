@@ -12,15 +12,3 @@ func handleAppConfig(e *core.RequestEvent) error {
 		{"id": 1},
 	})
 }
-
-func handleRemoteVersion(e *core.RequestEvent) error {
-	return writeJSON(e, http.StatusOK, map[string]any{
-		"version":          "v" + ngxAppVersion,
-		"update_available": false,
-	})
-}
-
-func handleEmptyList(e *core.RequestEvent) error {
-	page, pageSize := paginationParams(e)
-	return paginatedList(e, 0, page, pageSize, []any{})
-}

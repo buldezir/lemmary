@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -253,4 +254,59 @@ func (p *Processor) runJob(jobID string) error {
 
 	runner := NewPipelineRunner(p.app, snap.Cfg, snap.OCR, snap.AI)
 	return runner.Run(context.Background(), jobID)
+}
+
+func parseSteps(job *core.Record) ([]string, error) {
+	raw := job.Get("steps")
+	if raw == nil {
+		return nil, nil
+	}
+
+	switch v := raw.(type) {
+	case []string:
+		return v, nil
+	case []any:
+		steps := make([]string, 0, len(v))
+		for _, item := range v {
+			name, ok := item.(string)
+			if !ok || name == "" {
+				continue
+			}
+			steps = append(steps, name)
+		}
+		return steps, nil
+	default:
+		data, err := json.Marshal(raw)
+		if err != nil {
+			return nil, fmt.Errorf("marshal steps: %w", err)
+		}
+		var steps []string
+		if err := json.Unmarshal(data, &steps); err != nil {
+			return nil, fmt.Errorf("unmarshal steps: %w", err)
+		}
+		return steps, nil
+	}
+}
+
+func parseForceSteps(job *core.Record) map[string]bool {
+	forced := make(map[string]bool)
+	raw := job.Get("force_steps")
+	if raw == nil {
+		return forced
+	}
+
+	var names []string
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return forced
+	}
+	if err := json.Unmarshal(data, &names); err != nil {
+		return forced
+	}
+	for _, name := range names {
+		if name != "" {
+			forced[name] = true
+		}
+	}
+	return forced
 }

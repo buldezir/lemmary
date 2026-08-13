@@ -112,20 +112,3 @@ func resolveOCRText(ctx context.Context, state *StepState, provider ocr.Provider
 	}
 	return text, provider.Name(), nil
 }
-
-func ensureTempFile(state *StepState) error {
-	if state.TmpPath != "" {
-		return nil
-	}
-
-	tmpPath, mimeType, cleanup, err := readDocumentToTempFile(state.App, state.Document)
-	if err != nil {
-		return fmt.Errorf("read document file: %w", err)
-	}
-	state.TmpPath = tmpPath
-	state.MimeType = mimeType
-	if state.Cleanup == nil {
-		state.Cleanup = cleanup
-	}
-	return nil
-}

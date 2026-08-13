@@ -159,20 +159,6 @@ func findNamedEntityIDs(app core.App, collection, name string) ([]string, error)
 	return ids, nil
 }
 
-func listAvailableTagNames(app core.App) ([]string, error) {
-	records, err := app.FindRecordsByFilter("tags", "", "name", 500, 0)
-	if err != nil {
-		return nil, fmt.Errorf("list tags: %w", err)
-	}
-	names := make([]string, 0, len(records))
-	for _, record := range records {
-		if name := strings.TrimSpace(record.GetString("name")); name != "" {
-			names = append(names, name)
-		}
-	}
-	return names, nil
-}
-
 func findTagIDsByNames(app core.App, names []string) ([]string, error) {
 	ids := make([]string, 0, len(names))
 	seen := map[string]struct{}{}
@@ -297,13 +283,4 @@ func truncateRunes(s string, max int) string {
 		return s
 	}
 	return string(runes[:max]) + "…"
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
-		}
-	}
-	return ""
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -99,7 +100,7 @@ func handlePatchDocument(e *core.RequestEvent) error {
 				raw = append(raw, tagID)
 			}
 		}
-		record.Set("tags", expandTagIDs(e.App, raw))
+		record.Set("tags", resolveTagPBIDs(e.App, raw))
 	}
 
 	record.Set("metadata_source", models.MetadataSourceUser)
@@ -161,7 +162,7 @@ func handlePostDocument(e *core.RequestEvent) error {
 			}
 		}
 		if tagIDs := parseTagIDs(form.Value); len(tagIDs) > 0 {
-			record.Set("tags", expandTagIDs(e.App, tagIDs))
+			record.Set("tags", resolveTagPBIDs(e.App, tagIDs))
 		}
 	}
 
@@ -270,4 +271,41 @@ func firstFormValue(form *multipart.Form, key string) string {
 		return ""
 	}
 	return strings.TrimSpace(values[0])
+}
+
+func parseTagIDs(form url.Values) []string {
+	var ids []string
+	for _, v := range form["tags"] {
+		if strings.TrimSpace(v) != "" {
+			ids = append(ids, v)
+		}
+	}
+	return ids
+}
+
+func documentSortField(ordering string) string {
+	if ordering == "" {
+		return "-created"
+	}
+	field := strings.TrimPrefix(strings.TrimPrefix(ordering, "-"), "+")
+	desc := strings.HasPrefix(ordering, "-")
+
+	var pbField string
+	switch field {
+	case "created", "created_date":
+		pbField = "document_date"
+	case "added":
+		pbField = "created"
+	case "modified":
+		pbField = "updated"
+	case "title":
+		pbField = "title"
+	default:
+		pbField = "created"
+	}
+
+	if desc || strings.HasPrefix(ordering, "-") {
+		return "-" + pbField
+	}
+	return pbField
 }

@@ -166,7 +166,7 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 		record.Set("processing_result_language", strings.ToLower(strings.TrimSpace(*req.ProcessingResultLanguage)))
 	}
 	if req.DeepSearchLanguages != nil {
-		record.Set("deep_search_languages", normalizeDeepSearchLanguages(*req.DeepSearchLanguages))
+		record.Set("deep_search_languages", config.NormalizeLanguageList(*req.DeepSearchLanguages))
 	}
 	if req.OpenAITimeoutSec != nil {
 		if *req.OpenAITimeoutSec <= 0 {
@@ -236,21 +236,3 @@ type settingsError string
 func (e settingsError) Error() string { return string(e) }
 
 func errInvalid(msg string) error { return settingsError(msg) }
-
-func normalizeDeepSearchLanguages(raw string) string {
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
-	seen := map[string]struct{}{}
-	for _, part := range parts {
-		code := strings.ToLower(strings.TrimSpace(part))
-		if code == "" {
-			continue
-		}
-		if _, ok := seen[code]; ok {
-			continue
-		}
-		seen[code] = struct{}{}
-		out = append(out, code)
-	}
-	return strings.Join(out, ",")
-}

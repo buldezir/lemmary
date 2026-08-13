@@ -10,38 +10,22 @@ import (
 
 var xmlBlockRE = regexp.MustCompile(`(?s)<[^>]+>.*?</[^>]+>`)
 
-const (
-	JobStatusPending     = "pending"
-	JobStatusRunning     = "running"
-	JobStatusCompleted   = "completed"
-	JobStatusFailed      = "failed"
-	JobStatusNeedsReview = "needs_review"
-
-	DocStatusPending     = "pending"
-	DocStatusProcessing  = "processing"
-	DocStatusCompleted   = "completed"
-	DocStatusFailed      = "failed"
-	DocStatusNeedsReview = "needs_review"
-
-	MetadataSourceUser = "user"
-)
-
 type ExtractedMetadata struct {
-	Title                 string   `json:"title"`
-	TitleTranslated       string   `json:"title_translated"`
-	Purpose               string   `json:"purpose"`
-	PurposeTranslated     string   `json:"purpose_translated"`
-	DocumentDate          string   `json:"document_date"`
-	DocumentType           string   `json:"document_type"`
-	DocumentTypeTranslated string   `json:"document_type_translated"`
-	Correspondent          string   `json:"correspondent"`
-	CorrespondentTranslated string  `json:"correspondent_translated"`
-	Tags                  []string `json:"tags"`
-	TagsTranslated        []string `json:"tags_translated"`
-	PeopleOrOrganizations []string `json:"people_or_organizations"`
-	Summary               string   `json:"summary"`
-	SummaryTranslated     string   `json:"summary_translated"`
-	Confidence            float64  `json:"confidence"`
+	Title                   string   `json:"title"`
+	TitleTranslated         string   `json:"title_translated"`
+	Purpose                 string   `json:"purpose"`
+	PurposeTranslated       string   `json:"purpose_translated"`
+	DocumentDate            string   `json:"document_date"`
+	DocumentType            string   `json:"document_type"`
+	DocumentTypeTranslated  string   `json:"document_type_translated"`
+	Correspondent           string   `json:"correspondent"`
+	CorrespondentTranslated string   `json:"correspondent_translated"`
+	Tags                    []string `json:"tags"`
+	TagsTranslated          []string `json:"tags_translated"`
+	PeopleOrOrganizations   []string `json:"people_or_organizations"`
+	Summary                 string   `json:"summary"`
+	SummaryTranslated       string   `json:"summary_translated"`
+	Confidence              float64  `json:"confidence"`
 }
 
 func (m *ExtractedMetadata) Populated() bool {
