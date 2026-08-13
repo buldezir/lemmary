@@ -6,23 +6,22 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
+	"paperless-go/backend/internal/aiprovider"
 	"paperless-go/backend/internal/config"
 )
 
 type settingsResponse struct {
-	OCRProvider                   string  `json:"ocr_provider"`
-	GoogleVisionAPIKeySet         bool    `json:"google_vision_api_key_set"`
-	MistralAPIKeySet              bool    `json:"mistral_api_key_set"`
-	MistralOCRModel               string  `json:"mistral_ocr_model"`
-	MistralAPIBaseURL             string  `json:"mistral_api_base_url"`
+	OCRProviderID                 string  `json:"ocr_provider_id"`
+	OCRModel                      string  `json:"ocr_model"`
+	ExtractProviderID             string  `json:"extract_provider_id"`
+	ExtractModel                  string  `json:"extract_model"`
+	ChatProviderID                string  `json:"chat_provider_id"`
+	ChatModel                     string  `json:"chat_model"`
+	SearchProviderID              string  `json:"search_provider_id"`
+	SearchModel                   string  `json:"search_model"`
 	OCRTimeoutSec                 int     `json:"ocr_timeout_sec"`
 	ProcessingResultLanguage      string  `json:"processing_result_language"`
 	DeepSearchLanguages           string  `json:"deep_search_languages"`
-	OpenAIAPIKeySet               bool    `json:"openai_api_key_set"`
-	OpenAIModel                   string  `json:"openai_model"`
-	OpenAIChatModel               string  `json:"openai_chat_model"`
-	OpenAISearchModel             string  `json:"openai_search_model"`
-	OpenAIBaseURL                 string  `json:"openai_base_url"`
 	OpenAITimeoutSec              int     `json:"openai_timeout_sec"`
 	WorkerTimeoutSec              int     `json:"worker_timeout_sec"`
 	WorkerMaxRetries              int     `json:"worker_max_retries"`
@@ -32,19 +31,17 @@ type settingsResponse struct {
 }
 
 type settingsPatchRequest struct {
-	OCRProvider                   *string  `json:"ocr_provider"`
-	GoogleVisionAPIKey            *string  `json:"google_vision_api_key"`
-	MistralAPIKey                 *string  `json:"mistral_api_key"`
-	MistralOCRModel               *string  `json:"mistral_ocr_model"`
-	MistralAPIBaseURL             *string  `json:"mistral_api_base_url"`
+	OCRProviderID                 *string  `json:"ocr_provider_id"`
+	OCRModel                      *string  `json:"ocr_model"`
+	ExtractProviderID             *string  `json:"extract_provider_id"`
+	ExtractModel                  *string  `json:"extract_model"`
+	ChatProviderID                *string  `json:"chat_provider_id"`
+	ChatModel                     *string  `json:"chat_model"`
+	SearchProviderID              *string  `json:"search_provider_id"`
+	SearchModel                   *string  `json:"search_model"`
 	OCRTimeoutSec                 *int     `json:"ocr_timeout_sec"`
 	ProcessingResultLanguage      *string  `json:"processing_result_language"`
 	DeepSearchLanguages           *string  `json:"deep_search_languages"`
-	OpenAIAPIKey                  *string  `json:"openai_api_key"`
-	OpenAIModel                   *string  `json:"openai_model"`
-	OpenAIChatModel               *string  `json:"openai_chat_model"`
-	OpenAISearchModel             *string  `json:"openai_search_model"`
-	OpenAIBaseURL                 *string  `json:"openai_base_url"`
 	OpenAITimeoutSec              *int     `json:"openai_timeout_sec"`
 	WorkerTimeoutSec              *int     `json:"worker_timeout_sec"`
 	WorkerMaxRetries              *int     `json:"worker_max_retries"`
@@ -56,7 +53,6 @@ type settingsPatchRequest struct {
 func handleGetSettings(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		if err := config.EnsureDefaults(app); err != nil {
-			// Still return in-memory / env snapshot so the Settings form can load.
 			app.Logger().Warn("ensure settings before GET failed", "error", err)
 		} else {
 			_ = rt.Reload(app)
@@ -77,7 +73,7 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 			return writeError(e, http.StatusInternalServerError, "Settings are unavailable: "+err.Error())
 		}
 
-		if err := applySettingsPatch(record, req); err != nil {
+		if err := applySettingsPatch(app, record, req); err != nil {
 			return writeError(e, http.StatusBadRequest, err.Error())
 		}
 
@@ -85,8 +81,6 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 			return writeError(e, http.StatusInternalServerError, "Failed to save settings.")
 		}
 
-		// Record hook also reloads; call explicitly so the response reflects new state
-		// even if the hook is skipped for any reason.
 		if err := rt.Reload(app); err != nil {
 			return writeError(e, http.StatusInternalServerError, "Settings saved but reload failed.")
 		}
@@ -101,19 +95,17 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 		threshold = config.DefaultNearDuplicateThreshold
 	}
 	return settingsResponse{
-		OCRProvider:                   cfg.OCRProvider,
-		GoogleVisionAPIKeySet:         cfg.GoogleVisionAPIKey != "",
-		MistralAPIKeySet:              cfg.MistralAPIKey != "",
-		MistralOCRModel:               cfg.MistralOCRModel,
-		MistralAPIBaseURL:             cfg.MistralAPIBaseURL,
+		OCRProviderID:                 cfg.OCRProviderID,
+		OCRModel:                      cfg.OCRModel,
+		ExtractProviderID:             cfg.ExtractProviderID,
+		ExtractModel:                  cfg.ExtractModel,
+		ChatProviderID:                cfg.ChatProviderID,
+		ChatModel:                     cfg.ChatModel,
+		SearchProviderID:              cfg.SearchProviderID,
+		SearchModel:                   cfg.SearchModel,
 		OCRTimeoutSec:                 int(cfg.OCRTimeout.Seconds()),
 		ProcessingResultLanguage:      cfg.ProcessingResultLanguage,
 		DeepSearchLanguages:           cfg.DeepSearchLanguages,
-		OpenAIAPIKeySet:               cfg.OpenAIAPIKey != "",
-		OpenAIModel:                   cfg.OpenAIModel,
-		OpenAIChatModel:               cfg.OpenAIChatModel,
-		OpenAISearchModel:             cfg.OpenAISearchModel,
-		OpenAIBaseURL:                 cfg.OpenAIBaseURL,
 		OpenAITimeoutSec:              int(cfg.OpenAITimeout.Seconds()),
 		WorkerTimeoutSec:              int(cfg.WorkerTimeout.Seconds()),
 		WorkerMaxRetries:              cfg.WorkerMaxRetries,
@@ -123,25 +115,46 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 	}
 }
 
-func applySettingsPatch(record *core.Record, req settingsPatchRequest) error {
-	if req.OCRProvider != nil {
-		provider := strings.TrimSpace(*req.OCRProvider)
-		if provider != "google_vision" && provider != "mistral" {
-			return errInvalid("ocr_provider must be google_vision or mistral")
+func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequest) error {
+	if req.OCRProviderID != nil {
+		id := strings.TrimSpace(*req.OCRProviderID)
+		if err := validateProviderID(app, id, false); err != nil {
+			return err
 		}
-		record.Set("ocr_provider", provider)
+		record.Set("ocr_provider_id", id)
 	}
-	if req.GoogleVisionAPIKey != nil && strings.TrimSpace(*req.GoogleVisionAPIKey) != "" {
-		record.Set("google_vision_api_key", strings.TrimSpace(*req.GoogleVisionAPIKey))
+	if req.OCRModel != nil {
+		record.Set("ocr_model", strings.TrimSpace(*req.OCRModel))
 	}
-	if req.MistralAPIKey != nil && strings.TrimSpace(*req.MistralAPIKey) != "" {
-		record.Set("mistral_api_key", strings.TrimSpace(*req.MistralAPIKey))
+	if req.ExtractProviderID != nil {
+		id := strings.TrimSpace(*req.ExtractProviderID)
+		if err := validateProviderID(app, id, true); err != nil {
+			return err
+		}
+		record.Set("extract_provider_id", id)
 	}
-	if req.MistralOCRModel != nil {
-		record.Set("mistral_ocr_model", strings.TrimSpace(*req.MistralOCRModel))
+	if req.ExtractModel != nil {
+		record.Set("extract_model", strings.TrimSpace(*req.ExtractModel))
 	}
-	if req.MistralAPIBaseURL != nil {
-		record.Set("mistral_api_base_url", strings.TrimSpace(*req.MistralAPIBaseURL))
+	if req.ChatProviderID != nil {
+		id := strings.TrimSpace(*req.ChatProviderID)
+		if err := validateProviderID(app, id, true); err != nil {
+			return err
+		}
+		record.Set("chat_provider_id", id)
+	}
+	if req.ChatModel != nil {
+		record.Set("chat_model", strings.TrimSpace(*req.ChatModel))
+	}
+	if req.SearchProviderID != nil {
+		id := strings.TrimSpace(*req.SearchProviderID)
+		if err := validateProviderID(app, id, true); err != nil {
+			return err
+		}
+		record.Set("search_provider_id", id)
+	}
+	if req.SearchModel != nil {
+		record.Set("search_model", strings.TrimSpace(*req.SearchModel))
 	}
 	if req.OCRTimeoutSec != nil {
 		if *req.OCRTimeoutSec <= 0 {
@@ -154,21 +167,6 @@ func applySettingsPatch(record *core.Record, req settingsPatchRequest) error {
 	}
 	if req.DeepSearchLanguages != nil {
 		record.Set("deep_search_languages", normalizeDeepSearchLanguages(*req.DeepSearchLanguages))
-	}
-	if req.OpenAIAPIKey != nil && strings.TrimSpace(*req.OpenAIAPIKey) != "" {
-		record.Set("openai_api_key", strings.TrimSpace(*req.OpenAIAPIKey))
-	}
-	if req.OpenAIModel != nil {
-		record.Set("openai_model", strings.TrimSpace(*req.OpenAIModel))
-	}
-	if req.OpenAIChatModel != nil {
-		record.Set("openai_chat_model", strings.TrimSpace(*req.OpenAIChatModel))
-	}
-	if req.OpenAISearchModel != nil {
-		record.Set("openai_search_model", strings.TrimSpace(*req.OpenAISearchModel))
-	}
-	if req.OpenAIBaseURL != nil {
-		record.Set("openai_base_url", strings.TrimSpace(*req.OpenAIBaseURL))
 	}
 	if req.OpenAITimeoutSec != nil {
 		if *req.OpenAITimeoutSec <= 0 {
@@ -199,6 +197,36 @@ func applySettingsPatch(record *core.Record, req settingsPatchRequest) error {
 			return errInvalid("near_duplicate_threshold must be between 0 and 1")
 		}
 		record.Set("near_duplicate_threshold", *req.NearDuplicateThreshold)
+	}
+
+	ocrID := strings.TrimSpace(record.GetString("ocr_provider_id"))
+	if ocrID != "" {
+		p, err := aiprovider.FindByID(app, ocrID)
+		if err != nil || p == nil {
+			return errInvalid("ocr_provider_id is not a valid provider")
+		}
+		if aiprovider.RequiresOCRModel(p.SDK) && strings.TrimSpace(record.GetString("ocr_model")) == "" {
+			return errInvalid("ocr_model is required for this OCR provider")
+		}
+	}
+	if extractID := strings.TrimSpace(record.GetString("extract_provider_id")); extractID != "" {
+		if strings.TrimSpace(record.GetString("extract_model")) == "" {
+			return errInvalid("extract_model is required")
+		}
+	}
+	return nil
+}
+
+func validateProviderID(app core.App, id string, llmOnly bool) error {
+	if id == "" {
+		return nil
+	}
+	p, err := aiprovider.FindByID(app, id)
+	if err != nil || p == nil {
+		return errInvalid("unknown provider")
+	}
+	if llmOnly && !aiprovider.IsLLM(p.SDK) {
+		return errInvalid("extraction, chat, and search require an openai or openrouter provider")
 	}
 	return nil
 }

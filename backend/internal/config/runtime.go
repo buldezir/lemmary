@@ -6,6 +6,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"paperless-go/backend/internal/ai"
+	"paperless-go/backend/internal/aiprovider"
 	"paperless-go/backend/internal/ocr"
 )
 
@@ -55,44 +56,54 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 	aiLogger := logger.With("component", "ai")
 
 	var ocrProvider ocr.Provider
-	ocrProvider, err := ocr.NewProvider(cfg.OCRProvider, ocr.ProviderConfig{
-		GoogleVisionAPIKey: cfg.GoogleVisionAPIKey,
-		MistralAPIKey:      cfg.MistralAPIKey,
-		MistralModel:       cfg.MistralOCRModel,
-		MistralBaseURL:     cfg.MistralAPIBaseURL,
-		OCRTimeout:         cfg.OCRTimeout,
-		Logger:             ocrLogger,
-	})
-	if err != nil {
-		logger.Warn("OCR provider unavailable after settings reload", slog.Any("error", err))
-		ocrProvider = nil
+	if cfg.OCRProvider != nil {
+		built, err := ocr.NewFromAIProvider(*cfg.OCRProvider, cfg.OCRModel, cfg.OCRTimeout, ocrLogger)
+		if err != nil {
+			logger.Warn("OCR provider unavailable after settings reload", slog.Any("error", err))
+		} else {
+			ocrProvider = built
+		}
 	}
 
-	extractor := ai.NewExtractor(
-		cfg.OpenAIAPIKey,
-		cfg.OpenAIModel,
-		cfg.OpenAIBaseURL,
-		cfg.ExtractionPromptVer,
-		cfg.ProcessingResultLanguage,
-		cfg.OpenAITimeout,
-		aiLogger,
-	)
-	chatter := ai.NewChatter(
-		cfg.OpenAIAPIKey,
-		cfg.OpenAIChatModel,
-		cfg.OpenAIBaseURL,
-		cfg.OpenAITimeout,
-		aiLogger,
-	)
-	searchAgent := ai.NewSearchAgent(
-		cfg.OpenAIAPIKey,
-		cfg.OpenAISearchModel,
-		cfg.OpenAIBaseURL,
-		cfg.OpenAITimeout,
-		cfg.DeepSearchLanguages,
-		cfg.ProcessingResultLanguage,
-		aiLogger,
-	)
+	var extractor ai.Extractor
+	if cfg.ExtractProvider != nil && cfg.ExtractProvider.APIKey != "" && aiprovider.IsLLM(cfg.ExtractProvider.SDK) {
+		extractor = ai.NewExtractor(
+			cfg.ExtractProvider.SDK,
+			cfg.ExtractProvider.APIKey,
+			cfg.ExtractModel,
+			cfg.ExtractProvider.BaseURL,
+			cfg.ExtractionPromptVer,
+			cfg.ProcessingResultLanguage,
+			cfg.OpenAITimeout,
+			aiLogger,
+		)
+	}
+
+	var chatter ai.Chatter
+	if cfg.ChatProvider != nil && cfg.ChatProvider.APIKey != "" && aiprovider.IsLLM(cfg.ChatProvider.SDK) {
+		chatter = ai.NewChatter(
+			cfg.ChatProvider.SDK,
+			cfg.ChatProvider.APIKey,
+			cfg.ChatModel,
+			cfg.ChatProvider.BaseURL,
+			cfg.OpenAITimeout,
+			aiLogger,
+		)
+	}
+
+	var searchAgent ai.SearchAgent
+	if cfg.SearchProvider != nil && cfg.SearchProvider.APIKey != "" && aiprovider.IsLLM(cfg.SearchProvider.SDK) {
+		searchAgent = ai.NewSearchAgent(
+			cfg.SearchProvider.SDK,
+			cfg.SearchProvider.APIKey,
+			cfg.SearchModel,
+			cfg.SearchProvider.BaseURL,
+			cfg.OpenAITimeout,
+			cfg.DeepSearchLanguages,
+			cfg.ProcessingResultLanguage,
+			aiLogger,
+		)
+	}
 
 	r.mu.Lock()
 	r.snap = Snapshot{
@@ -108,12 +119,19 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 	if ocrProvider != nil {
 		ocrName = ocrProvider.Name()
 	}
+	aiName := "unavailable"
+	aiModel := ""
+	if extractor != nil {
+		aiName = extractor.Name()
+		aiModel = extractor.Model()
+	}
 	logger.Info("runtime settings reloaded",
 		"ocr", ocrName,
-		"ai", extractor.Name(),
-		"model", extractor.Model(),
-		"chat_model", cfg.OpenAIChatModel,
-		"search_model", cfg.OpenAISearchModel,
+		"ocr_model", cfg.OCRModel,
+		"ai", aiName,
+		"model", aiModel,
+		"chat_model", cfg.ChatModel,
+		"search_model", cfg.SearchModel,
 		"deep_search_languages", cfg.DeepSearchLanguages,
 	)
 }
@@ -139,7 +157,7 @@ func RegisterHooks(app core.App, rt *Runtime) {
 		return nil
 	})
 
-	reload := func(e *core.RecordEvent) error {
+	reloadSettings := func(e *core.RecordEvent) error {
 		if err := e.Next(); err != nil {
 			return err
 		}
@@ -150,6 +168,17 @@ func RegisterHooks(app core.App, rt *Runtime) {
 		return nil
 	}
 
-	app.OnRecordAfterCreateSuccess(CollectionName).BindFunc(reload)
-	app.OnRecordAfterUpdateSuccess(CollectionName).BindFunc(reload)
+	app.OnRecordAfterCreateSuccess(CollectionName).BindFunc(reloadSettings)
+	app.OnRecordAfterUpdateSuccess(CollectionName).BindFunc(reloadSettings)
+
+	reloadProviders := func(e *core.RecordEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
+		_ = rt.Reload(e.App)
+		return nil
+	}
+	app.OnRecordAfterCreateSuccess(aiprovider.CollectionName).BindFunc(reloadProviders)
+	app.OnRecordAfterUpdateSuccess(aiprovider.CollectionName).BindFunc(reloadProviders)
+	app.OnRecordAfterDeleteSuccess(aiprovider.CollectionName).BindFunc(reloadProviders)
 }

@@ -36,10 +36,14 @@ export function DocumentDetailPage() {
 
   useEffect(() => {
     let active = true
+    let unsubscribe: (() => void) | undefined
+    let poll: ReturnType<typeof setInterval> | undefined
 
-    async function load() {
+    async function load(isInitial = false) {
       try {
-        setLoading(true)
+        if (isInitial) {
+          setLoading(true)
+        }
         await ensureAuth()
 
         const doc = await pb.collection('documents').getOne<DocumentRecord>(documentId, {
@@ -51,41 +55,61 @@ export function DocumentDetailPage() {
           sort: '-created',
         })
 
-        if (active) {
-          setDocument(doc)
-          setJob(jobs.items[0] ?? null)
-          setTagInput((doc.expand?.tags ?? []).map((tag) => tag.name).join(', '))
-          setDocumentTypeInput(doc.expand?.document_type?.name ?? '')
-          setCorrespondentInput(doc.expand?.correspondent?.name ?? '')
-          setError('')
+        if (!active) {
+          return
+        }
+
+        setDocument(doc)
+        setJob(jobs.items[0] ?? null)
+        setTagInput((doc.expand?.tags ?? []).map((tag) => tag.name).join(', '))
+        setDocumentTypeInput(doc.expand?.document_type?.name ?? '')
+        setCorrespondentInput(doc.expand?.correspondent?.name ?? '')
+        setError('')
+
+        const inFlight = doc.processing_status === 'processing' || doc.processing_status === 'pending'
+        if (inFlight && poll == null) {
+          poll = setInterval(() => {
+            void load()
+          }, 1000)
+        }
+        if (!inFlight && poll != null) {
+          clearInterval(poll)
+          poll = undefined
         }
       } catch (err) {
         if (active) {
           setError(err instanceof Error ? err.message : 'Failed to load document')
         }
       } finally {
-        if (active) {
+        if (active && isInitial) {
           setLoading(false)
         }
       }
     }
 
-    load()
+    void load(true)
 
-    let unsubscribe: (() => void) | undefined
-
-    void pb.collection('documents').subscribe(documentId, (event) => {
-      if (event.action === 'delete') {
-        return
-      }
-      load()
-    }).then((fn) => {
-      unsubscribe = fn
-    })
+    void pb
+      .collection('documents')
+      .subscribe(documentId, (event) => {
+        if (event.action === 'delete') {
+          return
+        }
+        void load()
+      })
+      .then((fn) => {
+        unsubscribe = fn
+      })
+      .catch(() => {
+        // Realtime is optional; polling still refreshes processing status.
+      })
 
     return () => {
       active = false
       unsubscribe?.()
+      if (poll != null) {
+        clearInterval(poll)
+      }
     }
   }, [documentId])
 

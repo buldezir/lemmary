@@ -11,6 +11,7 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/shared"
+	"paperless-go/backend/internal/aiprovider"
 	"paperless-go/backend/internal/models"
 )
 
@@ -48,6 +49,7 @@ Do not include markdown or explanation.`
 }
 
 type OpenAIClient struct {
+	sdk            string
 	apiKey         string
 	model          string
 	baseURL        string
@@ -57,17 +59,25 @@ type OpenAIClient struct {
 	logger         *slog.Logger
 }
 
-func NewOpenAIClient(apiKey, model, baseURL, promptVer, resultLanguage string, timeout time.Duration, logger *slog.Logger) *OpenAIClient {
+func NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage string, timeout time.Duration, logger *slog.Logger) *OpenAIClient {
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithHTTPClient(&http.Client{Timeout: timeout}),
 		option.WithRequestTimeout(timeout),
+		option.WithMaxRetries(0),
 	}
 	if strings.TrimSpace(baseURL) != "" {
 		opts = append(opts, option.WithBaseURL(strings.TrimRight(baseURL, "/")))
 	}
+	if strings.TrimSpace(sdk) == "" {
+		sdk = "openai"
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
 
 	return &OpenAIClient{
+		sdk:            sdk,
 		apiKey:         apiKey,
 		model:          model,
 		baseURL:        strings.TrimRight(baseURL, "/"),
@@ -79,16 +89,28 @@ func NewOpenAIClient(apiKey, model, baseURL, promptVer, resultLanguage string, t
 }
 
 func (c *OpenAIClient) Name() string {
-	return "openai"
+	return c.sdk
 }
 
 func (c *OpenAIClient) Model() string {
 	return c.model
 }
 
+func (c *OpenAIClient) complete(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
+	aiprovider.LogRequest(
+		c.logger,
+		c.sdk,
+		http.MethodPost,
+		aiprovider.ChatCompletionsURL(c.baseURL),
+		string(params.Model),
+		extra...,
+	)
+	return c.client.Chat.Completions.New(ctx, params)
+}
+
 func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string) (*models.ExtractedMetadata, error) {
 	if c.apiKey == "" {
-		return nil, fmt.Errorf("OPENAI_API_KEY is not configured")
+		return nil, fmt.Errorf("AI API key is not configured")
 	}
 
 	inputChars := len(ocrText)
@@ -103,8 +125,7 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string) (*mo
 	)
 
 	requestStart := time.Now()
-	c.logger.Info("chat completion", "model", c.model, "base_url", c.baseURL, "messages", 2)
-	chatResp, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	chatResp, err := c.complete(ctx, openai.ChatCompletionNewParams{
 		Model: shared.ChatModel(c.model),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(buildExtractionSystemPrompt(c.resultLanguage)),
@@ -114,7 +135,7 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string) (*mo
 			OfJSONObject: &shared.ResponseFormatJSONObjectParam{},
 		},
 		Temperature: openai.Float(0.1),
-	})
+	}, "purpose", "extract", "messages", 2)
 	if err != nil {
 		c.logger.Error("request failed",
 			"duration", time.Since(requestStart).Round(time.Millisecond),
@@ -169,6 +190,6 @@ func truncateForLog(s string, max int) string {
 	return s[:max] + "…"
 }
 
-func NewExtractor(apiKey, model, baseURL, promptVer, resultLanguage string, timeout time.Duration, logger *slog.Logger) Extractor {
-	return NewOpenAIClient(apiKey, model, baseURL, promptVer, resultLanguage, timeout, logger)
+func NewExtractor(sdk, apiKey, model, baseURL, promptVer, resultLanguage string, timeout time.Duration, logger *slog.Logger) Extractor {
+	return NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage, timeout, logger)
 }

@@ -15,7 +15,11 @@ test('superuser can load and save settings', async ({ page }) => {
   await loginAsSuper(page)
   await openSettings(page)
 
-  await page.getByLabel('Extraction model').fill('e2e-browser-model')
+  await expect(page.getByRole('heading', { name: 'Providers' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Models' })).toBeVisible()
+  const extractionModel = page.getByLabel('Extraction model')
+  await expect(extractionModel.locator('option[value="e2e-mock"]')).toHaveCount(1, { timeout: 15_000 })
+  await extractionModel.selectOption('e2e-mock-updated')
   await page.getByRole('button', { name: 'Save settings' }).click()
   await expect(page.getByText('Settings saved. Runtime reloaded.')).toBeVisible({ timeout: 15_000 })
 })

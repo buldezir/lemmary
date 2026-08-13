@@ -1,14 +1,19 @@
 import { type SubmitEvent, useEffect, useState } from 'react'
 import {
   accentContrastText,
+  createAIProvider,
   createSetupAdmin,
   getAppSettings,
   getSetupStatus,
+  listAIProviders,
   loginWithPassword,
   updateAppSettings,
+  type AIProvider,
+  type ProviderSDK,
   type SetupStatus,
 } from '../lib/pocketbase'
 import { AppFooter } from './AppFooter'
+import { ProviderModelFields, isLLMProvider, sdkLabel } from './ProviderModelFields'
 
 type SetupWizardProps = {
   appName: string
@@ -17,22 +22,25 @@ type SetupWizardProps = {
   onComplete: () => void
 }
 
-type Step = 'admin' | 'ocr' | 'openai' | 'done'
+type Step = 'admin' | 'providers' | 'models' | 'done'
 
 const inputClassName =
   'w-full rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900'
 const labelClassName = 'flex flex-col gap-1'
 const labelTextClassName = 'text-xs font-medium text-stone-500'
 
+const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
+  openai: 'https://api.openai.com/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+  mistral: 'https://api.mistral.ai/v1',
+  google_vision: '',
+}
+
 function initialStep(status: SetupStatus): Step {
   if (status.needs_admin) return 'admin'
   if (status.needs_config) {
-    const ocrReady =
-      status.ocr_provider === 'mistral'
-        ? status.mistral_api_key_set
-        : status.google_vision_api_key_set
-    if (!ocrReady) return 'ocr'
-    return 'openai'
+    if (!status.provider_count) return 'providers'
+    return 'models'
   }
   return 'done'
 }
@@ -45,46 +53,41 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
   const [status, setStatus] = useState(initialStatus)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [showAdvanced, setShowAdvanced] = useState(false)
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
 
-  const [ocrProvider, setOcrProvider] = useState(initialStatus.ocr_provider || 'google_vision')
-  const [googleKey, setGoogleKey] = useState('')
-  const [mistralKey, setMistralKey] = useState('')
-  const [mistralModel, setMistralModel] = useState('mistral-ocr-latest')
-  const [mistralBaseURL, setMistralBaseURL] = useState('https://api.mistral.ai/v1')
-  const [googleKeySet, setGoogleKeySet] = useState(initialStatus.google_vision_api_key_set)
-  const [mistralKeySet, setMistralKeySet] = useState(initialStatus.mistral_api_key_set)
+  const [providers, setProviders] = useState<AIProvider[]>([])
+  const [sdk, setSdk] = useState<ProviderSDK>('openai')
+  const [alias, setAlias] = useState('')
+  const [baseURL, setBaseURL] = useState(SDK_DEFAULT_BASE.openai)
+  const [apiKey, setApiKey] = useState('')
 
-  const [openaiKey, setOpenaiKey] = useState('')
-  const [openaiKeySet, setOpenaiKeySet] = useState(initialStatus.openai_api_key_set)
-  const [openaiModel, setOpenaiModel] = useState('gpt-4o-mini')
-  const [openaiBaseURL, setOpenaiBaseURL] = useState('https://api.openai.com/v1')
+  const [ocrProviderId, setOcrProviderId] = useState('')
+  const [ocrModel, setOcrModel] = useState('')
+  const [extractProviderId, setExtractProviderId] = useState('')
+  const [extractModel, setExtractModel] = useState('')
 
   useEffect(() => {
     if (step === 'admin') return
 
     let active = true
-    async function loadSettings() {
+    async function load() {
       try {
-        const settings = await getAppSettings()
+        const [nextProviders, settings] = await Promise.all([listAIProviders(), getAppSettings()])
         if (!active) return
-        setOcrProvider(settings.ocr_provider || 'google_vision')
-        setMistralModel(settings.mistral_ocr_model || 'mistral-ocr-latest')
-        setMistralBaseURL(settings.mistral_api_base_url || 'https://api.mistral.ai/v1')
-        setGoogleKeySet(settings.google_vision_api_key_set)
-        setMistralKeySet(settings.mistral_api_key_set)
-        setOpenaiKeySet(settings.openai_api_key_set)
-        setOpenaiModel(settings.openai_model || 'gpt-4o-mini')
-        setOpenaiBaseURL(settings.openai_base_url || 'https://api.openai.com/v1')
+        setProviders(nextProviders)
+        setOcrProviderId(settings.ocr_provider_id || nextProviders[0]?.id || '')
+        setOcrModel(settings.ocr_model || '')
+        const llm = nextProviders.find((item) => isLLMProvider(item.sdk))
+        setExtractProviderId(settings.extract_provider_id || llm?.id || '')
+        setExtractModel(settings.extract_model || '')
       } catch {
-        // Prefill is best-effort; form still works with defaults.
+        // Prefill is best-effort.
       }
     }
-    void loadSettings()
+    void load()
     return () => {
       active = false
     }
@@ -111,9 +114,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
         setStep('done')
         return
       }
-      const ocrReady =
-        next.ocr_provider === 'mistral' ? next.mistral_api_key_set : next.google_vision_api_key_set
-      setStep(ocrReady ? 'openai' : 'ocr')
+      setStep(next.provider_count ? 'models' : 'providers')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create admin')
     } finally {
@@ -121,80 +122,65 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
     }
   }
 
-  async function onSaveOCR(event: SubmitEvent<HTMLFormElement>) {
+  async function onSaveProvider(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     try {
       setSubmitting(true)
       setError('')
-
-      const providerReady =
-        ocrProvider === 'mistral' ? mistralKeySet || mistralKey.trim() !== '' : googleKeySet || googleKey.trim() !== ''
-      if (!providerReady) {
-        throw new Error('Enter an API key for the selected OCR provider.')
+      if (!apiKey.trim()) {
+        throw new Error('Enter an API key.')
       }
-
-      const patch: Parameters<typeof updateAppSettings>[0] = {
-        ocr_provider: ocrProvider,
-      }
-      if (ocrProvider === 'mistral') {
-        if (mistralKey.trim()) patch.mistral_api_key = mistralKey.trim()
-        patch.mistral_ocr_model = mistralModel.trim()
-        patch.mistral_api_base_url = mistralBaseURL.trim()
-      } else if (googleKey.trim()) {
-        patch.google_vision_api_key = googleKey.trim()
-      }
-
-      const settings = await updateAppSettings(patch)
-      setGoogleKeySet(settings.google_vision_api_key_set)
-      setMistralKeySet(settings.mistral_api_key_set)
-      setGoogleKey('')
-      setMistralKey('')
-
+      await createAIProvider({
+        sdk,
+        alias: alias.trim() || sdkLabel(sdk),
+        base_url: baseURL.trim(),
+        api_key: apiKey.trim(),
+      })
+      const nextProviders = await listAIProviders()
+      setProviders(nextProviders)
+      setApiKey('')
+      setAlias('')
       const next = await refreshStatus()
-      if (next.openai_api_key_set) {
-        setStep(next.needs_config ? 'openai' : 'done')
-      } else {
-        setStep('openai')
+      if (!next.needs_config) {
+        setStep('done')
+        return
       }
+      setStep('models')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save OCR settings')
+      setError(err instanceof Error ? err.message : 'Failed to save provider')
     } finally {
       setSubmitting(false)
     }
   }
 
-  async function onSaveOpenAI(event: SubmitEvent<HTMLFormElement>) {
+  async function onSaveModels(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     try {
       setSubmitting(true)
       setError('')
-
-      if (!openaiKeySet && openaiKey.trim() === '') {
-        throw new Error('Enter an OpenAI API key.')
+      if (!ocrProviderId) {
+        throw new Error('Choose an OCR provider.')
       }
-
-      const patch: Parameters<typeof updateAppSettings>[0] = {}
-      if (openaiKey.trim()) patch.openai_api_key = openaiKey.trim()
-      if (showAdvanced) {
-        patch.openai_model = openaiModel.trim()
-        patch.openai_base_url = openaiBaseURL.trim()
+      if (!extractProviderId) {
+        throw new Error('Choose an extraction provider (OpenAI or OpenRouter).')
       }
-
-      const settings = await updateAppSettings(patch)
-      setOpenaiKeySet(settings.openai_api_key_set)
-      setOpenaiKey('')
-
+      await updateAppSettings({
+        ocr_provider_id: ocrProviderId,
+        ocr_model: ocrModel,
+        extract_provider_id: extractProviderId,
+        extract_model: extractModel,
+      })
       const next = await refreshStatus()
       if (next.needs_config) {
-        const ocrReady =
-          next.ocr_provider === 'mistral' ? next.mistral_api_key_set : next.google_vision_api_key_set
-        setStep(ocrReady ? 'openai' : 'ocr')
-        setError('Setup is still incomplete. Check OCR and OpenAI keys.')
+        if (!next.has_ocr || !next.has_llm) {
+          setStep(next.provider_count ? 'models' : 'providers')
+        }
+        setError('Setup is still incomplete. Add an OCR provider and an OpenAI-compatible provider.')
         return
       }
       setStep('done')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save OpenAI settings')
+      setError(err instanceof Error ? err.message : 'Failed to save models')
     } finally {
       setSubmitting(false)
     }
@@ -203,11 +189,13 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
   const stepLabel =
     step === 'admin'
       ? '1 · Admin account'
-      : step === 'ocr'
-        ? '2 · OCR'
-        : step === 'openai'
-          ? '3 · AI'
+      : step === 'providers'
+        ? '2 · Provider'
+        : step === 'models'
+          ? '3 · Models'
           : 'Ready'
+
+  const llmProviders = providers.filter((item) => isLLMProvider(item.sdk))
 
   return (
     <div className="flex min-h-screen flex-col bg-stone-100">
@@ -225,8 +213,8 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           <p className="mb-1 text-xs font-medium uppercase tracking-wide text-stone-400">{stepLabel}</p>
           <h2 className="mb-4 text-base font-semibold text-stone-900">
             {step === 'admin' && 'Create your admin account'}
-            {step === 'ocr' && 'Configure OCR'}
-            {step === 'openai' && 'Configure AI'}
+            {step === 'providers' && 'Add a provider'}
+            {step === 'models' && 'Choose models'}
             {step === 'done' && 'Setup complete'}
           </h2>
 
@@ -281,73 +269,65 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
             </form>
           )}
 
-          {step === 'ocr' && (
-            <form className="flex flex-col gap-4" onSubmit={onSaveOCR}>
+          {step === 'providers' && (
+            <form className="flex flex-col gap-4" onSubmit={onSaveProvider}>
               <p className="text-sm text-stone-600">
-                Choose a provider and add its API key. Required for document processing.
+                Add an API provider. OpenAI or OpenRouter is required for extraction and chat; Google
+                Vision or Mistral can be used for OCR.
               </p>
+              {providers.length > 0 && (
+                <p className="text-xs text-stone-500">
+                  Already added: {providers.map((item) => item.alias).join(', ')}
+                </p>
+              )}
               <label className={labelClassName}>
-                <span className={labelTextClassName}>OCR provider</span>
+                <span className={labelTextClassName}>SDK</span>
                 <select
-                  value={ocrProvider}
-                  onChange={(e) => setOcrProvider(e.target.value)}
+                  value={sdk}
+                  onChange={(e) => {
+                    const next = e.target.value as ProviderSDK
+                    setSdk(next)
+                    setBaseURL(SDK_DEFAULT_BASE[next])
+                  }}
                   className={inputClassName}
                 >
-                  <option value="google_vision">Google Cloud Vision</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="openrouter">OpenRouter</option>
                   <option value="mistral">Mistral OCR</option>
+                  <option value="google_vision">Google Cloud Vision</option>
                 </select>
               </label>
-              {ocrProvider === 'google_vision' ? (
+              <label className={labelClassName}>
+                <span className={labelTextClassName}>Alias</span>
+                <input
+                  value={alias}
+                  placeholder={sdkLabel(sdk)}
+                  onChange={(e) => setAlias(e.target.value)}
+                  className={inputClassName}
+                />
+              </label>
+              {sdk !== 'google_vision' && (
                 <label className={labelClassName}>
-                  <span className={labelTextClassName}>
-                    Google Vision API key{googleKeySet ? ' (set)' : ''}
-                  </span>
+                  <span className={labelTextClassName}>Base URL</span>
                   <input
-                    type="password"
-                    autoComplete="off"
-                    placeholder={googleKeySet ? 'Leave blank to keep' : 'Required'}
-                    required={!googleKeySet}
-                    value={googleKey}
-                    onChange={(e) => setGoogleKey(e.target.value)}
+                    type="url"
+                    value={baseURL}
+                    onChange={(e) => setBaseURL(e.target.value)}
                     className={inputClassName}
                   />
                 </label>
-              ) : (
-                <>
-                  <label className={labelClassName}>
-                    <span className={labelTextClassName}>
-                      Mistral API key{mistralKeySet ? ' (set)' : ''}
-                    </span>
-                    <input
-                      type="password"
-                      autoComplete="off"
-                      placeholder={mistralKeySet ? 'Leave blank to keep' : 'Required'}
-                      required={!mistralKeySet}
-                      value={mistralKey}
-                      onChange={(e) => setMistralKey(e.target.value)}
-                      className={inputClassName}
-                    />
-                  </label>
-                  <label className={labelClassName}>
-                    <span className={labelTextClassName}>Mistral OCR model</span>
-                    <input
-                      type="text"
-                      value={mistralModel}
-                      onChange={(e) => setMistralModel(e.target.value)}
-                      className={inputClassName}
-                    />
-                  </label>
-                  <label className={labelClassName}>
-                    <span className={labelTextClassName}>Mistral API base URL</span>
-                    <input
-                      type="url"
-                      value={mistralBaseURL}
-                      onChange={(e) => setMistralBaseURL(e.target.value)}
-                      className={inputClassName}
-                    />
-                  </label>
-                </>
               )}
+              <label className={labelClassName}>
+                <span className={labelTextClassName}>API key</span>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  required
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className={inputClassName}
+                />
+              </label>
               {error && <p className="text-sm text-red-600">{error}</p>}
               <button
                 type="submit"
@@ -359,62 +339,52 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
             </form>
           )}
 
-          {step === 'openai' && (
-            <form className="flex flex-col gap-4" onSubmit={onSaveOpenAI}>
+          {step === 'models' && (
+            <form className="flex flex-col gap-4" onSubmit={onSaveModels}>
               <p className="text-sm text-stone-600">
-                An OpenAI-compatible API key powers metadata extraction, chat, and Deep Search.
+                Pick a provider and model for OCR and metadata extraction. Chat and search default to
+                the extraction model.
               </p>
-              <label className={labelClassName}>
-                <span className={labelTextClassName}>
-                  OpenAI API key{openaiKeySet ? ' (set)' : ''}
-                </span>
-                <input
-                  type="password"
-                  autoComplete="off"
-                  placeholder={openaiKeySet ? 'Leave blank to keep' : 'Required'}
-                  required={!openaiKeySet}
-                  value={openaiKey}
-                  onChange={(e) => setOpenaiKey(e.target.value)}
-                  className={inputClassName}
-                />
-              </label>
-              <button
-                type="button"
-                className="text-left text-xs font-medium text-stone-500 hover:text-stone-800"
-                onClick={() => setShowAdvanced((v) => !v)}
-              >
-                {showAdvanced ? 'Hide advanced' : 'Show advanced'}
-              </button>
-              {showAdvanced && (
-                <>
-                  <label className={labelClassName}>
-                    <span className={labelTextClassName}>Extraction model</span>
-                    <input
-                      type="text"
-                      value={openaiModel}
-                      onChange={(e) => setOpenaiModel(e.target.value)}
-                      className={inputClassName}
-                    />
-                  </label>
-                  <label className={labelClassName}>
-                    <span className={labelTextClassName}>API base URL</span>
-                    <input
-                      type="url"
-                      value={openaiBaseURL}
-                      onChange={(e) => setOpenaiBaseURL(e.target.value)}
-                      className={inputClassName}
-                    />
-                  </label>
-                </>
+              {llmProviders.length === 0 && (
+                <p className="text-sm text-amber-800">
+                  Add an OpenAI or OpenRouter provider to enable extraction and chat.
+                </p>
               )}
+              <ProviderModelFields
+                label="OCR"
+                providers={providers}
+                providerId={ocrProviderId}
+                model={ocrModel}
+                purpose="ocr"
+                onProviderChange={setOcrProviderId}
+                onModelChange={setOcrModel}
+              />
+              <ProviderModelFields
+                label="Extraction"
+                providers={llmProviders}
+                providerId={extractProviderId}
+                model={extractModel}
+                purpose="llm"
+                onProviderChange={setExtractProviderId}
+                onModelChange={setExtractModel}
+              />
               {error && <p className="text-sm text-red-600">{error}</p>}
-              <button
-                type="submit"
-                disabled={submitting}
-                className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {submitting ? 'Saving...' : 'Finish setup'}
-              </button>
+              <div className="flex flex-col gap-2">
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {submitting ? 'Saving...' : 'Finish setup'}
+                </button>
+                <button
+                  type="button"
+                  className="text-left text-xs font-medium text-stone-500 hover:text-stone-800"
+                  onClick={() => setStep('providers')}
+                >
+                  Add another provider
+                </button>
+              </div>
             </form>
           )}
 

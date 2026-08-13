@@ -12,9 +12,12 @@ import (
 	vision "cloud.google.com/go/vision/v2/apiv1"
 	"cloud.google.com/go/vision/v2/apiv1/visionpb"
 	"google.golang.org/api/option"
+	"paperless-go/backend/internal/aiprovider"
 )
 
 const visionMaxFilePagesPerRequest = 5
+const visionAnnotateFilesURL = "https://vision.googleapis.com/v1/files:annotate"
+const visionAnnotateImagesURL = "https://vision.googleapis.com/v1/images:annotate"
 
 func visionDocumentTextFeatures() []*visionpb.Feature {
 	return []*visionpb.Feature{
@@ -190,6 +193,11 @@ func (p *GoogleVisionProvider) annotateFile(ctx context.Context, content []byte,
 		},
 	}
 
+	aiprovider.LogRequest(p.logger, aiprovider.SDKGoogleVision, "POST", visionAnnotateFilesURL, "",
+		"purpose", "ocr",
+		"mime", mimeType,
+		"pages", pages,
+	)
 	resp, err := p.client.BatchAnnotateFiles(ctx, req)
 	if err != nil {
 		return fileAnnotateResult{}, visionError(err)
@@ -244,6 +252,10 @@ func (p *GoogleVisionProvider) extractImageText(ctx context.Context, content []b
 		},
 	}
 
+	aiprovider.LogRequest(p.logger, aiprovider.SDKGoogleVision, "POST", visionAnnotateImagesURL, "",
+		"purpose", "ocr",
+		"mime", mimeType,
+	)
 	resp, err := p.client.BatchAnnotateImages(ctx, req)
 	if err != nil {
 		return "", visionError(err)

@@ -135,6 +135,7 @@ export type ChatMessage = {
 export type OCRProviderInfo = {
   id: string
   name: string
+  sdk: string
 }
 
 export type OCRTestResult = {
@@ -245,12 +246,13 @@ export async function listOCRProviders() {
   return data.providers ?? []
 }
 
-export async function testOCR(file: File, provider: string) {
+export async function testOCR(file: File, provider: string, model?: string) {
   await ensureAuth()
 
   const formData = new FormData()
   formData.append('file', file)
   formData.append('provider', provider)
+  if (model) formData.append('model', model)
 
   const response = await fetch(`${pbUrl}/api/app/ocr/test`, {
     method: 'POST',
@@ -402,10 +404,9 @@ export async function getAppMeta(): Promise<AppMeta> {
 export type SetupStatus = {
   needs_admin: boolean
   needs_config: boolean
-  ocr_provider: string
-  google_vision_api_key_set: boolean
-  mistral_api_key_set: boolean
-  openai_api_key_set: boolean
+  has_ocr: boolean
+  has_llm: boolean
+  provider_count: number
 }
 
 export async function getSetupStatus(): Promise<SetupStatus> {
@@ -443,20 +444,110 @@ export function accentContrastText(accent: string): string {
   return luma > 0.6 ? '#000000' : '#ffffff'
 }
 
+export type ProviderSDK = 'openai' | 'openrouter' | 'google_vision' | 'mistral'
+
+export type AIProvider = {
+  id: string
+  sdk: ProviderSDK
+  alias: string
+  base_url: string
+  api_key_set: boolean
+}
+
+export type AIProviderWrite = {
+  sdk: ProviderSDK
+  alias: string
+  base_url?: string
+  api_key?: string
+}
+
+export type CatalogModel = {
+  id: string
+  name: string
+}
+
+export async function listAIProviders() {
+  await ensureAuth()
+  const response = await fetch(`${pbUrl}/api/app/providers`, {
+    headers: { Authorization: pb.authStore.token },
+  })
+  const data = (await response.json()) as { providers?: AIProvider[]; detail?: string }
+  if (!response.ok) {
+    throw new Error(data.detail ?? 'Failed to load providers')
+  }
+  return data.providers ?? []
+}
+
+export async function createAIProvider(body: AIProviderWrite) {
+  await ensureAuth()
+  const response = await fetch(`${pbUrl}/api/app/providers`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: pb.authStore.token,
+    },
+    body: JSON.stringify(body),
+  })
+  const data = (await response.json()) as AIProvider & { detail?: string }
+  if (!response.ok) {
+    throw new Error(data.detail ?? 'Failed to create provider')
+  }
+  return data as AIProvider
+}
+
+export async function updateAIProvider(id: string, body: Partial<AIProviderWrite>) {
+  await ensureAuth()
+  const response = await fetch(`${pbUrl}/api/app/providers/${id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: pb.authStore.token,
+    },
+    body: JSON.stringify(body),
+  })
+  const data = (await response.json()) as AIProvider & { detail?: string }
+  if (!response.ok) {
+    throw new Error(data.detail ?? 'Failed to update provider')
+  }
+  return data as AIProvider
+}
+
+export async function deleteAIProvider(id: string) {
+  await ensureAuth()
+  const response = await fetch(`${pbUrl}/api/app/providers/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: pb.authStore.token },
+  })
+  const data = (await response.json()) as { detail?: string }
+  if (!response.ok) {
+    throw new Error(data.detail ?? 'Failed to delete provider')
+  }
+}
+
+export async function listProviderModels(id: string, purpose: 'ocr' | 'llm' = 'llm') {
+  await ensureAuth()
+  const response = await fetch(`${pbUrl}/api/app/providers/${id}/models?for=${purpose}`, {
+    headers: { Authorization: pb.authStore.token },
+  })
+  const data = (await response.json()) as { models?: CatalogModel[]; sdk?: string; detail?: string }
+  if (!response.ok) {
+    throw new Error(data.detail ?? 'Failed to load models')
+  }
+  return { models: data.models ?? [], sdk: data.sdk ?? '' }
+}
+
 export type AppSettings = {
-  ocr_provider: string
-  google_vision_api_key_set: boolean
-  mistral_api_key_set: boolean
-  mistral_ocr_model: string
-  mistral_api_base_url: string
+  ocr_provider_id: string
+  ocr_model: string
+  extract_provider_id: string
+  extract_model: string
+  chat_provider_id: string
+  chat_model: string
+  search_provider_id: string
+  search_model: string
   ocr_timeout_sec: number
   processing_result_language: string
   deep_search_languages: string
-  openai_api_key_set: boolean
-  openai_model: string
-  openai_chat_model: string
-  openai_search_model: string
-  openai_base_url: string
   openai_timeout_sec: number
   worker_timeout_sec: number
   worker_max_retries: number
@@ -466,19 +557,17 @@ export type AppSettings = {
 }
 
 export type AppSettingsPatch = {
-  ocr_provider?: string
-  google_vision_api_key?: string
-  mistral_api_key?: string
-  mistral_ocr_model?: string
-  mistral_api_base_url?: string
+  ocr_provider_id?: string
+  ocr_model?: string
+  extract_provider_id?: string
+  extract_model?: string
+  chat_provider_id?: string
+  chat_model?: string
+  search_provider_id?: string
+  search_model?: string
   ocr_timeout_sec?: number
   processing_result_language?: string
   deep_search_languages?: string
-  openai_api_key?: string
-  openai_model?: string
-  openai_chat_model?: string
-  openai_search_model?: string
-  openai_base_url?: string
   openai_timeout_sec?: number
   worker_timeout_sec?: number
   worker_max_retries?: number

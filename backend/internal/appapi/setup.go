@@ -8,16 +8,16 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	"paperless-go/backend/internal/aiprovider"
 	"paperless-go/backend/internal/config"
 )
 
 type setupStatusResponse struct {
-	NeedsAdmin            bool   `json:"needs_admin"`
-	NeedsConfig           bool   `json:"needs_config"`
-	OCRProvider           string `json:"ocr_provider"`
-	GoogleVisionAPIKeySet bool   `json:"google_vision_api_key_set"`
-	MistralAPIKeySet      bool   `json:"mistral_api_key_set"`
-	OpenAIAPIKeySet       bool   `json:"openai_api_key_set"`
+	NeedsAdmin    bool `json:"needs_admin"`
+	NeedsConfig   bool `json:"needs_config"`
+	HasOCR        bool `json:"has_ocr"`
+	HasLLM        bool `json:"has_llm"`
+	ProviderCount int  `json:"provider_count"`
 }
 
 type setupAdminRequest struct {
@@ -40,13 +40,17 @@ func handleGetSetupStatus(app core.App, rt *config.Runtime) func(*core.RequestEv
 			return writeError(e, http.StatusInternalServerError, "Failed to check setup status.")
 		}
 
+		providerCount := 0
+		if providers, listErr := aiprovider.List(app); listErr == nil {
+			providerCount = len(providers)
+		}
+
 		return writeJSON(e, http.StatusOK, setupStatusResponse{
-			NeedsAdmin:            needsAdmin,
-			NeedsConfig:           needsConfigSetup(cfg),
-			OCRProvider:           cfg.OCRProvider,
-			GoogleVisionAPIKeySet: cfg.GoogleVisionAPIKey != "",
-			MistralAPIKeySet:      cfg.MistralAPIKey != "",
-			OpenAIAPIKeySet:       cfg.OpenAIAPIKey != "",
+			NeedsAdmin:    needsAdmin,
+			NeedsConfig:   needsConfigSetup(cfg),
+			HasOCR:        config.HasOCR(cfg),
+			HasLLM:        config.HasLLM(cfg),
+			ProviderCount: providerCount,
 		})
 	}
 }
@@ -126,13 +130,5 @@ func needsAdminSetup(app core.App) (bool, error) {
 }
 
 func needsConfigSetup(cfg config.Config) bool {
-	if strings.TrimSpace(cfg.OpenAIAPIKey) == "" {
-		return true
-	}
-	switch strings.TrimSpace(cfg.OCRProvider) {
-	case "mistral":
-		return strings.TrimSpace(cfg.MistralAPIKey) == ""
-	default:
-		return strings.TrimSpace(cfg.GoogleVisionAPIKey) == ""
-	}
+	return !config.HasOCR(cfg) || !config.HasLLM(cfg)
 }

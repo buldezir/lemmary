@@ -32,7 +32,7 @@ Document OCR text:
 
 func (c *OpenAIClient) Chat(ctx context.Context, ocrText string, messages []ChatMessage) (string, error) {
 	if c.apiKey == "" {
-		return "", fmt.Errorf("OPENAI_API_KEY is not configured")
+		return "", fmt.Errorf("AI API key is not configured")
 	}
 
 	apiMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages)+1)
@@ -58,12 +58,11 @@ func (c *OpenAIClient) Chat(ctx context.Context, ocrText string, messages []Chat
 	}
 
 	requestStart := time.Now()
-	c.logger.Info("chat completion", "model", c.model, "base_url", c.baseURL, "messages", len(apiMessages))
-	chatResp, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	chatResp, err := c.complete(ctx, openai.ChatCompletionNewParams{
 		Model:       shared.ChatModel(c.model),
 		Messages:    apiMessages,
 		Temperature: openai.Float(0.3),
-	})
+	}, "purpose", "chat", "messages", len(apiMessages))
 	if err != nil {
 		c.logger.Error("chat request failed",
 			"duration", time.Since(requestStart).Round(time.Millisecond),
@@ -83,6 +82,6 @@ func (c *OpenAIClient) Chat(ctx context.Context, ocrText string, messages []Chat
 	return strings.TrimSpace(chatResp.Choices[0].Message.Content), nil
 }
 
-func NewChatter(apiKey, model, baseURL string, timeout time.Duration, logger *slog.Logger) Chatter {
-	return NewOpenAIClient(apiKey, model, baseURL, "", "", timeout, logger)
+func NewChatter(sdk, apiKey, model, baseURL string, timeout time.Duration, logger *slog.Logger) Chatter {
+	return NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", timeout, logger)
 }

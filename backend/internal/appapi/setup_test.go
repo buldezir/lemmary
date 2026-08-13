@@ -3,11 +3,16 @@ package appapi
 import (
 	"testing"
 
+	"paperless-go/backend/internal/aiprovider"
 	"paperless-go/backend/internal/config"
 )
 
 func TestNeedsConfigSetup(t *testing.T) {
 	t.Parallel()
+
+	google := &aiprovider.Provider{SDK: aiprovider.SDKGoogleVision, APIKey: "g"}
+	mistral := &aiprovider.Provider{SDK: aiprovider.SDKMistral, APIKey: "m"}
+	openai := &aiprovider.Provider{SDK: aiprovider.SDKOpenAI, APIKey: "o"}
 
 	tests := []struct {
 		name string
@@ -17,51 +22,50 @@ func TestNeedsConfigSetup(t *testing.T) {
 		{
 			name: "ready google",
 			cfg: config.Config{
-				OCRProvider:        "google_vision",
-				GoogleVisionAPIKey: "g",
-				OpenAIAPIKey:       "o",
+				OCRProvider:     google,
+				ExtractProvider: openai,
+				ExtractModel:    "gpt",
 			},
 			want: false,
 		},
 		{
 			name: "ready mistral",
 			cfg: config.Config{
-				OCRProvider:   "mistral",
-				MistralAPIKey: "m",
-				OpenAIAPIKey:  "o",
+				OCRProvider:     mistral,
+				OCRModel:        "mistral-ocr-latest",
+				ExtractProvider: openai,
+				ExtractModel:    "gpt",
 			},
 			want: false,
 		},
 		{
 			name: "missing openai",
 			cfg: config.Config{
-				OCRProvider:        "google_vision",
-				GoogleVisionAPIKey: "g",
+				OCRProvider: google,
 			},
 			want: true,
 		},
 		{
 			name: "missing google key",
 			cfg: config.Config{
-				OCRProvider:  "google_vision",
-				OpenAIAPIKey: "o",
+				OCRProvider:     &aiprovider.Provider{SDK: aiprovider.SDKGoogleVision},
+				ExtractProvider: openai,
 			},
 			want: true,
 		},
 		{
-			name: "missing mistral key",
+			name: "missing mistral model",
 			cfg: config.Config{
-				OCRProvider:  "mistral",
-				OpenAIAPIKey: "o",
+				OCRProvider:     mistral,
+				ExtractProvider: openai,
 			},
 			want: true,
 		},
 		{
-			name: "wrong provider key ignored",
+			name: "mistral used as llm",
 			cfg: config.Config{
-				OCRProvider:        "mistral",
-				GoogleVisionAPIKey: "g",
-				OpenAIAPIKey:       "o",
+				OCRProvider:     google,
+				ExtractProvider: mistral,
 			},
 			want: true,
 		},

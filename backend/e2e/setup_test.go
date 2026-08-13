@@ -22,11 +22,11 @@ func TestSetupStatusReadyOnSharedHarness(t *testing.T) {
 	if body["needs_config"] != false {
 		t.Fatalf("needs_config=%v want false (shared harness seeds keys)", body["needs_config"])
 	}
-	if body["mistral_api_key_set"] != true {
-		t.Fatalf("mistral_api_key_set=%v", body["mistral_api_key_set"])
+	if body["has_ocr"] != true {
+		t.Fatalf("has_ocr=%v", body["has_ocr"])
 	}
-	if body["openai_api_key_set"] != true {
-		t.Fatalf("openai_api_key_set=%v", body["openai_api_key_set"])
+	if body["has_llm"] != true {
+		t.Fatalf("has_llm=%v", body["has_llm"])
 	}
 }
 
@@ -86,12 +86,31 @@ func TestSetupAdminCreateOnce(t *testing.T) {
 		t.Fatalf("is_admin=%v want true body %s", me["is_admin"], raw)
 	}
 
+	status, raw = h.doJSON(t, http.MethodPost, "/api/app/providers", userAuth.Token, map[string]any{
+		"sdk":      "mistral",
+		"alias":    "Setup Mistral",
+		"base_url": h.Mocks.OCR.URL + "/v1",
+		"api_key":  "setup-mistral-key",
+	})
+	requireStatus(t, status, http.StatusCreated, raw)
+	var mistral map[string]any
+	_ = json.Unmarshal([]byte(raw), &mistral)
+
+	status, raw = h.doJSON(t, http.MethodPost, "/api/app/providers", userAuth.Token, map[string]any{
+		"sdk":      "openai",
+		"alias":    "Setup OpenAI",
+		"base_url": h.Mocks.OpenAI.URL + "/v1",
+		"api_key":  "setup-openai-key",
+	})
+	requireStatus(t, status, http.StatusCreated, raw)
+	var openai map[string]any
+	_ = json.Unmarshal([]byte(raw), &openai)
+
 	status, raw = h.doJSON(t, http.MethodPatch, "/api/app/settings", userAuth.Token, map[string]any{
-		"ocr_provider":         "mistral",
-		"mistral_api_key":      "setup-mistral-key",
-		"openai_api_key":       "setup-openai-key",
-		"mistral_api_base_url": h.Mocks.OCR.URL + "/v1",
-		"openai_base_url":      h.Mocks.OpenAI.URL + "/v1",
+		"ocr_provider_id":     mistral["id"],
+		"ocr_model":           "mistral-ocr-latest",
+		"extract_provider_id": openai["id"],
+		"extract_model":       "e2e-mock",
 	})
 	requireStatus(t, status, http.StatusOK, raw)
 

@@ -30,6 +30,7 @@ On first run, migrations create:
 - `documents`
 - `processing_jobs`
 - `app_settings` (singleton; seeded from `.env` on first boot)
+- `ai_providers` (named OCR/LLM endpoints; seeded from `.env` on first boot)
 - `outbound_emails` (outbound mail log when SMTP is not configured; superuser-only)
 
 ### 2. Start React frontend
@@ -59,18 +60,18 @@ All variables live in `.env` at the project root (see `.env.example`).
 
 ### Seed-only (first boot → Settings)
 
-These seed `app_settings` when the singleton record does not exist yet. After that, edit them in the app **Settings** page (requires a PocketBase superuser login). Changing `.env` alone will not update a running install.
+These seed `app_settings` and `ai_providers` when the singleton record does not exist yet. After that, edit them in the app **Settings** page (requires a PocketBase superuser login). Changing `.env` alone will not update a running install.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `OCR_PROVIDER` | `google_vision` | OCR provider (`google_vision`, `mistral`) |
-| `GOOGLE_VISION_API_KEY` | empty | Google Cloud Vision API key |
-| `MISTRAL_API_KEY` | empty | Mistral API key |
-| `MISTRAL_OCR_MODEL` | `mistral-ocr-latest` | Mistral OCR model |
+| `OCR_PROVIDER` | `google_vision` | Which env-seeded provider to bind for OCR (`google_vision`, `mistral`, `openai`, `openrouter`) |
+| `GOOGLE_VISION_API_KEY` | empty | Seeds a Google Cloud Vision provider |
+| `MISTRAL_API_KEY` | empty | Seeds a Mistral OCR provider |
+| `MISTRAL_OCR_MODEL` | `mistral-ocr-latest` | OCR model when seeding Mistral |
 | `MISTRAL_API_BASE_URL` | `https://api.mistral.ai/v1` | Mistral API base URL |
 | `OCR_TIMEOUT_SEC` | `40` | OCR request timeout |
 | `PROCESSING_RESULT_LANGUAGE` | empty | ISO 639-1 code (e.g. `en`, `de`). When set, `title`, `summary`, `purpose`, and `document_type` are stored in this language; originals go in `*_original` fields. |
-| `OPENAI_API_KEY` | empty | OpenAI-compatible API key |
+| `OPENAI_API_KEY` | empty | Seeds an OpenAI-compatible provider (used for extraction, chat, search, and optional LLM OCR) |
 | `OPENAI_MODEL` | `gpt-4o-mini` | Model ID for metadata extraction |
 | `OPENAI_CHAT_MODEL` | `OPENAI_MODEL` | Optional model ID for document chat |
 | `OPENAI_SEARCH_MODEL` | `OPENAI_CHAT_MODEL` | Optional model ID for Deep Search |
@@ -86,15 +87,15 @@ These seed `app_settings` when the singleton record does not exist yet. After th
 On a fresh install the SPA hard-gates until setup is complete:
 
 1. **Create admin** — email + password. Creates a PocketBase `_superusers` account **and** a matching `users` account (same credentials) so the admin can own documents. Replaces PocketBase’s browser installer UI.
-2. **OCR** — provider + matching API key.
-3. **OpenAI** — API key for extraction, chat, and Deep Search.
+2. **Provider** — add at least one API provider (`openai`, `openrouter`, `mistral`, or `google_vision`).
+3. **Models** — pick provider → model for OCR and metadata extraction (chat/search inherit extraction).
 
 You can also create the admin via CLI (`go run . superuser upsert EMAIL PASS` from `backend/`; this also upserts the paired `users` account) and/or seed OCR/AI keys in `.env` before first boot; the wizard skips steps that are already done. Until keys are present, regular users see a “setup incomplete” screen; only an admin can finish configuration.
 
 ## Settings (admin UI)
 
 1. Sign in with the **admin** email/password (login prefers the `users` account; legacy `_superusers`-only installs are linked automatically via `/api/app/ensure-user`, which sets a hidden `is_app_admin` flag on the paired `users` record).
-2. Open **Settings** in the nav (shown when `/api/app/me` reports `is_admin`). Changes save to `app_settings` and hot-reload the in-process OCR/AI clients (no restart).
+2. Open **Settings** in the nav (shown when `/api/app/me` reports `is_admin`). Add providers, then bind OCR / extraction / chat / search to a provider and model. Changes hot-reload the in-process clients (no restart).
 
 `WORKER_CRON_EXPR` is not editable there; change `.env` and restart, or use PocketBase Admin → Settings → Crons.
 
@@ -121,22 +122,22 @@ Browse them in PocketBase Admin as a superuser. Enable SMTP when you want real d
 
 Text extraction:
 
-- **PDF and images** — configured OCR provider (Google Vision or Mistral)
+- **PDF and images** — configured OCR provider (Google Vision, Mistral OCR, or an OpenAI/OpenRouter model that accepts files/images)
 - **TXT, CSV, DOCX, XLSX** — native parsers (no OCR API call); preview is skipped for these formats
 
 Cron jobs are visible and manually triggerable in PocketBase Admin → Settings → Crons.
 
-## OpenAI setup
+## OpenAI / OpenRouter setup
 
-Prefer **Settings** in the UI (admin). For a fresh install you can also put `OPENAI_API_KEY` (and optional model/base URL) in `.env` so they seed `app_settings` on first boot.
+Prefer **Settings** in the UI (admin): add a provider with SDK `openai` or `openrouter`, then select it for extraction, chat, and search. For a fresh install you can also put `OPENAI_API_KEY` (and optional model/base URL) in `.env` so they seed an `ai_providers` row on first boot.
 
-Without an API key, AI extraction, document chat, and Deep Search return a configuration error.
+Without an LLM provider, AI extraction, document chat, and Deep Search return a configuration error.
 
-Deep Search (`/search`) uses a tool-calling agent over keyword search. Configure **Search model** and **Deep search languages** in Settings.
+Deep Search (`/search`) uses a tool-calling agent over keyword search. Configure **Search provider/model** and **Deep search languages** in Settings.
 
 ## OCR setup
 
-Set the provider and API keys in **Settings** (or seed via `.env` on first boot).
+Add an OCR-capable provider in **Settings** (or seed via `.env` on first boot), then bind it under **Models**. OpenRouter OCR lists only models that advertise `file` input. Other SDKs show the full catalog with a warning to choose a file-capable model.
 
 ### Google Cloud Vision
 
@@ -222,7 +223,7 @@ The same flow is available as `POST /api/app/import/ngx` with JSON body `{ "url"
 
 ## Troubleshooting
 
-- **Stuck on setup wizard:** create the admin account and provide OCR + OpenAI API keys (or seed keys in `.env` before first boot / use `superuser upsert`). Clearing required keys later brings the config steps back for admins.
+- **Stuck on setup wizard:** create the admin account and add an OCR provider plus an OpenAI-compatible provider (or seed keys in `.env` before first boot / use `superuser upsert`). Clearing required keys later brings the config steps back for admins.
 - **Upload succeeds but stays pending:** ensure the backend server is running; the worker starts with `serve`.
 - **OCR fails:** configure the OCR provider and API key in Settings (or seed `.env` before first boot). For Google Vision, ensure the Vision API is enabled for your project.
 - **AI extraction fails:** configure OpenAI settings in Settings. Check the processing job error on the document detail page.

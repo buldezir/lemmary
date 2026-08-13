@@ -1,14 +1,21 @@
 import { type SubmitEvent, useEffect, useState } from 'react'
 import { Navigate } from '@tanstack/react-router'
 import {
+  createAIProvider,
+  deleteAIProvider,
   ensureAuth,
   getAppSettings,
   isAdmin,
+  listAIProviders,
   scanDuplicates,
+  updateAIProvider,
   updateAppSettings,
+  type AIProvider,
   type AppSettings,
   type DuplicateScanResult,
+  type ProviderSDK,
 } from '../lib/pocketbase'
+import { ProviderModelFields, isLLMProvider, sdkLabel } from '../components/ProviderModelFields'
 
 const inputClassName =
   'w-full rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900'
@@ -17,20 +24,25 @@ const labelTextClassName = 'text-xs font-medium text-stone-500'
 const sectionClassName = 'rounded-lg border border-stone-200 bg-stone-50 p-5'
 const sectionTitleClassName = 'mb-4 text-sm font-semibold text-stone-950'
 
+const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
+  openai: 'https://api.openai.com/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+  mistral: 'https://api.mistral.ai/v1',
+  google_vision: '',
+}
+
 type FormState = {
-  ocr_provider: string
-  google_vision_api_key: string
-  mistral_api_key: string
-  mistral_ocr_model: string
-  mistral_api_base_url: string
+  ocr_provider_id: string
+  ocr_model: string
+  extract_provider_id: string
+  extract_model: string
+  chat_provider_id: string
+  chat_model: string
+  search_provider_id: string
+  search_model: string
   ocr_timeout_sec: string
   processing_result_language: string
   deep_search_languages: string
-  openai_api_key: string
-  openai_model: string
-  openai_chat_model: string
-  openai_search_model: string
-  openai_base_url: string
   openai_timeout_sec: string
   worker_timeout_sec: string
   worker_max_retries: string
@@ -41,19 +53,17 @@ type FormState = {
 
 function formFromSettings(settings: AppSettings): FormState {
   return {
-    ocr_provider: settings.ocr_provider,
-    google_vision_api_key: '',
-    mistral_api_key: '',
-    mistral_ocr_model: settings.mistral_ocr_model,
-    mistral_api_base_url: settings.mistral_api_base_url,
+    ocr_provider_id: settings.ocr_provider_id,
+    ocr_model: settings.ocr_model,
+    extract_provider_id: settings.extract_provider_id,
+    extract_model: settings.extract_model,
+    chat_provider_id: settings.chat_provider_id,
+    chat_model: settings.chat_model,
+    search_provider_id: settings.search_provider_id,
+    search_model: settings.search_model,
     ocr_timeout_sec: String(settings.ocr_timeout_sec),
     processing_result_language: settings.processing_result_language,
     deep_search_languages: settings.deep_search_languages,
-    openai_api_key: '',
-    openai_model: settings.openai_model,
-    openai_chat_model: settings.openai_chat_model,
-    openai_search_model: settings.openai_search_model,
-    openai_base_url: settings.openai_base_url,
     openai_timeout_sec: String(settings.openai_timeout_sec),
     worker_timeout_sec: String(settings.worker_timeout_sec),
     worker_max_retries: String(settings.worker_max_retries),
@@ -63,20 +73,36 @@ function formFromSettings(settings: AppSettings): FormState {
   }
 }
 
+type ProviderDraft = {
+  sdk: ProviderSDK
+  alias: string
+  base_url: string
+  api_key: string
+}
+
+function emptyDraft(sdk: ProviderSDK = 'openai'): ProviderDraft {
+  return { sdk, alias: '', base_url: SDK_DEFAULT_BASE[sdk], api_key: '' }
+}
+
 export function SettingsPage() {
   const [allowed, setAllowed] = useState<boolean | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
-  const [keyFlags, setKeyFlags] = useState({
-    google: false,
-    mistral: false,
-    openai: false,
-  })
+  const [providers, setProviders] = useState<AIProvider[]>([])
+  const [draft, setDraft] = useState<ProviderDraft>(emptyDraft())
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [showAdd, setShowAdd] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState<DuplicateScanResult | null>(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  async function reloadProviders() {
+    const next = await listAIProviders()
+    setProviders(next)
+    return next
+  }
 
   useEffect(() => {
     let active = true
@@ -91,14 +117,10 @@ export function SettingsPage() {
         }
         if (active) setAllowed(true)
 
-        const settings = await getAppSettings()
+        const [settings, nextProviders] = await Promise.all([getAppSettings(), listAIProviders()])
         if (!active) return
         setForm(formFromSettings(settings))
-        setKeyFlags({
-          google: settings.google_vision_api_key_set,
-          mistral: settings.mistral_api_key_set,
-          openai: settings.openai_api_key_set,
-        })
+        setProviders(nextProviders)
         setError('')
       } catch (err) {
         if (active) {
@@ -121,6 +143,47 @@ export function SettingsPage() {
     setSuccess('')
   }
 
+  async function onSaveProvider(event: SubmitEvent<HTMLFormElement>) {
+    event.preventDefault()
+    try {
+      setError('')
+      setSuccess('')
+      if (editingId) {
+        await updateAIProvider(editingId, {
+          sdk: draft.sdk,
+          alias: draft.alias.trim(),
+          base_url: draft.base_url.trim(),
+          ...(draft.api_key.trim() ? { api_key: draft.api_key.trim() } : {}),
+        })
+      } else {
+        await createAIProvider({
+          sdk: draft.sdk,
+          alias: draft.alias.trim() || sdkLabel(draft.sdk),
+          base_url: draft.base_url.trim(),
+          api_key: draft.api_key.trim(),
+        })
+      }
+      await reloadProviders()
+      setDraft(emptyDraft())
+      setEditingId(null)
+      setShowAdd(false)
+      setSuccess('Provider saved.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save provider')
+    }
+  }
+
+  async function onDeleteProvider(id: string) {
+    try {
+      setError('')
+      await deleteAIProvider(id)
+      await reloadProviders()
+      setSuccess('Provider deleted.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete provider')
+    }
+  }
+
   async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!form) return
@@ -136,7 +199,7 @@ export function SettingsPage() {
       return
     }
     if (!Number.isFinite(openAITimeout) || openAITimeout <= 0) {
-      setError('OpenAI timeout must be a positive number')
+      setError('AI timeout must be a positive number')
       return
     }
     if (!Number.isFinite(workerTimeout) || workerTimeout <= 0) {
@@ -158,35 +221,26 @@ export function SettingsPage() {
       setSuccess('')
 
       const settings = await updateAppSettings({
-        ocr_provider: form.ocr_provider,
-        mistral_ocr_model: form.mistral_ocr_model,
-        mistral_api_base_url: form.mistral_api_base_url,
+        ocr_provider_id: form.ocr_provider_id,
+        ocr_model: form.ocr_model,
+        extract_provider_id: form.extract_provider_id,
+        extract_model: form.extract_model,
+        chat_provider_id: form.chat_provider_id,
+        chat_model: form.chat_model,
+        search_provider_id: form.search_provider_id,
+        search_model: form.search_model,
         ocr_timeout_sec: ocrTimeout,
         processing_result_language: form.processing_result_language,
         deep_search_languages: form.deep_search_languages,
-        openai_model: form.openai_model,
-        openai_chat_model: form.openai_chat_model,
-        openai_search_model: form.openai_search_model,
-        openai_base_url: form.openai_base_url,
         openai_timeout_sec: openAITimeout,
         worker_timeout_sec: workerTimeout,
         worker_max_retries: maxRetries,
         extraction_prompt_version: form.extraction_prompt_version,
         near_duplicate_detection_enabled: form.near_duplicate_detection_enabled,
         near_duplicate_threshold: nearThreshold,
-        ...(form.google_vision_api_key.trim()
-          ? { google_vision_api_key: form.google_vision_api_key.trim() }
-          : {}),
-        ...(form.mistral_api_key.trim() ? { mistral_api_key: form.mistral_api_key.trim() } : {}),
-        ...(form.openai_api_key.trim() ? { openai_api_key: form.openai_api_key.trim() } : {}),
       })
 
       setForm(formFromSettings(settings))
-      setKeyFlags({
-        google: settings.google_vision_api_key_set,
-        mistral: settings.mistral_api_key_set,
-        openai: settings.openai_api_key_set,
-      })
       setSuccess('Settings saved. Runtime reloaded.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save settings')
@@ -220,6 +274,8 @@ export function SettingsPage() {
     return <p className="text-sm text-stone-500">{error || 'Loading settings...'}</p>
   }
 
+  const llmProviders = providers.filter((item) => isLLMProvider(item.sdk))
+
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-6">
@@ -229,23 +285,152 @@ export function SettingsPage() {
         </p>
       </div>
 
-      <form className="flex flex-col gap-5" onSubmit={onSubmit}>
-        <section className={sectionClassName}>
-          <h2 className={sectionTitleClassName}>OCR</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
+      <section className={`${sectionClassName} mb-5`}>
+        <h2 className={sectionTitleClassName}>Providers</h2>
+        <ul className="mb-4 flex flex-col gap-2">
+          {providers.length === 0 && <li className="text-sm text-stone-500">No providers yet.</li>}
+          {providers.map((item) => (
+            <li
+              key={item.id}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 bg-white px-3 py-2"
+            >
+              <div>
+                <p className="text-sm font-medium text-stone-950">{item.alias}</p>
+                <p className="text-xs text-stone-500">
+                  {sdkLabel(item.sdk)}
+                  {item.base_url ? ` · ${item.base_url}` : ''}
+                  {item.api_key_set ? ' · key set' : ' · missing key'}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="rounded-md border border-stone-300 bg-white px-2 py-1 text-xs font-medium text-stone-950 hover:bg-stone-100"
+                  onClick={() => {
+                    setEditingId(item.id)
+                    setShowAdd(true)
+                    setDraft({
+                      sdk: item.sdk,
+                      alias: item.alias,
+                      base_url: item.base_url,
+                      api_key: '',
+                    })
+                  }}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-stone-300 bg-white px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                  onClick={() => void onDeleteProvider(item.id)}
+                >
+                  Delete
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+        {!showAdd ? (
+          <button
+            type="button"
+            className="rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-950 hover:bg-stone-100"
+            onClick={() => {
+              setEditingId(null)
+              setDraft(emptyDraft())
+              setShowAdd(true)
+            }}
+          >
+            Add provider
+          </button>
+        ) : (
+          <form className="grid gap-3 sm:grid-cols-2" onSubmit={onSaveProvider}>
             <label className={labelClassName}>
-              <span className={labelTextClassName}>Provider</span>
+              <span className={labelTextClassName}>SDK</span>
               <select
                 className={inputClassName}
-                value={form.ocr_provider}
-                onChange={(e) => updateField('ocr_provider', e.target.value)}
+                value={draft.sdk}
+                onChange={(event) => {
+                  const sdk = event.target.value as ProviderSDK
+                  setDraft((current) => ({
+                    ...current,
+                    sdk,
+                    base_url: current.base_url === SDK_DEFAULT_BASE[current.sdk] ? SDK_DEFAULT_BASE[sdk] : current.base_url,
+                  }))
+                }}
               >
-                <option value="google_vision">Google Cloud Vision</option>
+                <option value="openai">OpenAI</option>
+                <option value="openrouter">OpenRouter</option>
                 <option value="mistral">Mistral OCR</option>
+                <option value="google_vision">Google Cloud Vision</option>
               </select>
             </label>
             <label className={labelClassName}>
-              <span className={labelTextClassName}>Timeout (seconds)</span>
+              <span className={labelTextClassName}>Alias</span>
+              <input
+                className={inputClassName}
+                value={draft.alias}
+                placeholder={sdkLabel(draft.sdk)}
+                onChange={(event) => setDraft((current) => ({ ...current, alias: event.target.value }))}
+              />
+            </label>
+            {draft.sdk !== 'google_vision' && (
+              <label className={`${labelClassName} sm:col-span-2`}>
+                <span className={labelTextClassName}>Base URL</span>
+                <input
+                  className={inputClassName}
+                  value={draft.base_url}
+                  onChange={(event) => setDraft((current) => ({ ...current, base_url: event.target.value }))}
+                />
+              </label>
+            )}
+            <label className={`${labelClassName} sm:col-span-2`}>
+              <span className={labelTextClassName}>API key{editingId ? ' (leave blank to keep)' : ''}</span>
+              <input
+                type="password"
+                autoComplete="off"
+                className={inputClassName}
+                value={draft.api_key}
+                required={!editingId}
+                onChange={(event) => setDraft((current) => ({ ...current, api_key: event.target.value }))}
+              />
+            </label>
+            <div className="flex gap-2 sm:col-span-2">
+              <button
+                type="submit"
+                className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700"
+              >
+                {editingId ? 'Update provider' : 'Save provider'}
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-950 hover:bg-stone-100"
+                onClick={() => {
+                  setShowAdd(false)
+                  setEditingId(null)
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
+
+      <form className="flex flex-col gap-5" onSubmit={onSubmit}>
+        <section className={sectionClassName}>
+          <h2 className={sectionTitleClassName}>Models</h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <ProviderModelFields
+              label="OCR"
+              providers={providers}
+              providerId={form.ocr_provider_id}
+              model={form.ocr_model}
+              purpose="ocr"
+              onProviderChange={(id) => updateField('ocr_provider_id', id)}
+              onModelChange={(value) => updateField('ocr_model', value)}
+            />
+            <label className={labelClassName}>
+              <span className={labelTextClassName}>OCR timeout (seconds)</span>
               <input
                 type="number"
                 min={1}
@@ -254,102 +439,37 @@ export function SettingsPage() {
                 onChange={(e) => updateField('ocr_timeout_sec', e.target.value)}
               />
             </label>
+            <ProviderModelFields
+              label="Extraction"
+              providers={llmProviders}
+              providerId={form.extract_provider_id}
+              model={form.extract_model}
+              purpose="llm"
+              onProviderChange={(id) => updateField('extract_provider_id', id)}
+              onModelChange={(value) => updateField('extract_model', value)}
+            />
+            <ProviderModelFields
+              label="Chat"
+              providers={llmProviders}
+              providerId={form.chat_provider_id}
+              model={form.chat_model}
+              purpose="llm"
+              allowEmpty
+              onProviderChange={(id) => updateField('chat_provider_id', id)}
+              onModelChange={(value) => updateField('chat_model', value)}
+            />
+            <ProviderModelFields
+              label="Search"
+              providers={llmProviders}
+              providerId={form.search_provider_id}
+              model={form.search_model}
+              purpose="llm"
+              allowEmpty
+              onProviderChange={(id) => updateField('search_provider_id', id)}
+              onModelChange={(value) => updateField('search_model', value)}
+            />
             <label className={labelClassName}>
-              <span className={labelTextClassName}>
-                Google Vision API key{keyFlags.google ? ' (set)' : ''}
-              </span>
-              <input
-                type="password"
-                autoComplete="off"
-                placeholder={keyFlags.google ? '•••• leave blank to keep' : ''}
-                className={inputClassName}
-                value={form.google_vision_api_key}
-                onChange={(e) => updateField('google_vision_api_key', e.target.value)}
-              />
-            </label>
-            <label className={labelClassName}>
-              <span className={labelTextClassName}>
-                Mistral API key{keyFlags.mistral ? ' (set)' : ''}
-              </span>
-              <input
-                type="password"
-                autoComplete="off"
-                placeholder={keyFlags.mistral ? '•••• leave blank to keep' : ''}
-                className={inputClassName}
-                value={form.mistral_api_key}
-                onChange={(e) => updateField('mistral_api_key', e.target.value)}
-              />
-            </label>
-            <label className={labelClassName}>
-              <span className={labelTextClassName}>Mistral OCR model</span>
-              <input
-                className={inputClassName}
-                value={form.mistral_ocr_model}
-                onChange={(e) => updateField('mistral_ocr_model', e.target.value)}
-              />
-            </label>
-            <label className={labelClassName}>
-              <span className={labelTextClassName}>Mistral API base URL</span>
-              <input
-                className={inputClassName}
-                value={form.mistral_api_base_url}
-                onChange={(e) => updateField('mistral_api_base_url', e.target.value)}
-              />
-            </label>
-          </div>
-        </section>
-
-        <section className={sectionClassName}>
-          <h2 className={sectionTitleClassName}>AI / OpenAI</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className={`${labelClassName} sm:col-span-2`}>
-              <span className={labelTextClassName}>
-                API key{keyFlags.openai ? ' (set)' : ''}
-              </span>
-              <input
-                type="password"
-                autoComplete="off"
-                placeholder={keyFlags.openai ? '•••• leave blank to keep' : ''}
-                className={inputClassName}
-                value={form.openai_api_key}
-                onChange={(e) => updateField('openai_api_key', e.target.value)}
-              />
-            </label>
-            <label className={labelClassName}>
-              <span className={labelTextClassName}>Extraction model</span>
-              <input
-                className={inputClassName}
-                value={form.openai_model}
-                onChange={(e) => updateField('openai_model', e.target.value)}
-              />
-            </label>
-            <label className={labelClassName}>
-              <span className={labelTextClassName}>Chat model</span>
-              <input
-                className={inputClassName}
-                value={form.openai_chat_model}
-                onChange={(e) => updateField('openai_chat_model', e.target.value)}
-              />
-            </label>
-            <label className={labelClassName}>
-              <span className={labelTextClassName}>Search model</span>
-              <input
-                className={inputClassName}
-                placeholder="Defaults to chat model"
-                value={form.openai_search_model}
-                onChange={(e) => updateField('openai_search_model', e.target.value)}
-              />
-            </label>
-            <label className={labelClassName}>
-              <span className={labelTextClassName}>Base URL</span>
-              <input
-                className={inputClassName}
-                value={form.openai_base_url}
-                onChange={(e) => updateField('openai_base_url', e.target.value)}
-              />
-            </label>
-            <label className={labelClassName}>
-              <span className={labelTextClassName}>Timeout (seconds)</span>
+              <span className={labelTextClassName}>AI timeout (seconds)</span>
               <input
                 type="number"
                 min={1}
