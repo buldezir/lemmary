@@ -1,5 +1,11 @@
 # Agent instructions
 
+## Commiting
+
+When doing git commit - write very detailed commit message.
+So later agent could see what it did from git log.
+It may be multi-line and multi-paragraph.
+
 ## Resolving GitHub issues
 
 When the user asks to resolve a GitHub issue:
