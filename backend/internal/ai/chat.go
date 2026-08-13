@@ -58,12 +58,11 @@ func (c *OpenAIClient) Chat(ctx context.Context, ocrText string, messages []Chat
 	}
 
 	requestStart := time.Now()
-	c.logger.Info("chat completion", "model", c.model, "base_url", c.baseURL, "messages", len(apiMessages))
-	chatResp, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	chatResp, err := c.complete(ctx, openai.ChatCompletionNewParams{
 		Model:       shared.ChatModel(c.model),
 		Messages:    apiMessages,
 		Temperature: openai.Float(0.3),
-	})
+	}, "purpose", "chat", "messages", len(apiMessages))
 	if err != nil {
 		c.logger.Error("chat request failed",
 			"duration", time.Since(requestStart).Round(time.Millisecond),

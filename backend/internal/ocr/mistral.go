@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"paperless-go/backend/internal/aiprovider"
 )
 
 const mistralOCRMaxFileBytes = 10 * 1024 * 1024
@@ -175,6 +177,7 @@ func (p *MistralProvider) requestOCR(ctx context.Context, docType, dataURL strin
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 
+	aiprovider.LogRequest(p.logger, aiprovider.SDKMistral, http.MethodPost, req.URL.String(), p.model, "purpose", "ocr", "doc_type", docType)
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("mistral OCR request: %w", err)

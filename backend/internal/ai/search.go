@@ -124,14 +124,13 @@ func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, 
 		}
 
 		requestStart := time.Now()
-		a.client.logger.Info("search agent completion",
-			"model", a.client.model,
+		chatResp, err := a.client.complete(ctx, params,
+			"purpose", "search",
 			"mode", mode,
 			"round", round,
 			"allow_tools", allowTools,
 			"messages", len(apiMessages),
 		)
-		chatResp, err := a.client.client.Chat.Completions.New(ctx, params)
 		if err != nil {
 			a.client.logger.Error("search agent request failed",
 				"duration", time.Since(requestStart).Round(time.Millisecond),
@@ -212,15 +211,11 @@ If nothing relevant was found, say so clearly.`,
 	))
 
 	requestStart := time.Now()
-	a.client.logger.Info("search agent forcing final answer",
-		"model", a.client.model,
-		"messages", len(msgs),
-	)
-	chatResp, err := a.client.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	chatResp, err := a.client.complete(ctx, openai.ChatCompletionNewParams{
 		Model:       shared.ChatModel(a.client.model),
 		Messages:    msgs,
 		Temperature: openai.Float(0.2),
-	})
+	}, "purpose", "search_final", "messages", len(msgs))
 	if err != nil {
 		a.client.logger.Error("search agent force-final failed",
 			"duration", time.Since(requestStart).Round(time.Millisecond),

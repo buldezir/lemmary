@@ -11,6 +11,7 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/shared"
+	"paperless-go/backend/internal/aiprovider"
 	"paperless-go/backend/internal/models"
 )
 
@@ -71,6 +72,9 @@ func NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage stri
 	if strings.TrimSpace(sdk) == "" {
 		sdk = "openai"
 	}
+	if logger == nil {
+		logger = slog.Default()
+	}
 
 	return &OpenAIClient{
 		sdk:            sdk,
@@ -92,6 +96,18 @@ func (c *OpenAIClient) Model() string {
 	return c.model
 }
 
+func (c *OpenAIClient) complete(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
+	aiprovider.LogRequest(
+		c.logger,
+		c.sdk,
+		http.MethodPost,
+		aiprovider.ChatCompletionsURL(c.baseURL),
+		string(params.Model),
+		extra...,
+	)
+	return c.client.Chat.Completions.New(ctx, params)
+}
+
 func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string) (*models.ExtractedMetadata, error) {
 	if c.apiKey == "" {
 		return nil, fmt.Errorf("AI API key is not configured")
@@ -109,8 +125,7 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string) (*mo
 	)
 
 	requestStart := time.Now()
-	c.logger.Info("chat completion", "model", c.model, "base_url", c.baseURL, "messages", 2)
-	chatResp, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	chatResp, err := c.complete(ctx, openai.ChatCompletionNewParams{
 		Model: shared.ChatModel(c.model),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(buildExtractionSystemPrompt(c.resultLanguage)),
@@ -120,7 +135,7 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string) (*mo
 			OfJSONObject: &shared.ResponseFormatJSONObjectParam{},
 		},
 		Temperature: openai.Float(0.1),
-	})
+	}, "purpose", "extract", "messages", 2)
 	if err != nil {
 		c.logger.Error("request failed",
 			"duration", time.Since(requestStart).Round(time.Millisecond),

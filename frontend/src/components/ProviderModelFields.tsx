@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   listProviderModels,
   type AIProvider,
@@ -11,8 +11,14 @@ const inputClassName =
 const labelClassName = 'flex flex-col gap-1'
 const labelTextClassName = 'text-xs font-medium text-stone-500'
 
+const CUSTOM_MODEL = '__custom__'
+
 export const OCR_MODEL_WARNING =
   'Choose this model wisely — this provider does not advertise which models accept file inputs.'
+
+export function showsOCRModelWarning(sdk?: string) {
+  return sdk === 'openai'
+}
 
 export function isLLMProvider(sdk: string) {
   return sdk === 'openai' || sdk === 'openrouter'
@@ -31,6 +37,104 @@ export function sdkLabel(sdk: ProviderSDK | string) {
     default:
       return sdk
   }
+}
+
+export function providerOptionLabel(item: Pick<AIProvider, 'alias' | 'sdk'>) {
+  const sdk = sdkLabel(item.sdk)
+  return item.alias === sdk ? item.alias : `${item.alias} (${sdk})`
+}
+
+export function modelOptionLabel(item: CatalogModel) {
+  if (item.name && item.name !== item.id) {
+    return `${item.id} (${item.name})`
+  }
+  return item.id
+}
+
+type ModelSelectProps = {
+  label: string
+  model: string
+  models: CatalogModel[]
+  loading: boolean
+  onChange: (model: string) => void
+  allowEmpty?: boolean
+  disabled?: boolean
+}
+
+export function ModelSelect({
+  label,
+  model,
+  models,
+  loading,
+  onChange,
+  allowEmpty = false,
+  disabled = false,
+}: ModelSelectProps) {
+  const inCatalog = models.some((item) => item.id === model)
+  const [wantCustom, setWantCustom] = useState(false)
+  const showCustomInput =
+    !loading && models.length > 0 && (wantCustom || Boolean(model && !inCatalog))
+  const useSelect = loading || models.length > 0
+  const selectValue = showCustomInput ? CUSTOM_MODEL : model
+
+  return (
+    <div className={labelClassName}>
+      <label className={labelClassName}>
+        <span className={labelTextClassName}>{label} model</span>
+        {useSelect ? (
+          <select
+            className={`${inputClassName} disabled:cursor-not-allowed disabled:opacity-50`}
+            value={loading ? '' : selectValue}
+            disabled={disabled || loading}
+            onChange={(event) => {
+              const next = event.target.value
+              if (next === CUSTOM_MODEL) {
+                setWantCustom(true)
+                if (inCatalog) onChange('')
+                return
+              }
+              setWantCustom(false)
+              onChange(next)
+            }}
+          >
+            {loading ? (
+              <option value="">Loading models…</option>
+            ) : (
+              <>
+                {allowEmpty || !selectValue ? (
+                  <option value="">{allowEmpty ? 'None' : 'Select a model'}</option>
+                ) : null}
+                {models.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {modelOptionLabel(item)}
+                  </option>
+                ))}
+                <option value={CUSTOM_MODEL}>Custom model id…</option>
+              </>
+            )}
+          </select>
+        ) : (
+          <input
+            className={inputClassName}
+            value={model}
+            placeholder="Model id"
+            disabled={disabled}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        )}
+      </label>
+      {showCustomInput ? (
+        <input
+          className={inputClassName}
+          value={model}
+          placeholder="Model id"
+          aria-label={`Custom ${label} model`}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      ) : null}
+    </div>
+  )
 }
 
 type ProviderModelFieldsProps = {
@@ -54,14 +158,13 @@ export function ProviderModelFields({
   onModelChange,
   allowEmpty = false,
 }: ProviderModelFieldsProps) {
-  const listId = useId()
   const [models, setModels] = useState<CatalogModel[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   const selected = providers.find((item) => item.id === providerId)
   const hideModel = purpose === 'ocr' && selected?.sdk === 'google_vision'
-  const showWarning = purpose === 'ocr' && selected != null && selected.sdk !== 'openrouter'
+  const showWarning = purpose === 'ocr' && showsOCRModelWarning(selected?.sdk)
 
   useEffect(() => {
     if (!providerId || hideModel) {
@@ -110,29 +213,21 @@ export function ProviderModelFields({
           ) : null}
           {providers.map((item) => (
             <option key={item.id} value={item.id}>
-              {item.alias} ({sdkLabel(item.sdk)})
+              {providerOptionLabel(item)}
             </option>
           ))}
         </select>
       </label>
       {!hideModel && (
-        <label className={labelClassName}>
-          <span className={labelTextClassName}>{label} model</span>
-          <input
-            className={inputClassName}
-            list={listId}
-            value={model}
-            placeholder={loading ? 'Loading models…' : 'Model id'}
-            onChange={(event) => onModelChange(event.target.value)}
-          />
-          <datalist id={listId}>
-            {models.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </datalist>
-        </label>
+        <ModelSelect
+          key={providerId || 'none'}
+          label={label}
+          model={model}
+          models={models}
+          loading={loading}
+          allowEmpty={allowEmpty}
+          onChange={onModelChange}
+        />
       )}
       {error && <p className="text-xs text-amber-700 sm:col-span-2">{error}. You can still type a model id.</p>}
       {showWarning && (

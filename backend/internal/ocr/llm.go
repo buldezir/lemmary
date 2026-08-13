@@ -82,6 +82,7 @@ func (p *LLMProvider) ExtractText(ctx context.Context, filePath string, mimeType
 		"bytes", len(data),
 	)
 
+	aiprovider.LogRequest(p.logger, p.sdk, http.MethodPost, aiprovider.ChatCompletionsURL(p.baseURL), p.model, "purpose", "ocr", "messages", 2)
 	chatResp, err := p.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Model: shared.ChatModel(p.model),
 		Messages: []openai.ChatCompletionMessageParamUnion{

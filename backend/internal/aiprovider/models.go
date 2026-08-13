@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -37,7 +38,7 @@ func ModelsURL(p Provider, forOCR bool) string {
 	return endpoint
 }
 
-func ListModels(ctx context.Context, p Provider, forOCR bool, client *http.Client) ([]Model, error) {
+func ListModels(ctx context.Context, p Provider, forOCR bool, client *http.Client, logger *slog.Logger) ([]Model, error) {
 	if p.SDK == SDKGoogleVision {
 		return nil, nil
 	}
@@ -52,6 +53,8 @@ func ListModels(ctx context.Context, p Provider, forOCR bool, client *http.Clien
 	if client == nil {
 		client = &http.Client{Timeout: modelsListTimeout}
 	}
+
+	LogRequest(logger, p.SDK, http.MethodGet, endpoint, "", "for_ocr", forOCR)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -82,7 +85,24 @@ func ListModels(ctx context.Context, p Provider, forOCR bool, client *http.Clien
 	if err != nil {
 		return nil, err
 	}
+	if forOCR && p.SDK == SDKMistral {
+		models = filterModelsBySubstring(models, "ocr")
+	}
 	return models, nil
+}
+
+func filterModelsBySubstring(models []Model, substr string) []Model {
+	needle := strings.ToLower(strings.TrimSpace(substr))
+	if needle == "" {
+		return models
+	}
+	out := make([]Model, 0, len(models))
+	for _, m := range models {
+		if strings.Contains(strings.ToLower(m.ID), needle) || strings.Contains(strings.ToLower(m.Name), needle) {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 func parseModelsResponse(body []byte) ([]Model, error) {

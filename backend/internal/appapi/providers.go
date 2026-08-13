@@ -185,7 +185,7 @@ func handleListProviderModels(app core.App) func(*core.RequestEvent) error {
 			return writeError(e, http.StatusNotFound, "Provider not found.")
 		}
 		forOCR := strings.EqualFold(strings.TrimSpace(e.Request.URL.Query().Get("for")), "ocr")
-		models, err := aiprovider.ListModels(e.Request.Context(), *p, forOCR, nil)
+		models, err := aiprovider.ListModels(e.Request.Context(), *p, forOCR, nil, app.Logger().With("component", "ai"))
 		if err != nil {
 			app.Logger().Warn("list provider models", "provider", p.ID, slog.Any("error", err))
 			return writeError(e, http.StatusBadGateway, "Failed to load models from the provider.")

@@ -7,7 +7,7 @@ import {
   type CatalogModel,
   type OCRProviderInfo,
 } from '../lib/pocketbase'
-import { OCR_MODEL_WARNING } from '../components/ProviderModelFields'
+import { ModelSelect, OCR_MODEL_WARNING, showsOCRModelWarning } from '../components/ProviderModelFields'
 
 const ACCEPTED_EXTENSIONS = new Set([
   '.pdf',
@@ -41,6 +41,7 @@ export function OCRTestPage() {
   const [provider, setProvider] = useState('')
   const [model, setModel] = useState('')
   const [models, setModels] = useState<CatalogModel[]>([])
+  const [loadingModels, setLoadingModels] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [dragging, setDragging] = useState(false)
   const [loadingProviders, setLoadingProviders] = useState(true)
@@ -81,22 +82,26 @@ export function OCRTestPage() {
 
   const selected = providers.find((item) => item.id === provider)
   const hideModel = selected?.sdk === 'google_vision'
-  const showWarning = Boolean(selected && selected.sdk !== 'openrouter')
+  const showWarning = showsOCRModelWarning(selected?.sdk)
 
   useEffect(() => {
     if (!provider || hideModel) {
       setModels([])
+      setLoadingModels(false)
       return
     }
     let active = true
     async function loadModels() {
       try {
+        setLoadingModels(true)
         const next = await listProviderModels(provider, 'ocr')
         if (!active) return
         setModels(next.models)
         setModel((current) => current || next.models[0]?.id || '')
       } catch {
         if (active) setModels([])
+      } finally {
+        if (active) setLoadingModels(false)
       }
     }
     void loadModels()
@@ -202,23 +207,15 @@ export function OCRTestPage() {
         </label>
 
         {!hideModel && provider && (
-          <label className="flex flex-col gap-1.5 text-sm font-medium text-stone-700">
-            Model
-            <input
-              list="ocr-test-models"
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
-              placeholder="Model id"
-              className="w-full rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm font-normal text-stone-950 outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
-            />
-            <datalist id="ocr-test-models">
-              {models.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </datalist>
-          </label>
+          <ModelSelect
+            key={provider}
+            label="OCR"
+            model={model}
+            models={models}
+            loading={loadingModels}
+            disabled={running}
+            onChange={setModel}
+          />
         )}
         {showWarning && <p className="text-xs text-amber-800">{OCR_MODEL_WARNING}</p>}
 

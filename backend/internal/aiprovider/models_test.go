@@ -6,6 +6,22 @@ import (
 	"testing"
 )
 
+func TestChatCompletionsURL(t *testing.T) {
+	t.Parallel()
+	got := ChatCompletionsURL("https://opencode.ai/zen/go/v1/")
+	if got != "https://opencode.ai/zen/go/v1/chat/completions" {
+		t.Fatalf("ChatCompletionsURL() = %q", got)
+	}
+	if got := ChatCompletionsURL(""); got != "https://api.openai.com/v1/chat/completions" {
+		t.Fatalf("default ChatCompletionsURL() = %q", got)
+	}
+}
+
+func TestLogRequestNilLogger(t *testing.T) {
+	t.Parallel()
+	LogRequest(nil, SDKOpenAI, "POST", "https://example.test/v1/chat/completions", "m", "purpose", "chat")
+}
+
 func TestModelsURLOpenRouterOCRAddsFileFilter(t *testing.T) {
 	t.Parallel()
 	p := Provider{SDK: SDKOpenRouter, BaseURL: "https://openrouter.ai/api/v1"}
@@ -41,6 +57,24 @@ func TestParseModelsResponse(t *testing.T) {
 	}
 }
 
+func TestParseModelsResponseOpenCodeGoCatalog(t *testing.T) {
+	t.Parallel()
+	body := []byte(`{"object":"list","data":[{"id":"minimax-m3","object":"model","created":1786645321,"owned_by":"opencode"},{"id":"deepseek-v4-flash","object":"model","created":1786645321,"owned_by":"opencode"}]}`)
+	models, err := parseModelsResponse(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("len=%d want 2: %+v", len(models), models)
+	}
+	if models[0].ID != "minimax-m3" || models[0].Name != "minimax-m3" {
+		t.Fatalf("first=%+v", models[0])
+	}
+	if models[1].ID != "deepseek-v4-flash" {
+		t.Fatalf("second=%+v", models[1])
+	}
+}
+
 func TestParseModelsResponseDedupes(t *testing.T) {
 	t.Parallel()
 	models, err := parseModelsResponse([]byte(`{"data":[{"id":"a"},{"id":"a","name":"A"}]}`))
@@ -73,7 +107,7 @@ func TestListModels(t *testing.T) {
 	defer srv.Close()
 
 	p := Provider{SDK: SDKOpenRouter, BaseURL: srv.URL + "/v1", APIKey: "test-key"}
-	models, err := ListModels(t.Context(), p, true, srv.Client())
+	models, err := ListModels(t.Context(), p, true, srv.Client(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,9 +116,60 @@ func TestListModels(t *testing.T) {
 	}
 }
 
+func TestListModelsMistralOCRFiltersByOCRSubstring(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[
+			{"id":"mistral-small-latest"},
+			{"id":"mistral-ocr-latest"},
+			{"id":"mistral-ocr-2512","name":"Mistral OCR"},
+			{"id":"codestral-latest"}
+		]}`))
+	}))
+	defer srv.Close()
+
+	p := Provider{SDK: SDKMistral, BaseURL: srv.URL + "/v1", APIKey: "test-key"}
+	models, err := ListModels(t.Context(), p, true, srv.Client(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("len=%d want 2: %+v", len(models), models)
+	}
+	if models[0].ID != "mistral-ocr-latest" || models[1].ID != "mistral-ocr-2512" {
+		t.Fatalf("got %+v", models)
+	}
+
+	all, err := ListModels(t.Context(), p, false, srv.Client(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 4 {
+		t.Fatalf("unfiltered len=%d want 4: %+v", len(all), all)
+	}
+}
+
+func TestFilterModelsBySubstring(t *testing.T) {
+	t.Parallel()
+	in := []Model{
+		{ID: "mistral-ocr-latest", Name: "mistral-ocr-latest"},
+		{ID: "codestral-latest", Name: "codestral-latest"},
+		{ID: "other", Name: "Has OCR in name"},
+	}
+	got := filterModelsBySubstring(in, "ocr")
+	if len(got) != 2 || got[0].ID != "mistral-ocr-latest" || got[1].ID != "other" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
 func TestListModelsGoogleVisionEmpty(t *testing.T) {
 	t.Parallel()
-	models, err := ListModels(t.Context(), Provider{SDK: SDKGoogleVision, APIKey: "x"}, true, nil)
+	models, err := ListModels(t.Context(), Provider{SDK: SDKGoogleVision, APIKey: "x"}, true, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
