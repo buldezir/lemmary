@@ -14,7 +14,7 @@ import (
 
 const (
 	// MaxEdge is the longest edge of generated preview images in pixels.
-	MaxEdge = 400
+	MaxEdge         = 400
 	pdftoppmTimeout = 30 * time.Second
 )
 

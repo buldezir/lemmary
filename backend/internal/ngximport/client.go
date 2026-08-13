@@ -24,10 +24,10 @@ const (
 
 // Client talks to a remote Paperless-ngx REST API.
 type Client struct {
-	baseURL         string
-	apiKey          string
-	httpClient      *http.Client
-	downloadClient  *http.Client
+	baseURL        string
+	apiKey         string
+	httpClient     *http.Client
+	downloadClient *http.Client
 }
 
 func NewClient(baseURL, apiKey string, httpClient *http.Client) (*Client, error) {

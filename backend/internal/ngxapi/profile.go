@@ -21,10 +21,10 @@ func handleProfile(e *core.RequestEvent) error {
 
 func mapProfile(user *core.Record) map[string]any {
 	profile := map[string]any{
-		"email":              user.GetString("email"),
+		"email":               user.GetString("email"),
 		"has_usable_password": true,
-		"is_mfa_enabled":     false,
-		"social_accounts":    []any{},
+		"is_mfa_enabled":      false,
+		"social_accounts":     []any{},
 	}
 	if name := user.GetString("name"); name != "" {
 		parts := splitName(name)

@@ -55,11 +55,11 @@ func defaultUiSettings(app core.App) map[string]any {
 		appTitle = name
 	}
 	return map[string]any{
-		"version":    ngxAppVersion,
-		"app_title":  appTitle,
-		"app_logo":   nil,
-		"trash_delay": 30,
-		"email_enabled": false,
+		"version":          ngxAppVersion,
+		"app_title":        appTitle,
+		"app_logo":         nil,
+		"trash_delay":      30,
+		"email_enabled":    false,
 		"auditlog_enabled": false,
 		"update_checking": map[string]any{
 			"backend_setting": "default",
