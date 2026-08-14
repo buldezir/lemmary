@@ -7,6 +7,7 @@ import { FilterCombobox } from '../components/FilterCombobox'
 import { Pagination } from '../components/Pagination'
 
 const PAGE_SIZE = 12
+const SEARCH_DEBOUNCE_MS = 800
 
 const selectClassName =
   'rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900'
@@ -90,7 +91,7 @@ export function IndexPage() {
     const timer = window.setTimeout(() => {
       setDebouncedSearch(search)
       setPage(1)
-    }, 300)
+    }, SEARCH_DEBOUNCE_MS)
     return () => window.clearTimeout(timer)
   }, [search])
 
