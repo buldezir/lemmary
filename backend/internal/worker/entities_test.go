@@ -21,3 +21,12 @@ func TestEnsureNamedEntitySkipsEmptyName(t *testing.T) {
 		t.Fatalf("expected empty result, id=%q created=%v", id, created)
 	}
 }
+
+func TestRequireOwnedRelationSkipsEmpty(t *testing.T) {
+	if err := requireOwnedRelation(nil, "correspondents", "correspondent", "", "user1"); err != nil {
+		t.Fatalf("empty id should skip, got %v", err)
+	}
+	if err := requireOwnedRelation(nil, "correspondents", "correspondent", "  ", "user1"); err != nil {
+		t.Fatalf("blank id should skip, got %v", err)
+	}
+}

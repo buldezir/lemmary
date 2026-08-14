@@ -148,6 +148,29 @@ func TestNamedEntityOwnerIsolation(t *testing.T) {
 	if err != nil || len(records) != 1 {
 		t.Fatalf("expected ngx-created type owned by user B: err=%v n=%d", err, len(records))
 	}
+
+	doc := h.uploadDocument(t, tokenB, otherID, fixturePath("sample.txt"))
+	docID := jsonGetString(doc, "id")
+	t.Cleanup(func() {
+		_, _ = h.doJSON(t, http.MethodDelete, "/api/collections/documents/records/"+docID, tokenB, nil)
+	})
+
+	status, raw = h.doJSON(t, http.MethodPatch, "/api/collections/documents/records/"+docID, tokenB, map[string]any{
+		"document_type": typeID,
+		"correspondent": corrID,
+	})
+	if status == http.StatusOK {
+		t.Fatalf("user B should not attach user A's named entities: %s", raw)
+	}
+
+	status, raw = h.doJSON(t, http.MethodPatch, "/api/collections/documents/records/"+docID, tokenB, map[string]any{
+		"document_type": records[0].Id,
+	})
+	requireStatus(t, status, http.StatusOK, raw)
+	updated := mustDecodeMap(t, raw)
+	if jsonGetString(updated, "document_type") != records[0].Id {
+		t.Fatalf("expected user B's document type, got %s", raw)
+	}
 }
 
 func ngxToken(t *testing.T, h *Harness, email, password string) string {

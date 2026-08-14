@@ -26,14 +26,17 @@ func parseNgxID(raw string) (int, error) {
 	return strconv.Atoi(strings.TrimSpace(raw))
 }
 
-func findRecordByNgxID(
-	app core.App,
-	collection string,
-	ngxID int,
-	filter string,
-	params map[string]any,
-) (*core.Record, error) {
-	records, err := app.FindRecordsByFilter(collection, filter, "", 500, 0, params)
+func findRecordByNgxID(app core.App, collection string, ngxID int, ownerUserID string) (*core.Record, error) {
+	filter, params := ownerScope(ownerUserID)
+	var (
+		records []*core.Record
+		err     error
+	)
+	if params != nil {
+		records, err = app.FindRecordsByFilter(collection, filter, "", 500, 0, params)
+	} else {
+		records, err = app.FindRecordsByFilter(collection, filter, "", 500, 0)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -46,15 +49,16 @@ func findRecordByNgxID(
 }
 
 func findOwnedDocumentByNgxID(app core.App, authID string, ngxID int) (*core.Record, error) {
-	return findRecordByNgxID(app, "documents", ngxID, ownerFilter(authID), ownerParams(authID))
+	return findRecordByNgxID(app, "documents", ngxID, authID)
 }
 
-func ownerFilter(authID string) string {
-	return "user = {:userId}"
-}
-
-func ownerParams(authID string) map[string]any {
-	return map[string]any{"userId": authID}
+// ownerScope returns a PocketBase filter and its matching params together so
+// the placeholder and the bound user id cannot drift apart.
+func ownerScope(authID string) (string, map[string]any) {
+	if authID == "" {
+		return "", nil
+	}
+	return "user = {:userId}", map[string]any{"userId": authID}
 }
 
 func findOwnedDocument(app core.App, authID, id string) (*core.Record, error) {
@@ -73,18 +77,18 @@ func ngxRelationID(record *core.Record, field string) any {
 	return toNgxID(id)
 }
 
-func resolvePBRelationID(app core.App, collection string, raw any, filter string, params map[string]any) string {
+func resolvePBRelationID(app core.App, collection string, raw any, ownerUserID string) string {
 	switch v := raw.(type) {
 	case nil:
 		return ""
 	case float64:
-		record, err := findRecordByNgxID(app, collection, int(v), filter, params)
+		record, err := findRecordByNgxID(app, collection, int(v), ownerUserID)
 		if err != nil {
 			return ""
 		}
 		return record.Id
 	case int:
-		record, err := findRecordByNgxID(app, collection, v, filter, params)
+		record, err := findRecordByNgxID(app, collection, v, ownerUserID)
 		if err != nil {
 			return ""
 		}
@@ -94,7 +98,7 @@ func resolvePBRelationID(app core.App, collection string, raw any, filter string
 			return ""
 		}
 		if ngxID, err := strconv.Atoi(v); err == nil {
-			record, err := findRecordByNgxID(app, collection, ngxID, filter, params)
+			record, err := findRecordByNgxID(app, collection, ngxID, ownerUserID)
 			if err != nil {
 				return ""
 			}
@@ -104,7 +108,7 @@ func resolvePBRelationID(app core.App, collection string, raw any, filter string
 		if err != nil {
 			return ""
 		}
-		if uid, ok := params["userId"].(string); ok && uid != "" && record.GetString("user") != uid {
+		if ownerUserID != "" && record.GetString("user") != ownerUserID {
 			return ""
 		}
 		return record.Id
@@ -127,7 +131,7 @@ func resolveTagPBIDs(app core.App, rawIDs []string) []string {
 			}
 			continue
 		}
-		tag, err := findRecordByNgxID(app, "tags", ngxID, "", nil)
+		tag, err := findRecordByNgxID(app, "tags", ngxID, "")
 		if err == nil {
 			result = append(result, tag.Id)
 		}

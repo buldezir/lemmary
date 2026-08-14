@@ -17,8 +17,7 @@ func handleListDocuments(e *core.RequestEvent) error {
 	page, pageSize := paginationParams(e)
 	authID := e.Auth.Id
 
-	filter := ownerFilter(authID)
-	params := ownerParams(authID)
+	filter, params := ownerScope(authID)
 
 	query := strings.TrimSpace(e.Request.URL.Query().Get("query"))
 	if query != "" {
@@ -152,12 +151,12 @@ func handlePostDocument(e *core.RequestEvent) error {
 			record.Set("document_date", createdDateOnly(created))
 		}
 		if correspondent := firstFormValue(form, "correspondent"); correspondent != "" {
-			if pbID := resolvePBRelationID(e.App, "correspondents", correspondent, ownerFilter(e.Auth.Id), ownerParams(e.Auth.Id)); pbID != "" {
+			if pbID := resolvePBRelationID(e.App, "correspondents", correspondent, e.Auth.Id); pbID != "" {
 				record.Set("correspondent", pbID)
 			}
 		}
 		if docType := firstFormValue(form, "document_type"); docType != "" {
-			if pbID := resolvePBRelationID(e.App, "document_types", docType, ownerFilter(e.Auth.Id), ownerParams(e.Auth.Id)); pbID != "" {
+			if pbID := resolvePBRelationID(e.App, "document_types", docType, e.Auth.Id); pbID != "" {
 				record.Set("document_type", pbID)
 			}
 		}
@@ -247,7 +246,7 @@ func setRelationField(app core.App, record *core.Record, field string, value any
 		record.Set(field, "")
 		return
 	}
-	pbID := resolvePBRelationID(app, collectionForRelationField(field), value, ownerFilter(authID), ownerParams(authID))
+	pbID := resolvePBRelationID(app, collectionForRelationField(field), value, authID)
 	record.Set(field, pbID)
 }
 

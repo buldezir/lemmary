@@ -48,17 +48,30 @@ func EnsureNamedEntity(app core.App, collection, userID, displayName, originalNa
 	record.Set("name", displayName)
 	record.Set("name_original", originalName)
 	if err := app.Save(record); err != nil {
-		existingID, findErr := findNamedEntity(app, collection, userID, "name", displayName)
-		if findErr == nil && existingID != "" {
-			return existingID, false, nil
-		}
-		existingID, findErr = findNamedEntity(app, collection, userID, "name_original", originalName)
-		if findErr == nil && existingID != "" {
-			return existingID, false, nil
+		if id, reused, reuseErr := reuseNamedEntityAfterConflict(app, collection, userID, displayName, originalName); reused {
+			return id, false, reuseErr
 		}
 		return "", false, err
 	}
 	return record.Id, true, nil
+}
+
+func reuseNamedEntityAfterConflict(app core.App, collection, userID, displayName, originalName string) (id string, reused bool, err error) {
+	existingID, findErr := findNamedEntity(app, collection, userID, "name", displayName)
+	if findErr != nil {
+		return "", false, findErr
+	}
+	if existingID == "" {
+		existingID, findErr = findNamedEntity(app, collection, userID, "name_original", originalName)
+		if findErr != nil {
+			return "", false, findErr
+		}
+	}
+	if existingID == "" {
+		return "", false, nil
+	}
+	id, err = updateNamedEntity(app, collection, existingID, displayName, originalName)
+	return id, true, err
 }
 
 func ensureNamedEntity(app core.App, collection, userID, displayName, originalName string) (string, error) {
@@ -151,6 +164,29 @@ func ensureTags(app core.App, names []string) ([]string, error) {
 	}
 
 	return tagIDs, nil
+}
+
+func validateDocumentNamedEntityOwnership(app core.App, record *core.Record) error {
+	userID := strings.TrimSpace(record.GetString("user"))
+	if err := requireOwnedRelation(app, "document_types", "document type", record.GetString("document_type"), userID); err != nil {
+		return err
+	}
+	return requireOwnedRelation(app, "correspondents", "correspondent", record.GetString("correspondent"), userID)
+}
+
+func requireOwnedRelation(app core.App, collection, label, id, userID string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	related, err := app.FindRecordById(collection, id)
+	if err != nil {
+		return fmt.Errorf("%s not found", label)
+	}
+	if related.GetString("user") != userID {
+		return fmt.Errorf("%s does not belong to this user", label)
+	}
+	return nil
 }
 
 // EnsureTag finds or creates a tag by exact name. created is true only when inserted.

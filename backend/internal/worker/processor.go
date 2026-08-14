@@ -40,6 +40,13 @@ func Register(app core.App, rt *config.Runtime) {
 }
 
 func (p *Processor) registerHooks() {
+	p.app.OnRecordValidate("documents").BindFunc(func(e *core.RecordEvent) error {
+		if err := validateDocumentNamedEntityOwnership(e.App, e.Record); err != nil {
+			return err
+		}
+		return e.Next()
+	})
+
 	p.app.OnRecordCreate("documents").BindFunc(func(e *core.RecordEvent) error {
 		record := e.Record
 		if record.GetString("processing_status") == "" {

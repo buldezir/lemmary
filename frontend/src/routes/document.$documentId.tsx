@@ -236,6 +236,11 @@ export function DocumentDetailPage() {
       setMessage('')
       setError('')
 
+      const userId = pb.authStore.record?.id
+      if (!userId) {
+        throw new Error('You must be signed in to save metadata.')
+      }
+
       const tagNames = tagInput
         .split(',')
         .map((tag) => tag.trim())
@@ -266,7 +271,7 @@ export function DocumentDetailPage() {
           const created = await pb.collection('document_types').create({
             name: documentTypeName,
             name_original: documentTypeName,
-            user: pb.authStore.record?.id ?? '',
+            user: userId,
           })
           documentTypeId = created.id
         }
@@ -284,7 +289,7 @@ export function DocumentDetailPage() {
           const created = await pb.collection('correspondents').create({
             name: correspondentName,
             name_original: correspondentName,
-            user: pb.authStore.record?.id ?? '',
+            user: userId,
           })
           correspondentId = created.id
         }

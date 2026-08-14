@@ -15,3 +15,25 @@ func TestToNgxIDStable(t *testing.T) {
 		t.Fatalf("toNgxID must be positive, got %d", first)
 	}
 }
+
+func TestOwnerScopeBindsAuthID(t *testing.T) {
+	t.Parallel()
+
+	filter, params := ownerScope("user-a")
+	if filter != "user = {:userId}" {
+		t.Fatalf("filter=%q", filter)
+	}
+	if params["userId"] != "user-a" {
+		t.Fatalf("params=%v", params)
+	}
+
+	_, other := ownerScope("user-b")
+	if other["userId"] != "user-b" {
+		t.Fatalf("second scope params=%v", other)
+	}
+
+	emptyFilter, emptyParams := ownerScope("")
+	if emptyFilter != "" || emptyParams != nil {
+		t.Fatalf("empty owner should be unscoped, filter=%q params=%v", emptyFilter, emptyParams)
+	}
+}

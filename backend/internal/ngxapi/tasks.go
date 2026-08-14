@@ -9,7 +9,7 @@ import (
 
 func handleListTasks(e *core.RequestEvent) error {
 	filter := "document.user = {:userId}"
-	params := ownerParams(e.Auth.Id)
+	_, params := ownerScope(e.Auth.Id)
 
 	if taskID := strings.TrimSpace(e.Request.URL.Query().Get("task_id")); taskID != "" {
 		filter += " && task_id = {:taskId}"

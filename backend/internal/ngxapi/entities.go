@@ -9,11 +9,11 @@ import (
 )
 
 func handleListTags(e *core.RequestEvent) error {
-	return listNamedRecords(e, "tags", mapTag, "", nil)
+	return listNamedRecords(e, "tags", mapTag, "")
 }
 
 func handleGetTag(e *core.RequestEvent) error {
-	return getNamedRecord(e, "tags", mapTag, "", nil)
+	return getNamedRecord(e, "tags", mapTag, "")
 }
 
 func handleCreateTag(e *core.RequestEvent) error {
@@ -21,19 +21,19 @@ func handleCreateTag(e *core.RequestEvent) error {
 }
 
 func handlePatchTag(e *core.RequestEvent) error {
-	return patchNamedRecord(e, "tags", mapTag, "", nil)
+	return patchNamedRecord(e, "tags", mapTag, "")
 }
 
 func handleDeleteTag(e *core.RequestEvent) error {
-	return deleteNamedRecord(e, "tags", "", nil)
+	return deleteNamedRecord(e, "tags", "")
 }
 
 func handleListCorrespondents(e *core.RequestEvent) error {
-	return listNamedRecords(e, "correspondents", mapCorrespondent, ownerFilter(e.Auth.Id), ownerParams(e.Auth.Id))
+	return listNamedRecords(e, "correspondents", mapCorrespondent, e.Auth.Id)
 }
 
 func handleGetCorrespondent(e *core.RequestEvent) error {
-	return getNamedRecord(e, "correspondents", mapCorrespondent, ownerFilter(e.Auth.Id), ownerParams(e.Auth.Id))
+	return getNamedRecord(e, "correspondents", mapCorrespondent, e.Auth.Id)
 }
 
 func handleCreateCorrespondent(e *core.RequestEvent) error {
@@ -45,7 +45,7 @@ func handlePatchCorrespondent(e *core.RequestEvent) error {
 }
 
 func handleDeleteCorrespondent(e *core.RequestEvent) error {
-	return deleteNamedRecord(e, "correspondents", ownerFilter(e.Auth.Id), ownerParams(e.Auth.Id))
+	return deleteNamedRecord(e, "correspondents", e.Auth.Id)
 }
 
 func createCorrespondentRecord(e *core.RequestEvent, mapper recordMapper) error {
@@ -86,7 +86,7 @@ func patchCorrespondentRecord(e *core.RequestEvent, mapper recordMapper) error {
 	if err != nil {
 		return notFound(e, "Not found.")
 	}
-	record, err := findRecordByNgxID(e.App, "correspondents", ngxID, ownerFilter(e.Auth.Id), ownerParams(e.Auth.Id))
+	record, err := findRecordByNgxID(e.App, "correspondents", ngxID, e.Auth.Id)
 	if err != nil {
 		return notFound(e, "Not found.")
 	}
@@ -112,11 +112,11 @@ func patchCorrespondentRecord(e *core.RequestEvent, mapper recordMapper) error {
 }
 
 func handleListDocumentTypes(e *core.RequestEvent) error {
-	return listNamedRecords(e, "document_types", mapDocumentType, ownerFilter(e.Auth.Id), ownerParams(e.Auth.Id))
+	return listNamedRecords(e, "document_types", mapDocumentType, e.Auth.Id)
 }
 
 func handleGetDocumentType(e *core.RequestEvent) error {
-	return getNamedRecord(e, "document_types", mapDocumentType, ownerFilter(e.Auth.Id), ownerParams(e.Auth.Id))
+	return getNamedRecord(e, "document_types", mapDocumentType, e.Auth.Id)
 }
 
 func handleCreateDocumentType(e *core.RequestEvent) error {
@@ -165,7 +165,7 @@ func patchDocumentTypeRecord(e *core.RequestEvent, mapper recordMapper) error {
 	if err != nil {
 		return notFound(e, "Not found.")
 	}
-	record, err := findRecordByNgxID(e.App, "document_types", ngxID, ownerFilter(e.Auth.Id), ownerParams(e.Auth.Id))
+	record, err := findRecordByNgxID(e.App, "document_types", ngxID, e.Auth.Id)
 	if err != nil {
 		return notFound(e, "Not found.")
 	}
@@ -191,20 +191,23 @@ func patchDocumentTypeRecord(e *core.RequestEvent, mapper recordMapper) error {
 }
 
 func handleDeleteDocumentType(e *core.RequestEvent) error {
-	return deleteNamedRecord(e, "document_types", ownerFilter(e.Auth.Id), ownerParams(e.Auth.Id))
+	return deleteNamedRecord(e, "document_types", e.Auth.Id)
 }
 
 type recordMapper func(*core.Record) map[string]any
 
-func listNamedRecords(e *core.RequestEvent, collection string, mapper recordMapper, filter string, params map[string]any) error {
+func listNamedRecords(e *core.RequestEvent, collection string, mapper recordMapper, ownerUserID string) error {
 	page, pageSize := paginationParams(e)
 
 	var (
-		total int64
-		err   error
+		total  int64
+		err    error
+		filter string
+		params map[string]any
 	)
-	if filter != "" {
-		total, err = e.App.CountRecords(collection, dbx.NewExp(filter, params))
+	if ownerUserID != "" {
+		filter, params = ownerScope(ownerUserID)
+		total, err = e.App.CountRecords(collection, dbx.HashExp{"user": ownerUserID})
 	} else {
 		total, err = e.App.CountRecords(collection)
 	}
@@ -213,25 +216,7 @@ func listNamedRecords(e *core.RequestEvent, collection string, mapper recordMapp
 	}
 
 	offset := (page - 1) * pageSize
-	var records []*core.Record
-	if len(params) > 0 {
-		records, err = e.App.FindRecordsByFilter(
-			collection,
-			filter,
-			"name",
-			pageSize,
-			offset,
-			params,
-		)
-	} else {
-		records, err = e.App.FindRecordsByFilter(
-			collection,
-			filter,
-			"name",
-			pageSize,
-			offset,
-		)
-	}
+	records, err := findNamedRecordsPage(e.App, collection, filter, pageSize, offset, params)
 	if err != nil {
 		return internalError(e, err)
 	}
@@ -244,12 +229,19 @@ func listNamedRecords(e *core.RequestEvent, collection string, mapper recordMapp
 	return paginatedList(e, total, page, pageSize, results)
 }
 
-func getNamedRecord(e *core.RequestEvent, collection string, mapper recordMapper, filter string, params map[string]any) error {
+func findNamedRecordsPage(app core.App, collection, filter string, pageSize, offset int, params map[string]any) ([]*core.Record, error) {
+	if params != nil {
+		return app.FindRecordsByFilter(collection, filter, "name", pageSize, offset, params)
+	}
+	return app.FindRecordsByFilter(collection, filter, "name", pageSize, offset)
+}
+
+func getNamedRecord(e *core.RequestEvent, collection string, mapper recordMapper, ownerUserID string) error {
 	ngxID, err := parseNgxID(e.Request.PathValue("id"))
 	if err != nil {
 		return notFound(e, "Not found.")
 	}
-	record, err := findRecordByNgxID(e.App, collection, ngxID, filter, params)
+	record, err := findRecordByNgxID(e.App, collection, ngxID, ownerUserID)
 	if err != nil {
 		return notFound(e, "Not found.")
 	}
@@ -282,12 +274,12 @@ func createNamedRecord(e *core.RequestEvent, collection string, mapper recordMap
 	return writeJSON(e, http.StatusCreated, mapper(record))
 }
 
-func patchNamedRecord(e *core.RequestEvent, collection string, mapper recordMapper, filter string, params map[string]any) error {
+func patchNamedRecord(e *core.RequestEvent, collection string, mapper recordMapper, ownerUserID string) error {
 	ngxID, err := parseNgxID(e.Request.PathValue("id"))
 	if err != nil {
 		return notFound(e, "Not found.")
 	}
-	record, err := findRecordByNgxID(e.App, collection, ngxID, filter, params)
+	record, err := findRecordByNgxID(e.App, collection, ngxID, ownerUserID)
 	if err != nil {
 		return notFound(e, "Not found.")
 	}
@@ -308,12 +300,12 @@ func patchNamedRecord(e *core.RequestEvent, collection string, mapper recordMapp
 	return writeJSON(e, http.StatusOK, mapper(record))
 }
 
-func deleteNamedRecord(e *core.RequestEvent, collection, filter string, params map[string]any) error {
+func deleteNamedRecord(e *core.RequestEvent, collection, ownerUserID string) error {
 	ngxID, err := parseNgxID(e.Request.PathValue("id"))
 	if err != nil {
 		return notFound(e, "Not found.")
 	}
-	record, err := findRecordByNgxID(e.App, collection, ngxID, filter, params)
+	record, err := findRecordByNgxID(e.App, collection, ngxID, ownerUserID)
 	if err != nil {
 		return notFound(e, "Not found.")
 	}
