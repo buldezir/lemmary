@@ -3,6 +3,7 @@ package e2e
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"testing"
 )
 
@@ -136,4 +137,66 @@ func TestDocumentsFilterByTitle(t *testing.T) {
 	}
 	var body map[string]any
 	_ = json.Unmarshal([]byte(raw), &body)
+}
+
+func TestDocumentsFilterByTagName(t *testing.T) {
+	h := StartShared(t)
+	token := h.userToken(t)
+
+	tagged := h.uploadDocument(t, token, h.UserID, fixturePath("sample.txt"))
+	taggedID := jsonGetString(tagged, "id")
+	t.Cleanup(func() {
+		_, _ = h.doJSON(t, http.MethodDelete, "/api/collections/documents/records/"+taggedID, token, nil)
+	})
+	other := h.uploadDocument(t, token, h.UserID, fixturePath("sample.txt"))
+	otherID := jsonGetString(other, "id")
+	t.Cleanup(func() {
+		_, _ = h.doJSON(t, http.MethodDelete, "/api/collections/documents/records/"+otherID, token, nil)
+	})
+	h.settleDocuments(t, taggedID, otherID)
+
+	tagName := "filter-tag-" + taggedID
+	status, raw := h.doJSON(t, http.MethodPost, "/api/collections/tags/records", token, map[string]any{
+		"name": tagName,
+	})
+	requireStatus(t, status, http.StatusOK, raw)
+	tagID := jsonGetString(mustDecodeMap(t, raw), "id")
+	t.Cleanup(func() {
+		_, _ = h.doJSON(t, http.MethodDelete, "/api/collections/tags/records/"+tagID, token, nil)
+	})
+
+	status, raw = h.doJSON(t, http.MethodPatch, "/api/collections/documents/records/"+taggedID, token, map[string]any{
+		"title":             "UntaggedTitleShouldNotMatchXYZ",
+		"tags":              []string{tagID},
+		"processing_status": "completed",
+	})
+	requireStatus(t, status, http.StatusOK, raw)
+
+	status, raw = h.doJSON(t, http.MethodPatch, "/api/collections/documents/records/"+otherID, token, map[string]any{
+		"title":             "OtherDocNoTagABC",
+		"tags":              []string{},
+		"processing_status": "completed",
+	})
+	requireStatus(t, status, http.StatusOK, raw)
+
+	filter := `(title ~ "` + tagName + `" || purpose ~ "` + tagName + `" || summary ~ "` + tagName + `" || ocr_text ~ "` + tagName + `" || tags.name ~ "` + tagName + `")`
+	status, raw = h.doJSON(t, http.MethodGet, "/api/collections/documents/records?filter="+url.QueryEscape(filter), token, nil)
+	requireStatus(t, status, http.StatusOK, raw)
+
+	foundTagged := false
+	foundOther := false
+	for _, item := range mustDecodeList(t, raw) {
+		switch jsonGetString(item, "id") {
+		case taggedID:
+			foundTagged = true
+		case otherID:
+			foundOther = true
+		}
+	}
+	if !foundTagged {
+		t.Fatal("expected document matching tag name in standard search filter")
+	}
+	if foundOther {
+		t.Fatal("document without the tag should not match standard search filter")
+	}
 }

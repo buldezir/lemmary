@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { ensureAuth, pb } from '../lib/pocketbase'
 import type { CorrespondentRecord, DocumentRecord, DocumentTypeRecord } from '../lib/pocketbase'
 import { DocumentCard } from '../components/DocumentCard'
+import { FilterCombobox } from '../components/FilterCombobox'
 import { Pagination } from '../components/Pagination'
 
 const PAGE_SIZE = 12
@@ -42,7 +43,7 @@ function buildDocumentFilter(filters: {
   if (filters.search) {
     const query = escapeFilterValue(filters.search)
     parts.push(
-      `(title ~ "${query}" || purpose ~ "${query}" || summary ~ "${query}" || ocr_text ~ "${query}")`,
+      `(title ~ "${query}" || purpose ~ "${query}" || summary ~ "${query}" || ocr_text ~ "${query}" || tags.name ~ "${query}")`,
     )
   }
 
@@ -115,7 +116,7 @@ export function IndexPage() {
           dateTo,
           documentType: documentTypeFilter,
           correspondent: correspondentFilter,
-          search: debouncedSearch,
+          search: debouncedSearch.trim(),
         })
         const result = await pb.collection('documents').getList<DocumentRecord>(page, PAGE_SIZE, {
           sort: '-created',
@@ -182,7 +183,7 @@ export function IndexPage() {
         <div className="flex flex-col gap-3 sm:flex-row">
           <input
             type="search"
-            placeholder="Search title, purpose, summary..."
+            placeholder="Search title, tags, purpose, summary..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             className="w-full rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm outline-none placeholder:text-stone-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
@@ -229,42 +230,29 @@ export function IndexPage() {
               className={selectClassName}
             />
           </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-stone-500">Document type</span>
-            <select
-              value={documentTypeFilter}
-              onChange={(event) => {
-                setDocumentTypeFilter(event.target.value)
-                setPage(1)
-              }}
-              className={selectClassName}
-            >
-              <option value="all">All types</option>
-              {documentTypes.map((type) => (
-                <option key={type.id} value={type.id}>
-                  {type.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-stone-500">Correspondent</span>
-            <select
-              value={correspondentFilter}
-              onChange={(event) => {
-                setCorrespondentFilter(event.target.value)
-                setPage(1)
-              }}
-              className={selectClassName}
-            >
-              <option value="all">All correspondents</option>
-              {correspondents.map((correspondent) => (
-                <option key={correspondent.id} value={correspondent.id}>
-                  {correspondent.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <FilterCombobox
+            label="Document type"
+            value={documentTypeFilter}
+            allLabel="All types"
+            options={documentTypes.map((type) => ({ value: type.id, label: type.name }))}
+            onChange={(next) => {
+              setDocumentTypeFilter(next)
+              setPage(1)
+            }}
+          />
+          <FilterCombobox
+            label="Correspondent"
+            value={correspondentFilter}
+            allLabel="All correspondents"
+            options={correspondents.map((correspondent) => ({
+              value: correspondent.id,
+              label: correspondent.name,
+            }))}
+            onChange={(next) => {
+              setCorrespondentFilter(next)
+              setPage(1)
+            }}
+          />
         </div>
       </div>
 
