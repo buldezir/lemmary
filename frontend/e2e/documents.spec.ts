@@ -104,12 +104,13 @@ test('standard search matches document tags', async ({ page }) => {
   await saveDocumentMetadata(page, { title, tags: tag })
 
   await goToDocuments(page)
-  await page.getByPlaceholder('Search title, tags, purpose, summary...').fill(tag)
+  const searchBox = page.getByPlaceholder('Search title, tags, purpose, summary...')
+  await searchBox.fill(`nomatch${stamp}`)
+  await expect(documentLink(page, documentId)).toHaveCount(0)
+
+  await searchBox.fill(tag)
   await expect(documentLink(page, documentId)).toBeVisible()
   await expect(page.getByRole('heading', { name: title })).toBeVisible()
-
-  await page.getByPlaceholder('Search title, tags, purpose, summary...').fill(`nomatch${stamp}`)
-  await expect(documentLink(page, documentId)).toHaveCount(0)
 })
 
 test('document type and correspondent filters are typeahead dropdowns', async ({ page }) => {

@@ -7,7 +7,6 @@ import { FilterCombobox } from '../components/FilterCombobox'
 import { Pagination } from '../components/Pagination'
 
 const PAGE_SIZE = 12
-const SEARCH_DEBOUNCE_MS = 800
 
 const selectClassName =
   'rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900'
@@ -16,12 +15,13 @@ function escapeFilterValue(value: string) {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
 }
 
-function buildBaseFilter(filters: {
+function buildDocumentFilter(filters: {
   status: string
   dateFrom: string
   dateTo: string
   documentType: string
   correspondent: string
+  search: string
 }) {
   const parts: string[] = []
 
@@ -40,31 +40,11 @@ function buildBaseFilter(filters: {
   if (filters.dateTo) {
     parts.push(`document_date <= "${filters.dateTo}"`)
   }
-
-  return parts
-}
-
-function buildDocumentFilter(filters: {
-  status: string
-  dateFrom: string
-  dateTo: string
-  documentType: string
-  correspondent: string
-  search: string
-  taggedIds?: string[]
-}) {
-  const parts = buildBaseFilter(filters)
-
   if (filters.search) {
     const query = escapeFilterValue(filters.search)
-    const clauses = [
-      `title ~ "${query}"`,
-      `purpose ~ "${query}"`,
-      `summary ~ "${query}"`,
-      `ocr_text ~ "${query}"`,
-      ...(filters.taggedIds ?? []).map((id) => `id = "${escapeFilterValue(id)}"`),
-    ]
-    parts.push(`(${clauses.join(' || ')})`)
+    parts.push(
+      `(title ~ "${query}" || purpose ~ "${query}" || summary ~ "${query}" || ocr_text ~ "${query}" || tags.name ~ "${query}")`,
+    )
   }
 
   return parts.length > 0 ? parts.join(' && ') : undefined
@@ -91,7 +71,7 @@ export function IndexPage() {
     const timer = window.setTimeout(() => {
       setDebouncedSearch(search)
       setPage(1)
-    }, SEARCH_DEBOUNCE_MS)
+    }, 300)
     return () => window.clearTimeout(timer)
   }, [search])
 
@@ -130,32 +110,13 @@ export function IndexPage() {
       try {
         setLoading(true)
         await ensureAuth()
-        const base = {
+        const filter = buildDocumentFilter({
           status: statusFilter,
           dateFrom,
           dateTo,
           documentType: documentTypeFilter,
           correspondent: correspondentFilter,
-        }
-        let taggedIds: string[] = []
-        const query = debouncedSearch.trim()
-        if (query) {
-          // PocketBase cannot OR tags.name with multiple scalar LIKE clauses, so
-          // resolve matching document IDs first and include them as id = "..." terms.
-          const tagParts = [
-            ...buildBaseFilter(base),
-            `tags.name ~ "${escapeFilterValue(query)}"`,
-          ]
-          const tagged = await pb.collection('documents').getList(1, 200, {
-            filter: tagParts.join(' && '),
-            fields: 'id',
-          })
-          taggedIds = tagged.items.map((row) => row.id)
-        }
-        const filter = buildDocumentFilter({
-          ...base,
-          search: query,
-          taggedIds,
+          search: debouncedSearch.trim(),
         })
         const result = await pb.collection('documents').getList<DocumentRecord>(page, PAGE_SIZE, {
           sort: '-created',

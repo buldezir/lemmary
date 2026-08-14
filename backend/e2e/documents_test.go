@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
-	"strings"
 	"testing"
 )
 
@@ -146,8 +145,14 @@ func TestDocumentsFilterByTagName(t *testing.T) {
 
 	tagged := h.uploadDocument(t, token, h.UserID, fixturePath("sample.txt"))
 	taggedID := jsonGetString(tagged, "id")
+	t.Cleanup(func() {
+		_, _ = h.doJSON(t, http.MethodDelete, "/api/collections/documents/records/"+taggedID, token, nil)
+	})
 	other := h.uploadDocument(t, token, h.UserID, fixturePath("sample.txt"))
 	otherID := jsonGetString(other, "id")
+	t.Cleanup(func() {
+		_, _ = h.doJSON(t, http.MethodDelete, "/api/collections/documents/records/"+otherID, token, nil)
+	})
 	h.settleDocuments(t, taggedID, otherID)
 
 	tagName := "filter-tag-" + taggedID
@@ -156,6 +161,9 @@ func TestDocumentsFilterByTagName(t *testing.T) {
 	})
 	requireStatus(t, status, http.StatusOK, raw)
 	tagID := jsonGetString(mustDecodeMap(t, raw), "id")
+	t.Cleanup(func() {
+		_, _ = h.doJSON(t, http.MethodDelete, "/api/collections/tags/records/"+tagID, token, nil)
+	})
 
 	status, raw = h.doJSON(t, http.MethodPatch, "/api/collections/documents/records/"+taggedID, token, map[string]any{
 		"title":             "UntaggedTitleShouldNotMatchXYZ",
@@ -171,26 +179,7 @@ func TestDocumentsFilterByTagName(t *testing.T) {
 	})
 	requireStatus(t, status, http.StatusOK, raw)
 
-	status, raw = h.doJSON(t, http.MethodGet, "/api/collections/documents/records?filter="+url.QueryEscape(`tags.name ~ "`+tagName+`"`)+"&fields=id&perPage=200", token, nil)
-	requireStatus(t, status, http.StatusOK, raw)
-	var taggedIDs []string
-	for _, item := range mustDecodeList(t, raw) {
-		taggedIDs = append(taggedIDs, jsonGetString(item, "id"))
-	}
-	if len(taggedIDs) == 0 {
-		t.Fatal("expected tags.name filter to return the tagged document")
-	}
-
-	clauses := []string{
-		`title ~ "` + tagName + `"`,
-		`purpose ~ "` + tagName + `"`,
-		`summary ~ "` + tagName + `"`,
-		`ocr_text ~ "` + tagName + `"`,
-	}
-	for _, id := range taggedIDs {
-		clauses = append(clauses, `id = "`+id+`"`)
-	}
-	filter := "(" + strings.Join(clauses, " || ") + ")"
+	filter := `(title ~ "` + tagName + `" || purpose ~ "` + tagName + `" || summary ~ "` + tagName + `" || ocr_text ~ "` + tagName + `" || tags.name ~ "` + tagName + `")`
 	status, raw = h.doJSON(t, http.MethodGet, "/api/collections/documents/records?filter="+url.QueryEscape(filter), token, nil)
 	requireStatus(t, status, http.StatusOK, raw)
 
@@ -210,10 +199,4 @@ func TestDocumentsFilterByTagName(t *testing.T) {
 	if foundOther {
 		t.Fatal("document without the tag should not match standard search filter")
 	}
-
-	t.Cleanup(func() {
-		_, _ = h.doJSON(t, http.MethodDelete, "/api/collections/documents/records/"+taggedID, token, nil)
-		_, _ = h.doJSON(t, http.MethodDelete, "/api/collections/documents/records/"+otherID, token, nil)
-		_, _ = h.doJSON(t, http.MethodDelete, "/api/collections/tags/records/"+tagID, token, nil)
-	})
 }

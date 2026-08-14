@@ -49,9 +49,18 @@ export function FilterCombobox({
     return showAll ? [{ value: allValue, label: allLabel }, ...matches] : matches
   }, [allLabel, allValue, options, query])
 
+  const lastIndex = Math.max(filteredOptions.length - 1, 0)
+  const activeIndex = Math.min(highlightedIndex, lastIndex)
+
   function close() {
     setOpen(false)
     setQuery(null)
+    setHighlightedIndex(0)
+  }
+
+  function openList() {
+    setOpen(true)
+    setHighlightedIndex(0)
   }
 
   function selectOption(nextValue: string) {
@@ -60,13 +69,9 @@ export function FilterCombobox({
   }
 
   useEffect(() => {
-    setHighlightedIndex(0)
-  }, [query, open])
-
-  useEffect(() => {
     if (!open) return
     highlightedRef.current?.scrollIntoView({ block: 'nearest' })
-  }, [highlightedIndex, open, filteredOptions])
+  }, [activeIndex, open, filteredOptions])
 
   useEffect(() => {
     if (!open) return
@@ -91,26 +96,26 @@ export function FilterCombobox({
     if (event.key === 'ArrowDown') {
       event.preventDefault()
       if (!open) {
-        setOpen(true)
+        openList()
         return
       }
-      setHighlightedIndex((index) => Math.min(index + 1, Math.max(filteredOptions.length - 1, 0)))
+      setHighlightedIndex(Math.min(activeIndex + 1, lastIndex))
       return
     }
 
     if (event.key === 'ArrowUp') {
       event.preventDefault()
       if (!open) {
-        setOpen(true)
+        openList()
         return
       }
-      setHighlightedIndex((index) => Math.max(index - 1, 0))
+      setHighlightedIndex(Math.max(activeIndex - 1, 0))
       return
     }
 
     if (event.key === 'Enter' && open) {
       event.preventDefault()
-      const option = filteredOptions[highlightedIndex]
+      const option = filteredOptions[activeIndex]
       if (option) {
         selectOption(option.value)
       }
@@ -130,7 +135,7 @@ export function FilterCombobox({
           aria-expanded={open}
           aria-controls={listboxId}
           aria-autocomplete="list"
-          aria-activedescendant={open ? `${listboxId}-option-${highlightedIndex}` : undefined}
+          aria-activedescendant={open ? `${listboxId}-option-${activeIndex}` : undefined}
           autoComplete="off"
           spellCheck={false}
           placeholder={selectedLabel}
@@ -138,12 +143,13 @@ export function FilterCombobox({
           onChange={(event) => {
             setQuery(event.target.value)
             setOpen(true)
+            setHighlightedIndex(0)
           }}
           onFocus={(event) => {
-            setOpen(true)
+            openList()
             event.currentTarget.select()
           }}
-          onClick={() => setOpen(true)}
+          onClick={() => openList()}
           onKeyDown={onKeyDown}
           className={inputClassName}
         />
@@ -172,7 +178,7 @@ export function FilterCombobox({
             ) : (
               filteredOptions.map((option, index) => {
                 const selected = option.value === value
-                const highlighted = index === highlightedIndex
+                const highlighted = index === activeIndex
                 return (
                   <li
                     key={`${option.value}-${option.label}`}
