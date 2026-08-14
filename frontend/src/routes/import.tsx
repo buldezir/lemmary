@@ -1,9 +1,7 @@
 import { type SubmitEvent, useEffect, useState } from 'react'
-import { Navigate } from '@tanstack/react-router'
 import {
   ensureAuth,
   importFromNgx,
-  isAdmin,
   type NgxImportMode,
   type NgxImportResult,
 } from '../lib/pocketbase'
@@ -29,7 +27,6 @@ const modeOptions: { value: NgxImportMode; label: string; description: string }[
 ]
 
 export function ImportPage() {
-  const [allowed, setAllowed] = useState<boolean | null>(null)
   const [url, setUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [mode, setMode] = useState<NgxImportMode>('preserve')
@@ -44,12 +41,9 @@ export function ImportPage() {
     async function load() {
       try {
         await ensureAuth()
-        const admin = await isAdmin()
-        if (active) setAllowed(admin)
       } catch (err) {
         if (active) {
           setError(err instanceof Error ? err.message : 'Failed to load')
-          setAllowed(false)
         }
       } finally {
         if (active) setLoading(false)
@@ -83,11 +77,8 @@ export function ImportPage() {
     }
   }
 
-  if (loading || allowed === null) {
+  if (loading) {
     return <p className="text-sm text-stone-500">Loading…</p>
-  }
-  if (!allowed) {
-    return <Navigate to="/" />
   }
 
   return (
@@ -95,9 +86,10 @@ export function ImportPage() {
       <div>
         <h1 className="text-2xl font-semibold text-stone-950">Import from Paperless-ngx</h1>
         <p className="mt-1 text-sm text-stone-500">
-          Pull documents from an existing Paperless-ngx instance using its URL and API token. Choose
-          whether to keep remote metadata or reprocess files through OCR and AI. The API key is not
-          stored.
+          Pull documents from an existing Paperless-ngx instance using its URL and API token. The
+          remote token belongs to a specific ngx user, so imported documents are added to your
+          account. Choose whether to keep remote metadata or reprocess files through OCR and AI. The
+          API key is not stored.
         </p>
       </div>
 

@@ -206,7 +206,7 @@ API versions 9 and 10 are accepted via the `Accept` header (`application/json; v
 
 ### Importing from Paperless-ngx
 
-Admins can migrate an existing Paperless-ngx library into Paperless Go:
+Any signed-in user can migrate a Paperless-ngx library into their own Paperless Go account. The remote API token authenticates a specific ngx user, so the import runs as the current local user rather than as an admin.
 
 1. Open **Import** in the More menu (or go to `/import`).
 2. Enter the remote Paperless-ngx base URL and an API token from that instance’s profile.

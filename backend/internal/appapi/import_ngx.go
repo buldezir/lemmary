@@ -55,13 +55,16 @@ func handlePostImportNgx(app core.App) func(*core.RequestEvent) error {
 
 func handleGetImportNgxStatus(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		_ = app
 		jobID := strings.TrimSpace(e.Request.URL.Query().Get("job_id"))
 		if jobID == "" {
 			return writeError(e, http.StatusBadRequest, "job_id is required.")
 		}
+		ownerID, err := resolveImportOwnerID(app, e)
+		if err != nil {
+			return writeError(e, http.StatusBadRequest, err.Error())
+		}
 		job, ok := ngximport.GetJob(jobID)
-		if !ok {
+		if !ok || job.OwnerUserID != ownerID {
 			return writeError(e, http.StatusNotFound, "Import job not found.")
 		}
 		payload := map[string]any{

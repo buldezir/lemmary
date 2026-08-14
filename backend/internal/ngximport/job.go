@@ -19,11 +19,12 @@ const (
 
 // Job is an in-memory import run snapshot (lost on process restart).
 type Job struct {
-	ID        string    `json:"job_id"`
-	Status    string    `json:"status"`
-	Result    *Result   `json:"result,omitempty"`
-	Error     string    `json:"error,omitempty"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          string    `json:"job_id"`
+	OwnerUserID string    `json:"-"`
+	Status      string    `json:"status"`
+	Result      *Result   `json:"result,omitempty"`
+	Error       string    `json:"error,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 var (
@@ -62,9 +63,10 @@ func Start(app core.App, ownerUserID, baseURL, apiKey, mode string) (string, err
 		return "", err
 	}
 	job := &Job{
-		ID:        id,
-		Status:    JobStatusRunning,
-		UpdatedAt: time.Now().UTC(),
+		ID:          id,
+		OwnerUserID: ownerUserID,
+		Status:      JobStatusRunning,
+		UpdatedAt:   time.Now().UTC(),
 	}
 	jobsMu.Lock()
 	jobs[id] = job

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,21 +12,24 @@ import (
 	"time"
 )
 
-func TestImportNgxForbiddenForUser(t *testing.T) {
+func TestImportNgxUnauthorized(t *testing.T) {
 	h := StartShared(t)
-	token := h.userToken(t)
-	status, raw := h.doJSON(t, http.MethodPost, "/api/app/import/ngx", token, map[string]any{
+	status, raw := h.doJSON(t, http.MethodPost, "/api/app/import/ngx", "", map[string]any{
 		"url":     "http://example.com",
 		"api_key": "x",
 	})
-	if status != http.StatusForbidden {
+	if status != http.StatusUnauthorized {
 		t.Fatalf("status=%d body=%s", status, raw)
+	}
+	status, raw = h.doJSON(t, http.MethodGet, "/api/app/import/ngx/status?job_id=missing", "", nil)
+	if status != http.StatusUnauthorized {
+		t.Fatalf("status poll=%d body=%s", status, raw)
 	}
 }
 
 func TestImportNgxValidation(t *testing.T) {
 	h := StartShared(t)
-	token := h.adminUserToken(t)
+	token := h.userToken(t)
 	status, raw := h.doJSON(t, http.MethodPost, "/api/app/import/ngx", token, map[string]any{
 		"url":     "",
 		"api_key": "x",
@@ -90,7 +94,7 @@ func TestImportNgxPreserveMetadata(t *testing.T) {
 	remote := httptest.NewServer(mux)
 	t.Cleanup(remote.Close)
 
-	token := h.adminUserToken(t)
+	token := h.userToken(t)
 	result := runImportNgx(t, h, token, remote.URL, "remote-token", "preserve")
 	if intFromAny(result["imported"]) != 1 {
 		t.Fatalf("imported=%v body=%v", result["imported"], result)
@@ -140,6 +144,9 @@ func TestImportNgxPreserveMetadata(t *testing.T) {
 	if dtype, _ := doc["document_type"].(string); dtype == "" {
 		t.Fatal("expected document_type to be set")
 	}
+	if user, _ := doc["user"].(string); user != h.UserID {
+		t.Fatalf("imported document owner=%q want user %q", user, h.UserID)
+	}
 }
 
 func TestImportNgxReprocessFilesOnly(t *testing.T) {
@@ -180,7 +187,7 @@ func TestImportNgxReprocessFilesOnly(t *testing.T) {
 	remote := httptest.NewServer(mux)
 	t.Cleanup(remote.Close)
 
-	token := h.adminUserToken(t)
+	token := h.userToken(t)
 	result := runImportNgx(t, h, token, remote.URL, "remote-token", "reprocess")
 	if intFromAny(result["imported"]) != 1 {
 		t.Fatalf("imported=%v body=%v", result["imported"], result)
@@ -210,6 +217,60 @@ func TestImportNgxReprocessFilesOnly(t *testing.T) {
 	if ocr, _ := doc["ocr_text"].(string); ocr == "ShouldNotKeepOCR" {
 		t.Fatalf("reprocess mode should not keep ngx OCR text, got %q", ocr)
 	}
+	if user, _ := doc["user"].(string); user != h.UserID {
+		t.Fatalf("imported document owner=%q want user %q", user, h.UserID)
+	}
+}
+
+func TestImportNgxJobHiddenFromOtherUser(t *testing.T) {
+	h := StartShared(t)
+	mux := http.NewServeMux()
+	empty := func(w http.ResponseWriter, _ *http.Request) {
+		writeNgxPage(w, []map[string]any{})
+	}
+	mux.HandleFunc("/api/tags/", empty)
+	mux.HandleFunc("/api/correspondents/", empty)
+	mux.HandleFunc("/api/document_types/", empty)
+	mux.HandleFunc("/api/documents/", empty)
+	remote := httptest.NewServer(mux)
+	t.Cleanup(remote.Close)
+
+	tokenA := h.userToken(t)
+	status, raw := h.doJSON(t, http.MethodPost, "/api/app/import/ngx", tokenA, map[string]any{
+		"url":     remote.URL,
+		"api_key": "remote-token",
+		"mode":    "preserve",
+	})
+	requireStatus(t, status, http.StatusAccepted, raw)
+	var start map[string]any
+	if err := json.Unmarshal([]byte(raw), &start); err != nil {
+		t.Fatalf("decode start: %v body %s", err, raw)
+	}
+	jobID, _ := start["job_id"].(string)
+	if jobID == "" {
+		t.Fatalf("missing job_id in %s", raw)
+	}
+
+	otherEmail := fmt.Sprintf("import-other-%d@paperless.local", time.Now().UnixNano())
+	otherPass := "otherpassword123"
+	status, raw = h.doJSON(t, http.MethodPost, "/api/collections/users/records", h.superToken(t), map[string]any{
+		"email":           otherEmail,
+		"password":        otherPass,
+		"passwordConfirm": otherPass,
+		"verified":        true,
+	})
+	if status < 200 || status >= 300 {
+		if _, err := createAuthRecord(h.App, "users", otherEmail, otherPass); err != nil {
+			t.Fatalf("create other user via API (%s) and app (%v)", formatErr(status, raw), err)
+		}
+	}
+	tokenB := h.authWithPassword(t, "users", otherEmail, otherPass).Token
+	status, raw = h.doJSON(t, http.MethodGet, "/api/app/import/ngx/status?job_id="+jobID, tokenB, nil)
+	if status != http.StatusNotFound {
+		t.Fatalf("other user should not see import job: status=%d body=%s", status, raw)
+	}
+
+	_ = waitImportNgx(t, h, tokenA, jobID)
 }
 
 func runImportNgx(t *testing.T, h *Harness, token, url, apiKey, mode string) map[string]any {
@@ -229,10 +290,14 @@ func runImportNgx(t *testing.T, h *Harness, token, url, apiKey, mode string) map
 	if jobID == "" {
 		t.Fatalf("missing job_id in %s", raw)
 	}
+	return waitImportNgx(t, h, token, jobID)
+}
 
+func waitImportNgx(t *testing.T, h *Harness, token, jobID string) map[string]any {
+	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		status, raw = h.doJSON(t, http.MethodGet, "/api/app/import/ngx/status?job_id="+jobID, token, nil)
+		status, raw := h.doJSON(t, http.MethodGet, "/api/app/import/ngx/status?job_id="+jobID, token, nil)
 		requireStatus(t, status, http.StatusOK, raw)
 		var payload map[string]any
 		if err := json.Unmarshal([]byte(raw), &payload); err != nil {
