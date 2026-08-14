@@ -688,15 +688,30 @@ export async function importFromNgx(url: string, apiKey: string, mode: NgxImport
   }
 
   for (let attempt = 0; attempt < importPollMaxAttempts; attempt++) {
-    const statusResponse = await fetch(
-      `${pbUrl}/api/app/import/ngx/status?job_id=${encodeURIComponent(startData.job_id)}`,
-      {
-        headers: {
-          Authorization: pb.authStore.token,
+    let statusResponse: Response
+    try {
+      statusResponse = await fetch(
+        `${pbUrl}/api/app/import/ngx/status?job_id=${encodeURIComponent(startData.job_id)}`,
+        {
+          headers: {
+            Authorization: pb.authStore.token,
+          },
         },
-      },
-    )
-    const statusData = (await statusResponse.json()) as NgxImportJobStatus
+      )
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, importPollIntervalMs))
+      continue
+    }
+    if (statusResponse.status >= 500) {
+      await new Promise((resolve) => setTimeout(resolve, importPollIntervalMs))
+      continue
+    }
+    let statusData: NgxImportJobStatus
+    try {
+      statusData = (await statusResponse.json()) as NgxImportJobStatus
+    } catch {
+      throw new Error('Failed to poll import status')
+    }
     if (!statusResponse.ok) {
       throw new Error(statusData.detail ?? 'Failed to poll import status')
     }

@@ -13,6 +13,7 @@ import (
 	"paperless-go/backend/internal/appapi"
 	"paperless-go/backend/internal/appwire"
 	"paperless-go/backend/internal/config"
+	"paperless-go/backend/internal/ngximport"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
@@ -65,6 +66,7 @@ type Options struct {
 // Start boots a temporary PocketBase instance with mocks and seeded users.
 // Prefer StartShared from tests; use Start for the Playwright e2e server process.
 func Start(opts Options) (*Harness, error) {
+	ngximport.SetAllowPrivateImportHosts(true)
 	mocks := startMockServers()
 
 	dataDir, err := os.MkdirTemp("", "paperless-e2e-*")

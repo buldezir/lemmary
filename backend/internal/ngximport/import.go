@@ -49,17 +49,17 @@ func ParseMode(raw string) (string, error) {
 }
 
 // Run imports taxonomy and documents from a remote Paperless-ngx instance.
-// Only one import may run at a time.
+// Only one import may run at a time per owner.
 func Run(app core.App, ownerUserID, baseURL, apiKey, mode string) (Result, error) {
 	return RunWithClient(app, ownerUserID, baseURL, apiKey, mode, nil)
 }
 
 // RunWithClient is like Run but accepts a prebuilt client (for tests).
 func RunWithClient(app core.App, ownerUserID, baseURL, apiKey, mode string, client *Client) (Result, error) {
-	if err := acquireImport(); err != nil {
+	if err := acquireImport(ownerUserID); err != nil {
 		return Result{}, err
 	}
-	defer releaseImport()
+	defer releaseImport(ownerUserID)
 	return runImport(app, ownerUserID, baseURL, apiKey, mode, client)
 }
 

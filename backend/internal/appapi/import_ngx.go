@@ -36,7 +36,7 @@ func handlePostImportNgx(app core.App) func(*core.RequestEvent) error {
 
 		ownerID, err := resolveImportOwnerID(app, e)
 		if err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeImportOwnerError(e, err)
 		}
 
 		jobID, err := ngximport.Start(app, ownerID, req.URL, req.APIKey, mode)
@@ -61,7 +61,7 @@ func handleGetImportNgxStatus(app core.App) func(*core.RequestEvent) error {
 		}
 		ownerID, err := resolveImportOwnerID(app, e)
 		if err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeImportOwnerError(e, err)
 		}
 		job, ok := ngximport.GetJob(jobID)
 		if !ok || job.OwnerUserID != ownerID {
@@ -81,21 +81,37 @@ func handleGetImportNgxStatus(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
+type importOwnerClientError struct {
+	msg string
+}
+
+func (e *importOwnerClientError) Error() string {
+	return e.msg
+}
+
+func writeImportOwnerError(e *core.RequestEvent, err error) error {
+	var clientErr *importOwnerClientError
+	if errors.As(err, &clientErr) {
+		return writeError(e, http.StatusBadRequest, clientErr.Error())
+	}
+	return writeError(e, http.StatusInternalServerError, "Failed to resolve import owner.")
+}
+
 func resolveImportOwnerID(app core.App, e *core.RequestEvent) (string, error) {
 	if e.Auth == nil {
-		return "", errors.New("Authentication required.")
+		return "", &importOwnerClientError{msg: "Authentication required."}
 	}
 	if e.Auth.Collection().Name == "users" {
 		return e.Auth.Id, nil
 	}
 	email := strings.TrimSpace(e.Auth.Email())
 	if email == "" {
-		return "", errors.New("Admin account has no email; cannot resolve document owner.")
+		return "", &importOwnerClientError{msg: "Admin account has no email; cannot resolve document owner."}
 	}
 	user, err := app.FindAuthRecordByEmail("users", email)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return "", errors.New("No paired users account for this admin; sign in with the admin user account.")
+			return "", &importOwnerClientError{msg: "No paired users account for this admin; sign in with the admin user account."}
 		}
 		return "", err
 	}

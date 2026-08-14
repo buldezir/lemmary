@@ -39,7 +39,10 @@ func NewClient(baseURL, apiKey string, httpClient *http.Client) (*Client, error)
 		return nil, fmt.Errorf("api key is required")
 	}
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: listTimeout}
+		if err := rejectBlockedImportURL(normalized); err != nil {
+			return nil, err
+		}
+		httpClient = newImportHTTPClient(listTimeout)
 	}
 	downloadClient := httpClient
 	if httpClient.Timeout != 0 && httpClient.Timeout < downloadTimeout {
@@ -154,7 +157,7 @@ func (c *Client) DownloadDocument(id int) (downloadedFile, error) {
 		return downloadedFile{}, fmt.Errorf("document %d exceeds %d bytes", id, maxDownloadBytes)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return downloadedFile{}, fmt.Errorf("download document %d: status %d: %s", id, resp.StatusCode, truncate(string(body), 200))
+		return downloadedFile{}, fmt.Errorf("download document %d: status %d", id, resp.StatusCode)
 	}
 	name := filenameFromDisposition(resp.Header.Get("Content-Disposition"))
 	if name == "" {
@@ -215,8 +218,8 @@ func (c *Client) getJSON(relOrPath string, dest any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxJSONErrorBytes))
-		return fmt.Errorf("GET %s: status %d: %s", relOrPath, resp.StatusCode, truncate(string(body), 200))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxJSONErrorBytes))
+		return fmt.Errorf("GET %s: status %d", relOrPath, resp.StatusCode)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
 		return fmt.Errorf("decode %s: %w", relOrPath, err)
@@ -267,11 +270,4 @@ func filenameFromDisposition(header string) string {
 		return path.Base(name)
 	}
 	return ""
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,35 +32,38 @@ var (
 	jobsMu     sync.Mutex
 	jobs       = map[string]*Job{}
 	importMu   sync.Mutex
-	importBusy bool
+	importBusy = map[string]struct{}{}
 )
 
-func acquireImport() error {
+func acquireImport(ownerUserID string) error {
+	if strings.TrimSpace(ownerUserID) == "" {
+		return fmt.Errorf("owner user id is required")
+	}
 	importMu.Lock()
 	defer importMu.Unlock()
-	if importBusy {
+	if _, busy := importBusy[ownerUserID]; busy {
 		return ErrImportInProgress
 	}
-	importBusy = true
+	importBusy[ownerUserID] = struct{}{}
 	return nil
 }
 
-func releaseImport() {
+func releaseImport(ownerUserID string) {
 	importMu.Lock()
-	importBusy = false
+	delete(importBusy, ownerUserID)
 	importMu.Unlock()
 }
 
 // Start begins an import in a background goroutine and returns the job id.
-// Only one import may run at a time.
+// Only one import may run at a time per owner.
 func Start(app core.App, ownerUserID, baseURL, apiKey, mode string) (string, error) {
-	if err := acquireImport(); err != nil {
+	if err := acquireImport(ownerUserID); err != nil {
 		return "", err
 	}
 
 	id, err := newJobID()
 	if err != nil {
-		releaseImport()
+		releaseImport(ownerUserID)
 		return "", err
 	}
 	job := &Job{
@@ -73,7 +77,7 @@ func Start(app core.App, ownerUserID, baseURL, apiKey, mode string) (string, err
 	jobsMu.Unlock()
 
 	go func() {
-		defer releaseImport()
+		defer releaseImport(ownerUserID)
 		result, runErr := runImport(app, ownerUserID, baseURL, apiKey, mode, nil)
 		jobsMu.Lock()
 		defer jobsMu.Unlock()
