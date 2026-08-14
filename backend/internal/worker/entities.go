@@ -1,31 +1,37 @@
 package worker
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// EnsureNamedEntity finds or creates a named entity (correspondent / document type).
-// Lookup prefers name_original, then name. created is true only when a new record is inserted.
-func EnsureNamedEntity(app core.App, collection, displayName, originalName string) (id string, created bool, err error) {
+// EnsureNamedEntity finds or creates a named entity (correspondent / document type)
+// owned by userID. Lookup prefers name_original, then name. created is true only
+// when a new record is inserted.
+func EnsureNamedEntity(app core.App, collection, userID, displayName, originalName string) (id string, created bool, err error) {
+	userID = strings.TrimSpace(userID)
 	displayName = strings.TrimSpace(displayName)
 	originalName = strings.TrimSpace(originalName)
 	if displayName == "" {
 		return "", false, nil
 	}
+	if userID == "" {
+		return "", false, fmt.Errorf("user id is required")
+	}
 	if originalName == "" {
 		originalName = displayName
 	}
 
-	if existingID, err := findNamedEntity(app, collection, "name_original", originalName); err != nil {
+	if existingID, err := findNamedEntity(app, collection, userID, "name_original", originalName); err != nil {
 		return "", false, err
 	} else if existingID != "" {
 		id, err := updateNamedEntity(app, collection, existingID, displayName, originalName)
 		return id, false, err
 	}
 
-	if existingID, err := findNamedEntity(app, collection, "name", displayName); err != nil {
+	if existingID, err := findNamedEntity(app, collection, userID, "name", displayName); err != nil {
 		return "", false, err
 	} else if existingID != "" {
 		id, err := updateNamedEntity(app, collection, existingID, displayName, originalName)
@@ -38,20 +44,29 @@ func EnsureNamedEntity(app core.App, collection, displayName, originalName strin
 	}
 
 	record := core.NewRecord(coll)
+	record.Set("user", userID)
 	record.Set("name", displayName)
 	record.Set("name_original", originalName)
 	if err := app.Save(record); err != nil {
+		existingID, findErr := findNamedEntity(app, collection, userID, "name", displayName)
+		if findErr == nil && existingID != "" {
+			return existingID, false, nil
+		}
+		existingID, findErr = findNamedEntity(app, collection, userID, "name_original", originalName)
+		if findErr == nil && existingID != "" {
+			return existingID, false, nil
+		}
 		return "", false, err
 	}
 	return record.Id, true, nil
 }
 
-func ensureNamedEntity(app core.App, collection, displayName, originalName string) (string, error) {
-	id, _, err := EnsureNamedEntity(app, collection, displayName, originalName)
+func ensureNamedEntity(app core.App, collection, userID, displayName, originalName string) (string, error) {
+	id, _, err := EnsureNamedEntity(app, collection, userID, displayName, originalName)
 	return id, err
 }
 
-func findNamedEntity(app core.App, collection, field, value string) (string, error) {
+func findNamedEntity(app core.App, collection, userID, field, value string) (string, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return "", nil
@@ -59,11 +74,11 @@ func findNamedEntity(app core.App, collection, field, value string) (string, err
 
 	existing, err := app.FindRecordsByFilter(
 		collection,
-		field+" = {:name}",
+		"user = {:userId} && "+field+" = {:name}",
 		"",
 		1,
 		0,
-		map[string]any{"name": value},
+		map[string]any{"userId": userID, "name": value},
 	)
 	if err != nil {
 		return "", err

@@ -99,7 +99,7 @@ func applyCorrespondent(app core.App, document *core.Record, metadata *models.Ex
 		return nil
 	}
 
-	correspondentID, err := ensureNamedEntity(app, "correspondents", displayName, originalName)
+	correspondentID, err := ensureNamedEntity(app, "correspondents", document.GetString("user"), displayName, originalName)
 	if err != nil {
 		return err
 	}
@@ -114,7 +114,7 @@ func applyDocumentType(app core.App, document *core.Record, metadata *models.Ext
 		return nil
 	}
 
-	typeID, err := ensureNamedEntity(app, "document_types", displayName, originalName)
+	typeID, err := ensureNamedEntity(app, "document_types", document.GetString("user"), displayName, originalName)
 	if err != nil {
 		return err
 	}

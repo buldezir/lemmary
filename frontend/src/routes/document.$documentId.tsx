@@ -266,6 +266,7 @@ export function DocumentDetailPage() {
           const created = await pb.collection('document_types').create({
             name: documentTypeName,
             name_original: documentTypeName,
+            user: pb.authStore.record?.id ?? '',
           })
           documentTypeId = created.id
         }
@@ -283,6 +284,7 @@ export function DocumentDetailPage() {
           const created = await pb.collection('correspondents').create({
             name: correspondentName,
             name_original: correspondentName,
+            user: pb.authStore.record?.id ?? '',
           })
           correspondentId = created.id
         }

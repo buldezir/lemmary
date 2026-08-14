@@ -83,10 +83,10 @@ func handlePatchDocument(e *core.RequestEvent) error {
 		record.Set("document_date", v)
 	}
 	if v, ok := body["document_type"]; ok {
-		setRelationField(e.App, record, "document_type", v)
+		setRelationField(e.App, record, "document_type", v, e.Auth.Id)
 	}
 	if v, ok := body["correspondent"]; ok {
-		setRelationField(e.App, record, "correspondent", v)
+		setRelationField(e.App, record, "correspondent", v, e.Auth.Id)
 	}
 	if v, ok := body["tags"].([]any); ok {
 		raw := make([]string, 0, len(v))
@@ -152,12 +152,12 @@ func handlePostDocument(e *core.RequestEvent) error {
 			record.Set("document_date", createdDateOnly(created))
 		}
 		if correspondent := firstFormValue(form, "correspondent"); correspondent != "" {
-			if pbID := resolvePBRelationID(e.App, "correspondents", correspondent); pbID != "" {
+			if pbID := resolvePBRelationID(e.App, "correspondents", correspondent, ownerFilter(e.Auth.Id), ownerParams(e.Auth.Id)); pbID != "" {
 				record.Set("correspondent", pbID)
 			}
 		}
 		if docType := firstFormValue(form, "document_type"); docType != "" {
-			if pbID := resolvePBRelationID(e.App, "document_types", docType); pbID != "" {
+			if pbID := resolvePBRelationID(e.App, "document_types", docType, ownerFilter(e.Auth.Id), ownerParams(e.Auth.Id)); pbID != "" {
 				record.Set("document_type", pbID)
 			}
 		}
@@ -242,12 +242,12 @@ func findTaskIDForDocument(app core.App, documentID string) (string, error) {
 	return taskID, nil
 }
 
-func setRelationField(app core.App, record *core.Record, field string, value any) {
+func setRelationField(app core.App, record *core.Record, field string, value any, authID string) {
 	if value == nil {
 		record.Set(field, "")
 		return
 	}
-	pbID := resolvePBRelationID(app, collectionForRelationField(field), value)
+	pbID := resolvePBRelationID(app, collectionForRelationField(field), value, ownerFilter(authID), ownerParams(authID))
 	record.Set(field, pbID)
 }
 

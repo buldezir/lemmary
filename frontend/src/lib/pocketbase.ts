@@ -9,12 +9,14 @@ export type DocumentTypeRecord = {
   id: string
   name: string
   name_original: string
+  user?: string
 }
 
 export type CorrespondentRecord = {
   id: string
   name: string
   name_original: string
+  user?: string
 }
 
 export type DocumentRecord = {

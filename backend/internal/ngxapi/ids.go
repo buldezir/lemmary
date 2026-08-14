@@ -73,18 +73,18 @@ func ngxRelationID(record *core.Record, field string) any {
 	return toNgxID(id)
 }
 
-func resolvePBRelationID(app core.App, collection string, raw any) string {
+func resolvePBRelationID(app core.App, collection string, raw any, filter string, params map[string]any) string {
 	switch v := raw.(type) {
 	case nil:
 		return ""
 	case float64:
-		record, err := findRecordByNgxID(app, collection, int(v), "", nil)
+		record, err := findRecordByNgxID(app, collection, int(v), filter, params)
 		if err != nil {
 			return ""
 		}
 		return record.Id
 	case int:
-		record, err := findRecordByNgxID(app, collection, v, "", nil)
+		record, err := findRecordByNgxID(app, collection, v, filter, params)
 		if err != nil {
 			return ""
 		}
@@ -94,13 +94,20 @@ func resolvePBRelationID(app core.App, collection string, raw any) string {
 			return ""
 		}
 		if ngxID, err := strconv.Atoi(v); err == nil {
-			record, err := findRecordByNgxID(app, collection, ngxID, "", nil)
+			record, err := findRecordByNgxID(app, collection, ngxID, filter, params)
 			if err != nil {
 				return ""
 			}
 			return record.Id
 		}
-		return v
+		record, err := app.FindRecordById(collection, v)
+		if err != nil {
+			return ""
+		}
+		if uid, ok := params["userId"].(string); ok && uid != "" && record.GetString("user") != uid {
+			return ""
+		}
+		return record.Id
 	default:
 		return ""
 	}

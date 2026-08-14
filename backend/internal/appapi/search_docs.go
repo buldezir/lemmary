@@ -50,7 +50,7 @@ func searchUserDocuments(app core.App, userID string, args ai.SearchDocumentsArg
 	}
 
 	if typeName := strings.TrimSpace(args.DocumentType); typeName != "" {
-		typeIDs, err := findNamedEntityIDs(app, "document_types", typeName)
+		typeIDs, err := findNamedEntityIDs(app, "document_types", typeName, userID)
 		if err != nil {
 			return nil, err
 		}
@@ -62,7 +62,7 @@ func searchUserDocuments(app core.App, userID string, args ai.SearchDocumentsArg
 	}
 
 	if corrName := strings.TrimSpace(args.Correspondent); corrName != "" {
-		corrIDs, err := findNamedEntityIDs(app, "correspondents", corrName)
+		corrIDs, err := findNamedEntityIDs(app, "correspondents", corrName, userID)
 		if err != nil {
 			return nil, err
 		}
@@ -136,18 +136,24 @@ func searchUserDocuments(app core.App, userID string, args ai.SearchDocumentsArg
 	return hits, nil
 }
 
-func findNamedEntityIDs(app core.App, collection, name string) ([]string, error) {
+func findNamedEntityIDs(app core.App, collection, name, userID string) ([]string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, nil
 	}
+	filter := "name ~ {:name} || name_original ~ {:name}"
+	params := dbx.Params{"name": name}
+	if userID != "" {
+		filter = "user = {:userId} && (" + filter + ")"
+		params["userId"] = userID
+	}
 	records, err := app.FindRecordsByFilter(
 		collection,
-		"name ~ {:name} || name_original ~ {:name}",
+		filter,
 		"name",
 		20,
 		0,
-		dbx.Params{"name": name},
+		params,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("lookup %s: %w", collection, err)
