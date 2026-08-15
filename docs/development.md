@@ -54,6 +54,7 @@ All variables live in `.env` at the project root (see `.env.example`).
 | Variable | Default | Description |
 | --- | --- | --- |
 | `WORKER_CRON_EXPR` | `* * * * *` | Cron expression for sweeping stuck pending jobs (registered once at startup) |
+| `IMPORT_ALLOW_PRIVATE` | unset (blocked) | Set to `1`/`true` to let ngx import reach loopback and RFC1918 hosts. Link-local / cloud-metadata addresses stay blocked. Needed when Paperless-ngx is on the same LAN or Docker network. |
 | `VITE_POCKETBASE_URL` | `http://127.0.0.1:8090` | PocketBase API URL (frontend) |
 | `VITE_DEV_USER_EMAIL` | — | Dev auto-login email (`users` collection) |
 | `VITE_DEV_USER_PASSWORD` | — | Dev auto-login password |
@@ -206,7 +207,7 @@ API versions 9 and 10 are accepted via the `Accept` header (`application/json; v
 
 ### Importing from Paperless-ngx
 
-Admins can migrate an existing Paperless-ngx library into Paperless Go:
+Any signed-in user can migrate a Paperless-ngx library into their own Paperless Go account. The remote API token authenticates a specific ngx user, so the import runs as the current local user rather than as an admin.
 
 1. Open **Import** in the More menu (or go to `/import`).
 2. Enter the remote Paperless-ngx base URL and an API token from that instance’s profile.
@@ -215,7 +216,9 @@ Admins can migrate an existing Paperless-ngx library into Paperless Go:
    - **Import files only and reprocess** (`reprocess`): downloads only the original files and queues the full OCR + AI pipeline as for a new upload.
 4. Start the import. Exact file duplicates (same checksum) are skipped.
 
-The same flow is available as `POST /api/app/import/ngx` with JSON body `{ "url": "...", "api_key": "...", "mode": "preserve" | "reprocess" }`. The request returns `202 Accepted` with `{ "job_id", "status": "running" }`. Poll `GET /api/app/import/ngx/status?job_id=...` until `status` is `completed` (with `result`) or `failed` (with `error`). Job state is kept in memory for the running process only. `mode` defaults to `preserve`. The API key is not persisted.
+The same flow is available as `POST /api/app/import/ngx` with JSON body `{ "url": "...", "api_key": "...", "mode": "preserve" | "reprocess" }`. The request returns `202 Accepted` with `{ "job_id", "status": "running" }`. Poll `GET /api/app/import/ngx/status?job_id=...` until `status` is `completed` (with `result`) or `failed` (with `error`). Job state is kept in memory for the running process only. One import may run at a time per user. `mode` defaults to `preserve`. The API key is not persisted.
+
+Import fetches only the caller-supplied URL. Private, loopback, and link-local destinations are blocked by default (including after redirects). Set `IMPORT_ALLOW_PRIVATE=1` if the remote Paperless-ngx instance is on a private network; cloud-metadata addresses remain blocked.
 
 ### swift-paperless (iOS)
 

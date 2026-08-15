@@ -5,7 +5,7 @@ test('regular user cannot open settings', async ({ page }) => {
   await loginAsUser(page)
   await openMoreMenu(page)
   await expect(page.getByRole('menuitem', { name: 'Settings' })).toHaveCount(0)
-  await expect(page.getByRole('menuitem', { name: 'Admin' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'Admin' })).toHaveCount(0)
   await page.goto('/settings')
   await expect(page.getByRole('heading', { name: 'Settings' })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible()

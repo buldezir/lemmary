@@ -130,16 +130,14 @@ function MoreNavMenu({ admin }: { admin: boolean }) {
           >
             Export
           </Link>
-          {admin && (
-            <Link
-              to="/import"
-              role="menuitem"
-              className={`${menuItemClass} ${importActive ? navLinkActiveClass : ''}`}
-              onClick={() => setOpen(false)}
-            >
-              Import
-            </Link>
-          )}
+          <Link
+            to="/import"
+            role="menuitem"
+            className={`${menuItemClass} ${importActive ? navLinkActiveClass : ''}`}
+            onClick={() => setOpen(false)}
+          >
+            Import
+          </Link>
           {admin && (
             <Link
               to="/settings"
@@ -150,16 +148,18 @@ function MoreNavMenu({ admin }: { admin: boolean }) {
               Settings
             </Link>
           )}
-          <a
-            href={pbAdminUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            role="menuitem"
-            className={menuItemClass}
-            onClick={() => setOpen(false)}
-          >
-            Admin
-          </a>
+          {admin && (
+            <a
+              href={pbAdminUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              role="menuitem"
+              className={menuItemClass}
+              onClick={() => setOpen(false)}
+            >
+              Admin
+            </a>
+          )}
         </div>
       )}
     </div>
