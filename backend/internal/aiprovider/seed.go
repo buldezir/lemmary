@@ -69,33 +69,36 @@ func MigrateLegacySettings(app core.App, settings *core.Record) error {
 	}
 
 	models := taskModels{
-		extract: firstNonEmpty(settings.GetString("openai_model"), "gpt-4o-mini"),
-		chat:    strings.TrimSpace(settings.GetString("openai_chat_model")),
-		search:  strings.TrimSpace(settings.GetString("openai_search_model")),
-		ocr:     firstNonEmpty(settings.GetString("mistral_ocr_model"), "mistral-ocr-latest"),
-		ocrSDK:  firstNonEmpty(settings.GetString("ocr_provider"), "google_vision"),
+		extract:    firstNonEmpty(settings.GetString("openai_model"), "gpt-4o-mini"),
+		chat:       strings.TrimSpace(settings.GetString("openai_chat_model")),
+		search:     strings.TrimSpace(settings.GetString("openai_search_model")),
+		ocr:        firstNonEmpty(settings.GetString("mistral_ocr_model"), "mistral-ocr-latest"),
+		ocrSDK:     firstNonEmpty(settings.GetString("ocr_provider"), "google_vision"),
+		mistralLLM: "mistral-small-latest",
 	}
 	bindFromIDs(settings, openaiID, mistralID, googleID, models)
 	return nil
 }
 
 type taskModels struct {
-	extract string
-	chat    string
-	search  string
-	ocr     string
-	ocrSDK  string
+	extract    string
+	chat       string
+	search     string
+	ocr        string
+	ocrSDK     string
+	mistralLLM string
 }
 
 func envTaskModels() taskModels {
 	extract := getenv("OPENAI_MODEL", "gpt-4o-mini")
 	chat := getenv("OPENAI_CHAT_MODEL", extract)
 	return taskModels{
-		extract: extract,
-		chat:    chat,
-		search:  getenv("OPENAI_SEARCH_MODEL", chat),
-		ocr:     getenv("MISTRAL_OCR_MODEL", "mistral-ocr-latest"),
-		ocrSDK:  getenv("OCR_PROVIDER", "google_vision"),
+		extract:    extract,
+		chat:       chat,
+		search:     getenv("OPENAI_SEARCH_MODEL", chat),
+		ocr:        getenv("MISTRAL_OCR_MODEL", "mistral-ocr-latest"),
+		ocrSDK:     getenv("OCR_PROVIDER", "google_vision"),
+		mistralLLM: getenv("MISTRAL_MODEL", "mistral-small-latest"),
 	}
 }
 
@@ -125,21 +128,28 @@ func bindFromIDs(settings *core.Record, openaiID, mistralID, googleID string, mo
 	}
 
 	if openaiID != "" {
-		settings.Set("extract_provider_id", openaiID)
-		settings.Set("extract_model", models.extract)
-		chatModel := models.chat
-		if chatModel == "" {
-			chatModel = models.extract
-		}
-		settings.Set("chat_provider_id", openaiID)
-		settings.Set("chat_model", chatModel)
-		searchModel := models.search
-		if searchModel == "" {
-			searchModel = chatModel
-		}
-		settings.Set("search_provider_id", openaiID)
-		settings.Set("search_model", searchModel)
+		bindLLM(settings, openaiID, models.extract, models.chat, models.search)
+	} else if mistralID != "" {
+		model := firstNonEmpty(models.mistralLLM, "mistral-small-latest")
+		bindLLM(settings, mistralID, model, model, model)
 	}
+}
+
+func bindLLM(settings *core.Record, providerID, extract, chat, search string) {
+	settings.Set("extract_provider_id", providerID)
+	settings.Set("extract_model", extract)
+	chatModel := chat
+	if chatModel == "" {
+		chatModel = extract
+	}
+	settings.Set("chat_provider_id", providerID)
+	settings.Set("chat_model", chatModel)
+	searchModel := search
+	if searchModel == "" {
+		searchModel = chatModel
+	}
+	settings.Set("search_provider_id", providerID)
+	settings.Set("search_model", searchModel)
 }
 
 func alreadyBound(settings *core.Record) bool {

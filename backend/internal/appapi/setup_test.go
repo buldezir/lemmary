@@ -67,6 +67,23 @@ func TestNeedsConfigSetup(t *testing.T) {
 				OCRProvider:     google,
 				ExtractProvider: mistral,
 			},
+			want: false,
+		},
+		{
+			name: "ready mistral only",
+			cfg: config.Config{
+				OCRProvider:     mistral,
+				OCRModel:        "mistral-ocr-latest",
+				ExtractProvider: mistral,
+			},
+			want: false,
+		},
+		{
+			name: "google used as llm",
+			cfg: config.Config{
+				OCRProvider:     google,
+				ExtractProvider: google,
+			},
 			want: true,
 		},
 	}

@@ -12,8 +12,8 @@ The API has been tested with the [swift-paperless](https://github.com/paulgessin
 
 - **Backend:** Go, [PocketBase as a framework](https://pocketbase.io/docs/use-as-framework/)
 - **Frontend:** React, TanStack Router, PocketBase JS SDK
-- **OCR:** Google Cloud Vision (`google_vision`) or Mistral AI OCR (`mistral`), configured in Settings
-- **AI:** OpenAI-compatible chat completions via the official OpenAI Go SDK
+- **OCR:** Google Cloud Vision (`google_vision`) or Mistral Document OCR (`mistral`), configured in Settings
+- **AI:** OpenAI-compatible chat completions (OpenAI, OpenRouter, or Mistral) via the official OpenAI Go SDK
 - **Deep Search:** natural-language archive search via a tool-calling agent (keyword expansion across configured languages)
 
 ## Project layout
@@ -32,7 +32,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Open [http://127.0.0.1:8090](http://127.0.0.1:8090). On first launch, the in-app setup wizard creates your admin account and collects OCR + OpenAI API keys (hard gate until both are set). Data is stored in a Docker volume (`app_data`).
+Open [http://127.0.0.1:8090](http://127.0.0.1:8090). On first launch, the in-app setup wizard creates your admin account and collects OCR + LLM API keys (hard gate until both are set). A single Mistral key can cover OCR and extraction. Data is stored in a Docker volume (`app_data`).
 
 For local development without Docker, see [docs/development.md](docs/development.md).
 

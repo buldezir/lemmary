@@ -21,7 +21,7 @@ export function showsOCRModelWarning(sdk?: string) {
 }
 
 export function isLLMProvider(sdk: string) {
-  return sdk === 'openai' || sdk === 'openrouter'
+  return sdk === 'openai' || sdk === 'openrouter' || sdk === 'mistral'
 }
 
 export function sdkLabel(sdk: ProviderSDK | string) {
@@ -33,7 +33,7 @@ export function sdkLabel(sdk: ProviderSDK | string) {
     case 'google_vision':
       return 'Google Cloud Vision'
     case 'mistral':
-      return 'Mistral OCR'
+      return 'Mistral'
     default:
       return sdk
   }

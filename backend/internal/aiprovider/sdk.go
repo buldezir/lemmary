@@ -24,7 +24,7 @@ func ValidSDK(sdk string) bool {
 
 func IsLLM(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
-	case SDKOpenAI, SDKOpenRouter:
+	case SDKOpenAI, SDKOpenRouter, SDKMistral:
 		return true
 	default:
 		return false
@@ -57,7 +57,7 @@ func DefaultAlias(sdk string) string {
 	case SDKGoogleVision:
 		return "Google Cloud Vision"
 	case SDKMistral:
-		return "Mistral OCR"
+		return "Mistral"
 	default:
 		return sdk
 	}

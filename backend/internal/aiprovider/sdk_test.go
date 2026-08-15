@@ -12,3 +12,20 @@ func TestChatCompletionsURL(t *testing.T) {
 		t.Fatalf("default ChatCompletionsURL() = %q", got)
 	}
 }
+
+func TestIsLLM(t *testing.T) {
+	t.Parallel()
+	if !IsLLM(SDKOpenAI) || !IsLLM(SDKOpenRouter) || !IsLLM(SDKMistral) {
+		t.Fatal("openai, openrouter, and mistral should be LLM SDKs")
+	}
+	if IsLLM(SDKGoogleVision) || IsLLM("unknown") {
+		t.Fatal("google_vision and unknown should not be LLM SDKs")
+	}
+}
+
+func TestDefaultAlias(t *testing.T) {
+	t.Parallel()
+	if got := DefaultAlias(SDKMistral); got != "Mistral" {
+		t.Fatalf("DefaultAlias(mistral) = %q", got)
+	}
+}

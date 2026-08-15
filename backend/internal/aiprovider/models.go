@@ -85,8 +85,12 @@ func ListModels(ctx context.Context, p Provider, forOCR bool, client *http.Clien
 	if err != nil {
 		return nil, err
 	}
-	if forOCR && p.SDK == SDKMistral {
-		models = filterModelsBySubstring(models, "ocr")
+	if p.SDK == SDKMistral {
+		if forOCR {
+			models = filterModelsBySubstring(models, "ocr")
+		} else {
+			models = rejectModelsBySubstring(models, "ocr")
+		}
 	}
 	return models, nil
 }
@@ -98,11 +102,29 @@ func filterModelsBySubstring(models []Model, substr string) []Model {
 	}
 	out := make([]Model, 0, len(models))
 	for _, m := range models {
-		if strings.Contains(strings.ToLower(m.ID), needle) || strings.Contains(strings.ToLower(m.Name), needle) {
+		if modelContains(m, needle) {
 			out = append(out, m)
 		}
 	}
 	return out
+}
+
+func rejectModelsBySubstring(models []Model, substr string) []Model {
+	needle := strings.ToLower(strings.TrimSpace(substr))
+	if needle == "" {
+		return models
+	}
+	out := make([]Model, 0, len(models))
+	for _, m := range models {
+		if !modelContains(m, needle) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func modelContains(m Model, needle string) bool {
+	return strings.Contains(strings.ToLower(m.ID), needle) || strings.Contains(strings.ToLower(m.Name), needle)
 }
 
 func parseModelsResponse(body []byte) ([]Model, error) {

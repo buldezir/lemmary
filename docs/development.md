@@ -67,12 +67,13 @@ These seed `app_settings` and `ai_providers` when the singleton record does not 
 | --- | --- | --- |
 | `OCR_PROVIDER` | `google_vision` | Which env-seeded provider to bind for OCR (`google_vision`, `mistral`, `openai`, `openrouter`) |
 | `GOOGLE_VISION_API_KEY` | empty | Seeds a Google Cloud Vision provider |
-| `MISTRAL_API_KEY` | empty | Seeds a Mistral OCR provider |
+| `MISTRAL_API_KEY` | empty | Seeds a Mistral provider (OCR + chat completions) |
 | `MISTRAL_OCR_MODEL` | `mistral-ocr-latest` | OCR model when seeding Mistral |
+| `MISTRAL_MODEL` | `mistral-small-latest` | Chat model when Mistral is the only LLM (no `OPENAI_API_KEY`) |
 | `MISTRAL_API_BASE_URL` | `https://api.mistral.ai/v1` | Mistral API base URL |
 | `OCR_TIMEOUT_SEC` | `40` | OCR request timeout |
 | `PROCESSING_RESULT_LANGUAGE` | empty | ISO 639-1 code (e.g. `en`, `de`). When set, `title`, `summary`, `purpose`, and `document_type` are stored in this language; originals go in `*_original` fields. |
-| `OPENAI_API_KEY` | empty | Seeds an OpenAI-compatible provider (used for extraction, chat, search, and optional LLM OCR) |
+| `OPENAI_API_KEY` | empty | Seeds an OpenAI-compatible provider (used for extraction, chat, search, and optional LLM OCR). If unset, a seeded Mistral provider is bound for those tasks instead. |
 | `OPENAI_MODEL` | `gpt-4o-mini` | Model ID for metadata extraction |
 | `OPENAI_CHAT_MODEL` | `OPENAI_MODEL` | Optional model ID for document chat |
 | `OPENAI_SEARCH_MODEL` | `OPENAI_CHAT_MODEL` | Optional model ID for Deep Search |
@@ -123,14 +124,16 @@ Browse them in PocketBase Admin as a superuser. Enable SMTP when you want real d
 
 Text extraction:
 
-- **PDF and images** — configured OCR provider (Google Vision, Mistral OCR, or an OpenAI/OpenRouter model that accepts files/images)
+- **PDF and images** — configured OCR provider (Google Vision, Mistral Document OCR, or an OpenAI/OpenRouter model that accepts files/images)
 - **TXT, CSV, DOCX, XLSX** — native parsers (no OCR API call); preview is skipped for these formats
 
 Cron jobs are visible and manually triggerable in PocketBase Admin → Settings → Crons.
 
-## OpenAI / OpenRouter setup
+## LLM setup (OpenAI / OpenRouter / Mistral)
 
-Prefer **Settings** in the UI (admin): add a provider with SDK `openai` or `openrouter`, then select it for extraction, chat, and search. For a fresh install you can also put `OPENAI_API_KEY` (and optional model/base URL) in `.env` so they seed an `ai_providers` row on first boot.
+Prefer **Settings** in the UI (admin): add a provider with SDK `openai`, `openrouter`, or `mistral`, then select it for extraction, chat, and search. Mistral uses the same [OpenAI-compatible chat completions](https://docs.mistral.ai/api) endpoint as the other LLMs (`/v1/chat/completions`); OCR still uses Mistral’s dedicated Document OCR API.
+
+For a fresh install you can put `OPENAI_API_KEY` and/or `MISTRAL_API_KEY` in `.env` so they seed `ai_providers` rows on first boot. If both are set, OpenAI is bound for LLM tasks and Mistral can still be chosen in Settings. If only Mistral is set, it is bound for extraction, chat, and search using `MISTRAL_MODEL` (default `mistral-small-latest`).
 
 Without an LLM provider, AI extraction, document chat, and Deep Search return a configuration error.
 
@@ -138,7 +141,7 @@ Deep Search (`/search`) uses a tool-calling agent over keyword search. Configure
 
 ## OCR setup
 
-Add an OCR-capable provider in **Settings** (or seed via `.env` on first boot), then bind it under **Models**. OpenRouter OCR lists only models that advertise `file` input. Other SDKs show the full catalog with a warning to choose a file-capable model.
+Add an OCR-capable provider in **Settings** (or seed via `.env` on first boot), then bind it under **Models**. OpenRouter OCR lists only models that advertise `file` input. Mistral OCR lists models whose ids contain `ocr`. Other SDKs show the full catalog with a warning to choose a file-capable model.
 
 ### Google Cloud Vision
 
@@ -151,7 +154,7 @@ See [docs/google_vision.md](google_vision.md) for obtaining a Google API key.
 
 ### Mistral OCR
 
-Uses the [Mistral Document OCR API](https://docs.mistral.ai/en/studio-api/document-processing/basic_ocr). Local files are sent as base64 data URLs (up to 10 MB).
+Uses the [Mistral Document OCR API](https://docs.mistral.ai/en/studio-api/document-processing/basic_ocr) when the provider is bound for OCR. Local files are sent as base64 data URLs (up to 10 MB). The same provider can be bound for extraction, chat, and search (chat completions, not this OCR endpoint).
 
 - **PDFs and office documents** — `document_url` with a base64 data URL
 - **Images** — `image_url` with a base64 data URL
@@ -226,9 +229,9 @@ Import fetches only the caller-supplied URL. Private, loopback, and link-local d
 
 ## Troubleshooting
 
-- **Stuck on setup wizard:** create the admin account and add an OCR provider plus an OpenAI-compatible provider (or seed keys in `.env` before first boot / use `superuser upsert`). Clearing required keys later brings the config steps back for admins.
+- **Stuck on setup wizard:** create the admin account and add an OCR provider plus an LLM provider (OpenAI, OpenRouter, or Mistral — or seed keys in `.env` before first boot / use `superuser upsert`). Clearing required keys later brings the config steps back for admins.
 - **Upload succeeds but stays pending:** ensure the backend server is running; the worker starts with `serve`.
 - **OCR fails:** configure the OCR provider and API key in Settings (or seed `.env` before first boot). For Google Vision, ensure the Vision API is enabled for your project.
-- **AI extraction fails:** configure OpenAI settings in Settings. Check the processing job error on the document detail page.
+- **AI extraction fails:** configure an LLM provider (OpenAI, OpenRouter, or Mistral) in Settings. Check the processing job error on the document detail page.
 - **Settings page missing:** log in with the admin email (the account created at setup / `superuser upsert`). Regular non-admin users do not see Settings.
 - **Auth errors in frontend:** delete PocketBase data dir (`backend/pb_data`) and restart to recreate collections, then reload the app.

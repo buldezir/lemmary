@@ -133,8 +133,11 @@ func TestListModelsMistralOCRFiltersByOCRSubstring(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(all) != 4 {
-		t.Fatalf("unfiltered len=%d want 4: %+v", len(all), all)
+	if len(all) != 2 {
+		t.Fatalf("llm catalog len=%d want 2: %+v", len(all), all)
+	}
+	if all[0].ID != "mistral-small-latest" || all[1].ID != "codestral-latest" {
+		t.Fatalf("llm catalog=%+v", all)
 	}
 }
 
@@ -148,6 +151,10 @@ func TestFilterModelsBySubstring(t *testing.T) {
 	got := filterModelsBySubstring(in, "ocr")
 	if len(got) != 2 || got[0].ID != "mistral-ocr-latest" || got[1].ID != "other" {
 		t.Fatalf("got %+v", got)
+	}
+	rejected := rejectModelsBySubstring(in, "ocr")
+	if len(rejected) != 1 || rejected[0].ID != "codestral-latest" {
+		t.Fatalf("rejected %+v", rejected)
 	}
 }
 
