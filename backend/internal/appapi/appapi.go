@@ -4,9 +4,10 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
 	"paperless-go/backend/internal/config"
+	"paperless-go/backend/internal/fulltext"
 )
 
-func Register(app core.App, rt *config.Runtime) {
+func Register(app core.App, rt *config.Runtime, idx *fulltext.Index) {
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: 45,
 		Func: func(e *core.ServeEvent) error {
@@ -18,7 +19,9 @@ func Register(app core.App, rt *config.Runtime) {
 			g.POST("/ensure-user", handlePostEnsureUser(app))
 			g.POST("/documents/{documentId}/chat", bindAuth(handleDocumentChat(app, rt)))
 			g.GET("/documents/export", bindAuth(handleExportDocuments(app)))
-			g.POST("/search", bindAuth(handleDeepSearch(app, rt)))
+			g.GET("/documents/search", bindAuth(handleDocumentSearch(app, idx)))
+			g.POST("/search", bindAuth(handleDeepSearch(app, rt, idx)))
+			g.POST("/search/reindex", bindAdmin(handleSearchReindex(app, idx)))
 			g.GET("/ocr/providers", bindAuth(handleOCRProviders(app, rt)))
 			g.POST("/ocr/test", bindAuth(handleOCRTest(app, rt)))
 			g.GET("/settings", bindAdmin(handleGetSettings(app, rt)))

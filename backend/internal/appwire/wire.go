@@ -7,6 +7,7 @@ import (
 	"paperless-go/backend/internal/appapi"
 	"paperless-go/backend/internal/authguard"
 	"paperless-go/backend/internal/config"
+	"paperless-go/backend/internal/fulltext"
 	"paperless-go/backend/internal/mailsink"
 	"paperless-go/backend/internal/ngxapi"
 	"paperless-go/backend/internal/worker"
@@ -20,11 +21,13 @@ import (
 // Register wires all application hooks, APIs, and the SPA static handler onto app.
 // publicDir is the directory containing the built frontend; indexFallback enables SPA routing.
 func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, indexFallback bool) {
+	ft := fulltext.New()
 	config.RegisterHooks(app, rt)
 	authguard.Register(app)
 	mailsink.Register(app)
-	appapi.Register(app, rt)
-	ngxapi.Register(app)
+	fulltext.Register(app, ft)
+	appapi.Register(app, rt, ft)
+	ngxapi.Register(app, ft)
 	worker.Register(app, rt)
 
 	// Prefer the in-app setup wizard over PocketBase's browser installer UI.

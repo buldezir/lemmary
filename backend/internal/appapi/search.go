@@ -10,6 +10,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"paperless-go/backend/internal/ai"
 	"paperless-go/backend/internal/config"
+	"paperless-go/backend/internal/fulltext"
 )
 
 type searchRequest struct {
@@ -22,7 +23,7 @@ type searchResponse struct {
 	Documents []ai.DocumentHit `json:"documents"`
 }
 
-func handleDeepSearch(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
+func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var req searchRequest
 		if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
@@ -54,7 +55,7 @@ func handleDeepSearch(app core.App, rt *config.Runtime) func(*core.RequestEvent)
 		}
 
 		searcher := func(ctx context.Context, args ai.SearchDocumentsArgs) ([]ai.DocumentHit, error) {
-			return searchUserDocuments(app, userID, args)
+			return searchUserDocuments(app, idx, userID, args)
 		}
 
 		reply, hits, err := agent.Search(context.Background(), req.Messages, mode, availableTags, searcher)

@@ -203,6 +203,64 @@ export type SearchDocumentHit = {
 
 export type SearchMode = 'shallow' | 'deep'
 
+export type DocumentSearchList = {
+  page: number
+  perPage: number
+  totalItems: number
+  totalPages: number
+  items: DocumentRecord[]
+}
+
+export async function searchDocuments(opts: {
+  q: string
+  page: number
+  perPage: number
+  status?: string
+  documentType?: string
+  correspondent?: string
+  dateFrom?: string
+  dateTo?: string
+}): Promise<DocumentSearchList> {
+  await ensureAuth()
+
+  const params = new URLSearchParams()
+  params.set('q', opts.q)
+  params.set('page', String(opts.page))
+  params.set('perPage', String(opts.perPage))
+  if (opts.status && opts.status !== 'all') {
+    params.set('status', opts.status)
+  }
+  if (opts.documentType && opts.documentType !== 'all') {
+    params.set('document_type', opts.documentType)
+  }
+  if (opts.correspondent && opts.correspondent !== 'all') {
+    params.set('correspondent', opts.correspondent)
+  }
+  if (opts.dateFrom) {
+    params.set('date_from', opts.dateFrom)
+  }
+  if (opts.dateTo) {
+    params.set('date_to', opts.dateTo)
+  }
+
+  const response = await fetch(`${pbUrl}/api/app/documents/search?${params}`, {
+    headers: {
+      Authorization: pb.authStore.token,
+    },
+  })
+  const data = (await response.json()) as DocumentSearchList & { detail?: string }
+  if (!response.ok) {
+    throw new Error(data.detail ?? 'Failed to search documents')
+  }
+  return {
+    page: data.page ?? opts.page,
+    perPage: data.perPage ?? opts.perPage,
+    totalItems: data.totalItems ?? 0,
+    totalPages: data.totalPages ?? 0,
+    items: data.items ?? [],
+  }
+}
+
 export async function deepSearch(messages: ChatMessage[], mode: SearchMode = 'shallow') {
   await ensureAuth()
 
@@ -636,6 +694,27 @@ export async function scanDuplicates() {
     throw new Error(data.detail ?? 'Duplicate scan failed')
   }
   return data as DuplicateScanResult
+}
+
+export type SearchReindexResult = {
+  indexed: number
+}
+
+export async function reindexSearch() {
+  await ensureAuth()
+
+  const response = await fetch(`${pbUrl}/api/app/search/reindex`, {
+    method: 'POST',
+    headers: {
+      Authorization: pb.authStore.token,
+    },
+  })
+
+  const data = (await response.json()) as SearchReindexResult & { detail?: string }
+  if (!response.ok) {
+    throw new Error(data.detail ?? 'Search reindex failed')
+  }
+  return data as SearchReindexResult
 }
 
 export type NgxImportMode = 'preserve' | 'reprocess'

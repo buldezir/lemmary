@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"testing"
 )
 
@@ -134,6 +135,42 @@ func TestNgxDownload(t *testing.T) {
 	status, body, _ := h.doRaw(t, http.MethodGet, "/api/documents/"+formatNgxID(ngxID)+"/download/", "Token "+tok.Token, nil, "")
 	requireStatus(t, status, http.StatusOK, body)
 	requireContains(t, body, "Acme Plumbing")
+}
+
+func TestNgxDocumentsQuery(t *testing.T) {
+	h := StartShared(t)
+	token := h.userToken(t)
+	rec := h.uploadDocument(t, token, h.UserID, fixturePath("sample.txt"))
+	pbID := jsonGetString(rec, "id")
+	t.Cleanup(func() {
+		_, _ = h.doJSON(t, http.MethodDelete, "/api/collections/documents/records/"+pbID, token, nil)
+	})
+	_ = h.waitDocumentStatus(t, token, pbID, "completed", "needs_review")
+
+	status, raw := h.doJSON(t, http.MethodPost, "/api/token/", "", map[string]string{
+		"username": UserEmail,
+		"password": UserPassword,
+	})
+	requireStatus(t, status, http.StatusOK, raw)
+	var tok struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal([]byte(raw), &tok); err != nil || tok.Token == "" {
+		t.Fatalf("token response: %s", raw)
+	}
+
+	status, raw = h.doJSON(t, http.MethodGet, "/api/documents/?query="+url.QueryEscape("Acme Plumbing")+"&page_size=100", "Token "+tok.Token, nil)
+	requireStatus(t, status, http.StatusOK, raw)
+	var list struct {
+		Count   int              `json:"count"`
+		Results []map[string]any `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(raw), &list); err != nil {
+		t.Fatalf("decode list: %v body %s", err, raw)
+	}
+	if list.Count == 0 || len(list.Results) == 0 {
+		t.Fatalf("expected ngx query hits: %s", raw)
+	}
 }
 
 func formatNgxID(id any) string {
