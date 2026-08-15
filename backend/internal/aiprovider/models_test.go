@@ -100,7 +100,47 @@ func TestListModels(t *testing.T) {
 	}
 }
 
-func TestListModelsMistralOCRFiltersByOCRSubstring(t *testing.T) {
+func TestListModelsMistralFiltersByCapabilities(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[
+			{"id":"mistral-small-latest","capabilities":{"completion_chat":true,"function_calling":true,"ocr":false}},
+			{"id":"mistral-ocr-latest","capabilities":{"completion_chat":false,"ocr":true}},
+			{"id":"mistral-embed","capabilities":{"completion_chat":false,"ocr":false}},
+			{"id":"mistral-moderation-latest","capabilities":{"completion_chat":false,"moderation":true,"ocr":false}},
+			{"id":"codestral-embed","capabilities":{"completion_chat":false,"ocr":false}},
+			{"id":"invoice-ocr-extract","capabilities":{"completion_chat":true,"ocr":false}}
+		]}`))
+	}))
+	defer srv.Close()
+
+	p := Provider{SDK: SDKMistral, BaseURL: srv.URL + "/v1", APIKey: "test-key"}
+	ocr, err := ListModels(t.Context(), p, true, srv.Client(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ocr) != 1 || ocr[0].ID != "mistral-ocr-latest" {
+		t.Fatalf("ocr catalog=%+v", ocr)
+	}
+
+	llm, err := ListModels(t.Context(), p, false, srv.Client(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(llm) != 2 {
+		t.Fatalf("llm catalog len=%d want 2: %+v", len(llm), llm)
+	}
+	if llm[0].ID != "mistral-small-latest" || llm[1].ID != "invoice-ocr-extract" {
+		t.Fatalf("llm catalog=%+v", llm)
+	}
+}
+
+func TestListModelsMistralFallsBackToOCRSubstring(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {
@@ -133,21 +173,33 @@ func TestListModelsMistralOCRFiltersByOCRSubstring(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(all) != 4 {
-		t.Fatalf("unfiltered len=%d want 4: %+v", len(all), all)
+	if len(all) != 2 {
+		t.Fatalf("llm catalog len=%d want 2: %+v", len(all), all)
+	}
+	if all[0].ID != "mistral-small-latest" || all[1].ID != "codestral-latest" {
+		t.Fatalf("llm catalog=%+v", all)
 	}
 }
 
-func TestFilterModelsBySubstring(t *testing.T) {
+func TestFilterMistralModelsMixesCapabilitiesAndSubstringFallback(t *testing.T) {
 	t.Parallel()
 	in := []Model{
-		{ID: "mistral-ocr-latest", Name: "mistral-ocr-latest"},
+		{ID: "mistral-ocr-latest", Name: "mistral-ocr-latest", caps: &modelCapabilities{ocr: true}},
+		{ID: "mistral-embed", Name: "mistral-embed", caps: &modelCapabilities{}},
+		{ID: "invoice-ocr-extract", Name: "invoice-ocr-extract", caps: &modelCapabilities{completionChat: true}},
+		{ID: "legacy-ocr", Name: "legacy-ocr"},
 		{ID: "codestral-latest", Name: "codestral-latest"},
-		{ID: "other", Name: "Has OCR in name"},
+		{ID: "named", Name: "Has OCR in name"},
 	}
-	got := filterModelsBySubstring(in, "ocr")
-	if len(got) != 2 || got[0].ID != "mistral-ocr-latest" || got[1].ID != "other" {
-		t.Fatalf("got %+v", got)
+
+	ocr := filterMistralModels(in, true)
+	if len(ocr) != 3 || ocr[0].ID != "mistral-ocr-latest" || ocr[1].ID != "legacy-ocr" || ocr[2].ID != "named" {
+		t.Fatalf("ocr=%+v", ocr)
+	}
+
+	llm := filterMistralModels(in, false)
+	if len(llm) != 2 || llm[0].ID != "invoice-ocr-extract" || llm[1].ID != "codestral-latest" {
+		t.Fatalf("llm=%+v", llm)
 	}
 }
 

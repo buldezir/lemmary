@@ -162,7 +162,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
         throw new Error('Choose an OCR provider.')
       }
       if (!extractProviderId) {
-        throw new Error('Choose an extraction provider (OpenAI or OpenRouter).')
+        throw new Error('Choose an extraction provider (OpenAI, OpenRouter, or Mistral).')
       }
       await updateAppSettings({
         ocr_provider_id: ocrProviderId,
@@ -175,7 +175,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
         if (!next.has_ocr || !next.has_llm) {
           setStep(next.provider_count ? 'models' : 'providers')
         }
-        setError('Setup is still incomplete. Add an OCR provider and an OpenAI-compatible provider.')
+        setError('Setup is still incomplete. Add an OCR provider and an LLM provider (OpenAI, OpenRouter, or Mistral).')
         return
       }
       setStep('done')
@@ -272,8 +272,8 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           {step === 'providers' && (
             <form className="flex flex-col gap-4" onSubmit={onSaveProvider}>
               <p className="text-sm text-stone-600">
-                Add an API provider. OpenAI or OpenRouter is required for extraction and chat; Google
-                Vision or Mistral can be used for OCR.
+                Add an API provider. OpenAI, OpenRouter, or Mistral can run extraction and chat;
+                Google Vision or Mistral OCR can run OCR. One Mistral provider covers both.
               </p>
               {providers.length > 0 && (
                 <p className="text-xs text-stone-500">
@@ -293,7 +293,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 >
                   <option value="openai">OpenAI</option>
                   <option value="openrouter">OpenRouter</option>
-                  <option value="mistral">Mistral OCR</option>
+                  <option value="mistral">Mistral</option>
                   <option value="google_vision">Google Cloud Vision</option>
                 </select>
               </label>
@@ -347,7 +347,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
               </p>
               {llmProviders.length === 0 && (
                 <p className="text-sm text-amber-800">
-                  Add an OpenAI or OpenRouter provider to enable extraction and chat.
+                  Add an OpenAI, OpenRouter, or Mistral provider to enable extraction and chat.
                 </p>
               )}
               <ProviderModelFields

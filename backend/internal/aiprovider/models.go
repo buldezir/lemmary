@@ -15,6 +15,14 @@ import (
 type Model struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+
+	// caps is set when the provider returned a capabilities object (Mistral).
+	caps *modelCapabilities
+}
+
+type modelCapabilities struct {
+	completionChat bool
+	ocr            bool
 }
 
 const modelsListTimeout = 20 * time.Second
@@ -85,24 +93,37 @@ func ListModels(ctx context.Context, p Provider, forOCR bool, client *http.Clien
 	if err != nil {
 		return nil, err
 	}
-	if forOCR && p.SDK == SDKMistral {
-		models = filterModelsBySubstring(models, "ocr")
+	if p.SDK == SDKMistral {
+		models = filterMistralModels(models, forOCR)
 	}
 	return models, nil
 }
 
-func filterModelsBySubstring(models []Model, substr string) []Model {
-	needle := strings.ToLower(strings.TrimSpace(substr))
-	if needle == "" {
-		return models
-	}
+func filterMistralModels(models []Model, forOCR bool) []Model {
 	out := make([]Model, 0, len(models))
 	for _, m := range models {
-		if strings.Contains(strings.ToLower(m.ID), needle) || strings.Contains(strings.ToLower(m.Name), needle) {
+		if includeMistralModel(m, forOCR) {
 			out = append(out, m)
 		}
 	}
 	return out
+}
+
+func includeMistralModel(m Model, forOCR bool) bool {
+	if m.caps != nil {
+		if forOCR {
+			return m.caps.ocr
+		}
+		return m.caps.completionChat
+	}
+	if forOCR {
+		return modelContains(m, "ocr")
+	}
+	return !modelContains(m, "ocr")
+}
+
+func modelContains(m Model, needle string) bool {
+	return strings.Contains(strings.ToLower(m.ID), needle) || strings.Contains(strings.ToLower(m.Name), needle)
 }
 
 func parseModelsResponse(body []byte) ([]Model, error) {
@@ -130,9 +151,13 @@ func modelsFromRaw(raw []json.RawMessage) []Model {
 	seen := map[string]struct{}{}
 	for _, item := range raw {
 		var row struct {
-			ID    string `json:"id"`
-			Name  string `json:"name"`
-			Model string `json:"model"`
+			ID           string `json:"id"`
+			Name         string `json:"name"`
+			Model        string `json:"model"`
+			Capabilities *struct {
+				CompletionChat bool `json:"completion_chat"`
+				OCR            bool `json:"ocr"`
+			} `json:"capabilities"`
 		}
 		if json.Unmarshal(item, &row) != nil {
 			continue
@@ -152,7 +177,14 @@ func modelsFromRaw(raw []json.RawMessage) []Model {
 		if name == "" {
 			name = id
 		}
-		out = append(out, Model{ID: id, Name: name})
+		m := Model{ID: id, Name: name}
+		if row.Capabilities != nil {
+			m.caps = &modelCapabilities{
+				completionChat: row.Capabilities.CompletionChat,
+				ocr:            row.Capabilities.OCR,
+			}
+		}
+		out = append(out, m)
 	}
 	return out
 }

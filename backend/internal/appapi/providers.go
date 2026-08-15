@@ -127,7 +127,7 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 				if settings, err := config.FindSettingsRecord(app); err == nil {
 					for _, field := range []string{"extract_provider_id", "chat_provider_id", "search_provider_id"} {
 						if strings.TrimSpace(settings.GetString(field)) == record.Id {
-							return writeError(e, http.StatusConflict, "Provider is bound to extraction, chat, or search and must stay openai or openrouter.")
+							return writeError(e, http.StatusConflict, "Provider is bound to extraction, chat, or search and must stay an LLM SDK (openai, openrouter, or mistral).")
 						}
 					}
 				}

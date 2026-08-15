@@ -360,7 +360,7 @@ export function SettingsPage() {
               >
                 <option value="openai">OpenAI</option>
                 <option value="openrouter">OpenRouter</option>
-                <option value="mistral">Mistral OCR</option>
+                <option value="mistral">Mistral</option>
                 <option value="google_vision">Google Cloud Vision</option>
               </select>
             </label>

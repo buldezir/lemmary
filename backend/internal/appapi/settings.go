@@ -226,7 +226,7 @@ func validateProviderID(app core.App, id string, llmOnly bool) error {
 		return errInvalid("unknown provider")
 	}
 	if llmOnly && !aiprovider.IsLLM(p.SDK) {
-		return errInvalid("extraction, chat, and search require an openai or openrouter provider")
+		return errInvalid("extraction, chat, and search require an openai, openrouter, or mistral provider")
 	}
 	return nil
 }

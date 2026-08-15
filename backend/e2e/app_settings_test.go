@@ -3,6 +3,7 @@ package e2e
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -161,10 +162,10 @@ func TestAppProvidersCRUD(t *testing.T) {
 		t.Fatal("expected extract_provider_id")
 	}
 	status, raw = h.doJSON(t, http.MethodPatch, "/api/app/providers/"+inUse, superTok, map[string]any{
-		"sdk": "mistral",
+		"sdk": "google_vision",
 	})
 	if status != http.StatusConflict {
-		t.Fatalf("expected 409 changing sdk of in-use LLM provider, got %d: %s", status, raw)
+		t.Fatalf("expected 409 changing sdk of in-use LLM provider to google_vision, got %d: %s", status, raw)
 	}
 	status, raw = h.doJSON(t, http.MethodDelete, "/api/app/providers/"+inUse, superTok, nil)
 	if status != http.StatusConflict {
@@ -178,4 +179,100 @@ func TestAppProvidersCRUD(t *testing.T) {
 
 	status, raw = h.doJSON(t, http.MethodDelete, "/api/app/providers/"+id, superTok, nil)
 	requireStatus(t, status, http.StatusOK, raw)
+}
+
+func TestAppMistralLLMProvider(t *testing.T) {
+	h := StartShared(t)
+	superTok := h.superToken(t)
+
+	status, raw := h.doJSON(t, http.MethodGet, "/api/app/providers", superTok, nil)
+	requireStatus(t, status, http.StatusOK, raw)
+	var body struct {
+		Providers []struct {
+			ID  string `json:"id"`
+			SDK string `json:"sdk"`
+		} `json:"providers"`
+	}
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
+		t.Fatalf("decode providers: %v", err)
+	}
+	mistralID := ""
+	for _, p := range body.Providers {
+		if p.SDK == "mistral" {
+			mistralID = p.ID
+			break
+		}
+	}
+	if mistralID == "" {
+		t.Fatalf("no mistral provider in %s", raw)
+	}
+
+	status, raw = h.doJSON(t, http.MethodGet, "/api/app/providers/"+mistralID+"/models?for=ocr", superTok, nil)
+	requireStatus(t, status, http.StatusOK, raw)
+	requireContains(t, raw, "mistral-ocr-latest")
+	if strings.Contains(raw, "mistral-small-latest") {
+		t.Fatalf("OCR catalog should not include chat models: %s", raw)
+	}
+	if strings.Contains(raw, "mistral-embed") {
+		t.Fatalf("OCR catalog should not include embed models: %s", raw)
+	}
+
+	status, raw = h.doJSON(t, http.MethodGet, "/api/app/providers/"+mistralID+"/models?for=llm", superTok, nil)
+	requireStatus(t, status, http.StatusOK, raw)
+	requireContains(t, raw, "mistral-small-latest")
+	if strings.Contains(raw, "mistral-ocr-latest") {
+		t.Fatalf("LLM catalog should not include OCR models: %s", raw)
+	}
+	if strings.Contains(raw, "mistral-embed") {
+		t.Fatalf("LLM catalog should not include embed models: %s", raw)
+	}
+
+	status, raw = h.doJSON(t, http.MethodGet, "/api/app/settings", superTok, nil)
+	requireStatus(t, status, http.StatusOK, raw)
+	var original map[string]any
+	if err := json.Unmarshal([]byte(raw), &original); err != nil {
+		t.Fatalf("decode settings: %v", err)
+	}
+	t.Cleanup(func() {
+		status, restoreRaw := h.doJSON(t, http.MethodPatch, "/api/app/settings", superTok, map[string]any{
+			"extract_provider_id": original["extract_provider_id"],
+			"extract_model":       original["extract_model"],
+			"chat_provider_id":    original["chat_provider_id"],
+			"chat_model":          original["chat_model"],
+			"search_provider_id":  original["search_provider_id"],
+			"search_model":        original["search_model"],
+		})
+		if status != http.StatusOK {
+			t.Errorf("failed to restore LLM provider bindings (%d): %s", status, restoreRaw)
+		}
+	})
+
+	status, raw = h.doJSON(t, http.MethodPatch, "/api/app/settings", superTok, map[string]any{
+		"extract_provider_id": mistralID,
+		"extract_model":       "mistral-small-latest",
+		"chat_provider_id":    mistralID,
+		"chat_model":          "mistral-small-latest",
+		"search_provider_id":  mistralID,
+		"search_model":        "mistral-small-latest",
+	})
+	requireStatus(t, status, http.StatusOK, raw)
+	requireContains(t, raw, mistralID)
+	requireContains(t, raw, "mistral-small-latest")
+
+	userTok := h.userToken(t)
+	rec := h.uploadDocument(t, userTok, h.UserID, fixturePath("sample.png"))
+	id := jsonGetString(rec, "id")
+	doc := h.waitDocumentStatus(t, userTok, id, "completed", "needs_review")
+	title := jsonGetString(doc, "title")
+	if title == "" {
+		t.Fatal("expected metadata extracted via Mistral chat completions")
+	}
+
+	status, raw = h.doJSON(t, http.MethodPost, "/api/app/documents/"+id+"/chat", userTok, map[string]any{
+		"messages": []map[string]string{
+			{"role": "user", "content": "What is the invoice total?"},
+		},
+	})
+	requireStatus(t, status, http.StatusOK, raw)
+	requireContains(t, raw, "250")
 }
