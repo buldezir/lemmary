@@ -148,16 +148,18 @@ function MoreNavMenu({ admin }: { admin: boolean }) {
               Settings
             </Link>
           )}
-          <a
-            href={pbAdminUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            role="menuitem"
-            className={menuItemClass}
-            onClick={() => setOpen(false)}
-          >
-            Admin
-          </a>
+          {admin && (
+            <a
+              href={pbAdminUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              role="menuitem"
+              className={menuItemClass}
+              onClick={() => setOpen(false)}
+            >
+              Admin
+            </a>
+          )}
         </div>
       )}
     </div>
