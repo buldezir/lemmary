@@ -46,8 +46,31 @@ func startMockServers() *mockServers {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"data": []map[string]any{
-					{"id": "mistral-ocr-latest", "name": "mistral-ocr-latest"},
-					{"id": "mistral-small-latest", "name": "mistral-small-latest"},
+					{
+						"id":   "mistral-ocr-latest",
+						"name": "mistral-ocr-latest",
+						"capabilities": map[string]any{
+							"completion_chat": false,
+							"ocr":             true,
+						},
+					},
+					{
+						"id":   "mistral-small-latest",
+						"name": "mistral-small-latest",
+						"capabilities": map[string]any{
+							"completion_chat":  true,
+							"function_calling": true,
+							"ocr":              false,
+						},
+					},
+					{
+						"id":   "mistral-embed",
+						"name": "mistral-embed",
+						"capabilities": map[string]any{
+							"completion_chat": false,
+							"ocr":             false,
+						},
+					},
 				},
 			})
 			return

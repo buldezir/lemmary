@@ -213,12 +213,18 @@ func TestAppMistralLLMProvider(t *testing.T) {
 	if strings.Contains(raw, "mistral-small-latest") {
 		t.Fatalf("OCR catalog should not include chat models: %s", raw)
 	}
+	if strings.Contains(raw, "mistral-embed") {
+		t.Fatalf("OCR catalog should not include embed models: %s", raw)
+	}
 
 	status, raw = h.doJSON(t, http.MethodGet, "/api/app/providers/"+mistralID+"/models?for=llm", superTok, nil)
 	requireStatus(t, status, http.StatusOK, raw)
 	requireContains(t, raw, "mistral-small-latest")
 	if strings.Contains(raw, "mistral-ocr-latest") {
 		t.Fatalf("LLM catalog should not include OCR models: %s", raw)
+	}
+	if strings.Contains(raw, "mistral-embed") {
+		t.Fatalf("LLM catalog should not include embed models: %s", raw)
 	}
 
 	status, raw = h.doJSON(t, http.MethodGet, "/api/app/settings", superTok, nil)
