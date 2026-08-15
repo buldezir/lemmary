@@ -8,6 +8,7 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"paperless-go/backend/internal/ai"
+	"paperless-go/backend/internal/fulltext"
 )
 
 const (
@@ -18,10 +19,13 @@ const (
 	snippetContext     = 80
 )
 
-func searchUserDocuments(app core.App, userID string, args ai.SearchDocumentsArgs) ([]ai.DocumentHit, error) {
+func searchUserDocuments(app core.App, idx *fulltext.Index, userID string, args ai.SearchDocumentsArgs) ([]ai.DocumentHit, error) {
 	query := strings.TrimSpace(args.Query)
 	if query == "" {
 		return nil, fmt.Errorf("query is required")
+	}
+	if idx == nil || !idx.Ready() {
+		return nil, fmt.Errorf("search index is not ready")
 	}
 
 	limit := args.Limit
@@ -32,21 +36,12 @@ func searchUserDocuments(app core.App, userID string, args ai.SearchDocumentsArg
 		limit = maxSearchLimit
 	}
 
-	filter := "(title ~ {:q} || title_original ~ {:q} || purpose ~ {:q} || purpose_original ~ {:q} || summary ~ {:q} || summary_original ~ {:q} || ocr_text ~ {:q})"
-	params := dbx.Params{"q": query}
-
-	if userID != "" {
-		filter = "user = {:userId} && " + filter
-		params["userId"] = userID
-	}
-
-	if dateFrom := strings.TrimSpace(args.DateFrom); dateFrom != "" {
-		filter += " && document_date >= {:dateFrom}"
-		params["dateFrom"] = dateFrom
-	}
-	if dateTo := strings.TrimSpace(args.DateTo); dateTo != "" {
-		filter += " && document_date <= {:dateTo}"
-		params["dateTo"] = dateTo
+	ftQuery := fulltext.Query{
+		Text:     query,
+		UserID:   userID,
+		DateFrom: strings.TrimSpace(args.DateFrom),
+		DateTo:   strings.TrimSpace(args.DateTo),
+		Limit:    limit,
 	}
 
 	if typeName := strings.TrimSpace(args.DocumentType); typeName != "" {
@@ -57,8 +52,7 @@ func searchUserDocuments(app core.App, userID string, args ai.SearchDocumentsArg
 		if len(typeIDs) == 0 {
 			return []ai.DocumentHit{}, nil
 		}
-		filter += " && document_type ?= {:typeIds}"
-		params["typeIds"] = typeIDs
+		ftQuery.DocumentTypeIDs = typeIDs
 	}
 
 	if corrName := strings.TrimSpace(args.Correspondent); corrName != "" {
@@ -69,8 +63,7 @@ func searchUserDocuments(app core.App, userID string, args ai.SearchDocumentsArg
 		if len(corrIDs) == 0 {
 			return []ai.DocumentHit{}, nil
 		}
-		filter += " && correspondent ?= {:corrIds}"
-		params["corrIds"] = corrIDs
+		ftQuery.CorrespondentIDs = corrIDs
 	}
 
 	if tagNames := normalizeTagNames(args.Tags); len(tagNames) > 0 {
@@ -81,30 +74,35 @@ func searchUserDocuments(app core.App, userID string, args ai.SearchDocumentsArg
 		if len(tagIDs) == 0 {
 			return []ai.DocumentHit{}, nil
 		}
-		filter += " && tags.id ?= {:tagIds}"
-		params["tagIds"] = tagIDs
+		ftQuery.TagIDs = tagIDs
 	}
 
-	records, err := app.FindRecordsByFilter(
-		"documents",
-		filter,
-		"-document_date,-created",
-		limit,
-		0,
-		params,
-	)
+	result, err := idx.Search(ftQuery)
 	if err != nil {
 		return nil, fmt.Errorf("search documents: %w", err)
 	}
 
-	hits := make([]ai.DocumentHit, 0, len(records))
-	for _, record := range records {
+	hits := make([]ai.DocumentHit, 0, len(result.Hits))
+	for _, bleveHit := range result.Hits {
+		record, err := app.FindRecordById("documents", bleveHit.ID)
+		if err != nil {
+			continue
+		}
+		if userID != "" && record.GetString("user") != userID {
+			continue
+		}
+
+		snippet := bleveHit.OCRSnippet
+		if snippet == "" {
+			snippet = ocrSnippet(record.GetString("ocr_text"), query)
+		}
+
 		hit := ai.DocumentHit{
 			ID:           record.Id,
 			Title:        firstNonEmpty(record.GetString("title"), "Untitled document"),
 			DocumentDate: truncateDate(record.GetString("document_date")),
 			Summary:      truncateRunes(firstNonEmpty(record.GetString("summary"), record.GetString("purpose")), maxSummaryLen),
-			OCRSnippet:   ocrSnippet(record.GetString("ocr_text"), query),
+			OCRSnippet:   snippet,
 			Tags:         []string{},
 		}
 

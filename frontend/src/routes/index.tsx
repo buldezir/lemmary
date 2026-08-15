@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { ensureAuth, pb } from '../lib/pocketbase'
+import { ensureAuth, pb, searchDocuments } from '../lib/pocketbase'
 import type { CorrespondentRecord, DocumentRecord, DocumentTypeRecord } from '../lib/pocketbase'
 import { DocumentCard } from '../components/DocumentCard'
 import { FilterCombobox } from '../components/FilterCombobox'
@@ -11,17 +11,12 @@ const PAGE_SIZE = 12
 const selectClassName =
   'rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900'
 
-function escapeFilterValue(value: string) {
-  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-}
-
 function buildDocumentFilter(filters: {
   status: string
   dateFrom: string
   dateTo: string
   documentType: string
   correspondent: string
-  search: string
 }) {
   const parts: string[] = []
 
@@ -39,12 +34,6 @@ function buildDocumentFilter(filters: {
   }
   if (filters.dateTo) {
     parts.push(`document_date <= "${filters.dateTo}"`)
-  }
-  if (filters.search) {
-    const query = escapeFilterValue(filters.search)
-    parts.push(
-      `(title ~ "${query}" || purpose ~ "${query}" || summary ~ "${query}" || ocr_text ~ "${query}" || tags.name ~ "${query}")`,
-    )
   }
 
   return parts.length > 0 ? parts.join(' && ') : undefined
@@ -110,24 +99,43 @@ export function IndexPage() {
       try {
         setLoading(true)
         await ensureAuth()
-        const filter = buildDocumentFilter({
-          status: statusFilter,
-          dateFrom,
-          dateTo,
-          documentType: documentTypeFilter,
-          correspondent: correspondentFilter,
-          search: debouncedSearch.trim(),
-        })
-        const result = await pb.collection('documents').getList<DocumentRecord>(page, PAGE_SIZE, {
-          sort: '-created',
-          expand: 'tags,document_type,correspondent',
-          ...(filter ? { filter } : {}),
-        })
-        if (active) {
-          setDocuments(result.items)
-          setTotalItems(result.totalItems)
-          setTotalPages(result.totalPages)
-          setError('')
+        const query = debouncedSearch.trim()
+        if (query) {
+          const result = await searchDocuments({
+            q: query,
+            page,
+            perPage: PAGE_SIZE,
+            status: statusFilter,
+            documentType: documentTypeFilter,
+            correspondent: correspondentFilter,
+            dateFrom,
+            dateTo,
+          })
+          if (active) {
+            setDocuments(result.items)
+            setTotalItems(result.totalItems)
+            setTotalPages(result.totalPages)
+            setError('')
+          }
+        } else {
+          const filter = buildDocumentFilter({
+            status: statusFilter,
+            dateFrom,
+            dateTo,
+            documentType: documentTypeFilter,
+            correspondent: correspondentFilter,
+          })
+          const result = await pb.collection('documents').getList<DocumentRecord>(page, PAGE_SIZE, {
+            sort: '-created',
+            expand: 'tags,document_type,correspondent',
+            ...(filter ? { filter } : {}),
+          })
+          if (active) {
+            setDocuments(result.items)
+            setTotalItems(result.totalItems)
+            setTotalPages(result.totalPages)
+            setError('')
+          }
         }
       } catch (err) {
         if (active) {

@@ -114,6 +114,26 @@ test('standard search matches document tags', async ({ page }) => {
   await expect(page.getByRole('heading', { name: title })).toBeVisible()
 })
 
+test('standard search matches OCR text', async ({ page }) => {
+  const stamp = `${Date.now()}`
+  const title = `OCR Search Doc ${stamp}`
+
+  await loginAsUser(page)
+  await uploadFixture(page, 'sample.txt')
+  await waitForProcessing(page)
+  const documentId = documentIdFromURL(page)
+  await saveDocumentMetadata(page, { title })
+
+  await goToDocuments(page)
+  const searchBox = page.getByPlaceholder('Search title, tags, purpose, summary...')
+  await searchBox.fill(`nomatch${stamp}`)
+  await expect(documentLink(page, documentId)).toHaveCount(0)
+
+  await searchBox.fill('Acme Plumbing')
+  await expect(documentLink(page, documentId)).toBeVisible()
+  await expect(page.getByRole('heading', { name: title })).toBeVisible()
+})
+
 test('document type and correspondent filters are typeahead dropdowns', async ({ page }) => {
   const stamp = `${Date.now()}`
   const typeA = `TypeAlpha ${stamp}`

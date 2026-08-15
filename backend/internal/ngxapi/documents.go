@@ -10,47 +10,81 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	"paperless-go/backend/internal/fulltext"
 	"paperless-go/backend/internal/models"
 )
 
-func handleListDocuments(e *core.RequestEvent) error {
-	page, pageSize := paginationParams(e)
-	authID := e.Auth.Id
+var errSearchIndexNotReady = errors.New("search index is not ready")
 
-	filter, params := ownerScope(authID)
+func handleListDocuments(idx *fulltext.Index) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		page, pageSize := paginationParams(e)
+		authID := e.Auth.Id
 
-	query := strings.TrimSpace(e.Request.URL.Query().Get("query"))
-	if query != "" {
-		filter += " && (title ~ {:q} || ocr_text ~ {:q})"
-		params["q"] = query
+		query := strings.TrimSpace(e.Request.URL.Query().Get("query"))
+		if query != "" {
+			return listDocumentsFulltext(e, idx, authID, query, page, pageSize)
+		}
+
+		filter, params := ownerScope(authID)
+
+		total, err := e.App.CountRecords("documents", dbx.NewExp(filter, params))
+		if err != nil {
+			return internalError(e, err)
+		}
+
+		sort := documentSortField(e.Request.URL.Query().Get("ordering"))
+		offset := (page - 1) * pageSize
+
+		records, err := e.App.FindRecordsByFilter(
+			"documents",
+			filter,
+			sort,
+			pageSize,
+			offset,
+			params,
+		)
+		if err != nil {
+			return internalError(e, err)
+		}
+
+		results := make([]any, 0, len(records))
+		for _, record := range records {
+			results = append(results, mapDocument(e.App, record))
+		}
+
+		return paginatedList(e, total, page, pageSize, results)
+	}
+}
+
+func listDocumentsFulltext(e *core.RequestEvent, idx *fulltext.Index, authID, query string, page, pageSize int) error {
+	if idx == nil || !idx.Ready() {
+		return internalError(e, errSearchIndexNotReady)
 	}
 
-	total, err := e.App.CountRecords("documents", dbx.NewExp(filter, params))
+	result, err := idx.Search(fulltext.Query{
+		Text:   query,
+		UserID: authID,
+		Offset: (page - 1) * pageSize,
+		Limit:  pageSize,
+	})
 	if err != nil {
 		return internalError(e, err)
 	}
 
-	sort := documentSortField(e.Request.URL.Query().Get("ordering"))
-	offset := (page - 1) * pageSize
-
-	records, err := e.App.FindRecordsByFilter(
-		"documents",
-		filter,
-		sort,
-		pageSize,
-		offset,
-		params,
-	)
-	if err != nil {
-		return internalError(e, err)
-	}
-
-	results := make([]any, 0, len(records))
-	for _, record := range records {
+	results := make([]any, 0, len(result.Hits))
+	for _, hit := range result.Hits {
+		record, err := e.App.FindRecordById("documents", hit.ID)
+		if err != nil {
+			continue
+		}
+		if authID != "" && record.GetString("user") != authID {
+			continue
+		}
 		results = append(results, mapDocument(e.App, record))
 	}
 
-	return paginatedList(e, total, page, pageSize, results)
+	return paginatedList(e, int64(result.Total), page, pageSize, results)
 }
 
 func handleGetDocument(e *core.RequestEvent) error {

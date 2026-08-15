@@ -31,3 +31,10 @@ test('superuser can scan for duplicates', async ({ page }) => {
   await page.getByRole('button', { name: 'Scan for duplicates' }).click()
   await expect(page.getByText(/Scan finished:/i)).toBeVisible({ timeout: 30_000 })
 })
+
+test('superuser can rebuild search index', async ({ page }) => {
+  await loginAsSuper(page)
+  await openSettings(page)
+  await page.getByRole('button', { name: 'Rebuild search index' }).click()
+  await expect(page.getByText(/Reindexed \d+ documents\./i)).toBeVisible({ timeout: 30_000 })
+})

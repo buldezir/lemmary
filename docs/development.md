@@ -129,6 +129,20 @@ Text extraction:
 
 Cron jobs are visible and manually triggerable in PocketBase Admin → Settings → Crons.
 
+## Full-text search
+
+Archive search uses a [Bleve](https://github.com/blevesearch/bleve) inverted index (not SQLite `LIKE`). The index lives at `{dataDir}/bleve/documents` (Docker: `/app/pb_data/bleve/documents` on the existing `app_data` volume). It is derived data: wiping `pb_data` also wipes the index, and the next boot rebuilds it from documents.
+
+Query behavior:
+
+- Terms are **AND**ed (all must match) and ranked with **BM25**. Quoted `"phrases"` must appear in order.
+- Search covers bilingual title/purpose/summary, OCR text, tag/type/correspondent names, and `people_or_organizations`.
+- The homepage search box calls `GET /api/app/documents/search`. An empty search box still lists via PocketBase (sort by created).
+- Deep Search’s `search_documents` tool and paperless-ngx `GET /api/documents/?query=` use the same index.
+- PocketBase collection filters (`field ~ "..."`) remain available to API clients; the UI no longer uses them for the search box.
+
+Admins can force a rebuild from **Settings → Rebuild search index** (`POST /api/app/search/reindex`).
+
 ## LLM setup (OpenAI / OpenRouter / Mistral)
 
 Prefer **Settings** in the UI (admin): add a provider with SDK `openai`, `openrouter`, or `mistral`, then select it for extraction, chat, and search. Mistral uses the same [OpenAI-compatible chat completions](https://docs.mistral.ai/api) endpoint as the other LLMs (`/v1/chat/completions`); OCR still uses Mistral’s dedicated Document OCR API.
@@ -137,7 +151,7 @@ For a fresh install you can put `OPENAI_API_KEY` and/or `MISTRAL_API_KEY` in `.e
 
 Without an LLM provider, AI extraction, document chat, and Deep Search return a configuration error.
 
-Deep Search (`/search`) uses a tool-calling agent over keyword search. Configure **Search provider/model** and **Deep search languages** in Settings.
+Deep Search (`/search`) uses a tool-calling agent over the Bleve full-text index. Configure **Search provider/model** and **Deep search languages** in Settings.
 
 ## OCR setup
 
@@ -234,4 +248,5 @@ Import fetches only the caller-supplied URL. Private, loopback, and link-local d
 - **OCR fails:** configure the OCR provider and API key in Settings (or seed `.env` before first boot). For Google Vision, ensure the Vision API is enabled for your project.
 - **AI extraction fails:** configure an LLM provider (OpenAI, OpenRouter, or Mistral) in Settings. Check the processing job error on the document detail page.
 - **Settings page missing:** log in with the admin email (the account created at setup / `superuser upsert`). Regular non-admin users do not see Settings.
-- **Auth errors in frontend:** delete PocketBase data dir (`backend/pb_data`) and restart to recreate collections, then reload the app.
+- **Auth errors in frontend:** delete PocketBase data dir (`backend/pb_data`) and restart to recreate collections, then reload the app. This also deletes the Bleve index (rebuilt on next boot).
+- **Search misses a document:** wait for processing to finish, then retry. Admins can use **Settings → Rebuild search index**, or delete `backend/pb_data/bleve` and restart.

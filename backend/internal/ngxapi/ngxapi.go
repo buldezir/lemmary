@@ -7,10 +7,11 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
 	"github.com/pocketbase/pocketbase/tools/router"
+	"paperless-go/backend/internal/fulltext"
 )
 
 // Register mounts paperless-ngx compatible REST endpoints on the PocketBase router.
-func Register(app core.App) {
+func Register(app core.App, idx *fulltext.Index) {
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: 40,
 		Func: func(e *core.ServeEvent) error {
@@ -60,7 +61,7 @@ func Register(app core.App) {
 			g.HEAD("/token/", handleTokenMethodNotAllowed)
 			g.HEAD("/token", handleTokenMethodNotAllowed)
 
-			registerDocumentRoutes(g)
+			registerDocumentRoutes(g, idx)
 			registerTagRoutes(g)
 			registerCorrespondentRoutes(g)
 			registerDocumentTypeRoutes(g)
@@ -73,7 +74,7 @@ func Register(app core.App) {
 	})
 }
 
-func registerDocumentRoutes(g *router.RouterGroup[*core.RequestEvent]) {
+func registerDocumentRoutes(g *router.RouterGroup[*core.RequestEvent], idx *fulltext.Index) {
 	list := []struct {
 		list, item, itemDownload, itemThumb, postDocument string
 	}{
@@ -81,7 +82,7 @@ func registerDocumentRoutes(g *router.RouterGroup[*core.RequestEvent]) {
 		{"/documents", "/documents/{id}", "/documents/{id}/download", "/documents/{id}/thumb", "/documents/post_document"},
 	}
 	for _, r := range list {
-		g.GET(r.list, bindAuth(handleListDocuments))
+		g.GET(r.list, bindAuth(handleListDocuments(idx)))
 		g.GET(r.item, bindAuth(handleGetDocument))
 		g.PATCH(r.item, bindAuth(handlePatchDocument))
 		g.DELETE(r.item, bindAuth(handleDeleteDocument))
