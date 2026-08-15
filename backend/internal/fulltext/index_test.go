@@ -1,11 +1,17 @@
 package fulltext
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/blevesearch/bleve/v2"
+	"github.com/pocketbase/pocketbase/core"
 )
 
 func testIndex(t *testing.T) *Index {
@@ -212,6 +218,11 @@ func TestMappingVersionRebuild(t *testing.T) {
 	if !idx2.NeedsRebuild() {
 		t.Fatal("expected rebuild after mapping version mismatch")
 	}
+	if b, err := os.ReadFile(versionPath); err != nil {
+		t.Fatalf("version file should remain until rebuild succeeds: %v", err)
+	} else if strings.TrimSpace(string(b)) == MappingVersion {
+		t.Fatal("Open must not commit MappingVersion before rebuild completes")
+	}
 	hits := searchIDs(t, idx2, Query{Text: "hello", UserID: "u1"})
 	if len(hits) != 0 {
 		t.Fatalf("stale index should have been wiped, got %v", hits)
@@ -243,5 +254,145 @@ func TestEmptyQuerySkipsIndex(t *testing.T) {
 	}
 	if len(res.Hits) != 0 || res.Total != 0 {
 		t.Fatalf("empty query should not search: %+v", res)
+	}
+}
+
+func sampleDoc(title string) map[string]any {
+	return map[string]any{
+		FieldUser:  "u1",
+		FieldTitle: title,
+		FieldAll:   title,
+	}
+}
+
+func TestRebuildKeepsLiveIndexOnFailure(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "keep", sampleDoc("hello"))
+
+	t.Cleanup(func() { indexAllHook = nil })
+	indexAllHook = func(core.App, bleve.Index) (int, error) {
+		return 0, errors.New("injected mid-rebuild failure")
+	}
+
+	if _, err := idx.Rebuild(nil); err == nil {
+		t.Fatal("expected rebuild error")
+	}
+	if !idx.Ready() {
+		t.Fatal("live index should remain ready after failed rebuild")
+	}
+	hits := searchIDs(t, idx, Query{Text: "hello", UserID: "u1"})
+	if !containsID(hits, "keep") {
+		t.Fatalf("expected original docs after failed rebuild, got %v", hits)
+	}
+}
+
+func TestConcurrentRebuildsSerialize(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "keep", sampleDoc("hello"))
+
+	t.Cleanup(func() { indexAllHook = nil })
+	indexAllHook = func(_ core.App, b bleve.Index) (int, error) {
+		time.Sleep(30 * time.Millisecond)
+		if err := b.Index("keep", sampleDoc("hello")); err != nil {
+			return 0, err
+		}
+		return 1, nil
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	wg.Add(2)
+	for n := 0; n < 2; n++ {
+		n := n
+		go func() {
+			defer wg.Done()
+			_, errs[n] = idx.Rebuild(nil)
+		}()
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("rebuild %d: %v", i, err)
+		}
+	}
+	if !idx.Ready() {
+		t.Fatal("index not ready after concurrent rebuilds")
+	}
+	hits := searchIDs(t, idx, Query{Text: "hello", UserID: "u1"})
+	if !containsID(hits, "keep") {
+		t.Fatalf("expected keep after concurrent rebuilds, got %v", hits)
+	}
+}
+
+func TestPutWaitsForRebuildThenHitsNewIndex(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "keep", sampleDoc("hello"))
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	t.Cleanup(func() { indexAllHook = nil })
+	indexAllHook = func(_ core.App, b bleve.Index) (int, error) {
+		close(entered)
+		<-release
+		if err := b.Index("keep", sampleDoc("hello")); err != nil {
+			return 0, err
+		}
+		return 1, nil
+	}
+
+	rebuildDone := make(chan error, 1)
+	go func() {
+		_, err := idx.Rebuild(nil)
+		rebuildDone <- err
+	}()
+	<-entered
+
+	putDone := make(chan error, 1)
+	go func() {
+		putDone <- idx.Put("late", sampleDoc("hello late"))
+	}()
+
+	select {
+	case err := <-putDone:
+		t.Fatalf("put completed during rebuild: %v", err)
+	case <-time.After(40 * time.Millisecond):
+	}
+
+	close(release)
+	if err := <-rebuildDone; err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if err := <-putDone; err != nil {
+		t.Fatalf("put after rebuild: %v", err)
+	}
+
+	hits := searchIDs(t, idx, Query{Text: "hello", UserID: "u1"})
+	if !containsID(hits, "keep") || !containsID(hits, "late") {
+		t.Fatalf("expected keep and late after rebuild, got %v", hits)
+	}
+}
+
+func TestIDsByKeywordPaginates(t *testing.T) {
+	idx := testIndex(t)
+	prev := lookupPageSize
+	lookupPageSize = 2
+	t.Cleanup(func() { lookupPageSize = prev })
+
+	for i := 0; i < 5; i++ {
+		id := fmt.Sprintf("d%d", i)
+		mustPut(t, idx, id, map[string]any{
+			FieldUser:  "u1",
+			FieldTags:  []string{"tag-wide"},
+			FieldTitle: id,
+			FieldAll:   id,
+		})
+	}
+
+	ids, err := idx.IDsByKeyword(FieldTags, "tag-wide")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 5 {
+		t.Fatalf("expected 5 ids across pages, got %v", ids)
 	}
 }

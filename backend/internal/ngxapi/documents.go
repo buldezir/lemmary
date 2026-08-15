@@ -23,7 +23,7 @@ func handleListDocuments(idx *fulltext.Index) func(*core.RequestEvent) error {
 
 		query := strings.TrimSpace(e.Request.URL.Query().Get("query"))
 		if query != "" {
-			return listDocumentsFulltext(e, idx, authID, query, page, pageSize)
+			return listDocumentsFulltext(e, idx, authID, query, page, clampSearchPageSize(pageSize))
 		}
 
 		filter, params := ownerScope(authID)

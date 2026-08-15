@@ -13,7 +13,9 @@ import (
 
 const (
 	defaultSearchLimit = 10
-	maxSearchLimit     = 500
+	// MaxSearchLimit is the largest page size Search will return. Callers must
+	// use this cap when computing offsets so pages do not skip hits.
+	MaxSearchLimit = 500
 )
 
 type Query struct {
@@ -71,17 +73,12 @@ func (i *Index) Search(q Query) (Result, error) {
 		return empty, nil
 	}
 
-	b, err := i.bleve()
-	if err != nil {
-		return empty, err
-	}
-
 	limit := q.Limit
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
-	if limit > maxSearchLimit {
-		limit = maxSearchLimit
+	if limit > MaxSearchLimit {
+		limit = MaxSearchLimit
 	}
 	offset := q.Offset
 	if offset < 0 {
@@ -93,24 +90,32 @@ func (i *Index) Search(q Query) (Result, error) {
 		return empty, err
 	}
 
-	req := bleve.NewSearchRequestOptions(bq, limit, offset, false)
-	req.Highlight = bleve.NewHighlight()
-	req.Highlight.Fields = []string{FieldOCRText}
+	var result Result
+	err = i.withIndex(func(b bleve.Index) error {
+		req := bleve.NewSearchRequestOptions(bq, limit, offset, false)
+		req.Highlight = bleve.NewHighlight()
+		req.Highlight.Fields = []string{FieldOCRText}
 
-	res, err := b.Search(req)
-	if err != nil {
-		return empty, fmt.Errorf("bleve search: %w", err)
-	}
-
-	hits := make([]Hit, 0, len(res.Hits))
-	for _, h := range res.Hits {
-		hit := Hit{ID: h.ID, Score: h.Score}
-		if frags := h.Fragments[FieldOCRText]; len(frags) > 0 {
-			hit.OCRSnippet = plainFragment(frags[0])
+		res, err := b.Search(req)
+		if err != nil {
+			return fmt.Errorf("bleve search: %w", err)
 		}
-		hits = append(hits, hit)
+
+		hits := make([]Hit, 0, len(res.Hits))
+		for _, h := range res.Hits {
+			hit := Hit{ID: h.ID, Score: h.Score}
+			if frags := h.Fragments[FieldOCRText]; len(frags) > 0 {
+				hit.OCRSnippet = plainFragment(frags[0])
+			}
+			hits = append(hits, hit)
+		}
+		result = Result{Hits: hits, Total: res.Total}
+		return nil
+	})
+	if err != nil {
+		return empty, err
 	}
-	return Result{Hits: hits, Total: res.Total}, nil
+	return result, nil
 }
 
 func (i *Index) IDsByKeyword(field, value string) ([]string, error) {
@@ -118,22 +123,33 @@ func (i *Index) IDsByKeyword(field, value string) ([]string, error) {
 	if field == "" || value == "" {
 		return nil, nil
 	}
-	b, err := i.bleve()
-	if err != nil {
-		return nil, err
+
+	page := lookupPageSize
+	if page <= 0 {
+		page = defaultLookupPage
 	}
-	tq := bleve.NewTermQuery(value)
-	tq.SetField(field)
-	req := bleve.NewSearchRequestOptions(tq, 500, 0, false)
-	res, err := b.Search(req)
-	if err != nil {
-		return nil, err
-	}
-	ids := make([]string, 0, len(res.Hits))
-	for _, h := range res.Hits {
-		ids = append(ids, h.ID)
-	}
-	return ids, nil
+
+	var ids []string
+	err := i.withIndex(func(b bleve.Index) error {
+		tq := bleve.NewTermQuery(value)
+		tq.SetField(field)
+		offset := 0
+		for {
+			req := bleve.NewSearchRequestOptions(tq, page, offset, false)
+			res, err := b.Search(req)
+			if err != nil {
+				return err
+			}
+			for _, h := range res.Hits {
+				ids = append(ids, h.ID)
+			}
+			if len(res.Hits) < page {
+				return nil
+			}
+			offset += page
+		}
+	})
+	return ids, err
 }
 
 func buildQuery(q Query, text string) (query.Query, error) {

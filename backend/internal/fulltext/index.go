@@ -12,11 +12,24 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-const rebuildPageSize = 200
+const (
+	rebuildPageSize   = 200
+	rebuildSuffix     = ".rebuilding"
+	defaultLookupPage = 500
+)
+
+// lookupPageSize is the SQLite/Bleve page size for named-entity fan-out.
+// Tests may lower it to exercise pagination.
+var lookupPageSize = defaultLookupPage
+
+// indexAllHook, if set, replaces SQLite listing during Rebuild. Tests only.
+var indexAllHook func(app core.App, idx bleve.Index) (int, error)
 
 // Index is a process-wide Bleve handle. It may be passed around before Open.
 type Index struct {
-	mu           sync.RWMutex
+	mu           sync.RWMutex // held for the duration of Bleve ops; exclusive for close/swap
+	writeMu      sync.RWMutex // writers RLock; Rebuild/Close take Lock
+	rebuildMu    sync.Mutex   // serializes Rebuild
 	wg           sync.WaitGroup
 	idx          bleve.Index
 	path         string
@@ -48,6 +61,7 @@ func (i *Index) Open(dataDir string) error {
 	if err := os.MkdirAll(base, 0o755); err != nil {
 		return fmt.Errorf("create bleve dir: %w", err)
 	}
+	_ = os.RemoveAll(path + rebuildSuffix)
 
 	versionOK := false
 	if b, err := os.ReadFile(versionPath); err == nil {
@@ -85,11 +99,6 @@ func (i *Index) Open(dataDir string) error {
 		}
 	}
 
-	if err := os.WriteFile(versionPath, []byte(MappingVersion+"\n"), 0o644); err != nil {
-		_ = idx.Close()
-		return fmt.Errorf("write mapping version: %w", err)
-	}
-
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	if i.idx != nil {
@@ -103,6 +112,10 @@ func (i *Index) Open(dataDir string) error {
 }
 
 func (i *Index) Close() error {
+	i.rebuildMu.Lock()
+	defer i.rebuildMu.Unlock()
+	i.writeMu.Lock()
+	defer i.writeMu.Unlock()
 	i.WaitIdle()
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -125,15 +138,15 @@ func (i *Index) EnqueueUpsert(app core.App, id string) {
 	if app == nil || id == "" {
 		return
 	}
-	i.wg.Add(1)
+	i.beginWrite()
 	go func() {
-		defer i.wg.Done()
+		defer i.endWrite()
 		rec, err := app.FindRecordById("documents", id)
 		if err != nil {
-			_ = i.Delete(id)
+			_ = i.deleteUnlocked(id)
 			return
 		}
-		if err := i.Upsert(app, rec); err != nil {
+		if err := i.upsertUnlocked(app, rec); err != nil {
 			app.Logger().Error("fulltext upsert failed", slog.String("id", id), slog.Any("error", err))
 		}
 	}()
@@ -144,10 +157,10 @@ func (i *Index) EnqueueDelete(id string) {
 	if id == "" {
 		return
 	}
-	i.wg.Add(1)
+	i.beginWrite()
 	go func() {
-		defer i.wg.Done()
-		_ = i.Delete(id)
+		defer i.endWrite()
+		_ = i.deleteUnlocked(id)
 	}()
 }
 
@@ -156,30 +169,47 @@ func (i *Index) EnqueueReindexEntity(app core.App, collection, field, entityID s
 	if app == nil || collection == "" || field == "" || entityID == "" {
 		return
 	}
-	i.wg.Add(1)
+	i.beginWrite()
 	go func() {
-		defer i.wg.Done()
+		defer i.endWrite()
 		reindexDocumentsForEntity(app, i, collection, field, entityID)
 	}()
 }
 
+func (i *Index) beginWrite() {
+	i.writeMu.RLock()
+	i.wg.Add(1)
+}
+
+func (i *Index) endWrite() {
+	i.wg.Done()
+	i.writeMu.RUnlock()
+}
+
 func (i *Index) Put(id string, doc map[string]any) error {
-	b, err := i.bleve()
-	if err != nil {
-		return err
-	}
-	return b.Index(id, doc)
+	i.writeMu.RLock()
+	defer i.writeMu.RUnlock()
+	return i.withIndex(func(b bleve.Index) error {
+		return b.Index(id, doc)
+	})
 }
 
 func (i *Index) Upsert(app core.App, rec *core.Record) error {
 	if rec == nil {
 		return nil
 	}
-	b, err := i.bleve()
-	if err != nil {
-		return err
+	i.writeMu.RLock()
+	defer i.writeMu.RUnlock()
+	return i.upsertUnlocked(app, rec)
+}
+
+func (i *Index) upsertUnlocked(app core.App, rec *core.Record) error {
+	if rec == nil {
+		return nil
 	}
-	return b.Index(rec.Id, Build(app, rec))
+	return i.withIndex(func(b bleve.Index) error {
+		return b.Index(rec.Id, Build(app, rec))
+	})
 }
 
 func (i *Index) Delete(id string) error {
@@ -187,19 +217,29 @@ func (i *Index) Delete(id string) error {
 	if id == "" {
 		return nil
 	}
-	b, err := i.bleve()
-	if err != nil {
-		return err
+	i.writeMu.RLock()
+	defer i.writeMu.RUnlock()
+	return i.deleteUnlocked(id)
+}
+
+func (i *Index) deleteUnlocked(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
 	}
-	return b.Delete(id)
+	return i.withIndex(func(b bleve.Index) error {
+		return b.Delete(id)
+	})
 }
 
 func (i *Index) DocCount() (uint64, error) {
-	b, err := i.bleve()
-	if err != nil {
-		return 0, err
-	}
-	return b.DocCount()
+	var n uint64
+	err := i.withIndex(func(b bleve.Index) error {
+		var err error
+		n, err = b.DocCount()
+		return err
+	})
+	return n, err
 }
 
 // ShouldHeal reports whether the index is empty while SQLite still has documents.
@@ -212,52 +252,92 @@ func (i *Index) ShouldHeal(app core.App) bool {
 	return err == nil && n > 0
 }
 
-// Rebuild wipes the on-disk index and reindexes every document from PocketBase.
+// Rebuild builds a replacement index and swaps it in only after success.
+// Concurrent writers wait at writeMu so their updates land on the new index.
 func (i *Index) Rebuild(app core.App) (int, error) {
-	i.WaitIdle()
-	i.mu.Lock()
+	i.rebuildMu.Lock()
+	defer i.rebuildMu.Unlock()
+	i.writeMu.Lock()
+	defer i.writeMu.Unlock()
+
+	i.mu.RLock()
 	path := i.path
 	versionPath := i.versionPath
-	if i.idx != nil {
-		_ = i.idx.Close()
-		i.idx = nil
-	}
-	i.mu.Unlock()
-
+	i.mu.RUnlock()
 	if path == "" {
 		return 0, fmt.Errorf("search index is not open")
-	}
-	if err := os.RemoveAll(path); err != nil {
-		return 0, fmt.Errorf("remove bleve index: %w", err)
 	}
 
 	mapping, err := newMapping()
 	if err != nil {
 		return 0, fmt.Errorf("bleve mapping: %w", err)
 	}
-	idx, err := bleve.New(path, mapping)
+
+	builtPath := path + rebuildSuffix
+	_ = os.RemoveAll(builtPath)
+	built, err := bleve.New(builtPath, mapping)
 	if err != nil {
-		return 0, fmt.Errorf("create bleve index: %w", err)
+		return 0, fmt.Errorf("create bleve rebuild index: %w", err)
 	}
 
-	n, err := indexAllDocuments(app, idx)
+	n, err := indexAllDocuments(app, built)
 	if err != nil {
-		_ = idx.Close()
+		_ = built.Close()
+		_ = os.RemoveAll(builtPath)
 		return n, err
 	}
-	if err := os.WriteFile(versionPath, []byte(MappingVersion+"\n"), 0o644); err != nil {
-		_ = idx.Close()
-		return n, fmt.Errorf("write mapping version: %w", err)
-	}
 
-	i.mu.Lock()
-	i.idx = idx
-	i.needsRebuild = false
-	i.mu.Unlock()
+	if err := i.installRebuilt(built, builtPath, versionPath); err != nil {
+		_ = os.RemoveAll(builtPath)
+		return n, err
+	}
 	return n, nil
 }
 
+func (i *Index) installRebuilt(built bleve.Index, builtPath, versionPath string) error {
+	if err := built.Close(); err != nil {
+		return fmt.Errorf("close rebuild index: %w", err)
+	}
+
+	i.mu.Lock()
+	defer i.mu.Unlock()
+
+	old := i.idx
+	path := i.path
+	if old != nil {
+		_ = old.Close()
+		i.idx = nil
+	}
+	if err := os.RemoveAll(path); err != nil {
+		if reopened, oerr := bleve.Open(path); oerr == nil {
+			i.idx = reopened
+		}
+		return fmt.Errorf("remove bleve index: %w", err)
+	}
+	if err := os.Rename(builtPath, path); err != nil {
+		return fmt.Errorf("install bleve index: %w", err)
+	}
+	idx, err := bleve.Open(path)
+	if err != nil {
+		return fmt.Errorf("open rebuilt bleve index: %w", err)
+	}
+	i.idx = idx
+	if err := os.WriteFile(versionPath, []byte(MappingVersion+"\n"), 0o644); err != nil {
+		i.needsRebuild = true
+		return fmt.Errorf("write mapping version: %w", err)
+	}
+	i.needsRebuild = false
+	return nil
+}
+
 func indexAllDocuments(app core.App, idx bleve.Index) (int, error) {
+	if indexAllHook != nil {
+		return indexAllHook(app, idx)
+	}
+	return indexAllDocumentsFromApp(app, idx)
+}
+
+func indexAllDocumentsFromApp(app core.App, idx bleve.Index) (int, error) {
 	if _, err := app.FindCollectionByNameOrId("documents"); err != nil {
 		return 0, fmt.Errorf("documents collection: %w", err)
 	}
@@ -298,11 +378,11 @@ func indexAllDocuments(app core.App, idx bleve.Index) (int, error) {
 	return n, nil
 }
 
-func (i *Index) bleve() (bleve.Index, error) {
+func (i *Index) withIndex(fn func(bleve.Index) error) error {
 	i.mu.RLock()
 	defer i.mu.RUnlock()
 	if i.idx == nil {
-		return nil, fmt.Errorf("search index is not ready")
+		return fmt.Errorf("search index is not ready")
 	}
-	return i.idx, nil
+	return fn(i.idx)
 }

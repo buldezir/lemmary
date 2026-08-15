@@ -95,12 +95,12 @@ func reindexDocumentsForEntity(app core.App, idx *Index, collection, field, enti
 	if collection == collectionTags {
 		filter = "tags.id ?= {:id}"
 	}
-	records, err := app.FindRecordsByFilter(collectionDocuments, filter, "", 500, 0, map[string]any{"id": entityID})
+	sqlIDs, err := documentIDsByFilter(app, filter, map[string]any{"id": entityID})
 	if err != nil {
 		app.Logger().Error("fulltext named-entity lookup failed", slog.String("collection", collection), slog.Any("error", err))
 	} else {
-		for _, rec := range records {
-			ids[rec.Id] = struct{}{}
+		for _, id := range sqlIDs {
+			ids[id] = struct{}{}
 		}
 	}
 
@@ -116,13 +116,35 @@ func reindexDocumentsForEntity(app core.App, idx *Index, collection, field, enti
 	for id := range ids {
 		rec, err := app.FindRecordById(collectionDocuments, id)
 		if err != nil {
-			if delErr := idx.Delete(id); delErr != nil {
+			if delErr := idx.deleteUnlocked(id); delErr != nil {
 				app.Logger().Error("fulltext delete after entity change failed", slog.String("id", id), slog.Any("error", delErr))
 			}
 			continue
 		}
-		if err := idx.Upsert(app, rec); err != nil {
+		if err := idx.upsertUnlocked(app, rec); err != nil {
 			app.Logger().Error("fulltext reindex after entity change failed", slog.String("id", id), slog.Any("error", err))
 		}
+	}
+}
+
+func documentIDsByFilter(app core.App, filter string, params map[string]any) ([]string, error) {
+	page := lookupPageSize
+	if page <= 0 {
+		page = defaultLookupPage
+	}
+	var ids []string
+	offset := 0
+	for {
+		records, err := app.FindRecordsByFilter(collectionDocuments, filter, "", page, offset, params)
+		if err != nil {
+			return ids, err
+		}
+		for _, rec := range records {
+			ids = append(ids, rec.Id)
+		}
+		if len(records) < page {
+			return ids, nil
+		}
+		offset += page
 	}
 }

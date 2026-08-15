@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/pocketbase/pocketbase/core"
+	"paperless-go/backend/internal/fulltext"
 )
 
 type paginatedResponse struct {
@@ -89,6 +90,16 @@ func paginationParams(e *core.RequestEvent) (page, pageSize int) {
 		}
 	}
 	return page, pageSize
+}
+
+func clampSearchPageSize(pageSize int) int {
+	if pageSize > fulltext.MaxSearchLimit {
+		return fulltext.MaxSearchLimit
+	}
+	if pageSize <= 0 {
+		return 25
+	}
+	return pageSize
 }
 
 func buildPageURL(e *core.RequestEvent, page int) string {

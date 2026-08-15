@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"paperless-go/backend/internal/fulltext"
 )
@@ -68,7 +69,7 @@ func handleDocumentSearch(app core.App, idx *fulltext.Index) func(*core.RequestE
 			return writeError(e, http.StatusInternalServerError, err.Error())
 		}
 
-		items := hydrateDocumentExports(app, result.Hits)
+		items := hydrateDocumentExports(app, result.Hits, userID)
 		totalPages := 0
 		if perPage > 0 && result.Total > 0 {
 			totalPages = int((result.Total + uint64(perPage) - 1) / uint64(perPage))
@@ -97,11 +98,19 @@ func handleSearchReindex(app core.App, idx *fulltext.Index) func(*core.RequestEv
 	}
 }
 
-func hydrateDocumentExports(app core.App, hits []fulltext.Hit) []map[string]any {
+type documentLookup interface {
+	FindRecordById(collectionNameOrId any, recordId string, optFilters ...func(*dbx.SelectQuery) error) (*core.Record, error)
+	ExpandRecord(record *core.Record, expands []string, optFetchFunc core.ExpandFetchFunc) map[string]error
+}
+
+func hydrateDocumentExports(app documentLookup, hits []fulltext.Hit, userID string) []map[string]any {
 	items := make([]map[string]any, 0, len(hits))
 	for _, hit := range hits {
 		rec, err := app.FindRecordById("documents", hit.ID)
 		if err != nil {
+			continue
+		}
+		if userID != "" && rec.GetString("user") != userID {
 			continue
 		}
 		_ = app.ExpandRecord(rec, []string{"tags", "document_type", "correspondent"}, nil)
