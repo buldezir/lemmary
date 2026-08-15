@@ -83,14 +83,17 @@ func (p *LLMProvider) ExtractText(ctx context.Context, filePath string, mimeType
 	)
 
 	aiprovider.LogRequest(p.logger, p.sdk, http.MethodPost, aiprovider.ChatCompletionsURL(p.baseURL), p.model, "purpose", "ocr", "messages", 2)
-	chatResp, err := p.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	ocrParams := openai.ChatCompletionNewParams{
 		Model: shared.ChatModel(p.model),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("You transcribe documents for an archive. Return only the extracted text."),
 			openai.UserMessage(parts),
 		},
-		Temperature: openai.Float(0),
-	})
+	}
+	if aiprovider.AllowsCustomTemperature(p.model) {
+		ocrParams.Temperature = openai.Float(0)
+	}
+	chatResp, err := p.client.Chat.Completions.New(ctx, ocrParams)
 	if err != nil {
 		p.logger.Error("llm ocr failed",
 			"file", filepath.Base(filePath),

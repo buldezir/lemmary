@@ -110,7 +110,7 @@ func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, 
 		params := openai.ChatCompletionNewParams{
 			Model:       shared.ChatModel(a.client.model),
 			Messages:    apiMessages,
-			Temperature: openai.Float(0.2),
+			Temperature: completionTemperature(a.client.model, 0.2),
 		}
 		if allowTools {
 			params.Tools = tools
@@ -214,7 +214,7 @@ If nothing relevant was found, say so clearly.`,
 	chatResp, err := a.client.complete(ctx, openai.ChatCompletionNewParams{
 		Model:       shared.ChatModel(a.client.model),
 		Messages:    msgs,
-		Temperature: openai.Float(0.2),
+		Temperature: completionTemperature(a.client.model, 0.2),
 	}, "purpose", "search_final", "messages", len(msgs))
 	if err != nil {
 		a.client.logger.Error("search agent force-final failed",
