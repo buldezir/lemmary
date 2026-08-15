@@ -6,6 +6,7 @@ test('login succeeds for regular user', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Documents' })).toBeVisible()
   await page.getByRole('button', { name: 'More' }).click()
   await expect(page.getByRole('menuitem', { name: 'Settings' })).toHaveCount(0)
+  await expect(page.getByRole('menuitem', { name: 'Admin' })).toHaveCount(0)
 })
 
 test('login rejects bad password', async ({ page }) => {

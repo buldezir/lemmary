@@ -20,6 +20,7 @@ test('admin can upload documents', async ({ page }) => {
   await loginAsSuper(page)
   await openMoreMenu(page)
   await expect(page.getByRole('menuitem', { name: 'Settings' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'Admin' })).toBeVisible()
   await uploadFixture(page, 'sample.txt')
   await expect(page).toHaveURL(/\/document\//)
 })
