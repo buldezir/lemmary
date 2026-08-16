@@ -69,7 +69,7 @@ func MigrateLegacySettings(app core.App, settings *core.Record) error {
 	}
 
 	models := taskModels{
-		extract:    firstNonEmpty(settings.GetString("openai_model"), "gpt-4o-mini"),
+		extract:    firstNonEmpty(settings.GetString("openai_model"), "gpt-5.6-luna"),
 		chat:       strings.TrimSpace(settings.GetString("openai_chat_model")),
 		search:     strings.TrimSpace(settings.GetString("openai_search_model")),
 		ocr:        firstNonEmpty(settings.GetString("mistral_ocr_model"), "mistral-ocr-latest"),
@@ -90,7 +90,7 @@ type taskModels struct {
 }
 
 func envTaskModels() taskModels {
-	extract := getenv("OPENAI_MODEL", "gpt-4o-mini")
+	extract := getenv("OPENAI_MODEL", "gpt-5.6-luna")
 	chat := getenv("OPENAI_CHAT_MODEL", extract)
 	return taskModels{
 		extract:    extract,

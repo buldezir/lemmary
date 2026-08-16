@@ -30,12 +30,12 @@ const extractTestJSON = `{
 
 func TestCompletionTemperature(t *testing.T) {
 	t.Parallel()
-	if CompletionTemperature("gpt-5-mini", 0.1).Valid() {
-		t.Fatal("gpt-5-mini should omit temperature")
+	if CompletionTemperature("gpt-5.6-luna", 0.1).Valid() {
+		t.Fatal("gpt-5.6-luna should omit temperature")
 	}
-	got := CompletionTemperature("gpt-4o-mini", 0.1)
+	got := CompletionTemperature("mistral-small-latest", 0.1)
 	if !got.Valid() || got.Value != 0.1 {
-		t.Fatalf("gpt-4o-mini temperature = %+v, want 0.1", got)
+		t.Fatalf("mistral-small-latest temperature = %+v, want 0.1", got)
 	}
 }
 
@@ -60,17 +60,17 @@ func TestIsUnsupportedTemperatureError(t *testing.T) {
 
 func TestExtractMetadataOmitsTemperatureForGPT5(t *testing.T) {
 	t.Parallel()
-	body := captureChatBody(t, "gpt-5-mini")
+	body := captureChatBody(t, "gpt-5.6-luna")
 	if strings.Contains(body, `"temperature"`) {
-		t.Fatalf("gpt-5-mini request should omit temperature, got %s", body)
+		t.Fatalf("gpt-5.6-luna request should omit temperature, got %s", body)
 	}
 }
 
-func TestExtractMetadataSendsTemperatureForGPT4o(t *testing.T) {
+func TestExtractMetadataSendsTemperatureForMistral(t *testing.T) {
 	t.Parallel()
-	body := captureChatBody(t, "gpt-4o-mini")
+	body := captureChatBody(t, "mistral-small-latest")
 	if !strings.Contains(body, `"temperature"`) {
-		t.Fatalf("gpt-4o-mini request should include temperature, got %s", body)
+		t.Fatalf("mistral-small-latest request should include temperature, got %s", body)
 	}
 }
 
@@ -93,7 +93,7 @@ func TestExtractMetadataRetriesWithoutTemperature(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	client := NewOpenAIClient("openai", "test-key", "gpt-4o-mini", srv.URL, "v1", "", 5*time.Second, slog.Default())
+	client := NewOpenAIClient("openai", "test-key", "mistral-small-latest", srv.URL, "v1", "", 5*time.Second, slog.Default())
 	meta, err := client.ExtractMetadata(context.Background(), "Invoice from Acme")
 	if err != nil {
 		t.Fatalf("ExtractMetadata: %v", err)

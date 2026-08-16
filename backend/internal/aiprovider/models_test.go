@@ -26,14 +26,14 @@ func TestModelsURLOpenAIOCRUnfiltered(t *testing.T) {
 
 func TestParseModelsResponse(t *testing.T) {
 	t.Parallel()
-	models, err := parseModelsResponse([]byte(`{"data":[{"id":"gpt-4o","name":"GPT-4o"},{"id":"other"},{"model":"skip-me"}]}`))
+	models, err := parseModelsResponse([]byte(`{"data":[{"id":"gpt-5.6-luna","name":"GPT-5.6 Luna"},{"id":"other"},{"model":"skip-me"}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(models) != 3 {
 		t.Fatalf("len=%d want 3: %+v", len(models), models)
 	}
-	if models[0].ID != "gpt-4o" || models[0].Name != "GPT-4o" {
+	if models[0].ID != "gpt-5.6-luna" || models[0].Name != "GPT-5.6 Luna" {
 		t.Fatalf("first=%+v", models[0])
 	}
 	if models[2].ID != "skip-me" {

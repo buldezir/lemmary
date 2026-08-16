@@ -8,9 +8,9 @@ func TestAllowsCustomTemperature(t *testing.T) {
 		model string
 		want  bool
 	}{
-		{"gpt-4o-mini", true},
+		{"gpt-5.6-luna", false},
 		{"gpt-4.1", true},
-		{"openai/gpt-4o", true},
+		{"openai/gpt-5.6-luna", false},
 		{"mistral-small-latest", true},
 		{"gpt-5", false},
 		{"gpt-5-mini", false},
