@@ -62,30 +62,39 @@ func (c *OpenAIClient) Model() string {
 }
 
 func (c *OpenAIClient) complete(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
+	return CompleteChat(ctx, c.client, c.logger, c.sdk, c.baseURL, params, extra...)
+}
+
+// CompleteChat sends a chat completion and retries once without temperature
+// if the model rejects a custom value.
+func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger, sdk, baseURL string, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	aiprovider.LogRequest(
-		c.logger,
-		c.sdk,
+		logger,
+		sdk,
 		http.MethodPost,
-		aiprovider.ChatCompletionsURL(c.baseURL),
+		aiprovider.ChatCompletionsURL(baseURL),
 		string(params.Model),
 		extra...,
 	)
-	resp, err := c.client.Chat.Completions.New(ctx, params)
+	resp, err := client.Chat.Completions.New(ctx, params)
 	if err != nil && params.Temperature.Valid() && isUnsupportedTemperatureError(err) {
-		c.logger.Warn("model rejected temperature; retrying with API default",
+		logger.Warn("model rejected temperature; retrying with API default",
 			"model", params.Model,
 			slog.Any("error", err),
 		)
 		params.Temperature = param.Opt[float64]{}
 		aiprovider.LogRequest(
-			c.logger,
-			c.sdk,
+			logger,
+			sdk,
 			http.MethodPost,
-			aiprovider.ChatCompletionsURL(c.baseURL),
+			aiprovider.ChatCompletionsURL(baseURL),
 			string(params.Model),
 			append(extra, "retry", "omit_temperature")...,
 		)
-		return c.client.Chat.Completions.New(ctx, params)
+		return client.Chat.Completions.New(ctx, params)
 	}
 	return resp, err
 }

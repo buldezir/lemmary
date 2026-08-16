@@ -9,7 +9,7 @@ import (
 	"paperless-go/backend/internal/aiprovider"
 )
 
-func completionTemperature(model string, value float64) param.Opt[float64] {
+func CompletionTemperature(model string, value float64) param.Opt[float64] {
 	if !aiprovider.AllowsCustomTemperature(model) {
 		return param.Opt[float64]{}
 	}

@@ -30,10 +30,10 @@ const extractTestJSON = `{
 
 func TestCompletionTemperature(t *testing.T) {
 	t.Parallel()
-	if completionTemperature("gpt-5-mini", 0.1).Valid() {
+	if CompletionTemperature("gpt-5-mini", 0.1).Valid() {
 		t.Fatal("gpt-5-mini should omit temperature")
 	}
-	got := completionTemperature("gpt-4o-mini", 0.1)
+	got := CompletionTemperature("gpt-4o-mini", 0.1)
 	if !got.Valid() || got.Value != 0.1 {
 		t.Fatalf("gpt-4o-mini temperature = %+v, want 0.1", got)
 	}

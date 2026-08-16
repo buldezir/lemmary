@@ -14,6 +14,7 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/shared"
+	"paperless-go/backend/internal/ai"
 	"paperless-go/backend/internal/aiprovider"
 )
 
@@ -82,18 +83,15 @@ func (p *LLMProvider) ExtractText(ctx context.Context, filePath string, mimeType
 		"bytes", len(data),
 	)
 
-	aiprovider.LogRequest(p.logger, p.sdk, http.MethodPost, aiprovider.ChatCompletionsURL(p.baseURL), p.model, "purpose", "ocr", "messages", 2)
 	ocrParams := openai.ChatCompletionNewParams{
 		Model: shared.ChatModel(p.model),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("You transcribe documents for an archive. Return only the extracted text."),
 			openai.UserMessage(parts),
 		},
+		Temperature: ai.CompletionTemperature(p.model, 0),
 	}
-	if aiprovider.AllowsCustomTemperature(p.model) {
-		ocrParams.Temperature = openai.Float(0)
-	}
-	chatResp, err := p.client.Chat.Completions.New(ctx, ocrParams)
+	chatResp, err := ai.CompleteChat(ctx, p.client, p.logger, p.sdk, p.baseURL, ocrParams, "purpose", "ocr", "messages", 2)
 	if err != nil {
 		p.logger.Error("llm ocr failed",
 			"file", filepath.Base(filePath),
