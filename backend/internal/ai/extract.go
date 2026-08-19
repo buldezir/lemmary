@@ -76,7 +76,7 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string) (*mo
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONObject: &shared.ResponseFormatJSONObjectParam{},
 		},
-		Temperature: openai.Float(0.1),
+		Temperature: CompletionTemperature(c.model, 0.1),
 	}, "purpose", "extract", "messages", 2)
 	if err != nil {
 		c.logger.Error("request failed",

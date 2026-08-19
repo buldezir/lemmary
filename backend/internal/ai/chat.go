@@ -61,7 +61,7 @@ func (c *OpenAIClient) Chat(ctx context.Context, ocrText string, messages []Chat
 	chatResp, err := c.complete(ctx, openai.ChatCompletionNewParams{
 		Model:       shared.ChatModel(c.model),
 		Messages:    apiMessages,
-		Temperature: openai.Float(0.3),
+		Temperature: CompletionTemperature(c.model, 0.3),
 	}, "purpose", "chat", "messages", len(apiMessages))
 	if err != nil {
 		c.logger.Error("chat request failed",

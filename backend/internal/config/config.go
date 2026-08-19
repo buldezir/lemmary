@@ -54,7 +54,7 @@ func DefaultsFromEnv() Config {
 	workerTimeoutSec, _ := strconv.Atoi(getEnv("WORKER_TIMEOUT_SEC", "300"))
 	maxRetries, _ := strconv.Atoi(getEnv("WORKER_MAX_RETRIES", "0"))
 
-	openAIModel := getEnv("OPENAI_MODEL", "gpt-4o-mini")
+	openAIModel := getEnv("OPENAI_MODEL", "gpt-5.6-luna")
 	chatModel := getEnv("OPENAI_CHAT_MODEL", openAIModel)
 
 	return Config{

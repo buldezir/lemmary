@@ -74,7 +74,7 @@ These seed `app_settings` and `ai_providers` when the singleton record does not 
 | `OCR_TIMEOUT_SEC` | `40` | OCR request timeout |
 | `PROCESSING_RESULT_LANGUAGE` | empty | ISO 639-1 code (e.g. `en`, `de`). When set, `title`, `summary`, `purpose`, and `document_type` are stored in this language; originals go in `*_original` fields. |
 | `OPENAI_API_KEY` | empty | Seeds an OpenAI-compatible provider (used for extraction, chat, search, and optional LLM OCR). If unset, a seeded Mistral provider is bound for those tasks instead. |
-| `OPENAI_MODEL` | `gpt-4o-mini` | Model ID for metadata extraction |
+| `OPENAI_MODEL` | `gpt-5.6-luna` | Model ID for metadata extraction |
 | `OPENAI_CHAT_MODEL` | `OPENAI_MODEL` | Optional model ID for document chat |
 | `OPENAI_SEARCH_MODEL` | `OPENAI_CHAT_MODEL` | Optional model ID for Deep Search |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API base URL |
