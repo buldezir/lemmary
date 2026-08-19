@@ -25,6 +25,20 @@ const labelTextClassName = 'text-xs font-medium text-stone-500'
 const sectionClassName = 'rounded-lg border border-stone-200 bg-stone-50 p-5'
 const sectionTitleClassName = 'mb-4 text-sm font-semibold text-stone-950'
 
+function SaveSettingsButton({ saving }: { saving: boolean }) {
+  return (
+    <div>
+      <button
+        type="submit"
+        disabled={saving}
+        className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {saving ? 'Saving...' : 'Save settings'}
+      </button>
+    </div>
+  )
+}
+
 const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
   openai: 'https://api.openai.com/v1',
   openrouter: 'https://openrouter.ai/api/v1',
@@ -522,6 +536,8 @@ export function SettingsPage() {
           </div>
         </section>
 
+        <SaveSettingsButton saving={saving} />
+
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>Worker</h2>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -598,6 +614,11 @@ export function SettingsPage() {
           </div>
         </section>
 
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        {success && <p className="text-sm text-green-700">{success}</p>}
+
+        <SaveSettingsButton saving={saving} />
+
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>Search index</h2>
           <p className="text-xs text-stone-500">
@@ -615,19 +636,6 @@ export function SettingsPage() {
             </button>
           </div>
         </section>
-
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        {success && <p className="text-sm text-green-700">{success}</p>}
-
-        <div>
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {saving ? 'Saving...' : 'Save settings'}
-          </button>
-        </div>
       </form>
     </div>
   )
