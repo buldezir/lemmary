@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"paperless-go/backend/internal/worker"
 )
 
 func TestPipelineCompletesWithMocks(t *testing.T) {
@@ -79,5 +81,88 @@ func TestPipelineReprocess(t *testing.T) {
 	}
 	if !deadlineOK {
 		t.Fatalf("reprocess job did not finish: %v", job)
+	}
+}
+
+func TestExtractionPromptIncludesExistingNamedEntities(t *testing.T) {
+	h := StartShared(t)
+	token := h.userToken(t)
+	suffix := strings.ReplaceAll(t.Name(), "/", "-")
+	corrName := "Amazon EU S.à r.l. " + suffix
+	typeName := "Credit Note " + suffix
+	otherCorr := "OtherUserCorr-" + suffix
+
+	status, raw := h.doJSON(t, http.MethodPost, "/api/collections/correspondents/records", token, map[string]any{
+		"name":          corrName,
+		"name_original": corrName,
+		"user":          h.UserID,
+	})
+	requireStatus(t, status, http.StatusOK, raw)
+	corrID := jsonGetString(mustDecodeMap(t, raw), "id")
+	t.Cleanup(func() {
+		_, _ = h.doJSON(t, http.MethodDelete, "/api/collections/correspondents/records/"+corrID, token, nil)
+	})
+
+	status, raw = h.doJSON(t, http.MethodPost, "/api/collections/document_types/records", token, map[string]any{
+		"name":          typeName,
+		"name_original": typeName,
+		"user":          h.UserID,
+	})
+	requireStatus(t, status, http.StatusOK, raw)
+	typeID := jsonGetString(mustDecodeMap(t, raw), "id")
+	t.Cleanup(func() {
+		_, _ = h.doJSON(t, http.MethodDelete, "/api/collections/document_types/records/"+typeID, token, nil)
+	})
+
+	otherEmail := "catalog-other-" + suffix + "@paperless.local"
+	otherPass := "otherpassword123"
+	status, raw = h.doJSON(t, http.MethodPost, "/api/collections/users/records", h.superToken(t), map[string]any{
+		"email":           otherEmail,
+		"password":        otherPass,
+		"passwordConfirm": otherPass,
+		"verified":        true,
+	})
+	otherID := ""
+	if status >= 200 && status < 300 {
+		otherID = jsonGetString(mustDecodeMap(t, raw), "id")
+	} else {
+		var err error
+		otherID, err = createAuthRecord(h.App, "users", otherEmail, otherPass)
+		if err != nil {
+			t.Fatalf("create other user: API %s app %v", formatErr(status, raw), err)
+		}
+	}
+	idOther, createdOther, err := worker.EnsureNamedEntity(h.App, "correspondents", otherID, otherCorr, otherCorr)
+	if err != nil || !createdOther {
+		t.Fatalf("create other user correspondent: id=%s created=%v err=%v", idOther, createdOther, err)
+	}
+	t.Cleanup(func() {
+		if rec, err := h.App.FindRecordById("correspondents", idOther); err == nil {
+			_ = h.App.Delete(rec)
+		}
+	})
+
+	h.Mocks.ResetOpenAIBodies()
+	rec := h.uploadDocument(t, token, h.UserID, fixturePath("sample.png"))
+	id := jsonGetString(rec, "id")
+	_ = h.waitDocumentStatus(t, token, id, "completed", "needs_review")
+
+	foundCorr, foundType, leaked := false, false, false
+	for _, body := range h.Mocks.LastOpenAIBodies() {
+		if strings.Contains(body, corrName) && strings.Contains(body, "untrusted user data") {
+			foundCorr = true
+		}
+		if strings.Contains(body, typeName) && strings.Contains(strings.ToLower(body), "existing document types") {
+			foundType = true
+		}
+		if strings.Contains(body, otherCorr) {
+			leaked = true
+		}
+	}
+	if !foundCorr || !foundType {
+		t.Fatalf("expected existing correspondent %q and document type %q in extraction prompt, bodies=%v", corrName, typeName, h.Mocks.LastOpenAIBodies())
+	}
+	if leaked {
+		t.Fatalf("other user's correspondent leaked into extraction prompt: %v", h.Mocks.LastOpenAIBodies())
 	}
 }

@@ -173,6 +173,69 @@ func TestNamedEntityOwnerIsolation(t *testing.T) {
 	}
 }
 
+func TestEnsureNamedEntityReusesNormalizedName(t *testing.T) {
+	h := StartShared(t)
+	stamp := fmt.Sprintf("%d", time.Now().UnixNano())
+	canonical := "Amazon EU S.à r.l. " + stamp
+	variant := "Amazon EU S.a.r.l. " + stamp
+	branch := "Amazon EU S.à r.l., German Branch " + stamp
+
+	id1, created, err := worker.EnsureNamedEntity(h.App, "correspondents", h.UserID, canonical, canonical)
+	if err != nil || !created || id1 == "" {
+		t.Fatalf("create canonical: id=%s created=%v err=%v", id1, created, err)
+	}
+	t.Cleanup(func() {
+		if rec, err := h.App.FindRecordById("correspondents", id1); err == nil {
+			_ = h.App.Delete(rec)
+		}
+	})
+
+	id2, created2, err := worker.EnsureNamedEntity(h.App, "correspondents", h.UserID, variant, variant)
+	if err != nil {
+		t.Fatalf("reuse variant: %v", err)
+	}
+	if created2 || id2 != id1 {
+		t.Fatalf("expected reuse of %s, got id=%s created=%v", id1, id2, created2)
+	}
+	rec, err := h.App.FindRecordById("correspondents", id1)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if rec.GetString("name") != canonical {
+		t.Fatalf("name overwritten: got %q want %q", rec.GetString("name"), canonical)
+	}
+
+	id3, created3, err := worker.EnsureNamedEntity(h.App, "correspondents", h.UserID, branch, branch)
+	if err != nil {
+		t.Fatalf("create branch: %v", err)
+	}
+	if !created3 || id3 == "" || id3 == id1 {
+		t.Fatalf("German Branch should be a new record, created=%v id=%s", created3, id3)
+	}
+	t.Cleanup(func() {
+		if rec, err := h.App.FindRecordById("correspondents", id3); err == nil {
+			_ = h.App.Delete(rec)
+		}
+	})
+
+	typeID, createdType, err := worker.EnsureNamedEntity(h.App, "document_types", h.UserID, "Invoice "+stamp, "Invoice "+stamp)
+	if err != nil || !createdType {
+		t.Fatalf("create type: id=%s created=%v err=%v", typeID, createdType, err)
+	}
+	t.Cleanup(func() {
+		if rec, err := h.App.FindRecordById("document_types", typeID); err == nil {
+			_ = h.App.Delete(rec)
+		}
+	})
+	typeID2, createdType2, err := worker.EnsureNamedEntity(h.App, "document_types", h.UserID, "invoice "+stamp, "invoice "+stamp)
+	if err != nil {
+		t.Fatalf("reuse type: %v", err)
+	}
+	if createdType2 || typeID2 != typeID {
+		t.Fatalf("expected type reuse of %s, got id=%s created=%v", typeID, typeID2, createdType2)
+	}
+}
+
 func ngxToken(t *testing.T, h *Harness, email, password string) string {
 	t.Helper()
 	status, raw := h.doJSON(t, http.MethodPost, "/api/token/", "", map[string]string{

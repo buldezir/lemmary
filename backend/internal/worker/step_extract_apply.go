@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pocketbase/pocketbase/core"
 	"paperless-go/backend/internal/ai"
 	"paperless-go/backend/internal/models"
 )
@@ -46,17 +47,22 @@ func (s *ExtractMetadataStep) Run(ctx context.Context, state *StepState) error {
 	}
 	state.OCRText = ocrText
 
+	userID := strings.TrimSpace(state.Document.GetString("user"))
+	catalog := loadExtractionCatalog(state.App, userID, state.Logger)
+
 	state.Logger.Info("starting AI extraction",
 		"provider", s.Extractor.Name(),
 		"model", s.Extractor.Model(),
 		"ocr_chars", len(ocrText),
+		"catalog_correspondent_names", len(catalog.Correspondents),
+		"catalog_document_type_names", len(catalog.DocumentTypes),
 	)
 
 	aiStart := time.Now()
 	aiCtx, cancel := context.WithTimeout(ctx, state.Cfg.OpenAITimeout)
 	defer cancel()
 
-	metadata, err := s.Extractor.ExtractMetadata(aiCtx, ocrText)
+	metadata, err := s.Extractor.ExtractMetadata(aiCtx, ocrText, catalog)
 	if err != nil {
 		state.Logger.Error("AI extraction failed",
 			"duration", time.Since(aiStart).Round(time.Millisecond),
@@ -79,6 +85,34 @@ func (s *ExtractMetadataStep) Run(ctx context.Context, state *StepState) error {
 		return fmt.Errorf("save metadata snapshot: %w", err)
 	}
 	return nil
+}
+
+func loadExtractionCatalog(app core.App, userID string, logger *slog.Logger) ai.ExtractionCatalog {
+	if strings.TrimSpace(userID) == "" {
+		if logger != nil {
+			logger.Warn("extraction catalog skipped: document has no owner")
+		}
+		return ai.ExtractionCatalog{}
+	}
+
+	correspondents, err := listCorrespondentNames(app, userID)
+	if err != nil {
+		if logger != nil {
+			logger.Warn("extraction catalog correspondents unavailable; continuing without them", slog.Any("error", err))
+		}
+		correspondents = nil
+	}
+	documentTypes, err := listDocumentTypeNames(app, userID)
+	if err != nil {
+		if logger != nil {
+			logger.Warn("extraction catalog document types unavailable; continuing without them", slog.Any("error", err))
+		}
+		documentTypes = nil
+	}
+	return ai.ExtractionCatalog{
+		Correspondents: correspondents,
+		DocumentTypes:  documentTypes,
+	}
 }
 
 type ApplyMetadataStep struct{}

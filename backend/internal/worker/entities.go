@@ -3,13 +3,21 @@ package worker
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/pocketbase/pocketbase/core"
+	"golang.org/x/text/unicode/norm"
+)
+
+const (
+	maxExtractionCatalogNames = 500
+	namedEntityListPageSize   = 500
 )
 
 // EnsureNamedEntity finds or creates a named entity (correspondent / document type)
-// owned by userID. Lookup prefers name_original, then name. created is true only
-// when a new record is inserted.
+// owned by userID. Lookup prefers exact name_original, then exact name, then a
+// punctuation/accent-insensitive match. created is true only when a new record
+// is inserted. Existing name and name_original values are left unchanged.
 func EnsureNamedEntity(app core.App, collection, userID, displayName, originalName string) (id string, created bool, err error) {
 	userID = strings.TrimSpace(userID)
 	displayName = strings.TrimSpace(displayName)
@@ -32,6 +40,13 @@ func EnsureNamedEntity(app core.App, collection, userID, displayName, originalNa
 	}
 
 	if existingID, err := findNamedEntity(app, collection, userID, "name", displayName); err != nil {
+		return "", false, err
+	} else if existingID != "" {
+		id, err := updateNamedEntity(app, collection, existingID, displayName, originalName)
+		return id, false, err
+	}
+
+	if existingID, err := findNamedEntityNormalized(app, collection, userID, displayName, originalName); err != nil {
 		return "", false, err
 	} else if existingID != "" {
 		id, err := updateNamedEntity(app, collection, existingID, displayName, originalName)
@@ -68,6 +83,12 @@ func reuseNamedEntityAfterConflict(app core.App, collection, userID, displayName
 		}
 	}
 	if existingID == "" {
+		existingID, findErr = findNamedEntityNormalized(app, collection, userID, displayName, originalName)
+		if findErr != nil {
+			return "", false, findErr
+		}
+	}
+	if existingID == "" {
 		return "", false, nil
 	}
 	id, err = updateNamedEntity(app, collection, existingID, displayName, originalName)
@@ -77,6 +98,135 @@ func reuseNamedEntityAfterConflict(app core.App, collection, userID, displayName
 func ensureNamedEntity(app core.App, collection, userID, displayName, originalName string) (string, error) {
 	id, _, err := EnsureNamedEntity(app, collection, userID, displayName, originalName)
 	return id, err
+}
+
+func listCorrespondentNames(app core.App, userID string) ([]string, error) {
+	return listNamedEntityNames(app, "correspondents", userID)
+}
+
+func listDocumentTypeNames(app core.App, userID string) ([]string, error) {
+	return listNamedEntityNames(app, "document_types", userID)
+}
+
+func listNamedEntityNames(app core.App, collection, userID string) ([]string, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, nil
+	}
+
+	names := make([]string, 0)
+	seen := map[string]struct{}{}
+	offset := 0
+	for {
+		if len(names) >= maxExtractionCatalogNames {
+			return names, nil
+		}
+		records, err := app.FindRecordsByFilter(
+			collection,
+			"user = {:userId}",
+			"name,id",
+			namedEntityListPageSize,
+			offset,
+			map[string]any{"userId": userID},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("list %s: %w", collection, err)
+		}
+		for _, rec := range records {
+			names = addUniqueCatalogName(names, seen, rec.GetString("name"), maxExtractionCatalogNames)
+			if len(names) >= maxExtractionCatalogNames {
+				return names, nil
+			}
+		}
+		if len(records) < namedEntityListPageSize {
+			return names, nil
+		}
+		offset += namedEntityListPageSize
+	}
+}
+
+func addUniqueCatalogName(names []string, seen map[string]struct{}, raw string, max int) []string {
+	name := strings.TrimSpace(raw)
+	if name == "" {
+		return names
+	}
+	key := strings.ToLower(name)
+	if _, ok := seen[key]; ok {
+		return names
+	}
+	if max > 0 && len(names) >= max {
+		return names
+	}
+	seen[key] = struct{}{}
+	return append(names, name)
+}
+
+func normalizeNamedEntityKey(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	s = strings.ToLower(norm.NFD.String(s))
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if unicode.Is(unicode.Mn, r) {
+			continue
+		}
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func namedEntityMatchKeys(values ...string) map[string]struct{} {
+	keys := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		key := normalizeNamedEntityKey(value)
+		if key == "" {
+			continue
+		}
+		keys[key] = struct{}{}
+	}
+	return keys
+}
+
+func findNamedEntityNormalized(app core.App, collection, userID, displayName, originalName string) (string, error) {
+	keys := namedEntityMatchKeys(displayName, originalName)
+	if len(keys) == 0 {
+		return "", nil
+	}
+
+	offset := 0
+	for {
+		records, err := app.FindRecordsByFilter(
+			collection,
+			"user = {:userId}",
+			"name,id",
+			namedEntityListPageSize,
+			offset,
+			map[string]any{"userId": userID},
+		)
+		if err != nil {
+			return "", err
+		}
+		for _, rec := range records {
+			for _, field := range []string{"name", "name_original"} {
+				key := normalizeNamedEntityKey(rec.GetString(field))
+				if key == "" {
+					continue
+				}
+				if _, ok := keys[key]; ok {
+					return rec.Id, nil
+				}
+			}
+		}
+		if len(records) < namedEntityListPageSize {
+			return "", nil
+		}
+		offset += namedEntityListPageSize
+	}
 }
 
 func findNamedEntity(app core.App, collection, userID, field, value string) (string, error) {
@@ -108,18 +258,21 @@ func updateNamedEntity(app core.App, collection, id, displayName, originalName s
 		return "", err
 	}
 
+	// Keep an existing display name and original so later extractions cannot
+	// overwrite a user rename or swap translated/source values.
 	changed := false
-	if name := strings.TrimSpace(record.GetString("name")); name != displayName {
+	if strings.TrimSpace(record.GetString("name")) == "" && displayName != "" {
 		record.Set("name", displayName)
 		changed = true
 	}
-	if original := strings.TrimSpace(record.GetString("name_original")); original == "" || original != originalName {
+	if strings.TrimSpace(record.GetString("name_original")) == "" && originalName != "" {
 		record.Set("name_original", originalName)
 		changed = true
 	}
 	if changed {
 		if err := app.Save(record); err != nil {
-			return "", err
+			// Unique (user, name) collisions must not fail apply; the matched record is kept as-is.
+			return record.Id, nil
 		}
 	}
 	return record.Id, nil
