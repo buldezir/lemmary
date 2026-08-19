@@ -50,21 +50,25 @@ export async function openSettings(page: Page) {
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
 }
 
-export async function uploadFixture(page: Page, fixtureName: string) {
-  await page.getByRole('link', { name: 'Upload', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Upload document' })).toBeVisible()
-
+export function uniqueFixturePayload(fixtureName: string, displayName = fixtureName) {
   const fixturePath = path.join(fixturesDir, fixtureName)
   const original = fs.readFileSync(fixturePath)
   const unique = Buffer.concat([
     original,
     Buffer.from(`\n#e2e-${Date.now()}-${Math.random().toString(16).slice(2)}\n`),
   ])
-  await page.locator('input[type="file"]').setInputFiles({
-    name: fixtureName,
+  return {
+    name: displayName,
     mimeType: mimeForFixture(fixtureName),
     buffer: unique,
-  })
+  }
+}
+
+export async function uploadFixture(page: Page, fixtureName: string) {
+  await page.getByRole('link', { name: 'Upload', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Upload documents' })).toBeVisible()
+
+  await page.locator('input[type="file"]').setInputFiles(uniqueFixturePayload(fixtureName))
   await page.getByRole('button', { name: 'Upload and process' }).click()
   await expect(page).toHaveURL(/\/document\//)
 }

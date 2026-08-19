@@ -3,7 +3,7 @@ import { credentials, loginAsUser, logout } from './helpers/auth'
 
 test('login succeeds for regular user', async ({ page }) => {
   await loginAsUser(page)
-  await expect(page.getByRole('link', { name: 'Documents' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Documents', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'More' }).click()
   await expect(page.getByRole('menuitem', { name: 'Settings' })).toHaveCount(0)
   await expect(page.getByRole('menuitem', { name: 'Admin' })).toHaveCount(0)

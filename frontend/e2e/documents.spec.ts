@@ -2,7 +2,14 @@ import { test, expect, type Page } from '@playwright/test'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { loginAsSuper, loginAsUser, openMoreMenu, uploadFixture, waitForProcessing } from './helpers/auth'
+import {
+  loginAsSuper,
+  loginAsUser,
+  openMoreMenu,
+  uniqueFixturePayload,
+  uploadFixture,
+  waitForProcessing,
+} from './helpers/auth'
 
 const fixturesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures')
 
@@ -14,6 +21,22 @@ test('upload txt document and see it on list', async ({ page }) => {
   await page.getByRole('link', { name: 'Documents', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible()
   await expect(page.locator('main a[href*="/document/"]').first()).toBeVisible()
+})
+
+test('upload multiple files and return to documents list', async ({ page }) => {
+  await loginAsUser(page)
+  await page.getByRole('link', { name: 'Upload', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Upload documents' })).toBeVisible()
+
+  const first = uniqueFixturePayload('sample.txt', 'batch-a.txt')
+  const second = uniqueFixturePayload('sample.csv', 'batch-b.csv')
+  await page.locator('input[type="file"]').setInputFiles([first, second])
+  await expect(page.getByText('batch-a.txt')).toBeVisible()
+  await expect(page.getByText('batch-b.csv')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Upload and process' }).click()
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible()
 })
 
 test('admin can upload documents', async ({ page }) => {
@@ -79,7 +102,7 @@ test('reject duplicate file upload', async ({ page }) => {
   }
 
   await page.getByRole('link', { name: 'Upload', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Upload document' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Upload documents' })).toBeVisible()
   await page.locator('input[type="file"]').setInputFiles(payload)
   await page.getByRole('button', { name: 'Upload and process' }).click()
   await expect(page).toHaveURL(/\/document\//)

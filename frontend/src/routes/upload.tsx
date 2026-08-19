@@ -1,4 +1,4 @@
-import { type DragEvent, type SubmitEvent, useState } from 'react'
+import { type DragEvent, type SubmitEvent, useRef, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { ensureAuth, parseDuplicateOfId, pb } from '../lib/pocketbase'
 
@@ -26,10 +26,23 @@ const ACCEPTED_MIME_TYPES = new Set([
 const SUPPORTED_FORMATS_LABEL =
   'PDF, JPEG, PNG, WebP, plain text, CSV, Word (.docx), or Excel (.xlsx)'
 
+const ACCEPT_ATTR =
+  '.pdf,.jpg,.jpeg,.png,.webp,.txt,.csv,.docx,.xlsx,application/pdf,image/jpeg,image/png,image/webp,text/plain,text/csv,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+type FileUploadError = {
+  name: string
+  message: string
+  duplicateOfId: string | null
+}
+
 function isAcceptedFile(file: File) {
   const extension = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')).toLowerCase() : ''
   if (ACCEPTED_EXTENSIONS.has(extension)) return true
   return ACCEPTED_MIME_TYPES.has(file.type)
+}
+
+function fileKey(file: File) {
+  return `${file.name}:${file.size}:${file.lastModified}`
 }
 
 function uploadErrorMessage(err: unknown): string {
@@ -55,27 +68,66 @@ function duplicateIdFromError(err: unknown, message: string): string | null {
   return parseDuplicateOfId(message)
 }
 
+function formatBytes(size: number) {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
 export function UploadPage() {
   const navigate = useNavigate()
-  const [file, setFile] = useState<File | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [files, setFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
+  const [uploadIndex, setUploadIndex] = useState(0)
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState('')
-  const [duplicateOfId, setDuplicateOfId] = useState<string | null>(null)
+  const [fileErrors, setFileErrors] = useState<FileUploadError[]>([])
 
-  function selectFile(next: File | null) {
-    if (!next) {
-      setFile(null)
+  function resetInput() {
+    if (inputRef.current) inputRef.current.value = ''
+  }
+
+  function selectFiles(next: FileList | File[] | null) {
+    if (!next || next.length === 0) {
+      setFiles([])
+      resetInput()
       return
     }
-    if (!isAcceptedFile(next)) {
-      setError(`Unsupported file type. Use ${SUPPORTED_FORMATS_LABEL}.`)
-      setDuplicateOfId(null)
-      return
+
+    const incoming = Array.from(next)
+    const accepted: File[] = []
+    const seen = new Set<string>()
+    const rejected: string[] = []
+
+    for (const file of incoming) {
+      if (!isAcceptedFile(file)) {
+        rejected.push(file.name)
+        continue
+      }
+      const key = fileKey(file)
+      if (seen.has(key)) continue
+      seen.add(key)
+      accepted.push(file)
     }
-    setError('')
-    setDuplicateOfId(null)
-    setFile(next)
+
+    setFileErrors([])
+    if (rejected.length > 0) {
+      setError(
+        rejected.length === 1
+          ? `Unsupported file type (${rejected[0]}). Use ${SUPPORTED_FORMATS_LABEL}.`
+          : `Unsupported file types (${rejected.join(', ')}). Use ${SUPPORTED_FORMATS_LABEL}.`,
+      )
+    } else {
+      setError('')
+    }
+    setFiles(accepted)
+  }
+
+  function removeFile(index: number) {
+    setFiles((current) => current.filter((_, i) => i !== index))
+    setFileErrors((current) => current.filter((_, i) => i !== index))
+    resetInput()
   }
 
   function onDragOver(event: DragEvent<HTMLLabelElement>) {
@@ -96,42 +148,83 @@ export function UploadPage() {
   function onDrop(event: DragEvent<HTMLLabelElement>) {
     event.preventDefault()
     setDragging(false)
-    selectFile(event.dataTransfer.files?.[0] ?? null)
+    selectFiles(event.dataTransfer.files)
   }
 
   async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!file) {
-      setError('Choose a file to upload.')
+    if (files.length === 0) {
+      setError('Choose at least one file to upload.')
       return
     }
 
     try {
       setUploading(true)
       setError('')
-      setDuplicateOfId(null)
+      setFileErrors([])
+      setUploadIndex(1)
       await ensureAuth()
 
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('user', pb.authStore.record?.id ?? '')
-      formData.append('processing_status', 'pending')
+      const userId = pb.authStore.record?.id ?? ''
+      const uploadedIds: string[] = []
+      const failures: FileUploadError[] = []
+      const failedFiles: File[] = []
 
-      const record = await pb.collection('documents').create(formData)
-      navigate({ to: '/document/$documentId', params: { documentId: record.id } })
-    } catch (err) {
-      const message = uploadErrorMessage(err)
-      setError(message)
-      setDuplicateOfId(duplicateIdFromError(err, message))
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        setUploadIndex(i + 1)
+        try {
+          const formData = new FormData()
+          formData.append('file', file)
+          formData.append('user', userId)
+          formData.append('processing_status', 'pending')
+          const record = await pb.collection('documents').create(formData)
+          uploadedIds.push(record.id)
+        } catch (err) {
+          const message = uploadErrorMessage(err)
+          failures.push({
+            name: file.name,
+            message,
+            duplicateOfId: duplicateIdFromError(err, message),
+          })
+          failedFiles.push(file)
+        }
+      }
+
+      if (failures.length === 0) {
+        if (uploadedIds.length === 1) {
+          navigate({ to: '/document/$documentId', params: { documentId: uploadedIds[0] } })
+        } else {
+          navigate({ to: '/' })
+        }
+        return
+      }
+
+      setFiles(failedFiles)
+      setFileErrors(failures)
+      resetInput()
+      if (uploadedIds.length > 0) {
+        setError(
+          `Uploaded ${uploadedIds.length} of ${files.length} files. ${failures.length} failed.`,
+        )
+      }
     } finally {
       setUploading(false)
+      setUploadIndex(0)
     }
   }
+
+  const dropLabel =
+    files.length === 0
+      ? 'Choose files'
+      : files.length === 1
+        ? files[0].name
+        : `${files.length} files selected`
 
   return (
     <section className="mx-auto flex max-w-xl flex-col gap-6">
       <div>
-        <h2 className="text-xl font-semibold text-stone-950">Upload document</h2>
+        <h2 className="text-xl font-semibold text-stone-950">Upload documents</h2>
         <p className="text-sm text-stone-500">Supported formats: {SUPPORTED_FORMATS_LABEL}.</p>
       </div>
 
@@ -148,38 +241,71 @@ export function UploadPage() {
           onDrop={onDrop}
         >
           <input
+            ref={inputRef}
             type="file"
-            accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv,.docx,.xlsx,application/pdf,image/jpeg,image/png,image/webp,text/plain,text/csv,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
+            multiple
+            accept={ACCEPT_ATTR}
+            onChange={(event) => selectFiles(event.target.files)}
             className="hidden"
           />
-          <span className="text-sm font-medium text-stone-950">
-            {file ? file.name : 'Choose a file'}
-          </span>
-          {!file && <span className="text-xs text-stone-400">or drop it here</span>}
+          <span className="text-sm font-medium text-stone-950">{dropLabel}</span>
+          {files.length === 0 && <span className="text-xs text-stone-400">or drop them here</span>}
         </label>
 
-        {error && (
-          <div className="flex flex-col gap-1 text-sm text-red-600">
-            <p>{error}</p>
-            {duplicateOfId && (
-              <Link
-                to="/document/$documentId"
-                params={{ documentId: duplicateOfId }}
-                className="font-medium text-gray-900 underline"
-              >
-                Open existing document
-              </Link>
-            )}
-          </div>
+        {files.length > 0 && (
+          <ul className="flex flex-col gap-2">
+            {files.map((file, index) => {
+              const fileError = fileErrors[index]
+              return (
+                <li
+                  key={fileKey(file)}
+                  className="flex items-start justify-between gap-3 rounded-md border border-stone-200 bg-white px-3 py-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-stone-950">{file.name}</p>
+                    <p className="text-xs text-stone-400">{formatBytes(file.size)}</p>
+                    {fileError && (
+                      <div className="mt-1 flex flex-col gap-1 text-sm text-red-600">
+                        <p>{fileError.message}</p>
+                        {fileError.duplicateOfId && (
+                          <Link
+                            to="/document/$documentId"
+                            params={{ documentId: fileError.duplicateOfId }}
+                            className="font-medium text-gray-900 underline"
+                          >
+                            Open existing document
+                          </Link>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeFile(index)}
+                    disabled={uploading}
+                    aria-label={`Remove ${file.name}`}
+                    className="shrink-0 text-xs font-medium text-stone-500 hover:text-stone-900 disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
         )}
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
 
         <button
           type="submit"
-          disabled={uploading || !file}
+          disabled={uploading || files.length === 0}
           className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {uploading ? 'Uploading...' : 'Upload and process'}
+          {uploading
+            ? files.length > 1
+              ? `Uploading ${uploadIndex} of ${files.length}...`
+              : 'Uploading...'
+            : 'Upload and process'}
         </button>
       </form>
     </section>
