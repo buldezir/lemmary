@@ -127,7 +127,7 @@ export function IndexPage() {
           })
           const result = await pb.collection('documents').getList<DocumentRecord>(page, PAGE_SIZE, {
             sort: '-created',
-            expand: 'tags,document_type,correspondent',
+            expand: 'tags,document_type,correspondent,duplicate_of',
             ...(filter ? { filter } : {}),
           })
           if (active) {

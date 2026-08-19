@@ -72,7 +72,7 @@ test('delete document from detail page', async ({ page }) => {
   await expect(page).toHaveURL(/\/$/)
   await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible()
   await expect(page.getByText('Loading documents...')).toHaveCount(0)
-  await expect(page.locator(`main a[href="/document/${documentId}"]`)).toHaveCount(0)
+  await expect(page.locator(`main [data-document-id="${documentId}"]`)).toHaveCount(0)
 })
 
 test('cancel document delete keeps detail page', async ({ page }) => {
@@ -197,6 +197,67 @@ test('document type and correspondent filters are typeahead dropdowns', async ({
   await expect(documentLink(page, documentA)).toHaveCount(0)
 })
 
+test('needs-review document card shows duplicate reason instead of empty summary', async ({
+  page,
+}) => {
+  const stamp = `${Date.now()}`
+  const originalTitle = `Original Invoice ${stamp}`
+  const duplicateTitle = `Possible Dup ${stamp}`
+
+  await loginAsUser(page)
+  await uploadFixture(page, 'sample.txt')
+  await waitForProcessing(page)
+  const originalId = documentIdFromURL(page)
+  await saveDocumentMetadata(page, { title: originalTitle })
+
+  await uploadFixture(page, 'sample.txt')
+  await waitForProcessing(page)
+  const duplicateId = documentIdFromURL(page)
+  await saveDocumentMetadata(page, { title: duplicateTitle })
+  await patchDocument(page, duplicateId, {
+    processing_status: 'needs_review',
+    summary: '',
+    purpose: '',
+    duplicate_of: originalId,
+  })
+
+  await goToDocuments(page)
+  const card = documentLink(page, duplicateId)
+  await expect(card).toContainText('Needs review')
+  await expect(card).toContainText(`Possible duplicate of ${originalTitle}.`)
+  await expect(card).not.toContainText('No summary yet.')
+
+  await card.getByRole('link', { name: originalTitle, exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/document/${originalId}`))
+  await expect(page.getByRole('heading', { name: originalTitle })).toBeVisible()
+})
+
+test('needs-review document card shows low confidence instead of empty summary', async ({
+  page,
+}) => {
+  const stamp = `${Date.now()}`
+  const title = `Low Confidence ${stamp}`
+
+  await loginAsUser(page)
+  await uploadFixture(page, 'sample.txt')
+  await waitForProcessing(page)
+  const documentId = documentIdFromURL(page)
+  await saveDocumentMetadata(page, { title })
+  await patchDocument(page, documentId, {
+    processing_status: 'needs_review',
+    summary: '',
+    purpose: '',
+    confidence: 0.32,
+    duplicate_of: '',
+  })
+
+  await goToDocuments(page)
+  const card = documentLink(page, documentId)
+  await expect(card).toContainText('Needs review')
+  await expect(card).toContainText('Low extraction confidence (32%).')
+  await expect(card).not.toContainText('No summary yet.')
+})
+
 async function saveDocumentMetadata(
   page: Page,
   fields: {
@@ -223,6 +284,35 @@ async function saveDocumentMetadata(
   await expect(page.getByText('Metadata saved.')).toBeVisible()
 }
 
+async function patchDocument(page: Page, documentId: string, data: Record<string, unknown>) {
+  const error = await page.evaluate(
+    async ({ documentId, data }) => {
+      const raw = localStorage.getItem('pocketbase_auth')
+      if (!raw) {
+        return 'missing pocketbase_auth'
+      }
+      const parsed = JSON.parse(raw) as { token?: string }
+      if (!parsed.token) {
+        return 'missing auth token'
+      }
+      const response = await fetch(`/api/collections/documents/records/${documentId}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: parsed.token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      })
+      if (!response.ok) {
+        return await response.text()
+      }
+      return ''
+    },
+    { documentId, data },
+  )
+  expect(error, `failed to patch document ${documentId}`).toBe('')
+}
+
 async function goToDocuments(page: Page) {
   await page.getByRole('link', { name: 'Documents', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible()
@@ -236,5 +326,5 @@ function documentIdFromURL(page: Page) {
 }
 
 function documentLink(page: Page, documentId: string) {
-  return page.locator(`main a[href="/document/${documentId}"]`)
+  return page.locator(`main [data-document-id="${documentId}"]`)
 }

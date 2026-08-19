@@ -21,48 +21,84 @@ const statusStyles: Record<DocumentRecord['processing_status'], string> = {
   needs_review: 'bg-amber-50 text-amber-700 ring-amber-200',
 }
 
+function CardDescription({ document }: { document: DocumentRecord }) {
+  const summary = document.summary?.trim() || document.purpose?.trim()
+  if (summary) {
+    return <p className="line-clamp-3 text-sm text-stone-600">{summary}</p>
+  }
+  if (document.processing_status !== 'needs_review') {
+    return <p className="line-clamp-3 text-sm text-stone-600">No summary yet.</p>
+  }
+  if (document.duplicate_of) {
+    const originalTitle = document.expand?.duplicate_of?.title?.trim() || 'another document'
+    return (
+      <p className="line-clamp-3 text-sm text-amber-800">
+        Possible duplicate of{' '}
+        <Link
+          to="/document/$documentId"
+          params={{ documentId: document.duplicate_of }}
+          className="relative z-10 pointer-events-auto font-medium underline underline-offset-2 hover:text-amber-950"
+        >
+          {originalTitle}
+        </Link>
+        .
+      </p>
+    )
+  }
+  const pct = Math.round((document.confidence ?? 0) * 100)
+  return (
+    <p className="line-clamp-3 text-sm text-amber-800">Low extraction confidence ({pct}%).</p>
+  )
+}
+
 export function DocumentCard({ document }: Props) {
   const tags = document.expand?.tags?.map((tag) => tag.name) ?? []
   const correspondent = document.expand?.correspondent?.name
   const documentType = document.expand?.document_type?.name
+  const title = document.title || 'Untitled document'
 
   return (
-    <Link
-      to="/document/$documentId"
-      params={{ documentId: document.id }}
-      className="flex flex-col gap-3 rounded-lg border border-stone-200 bg-stone-50 p-4 transition-colors hover:border-stone-300 hover:bg-white hover:shadow-sm"
+    <article
+      data-document-id={document.id}
+      className="relative flex flex-col gap-3 rounded-lg border border-stone-200 bg-stone-50 p-4 transition-colors hover:border-stone-300 hover:bg-white hover:shadow-sm"
     >
-      <div className="flex items-center justify-between gap-2">
-        <span
-          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${statusStyles[document.processing_status]}`}
-        >
-          {statusLabels[document.processing_status]}
-        </span>
-        {document.document_date && (
-          <span className="text-xs text-stone-400">{document.document_date.slice(0, 10)}</span>
+      <Link
+        to="/document/$documentId"
+        params={{ documentId: document.id }}
+        aria-label={title}
+        className="absolute inset-0 z-0 rounded-lg"
+      />
+      <div className="pointer-events-none relative flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-2">
+          <span
+            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${statusStyles[document.processing_status]}`}
+          >
+            {statusLabels[document.processing_status]}
+          </span>
+          {document.document_date && (
+            <span className="text-xs text-stone-400">{document.document_date.slice(0, 10)}</span>
+          )}
+        </div>
+
+        <div>
+          <h3 className="font-medium text-stone-950">{title}</h3>
+          <p className="text-xs text-stone-500">
+            {[documentType || 'Unknown type', correspondent].filter(Boolean).join(' · ')}
+          </p>
+        </div>
+
+        <CardDescription document={document} />
+
+        {tags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {tags.map((tag) => (
+              <span key={tag} className="rounded-full bg-stone-200/70 px-2 py-0.5 text-xs text-stone-600">
+                {tag}
+              </span>
+            ))}
+          </div>
         )}
       </div>
-
-      <div>
-        <h3 className="font-medium text-stone-950">{document.title || 'Untitled document'}</h3>
-        <p className="text-xs text-stone-500">
-          {[documentType || 'Unknown type', correspondent].filter(Boolean).join(' · ')}
-        </p>
-      </div>
-
-      <p className="line-clamp-3 text-sm text-stone-600">
-        {document.summary || document.purpose || 'No summary yet.'}
-      </p>
-
-      {tags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {tags.map((tag) => (
-            <span key={tag} className="rounded-full bg-stone-200/70 px-2 py-0.5 text-xs text-stone-600">
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
-    </Link>
+    </article>
   )
 }
