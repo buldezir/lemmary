@@ -7,6 +7,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"paperless-go/backend/internal/ai"
 	"paperless-go/backend/internal/aiprovider"
+	"paperless-go/backend/internal/applog"
 	"paperless-go/backend/internal/ocr"
 )
 
@@ -139,6 +140,10 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 // RegisterHooks seeds defaults, loads runtime state on bootstrap, and reloads on settings changes.
 // Bootstrap never fails due to settings — the app must start so admins can open Settings.
 func RegisterHooks(app core.App, rt *Runtime) {
+	// High-priority hook so the stdout tee is in place before other
+	// OnBootstrap handlers unwind and log (possibly from goroutines).
+	applog.Register(app)
+
 	app.OnBootstrap().BindFunc(func(e *core.BootstrapEvent) error {
 		if err := e.Next(); err != nil {
 			return err
