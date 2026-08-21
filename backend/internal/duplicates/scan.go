@@ -102,16 +102,21 @@ func EligibleNearDuplicateOriginal(document, candidate *core.Record) bool {
 }
 
 // MarkAsDuplicate links document to original and sets needs_review.
-func MarkAsDuplicate(app core.App, document, original *core.Record) error {
+// marked is false when the document was already linked, so scan counters do not
+// report a no-op as a fresh mark on every run.
+func MarkAsDuplicate(app core.App, document, original *core.Record) (marked bool, err error) {
 	if document == nil || original == nil {
-		return fmt.Errorf("missing document for duplicate mark")
+		return false, fmt.Errorf("missing document for duplicate mark")
 	}
 	if document.GetString("duplicate_of") != "" {
-		return nil
+		return false, nil
 	}
 	document.Set("duplicate_of", original.Id)
 	document.Set("processing_status", models.DocStatusNeedsReview)
-	return app.Save(document)
+	if err := app.Save(document); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // ScanAll backfills checksums/fingerprints and marks exact (and optional near) duplicates.
@@ -185,18 +190,22 @@ func backfillChecksum(app core.App, record *core.Record, result *ScanResult) err
 				return err
 			}
 			result.ChecksumBackfilled++
-			if duplicate.GetString("duplicate_of") == "" {
-				if err := MarkAsDuplicate(app, duplicate, original); err != nil {
-					return err
-				}
+			marked, err := MarkAsDuplicate(app, duplicate, original)
+			if err != nil {
+				return err
+			}
+			if marked {
 				result.ExactMarked++
 			}
 			return nil
 		}
-		if err := MarkAsDuplicate(app, record, existing); err != nil {
+		marked, err := MarkAsDuplicate(app, record, existing)
+		if err != nil {
 			return err
 		}
-		result.ExactMarked++
+		if marked {
+			result.ExactMarked++
+		}
 		return nil
 	}
 
@@ -212,10 +221,13 @@ func backfillChecksum(app core.App, record *core.Record, result *ScanResult) err
 		if existing == nil {
 			return err
 		}
-		if markErr := MarkAsDuplicate(app, record, existing); markErr != nil {
+		marked, markErr := MarkAsDuplicate(app, record, existing)
+		if markErr != nil {
 			return markErr
 		}
-		result.ExactMarked++
+		if marked {
+			result.ExactMarked++
+		}
 		return nil
 	}
 	result.ChecksumBackfilled++
@@ -291,10 +303,13 @@ func markExactDuplicates(app core.App, result *ScanResult) error {
 			if err != nil {
 				return err
 			}
-			if err := MarkAsDuplicate(app, duplicate, original); err != nil {
+			marked, err := MarkAsDuplicate(app, duplicate, original)
+			if err != nil {
 				return err
 			}
-			result.ExactMarked++
+			if marked {
+				result.ExactMarked++
+			}
 		}
 	}
 	return nil
@@ -358,11 +373,14 @@ func markNearDuplicates(app core.App, threshold float64, result *ScanResult) err
 					continue
 				}
 				// Prefer older as original (group sorted by created ascending).
-				if err := MarkAsDuplicate(app, bRecord, aRecord); err != nil {
+				linked, err := MarkAsDuplicate(app, bRecord, aRecord)
+				if err != nil {
 					return err
 				}
 				marked[b.ID] = struct{}{}
-				result.NearMarked++
+				if linked {
+					result.NearMarked++
+				}
 			}
 		}
 	}

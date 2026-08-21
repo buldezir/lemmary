@@ -65,7 +65,7 @@ func (s *DetectDuplicatesStep) Run(ctx context.Context, state *StepState) error 
 		return nil
 	}
 
-	if err := duplicates.MarkAsDuplicate(state.App, state.Document, match); err != nil {
+	if _, err := duplicates.MarkAsDuplicate(state.App, state.Document, match); err != nil {
 		return fmt.Errorf("mark near duplicate: %w", err)
 	}
 	state.Job.Set("status", models.JobStatusNeedsReview)
