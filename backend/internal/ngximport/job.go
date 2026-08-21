@@ -28,12 +28,33 @@ type Job struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// jobRetention is how long a finished job stays readable by the status endpoint
+// before it is swept. Without it the map would grow for the process lifetime.
+const jobRetention = time.Hour
+
 var (
 	jobsMu     sync.Mutex
 	jobs       = map[string]*Job{}
 	importMu   sync.Mutex
 	importBusy = map[string]struct{}{}
 )
+
+// pruneJobsLocked drops finished jobs older than jobRetention.
+// Callers must hold jobsMu. Running jobs are never swept.
+func pruneJobsLocked(now time.Time) {
+	for id, job := range jobs {
+		if job == nil {
+			delete(jobs, id)
+			continue
+		}
+		if job.Status == JobStatusRunning {
+			continue
+		}
+		if now.Sub(job.UpdatedAt) > jobRetention {
+			delete(jobs, id)
+		}
+	}
+}
 
 func acquireImport(ownerUserID string) error {
 	if strings.TrimSpace(ownerUserID) == "" {
@@ -73,6 +94,7 @@ func Start(app core.App, ownerUserID, baseURL, apiKey, mode string) (string, err
 		UpdatedAt:   time.Now().UTC(),
 	}
 	jobsMu.Lock()
+	pruneJobsLocked(time.Now().UTC())
 	jobs[id] = job
 	jobsMu.Unlock()
 
@@ -82,6 +104,7 @@ func Start(app core.App, ownerUserID, baseURL, apiKey, mode string) (string, err
 		jobsMu.Lock()
 		defer jobsMu.Unlock()
 		job.UpdatedAt = time.Now().UTC()
+		// Status is written under jobsMu; GetJob copies, so readers never race.
 		if runErr != nil {
 			job.Status = JobStatusFailed
 			job.Error = runErr.Error()

@@ -272,3 +272,105 @@ func ngxResultIDByName(t *testing.T, raw, name string) string {
 	}
 	return ""
 }
+
+// Tags used to be globally shared; they are now user-owned like the rest of the
+// taxonomy. This locks in isolation across the PocketBase API, the ngx API, and
+// the worker's EnsureTag path.
+func TestTagOwnerIsolation(t *testing.T) {
+	h := StartShared(t)
+	tokenA := h.userToken(t)
+	stamp := fmt.Sprintf("%d", time.Now().UnixNano())
+	tagName := "IsoTag-" + stamp
+
+	status, raw := h.doJSON(t, http.MethodPost, "/api/collections/tags/records", tokenA, map[string]any{
+		"name": tagName,
+		"user": h.UserID,
+	})
+	requireStatus(t, status, http.StatusOK, raw)
+	tagA := mustDecodeMap(t, raw)
+	tagAID := jsonGetString(tagA, "id")
+	t.Cleanup(func() {
+		_, _ = h.doJSON(t, http.MethodDelete, "/api/collections/tags/records/"+tagAID, tokenA, nil)
+	})
+	if jsonGetString(tagA, "user") != h.UserID {
+		t.Fatalf("tag user=%q want %q", jsonGetString(tagA, "user"), h.UserID)
+	}
+
+	otherEmail := fmt.Sprintf("tag-other-%s@paperless.local", stamp)
+	otherPass := "otherpassword123"
+	otherID, err := createAuthRecord(h.App, "users", otherEmail, otherPass)
+	if err != nil {
+		t.Fatalf("create other user: %v", err)
+	}
+	authB := h.authWithPassword(t, "users", otherEmail, otherPass)
+	tokenB := authB.Token
+
+	status, raw = h.doJSON(t, http.MethodGet, "/api/collections/tags/records/"+tagAID, tokenB, nil)
+	if status == http.StatusOK {
+		t.Fatalf("other user should not view user A's tag: %s", raw)
+	}
+
+	status, raw = h.doJSON(t, http.MethodGet, `/api/collections/tags/records?filter=name="`+tagName+`"`, tokenB, nil)
+	requireStatus(t, status, http.StatusOK, raw)
+	if len(mustDecodeList(t, raw)) != 0 {
+		t.Fatalf("other user listed user A's tag: %s", raw)
+	}
+
+	ngxAuthA := ngxToken(t, h, UserEmail, UserPassword)
+	ngxAuthB := ngxToken(t, h, otherEmail, otherPass)
+
+	status, raw = h.doJSON(t, http.MethodGet, "/api/tags/?page_size=100", ngxAuthA, nil)
+	requireStatus(t, status, http.StatusOK, raw)
+	if !ngxResultsContainName(t, raw, tagName) {
+		t.Fatalf("ngx list missing user A's tag: %s", raw)
+	}
+
+	status, raw = h.doJSON(t, http.MethodGet, "/api/tags/?page_size=100", ngxAuthB, nil)
+	requireStatus(t, status, http.StatusOK, raw)
+	if ngxResultsContainName(t, raw, tagName) {
+		t.Fatalf("ngx list leaked user A's tag to user B: %s", raw)
+	}
+
+	// Same name, different owner: both users get their own record.
+	idA, createdA, err := worker.EnsureTag(h.App, h.UserID, tagName)
+	if err != nil {
+		t.Fatalf("ensure tag for user A: %v", err)
+	}
+	if createdA || idA != tagAID {
+		t.Fatalf("user A should reuse tag %s, got id=%s created=%v", tagAID, idA, createdA)
+	}
+	idB, createdB, err := worker.EnsureTag(h.App, otherID, tagName)
+	if err != nil {
+		t.Fatalf("ensure tag for user B: %v", err)
+	}
+	if !createdB || idB == "" || idB == idA {
+		t.Fatalf("user B should get a distinct tag, created=%v idA=%s idB=%s", createdB, idA, idB)
+	}
+	t.Cleanup(func() {
+		if rec, err := h.App.FindRecordById("tags", idB); err == nil {
+			_ = h.App.Delete(rec)
+		}
+	})
+
+	// A document may not reference another user's tag.
+	doc := h.uploadDocument(t, tokenB, otherID, fixturePath("sample.txt"))
+	docID := jsonGetString(doc, "id")
+	t.Cleanup(func() {
+		_, _ = h.doJSON(t, http.MethodDelete, "/api/collections/documents/records/"+docID, tokenB, nil)
+	})
+
+	status, raw = h.doJSON(t, http.MethodPatch, "/api/collections/documents/records/"+docID, tokenB, map[string]any{
+		"tags": []string{tagAID},
+	})
+	if status == http.StatusOK {
+		t.Fatalf("user B should not attach user A's tag: %s", raw)
+	}
+
+	status, raw = h.doJSON(t, http.MethodPatch, "/api/collections/documents/records/"+docID, tokenB, map[string]any{
+		"tags": []string{idB},
+	})
+	requireStatus(t, status, http.StatusOK, raw)
+	if got := mustDecodeMap(t, raw)["tags"]; fmt.Sprintf("%v", got) != fmt.Sprintf("[%s]", idB) {
+		t.Fatalf("expected user B's own tag, got %v", got)
+	}
+}

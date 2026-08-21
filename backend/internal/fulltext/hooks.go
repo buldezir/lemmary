@@ -113,6 +113,7 @@ func reindexDocumentsForEntity(app core.App, idx *Index, collection, field, enti
 		}
 	}
 
+	names := newNameCache(app)
 	for id := range ids {
 		rec, err := app.FindRecordById(collectionDocuments, id)
 		if err != nil {
@@ -121,7 +122,7 @@ func reindexDocumentsForEntity(app core.App, idx *Index, collection, field, enti
 			}
 			continue
 		}
-		if err := idx.upsertUnlocked(app, rec); err != nil {
+		if err := idx.putUnlocked(rec.Id, buildWith(names, rec)); err != nil {
 			app.Logger().Error("fulltext reindex after entity change failed", slog.String("id", id), slog.Any("error", err))
 		}
 	}

@@ -179,13 +179,13 @@ func TestFormatExistingNamedListPromptJSONAndSanitizes(t *testing.T) {
 
 func TestUniqueTrimmedNamesCapsCatalog(t *testing.T) {
 	t.Parallel()
-	names := make([]string, maxExtractionCatalogNames+25)
+	names := make([]string, MaxExtractionCatalogNames+25)
 	for i := range names {
 		names[i] = fmt.Sprintf("Correspondent %04d", i)
 	}
 	got := uniqueTrimmedNames(names)
-	if len(got) != maxExtractionCatalogNames {
-		t.Fatalf("len=%d want %d", len(got), maxExtractionCatalogNames)
+	if len(got) != MaxExtractionCatalogNames {
+		t.Fatalf("len=%d want %d", len(got), MaxExtractionCatalogNames)
 	}
 }
 

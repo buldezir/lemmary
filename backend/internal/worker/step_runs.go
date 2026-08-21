@@ -5,7 +5,9 @@ import (
 	"fmt"
 
 	"github.com/pocketbase/pocketbase/core"
+
 	"paperless-go/backend/internal/models"
+	"paperless-go/backend/internal/strutil"
 )
 
 func parseStepRuns(job *core.Record) ([]models.StepRun, error) {
@@ -115,5 +117,5 @@ func markStepFailed(run *models.StepRun, err error) {
 	now := nowTimestamp()
 	run.Status = models.StepStatusFailed
 	run.FinishedAt = now
-	run.Error = truncateError(err.Error(), 1900)
+	run.Error = strutil.Truncate(err.Error(), 1900)
 }

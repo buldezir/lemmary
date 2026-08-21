@@ -21,6 +21,7 @@ func TestDocumentsExportArchive(t *testing.T) {
 
 	status, raw := h.doJSON(t, http.MethodPost, "/api/collections/tags/records", token, map[string]any{
 		"name": "export-e2e-tag-" + id,
+		"user": h.UserID,
 	})
 	requireStatus(t, status, http.StatusOK, raw)
 	var tag map[string]any

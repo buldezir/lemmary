@@ -12,12 +12,18 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
+
 	"paperless-go/backend/internal/models"
+	"paperless-go/backend/internal/strutil"
 )
 
 const (
-	maxExtractionCatalogNames = 500
-	maxCatalogNameRunes       = 200
+	// MaxExtractionCatalogNames caps how many existing correspondent/document-type
+	// names are offered to the model for reuse. Producers of ExtractionCatalog
+	// should not exceed it; the prompt builder trims anything past it anyway.
+	MaxExtractionCatalogNames = 500
+
+	maxCatalogNameRunes = 200
 )
 
 type ExtractionCatalog struct {
@@ -129,7 +135,7 @@ func uniqueTrimmedNames(names []string) []string {
 		}
 		seen[key] = struct{}{}
 		cleaned = append(cleaned, name)
-		if len(cleaned) >= maxExtractionCatalogNames {
+		if len(cleaned) >= MaxExtractionCatalogNames {
 			break
 		}
 	}
@@ -169,7 +175,7 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 	}
 
 	inputChars := len(ocrText)
-	sentChars := len(truncate(ocrText, 12000))
+	sentChars := len(strutil.Truncate(ocrText, 12000))
 	c.logger.Info("extraction starting",
 		"provider", c.Name(),
 		"model", c.model,
@@ -186,7 +192,7 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 		Model: shared.ChatModel(c.model),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(buildExtractionSystemPrompt(c.resultLanguage, catalog)),
-			openai.UserMessage(fmt.Sprintf("Extract metadata from this OCR text:\n\n%s", truncate(ocrText, 12000))),
+			openai.UserMessage(fmt.Sprintf("Extract metadata from this OCR text:\n\n%s", strutil.Truncate(ocrText, 12000))),
 		},
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONObject: &shared.ResponseFormatJSONObjectParam{},
@@ -220,8 +226,8 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 	}
 	c.logger.Info("extraction complete",
 		"confidence", metadata.Confidence,
-		"title", truncateForLog(metadata.Title, 80),
-		"type", truncateForLog(metadata.DocumentType, 40),
+		"title", strutil.TruncateRunes(metadata.Title, 80),
+		"type", strutil.TruncateRunes(metadata.DocumentType, 40),
 		"tags", len(metadata.Tags),
 		"content_chars", len(content),
 	)

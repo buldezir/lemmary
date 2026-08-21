@@ -254,7 +254,7 @@ export function DocumentDetailPage() {
         if (existing.items.length > 0) {
           tagIds.push(existing.items[0].id)
         } else {
-          const created = await pb.collection('tags').create({ name })
+          const created = await pb.collection('tags').create({ name, user: userId })
           tagIds.push(created.id)
         }
       }

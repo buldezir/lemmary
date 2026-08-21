@@ -10,6 +10,8 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
+
+	"paperless-go/backend/internal/strutil"
 )
 
 const (
@@ -18,6 +20,9 @@ const (
 
 	maxShallowToolRounds = 1
 	maxDeepToolRounds    = 4
+
+	// maxToolResultBytes caps the JSON fed back to the model per tool call.
+	maxToolResultBytes = 24000
 )
 
 type SearchMode string
@@ -337,8 +342,8 @@ func (a *openAISearchAgent) executeToolCall(
 		}
 	}
 	toolContent := string(payload)
-	if len(toolContent) > 24000 {
-		toolContent = toolContent[:24000] + "…"
+	if len(toolContent) > maxToolResultBytes {
+		toolContent = strutil.Truncate(toolContent, maxToolResultBytes) + strutil.Ellipsis
 	}
 	return toolExecResult{ID: callID, Name: name, Content: toolContent}
 }

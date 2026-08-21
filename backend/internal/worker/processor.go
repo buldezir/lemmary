@@ -70,7 +70,7 @@ func (p *Processor) registerHooks() {
 			return err
 		}
 
-		steps := takeCreateStepsForChecksum(record.GetString("checksum"))
+		steps := createStepsFor(record)
 		_, err := createProcessingJob(e.App, record.Id, steps, nil)
 		return err
 	})
@@ -114,14 +114,14 @@ func (p *Processor) registerHooks() {
 
 	p.app.OnRecordAfterCreateSuccess("processing_jobs").BindFunc(func(e *core.RecordEvent) error {
 		if e.Record.GetString("status") == models.JobStatusPending {
-			go p.dispatch(e.Record.Id)
+			go p.drainPending()
 		}
 		return e.Next()
 	})
 
 	p.app.OnRecordAfterUpdateSuccess("processing_jobs").BindFunc(func(e *core.RecordEvent) error {
 		if e.Record.GetString("status") == models.JobStatusPending {
-			go p.dispatch(e.Record.Id)
+			go p.drainPending()
 		}
 		return e.Next()
 	})
@@ -154,37 +154,78 @@ func createProcessingJob(app core.App, documentID string, steps []string, forceS
 	return job, nil
 }
 
-func (p *Processor) dispatch(jobID string) {
-	_ = jobID
-	go p.drainPending()
-}
-
 func (p *Processor) drainPending() {
 	if !p.processing.TryLock() {
 		return
 	}
 	defer p.processing.Unlock()
 
+	lastJobID := ""
 	for {
-		jobs, err := p.app.FindRecordsByFilter(
-			"processing_jobs",
-			"status = {:status}",
-			"created",
-			1,
-			0,
-			map[string]any{"status": models.JobStatusPending},
-		)
+		job, err := p.nextDueJob()
 		if err != nil {
 			p.app.Logger().Error("list pending jobs", slog.Any("error", err))
 			return
 		}
-		if len(jobs) == 0 {
+		if job == nil {
 			return
 		}
-		if err := p.runJob(jobs[0].Id); err != nil {
-			p.app.Logger().Error("job error", "job", jobs[0].Id, slog.Any("error", err))
+
+		snap := p.rt.Snapshot()
+		if err := providersReady(snap); err != nil {
+			// Leave the job pending so it runs once Settings are complete. Returning
+			// (rather than retrying inline) is what keeps this from becoming a hot
+			// loop on a fresh install where no provider is configured yet; the cron
+			// re-enters drainPending on the next tick.
+			p.app.Logger().Warn("pending jobs deferred; provider unavailable",
+				"job", job.Id,
+				slog.Any("error", err),
+			)
+			return
+		}
+
+		if job.Id == lastJobID {
+			// runJob returned without moving the job out of the runnable set, so
+			// picking it up again would spin. Hand it back to the cron instead.
+			p.app.Logger().Error("job made no progress; deferring to next cron tick", "job", job.Id)
+			return
+		}
+		lastJobID = job.Id
+
+		if err := p.runJob(job.Id, snap); err != nil {
+			p.app.Logger().Error("job error", "job", job.Id, slog.Any("error", err))
 		}
 	}
+}
+
+// nextDueJob returns the oldest pending job whose backoff has elapsed, or nil.
+func (p *Processor) nextDueJob() (*core.Record, error) {
+	jobs, err := p.app.FindRecordsByFilter(
+		"processing_jobs",
+		"status = {:status} && (next_attempt_at = '' || next_attempt_at <= {:now})",
+		"created",
+		1,
+		0,
+		map[string]any{"status": models.JobStatusPending, "now": nowTimestamp()},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if len(jobs) == 0 {
+		return nil, nil
+	}
+	return jobs[0], nil
+}
+
+// providersReady reports whether the snapshot has everything a job needs.
+func providersReady(snap config.Snapshot) error {
+	if snap.OCR == nil {
+		return fmt.Errorf("OCR provider is not configured; update Settings")
+	}
+	if snap.AI == nil {
+		return fmt.Errorf("AI extractor is not configured; update Settings")
+	}
+	return nil
 }
 
 func (p *Processor) processNextPending() error {
@@ -192,15 +233,7 @@ func (p *Processor) processNextPending() error {
 	return nil
 }
 
-func (p *Processor) runJob(jobID string) error {
-	snap := p.rt.Snapshot()
-	if snap.OCR == nil {
-		return fmt.Errorf("OCR provider is not configured; update Settings")
-	}
-	if snap.AI == nil {
-		return fmt.Errorf("AI extractor is not configured; update Settings")
-	}
-
+func (p *Processor) runJob(jobID string, snap config.Snapshot) error {
 	claimed := false
 	err := p.app.RunInTransaction(func(txApp core.App) error {
 		job, err := txApp.FindRecordById("processing_jobs", jobID)

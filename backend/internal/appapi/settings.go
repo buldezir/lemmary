@@ -2,6 +2,7 @@ package appapi
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -70,7 +71,8 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 
 		record, err := config.FindSettingsRecord(app)
 		if err != nil {
-			return writeError(e, http.StatusInternalServerError, "Settings are unavailable: "+err.Error())
+			app.Logger().Error("load settings record failed", slog.Any("error", err))
+			return writeError(e, http.StatusInternalServerError, "Settings are unavailable.")
 		}
 
 		if err := applySettingsPatch(app, record, req); err != nil {

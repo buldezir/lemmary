@@ -133,7 +133,7 @@ func handlePatchDocument(e *core.RequestEvent) error {
 				raw = append(raw, tagID)
 			}
 		}
-		record.Set("tags", resolveTagPBIDs(e.App, raw))
+		record.Set("tags", resolveTagPBIDs(e.App, raw, e.Auth.Id))
 	}
 
 	record.Set("metadata_source", models.MetadataSourceUser)
@@ -195,7 +195,7 @@ func handlePostDocument(e *core.RequestEvent) error {
 			}
 		}
 		if tagIDs := parseTagIDs(form.Value); len(tagIDs) > 0 {
-			record.Set("tags", resolveTagPBIDs(e.App, tagIDs))
+			record.Set("tags", resolveTagPBIDs(e.App, tagIDs, e.Auth.Id))
 		}
 	}
 
@@ -337,7 +337,7 @@ func documentSortField(ordering string) string {
 		pbField = "created"
 	}
 
-	if desc || strings.HasPrefix(ordering, "-") {
+	if desc {
 		return "-" + pbField
 	}
 	return pbField

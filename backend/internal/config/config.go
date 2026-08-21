@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
+
 	"paperless-go/backend/internal/aiprovider"
+	"paperless-go/backend/internal/strutil"
 )
 
 const (
@@ -81,117 +83,32 @@ func WorkerCronFromEnv() string {
 	return getEnv("WORKER_CRON_EXPR", "* * * * *")
 }
 
-func bindingFields() []core.Field {
-	return []core.Field{
-		&core.TextField{Name: "ocr_provider_id", Max: 15},
-		&core.TextField{Name: "ocr_model", Max: 200},
-		&core.TextField{Name: "extract_provider_id", Max: 15},
-		&core.TextField{Name: "extract_model", Max: 200},
-		&core.TextField{Name: "chat_provider_id", Max: 15},
-		&core.TextField{Name: "chat_model", Max: 200},
-		&core.TextField{Name: "search_provider_id", Max: 15},
-		&core.TextField{Name: "search_model", Max: 200},
-	}
-}
-
-// EnsureCollection creates the app_settings collection if it does not exist yet.
-func EnsureCollection(app core.App) (*core.Collection, error) {
-	if collection, err := app.FindCollectionByNameOrId(CollectionName); err == nil {
-		return collection, nil
-	}
-
-	settings := core.NewBaseCollection(CollectionName)
-	// Locked down for regular users; superusers bypass rules.
-	settings.Fields.Add(
-		&core.TextField{Name: "ocr_provider", Max: 50},
-		&core.TextField{Name: "google_vision_api_key", Max: 2000},
-		&core.TextField{Name: "mistral_api_key", Max: 2000},
-		&core.TextField{Name: "mistral_ocr_model", Max: 200},
-		&core.TextField{Name: "mistral_api_base_url", Max: 500},
-		&core.NumberField{Name: "ocr_timeout_sec", OnlyInt: true},
-		&core.TextField{Name: "processing_result_language", Max: 16},
-		&core.TextField{Name: "deep_search_languages", Max: 200},
-		&core.TextField{Name: "openai_api_key", Max: 2000},
-		&core.TextField{Name: "openai_model", Max: 200},
-		&core.TextField{Name: "openai_chat_model", Max: 200},
-		&core.TextField{Name: "openai_search_model", Max: 200},
-		&core.TextField{Name: "openai_base_url", Max: 500},
-		&core.NumberField{Name: "openai_timeout_sec", OnlyInt: true},
-		&core.NumberField{Name: "worker_timeout_sec", OnlyInt: true},
-		&core.NumberField{Name: "worker_max_retries", OnlyInt: true},
-		&core.TextField{Name: "extraction_prompt_version", Max: 50},
-		&core.BoolField{Name: "near_duplicate_detection_enabled"},
-		&core.NumberField{Name: "near_duplicate_threshold"},
-	)
-	for _, field := range bindingFields() {
-		settings.Fields.Add(field)
-	}
-	settings.Fields.Add(
-		&core.AutodateField{Name: "created", OnCreate: true},
-		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
-	)
-	if err := app.Save(settings); err != nil {
-		return nil, fmt.Errorf("create %s collection: %w", CollectionName, err)
-	}
-	return settings, nil
-}
-
-// EnsureCollectionFields adds any missing app_settings fields (for upgrades).
-func EnsureCollectionFields(app core.App) error {
+// findSettingsCollection returns the app_settings collection.
+//
+// The schema itself is owned by migrations/ — this only reports a clear error
+// when they have not run, instead of maintaining a second copy of the field
+// list that can drift from the migration ladder.
+func findSettingsCollection(app core.App) (*core.Collection, error) {
 	collection, err := app.FindCollectionByNameOrId(CollectionName)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("%s collection is missing; run migrations: %w", CollectionName, err)
 	}
-	changed := false
-	if collection.Fields.GetByName("deep_search_languages") == nil {
-		collection.Fields.Add(&core.TextField{Name: "deep_search_languages", Max: 200})
-		changed = true
-	}
-	if collection.Fields.GetByName("openai_search_model") == nil {
-		collection.Fields.Add(&core.TextField{Name: "openai_search_model", Max: 200})
-		changed = true
-	}
-	if collection.Fields.GetByName("near_duplicate_detection_enabled") == nil {
-		collection.Fields.Add(&core.BoolField{Name: "near_duplicate_detection_enabled"})
-		changed = true
-	}
-	if collection.Fields.GetByName("near_duplicate_threshold") == nil {
-		collection.Fields.Add(&core.NumberField{Name: "near_duplicate_threshold"})
-		changed = true
-	}
-	for _, field := range bindingFields() {
-		if collection.Fields.GetByName(field.GetName()) == nil {
-			collection.Fields.Add(field)
-			changed = true
-		}
-	}
-	if !changed {
-		return nil
-	}
-	return app.Save(collection)
+	return collection, nil
 }
 
-// EnsureDefaults creates the app_settings collection + singleton from env if missing.
+// EnsureDefaults seeds the app_settings singleton from env when it is missing.
 func EnsureDefaults(app core.App) error {
 	if _, err := aiprovider.EnsureCollection(app); err != nil {
 		return err
 	}
-	if err := EnsureCollectionFields(app); err != nil {
-		return err
-	}
 
 	if record, err := app.FindRecordById(CollectionName, SingletonID); err == nil {
 		return bindProviders(app, record)
 	}
 
-	collection, err := EnsureCollection(app)
+	collection, err := findSettingsCollection(app)
 	if err != nil {
 		return err
-	}
-
-	// Re-check after ensuring collection (race / concurrent bootstrap).
-	if record, err := app.FindRecordById(CollectionName, SingletonID); err == nil {
-		return bindProviders(app, record)
 	}
 
 	cfg := DefaultsFromEnv()
@@ -283,7 +200,7 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 		WorkerCronExpr:                WorkerCronFromEnv(),
 		WorkerTimeout:                 time.Duration(workerTimeoutSec) * time.Second,
 		WorkerMaxRetries:              int(record.GetFloat("worker_max_retries")),
-		ExtractionPromptVer:           firstNonEmpty(record.GetString("extraction_prompt_version"), "v1"),
+		ExtractionPromptVer:           strutil.FirstNonEmpty(record.GetString("extraction_prompt_version"), "v1"),
 		NearDuplicateDetectionEnabled: record.GetBool("near_duplicate_detection_enabled"),
 		NearDuplicateThreshold:        threshold,
 	}
@@ -294,50 +211,43 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 	return cfg, nil
 }
 
+// applyBindingFallbacks fills unset chat/search bindings: chat falls back to the
+// extraction binding, and search falls back to the (already resolved) chat one.
+// Kept separate from the DB lookups so the fallback chain stays easy to reason
+// about and test.
+func applyBindingFallbacks(cfg *Config) {
+	if cfg.ChatProviderID == "" {
+		cfg.ChatProviderID = cfg.ExtractProviderID
+	}
+	if cfg.ChatModel == "" {
+		cfg.ChatModel = cfg.ExtractModel
+	}
+	if cfg.SearchProviderID == "" {
+		cfg.SearchProviderID = cfg.ChatProviderID
+	}
+	if cfg.SearchModel == "" {
+		cfg.SearchModel = cfg.ChatModel
+	}
+}
+
 func resolveProviders(app core.App, cfg *Config) error {
-	ocr, err := lookupProvider(app, cfg.OCRProviderID)
-	if err != nil {
-		return err
-	}
-	extract, err := lookupProvider(app, cfg.ExtractProviderID)
-	if err != nil {
-		return err
-	}
+	applyBindingFallbacks(cfg)
 
-	chatID := cfg.ChatProviderID
-	chatModel := cfg.ChatModel
-	if chatID == "" {
-		chatID = cfg.ExtractProviderID
+	for _, binding := range []struct {
+		id     string
+		target **aiprovider.Provider
+	}{
+		{cfg.OCRProviderID, &cfg.OCRProvider},
+		{cfg.ExtractProviderID, &cfg.ExtractProvider},
+		{cfg.ChatProviderID, &cfg.ChatProvider},
+		{cfg.SearchProviderID, &cfg.SearchProvider},
+	} {
+		provider, err := lookupProvider(app, binding.id)
+		if err != nil {
+			return err
+		}
+		*binding.target = provider
 	}
-	if chatModel == "" {
-		chatModel = cfg.ExtractModel
-	}
-	chat, err := lookupProvider(app, chatID)
-	if err != nil {
-		return err
-	}
-
-	searchID := cfg.SearchProviderID
-	searchModel := cfg.SearchModel
-	if searchID == "" {
-		searchID = chatID
-	}
-	if searchModel == "" {
-		searchModel = chatModel
-	}
-	search, err := lookupProvider(app, searchID)
-	if err != nil {
-		return err
-	}
-
-	cfg.OCRProvider = ocr
-	cfg.ExtractProvider = extract
-	cfg.ChatProvider = chat
-	cfg.SearchProvider = search
-	cfg.ChatProviderID = chatID
-	cfg.ChatModel = chatModel
-	cfg.SearchProviderID = searchID
-	cfg.SearchModel = searchModel
 	return nil
 }
 
@@ -405,15 +315,6 @@ func getEnvFloat(key string, fallback float64) float64 {
 		return fallback
 	}
 	return parsed
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
-		}
-	}
-	return ""
 }
 
 // NormalizeLanguageList cleans a comma-separated ISO 639-1 list (e.g. "de, en, uk").

@@ -5,6 +5,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/pocketbase/pocketbase/core"
 
 	"paperless-go/backend/internal/worker"
 )
@@ -165,4 +168,77 @@ func TestExtractionPromptIncludesExistingNamedEntities(t *testing.T) {
 	if leaked {
 		t.Fatalf("other user's correspondent leaked into extraction prompt: %v", h.Mocks.LastOpenAIBodies())
 	}
+}
+
+// A job whose backoff has not elapsed must not be picked up yet, and must run
+// once it is due. This is what stops a failing step from being retried in a
+// tight loop.
+func TestPipelineRespectsNextAttemptAt(t *testing.T) {
+	h := StartShared(t)
+	token := h.userToken(t)
+
+	rec := h.uploadDocument(t, token, h.UserID, fixturePath("sample.png"))
+	id := jsonGetString(rec, "id")
+	t.Cleanup(func() {
+		_, _ = h.doJSON(t, http.MethodDelete, "/api/collections/documents/records/"+id, token, nil)
+	})
+	_ = h.waitDocumentStatus(t, token, id, "completed", "needs_review")
+
+	jobs, err := h.App.FindCollectionByNameOrId("processing_jobs")
+	if err != nil {
+		t.Fatalf("find processing_jobs: %v", err)
+	}
+
+	job := core.NewRecord(jobs)
+	job.Set("document", id)
+	job.Set("status", "pending")
+	job.Set("steps", []string{"extract_metadata", "apply_metadata"})
+	job.Set("next_attempt_at", time.Now().UTC().Add(time.Hour).Format("2006-01-02 15:04:05.000Z"))
+	if err := h.App.Save(job); err != nil {
+		t.Fatalf("save deferred job: %v", err)
+	}
+	t.Cleanup(func() {
+		if rec, err := h.App.FindRecordById("processing_jobs", job.Id); err == nil {
+			_ = h.App.Delete(rec)
+		}
+	})
+
+	// Give the drain goroutine a chance to (incorrectly) pick it up.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		current, err := h.App.FindRecordById("processing_jobs", job.Id)
+		if err != nil {
+			t.Fatalf("reload job: %v", err)
+		}
+		if current.GetString("status") != "pending" {
+			t.Fatalf("deferred job ran early with status %q", current.GetString("status"))
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Now make it due: the worker must pick it up and finish it.
+	due, err := h.App.FindRecordById("processing_jobs", job.Id)
+	if err != nil {
+		t.Fatalf("reload job: %v", err)
+	}
+	due.Set("next_attempt_at", time.Now().UTC().Add(-time.Minute).Format("2006-01-02 15:04:05.000Z"))
+	if err := h.App.Save(due); err != nil {
+		t.Fatalf("save due job: %v", err)
+	}
+
+	deadline = time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		current, err := h.App.FindRecordById("processing_jobs", job.Id)
+		if err != nil {
+			t.Fatalf("reload job: %v", err)
+		}
+		switch current.GetString("status") {
+		case "completed", "needs_review":
+			return
+		case "failed":
+			t.Fatalf("due job failed: %s", current.GetString("step_runs"))
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal("due job was never processed")
 }

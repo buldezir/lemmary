@@ -117,7 +117,9 @@ func resolvePBRelationID(app core.App, collection string, raw any, ownerUserID s
 	}
 }
 
-func resolveTagPBIDs(app core.App, rawIDs []string) []string {
+// resolveTagPBIDs maps paperless-ngx numeric tag ids (or raw PocketBase ids) to
+// PocketBase ids, keeping only tags owned by ownerUserID.
+func resolveTagPBIDs(app core.App, rawIDs []string, ownerUserID string) []string {
 	result := make([]string, 0, len(rawIDs))
 	for _, raw := range rawIDs {
 		raw = strings.TrimSpace(raw)
@@ -126,12 +128,12 @@ func resolveTagPBIDs(app core.App, rawIDs []string) []string {
 		}
 		ngxID, err := strconv.Atoi(raw)
 		if err != nil {
-			if _, err := app.FindRecordById("tags", raw); err == nil {
+			if tag, err := app.FindRecordById("tags", raw); err == nil && tag.GetString("user") == ownerUserID {
 				result = append(result, raw)
 			}
 			continue
 		}
-		tag, err := findRecordByNgxID(app, "tags", ngxID, "")
+		tag, err := findRecordByNgxID(app, "tags", ngxID, ownerUserID)
 		if err == nil {
 			result = append(result, tag.Id)
 		}

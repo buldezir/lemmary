@@ -62,9 +62,7 @@ func Register(app core.App, idx *fulltext.Index) {
 			g.HEAD("/token", handleTokenMethodNotAllowed)
 
 			registerDocumentRoutes(g, idx)
-			registerTagRoutes(g)
-			registerCorrespondentRoutes(g)
-			registerDocumentTypeRoutes(g)
+			registerTaxonomyRoutes(g)
 
 			g.GET("/tasks/", bindAuth(handleListTasks))
 			g.GET("/tasks", bindAuth(handleListTasks))
@@ -92,36 +90,52 @@ func registerDocumentRoutes(g *router.RouterGroup[*core.RequestEvent], idx *full
 	}
 }
 
-func registerTagRoutes(g *router.RouterGroup[*core.RequestEvent]) {
-	for _, base := range []string{"/tags/", "/tags"} {
-		g.GET(base, bindAuth(handleListTags))
-		g.POST(base, bindAuth(handleCreateTag))
+// namedEntityRoutes is the CRUD handler set for one paperless-ngx taxonomy
+// collection. All three collections expose the same five endpoints.
+type namedEntityRoutes struct {
+	base                          string
+	list, create, get, patch, del func(*core.RequestEvent) error
+}
+
+func registerNamedEntityRoutes(g *router.RouterGroup[*core.RequestEvent], routes namedEntityRoutes) {
+	for _, base := range []string{routes.base + "/", routes.base} {
+		g.GET(base, bindAuth(routes.list))
+		g.POST(base, bindAuth(routes.create))
 		item := itemPath(base, "{id}")
-		g.GET(item, bindAuth(handleGetTag))
-		g.PATCH(item, bindAuth(handlePatchTag))
-		g.DELETE(item, bindAuth(handleDeleteTag))
+		g.GET(item, bindAuth(routes.get))
+		g.PATCH(item, bindAuth(routes.patch))
+		g.DELETE(item, bindAuth(routes.del))
 	}
 }
 
-func registerCorrespondentRoutes(g *router.RouterGroup[*core.RequestEvent]) {
-	for _, base := range []string{"/correspondents/", "/correspondents"} {
-		g.GET(base, bindAuth(handleListCorrespondents))
-		g.POST(base, bindAuth(handleCreateCorrespondent))
-		item := itemPath(base, "{id}")
-		g.GET(item, bindAuth(handleGetCorrespondent))
-		g.PATCH(item, bindAuth(handlePatchCorrespondent))
-		g.DELETE(item, bindAuth(handleDeleteCorrespondent))
-	}
-}
-
-func registerDocumentTypeRoutes(g *router.RouterGroup[*core.RequestEvent]) {
-	for _, base := range []string{"/document_types/", "/document_types"} {
-		g.GET(base, bindAuth(handleListDocumentTypes))
-		g.POST(base, bindAuth(handleCreateDocumentType))
-		item := itemPath(base, "{id}")
-		g.GET(item, bindAuth(handleGetDocumentType))
-		g.PATCH(item, bindAuth(handlePatchDocumentType))
-		g.DELETE(item, bindAuth(handleDeleteDocumentType))
+func registerTaxonomyRoutes(g *router.RouterGroup[*core.RequestEvent]) {
+	for _, routes := range []namedEntityRoutes{
+		{
+			base:   "/tags",
+			list:   handleListTags,
+			create: handleCreateTag,
+			get:    handleGetTag,
+			patch:  handlePatchTag,
+			del:    handleDeleteTag,
+		},
+		{
+			base:   "/correspondents",
+			list:   handleListCorrespondents,
+			create: handleCreateCorrespondent,
+			get:    handleGetCorrespondent,
+			patch:  handlePatchCorrespondent,
+			del:    handleDeleteCorrespondent,
+		},
+		{
+			base:   "/document_types",
+			list:   handleListDocumentTypes,
+			create: handleCreateDocumentType,
+			get:    handleGetDocumentType,
+			patch:  handlePatchDocumentType,
+			del:    handleDeleteDocumentType,
+		},
+	} {
+		registerNamedEntityRoutes(g, routes)
 	}
 }
 

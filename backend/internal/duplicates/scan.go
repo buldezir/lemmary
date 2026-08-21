@@ -4,10 +4,15 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+
 	"paperless-go/backend/internal/config"
 	"paperless-go/backend/internal/models"
 )
+
+// scanPageSize bounds how many records a scan holds in memory at once.
+const scanPageSize = 200
 
 // ScanResult summarizes a bulk duplicate scan.
 type ScanResult struct {
@@ -36,38 +41,47 @@ func FindNearDuplicate(app core.App, document *core.Record, ocrText string, thre
 		return nil, 0, nil
 	}
 
-	candidates, err := app.FindRecordsByFilter(
-		"documents",
-		"user = {:user} && id != {:id} && text_fingerprint != '' && ocr_text != '' && duplicate_of = '' && created < {:created}",
-		"created",
-		500,
-		0,
-		map[string]any{"user": userID, "id": document.Id, "created": created},
-	)
-	if err != nil {
-		return nil, 0, err
-	}
-
 	var best *core.Record
 	bestScore := 0.0
-	for _, candidate := range candidates {
-		if !EligibleNearDuplicateOriginal(document, candidate) {
-			continue
+	offset := 0
+	// Paginate rather than capping: with a fixed limit the newest candidates —
+	// the most likely duplicates — would silently never be compared.
+	for {
+		candidates, err := app.FindRecordsByFilter(
+			"documents",
+			"user = {:user} && id != {:id} && text_fingerprint != '' && ocr_text != '' && duplicate_of = '' && created < {:created}",
+			"created",
+			scanPageSize,
+			offset,
+			map[string]any{"user": userID, "id": document.Id, "created": created},
+		)
+		if err != nil {
+			return nil, 0, err
 		}
-		otherFP, ok := ParseFingerprintHex(candidate.GetString("text_fingerprint"))
-		if !ok {
-			continue
+
+		for _, candidate := range candidates {
+			if !EligibleNearDuplicateOriginal(document, candidate) {
+				continue
+			}
+			otherFP, ok := ParseFingerprintHex(candidate.GetString("text_fingerprint"))
+			if !ok {
+				continue
+			}
+			if HammingDistance(fpVal, otherFP) > MaxHammingDistance {
+				continue
+			}
+			score := TextSimilarity(ocrText, candidate.GetString("ocr_text"))
+			if score >= threshold && score > bestScore {
+				best = candidate
+				bestScore = score
+			}
 		}
-		if HammingDistance(fpVal, otherFP) > MaxHammingDistance {
-			continue
+
+		if len(candidates) < scanPageSize {
+			return best, bestScore, nil
 		}
-		score := TextSimilarity(ocrText, candidate.GetString("ocr_text"))
-		if score >= threshold && score > bestScore {
-			best = candidate
-			bestScore = score
-		}
+		offset += scanPageSize
 	}
-	return best, bestScore, nil
 }
 
 // EligibleNearDuplicateOriginal reports whether candidate may be treated as the original
@@ -243,48 +257,41 @@ func backfillFingerprint(app core.App, record *core.Record, result *ScanResult) 
 }
 
 func markExactDuplicates(app core.App, result *ScanResult) error {
-	page := 1
 	type groupKey struct {
 		user     string
 		checksum string
 	}
-	groups := map[groupKey][]*core.Record{}
 
-	for {
-		records, err := app.FindRecordsByFilter(
-			"documents",
-			"checksum != ''",
-			"created",
-			200,
-			(page-1)*200,
-			nil,
-		)
-		if err != nil {
-			return err
-		}
-		if len(records) == 0 {
-			break
-		}
-		for _, record := range records {
-			key := groupKey{user: record.GetString("user"), checksum: record.GetString("checksum")}
-			groups[key] = append(groups[key], record)
-		}
-		if len(records) < 200 {
-			break
-		}
-		page++
+	rows, err := scanRows(app, "checksum != ''")
+	if err != nil {
+		return err
+	}
+
+	// Group by (user, checksum) over lightweight rows so a large archive does not
+	// pull every document (and its OCR text) into memory at once.
+	groups := map[groupKey][]scanRow{}
+	for _, row := range rows {
+		key := groupKey{user: row.User, checksum: row.Checksum}
+		groups[key] = append(groups[key], row)
 	}
 
 	for _, group := range groups {
 		if len(group) < 2 {
 			continue
 		}
-		original := group[0]
-		for _, dup := range group[1:] {
-			if dup.GetString("duplicate_of") != "" {
+		original, err := app.FindRecordById("documents", group[0].ID)
+		if err != nil {
+			return err
+		}
+		for _, row := range group[1:] {
+			if row.DuplicateOf != "" {
 				continue
 			}
-			if err := MarkAsDuplicate(app, dup, original); err != nil {
+			duplicate, err := app.FindRecordById("documents", row.ID)
+			if err != nil {
+				return err
+			}
+			if err := MarkAsDuplicate(app, duplicate, original); err != nil {
 				return err
 			}
 			result.ExactMarked++
@@ -294,68 +301,116 @@ func markExactDuplicates(app core.App, result *ScanResult) error {
 }
 
 func markNearDuplicates(app core.App, threshold float64, result *ScanResult) error {
-	page := 1
-	var docs []*core.Record
-	for {
-		records, err := app.FindRecordsByFilter(
-			"documents",
-			"ocr_text != '' && text_fingerprint != ''",
-			"created",
-			200,
-			(page-1)*200,
-			nil,
-		)
-		if err != nil {
-			return err
-		}
-		if len(records) == 0 {
-			break
-		}
-		docs = append(docs, records...)
-		if len(records) < 200 {
-			break
-		}
-		page++
+	rows, err := scanRows(app, "ocr_text != '' AND text_fingerprint != ''")
+	if err != nil {
+		return err
 	}
 
-	byUser := map[string][]*core.Record{}
-	for _, doc := range docs {
-		uid := doc.GetString("user")
-		byUser[uid] = append(byUser[uid], doc)
+	byUser := map[string][]scanRow{}
+	for _, row := range rows {
+		byUser[row.User] = append(byUser[row.User], row)
 	}
 
+	// Rows carry only the SimHash, so the O(n²) sweep stays in memory-cheap
+	// integer comparisons. OCR text is loaded only for the few pairs that pass
+	// the Hamming prefilter, and the outer document's text is loaded once.
+	marked := map[string]struct{}{}
 	for _, group := range byUser {
 		for i := 0; i < len(group); i++ {
 			a := group[i]
-			if a.GetString("duplicate_of") != "" {
+			if a.DuplicateOf != "" || isMarked(marked, a.ID) {
 				continue
 			}
-			fa, ok := ParseFingerprintHex(a.GetString("text_fingerprint"))
+			fa, ok := ParseFingerprintHex(a.Fingerprint)
 			if !ok {
 				continue
 			}
+
+			var (
+				aRecord *core.Record
+				aText   string
+			)
 			for j := i + 1; j < len(group); j++ {
 				b := group[j]
-				if b.GetString("duplicate_of") != "" {
+				if b.DuplicateOf != "" || isMarked(marked, b.ID) {
 					continue
 				}
-				fb, ok := ParseFingerprintHex(b.GetString("text_fingerprint"))
+				fb, ok := ParseFingerprintHex(b.Fingerprint)
 				if !ok {
 					continue
 				}
 				if HammingDistance(fa, fb) > MaxHammingDistance {
 					continue
 				}
-				if TextSimilarity(a.GetString("ocr_text"), b.GetString("ocr_text")) < threshold {
+
+				if aRecord == nil {
+					aRecord, err = app.FindRecordById("documents", a.ID)
+					if err != nil {
+						return err
+					}
+					aText = aRecord.GetString("ocr_text")
+				}
+				bRecord, err := app.FindRecordById("documents", b.ID)
+				if err != nil {
+					return err
+				}
+				if TextSimilarity(aText, bRecord.GetString("ocr_text")) < threshold {
 					continue
 				}
 				// Prefer older as original (group sorted by created ascending).
-				if err := MarkAsDuplicate(app, b, a); err != nil {
+				if err := MarkAsDuplicate(app, bRecord, aRecord); err != nil {
 					return err
 				}
+				marked[b.ID] = struct{}{}
 				result.NearMarked++
 			}
 		}
 	}
 	return nil
+}
+
+func isMarked(marked map[string]struct{}, id string) bool {
+	_, ok := marked[id]
+	return ok
+}
+
+// scanRow is the projection the bulk scan works on: everything needed to group
+// and prefilter, and nothing large. OCR text is fetched per record only when a
+// pair actually has to be compared.
+type scanRow struct {
+	ID          string `db:"id"`
+	User        string `db:"user"`
+	Created     string `db:"created"`
+	Checksum    string `db:"checksum"`
+	Fingerprint string `db:"text_fingerprint"`
+	DuplicateOf string `db:"duplicate_of"`
+}
+
+// scanRows pages through documents matching filter, oldest first.
+func scanRows(app core.App, filter string) ([]scanRow, error) {
+	collection, err := app.FindCollectionByNameOrId("documents")
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []scanRow
+	offset := 0
+	for {
+		var page []scanRow
+		err := app.RecordQuery(collection).
+			Select("id", "[[user]]", "created", "checksum", "text_fingerprint", "duplicate_of").
+			AndWhere(dbx.NewExp(filter)).
+			OrderBy("created ASC", "id ASC").
+			Limit(int64(scanPageSize)).
+			Offset(int64(offset)).
+			All(&page)
+		if err != nil {
+			return nil, fmt.Errorf("list documents for duplicate scan: %w", err)
+		}
+		rows = append(rows, page...)
+		if len(page) < scanPageSize {
+			return rows, nil
+		}
+		offset += scanPageSize
+	}
 }

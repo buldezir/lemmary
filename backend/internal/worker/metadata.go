@@ -6,7 +6,9 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
+
 	"paperless-go/backend/internal/models"
+	"paperless-go/backend/internal/strutil"
 )
 
 func applyExtractedMetadata(document *core.Record, metadata *models.ExtractedMetadata, resultLanguage string) {
@@ -14,9 +16,9 @@ func applyExtractedMetadata(document *core.Record, metadata *models.ExtractedMet
 		document.Set("title_original", metadata.Title)
 		document.Set("summary_original", metadata.Summary)
 		document.Set("purpose_original", metadata.Purpose)
-		document.Set("title", firstNonEmpty(metadata.TitleTranslated, metadata.Title))
-		document.Set("summary", firstNonEmpty(metadata.SummaryTranslated, metadata.Summary))
-		document.Set("purpose", firstNonEmpty(metadata.PurposeTranslated, metadata.Purpose))
+		document.Set("title", strutil.FirstNonEmpty(metadata.TitleTranslated, metadata.Title))
+		document.Set("summary", strutil.FirstNonEmpty(metadata.SummaryTranslated, metadata.Summary))
+		document.Set("purpose", strutil.FirstNonEmpty(metadata.PurposeTranslated, metadata.Purpose))
 		return
 	}
 
@@ -47,15 +49,6 @@ func mergeTagNames(original, translated []string) []string {
 	return names
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
-}
-
 func documentTypeNames(metadata *models.ExtractedMetadata, resultLanguage string) (displayName, originalName string) {
 	originalName = strings.TrimSpace(metadata.DocumentType)
 	if originalName == "" {
@@ -66,7 +59,7 @@ func documentTypeNames(metadata *models.ExtractedMetadata, resultLanguage string
 	}
 
 	translated := strings.TrimSpace(metadata.DocumentTypeTranslated)
-	displayName = firstNonEmpty(translated, originalName)
+	displayName = strutil.FirstNonEmpty(translated, originalName)
 	return displayName, originalName
 }
 
@@ -88,7 +81,7 @@ func correspondentNames(metadata *models.ExtractedMetadata, resultLanguage strin
 	}
 
 	translated := strings.TrimSpace(metadata.CorrespondentTranslated)
-	displayName = firstNonEmpty(translated, originalName)
+	displayName = strutil.FirstNonEmpty(translated, originalName)
 	return displayName, originalName
 }
 

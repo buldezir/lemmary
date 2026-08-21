@@ -1,44 +1,37 @@
 package worker
 
 import (
-	"sync"
+	"github.com/pocketbase/pocketbase/core"
 
 	"paperless-go/backend/internal/models"
 )
 
-// createStepsByChecksum lets a caller (e.g. ngx import) request non-default
-// pipeline steps for the next document create with that checksum. The create
-// hook consumes the entry with LoadAndDelete so concurrent uploads with other
-// checksums are unaffected.
-var createStepsByChecksum sync.Map
+// createStepsKey carries requested pipeline steps on an unsaved document record.
+//
+// PocketBase keeps values whose key does not match a collection field in the
+// record's in-memory data only — DBExport writes schema fields, so this never
+// reaches the database. That makes it a safe transient channel from the caller
+// that builds the record to the OnRecordCreate hook that creates the job.
+const createStepsKey = "__pipeline_steps"
 
-// RegisterCreateStepsForChecksum schedules custom processing steps for the
-// next OnRecordCreate of a document whose checksum matches. Callers should
-// ClearCreateStepsForChecksum if Save fails before the hook runs.
-func RegisterCreateStepsForChecksum(checksum string, steps []string) {
-	if checksum == "" || len(steps) == 0 {
+// SetCreateSteps requests non-default pipeline steps for the job created when
+// record is saved. Pass nil or an empty slice to use the full pipeline.
+func SetCreateSteps(record *core.Record, steps []string) {
+	if record == nil || len(steps) == 0 {
 		return
 	}
-	copied := append([]string(nil), steps...)
-	createStepsByChecksum.Store(checksum, copied)
+	record.Set(createStepsKey, append([]string(nil), steps...))
 }
 
-// ClearCreateStepsForChecksum drops a pending registration (e.g. after a failed Save).
-func ClearCreateStepsForChecksum(checksum string) {
-	if checksum == "" {
-		return
-	}
-	createStepsByChecksum.Delete(checksum)
-}
-
-func takeCreateStepsForChecksum(checksum string) []string {
-	if checksum == "" {
+// createStepsFor returns the steps requested via SetCreateSteps, or the full
+// pipeline when none were requested.
+func createStepsFor(record *core.Record) []string {
+	if record == nil {
 		return models.FullPipelineSteps
 	}
-	if v, ok := createStepsByChecksum.LoadAndDelete(checksum); ok {
-		if steps, ok := v.([]string); ok && len(steps) > 0 {
-			return steps
-		}
+	steps, ok := record.GetRaw(createStepsKey).([]string)
+	if !ok || len(steps) == 0 {
+		return models.FullPipelineSteps
 	}
-	return models.FullPipelineSteps
+	return steps
 }

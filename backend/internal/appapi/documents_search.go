@@ -1,6 +1,7 @@
 package appapi
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -66,7 +67,8 @@ func handleDocumentSearch(app core.App, idx *fulltext.Index) func(*core.RequestE
 
 		result, err := idx.Search(query)
 		if err != nil {
-			return writeError(e, http.StatusInternalServerError, err.Error())
+			app.Logger().Error("document search failed", slog.Any("error", err))
+			return writeError(e, http.StatusInternalServerError, "Search failed.")
 		}
 
 		items := hydrateDocumentExports(app, result.Hits, userID)
@@ -92,7 +94,8 @@ func handleSearchReindex(app core.App, idx *fulltext.Index) func(*core.RequestEv
 		}
 		n, err := idx.Rebuild(app)
 		if err != nil {
-			return writeError(e, http.StatusInternalServerError, err.Error())
+			app.Logger().Error("search reindex failed", slog.Any("error", err))
+			return writeError(e, http.StatusInternalServerError, "Reindex failed.")
 		}
 		return writeJSON(e, http.StatusOK, map[string]any{"indexed": n})
 	}

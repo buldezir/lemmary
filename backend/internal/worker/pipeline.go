@@ -181,14 +181,17 @@ func (r *PipelineRunner) handleStepFailure(job, document *core.Record, runs []mo
 	job.Set("current_step", runs[idx].Name)
 
 	if runs[idx].Attempts < r.Cfg.WorkerMaxRetries {
+		delay := RetryDelay(runs[idx].Attempts)
 		r.App.Logger().Warn("scheduling step retry",
 			"job", job.Id,
 			"document", document.Id,
 			"step", runs[idx].Name,
 			"attempt", runs[idx].Attempts,
 			"max_retries", r.Cfg.WorkerMaxRetries,
+			"retry_in", delay,
 		)
 		job.Set("status", models.JobStatusPending)
+		job.Set("next_attempt_at", timestampAfter(delay))
 		document.Set("processing_status", models.DocStatusPending)
 		if saveErr := r.App.Save(document); saveErr != nil {
 			return saveErr

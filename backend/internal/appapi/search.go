@@ -4,14 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/pocketbase/dbx"
 
 	"github.com/pocketbase/pocketbase/core"
 	"paperless-go/backend/internal/ai"
 	"paperless-go/backend/internal/config"
 	"paperless-go/backend/internal/fulltext"
 )
+
+// maxAvailableTagNames caps how many tag names are inlined into the agent prompt.
+const maxAvailableTagNames = 500
 
 type searchRequest struct {
 	Messages []ai.ChatMessage `json:"messages"`
@@ -49,18 +55,22 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 		if !e.HasSuperuserAuth() {
 			userID = e.Auth.Id
 		}
-		availableTags, err := listAvailableTagNames(app)
+		availableTags, err := listAvailableTagNames(app, userID)
 		if err != nil {
-			return writeError(e, http.StatusInternalServerError, err.Error())
+			app.Logger().Error("deep search list tags failed", slog.Any("error", err))
+			return writeError(e, http.StatusInternalServerError, "Search is unavailable.")
 		}
 
 		searcher := func(ctx context.Context, args ai.SearchDocumentsArgs) ([]ai.DocumentHit, error) {
 			return searchUserDocuments(app, idx, userID, args)
 		}
 
-		reply, hits, err := agent.Search(context.Background(), req.Messages, mode, availableTags, searcher)
+		// Use the request context so closing the browser tab cancels the agent
+		// loop instead of leaving several LLM round-trips running.
+		reply, hits, err := agent.Search(e.Request.Context(), req.Messages, mode, availableTags, searcher)
 		if err != nil {
-			return writeError(e, http.StatusInternalServerError, err.Error())
+			app.Logger().Error("deep search failed", slog.Any("error", err))
+			return writeError(e, http.StatusBadGateway, "The AI provider could not complete the search.")
 		}
 		if hits == nil {
 			hits = []ai.DocumentHit{}
@@ -76,8 +86,16 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 	}
 }
 
-func listAvailableTagNames(app core.App) ([]string, error) {
-	records, err := app.FindRecordsByFilter("tags", "", "name", 500, 0)
+// listAvailableTagNames returns the tag names offered to the search agent.
+// userID scopes the list to that owner; empty lists every tag (superusers).
+func listAvailableTagNames(app core.App, userID string) ([]string, error) {
+	filter := ""
+	var params []dbx.Params
+	if userID != "" {
+		filter = "user = {:userId}"
+		params = append(params, dbx.Params{"userId": userID})
+	}
+	records, err := app.FindRecordsByFilter("tags", filter, "name", maxAvailableTagNames, 0, params...)
 	if err != nil {
 		return nil, fmt.Errorf("list tags: %w", err)
 	}

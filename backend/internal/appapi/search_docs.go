@@ -7,8 +7,10 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+
 	"paperless-go/backend/internal/ai"
 	"paperless-go/backend/internal/fulltext"
+	"paperless-go/backend/internal/strutil"
 )
 
 const (
@@ -67,7 +69,7 @@ func searchUserDocuments(app core.App, idx *fulltext.Index, userID string, args 
 	}
 
 	if tagNames := normalizeTagNames(args.Tags); len(tagNames) > 0 {
-		tagIDs, err := findTagIDsByNames(app, tagNames)
+		tagIDs, err := findTagIDsByNames(app, tagNames, userID)
 		if err != nil {
 			return nil, err
 		}
@@ -99,9 +101,9 @@ func searchUserDocuments(app core.App, idx *fulltext.Index, userID string, args 
 
 		hit := ai.DocumentHit{
 			ID:           record.Id,
-			Title:        firstNonEmpty(record.GetString("title"), "Untitled document"),
+			Title:        strutil.FirstNonEmpty(record.GetString("title"), "Untitled document"),
 			DocumentDate: truncateDate(record.GetString("document_date")),
-			Summary:      truncateRunes(firstNonEmpty(record.GetString("summary"), record.GetString("purpose")), maxSummaryLen),
+			Summary:      strutil.TruncateRunes(strutil.FirstNonEmpty(record.GetString("summary"), record.GetString("purpose")), maxSummaryLen),
 			OCRSnippet:   snippet,
 			Tags:         []string{},
 		}
@@ -163,7 +165,9 @@ func findNamedEntityIDs(app core.App, collection, name, userID string) ([]string
 	return ids, nil
 }
 
-func findTagIDsByNames(app core.App, names []string) ([]string, error) {
+// findTagIDsByNames resolves agent-supplied tag names to ids, scoped to
+// userID (empty means unscoped, for superusers).
+func findTagIDsByNames(app core.App, names []string, userID string) ([]string, error) {
 	ids := make([]string, 0, len(names))
 	seen := map[string]struct{}{}
 	for _, name := range names {
@@ -171,29 +175,15 @@ func findTagIDsByNames(app core.App, names []string) ([]string, error) {
 		if name == "" {
 			continue
 		}
-		records, err := app.FindRecordsByFilter(
-			"tags",
-			"name = {:name}",
-			"name",
-			5,
-			0,
-			dbx.Params{"name": name},
-		)
+		records, err := findTagsByNameFilter(app, "name = {:name}", name, userID)
 		if err != nil {
-			return nil, fmt.Errorf("lookup tags: %w", err)
+			return nil, err
 		}
 		if len(records) == 0 {
 			// Fall back to substring match so near-exact agent inputs still work.
-			records, err = app.FindRecordsByFilter(
-				"tags",
-				"name ~ {:name}",
-				"name",
-				5,
-				0,
-				dbx.Params{"name": name},
-			)
+			records, err = findTagsByNameFilter(app, "name ~ {:name}", name, userID)
 			if err != nil {
-				return nil, fmt.Errorf("lookup tags: %w", err)
+				return nil, err
 			}
 		}
 		for _, record := range records {
@@ -205,6 +195,19 @@ func findTagIDsByNames(app core.App, names []string) ([]string, error) {
 		}
 	}
 	return ids, nil
+}
+
+func findTagsByNameFilter(app core.App, filter, name, userID string) ([]*core.Record, error) {
+	params := dbx.Params{"name": name}
+	if userID != "" {
+		filter = "user = {:userId} && (" + filter + ")"
+		params["userId"] = userID
+	}
+	records, err := app.FindRecordsByFilter("tags", filter, "name", 5, 0, params)
+	if err != nil {
+		return nil, fmt.Errorf("lookup tags: %w", err)
+	}
+	return records, nil
 }
 
 func normalizeTagNames(names []string) []string {
@@ -240,7 +243,7 @@ func ocrSnippet(ocrText, query string) string {
 		idx = strings.Index(lowerOCR, lowerQuery)
 	}
 	if idx < 0 {
-		return truncateRunes(ocrText, maxSnippetLen)
+		return strutil.TruncateRunes(ocrText, maxSnippetLen)
 	}
 
 	start := idx - snippetContext
@@ -266,7 +269,7 @@ func ocrSnippet(ocrText, query string) string {
 	if end < len(ocrText) {
 		snippet += "…"
 	}
-	return truncateRunes(snippet, maxSnippetLen)
+	return strutil.TruncateRunes(snippet, maxSnippetLen)
 }
 
 func truncateDate(v string) string {
@@ -275,16 +278,4 @@ func truncateDate(v string) string {
 		return v[:10]
 	}
 	return v
-}
-
-func truncateRunes(s string, max int) string {
-	s = strings.TrimSpace(s)
-	if max <= 0 || s == "" {
-		return s
-	}
-	runes := []rune(s)
-	if len(runes) <= max {
-		return s
-	}
-	return string(runes[:max]) + "…"
 }

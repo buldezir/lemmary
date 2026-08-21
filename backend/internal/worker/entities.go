@@ -7,12 +7,11 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"golang.org/x/text/unicode/norm"
+
+	"paperless-go/backend/internal/ai"
 )
 
-const (
-	maxExtractionCatalogNames = 500
-	namedEntityListPageSize   = 500
-)
+const namedEntityListPageSize = 500
 
 // EnsureNamedEntity finds or creates a named entity (correspondent / document type)
 // owned by userID. Lookup prefers exact name_original, then exact name, then a
@@ -118,7 +117,7 @@ func listNamedEntityNames(app core.App, collection, userID string) ([]string, er
 	seen := map[string]struct{}{}
 	offset := 0
 	for {
-		if len(names) >= maxExtractionCatalogNames {
+		if len(names) >= ai.MaxExtractionCatalogNames {
 			return names, nil
 		}
 		records, err := app.FindRecordsByFilter(
@@ -133,8 +132,8 @@ func listNamedEntityNames(app core.App, collection, userID string) ([]string, er
 			return nil, fmt.Errorf("list %s: %w", collection, err)
 		}
 		for _, rec := range records {
-			names = addUniqueCatalogName(names, seen, rec.GetString("name"), maxExtractionCatalogNames)
-			if len(names) >= maxExtractionCatalogNames {
+			names = addUniqueCatalogName(names, seen, rec.GetString("name"), ai.MaxExtractionCatalogNames)
+			if len(names) >= ai.MaxExtractionCatalogNames {
 				return names, nil
 			}
 		}
@@ -278,44 +277,17 @@ func updateNamedEntity(app core.App, collection, id, displayName, originalName s
 	return record.Id, nil
 }
 
-func ensureTags(app core.App, names []string) ([]string, error) {
+func ensureTags(app core.App, userID string, names []string) ([]string, error) {
 	tagIDs := make([]string, 0, len(names))
-	tagsCollection, err := app.FindCollectionByNameOrId("tags")
-	if err != nil {
-		return nil, err
-	}
-
-	for _, rawName := range names {
-		name := strings.TrimSpace(rawName)
-		if name == "" {
-			continue
-		}
-
-		existing, err := app.FindRecordsByFilter(
-			"tags",
-			"name = {:name}",
-			"",
-			1,
-			0,
-			map[string]any{"name": name},
-		)
+	for _, name := range names {
+		id, _, err := EnsureTag(app, userID, name)
 		if err != nil {
 			return nil, err
 		}
-
-		if len(existing) > 0 {
-			tagIDs = append(tagIDs, existing[0].Id)
-			continue
+		if id != "" {
+			tagIDs = append(tagIDs, id)
 		}
-
-		tag := core.NewRecord(tagsCollection)
-		tag.Set("name", name)
-		if err := app.Save(tag); err != nil {
-			return nil, err
-		}
-		tagIDs = append(tagIDs, tag.Id)
 	}
-
 	return tagIDs, nil
 }
 
@@ -324,7 +296,15 @@ func validateDocumentNamedEntityOwnership(app core.App, record *core.Record) err
 	if err := requireOwnedRelation(app, "document_types", "document type", record.GetString("document_type"), userID); err != nil {
 		return err
 	}
-	return requireOwnedRelation(app, "correspondents", "correspondent", record.GetString("correspondent"), userID)
+	if err := requireOwnedRelation(app, "correspondents", "correspondent", record.GetString("correspondent"), userID); err != nil {
+		return err
+	}
+	for _, tagID := range record.GetStringSlice("tags") {
+		if err := requireOwnedRelation(app, "tags", "tag", tagID, userID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func requireOwnedRelation(app core.App, collection, label, id, userID string) error {
@@ -342,26 +322,22 @@ func requireOwnedRelation(app core.App, collection, label, id, userID string) er
 	return nil
 }
 
-// EnsureTag finds or creates a tag by exact name. created is true only when inserted.
-func EnsureTag(app core.App, name string) (id string, created bool, err error) {
+// EnsureTag finds or creates a tag owned by userID, matched by exact name.
+// created is true only when a new record is inserted.
+func EnsureTag(app core.App, userID, name string) (id string, created bool, err error) {
+	userID = strings.TrimSpace(userID)
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return "", false, nil
 	}
-
-	existing, err := app.FindRecordsByFilter(
-		"tags",
-		"name = {:name}",
-		"",
-		1,
-		0,
-		map[string]any{"name": name},
-	)
-	if err != nil {
-		return "", false, err
+	if userID == "" {
+		return "", false, fmt.Errorf("user id is required")
 	}
-	if len(existing) > 0 {
-		return existing[0].Id, false, nil
+
+	if existingID, err := findTagByName(app, userID, name); err != nil {
+		return "", false, err
+	} else if existingID != "" {
+		return existingID, false, nil
 	}
 
 	tagsCollection, err := app.FindCollectionByNameOrId("tags")
@@ -369,21 +345,32 @@ func EnsureTag(app core.App, name string) (id string, created bool, err error) {
 		return "", false, err
 	}
 	tag := core.NewRecord(tagsCollection)
+	tag.Set("user", userID)
 	tag.Set("name", name)
 	if err := app.Save(tag); err != nil {
-		// Race: another create may have won; re-find.
-		existing, findErr := app.FindRecordsByFilter(
-			"tags",
-			"name = {:name}",
-			"",
-			1,
-			0,
-			map[string]any{"name": name},
-		)
-		if findErr == nil && len(existing) > 0 {
-			return existing[0].Id, false, nil
+		// Race: a concurrent create may have won the unique (user, name) index.
+		if existingID, findErr := findTagByName(app, userID, name); findErr == nil && existingID != "" {
+			return existingID, false, nil
 		}
 		return "", false, err
 	}
 	return tag.Id, true, nil
+}
+
+func findTagByName(app core.App, userID, name string) (string, error) {
+	existing, err := app.FindRecordsByFilter(
+		"tags",
+		"user = {:user} && name = {:name}",
+		"",
+		1,
+		0,
+		map[string]any{"user": userID, "name": name},
+	)
+	if err != nil {
+		return "", err
+	}
+	if len(existing) == 0 {
+		return "", nil
+	}
+	return existing[0].Id, nil
 }

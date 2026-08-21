@@ -1,7 +1,6 @@
 package appapi
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,6 +8,9 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+
+	"paperless-go/backend/internal/models"
+	"paperless-go/backend/internal/strutil"
 )
 
 const exportPageSize = 100
@@ -46,7 +48,7 @@ func handleExportDocuments(app core.App) func(*core.RequestEvent) error {
 			fileKey := rec.BaseFilesPath() + "/" + name
 			doc := ExportDocument{
 				ID:               rec.Id,
-				Title:            firstNonEmpty(rec.GetString("title"), rec.GetString("title_original"), "Untitled"),
+				Title:            strutil.FirstNonEmpty(rec.GetString("title"), rec.GetString("title_original"), "Untitled"),
 				OriginalFilename: name,
 				OpenFile: func() (io.ReadCloser, error) {
 					reader, err := fsys.GetReader(fileKey)
@@ -141,7 +143,7 @@ func buildExportMetadata(app core.App, record *core.Record, originalFilename str
 		"tags":                    tags,
 		"document_type":           documentType,
 		"correspondent":           correspondent,
-		"people_or_organizations": peopleOrOrganizations(record),
+		"people_or_organizations": models.PeopleOrOrganizations(record),
 		"processing_status":       record.GetString("processing_status"),
 		"metadata_source":         record.GetString("metadata_source"),
 		"confidence":              record.GetFloat("confidence"),
@@ -149,42 +151,5 @@ func buildExportMetadata(app core.App, record *core.Record, originalFilename str
 		"created":                 record.GetString("created"),
 		"updated":                 record.GetString("updated"),
 		"original_filename":       originalFilename,
-	}
-}
-
-func peopleOrOrganizations(record *core.Record) []string {
-	raw := record.Get("people_or_organizations")
-	switch v := raw.(type) {
-	case []string:
-		return v
-	case []any:
-		out := make([]string, 0, len(v))
-		for _, item := range v {
-			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
-				out = append(out, s)
-			}
-		}
-		return out
-	case string:
-		if strings.TrimSpace(v) == "" {
-			return []string{}
-		}
-		var out []string
-		if err := json.Unmarshal([]byte(v), &out); err == nil {
-			return out
-		}
-		return []string{}
-	case nil:
-		return []string{}
-	default:
-		b, err := json.Marshal(v)
-		if err != nil {
-			return []string{}
-		}
-		var out []string
-		if err := json.Unmarshal(b, &out); err != nil {
-			return []string{}
-		}
-		return out
 	}
 }

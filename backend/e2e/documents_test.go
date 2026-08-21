@@ -158,6 +158,7 @@ func TestDocumentsFilterByTagName(t *testing.T) {
 	tagName := "filter-tag-" + taggedID
 	status, raw := h.doJSON(t, http.MethodPost, "/api/collections/tags/records", token, map[string]any{
 		"name": tagName,
+		"user": h.UserID,
 	})
 	requireStatus(t, status, http.StatusOK, raw)
 	tagID := jsonGetString(mustDecodeMap(t, raw), "id")
@@ -239,6 +240,7 @@ func TestAppDocumentsSearch(t *testing.T) {
 	tagName := "ft-tag-" + id
 	status, raw = h.doJSON(t, http.MethodPost, "/api/collections/tags/records", token, map[string]any{
 		"name": tagName,
+		"user": h.UserID,
 	})
 	requireStatus(t, status, http.StatusOK, raw)
 	tagID := jsonGetString(mustDecodeMap(t, raw), "id")

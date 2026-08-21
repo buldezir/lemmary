@@ -3,6 +3,7 @@ package ngxapi
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -43,8 +44,16 @@ func notFound(e *core.RequestEvent, detail string) error {
 	return writeJSON(e, http.StatusNotFound, map[string]any{"detail": detail})
 }
 
+// internalError logs the cause and returns a generic 500 so upstream/database
+// details never reach the client.
 func internalError(e *core.RequestEvent, err error) error {
-	return writeJSON(e, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
+	if e.App != nil {
+		e.App.Logger().Error("ngx api request failed",
+			"path", e.Request.URL.Path,
+			slog.Any("error", err),
+		)
+	}
+	return writeJSON(e, http.StatusInternalServerError, map[string]any{"detail": "Internal server error."})
 }
 
 func methodNotAllowed(e *core.RequestEvent, allowed string) error {

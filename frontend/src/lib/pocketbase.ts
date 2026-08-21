@@ -56,6 +56,7 @@ export type DocumentRecord = {
 export type TagRecord = {
   id: string
   name: string
+  user?: string
 }
 
 export type ProcessingStep =

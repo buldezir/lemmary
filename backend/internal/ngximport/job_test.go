@@ -3,6 +3,7 @@ package ngximport
 import (
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestAcquireImportPerOwner(t *testing.T) {
@@ -35,5 +36,35 @@ func TestAcquireImportRequiresOwner(t *testing.T) {
 	}
 	if err := acquireImport("   "); err == nil {
 		t.Fatal("expected error for blank owner")
+	}
+}
+
+func TestPruneJobsLockedDropsFinishedJobs(t *testing.T) {
+	jobsMu.Lock()
+	defer jobsMu.Unlock()
+
+	now := time.Now().UTC()
+	original := jobs
+	jobs = map[string]*Job{
+		"fresh":     {ID: "fresh", Status: JobStatusCompleted, UpdatedAt: now},
+		"stale":     {ID: "stale", Status: JobStatusCompleted, UpdatedAt: now.Add(-2 * jobRetention)},
+		"failed":    {ID: "failed", Status: JobStatusFailed, UpdatedAt: now.Add(-2 * jobRetention)},
+		"longRun":   {ID: "longRun", Status: JobStatusRunning, UpdatedAt: now.Add(-9 * jobRetention)},
+		"nilRecord": nil,
+	}
+	defer func() { jobs = original }()
+
+	pruneJobsLocked(now)
+
+	if _, ok := jobs["fresh"]; !ok {
+		t.Fatal("expected a recently finished job to be retained")
+	}
+	if _, ok := jobs["longRun"]; !ok {
+		t.Fatal("expected a still-running job to be retained regardless of age")
+	}
+	for _, id := range []string{"stale", "failed", "nilRecord"} {
+		if _, ok := jobs[id]; ok {
+			t.Fatalf("expected %q to be swept", id)
+		}
 	}
 }

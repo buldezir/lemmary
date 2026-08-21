@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"paperless-go/backend/internal/strutil"
 )
 
 func SeedFromEnv(app core.App, settings *core.Record) error {
@@ -27,7 +29,7 @@ func SeedFromEnv(app core.App, settings *core.Record) error {
 	if err != nil {
 		return err
 	}
-	mistralID, err := createEnvProvider(app, SDKMistral, "MISTRAL_API_KEY", firstNonEmpty(os.Getenv("MISTRAL_API_BASE_URL"), DefaultBaseURL(SDKMistral)))
+	mistralID, err := createEnvProvider(app, SDKMistral, "MISTRAL_API_KEY", strutil.FirstNonEmpty(os.Getenv("MISTRAL_API_BASE_URL"), DefaultBaseURL(SDKMistral)))
 	if err != nil {
 		return err
 	}
@@ -69,11 +71,11 @@ func MigrateLegacySettings(app core.App, settings *core.Record) error {
 	}
 
 	models := taskModels{
-		extract:    firstNonEmpty(settings.GetString("openai_model"), "gpt-5.6-luna"),
+		extract:    strutil.FirstNonEmpty(settings.GetString("openai_model"), "gpt-5.6-luna"),
 		chat:       strings.TrimSpace(settings.GetString("openai_chat_model")),
 		search:     strings.TrimSpace(settings.GetString("openai_search_model")),
-		ocr:        firstNonEmpty(settings.GetString("mistral_ocr_model"), "mistral-ocr-latest"),
-		ocrSDK:     firstNonEmpty(settings.GetString("ocr_provider"), "google_vision"),
+		ocr:        strutil.FirstNonEmpty(settings.GetString("mistral_ocr_model"), "mistral-ocr-latest"),
+		ocrSDK:     strutil.FirstNonEmpty(settings.GetString("ocr_provider"), "google_vision"),
 		mistralLLM: "mistral-small-latest",
 	}
 	bindFromIDs(settings, openaiID, mistralID, googleID, models)
@@ -130,7 +132,7 @@ func bindFromIDs(settings *core.Record, openaiID, mistralID, googleID string, mo
 	if openaiID != "" {
 		bindLLM(settings, openaiID, models.extract, models.chat, models.search)
 	} else if mistralID != "" {
-		model := firstNonEmpty(models.mistralLLM, "mistral-small-latest")
+		model := strutil.FirstNonEmpty(models.mistralLLM, "mistral-small-latest")
 		bindLLM(settings, mistralID, model, model, model)
 	}
 }
@@ -207,13 +209,4 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
-		}
-	}
-	return ""
 }

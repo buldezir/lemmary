@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
+
 	"paperless-go/backend/internal/ai"
 	"paperless-go/backend/internal/models"
+	"paperless-go/backend/internal/strutil"
 )
 
 type ExtractMetadataStep struct {
@@ -38,6 +40,10 @@ func (s *ExtractMetadataStep) ShouldSkip(state *StepState) (bool, error) {
 }
 
 func (s *ExtractMetadataStep) Run(ctx context.Context, state *StepState) error {
+	if s.Extractor == nil {
+		return fmt.Errorf("extract_metadata requires a configured AI extractor")
+	}
+
 	ocrText := strings.TrimSpace(state.OCRText)
 	if ocrText == "" {
 		ocrText = strings.TrimSpace(state.Document.GetString("ocr_text"))
@@ -74,8 +80,8 @@ func (s *ExtractMetadataStep) Run(ctx context.Context, state *StepState) error {
 	state.Logger.Info("AI extraction complete",
 		"duration", time.Since(aiStart).Round(time.Millisecond),
 		"confidence", metadata.Confidence,
-		"title", truncateForLog(metadata.Title, 80),
-		"type", truncateForLog(metadata.DocumentType, 40),
+		"title", strutil.TruncateRunes(metadata.Title, 80),
+		"type", strutil.TruncateRunes(metadata.DocumentType, 40),
 		"tags", len(metadata.Tags),
 	)
 
@@ -146,25 +152,27 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 		return fmt.Errorf("document type: %w", err)
 	}
 	state.Logger.Info("document type applied",
-		"document_type", truncateForLog(state.Document.GetString("document_type"), 40),
+		"document_type", strutil.TruncateRunes(state.Document.GetString("document_type"), 40),
 	)
 
 	if err := applyCorrespondent(state.App, state.Document, metadata, state.Cfg.ProcessingResultLanguage); err != nil {
 		return fmt.Errorf("correspondent: %w", err)
 	}
 	state.Logger.Info("correspondent applied",
-		"correspondent", truncateForLog(state.Document.GetString("correspondent"), 40),
+		"correspondent", strutil.TruncateRunes(state.Document.GetString("correspondent"), 40),
 	)
 
 	state.Document.Set("confidence", metadata.Confidence)
 	state.Document.Set("people_or_organizations", metadata.PeopleOrOrganizations)
-	state.Document.Set("metadata_source", state.AI.Model())
+	if state.AI != nil {
+		state.Document.Set("metadata_source", state.AI.Model())
+	}
 
 	if metadata.DocumentDate != "" {
 		state.Document.Set("document_date", metadata.DocumentDate)
 	}
 
-	tagIDs, err := ensureTags(state.App, mergeTagNames(metadata.Tags, metadata.TagsTranslated))
+	tagIDs, err := ensureTags(state.App, state.Document.GetString("user"), mergeTagNames(metadata.Tags, metadata.TagsTranslated))
 	if err != nil {
 		return fmt.Errorf("tags: %w", err)
 	}

@@ -1,27 +1,60 @@
 package fulltext
 
 import (
-	"encoding/json"
 	"strings"
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"paperless-go/backend/internal/models"
 )
 
+// Build converts a document record into the Bleve document to index.
 func Build(app core.App, rec *core.Record) map[string]any {
+	return buildWith(newNameCache(app), rec)
+}
+
+// nameCache memoizes named-entity lookups. A single document costs one query per
+// tag plus one each for its type and correspondent; over a full rebuild the same
+// handful of entities is looked up thousands of times, so the cache turns that
+// fan-out into one query per distinct entity.
+type nameCache struct {
+	app   core.App
+	names map[string]string
+}
+
+func newNameCache(app core.App) *nameCache {
+	return &nameCache{app: app, names: map[string]string{}}
+}
+
+func (c *nameCache) lookup(collection, id string) string {
+	id = strings.TrimSpace(id)
+	if c == nil || c.app == nil || id == "" {
+		return ""
+	}
+	key := collection + "/" + id
+	if name, ok := c.names[key]; ok {
+		return name
+	}
+	name := lookupName(c.app, collection, id)
+	c.names[key] = name
+	return name
+}
+
+func buildWith(names *nameCache, rec *core.Record) map[string]any {
 	tagIDs := rec.GetStringSlice("tags")
 	tagNames := make([]string, 0, len(tagIDs))
 	for _, id := range tagIDs {
-		if name := lookupName(app, "tags", id); name != "" {
+		if name := names.lookup("tags", id); name != "" {
 			tagNames = append(tagNames, name)
 		}
 	}
 
 	typeID := rec.GetString("document_type")
 	corrID := rec.GetString("correspondent")
-	typeName := lookupName(app, "document_types", typeID)
-	corrName := lookupName(app, "correspondents", corrID)
-	people := peopleOrOrganizations(rec)
+	typeName := names.lookup("document_types", typeID)
+	corrName := names.lookup("correspondents", corrID)
+	people := models.PeopleOrOrganizations(rec)
 
 	title := strings.TrimSpace(rec.GetString("title"))
 	titleOrig := strings.TrimSpace(rec.GetString("title_original"))
@@ -73,45 +106,6 @@ func lookupName(app core.App, collection, id string) string {
 		return ""
 	}
 	return strings.TrimSpace(rec.GetString("name"))
-}
-
-func peopleOrOrganizations(record *core.Record) []string {
-	raw := record.Get("people_or_organizations")
-	switch v := raw.(type) {
-	case []string:
-		return trimNonEmpty(v)
-	case []any:
-		out := make([]string, 0, len(v))
-		for _, item := range v {
-			if s, ok := item.(string); ok {
-				if s = strings.TrimSpace(s); s != "" {
-					out = append(out, s)
-				}
-			}
-		}
-		return out
-	case string:
-		if strings.TrimSpace(v) == "" {
-			return nil
-		}
-		var out []string
-		if err := json.Unmarshal([]byte(v), &out); err == nil {
-			return trimNonEmpty(out)
-		}
-		return nil
-	default:
-		return nil
-	}
-}
-
-func trimNonEmpty(in []string) []string {
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if s = strings.TrimSpace(s); s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
 }
 
 func joinNonEmpty(parts []string) string {

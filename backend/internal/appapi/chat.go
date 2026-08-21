@@ -1,8 +1,8 @@
 package appapi
 
 import (
-	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -30,7 +30,9 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 		if err != nil {
 			return writeError(e, http.StatusNotFound, "Document not found.")
 		}
-		if document.GetString("user") != e.Auth.Id {
+		// Superusers bypass ownership, matching deep search and the PocketBase
+		// collection rules.
+		if !e.HasSuperuserAuth() && document.GetString("user") != e.Auth.Id {
 			return writeError(e, http.StatusForbidden, "You do not have access to this document.")
 		}
 
@@ -52,9 +54,11 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 			return writeError(e, http.StatusServiceUnavailable, "AI chat is not configured; update Settings.")
 		}
 
-		reply, err := chatter.Chat(context.Background(), ocrText, req.Messages)
+		// Request context: closing the tab cancels the upstream LLM call.
+		reply, err := chatter.Chat(e.Request.Context(), ocrText, req.Messages)
 		if err != nil {
-			return writeError(e, http.StatusInternalServerError, err.Error())
+			app.Logger().Error("document chat failed", "document", documentID, slog.Any("error", err))
+			return writeError(e, http.StatusBadGateway, "The AI provider could not complete the request.")
 		}
 
 		return writeJSON(e, http.StatusOK, chatResponse{

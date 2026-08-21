@@ -9,6 +9,8 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
+
+	"paperless-go/backend/internal/strutil"
 )
 
 type ChatMessage struct {
@@ -27,7 +29,7 @@ Be concise and accurate.
 
 Document OCR text:
 
-%s`, truncate(ocrText, 12000))
+%s`, strutil.Truncate(ocrText, 12000))
 }
 
 func (c *OpenAIClient) Chat(ctx context.Context, ocrText string, messages []ChatMessage) (string, error) {

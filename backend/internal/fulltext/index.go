@@ -26,6 +26,24 @@ var lookupPageSize = defaultLookupPage
 var indexAllHook func(app core.App, idx bleve.Index) (int, error)
 
 // Index is a process-wide Bleve handle. It may be passed around before Open.
+//
+// Locking protocol — acquire in this order, never the reverse:
+//
+//		rebuildMu -> writeMu -> mu
+//
+//	  - rebuildMu serializes Rebuild against itself and Close.
+//	  - writeMu is the writer gate: index/delete paths take RLock, Rebuild and
+//	    Close take Lock so an index swap cannot land mid-write. A write that
+//	    arrives during a rebuild blocks here until the new index is installed.
+//	  - mu guards the idx handle itself and is held for the duration of a single
+//	    Bleve operation, exclusively while closing or swapping the handle.
+//
+// The Enqueue* methods deliberately take writeMu.RLock on the calling goroutine
+// and release it on the spawned one (via beginWrite/endWrite). That is legal for
+// sync.RWMutex — it is not goroutine-owned — and is what lets Close and Rebuild
+// wait for in-flight async work. Do not add a nested beginWrite inside a write
+// path: a re-entrant RLock deadlocks whenever a writer is queued on writeMu.
+// wg exists so WaitIdle can join spawned tasks without holding a lock.
 type Index struct {
 	mu           sync.RWMutex // held for the duration of Bleve ops; exclusive for close/swap
 	writeMu      sync.RWMutex // writers RLock; Rebuild/Close take Lock
@@ -207,8 +225,14 @@ func (i *Index) upsertUnlocked(app core.App, rec *core.Record) error {
 	if rec == nil {
 		return nil
 	}
+	return i.putUnlocked(rec.Id, Build(app, rec))
+}
+
+// putUnlocked indexes a prebuilt document. Callers must already hold writeMu
+// (see the lock-order note on Index).
+func (i *Index) putUnlocked(id string, doc map[string]any) error {
 	return i.withIndex(func(b bleve.Index) error {
-		return b.Index(rec.Id, Build(app, rec))
+		return b.Index(id, doc)
 	})
 }
 
@@ -342,6 +366,9 @@ func indexAllDocumentsFromApp(app core.App, idx bleve.Index) (int, error) {
 		return 0, fmt.Errorf("documents collection: %w", err)
 	}
 
+	// One cache for the whole rebuild: tags/types/correspondents repeat heavily
+	// across documents, so this collapses tens of thousands of point lookups.
+	names := newNameCache(app)
 	batch := idx.NewBatch()
 	n := 0
 	offset := 0
@@ -354,7 +381,7 @@ func indexAllDocumentsFromApp(app core.App, idx bleve.Index) (int, error) {
 			break
 		}
 		for _, rec := range records {
-			if err := batch.Index(rec.Id, Build(app, rec)); err != nil {
+			if err := batch.Index(rec.Id, buildWith(names, rec)); err != nil {
 				return n, fmt.Errorf("batch index %s: %w", rec.Id, err)
 			}
 			n++

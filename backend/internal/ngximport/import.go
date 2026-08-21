@@ -155,7 +155,7 @@ func ensureNamed(app core.App, collection, ownerUserID, name string) (id string,
 	}
 	switch collection {
 	case "tags":
-		return worker.EnsureTag(app, name)
+		return worker.EnsureTag(app, ownerUserID, name)
 	case "correspondents", "document_types":
 		return worker.EnsureNamedEntity(app, collection, ownerUserID, name, name)
 	default:
@@ -246,8 +246,7 @@ func importOneDocument(
 				record.Set("tags", tagIDs)
 			}
 		}
-		worker.RegisterCreateStepsForChecksum(checksum, models.ImportPreserveSteps)
-		defer worker.ClearCreateStepsForChecksum(checksum)
+		worker.SetCreateSteps(record, models.ImportPreserveSteps)
 	}
 
 	if err := app.Save(record); err != nil {

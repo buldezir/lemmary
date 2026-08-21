@@ -3,6 +3,8 @@ package appapi
 import (
 	"strings"
 	"testing"
+
+	"paperless-go/backend/internal/strutil"
 )
 
 func TestOCRSnippet(t *testing.T) {
@@ -17,7 +19,7 @@ func TestOCRSnippet(t *testing.T) {
 }
 
 func TestTruncateRunes(t *testing.T) {
-	got := truncateRunes("abcdefghij", 5)
+	got := strutil.TruncateRunes("abcdefghij", 5)
 	if got != "abcde…" {
 		t.Fatalf("got %q", got)
 	}
