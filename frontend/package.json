@@ -4,14 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n app,docs -c yellow,cyan \"vite --host 127.0.0.1 --port 5173\" \"vitepress dev --host 127.0.0.1 --port 5174\"",
+    "dev": "concurrently -k -n app,docs -c yellow,cyan \"vite --host ${DEV_HOST:-127.0.0.1} --port 5173\" \"vitepress dev --host ${DEV_HOST:-127.0.0.1} --port 5174\"",
     "build": "tsc -b && vite build && npm run docs:build",
     "lint": "eslint .",
     "preview": "vite preview",
     "build:e2e": "VITE_DEV_USER_EMAIL= VITE_DEV_USER_PASSWORD= VITE_POCKETBASE_URL= npm run build",
     "test:e2e": "npm run build:e2e && playwright test",
     "test:e2e:ui": "npm run build:e2e && playwright test --ui",
-    "docs:dev": "vitepress dev --host 127.0.0.1 --port 5174",
+    "docs:dev": "vitepress dev --host ${DEV_HOST:-127.0.0.1} --port 5174",
     "docs:build": "vitepress build"
   },
   "dependencies": {
