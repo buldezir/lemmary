@@ -4,3 +4,15 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* Tailwind v4 preflight resets buttons to the default cursor. Put the pointer
+   back on every enabled button once, instead of per button. Disabled buttons
+   keep their `disabled:cursor-not-allowed` utility: utilities outrank base. */
+@layer base {
+  button:not(:disabled),
+  [role='button']:not(:disabled),
+  input[type='button']:not(:disabled),
+  input[type='submit']:not(:disabled) {
+    cursor: pointer;
+  }
+}

@@ -102,6 +102,17 @@ You can also create the admin via CLI (`go run . superuser upsert EMAIL PASS` fr
 
 `WORKER_CRON_EXPR` is not editable there; change `.env` and restart, or use PocketBase Admin → Settings → Crons.
 
+## Management (admin UI)
+
+**Management** in the nav (admin only, next to Settings) holds maintenance actions that run over the whole library, not per document:
+
+- **Scan for duplicates** — `POST /api/app/duplicates/scan`, see [Duplicate detection](#duplicate-detection).
+- **Clear stale data** — `POST /api/app/taxonomy/prune` deletes every tag, correspondent and document type that no document references any more (left behind by deleted documents, renames, or an aborted import). Documents are never modified. Reference collection and deletion share one transaction, so a document saved concurrently either counts as a reference or fails its own relation check; it cannot keep a dangling id.
+  The button is disabled while any processing job is `pending` or `running`, so an entity a job is about to attach cannot be swept up. The count comes from the PocketBase collection API (`GET /api/collections/processing_jobs/records`), polled every 5s and re-checked on click. That list rule is `document.user = @request.auth.id`, so the gate only sees jobs on the admin's own documents — another user's in-flight upload does not block the button.
+- **Rebuild search index** — `POST /api/app/search/reindex`, see [Full-text search](#full-text-search).
+
+Admin-only items in the nav menu are prefixed with a shield icon (decorative — the items only render for admins in the first place).
+
 ## Outbound mail (SMTP / `outbound_emails`)
 
 Configure SMTP under PocketBase Admin → Settings → Mail. When SMTP is **disabled** (the default), PocketBase would normally fall back to local `sendmail`. This app replaces that fallback: messages are written to the `outbound_emails` collection instead (password reset, verification, OTP, auth alerts, etc.).

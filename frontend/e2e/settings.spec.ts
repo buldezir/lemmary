@@ -22,6 +22,7 @@ test('superuser can load and save settings', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Providers' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Models' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Save settings' })).toHaveCount(2)
+  await expect(page.getByRole('button', { name: 'Save settings' }).first()).toHaveCSS('cursor', 'pointer')
   const extractionModel = page.getByLabel('Extraction model')
   await expect(extractionModel.locator('option[value="e2e-mock"]')).toHaveCount(1, { timeout: 15_000 })
   await expect(page.getByLabel('Extraction provider').locator('option', { hasText: 'Mistral' })).toHaveCount(1)
@@ -42,4 +43,32 @@ test('superuser can rebuild search index', async ({ page }) => {
   await openManagement(page)
   await page.getByRole('button', { name: 'Rebuild search index' }).click()
   await expect(page.getByText(/Reindexed \d+ documents\./i)).toBeVisible({ timeout: 30_000 })
+})
+
+test('superuser can clear stale data once the queue is idle', async ({ page }) => {
+  await loginAsSuper(page)
+  await openManagement(page)
+  const clear = page.getByRole('button', { name: 'Clear stale data' })
+  // The button is gated on in-flight processing jobs left by earlier specs.
+  await expect(clear).toBeEnabled({ timeout: 60_000 })
+  await expect(clear).toHaveCSS('cursor', 'pointer')
+  await clear.click()
+  await expect(page.getByText(/Removed \d+ tags?, \d+ correspondents?, \d+ document types?\./i)).toBeVisible({
+    timeout: 30_000,
+  })
+})
+
+test('clear stale data is blocked while documents are processing', async ({ page }) => {
+  await loginAsSuper(page)
+  await page.route('**/api/collections/processing_jobs/records?**', (route) =>
+    route.fulfill({ json: { page: 1, perPage: 1, totalItems: 1, totalPages: 1, items: [] } }),
+  )
+  await openManagement(page)
+  const clear = page.getByRole('button', { name: 'Clear stale data' })
+  await expect(clear).toBeDisabled()
+  await expect(clear).toHaveCSS('cursor', 'not-allowed')
+  await expect(
+    page.getByText('Waiting for the queue to drain: 1 job pending, 1 job running.'),
+  ).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Rebuild search index' })).toBeEnabled()
 })

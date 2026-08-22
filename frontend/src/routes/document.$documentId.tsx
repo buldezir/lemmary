@@ -396,7 +396,7 @@ export function DocumentDetailPage() {
             type="button"
             onClick={() => void onDelete()}
             disabled={deleting}
-            className="rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+            className="rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {deleting ? 'Deleting...' : 'Delete'}
           </button>
@@ -407,7 +407,7 @@ export function DocumentDetailPage() {
               aria-label={showProcessingJob ? 'Hide processing job details' : 'Show processing job details'}
               aria-pressed={showProcessingJob}
               title={showProcessingJob ? 'Hide processing job' : 'Show processing job'}
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border transition-colors cursor-pointer ${
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border transition-colors ${
                 showProcessingJob
                   ? 'border-gray-900 bg-gray-900 text-white hover:bg-gray-700'
                   : 'border-stone-300 bg-stone-50 text-stone-500 hover:bg-white hover:text-stone-700'
@@ -518,7 +518,7 @@ export function DocumentDetailPage() {
             <button
               type="submit"
               disabled={!canReprocess || reprocessing || reprocessSteps.length === 0}
-              className="self-start rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+              className="self-start rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {reprocessing ? 'Reprocessing...' : 'Reprocess selected steps'}
             </button>
@@ -644,7 +644,7 @@ export function DocumentDetailPage() {
             <button
               type="submit"
               disabled={saving}
-              className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+              className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving ? 'Saving...' : 'Save corrections'}
             </button>
@@ -655,7 +655,7 @@ export function DocumentDetailPage() {
                 event.preventDefault()
                 setEditing(true)
               }}
-              className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 cursor-pointer"
+              className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700"
             >
               Unblock editing
             </button>

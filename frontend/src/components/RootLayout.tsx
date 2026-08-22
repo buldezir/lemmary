@@ -20,7 +20,7 @@ const navLinkClass =
   'rounded-md px-3 py-1.5 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-200/70 hover:text-stone-950'
 const navLinkActiveClass = 'bg-gray-900 text-white hover:bg-gray-900 hover:text-white'
 const iconButtonClass =
-  'rounded-md p-1.5 text-stone-500 transition-colors hover:bg-stone-200/70 hover:text-stone-950 cursor-pointer'
+  'rounded-md p-1.5 text-stone-500 transition-colors hover:bg-stone-200/70 hover:text-stone-950'
 const menuItemClass =
   'flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm font-medium text-stone-600 transition-colors hover:bg-stone-200/70 hover:text-stone-950'
 
@@ -82,12 +82,14 @@ function AdminIcon() {
   )
 }
 
+// The shield stays decorative: these items only render for admins, so spelling
+// "admin only" into the accessible name would add nothing but ambiguity between
+// the three of them.
 function AdminMenuLabel({ children }: { children: string }) {
   return (
     <>
       <AdminIcon />
       <span>{children}</span>
-      <span className="sr-only">(admin only)</span>
     </>
   )
 }

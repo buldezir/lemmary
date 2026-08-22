@@ -718,6 +718,56 @@ export async function reindexSearch() {
   return data as SearchReindexResult
 }
 
+export type ActiveJobCounts = {
+  pending: number
+  running: number
+}
+
+// requestKey: null — the two counts run concurrently and must not auto-cancel
+// each other, nor a poll that is already in flight.
+function countJobsByStatus(status: string) {
+  return pb
+    .collection('processing_jobs')
+    .getList(1, 1, { filter: `status = "${status}"`, requestKey: null })
+    .then((result) => result.totalItems)
+}
+
+// Counted through the processing_jobs collection, so it only covers jobs on the
+// caller's own documents (that collection's list rule is document.user = auth.id).
+export async function getActiveJobCounts(): Promise<ActiveJobCounts> {
+  await ensureAuth()
+
+  const [pending, running] = await Promise.all([
+    countJobsByStatus('pending'),
+    countJobsByStatus('running'),
+  ])
+
+  return { pending, running }
+}
+
+export type TaxonomyPruneResult = {
+  tags: number
+  correspondents: number
+  document_types: number
+}
+
+export async function pruneStaleTaxonomy() {
+  await ensureAuth()
+
+  const response = await fetch(`${pbUrl}/api/app/taxonomy/prune`, {
+    method: 'POST',
+    headers: {
+      Authorization: pb.authStore.token,
+    },
+  })
+
+  const data = (await response.json()) as TaxonomyPruneResult & { detail?: string }
+  if (!response.ok) {
+    throw new Error(data.detail ?? 'Stale data cleanup failed')
+  }
+  return data as TaxonomyPruneResult
+}
+
 export type NgxImportMode = 'preserve' | 'reprocess'
 
 export type NgxImportResult = {

@@ -32,6 +32,7 @@ func Register(app core.App, rt *config.Runtime, idx *fulltext.Index) {
 			g.DELETE("/providers/{id}", bindAdmin(handleDeleteProvider(app, rt)))
 			g.GET("/providers/{id}/models", bindAdmin(handleListProviderModels(app)))
 			g.POST("/duplicates/scan", bindAdmin(handlePostDuplicatesScan(app, rt)))
+			g.POST("/taxonomy/prune", bindAdmin(handlePostTaxonomyPrune(app)))
 			g.POST("/import/ngx", bindAuth(handlePostImportNgx(app)))
 			g.GET("/import/ngx/status", bindAuth(handleGetImportNgxStatus(app)))
 			return e.Next()
