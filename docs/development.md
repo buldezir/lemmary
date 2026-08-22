@@ -123,7 +123,7 @@ Metadata extraction sends the current document's OCR text **and** up to 500 of t
 
 - **Exact duplicates** — on create, the uploaded file is hashed (SHA-256) into `documents.checksum`. A second upload with the same checksum for the same user is **rejected**, with an error pointing at the existing document id. Uniqueness is enforced with a per-user unique index on non-empty checksums so concurrent uploads cannot both succeed.
 - **Near-duplicates (optional)** — after OCR, a `detect_duplicates` step can compare normalized OCR text (SimHash + Jaccard). This is controlled by Settings → **Enable near-duplicate detection after OCR** (off by default). Matches are marked `needs_review` with `duplicate_of` set to the earlier document (never a newer one); AI extract/apply steps are skipped.
-- **Bulk scan** — Settings → **Scan for duplicates** (admin) backfills missing checksums/fingerprints and marks exact (and, if enabled, near) duplicates among existing documents.
+- **Bulk scan** — Management → **Scan for duplicates** (admin) backfills missing checksums/fingerprints and marks exact (and, if enabled, near) duplicates among existing documents.
 
 Text extraction:
 
@@ -144,7 +144,7 @@ Query behavior:
 - Deep Search’s `search_documents` tool and paperless-ngx `GET /api/documents/?query=` use the same index.
 - PocketBase collection filters (`field ~ "..."`) remain available to API clients; the UI no longer uses them for the search box.
 
-Admins can force a rebuild from **Settings → Rebuild search index** (`POST /api/app/search/reindex`).
+Admins can force a rebuild from **Management → Rebuild search index** (`POST /api/app/search/reindex`).
 
 ## LLM setup (OpenAI / OpenRouter / Mistral)
 
@@ -252,4 +252,4 @@ Import fetches only the caller-supplied URL. Private, loopback, and link-local d
 - **AI extraction fails:** configure an LLM provider (OpenAI, OpenRouter, or Mistral) in Settings. Check the processing job error on the document detail page.
 - **Settings page missing:** log in with the admin email (the account created at setup / `superuser upsert`). Regular non-admin users do not see Settings.
 - **Auth errors in frontend:** delete PocketBase data dir (`backend/pb_data`) and restart to recreate collections, then reload the app. This also deletes the Bleve index (rebuilt on next boot).
-- **Search misses a document:** wait for processing to finish, then retry. Admins can use **Settings → Rebuild search index**, or delete `backend/pb_data/bleve` and restart.
+- **Search misses a document:** wait for processing to finish, then retry. Admins can use **Management → Rebuild search index**, or delete `backend/pb_data/bleve` and restart.

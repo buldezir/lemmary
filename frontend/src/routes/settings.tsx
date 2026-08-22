@@ -1,5 +1,5 @@
 import { type SubmitEvent, useEffect, useState } from 'react'
-import { Navigate } from '@tanstack/react-router'
+import { Link, Navigate } from '@tanstack/react-router'
 import {
   createAIProvider,
   deleteAIProvider,
@@ -7,13 +7,10 @@ import {
   getAppSettings,
   isAdmin,
   listAIProviders,
-  reindexSearch,
-  scanDuplicates,
   updateAIProvider,
   updateAppSettings,
   type AIProvider,
   type AppSettings,
-  type DuplicateScanResult,
   type ProviderSDK,
 } from '../lib/pocketbase'
 import { ProviderModelFields, isLLMProvider, sdkLabel } from '../components/ProviderModelFields'
@@ -108,9 +105,6 @@ export function SettingsPage() {
   const [showAdd, setShowAdd] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [scanning, setScanning] = useState(false)
-  const [scanResult, setScanResult] = useState<DuplicateScanResult | null>(null)
-  const [reindexing, setReindexing] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -262,36 +256,6 @@ export function SettingsPage() {
       setError(err instanceof Error ? err.message : 'Failed to save settings')
     } finally {
       setSaving(false)
-    }
-  }
-
-  async function onScanDuplicates() {
-    try {
-      setScanning(true)
-      setError('')
-      setScanResult(null)
-      const result = await scanDuplicates()
-      setScanResult(result)
-      setSuccess(
-        `Scan finished: ${result.scanned} scanned, ${result.exact_marked} exact marked, ${result.near_marked} near marked.`,
-      )
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Duplicate scan failed')
-    } finally {
-      setScanning(false)
-    }
-  }
-
-  async function onReindexSearch() {
-    try {
-      setReindexing(true)
-      setError('')
-      const result = await reindexSearch()
-      setSuccess(`Reindexed ${result.indexed} documents.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Search reindex failed')
-    } finally {
-      setReindexing(false)
     }
   }
 
@@ -594,48 +558,18 @@ export function SettingsPage() {
           </div>
           <p className="mt-3 text-xs text-stone-500">
             Exact file duplicates (same checksum) are always rejected on upload. Near-duplicate
-            matching compares OCR text and is off by default.
+            matching compares OCR text and is off by default. Scan existing documents from{' '}
+            <Link to="/management" className="underline hover:text-stone-950">
+              Management
+            </Link>
+            .
           </p>
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              disabled={scanning}
-              onClick={() => void onScanDuplicates()}
-              className="rounded-md border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-950 transition-colors hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {scanning ? 'Scanning...' : 'Scan for duplicates'}
-            </button>
-            {scanResult && (
-              <p className="text-xs text-stone-500">
-                Backfilled {scanResult.checksum_backfilled} checksums,{' '}
-                {scanResult.fingerprints_filled} fingerprints.
-              </p>
-            )}
-          </div>
         </section>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
         {success && <p className="text-sm text-green-700">{success}</p>}
 
         <SaveSettingsButton saving={saving} />
-
-        <section className={sectionClassName}>
-          <h2 className={sectionTitleClassName}>Search index</h2>
-          <p className="text-xs text-stone-500">
-            Full-text search is a derived Bleve index. Rebuild it if search results look stale after
-            imports or a crash.
-          </p>
-          <div className="mt-4">
-            <button
-              type="button"
-              disabled={reindexing}
-              onClick={() => void onReindexSearch()}
-              className="rounded-md border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-950 transition-colors hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {reindexing ? 'Reindexing...' : 'Rebuild search index'}
-            </button>
-          </div>
-        </section>
       </form>
     </div>
   )

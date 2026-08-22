@@ -50,6 +50,12 @@ export async function openSettings(page: Page) {
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
 }
 
+export async function openManagement(page: Page) {
+  await openMoreMenu(page)
+  await page.getByRole('menuitem', { name: 'Management' }).click()
+  await expect(page.getByRole('heading', { name: 'Management' })).toBeVisible()
+}
+
 export function uniqueFixturePayload(fixtureName: string, displayName = fixtureName) {
   const fixturePath = path.join(fixturesDir, fixtureName)
   const original = fs.readFileSync(fixturePath)

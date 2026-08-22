@@ -22,7 +22,7 @@ const navLinkActiveClass = 'bg-gray-900 text-white hover:bg-gray-900 hover:text-
 const iconButtonClass =
   'rounded-md p-1.5 text-stone-500 transition-colors hover:bg-stone-200/70 hover:text-stone-950 cursor-pointer'
 const menuItemClass =
-  'block w-full rounded-md px-3 py-1.5 text-left text-sm font-medium text-stone-600 transition-colors hover:bg-stone-200/70 hover:text-stone-950'
+  'flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm font-medium text-stone-600 transition-colors hover:bg-stone-200/70 hover:text-stone-950'
 
 function LogoutIcon() {
   return (
@@ -63,15 +63,46 @@ function MoreIcon() {
   )
 }
 
+function AdminIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-3.5 w-3.5 shrink-0 text-amber-600"
+      aria-hidden="true"
+    >
+      <path d="M12 3 4.5 6v5.5c0 4.4 3.1 8.4 7.5 9.5 4.4-1.1 7.5-5.1 7.5-9.5V6L12 3Z" />
+      <path d="M9.5 12.5 11.5 14.5 15 11" />
+    </svg>
+  )
+}
+
+function AdminMenuLabel({ children }: { children: string }) {
+  return (
+    <>
+      <AdminIcon />
+      <span>{children}</span>
+      <span className="sr-only">(admin only)</span>
+    </>
+  )
+}
+
 function MoreNavMenu({ admin }: { admin: boolean }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const matchRoute = useMatchRoute()
   const settingsActive = Boolean(matchRoute({ to: '/settings' }))
+  const managementActive = Boolean(matchRoute({ to: '/management' }))
   const importActive = Boolean(matchRoute({ to: '/import' }))
   const exportActive = Boolean(matchRoute({ to: '/export' }))
   const ocrTestActive = Boolean(matchRoute({ to: '/ocr-test' }))
-  const menuActive = settingsActive || importActive || exportActive || ocrTestActive
+  const menuActive =
+    settingsActive || managementActive || importActive || exportActive || ocrTestActive
 
   useEffect(() => {
     if (!open) return
@@ -145,7 +176,17 @@ function MoreNavMenu({ admin }: { admin: boolean }) {
               className={`${menuItemClass} ${settingsActive ? navLinkActiveClass : ''}`}
               onClick={() => setOpen(false)}
             >
-              Settings
+              <AdminMenuLabel>Settings</AdminMenuLabel>
+            </Link>
+          )}
+          {admin && (
+            <Link
+              to="/management"
+              role="menuitem"
+              className={`${menuItemClass} ${managementActive ? navLinkActiveClass : ''}`}
+              onClick={() => setOpen(false)}
+            >
+              <AdminMenuLabel>Management</AdminMenuLabel>
             </Link>
           )}
           {admin && (
@@ -157,7 +198,7 @@ function MoreNavMenu({ admin }: { admin: boolean }) {
               className={menuItemClass}
               onClick={() => setOpen(false)}
             >
-              Admin
+              <AdminMenuLabel>Admin</AdminMenuLabel>
             </a>
           )}
         </div>

@@ -1,13 +1,17 @@
 import { test, expect } from '@playwright/test'
-import { loginAsSuper, loginAsUser, openMoreMenu, openSettings } from './helpers/auth'
+import { loginAsSuper, loginAsUser, openManagement, openMoreMenu, openSettings } from './helpers/auth'
 
 test('regular user cannot open settings', async ({ page }) => {
   await loginAsUser(page)
   await openMoreMenu(page)
   await expect(page.getByRole('menuitem', { name: 'Settings' })).toHaveCount(0)
+  await expect(page.getByRole('menuitem', { name: 'Management' })).toHaveCount(0)
   await expect(page.getByRole('menuitem', { name: 'Admin' })).toHaveCount(0)
   await page.goto('/settings')
   await expect(page.getByRole('heading', { name: 'Settings' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible()
+  await page.goto('/management')
+  await expect(page.getByRole('heading', { name: 'Management' })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible()
 })
 
@@ -28,14 +32,14 @@ test('superuser can load and save settings', async ({ page }) => {
 
 test('superuser can scan for duplicates', async ({ page }) => {
   await loginAsSuper(page)
-  await openSettings(page)
+  await openManagement(page)
   await page.getByRole('button', { name: 'Scan for duplicates' }).click()
   await expect(page.getByText(/Scan finished:/i)).toBeVisible({ timeout: 30_000 })
 })
 
 test('superuser can rebuild search index', async ({ page }) => {
   await loginAsSuper(page)
-  await openSettings(page)
+  await openManagement(page)
   await page.getByRole('button', { name: 'Rebuild search index' }).click()
   await expect(page.getByText(/Reindexed \d+ documents\./i)).toBeVisible({ timeout: 30_000 })
 })
