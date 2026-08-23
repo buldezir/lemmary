@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import type { DocumentRecord } from '../lib/pocketbase'
+import type { DocumentRecord } from '../lib/api/documents'
 
 type Props = {
   document: DocumentRecord

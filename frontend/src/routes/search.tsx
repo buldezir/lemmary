@@ -1,12 +1,13 @@
-import { type FormEvent, useEffect, useRef, useState } from 'react'
+import { type SubmitEvent, useEffect, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { MarkdownContent } from '../components/MarkdownContent'
+import { Button } from '../components/ui'
 import {
   deepSearch,
   type ChatMessage,
   type SearchDocumentHit,
   type SearchMode,
-} from '../lib/pocketbase'
+} from '../lib/api/ai'
 
 type SearchTurn = {
   message: ChatMessage
@@ -25,18 +26,14 @@ export function SearchPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [turns, sending])
 
-  async function onSubmit(event: FormEvent) {
-    event.preventDefault()
+  async function send() {
     const text = input.trim()
     if (!text || sending) {
       return
     }
 
     const userMessage: ChatMessage = { role: 'user', content: text }
-    const history: ChatMessage[] = [
-      ...turns.map((turn) => turn.message),
-      userMessage,
-    ]
+    const history: ChatMessage[] = [...turns.map((turn) => turn.message), userMessage]
     const mode: SearchMode = deepMode ? 'deep' : 'shallow'
 
     try {
@@ -46,10 +43,7 @@ export function SearchPage() {
       setTurns((current) => [...current, { message: userMessage }])
 
       const result = await deepSearch(history, mode)
-      setTurns((current) => [
-        ...current,
-        { message: result.message, documents: result.documents },
-      ])
+      setTurns((current) => [...current, { message: result.message, documents: result.documents }])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to run deep search')
       setTurns((current) => current.slice(0, -1))
@@ -57,6 +51,11 @@ export function SearchPage() {
     } finally {
       setSending(false)
     }
+  }
+
+  function onSubmit(event: SubmitEvent<HTMLFormElement>) {
+    event.preventDefault()
+    void send()
   }
 
   return (
@@ -137,7 +136,7 @@ export function SearchPage() {
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault()
-                  void onSubmit(event)
+                  void send()
                 }
               }}
               autoFocus
@@ -145,13 +144,9 @@ export function SearchPage() {
               placeholder="Describe what you are looking for..."
               className="min-h-12 flex-1 resize-y rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm text-stone-950 outline-none placeholder:text-stone-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-50"
             />
-            <button
-              type="submit"
-              disabled={sending || !input.trim()}
-              className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
+            <Button type="submit" disabled={sending || !input.trim()}>
               {sending ? 'Searching...' : 'Search'}
-            </button>
+            </Button>
           </div>
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
         </form>

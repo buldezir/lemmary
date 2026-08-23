@@ -1,18 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, Outlet, useMatchRoute } from '@tanstack/react-router'
-import {
-  accentContrastText,
-  ensureAuth,
-  getSetupStatus,
-  getUserDisplayName,
-  isAdmin,
-  logout,
-  pb,
-  pbAdminUrl,
-  type SetupStatus,
-} from '../lib/pocketbase'
+import { pb, pbAdminUrl } from '../lib/pb'
+import { ensureAuth, getUserDisplayName, isAdmin, logout } from '../lib/auth'
+import { getSetupStatus, type SetupStatus } from '../lib/api/meta'
 import { useAppMeta } from '../hooks/useAppMeta'
 import { AppFooter } from './AppFooter'
+import { Button } from './ui'
+import { AppLogo } from './ui'
 import { LoginPage } from './LoginPage'
 import { SetupBlocked, SetupWizard } from './SetupWizard'
 
@@ -217,63 +211,63 @@ type Gate =
   | { kind: 'blocked'; status: SetupStatus }
   | { kind: 'app'; status: SetupStatus; admin: boolean }
 
+async function resolveGate(): Promise<Gate> {
+  const status = await getSetupStatus()
+
+  if (status.needs_admin) {
+    return { kind: 'setup', status }
+  }
+
+  let authenticated: boolean
+  try {
+    await ensureAuth()
+    authenticated = pb.authStore.isValid
+  } catch {
+    authenticated = false
+  }
+
+  if (!authenticated) {
+    return { kind: 'login', status }
+  }
+
+  if (status.needs_config) {
+    if (await isAdmin()) {
+      return { kind: 'setup', status }
+    }
+    return { kind: 'blocked', status }
+  }
+
+  return { kind: 'app', status, admin: await isAdmin() }
+}
+
 export function RootLayout() {
   const [gate, setGate] = useState<Gate>({ kind: 'loading' })
   const { appName, accent } = useAppMeta()
   const userDisplayName = gate.kind === 'app' ? getUserDisplayName() : ''
-  const appInitial = appName.trim().charAt(0).toUpperCase() || 'P'
-  const logoStyle = { backgroundColor: accent, color: accentContrastText(accent) }
   const admin = gate.kind === 'app' ? gate.admin : false
 
-  async function resolveGate(): Promise<Gate> {
-    const status = await getSetupStatus()
-
-    if (status.needs_admin) {
-      return { kind: 'setup', status }
-    }
-
-    let authenticated = false
+  async function refreshGate() {
     try {
-      await ensureAuth()
-      authenticated = pb.authStore.isValid
-    } catch {
-      authenticated = false
+      setGate(await resolveGate())
+    } catch (err) {
+      setGate({
+        kind: 'error',
+        message: err instanceof Error ? err.message : 'Failed to load setup status',
+      })
     }
-
-    if (!authenticated) {
-      return { kind: 'login', status }
-    }
-
-    if (status.needs_config) {
-      if (await isAdmin()) {
-        return { kind: 'setup', status }
-      }
-      return { kind: 'blocked', status }
-    }
-
-    return { kind: 'app', status, admin: await isAdmin() }
   }
 
   useEffect(() => {
-    let active = true
-
-    async function init() {
-      try {
-        const next = await resolveGate()
-        if (active) setGate(next)
-      } catch (err) {
-        if (active) {
-          setGate({
-            kind: 'error',
-            message: err instanceof Error ? err.message : 'Failed to load setup status',
-          })
-        }
+    // The microtask keeps refreshGate's setState out of the effect's
+    // synchronous body; the gate resolves over the network anyway.
+    let cancelled = false
+    void Promise.resolve().then(() => {
+      if (!cancelled) {
+        void refreshGate()
       }
-    }
-
-    void init()
+    })
     return () => {
-      active = false
+      cancelled = true
     }
   }, [])
 
@@ -283,16 +277,7 @@ export function RootLayout() {
     }
 
     return pb.authStore.onChange(() => {
-      void (async () => {
-        try {
-          setGate(await resolveGate())
-        } catch (err) {
-          setGate({
-            kind: 'error',
-            message: err instanceof Error ? err.message : 'Failed to load setup status',
-          })
-        }
-      })()
+      void refreshGate()
     })
   }, [gate.kind])
 
@@ -308,23 +293,14 @@ export function RootLayout() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-stone-100 px-6 text-center">
         <p className="text-sm text-red-600">{gate.message}</p>
-        <button
-          type="button"
-          className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white"
+        <Button
           onClick={() => {
             setGate({ kind: 'loading' })
-            void resolveGate()
-              .then(setGate)
-              .catch((err) =>
-                setGate({
-                  kind: 'error',
-                  message: err instanceof Error ? err.message : 'Failed to load setup status',
-                }),
-              )
+            void refreshGate()
           }}
         >
           Retry
-        </button>
+        </Button>
       </div>
     )
   }
@@ -335,9 +311,7 @@ export function RootLayout() {
         appName={appName}
         accent={accent}
         initialStatus={gate.status}
-        onComplete={() => {
-          void resolveGate().then(setGate)
-        }}
+        onComplete={() => void refreshGate()}
       />
     )
   }
@@ -349,22 +323,14 @@ export function RootLayout() {
         accent={accent}
         onLogout={() => {
           logout()
-          void resolveGate().then(setGate)
+          void refreshGate()
         }}
       />
     )
   }
 
   if (gate.kind === 'login') {
-    return (
-      <LoginPage
-        appName={appName}
-        accent={accent}
-        onSuccess={() => {
-          void resolveGate().then(setGate)
-        }}
-      />
-    )
+    return <LoginPage appName={appName} accent={accent} onSuccess={() => void refreshGate()} />
   }
 
   return (
@@ -372,12 +338,7 @@ export function RootLayout() {
       <header className="border-b border-stone-200 bg-stone-50/95">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <Link to="/" className="flex items-center gap-2 font-semibold text-stone-950">
-            <span
-              className="flex h-7 w-7 items-center justify-center rounded-md text-sm"
-              style={logoStyle}
-            >
-              {appInitial}
-            </span>
+            <AppLogo appName={appName} accent={accent} />
             {appName}
           </Link>
           <div className="flex items-center gap-4">

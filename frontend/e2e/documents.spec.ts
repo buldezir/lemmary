@@ -52,7 +52,7 @@ test('edit document title on detail page', async ({ page }) => {
   await loginAsUser(page)
   await uploadFixture(page, 'sample.txt')
 
-  await page.getByRole('button', { name: 'Unblock editing' }).click()
+  await page.getByRole('button', { name: 'Edit' }).click()
   await page.getByLabel('Title', { exact: true }).fill('E2E Edited Title')
   await page.getByRole('button', { name: 'Save corrections' }).click()
   await expect(page.getByRole('heading', { name: 'E2E Edited Title' })).toBeVisible()
@@ -267,7 +267,7 @@ async function saveDocumentMetadata(
     tags?: string
   },
 ) {
-  await page.getByRole('button', { name: 'Unblock editing' }).click()
+  await page.getByRole('button', { name: 'Edit' }).click()
   if (fields.title !== undefined) {
     await page.getByLabel('Title', { exact: true }).fill(fields.title)
   }

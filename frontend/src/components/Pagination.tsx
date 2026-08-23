@@ -1,3 +1,5 @@
+import { pageNumbers } from '../lib/pagination'
+
 type Props = {
   page: number
   totalPages: number
@@ -8,15 +10,6 @@ type Props = {
 
 const buttonClassName =
   'rounded-md border border-stone-300 bg-stone-50 px-3 py-1.5 text-sm font-medium text-stone-700 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40'
-
-function pageNumbers(current: number, total: number): number[] {
-  if (total <= 7) {
-    return Array.from({ length: total }, (_, index) => index + 1)
-  }
-
-  const pages = new Set<number>([1, total, current, current - 1, current + 1])
-  return [...pages].filter((page) => page >= 1 && page <= total).sort((a, b) => a - b)
-}
 
 export function Pagination({ page, totalPages, totalItems, pageSize, onPageChange }: Props) {
   if (totalPages <= 1) {
@@ -54,9 +47,9 @@ export function Pagination({ page, totalPages, totalItems, pageSize, onPageChang
                 type="button"
                 onClick={() => onPageChange(pageNumber)}
                 aria-current={pageNumber === page ? 'page' : undefined}
-                className={`min-w-9 rounded-md px-2 py-1.5 text-sm font-medium transition-colors hover:bg-stone-600 hover:text-stone-100 ${
+                className={`min-w-9 rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
                   pageNumber === page
-                    ? 'bg-gray-900 text-white'
+                    ? 'bg-gray-900 text-white hover:bg-gray-700'
                     : 'text-stone-600 hover:bg-stone-100'
                 }`}
               >

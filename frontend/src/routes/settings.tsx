@@ -1,46 +1,36 @@
 import { type SubmitEvent, useEffect, useState } from 'react'
-import { Link, Navigate } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import {
   createAIProvider,
   deleteAIProvider,
-  ensureAuth,
-  getAppSettings,
-  isAdmin,
+  isLLMProvider,
   listAIProviders,
+  sdkLabel,
   updateAIProvider,
-  updateAppSettings,
+  SDK_DEFAULT_BASE,
+  SDK_OPTIONS,
   type AIProvider,
-  type AppSettings,
   type ProviderSDK,
-} from '../lib/pocketbase'
-import { ProviderModelFields, isLLMProvider, sdkLabel } from '../components/ProviderModelFields'
-
-const inputClassName =
-  'w-full rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900'
-const labelClassName = 'flex flex-col gap-1'
-const labelTextClassName = 'text-xs font-medium text-stone-500'
-const sectionClassName = 'rounded-lg border border-stone-200 bg-stone-50 p-5'
-const sectionTitleClassName = 'mb-4 text-sm font-semibold text-stone-950'
+} from '../lib/api/providers'
+import { getAppSettings, updateAppSettings, type AppSettings } from '../lib/api/settings'
+import { ProviderModelFields } from '../components/ProviderModelFields'
+import {
+  Button,
+  inputClassName,
+  labelClassName,
+  labelTextClassName,
+  sectionClassName,
+  sectionTitleClassName,
+} from '../components/ui'
 
 function SaveSettingsButton({ saving }: { saving: boolean }) {
   return (
     <div>
-      <button
-        type="submit"
-        disabled={saving}
-        className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-      >
+      <Button type="submit" disabled={saving}>
         {saving ? 'Saving...' : 'Save settings'}
-      </button>
+      </Button>
     </div>
   )
-}
-
-const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
-  openai: 'https://api.openai.com/v1',
-  openrouter: 'https://openrouter.ai/api/v1',
-  mistral: 'https://api.mistral.ai/v1',
-  google_vision: '',
 }
 
 type FormState = {
@@ -96,8 +86,9 @@ function emptyDraft(sdk: ProviderSDK = 'openai'): ProviderDraft {
   return { sdk, alias: '', base_url: SDK_DEFAULT_BASE[sdk], api_key: '' }
 }
 
+// Admin access is enforced by the route's beforeLoad guard, so this page can
+// assume the caller is an admin.
 export function SettingsPage() {
-  const [allowed, setAllowed] = useState<boolean | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
   const [providers, setProviders] = useState<AIProvider[]>([])
   const [draft, setDraft] = useState<ProviderDraft>(emptyDraft())
@@ -119,14 +110,6 @@ export function SettingsPage() {
 
     async function load() {
       try {
-        await ensureAuth()
-        const admin = await isAdmin()
-        if (!admin) {
-          if (active) setAllowed(false)
-          return
-        }
-        if (active) setAllowed(true)
-
         const [settings, nextProviders] = await Promise.all([getAppSettings(), listAIProviders()])
         if (!active) return
         setForm(formFromSettings(settings))
@@ -135,7 +118,6 @@ export function SettingsPage() {
       } catch (err) {
         if (active) {
           setError(err instanceof Error ? err.message : 'Failed to load settings')
-          setAllowed(await isAdmin())
         }
       } finally {
         if (active) setLoading(false)
@@ -259,10 +241,6 @@ export function SettingsPage() {
     }
   }
 
-  if (allowed === false) {
-    return <Navigate to="/" />
-  }
-
   if (loading || !form) {
     return <p className="text-sm text-stone-500">{error || 'Loading settings...'}</p>
   }
@@ -296,9 +274,9 @@ export function SettingsPage() {
                 </p>
               </div>
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="rounded-md border border-stone-300 bg-white px-2 py-1 text-xs font-medium text-stone-950 hover:bg-stone-100"
+                <Button
+                  variant="secondary"
+                  size="xs"
                   onClick={() => {
                     setEditingId(item.id)
                     setShowAdd(true)
@@ -311,22 +289,23 @@ export function SettingsPage() {
                   }}
                 >
                   Edit
-                </button>
-                <button
-                  type="button"
-                  className="rounded-md border border-stone-300 bg-white px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  className="text-red-700 hover:bg-red-50"
                   onClick={() => void onDeleteProvider(item.id)}
                 >
                   Delete
-                </button>
+                </Button>
               </div>
             </li>
           ))}
         </ul>
         {!showAdd ? (
-          <button
-            type="button"
-            className="rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-950 hover:bg-stone-100"
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => {
               setEditingId(null)
               setDraft(emptyDraft())
@@ -334,7 +313,7 @@ export function SettingsPage() {
             }}
           >
             Add provider
-          </button>
+          </Button>
         ) : (
           <form className="grid gap-3 sm:grid-cols-2" onSubmit={onSaveProvider}>
             <label className={labelClassName}>
@@ -347,14 +326,18 @@ export function SettingsPage() {
                   setDraft((current) => ({
                     ...current,
                     sdk,
-                    base_url: current.base_url === SDK_DEFAULT_BASE[current.sdk] ? SDK_DEFAULT_BASE[sdk] : current.base_url,
+                    base_url:
+                      current.base_url === SDK_DEFAULT_BASE[current.sdk]
+                        ? SDK_DEFAULT_BASE[sdk]
+                        : current.base_url,
                   }))
                 }}
               >
-                <option value="openai">OpenAI</option>
-                <option value="openrouter">OpenRouter</option>
-                <option value="mistral">Mistral</option>
-                <option value="google_vision">Google Cloud Vision</option>
+                {SDK_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </label>
             <label className={labelClassName}>
@@ -372,38 +355,41 @@ export function SettingsPage() {
                 <input
                   className={inputClassName}
                   value={draft.base_url}
-                  onChange={(event) => setDraft((current) => ({ ...current, base_url: event.target.value }))}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, base_url: event.target.value }))
+                  }
                 />
               </label>
             )}
             <label className={`${labelClassName} sm:col-span-2`}>
-              <span className={labelTextClassName}>API key{editingId ? ' (leave blank to keep)' : ''}</span>
+              <span className={labelTextClassName}>
+                API key{editingId ? ' (leave blank to keep)' : ''}
+              </span>
               <input
                 type="password"
                 autoComplete="off"
                 className={inputClassName}
                 value={draft.api_key}
                 required={!editingId}
-                onChange={(event) => setDraft((current) => ({ ...current, api_key: event.target.value }))}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, api_key: event.target.value }))
+                }
               />
             </label>
             <div className="flex gap-2 sm:col-span-2">
-              <button
-                type="submit"
-                className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700"
-              >
+              <Button type="submit" size="sm">
                 {editingId ? 'Update provider' : 'Save provider'}
-              </button>
-              <button
-                type="button"
-                className="rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-950 hover:bg-stone-100"
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => {
                   setShowAdd(false)
                   setEditingId(null)
                 }}
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           </form>
         )}

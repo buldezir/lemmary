@@ -1,55 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   listProviderModels,
+  modelOptionLabel,
+  providerOptionLabel,
+  showsOCRModelWarning,
+  OCR_MODEL_WARNING,
   type AIProvider,
   type CatalogModel,
-  type ProviderSDK,
-} from '../lib/pocketbase'
-
-const inputClassName =
-  'w-full rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900'
-const labelClassName = 'flex flex-col gap-1'
-const labelTextClassName = 'text-xs font-medium text-stone-500'
+} from '../lib/api/providers'
+import { useAsync } from '../hooks/useAsync'
+import { inputClassName, labelClassName, labelTextClassName } from './ui'
 
 const CUSTOM_MODEL = '__custom__'
-
-export const OCR_MODEL_WARNING =
-  'Choose this model wisely — this provider does not advertise which models accept file inputs.'
-
-export function showsOCRModelWarning(sdk?: string) {
-  return sdk === 'openai'
-}
-
-export function isLLMProvider(sdk: string) {
-  return sdk === 'openai' || sdk === 'openrouter' || sdk === 'mistral'
-}
-
-export function sdkLabel(sdk: ProviderSDK | string) {
-  switch (sdk) {
-    case 'openai':
-      return 'OpenAI'
-    case 'openrouter':
-      return 'OpenRouter'
-    case 'google_vision':
-      return 'Google Cloud Vision'
-    case 'mistral':
-      return 'Mistral'
-    default:
-      return sdk
-  }
-}
-
-export function providerOptionLabel(item: Pick<AIProvider, 'alias' | 'sdk'>) {
-  const sdk = sdkLabel(item.sdk)
-  return item.alias === sdk ? item.alias : `${item.alias} (${sdk})`
-}
-
-export function modelOptionLabel(item: CatalogModel) {
-  if (item.name && item.name !== item.id) {
-    return `${item.id} (${item.name})`
-  }
-  return item.id
-}
 
 type ModelSelectProps = {
   label: string
@@ -158,43 +120,17 @@ export function ProviderModelFields({
   onModelChange,
   allowEmpty = false,
 }: ProviderModelFieldsProps) {
-  const [models, setModels] = useState<CatalogModel[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
   const selected = providers.find((item) => item.id === providerId)
   const hideModel = purpose === 'ocr' && selected?.sdk === 'google_vision'
   const showWarning = purpose === 'ocr' && showsOCRModelWarning(selected?.sdk)
 
-  useEffect(() => {
+  const modelsState = useAsync(async () => {
     if (!providerId || hideModel) {
-      setModels([])
-      setError('')
-      setLoading(false)
-      return
+      return { models: [] as CatalogModel[], sdk: '' }
     }
-
-    let active = true
-    async function load() {
-      try {
-        setLoading(true)
-        setError('')
-        const next = await listProviderModels(providerId, purpose)
-        if (!active) return
-        setModels(next.models)
-      } catch (err) {
-        if (!active) return
-        setModels([])
-        setError(err instanceof Error ? err.message : 'Failed to load models')
-      } finally {
-        if (active) setLoading(false)
-      }
-    }
-    void load()
-    return () => {
-      active = false
-    }
+    return listProviderModels(providerId, purpose)
   }, [providerId, purpose, hideModel])
+  const models = modelsState.data?.models ?? []
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 sm:col-span-2">
@@ -224,15 +160,17 @@ export function ProviderModelFields({
           label={label}
           model={model}
           models={models}
-          loading={loading}
+          loading={modelsState.loading}
           allowEmpty={allowEmpty}
           onChange={onModelChange}
         />
       )}
-      {error && <p className="text-xs text-amber-700 sm:col-span-2">{error}. You can still type a model id.</p>}
-      {showWarning && (
-        <p className="text-xs text-amber-800 sm:col-span-2">{OCR_MODEL_WARNING}</p>
+      {modelsState.error && (
+        <p className="text-xs text-amber-700 sm:col-span-2">
+          {modelsState.error}. You can still type a model id.
+        </p>
       )}
+      {showWarning && <p className="text-xs text-amber-800 sm:col-span-2">{OCR_MODEL_WARNING}</p>}
     </div>
   )
 }

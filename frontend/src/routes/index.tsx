@@ -1,21 +1,22 @@
 import { useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
+import { ClientResponseError } from 'pocketbase'
+import { pb } from '../lib/pb'
+import { ensureAuth } from '../lib/auth'
 import {
-  ensureAuth,
-  pb,
+  buildDocumentFilter,
   reprocessDocuments,
   searchDocuments,
-  REPROCESS_MODE_LABELS,
-} from '../lib/pocketbase'
-import type {
-  CorrespondentRecord,
-  DocumentRecord,
-  DocumentTypeRecord,
-  ReprocessMode,
-} from '../lib/pocketbase'
+  type CorrespondentRecord,
+  type DocumentRecord,
+  type DocumentTypeRecord,
+} from '../lib/api/documents'
+import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
+import { useAsync } from '../hooks/useAsync'
 import { DocumentCard } from '../components/DocumentCard'
 import { FilterCombobox } from '../components/FilterCombobox'
 import { Pagination } from '../components/Pagination'
+import { Button } from '../components/ui'
 
 const PAGE_SIZE = 12
 
@@ -24,38 +25,8 @@ const selectClassName =
 
 const reprocessModes: ReprocessMode[] = ['auto', 'full', 'extraction']
 
-function buildDocumentFilter(filters: {
-  status: string
-  dateFrom: string
-  dateTo: string
-  documentType: string
-  correspondent: string
-}) {
-  const parts: string[] = []
-
-  if (filters.status !== 'all') {
-    parts.push(`processing_status = "${filters.status}"`)
-  }
-  if (filters.documentType !== 'all') {
-    parts.push(`document_type = "${filters.documentType}"`)
-  }
-  if (filters.correspondent !== 'all') {
-    parts.push(`correspondent = "${filters.correspondent}"`)
-  }
-  if (filters.dateFrom) {
-    parts.push(`document_date >= "${filters.dateFrom}"`)
-  }
-  if (filters.dateTo) {
-    parts.push(`document_date <= "${filters.dateTo}"`)
-  }
-
-  return parts.length > 0 ? parts.join(' && ') : undefined
-}
-
 export function IndexPage() {
   const [documents, setDocuments] = useState<DocumentRecord[]>([])
-  const [documentTypes, setDocumentTypes] = useState<DocumentTypeRecord[]>([])
-  const [correspondents, setCorrespondents] = useState<CorrespondentRecord[]>([])
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -73,6 +44,17 @@ export function IndexPage() {
   const [reprocessing, setReprocessing] = useState(false)
   const [message, setMessage] = useState('')
 
+  const filterOptions = useAsync(async () => {
+    await ensureAuth()
+    const [types, correspondents] = await Promise.all([
+      pb.collection('document_types').getFullList<DocumentTypeRecord>({ sort: 'name' }),
+      pb.collection('correspondents').getFullList<CorrespondentRecord>({ sort: 'name' }),
+    ])
+    return { types, correspondents }
+  }, [])
+  const documentTypes = filterOptions.data?.types ?? []
+  const correspondents = filterOptions.data?.correspondents ?? []
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setDebouncedSearch(search)
@@ -84,96 +66,74 @@ export function IndexPage() {
   useEffect(() => {
     let active = true
 
-    async function loadFilterOptions() {
+    async function load(isInitial = false) {
       try {
-        await ensureAuth()
-        const [types, cors] = await Promise.all([
-          pb.collection('document_types').getFullList<DocumentTypeRecord>({ sort: 'name' }),
-          pb.collection('correspondents').getFullList<CorrespondentRecord>({ sort: 'name' }),
-        ])
-        if (active) {
-          setDocumentTypes(types)
-          setCorrespondents(cors)
+        // Only the initial load blanks the page; realtime refreshes swap the
+        // data in place instead of flashing "Loading documents...".
+        if (isInitial) {
+          setLoading(true)
         }
-      } catch (err) {
-        if (active) {
-          setError(err instanceof Error ? err.message : 'Failed to load filter options')
-        }
-      }
-    }
-
-    void loadFilterOptions()
-
-    return () => {
-      active = false
-    }
-  }, [])
-
-  useEffect(() => {
-    let active = true
-
-    async function load() {
-      try {
-        setLoading(true)
         await ensureAuth()
         const query = debouncedSearch.trim()
-        if (query) {
-          const result = await searchDocuments({
-            q: query,
-            page,
-            perPage: PAGE_SIZE,
-            status: statusFilter,
-            documentType: documentTypeFilter,
-            correspondent: correspondentFilter,
-            dateFrom,
-            dateTo,
-          })
-          if (active) {
-            setDocuments(result.items)
-            setTotalItems(result.totalItems)
-            setTotalPages(result.totalPages)
-            setError('')
-          }
-        } else {
-          const filter = buildDocumentFilter({
-            status: statusFilter,
-            dateFrom,
-            dateTo,
-            documentType: documentTypeFilter,
-            correspondent: correspondentFilter,
-          })
-          const result = await pb.collection('documents').getList<DocumentRecord>(page, PAGE_SIZE, {
-            sort: '-created',
-            expand: 'tags,document_type,correspondent,duplicate_of',
-            ...(filter ? { filter } : {}),
-          })
-          if (active) {
-            setDocuments(result.items)
-            setTotalItems(result.totalItems)
-            setTotalPages(result.totalPages)
-            setError('')
-          }
+        const filter = buildDocumentFilter({
+          status: statusFilter,
+          dateFrom,
+          dateTo,
+          documentType: documentTypeFilter,
+          correspondent: correspondentFilter,
+        })
+        const result = query
+          ? await searchDocuments({
+              q: query,
+              page,
+              perPage: PAGE_SIZE,
+              status: statusFilter,
+              documentType: documentTypeFilter,
+              correspondent: correspondentFilter,
+              dateFrom,
+              dateTo,
+            })
+          : await pb.collection('documents').getList<DocumentRecord>(page, PAGE_SIZE, {
+              sort: '-created',
+              expand: 'tags,document_type,correspondent,duplicate_of',
+              ...(filter ? { filter } : {}),
+            })
+        if (active) {
+          setDocuments(result.items)
+          setTotalItems(result.totalItems)
+          setTotalPages(result.totalPages)
+          setError('')
         }
       } catch (err) {
+        // Overlapping refreshes (filter change + realtime) can autocancel each
+        // other; the surviving request has the fresh data.
+        if (err instanceof ClientResponseError && err.isAbort) {
+          return
+        }
         if (active) {
           setError(err instanceof Error ? err.message : 'Failed to load documents')
         }
       } finally {
-        if (active) {
+        if (active && isInitial) {
           setLoading(false)
         }
       }
     }
 
-    load()
+    void load(true)
 
     let unsubscribe: (() => void) | undefined
-
-    void pb.collection('documents').subscribe('*', () => {
-      load()
-    }).then((fn) => {
-      unsubscribe = fn
-    })
+    void pb
+      .collection('documents')
+      .subscribe('*', () => {
+        void load()
+      })
+      .then((fn) => {
+        unsubscribe = fn
+      })
+      .catch(() => {
+        // Realtime is optional; the list is still correct as of the load.
+      })
 
     return () => {
       active = false
@@ -333,7 +293,9 @@ export function IndexPage() {
       </div>
 
       {loading && <p className="text-sm text-stone-500">Loading documents...</p>}
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {(error || filterOptions.error) && (
+        <p className="text-sm text-red-600">{error || filterOptions.error}</p>
+      )}
 
       {!loading && documents.length === 0 && (
         <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50 py-12 text-center">
@@ -373,29 +335,22 @@ export function IndexPage() {
                   </option>
                 ))}
               </select>
-              <button
-                type="button"
+              <Button
                 disabled={reprocessing || selectedOnPage.length === 0}
                 onClick={() => void onReprocessSelected()}
-                className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {reprocessing ? 'Queueing...' : 'Reprocess'}
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="secondary"
                 onClick={() => setSelectedIds(new Set(documents.map((document) => document.id)))}
-                className="rounded-md border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-950 transition-colors hover:bg-stone-100"
               >
                 Select all on page
-              </button>
+              </Button>
               {selectedOnPage.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedIds(new Set())}
-                  className="rounded-md border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-950 transition-colors hover:bg-stone-100"
-                >
+                <Button variant="secondary" onClick={() => setSelectedIds(new Set())}>
                   Clear
-                </button>
+                </Button>
               )}
             </div>
           )}

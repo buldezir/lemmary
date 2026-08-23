@@ -7,6 +7,8 @@
     "dev": "concurrently -k -n app,docs -c yellow,cyan \"vite --host ${DEV_HOST:-127.0.0.1} --port 5173\" \"vitepress dev --host ${DEV_HOST:-127.0.0.1} --port 5174\"",
     "build": "tsc -b && vite build && npm run docs:build",
     "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "preview": "vite preview",
     "build:e2e": "VITE_DEV_USER_EMAIL= VITE_DEV_USER_PASSWORD= VITE_POCKETBASE_URL= npm run build",
     "test:e2e": "npm run build:e2e && playwright test",
@@ -41,6 +43,7 @@
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
     "vitepress": "^1.6.4",
+    "vitest": "^4.1.11",
     "vue": "^3.5.40"
   }
 }

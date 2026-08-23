@@ -1,6 +1,9 @@
 import { type DragEvent, type SubmitEvent, useRef, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { ensureAuth, parseDuplicateOfId, pb } from '../lib/pocketbase'
+import { pb } from '../lib/pb'
+import { ensureAuth } from '../lib/auth'
+import { parseDuplicateOfId } from '../lib/api/documents'
+import { Button } from '../components/ui'
 
 const ACCEPTED_EXTENSIONS = new Set([
   '.pdf',
@@ -36,7 +39,9 @@ type FileUploadError = {
 }
 
 function isAcceptedFile(file: File) {
-  const extension = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')).toLowerCase() : ''
+  const extension = file.name.includes('.')
+    ? file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
+    : ''
   if (ACCEPTED_EXTENSIONS.has(extension)) return true
   return ACCEPTED_MIME_TYPES.has(file.type)
 }
@@ -49,7 +54,7 @@ function uploadErrorMessage(err: unknown): string {
   if (err && typeof err === 'object') {
     const withResponse = err as {
       message?: string
-      response?: { message?: string; data?: { duplicate_of?: string } }
+      response?: { message?: string }
     }
     if (withResponse.response?.message) return withResponse.response.message
     if (typeof withResponse.message === 'string' && withResponse.message) return withResponse.message
@@ -296,17 +301,13 @@ export function UploadFilesPage() {
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
-        <button
-          type="submit"
-          disabled={uploading || files.length === 0}
-          className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" disabled={uploading || files.length === 0}>
           {uploading
             ? files.length > 1
               ? `Uploading ${uploadIndex} of ${files.length}...`
               : 'Uploading...'
             : 'Upload and process'}
-        </button>
+        </Button>
       </form>
     </section>
   )

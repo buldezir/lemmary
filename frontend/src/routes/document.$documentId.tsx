@@ -1,20 +1,25 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import { type SubmitEvent, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
+import { ClientResponseError } from 'pocketbase'
+import { pb } from '../lib/pb'
+import { ensureAuth } from '../lib/auth'
+import {
+  fileUrl,
+  reprocessDocument,
+  saveDocumentMetadata,
+  type DocumentRecord,
+} from '../lib/api/documents'
 import {
   defaultReprocessSteps,
-  ensureAuth,
-  fileUrl,
   forceStepsForReprocess,
   FULL_PIPELINE_STEPS,
   orderedProcessingSteps,
-  pb,
   PROCESSING_STEP_DESCRIPTIONS,
   PROCESSING_STEP_LABELS,
-  reprocessDocument,
-  type DocumentRecord,
   type ProcessingJobRecord,
   type ProcessingStep,
-} from '../lib/pocketbase'
+} from '../lib/processing'
+import { Button } from '../components/ui'
 
 export function DocumentDetailPage() {
   const { documentId } = useParams({ from: '/document/$documentId' })
@@ -34,6 +39,31 @@ export function DocumentDetailPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
+  // Mirrors `editing` for the load callback below: a background refresh (poll
+  // or realtime event) must not clobber the form while the user is typing.
+  const editingRef = useRef(editing)
+  useEffect(() => {
+    editingRef.current = editing
+  }, [editing])
+
+  // Tracks which (document, has-OCR-text) pair the reprocess defaults were
+  // computed for, so background refreshes do not reset the user's selection.
+  const reprocessDefaultsKey = useRef('')
+
+  function applyLoadedDocument(doc: DocumentRecord) {
+    setDocument(doc)
+    setTagInput((doc.expand?.tags ?? []).map((tag) => tag.name).join(', '))
+    setDocumentTypeInput(doc.expand?.document_type?.name ?? '')
+    setCorrespondentInput(doc.expand?.correspondent?.name ?? '')
+
+    const hasOcr = Boolean(doc.ocr_text?.trim())
+    const key = `${doc.id}:${hasOcr}`
+    if (reprocessDefaultsKey.current !== key) {
+      reprocessDefaultsKey.current = key
+      setReprocessSteps(defaultReprocessSteps(hasOcr))
+    }
+  }
+
   useEffect(() => {
     let active = true
     let unsubscribe: (() => void) | undefined
@@ -51,7 +81,7 @@ export function DocumentDetailPage() {
         })
 
         const jobs = await pb.collection('processing_jobs').getList<ProcessingJobRecord>(1, 1, {
-          filter: `document = "${documentId}"`,
+          filter: pb.filter('document = {:documentId}', { documentId }),
           sort: '-created',
         })
 
@@ -59,11 +89,10 @@ export function DocumentDetailPage() {
           return
         }
 
-        setDocument(doc)
         setJob(jobs.items[0] ?? null)
-        setTagInput((doc.expand?.tags ?? []).map((tag) => tag.name).join(', '))
-        setDocumentTypeInput(doc.expand?.document_type?.name ?? '')
-        setCorrespondentInput(doc.expand?.correspondent?.name ?? '')
+        if (!editingRef.current) {
+          applyLoadedDocument(doc)
+        }
         setError('')
 
         const inFlight = doc.processing_status === 'processing' || doc.processing_status === 'pending'
@@ -77,6 +106,11 @@ export function DocumentDetailPage() {
           poll = undefined
         }
       } catch (err) {
+        // Overlapping refreshes (poll + realtime) can autocancel each other;
+        // the surviving request has the fresh data, so that is not an error.
+        if (err instanceof ClientResponseError && err.isAbort) {
+          return
+        }
         if (active) {
           setError(err instanceof Error ? err.message : 'Failed to load document')
         }
@@ -113,17 +147,10 @@ export function DocumentDetailPage() {
     }
   }, [documentId])
 
-  useEffect(() => {
-    if (!document) {
-      return
-    }
-    setReprocessSteps(defaultReprocessSteps(Boolean(document.ocr_text?.trim())))
-  }, [document?.id, document?.ocr_text])
+  const hasOcrText = Boolean(document?.ocr_text?.trim())
 
   const canReprocess =
     document?.processing_status !== 'processing' && document?.processing_status !== 'pending'
-
-  const hasOcrText = Boolean(document?.ocr_text?.trim())
 
   function toggleReprocessStep(step: ProcessingStep) {
     setReprocessSteps((current) => {
@@ -144,7 +171,7 @@ export function DocumentDetailPage() {
     return true
   }
 
-  function onReprocessSubmit(event: FormEvent) {
+  function onReprocessSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!document || !canReprocess || reprocessSteps.length === 0) {
       return
@@ -181,16 +208,18 @@ export function DocumentDetailPage() {
       await reprocessDocument(document.id, steps, forceStepsForReprocess(steps))
 
       const doc = await pb.collection('documents').getOne<DocumentRecord>(document.id, {
-        expand: 'tags,document_type,correspondent',
+        expand: 'tags,document_type,correspondent,duplicate_of',
       })
       const jobs = await pb.collection('processing_jobs').getList<ProcessingJobRecord>(1, 1, {
-        filter: `document = "${document.id}"`,
+        filter: pb.filter('document = {:documentId}', { documentId: document.id }),
         sort: '-created',
       })
 
-      setDocument(doc)
+      applyLoadedDocument(doc)
       setJob(jobs.items[0] ?? null)
-      setMessage(`Document queued for reprocessing (${steps.map((step) => PROCESSING_STEP_LABELS[step]).join(', ')}).`)
+      setMessage(
+        `Document queued for reprocessing (${steps.map((step) => PROCESSING_STEP_LABELS[step]).join(', ')}).`,
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reprocess document')
     } finally {
@@ -225,7 +254,7 @@ export function DocumentDetailPage() {
     await navigate({ to: '/' })
   }
 
-  async function onSave(event: FormEvent) {
+  async function onSave(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!document || !editing) {
       return
@@ -236,87 +265,24 @@ export function DocumentDetailPage() {
       setMessage('')
       setError('')
 
-      const userId = pb.authStore.record?.id
-      if (!userId) {
-        throw new Error('You must be signed in to save metadata.')
-      }
-
-      const tagNames = tagInput
-        .split(',')
-        .map((tag) => tag.trim())
-        .filter(Boolean)
-
-      const tagIds: string[] = []
-      for (const name of tagNames) {
-        const existing = await pb.collection('tags').getList(1, 1, {
-          filter: `name = "${name.replace(/"/g, '\\"')}"`,
-        })
-        if (existing.items.length > 0) {
-          tagIds.push(existing.items[0].id)
-        } else {
-          const created = await pb.collection('tags').create({ name, user: userId })
-          tagIds.push(created.id)
-        }
-      }
-
-      let documentTypeId = ''
-      const documentTypeName = documentTypeInput.trim()
-      if (documentTypeName) {
-        const existing = await pb.collection('document_types').getList(1, 1, {
-          filter: `name = "${documentTypeName.replace(/"/g, '\\"')}"`,
-        })
-        if (existing.items.length > 0) {
-          documentTypeId = existing.items[0].id
-        } else {
-          const created = await pb.collection('document_types').create({
-            name: documentTypeName,
-            name_original: documentTypeName,
-            user: userId,
-          })
-          documentTypeId = created.id
-        }
-      }
-
-      let correspondentId = ''
-      const correspondentName = correspondentInput.trim()
-      if (correspondentName) {
-        const existing = await pb.collection('correspondents').getList(1, 1, {
-          filter: `name = "${correspondentName.replace(/"/g, '\\"')}"`,
-        })
-        if (existing.items.length > 0) {
-          correspondentId = existing.items[0].id
-        } else {
-          const created = await pb.collection('correspondents').create({
-            name: correspondentName,
-            name_original: correspondentName,
-            user: userId,
-          })
-          correspondentId = created.id
-        }
-      }
-
-      const updated = await pb.collection('documents').update<DocumentRecord>(document.id, {
+      await saveDocumentMetadata(document.id, {
         title: document.title,
         purpose: document.purpose,
-        document_date: document.document_date || null,
-        document_type: documentTypeId || null,
-        correspondent: correspondentId || null,
         summary: document.summary,
-        tags: tagIds,
-        metadata_source: 'user',
-        processing_status:
-          document.processing_status === 'needs_review' ? 'completed' : document.processing_status,
+        documentDate: document.document_date,
+        documentTypeName: documentTypeInput,
+        correspondentName: correspondentInput,
+        tagNames: tagInput.split(','),
+        processingStatus: document.processing_status,
       })
 
-      setDocument(updated)
-      setMessage('Metadata saved.')
       setEditing(false)
+      editingRef.current = false
       const refreshed = await pb.collection('documents').getOne<DocumentRecord>(document.id, {
         expand: 'tags,document_type,correspondent,duplicate_of',
       })
-      setDocument(refreshed)
-      setDocumentTypeInput(refreshed.expand?.document_type?.name ?? '')
-      setCorrespondentInput(refreshed.expand?.correspondent?.name ?? '')
+      applyLoadedDocument(refreshed)
+      setMessage('Metadata saved.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save metadata')
     } finally {
@@ -368,14 +334,12 @@ export function DocumentDetailPage() {
           <Link
             to="/document/$documentId/ask"
             params={{ documentId }}
-            aria-disabled={!document.ocr_text?.trim()}
+            aria-disabled={!hasOcrText}
             title={
-              document.ocr_text?.trim()
-                ? 'Ask questions about this document'
-                : 'OCR text required before asking AI'
+              hasOcrText ? 'Ask questions about this document' : 'OCR text required before asking AI'
             }
             className={`rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
-              document.ocr_text?.trim()
+              hasOcrText
                 ? 'border-gray-900 bg-gray-900 text-white hover:bg-gray-700'
                 : 'pointer-events-none border-stone-200 bg-stone-100 text-stone-400'
             }`}
@@ -392,14 +356,9 @@ export function DocumentDetailPage() {
               Open file
             </a>
           )}
-          <button
-            type="button"
-            onClick={() => void onDelete()}
-            disabled={deleting}
-            className="rounded-md border border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
+          <Button variant="danger" onClick={() => void onDelete()} disabled={deleting}>
             {deleting ? 'Deleting...' : 'Delete'}
-          </button>
+          </Button>
           {job ? (
             <button
               type="button"
@@ -515,13 +474,15 @@ export function DocumentDetailPage() {
                 )
               })}
             </fieldset>
-            <button
+            <Button
               type="submit"
+              variant="danger"
+              size="sm"
+              className="self-start"
               disabled={!canReprocess || reprocessing || reprocessSteps.length === 0}
-              className="self-start rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {reprocessing ? 'Reprocessing...' : 'Reprocess selected steps'}
-            </button>
+            </Button>
           </form>
         </div>
       )}
@@ -641,24 +602,21 @@ export function DocumentDetailPage() {
 
         <div className="flex items-center gap-4 sm:col-span-2">
           {editing ? (
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
+            <Button type="submit" disabled={saving}>
               {saving ? 'Saving...' : 'Save corrections'}
-            </button>
+            </Button>
           ) : (
-            <button
-              type="button"
+            <Button
               onClick={(event) => {
+                // Without preventDefault, React swaps this node into the
+                // submit button before the browser applies the click's default
+                // action, which would submit the form immediately.
                 event.preventDefault()
                 setEditing(true)
               }}
-              className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700"
             >
-              Unblock editing
-            </button>
+              Edit
+            </Button>
           )}
           {message && <p className="text-sm text-green-600">{message}</p>}
           {error && <p className="text-sm text-red-600">{error}</p>}

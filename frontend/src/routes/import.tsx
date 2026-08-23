@@ -1,15 +1,6 @@
-import { type SubmitEvent, useEffect, useState } from 'react'
-import {
-  ensureAuth,
-  importFromNgx,
-  type NgxImportMode,
-  type NgxImportResult,
-} from '../lib/pocketbase'
-
-const inputClassName =
-  'w-full rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900'
-const labelClassName = 'flex flex-col gap-1'
-const labelTextClassName = 'text-xs font-medium text-stone-500'
+import { type SubmitEvent, useState } from 'react'
+import { importFromNgx, type NgxImportMode, type NgxImportResult } from '../lib/api/imports'
+import { Button, inputClassName, labelClassName, labelTextClassName } from '../components/ui'
 
 const modeOptions: { value: NgxImportMode; label: string; description: string }[] = [
   {
@@ -30,31 +21,9 @@ export function ImportPage() {
   const [url, setUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [mode, setMode] = useState<NgxImportMode>('preserve')
-  const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState<NgxImportResult | null>(null)
-
-  useEffect(() => {
-    let active = true
-
-    async function load() {
-      try {
-        await ensureAuth()
-      } catch (err) {
-        if (active) {
-          setError(err instanceof Error ? err.message : 'Failed to load')
-        }
-      } finally {
-        if (active) setLoading(false)
-      }
-    }
-
-    void load()
-    return () => {
-      active = false
-    }
-  }, [])
 
   async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -75,10 +44,6 @@ export function ImportPage() {
     } finally {
       setRunning(false)
     }
-  }
-
-  if (loading) {
-    return <p className="text-sm text-stone-500">Loading…</p>
   }
 
   return (
@@ -146,13 +111,9 @@ export function ImportPage() {
             </label>
           ))}
         </fieldset>
-        <button
-          type="submit"
-          disabled={running}
-          className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" disabled={running}>
           {running ? 'Importing…' : 'Start import'}
-        </button>
+        </Button>
       </form>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

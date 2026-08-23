@@ -1,19 +1,20 @@
 import { type SubmitEvent, useEffect, useState } from 'react'
+import { loginWithPassword } from '../lib/auth'
+import { createSetupAdmin, getSetupStatus, type SetupStatus } from '../lib/api/meta'
 import {
-  accentContrastText,
   createAIProvider,
-  createSetupAdmin,
-  getAppSettings,
-  getSetupStatus,
+  isLLMProvider,
   listAIProviders,
-  loginWithPassword,
-  updateAppSettings,
+  sdkLabel,
+  SDK_DEFAULT_BASE,
+  SDK_OPTIONS,
   type AIProvider,
   type ProviderSDK,
-  type SetupStatus,
-} from '../lib/pocketbase'
+} from '../lib/api/providers'
+import { getAppSettings, updateAppSettings } from '../lib/api/settings'
 import { AppFooter } from './AppFooter'
-import { ProviderModelFields, isLLMProvider, sdkLabel } from './ProviderModelFields'
+import { ProviderModelFields } from './ProviderModelFields'
+import { AppLogo, Button, inputClassName, labelClassName, labelTextClassName } from './ui'
 
 type SetupWizardProps = {
   appName: string
@@ -23,18 +24,6 @@ type SetupWizardProps = {
 }
 
 type Step = 'admin' | 'providers' | 'models' | 'done'
-
-const inputClassName =
-  'w-full rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900'
-const labelClassName = 'flex flex-col gap-1'
-const labelTextClassName = 'text-xs font-medium text-stone-500'
-
-const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
-  openai: 'https://api.openai.com/v1',
-  openrouter: 'https://openrouter.ai/api/v1',
-  mistral: 'https://api.mistral.ai/v1',
-  google_vision: '',
-}
 
 function initialStep(status: SetupStatus): Step {
   if (status.needs_admin) return 'admin'
@@ -46,9 +35,6 @@ function initialStep(status: SetupStatus): Step {
 }
 
 export function SetupWizard({ appName, accent, initialStatus, onComplete }: SetupWizardProps) {
-  const appInitial = appName.trim().charAt(0).toUpperCase() || 'P'
-  const logoStyle = { backgroundColor: accent, color: accentContrastText(accent) }
-
   const [step, setStep] = useState<Step>(() => initialStep(initialStatus))
   const [status, setStatus] = useState(initialStatus)
   const [submitting, setSubmitting] = useState(false)
@@ -175,7 +161,9 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
         if (!next.has_ocr || !next.has_llm) {
           setStep(next.provider_count ? 'models' : 'providers')
         }
-        setError('Setup is still incomplete. Add an OCR provider and an LLM provider (OpenAI, OpenRouter, or Mistral).')
+        setError(
+          'Setup is still incomplete. Add an OCR provider and an LLM provider (OpenAI, OpenRouter, or Mistral).',
+        )
         return
       }
       setStep('done')
@@ -202,15 +190,12 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       <div className="flex flex-1 items-center justify-center px-6 py-10">
         <section className="w-full max-w-md rounded-lg border border-stone-200 bg-stone-50 p-6 shadow-sm">
           <div className="mb-2 flex items-center gap-2">
-            <span
-              className="flex h-7 w-7 items-center justify-center rounded-md text-sm"
-              style={logoStyle}
-            >
-              {appInitial}
-            </span>
+            <AppLogo appName={appName} accent={accent} />
             <h1 className="text-lg font-semibold text-stone-950">{appName}</h1>
           </div>
-          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-stone-400">{stepLabel}</p>
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-stone-400">
+            {stepLabel}
+          </p>
           <h2 className="mb-4 text-base font-semibold text-stone-900">
             {step === 'admin' && 'Create your admin account'}
             {step === 'providers' && 'Add a provider'}
@@ -259,13 +244,9 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 />
               </label>
               {error && <p className="text-sm text-red-600">{error}</p>}
-              <button
-                type="submit"
-                disabled={submitting}
-                className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
+              <Button type="submit" disabled={submitting}>
                 {submitting ? 'Creating...' : 'Create admin'}
-              </button>
+              </Button>
             </form>
           )}
 
@@ -291,10 +272,11 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                   }}
                   className={inputClassName}
                 >
-                  <option value="openai">OpenAI</option>
-                  <option value="openrouter">OpenRouter</option>
-                  <option value="mistral">Mistral</option>
-                  <option value="google_vision">Google Cloud Vision</option>
+                  {SDK_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label className={labelClassName}>
@@ -329,21 +311,17 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 />
               </label>
               {error && <p className="text-sm text-red-600">{error}</p>}
-              <button
-                type="submit"
-                disabled={submitting}
-                className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
+              <Button type="submit" disabled={submitting}>
                 {submitting ? 'Saving...' : 'Continue'}
-              </button>
+              </Button>
             </form>
           )}
 
           {step === 'models' && (
             <form className="flex flex-col gap-4" onSubmit={onSaveModels}>
               <p className="text-sm text-stone-600">
-                Pick a provider and model for OCR and metadata extraction. Chat and search default to
-                the extraction model.
+                Pick a provider and model for OCR and metadata extraction. Chat and search default
+                to the extraction model.
               </p>
               {llmProviders.length === 0 && (
                 <p className="text-sm text-amber-800">
@@ -370,13 +348,9 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
               />
               {error && <p className="text-sm text-red-600">{error}</p>}
               <div className="flex flex-col gap-2">
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
+                <Button type="submit" disabled={submitting}>
                   {submitting ? 'Saving...' : 'Finish setup'}
-                </button>
+                </Button>
                 <button
                   type="button"
                   className="text-left text-xs font-medium text-stone-500 hover:text-stone-800"
@@ -397,13 +371,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
               {status.needs_config && (
                 <p className="text-sm text-red-600">Setup still reports missing configuration.</p>
               )}
-              <button
-                type="button"
-                onClick={onComplete}
-                className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700"
-              >
-                Open {appName}
-              </button>
+              <Button onClick={onComplete}>Open {appName}</Button>
             </div>
           )}
         </section>
@@ -420,33 +388,19 @@ type SetupBlockedProps = {
 }
 
 export function SetupBlocked({ appName, accent, onLogout }: SetupBlockedProps) {
-  const appInitial = appName.trim().charAt(0).toUpperCase() || 'P'
-  const logoStyle = { backgroundColor: accent, color: accentContrastText(accent) }
-
   return (
     <div className="flex min-h-screen flex-col bg-stone-100">
       <div className="flex flex-1 items-center justify-center px-6">
         <section className="w-full max-w-sm rounded-lg border border-stone-200 bg-stone-50 p-6 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
-            <span
-              className="flex h-7 w-7 items-center justify-center rounded-md text-sm"
-              style={logoStyle}
-            >
-              {appInitial}
-            </span>
+            <AppLogo appName={appName} accent={accent} />
             <h1 className="text-lg font-semibold text-stone-950">{appName}</h1>
           </div>
           <h2 className="mb-2 text-base font-semibold text-stone-900">Setup incomplete</h2>
           <p className="mb-4 text-sm text-stone-600">
             An administrator must finish first-launch configuration before the app can be used.
           </p>
-          <button
-            type="button"
-            onClick={onLogout}
-            className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700"
-          >
-            Log out
-          </button>
+          <Button onClick={onLogout}>Log out</Button>
         </section>
       </div>
       <AppFooter />

@@ -1,46 +1,28 @@
-import { type FormEvent, useEffect, useRef, useState } from 'react'
+import { type SubmitEvent, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
 import { MarkdownContent } from '../components/MarkdownContent'
-import { chatWithDocument, ensureAuth, pb, type ChatMessage, type DocumentRecord } from '../lib/pocketbase'
+import { Button } from '../components/ui'
+import { pb } from '../lib/pb'
+import { ensureAuth } from '../lib/auth'
+import { chatWithDocument, type ChatMessage } from '../lib/api/ai'
+import type { DocumentRecord } from '../lib/api/documents'
+import { useAsync } from '../hooks/useAsync'
 
 export function DocumentAskPage() {
   const { documentId } = useParams({ from: '/document/$documentId/ask' })
-  const [document, setDocument] = useState<DocumentRecord | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    let active = true
-
-    async function load() {
-      try {
-        setLoading(true)
-        await ensureAuth()
-        const doc = await pb.collection('documents').getOne<DocumentRecord>(documentId)
-        if (active) {
-          setDocument(doc)
-          setError('')
-        }
-      } catch (err) {
-        if (active) {
-          setError(err instanceof Error ? err.message : 'Failed to load document')
-        }
-      } finally {
-        if (active) {
-          setLoading(false)
-        }
-      }
-    }
-
-    void load()
-
-    return () => {
-      active = false
-    }
+  const {
+    data: document,
+    loading,
+    error: loadError,
+  } = useAsync(async () => {
+    await ensureAuth()
+    return pb.collection('documents').getOne<DocumentRecord>(documentId)
   }, [documentId])
 
   useEffect(() => {
@@ -49,8 +31,7 @@ export function DocumentAskPage() {
 
   const hasOcrText = Boolean(document?.ocr_text?.trim())
 
-  async function onSubmit(event: FormEvent) {
-    event.preventDefault()
+  async function send() {
     const text = input.trim()
     if (!text || sending || !hasOcrText) {
       return
@@ -76,6 +57,11 @@ export function DocumentAskPage() {
     }
   }
 
+  function onSubmit(event: SubmitEvent<HTMLFormElement>) {
+    event.preventDefault()
+    void send()
+  }
+
   if (loading) {
     return <p className="text-sm text-stone-500">Loading...</p>
   }
@@ -83,7 +69,7 @@ export function DocumentAskPage() {
   if (!document) {
     return (
       <section className="flex flex-col gap-3">
-        <p className="text-sm text-red-600">{error || 'Document not found.'}</p>
+        <p className="text-sm text-red-600">{loadError || 'Document not found.'}</p>
         <Link to="/" className="text-sm font-medium text-gray-900 underline">
           Back to documents
         </Link>
@@ -133,7 +119,11 @@ export function DocumentAskPage() {
                       : 'border border-stone-200 bg-stone-100 text-stone-950'
                   }`}
                 >
-                  {message.role === 'user' ? message.content : <MarkdownContent content={message.content} />}
+                  {message.role === 'user' ? (
+                    message.content
+                  ) : (
+                    <MarkdownContent content={message.content} />
+                  )}
                 </div>
               </div>
             ))}
@@ -156,7 +146,7 @@ export function DocumentAskPage() {
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault()
-                    void onSubmit(event)
+                    void send()
                   }
                 }}
                 autoFocus
@@ -164,13 +154,9 @@ export function DocumentAskPage() {
                 placeholder="Ask a question about this document..."
                 className="min-h-12 flex-1 resize-y rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm text-stone-950 outline-none placeholder:text-stone-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-50"
               />
-              <button
-                type="submit"
-                disabled={sending || !input.trim()}
-                className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
+              <Button type="submit" disabled={sending || !input.trim()}>
                 {sending ? 'Sending...' : 'Send'}
-              </button>
+              </Button>
             </div>
             {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
           </form>

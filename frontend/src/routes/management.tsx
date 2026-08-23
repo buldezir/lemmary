@@ -1,28 +1,19 @@
 import { useEffect, useState } from 'react'
-import { Navigate } from '@tanstack/react-router'
+import { countFailedDocuments, reprocessFailedDocuments } from '../lib/api/documents'
 import {
-  countFailedDocuments,
-  ensureAuth,
   getActiveJobCounts,
-  isAdmin,
   pruneStaleTaxonomy,
   reindexSearch,
-  reprocessFailedDocuments,
   scanDuplicates,
-  REPROCESS_MODE_LABELS,
   type ActiveJobCounts,
   type DuplicateScanResult,
-  type ReprocessMode,
   type TaxonomyPruneResult,
-} from '../lib/pocketbase'
+} from '../lib/api/maintenance'
+import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
+import { Button, labelTextClassName, sectionClassName, sectionTitleClassName } from '../components/ui'
 
-const sectionClassName = 'rounded-lg border border-stone-200 bg-stone-50 p-5'
-const sectionTitleClassName = 'mb-4 text-sm font-semibold text-stone-950'
-const actionButtonClassName =
-  'rounded-md border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-950 transition-colors hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50'
 const selectClassName =
   'rounded-md border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900'
-const labelTextClassName = 'text-xs font-medium text-stone-500'
 
 // How often the in-flight job count is refreshed while the page is open.
 const activeJobsPollMs = 5_000
@@ -55,47 +46,25 @@ function pruneSummary(result: TaxonomyPruneResult) {
   return `Removed ${parts.join(', ')}.`
 }
 
+// Admin access is enforced by the route's beforeLoad guard, so this page can
+// assume the caller is an admin.
 export function ManagementPage() {
-  const [allowed, setAllowed] = useState<boolean | null>(null)
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState<DuplicateScanResult | null>(null)
   const [reindexing, setReindexing] = useState(false)
   const [pruning, setPruning] = useState(false)
   const [activeJobs, setActiveJobs] = useState<ActiveJobCounts | null>(null)
   const [failedCount, setFailedCount] = useState<number | null>(null)
+  const [failedCountLoaded, setFailedCountLoaded] = useState(false)
   const [reprocessing, setReprocessing] = useState(false)
   const [reprocessMode, setReprocessMode] = useState<ReprocessMode>('auto')
   const [reprocessBatch, setReprocessBatch] = useState<number>(100)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  useEffect(() => {
-    let active = true
-
-    async function load() {
-      try {
-        await ensureAuth()
-        const admin = await isAdmin()
-        if (active) setAllowed(admin)
-      } catch (err) {
-        if (active) {
-          setError(err instanceof Error ? err.message : 'Failed to check permissions')
-          setAllowed(false)
-        }
-      }
-    }
-
-    void load()
-    return () => {
-      active = false
-    }
-  }, [])
-
   // Pruning taxonomy while documents are still processing could delete an entity
   // a running job is about to attach, so the queue is polled to gate that button.
   useEffect(() => {
-    if (allowed !== true) return
-
     let active = true
 
     async function refresh() {
@@ -114,26 +83,30 @@ export function ManagementPage() {
       active = false
       clearInterval(timer)
     }
-  }, [allowed])
+  }, [])
 
   // The failed count is what the sweep acts on, so it is refreshed on load and
   // after every batch rather than polled — batches are the only thing that moves
   // it downward from this page.
   useEffect(() => {
-    if (allowed !== true) return
-
     let active = true
     countFailedDocuments()
       .then((count) => {
-        if (active) setFailedCount(count)
+        if (active) {
+          setFailedCount(count)
+          setFailedCountLoaded(true)
+        }
       })
       .catch(() => {
-        if (active) setFailedCount(null)
+        if (active) {
+          setFailedCount(null)
+          setFailedCountLoaded(true)
+        }
       })
     return () => {
       active = false
     }
-  }, [allowed])
+  }, [])
 
   async function onReprocessFailed() {
     if (!failedCount) return
@@ -226,14 +199,6 @@ export function ManagementPage() {
     }
   }
 
-  if (allowed === false) {
-    return <Navigate to="/" />
-  }
-
-  if (allowed === null) {
-    return <p className="text-sm text-stone-500">{error || 'Loading...'}</p>
-  }
-
   const jobsInFlight = activeJobsTotal(activeJobs) > 0
 
   return (
@@ -282,23 +247,24 @@ export function ManagementPage() {
                 ))}
               </select>
             </label>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               disabled={reprocessing || !failedCount}
               onClick={() => void onReprocessFailed()}
-              className={actionButtonClassName}
             >
               {reprocessing
                 ? 'Queueing...'
                 : `Reprocess ${Math.min(reprocessBatch, failedCount ?? 0)} failed`}
-            </button>
+            </Button>
           </div>
           <p className="mt-3 text-xs text-stone-500">
-            {failedCount === null
-              ? 'Could not read the failed document count.'
-              : failedCount === 0
-                ? 'No documents have failed processing.'
-                : `${countLabel(failedCount, 'document has', 'documents have')} failed processing.`}
+            {!failedCountLoaded
+              ? 'Loading the failed document count...'
+              : failedCount === null
+                ? 'Could not read the failed document count.'
+                : failedCount === 0
+                  ? 'No documents have failed processing.'
+                  : `${countLabel(failedCount, 'document has', 'documents have')} failed processing.`}
             {activeJobs && jobsInFlight && ` Queue: ${activeJobsLabel(activeJobs)}.`}
           </p>
         </section>
@@ -310,14 +276,9 @@ export function ManagementPage() {
             duplicates, if near-duplicate detection is enabled in Settings).
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              disabled={scanning}
-              onClick={() => void onScanDuplicates()}
-              className={actionButtonClassName}
-            >
+            <Button variant="secondary" disabled={scanning} onClick={() => void onScanDuplicates()}>
               {scanning ? 'Scanning...' : 'Scan for duplicates'}
-            </button>
+            </Button>
             {scanResult && (
               <p className="text-xs text-stone-500">
                 Backfilled {scanResult.checksum_backfilled} checksums,{' '}
@@ -336,14 +297,13 @@ export function ManagementPage() {
             are not swept up.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               disabled={pruning || jobsInFlight}
               onClick={() => void onPruneStale()}
-              className={actionButtonClassName}
             >
               {pruning ? 'Clearing...' : 'Clear stale data'}
-            </button>
+            </Button>
             {jobsInFlight && activeJobs && (
               <p className="text-xs text-amber-700">
                 Waiting for the queue to drain: {activeJobsLabel(activeJobs)}.
@@ -359,14 +319,9 @@ export function ManagementPage() {
             imports or a crash.
           </p>
           <div className="mt-4">
-            <button
-              type="button"
-              disabled={reindexing}
-              onClick={() => void onReindexSearch()}
-              className={actionButtonClassName}
-            >
+            <Button variant="secondary" disabled={reindexing} onClick={() => void onReindexSearch()}>
               {reindexing ? 'Reindexing...' : 'Rebuild search index'}
-            </button>
+            </Button>
           </div>
         </section>
 

@@ -1,20 +1,16 @@
 import { type ChangeEvent, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
-  type AmazonArchivePreview,
-  type AmazonImportProgress,
-  type AmazonImportResult,
   discardAmazonArchive,
   importAmazonArchive,
   uploadAmazonArchive,
-} from '../lib/pocketbase'
+  type AmazonArchivePreview,
+  type AmazonImportProgress,
+  type AmazonImportResult,
+} from '../lib/api/imports'
+import { Button } from '../components/ui'
 
 const ACCEPT_ATTR = '.zip,application/zip,application/x-zip-compressed'
-
-const primaryButtonClass =
-  'rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50'
-const secondaryButtonClass =
-  'rounded-md border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50'
 
 function formatBytes(size: number) {
   if (size < 1024) return `${size} B`
@@ -80,7 +76,11 @@ export function UploadAmazonPage() {
     const uploadId = preview.upload_id
     setPreview(null)
     setError('')
-    await discardAmazonArchive(uploadId)
+    try {
+      await discardAmazonArchive(uploadId)
+    } catch {
+      // Best-effort cleanup: staged archives expire on their own.
+    }
   }
 
   return (
@@ -164,17 +164,12 @@ export function UploadAmazonPage() {
           )}
 
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={onConfirm}
-              disabled={preview.importable_count === 0}
-              className={primaryButtonClass}
-            >
+            <Button onClick={() => void onConfirm()} disabled={preview.importable_count === 0}>
               Import {plural(preview.importable_count, 'file')}
-            </button>
-            <button type="button" onClick={onCancel} className={secondaryButtonClass}>
+            </Button>
+            <Button variant="secondary" onClick={() => void onCancel()}>
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       )}

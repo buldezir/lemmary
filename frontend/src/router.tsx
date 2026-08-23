@@ -1,4 +1,5 @@
-import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
+import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router'
+import { ensureAuth, isAdmin } from './lib/auth'
 import { RootLayout } from './components/RootLayout'
 import { IndexPage } from './routes/index'
 import { UploadPage } from './routes/upload'
@@ -13,6 +14,19 @@ import { SettingsPage } from './routes/settings'
 import { ManagementPage } from './routes/management'
 import { ImportPage } from './routes/import'
 import { ExportPage } from './routes/export'
+
+// Admin-only routes bounce non-admins to the document list before the page
+// component mounts. RootLayout still runs the login and setup gates.
+async function requireAdmin() {
+  try {
+    await ensureAuth()
+  } catch {
+    throw redirect({ to: '/' })
+  }
+  if (!(await isAdmin())) {
+    throw redirect({ to: '/' })
+  }
+}
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -64,12 +78,14 @@ const ocrTestRoute = createRoute({
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
+  beforeLoad: requireAdmin,
   component: SettingsPage,
 })
 
 const managementRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/management',
+  beforeLoad: requireAdmin,
   component: ManagementPage,
 })
 

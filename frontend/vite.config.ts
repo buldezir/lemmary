@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -5,6 +6,10 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   envDir: '..',
   plugins: [react(), tailwindcss()],
+  test: {
+    // Unit tests only; Playwright owns e2e/.
+    include: ['src/**/*.test.{ts,tsx}'],
+  },
   build: {
     outDir: '../public',
     emptyOutDir: true,

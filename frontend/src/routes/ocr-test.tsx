@@ -1,13 +1,16 @@
-import { type DragEvent, type SubmitEvent, useEffect, useState } from 'react'
+import { type DragEvent, type SubmitEvent, useState } from 'react'
+import { ensureAuth } from '../lib/auth'
 import {
-  ensureAuth,
   listOCRProviders,
   listProviderModels,
+  showsOCRModelWarning,
   testOCR,
+  OCR_MODEL_WARNING,
   type CatalogModel,
-  type OCRProviderInfo,
-} from '../lib/pocketbase'
-import { ModelSelect, OCR_MODEL_WARNING, showsOCRModelWarning } from '../components/ProviderModelFields'
+} from '../lib/api/providers'
+import { useAsync } from '../hooks/useAsync'
+import { ModelSelect } from '../components/ProviderModelFields'
+import { Button } from '../components/ui'
 
 const ACCEPTED_EXTENSIONS = new Set([
   '.pdf',
@@ -30,85 +33,49 @@ const ACCEPTED_MIME_TYPES = new Set([
 ])
 
 function isAcceptedFile(file: File) {
-  const extension = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')).toLowerCase() : ''
+  const extension = file.name.includes('.')
+    ? file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
+    : ''
   if (ACCEPTED_EXTENSIONS.has(extension)) return true
   if (ACCEPTED_MIME_TYPES.has(file.type)) return true
   return ACCEPTED_MIME_PREFIXES.some((prefix) => file.type.startsWith(prefix))
 }
 
 export function OCRTestPage() {
-  const [providers, setProviders] = useState<OCRProviderInfo[]>([])
   const [provider, setProvider] = useState('')
   const [model, setModel] = useState('')
-  const [models, setModels] = useState<CatalogModel[]>([])
-  const [loadingModels, setLoadingModels] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [dragging, setDragging] = useState(false)
-  const [loadingProviders, setLoadingProviders] = useState(true)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState('')
   const [meta, setMeta] = useState('')
 
-  useEffect(() => {
-    let active = true
-
-    async function loadProviders() {
-      try {
-        setLoadingProviders(true)
-        await ensureAuth()
-        const next = await listOCRProviders()
-        if (!active) return
-        setProviders(next)
-        setProvider((current) => current || next[0]?.id || '')
-        setError('')
-      } catch (err) {
-        if (active) {
-          setError(err instanceof Error ? err.message : 'Failed to load OCR providers')
-        }
-      } finally {
-        if (active) {
-          setLoadingProviders(false)
-        }
-      }
-    }
-
-    void loadProviders()
-
-    return () => {
-      active = false
-    }
+  const providersState = useAsync(async () => {
+    await ensureAuth()
+    const next = await listOCRProviders()
+    // Preselect the first provider once the list arrives.
+    setProvider((current) => current || next[0]?.id || '')
+    return next
   }, [])
+  const providers = providersState.data ?? []
+  const loadingProviders = providersState.loading
 
   const selected = providers.find((item) => item.id === provider)
   const hideModel = selected?.sdk === 'google_vision'
   const showWarning = showsOCRModelWarning(selected?.sdk)
 
-  useEffect(() => {
+  const modelsState = useAsync(async () => {
     if (!provider || hideModel) {
-      setModels([])
-      setLoadingModels(false)
-      return
+      return [] as CatalogModel[]
     }
-    let active = true
-    async function loadModels() {
-      try {
-        setLoadingModels(true)
-        const next = await listProviderModels(provider, 'ocr')
-        if (!active) return
-        setModels(next.models)
-        setModel((current) => current || next.models[0]?.id || '')
-      } catch {
-        if (active) setModels([])
-      } finally {
-        if (active) setLoadingModels(false)
-      }
-    }
-    void loadModels()
-    return () => {
-      active = false
-    }
+    const next = await listProviderModels(provider, 'ocr')
+    // Preselect the first catalog model once the list arrives.
+    setModel((current) => current || next.models[0]?.id || '')
+    return next.models
   }, [provider, hideModel])
+  const models = modelsState.data ?? []
+  const loadingModels = modelsState.loading
 
   function selectFile(next: File | null) {
     if (!next) {
@@ -163,7 +130,9 @@ export function OCRTestPage() {
 
       const response = await testOCR(file, provider, hideModel ? undefined : model)
       setResult(response.text)
-      setMeta(`${response.char_count.toLocaleString()} characters · ${response.provider} · ${response.duration}`)
+      setMeta(
+        `${response.char_count.toLocaleString()} characters · ${response.provider} · ${response.duration}`,
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'OCR test failed')
     } finally {
@@ -243,15 +212,13 @@ export function OCRTestPage() {
           {!file && <span className="text-xs text-stone-400">or drop it here (max 10 MB)</span>}
         </label>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {(error || providersState.error) && (
+          <p className="text-sm text-red-600">{error || providersState.error}</p>
+        )}
 
-        <button
-          type="submit"
-          disabled={running || !file || !provider || providers.length === 0}
-          className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" disabled={running || !file || !provider || providers.length === 0}>
           {running ? 'Running OCR...' : 'Run OCR'}
-        </button>
+        </Button>
       </form>
 
       {(result || running) && (

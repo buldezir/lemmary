@@ -1,11 +1,7 @@
-import { type SubmitEvent, useEffect, useState } from 'react'
-import {
-  downloadDocumentsArchive,
-  ensureAuth,
-  type ExportArchiveMode,
-} from '../lib/pocketbase'
-
-const labelTextClassName = 'text-xs font-medium text-stone-500'
+import { type SubmitEvent, useState } from 'react'
+import { fetchDocumentsArchive, type ExportArchiveMode } from '../lib/api/documents'
+import { saveBlob } from '../lib/download'
+import { Button, labelTextClassName } from '../components/ui'
 
 const modeOptions: { value: ExportArchiveMode; label: string; description: string }[] = [
   {
@@ -29,31 +25,9 @@ const modeOptions: { value: ExportArchiveMode; label: string; description: strin
 
 export function ExportPage() {
   const [mode, setMode] = useState<ExportArchiveMode>('originals')
-  const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-
-  useEffect(() => {
-    let active = true
-
-    async function load() {
-      try {
-        await ensureAuth()
-      } catch (err) {
-        if (active) {
-          setError(err instanceof Error ? err.message : 'Failed to load')
-        }
-      } finally {
-        if (active) setLoading(false)
-      }
-    }
-
-    void load()
-    return () => {
-      active = false
-    }
-  }, [])
 
   async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -61,17 +35,13 @@ export function ExportPage() {
       setRunning(true)
       setError('')
       setSuccess('')
-      await downloadDocumentsArchive(mode)
+      saveBlob(await fetchDocumentsArchive(mode), 'paperless-export.zip')
       setSuccess('Archive download started.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Download failed')
     } finally {
       setRunning(false)
     }
-  }
-
-  if (loading) {
-    return <p className="text-sm text-stone-500">Loading…</p>
   }
 
   return (
@@ -113,13 +83,9 @@ export function ExportPage() {
             </label>
           ))}
         </fieldset>
-        <button
-          type="submit"
-          disabled={running}
-          className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" disabled={running}>
           {running ? 'Preparing archive…' : 'Download archive'}
-        </button>
+        </Button>
       </form>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
