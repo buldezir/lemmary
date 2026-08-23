@@ -71,7 +71,22 @@ type JobStatusResponse = {
 }
 
 const jobPollIntervalMs = 500
-const jobPollMaxAttempts = 600
+
+/**
+ * How long a job may run before the client gives up on it. Only a safety net:
+ * a caller whose backend job can legitimately run longer passes its own budget,
+ * because reporting a failure while the server keeps working is worse than
+ * waiting.
+ */
+const defaultJobTimeoutMs = 5 * 60 * 1000
+
+export type PollJobOptions = {
+  onProgress?: (progress: JobProgress) => void
+  /** How long to keep polling before giving up. */
+  timeoutMs?: number
+  /** What the run is called in error messages ("import", "split", …). */
+  label?: string
+}
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -83,9 +98,12 @@ function sleep(ms: number) {
  */
 export async function pollJob<TResult>(
   statusPath: string,
-  opts: { onProgress?: (progress: JobProgress) => void } = {},
+  opts: PollJobOptions = {},
 ): Promise<TResult> {
-  for (let attempt = 0; attempt < jobPollMaxAttempts; attempt++) {
+  const label = opts.label ?? 'job'
+  const attempts = Math.ceil((opts.timeoutMs ?? defaultJobTimeoutMs) / jobPollIntervalMs)
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
     let response: Response
     try {
       response = await fetch(`${pbUrl}${statusPath}`, {
@@ -102,25 +120,25 @@ export async function pollJob<TResult>(
 
     const data = (await readJson(response)) as JobStatusResponse | null
     if (data === null) {
-      throw new Error('Failed to poll import status')
+      throw new Error(`Failed to poll the ${label} status`)
     }
     if (!response.ok) {
-      throw new Error(errorDetail(data, 'Failed to poll import status'))
+      throw new Error(errorDetail(data, `Failed to poll the ${label} status`))
     }
     if (data.progress) {
       opts.onProgress?.(data.progress)
     }
     if (data.status === 'completed') {
       if (data.result == null) {
-        throw new Error('Import completed without a result')
+        throw new Error(`The ${label} completed without a result`)
       }
       return data.result as TResult
     }
     if (data.status === 'failed') {
-      throw new Error(data.error ?? 'Import failed')
+      throw new Error(data.error ?? `The ${label} failed`)
     }
     await sleep(jobPollIntervalMs)
   }
 
-  throw new Error('Import timed out while waiting for completion')
+  throw new Error(`The ${label} is taking longer than expected; it may still be running on the server`)
 }

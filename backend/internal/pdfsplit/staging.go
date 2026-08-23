@@ -2,8 +2,6 @@ package pdfsplit
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +12,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"paperless-go/backend/internal/pdftool"
+	"paperless-go/backend/internal/staging"
 )
 
 // stagingTTL is how long a staged PDF waits for confirmation before it is
@@ -38,29 +37,36 @@ type Preview struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-type stagedPDF struct {
-	id          string
-	ownerUserID string
-	dir         string
-	expiresAt   time.Time
-	preview     Preview
+// staged is the payload of a registry entry: the preview plus the guard that
+// keeps the lazy thumbnail renders of this upload from piling up.
+type staged struct {
+	preview Preview
+	// renderMu serializes this upload's page renders, so two requests for the
+	// same page do not run pdftoppm twice over the same file.
+	renderMu sync.Mutex
 }
 
-func (s *stagedPDF) sourcePath() string {
-	return filepath.Join(s.dir, sourceFileName)
+// stagedPDF is one upload waiting to be split.
+type stagedPDF = staging.Item[*staged]
+
+var stagingRegistry = newStagingRegistry()
+
+func newStagingRegistry() *staging.Registry[*staged] {
+	return staging.New[*staged](staging.Config{
+		TTL: stagingTTL,
+		// An upload owns a directory: the source PDF plus the thumbnails
+		// rendered from it.
+		Remove:  os.RemoveAll,
+		Manages: staging.Directories,
+	})
 }
 
-var (
-	stagingMu sync.Mutex
-	// stagingItems holds uploads awaiting confirmation, keyed by upload id.
-	stagingItems = map[string]*stagedPDF{}
-	// stagingBusy holds the directory names of uploads currently being split,
-	// so a long split is never swept out from under itself.
-	stagingBusy = map[string]struct{}{}
-)
+func sourcePathOf(item *stagedPDF) string {
+	return filepath.Join(item.Path, sourceFileName)
+}
 
-// Inspect stages the uploaded PDF, renders a thumbnail per page and reports the
-// page count. Nothing is created until Start is called with the upload id.
+// Inspect stages the uploaded PDF and reports the page count. Nothing is
+// created until Start is called with the upload id.
 func Inspect(app core.App, ownerUserID, fileName string, src io.Reader) (Preview, error) {
 	if strings.TrimSpace(ownerUserID) == "" {
 		return Preview{}, fmt.Errorf("owner user id is required")
@@ -70,9 +76,9 @@ func Inspect(app core.App, ownerUserID, fileName string, src io.Reader) (Preview
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return Preview{}, fmt.Errorf("prepare staging dir: %w", err)
 	}
-	sweepStaging(root, time.Now())
+	stagingRegistry.Sweep(root, time.Now())
 
-	id, err := newUploadID()
+	id, err := staging.NewID()
 	if err != nil {
 		return Preview{}, err
 	}
@@ -81,33 +87,31 @@ func Inspect(app core.App, ownerUserID, fileName string, src io.Reader) (Preview
 		return Preview{}, fmt.Errorf("prepare upload dir: %w", err)
 	}
 
-	item := &stagedPDF{id: id, ownerUserID: ownerUserID, dir: dir}
-	pageCount, size, err := savePDF(item.sourcePath(), src)
+	pageCount, size, err := savePDF(filepath.Join(dir, sourceFileName), src)
 	if err != nil {
 		os.RemoveAll(dir)
 		return Preview{}, err
 	}
 
-	// Rendered up front, in one pdftoppm run: the cut-marking UI needs every
-	// page at once, and re-rendering per request would pay the document parse
-	// cost again for each thumbnail.
-	if _, err := pdftool.RenderPages(context.Background(), item.sourcePath(), dir, thumbEdge, pageCount); err != nil {
-		os.RemoveAll(dir)
-		return Preview{}, fmt.Errorf("render page thumbnails: %w", err)
+	// Thumbnails are rendered on demand rather than here: a hundred pages at
+	// thumbEdge takes minutes, and holding the upload request open for that
+	// risks a client or proxy timeout while the cut-marking UI is perfectly
+	// happy to paint pages as they arrive.
+	expiresAt := time.Now().UTC().Add(stagingTTL)
+	item := &stagedPDF{
+		ID:          id,
+		OwnerUserID: ownerUserID,
+		Path:        dir,
+		ExpiresAt:   expiresAt,
+		Payload: &staged{preview: Preview{
+			UploadID:  id,
+			FileName:  strings.TrimSpace(fileName),
+			PageCount: pageCount,
+			SizeBytes: size,
+			ExpiresAt: expiresAt,
+		}},
 	}
-
-	item.expiresAt = time.Now().UTC().Add(stagingTTL)
-	item.preview = Preview{
-		UploadID:  id,
-		FileName:  strings.TrimSpace(fileName),
-		PageCount: pageCount,
-		SizeBytes: size,
-		ExpiresAt: item.expiresAt,
-	}
-
-	stagingMu.Lock()
-	stagingItems[id] = item
-	stagingMu.Unlock()
+	stagingRegistry.Add(item)
 
 	app.Logger().Info("pdf staged for splitting",
 		"component", "pdf_split",
@@ -115,7 +119,7 @@ func Inspect(app core.App, ownerUserID, fileName string, src io.Reader) (Preview
 		"bytes", size,
 		"pages", pageCount,
 	)
-	return item.preview, nil
+	return item.Payload.preview, nil
 }
 
 // savePDF streams src to path and validates it is a splittable PDF, returning
@@ -170,112 +174,62 @@ func hasPDFHeader(path string) bool {
 
 // Discard drops a staged upload that the user chose not to split.
 func Discard(uploadID, ownerUserID string) bool {
-	item, ok := claimStaged(uploadID, ownerUserID)
+	item, ok := stagingRegistry.Claim(uploadID, ownerUserID)
 	if !ok {
 		return false
 	}
-	releaseStaged(item)
+	stagingRegistry.Release(item)
 	return true
 }
 
 // Lookup returns the preview of a staged upload without claiming it, so the
 // thumbnail and detect endpoints can be called repeatedly.
 func Lookup(uploadID, ownerUserID string) (Preview, string, bool) {
-	stagingMu.Lock()
-	defer stagingMu.Unlock()
-	item, ok := stagingItems[uploadID]
-	if !ok || item.ownerUserID != ownerUserID || time.Now().UTC().After(item.expiresAt) {
+	item, ok := stagingRegistry.Lookup(uploadID, ownerUserID)
+	if !ok {
 		return Preview{}, "", false
 	}
-	return item.preview, item.sourcePath(), true
+	return item.Payload.preview, sourcePathOf(item), true
 }
 
-// ThumbPath resolves the cached PNG for a page of a staged upload.
-func ThumbPath(uploadID, ownerUserID string, page int) (string, bool) {
-	stagingMu.Lock()
-	defer stagingMu.Unlock()
-	item, ok := stagingItems[uploadID]
-	if !ok || item.ownerUserID != ownerUserID || time.Now().UTC().After(item.expiresAt) {
-		return "", false
+// PageThumb returns the PNG of one page of a staged upload, rendering it on
+// first request and reusing the cached file afterwards.
+//
+// The bytes are read while the upload is held, so a discard or a confirmed
+// split running at the same time cannot delete the directory underneath.
+func PageThumb(uploadID, ownerUserID string, page int) ([]byte, error) {
+	item, ok := stagingRegistry.Hold(uploadID, ownerUserID)
+	if !ok {
+		return nil, ErrUploadNotFound
 	}
-	if page < 1 || page > item.preview.PageCount {
-		return "", false
+	defer stagingRegistry.Unhold(item)
+
+	if page < 1 || page > item.Payload.preview.PageCount {
+		return nil, ErrUploadNotFound
 	}
-	return pdftool.PagePNGPath(item.dir, page), true
-}
-
-// claimStaged removes the upload from the registry and returns it, so the same
-// upload cannot be split (or discarded) twice.
-func claimStaged(uploadID, ownerUserID string) (*stagedPDF, bool) {
-	stagingMu.Lock()
-	defer stagingMu.Unlock()
-	item, ok := stagingItems[uploadID]
-	if !ok || item.ownerUserID != ownerUserID || time.Now().UTC().After(item.expiresAt) {
-		return nil, false
+	path := pdftool.PagePNGPath(item.Path, page)
+	if data, err := os.ReadFile(path); err == nil {
+		return data, nil
 	}
-	delete(stagingItems, uploadID)
-	stagingBusy[filepath.Base(item.dir)] = struct{}{}
-	return item, true
-}
 
-// releaseStaged deletes a claimed upload once the split (or discard) is done.
-func releaseStaged(item *stagedPDF) {
-	os.RemoveAll(item.dir)
-	stagingMu.Lock()
-	delete(stagingBusy, filepath.Base(item.dir))
-	stagingMu.Unlock()
-}
-
-// restoreStaged puts a claimed upload back for a later attempt.
-func restoreStaged(item *stagedPDF) {
-	stagingMu.Lock()
-	delete(stagingBusy, filepath.Base(item.dir))
-	stagingItems[item.id] = item
-	stagingMu.Unlock()
-}
-
-// sweepStaging drops expired registry entries and any upload directory left
-// behind by an earlier process (the registry does not survive a restart).
-func sweepStaging(root string, now time.Time) {
-	stagingMu.Lock()
-	live := make(map[string]struct{}, len(stagingItems)+len(stagingBusy))
-	for name := range stagingBusy {
-		live[name] = struct{}{}
+	// Serialized per upload: the UI fetches a few pages at a time, and letting
+	// each of those start its own poppler process over the same file buys
+	// little for the load it adds.
+	item.Payload.renderMu.Lock()
+	defer item.Payload.renderMu.Unlock()
+	if data, err := os.ReadFile(path); err == nil {
+		return data, nil
 	}
-	for id, item := range stagingItems {
-		if now.UTC().After(item.expiresAt) {
-			delete(stagingItems, id)
-			os.RemoveAll(item.dir)
-			continue
-		}
-		live[filepath.Base(item.dir)] = struct{}{}
+	if err := pdftool.RenderPage(context.Background(), sourcePathOf(item), path, thumbEdge, page); err != nil {
+		return nil, fmt.Errorf("render page %d: %w", page, err)
 	}
-	stagingMu.Unlock()
-
-	entries, err := os.ReadDir(root)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return
+		return nil, fmt.Errorf("read rendered page %d: %w", page, err)
 	}
-	for _, entry := range entries {
-		if _, ok := live[entry.Name()]; ok {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil || now.Sub(info.ModTime()) <= stagingTTL {
-			continue
-		}
-		os.RemoveAll(filepath.Join(root, entry.Name()))
-	}
+	return data, nil
 }
 
 func stagingRoot(app core.App) string {
 	return filepath.Join(app.DataDir(), "temp", "split_upload")
-}
-
-func newUploadID() (string, error) {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", fmt.Errorf("generate upload id: %w", err)
-	}
-	return hex.EncodeToString(b[:]), nil
 }

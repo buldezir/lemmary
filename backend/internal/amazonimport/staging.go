@@ -2,17 +2,15 @@ package amazonimport
 
 import (
 	"archive/zip"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
+	"paperless-go/backend/internal/staging"
 )
 
 // stagingTTL is how long an uploaded archive waits for confirmation before it
@@ -35,22 +33,19 @@ type Preview struct {
 	Files        []Entry `json:"files"`
 }
 
-type stagedArchive struct {
-	id          string
-	ownerUserID string
-	path        string
-	expiresAt   time.Time
-	preview     Preview
-}
+// stagedArchive is one upload waiting to be imported.
+type stagedArchive = staging.Item[Preview]
 
-var (
-	stagingMu sync.Mutex
-	// stagingItems holds archives awaiting confirmation, keyed by upload id.
-	stagingItems = map[string]*stagedArchive{}
-	// stagingBusy holds the file names of archives currently being imported, so
-	// a long import is never swept out from under itself.
-	stagingBusy = map[string]struct{}{}
-)
+var stagingRegistry = newStagingRegistry()
+
+func newStagingRegistry() *staging.Registry[Preview] {
+	return staging.New[Preview](staging.Config{
+		TTL: stagingTTL,
+		// An upload is a single .zip file in the shared staging directory.
+		Remove:  os.Remove,
+		Manages: staging.Files,
+	})
+}
 
 // Inspect stages the uploaded archive on disk and describes the PDFs it holds.
 // Nothing is imported until Start is called with the returned upload id.
@@ -63,9 +58,9 @@ func Inspect(app core.App, ownerUserID, fileName string, src io.Reader) (Preview
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return Preview{}, fmt.Errorf("prepare staging dir: %w", err)
 	}
-	sweepStaging(dir, time.Now())
+	stagingRegistry.Sweep(dir, time.Now())
 
-	id, err := newUploadID()
+	id, err := staging.NewID()
 	if err != nil {
 		return Preview{}, err
 	}
@@ -90,26 +85,23 @@ func Inspect(app core.App, ownerUserID, fileName string, src io.Reader) (Preview
 	}
 
 	item := &stagedArchive{
-		id:          id,
-		ownerUserID: ownerUserID,
-		path:        archivePath,
-		expiresAt:   time.Now().UTC().Add(stagingTTL),
-		preview:     buildPreview(id, fileName, entries, ignored),
+		ID:          id,
+		OwnerUserID: ownerUserID,
+		Path:        archivePath,
+		ExpiresAt:   time.Now().UTC().Add(stagingTTL),
+		Payload:     buildPreview(id, fileName, entries, ignored),
 	}
-	item.preview.ExpiresAt = item.expiresAt
-
-	stagingMu.Lock()
-	stagingItems[id] = item
-	stagingMu.Unlock()
+	item.Payload.ExpiresAt = item.ExpiresAt
+	stagingRegistry.Add(item)
 
 	app.Logger().Info("amazon archive staged",
 		"component", "amazon_import",
 		"upload_id", id,
 		"bytes", size,
-		"pdfs", item.preview.PDFCount,
-		"importable", item.preview.ImportableCount,
+		"pdfs", item.Payload.PDFCount,
+		"importable", item.Payload.ImportableCount,
 	)
-	return item.preview, nil
+	return item.Payload, nil
 }
 
 func buildPreview(uploadID, fileName string, entries []Entry, ignored int) Preview {
@@ -157,89 +149,14 @@ func saveArchive(path string, src io.Reader, limit int64) (int64, error) {
 
 // Discard drops a staged archive that the user chose not to import.
 func Discard(uploadID, ownerUserID string) bool {
-	item, ok := claimStaged(uploadID, ownerUserID)
+	item, ok := stagingRegistry.Claim(uploadID, ownerUserID)
 	if !ok {
 		return false
 	}
-	releaseStaged(item)
+	stagingRegistry.Release(item)
 	return true
-}
-
-// claimStaged removes the archive from the registry and returns it, so the same
-// upload cannot be imported (or discarded) twice.
-func claimStaged(uploadID, ownerUserID string) (*stagedArchive, bool) {
-	stagingMu.Lock()
-	defer stagingMu.Unlock()
-	item, ok := stagingItems[uploadID]
-	if !ok || item.ownerUserID != ownerUserID || time.Now().UTC().After(item.expiresAt) {
-		return nil, false
-	}
-	delete(stagingItems, uploadID)
-	stagingBusy[filepath.Base(item.path)] = struct{}{}
-	return item, true
-}
-
-// releaseStaged deletes a claimed archive once the import (or discard) is done.
-func releaseStaged(item *stagedArchive) {
-	os.Remove(item.path)
-	stagingMu.Lock()
-	delete(stagingBusy, filepath.Base(item.path))
-	stagingMu.Unlock()
-}
-
-// restoreStaged puts a claimed archive back for a later attempt.
-func restoreStaged(item *stagedArchive) {
-	stagingMu.Lock()
-	delete(stagingBusy, filepath.Base(item.path))
-	stagingItems[item.id] = item
-	stagingMu.Unlock()
-}
-
-// sweepStaging drops expired registry entries and any archive file left behind
-// by an earlier process (the registry does not survive a restart).
-func sweepStaging(dir string, now time.Time) {
-	stagingMu.Lock()
-	live := make(map[string]struct{}, len(stagingItems)+len(stagingBusy))
-	for name := range stagingBusy {
-		live[name] = struct{}{}
-	}
-	for id, item := range stagingItems {
-		if now.UTC().After(item.expiresAt) {
-			delete(stagingItems, id)
-			os.Remove(item.path)
-			continue
-		}
-		live[filepath.Base(item.path)] = struct{}{}
-	}
-	stagingMu.Unlock()
-
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		return
-	}
-	for _, file := range files {
-		if file.IsDir() {
-			continue
-		}
-		if _, ok := live[file.Name()]; ok {
-			continue
-		}
-		info, err := file.Info()
-		if err != nil || now.Sub(info.ModTime()) <= stagingTTL {
-			continue
-		}
-		os.Remove(filepath.Join(dir, file.Name()))
-	}
 }
 
 func stagingDir(app core.App) string {
 	return filepath.Join(app.DataDir(), "temp", "amazon_import")
-}
-
-func newUploadID() (string, error) {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", fmt.Errorf("generate upload id: %w", err)
-	}
-	return hex.EncodeToString(b[:]), nil
 }

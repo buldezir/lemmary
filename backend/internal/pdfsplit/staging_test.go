@@ -4,25 +4,31 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"paperless-go/backend/internal/pdftool"
 	"paperless-go/backend/internal/pdftool/testpdf"
 )
+
+// requirePoppler skips when a poppler binary the test needs is absent.
+func requirePoppler(t *testing.T, binaries ...string) {
+	t.Helper()
+	for _, binary := range binaries {
+		if _, err := exec.LookPath(binary); err != nil {
+			t.Skipf("%s not installed", binary)
+		}
+	}
+}
 
 // resetStaging isolates the package-level registry between tests.
 func resetStaging(t *testing.T) {
 	t.Helper()
-	clear := func() {
-		stagingMu.Lock()
-		stagingItems = map[string]*stagedPDF{}
-		stagingBusy = map[string]struct{}{}
-		stagingMu.Unlock()
-	}
-	clear()
-	t.Cleanup(clear)
+	stagingRegistry = newStagingRegistry()
+	t.Cleanup(func() { stagingRegistry = newStagingRegistry() })
 }
 
 // stageDir registers a staged upload backed by a real directory.
@@ -36,15 +42,15 @@ func stageDir(t *testing.T, root, id, owner string, pageCount int, expiresAt tim
 		t.Fatalf("write source: %v", err)
 	}
 	item := &stagedPDF{
-		id:          id,
-		ownerUserID: owner,
-		dir:         dir,
-		expiresAt:   expiresAt,
-		preview:     Preview{UploadID: id, PageCount: pageCount, ExpiresAt: expiresAt},
+		ID:          id,
+		OwnerUserID: owner,
+		Path:        dir,
+		ExpiresAt:   expiresAt,
+		Payload: &staged{
+			preview: Preview{UploadID: id, PageCount: pageCount, ExpiresAt: expiresAt},
+		},
 	}
-	stagingMu.Lock()
-	stagingItems[id] = item
-	stagingMu.Unlock()
+	stagingRegistry.Add(item)
 	return item
 }
 
@@ -97,23 +103,23 @@ func TestClaimStagedIsSingleUseAndOwnerScoped(t *testing.T) {
 	root := t.TempDir()
 	item := stageDir(t, root, "upload-1", "owner-a", 3, time.Now().UTC().Add(time.Hour))
 
-	if _, ok := claimStaged("upload-1", "owner-b"); ok {
+	if _, ok := stagingRegistry.Claim("upload-1", "owner-b"); ok {
 		t.Fatal("another owner must not claim the upload")
 	}
-	if _, ok := claimStaged("missing", "owner-a"); ok {
+	if _, ok := stagingRegistry.Claim("missing", "owner-a"); ok {
 		t.Fatal("unknown id must not claim")
 	}
 
-	claimed, ok := claimStaged("upload-1", "owner-a")
+	claimed, ok := stagingRegistry.Claim("upload-1", "owner-a")
 	if !ok || claimed != item {
 		t.Fatalf("claim failed: %v %v", claimed, ok)
 	}
-	if _, ok := claimStaged("upload-1", "owner-a"); ok {
+	if _, ok := stagingRegistry.Claim("upload-1", "owner-a"); ok {
 		t.Fatal("a claimed upload must not be claimable twice")
 	}
 
-	restoreStaged(claimed)
-	if _, ok := claimStaged("upload-1", "owner-a"); !ok {
+	stagingRegistry.Restore(claimed)
+	if _, ok := stagingRegistry.Claim("upload-1", "owner-a"); !ok {
 		t.Fatal("a restored upload must be claimable again")
 	}
 }
@@ -123,13 +129,68 @@ func TestClaimStagedRejectsExpired(t *testing.T) {
 	root := t.TempDir()
 	stageDir(t, root, "old", "owner-a", 2, time.Now().UTC().Add(-time.Minute))
 
-	if _, ok := claimStaged("old", "owner-a"); ok {
+	if _, ok := stagingRegistry.Claim("old", "owner-a"); ok {
 		t.Fatal("an expired upload must not be claimable")
 	}
 }
 
-func TestLookupAndThumbPathAreOwnerScoped(t *testing.T) {
+// A held upload must survive everything that would otherwise delete it, and be
+// cleaned up once the hold ends — that is what keeps a long detection run from
+// reading a source.pdf somebody else deleted.
+func TestHeldUploadSurvivesADiscardUntilTheHolderIsDone(t *testing.T) {
 	resetStaging(t)
+	root := t.TempDir()
+	item := stageDir(t, root, "upload-1", "owner-a", 2, time.Now().UTC().Add(time.Hour))
+
+	held, ok := stagingRegistry.Hold("upload-1", "owner-a")
+	if !ok {
+		t.Fatal("hold failed")
+	}
+	// Holding must not consume the upload: the split still has to happen.
+	if _, _, ok := Lookup("upload-1", "owner-a"); !ok {
+		t.Fatal("a held upload must still be visible")
+	}
+
+	if !Discard("upload-1", "owner-a") {
+		t.Fatal("discard should report success")
+	}
+	if _, err := os.Stat(sourcePathOf(item)); err != nil {
+		t.Fatalf("the source was deleted while it was being read: %v", err)
+	}
+
+	stagingRegistry.Unhold(held)
+	if _, err := os.Stat(item.Path); !os.IsNotExist(err) {
+		t.Fatalf("the discarded directory outlived the hold: %v", err)
+	}
+	if _, _, ok := Lookup("upload-1", "owner-a"); ok {
+		t.Fatal("a discarded upload must not come back when the hold ends")
+	}
+}
+
+func TestSweepKeepsAHeldUpload(t *testing.T) {
+	resetStaging(t)
+	root := t.TempDir()
+	now := time.Now().UTC()
+	item := stageDir(t, root, "upload-1", "owner-a", 2, now.Add(time.Hour))
+
+	held, ok := stagingRegistry.Hold("upload-1", "owner-a")
+	if !ok {
+		t.Fatal("hold failed")
+	}
+	// The TTL lapses while the detection is still reading the file.
+	stagingRegistry.Sweep(root, now.Add(2*time.Hour))
+	if _, err := os.Stat(sourcePathOf(item)); err != nil {
+		t.Fatalf("the sweep deleted an upload being read: %v", err)
+	}
+	stagingRegistry.Unhold(held)
+	if _, err := os.Stat(item.Path); !os.IsNotExist(err) {
+		t.Fatalf("the expired directory outlived the hold: %v", err)
+	}
+}
+
+func TestLookupAndPageThumbAreOwnerScoped(t *testing.T) {
+	resetStaging(t)
+	requirePoppler(t, "pdftoppm")
 	root := t.TempDir()
 	item := stageDir(t, root, "upload-1", "owner-a", 3, time.Now().UTC().Add(time.Hour))
 
@@ -137,7 +198,7 @@ func TestLookupAndThumbPathAreOwnerScoped(t *testing.T) {
 	if !ok {
 		t.Fatal("owner should be able to look up the upload")
 	}
-	if view.PageCount != 3 || sourcePath != item.sourcePath() {
+	if view.PageCount != 3 || sourcePath != sourcePathOf(item) {
 		t.Fatalf("unexpected lookup: %+v %s", view, sourcePath)
 	}
 	if _, _, ok := Lookup("upload-1", "owner-b"); ok {
@@ -149,16 +210,33 @@ func TestLookupAndThumbPathAreOwnerScoped(t *testing.T) {
 		t.Fatal("lookup must not consume the upload")
 	}
 
-	if path, ok := ThumbPath("upload-1", "owner-a", 2); !ok || filepath.Dir(path) != item.dir {
-		t.Fatalf("thumb path=%q ok=%v", path, ok)
+	// Nothing is rendered at staging time, so the first request has to produce
+	// the PNG and the second has to reuse the cached file.
+	cached := pdftool.PagePNGPath(item.Path, 2)
+	if _, err := os.Stat(cached); !os.IsNotExist(err) {
+		t.Fatalf("page 2 was rendered before it was asked for: %v", err)
 	}
+	data, err := PageThumb("upload-1", "owner-a", 2)
+	if err != nil {
+		t.Fatalf("PageThumb() error: %v", err)
+	}
+	if !strings.HasPrefix(string(data), "\x89PNG") {
+		t.Fatal("page 2 is not a PNG")
+	}
+	if _, err := os.Stat(cached); err != nil {
+		t.Fatalf("the rendered page was not cached: %v", err)
+	}
+	if again, err := PageThumb("upload-1", "owner-a", 2); err != nil || len(again) != len(data) {
+		t.Fatalf("cached read err=%v bytes=%d want %d", err, len(again), len(data))
+	}
+
 	for _, page := range []int{0, 4} {
-		if _, ok := ThumbPath("upload-1", "owner-a", page); ok {
-			t.Fatalf("page %d is out of range and must not resolve", page)
+		if _, err := PageThumb("upload-1", "owner-a", page); !errors.Is(err, ErrUploadNotFound) {
+			t.Fatalf("page %d is out of range: err=%v", page, err)
 		}
 	}
-	if _, ok := ThumbPath("upload-1", "owner-b", 1); ok {
-		t.Fatal("another owner must not read thumbnails")
+	if _, err := PageThumb("upload-1", "owner-b", 1); !errors.Is(err, ErrUploadNotFound) {
+		t.Fatalf("another owner must not read thumbnails: err=%v", err)
 	}
 }
 
@@ -170,7 +248,7 @@ func TestDiscardRemovesTheUploadDirectory(t *testing.T) {
 	if !Discard("upload-1", "owner-a") {
 		t.Fatal("discard should report success")
 	}
-	if _, err := os.Stat(item.dir); !os.IsNotExist(err) {
+	if _, err := os.Stat(item.Path); !os.IsNotExist(err) {
 		t.Fatalf("staged directory still present: %v", err)
 	}
 	if Discard("upload-1", "owner-a") {
@@ -203,17 +281,17 @@ func TestSweepStagingDropsExpiredAndOrphanDirectories(t *testing.T) {
 	}
 
 	// An upload mid-split has no registry entry either, but must survive.
-	splitting, ok := claimStaged("fresh", "owner-a")
+	splitting, ok := stagingRegistry.Claim("fresh", "owner-a")
 	if !ok {
 		t.Fatal("claim fresh")
 	}
 
-	sweepStaging(root, now)
+	stagingRegistry.Sweep(root, now)
 
-	if _, err := os.Stat(splitting.dir); err != nil {
+	if _, err := os.Stat(splitting.Path); err != nil {
 		t.Fatalf("upload being split was swept: %v", err)
 	}
-	if _, err := os.Stat(expired.dir); !os.IsNotExist(err) {
+	if _, err := os.Stat(expired.Path); !os.IsNotExist(err) {
 		t.Fatalf("expired upload kept: %v", err)
 	}
 	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
@@ -222,10 +300,7 @@ func TestSweepStagingDropsExpiredAndOrphanDirectories(t *testing.T) {
 	if _, err := os.Stat(recent); err != nil {
 		t.Fatalf("recent unknown directory swept: %v", err)
 	}
-	stagingMu.Lock()
-	_, stillRegistered := stagingItems["expired"]
-	stagingMu.Unlock()
-	if stillRegistered {
+	if _, ok := stagingRegistry.Lookup("expired", "owner-a"); ok {
 		t.Fatal("expired entry left in the registry")
 	}
 }

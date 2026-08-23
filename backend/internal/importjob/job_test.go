@@ -168,3 +168,15 @@ func waitForProgress(t *testing.T, r *Registry[int], id string, done int) Job[in
 	t.Fatalf("job %s did not report progress %d", id, done)
 	return Job[int]{}
 }
+
+func TestAppendErrorIsCapped(t *testing.T) {
+	t.Parallel()
+
+	var errs []string
+	for i := 0; i < MaxReportedErrors+10; i++ {
+		errs = AppendError(errs, "boom")
+	}
+	if len(errs) != MaxReportedErrors {
+		t.Fatalf("errors=%d want %d", len(errs), MaxReportedErrors)
+	}
+}

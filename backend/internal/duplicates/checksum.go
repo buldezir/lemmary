@@ -127,6 +127,30 @@ func ErrDuplicateFromAPIError(err error) *ErrDuplicate {
 	return &ErrDuplicate{ExistingID: id}
 }
 
+// NormalizeSaveError folds every shape a duplicate rejection can arrive in into
+// *ErrDuplicate, so an ingest path only has to test for that one type. Any other
+// error is returned unchanged, and nil stays nil.
+//
+// The three shapes are the create hook rejecting the upload outright, the same
+// rejection arriving wrapped in an ApiError, and the database's unique
+// (user, checksum) index firing when two saves race.
+func NormalizeSaveError(app core.App, record *core.Record, saveErr error) error {
+	if saveErr == nil {
+		return nil
+	}
+	var dup *ErrDuplicate
+	if errors.As(saveErr, &dup) {
+		return dup
+	}
+	if dup := ErrDuplicateFromAPIError(saveErr); dup != nil {
+		return dup
+	}
+	if dup := ErrDuplicateFromSaveConflict(app, record, saveErr); dup != nil {
+		return dup
+	}
+	return saveErr
+}
+
 // AssignChecksumFromUpload hashes the unsaved upload, sets checksum, and rejects duplicates.
 // Callers should still handle unique-constraint failures from Save via ErrDuplicateFromSaveConflict
 // so concurrent uploads cannot both succeed.

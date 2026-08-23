@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
@@ -88,13 +87,13 @@ func handleGetSplitPage(app core.App) func(*core.RequestEvent) error {
 			return writeError(e, http.StatusBadRequest, "upload_id and page are required.")
 		}
 
-		path, ok := pdfsplit.ThumbPath(uploadID, ownerID, page)
-		if !ok {
-			return writeError(e, http.StatusNotFound, "Page not found.")
-		}
-		data, err := os.ReadFile(path)
+		// Rendered on first request rather than at upload time, so this can be
+		// the slow call for a page nobody has looked at yet.
+		data, err := pdfsplit.PageThumb(uploadID, ownerID, page)
 		if err != nil {
-			app.Logger().Error("split page thumbnail unreadable", slog.Any("error", err))
+			if !errors.Is(err, pdfsplit.ErrUploadNotFound) {
+				app.Logger().Error("split page thumbnail failed", slog.Any("error", err))
+			}
 			return writeError(e, http.StatusNotFound, "Page not found.")
 		}
 
@@ -103,8 +102,8 @@ func handleGetSplitPage(app core.App) func(*core.RequestEvent) error {
 		// browser keep them for the life of the staged upload.
 		e.Response.Header().Set("Cache-Control", "private, max-age=1800")
 		e.Response.WriteHeader(http.StatusOK)
-		_, err = e.Response.Write(data)
-		return err
+		_, writeErr := e.Response.Write(data)
+		return writeErr
 	}
 }
 

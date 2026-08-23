@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
@@ -12,9 +11,6 @@ import (
 	"paperless-go/backend/internal/importjob"
 	"paperless-go/backend/internal/models"
 )
-
-// maxReportedErrors bounds the error list returned to the client.
-const maxReportedErrors = 25
 
 // Job statuses for in-memory async imports.
 const (
@@ -45,24 +41,42 @@ type Job = importjob.Job[Result]
 var registry = importjob.NewRegistry[Result](importjob.DefaultRetention)
 
 // Start imports the PDFs of a staged archive in the background and returns the
-// job id. The archive is consumed: the upload id is no longer valid afterwards.
+// job id. A run that gets as far as importing something consumes the archive:
+// the upload id is no longer valid afterwards.
 // Only one import may run at a time per owner.
 func Start(app core.App, ownerUserID, uploadID string) (string, error) {
-	item, ok := claimStaged(strings.TrimSpace(uploadID), ownerUserID)
+	item, ok := stagingRegistry.Claim(uploadID, ownerUserID)
 	if !ok {
 		return "", ErrUploadNotFound
 	}
 
-	jobID, err := registry.Start(ownerUserID, func(report func(done, total int)) (Result, error) {
-		defer releaseStaged(item)
-		return runImport(app, ownerUserID, item, report)
+	jobID, err := registry.Start(ownerUserID, func(report func(done, total int)) (result Result, runErr error) {
+		finished := false
+		// Settled from a defer because a panic in the run unwinds straight past
+		// here into the job registry's recover, and an archive nobody settles is
+		// neither retryable nor sweepable.
+		defer func() { settleUpload(item, result, runErr, finished) }()
+		result, runErr = runImport(app, ownerUserID, item, report)
+		finished = true
+		return result, runErr
 	})
 	if err != nil {
 		// The job never started, so put the archive back for another attempt.
-		restoreStaged(item)
+		stagingRegistry.Restore(item)
 		return "", err
 	}
 	return jobID, nil
+}
+
+// settleUpload ends the hold an import job took on the staged archive. A run
+// that failed before importing anything — a corrupt zip, a missing collection —
+// leaves it staged so it can be retried without a re-upload.
+func settleUpload(item *stagedArchive, result Result, runErr error, finished bool) {
+	if !finished || (runErr != nil && result.Imported == 0) {
+		stagingRegistry.Restore(item)
+		return
+	}
+	stagingRegistry.Release(item)
 }
 
 // GetJob returns a copy of the in-memory job, or false if unknown.
@@ -73,7 +87,7 @@ func GetJob(id string) (Job, bool) {
 func runImport(app core.App, ownerUserID string, item *stagedArchive, report func(done, total int)) (Result, error) {
 	result := Result{Errors: []string{}}
 
-	zr, err := zip.OpenReader(item.path)
+	zr, err := zip.OpenReader(item.Path)
 	if err != nil {
 		return result, ErrNotArchive
 	}
@@ -90,7 +104,7 @@ func runImport(app core.App, ownerUserID string, item *stagedArchive, report fun
 		}
 	}
 
-	entries := item.preview.Files
+	entries := item.Payload.Files
 	total := len(entries)
 	report(0, total)
 
@@ -124,7 +138,7 @@ func applyEntry(app core.App, collection *core.Collection, ownerUserID string, e
 	}
 	if file == nil {
 		result.Failed++
-		appendError(result, fmt.Sprintf("%s: missing from archive", entry.Path))
+		result.Errors = importjob.AppendError(result.Errors, fmt.Sprintf("%s: missing from archive", entry.Path))
 		return
 	}
 	if err := importOnePDF(app, collection, ownerUserID, entry, file); err != nil {
@@ -134,7 +148,7 @@ func applyEntry(app core.App, collection *core.Collection, ownerUserID string, e
 			return
 		}
 		result.Failed++
-		appendError(result, fmt.Sprintf("%s: %v", entry.Path, err))
+		result.Errors = importjob.AppendError(result.Errors, fmt.Sprintf("%s: %v", entry.Path, err))
 		return
 	}
 	result.Imported++
@@ -156,25 +170,5 @@ func importOnePDF(app core.App, collection *core.Collection, ownerUserID string,
 	record.Set("file", fsFile)
 	record.Set("processing_status", models.DocStatusPending)
 
-	if err := app.Save(record); err != nil {
-		var dup *duplicates.ErrDuplicate
-		if errors.As(err, &dup) {
-			return dup
-		}
-		if dup := duplicates.ErrDuplicateFromAPIError(err); dup != nil {
-			return dup
-		}
-		if dup := duplicates.ErrDuplicateFromSaveConflict(app, record, err); dup != nil {
-			return dup
-		}
-		return err
-	}
-	return nil
-}
-
-func appendError(result *Result, msg string) {
-	if len(result.Errors) >= maxReportedErrors {
-		return
-	}
-	result.Errors = append(result.Errors, msg)
+	return duplicates.NormalizeSaveError(app, record, app.Save(record))
 }

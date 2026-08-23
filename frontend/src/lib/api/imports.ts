@@ -28,6 +28,7 @@ export async function importFromNgx(
 
   const result = await pollJob<NgxImportResult>(
     `/api/app/import/ngx/status?job_id=${encodeURIComponent(start.job_id)}`,
+    { label: 'import' },
   )
   return { ...result, errors: result.errors ?? [] }
 }
@@ -105,7 +106,7 @@ export async function importAmazonArchive(
 
   const result = await pollJob<AmazonImportResult>(
     `/api/app/import/amazon/status?job_id=${encodeURIComponent(start.job_id)}`,
-    { onProgress },
+    { onProgress, label: 'import' },
   )
   return { ...result, errors: result.errors ?? [] }
 }

@@ -7,7 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -27,6 +28,11 @@ const maxDetectOCRPages = 40
 // layer. A scanned page yields nothing at all, so the bar only has to clear
 // stray artifacts.
 const minPageTextChars = 16
+
+// detectOCRWorkers bounds how many pages of a scan are sent to the OCR provider
+// at once. A handful in flight hides the round trip latency without turning a
+// long scan into a burst the provider (or its rate limit) objects to.
+const detectOCRWorkers = 4
 
 var (
 	// ErrDetectUnavailable is returned when no extraction model is configured.
@@ -67,19 +73,32 @@ var detectRegistry = importjob.NewRegistry[Suggestion](importjob.DefaultRetentio
 // Detect proposes document boundaries for a staged upload in the background and
 // returns the job id. The upload is not consumed: detection can be repeated and
 // the user still confirms the split afterwards.
+//
+// It is held for the length of the run, though. A detection reads the staged PDF
+// for as long as it takes to OCR every page, and without the hold a discard, a
+// confirmed split or the TTL sweep would delete the file out from under it.
 func Detect(app core.App, ownerUserID, uploadID string, deps DetectDeps) (string, error) {
-	view, sourcePath, ok := Lookup(strings.TrimSpace(uploadID), ownerUserID)
+	item, ok := stagingRegistry.Hold(uploadID, ownerUserID)
 	if !ok {
 		return "", ErrUploadNotFound
 	}
 	if deps.Splitter == nil {
+		stagingRegistry.Unhold(item)
 		return "", ErrDetectUnavailable
 	}
 
 	logger := app.Logger().With("component", "pdf_split")
-	return detectRegistry.Start(ownerUserID, func(report func(done, total int)) (Suggestion, error) {
-		return runDetect(logger, sourcePath, view.PageCount, deps, report)
+	sourcePath, pageCount := sourcePathOf(item), item.Payload.preview.PageCount
+	jobID, err := detectRegistry.Start(ownerUserID, func(report func(done, total int)) (Suggestion, error) {
+		defer stagingRegistry.Unhold(item)
+		return runDetect(logger, sourcePath, pageCount, deps, report)
 	})
+	if err != nil {
+		// The job never started, so the hold ends with it.
+		stagingRegistry.Unhold(item)
+		return "", err
+	}
+	return jobID, nil
 }
 
 // GetDetectJob returns a copy of the in-memory detection job, or false if unknown.
@@ -119,13 +138,17 @@ func readPageText(
 	deps DetectDeps,
 	report func(done, total int),
 ) ([]ai.PageText, string, error) {
+	// One pdftotext run for the whole file: starting it per page would re-parse
+	// the document up to MaxPages times over.
+	texts, err := pdftool.AllPagesText(context.Background(), sourcePath, pageCount)
+	if err != nil {
+		return nil, "", fmt.Errorf("read page text: %w", err)
+	}
+
 	pages := make([]ai.PageText, 0, pageCount)
 	withText := 0
 	for page := 1; page <= pageCount; page++ {
-		text, err := pdftool.PageText(context.Background(), sourcePath, page)
-		if err != nil {
-			return nil, "", fmt.Errorf("read page %d text: %w", page, err)
-		}
+		text := texts[page-1]
 		if len(text) >= minPageTextChars {
 			withText++
 		}
@@ -160,27 +183,82 @@ func readPageText(
 	defer os.RemoveAll(workDir)
 
 	report(0, pageCount)
-	for i := range pages {
-		text, err := ocrOnePage(sourcePath, workDir, pages[i].Page, deps)
-		if err != nil {
-			return nil, "", fmt.Errorf("read page %d: %w", pages[i].Page, err)
-		}
-		pages[i].Text = text
-		report(pages[i].Page, pageCount)
+	if err := ocrPages(pages, sourcePath, workDir, deps, report); err != nil {
+		return nil, "", err
 	}
 	return pages, "ocr", nil
 }
 
+// ocrPages fills in the text of every page from the OCR provider, a few pages
+// at a time.
+//
+// The calls are network bound and independent, so running them one after another
+// made the wall time the sum of up to maxDetectOCRPages round trips. Order is
+// preserved because each worker writes only its own slot; the first failure
+// cancels the rest.
+func ocrPages(
+	pages []ai.PageText,
+	sourcePath, workDir string,
+	deps DetectDeps,
+	report func(done, total int),
+) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	workers := min(detectOCRWorkers, len(pages))
+	var (
+		next atomic.Int64
+		mu   sync.Mutex
+		done int
+		wg   sync.WaitGroup
+	)
+	errs := make([]error, len(pages))
+
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				i := int(next.Add(1)) - 1
+				if i >= len(pages) || ctx.Err() != nil {
+					return
+				}
+				text, err := ocrOnePage(ctx, sourcePath, workDir, pages[i].Page, deps)
+				if err != nil {
+					errs[i] = fmt.Errorf("read page %d: %w", pages[i].Page, err)
+					cancel()
+					return
+				}
+				pages[i].Text = text
+
+				mu.Lock()
+				done++
+				report(done, len(pages))
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+
+	// Reported by page order, so the message names the first page that failed
+	// rather than whichever worker lost the race.
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ocrOnePage extracts a single page to its own PDF and runs the OCR provider on
 // it, which is how a per-page text list is built from a whole-file provider.
-func ocrOnePage(sourcePath, workDir string, page int, deps DetectDeps) (string, error) {
+func ocrOnePage(ctx context.Context, sourcePath, workDir string, page int, deps DetectDeps) (string, error) {
 	pagePath := filepath.Join(workDir, fmt.Sprintf("page-%d.pdf", page))
-	if err := pdftool.ExtractRange(context.Background(), sourcePath, page, page, pagePath); err != nil {
+	if err := pdftool.ExtractRange(ctx, sourcePath, page, page, pagePath); err != nil {
 		return "", err
 	}
 	defer os.Remove(pagePath)
 
-	ctx := context.Background()
 	if deps.OCRTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, deps.OCRTimeout)

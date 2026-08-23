@@ -23,8 +23,21 @@ const (
 // Without it the registry would grow for the process lifetime.
 const DefaultRetention = time.Hour
 
+// MaxReportedErrors bounds the error list a job result carries back to the
+// client: a run that fails on every one of a few hundred items would otherwise
+// return a response nobody reads.
+const MaxReportedErrors = 25
+
 // ErrBusy is returned when the owner already has an import running.
 var ErrBusy = errors.New("an import is already in progress")
+
+// AppendError appends msg to a result's error list unless the cap is reached.
+func AppendError(errs []string, msg string) []string {
+	if len(errs) >= MaxReportedErrors {
+		return errs
+	}
+	return append(errs, msg)
+}
 
 // Progress is the coarse "done of total" counter a long run may report.
 type Progress struct {

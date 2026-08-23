@@ -48,8 +48,11 @@ func Register(app core.App, rt *config.Runtime, idx *fulltext.Index) {
 			g.DELETE("/import/amazon/upload", bindAuth(handleDeleteImportAmazonUpload(app)))
 			g.POST("/import/amazon", bindAuth(handlePostImportAmazon(app)))
 			g.GET("/import/amazon/status", bindAuth(handleGetImportAmazonStatus(app)))
+			// The extra megabyte is headroom for the multipart framing, so a PDF
+			// at the cap still reaches the handler and is rejected with the
+			// message that explains the limit instead of a bare 413.
 			g.POST("/split/upload", bindAuth(handlePostSplitUpload(app))).
-				Bind(apis.BodyLimit(pdfsplit.MaxPDFBytes))
+				Bind(apis.BodyLimit(pdfsplit.MaxPDFBytes + (1 << 20)))
 			g.DELETE("/split/upload", bindAuth(handleDeleteSplitUpload(app)))
 			g.GET("/split/page", bindAuth(handleGetSplitPage(app)))
 			g.POST("/split/detect", bindAuth(handlePostSplitDetect(app, rt)))

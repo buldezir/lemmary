@@ -17,9 +17,6 @@ import (
 	"paperless-go/backend/internal/strutil"
 )
 
-// maxReportedErrors bounds the error list returned to the client.
-const maxReportedErrors = 25
-
 // maxPartNameBytes keeps a generated part file name well inside what the
 // storage layer and the UI can carry. The sanitized stem is ASCII, so a byte
 // cap is also a character cap.
@@ -85,32 +82,52 @@ func ValidateParts(parts []Part, pageCount int) error {
 	return nil
 }
 
-// Start splits a staged PDF in the background and returns the job id. The
-// upload is consumed: the upload id is no longer valid afterwards, and the
-// original PDF is discarded rather than kept as a document of its own.
-// Only one split may run at a time per owner.
+// Start splits a staged PDF in the background and returns the job id. A run
+// that gets as far as creating documents consumes the upload: the upload id is
+// no longer valid afterwards, and the original PDF is discarded rather than kept
+// as a document of its own. Only one split may run at a time per owner.
 func Start(app core.App, ownerUserID, uploadID string, parts []Part) (string, error) {
-	item, ok := claimStaged(strings.TrimSpace(uploadID), ownerUserID)
+	item, ok := stagingRegistry.Claim(uploadID, ownerUserID)
 	if !ok {
 		return "", ErrUploadNotFound
 	}
 
-	if err := ValidateParts(parts, item.preview.PageCount); err != nil {
+	if err := ValidateParts(parts, item.Payload.preview.PageCount); err != nil {
 		// Nothing was consumed, so the upload stays available for a fixed request.
-		restoreStaged(item)
+		stagingRegistry.Restore(item)
 		return "", err
 	}
 
-	jobID, err := registry.Start(ownerUserID, func(report func(done, total int)) (Result, error) {
-		defer releaseStaged(item)
-		return runSplit(app, ownerUserID, item, parts, report)
+	jobID, err := registry.Start(ownerUserID, func(report func(done, total int)) (result Result, runErr error) {
+		finished := false
+		// Settled from a defer because a panic in the run unwinds straight past
+		// here into the job registry's recover, and an upload nobody settles is
+		// neither retryable nor sweepable.
+		defer func() { settleUpload(item, result, runErr, finished) }()
+		result, runErr = runSplit(app, ownerUserID, item, parts, report)
+		finished = true
+		return result, runErr
 	})
 	if err != nil {
 		// The job never started, so put the upload back for another attempt.
-		restoreStaged(item)
+		stagingRegistry.Restore(item)
 		return "", err
 	}
 	return jobID, nil
+}
+
+// settleUpload ends the hold a split job took on the staged upload.
+//
+// The upload is consumed once the run got as far as creating documents (or
+// finished cleanly). A run that fell over before a single document existed
+// leaves it staged instead: retrying beats making the user upload the scan and
+// mark every cut again.
+func settleUpload(item *stagedPDF, result Result, runErr error, finished bool) {
+	if !finished || (runErr != nil && result.Created == 0) {
+		stagingRegistry.Restore(item)
+		return
+	}
+	stagingRegistry.Release(item)
 }
 
 // GetJob returns a copy of the in-memory job, or false if unknown.
@@ -132,21 +149,21 @@ func runSplit(app core.App, ownerUserID string, item *stagedPDF, parts []Part, r
 	}
 	defer os.RemoveAll(workDir)
 
-	baseName := partBaseName(item.preview.FileName)
+	baseName := partBaseName(item.Payload.preview.FileName)
 	total := len(parts)
 	report(0, total)
 
 	for i, part := range parts {
 		name := partFileName(baseName, part)
-		if err := applyPart(app, collection, ownerUserID, item.sourcePath(), workDir, name, part, &result); err != nil {
-			appendError(&result, fmt.Sprintf("pages %d-%d: %v", part.From, part.To, err))
+		if err := applyPart(app, collection, ownerUserID, sourcePathOf(item), workDir, name, part, &result); err != nil {
+			result.Errors = importjob.AppendError(result.Errors, fmt.Sprintf("pages %d-%d: %v", part.From, part.To, err))
 		}
 		report(i+1, total)
 	}
 
 	app.Logger().Info("pdf split finished",
 		"component", "pdf_split",
-		"upload_id", item.id,
+		"upload_id", item.ID,
 		"parts", total,
 		"created", result.Created,
 		"duplicates", result.SkippedDuplicates,
@@ -199,7 +216,7 @@ func applyPart(
 	record.Set("file", fsFile)
 	record.Set("processing_status", models.DocStatusPending)
 
-	if err := saveDocument(app, record); err != nil {
+	if err := duplicates.NormalizeSaveError(app, record, app.Save(record)); err != nil {
 		var dup *duplicates.ErrDuplicate
 		if errors.As(err, &dup) {
 			// Already in the library — re-splitting the same scan is a normal
@@ -214,26 +231,6 @@ func applyPart(
 	result.Created++
 	result.DocumentIDs = append(result.DocumentIDs, record.Id)
 	return nil
-}
-
-// saveDocument saves the record, normalizing every shape a duplicate rejection
-// can arrive in into *duplicates.ErrDuplicate.
-func saveDocument(app core.App, record *core.Record) error {
-	err := app.Save(record)
-	if err == nil {
-		return nil
-	}
-	var dup *duplicates.ErrDuplicate
-	if errors.As(err, &dup) {
-		return dup
-	}
-	if dup := duplicates.ErrDuplicateFromAPIError(err); dup != nil {
-		return dup
-	}
-	if dup := duplicates.ErrDuplicateFromSaveConflict(app, record, err); dup != nil {
-		return dup
-	}
-	return err
 }
 
 // partBaseName derives a safe file-name stem from the uploaded file name.
@@ -270,11 +267,4 @@ func partFileName(baseName string, part Part) string {
 		return fmt.Sprintf("%s-page-%d.pdf", baseName, part.From)
 	}
 	return fmt.Sprintf("%s-pages-%d-%d.pdf", baseName, part.From, part.To)
-}
-
-func appendError(result *Result, msg string) {
-	if len(result.Errors) >= maxReportedErrors {
-		return
-	}
-	result.Errors = append(result.Errors, msg)
 }

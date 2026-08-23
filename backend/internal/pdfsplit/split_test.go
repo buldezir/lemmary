@@ -2,6 +2,7 @@ package pdfsplit
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -108,14 +109,35 @@ func TestPartFileName(t *testing.T) {
 	}
 }
 
-func TestAppendErrorIsCapped(t *testing.T) {
-	t.Parallel()
+func TestSplitRestoresTheUploadWhenNothingWasCreated(t *testing.T) {
+	resetStaging(t)
+	root := t.TempDir()
+	item := stageDir(t, root, "upload-1", "owner-a", 2, time.Now().UTC().Add(time.Hour))
 
-	result := &Result{}
-	for i := 0; i < maxReportedErrors+10; i++ {
-		appendError(result, "boom")
+	// nil app: the run fails before a single document exists, which is the case
+	// that used to destroy the staged PDF and force a full re-upload.
+	jobID, err := Start(nil, "owner-a", "upload-1", []Part{{From: 1, To: 2}})
+	if err != nil {
+		t.Fatalf("Start() error: %v", err)
 	}
-	if len(result.Errors) != maxReportedErrors {
-		t.Fatalf("errors=%d want %d", len(result.Errors), maxReportedErrors)
+	waitForSplitStatus(t, jobID, JobStatusFailed)
+
+	if _, _, ok := Lookup("upload-1", "owner-a"); !ok {
+		t.Fatal("a split that created nothing must leave the upload staged for a retry")
 	}
+	if _, err := os.Stat(sourcePathOf(item)); err != nil {
+		t.Fatalf("the staged PDF was deleted by a failed split: %v", err)
+	}
+}
+
+func waitForSplitStatus(t *testing.T, jobID, want string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if job, ok := GetJob(jobID); ok && job.Status == want {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("job %s did not reach status %q", jobID, want)
 }

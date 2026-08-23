@@ -8,6 +8,7 @@
 package pdftool
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -27,9 +28,16 @@ const (
 	RenderTimeout = 5 * time.Minute
 	// TextTimeout bounds one pdftotext page extraction.
 	TextTimeout = 30 * time.Second
+	// AllTextTimeout bounds one pdftotext run over a whole document, which costs
+	// far more than a single page.
+	AllTextTimeout = 2 * time.Minute
 	// ExtractTimeout bounds the pdfseparate + pdfunite pair for one page range.
 	ExtractTimeout = 60 * time.Second
 )
+
+// pageSeparator is the form feed pdftotext writes after every page, which is how
+// a whole-file extraction is cut back into per-page text.
+const pageSeparator = "\f"
 
 // ErrNotPDF is returned for a path that does not carry a .pdf extension.
 var ErrNotPDF = fmt.Errorf("pdftool: not a PDF file")
@@ -43,18 +51,27 @@ func lookPath(binary string) (string, error) {
 	return path, nil
 }
 
-// run executes cmd, folding the combined output into the error so a poppler
-// message ("Syntax Error: ...") reaches the caller instead of just an exit code.
+// run executes cmd and returns its standard output, folding standard error into
+// the error so a poppler message ("Syntax Error: ...") reaches the caller
+// instead of just an exit code.
+//
+// The two streams are kept apart on purpose: poppler prints warnings about
+// damaged files ("Internal Error: xref num 1 not found") to standard error even
+// on success, and folding those into the output would count a warning as
+// extracted page text — which is enough to make a scan look born-digital.
 func run(ctx context.Context, binary string, args ...string) ([]byte, error) {
 	path, err := lookPath(binary)
 	if err != nil {
 		return nil, err
 	}
-	output, err := exec.CommandContext(ctx, path, args...).CombinedOutput()
-	if err != nil {
-		return output, fmt.Errorf("pdftool: %s: %w: %s", binary, err, strings.TrimSpace(string(output)))
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, path, args...)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return stdout.Bytes(), fmt.Errorf("pdftool: %s: %w: %s", binary, err, strings.TrimSpace(stderr.String()))
 	}
-	return output, nil
+	return stdout.Bytes(), nil
 }
 
 // RequirePDF rejects a path that is not a PDF before any binary is invoked.
@@ -202,6 +219,47 @@ func PageText(ctx context.Context, pdfPath string, page int) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
+// AllPagesText extracts the text layer of every page in one pdftotext run and
+// returns exactly pageCount entries, one per page in page order.
+//
+// One call rather than one per page: pdftotext re-parses the whole document
+// every time it starts, so a per-page loop pays that cost pageCount times.
+// pdftotext writes a form feed after each page, which is what the output is cut
+// on.
+func AllPagesText(ctx context.Context, pdfPath string, pageCount int) ([]string, error) {
+	if err := RequirePDF(pdfPath); err != nil {
+		return nil, err
+	}
+	if pageCount < 1 {
+		return nil, fmt.Errorf("pdftool: invalid page count %d", pageCount)
+	}
+	ctx, cancel := context.WithTimeout(ctx, AllTextTimeout)
+	defer cancel()
+
+	// -layout keeps columns readable, which matters when the text is fed to a
+	// model that has to recognize letterheads and totals.
+	output, err := run(ctx, "pdftotext", "-layout", pdfPath, "-")
+	if err != nil {
+		return nil, err
+	}
+
+	// The trailing separator after the last page would otherwise read as an
+	// extra empty page.
+	text := strings.TrimSuffix(string(output), pageSeparator)
+	pages := strings.Split(text, pageSeparator)
+
+	// A damaged file can yield fewer (or more) sections than it has pages, and
+	// callers index by page number, so the result is squared up either way
+	// instead of failing the whole extraction over a missing text layer.
+	out := make([]string, pageCount)
+	for i := range out {
+		if i < len(pages) {
+			out[i] = strings.TrimSpace(pages[i])
+		}
+	}
+	return out, nil
+}
+
 // ExtractRange writes pages from..to of pdfPath to outPath as a new PDF.
 //
 // pdfseparate copies the original page objects rather than re-rasterizing, so
@@ -244,7 +302,7 @@ func ExtractRange(ctx context.Context, pdfPath string, from, to int, outPath str
 		if err := movePDF(pages[0], outPath); err != nil {
 			return err
 		}
-		return canonicalizeFileID(ctx, outPath)
+		return canonicalizeFileID(outPath)
 	}
 
 	// pdfseparate names files by source page number, so sorting numerically
@@ -254,7 +312,7 @@ func ExtractRange(ctx context.Context, pdfPath string, from, to int, outPath str
 	if _, err := run(ctx, "pdfunite", args...); err != nil {
 		return err
 	}
-	return canonicalizeFileID(ctx, outPath)
+	return canonicalizeFileID(outPath)
 }
 
 // movePDF relocates src to dst, falling back to a copy across filesystems

@@ -13,16 +13,8 @@ import (
 // resetStaging isolates the package-level registry between tests.
 func resetStaging(t *testing.T) {
 	t.Helper()
-	stagingMu.Lock()
-	stagingItems = map[string]*stagedArchive{}
-	stagingBusy = map[string]struct{}{}
-	stagingMu.Unlock()
-	t.Cleanup(func() {
-		stagingMu.Lock()
-		stagingItems = map[string]*stagedArchive{}
-		stagingBusy = map[string]struct{}{}
-		stagingMu.Unlock()
-	})
+	stagingRegistry = newStagingRegistry()
+	t.Cleanup(func() { stagingRegistry = newStagingRegistry() })
 }
 
 func stageFile(t *testing.T, dir, id, owner string, expiresAt time.Time) *stagedArchive {
@@ -31,10 +23,8 @@ func stageFile(t *testing.T, dir, id, owner string, expiresAt time.Time) *staged
 	if err := os.WriteFile(path, []byte("archive"), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
-	item := &stagedArchive{id: id, ownerUserID: owner, path: path, expiresAt: expiresAt}
-	stagingMu.Lock()
-	stagingItems[id] = item
-	stagingMu.Unlock()
+	item := &stagedArchive{ID: id, OwnerUserID: owner, Path: path, ExpiresAt: expiresAt}
+	stagingRegistry.Add(item)
 	return item
 }
 
@@ -95,23 +85,23 @@ func TestClaimStagedIsSingleUseAndOwnerScoped(t *testing.T) {
 	dir := t.TempDir()
 	item := stageFile(t, dir, "upload-1", "owner-a", time.Now().UTC().Add(time.Hour))
 
-	if _, ok := claimStaged("upload-1", "owner-b"); ok {
+	if _, ok := stagingRegistry.Claim("upload-1", "owner-b"); ok {
 		t.Fatal("another owner must not claim the archive")
 	}
-	if _, ok := claimStaged("missing", "owner-a"); ok {
+	if _, ok := stagingRegistry.Claim("missing", "owner-a"); ok {
 		t.Fatal("unknown id must not claim")
 	}
 
-	claimed, ok := claimStaged("upload-1", "owner-a")
+	claimed, ok := stagingRegistry.Claim("upload-1", "owner-a")
 	if !ok || claimed != item {
 		t.Fatalf("claim failed: %v %v", claimed, ok)
 	}
-	if _, ok := claimStaged("upload-1", "owner-a"); ok {
+	if _, ok := stagingRegistry.Claim("upload-1", "owner-a"); ok {
 		t.Fatal("a claimed archive must not be claimable twice")
 	}
 
-	restoreStaged(claimed)
-	if _, ok := claimStaged("upload-1", "owner-a"); !ok {
+	stagingRegistry.Restore(claimed)
+	if _, ok := stagingRegistry.Claim("upload-1", "owner-a"); !ok {
 		t.Fatal("a restored archive must be claimable again")
 	}
 }
@@ -121,7 +111,7 @@ func TestClaimStagedRejectsExpired(t *testing.T) {
 	dir := t.TempDir()
 	stageFile(t, dir, "old", "owner-a", time.Now().UTC().Add(-time.Minute))
 
-	if _, ok := claimStaged("old", "owner-a"); ok {
+	if _, ok := stagingRegistry.Claim("old", "owner-a"); ok {
 		t.Fatal("an expired archive must not be claimable")
 	}
 }
@@ -134,7 +124,7 @@ func TestDiscardRemovesTheFile(t *testing.T) {
 	if !Discard("upload-1", "owner-a") {
 		t.Fatal("discard should report success")
 	}
-	if _, err := os.Stat(item.path); !os.IsNotExist(err) {
+	if _, err := os.Stat(item.Path); !os.IsNotExist(err) {
 		t.Fatalf("staged file still present: %v", err)
 	}
 	if Discard("upload-1", "owner-a") {
@@ -167,17 +157,17 @@ func TestSweepStagingDropsExpiredAndOrphanFiles(t *testing.T) {
 	}
 
 	// An archive mid-import has no registry entry either, but must survive.
-	importing, ok := claimStaged("fresh", "owner-a")
+	importing, ok := stagingRegistry.Claim("fresh", "owner-a")
 	if !ok {
 		t.Fatal("claim fresh")
 	}
 
-	sweepStaging(dir, now)
+	stagingRegistry.Sweep(dir, now)
 
-	if _, err := os.Stat(importing.path); err != nil {
+	if _, err := os.Stat(importing.Path); err != nil {
 		t.Fatalf("archive being imported was swept: %v", err)
 	}
-	if _, err := os.Stat(expired.path); !os.IsNotExist(err) {
+	if _, err := os.Stat(expired.Path); !os.IsNotExist(err) {
 		t.Fatalf("expired archive kept: %v", err)
 	}
 	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
@@ -186,10 +176,7 @@ func TestSweepStagingDropsExpiredAndOrphanFiles(t *testing.T) {
 	if _, err := os.Stat(recent); err != nil {
 		t.Fatalf("recent unknown file swept: %v", err)
 	}
-	stagingMu.Lock()
-	_, stillRegistered := stagingItems["expired"]
-	stagingMu.Unlock()
-	if stillRegistered {
+	if _, ok := stagingRegistry.Lookup("expired", "owner-a"); ok {
 		t.Fatal("expired entry left in the registry")
 	}
 }
@@ -207,7 +194,7 @@ func TestStartRestoresArchiveWhenTheOwnerIsBusy(t *testing.T) {
 	if _, err := Start(nil, "owner-a", "upload-1"); !errors.Is(err, ErrImportInProgress) {
 		t.Fatalf("err=%v want ErrImportInProgress", err)
 	}
-	if _, ok := claimStaged("upload-1", "owner-a"); !ok {
+	if _, ok := stagingRegistry.Claim("upload-1", "owner-a"); !ok {
 		t.Fatal("a rejected start must leave the archive stageable")
 	}
 }

@@ -37,6 +37,17 @@ export type SplitResult = {
 
 export type SplitProgress = JobProgress
 
+/**
+ * Poll budgets sized to what the backend may legitimately spend, so the UI does
+ * not report a failure while the server is still working.
+ *
+ * Detection reads up to 40 pages of a scan through the OCR provider before it
+ * even calls the model; a split extracts up to 100 parts, each with a minute of
+ * poppler budget, and then saves them.
+ */
+const detectTimeoutMs = 30 * 60 * 1000
+const splitTimeoutMs = 2 * 60 * 60 * 1000
+
 /** Stages a multi-document PDF and reports how many pages it holds. */
 export function uploadSplitPdf(file: File) {
   const formData = new FormData()
@@ -90,7 +101,7 @@ export async function detectSplitParts(
 
   const result = await pollJob<SplitSuggestion>(
     `/api/app/split/detect/status?job_id=${encodeURIComponent(start.job_id)}`,
-    { onProgress },
+    { onProgress, label: 'detection', timeoutMs: detectTimeoutMs },
   )
   return { ...result, parts: result.parts ?? [] }
 }
@@ -112,7 +123,7 @@ export async function runSplit(
 
   const result = await pollJob<SplitResult>(
     `/api/app/split/status?job_id=${encodeURIComponent(start.job_id)}`,
-    { onProgress },
+    { onProgress, label: 'split', timeoutMs: splitTimeoutMs },
   )
   return { ...result, errors: result.errors ?? [], document_ids: result.document_ids ?? [] }
 }

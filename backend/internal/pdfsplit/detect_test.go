@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,15 +34,19 @@ func (s *stubSplitter) DetectSplitPoints(_ context.Context, pages []ai.PageText)
 	return s.suggestion, nil
 }
 
+// stubOCR counts atomically: the detection fallback calls the provider from
+// several goroutines at once.
 type stubOCR struct {
-	calls int
-	err   error
+	callCount atomic.Int64
+	err       error
 }
 
 func (s *stubOCR) Name() string { return "stub-ocr" }
 
+func (s *stubOCR) calls() int { return int(s.callCount.Load()) }
+
 func (s *stubOCR) ExtractText(_ context.Context, filePath, _ string) (string, error) {
-	s.calls++
+	s.callCount.Add(1)
 	if s.err != nil {
 		return "", s.err
 	}
@@ -78,8 +83,8 @@ func TestRunDetectUsesThePDFTextLayer(t *testing.T) {
 	if suggestion.TextSource != "pdf" {
 		t.Fatalf("text_source=%q want pdf", suggestion.TextSource)
 	}
-	if ocrStub.calls != 0 {
-		t.Fatalf("a born-digital PDF must not be sent to OCR, got %d calls", ocrStub.calls)
+	if ocrStub.calls() != 0 {
+		t.Fatalf("a born-digital PDF must not be sent to OCR, got %d calls", ocrStub.calls())
 	}
 	if len(splitter.pages) != 5 {
 		t.Fatalf("splitter saw %d pages, want 5", len(splitter.pages))
@@ -131,8 +136,8 @@ func TestRunDetectFallsBackToOCRForAScan(t *testing.T) {
 	if suggestion.TextSource != "ocr" {
 		t.Fatalf("text_source=%q want ocr", suggestion.TextSource)
 	}
-	if ocrStub.calls != 3 {
-		t.Fatalf("ocr calls=%d want 3 (one per page)", ocrStub.calls)
+	if ocrStub.calls() != 3 {
+		t.Fatalf("ocr calls=%d want 3 (one per page)", ocrStub.calls())
 	}
 	for i, page := range splitter.pages {
 		if !strings.Contains(page.Text, "scanned text") {
@@ -160,8 +165,8 @@ func TestRunDetectRefusesALongScan(t *testing.T) {
 	if !errors.Is(err, ErrDetectTooManyPages) {
 		t.Fatalf("err=%v want ErrDetectTooManyPages", err)
 	}
-	if ocrStub.calls != 0 {
-		t.Fatalf("the page limit must be checked before any OCR call, got %d", ocrStub.calls)
+	if ocrStub.calls() != 0 {
+		t.Fatalf("the page limit must be checked before any OCR call, got %d", ocrStub.calls())
 	}
 }
 
@@ -238,7 +243,7 @@ func TestRunDetectTreatsAMostlyScannedFileAsAScan(t *testing.T) {
 	if suggestion.TextSource != "ocr" {
 		t.Fatalf("text_source=%q want ocr", suggestion.TextSource)
 	}
-	if ocrStub.calls != 5 {
-		t.Fatalf("ocr calls=%d want 5", ocrStub.calls)
+	if ocrStub.calls() != 5 {
+		t.Fatalf("ocr calls=%d want 5", ocrStub.calls())
 	}
 }

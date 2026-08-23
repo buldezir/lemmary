@@ -4,9 +4,19 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
+	"time"
 )
+
+// canonicalVerifyTimeout bounds the re-open check after the trailer rewrite.
+//
+// It is deliberately independent of the caller's context: verification runs at
+// the tail of ExtractRange's budget, so reusing that nearly spent deadline would
+// time the check out and hand back a randomly-identified file — exactly the
+// duplicate that canonicalization exists to prevent.
+const canonicalVerifyTimeout = 15 * time.Second
 
 // canonicalID is the fixed trailer /ID written in place of poppler's random one.
 // The letters never need escaping inside a PDF literal string, so the array is
@@ -27,7 +37,11 @@ var canonicalID = []byte("[(AAAAAAAAAAAAAAAA) (AAAAAAAAAAAAAAAA)]")
 // beyond the offset startxref names. The result is then verified, and the
 // original bytes are restored if it does not open: a file that hashes
 // differently is a far smaller problem than one that cannot be read.
-func canonicalizeFileID(ctx context.Context, path string) error {
+//
+// Falling back is logged rather than returned as an error, because the file is
+// still perfectly usable — but it will not deduplicate against a later split of
+// the same source, so the reason has to be visible somewhere.
+func canonicalizeFileID(path string) error {
 	original, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("pdftool: read for canonicalization: %w", err)
@@ -35,12 +49,31 @@ func canonicalizeFileID(ctx context.Context, path string) error {
 
 	rewritten, changed := canonicalizeTrailerID(original)
 	if !changed {
+		// Either the file is already canonical (nothing to do) or its trailer is
+		// not the shape the rewrite understands, which is worth knowing about:
+		// this part will not deduplicate against a later split of the same scan.
+		if !bytes.Contains(original, canonicalID) {
+			slog.Default().Warn("pdf file id left as poppler wrote it",
+				"component", "pdftool",
+				"path", path,
+				"reason", "no rewritable trailer /ID",
+			)
+		}
 		return nil
 	}
 	if err := os.WriteFile(path, rewritten, 0o600); err != nil {
 		return fmt.Errorf("pdftool: write canonicalized file: %w", err)
 	}
+
+	// A fresh context, not the caller's: see canonicalVerifyTimeout.
+	ctx, cancel := context.WithTimeout(context.Background(), canonicalVerifyTimeout)
+	defer cancel()
 	if _, err := PageCount(ctx, path); err != nil {
+		slog.Default().Warn("canonicalized pdf did not verify, keeping the original",
+			"component", "pdftool",
+			"path", path,
+			"error", err,
+		)
 		if writeErr := os.WriteFile(path, original, 0o600); writeErr != nil {
 			return fmt.Errorf("pdftool: restore after failed canonicalization: %w", writeErr)
 		}

@@ -2,6 +2,7 @@ package pdftool
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -204,5 +205,80 @@ func TestExtractRangeRejectsInvalidRange(t *testing.T) {
 	}
 	if err := ExtractRange(context.Background(), source, 0, 2, source+".out"); err == nil {
 		t.Fatal("expected an error when from < 1")
+	}
+}
+
+func TestRunKeepsStandardErrorOutOfTheOutput(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available")
+	}
+	// poppler prints warnings about damaged files to stderr even when it
+	// succeeds, and counting those as output is enough to make a scan look
+	// born-digital, so the two streams must stay apart.
+	output, err := run(context.Background(), "sh", "-c", "echo page text; echo 'Internal Error: xref num 1 not found' >&2")
+	if err != nil {
+		t.Fatalf("run() error: %v", err)
+	}
+	if got := strings.TrimSpace(string(output)); got != "page text" {
+		t.Fatalf("output=%q want %q", got, "page text")
+	}
+}
+
+func TestRunReportsStandardErrorInTheError(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available")
+	}
+	_, err := run(context.Background(), "sh", "-c", "echo 'Syntax Error: broken' >&2; exit 1")
+	if err == nil {
+		t.Fatal("expected an error for a failing command")
+	}
+	if !strings.Contains(err.Error(), "Syntax Error: broken") {
+		t.Fatalf("error %q does not carry the poppler message", err)
+	}
+}
+
+func TestAllPagesTextSplitsOnThePageSeparator(t *testing.T) {
+	requirePoppler(t, "pdftotext")
+
+	source := writePDF(t, 12, "Invoice INV-1001")
+	pages, err := AllPagesText(context.Background(), source, 12)
+	if err != nil {
+		t.Fatalf("AllPagesText() error: %v", err)
+	}
+	if len(pages) != 12 {
+		t.Fatalf("pages=%d want 12", len(pages))
+	}
+	for i, text := range pages {
+		want := fmt.Sprintf("Page %d", i+1)
+		if !strings.Contains(text, want) {
+			t.Fatalf("page %d text=%q, want %q", i+1, text, want)
+		}
+		// One page's text must not spill into the next, which is what the form
+		// feed boundary is there for.
+		if other := fmt.Sprintf("Page %d", i+2); i+2 <= 12 && strings.Contains(text, other) {
+			t.Fatalf("page %d text leaked %q: %q", i+1, other, text)
+		}
+	}
+}
+
+func TestAllPagesTextSquaresUpADisagreeingPageCount(t *testing.T) {
+	requirePoppler(t, "pdftotext")
+
+	// Callers index the result by page number, so a file whose text sections do
+	// not match its page count must still return one entry per page.
+	source := writePDF(t, 3)
+	pages, err := AllPagesText(context.Background(), source, 5)
+	if err != nil {
+		t.Fatalf("AllPagesText() error: %v", err)
+	}
+	if len(pages) != 5 {
+		t.Fatalf("pages=%d want 5", len(pages))
+	}
+	if pages[4] != "" {
+		t.Fatalf("missing page text=%q want empty", pages[4])
 	}
 }
