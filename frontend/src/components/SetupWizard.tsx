@@ -150,11 +150,18 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       if (!extractProviderId) {
         throw new Error('Choose an extraction provider (OpenAI, OpenRouter, or Mistral).')
       }
+      // First-launch setup only asks for one LLM binding: chat and search start
+      // out pointing at the extraction provider/model and can be split later in
+      // Settings.
       await updateAppSettings({
         ocr_provider_id: ocrProviderId,
         ocr_model: ocrModel,
         extract_provider_id: extractProviderId,
         extract_model: extractModel,
+        chat_provider_id: extractProviderId,
+        chat_model: extractModel,
+        search_provider_id: extractProviderId,
+        search_model: extractModel,
       })
       const next = await refreshStatus()
       if (next.needs_config) {
@@ -320,8 +327,8 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           {step === 'models' && (
             <form className="flex flex-col gap-4" onSubmit={onSaveModels}>
               <p className="text-sm text-stone-600">
-                Pick a provider and model for OCR and metadata extraction. Chat and search default
-                to the extraction model.
+                Pick a provider and model for OCR and metadata extraction. Chat and search are set
+                to the extraction model too; you can change them later in Settings.
               </p>
               {llmProviders.length === 0 && (
                 <p className="text-sm text-amber-800">
