@@ -225,7 +225,6 @@ func (h *Harness) stopDocumentJobs(t testing.TB, documentIDs ...string) {
 				continue
 			}
 			job.Set("status", "failed")
-			job.Set("last_error", "stopped by e2e harness")
 			if err := h.App.Save(job); err != nil {
 				t.Fatalf("stop job %s: %v", job.Id, err)
 			}

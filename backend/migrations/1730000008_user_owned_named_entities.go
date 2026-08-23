@@ -152,6 +152,8 @@ func unlockNamedEntityOwnership(app core.App, collectionName, oldIndex, newIndex
 		coll.Fields.RemoveById(f.GetId())
 	}
 	coll.RemoveIndex(newIndex)
-	coll.AddIndex(oldIndex, true, "name", "")
+	// Non-unique on purpose: per-user ownership legitimately created records
+	// sharing a name, so restoring the old unique index would fail mid-down.
+	coll.AddIndex(oldIndex, false, "name", "")
 	return app.Save(coll)
 }
