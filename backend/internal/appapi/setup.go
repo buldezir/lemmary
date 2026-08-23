@@ -30,9 +30,9 @@ func handleGetSetupStatus(app core.App, rt *config.Runtime) func(*core.RequestEv
 	return func(e *core.RequestEvent) error {
 		if err := config.EnsureDefaults(app); err != nil {
 			app.Logger().Warn("ensure settings before setup status failed", "error", err)
-		} else {
-			_ = rt.Reload(app)
 		}
+		// No reload here: this endpoint is polled on every page load and the
+		// runtime is already kept current by the settings/provider record hooks.
 
 		cfg := rt.Snapshot().Cfg
 		needsAdmin, err := needsAdminSetup(app)

@@ -55,9 +55,9 @@ func handleGetSettings(app core.App, rt *config.Runtime) func(*core.RequestEvent
 	return func(e *core.RequestEvent) error {
 		if err := config.EnsureDefaults(app); err != nil {
 			app.Logger().Warn("ensure settings before GET failed", "error", err)
-		} else {
-			_ = rt.Reload(app)
 		}
+		// No reload here: the runtime is rebuilt by the app_settings/ai_providers
+		// record hooks, so reads stay cheap and quiet.
 		return writeJSON(e, http.StatusOK, settingsResponseFromConfig(rt.Snapshot().Cfg))
 	}
 }
@@ -83,10 +83,7 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 			return writeError(e, http.StatusInternalServerError, "Failed to save settings.")
 		}
 
-		if err := rt.Reload(app); err != nil {
-			return writeError(e, http.StatusInternalServerError, "Settings saved but reload failed.")
-		}
-
+		// app.Save above fires OnRecordAfterUpdateSuccess, which reloads the runtime.
 		return writeJSON(e, http.StatusOK, settingsResponseFromConfig(rt.Snapshot().Cfg))
 	}
 }

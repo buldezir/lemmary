@@ -53,7 +53,7 @@ func handleListProviders(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
+func handleCreateProvider(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var req providerWriteRequest
 		if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
@@ -100,13 +100,12 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 		if err := app.Save(record); err != nil {
 			return writeError(e, http.StatusBadRequest, "Failed to create provider: "+err.Error())
 		}
-		_ = rt.Reload(app)
 		p := aiprovider.FromRecord(record)
 		return writeJSON(e, http.StatusCreated, providerJSON(p))
 	}
 }
 
-func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
+func handlePatchProvider(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		id := strings.TrimSpace(e.Request.PathValue("id"))
 		record, err := app.FindRecordById(aiprovider.CollectionName, id)
@@ -153,12 +152,11 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 		if err := app.Save(record); err != nil {
 			return writeError(e, http.StatusBadRequest, "Failed to update provider: "+err.Error())
 		}
-		_ = rt.Reload(app)
 		return writeJSON(e, http.StatusOK, providerJSON(aiprovider.FromRecord(record)))
 	}
 }
 
-func handleDeleteProvider(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
+func handleDeleteProvider(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		id := strings.TrimSpace(e.Request.PathValue("id"))
 		record, err := app.FindRecordById(aiprovider.CollectionName, id)
@@ -172,7 +170,6 @@ func handleDeleteProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 		if err := app.Delete(record); err != nil {
 			return writeError(e, http.StatusInternalServerError, "Failed to delete provider.")
 		}
-		_ = rt.Reload(app)
 		return writeJSON(e, http.StatusOK, map[string]string{"status": "deleted"})
 	}
 }
