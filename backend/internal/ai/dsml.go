@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -84,21 +83,13 @@ func parseDSMLParameters(body string) string {
 		if name == "" {
 			continue
 		}
-		if isString || match[2] == "" {
-			// Default to string when string= attribute is missing.
-			if match[2] == "" {
-				if n, err := strconv.Atoi(value); err == nil {
-					params[name] = n
-					continue
-				}
-				if b, err := strconv.ParseBool(value); err == nil {
-					params[name] = b
-					continue
-				}
-			}
+		if isString {
 			params[name] = value
 			continue
 		}
+		// No string= attribute, or string=false: try JSON first so numbers,
+		// booleans, arrays, and objects all decode (an array value left as a
+		// raw string would fail the tool-args unmarshal and drop the call).
 		var decoded any
 		if err := json.Unmarshal([]byte(value), &decoded); err == nil {
 			params[name] = decoded

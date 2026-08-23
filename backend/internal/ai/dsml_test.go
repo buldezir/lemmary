@@ -85,3 +85,11 @@ func indexOf(s, sub string) int {
 	}
 	return -1
 }
+
+func TestParseDSMLParametersArrayWithoutStringAttr(t *testing.T) {
+	body := `<｜DSML｜parameter name="tags">["invoice","tax"]</｜DSML｜parameter>`
+	got := parseDSMLParameters(body)
+	if got != `{"tags":["invoice","tax"]}` {
+		t.Fatalf("parseDSMLParameters = %s", got)
+	}
+}

@@ -1,6 +1,8 @@
 package aiprovider
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -71,8 +73,12 @@ func EnsureUniqueAlias(app core.App, alias, excludeID string) error {
 	}
 	record, err := FindByAlias(app, alias)
 	if err != nil {
-		// FindFirstRecordByFilter returns an error when no record matches.
-		return nil
+		// Not-found means the alias is free; any other error must propagate,
+		// or a transient DB failure would skip duplicate detection entirely.
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("check alias uniqueness: %w", err)
 	}
 	if record != nil && record.Id != excludeID {
 		return fmt.Errorf("alias %q is already in use", alias)

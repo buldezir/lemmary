@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,6 +47,74 @@ type SearchDocumentsArgs struct {
 	Correspondent string   `json:"correspondent,omitempty"`
 	Tags          []string `json:"tags,omitempty"`
 	Limit         int      `json:"limit,omitempty"`
+}
+
+// decodeSearchArgs parses tool-call arguments, coercing scalar-kind mismatches
+// (a numeric query, a stringified limit) instead of dropping the whole call —
+// models routinely get JSON scalar types wrong, especially via the DSML path.
+func decodeSearchArgs(data string) (SearchDocumentsArgs, error) {
+	var args SearchDocumentsArgs
+	if err := json.Unmarshal([]byte(data), &args); err == nil {
+		return args, nil
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(data), &raw); err != nil {
+		return args, err
+	}
+	return SearchDocumentsArgs{
+		Query:         coerceString(raw["query"]),
+		DateFrom:      coerceString(raw["date_from"]),
+		DateTo:        coerceString(raw["date_to"]),
+		DocumentType:  coerceString(raw["document_type"]),
+		Correspondent: coerceString(raw["correspondent"]),
+		Tags:          coerceStringSlice(raw["tags"]),
+		Limit:         coerceInt(raw["limit"]),
+	}, nil
+}
+
+func coerceString(v any) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case float64:
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(t)
+	default:
+		return ""
+	}
+}
+
+func coerceStringSlice(v any) []string {
+	switch t := v.(type) {
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, item := range t {
+			if s := coerceString(item); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case string:
+		if strings.TrimSpace(t) == "" {
+			return nil
+		}
+		return []string{t}
+	default:
+		return nil
+	}
+}
+
+func coerceInt(v any) int {
+	switch t := v.(type) {
+	case float64:
+		return int(t)
+	case string:
+		n, _ := strconv.Atoi(strings.TrimSpace(t))
+		return n
+	default:
+		return 0
+	}
 }
 
 // DocumentSearcher runs a user-scoped keyword search against the document archive.
@@ -117,8 +186,10 @@ func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, 
 			Messages:    apiMessages,
 			Temperature: CompletionTemperature(a.client.model, 0.2),
 		}
+		// Tools stay declared on every round: OpenAI-compatible endpoints reject
+		// a bare tool_choice with no tools array, which would 400 the final round.
+		params.Tools = tools
 		if allowTools {
-			params.Tools = tools
 			params.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{
 				OfAuto: openai.String("auto"),
 			}
@@ -301,8 +372,8 @@ func (a *openAISearchAgent) executeToolCall(
 		}
 	}
 
-	var args SearchDocumentsArgs
-	if err := json.Unmarshal([]byte(argumentsJSON), &args); err != nil {
+	args, err := decodeSearchArgs(argumentsJSON)
+	if err != nil {
 		return toolExecResult{
 			ID:      callID,
 			Name:    name,

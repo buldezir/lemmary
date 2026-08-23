@@ -155,7 +155,9 @@ func (p *MistralProvider) requestOCR(ctx context.Context, docType, dataURL strin
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	// Bounded read: base_url is admin-configurable, so the response size is
+	// not fully trusted. OCR markdown for the 20MB input cap fits comfortably.
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 	if err != nil {
 		return "", fmt.Errorf("read mistral OCR response: %w", err)
 	}

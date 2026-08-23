@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	vision "cloud.google.com/go/vision/v2/apiv1"
@@ -14,6 +15,30 @@ import (
 	"google.golang.org/api/option"
 	"paperless-go/backend/internal/aiprovider"
 )
+
+// The gRPC client is goroutine-safe and must be Close()d to release its
+// connection, but providers are rebuilt on every settings reload and OCR-test
+// request while older config snapshots may still be mid-job with the previous
+// instance — so instead of closing, reuse one client per API key for the
+// process lifetime. The map stays as small as the set of keys ever configured.
+var (
+	visionClientMu sync.Mutex
+	visionClients  = map[string]*vision.ImageAnnotatorClient{}
+)
+
+func visionClientForKey(apiKey string) (*vision.ImageAnnotatorClient, error) {
+	visionClientMu.Lock()
+	defer visionClientMu.Unlock()
+	if client, ok := visionClients[apiKey]; ok {
+		return client, nil
+	}
+	client, err := vision.NewImageAnnotatorClient(context.Background(), option.WithAPIKey(apiKey))
+	if err != nil {
+		return nil, err
+	}
+	visionClients[apiKey] = client
+	return client, nil
+}
 
 const visionMaxFilePagesPerRequest = 5
 const visionAnnotateFilesURL = "https://vision.googleapis.com/v1/files:annotate"
@@ -32,7 +57,7 @@ type GoogleVisionProvider struct {
 }
 
 func NewGoogleVisionProvider(apiKey string, logger *slog.Logger) *GoogleVisionProvider {
-	client, err := vision.NewImageAnnotatorClient(context.Background(), option.WithAPIKey(apiKey))
+	client, err := visionClientForKey(apiKey)
 	if err != nil {
 		logger.Error("google vision client init failed", slog.Any("error", err))
 	} else {

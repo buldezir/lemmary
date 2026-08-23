@@ -134,6 +134,12 @@ func LLMUserContentParts(filename, mimeType string, data []byte) ([]openai.ChatC
 		return parts, nil
 	}
 
+	// Chat-completions file parts only accept PDFs; anything else (docx, pptx)
+	// would come back as an opaque upstream 400 instead of a clear error.
+	if mimeType != "application/pdf" {
+		return nil, fmt.Errorf("LLM OCR does not support mime type %s; use a PDF or image, or a different OCR provider", mimeType)
+	}
+
 	if filename == "" {
 		filename = "document"
 	}
