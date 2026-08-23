@@ -36,7 +36,40 @@ func Register(app core.App, rt *config.Runtime) {
 		}
 	})
 
+	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
+		p.recoverStaleRunningJobs()
+		return e.Next()
+	})
+
 	app.Logger().Info("worker registered", "cron", cronExpr)
+}
+
+// recoverStaleRunningJobs re-pends jobs a previous process left in "running".
+// The pipeline runs outside any transaction, so a crash or restart mid-run
+// strands the job (nextDueJob only picks pending) and its document in
+// "processing" with no path back — bulk reprocess skips processing documents.
+func (p *Processor) recoverStaleRunningJobs() {
+	jobs, err := p.app.FindRecordsByFilter(
+		"processing_jobs",
+		"status = {:status}",
+		"",
+		0,
+		0,
+		map[string]any{"status": models.JobStatusRunning},
+	)
+	if err != nil {
+		p.app.Logger().Error("list stale running jobs", slog.Any("error", err))
+		return
+	}
+	for _, job := range jobs {
+		job.Set("status", models.JobStatusPending)
+		job.Set("next_attempt_at", "")
+		if err := p.app.Save(job); err != nil {
+			p.app.Logger().Error("re-pend stale running job", "job", job.Id, slog.Any("error", err))
+			continue
+		}
+		p.app.Logger().Warn("re-pended job left running by a previous process", "job", job.Id)
+	}
 }
 
 func (p *Processor) registerHooks() {
@@ -90,28 +123,6 @@ func (p *Processor) registerHooks() {
 		return e.Next()
 	})
 
-	p.app.OnRecordDelete("documents").BindFunc(func(e *core.RecordEvent) error {
-		jobs, err := e.App.FindRecordsByFilter(
-			"processing_jobs",
-			"document = {:docId}",
-			"-created",
-			100,
-			0,
-			map[string]any{"docId": e.Record.Id},
-		)
-		if err != nil {
-			return err
-		}
-
-		for _, job := range jobs {
-			if err := e.App.Delete(job); err != nil {
-				return err
-			}
-		}
-
-		return e.Next()
-	})
-
 	p.app.OnRecordAfterCreateSuccess("processing_jobs").BindFunc(func(e *core.RecordEvent) error {
 		if e.Record.GetString("status") == models.JobStatusPending {
 			go p.drainPending()
@@ -135,6 +146,32 @@ func Enqueue(app core.App, documentID string, steps []string, forceSteps []strin
 }
 
 func createProcessingJob(app core.App, documentID string, steps []string, forceSteps []string) (*core.Record, error) {
+	// Ensure-queued semantics: a document with an active job must not get a
+	// second one — concurrent reprocess requests would otherwise run OCR and
+	// AI extraction twice for the same document.
+	existing, err := app.FindRecordsByFilter(
+		"processing_jobs",
+		"document = {:doc} && (status = {:pending} || status = {:running})",
+		"-created",
+		1,
+		0,
+		map[string]any{
+			"doc":     documentID,
+			"pending": models.JobStatusPending,
+			"running": models.JobStatusRunning,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if len(existing) > 0 {
+		app.Logger().Info("document already has an active job; not queueing another",
+			"job", existing[0].Id,
+			"document", documentID,
+		)
+		return existing[0], nil
+	}
+
 	jobsCollection, err := app.FindCollectionByNameOrId("processing_jobs")
 	if err != nil {
 		return nil, err
@@ -201,7 +238,30 @@ func (p *Processor) drainPending() {
 
 		if err := p.runJob(job.Id, snap); err != nil {
 			p.app.Logger().Error("job error", "job", job.Id, slog.Any("error", err))
+			// Push the job's next attempt back if it is still immediately due.
+			// Without this, one persistently unclaimable job sits at the head of
+			// nextDueJob forever and starves every job created after it.
+			p.deferErroredJob(job.Id)
 		}
+	}
+}
+
+// deferErroredJob applies a short backoff to a job that errored while still
+// pending and due, so the drain loop can move past it to younger jobs.
+func (p *Processor) deferErroredJob(jobID string) {
+	job, err := p.app.FindRecordById("processing_jobs", jobID)
+	if err != nil {
+		return
+	}
+	if job.GetString("status") != models.JobStatusPending {
+		return
+	}
+	if at := job.GetString("next_attempt_at"); at != "" && at > nowTimestamp() {
+		return
+	}
+	job.Set("next_attempt_at", timestampAfter(RetryDelay(1)))
+	if err := p.app.Save(job); err != nil {
+		p.app.Logger().Error("defer errored job", "job", jobID, slog.Any("error", err))
 	}
 }
 
@@ -281,9 +341,6 @@ func (p *Processor) runJob(jobID string, snap config.Snapshot) error {
 			return err
 		}
 		runs = syncStepRuns(steps, runs)
-		if len(runs) == 0 {
-			runs = initStepRuns(steps)
-		}
 		saveStepRuns(job, runs)
 
 		document.Set("processing_status", models.DocStatusProcessing)

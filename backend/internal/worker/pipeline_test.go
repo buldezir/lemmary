@@ -66,9 +66,9 @@ func TestSyncStepRunsPreservesCompleted(t *testing.T) {
 	}
 }
 
-func TestInitStepRuns(t *testing.T) {
+func TestSyncStepRunsFromEmpty(t *testing.T) {
 	steps := models.FullPipelineSteps
-	got := initStepRuns(steps)
+	got := syncStepRuns(steps, nil)
 	if len(got) != len(steps) {
 		t.Fatalf("expected %d runs, got %d", len(steps), len(got))
 	}

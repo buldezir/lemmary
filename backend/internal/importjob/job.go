@@ -116,12 +116,7 @@ func (r *Registry[T]) Start(ownerUserID string, fn func(report func(done, total 
 		// Registered first so it unlocks after the mutex defer below.
 		defer r.Release(ownerUserID)
 
-		result, runErr := fn(func(done, total int) {
-			r.mu.Lock()
-			job.Progress = Progress{Done: done, Total: total}
-			job.UpdatedAt = time.Now().UTC()
-			r.mu.Unlock()
-		})
+		result, runErr := r.runProtected(job, fn)
 
 		// Fields are written under r.mu; Get copies, so readers never race.
 		r.mu.Lock()
@@ -137,6 +132,23 @@ func (r *Registry[T]) Start(ownerUserID string, fn func(report func(done, total 
 	}()
 
 	return id, nil
+}
+
+// runProtected invokes fn, converting a panic into a job failure: the Start
+// goroutine has no supervisor, so an unrecovered panic in an import would take
+// down the whole server (and every in-flight processing job with it).
+func (r *Registry[T]) runProtected(job *Job[T], fn func(report func(done, total int)) (T, error)) (result T, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("import panicked: %v", p)
+		}
+	}()
+	return fn(func(done, total int) {
+		r.mu.Lock()
+		job.Progress = Progress{Done: done, Total: total}
+		job.UpdatedAt = time.Now().UTC()
+		r.mu.Unlock()
+	})
 }
 
 // Get returns a copy of the job, or false if unknown.

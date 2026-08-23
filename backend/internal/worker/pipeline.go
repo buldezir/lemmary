@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -106,14 +107,8 @@ func (r *PipelineRunner) Run(ctx context.Context, jobID string) error {
 			return r.failStep(job, document, runs, idx, fmt.Errorf("unknown step %q", stepName))
 		}
 
-		markStepRunning(&runs[idx])
-		setStepRunExecutionDetails(&runs[idx], state)
-		job.Set("current_step", stepName)
-		saveStepRuns(job, runs)
-		if err := r.App.Save(job); err != nil {
-			return err
-		}
-
+		// Decide skip before booking an attempt: a skipped step must not show
+		// up in step_runs as attempted, and it needs only one job save.
 		skipped, err := step.ShouldSkip(state)
 		if err != nil {
 			return r.failStep(job, document, runs, idx, err)
@@ -126,6 +121,14 @@ func (r *PipelineRunner) Run(ctx context.Context, jobID string) error {
 			}
 			logger.Info("step skipped", "step", stepName)
 			continue
+		}
+
+		markStepRunning(&runs[idx])
+		setStepRunExecutionDetails(&runs[idx], state)
+		job.Set("current_step", stepName)
+		saveStepRuns(job, runs)
+		if err := r.App.Save(job); err != nil {
+			return err
 		}
 
 		logger.Info("step running", "step", stepName, "attempt", runs[idx].Attempts)
@@ -203,12 +206,15 @@ func (r *PipelineRunner) handleStepFailure(job, document *core.Record, runs []mo
 }
 
 func failJob(app core.App, job *core.Record, document *core.Record, err error) error {
-	documentID := ""
-	if document != nil {
-		documentID = document.Id
-	} else {
-		documentID = job.GetString("document")
+	if document == nil {
+		// Callers that fail before loading the document pass nil, but the claim
+		// already flipped the document to "processing"; load it by the job's
+		// relation so it lands on "failed" instead of hanging there forever.
+		if doc, loadErr := app.FindRecordById("documents", job.GetString("document")); loadErr == nil {
+			document = doc
+		}
 	}
+	documentID := job.GetString("document")
 	app.Logger().Error("job failed",
 		"job", job.Id,
 		"document", documentID,
@@ -218,13 +224,13 @@ func failJob(app core.App, job *core.Record, document *core.Record, err error) e
 	job.Set("status", models.JobStatusFailed)
 	job.Set("finished_at", nowTimestamp())
 	if saveErr := app.Save(job); saveErr != nil {
-		return saveErr
+		return errors.Join(err, saveErr)
 	}
 
 	if document != nil {
 		document.Set("processing_status", models.DocStatusFailed)
 		if saveErr := app.Save(document); saveErr != nil {
-			return saveErr
+			return errors.Join(err, saveErr)
 		}
 	}
 

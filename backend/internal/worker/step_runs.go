@@ -28,18 +28,6 @@ func parseStepRuns(job *core.Record) ([]models.StepRun, error) {
 	return runs, nil
 }
 
-func initStepRuns(steps []string) []models.StepRun {
-	runs := make([]models.StepRun, len(steps))
-	for i, name := range steps {
-		runs[i] = models.StepRun{
-			Name:     name,
-			Status:   models.StepStatusPending,
-			Attempts: 0,
-		}
-	}
-	return runs
-}
-
 func syncStepRuns(steps []string, existing []models.StepRun) []models.StepRun {
 	byName := make(map[string]models.StepRun, len(existing))
 	for _, run := range existing {
