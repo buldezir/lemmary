@@ -140,7 +140,7 @@ function MoreNavMenu({ admin }: { admin: boolean }) {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-20 mt-2 min-w-44 border border-line-strong bg-surface p-1 shadow-md shadow-ink/5"
+          className="absolute right-0 z-20 mt-2 min-w-44 border border-line-strong bg-surface p-1 shadow-md shadow-ink/10"
         >
           <Link
             to="/ocr-test"

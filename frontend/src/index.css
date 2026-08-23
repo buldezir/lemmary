@@ -8,28 +8,35 @@
  * deep oxblood accent for everything interactive. Success and error live in
  * the same warm register (forest ink, madder red) so nothing reads as a
  * foreign SaaS green or alert red on the cream ground.
+ *
+ * Contrast is deliberately pushed past the point where warmth usually goes
+ * soft. The page ground is a full step darker than the card surfaces, so
+ * sheets read as sheets rather than as a tint change; rules are pigment, not
+ * paper edge (line clears 2:1 on surface, line-strong 3.2:1); and every ink
+ * step clears AA on all three grounds -- ink-faint included, which the
+ * lighter set failed at 3.5:1.
  */
 @theme {
   --font-sans: 'Public Sans', ui-sans-serif, system-ui, sans-serif;
   --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --color-paper: #f6f1e5;
-  --color-surface: #fbf7ec;
-  --color-bright: #fffdf6;
-  --color-wash: #eae2ce;
-  --color-line: #dcd2ba;
-  --color-line-strong: #c9bc9e;
+  --color-paper: #ece3ce;
+  --color-surface: #fdfaf1;
+  --color-bright: #fffefa;
+  --color-wash: #dcd0b3;
+  --color-line: #c0b18d;
+  --color-line-strong: #9c8a63;
 
-  --color-ink: #262117;
-  --color-ink-muted: #56503e;
-  --color-ink-soft: #6e6650;
-  --color-ink-faint: #8a8066;
+  --color-ink: #1b1810;
+  --color-ink-muted: #484230;
+  --color-ink-soft: #59513c;
+  --color-ink-faint: #6f664e;
 
-  --color-oxblood: #7a2e26;
-  --color-oxblood-deep: #571e18;
-  --color-forest: #465b34;
-  --color-madder: #9c3327;
+  --color-oxblood: #6e2620;
+  --color-oxblood-deep: #4e1a15;
+  --color-forest: #38492a;
+  --color-madder: #8b291d;
 }
 
 html {

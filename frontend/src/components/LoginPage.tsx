@@ -71,7 +71,7 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
   return (
     <div className="flex min-h-screen flex-col bg-paper">
       <div className="flex flex-1 items-center justify-center px-6">
-        <section className="w-full max-w-sm border border-line-strong bg-surface p-8 shadow-sm shadow-ink/5">
+        <section className="w-full max-w-sm border border-line-strong bg-surface p-8 shadow-sm shadow-ink/10">
           <div className="mb-7 flex flex-col items-center gap-3 border-b border-line pb-6 text-center">
             <AppLogo appName={appName} accent={accent} />
             <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">

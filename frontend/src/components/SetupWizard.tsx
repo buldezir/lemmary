@@ -195,7 +195,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
   return (
     <div className="flex min-h-screen flex-col bg-paper">
       <div className="flex flex-1 items-center justify-center px-6 py-10">
-        <section className="w-full max-w-md border border-line-strong bg-surface p-8 shadow-sm shadow-ink/5">
+        <section className="w-full max-w-md border border-line-strong bg-surface p-8 shadow-sm shadow-ink/10">
           <div className="mb-2 flex items-center gap-2">
             <AppLogo appName={appName} accent={accent} />
             <h1 className="font-display text-xl font-semibold text-ink">{appName}</h1>
@@ -398,7 +398,7 @@ export function SetupBlocked({ appName, accent, onLogout }: SetupBlockedProps) {
   return (
     <div className="flex min-h-screen flex-col bg-paper">
       <div className="flex flex-1 items-center justify-center px-6">
-        <section className="w-full max-w-sm border border-line-strong bg-surface p-8 shadow-sm shadow-ink/5">
+        <section className="w-full max-w-sm border border-line-strong bg-surface p-8 shadow-sm shadow-ink/10">
           <div className="mb-4 flex items-center gap-2">
             <AppLogo appName={appName} accent={accent} />
             <h1 className="font-display text-xl font-semibold text-ink">{appName}</h1>

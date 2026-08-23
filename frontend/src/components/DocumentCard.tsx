@@ -63,7 +63,7 @@ export function DocumentCard({ document, selectable, selected, onToggleSelect }:
   return (
     <article
       data-document-id={document.id}
-      className={`relative flex flex-col gap-3 border bg-surface p-5 transition-colors hover:border-ink/50 hover:bg-bright hover:shadow-sm hover:shadow-ink/5 ${
+      className={`relative flex flex-col gap-3 border bg-surface p-5 transition-colors hover:border-ink/50 hover:bg-bright hover:shadow-sm hover:shadow-ink/10 ${
         selected ? 'border-oxblood ring-1 ring-oxblood' : 'border-line'
       }`}
     >
