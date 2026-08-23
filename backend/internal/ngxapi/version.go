@@ -2,6 +2,7 @@ package ngxapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"slices"
 	"strconv"
@@ -17,6 +18,13 @@ const (
 
 var supportedAPIVersions = []int{9, 10}
 
+// errUnsupportedAPIVersion means checkAPIVersion already wrote the 406
+// response. It must be non-nil so callers actually stop: returning the
+// encoder's nil error here used to let the handler keep executing — a DELETE
+// would still delete the document after the client saw a 406. PocketBase's
+// ErrorHandler sees the committed response and writes nothing more.
+var errUnsupportedAPIVersion = errors.New("unsupported paperless-ngx API version")
+
 func checkAPIVersion(e *core.RequestEvent) error {
 	version := parseAcceptVersion(e.Request.Header.Get("Accept"))
 	if version == 0 {
@@ -26,9 +34,10 @@ func checkAPIVersion(e *core.RequestEvent) error {
 		setNgxHeaders(e)
 		e.Response.Header().Set("Content-Type", "application/json")
 		e.Response.WriteHeader(http.StatusNotAcceptable)
-		return json.NewEncoder(e.Response).Encode(map[string]string{
+		_ = json.NewEncoder(e.Response).Encode(map[string]string{
 			"detail": `Invalid version in "Accept" header.`,
 		})
+		return errUnsupportedAPIVersion
 	}
 	return nil
 }

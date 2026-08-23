@@ -102,7 +102,7 @@ func createOwnedNamedRecord(e *core.RequestEvent, collection string, mapper reco
 		record.Set("name_original", original)
 	}
 	if err := e.App.Save(record); err != nil {
-		return badRequest(e, err.Error())
+		return saveError(e, err)
 	}
 
 	return writeJSON(e, http.StatusCreated, mapper(record))
@@ -131,7 +131,7 @@ func patchOwnedNamedRecord(e *core.RequestEvent, collection string, mapper recor
 		record.Set("name_original", original)
 	}
 	if err := e.App.Save(record); err != nil {
-		return badRequest(e, err.Error())
+		return saveError(e, err)
 	}
 
 	return writeJSON(e, http.StatusOK, mapper(record))

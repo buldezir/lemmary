@@ -2,6 +2,7 @@ package ngxapi
 
 import (
 	"errors"
+	"fmt"
 	"hash/fnv"
 	"strconv"
 	"strings"
@@ -28,24 +29,34 @@ func parseNgxID(raw string) (int, error) {
 
 func findRecordByNgxID(app core.App, collection string, ngxID int, ownerUserID string) (*core.Record, error) {
 	filter, params := ownerScope(ownerUserID)
-	var (
-		records []*core.Record
-		err     error
-	)
-	if params != nil {
-		records, err = app.FindRecordsByFilter(collection, filter, "", 500, 0, params)
-	} else {
-		records, err = app.FindRecordsByFilter(collection, filter, "", 500, 0)
-	}
-	if err != nil {
-		return nil, err
-	}
-	for _, record := range records {
-		if toNgxID(record.Id) == ngxID {
-			return record, nil
+	// Page through the whole owner scope: a fixed single-page scan made every
+	// record past the cap unreachable (404s, and PATCHes silently dropping
+	// tags that failed to resolve). The stable sort keeps pages consistent.
+	const page = 500
+	offset := 0
+	for {
+		var (
+			records []*core.Record
+			err     error
+		)
+		if params != nil {
+			records, err = app.FindRecordsByFilter(collection, filter, "id", page, offset, params)
+		} else {
+			records, err = app.FindRecordsByFilter(collection, filter, "id", page, offset)
 		}
+		if err != nil {
+			return nil, err
+		}
+		for _, record := range records {
+			if toNgxID(record.Id) == ngxID {
+				return record, nil
+			}
+		}
+		if len(records) < page {
+			return nil, errors.New("not found")
+		}
+		offset += page
 	}
-	return nil, errors.New("not found")
 }
 
 func findOwnedDocumentByNgxID(app core.App, authID string, ngxID int) (*core.Record, error) {
@@ -118,8 +129,10 @@ func resolvePBRelationID(app core.App, collection string, raw any, ownerUserID s
 }
 
 // resolveTagPBIDs maps paperless-ngx numeric tag ids (or raw PocketBase ids) to
-// PocketBase ids, keeping only tags owned by ownerUserID.
-func resolveTagPBIDs(app core.App, rawIDs []string, ownerUserID string) []string {
+// PocketBase ids owned by ownerUserID. An id that does not resolve is an error:
+// clients PATCH the full tag list, so silently dropping one would permanently
+// strip it from the document while the client sees a success.
+func resolveTagPBIDs(app core.App, rawIDs []string, ownerUserID string) ([]string, error) {
 	result := make([]string, 0, len(rawIDs))
 	for _, raw := range rawIDs {
 		raw = strings.TrimSpace(raw)
@@ -130,15 +143,17 @@ func resolveTagPBIDs(app core.App, rawIDs []string, ownerUserID string) []string
 		if err != nil {
 			if tag, err := app.FindRecordById("tags", raw); err == nil && tag.GetString("user") == ownerUserID {
 				result = append(result, raw)
+				continue
 			}
-			continue
+			return nil, fmt.Errorf("unknown tag id %q", raw)
 		}
 		tag, err := findRecordByNgxID(app, "tags", ngxID, ownerUserID)
-		if err == nil {
-			result = append(result, tag.Id)
+		if err != nil {
+			return nil, fmt.Errorf("unknown tag id %q", raw)
 		}
+		result = append(result, tag.Id)
 	}
-	return result
+	return result, nil
 }
 
 func ngxTagIDs(app core.App, pbIDs []string) []int {

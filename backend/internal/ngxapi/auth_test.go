@@ -1,6 +1,7 @@
 package ngxapi
 
 import (
+	"errors"
 	"net/http/httptest"
 	"testing"
 
@@ -39,8 +40,10 @@ func TestTokenGETReturns406ForUnsupportedAPIVersion(t *testing.T) {
 	e.Request.Header.Set("Accept", "application/json; version=3")
 	e.Response = httptest.NewRecorder()
 
-	if err := handleTokenMethodNotAllowed(e); err != nil {
-		t.Fatalf("handleTokenMethodNotAllowed() error: %v", err)
+	// The sentinel error is what stops handlers from running on after a 406;
+	// returning nil here used to let state-changing endpoints execute anyway.
+	if err := handleTokenMethodNotAllowed(e); !errors.Is(err, errUnsupportedAPIVersion) {
+		t.Fatalf("handleTokenMethodNotAllowed() error = %v, want errUnsupportedAPIVersion", err)
 	}
 
 	rec := e.Response.(*httptest.ResponseRecorder)

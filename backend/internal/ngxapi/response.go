@@ -2,14 +2,21 @@ package ngxapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
+	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/router"
 	"paperless-go/backend/internal/fulltext"
 )
+
+// maxPageSize bounds DB-backed listings; the fulltext path has its own clamp.
+const maxPageSize = 1000
 
 type paginatedResponse struct {
 	Count    int64   `json:"count"`
@@ -42,6 +49,21 @@ func unauthorized(e *core.RequestEvent, detail string) error {
 
 func notFound(e *core.RequestEvent, detail string) error {
 	return writeJSON(e, http.StatusNotFound, map[string]any{"detail": detail})
+}
+
+// saveError maps a Save failure to the right response: client-caused
+// validation problems stay 400s with their message, anything else (driver,
+// filesystem) becomes a logged generic 500 so internals never reach the client.
+func saveError(e *core.RequestEvent, err error) error {
+	var vErrs validation.Errors
+	if errors.As(err, &vErrs) {
+		return badRequest(e, vErrs.Error())
+	}
+	var apiErr *router.ApiError
+	if errors.As(err, &apiErr) && apiErr.Status >= 400 && apiErr.Status < 500 {
+		return badRequest(e, apiErr.Message)
+	}
+	return internalError(e, err)
 }
 
 // internalError logs the cause and returns a generic 500 so upstream/database
@@ -78,8 +100,12 @@ func requestBaseURL(e *core.RequestEvent) string {
 	if e.IsTLS() {
 		scheme = "https"
 	}
-	if proto := e.Request.Header.Get("X-Forwarded-Proto"); proto != "" {
-		scheme = proto
+	// Only the first hop's value, and only if it is a real scheme: the header
+	// is client-controlled and multi-hop proxies join values with commas.
+	if proto, _, _ := strings.Cut(e.Request.Header.Get("X-Forwarded-Proto"), ","); proto != "" {
+		if proto = strings.TrimSpace(proto); proto == "http" || proto == "https" {
+			scheme = proto
+		}
 	}
 	return fmt.Sprintf("%s://%s", scheme, e.Request.Host)
 }
@@ -97,6 +123,9 @@ func paginationParams(e *core.RequestEvent) (page, pageSize int) {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			pageSize = n
 		}
+	}
+	if pageSize > maxPageSize {
+		pageSize = maxPageSize
 	}
 	return page, pageSize
 }

@@ -177,12 +177,20 @@ func listAll[T any](c *Client, apiPath string, pageSize int) ([]T, error) {
 	return all, nil
 }
 
+// maxListPages caps pagination: the remote is user-supplied and untrusted, and
+// a server that always returns a "next" link (or loops it back to page 1)
+// would otherwise pin the import goroutine and grow memory forever.
+const maxListPages = 10000
+
 func forEachPage[T any](c *Client, apiPath string, pageSize int, fn func([]T) error) error {
 	next := apiPath
 	if !strings.Contains(next, "?") {
 		next += "?page=1&page_size=" + strconv.Itoa(pageSize)
 	}
-	for next != "" {
+	for pages := 0; next != ""; pages++ {
+		if pages >= maxListPages {
+			return fmt.Errorf("remote returned more than %d pages for %s; aborting", maxListPages, apiPath)
+		}
 		var p page[T]
 		if err := c.getJSON(next, &p); err != nil {
 			return err

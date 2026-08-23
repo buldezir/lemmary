@@ -2,6 +2,7 @@ package ngxapi
 
 import (
 	"errors"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -113,13 +114,17 @@ func handlePatchDocument(e *core.RequestEvent) error {
 		record.Set("ocr_text", v)
 	}
 	if v, ok := body["created"].(string); ok {
-		record.Set("document_date", v)
+		record.Set("document_date", createdDateOnly(v))
 	}
 	if v, ok := body["document_type"]; ok {
-		setRelationField(e.App, record, "document_type", v, e.Auth.Id)
+		if err := setRelationField(e.App, record, "document_type", v, e.Auth.Id); err != nil {
+			return badRequest(e, err.Error())
+		}
 	}
 	if v, ok := body["correspondent"]; ok {
-		setRelationField(e.App, record, "correspondent", v, e.Auth.Id)
+		if err := setRelationField(e.App, record, "correspondent", v, e.Auth.Id); err != nil {
+			return badRequest(e, err.Error())
+		}
 	}
 	if v, ok := body["tags"].([]any); ok {
 		raw := make([]string, 0, len(v))
@@ -133,12 +138,16 @@ func handlePatchDocument(e *core.RequestEvent) error {
 				raw = append(raw, tagID)
 			}
 		}
-		record.Set("tags", resolveTagPBIDs(e.App, raw, e.Auth.Id))
+		tagIDs, err := resolveTagPBIDs(e.App, raw, e.Auth.Id)
+		if err != nil {
+			return badRequest(e, err.Error())
+		}
+		record.Set("tags", tagIDs)
 	}
 
 	record.Set("metadata_source", models.MetadataSourceUser)
 	if err := e.App.Save(record); err != nil {
-		return badRequest(e, err.Error())
+		return saveError(e, err)
 	}
 
 	return writeJSON(e, http.StatusOK, mapDocument(e.App, record))
@@ -157,13 +166,10 @@ func handleDeleteDocument(e *core.RequestEvent) error {
 }
 
 func handlePostDocument(e *core.RequestEvent) error {
+	// FindUploadedFiles already parsed the multipart form.
 	files, err := e.FindUploadedFiles("document")
 	if err != nil {
 		return badRequest(e, "Missing document file.")
-	}
-
-	if err := e.Request.ParseMultipartForm(32 << 20); err != nil {
-		return badRequest(e, "Invalid multipart form.")
 	}
 
 	collection, err := e.App.FindCollectionByNameOrId("documents")
@@ -194,13 +200,17 @@ func handlePostDocument(e *core.RequestEvent) error {
 				record.Set("document_type", pbID)
 			}
 		}
-		if tagIDs := parseTagIDs(form.Value); len(tagIDs) > 0 {
-			record.Set("tags", resolveTagPBIDs(e.App, tagIDs, e.Auth.Id))
+		if rawTagIDs := parseTagIDs(form.Value); len(rawTagIDs) > 0 {
+			tagIDs, err := resolveTagPBIDs(e.App, rawTagIDs, e.Auth.Id)
+			if err != nil {
+				return badRequest(e, err.Error())
+			}
+			record.Set("tags", tagIDs)
 		}
 	}
 
 	if err := e.App.Save(record); err != nil {
-		return badRequest(e, err.Error())
+		return saveError(e, err)
 	}
 
 	taskID, err := findTaskIDForDocument(e.App, record.Id)
@@ -275,13 +285,36 @@ func findTaskIDForDocument(app core.App, documentID string) (string, error) {
 	return taskID, nil
 }
 
-func setRelationField(app core.App, record *core.Record, field string, value any, authID string) {
-	if value == nil {
+// setRelationField resolves a client-sent relation id and errors when it does
+// not resolve: silently storing "" would wipe the document's existing relation
+// while the client sees a 200. nil, 0, and "" are explicit clears.
+func setRelationField(app core.App, record *core.Record, field string, value any, authID string) error {
+	switch v := value.(type) {
+	case nil:
 		record.Set(field, "")
-		return
+		return nil
+	case float64:
+		if v == 0 {
+			record.Set(field, "")
+			return nil
+		}
+	case int:
+		if v == 0 {
+			record.Set(field, "")
+			return nil
+		}
+	case string:
+		if strings.TrimSpace(v) == "" {
+			record.Set(field, "")
+			return nil
+		}
 	}
 	pbID := resolvePBRelationID(app, collectionForRelationField(field), value, authID)
+	if pbID == "" {
+		return fmt.Errorf("unknown %s id", field)
+	}
 	record.Set(field, pbID)
+	return nil
 }
 
 func collectionForRelationField(field string) string {

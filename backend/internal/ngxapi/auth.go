@@ -5,10 +5,23 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	"golang.org/x/crypto/bcrypt"
 )
+
+// dummyPasswordHash is compared when no user matches the identity, so response
+// timing does not reveal whether a username exists. Cost matches PocketBase's
+// default password hashing cost.
+var dummyPasswordHash = sync.OnceValue(func() []byte {
+	hash, err := bcrypt.GenerateFromPassword([]byte("ngxapi timing equalizer"), bcrypt.DefaultCost)
+	if err != nil {
+		return nil
+	}
+	return hash
+})
 
 type tokenRequest struct {
 	Username string `json:"username" form:"username"`
@@ -109,7 +122,11 @@ func authenticateWithPassword(app core.App, identity, password string) (*core.Re
 		break
 	}
 
-	if record == nil || !record.ValidatePassword(password) {
+	if record == nil {
+		_ = bcrypt.CompareHashAndPassword(dummyPasswordHash(), []byte(password))
+		return nil, errors.New("invalid credentials")
+	}
+	if !record.ValidatePassword(password) {
 		return nil, errors.New("invalid credentials")
 	}
 
