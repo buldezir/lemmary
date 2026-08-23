@@ -1,6 +1,8 @@
 package fulltext
 
 import (
+	"database/sql"
+	"errors"
 	"log/slog"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -117,6 +119,10 @@ func reindexDocumentsForEntity(app core.App, idx *Index, collection, field, enti
 	for id := range ids {
 		rec, err := app.FindRecordById(collectionDocuments, id)
 		if err != nil {
+			if !errors.Is(err, sql.ErrNoRows) {
+				app.Logger().Error("fulltext entity reindex lookup failed", slog.String("id", id), slog.Any("error", err))
+				continue
+			}
 			if delErr := idx.deleteUnlocked(id); delErr != nil {
 				app.Logger().Error("fulltext delete after entity change failed", slog.String("id", id), slog.Any("error", delErr))
 			}

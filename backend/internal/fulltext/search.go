@@ -62,7 +62,6 @@ var boostedTextFields = []struct {
 	{FieldSummaryOriginal, 2},
 	{FieldPeople, 2},
 	{FieldOCRText, 1},
-	{FieldAll, 1},
 }
 
 func (i *Index) Search(q Query) (Result, error) {

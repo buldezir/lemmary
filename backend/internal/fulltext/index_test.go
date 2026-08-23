@@ -372,6 +372,49 @@ func TestPutWaitsForRebuildThenHitsNewIndex(t *testing.T) {
 	}
 }
 
+func TestEnqueueDrainsAndOrders(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "doc", sampleDoc("queued hello"))
+
+	// A delete enqueued after the document exists must win over the earlier
+	// state once the queue drains.
+	idx.EnqueueDelete("doc")
+	idx.WaitIdle()
+	if hits := searchIDs(t, idx, Query{Text: "queued", UserID: "u1"}); len(hits) != 0 {
+		t.Fatalf("expected delete to apply after WaitIdle, got %v", hits)
+	}
+}
+
+func TestConcurrentEnqueueAndSearch(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "doc", sampleDoc("racing hello"))
+
+	// Regression: WaitIdle (called by Search) used to wg.Wait concurrently
+	// with wg.Add in the enqueue path — an illegal WaitGroup reuse that could
+	// panic under load.
+	var wg sync.WaitGroup
+	for n := 0; n < 8; n++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			for k := 0; k < 50; k++ {
+				idx.EnqueueDelete("ghost")
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for k := 0; k < 50; k++ {
+				if _, err := idx.Search(Query{Text: "racing", UserID: "u1"}); err != nil {
+					t.Errorf("search: %v", err)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	idx.WaitIdle()
+}
+
 func TestIDsByKeywordPaginates(t *testing.T) {
 	idx := testIndex(t)
 	prev := lookupPageSize

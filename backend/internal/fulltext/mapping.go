@@ -11,7 +11,7 @@ import (
 
 const (
 	// MappingVersion is bumped when the Bleve mapping changes so Open wipes and rebuilds.
-	MappingVersion = "1"
+	MappingVersion = "2"
 
 	AnalyzerName = "archive"
 
@@ -73,7 +73,9 @@ func newMapping() (mapping.IndexMapping, error) {
 	doc.AddFieldMappingsAt(FieldDocumentTypeName, textField(false, true))
 	doc.AddFieldMappingsAt(FieldCorrespondentName, textField(false, true))
 	doc.AddFieldMappingsAt(FieldPeople, textField(false, true))
-	doc.AddFieldMappingsAt(FieldAll, textField(false, true))
+	// FieldAll is only the query-string DefaultField fallback; it is never
+	// highlighted, so term vectors would just double posting storage.
+	doc.AddFieldMappingsAt(FieldAll, textField(false, false))
 
 	im.DefaultMapping = doc
 	return im, nil

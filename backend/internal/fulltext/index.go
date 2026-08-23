@@ -1,6 +1,8 @@
 package fulltext
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -38,21 +40,42 @@ var indexAllHook func(app core.App, idx bleve.Index) (int, error)
 //	  - mu guards the idx handle itself and is held for the duration of a single
 //	    Bleve operation, exclusively while closing or swapping the handle.
 //
-// The Enqueue* methods deliberately take writeMu.RLock on the calling goroutine
-// and release it on the spawned one (via beginWrite/endWrite). That is legal for
-// sync.RWMutex — it is not goroutine-owned — and is what lets Close and Rebuild
-// wait for in-flight async work. Do not add a nested beginWrite inside a write
-// path: a re-entrant RLock deadlocks whenever a writer is queued on writeMu.
-// wg exists so WaitIdle can join spawned tasks without holding a lock.
+// The Enqueue* methods never block the caller: they append to a FIFO task
+// queue (guarded by qMu, outside the lock order above) that a single worker
+// goroutine drains. One worker means tasks for the same document apply in
+// enqueue order, so a delete can never be overtaken by an older upsert. The
+// worker takes writeMu.RLock per task, so a rebuild pauses the queue without
+// stalling the record hooks that enqueue. WaitIdle joins the queue via qCond.
 type Index struct {
 	mu           sync.RWMutex // held for the duration of Bleve ops; exclusive for close/swap
 	writeMu      sync.RWMutex // writers RLock; Rebuild/Close take Lock
 	rebuildMu    sync.Mutex   // serializes Rebuild
-	wg           sync.WaitGroup
 	idx          bleve.Index
 	path         string
 	versionPath  string
 	needsRebuild bool
+
+	qMu      sync.Mutex // guards queue, pending, draining, qCond; never held around Bleve ops
+	qCond    *sync.Cond // lazily created under qMu; signaled when pending drops to 0
+	queue    []indexTask
+	pending  int // queued + in-flight tasks
+	draining bool
+}
+
+type taskKind int
+
+const (
+	taskUpsert taskKind = iota
+	taskDelete
+	taskReindexEntity
+)
+
+type indexTask struct {
+	kind       taskKind
+	app        core.App
+	id         string
+	collection string
+	field      string
 }
 
 func New() *Index {
@@ -132,9 +155,11 @@ func (i *Index) Open(dataDir string) error {
 func (i *Index) Close() error {
 	i.rebuildMu.Lock()
 	defer i.rebuildMu.Unlock()
+	// Drain before taking writeMu: the worker needs writeMu.RLock per task.
+	// Tasks enqueued after this point find a nil handle and fail harmlessly.
+	i.WaitIdle()
 	i.writeMu.Lock()
 	defer i.writeMu.Unlock()
-	i.WaitIdle()
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	if i.idx == nil {
@@ -145,9 +170,16 @@ func (i *Index) Close() error {
 	return err
 }
 
-// WaitIdle blocks until in-flight async index tasks finish.
+// WaitIdle blocks until queued async index tasks finish.
 func (i *Index) WaitIdle() {
-	i.wg.Wait()
+	i.qMu.Lock()
+	if i.qCond == nil {
+		i.qCond = sync.NewCond(&i.qMu)
+	}
+	for i.pending > 0 {
+		i.qCond.Wait()
+	}
+	i.qMu.Unlock()
 }
 
 // EnqueueUpsert reloads and indexes the document after the PocketBase write commits.
@@ -156,18 +188,7 @@ func (i *Index) EnqueueUpsert(app core.App, id string) {
 	if app == nil || id == "" {
 		return
 	}
-	i.beginWrite()
-	go func() {
-		defer i.endWrite()
-		rec, err := app.FindRecordById("documents", id)
-		if err != nil {
-			_ = i.deleteUnlocked(id)
-			return
-		}
-		if err := i.upsertUnlocked(app, rec); err != nil {
-			app.Logger().Error("fulltext upsert failed", slog.String("id", id), slog.Any("error", err))
-		}
-	}()
+	i.enqueue(indexTask{kind: taskUpsert, app: app, id: id})
 }
 
 func (i *Index) EnqueueDelete(id string) {
@@ -175,11 +196,7 @@ func (i *Index) EnqueueDelete(id string) {
 	if id == "" {
 		return
 	}
-	i.beginWrite()
-	go func() {
-		defer i.endWrite()
-		_ = i.deleteUnlocked(id)
-	}()
+	i.enqueue(indexTask{kind: taskDelete, id: id})
 }
 
 func (i *Index) EnqueueReindexEntity(app core.App, collection, field, entityID string) {
@@ -187,21 +204,71 @@ func (i *Index) EnqueueReindexEntity(app core.App, collection, field, entityID s
 	if app == nil || collection == "" || field == "" || entityID == "" {
 		return
 	}
-	i.beginWrite()
-	go func() {
-		defer i.endWrite()
-		reindexDocumentsForEntity(app, i, collection, field, entityID)
-	}()
+	i.enqueue(indexTask{kind: taskReindexEntity, app: app, id: entityID, collection: collection, field: field})
 }
 
-func (i *Index) beginWrite() {
+func (i *Index) enqueue(t indexTask) {
+	i.qMu.Lock()
+	i.queue = append(i.queue, t)
+	i.pending++
+	startWorker := !i.draining
+	if startWorker {
+		i.draining = true
+	}
+	i.qMu.Unlock()
+	if startWorker {
+		go i.drainTasks()
+	}
+}
+
+func (i *Index) drainTasks() {
+	for {
+		i.qMu.Lock()
+		if len(i.queue) == 0 {
+			i.draining = false
+			i.qMu.Unlock()
+			return
+		}
+		t := i.queue[0]
+		i.queue[0] = indexTask{}
+		i.queue = i.queue[1:]
+		i.qMu.Unlock()
+
+		i.runTask(t)
+
+		i.qMu.Lock()
+		i.pending--
+		if i.pending == 0 && i.qCond != nil {
+			i.qCond.Broadcast()
+		}
+		i.qMu.Unlock()
+	}
+}
+
+func (i *Index) runTask(t indexTask) {
 	i.writeMu.RLock()
-	i.wg.Add(1)
-}
-
-func (i *Index) endWrite() {
-	i.wg.Done()
-	i.writeMu.RUnlock()
+	defer i.writeMu.RUnlock()
+	switch t.kind {
+	case taskDelete:
+		_ = i.deleteUnlocked(t.id)
+	case taskUpsert:
+		rec, err := t.app.FindRecordById("documents", t.id)
+		if err != nil {
+			// Only evict on a confirmed missing record; a transient DB error
+			// must not silently drop a live document from search.
+			if errors.Is(err, sql.ErrNoRows) {
+				_ = i.deleteUnlocked(t.id)
+			} else {
+				t.app.Logger().Error("fulltext upsert lookup failed", slog.String("id", t.id), slog.Any("error", err))
+			}
+			return
+		}
+		if err := i.upsertUnlocked(t.app, rec); err != nil {
+			t.app.Logger().Error("fulltext upsert failed", slog.String("id", t.id), slog.Any("error", err))
+		}
+	case taskReindexEntity:
+		reindexDocumentsForEntity(t.app, i, t.collection, t.field, t.id)
+	}
 }
 
 func (i *Index) Put(id string, doc map[string]any) error {
@@ -266,14 +333,20 @@ func (i *Index) DocCount() (uint64, error) {
 	return n, err
 }
 
-// ShouldHeal reports whether the index is empty while SQLite still has documents.
+// ShouldHeal reports whether the index has drifted from SQLite. Called at
+// boot: async index writes are fire-and-forget, so a crash (or a boot where
+// hooks never registered) leaves a non-empty but incomplete index that an
+// empty-only check would never notice.
 func (i *Index) ShouldHeal(app core.App) bool {
 	count, err := i.DocCount()
-	if err != nil || count > 0 {
+	if err != nil {
 		return false
 	}
 	n, err := app.CountRecords("documents")
-	return err == nil && n > 0
+	if err != nil {
+		return false
+	}
+	return uint64(n) != count
 }
 
 // Rebuild builds a replacement index and swaps it in only after success.
@@ -335,14 +408,20 @@ func (i *Index) installRebuilt(built bleve.Index, builtPath, versionPath string)
 	if err := os.RemoveAll(path); err != nil {
 		if reopened, oerr := bleve.Open(path); oerr == nil {
 			i.idx = reopened
+		} else {
+			i.needsRebuild = true
 		}
 		return fmt.Errorf("remove bleve index: %w", err)
 	}
+	// Past this point the old index is gone: on failure leave needsRebuild set
+	// so the heal path can retry instead of serving "not ready" until restart.
 	if err := os.Rename(builtPath, path); err != nil {
+		i.needsRebuild = true
 		return fmt.Errorf("install bleve index: %w", err)
 	}
 	idx, err := bleve.Open(path)
 	if err != nil {
+		i.needsRebuild = true
 		return fmt.Errorf("open rebuilt bleve index: %w", err)
 	}
 	i.idx = idx
