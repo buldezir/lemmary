@@ -6,7 +6,7 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/fulltext"
+	"lemmary/backend/internal/fulltext"
 )
 
 type stubDocuments struct {

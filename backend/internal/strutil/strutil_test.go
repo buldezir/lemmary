@@ -5,7 +5,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"paperless-go/backend/internal/strutil"
+	"lemmary/backend/internal/strutil"
 )
 
 func TestFirstNonEmpty(t *testing.T) {

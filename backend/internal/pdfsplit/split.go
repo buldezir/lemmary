@@ -10,11 +10,11 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
-	"paperless-go/backend/internal/duplicates"
-	"paperless-go/backend/internal/importjob"
-	"paperless-go/backend/internal/models"
-	"paperless-go/backend/internal/pdftool"
-	"paperless-go/backend/internal/strutil"
+	"lemmary/backend/internal/duplicates"
+	"lemmary/backend/internal/importjob"
+	"lemmary/backend/internal/models"
+	"lemmary/backend/internal/pdftool"
+	"lemmary/backend/internal/strutil"
 )
 
 // maxPartNameBytes keeps a generated part file name well inside what the
@@ -143,7 +143,7 @@ func runSplit(app core.App, ownerUserID string, item *stagedPDF, parts []Part, r
 		return result, err
 	}
 
-	workDir, err := os.MkdirTemp("", "paperless-split-*")
+	workDir, err := os.MkdirTemp("", "lemmary-split-*")
 	if err != nil {
 		return result, fmt.Errorf("prepare work dir: %w", err)
 	}

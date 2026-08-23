@@ -20,6 +20,6 @@ test('download archive starts without error', async ({ page }) => {
   const downloadPromise = page.waitForEvent('download', { timeout: 30_000 })
   await page.getByRole('button', { name: 'Download archive' }).click()
   const download = await downloadPromise
-  expect(download.suggestedFilename()).toBe('paperless-export.zip')
+  expect(download.suggestedFilename()).toBe('lemmary-export.zip')
   await expect(page.getByText('Archive download started.')).toBeVisible()
 })

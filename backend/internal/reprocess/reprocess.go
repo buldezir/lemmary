@@ -14,8 +14,8 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
-	"paperless-go/backend/internal/models"
-	"paperless-go/backend/internal/worker"
+	"lemmary/backend/internal/models"
+	"lemmary/backend/internal/worker"
 )
 
 const (

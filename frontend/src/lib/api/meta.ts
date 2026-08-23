@@ -1,6 +1,6 @@
 import { apiFetch } from '../apiClient'
 
-export const DEFAULT_APP_NAME = 'Paperless Go'
+export const DEFAULT_APP_NAME = 'Lemmary'
 export const DEFAULT_ACCENT = '#6e2620'
 
 export type AppMeta = {

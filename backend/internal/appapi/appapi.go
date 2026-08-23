@@ -4,10 +4,10 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
-	"paperless-go/backend/internal/amazonimport"
-	"paperless-go/backend/internal/config"
-	"paperless-go/backend/internal/fulltext"
-	"paperless-go/backend/internal/pdfsplit"
+	"lemmary/backend/internal/amazonimport"
+	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/pdfsplit"
 )
 
 func Register(app core.App, rt *config.Runtime, idx *fulltext.Index) {

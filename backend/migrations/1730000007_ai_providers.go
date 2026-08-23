@@ -3,7 +3,7 @@ package migrations
 import (
 	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
-	"paperless-go/backend/internal/aiprovider"
+	"lemmary/backend/internal/aiprovider"
 )
 
 func init() {

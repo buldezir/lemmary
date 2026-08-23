@@ -6,7 +6,7 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/packages/param"
-	"paperless-go/backend/internal/aiprovider"
+	"lemmary/backend/internal/aiprovider"
 )
 
 func CompletionTemperature(model string, value float64) param.Opt[float64] {

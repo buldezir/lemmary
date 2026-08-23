@@ -5,7 +5,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"paperless-go/backend/internal/models"
+	"lemmary/backend/internal/models"
 )
 
 func newDuplicateTestRecord(id, duplicateOf string) *core.Record {

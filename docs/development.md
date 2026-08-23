@@ -287,18 +287,18 @@ cd backend && go run . superuser upsert admin@example.com 'your-password'
 
 - API and browser e2e use **mocked** Mistral OCR and OpenAI-compatible APIs (no real keys).
 - Browser e2e serves the built SPA from `public/` on `http://127.0.0.1:18090` via [`backend/cmd/e2eserver`](../backend/cmd/e2eserver).
-- Seeded accounts: `e2e@paperless.local` / `e2epassword123` (regular user) and `admin@paperless.local` / `adminpassword123` (paired admin: `_superusers` + `users`).
+- Seeded accounts: `e2e@lemmary.local` / `e2epassword123` (regular user) and `admin@lemmary.local` / `adminpassword123` (paired admin: `_superusers` + `users`).
 - `go test ./...` from `backend/` includes the e2e package.
 
 ## Paperless-ngx API compatibility
 
-Paperless Go exposes a paperless-ngx-compatible REST API on the same host as PocketBase (for example `http://127.0.0.1:8090/api/`). The backend implements the endpoints third-party clients expect for authentication, documents, tags, correspondents, document types, and related metadata.
+Lemmary exposes a paperless-ngx-compatible REST API on the same host as PocketBase (for example `http://127.0.0.1:8090/api/`). The backend implements the endpoints third-party clients expect for authentication, documents, tags, correspondents, document types, and related metadata.
 
-Compatibility is intentionally partial: common read/write flows work, but not every paperless-ngx feature is available (for example, some list endpoints return empty stubs where Paperless Go has no equivalent data).
+Compatibility is intentionally partial: common read/write flows work, but not every paperless-ngx feature is available (for example, some list endpoints return empty stubs where Lemmary has no equivalent data).
 
 ### Connecting external clients
 
-1. Point the client at your Paperless Go server URL (scheme + host + port, no `/api` suffix — clients add that themselves).
+1. Point the client at your Lemmary server URL (scheme + host + port, no `/api` suffix — clients add that themselves).
 2. Sign in with a PocketBase user account. The `/api/token/` endpoint accepts the same username and password as the web UI.
 3. Clients that send `Authorization: Token <jwt>` (paperless-ngx style) are supported alongside standard Bearer tokens.
 
@@ -306,7 +306,7 @@ API versions 9 and 10 are accepted via the `Accept` header (`application/json; v
 
 ### Importing from Paperless-ngx
 
-Any signed-in user can migrate a Paperless-ngx library into their own Paperless Go account. The remote API token authenticates a specific ngx user, so the import runs as the current local user rather than as an admin.
+Any signed-in user can migrate a Paperless-ngx library into their own Lemmary account. The remote API token authenticates a specific ngx user, so the import runs as the current local user rather than as an admin.
 
 1. Open **Import** in the More menu (or go to `/import`).
 2. Enter the remote Paperless-ngx base URL and an API token from that instance’s profile.
@@ -321,7 +321,7 @@ Import fetches only the caller-supplied URL. Private, loopback, and link-local d
 
 ### swift-paperless (iOS)
 
-[swift-paperless](https://github.com/paulgessinger/swift-paperless) is the main mobile client exercised against this API. Browsing documents, viewing details, and uploading generally work. Some paperless-ngx-specific settings or advanced features may be missing or no-ops because Paperless Go does not implement the full paperless-ngx surface area.
+[swift-paperless](https://github.com/paulgessinger/swift-paperless) is the main mobile client exercised against this API. Browsing documents, viewing details, and uploading generally work. Some paperless-ngx-specific settings or advanced features may be missing or no-ops because Lemmary does not implement the full paperless-ngx surface area.
 
 ## Troubleshooting
 

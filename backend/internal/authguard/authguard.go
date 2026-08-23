@@ -9,7 +9,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/hook"
 )
 
-const collectionRecordsAuthGuardId = "paperlessCollectionRecordsAuthGuard"
+const collectionRecordsAuthGuardId = "lemmaryCollectionRecordsAuthGuard"
 
 // Register forces PocketBase collection record API requests to have valid auth.
 //

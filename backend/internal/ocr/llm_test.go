@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/openai/openai-go"
-	"paperless-go/backend/internal/aiprovider"
+	"lemmary/backend/internal/aiprovider"
 )
 
 func TestLLMUserContentPartsImage(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"paperless-go/backend/internal/aiprovider"
+	"lemmary/backend/internal/aiprovider"
 )
 
 type Provider interface {

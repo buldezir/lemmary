@@ -3,10 +3,10 @@ package worker
 import (
 	"context"
 
-	"paperless-go/backend/internal/ai"
-	"paperless-go/backend/internal/config"
-	"paperless-go/backend/internal/models"
-	"paperless-go/backend/internal/ocr"
+	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/models"
+	"lemmary/backend/internal/ocr"
 )
 
 type stubOCR struct{}

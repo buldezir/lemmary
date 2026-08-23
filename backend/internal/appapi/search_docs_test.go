@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"paperless-go/backend/internal/strutil"
+	"lemmary/backend/internal/strutil"
 )
 
 func TestOCRSnippet(t *testing.T) {

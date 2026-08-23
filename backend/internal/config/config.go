@@ -11,8 +11,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"paperless-go/backend/internal/aiprovider"
-	"paperless-go/backend/internal/strutil"
+	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/strutil"
 )
 
 const (

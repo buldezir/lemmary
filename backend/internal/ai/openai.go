@@ -10,7 +10,7 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
-	"paperless-go/backend/internal/aiprovider"
+	"lemmary/backend/internal/aiprovider"
 )
 
 type OpenAIClient struct {

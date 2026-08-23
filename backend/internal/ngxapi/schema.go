@@ -18,7 +18,7 @@ func handleSchema(e *core.RequestEvent) error {
 	return writeJSON(e, http.StatusOK, map[string]any{
 		"openapi": "3.0.3",
 		"info": map[string]any{
-			"title":   "Paperless Go API",
+			"title":   "Lemmary API",
 			"version": ngxAppVersion,
 		},
 	})

@@ -7,7 +7,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
 	"github.com/pocketbase/pocketbase/tools/router"
-	"paperless-go/backend/internal/fulltext"
+	"lemmary/backend/internal/fulltext"
 )
 
 // Register mounts paperless-ngx compatible REST endpoints on the PocketBase router.

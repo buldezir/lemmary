@@ -14,8 +14,8 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/shared"
-	"paperless-go/backend/internal/ai"
-	"paperless-go/backend/internal/aiprovider"
+	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/aiprovider"
 )
 
 const llmOCRMaxFileBytes = 10 * 1024 * 1024

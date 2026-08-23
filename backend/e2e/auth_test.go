@@ -32,17 +32,17 @@ func TestEnsureUserCreatesPairedAccount(t *testing.T) {
 	}
 	defer h.Close()
 
-	if _, err := createAuthRecord(h.App, "_superusers", "legacy-admin@paperless.local", "legacypassword1"); err != nil {
+	if _, err := createAuthRecord(h.App, "_superusers", "legacy-admin@lemmary.local", "legacypassword1"); err != nil {
 		t.Fatalf("create super only: %v", err)
 	}
 
-	superAuth := h.authWithPassword(t, "_superusers", "legacy-admin@paperless.local", "legacypassword1")
+	superAuth := h.authWithPassword(t, "_superusers", "legacy-admin@lemmary.local", "legacypassword1")
 	status, raw := h.doJSON(t, http.MethodPost, "/api/app/ensure-user", superAuth.Token, map[string]any{
 		"password": "legacypassword1",
 	})
 	requireStatus(t, status, http.StatusOK, raw)
 
-	userAuth := h.authWithPassword(t, "users", "legacy-admin@paperless.local", "legacypassword1")
+	userAuth := h.authWithPassword(t, "users", "legacy-admin@lemmary.local", "legacypassword1")
 	if userAuth.Token == "" {
 		t.Fatal("expected users token after ensure-user")
 	}
@@ -64,14 +64,14 @@ func TestEnsureUserDoesNotTakeOverExistingUser(t *testing.T) {
 	}
 	defer h.Close()
 
-	if _, err := createAuthRecord(h.App, "_superusers", "taken@paperless.local", "superpassword1"); err != nil {
+	if _, err := createAuthRecord(h.App, "_superusers", "taken@lemmary.local", "superpassword1"); err != nil {
 		t.Fatalf("create super: %v", err)
 	}
-	if _, err := createAuthRecord(h.App, "users", "taken@paperless.local", "userpassword1"); err != nil {
+	if _, err := createAuthRecord(h.App, "users", "taken@lemmary.local", "userpassword1"); err != nil {
 		t.Fatalf("create existing user: %v", err)
 	}
 
-	superAuth := h.authWithPassword(t, "_superusers", "taken@paperless.local", "superpassword1")
+	superAuth := h.authWithPassword(t, "_superusers", "taken@lemmary.local", "superpassword1")
 	status, raw := h.doJSON(t, http.MethodPost, "/api/app/ensure-user", superAuth.Token, map[string]any{
 		"password": "superpassword1",
 	})
@@ -80,7 +80,7 @@ func TestEnsureUserDoesNotTakeOverExistingUser(t *testing.T) {
 	}
 
 	// Original user password must still work; super password must not.
-	userAuth := h.authWithPassword(t, "users", "taken@paperless.local", "userpassword1")
+	userAuth := h.authWithPassword(t, "users", "taken@lemmary.local", "userpassword1")
 	status, raw = h.doJSON(t, http.MethodGet, "/api/app/me", userAuth.Token, nil)
 	requireStatus(t, status, http.StatusOK, raw)
 	var me map[string]any
@@ -99,16 +99,16 @@ func TestPairedAdminCannotBeClaimedByEmail(t *testing.T) {
 	}
 	defer h.Close()
 
-	if _, err := createAuthRecord(h.App, "_superusers", "legacy-admin@paperless.local", "legacypassword1"); err != nil {
+	if _, err := createAuthRecord(h.App, "_superusers", "legacy-admin@lemmary.local", "legacypassword1"); err != nil {
 		t.Fatalf("create super only: %v", err)
 	}
-	if _, err := createAuthRecord(h.App, "users", "attacker@paperless.local", "attackerpassword1"); err != nil {
+	if _, err := createAuthRecord(h.App, "users", "attacker@lemmary.local", "attackerpassword1"); err != nil {
 		t.Fatalf("create attacker: %v", err)
 	}
 
-	attacker := h.authWithPassword(t, "users", "attacker@paperless.local", "attackerpassword1")
+	attacker := h.authWithPassword(t, "users", "attacker@lemmary.local", "attackerpassword1")
 	status, raw := h.doJSON(t, http.MethodPost, "/api/collections/users/records", attacker.Token, map[string]any{
-		"email":           "legacy-admin@paperless.local",
+		"email":           "legacy-admin@lemmary.local",
 		"password":        "pwned-password-1",
 		"passwordConfirm": "pwned-password-1",
 	})
@@ -117,10 +117,10 @@ func TestPairedAdminCannotBeClaimedByEmail(t *testing.T) {
 	}
 
 	// Even if somehow created without the flag, email alone must not grant admin.
-	if _, err := createAuthRecord(h.App, "users", "legacy-admin@paperless.local", "pwned-password-1"); err != nil {
+	if _, err := createAuthRecord(h.App, "users", "legacy-admin@lemmary.local", "pwned-password-1"); err != nil {
 		t.Fatalf("create claim user via Save: %v", err)
 	}
-	claimAuth := h.authWithPassword(t, "users", "legacy-admin@paperless.local", "pwned-password-1")
+	claimAuth := h.authWithPassword(t, "users", "legacy-admin@lemmary.local", "pwned-password-1")
 	status, raw = h.doJSON(t, http.MethodGet, "/api/app/me", claimAuth.Token, nil)
 	requireStatus(t, status, http.StatusOK, raw)
 	var me map[string]any

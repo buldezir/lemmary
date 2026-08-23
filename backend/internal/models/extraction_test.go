@@ -3,7 +3,7 @@ package models_test
 import (
 	"testing"
 
-	"paperless-go/backend/internal/models"
+	"lemmary/backend/internal/models"
 )
 
 func TestExtractedMetadataPopulated(t *testing.T) {

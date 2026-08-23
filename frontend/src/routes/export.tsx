@@ -35,7 +35,7 @@ export function ExportPage() {
       setRunning(true)
       setError('')
       setSuccess('')
-      saveBlob(await fetchDocumentsArchive(mode), 'paperless-export.zip')
+      saveBlob(await fetchDocumentsArchive(mode), 'lemmary-export.zip')
       setSuccess('Archive download started.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Download failed')

@@ -5,11 +5,11 @@ import { fileURLToPath } from 'node:url'
 
 export const credentials = {
   user: {
-    email: process.env.E2E_USER_EMAIL ?? 'e2e@paperless.local',
+    email: process.env.E2E_USER_EMAIL ?? 'e2e@lemmary.local',
     password: process.env.E2E_USER_PASSWORD ?? 'e2epassword123',
   },
   super: {
-    email: process.env.E2E_SUPER_EMAIL ?? 'admin@paperless.local',
+    email: process.env.E2E_SUPER_EMAIL ?? 'admin@lemmary.local',
     password: process.env.E2E_SUPER_PASSWORD ?? 'adminpassword123',
   },
 }
@@ -18,7 +18,7 @@ const fixturesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..'
 
 export async function login(page: Page, email: string, password: string) {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Paperless Go' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Lemmary' })).toBeVisible()
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('Password').fill(password)
   await page.getByRole('button', { name: 'Sign in' }).click()
@@ -35,7 +35,7 @@ export async function loginAsSuper(page: Page) {
 
 export async function logout(page: Page) {
   await page.getByRole('button', { name: 'Log out' }).click()
-  await expect(page.getByRole('heading', { name: 'Paperless Go' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Lemmary' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
 }
 

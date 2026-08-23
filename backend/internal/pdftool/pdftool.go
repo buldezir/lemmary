@@ -276,7 +276,7 @@ func ExtractRange(ctx context.Context, pdfPath string, from, to int, outPath str
 	ctx, cancel := context.WithTimeout(ctx, ExtractTimeout)
 	defer cancel()
 
-	tmpDir, err := os.MkdirTemp("", "paperless-pdfrange-*")
+	tmpDir, err := os.MkdirTemp("", "lemmary-pdfrange-*")
 	if err != nil {
 		return fmt.Errorf("pdftool: temp dir: %w", err)
 	}

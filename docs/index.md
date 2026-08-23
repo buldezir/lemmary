@@ -1,6 +1,6 @@
-# paperless-go docs
+# Lemmary docs
 
-Local development and setup guides for paperless-go.
+Local development and setup guides for Lemmary.
 
 - [Development Guide](/development) — run locally, env vars, OCR, tests, troubleshooting
 - [Google Vision API key](/google_vision) — obtain a Cloud Vision API key for OCR

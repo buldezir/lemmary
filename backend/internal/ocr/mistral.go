@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"paperless-go/backend/internal/aiprovider"
+	"lemmary/backend/internal/aiprovider"
 )
 
 const mistralOCRMaxFileBytes = 10 * 1024 * 1024

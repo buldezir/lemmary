@@ -16,7 +16,7 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/duplicates"
+	"lemmary/backend/internal/duplicates"
 )
 
 const (

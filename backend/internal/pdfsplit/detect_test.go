@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"paperless-go/backend/internal/ai"
-	"paperless-go/backend/internal/models"
-	"paperless-go/backend/internal/pdftool/testpdf"
+	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/models"
+	"lemmary/backend/internal/pdftool/testpdf"
 )
 
 type stubSplitter struct {

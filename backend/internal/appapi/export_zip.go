@@ -12,7 +12,7 @@ import (
 	"unicode/utf8"
 )
 
-const exportZipRoot = "paperless-export"
+const exportZipRoot = "lemmary-export"
 
 // Max length of the sanitized title portion of an export entry name.
 // Keeps "[id] title.metadata.json" under common 255-byte filesystem limits.
@@ -53,7 +53,7 @@ type ExportDocument struct {
 }
 
 // WriteExportZip streams a zip of the given documents for mode into w.
-// Entries are flattened under paperless-export/ as "[id] title.ext".
+// Entries are flattened under lemmary-export/ as "[id] title.ext".
 // Documents that fail OpenFile or lack an ID/filename are skipped.
 // Empty OCR text omits the OCR sidecar.
 func WriteExportZip(w io.Writer, mode ExportMode, docs []ExportDocument) (err error) {

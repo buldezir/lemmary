@@ -94,7 +94,7 @@ func TestDocumentsOwnerIsolation(t *testing.T) {
 	id := jsonGetString(rec, "id")
 
 	// Create a second user and ensure they cannot view the first user's document.
-	otherEmail := "other-e2e@paperless.local"
+	otherEmail := "other-e2e@lemmary.local"
 	otherPass := "otherpassword123"
 	status, raw := h.doJSON(t, http.MethodPost, "/api/collections/users/records", h.superToken(t), map[string]any{
 		"email":           otherEmail,
@@ -265,7 +265,7 @@ func TestAppDocumentsSearch(t *testing.T) {
 		t.Fatal("expected tag name fulltext hit")
 	}
 
-	otherEmail := "ft-other-e2e@paperless.local"
+	otherEmail := "ft-other-e2e@lemmary.local"
 	otherPass := "otherpassword123"
 	status, raw = h.doJSON(t, http.MethodPost, "/api/collections/users/records", h.superToken(t), map[string]any{
 		"email":           otherEmail,

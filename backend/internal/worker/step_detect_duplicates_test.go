@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/duplicates"
+	"lemmary/backend/internal/duplicates"
 )
 
 func TestDetectDuplicatesShouldSkipWithoutOCR(t *testing.T) {

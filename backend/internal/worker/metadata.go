@@ -7,8 +7,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"paperless-go/backend/internal/models"
-	"paperless-go/backend/internal/strutil"
+	"lemmary/backend/internal/models"
+	"lemmary/backend/internal/strutil"
 )
 
 func applyExtractedMetadata(document *core.Record, metadata *models.ExtractedMetadata, resultLanguage string) {

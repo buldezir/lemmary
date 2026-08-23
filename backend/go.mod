@@ -1,4 +1,4 @@
-module paperless-go/backend
+module lemmary/backend
 
 go 1.26.3
 

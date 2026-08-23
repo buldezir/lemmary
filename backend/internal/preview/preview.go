@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase/tools/filesystem"
-	"paperless-go/backend/internal/pdftool"
+	"lemmary/backend/internal/pdftool"
 )
 
 const (
@@ -23,7 +23,7 @@ func GenerateFirstPagePNG(pdfPath string) (*filesystem.File, error) {
 		return nil, fmt.Errorf("preview: not a PDF file")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "paperless-preview-*")
+	tmpDir, err := os.MkdirTemp("", "lemmary-preview-*")
 	if err != nil {
 		return nil, err
 	}

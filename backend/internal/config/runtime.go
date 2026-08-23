@@ -5,10 +5,10 @@ import (
 	"sync"
 
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/ai"
-	"paperless-go/backend/internal/aiprovider"
-	"paperless-go/backend/internal/applog"
-	"paperless-go/backend/internal/ocr"
+	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/applog"
+	"lemmary/backend/internal/ocr"
 )
 
 // Snapshot is an immutable view of the live runtime config and clients.

@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/config"
-	"paperless-go/backend/internal/importjob"
-	"paperless-go/backend/internal/pdfsplit"
+	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/importjob"
+	"lemmary/backend/internal/pdfsplit"
 )
 
 type splitRequest struct {

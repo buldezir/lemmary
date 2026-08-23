@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"paperless-go/backend/internal/pdftool/testpdf"
+	"lemmary/backend/internal/pdftool/testpdf"
 )
 
 // splitPDF builds a multi-page PDF whose per-page text is unique to this test

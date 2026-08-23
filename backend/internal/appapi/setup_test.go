@@ -3,8 +3,8 @@ package appapi
 import (
 	"testing"
 
-	"paperless-go/backend/internal/aiprovider"
-	"paperless-go/backend/internal/config"
+	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/config"
 )
 
 func TestNeedsConfigSetup(t *testing.T) {

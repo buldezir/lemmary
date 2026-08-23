@@ -11,8 +11,8 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/fulltext"
-	"paperless-go/backend/internal/models"
+	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/models"
 )
 
 var errSearchIndexNotReady = errors.New("search index is not ready")

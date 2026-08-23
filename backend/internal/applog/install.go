@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	bootstrapHookID      = "paperlessGoConsoleLogOnBootstrap"
-	settingsReloadHookID = "paperlessGoConsoleLogOnSettingsReload"
+	bootstrapHookID      = "lemmaryConsoleLogOnBootstrap"
+	settingsReloadHookID = "lemmaryConsoleLogOnSettingsReload"
 )
 
 // Register attaches the stdout tee immediately after PocketBase initLogger.

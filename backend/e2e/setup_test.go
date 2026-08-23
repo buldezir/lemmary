@@ -49,7 +49,7 @@ func TestSetupAdminCreateOnce(t *testing.T) {
 	}
 
 	status, raw = h.doJSON(t, http.MethodPost, "/api/app/setup/admin", "", map[string]any{
-		"email":           "fresh-admin@paperless.local",
+		"email":           "fresh-admin@lemmary.local",
 		"password":        "freshpassword123",
 		"passwordConfirm": "freshpassword123",
 	})
@@ -66,7 +66,7 @@ func TestSetupAdminCreateOnce(t *testing.T) {
 	}
 
 	status, raw = h.doJSON(t, http.MethodPost, "/api/app/setup/admin", "", map[string]any{
-		"email":           "another@paperless.local",
+		"email":           "another@lemmary.local",
 		"password":        "anotherpassword1",
 		"passwordConfirm": "anotherpassword1",
 	})
@@ -75,7 +75,7 @@ func TestSetupAdminCreateOnce(t *testing.T) {
 	}
 
 	// Paired users account exists and can finish config via settings (is_admin).
-	userAuth := h.authWithPassword(t, "users", "fresh-admin@paperless.local", "freshpassword123")
+	userAuth := h.authWithPassword(t, "users", "fresh-admin@lemmary.local", "freshpassword123")
 	status, raw = h.doJSON(t, http.MethodGet, "/api/app/me", userAuth.Token, nil)
 	requireStatus(t, status, http.StatusOK, raw)
 	var me map[string]any
@@ -139,7 +139,7 @@ func TestSetupAdminValidation(t *testing.T) {
 	}
 
 	status, raw = h.doJSON(t, http.MethodPost, "/api/app/setup/admin", "", map[string]any{
-		"email":           "ok@paperless.local",
+		"email":           "ok@lemmary.local",
 		"password":        "longenough1",
 		"passwordConfirm": "mismatch!!",
 	})

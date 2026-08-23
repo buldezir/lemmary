@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/fulltext"
+	"lemmary/backend/internal/fulltext"
 )
 
 func TestClampSearchPageSize(t *testing.T) {

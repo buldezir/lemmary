@@ -5,8 +5,8 @@ import (
 	"net/http"
 
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/config"
-	"paperless-go/backend/internal/duplicates"
+	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/duplicates"
 )
 
 func handlePostDuplicatesScan(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {

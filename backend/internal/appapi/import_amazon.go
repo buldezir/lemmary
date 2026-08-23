@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/amazonimport"
+	"lemmary/backend/internal/amazonimport"
 )
 
 type importAmazonRequest struct {

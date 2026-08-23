@@ -6,7 +6,7 @@ const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 const vuePkg = path.join(frontendRoot, 'node_modules/vue')
 
 export default defineConfig({
-  title: 'paperless-go',
+  title: 'Lemmary',
   description: 'Development and setup documentation',
   srcDir: '../docs',
   base: '/docs/',

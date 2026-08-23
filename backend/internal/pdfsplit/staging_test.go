@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"paperless-go/backend/internal/pdftool"
-	"paperless-go/backend/internal/pdftool/testpdf"
+	"lemmary/backend/internal/pdftool"
+	"lemmary/backend/internal/pdftool/testpdf"
 )
 
 // requirePoppler skips when a poppler binary the test needs is absent.

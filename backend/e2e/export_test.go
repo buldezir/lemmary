@@ -51,9 +51,9 @@ func TestDocumentsExportArchive(t *testing.T) {
 		t.Fatal("missing file name")
 	}
 	ext := filepath.Ext(fileName)
-	origPath := "paperless-export/[" + id + "] " + wantTitle + ext
-	ocrPath := "paperless-export/[" + id + "] " + wantTitle + ".ocr.txt"
-	metaPath := "paperless-export/[" + id + "] " + wantTitle + ".metadata.json"
+	origPath := "lemmary-export/[" + id + "] " + wantTitle + ext
+	ocrPath := "lemmary-export/[" + id + "] " + wantTitle + ".ocr.txt"
+	metaPath := "lemmary-export/[" + id + "] " + wantTitle + ".metadata.json"
 
 	t.Run("unauthenticated", func(t *testing.T) {
 		status, body, _ := h.doRaw(t, http.MethodGet, "/api/app/documents/export?mode=originals", "", nil, "")
@@ -129,7 +129,7 @@ func TestDocumentsExportOwnerIsolation(t *testing.T) {
 	idA := jsonGetString(rec, "id")
 	h.settleDocuments(t, idA)
 
-	otherEmail := "export-other-e2e@paperless.local"
+	otherEmail := "export-other-e2e@lemmary.local"
 	otherPass := "otherpassword123"
 	status, raw := h.doJSON(t, http.MethodPost, "/api/collections/users/records", h.superToken(t), map[string]any{
 		"email":           otherEmail,
@@ -179,7 +179,7 @@ func fetchExportZip(t *testing.T, h *Harness, token, mode string) map[string]str
 	if ct := headers.Get("Content-Type"); !strings.Contains(ct, "application/zip") {
 		t.Fatalf("Content-Type=%q", ct)
 	}
-	if !strings.Contains(headers.Get("Content-Disposition"), "paperless-export.zip") {
+	if !strings.Contains(headers.Get("Content-Disposition"), "lemmary-export.zip") {
 		t.Fatalf("Content-Disposition=%q", headers.Get("Content-Disposition"))
 	}
 
@@ -224,7 +224,7 @@ func assertZipMissing(t *testing.T, entries map[string]string, name string) {
 
 func assertZipHasID(t *testing.T, entries map[string]string, id string) {
 	t.Helper()
-	prefix := "paperless-export/[" + id + "]"
+	prefix := "lemmary-export/[" + id + "]"
 	for name := range entries {
 		if strings.HasPrefix(name, prefix) {
 			return
@@ -239,7 +239,7 @@ func assertZipHasID(t *testing.T, entries map[string]string, id string) {
 
 func assertZipMissingID(t *testing.T, entries map[string]string, id string) {
 	t.Helper()
-	prefix := "paperless-export/[" + id + "]"
+	prefix := "lemmary-export/[" + id + "]"
 	for name := range entries {
 		if strings.HasPrefix(name, prefix) {
 			t.Fatalf("unexpected zip entry for document %s: %q", id, name)

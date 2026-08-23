@@ -9,7 +9,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"paperless-go/backend/internal/reprocess"
+	"lemmary/backend/internal/reprocess"
 )
 
 type reprocessFailedRequest struct {

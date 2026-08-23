@@ -11,9 +11,9 @@ import (
 	"github.com/pocketbase/dbx"
 
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/ai"
-	"paperless-go/backend/internal/config"
-	"paperless-go/backend/internal/fulltext"
+	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/fulltext"
 )
 
 // maxAvailableTagNames caps how many tag names are inlined into the agent prompt.

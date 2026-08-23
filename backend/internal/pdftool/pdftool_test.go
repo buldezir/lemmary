@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"paperless-go/backend/internal/pdftool/testpdf"
+	"lemmary/backend/internal/pdftool/testpdf"
 )
 
 // requirePoppler skips when the poppler binaries a test needs are absent, the

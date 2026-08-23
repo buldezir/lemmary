@@ -28,7 +28,7 @@ async function mockSetupStatus(
 
 test('ready install shows normal login', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Paperless Go' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Lemmary' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Create your admin account' })).toHaveCount(0)
 })

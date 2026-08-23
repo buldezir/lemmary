@@ -8,9 +8,9 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
-	"paperless-go/backend/internal/ai"
-	"paperless-go/backend/internal/fulltext"
-	"paperless-go/backend/internal/strutil"
+	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/strutil"
 )
 
 const (

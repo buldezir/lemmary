@@ -2,7 +2,7 @@ package ngximport
 
 import (
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/importjob"
+	"lemmary/backend/internal/importjob"
 )
 
 // Job statuses for in-memory async imports.

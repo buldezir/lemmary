@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"paperless-go/backend/internal/aiprovider"
+	"lemmary/backend/internal/aiprovider"
 )
 
 func TestApplyBindingFallbacksChainsExtractToChatToSearch(t *testing.T) {
@@ -169,16 +169,16 @@ func TestDefaultsFromEnvModelInheritance(t *testing.T) {
 }
 
 func TestGetEnvBool(t *testing.T) {
-	t.Setenv("PAPERLESS_TEST_BOOL", "")
-	if got := getEnvBool("PAPERLESS_TEST_BOOL", true); !got {
+	t.Setenv("LEMMARY_TEST_BOOL", "")
+	if got := getEnvBool("LEMMARY_TEST_BOOL", true); !got {
 		t.Fatal("expected fallback for an unset value")
 	}
-	t.Setenv("PAPERLESS_TEST_BOOL", "not-a-bool")
-	if got := getEnvBool("PAPERLESS_TEST_BOOL", true); !got {
+	t.Setenv("LEMMARY_TEST_BOOL", "not-a-bool")
+	if got := getEnvBool("LEMMARY_TEST_BOOL", true); !got {
 		t.Fatal("expected fallback for an unparsable value")
 	}
-	t.Setenv("PAPERLESS_TEST_BOOL", "true")
-	if got := getEnvBool("PAPERLESS_TEST_BOOL", false); !got {
+	t.Setenv("LEMMARY_TEST_BOOL", "true")
+	if got := getEnvBool("LEMMARY_TEST_BOOL", false); !got {
 		t.Fatal("expected true")
 	}
 }
@@ -187,13 +187,13 @@ func TestGetEnvBool(t *testing.T) {
 func TestGetEnvFloatRejectsOutOfRange(t *testing.T) {
 	cases := []string{"0", "-1", "1.5", "abc", ""}
 	for _, raw := range cases {
-		t.Setenv("PAPERLESS_TEST_FLOAT", raw)
-		if got := getEnvFloat("PAPERLESS_TEST_FLOAT", 0.9); got != 0.9 {
+		t.Setenv("LEMMARY_TEST_FLOAT", raw)
+		if got := getEnvFloat("LEMMARY_TEST_FLOAT", 0.9); got != 0.9 {
 			t.Fatalf("getEnvFloat(%q)=%v, want fallback", raw, got)
 		}
 	}
-	t.Setenv("PAPERLESS_TEST_FLOAT", "0.75")
-	if got := getEnvFloat("PAPERLESS_TEST_FLOAT", 0.9); got != 0.75 {
+	t.Setenv("LEMMARY_TEST_FLOAT", "0.75")
+	if got := getEnvFloat("LEMMARY_TEST_FLOAT", 0.9); got != 0.75 {
 		t.Fatalf("getEnvFloat=%v", got)
 	}
 }

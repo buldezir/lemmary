@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"paperless-go/backend/internal/config"
-	"paperless-go/backend/internal/duplicates"
-	"paperless-go/backend/internal/models"
+	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/duplicates"
+	"lemmary/backend/internal/models"
 )
 
 type DetectDuplicatesStep struct{}

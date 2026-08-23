@@ -6,7 +6,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"paperless-go/backend/internal/taxonomy"
+	"lemmary/backend/internal/taxonomy"
 )
 
 func handlePostTaxonomyPrune(app core.App) func(*core.RequestEvent) error {

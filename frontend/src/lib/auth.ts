@@ -80,7 +80,7 @@ export async function getLoginMethods(): Promise<LoginMethods> {
   }
 }
 
-const oauthPopupName = 'paperless-oauth2-login'
+const oauthPopupName = 'lemmary-oauth2-login'
 const oauthPopupFeatures = 'width=600,height=720,menubar=no,toolbar=no,resizable'
 
 /**

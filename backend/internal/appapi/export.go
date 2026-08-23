@@ -9,8 +9,8 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
-	"paperless-go/backend/internal/models"
-	"paperless-go/backend/internal/strutil"
+	"lemmary/backend/internal/models"
+	"lemmary/backend/internal/strutil"
 )
 
 const exportPageSize = 100
@@ -73,7 +73,7 @@ func handleExportDocuments(app core.App) func(*core.RequestEvent) error {
 		}
 
 		e.Response.Header().Set("Content-Type", "application/zip")
-		e.Response.Header().Set("Content-Disposition", `attachment; filename="paperless-export.zip"`)
+		e.Response.Header().Set("Content-Disposition", `attachment; filename="lemmary-export.zip"`)
 		e.Response.WriteHeader(http.StatusOK)
 
 		if err := WriteExportZip(e.Response, mode, docs); err != nil {

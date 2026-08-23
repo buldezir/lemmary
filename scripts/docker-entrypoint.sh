@@ -8,4 +8,4 @@ if [ "$#" -eq 0 ]; then
     set -- serve --http="0.0.0.0:${PORT:-80}"
 fi
 
-exec /app/paperless-go "$@"
+exec /app/lemmary "$@"

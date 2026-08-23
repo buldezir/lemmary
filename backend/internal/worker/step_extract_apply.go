@@ -9,9 +9,9 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"paperless-go/backend/internal/ai"
-	"paperless-go/backend/internal/models"
-	"paperless-go/backend/internal/strutil"
+	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/models"
+	"lemmary/backend/internal/strutil"
 )
 
 type ExtractMetadataStep struct {

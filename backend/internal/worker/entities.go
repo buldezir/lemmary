@@ -8,7 +8,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"golang.org/x/text/unicode/norm"
 
-	"paperless-go/backend/internal/ai"
+	"lemmary/backend/internal/ai"
 )
 
 const namedEntityListPageSize = 500

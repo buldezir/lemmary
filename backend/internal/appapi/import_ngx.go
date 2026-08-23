@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/ngximport"
+	"lemmary/backend/internal/ngximport"
 )
 
 type importNgxRequest struct {

@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/ai"
-	"paperless-go/backend/internal/config"
+	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/config"
 )
 
 type chatRequest struct {

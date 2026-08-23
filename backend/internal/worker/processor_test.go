@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/models"
+	"lemmary/backend/internal/models"
 )
 
 func newTestDocumentRecord() *core.Record {

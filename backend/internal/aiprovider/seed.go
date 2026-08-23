@@ -7,7 +7,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"paperless-go/backend/internal/strutil"
+	"lemmary/backend/internal/strutil"
 )
 
 func SeedFromEnv(app core.App, settings *core.Record) error {

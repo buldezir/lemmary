@@ -35,7 +35,7 @@ func TestUserDeleteCascadesOwnedRecords(t *testing.T) {
 	h := StartShared(t)
 	super := h.superToken(t)
 	stamp := fmt.Sprintf("%d", time.Now().UnixNano())
-	email := fmt.Sprintf("cascade-%s@paperless.local", stamp)
+	email := fmt.Sprintf("cascade-%s@lemmary.local", stamp)
 	pass := "cascadepassword123"
 
 	status, raw := h.doJSON(t, http.MethodPost, "/api/collections/users/records", super, map[string]any{

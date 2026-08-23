@@ -7,8 +7,8 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
-	"paperless-go/backend/internal/config"
-	"paperless-go/backend/internal/models"
+	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/models"
 )
 
 // scanPageSize bounds how many records a scan holds in memory at once.

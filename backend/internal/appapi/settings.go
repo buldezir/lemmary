@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/aiprovider"
-	"paperless-go/backend/internal/config"
+	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/config"
 )
 
 type settingsResponse struct {

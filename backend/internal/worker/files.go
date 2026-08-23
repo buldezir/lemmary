@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/ocr"
+	"lemmary/backend/internal/ocr"
 )
 
 func readDocumentToTempFile(app core.App, document *core.Record) (tmpPath, mimeType string, cleanup func(), err error) {
@@ -29,7 +29,7 @@ func readDocumentToTempFile(app core.App, document *core.Record) (tmpPath, mimeT
 	}
 	defer reader.Close()
 
-	tmpFile, err := os.CreateTemp("", "paperless-doc-*"+filepath.Ext(fileName))
+	tmpFile, err := os.CreateTemp("", "lemmary-doc-*"+filepath.Ext(fileName))
 	if err != nil {
 		return "", "", func() {}, err
 	}

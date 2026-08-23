@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/aiprovider"
-	"paperless-go/backend/internal/config"
-	"paperless-go/backend/internal/ocr"
-	"paperless-go/backend/internal/textextract"
+	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/ocr"
+	"lemmary/backend/internal/textextract"
 )
 
 const ocrTestMaxFileBytes = 10 * 1024 * 1024
@@ -79,7 +79,7 @@ func handleOCRTest(app core.App, rt *config.Runtime) func(*core.RequestEvent) er
 		}
 		defer file.Close()
 
-		tmpFile, err := os.CreateTemp("", "paperless-ocr-test-*"+filepath.Ext(header.Filename))
+		tmpFile, err := os.CreateTemp("", "lemmary-ocr-test-*"+filepath.Ext(header.Filename))
 		if err != nil {
 			return writeError(e, 500, "Failed to prepare upload.")
 		}

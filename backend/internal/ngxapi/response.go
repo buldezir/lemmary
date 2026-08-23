@@ -12,7 +12,7 @@ import (
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
-	"paperless-go/backend/internal/fulltext"
+	"lemmary/backend/internal/fulltext"
 )
 
 // maxPageSize bounds DB-backed listings; the fulltext path has its own clamp.

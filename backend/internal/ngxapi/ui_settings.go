@@ -50,7 +50,7 @@ func mapUiSettings(app core.App, user *core.Record) map[string]any {
 }
 
 func defaultUiSettings(app core.App) map[string]any {
-	appTitle := "Paperless Go"
+	appTitle := "Lemmary"
 	if name := strings.TrimSpace(app.Settings().Meta.AppName); name != "" {
 		appTitle = name
 	}

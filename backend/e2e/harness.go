@@ -10,23 +10,23 @@ import (
 	"testing"
 	"time"
 
-	"paperless-go/backend/internal/appapi"
-	"paperless-go/backend/internal/appwire"
-	"paperless-go/backend/internal/config"
-	"paperless-go/backend/internal/ngximport"
+	"lemmary/backend/internal/appapi"
+	"lemmary/backend/internal/appwire"
+	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/ngximport"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
 
-	_ "paperless-go/backend/migrations"
+	_ "lemmary/backend/migrations"
 )
 
 const (
-	UserEmail     = "e2e@paperless.local"
+	UserEmail     = "e2e@lemmary.local"
 	UserPassword  = "e2epassword123"
-	SuperEmail    = "admin@paperless.local"
+	SuperEmail    = "admin@lemmary.local"
 	SuperPassword = "adminpassword123"
 )
 
@@ -69,7 +69,7 @@ func Start(opts Options) (*Harness, error) {
 	ngximport.SetAllowPrivateImportHosts(true)
 	mocks := startMockServers()
 
-	dataDir, err := os.MkdirTemp("", "paperless-e2e-*")
+	dataDir, err := os.MkdirTemp("", "lemmary-e2e-*")
 	if err != nil {
 		mocks.Close()
 		return nil, err
@@ -155,7 +155,7 @@ func Start(opts Options) (*Harness, error) {
 	}
 
 	settings := app.Settings()
-	settings.Meta.AppName = "Paperless Go"
+	settings.Meta.AppName = "Lemmary"
 	if err := app.Save(settings); err != nil {
 		_ = app.ResetBootstrapState()
 		if listener != nil {

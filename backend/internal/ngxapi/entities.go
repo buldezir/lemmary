@@ -7,7 +7,7 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
-	"paperless-go/backend/internal/strutil"
+	"lemmary/backend/internal/strutil"
 )
 
 func handleListTags(e *core.RequestEvent) error {

@@ -1,4 +1,4 @@
-const githubRepoUrl = 'https://github.com/buldezir/paperless-go'
+const githubRepoUrl = 'https://github.com/buldezir/lemmary'
 
 function GitHubIcon() {
   return (
@@ -18,7 +18,7 @@ export function AppFooter() {
   return (
     <footer className="mt-auto border-t border-line py-5 text-center text-[11px] uppercase tracking-[0.14em] text-ink-soft">
       <p className="inline-flex items-center">
-        Paperless-Go
+        Lemmary
         <span className="mx-2 text-line-strong" aria-hidden="true">
           ·
         </span>

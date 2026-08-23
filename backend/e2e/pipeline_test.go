@@ -9,7 +9,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"paperless-go/backend/internal/worker"
+	"lemmary/backend/internal/worker"
 )
 
 func TestPipelineCompletesWithMocks(t *testing.T) {
@@ -117,7 +117,7 @@ func TestExtractionPromptIncludesExistingNamedEntities(t *testing.T) {
 		_, _ = h.doJSON(t, http.MethodDelete, "/api/collections/document_types/records/"+typeID, token, nil)
 	})
 
-	otherEmail := "catalog-other-" + suffix + "@paperless.local"
+	otherEmail := "catalog-other-" + suffix + "@lemmary.local"
 	otherPass := "otherpassword123"
 	status, raw = h.doJSON(t, http.MethodPost, "/api/collections/users/records", h.superToken(t), map[string]any{
 		"email":           otherEmail,

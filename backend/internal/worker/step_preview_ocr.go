@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"paperless-go/backend/internal/models"
-	"paperless-go/backend/internal/ocr"
-	"paperless-go/backend/internal/preview"
-	"paperless-go/backend/internal/textextract"
+	"lemmary/backend/internal/models"
+	"lemmary/backend/internal/ocr"
+	"lemmary/backend/internal/preview"
+	"lemmary/backend/internal/textextract"
 )
 
 type PreviewStep struct{}

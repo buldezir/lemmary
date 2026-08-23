@@ -6,7 +6,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"paperless-go/backend/internal/models"
+	"lemmary/backend/internal/models"
 )
 
 // Build converts a document record into the Bleve document to index.

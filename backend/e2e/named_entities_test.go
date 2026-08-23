@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"paperless-go/backend/internal/worker"
+	"lemmary/backend/internal/worker"
 )
 
 func TestNamedEntityOwnerIsolation(t *testing.T) {
@@ -44,7 +44,7 @@ func TestNamedEntityOwnerIsolation(t *testing.T) {
 		t.Fatalf("correspondent user=%q want %q", jsonGetString(created, "user"), h.UserID)
 	}
 
-	otherEmail := fmt.Sprintf("named-other-%s@paperless.local", stamp)
+	otherEmail := fmt.Sprintf("named-other-%s@lemmary.local", stamp)
 	otherPass := "otherpassword123"
 	status, raw = h.doJSON(t, http.MethodPost, "/api/collections/users/records", h.superToken(t), map[string]any{
 		"email":           otherEmail,
@@ -296,7 +296,7 @@ func TestTagOwnerIsolation(t *testing.T) {
 		t.Fatalf("tag user=%q want %q", jsonGetString(tagA, "user"), h.UserID)
 	}
 
-	otherEmail := fmt.Sprintf("tag-other-%s@paperless.local", stamp)
+	otherEmail := fmt.Sprintf("tag-other-%s@lemmary.local", stamp)
 	otherPass := "otherpassword123"
 	otherID, err := createAuthRecord(h.App, "users", otherEmail, otherPass)
 	if err != nil {

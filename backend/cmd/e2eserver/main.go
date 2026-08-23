@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"paperless-go/backend/e2e"
+	"lemmary/backend/e2e"
 )
 
 func main() {

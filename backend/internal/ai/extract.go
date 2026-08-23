@@ -13,8 +13,8 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
 
-	"paperless-go/backend/internal/models"
-	"paperless-go/backend/internal/strutil"
+	"lemmary/backend/internal/models"
+	"lemmary/backend/internal/strutil"
 )
 
 const (

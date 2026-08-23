@@ -73,11 +73,11 @@ func TestWriteExportZipModes(t *testing.T) {
 		},
 	}
 
-	orig1 := "paperless-export/[doc1] Invoice.pdf"
-	ocr1 := "paperless-export/[doc1] Invoice.ocr.txt"
-	meta1 := "paperless-export/[doc1] Invoice.metadata.json"
-	orig2 := "paperless-export/[doc2] Note.txt"
-	meta2 := "paperless-export/[doc2] Note.metadata.json"
+	orig1 := "lemmary-export/[doc1] Invoice.pdf"
+	ocr1 := "lemmary-export/[doc1] Invoice.ocr.txt"
+	meta1 := "lemmary-export/[doc1] Invoice.metadata.json"
+	orig2 := "lemmary-export/[doc2] Note.txt"
+	meta2 := "lemmary-export/[doc2] Note.metadata.json"
 
 	t.Run("originals", func(t *testing.T) {
 		entries := mustZipEntries(t, ExportModeOriginals, docs)
@@ -91,7 +91,7 @@ func TestWriteExportZipModes(t *testing.T) {
 		entries := mustZipEntries(t, ExportModeOCR, docs)
 		assertHas(t, entries, orig1, "PDFBYTES")
 		assertHas(t, entries, ocr1, ocrText)
-		assertMissing(t, entries, "paperless-export/[doc2] Note.ocr.txt")
+		assertMissing(t, entries, "lemmary-export/[doc2] Note.ocr.txt")
 		assertMissing(t, entries, meta1)
 	})
 
@@ -140,10 +140,10 @@ func TestWriteExportZipSkipsFailedOpen(t *testing.T) {
 		},
 	}
 	entries := mustZipEntries(t, ExportModeOriginals, docs)
-	if _, ok := entries["paperless-export/[missing] Gone.pdf"]; ok {
+	if _, ok := entries["lemmary-export/[missing] Gone.pdf"]; ok {
 		t.Fatal("expected missing file to be skipped")
 	}
-	assertHas(t, entries, "paperless-export/[ok] Ok.txt", "ok")
+	assertHas(t, entries, "lemmary-export/[ok] Ok.txt", "ok")
 }
 
 func TestExportEntryBase(t *testing.T) {

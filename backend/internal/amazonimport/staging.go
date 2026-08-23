@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/staging"
+	"lemmary/backend/internal/staging"
 )
 
 // stagingTTL is how long an uploaded archive waits for confirmation before it

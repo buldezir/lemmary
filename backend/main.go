@@ -5,16 +5,16 @@ import (
 	"os"
 	"path/filepath"
 
-	"paperless-go/backend/internal/appapi"
-	"paperless-go/backend/internal/appwire"
-	"paperless-go/backend/internal/config"
+	"lemmary/backend/internal/appapi"
+	"lemmary/backend/internal/appwire"
+	"lemmary/backend/internal/config"
 
 	"github.com/joho/godotenv"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 	"github.com/pocketbase/pocketbase/tools/osutils"
 
-	_ "paperless-go/backend/migrations"
+	_ "lemmary/backend/migrations"
 )
 
 func main() {

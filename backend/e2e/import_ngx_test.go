@@ -251,7 +251,7 @@ func TestImportNgxJobHiddenFromOtherUser(t *testing.T) {
 		t.Fatalf("missing job_id in %s", raw)
 	}
 
-	otherEmail := fmt.Sprintf("import-other-%d@paperless.local", time.Now().UnixNano())
+	otherEmail := fmt.Sprintf("import-other-%d@lemmary.local", time.Now().UnixNano())
 	otherPass := "otherpassword123"
 	status, raw = h.doJSON(t, http.MethodPost, "/api/collections/users/records", h.superToken(t), map[string]any{
 		"email":           otherEmail,
@@ -330,7 +330,7 @@ func TestImportNgxAsSuperuserOwnsPairedAdmin(t *testing.T) {
 
 func TestImportNgxSuperuserRequiresPairedUser(t *testing.T) {
 	h := StartShared(t)
-	email := fmt.Sprintf("orphan-super-%d@paperless.local", time.Now().UnixNano())
+	email := fmt.Sprintf("orphan-super-%d@lemmary.local", time.Now().UnixNano())
 	pass := "orphanpassword123"
 	if _, err := createAuthRecord(h.App, "_superusers", email, pass); err != nil {
 		t.Fatalf("create orphan superuser: %v", err)
@@ -404,7 +404,7 @@ func TestImportNgxAllowsConcurrentDifferentUsers(t *testing.T) {
 	remoteB := httptest.NewServer(muxB)
 	t.Cleanup(remoteB.Close)
 
-	otherEmail := fmt.Sprintf("import-concurrent-%d@paperless.local", time.Now().UnixNano())
+	otherEmail := fmt.Sprintf("import-concurrent-%d@lemmary.local", time.Now().UnixNano())
 	otherPass := "otherpassword123"
 	status, raw = h.doJSON(t, http.MethodPost, "/api/collections/users/records", h.superToken(t), map[string]any{
 		"email":           otherEmail,

@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	defaultAppName = "Paperless Go"
+	defaultAppName = "Lemmary"
 	defaultAccent  = "#111827" // gray-900, matches previous logo background
 )
 

@@ -10,7 +10,7 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
 
-	"paperless-go/backend/internal/strutil"
+	"lemmary/backend/internal/strutil"
 )
 
 type ChatMessage struct {

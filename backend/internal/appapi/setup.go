@@ -9,8 +9,8 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/aiprovider"
-	"paperless-go/backend/internal/config"
+	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/config"
 )
 
 var errAdminExists = errors.New("an admin account already exists")

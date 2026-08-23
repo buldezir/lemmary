@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/ai"
-	"paperless-go/backend/internal/importjob"
-	"paperless-go/backend/internal/models"
-	"paperless-go/backend/internal/ocr"
-	"paperless-go/backend/internal/pdftool"
+	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/importjob"
+	"lemmary/backend/internal/models"
+	"lemmary/backend/internal/ocr"
+	"lemmary/backend/internal/pdftool"
 )
 
 // maxDetectOCRPages bounds the OCR fallback for a scanned file. Each page is a
@@ -176,7 +176,7 @@ func readPageText(
 		"provider", deps.OCR.Name(),
 	)
 
-	workDir, err := os.MkdirTemp("", "paperless-split-detect-*")
+	workDir, err := os.MkdirTemp("", "lemmary-split-detect-*")
 	if err != nil {
 		return nil, "", fmt.Errorf("prepare work dir: %w", err)
 	}

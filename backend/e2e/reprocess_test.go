@@ -9,7 +9,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"paperless-go/backend/internal/models"
+	"lemmary/backend/internal/models"
 )
 
 // MaxSweepLimit mirrors reprocess.MaxLimit; the endpoint clamps to it.
@@ -278,7 +278,7 @@ func TestReprocessFailedSkipsAlreadyQueued(t *testing.T) {
 // queued/remaining counts exact rather than "at least".
 func (h *Harness) newFailedUser(t testing.TB, label string, count int) (token string, documentIDs []string) {
 	t.Helper()
-	email := fmt.Sprintf("reprocess-%s-%d@paperless.local", label, time.Now().UnixNano())
+	email := fmt.Sprintf("reprocess-%s-%d@lemmary.local", label, time.Now().UnixNano())
 	password := "reprocesspassword123"
 	userID, err := createAuthRecord(h.App, "users", email, password)
 	if err != nil {

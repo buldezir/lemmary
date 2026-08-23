@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/models"
-	"paperless-go/backend/internal/textextract"
+	"lemmary/backend/internal/models"
+	"lemmary/backend/internal/textextract"
 )
 
 type failingOCRProvider struct{}

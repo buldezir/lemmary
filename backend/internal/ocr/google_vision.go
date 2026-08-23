@@ -13,7 +13,7 @@ import (
 	vision "cloud.google.com/go/vision/v2/apiv1"
 	"cloud.google.com/go/vision/v2/apiv1/visionpb"
 	"google.golang.org/api/option"
-	"paperless-go/backend/internal/aiprovider"
+	"lemmary/backend/internal/aiprovider"
 )
 
 // The gRPC client is goroutine-safe and must be Close()d to release its

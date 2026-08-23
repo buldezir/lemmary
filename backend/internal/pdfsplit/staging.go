@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
-	"paperless-go/backend/internal/pdftool"
-	"paperless-go/backend/internal/staging"
+	"lemmary/backend/internal/pdftool"
+	"lemmary/backend/internal/staging"
 )
 
 // stagingTTL is how long a staged PDF waits for confirmation before it is

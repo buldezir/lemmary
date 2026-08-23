@@ -7,9 +7,9 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
-	"paperless-go/backend/internal/duplicates"
-	"paperless-go/backend/internal/importjob"
-	"paperless-go/backend/internal/models"
+	"lemmary/backend/internal/duplicates"
+	"lemmary/backend/internal/importjob"
+	"lemmary/backend/internal/models"
 )
 
 // Job statuses for in-memory async imports.

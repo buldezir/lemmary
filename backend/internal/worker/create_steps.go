@@ -3,7 +3,7 @@ package worker
 import (
 	"github.com/pocketbase/pocketbase/core"
 
-	"paperless-go/backend/internal/models"
+	"lemmary/backend/internal/models"
 )
 
 // createStepsKey carries requested pipeline steps on an unsaved document record.
