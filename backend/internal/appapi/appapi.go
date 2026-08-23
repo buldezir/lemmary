@@ -7,6 +7,7 @@ import (
 	"paperless-go/backend/internal/amazonimport"
 	"paperless-go/backend/internal/config"
 	"paperless-go/backend/internal/fulltext"
+	"paperless-go/backend/internal/pdfsplit"
 )
 
 func Register(app core.App, rt *config.Runtime, idx *fulltext.Index) {
@@ -47,6 +48,14 @@ func Register(app core.App, rt *config.Runtime, idx *fulltext.Index) {
 			g.DELETE("/import/amazon/upload", bindAuth(handleDeleteImportAmazonUpload(app)))
 			g.POST("/import/amazon", bindAuth(handlePostImportAmazon(app)))
 			g.GET("/import/amazon/status", bindAuth(handleGetImportAmazonStatus(app)))
+			g.POST("/split/upload", bindAuth(handlePostSplitUpload(app))).
+				Bind(apis.BodyLimit(pdfsplit.MaxPDFBytes))
+			g.DELETE("/split/upload", bindAuth(handleDeleteSplitUpload(app)))
+			g.GET("/split/page", bindAuth(handleGetSplitPage(app)))
+			g.POST("/split/detect", bindAuth(handlePostSplitDetect(app, rt)))
+			g.GET("/split/detect/status", bindAuth(handleGetSplitDetectStatus(app)))
+			g.POST("/split", bindAuth(handlePostSplit(app)))
+			g.GET("/split/status", bindAuth(handleGetSplitStatus(app)))
 			return e.Next()
 		},
 	})

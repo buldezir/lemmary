@@ -6,6 +6,8 @@ export const inputClassName =
 export const labelClassName = 'flex flex-col gap-1'
 export const labelTextClassName =
   'text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-soft'
+/** Small explanation shown under a form field. */
+export const fieldHintClassName = 'text-xs text-ink-soft'
 export const sectionClassName = 'border border-line bg-surface p-6'
 export const sectionTitleClassName =
   'mb-4 border-b border-line pb-2 font-display text-lg font-semibold text-ink'

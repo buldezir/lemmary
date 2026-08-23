@@ -15,6 +15,11 @@ export type AppSettings = {
   openai_timeout_sec: number
   worker_timeout_sec: number
   worker_max_retries: number
+  /**
+   * Bookkeeping only: recorded on each document's extraction step so its
+   * metadata can be traced to a prompt. Not editable in the UI — it is set by
+   * EXTRACTION_PROMPT_VERSION or through the API.
+   */
   extraction_prompt_version: string
   near_duplicate_detection_enabled: boolean
   near_duplicate_threshold: number

@@ -18,6 +18,9 @@ type Snapshot struct {
 	AI          ai.Extractor
 	Chatter     ai.Chatter
 	SearchAgent ai.SearchAgent
+	// Splitter proposes document boundaries for the split-documents upload. It
+	// shares the extraction provider: both reason over document text.
+	Splitter ai.Splitter
 }
 
 // Runtime holds the process-global reloadable config and provider clients.
@@ -99,6 +102,18 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		)
 	}
 
+	var splitter ai.Splitter
+	if cfg.ExtractProvider != nil && cfg.ExtractProvider.APIKey != "" && aiprovider.IsLLM(cfg.ExtractProvider.SDK) {
+		splitter = ai.NewSplitter(
+			cfg.ExtractProvider.SDK,
+			cfg.ExtractProvider.APIKey,
+			cfg.ExtractModel,
+			cfg.ExtractProvider.BaseURL,
+			cfg.OpenAITimeout,
+			aiLogger,
+		)
+	}
+
 	var searchAgent ai.SearchAgent
 	if cfg.SearchProvider != nil && cfg.SearchProvider.APIKey != "" && aiprovider.IsLLM(cfg.SearchProvider.SDK) {
 		searchAgent = ai.NewSearchAgent(
@@ -120,6 +135,7 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		AI:          extractor,
 		Chatter:     chatter,
 		SearchAgent: searchAgent,
+		Splitter:    splitter,
 	}
 	r.mu.Unlock()
 

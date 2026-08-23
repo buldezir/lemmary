@@ -18,6 +18,7 @@ import {
   Button,
   inputClassName,
   labelClassName,
+  fieldHintClassName,
   labelTextClassName,
   sectionClassName,
   sectionTitleClassName,
@@ -48,7 +49,6 @@ type FormState = {
   openai_timeout_sec: string
   worker_timeout_sec: string
   worker_max_retries: string
-  extraction_prompt_version: string
   near_duplicate_detection_enabled: boolean
   near_duplicate_threshold: string
 }
@@ -69,7 +69,6 @@ function formFromSettings(settings: AppSettings): FormState {
     openai_timeout_sec: String(settings.openai_timeout_sec),
     worker_timeout_sec: String(settings.worker_timeout_sec),
     worker_max_retries: String(settings.worker_max_retries),
-    extraction_prompt_version: settings.extraction_prompt_version,
     near_duplicate_detection_enabled: settings.near_duplicate_detection_enabled,
     near_duplicate_threshold: String(settings.near_duplicate_threshold ?? 0.92),
   }
@@ -227,7 +226,6 @@ export function SettingsPage() {
         openai_timeout_sec: openAITimeout,
         worker_timeout_sec: workerTimeout,
         worker_max_retries: maxRetries,
-        extraction_prompt_version: form.extraction_prompt_version,
         near_duplicate_detection_enabled: form.near_duplicate_detection_enabled,
         near_duplicate_threshold: nearThreshold,
       })
@@ -401,6 +399,7 @@ export function SettingsPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <ProviderModelFields
               label="OCR"
+              help="Reads the text out of uploaded PDFs, images and scans. Plain text, CSV, Word and Excel files are read locally and skip this step."
               providers={providers}
               providerId={form.ocr_provider_id}
               model={form.ocr_model}
@@ -408,18 +407,9 @@ export function SettingsPage() {
               onProviderChange={(id) => updateField('ocr_provider_id', id)}
               onModelChange={(value) => updateField('ocr_model', value)}
             />
-            <label className={labelClassName}>
-              <span className={labelTextClassName}>OCR timeout (seconds)</span>
-              <input
-                type="number"
-                min={1}
-                className={inputClassName}
-                value={form.ocr_timeout_sec}
-                onChange={(e) => updateField('ocr_timeout_sec', e.target.value)}
-              />
-            </label>
             <ProviderModelFields
               label="Extraction"
+              help="Turns a document's text into its title, date, type, correspondent, tags and summary. Also proposes the cuts for Detect automatically when splitting a PDF."
               providers={llmProviders}
               providerId={form.extract_provider_id}
               model={form.extract_model}
@@ -429,6 +419,7 @@ export function SettingsPage() {
             />
             <ProviderModelFields
               label="Chat"
+              help="Answers questions about a single document on its Ask AI page. Leave the provider empty to turn the feature off."
               providers={llmProviders}
               providerId={form.chat_provider_id}
               model={form.chat_model}
@@ -439,6 +430,7 @@ export function SettingsPage() {
             />
             <ProviderModelFields
               label="Search"
+              help="Answers natural-language queries on the Deep Search page, in both normal and deep mode. Leave the provider empty to turn the feature off."
               providers={llmProviders}
               providerId={form.search_provider_id}
               model={form.search_model}
@@ -447,42 +439,67 @@ export function SettingsPage() {
               onProviderChange={(id) => updateField('search_provider_id', id)}
               onModelChange={(value) => updateField('search_model', value)}
             />
-            <label className={labelClassName}>
-              <span className={labelTextClassName}>AI timeout (seconds)</span>
-              <input
-                type="number"
-                min={1}
-                className={inputClassName}
-                value={form.openai_timeout_sec}
-                onChange={(e) => updateField('openai_timeout_sec', e.target.value)}
-              />
-            </label>
-            <label className={labelClassName}>
-              <span className={labelTextClassName}>Result language (ISO 639-1)</span>
-              <input
-                className={inputClassName}
-                placeholder="e.g. en"
-                value={form.processing_result_language}
-                onChange={(e) => updateField('processing_result_language', e.target.value)}
-              />
-            </label>
-            <label className={labelClassName}>
-              <span className={labelTextClassName}>Deep search languages</span>
-              <input
-                className={inputClassName}
-                placeholder="e.g. de,en,uk"
-                value={form.deep_search_languages}
-                onChange={(e) => updateField('deep_search_languages', e.target.value)}
-              />
-            </label>
-            <label className={labelClassName}>
-              <span className={labelTextClassName}>Extraction prompt version</span>
-              <input
-                className={inputClassName}
-                value={form.extraction_prompt_version}
-                onChange={(e) => updateField('extraction_prompt_version', e.target.value)}
-              />
-            </label>
+            <div className={labelClassName}>
+              <label className={labelClassName}>
+                <span className={labelTextClassName}>OCR timeout (seconds)</span>
+                <input
+                  type="number"
+                  min={1}
+                  className={inputClassName}
+                  value={form.ocr_timeout_sec}
+                  onChange={(e) => updateField('ocr_timeout_sec', e.target.value)}
+                />
+              </label>
+              <p className={fieldHintClassName}>
+                How long one OCR call may take before the step fails.
+              </p>
+            </div>
+            <div className={labelClassName}>
+              <label className={labelClassName}>
+                <span className={labelTextClassName}>AI timeout (seconds)</span>
+                <input
+                  type="number"
+                  min={1}
+                  className={inputClassName}
+                  value={form.openai_timeout_sec}
+                  onChange={(e) => updateField('openai_timeout_sec', e.target.value)}
+                />
+              </label>
+              <p className={fieldHintClassName}>
+                How long one extraction, chat, search or split-detection request may take.
+              </p>
+            </div>
+            <div className={labelClassName}>
+              <label className={labelClassName}>
+                <span className={labelTextClassName}>Result language (ISO 639-1)</span>
+                <input
+                  className={inputClassName}
+                  placeholder="e.g. en"
+                  value={form.processing_result_language}
+                  onChange={(e) => updateField('processing_result_language', e.target.value)}
+                />
+              </label>
+              <p className={fieldHintClassName}>
+                Also stores the title, purpose, summary, type, correspondent and tags
+                translated into this language. Leave empty to keep only the document&rsquo;s own
+                language.
+              </p>
+            </div>
+            <div className={labelClassName}>
+              <label className={labelClassName}>
+                <span className={labelTextClassName}>Deep search languages</span>
+                <input
+                  className={inputClassName}
+                  placeholder="e.g. de,en,uk"
+                  value={form.deep_search_languages}
+                  onChange={(e) => updateField('deep_search_languages', e.target.value)}
+                />
+              </label>
+              <p className={fieldHintClassName}>
+                Languages deep search translates keywords into, so a German invoice is found by an
+                English question. Leave empty to search only in the language of the question.
+              </p>
+            </div>
           </div>
         </section>
 

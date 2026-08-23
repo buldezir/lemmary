@@ -9,7 +9,7 @@ import {
   type CatalogModel,
 } from '../lib/api/providers'
 import { useAsync } from '../hooks/useAsync'
-import { inputClassName, labelClassName, labelTextClassName } from './ui'
+import { fieldHintClassName, inputClassName, labelClassName, labelTextClassName } from './ui'
 
 const CUSTOM_MODEL = '__custom__'
 
@@ -101,6 +101,8 @@ export function ModelSelect({
 
 type ProviderModelFieldsProps = {
   label: string
+  /** Short explanation of what this provider/model pair is used for. */
+  help?: string
   providers: AIProvider[]
   providerId: string
   model: string
@@ -112,6 +114,7 @@ type ProviderModelFieldsProps = {
 
 export function ProviderModelFields({
   label,
+  help,
   providers,
   providerId,
   model,
@@ -165,6 +168,7 @@ export function ProviderModelFields({
           onChange={onModelChange}
         />
       )}
+      {help && <p className={`${fieldHintClassName} sm:col-span-2`}>{help}</p>}
       {modelsState.error && (
         <p className="text-xs text-amber-700 sm:col-span-2">
           {modelsState.error}. You can still type a model id.

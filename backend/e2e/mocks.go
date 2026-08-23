@@ -26,6 +26,16 @@ const mockExtractionJSON = `{
 
 const mockChatReply = "Based on the document, the invoice total is 250 EUR for leak repair."
 
+// mockSplitJSON answers a document-boundary request. The counts are deliberately
+// sloppy (the last part stops short) so tests also cover server-side
+// normalization of a model answer.
+const mockSplitJSON = `{
+  "parts": [
+    {"from": 1, "to": 1, "title": "Acme Plumbing Invoice"},
+    {"from": 2, "to": 2, "title": "Bank statement"}
+  ]
+}`
+
 const mockSearchFinalReply = "I found an Acme Plumbing invoice about a leak repair from July 2024."
 
 // mockServers holds httptest servers for OCR and OpenAI-compatible APIs.
@@ -156,6 +166,12 @@ func (m *mockServers) openAIResponseFromBody(body string) map[string]any {
 
 	if strings.Contains(body, `"image_url"`) || strings.Contains(body, `"file_data"`) || strings.Contains(body, `"type":"file"`) {
 		return chatCompletion(mockOCRText, nil)
+	}
+
+	// Split detection also asks for a JSON object, so it has to be recognized
+	// before the extraction branch claims every json_object request.
+	if strings.Contains(body, "--- PAGE 1 ---") {
+		return chatCompletion(mockSplitJSON, nil)
 	}
 
 	// Metadata extraction requests JSON object response format.

@@ -31,6 +31,30 @@ test('superuser can load and save settings', async ({ page }) => {
   await expect(page.getByText('Settings saved. Runtime reloaded.')).toBeVisible({ timeout: 15_000 })
 })
 
+test('each model option explains what it is used for', async ({ page }) => {
+  await loginAsSuper(page)
+  await openSettings(page)
+
+  await expect(
+    page.getByText('Reads the text out of uploaded PDFs, images and scans.'),
+  ).toBeVisible()
+  await expect(
+    page.getByText("Turns a document's text into its title, date, type, correspondent"),
+  ).toBeVisible()
+  await expect(page.getByText('Answers questions about a single document')).toBeVisible()
+  await expect(page.getByText('Answers natural-language queries on the Deep Search page')).toBeVisible()
+  await expect(
+    page.getByText('How long one extraction, chat, search or split-detection request may take.'),
+  ).toBeVisible()
+
+  // The hints sit outside the labels, so the fields stay addressable by label.
+  await expect(page.getByLabel('AI timeout (seconds)')).toBeVisible()
+  await expect(page.getByLabel('OCR timeout (seconds)')).toBeVisible()
+
+  // Bookkeeping only, so it is not offered here.
+  await expect(page.getByLabel('Extraction prompt version')).toHaveCount(0)
+})
+
 test('superuser can scan for duplicates', async ({ page }) => {
   await loginAsSuper(page)
   await openManagement(page)

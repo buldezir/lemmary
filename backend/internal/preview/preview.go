@@ -4,12 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/pocketbase/pocketbase/tools/filesystem"
+	"paperless-go/backend/internal/pdftool"
 )
 
 const (
@@ -20,12 +19,8 @@ const (
 
 // GenerateFirstPagePNG renders the first page of a PDF to a small PNG preview.
 func GenerateFirstPagePNG(pdfPath string) (*filesystem.File, error) {
-	if strings.ToLower(filepath.Ext(pdfPath)) != ".pdf" {
+	if err := pdftool.RequirePDF(pdfPath); err != nil {
 		return nil, fmt.Errorf("preview: not a PDF file")
-	}
-
-	if _, err := exec.LookPath("pdftoppm"); err != nil {
-		return nil, fmt.Errorf("preview: pdftoppm not found (install poppler-utils): %w", err)
 	}
 
 	tmpDir, err := os.MkdirTemp("", "paperless-preview-*")
@@ -34,24 +29,14 @@ func GenerateFirstPagePNG(pdfPath string) (*filesystem.File, error) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	outPrefix := filepath.Join(tmpDir, "preview")
+	previewPath := filepath.Join(tmpDir, "preview.png")
 	ctx, cancel := context.WithTimeout(context.Background(), pdftoppmTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "pdftoppm",
-		"-png",
-		"-f", "1",
-		"-l", "1",
-		"-scale-to", fmt.Sprintf("%d", MaxEdge),
-		"-singlefile",
-		pdfPath,
-		outPrefix,
-	)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("preview: pdftoppm: %w: %s", err, strings.TrimSpace(string(output)))
+	if err := pdftool.RenderPage(ctx, pdfPath, previewPath, MaxEdge, 1); err != nil {
+		return nil, fmt.Errorf("preview: %w", err)
 	}
 
-	previewPath := outPrefix + ".png"
 	data, err := os.ReadFile(previewPath)
 	if err != nil {
 		return nil, fmt.Errorf("preview: read output: %w", err)
