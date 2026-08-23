@@ -4,6 +4,38 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+AUTOLOGIN=1
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/dev.sh [options]
+
+Options:
+  --no-autologin  Run the frontend without the VITE_DEV_USER_* credentials from
+                  .env, so the app shows the real login screen instead of
+                  signing a user in on load.
+  -h, --help      Show this help.
+EOF
+}
+
+# Parsed before the cleanup trap is installed, so --help and a bad flag exit
+# without announcing that they are stopping servers they never started.
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --no-autologin) AUTOLOGIN=0 ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
 BACKEND_PID=""
 FRONTEND_PID=""
 
@@ -174,6 +206,14 @@ export DEV_HOST="$HOST"
 # Browser-side PocketBase URL must be reachable from the client device too.
 export VITE_POCKETBASE_URL="${VITE_POCKETBASE_URL:-http://$HOST:8090}"
 
+if [[ "$AUTOLOGIN" -eq 0 ]]; then
+  # Vite lets real environment variables win over the .env file, so exporting
+  # these empty blanks out whatever .env set. The frontend then finds no dev
+  # credentials and falls through to the login screen.
+  export VITE_DEV_USER_EMAIL=""
+  export VITE_DEV_USER_PASSWORD=""
+fi
+
 if [[ ! -f .env ]]; then
   echo "warning: .env not found; copy from .env.example if needed" >&2
 fi
@@ -202,6 +242,9 @@ echo "Dev servers running. Press Ctrl+C to stop."
 echo "  Backend:  http://$HOST:8090"
 echo "  Docs:     http://$HOST:5174/docs/"
 echo "  Frontend: http://$HOST:5173"
+if [[ "$AUTOLOGIN" -eq 0 ]]; then
+  echo "  Auto-login: disabled (--no-autologin)"
+fi
 echo ""
 
 while kill -0 "$BACKEND_PID" 2>/dev/null && kill -0 "$FRONTEND_PID" 2>/dev/null; do

@@ -31,6 +31,7 @@ export default defineConfig({
     nav: [
       { text: 'Development', link: '/development' },
       { text: 'Google Vision', link: '/google_vision' },
+      { text: 'OAuth2', link: '/oauth' },
     ],
     sidebar: [
       {
@@ -38,6 +39,7 @@ export default defineConfig({
         items: [
           { text: 'Development', link: '/development' },
           { text: 'Google Vision', link: '/google_vision' },
+          { text: 'OAuth2', link: '/oauth' },
         ],
       },
     ],

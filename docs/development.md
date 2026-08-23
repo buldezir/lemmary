@@ -45,6 +45,21 @@ This starts the app on `http://127.0.0.1:5173` and a VitePress preview of these 
 
 The frontend auto-logs in a regular `users` account when `VITE_DEV_*` is set.
 
+### 3. Or start everything at once
+
+`scripts/dev.sh` runs the backend, the app and the docs together, binding to the
+machine's LAN IP so other devices can reach them (override with `DEV_HOST=...`):
+
+```bash
+./scripts/dev.sh                  # backend + frontend + docs
+./scripts/dev.sh --no-autologin   # ... without the VITE_DEV_USER_* auto-login
+```
+
+`--no-autologin` blanks `VITE_DEV_USER_EMAIL` / `VITE_DEV_USER_PASSWORD` for that run, so
+the app shows the real login screen instead of signing a user in on load. Useful when
+working on the login screen itself — password errors, OAuth2 provider buttons, the setup
+wizard. `.env` is left untouched.
+
 ## Environment variables
 
 All variables live in `.env` at the project root (see `.env.example`).

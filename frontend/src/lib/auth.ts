@@ -36,6 +36,140 @@ export async function ensureAuth() {
   }
 }
 
+export type OAuthProvider = {
+  name: string
+  displayName: string
+}
+
+export type LoginMethods = {
+  /** Whether the users collection still accepts identity + password sign-in. */
+  password: boolean
+  /** OAuth2 providers enabled on the users collection, in PocketBase order. */
+  oauth: OAuthProvider[]
+}
+
+const fallbackLoginMethods: LoginMethods = { password: true, oauth: [] }
+
+/**
+ * Reads the sign-in methods enabled for the users collection in PocketBase, so
+ * the login screen offers whatever the instance was configured with. The
+ * endpoint is public, which is what lets this resolve before any session
+ * exists. Never throws: an unreachable server falls back to the password form
+ * rather than a login screen with no way in.
+ */
+export async function getLoginMethods(): Promise<LoginMethods> {
+  let methods
+  try {
+    methods = await pb.collection('users').listAuthMethods()
+  } catch {
+    return fallbackLoginMethods
+  }
+
+  const oauth = methods.oauth2.enabled
+    ? methods.oauth2.providers.map((provider) => ({
+        name: provider.name,
+        displayName: provider.displayName || provider.name,
+      }))
+    : []
+
+  return {
+    // Hiding the password form is only safe while OAuth2 can take over; with
+    // no provider left it would be a login screen with no controls at all.
+    password: methods.password.enabled || oauth.length === 0,
+    oauth,
+  }
+}
+
+const oauthPopupName = 'paperless-oauth2-login'
+const oauthPopupFeatures = 'width=600,height=720,menubar=no,toolbar=no,resizable'
+
+/**
+ * Opens the popup up front, while still inside the click handler's task. The
+ * SDK opens its own popup only after awaiting the auth-methods request and the
+ * realtime subscription, which browsers score as an unrequested popup and
+ * block.
+ */
+function openOAuthPopup(): Window | null {
+  if (typeof window === 'undefined' || !window.open) {
+    return null
+  }
+  return window.open('', oauthPopupName, oauthPopupFeatures)
+}
+
+/**
+ * Rejects once the user closes the popup without finishing, since the SDK's
+ * promise would otherwise stay pending forever and leave the button spinning.
+ */
+function watchOAuthPopup(popup: Window | null) {
+  let poll = 0
+  let grace = 0
+  const closed = new Promise<never>((_, reject) => {
+    if (!popup) {
+      return // no handle to watch; the SDK promise is the only outcome
+    }
+    poll = window.setInterval(() => {
+      if (!popup.closed) {
+        return
+      }
+      window.clearInterval(poll)
+      // The redirect page can close itself on success, so let an in-flight
+      // token exchange finish before calling this a cancellation.
+      grace = window.setTimeout(() => reject(new Error('Sign-in was cancelled.')), 2000)
+    }, 400)
+  })
+  return {
+    closed,
+    stop() {
+      window.clearInterval(poll)
+      window.clearTimeout(grace)
+    },
+  }
+}
+
+/**
+ * PocketBase reports every sign-in failure past the token exchange as a bare
+ * "Failed to authenticate.". In this app that is nearly always a first-time
+ * OAuth2 account: the users collection has no create rule, so OAuth2 can sign
+ * in accounts that already exist (matched on email) but cannot mint new ones.
+ */
+function oauthErrorMessage(err: unknown): string {
+  if (err instanceof ClientResponseError && err.message === 'Failed to authenticate.') {
+    return 'Failed to authenticate. If this account is new, an admin has to create a user with the same email address first.'
+  }
+  if (err instanceof Error && err.message) {
+    return err.message
+  }
+  return 'Sign-in failed'
+}
+
+/** Signs in through one of the collection's OAuth2 providers. */
+export async function loginWithOAuth2(provider: string) {
+  clearMeCache()
+  const popup = openOAuthPopup()
+  const watcher = watchOAuthPopup(popup)
+
+  try {
+    await Promise.race([
+      pb.collection('users').authWithOAuth2({
+        provider,
+        urlCallback: (url) => {
+          if (popup && !popup.closed) {
+            popup.location.href = url
+            return
+          }
+          window.open(url, oauthPopupName, oauthPopupFeatures)
+        },
+      }),
+      watcher.closed,
+    ])
+  } catch (err) {
+    throw new Error(oauthErrorMessage(err), { cause: err })
+  } finally {
+    watcher.stop()
+    popup?.close()
+  }
+}
+
 export async function loginWithPassword(email: string, password: string) {
   clearMeCache()
   try {
