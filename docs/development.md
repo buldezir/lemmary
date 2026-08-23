@@ -126,10 +126,23 @@ Browse them in PocketBase Admin as a superuser. Enable SMTP when you want real d
 | Section | Route | State |
 | --- | --- | --- |
 | Files | `/upload` (default) | Implemented — drag-and-drop / file-picker upload, see the processing flow below |
-| Amazon orders | `/upload/amazon` | Placeholder — will import an order archive requested from Amazon under Account → Request your data → Your Orders |
+| Amazon orders | `/upload/amazon` | Implemented — imports the invoice PDFs out of an order archive requested from Amazon, see [Amazon order import](#amazon-order-import) |
 | Split documents | `/upload/split` | Placeholder — will split a PDF holding several joined documents into one document per part |
 
 Plain file upload stays on `/upload` itself (an index route), so existing links and the **Upload** nav entry keep landing on it.
+
+### Amazon order import
+
+Request the archive from Amazon under Account → Request your data → Your Orders; Amazon emails a download link once the export is ready. The zip holds CSV reports, delivery photos and — under `Additional Data/Retail.TransactionalInvoicing.*` — the invoice PDFs. Only the PDFs are imported; every other entry is counted as ignored and left alone.
+
+Uploading and importing are two steps, so nothing is created before the user has seen what the archive holds:
+
+1. `POST /api/app/import/amazon/upload` (multipart, field `file`) streams the zip to `<data dir>/temp/amazon_import/` — it is never buffered in memory, since real exports run to hundreds of MB. The archive is scanned and every PDF is hashed, then returned as a preview: total PDF count, how many are importable, how many are duplicates or oversized, the ignored-entry count, and the per-file list. Duplicates are PDFs whose checksum already exists among the owner's documents (`duplicate_of` names the existing id) or that repeat earlier in the same archive. Imported documents are named `<parent folder>-<file>`, because Amazon numbers the invoices per folder (`1.pdf`, `2.pdf`, …).
+2. `POST /api/app/import/amazon` with `{ "upload_id": "..." }` starts the import and returns `202 Accepted` with `{ "job_id", "status": "running" }`. Poll `GET /api/app/import/amazon/status?job_id=...` for `progress` (`{ done, total }`) until `status` is `completed` (with `result`) or `failed` (with `error`). The `result` counts `imported`, `skipped_duplicates`, `skipped_oversized` and `failed`, plus up to 25 per-file error messages. Each imported document is saved as `pending`, so it goes through the normal OCR + AI [processing flow](#processing-flow).
+
+`DELETE /api/app/import/amazon/upload?upload_id=...` discards a staged archive the user chose not to import. Staged archives expire after 30 minutes and are swept on the next upload, including files left behind by an earlier process — the staging registry and the job state are in memory, so both are lost on restart. Confirming consumes the upload id: the same archive cannot be imported twice, and one import may run at a time per user (a second start returns `409`).
+
+Rejections come back as `400` at preview time rather than mid-import: not a readable zip, no PDFs, more than 5000 PDFs, an upload over 1 GiB, or an archive that decompresses beyond 8 GiB (a zip bomb). A single PDF over the 20 MB `documents.file` limit is not fatal — it is flagged `oversized` in the preview and skipped on import.
 
 ## Processing flow
 
