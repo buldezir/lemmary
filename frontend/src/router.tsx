@@ -2,6 +2,9 @@ import { createRootRoute, createRoute, createRouter } from '@tanstack/react-rout
 import { RootLayout } from './components/RootLayout'
 import { IndexPage } from './routes/index'
 import { UploadPage } from './routes/upload'
+import { UploadFilesPage } from './routes/upload.index'
+import { UploadAmazonPage } from './routes/upload.amazon'
+import { UploadSplitPage } from './routes/upload.split'
 import { DocumentDetailPage } from './routes/document.$documentId'
 import { DocumentAskPage } from './routes/document.$documentId.ask'
 import { OCRTestPage } from './routes/ocr-test'
@@ -25,6 +28,25 @@ const uploadRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/upload',
   component: UploadPage,
+})
+
+// Plain file upload is the default source, so it sits on /upload itself.
+const uploadFilesRoute = createRoute({
+  getParentRoute: () => uploadRoute,
+  path: '/',
+  component: UploadFilesPage,
+})
+
+const uploadAmazonRoute = createRoute({
+  getParentRoute: () => uploadRoute,
+  path: 'amazon',
+  component: UploadAmazonPage,
+})
+
+const uploadSplitRoute = createRoute({
+  getParentRoute: () => uploadRoute,
+  path: 'split',
+  component: UploadSplitPage,
 })
 
 const searchRoute = createRoute({
@@ -77,7 +99,7 @@ const documentAskRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
-  uploadRoute,
+  uploadRoute.addChildren([uploadFilesRoute, uploadAmazonRoute, uploadSplitRoute]),
   searchRoute,
   ocrTestRoute,
   settingsRoute,

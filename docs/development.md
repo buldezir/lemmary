@@ -119,6 +119,18 @@ Configure SMTP under PocketBase Admin → Settings → Mail. When SMTP is **disa
 
 Browse them in PocketBase Admin as a superuser. Enable SMTP when you want real delivery; the DB sink is skipped while SMTP is on.
 
+## Upload page
+
+**Upload** (`/upload`) groups the ways documents enter the library into sub-sections, each on its own route so a section can be linked, bookmarked, and reached with the browser back button:
+
+| Section | Route | State |
+| --- | --- | --- |
+| Files | `/upload` (default) | Implemented — drag-and-drop / file-picker upload, see the processing flow below |
+| Amazon orders | `/upload/amazon` | Placeholder — will import an order archive requested from Amazon under Account → Request your data → Your Orders |
+| Split documents | `/upload/split` | Placeholder — will split a PDF holding several joined documents into one document per part |
+
+Plain file upload stays on `/upload` itself (an index route), so existing links and the **Upload** nav entry keep landing on it.
+
 ## Processing flow
 
 1. User uploads a document from `/upload`
