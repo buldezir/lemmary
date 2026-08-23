@@ -6,7 +6,7 @@ services:
     env_file:
       - .env
     ports:
-      - "8090:80"
+      - "8090:${PORT:-80}"
     volumes:
       - app_data:/app/pb_data
 

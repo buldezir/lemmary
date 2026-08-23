@@ -23,6 +23,11 @@ RUN apk add --no-cache poppler-utils
 WORKDIR /app
 COPY --from=backend-builder /app/backend/paperless-go /app/paperless-go
 COPY --from=frontend-builder /app/public /app/public
-EXPOSE 80
-ENTRYPOINT ["/app/paperless-go"]
-CMD ["serve", "--http=0.0.0.0:80"]
+COPY scripts/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
+ENV PORT=80
+EXPOSE ${PORT}
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD wget -q --spider "http://127.0.0.1:${PORT}/api/health" || exit 1
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
