@@ -127,6 +127,13 @@ func (p *Processor) registerHooks() {
 	})
 }
 
+// Enqueue creates a pending job for documentID so the worker picks it up on the
+// next drain. It is the entry point for callers outside this package (bulk
+// reprocess); forceSteps may be nil.
+func Enqueue(app core.App, documentID string, steps []string, forceSteps []string) (*core.Record, error) {
+	return createProcessingJob(app, documentID, steps, forceSteps)
+}
+
 func createProcessingJob(app core.App, documentID string, steps []string, forceSteps []string) (*core.Record, error) {
 	jobsCollection, err := app.FindCollectionByNameOrId("processing_jobs")
 	if err != nil {

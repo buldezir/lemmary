@@ -3,6 +3,9 @@ import type { DocumentRecord } from '../lib/pocketbase'
 
 type Props = {
   document: DocumentRecord
+  selectable?: boolean
+  selected?: boolean
+  onToggleSelect?: (id: string) => void
 }
 
 const statusLabels: Record<DocumentRecord['processing_status'], string> = {
@@ -51,7 +54,7 @@ function CardDescription({ document }: { document: DocumentRecord }) {
   )
 }
 
-export function DocumentCard({ document }: Props) {
+export function DocumentCard({ document, selectable, selected, onToggleSelect }: Props) {
   const tags = document.expand?.tags?.map((tag) => tag.name) ?? []
   const correspondent = document.expand?.correspondent?.name
   const documentType = document.expand?.document_type?.name
@@ -60,7 +63,9 @@ export function DocumentCard({ document }: Props) {
   return (
     <article
       data-document-id={document.id}
-      className="relative flex flex-col gap-3 rounded-lg border border-stone-200 bg-stone-50 p-4 transition-colors hover:border-stone-300 hover:bg-white hover:shadow-sm"
+      className={`relative flex flex-col gap-3 rounded-lg border bg-stone-50 p-4 transition-colors hover:border-stone-300 hover:bg-white hover:shadow-sm ${
+        selected ? 'border-gray-900 ring-1 ring-gray-900' : 'border-stone-200'
+      }`}
     >
       <Link
         to="/document/$documentId"
@@ -70,11 +75,23 @@ export function DocumentCard({ document }: Props) {
       />
       <div className="pointer-events-none relative flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
-          <span
-            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${statusStyles[document.processing_status]}`}
-          >
-            {statusLabels[document.processing_status]}
-          </span>
+          <div className="flex items-center gap-2">
+            {/* Sits above the full-bleed link so ticking it does not navigate. */}
+            {selectable && (
+              <input
+                type="checkbox"
+                checked={Boolean(selected)}
+                onChange={() => onToggleSelect?.(document.id)}
+                aria-label={`Select ${title}`}
+                className="relative z-10 pointer-events-auto h-4 w-4 cursor-pointer rounded border-stone-300 text-gray-900 focus:ring-gray-900"
+              />
+            )}
+            <span
+              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${statusStyles[document.processing_status]}`}
+            >
+              {statusLabels[document.processing_status]}
+            </span>
+          </div>
           {document.document_date && (
             <span className="text-xs text-stone-400">{document.document_date.slice(0, 10)}</span>
           )}

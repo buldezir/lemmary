@@ -20,9 +20,9 @@ type importAmazonRequest struct {
 // confirm the file count before any document is created.
 func handlePostImportAmazonUpload(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		ownerID, err := resolveImportOwnerID(app, e)
+		ownerID, err := resolveOwnerUserID(app, e)
 		if err != nil {
-			return writeImportOwnerError(e, err)
+			return writeOwnerError(e, err)
 		}
 
 		// Streamed rather than buffered: these archives run to hundreds of MB.
@@ -51,9 +51,9 @@ func handlePostImportAmazonUpload(app core.App) func(*core.RequestEvent) error {
 // handleDeleteImportAmazonUpload drops a staged archive the user did not confirm.
 func handleDeleteImportAmazonUpload(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		ownerID, err := resolveImportOwnerID(app, e)
+		ownerID, err := resolveOwnerUserID(app, e)
 		if err != nil {
-			return writeImportOwnerError(e, err)
+			return writeOwnerError(e, err)
 		}
 		uploadID := strings.TrimSpace(e.Request.URL.Query().Get("upload_id"))
 		if uploadID == "" {
@@ -77,9 +77,9 @@ func handlePostImportAmazon(app core.App) func(*core.RequestEvent) error {
 			return writeError(e, http.StatusBadRequest, "upload_id is required.")
 		}
 
-		ownerID, err := resolveImportOwnerID(app, e)
+		ownerID, err := resolveOwnerUserID(app, e)
 		if err != nil {
-			return writeImportOwnerError(e, err)
+			return writeOwnerError(e, err)
 		}
 
 		jobID, err := amazonimport.Start(app, ownerID, req.UploadID)
@@ -104,9 +104,9 @@ func handleGetImportAmazonStatus(app core.App) func(*core.RequestEvent) error {
 		if jobID == "" {
 			return writeError(e, http.StatusBadRequest, "job_id is required.")
 		}
-		ownerID, err := resolveImportOwnerID(app, e)
+		ownerID, err := resolveOwnerUserID(app, e)
 		if err != nil {
-			return writeImportOwnerError(e, err)
+			return writeOwnerError(e, err)
 		}
 		job, ok := amazonimport.GetJob(jobID)
 		if !ok || job.OwnerUserID != ownerID {

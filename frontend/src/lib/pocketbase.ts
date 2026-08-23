@@ -169,6 +169,69 @@ export async function reprocessDocument(
   })
 }
 
+// Which steps a bulk requeue re-runs. 'auto' decides per document: extraction
+// only when OCR text survived the failed run, the full pipeline otherwise.
+export type ReprocessMode = 'auto' | 'full' | 'extraction'
+
+export type ReprocessResult = {
+  queued: number
+  skipped: number
+  remaining: number
+}
+
+export const REPROCESS_MODE_LABELS: Record<ReprocessMode, string> = {
+  auto: 'Auto (per document)',
+  full: 'Full pipeline',
+  extraction: 'Extraction only',
+}
+
+// requestKey: null — this is polled alongside the job counts and must not
+// auto-cancel a request already in flight.
+//
+// Counted through the documents collection, so it only covers the caller's own
+// documents (that collection's rules are user = @request.auth.id).
+export async function countFailedDocuments(): Promise<number> {
+  await ensureAuth()
+
+  const result = await pb
+    .collection('documents')
+    .getList(1, 1, { filter: `processing_status = "failed"`, requestKey: null })
+  return result.totalItems
+}
+
+async function postReprocess(body: Record<string, unknown>): Promise<ReprocessResult> {
+  await ensureAuth()
+
+  const response = await fetch(`${pbUrl}/api/app/documents/reprocess-failed`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: pb.authStore.token,
+    },
+    body: JSON.stringify(body),
+  })
+
+  const data = (await response.json()) as ReprocessResult & { detail?: string }
+  if (!response.ok) {
+    throw new Error(data.detail ?? 'Reprocess failed')
+  }
+  return data
+}
+
+// Requeues up to `limit` of the caller's failed documents, oldest first.
+export function reprocessFailedDocuments(opts: { limit?: number; mode?: ReprocessMode }) {
+  return postReprocess({
+    ...(opts.limit ? { limit: opts.limit } : {}),
+    mode: opts.mode ?? 'auto',
+  })
+}
+
+// Requeues an explicit selection. Documents already queued are skipped, so a
+// stale selection cannot double-queue.
+export function reprocessDocuments(documentIds: string[], mode: ReprocessMode = 'auto') {
+  return postReprocess({ document_ids: documentIds, mode })
+}
+
 export async function chatWithDocument(documentId: string, messages: ChatMessage[]) {
   await ensureAuth()
 

@@ -1,7 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { ensureAuth, pb, searchDocuments } from '../lib/pocketbase'
-import type { CorrespondentRecord, DocumentRecord, DocumentTypeRecord } from '../lib/pocketbase'
+import {
+  ensureAuth,
+  pb,
+  reprocessDocuments,
+  searchDocuments,
+  REPROCESS_MODE_LABELS,
+} from '../lib/pocketbase'
+import type {
+  CorrespondentRecord,
+  DocumentRecord,
+  DocumentTypeRecord,
+  ReprocessMode,
+} from '../lib/pocketbase'
 import { DocumentCard } from '../components/DocumentCard'
 import { FilterCombobox } from '../components/FilterCombobox'
 import { Pagination } from '../components/Pagination'
@@ -10,6 +21,8 @@ const PAGE_SIZE = 12
 
 const selectClassName =
   'rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900'
+
+const reprocessModes: ReprocessMode[] = ['auto', 'full', 'extraction']
 
 function buildDocumentFilter(filters: {
   status: string
@@ -55,6 +68,10 @@ export function IndexPage() {
   const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [reprocessMode, setReprocessMode] = useState<ReprocessMode>('auto')
+  const [reprocessing, setReprocessing] = useState(false)
+  const [message, setMessage] = useState('')
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -164,6 +181,56 @@ export function IndexPage() {
     }
   }, [page, statusFilter, dateFrom, dateTo, documentTypeFilter, correspondentFilter, debouncedSearch])
 
+  // Bulk reprocess exists to clear a backlog of failures, so selection is only
+  // offered where that backlog is on screen.
+  const selectable = statusFilter === 'failed'
+  // Every action goes through selectedOnPage, never selectedIds, so ids left over
+  // from another page or an earlier filter can neither be counted nor submitted.
+  // That is what makes a stale selection harmless without resetting state on
+  // every filter change.
+  const selectedOnPage = documents.filter((document) => selectedIds.has(document.id))
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  async function onReprocessSelected() {
+    const ids = selectedOnPage.map((document) => document.id)
+    if (ids.length === 0) return
+
+    const confirmed = window.confirm(
+      `Reprocess ${ids.length === 1 ? 'this document' : `these ${ids.length} documents`}?\n\n` +
+        `Steps: ${REPROCESS_MODE_LABELS[reprocessMode]}\n\n` +
+        'Existing metadata may be overwritten.',
+    )
+    if (!confirmed) return
+
+    try {
+      setReprocessing(true)
+      setError('')
+      setMessage('')
+      const result = await reprocessDocuments(ids, reprocessMode)
+      setSelectedIds(new Set())
+      setMessage(
+        result.skipped > 0
+          ? `Queued ${result.queued}, skipped ${result.skipped} already in the queue.`
+          : `Queued ${result.queued} for reprocessing.`,
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Reprocess failed')
+    } finally {
+      setReprocessing(false)
+    }
+  }
+
   const hasActiveFilters =
     statusFilter !== 'all' ||
     dateFrom !== '' ||
@@ -202,6 +269,7 @@ export function IndexPage() {
               setStatusFilter(event.target.value)
               setPage(1)
             }}
+            aria-label="Processing status"
             className={`${selectClassName} sm:w-48`}
           >
             <option value="all">All statuses</option>
@@ -282,11 +350,65 @@ export function IndexPage() {
         </div>
       )}
 
+      {message && <p className="text-sm text-green-700">{message}</p>}
+
       {!loading && documents.length > 0 && (
         <>
+          {selectable && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-stone-200 bg-stone-50 px-4 py-3">
+              <span className="text-sm text-stone-600">
+                {selectedOnPage.length === 0
+                  ? 'Select failed documents to reprocess.'
+                  : `${selectedOnPage.length} selected`}
+              </span>
+              <select
+                value={reprocessMode}
+                onChange={(event) => setReprocessMode(event.target.value as ReprocessMode)}
+                aria-label="Reprocess steps"
+                className={selectClassName}
+              >
+                {reprocessModes.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {REPROCESS_MODE_LABELS[mode]}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={reprocessing || selectedOnPage.length === 0}
+                onClick={() => void onReprocessSelected()}
+                className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {reprocessing ? 'Queueing...' : 'Reprocess'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set(documents.map((document) => document.id)))}
+                className="rounded-md border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-950 transition-colors hover:bg-stone-100"
+              >
+                Select all on page
+              </button>
+              {selectedOnPage.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds(new Set())}
+                  className="rounded-md border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-950 transition-colors hover:bg-stone-100"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {documents.map((document) => (
-              <DocumentCard key={document.id} document={document} />
+              <DocumentCard
+                key={document.id}
+                document={document}
+                selectable={selectable}
+                selected={selectedIds.has(document.id)}
+                onToggleSelect={toggleSelected}
+              />
             ))}
           </div>
 

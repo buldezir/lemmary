@@ -22,6 +22,7 @@ func Register(app core.App, rt *config.Runtime, idx *fulltext.Index) {
 			g.POST("/documents/{documentId}/chat", bindAuth(handleDocumentChat(app, rt)))
 			g.GET("/documents/export", bindAuth(handleExportDocuments(app)))
 			g.GET("/documents/search", bindAuth(handleDocumentSearch(app, idx)))
+			g.POST("/documents/reprocess-failed", bindAuth(handlePostReprocessFailed(app)))
 			g.POST("/search", bindAuth(handleDeepSearch(app, rt, idx)))
 			g.POST("/search/reindex", bindAdmin(handleSearchReindex(app, idx)))
 			g.GET("/ocr/providers", bindAuth(handleOCRProviders(app, rt)))

@@ -328,3 +328,100 @@ function documentIdFromURL(page: Page) {
 function documentLink(page: Page, documentId: string) {
   return page.locator(`main [data-document-id="${documentId}"]`)
 }
+
+// Bulk reprocess of failed documents. The list is stubbed so the selection UI is
+// exercised deterministically without having to make real documents fail.
+const failedDocuments = [
+  { id: 'faileddoc00001', title: 'Broken invoice', processing_status: 'failed' },
+  { id: 'faileddoc00002', title: 'Broken receipt', processing_status: 'failed' },
+  { id: 'faileddoc00003', title: 'Broken contract', processing_status: 'failed' },
+]
+
+async function stubFailedList(page: Page) {
+  await page.route('**/api/collections/documents/records?**', (route) => {
+    const filter = new URL(route.request().url()).searchParams.get('filter') ?? ''
+    if (!filter.includes('failed')) return route.fallback()
+    return route.fulfill({
+      json: {
+        page: 1,
+        perPage: 12,
+        totalItems: failedDocuments.length,
+        totalPages: 1,
+        items: failedDocuments.map((document) => ({
+          ...document,
+          collectionId: 'documents',
+          collectionName: 'documents',
+          created: '2026-01-01 00:00:00.000Z',
+          updated: '2026-01-01 00:00:00.000Z',
+          file: 'broken.pdf',
+          user: 'e2euser',
+          expand: {},
+        })),
+      },
+    })
+  })
+}
+
+test('selection is only offered on the failed filter', async ({ page }) => {
+  await loginAsUser(page)
+  await stubFailedList(page)
+
+  await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Select all on page' })).toHaveCount(0)
+
+  await page.getByLabel('Processing status').selectOption('failed')
+  await expect(page.getByText('Select failed documents to reprocess.')).toBeVisible()
+  await expect(page.getByRole('checkbox', { name: 'Select Broken invoice' })).toBeVisible()
+
+  await page.getByLabel('Processing status').selectOption('all')
+  await expect(page.getByRole('button', { name: 'Select all on page' })).toHaveCount(0)
+})
+
+test('reprocess selected documents posts only the ticked ids', async ({ page }) => {
+  await loginAsUser(page)
+  await stubFailedList(page)
+
+  let payload: unknown = null
+  await page.route('**/api/app/documents/reprocess-failed', (route) => {
+    payload = route.request().postDataJSON()
+    return route.fulfill({ json: { queued: 2, skipped: 0, remaining: 1 } })
+  })
+
+  await page.getByLabel('Processing status').selectOption('failed')
+
+  const reprocess = page.getByRole('button', { name: 'Reprocess', exact: true })
+  await expect(reprocess).toBeDisabled()
+
+  await page.getByRole('checkbox', { name: 'Select Broken invoice' }).check()
+  await page.getByRole('checkbox', { name: 'Select Broken contract' }).check()
+  await expect(page.getByText('2 selected')).toBeVisible()
+  await expect(reprocess).toBeEnabled()
+
+  page.once('dialog', (dialog) => {
+    expect(dialog.message()).toContain('Reprocess these 2 documents?')
+    void dialog.accept()
+  })
+  await reprocess.click()
+
+  await expect(page.getByText('Queued 2 for reprocessing.')).toBeVisible()
+  expect(payload).toEqual({
+    document_ids: ['faileddoc00001', 'faileddoc00003'],
+    mode: 'auto',
+  })
+
+  // The selection is dropped once queued, so a second click cannot resubmit it.
+  await expect(page.getByText('Select failed documents to reprocess.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Reprocess', exact: true })).toBeDisabled()
+})
+
+test('select all on page ticks every failed document', async ({ page }) => {
+  await loginAsUser(page)
+  await stubFailedList(page)
+
+  await page.getByLabel('Processing status').selectOption('failed')
+  await page.getByRole('button', { name: 'Select all on page' }).click()
+
+  await expect(page.getByText('3 selected')).toBeVisible()
+  await page.getByRole('button', { name: 'Clear' }).click()
+  await expect(page.getByText('Select failed documents to reprocess.')).toBeVisible()
+})

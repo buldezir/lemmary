@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Navigate } from '@tanstack/react-router'
 import {
+  countFailedDocuments,
   ensureAuth,
   getActiveJobCounts,
   isAdmin,
   pruneStaleTaxonomy,
   reindexSearch,
+  reprocessFailedDocuments,
   scanDuplicates,
+  REPROCESS_MODE_LABELS,
   type ActiveJobCounts,
   type DuplicateScanResult,
+  type ReprocessMode,
   type TaxonomyPruneResult,
 } from '../lib/pocketbase'
 
@@ -16,9 +20,17 @@ const sectionClassName = 'rounded-lg border border-stone-200 bg-stone-50 p-5'
 const sectionTitleClassName = 'mb-4 text-sm font-semibold text-stone-950'
 const actionButtonClassName =
   'rounded-md border border-stone-300 bg-white px-4 py-2 text-sm font-medium text-stone-950 transition-colors hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50'
+const selectClassName =
+  'rounded-md border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900'
+const labelTextClassName = 'text-xs font-medium text-stone-500'
 
 // How often the in-flight job count is refreshed while the page is open.
 const activeJobsPollMs = 5_000
+
+// Batch sizes offered for a reprocess sweep. The worker drains serially, so a
+// bigger batch does not finish sooner — it only commits more AI spend up front.
+const reprocessBatchSizes = [50, 100, 500] as const
+const reprocessModes: ReprocessMode[] = ['auto', 'full', 'extraction']
 
 function countLabel(count: number, singular: string, plural: string) {
   return `${count} ${count === 1 ? singular : plural}`
@@ -50,6 +62,10 @@ export function ManagementPage() {
   const [reindexing, setReindexing] = useState(false)
   const [pruning, setPruning] = useState(false)
   const [activeJobs, setActiveJobs] = useState<ActiveJobCounts | null>(null)
+  const [failedCount, setFailedCount] = useState<number | null>(null)
+  const [reprocessing, setReprocessing] = useState(false)
+  const [reprocessMode, setReprocessMode] = useState<ReprocessMode>('auto')
+  const [reprocessBatch, setReprocessBatch] = useState<number>(100)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -99,6 +115,60 @@ export function ManagementPage() {
       clearInterval(timer)
     }
   }, [allowed])
+
+  // The failed count is what the sweep acts on, so it is refreshed on load and
+  // after every batch rather than polled — batches are the only thing that moves
+  // it downward from this page.
+  useEffect(() => {
+    if (allowed !== true) return
+
+    let active = true
+    countFailedDocuments()
+      .then((count) => {
+        if (active) setFailedCount(count)
+      })
+      .catch(() => {
+        if (active) setFailedCount(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [allowed])
+
+  async function onReprocessFailed() {
+    if (!failedCount) return
+
+    const batch = Math.min(reprocessBatch, failedCount)
+    const confirmed = window.confirm(
+      `Reprocess ${countLabel(batch, 'failed document', 'failed documents')}?\n\n` +
+        `Steps: ${REPROCESS_MODE_LABELS[reprocessMode]}\n\n` +
+        'Existing metadata may be overwritten.',
+    )
+    if (!confirmed) return
+
+    try {
+      setReprocessing(true)
+      setError('')
+      setSuccess('')
+      const result = await reprocessFailedDocuments({
+        limit: reprocessBatch,
+        mode: reprocessMode,
+      })
+      setFailedCount(result.remaining)
+      const queued = countLabel(result.queued, 'document', 'documents')
+      setSuccess(
+        result.remaining > 0
+          ? `Queued ${queued}. ${countLabel(result.remaining, 'document', 'documents')} still failed — run another batch once the queue drains.`
+          : `Queued ${queued}. No failed documents left.`,
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Reprocess failed')
+      // The batch may have queued part of the set before failing.
+      setFailedCount(await countFailedDocuments().catch(() => null))
+    } finally {
+      setReprocessing(false)
+    }
+  }
 
   async function onScanDuplicates() {
     try {
@@ -176,6 +246,63 @@ export function ManagementPage() {
       </div>
 
       <div className="flex flex-col gap-5">
+        <section className={sectionClassName}>
+          <h2 className={sectionTitleClassName}>Failed processing</h2>
+          <p className="text-xs text-stone-500">
+            Queues a fresh job for documents whose processing failed. Originals are never
+            touched. Jobs run one at a time, so a batch drains gradually — reprocess in batches
+            rather than all at once to keep OCR and AI spend under control.
+          </p>
+          <div className="mt-4 flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1">
+              <span className={labelTextClassName}>Steps</span>
+              <select
+                value={reprocessMode}
+                onChange={(event) => setReprocessMode(event.target.value as ReprocessMode)}
+                className={selectClassName}
+              >
+                {reprocessModes.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {REPROCESS_MODE_LABELS[mode]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className={labelTextClassName}>Batch</span>
+              <select
+                value={reprocessBatch}
+                onChange={(event) => setReprocessBatch(Number(event.target.value))}
+                className={selectClassName}
+              >
+                {reprocessBatchSizes.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              disabled={reprocessing || !failedCount}
+              onClick={() => void onReprocessFailed()}
+              className={actionButtonClassName}
+            >
+              {reprocessing
+                ? 'Queueing...'
+                : `Reprocess ${Math.min(reprocessBatch, failedCount ?? 0)} failed`}
+            </button>
+          </div>
+          <p className="mt-3 text-xs text-stone-500">
+            {failedCount === null
+              ? 'Could not read the failed document count.'
+              : failedCount === 0
+                ? 'No documents have failed processing.'
+                : `${countLabel(failedCount, 'document has', 'documents have')} failed processing.`}
+            {activeJobs && jobsInFlight && ` Queue: ${activeJobsLabel(activeJobs)}.`}
+          </p>
+        </section>
+
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>Duplicates</h2>
           <p className="text-xs text-stone-500">
