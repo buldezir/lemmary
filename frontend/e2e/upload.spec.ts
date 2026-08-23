@@ -12,7 +12,7 @@ test('upload sub-sections are reachable and files upload is the default', async 
   await sources.getByRole('link', { name: 'Amazon orders' }).click()
   await expect(page).toHaveURL(/\/upload\/amazon$/)
   await expect(page.getByRole('heading', { name: 'Import Amazon orders' })).toBeVisible()
-  await expect(page.locator('input[type="file"]')).toHaveCount(0)
+  await expect(page.getByText('Choose the order export (.zip)')).toBeVisible()
 
   await sources.getByRole('link', { name: 'Split documents' }).click()
   await expect(page).toHaveURL(/\/upload\/split$/)

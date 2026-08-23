@@ -864,6 +864,157 @@ export async function importFromNgx(url: string, apiKey: string, mode: NgxImport
   throw new Error('Import timed out while waiting for completion')
 }
 
+export type AmazonArchiveEntry = {
+  path: string
+  name: string
+  size: number
+  duplicate: boolean
+  duplicate_of?: string
+  oversized: boolean
+}
+
+export type AmazonArchivePreview = {
+  upload_id: string
+  file_name: string
+  expires_at: string
+  /** Every PDF in the archive, duplicates included. */
+  pdf_count: number
+  /** How many of those would become new documents. */
+  importable_count: number
+  duplicate_count: number
+  oversized_count: number
+  /** Non-PDF entries (CSV reports, delivery photos) that are skipped. */
+  ignored_count: number
+  files: AmazonArchiveEntry[]
+  detail?: string
+}
+
+export type AmazonImportResult = {
+  imported: number
+  skipped_duplicates: number
+  skipped_oversized: number
+  failed: number
+  errors: string[]
+}
+
+export type AmazonImportProgress = {
+  done: number
+  total: number
+}
+
+type AmazonImportJobStatus = {
+  job_id: string
+  status: 'running' | 'completed' | 'failed' | string
+  progress?: AmazonImportProgress
+  error?: string
+  result?: AmazonImportResult
+  detail?: string
+}
+
+/** Stages an Amazon order export and reports what it holds. Imports nothing. */
+export async function uploadAmazonArchive(file: File) {
+  await ensureAuth()
+
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await fetch(`${pbUrl}/api/app/import/amazon/upload`, {
+    method: 'POST',
+    headers: {
+      Authorization: pb.authStore.token,
+    },
+    body: formData,
+  })
+
+  const data = (await response.json()) as AmazonArchivePreview
+  if (!response.ok) {
+    throw new Error(data.detail ?? 'Failed to read the archive')
+  }
+  return data
+}
+
+/** Drops a staged archive the user chose not to import. */
+export async function discardAmazonArchive(uploadId: string) {
+  await ensureAuth()
+
+  await fetch(`${pbUrl}/api/app/import/amazon/upload?upload_id=${encodeURIComponent(uploadId)}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: pb.authStore.token,
+    },
+  })
+}
+
+/** Imports the confirmed archive, reporting progress until the job finishes. */
+export async function importAmazonArchive(
+  uploadId: string,
+  onProgress?: (progress: AmazonImportProgress) => void,
+) {
+  await ensureAuth()
+
+  const startResponse = await fetch(`${pbUrl}/api/app/import/amazon`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: pb.authStore.token,
+    },
+    body: JSON.stringify({ upload_id: uploadId }),
+  })
+
+  const startData = (await startResponse.json()) as { job_id?: string; detail?: string }
+  if (!startResponse.ok) {
+    throw new Error(startData.detail ?? 'Import failed to start')
+  }
+  if (!startData.job_id) {
+    throw new Error('Import job id missing from server response')
+  }
+
+  for (let attempt = 0; attempt < importPollMaxAttempts; attempt++) {
+    let statusResponse: Response
+    try {
+      statusResponse = await fetch(
+        `${pbUrl}/api/app/import/amazon/status?job_id=${encodeURIComponent(startData.job_id)}`,
+        {
+          headers: {
+            Authorization: pb.authStore.token,
+          },
+        },
+      )
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, importPollIntervalMs))
+      continue
+    }
+    if (statusResponse.status >= 500) {
+      await new Promise((resolve) => setTimeout(resolve, importPollIntervalMs))
+      continue
+    }
+    let statusData: AmazonImportJobStatus
+    try {
+      statusData = (await statusResponse.json()) as AmazonImportJobStatus
+    } catch {
+      throw new Error('Failed to poll import status')
+    }
+    if (!statusResponse.ok) {
+      throw new Error(statusData.detail ?? 'Failed to poll import status')
+    }
+    if (statusData.progress) {
+      onProgress?.(statusData.progress)
+    }
+    if (statusData.status === 'completed') {
+      if (!statusData.result) {
+        throw new Error('Import completed without a result')
+      }
+      return { ...statusData.result, errors: statusData.result.errors ?? [] }
+    }
+    if (statusData.status === 'failed') {
+      throw new Error(statusData.error ?? 'Import failed')
+    }
+    await new Promise((resolve) => setTimeout(resolve, importPollIntervalMs))
+  }
+
+  throw new Error('Import timed out while waiting for completion')
+}
+
 export type ExportArchiveMode = 'originals' | 'ocr' | 'metadata'
 
 export async function downloadDocumentsArchive(mode: ExportArchiveMode = 'originals') {

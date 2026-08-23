@@ -47,6 +47,7 @@ See [docs/development.md](docs/development.md) for the full list.
 ## Features
 
 - Upload PDF, image, plain text, CSV, Word (.docx), or Excel (.xlsx) documents
+- Import the invoice PDFs from an Amazon "Your Orders" data export (**Upload → Amazon orders**); the archive is previewed and only imported after you confirm the file count, duplicates are skipped
 - Async processing jobs with status tracking
 - OCR text extraction (native text extraction for TXT/CSV/DOCX/XLSX)
 - AI metadata extraction: title, purpose, date, type, tags, summary

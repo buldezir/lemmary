@@ -1,8 +1,10 @@
 package appapi
 
 import (
+	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
+	"paperless-go/backend/internal/amazonimport"
 	"paperless-go/backend/internal/config"
 	"paperless-go/backend/internal/fulltext"
 )
@@ -35,6 +37,11 @@ func Register(app core.App, rt *config.Runtime, idx *fulltext.Index) {
 			g.POST("/taxonomy/prune", bindAdmin(handlePostTaxonomyPrune(app)))
 			g.POST("/import/ngx", bindAuth(handlePostImportNgx(app)))
 			g.GET("/import/ngx/status", bindAuth(handleGetImportNgxStatus(app)))
+			g.POST("/import/amazon/upload", bindAuth(handlePostImportAmazonUpload(app))).
+				Bind(apis.BodyLimit(amazonimport.MaxArchiveBytes))
+			g.DELETE("/import/amazon/upload", bindAuth(handleDeleteImportAmazonUpload(app)))
+			g.POST("/import/amazon", bindAuth(handlePostImportAmazon(app)))
+			g.GET("/import/amazon/status", bindAuth(handleGetImportAmazonStatus(app)))
 			return e.Next()
 		},
 	})

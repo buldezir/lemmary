@@ -10,6 +10,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 	"paperless-go/backend/internal/duplicates"
+	"paperless-go/backend/internal/importjob"
 	"paperless-go/backend/internal/models"
 	"paperless-go/backend/internal/worker"
 )
@@ -23,7 +24,7 @@ const (
 )
 
 // ErrImportInProgress is returned when another import is already running.
-var ErrImportInProgress = errors.New("an import is already in progress")
+var ErrImportInProgress = importjob.ErrBusy
 
 // Result summarizes a completed import run.
 type Result struct {
@@ -56,10 +57,10 @@ func Run(app core.App, ownerUserID, baseURL, apiKey, mode string) (Result, error
 
 // RunWithClient is like Run but accepts a prebuilt client (for tests).
 func RunWithClient(app core.App, ownerUserID, baseURL, apiKey, mode string, client *Client) (Result, error) {
-	if err := acquireImport(ownerUserID); err != nil {
+	if err := registry.Acquire(ownerUserID); err != nil {
 		return Result{}, err
 	}
-	defer releaseImport(ownerUserID)
+	defer registry.Release(ownerUserID)
 	return runImport(app, ownerUserID, baseURL, apiKey, mode, client)
 }
 
