@@ -59,6 +59,10 @@ func Install(app core.App) {
 	console := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 	next := slog.New(&teeHandler{console: console, inner: inner})
 	if !setAppLogger(app, next) {
+		// The reflection swap depends on PocketBase's private logger field; a
+		// PB upgrade can silently break it, and losing the stdout tee without
+		// a trace makes that miserable to diagnose.
+		log.Printf("applog: could not install stdout log tee (PocketBase internals changed?); console logging disabled")
 		return
 	}
 	bindSettingsReload(app)

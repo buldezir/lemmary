@@ -51,10 +51,10 @@ type Config struct {
 // Used to seed the DB singleton on first boot and as an in-memory fallback.
 // WorkerCronExpr always comes from env.
 func DefaultsFromEnv() Config {
-	timeoutSec, _ := strconv.Atoi(getEnv("OPENAI_TIMEOUT_SEC", "60"))
-	ocrTimeoutSec, _ := strconv.Atoi(getEnv("OCR_TIMEOUT_SEC", "40"))
-	workerTimeoutSec, _ := strconv.Atoi(getEnv("WORKER_TIMEOUT_SEC", "300"))
-	maxRetries, _ := strconv.Atoi(getEnv("WORKER_MAX_RETRIES", "0"))
+	timeoutSec := envIntDefault("OPENAI_TIMEOUT_SEC", 60, 1)
+	ocrTimeoutSec := envIntDefault("OCR_TIMEOUT_SEC", 40, 1)
+	workerTimeoutSec := envIntDefault("WORKER_TIMEOUT_SEC", 300, 1)
+	maxRetries := envIntDefault("WORKER_MAX_RETRIES", 0, 0)
 
 	openAIModel := getEnv("OPENAI_MODEL", "gpt-5.6-luna")
 	chatModel := getEnv("OPENAI_CHAT_MODEL", openAIModel)
@@ -131,6 +131,11 @@ func EnsureDefaults(app core.App) error {
 		return err
 	}
 	if err := app.Save(record); err != nil {
+		// A concurrent caller can seed the singleton between our find and save;
+		// the fixed ID then collides. Treat "someone else seeded it" as success.
+		if existing, findErr := app.FindRecordById(CollectionName, SingletonID); findErr == nil {
+			return bindProviders(app, existing)
+		}
 		return fmt.Errorf("seed %s: %w", CollectionName, err)
 	}
 	app.Logger().Info("seeded app_settings singleton from env defaults")
@@ -199,7 +204,7 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 		OpenAITimeout:                 time.Duration(openAITimeoutSec) * time.Second,
 		WorkerCronExpr:                WorkerCronFromEnv(),
 		WorkerTimeout:                 time.Duration(workerTimeoutSec) * time.Second,
-		WorkerMaxRetries:              int(record.GetFloat("worker_max_retries")),
+		WorkerMaxRetries:              max(int(record.GetFloat("worker_max_retries")), 0),
 		ExtractionPromptVer:           strutil.FirstNonEmpty(record.GetString("extraction_prompt_version"), "v1"),
 		NearDuplicateDetectionEnabled: record.GetBool("near_duplicate_detection_enabled"),
 		NearDuplicateThreshold:        threshold,
@@ -291,6 +296,20 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// envIntDefault parses an int env var, falling back when unset, malformed, or
+// below min — a typo like "6O" must not become a zero-second HTTP timeout.
+func envIntDefault(key string, fallback, min int) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(v)
+	if err != nil || parsed < min {
+		return fallback
+	}
+	return parsed
 }
 
 func getEnvBool(key string, fallback bool) bool {

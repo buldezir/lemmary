@@ -22,8 +22,13 @@ type Snapshot struct {
 
 // Runtime holds the process-global reloadable config and provider clients.
 type Runtime struct {
-	mu   sync.RWMutex
-	snap Snapshot
+	// reloadMu serializes whole Reload calls (DB read + client build +
+	// publish). Without it, two closely-spaced settings saves can race and the
+	// goroutine that read the older record may publish last, serving a stale
+	// provider or API key until the next save.
+	reloadMu sync.Mutex
+	mu       sync.RWMutex
+	snap     Snapshot
 }
 
 func NewRuntime() *Runtime {
@@ -42,6 +47,8 @@ func (r *Runtime) Snapshot() Snapshot {
 // If the DB settings are unavailable, falls back to env defaults so the process stays up.
 // Missing OCR/AI keys soft-fail: config is still updated and the process stays up.
 func (r *Runtime) Reload(app core.App) error {
+	r.reloadMu.Lock()
+	defer r.reloadMu.Unlock()
 	cfg, err := Load(app)
 	if err != nil {
 		app.Logger().Warn("loading app_settings failed; using env defaults", slog.Any("error", err))
