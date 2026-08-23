@@ -33,6 +33,12 @@ const (
 // A var so tests can shrink it instead of building 20 MB fixtures.
 var maxEntryBytes int64 = 20 << 20
 
+// maxTotalScanBytes budgets the total decompression one scan may do. Real
+// exports inflate to roughly the (already compressed) archive size; a crafted
+// high-ratio zip could otherwise force ~maxPDFs*maxEntryBytes (100 GB) of
+// synchronous inflation inside one request. A var so tests can shrink it.
+var maxTotalScanBytes int64 = 8 << 30
+
 var (
 	// ErrNotArchive is returned when the upload is not a readable zip.
 	ErrNotArchive = errors.New("the upload is not a readable zip archive")
@@ -42,6 +48,9 @@ var (
 	ErrTooManyPDFs = fmt.Errorf("the archive holds more than %d PDF files", maxPDFs)
 	// ErrArchiveTooLarge is returned when the upload exceeds MaxArchiveBytes.
 	ErrArchiveTooLarge = fmt.Errorf("the archive is larger than %d bytes", MaxArchiveBytes)
+	// ErrArchiveTooDense is returned when the archive decompresses far beyond
+	// any realistic export — the signature of a zip bomb.
+	ErrArchiveTooDense = errors.New("the archive decompresses beyond the allowed total size")
 )
 
 // Entry is one PDF found in the archive.
@@ -83,6 +92,7 @@ func documentLookup(app core.App, ownerUserID string) duplicateLookup {
 // only imported once.
 func scanPDFs(lookup duplicateLookup, zr *zip.Reader) (entries []Entry, ignored int, err error) {
 	seen := map[string]struct{}{}
+	var totalBytes int64
 
 	for _, f := range zr.File {
 		if !isPDFEntry(f) {
@@ -100,6 +110,10 @@ func scanPDFs(lookup duplicateLookup, zr *zip.Reader) (entries []Entry, ignored 
 		// The zip header size is only a hint; hashing measures the real stream.
 		checksum, size, err := hashEntry(f)
 		entry.Size = size
+		totalBytes += size
+		if totalBytes > maxTotalScanBytes {
+			return nil, 0, ErrArchiveTooDense
+		}
 		if errors.Is(err, errEntryTooLarge) {
 			entry.Oversized = true
 			entries = append(entries, entry)

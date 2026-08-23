@@ -41,47 +41,42 @@ func FindNearDuplicate(app core.App, document *core.Record, ocrText string, thre
 		return nil, 0, nil
 	}
 
+	// Sweep a lightweight projection (id + fingerprint) and load a candidate's
+	// full record — with its OCR text — only after it passes the Hamming
+	// prefilter. Loading full rows here made every processed document pull the
+	// whole earlier corpus, OCR text included, into memory.
+	rows, err := scanRows(app,
+		"[[user]] = {:user} AND id != {:id} AND text_fingerprint != '' AND ocr_text != '' AND duplicate_of = '' AND created < {:created}",
+		dbx.Params{"user": userID, "id": document.Id, "created": created},
+	)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	var best *core.Record
 	bestScore := 0.0
-	offset := 0
-	// Paginate rather than capping: with a fixed limit the newest candidates —
-	// the most likely duplicates — would silently never be compared.
-	for {
-		candidates, err := app.FindRecordsByFilter(
-			"documents",
-			"user = {:user} && id != {:id} && text_fingerprint != '' && ocr_text != '' && duplicate_of = '' && created < {:created}",
-			"created",
-			scanPageSize,
-			offset,
-			map[string]any{"user": userID, "id": document.Id, "created": created},
-		)
+	for _, row := range rows {
+		otherFP, ok := ParseFingerprintHex(row.Fingerprint)
+		if !ok {
+			continue
+		}
+		if HammingDistance(fpVal, otherFP) > MaxHammingDistance {
+			continue
+		}
+		candidate, err := app.FindRecordById("documents", row.ID)
 		if err != nil {
 			return nil, 0, err
 		}
-
-		for _, candidate := range candidates {
-			if !EligibleNearDuplicateOriginal(document, candidate) {
-				continue
-			}
-			otherFP, ok := ParseFingerprintHex(candidate.GetString("text_fingerprint"))
-			if !ok {
-				continue
-			}
-			if HammingDistance(fpVal, otherFP) > MaxHammingDistance {
-				continue
-			}
-			score := TextSimilarity(ocrText, candidate.GetString("ocr_text"))
-			if score >= threshold && score > bestScore {
-				best = candidate
-				bestScore = score
-			}
+		if !EligibleNearDuplicateOriginal(document, candidate) {
+			continue
 		}
-
-		if len(candidates) < scanPageSize {
-			return best, bestScore, nil
+		score := TextSimilarity(ocrText, candidate.GetString("ocr_text"))
+		if score >= threshold && score > bestScore {
+			best = candidate
+			bestScore = score
 		}
-		offset += scanPageSize
 	}
+	return best, bestScore, nil
 }
 
 // EligibleNearDuplicateOriginal reports whether candidate may be treated as the original
@@ -151,9 +146,10 @@ func ScanAll(app core.App, cfg config.Config) (ScanResult, error) {
 		page++
 	}
 
-	if err := markExactDuplicates(app, &result); err != nil {
-		return result, err
-	}
+	// Exact duplicates are fully handled inside backfillChecksum: the partial
+	// unique index idx_documents_user_checksum makes two rows with the same
+	// non-empty (user, checksum) impossible, so a group sweep over stored
+	// checksums can never find anything.
 	if cfg.NearDuplicateDetectionEnabled {
 		if err := markNearDuplicates(app, threshold, &result); err != nil {
 			return result, err
@@ -164,6 +160,12 @@ func ScanAll(app core.App, cfg config.Config) (ScanResult, error) {
 
 func backfillChecksum(app core.App, record *core.Record, result *ScanResult) error {
 	if strings.TrimSpace(record.GetString("checksum")) != "" {
+		return nil
+	}
+	// Marked duplicates deliberately carry no checksum (the original owns it);
+	// without this early exit every duplicate is re-read and re-hashed from
+	// storage on every scan just to rediscover that.
+	if strings.TrimSpace(record.GetString("duplicate_of")) != "" {
 		return nil
 	}
 	checksum, err := HashDocumentFile(app, record)
@@ -178,15 +180,20 @@ func backfillChecksum(app core.App, record *core.Record, result *ScanResult) err
 	if existing != nil {
 		original, duplicate := earlierRecord(existing, record), laterRecord(existing, record)
 		if original.Id == record.Id {
-			// Older document missing checksum while a newer one already has it: take ownership.
-			if existing.GetString("checksum") != "" {
-				existing.Set("checksum", "")
-				if err := app.Save(existing); err != nil {
-					return err
+			// Older document missing checksum while a newer one already has it:
+			// take ownership. One transaction, so a failure between the two
+			// saves cannot leave the checksum stored on neither record.
+			err := app.RunInTransaction(func(txApp core.App) error {
+				if existing.GetString("checksum") != "" {
+					existing.Set("checksum", "")
+					if err := txApp.Save(existing); err != nil {
+						return err
+					}
 				}
-			}
-			record.Set("checksum", checksum)
-			if err := app.Save(record); err != nil {
+				record.Set("checksum", checksum)
+				return txApp.Save(record)
+			})
+			if err != nil {
 				return err
 			}
 			result.ChecksumBackfilled++
@@ -268,55 +275,8 @@ func backfillFingerprint(app core.App, record *core.Record, result *ScanResult) 
 	return nil
 }
 
-func markExactDuplicates(app core.App, result *ScanResult) error {
-	type groupKey struct {
-		user     string
-		checksum string
-	}
-
-	rows, err := scanRows(app, "checksum != ''")
-	if err != nil {
-		return err
-	}
-
-	// Group by (user, checksum) over lightweight rows so a large archive does not
-	// pull every document (and its OCR text) into memory at once.
-	groups := map[groupKey][]scanRow{}
-	for _, row := range rows {
-		key := groupKey{user: row.User, checksum: row.Checksum}
-		groups[key] = append(groups[key], row)
-	}
-
-	for _, group := range groups {
-		if len(group) < 2 {
-			continue
-		}
-		original, err := app.FindRecordById("documents", group[0].ID)
-		if err != nil {
-			return err
-		}
-		for _, row := range group[1:] {
-			if row.DuplicateOf != "" {
-				continue
-			}
-			duplicate, err := app.FindRecordById("documents", row.ID)
-			if err != nil {
-				return err
-			}
-			marked, err := MarkAsDuplicate(app, duplicate, original)
-			if err != nil {
-				return err
-			}
-			if marked {
-				result.ExactMarked++
-			}
-		}
-	}
-	return nil
-}
-
 func markNearDuplicates(app core.App, threshold float64, result *ScanResult) error {
-	rows, err := scanRows(app, "ocr_text != '' AND text_fingerprint != ''")
+	rows, err := scanRows(app, "ocr_text != '' AND text_fingerprint != ''", nil)
 	if err != nil {
 		return err
 	}
@@ -404,8 +364,9 @@ type scanRow struct {
 	DuplicateOf string `db:"duplicate_of"`
 }
 
-// scanRows pages through documents matching filter, oldest first.
-func scanRows(app core.App, filter string) ([]scanRow, error) {
+// scanRows pages through documents matching filter, oldest first. params may
+// be nil when the filter has no placeholders.
+func scanRows(app core.App, filter string, params dbx.Params) ([]scanRow, error) {
 	collection, err := app.FindCollectionByNameOrId("documents")
 	if err != nil {
 		return nil, err
@@ -417,7 +378,7 @@ func scanRows(app core.App, filter string) ([]scanRow, error) {
 		var page []scanRow
 		err := app.RecordQuery(collection).
 			Select("id", "[[user]]", "created", "checksum", "text_fingerprint", "duplicate_of").
-			AndWhere(dbx.NewExp(filter)).
+			AndWhere(dbx.NewExp(filter, params)).
 			OrderBy("created ASC", "id ASC").
 			Limit(int64(scanPageSize)).
 			Offset(int64(offset)).

@@ -79,9 +79,15 @@ func runImport(app core.App, ownerUserID string, item *stagedArchive, report fun
 	}
 	defer zr.Close()
 
-	byPath := make(map[string]*zip.File, len(zr.File))
+	// Match preview entries to zip entries by position, not by name: duplicate
+	// entry names are legal in a zip, and a name-keyed map would import the
+	// last file's bytes for every same-named entry. The preview was built by
+	// walking the same staged file with the same filter, so order aligns.
+	pdfFiles := make([]*zip.File, 0, len(zr.File))
 	for _, f := range zr.File {
-		byPath[f.Name] = f
+		if isPDFEntry(f) {
+			pdfFiles = append(pdfFiles, f)
+		}
 	}
 
 	entries := item.preview.Files
@@ -94,7 +100,11 @@ func runImport(app core.App, ownerUserID string, item *stagedArchive, report fun
 	}
 
 	for i, entry := range entries {
-		applyEntry(app, collection, ownerUserID, entry, byPath[entry.Path], &result)
+		var file *zip.File
+		if i < len(pdfFiles) && pdfFiles[i].Name == entry.Path {
+			file = pdfFiles[i]
+		}
+		applyEntry(app, collection, ownerUserID, entry, file, &result)
 		report(i+1, total)
 	}
 
