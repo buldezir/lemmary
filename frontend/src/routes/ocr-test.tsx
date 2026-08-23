@@ -143,14 +143,14 @@ export function OCRTestPage() {
   return (
     <section className="mx-auto flex max-w-3xl flex-col gap-6">
       <div>
-        <h2 className="text-xl font-semibold text-stone-950">OCR test</h2>
-        <p className="text-sm text-stone-500">
+        <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">OCR test</h2>
+        <p className="text-sm text-ink-soft">
           Upload a file and run OCR with a configured provider. Results are not saved.
         </p>
       </div>
 
       <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-        <label className="flex flex-col gap-1.5 text-sm font-medium text-stone-700">
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-ink-muted">
           Provider
           <select
             value={provider}
@@ -159,7 +159,7 @@ export function OCRTestPage() {
               setModel('')
             }}
             disabled={loadingProviders || providers.length === 0 || running}
-            className="w-full rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm font-normal text-stone-950 outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm font-normal text-ink outline-none focus:border-oxblood focus:ring-1 focus:ring-oxblood disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loadingProviders ? (
               <option value="">Loading providers...</option>
@@ -189,10 +189,10 @@ export function OCRTestPage() {
         {showWarning && <p className="text-xs text-amber-800">{OCR_MODEL_WARNING}</p>}
 
         <label
-          className={`flex min-h-44 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed p-6 text-center transition-colors ${
+          className={`flex min-h-44 cursor-pointer flex-col items-center justify-center gap-1 rounded-none border border-dashed p-6 text-center transition-colors ${
             dragging
-              ? 'border-gray-900 bg-white'
-              : 'border-stone-300 bg-stone-50 hover:border-stone-400 hover:bg-white'
+              ? 'border-ink bg-bright'
+              : 'border-line-strong bg-surface hover:border-ink/50 hover:bg-bright'
           }`}
           onDragOver={onDragOver}
           onDragEnter={onDragEnter}
@@ -206,14 +206,14 @@ export function OCRTestPage() {
             className="hidden"
             disabled={running}
           />
-          <span className="text-sm font-medium text-stone-950">
+          <span className="text-sm font-medium text-ink">
             {file ? file.name : 'Choose a file'}
           </span>
-          {!file && <span className="text-xs text-stone-400">or drop it here (max 10 MB)</span>}
+          {!file && <span className="text-xs text-ink-faint">or drop it here (max 10 MB)</span>}
         </label>
 
         {(error || providersState.error) && (
-          <p className="text-sm text-red-600">{error || providersState.error}</p>
+          <p className="text-sm text-madder">{error || providersState.error}</p>
         )}
 
         <Button type="submit" disabled={running || !file || !provider || providers.length === 0}>
@@ -224,14 +224,14 @@ export function OCRTestPage() {
       {(result || running) && (
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-4">
-            <h3 className="text-sm font-medium text-stone-700">Result</h3>
-            {meta && <p className="text-xs text-stone-500">{meta}</p>}
+            <h3 className="text-sm font-medium text-ink-muted">Result</h3>
+            {meta && <p className="text-xs text-ink-soft">{meta}</p>}
           </div>
           <textarea
             readOnly
             rows={20}
             value={running ? 'Running OCR...' : result}
-            className="min-h-96 w-full resize-y rounded-md border border-stone-300 bg-stone-50 px-3 py-2 font-mono text-xs leading-relaxed text-stone-950 outline-none"
+            className="min-h-96 w-full resize-y rounded-xs border border-line-strong bg-surface px-3 py-2 font-mono text-xs leading-relaxed text-ink outline-none"
           />
         </div>
       )}

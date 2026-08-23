@@ -1,14 +1,62 @@
 @import 'tailwindcss';
 
+/*
+ * Warm editorial / archival theme.
+ *
+ * The palette is a paper ledger: warm cream grounds, ink-dark text in three
+ * muted steps, hairline rules the color of aged paper edges, and a single
+ * deep oxblood accent for everything interactive. Success and error live in
+ * the same warm register (forest ink, madder red) so nothing reads as a
+ * foreign SaaS green or alert red on the cream ground.
+ */
+@theme {
+  --font-sans: 'Public Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-paper: #f6f1e5;
+  --color-surface: #fbf7ec;
+  --color-bright: #fffdf6;
+  --color-wash: #eae2ce;
+  --color-line: #dcd2ba;
+  --color-line-strong: #c9bc9e;
+
+  --color-ink: #262117;
+  --color-ink-muted: #56503e;
+  --color-ink-soft: #6e6650;
+  --color-ink-faint: #8a8066;
+
+  --color-oxblood: #7a2e26;
+  --color-oxblood-deep: #571e18;
+  --color-forest: #465b34;
+  --color-madder: #9c3327;
+}
+
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Tailwind v4 preflight resets buttons to the default cursor. Put the pointer
-   back on every enabled button once, instead of per button. Disabled buttons
-   keep their `disabled:cursor-not-allowed` utility: utilities outrank base. */
 @layer base {
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+  }
+
+  ::selection {
+    background-color: var(--color-oxblood);
+    color: var(--color-paper);
+  }
+
+  /* Native checkboxes and radios pick up the accent instead of browser blue. */
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: var(--color-oxblood);
+  }
+
+  /* Tailwind v4 preflight resets buttons to the default cursor. Put the pointer
+     back on every enabled button once, instead of per button. Disabled buttons
+     keep their `disabled:cursor-not-allowed` utility: utilities outrank base. */
   button:not(:disabled),
   [role='button']:not(:disabled),
   input[type='button']:not(:disabled),

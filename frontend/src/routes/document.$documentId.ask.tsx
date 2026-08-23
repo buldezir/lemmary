@@ -63,14 +63,14 @@ export function DocumentAskPage() {
   }
 
   if (loading) {
-    return <p className="text-sm text-stone-500">Loading...</p>
+    return <p className="text-sm text-ink-soft">Loading...</p>
   }
 
   if (!document) {
     return (
       <section className="flex flex-col gap-3">
-        <p className="text-sm text-red-600">{loadError || 'Document not found.'}</p>
-        <Link to="/" className="text-sm font-medium text-gray-900 underline">
+        <p className="text-sm text-madder">{loadError || 'Document not found.'}</p>
+        <Link to="/" className="text-sm font-medium text-oxblood underline">
           Back to documents
         </Link>
       </section>
@@ -83,27 +83,27 @@ export function DocumentAskPage() {
         <Link
           to="/document/$documentId"
           params={{ documentId }}
-          className="text-sm text-stone-500 hover:text-stone-950"
+          className="text-sm text-ink-soft hover:text-oxblood"
         >
           &larr; Back to document
         </Link>
-        <h2 className="mt-1 text-xl font-semibold text-stone-950">
+        <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight text-ink">
           Ask AI: {document.title || 'Untitled document'}
         </h2>
-        <p className="text-sm text-stone-500">
+        <p className="text-sm text-ink-soft">
           Questions are answered using the document&apos;s OCR text as context.
         </p>
       </div>
 
       {!hasOcrText ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+        <div className="rounded-none border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
           This document has no OCR text yet. Run full processing before asking questions.
         </div>
       ) : (
-        <div className="flex min-h-128 flex-col overflow-hidden rounded-lg border border-stone-200 bg-stone-50">
+        <div className="flex min-h-128 flex-col overflow-hidden rounded-none border border-line bg-surface">
           <div className="flex-1 space-y-4 overflow-y-auto p-4">
             {messages.length === 0 && (
-              <p className="text-sm text-stone-400">
+              <p className="text-sm text-ink-faint">
                 Ask a question about this document, for example: &quot;What is the total amount?&quot;
               </p>
             )}
@@ -113,10 +113,10 @@ export function DocumentAskPage() {
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-[85%] rounded-lg px-4 py-2.5 text-sm leading-relaxed ${
+                  className={`max-w-[85%] rounded-none px-4 py-2.5 text-sm leading-relaxed ${
                     message.role === 'user'
-                      ? 'whitespace-pre-wrap bg-gray-900 text-white'
-                      : 'border border-stone-200 bg-stone-100 text-stone-950'
+                      ? 'whitespace-pre-wrap bg-ink text-paper'
+                      : 'border border-line bg-paper text-ink'
                   }`}
                 >
                   {message.role === 'user' ? (
@@ -129,7 +129,7 @@ export function DocumentAskPage() {
             ))}
             {sending && (
               <div className="flex justify-start">
-                <div className="rounded-lg border border-stone-200 bg-stone-100 px-4 py-2.5 text-sm text-stone-500">
+                <div className="rounded-none border border-line bg-paper px-4 py-2.5 text-sm text-ink-soft">
                   Thinking...
                 </div>
               </div>
@@ -137,7 +137,7 @@ export function DocumentAskPage() {
             <div ref={messagesEndRef} />
           </div>
 
-          <form onSubmit={onSubmit} className="border-t border-stone-200 bg-stone-100/60 p-4">
+          <form onSubmit={onSubmit} className="border-t border-line bg-paper/70 p-4">
             <div className="flex items-end gap-3">
               <textarea
                 rows={2}
@@ -152,13 +152,13 @@ export function DocumentAskPage() {
                 autoFocus
                 disabled={sending}
                 placeholder="Ask a question about this document..."
-                className="min-h-12 flex-1 resize-y rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm text-stone-950 outline-none placeholder:text-stone-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-h-12 flex-1 resize-y rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood disabled:cursor-not-allowed disabled:opacity-50"
               />
               <Button type="submit" disabled={sending || !input.trim()}>
                 {sending ? 'Sending...' : 'Send'}
               </Button>
             </div>
-            {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+            {error && <p className="mt-2 text-sm text-madder">{error}</p>}
           </form>
         </div>
       )}

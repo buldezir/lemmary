@@ -193,17 +193,17 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
   const llmProviders = providers.filter((item) => isLLMProvider(item.sdk))
 
   return (
-    <div className="flex min-h-screen flex-col bg-stone-100">
+    <div className="flex min-h-screen flex-col bg-paper">
       <div className="flex flex-1 items-center justify-center px-6 py-10">
-        <section className="w-full max-w-md rounded-lg border border-stone-200 bg-stone-50 p-6 shadow-sm">
+        <section className="w-full max-w-md border border-line-strong bg-surface p-8 shadow-sm shadow-ink/5">
           <div className="mb-2 flex items-center gap-2">
             <AppLogo appName={appName} accent={accent} />
-            <h1 className="text-lg font-semibold text-stone-950">{appName}</h1>
+            <h1 className="font-display text-xl font-semibold text-ink">{appName}</h1>
           </div>
-          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-stone-400">
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-oxblood">
             {stepLabel}
           </p>
-          <h2 className="mb-4 text-base font-semibold text-stone-900">
+          <h2 className="mb-4 font-display text-lg font-semibold text-ink">
             {step === 'admin' && 'Create your admin account'}
             {step === 'providers' && 'Add a provider'}
             {step === 'models' && 'Choose models'}
@@ -212,7 +212,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
 
           {step === 'admin' && (
             <form className="flex flex-col gap-4" onSubmit={onCreateAdmin}>
-              <p className="text-sm text-stone-600">
+              <p className="text-sm text-ink-muted">
                 This account manages settings and can access PocketBase Admin.
               </p>
               <label className={labelClassName}>
@@ -250,7 +250,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                   className={inputClassName}
                 />
               </label>
-              {error && <p className="text-sm text-red-600">{error}</p>}
+              {error && <p className="text-sm text-madder">{error}</p>}
               <Button type="submit" disabled={submitting}>
                 {submitting ? 'Creating...' : 'Create admin'}
               </Button>
@@ -259,12 +259,12 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
 
           {step === 'providers' && (
             <form className="flex flex-col gap-4" onSubmit={onSaveProvider}>
-              <p className="text-sm text-stone-600">
+              <p className="text-sm text-ink-muted">
                 Add an API provider. OpenAI, OpenRouter, or Mistral can run extraction and chat;
                 Google Vision or Mistral OCR can run OCR. One Mistral provider covers both.
               </p>
               {providers.length > 0 && (
-                <p className="text-xs text-stone-500">
+                <p className="text-xs text-ink-soft">
                   Already added: {providers.map((item) => item.alias).join(', ')}
                 </p>
               )}
@@ -317,7 +317,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                   className={inputClassName}
                 />
               </label>
-              {error && <p className="text-sm text-red-600">{error}</p>}
+              {error && <p className="text-sm text-madder">{error}</p>}
               <Button type="submit" disabled={submitting}>
                 {submitting ? 'Saving...' : 'Continue'}
               </Button>
@@ -326,7 +326,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
 
           {step === 'models' && (
             <form className="flex flex-col gap-4" onSubmit={onSaveModels}>
-              <p className="text-sm text-stone-600">
+              <p className="text-sm text-ink-muted">
                 Pick a provider and model for OCR and metadata extraction. Chat and search are set
                 to the extraction model too; you can change them later in Settings.
               </p>
@@ -353,14 +353,14 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 onProviderChange={setExtractProviderId}
                 onModelChange={setExtractModel}
               />
-              {error && <p className="text-sm text-red-600">{error}</p>}
+              {error && <p className="text-sm text-madder">{error}</p>}
               <div className="flex flex-col gap-2">
                 <Button type="submit" disabled={submitting}>
                   {submitting ? 'Saving...' : 'Finish setup'}
                 </Button>
                 <button
                   type="button"
-                  className="text-left text-xs font-medium text-stone-500 hover:text-stone-800"
+                  className="text-left text-xs font-medium text-ink-soft hover:text-ink"
                   onClick={() => setStep('providers')}
                 >
                   Add another provider
@@ -371,12 +371,12 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
 
           {step === 'done' && (
             <div className="flex flex-col gap-4">
-              <p className="text-sm text-stone-600">
+              <p className="text-sm text-ink-muted">
                 Your admin account and processing keys are ready. You can change them anytime in
                 Settings.
               </p>
               {status.needs_config && (
-                <p className="text-sm text-red-600">Setup still reports missing configuration.</p>
+                <p className="text-sm text-madder">Setup still reports missing configuration.</p>
               )}
               <Button onClick={onComplete}>Open {appName}</Button>
             </div>
@@ -396,15 +396,15 @@ type SetupBlockedProps = {
 
 export function SetupBlocked({ appName, accent, onLogout }: SetupBlockedProps) {
   return (
-    <div className="flex min-h-screen flex-col bg-stone-100">
+    <div className="flex min-h-screen flex-col bg-paper">
       <div className="flex flex-1 items-center justify-center px-6">
-        <section className="w-full max-w-sm rounded-lg border border-stone-200 bg-stone-50 p-6 shadow-sm">
+        <section className="w-full max-w-sm border border-line-strong bg-surface p-8 shadow-sm shadow-ink/5">
           <div className="mb-4 flex items-center gap-2">
             <AppLogo appName={appName} accent={accent} />
-            <h1 className="text-lg font-semibold text-stone-950">{appName}</h1>
+            <h1 className="font-display text-xl font-semibold text-ink">{appName}</h1>
           </div>
-          <h2 className="mb-2 text-base font-semibold text-stone-900">Setup incomplete</h2>
-          <p className="mb-4 text-sm text-stone-600">
+          <h2 className="mb-2 font-display text-lg font-semibold text-ink">Setup incomplete</h2>
+          <p className="mb-4 text-sm text-ink-muted">
             An administrator must finish first-launch configuration before the app can be used.
           </p>
           <Button onClick={onLogout}>Log out</Button>

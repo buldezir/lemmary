@@ -17,20 +17,20 @@ const statusLabels: Record<DocumentRecord['processing_status'], string> = {
 }
 
 const statusStyles: Record<DocumentRecord['processing_status'], string> = {
-  pending: 'bg-amber-50 text-amber-700 ring-amber-200',
-  processing: 'bg-blue-50 text-blue-700 ring-blue-200',
-  completed: 'bg-green-50 text-green-700 ring-green-200',
-  failed: 'bg-red-50 text-red-700 ring-red-200',
-  needs_review: 'bg-amber-50 text-amber-700 ring-amber-200',
+  pending: 'text-amber-800 ring-amber-800/40',
+  processing: 'text-sky-900 ring-sky-900/40',
+  completed: 'text-forest ring-forest/40',
+  failed: 'text-madder ring-madder/50',
+  needs_review: 'text-amber-800 ring-amber-800/40',
 }
 
 function CardDescription({ document }: { document: DocumentRecord }) {
   const summary = document.summary?.trim() || document.purpose?.trim()
   if (summary) {
-    return <p className="line-clamp-3 text-sm text-stone-600">{summary}</p>
+    return <p className="line-clamp-3 text-sm text-ink-muted">{summary}</p>
   }
   if (document.processing_status !== 'needs_review') {
-    return <p className="line-clamp-3 text-sm text-stone-600">No summary yet.</p>
+    return <p className="line-clamp-3 text-sm text-ink-muted">No summary yet.</p>
   }
   if (document.duplicate_of) {
     const originalTitle = document.expand?.duplicate_of?.title?.trim() || 'another document'
@@ -63,15 +63,15 @@ export function DocumentCard({ document, selectable, selected, onToggleSelect }:
   return (
     <article
       data-document-id={document.id}
-      className={`relative flex flex-col gap-3 rounded-lg border bg-stone-50 p-4 transition-colors hover:border-stone-300 hover:bg-white hover:shadow-sm ${
-        selected ? 'border-gray-900 ring-1 ring-gray-900' : 'border-stone-200'
+      className={`relative flex flex-col gap-3 border bg-surface p-5 transition-colors hover:border-ink/50 hover:bg-bright hover:shadow-sm hover:shadow-ink/5 ${
+        selected ? 'border-oxblood ring-1 ring-oxblood' : 'border-line'
       }`}
     >
       <Link
         to="/document/$documentId"
         params={{ documentId: document.id }}
         aria-label={title}
-        className="absolute inset-0 z-0 rounded-lg"
+        className="absolute inset-0 z-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood"
       />
       <div className="pointer-events-none relative flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
@@ -83,23 +83,23 @@ export function DocumentCard({ document, selectable, selected, onToggleSelect }:
                 checked={Boolean(selected)}
                 onChange={() => onToggleSelect?.(document.id)}
                 aria-label={`Select ${title}`}
-                className="relative z-10 pointer-events-auto h-4 w-4 cursor-pointer rounded border-stone-300 text-gray-900 focus:ring-gray-900"
+                className="relative z-10 pointer-events-auto h-4 w-4 cursor-pointer rounded border-line-strong text-oxblood focus:ring-oxblood"
               />
             )}
             <span
-              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${statusStyles[document.processing_status]}`}
+              className={`inline-flex px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ring-1 ring-inset ${statusStyles[document.processing_status]}`}
             >
               {statusLabels[document.processing_status]}
             </span>
           </div>
           {document.document_date && (
-            <span className="text-xs text-stone-400">{document.document_date.slice(0, 10)}</span>
+            <span className="font-mono text-xs tabular-nums text-ink-soft">{document.document_date.slice(0, 10)}</span>
           )}
         </div>
 
-        <div>
-          <h3 className="font-medium text-stone-950">{title}</h3>
-          <p className="text-xs text-stone-500">
+        <div className="border-t border-line pt-3">
+          <h3 className="font-display text-lg font-semibold leading-snug text-ink">{title}</h3>
+          <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-soft">
             {[documentType || 'Unknown type', correspondent].filter(Boolean).join(' · ')}
           </p>
         </div>
@@ -109,7 +109,7 @@ export function DocumentCard({ document, selectable, selected, onToggleSelect }:
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {tags.map((tag) => (
-              <span key={tag} className="rounded-full bg-stone-200/70 px-2 py-0.5 text-xs text-stone-600">
+              <span key={tag} className="border border-line px-1.5 py-0.5 text-[11px] text-ink-muted">
                 {tag}
               </span>
             ))}

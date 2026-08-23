@@ -291,14 +291,14 @@ export function DocumentDetailPage() {
   }
 
   if (loading) {
-    return <p className="text-sm text-stone-500">Loading document...</p>
+    return <p className="text-sm text-ink-soft">Loading document...</p>
   }
 
   if (!document) {
     return (
       <section className="flex flex-col gap-3">
-        <p className="text-sm text-red-600">{error || 'Document not found.'}</p>
-        <Link to="/" className="text-sm font-medium text-gray-900 underline">
+        <p className="text-sm text-madder">{error || 'Document not found.'}</p>
+        <Link to="/" className="text-sm font-medium text-oxblood underline">
           Back to documents
         </Link>
       </section>
@@ -308,7 +308,7 @@ export function DocumentDetailPage() {
   return (
     <section className="flex flex-col gap-6">
       {document.duplicate_of && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="rounded-xs border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Possible duplicate of{' '}
           <Link
             to="/document/$documentId"
@@ -322,13 +322,13 @@ export function DocumentDetailPage() {
       )}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <Link to="/" className="text-sm text-stone-500 hover:text-stone-950">
+          <Link to="/" className="text-sm text-ink-soft hover:text-oxblood">
             &larr; Back to documents
           </Link>
-          <h2 className="mt-1 text-xl font-semibold text-stone-950">
+          <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight text-ink">
             {document.title || 'Untitled document'}
           </h2>
-          <p className="text-sm text-stone-500">Status: {document.processing_status}</p>
+          <p className="text-sm text-ink-soft">Status: {document.processing_status}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Link
@@ -338,17 +338,17 @@ export function DocumentDetailPage() {
             title={
               hasOcrText ? 'Ask questions about this document' : 'OCR text required before asking AI'
             }
-            className={`rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+            className={`rounded-xs border px-4 py-2 text-sm font-medium transition-colors ${
               hasOcrText
-                ? 'border-gray-900 bg-gray-900 text-white hover:bg-gray-700'
-                : 'pointer-events-none border-stone-200 bg-stone-100 text-stone-400'
+                ? 'border-ink bg-ink text-paper hover:bg-oxblood'
+                : 'pointer-events-none border-line bg-paper text-ink-faint'
             }`}
           >
             Ask AI
           </Link>
           {document.file && (
             <a
-              className="rounded-md border border-stone-300 bg-stone-50 px-4 py-2 text-sm font-medium text-stone-700 transition-colors hover:bg-white"
+              className="rounded-xs border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-bright"
               href={fileUrl(document)}
               target="_blank"
               rel="noreferrer"
@@ -366,10 +366,10 @@ export function DocumentDetailPage() {
               aria-label={showProcessingJob ? 'Hide processing job details' : 'Show processing job details'}
               aria-pressed={showProcessingJob}
               title={showProcessingJob ? 'Hide processing job' : 'Show processing job'}
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border transition-colors ${
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xs border transition-colors ${
                 showProcessingJob
-                  ? 'border-gray-900 bg-gray-900 text-white hover:bg-gray-700'
-                  : 'border-stone-300 bg-stone-50 text-stone-500 hover:bg-white hover:text-stone-700'
+                  ? 'border-ink bg-ink text-paper hover:bg-oxblood'
+                  : 'border-line-strong bg-surface text-ink-soft hover:bg-bright hover:text-ink-muted'
               }`}
             >
               <svg
@@ -391,50 +391,50 @@ export function DocumentDetailPage() {
       </div>
 
       {job && showProcessingJob && (
-        <div className="rounded-lg border border-stone-200 bg-stone-50 p-3">
+        <div className="rounded-none border border-line bg-surface p-3">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <h3 className="text-sm font-semibold text-stone-950">Processing job</h3>
-            <span className="rounded bg-stone-200 px-1.5 py-0.5 text-xs font-medium text-stone-700">
+            <h3 className="text-sm font-semibold text-ink">Processing job</h3>
+            <span className="bg-wash px-1.5 py-0.5 text-xs font-medium text-ink-muted">
               {job.status}
             </span>
             {job.current_step ? (
-              <span className="text-xs text-stone-500">current: {job.current_step}</span>
+              <span className="text-xs text-ink-soft">current: {job.current_step}</span>
             ) : null}
-            <span className="text-xs text-stone-500">
+            <span className="text-xs text-ink-soft">
               {(job.steps ?? []).join(' → ') || 'n/a'}
             </span>
           </div>
           {job.step_runs && job.step_runs.length > 0 ? (
-            <ul className="mt-2 flex flex-col gap-1 text-sm text-stone-700">
+            <ul className="mt-2 flex flex-col gap-1 text-sm text-ink-muted">
               {job.step_runs.map((run) => (
                 <li key={run.name} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                   <span className="font-medium">{run.name}</span>
-                  <span className="rounded bg-stone-200 px-1.5 py-0.5 text-xs">{run.status}</span>
+                  <span className="bg-wash px-1.5 py-0.5 text-xs">{run.status}</span>
                   {run.attempts > 0 ? (
-                    <span className="text-xs text-stone-500">attempts: {run.attempts}</span>
+                    <span className="text-xs text-ink-soft">attempts: {run.attempts}</span>
                   ) : null}
                   {run.provider ? (
-                    <span className="text-xs text-stone-500">provider: {run.provider}</span>
+                    <span className="text-xs text-ink-soft">provider: {run.provider}</span>
                   ) : null}
                   {run.model ? (
-                    <span className="text-xs text-stone-500">model: {run.model}</span>
+                    <span className="text-xs text-ink-soft">model: {run.model}</span>
                   ) : null}
                   {run.prompt_version ? (
-                    <span className="text-xs text-stone-500">prompt: {run.prompt_version}</span>
+                    <span className="text-xs text-ink-soft">prompt: {run.prompt_version}</span>
                   ) : null}
-                  {run.error ? <span className="text-xs text-red-600">{run.error}</span> : null}
+                  {run.error ? <span className="text-xs text-madder">{run.error}</span> : null}
                 </li>
               ))}
             </ul>
           ) : null}
 
           <form
-            className="mt-3 flex flex-col gap-2 border-t border-stone-200 pt-3"
+            className="mt-3 flex flex-col gap-2 border-t border-line pt-3"
             onSubmit={onReprocessSubmit}
           >
             <div>
-              <h4 className="text-sm font-semibold text-stone-950">Reprocess</h4>
-              <p className="mt-0.5 text-xs text-stone-500">
+              <h4 className="text-sm font-semibold text-ink">Reprocess</h4>
+              <p className="mt-0.5 text-xs text-ink-soft">
                 Choose which pipeline steps to run. Selected steps are forced to re-run even if
                 output already exists.
               </p>
@@ -446,10 +446,10 @@ export function DocumentDetailPage() {
                 return (
                   <label
                     key={step}
-                    className={`flex items-start gap-2 rounded-md border px-3 py-1.5 text-sm ${
+                    className={`flex items-start gap-2 rounded-xs border px-3 py-1.5 text-sm ${
                       selectable
-                        ? 'border-stone-200 bg-white text-stone-700'
-                        : 'border-stone-100 bg-stone-100/80 text-stone-400'
+                        ? 'border-line bg-bright text-ink-muted'
+                        : 'border-line/50 bg-wash/50 text-ink-faint'
                     }`}
                     title={
                       step === 'extract_metadata' && !selectable
@@ -466,7 +466,7 @@ export function DocumentDetailPage() {
                     />
                     <span>
                       <span className="font-medium">{PROCESSING_STEP_LABELS[step]}</span>
-                      <span className="mt-0.5 block text-xs font-normal text-stone-500">
+                      <span className="mt-0.5 block text-xs font-normal text-ink-soft">
                         {PROCESSING_STEP_DESCRIPTIONS[step]}
                       </span>
                     </span>
@@ -488,7 +488,7 @@ export function DocumentDetailPage() {
       )}
 
       <form
-        className="grid grid-cols-1 gap-4 rounded-lg border border-stone-200 bg-stone-50 p-6 sm:grid-cols-2"
+        className="grid grid-cols-1 gap-4 rounded-none border border-line bg-surface p-6 sm:grid-cols-2"
         onSubmit={onSave}
       >
         <label className={labelClass}>
@@ -500,7 +500,7 @@ export function DocumentDetailPage() {
             onChange={(event) => setDocument({ ...document, title: event.target.value })}
           />
           {document.title_original && document.title_original !== document.title && (
-            <span className="text-xs font-normal text-stone-500">
+            <span className="text-xs font-normal text-ink-soft">
               Original: {document.title_original}
             </span>
           )}
@@ -527,7 +527,7 @@ export function DocumentDetailPage() {
           />
           {document.expand?.document_type?.name_original &&
             document.expand.document_type.name_original !== document.expand.document_type.name && (
-              <span className="text-xs font-normal text-stone-500">
+              <span className="text-xs font-normal text-ink-soft">
                 Original: {document.expand.document_type.name_original}
               </span>
             )}
@@ -543,7 +543,7 @@ export function DocumentDetailPage() {
           />
           {document.expand?.correspondent?.name_original &&
             document.expand.correspondent.name_original !== document.expand.correspondent.name && (
-              <span className="text-xs font-normal text-stone-500">
+              <span className="text-xs font-normal text-ink-soft">
                 Original: {document.expand.correspondent.name_original}
               </span>
             )}
@@ -558,7 +558,7 @@ export function DocumentDetailPage() {
             onChange={(event) => setDocument({ ...document, purpose: event.target.value })}
           />
           {document.purpose_original && document.purpose_original !== document.purpose && (
-            <span className="text-xs font-normal text-stone-500">
+            <span className="text-xs font-normal text-ink-soft">
               Original: {document.purpose_original}
             </span>
           )}
@@ -584,7 +584,7 @@ export function DocumentDetailPage() {
             onChange={(event) => setDocument({ ...document, summary: event.target.value })}
           />
           {document.summary_original && document.summary_original !== document.summary && (
-            <span className="text-xs font-normal text-stone-500">
+            <span className="text-xs font-normal text-ink-soft">
               Original: {document.summary_original}
             </span>
           )}
@@ -618,19 +618,19 @@ export function DocumentDetailPage() {
               Edit
             </Button>
           )}
-          {message && <p className="text-sm text-green-600">{message}</p>}
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {message && <p className="text-sm text-forest">{message}</p>}
+          {error && <p className="text-sm text-madder">{error}</p>}
         </div>
       </form>
     </section>
   )
 }
 
-const labelClass = 'flex flex-col gap-1.5 text-sm font-medium text-stone-700'
+const labelClass = 'flex flex-col gap-1.5 text-sm font-medium text-ink-muted'
 const inputClass =
-  'w-full rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm font-normal text-stone-950 outline-none placeholder:text-stone-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900'
+  'w-full rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm font-normal text-ink outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood'
 const readonlyClass =
-  'cursor-default border-stone-200 bg-stone-100/80 text-stone-700 shadow-inner focus:border-stone-200 focus:ring-0'
+  'cursor-default border-line bg-wash/50 text-ink-muted shadow-inner focus:border-line focus:ring-0'
 
 function fieldClass(editing: boolean) {
   return editing ? inputClass : `${inputClass} ${readonlyClass}`

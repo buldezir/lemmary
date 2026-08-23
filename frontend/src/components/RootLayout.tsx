@@ -11,12 +11,13 @@ import { LoginPage } from './LoginPage'
 import { SetupBlocked, SetupWizard } from './SetupWizard'
 
 const navLinkClass =
-  'rounded-md px-3 py-1.5 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-200/70 hover:text-stone-950'
-const navLinkActiveClass = 'bg-gray-900 text-white hover:bg-gray-900 hover:text-white'
+  'border-b border-transparent px-0.5 pb-1 pt-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-oxblood data-[status=active]:border-oxblood data-[status=active]:text-oxblood'
 const iconButtonClass =
-  'rounded-md p-1.5 text-stone-500 transition-colors hover:bg-stone-200/70 hover:text-stone-950'
+  'p-1.5 text-ink-soft transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood'
+const iconButtonActiveClass = 'text-oxblood'
 const menuItemClass =
-  'flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm font-medium text-stone-600 transition-colors hover:bg-stone-200/70 hover:text-stone-950'
+  'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm font-medium text-ink-muted transition-colors hover:bg-wash hover:text-oxblood'
+const menuItemActiveClass = 'text-oxblood'
 
 function LogoutIcon() {
   return (
@@ -127,7 +128,7 @@ function MoreNavMenu({ admin }: { admin: boolean }) {
     <div className="relative" ref={rootRef}>
       <button
         type="button"
-        className={`${iconButtonClass} ${menuActive ? navLinkActiveClass : ''}`}
+        className={`${iconButtonClass} ${menuActive ? iconButtonActiveClass : ''}`}
         aria-label="More"
         title="More"
         aria-expanded={open}
@@ -139,12 +140,12 @@ function MoreNavMenu({ admin }: { admin: boolean }) {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-20 mt-1 min-w-40 rounded-md border border-stone-200 bg-stone-50 p-1 shadow-sm"
+          className="absolute right-0 z-20 mt-2 min-w-44 border border-line-strong bg-surface p-1 shadow-md shadow-ink/5"
         >
           <Link
             to="/ocr-test"
             role="menuitem"
-            className={`${menuItemClass} ${ocrTestActive ? navLinkActiveClass : ''}`}
+            className={`${menuItemClass} ${ocrTestActive ? menuItemActiveClass : ''}`}
             onClick={() => setOpen(false)}
           >
             OCR test
@@ -152,7 +153,7 @@ function MoreNavMenu({ admin }: { admin: boolean }) {
           <Link
             to="/export"
             role="menuitem"
-            className={`${menuItemClass} ${exportActive ? navLinkActiveClass : ''}`}
+            className={`${menuItemClass} ${exportActive ? menuItemActiveClass : ''}`}
             onClick={() => setOpen(false)}
           >
             Export
@@ -160,7 +161,7 @@ function MoreNavMenu({ admin }: { admin: boolean }) {
           <Link
             to="/import"
             role="menuitem"
-            className={`${menuItemClass} ${importActive ? navLinkActiveClass : ''}`}
+            className={`${menuItemClass} ${importActive ? menuItemActiveClass : ''}`}
             onClick={() => setOpen(false)}
           >
             Import
@@ -169,7 +170,7 @@ function MoreNavMenu({ admin }: { admin: boolean }) {
             <Link
               to="/settings"
               role="menuitem"
-              className={`${menuItemClass} ${settingsActive ? navLinkActiveClass : ''}`}
+              className={`${menuItemClass} ${settingsActive ? menuItemActiveClass : ''}`}
               onClick={() => setOpen(false)}
             >
               <AdminMenuLabel>Settings</AdminMenuLabel>
@@ -179,7 +180,7 @@ function MoreNavMenu({ admin }: { admin: boolean }) {
             <Link
               to="/management"
               role="menuitem"
-              className={`${menuItemClass} ${managementActive ? navLinkActiveClass : ''}`}
+              className={`${menuItemClass} ${managementActive ? menuItemActiveClass : ''}`}
               onClick={() => setOpen(false)}
             >
               <AdminMenuLabel>Management</AdminMenuLabel>
@@ -283,7 +284,7 @@ export function RootLayout() {
 
   if (gate.kind === 'loading') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-stone-100 text-sm text-stone-500">
+      <div className="flex min-h-screen items-center justify-center bg-paper text-sm text-ink-soft">
         Loading...
       </div>
     )
@@ -291,8 +292,8 @@ export function RootLayout() {
 
   if (gate.kind === 'error') {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-stone-100 px-6 text-center">
-        <p className="text-sm text-red-600">{gate.message}</p>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-paper px-6 text-center">
+        <p className="text-sm text-madder">{gate.message}</p>
         <Button
           onClick={() => {
             setGate({ kind: 'loading' })
@@ -334,42 +335,42 @@ export function RootLayout() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-stone-100 text-stone-900">
-      <header className="border-b border-stone-200 bg-stone-50/95">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <Link to="/" className="flex items-center gap-2 font-semibold text-stone-950">
+    <div className="flex min-h-screen flex-col bg-paper text-ink">
+      <header className="border-b-3 border-double border-line-strong bg-paper">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
+          <Link
+            to="/"
+            className="flex items-center gap-2.5 font-display text-xl font-semibold tracking-tight text-ink transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-oxblood"
+          >
             <AppLogo appName={appName} accent={accent} />
             {appName}
           </Link>
           <div className="flex items-center gap-4">
-            <nav className="flex items-center gap-1">
+            <nav className="flex items-center gap-5">
               <Link
                 to="/"
                 className={navLinkClass}
                 activeOptions={{ exact: true }}
-                activeProps={{ className: `${navLinkClass} ${navLinkActiveClass}` }}
               >
                 Documents
               </Link>
               <Link
                 to="/upload"
                 className={navLinkClass}
-                activeProps={{ className: `${navLinkClass} ${navLinkActiveClass}` }}
               >
                 Upload
               </Link>
               <Link
                 to="/search"
                 className={navLinkClass}
-                activeProps={{ className: `${navLinkClass} ${navLinkActiveClass}` }}
               >
                 Deep Search
               </Link>
               <MoreNavMenu admin={admin} />
             </nav>
-            <div className="flex items-center gap-2 border-l border-stone-200 pl-4">
+            <div className="flex items-center gap-2 border-l border-line pl-4">
               {userDisplayName && (
-                <span className="max-w-40 truncate text-sm text-stone-600" title={userDisplayName}>
+                <span className="max-w-40 truncate text-sm text-ink-muted" title={userDisplayName}>
                   {userDisplayName}
                 </span>
               )}

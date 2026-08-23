@@ -21,7 +21,7 @@ import { Button } from '../components/ui'
 const PAGE_SIZE = 12
 
 const selectClassName =
-  'rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900'
+  'rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm outline-none focus:border-oxblood focus:ring-1 focus:ring-oxblood'
 
 const reprocessModes: ReprocessMode[] = ['auto', 'full', 'extraction']
 
@@ -203,12 +203,12 @@ export function IndexPage() {
     <section className="flex flex-col gap-6">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold text-stone-950">Documents</h2>
-          <p className="text-sm text-stone-500">Upload, search, and review AI-extracted metadata.</p>
+          <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">Documents</h2>
+          <p className="text-sm text-ink-soft">Upload, search, and review AI-extracted metadata.</p>
         </div>
         <Link
           to="/upload"
-          className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700"
+          className="rounded-xs bg-ink px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-oxblood"
         >
           Upload document
         </Link>
@@ -221,7 +221,7 @@ export function IndexPage() {
             placeholder="Search title, tags, purpose, summary..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            className="w-full rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm outline-none placeholder:text-stone-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
+            className="w-full rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood"
           />
           <select
             value={statusFilter}
@@ -243,7 +243,7 @@ export function IndexPage() {
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-stone-500">From date</span>
+            <span className="text-xs font-medium text-ink-soft">From date</span>
             <input
               type="date"
               value={dateFrom}
@@ -255,7 +255,7 @@ export function IndexPage() {
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-stone-500">To date</span>
+            <span className="text-xs font-medium text-ink-soft">To date</span>
             <input
               type="date"
               value={dateTo}
@@ -292,19 +292,19 @@ export function IndexPage() {
         </div>
       </div>
 
-      {loading && <p className="text-sm text-stone-500">Loading documents...</p>}
+      {loading && <p className="text-sm text-ink-soft">Loading documents...</p>}
       {(error || filterOptions.error) && (
-        <p className="text-sm text-red-600">{error || filterOptions.error}</p>
+        <p className="text-sm text-madder">{error || filterOptions.error}</p>
       )}
 
       {!loading && documents.length === 0 && (
-        <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50 py-12 text-center">
+        <div className="rounded-none border border-dashed border-line-strong bg-surface py-12 text-center">
           {hasActiveFilters ? (
-            <p className="text-sm text-stone-500">No documents match your filters.</p>
+            <p className="text-sm text-ink-soft">No documents match your filters.</p>
           ) : (
             <>
-              <p className="text-sm text-stone-500">No documents yet.</p>
-              <Link to="/upload" className="mt-1 inline-block text-sm font-medium text-gray-900 underline">
+              <p className="text-sm text-ink-soft">No documents yet.</p>
+              <Link to="/upload" className="mt-1 inline-block text-sm font-medium text-oxblood underline">
                 Upload your first document
               </Link>
             </>
@@ -312,13 +312,13 @@ export function IndexPage() {
         </div>
       )}
 
-      {message && <p className="text-sm text-green-700">{message}</p>}
+      {message && <p className="text-sm text-forest">{message}</p>}
 
       {!loading && documents.length > 0 && (
         <>
           {selectable && (
-            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-stone-200 bg-stone-50 px-4 py-3">
-              <span className="text-sm text-stone-600">
+            <div className="flex flex-wrap items-center gap-3 rounded-none border border-line bg-surface px-4 py-3">
+              <span className="text-sm text-ink-muted">
                 {selectedOnPage.length === 0
                   ? 'Select failed documents to reprocess.'
                   : `${selectedOnPage.length} selected`}

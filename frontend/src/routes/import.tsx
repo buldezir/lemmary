@@ -49,8 +49,8 @@ export function ImportPage() {
   return (
     <div className="mx-auto max-w-xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-stone-950">Import from Paperless-ngx</h1>
-        <p className="mt-1 text-sm text-stone-500">
+        <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">Import from Paperless-ngx</h1>
+        <p className="mt-1 text-sm text-ink-soft">
           Pull documents from an existing Paperless-ngx instance using its URL and API token. The
           remote token belongs to a specific ngx user, so imported documents are added to your
           account. Choose whether to keep remote metadata or reprocess files through OCR and AI. The
@@ -58,7 +58,7 @@ export function ImportPage() {
         </p>
       </div>
 
-      <form onSubmit={onSubmit} className="space-y-4 rounded-lg border border-stone-200 bg-stone-50 p-5">
+      <form onSubmit={onSubmit} className="space-y-4 rounded-none border border-line bg-surface p-5">
         <label className={labelClassName}>
           <span className={labelTextClassName}>Paperless-ngx URL</span>
           <input
@@ -88,10 +88,10 @@ export function ImportPage() {
           {modeOptions.map((option) => (
             <label
               key={option.value}
-              className={`flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 text-sm ${
+              className={`flex cursor-pointer items-start gap-2 rounded-xs border px-3 py-2 text-sm ${
                 mode === option.value
-                  ? 'border-stone-400 bg-white text-stone-800'
-                  : 'border-stone-200 bg-stone-50 text-stone-700'
+                  ? 'border-ink bg-bright text-ink'
+                  : 'border-line bg-surface text-ink-muted'
               }`}
             >
               <input
@@ -104,7 +104,7 @@ export function ImportPage() {
               />
               <span>
                 <span className="font-medium">{option.label}</span>
-                <span className="mt-0.5 block text-xs font-normal text-stone-500">
+                <span className="mt-0.5 block text-xs font-normal text-ink-soft">
                   {option.description}
                 </span>
               </span>
@@ -116,11 +116,11 @@ export function ImportPage() {
         </Button>
       </form>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-madder">{error}</p>}
 
       {result && (
-        <div className="space-y-2 rounded-lg border border-stone-200 bg-white p-5 text-sm text-stone-700">
-          <p className="font-medium text-stone-950">Import finished</p>
+        <div className="space-y-2 rounded-none border border-line bg-bright p-5 text-sm text-ink-muted">
+          <p className="font-medium text-ink">Import finished</p>
           <ul className="list-inside list-disc space-y-1">
             <li>Imported: {result.imported}</li>
             <li>Skipped duplicates: {result.skipped_duplicates}</li>
@@ -131,8 +131,8 @@ export function ImportPage() {
           </ul>
           {result.errors.length > 0 && (
             <div className="mt-3">
-              <p className="font-medium text-stone-950">Errors</p>
-              <ul className="mt-1 list-inside list-disc space-y-1 text-red-700">
+              <p className="font-medium text-ink">Errors</p>
+              <ul className="mt-1 list-inside list-disc space-y-1 text-madder">
                 {result.errors.map((msg) => (
                   <li key={msg}>{msg}</li>
                 ))}

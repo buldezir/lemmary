@@ -86,8 +86,8 @@ export function UploadAmazonPage() {
   return (
     <section className="flex flex-col gap-6">
       <div>
-        <h2 className="text-lg font-semibold text-stone-950">Import Amazon orders</h2>
-        <p className="mt-1 text-sm text-stone-500">
+        <h2 className="font-display text-xl font-semibold text-ink">Import Amazon orders</h2>
+        <p className="mt-1 text-sm text-ink-soft">
           Import an archive of your Amazon order history. Request it from Amazon under Account
           &rarr; Request your data &rarr; Your Orders; Amazon emails a download link once the export
           is ready. Only the invoice PDFs are imported — the CSV reports and delivery photos in the
@@ -97,10 +97,10 @@ export function UploadAmazonPage() {
 
       {!preview && !importing && (
         <label
-          className={`flex min-h-44 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed p-6 text-center transition-colors ${
+          className={`flex min-h-44 cursor-pointer flex-col items-center justify-center gap-1 rounded-none border border-dashed p-6 text-center transition-colors ${
             reading
-              ? 'border-stone-300 bg-stone-50'
-              : 'border-stone-300 bg-stone-50 hover:border-stone-400 hover:bg-white'
+              ? 'border-line-strong bg-surface'
+              : 'border-line-strong bg-surface hover:border-ink/50 hover:bg-bright'
           }`}
         >
           <input
@@ -111,20 +111,20 @@ export function UploadAmazonPage() {
             onChange={onArchiveSelected}
             className="hidden"
           />
-          <span className="text-sm font-medium text-stone-950">
+          <span className="text-sm font-medium text-ink">
             {reading ? 'Reading archive…' : 'Choose the order export (.zip)'}
           </span>
-          {!reading && <span className="text-xs text-stone-400">Nothing is imported yet</span>}
+          {!reading && <span className="text-xs text-ink-faint">Nothing is imported yet</span>}
         </label>
       )}
 
       {preview && !importing && (
-        <div className="flex flex-col gap-4 rounded-lg border border-stone-200 bg-white p-5">
+        <div className="flex flex-col gap-4 rounded-none border border-line bg-bright p-5">
           <div>
-            <p className="text-sm font-medium text-stone-950">
+            <p className="text-sm font-medium text-ink">
               {preview.file_name || 'Order export'}
             </p>
-            <p className="mt-1 text-sm text-stone-500">
+            <p className="mt-1 text-sm text-ink-soft">
               Found {plural(preview.pdf_count, 'PDF file')}: {preview.importable_count} new
               {preview.duplicate_count > 0 &&
                 `, ${preview.duplicate_count} already in your library`}
@@ -134,14 +134,14 @@ export function UploadAmazonPage() {
             </p>
           </div>
 
-          <ul className="max-h-64 divide-y divide-stone-100 overflow-y-auto rounded-md border border-stone-200">
+          <ul className="max-h-64 divide-y divide-line/50 overflow-y-auto rounded-xs border border-line">
             {preview.files.map((file) => (
               <li key={file.path} className="flex items-start justify-between gap-3 px-3 py-2">
                 <div className="min-w-0">
-                  <p className="truncate text-sm text-stone-950">{file.name}</p>
-                  <p className="truncate text-xs text-stone-400">{file.path}</p>
+                  <p className="truncate text-sm text-ink">{file.name}</p>
+                  <p className="truncate text-xs text-ink-faint">{file.path}</p>
                 </div>
-                <span className="shrink-0 text-xs text-stone-400">
+                <span className="shrink-0 text-xs text-ink-faint">
                   {file.oversized
                     ? 'Too large'
                     : file.duplicate
@@ -152,13 +152,13 @@ export function UploadAmazonPage() {
             ))}
           </ul>
 
-          <p className="text-sm font-medium text-stone-950">
+          <p className="text-sm font-medium text-ink">
             Do you actually want to import {plural(preview.pdf_count, 'file')} (duplicates will be
             ignored)?
           </p>
 
           {preview.importable_count === 0 && (
-            <p className="text-sm text-stone-500">
+            <p className="text-sm text-ink-soft">
               Every PDF in this archive is already in your library.
             </p>
           )}
@@ -175,22 +175,22 @@ export function UploadAmazonPage() {
       )}
 
       {importing && (
-        <div className="rounded-lg border border-stone-200 bg-white p-5">
-          <p className="text-sm font-medium text-stone-950">
+        <div className="rounded-none border border-line bg-bright p-5">
+          <p className="text-sm font-medium text-ink">
             Importing {progress.done} of {progress.total}…
           </p>
-          <p className="mt-1 text-sm text-stone-500">
+          <p className="mt-1 text-sm text-ink-soft">
             Imported documents are queued for OCR and AI processing.
           </p>
         </div>
       )}
 
       {result && (
-        <div className="flex flex-col gap-3 rounded-lg border border-stone-200 bg-white p-5">
-          <p className="text-sm font-medium text-stone-950">
+        <div className="flex flex-col gap-3 rounded-none border border-line bg-bright p-5">
+          <p className="text-sm font-medium text-ink">
             Imported {plural(result.imported, 'document')}.
           </p>
-          <ul className="text-sm text-stone-500">
+          <ul className="text-sm text-ink-soft">
             {result.skipped_duplicates > 0 && (
               <li>{plural(result.skipped_duplicates, 'duplicate')} ignored.</li>
             )}
@@ -200,19 +200,19 @@ export function UploadAmazonPage() {
             {result.failed > 0 && <li>{plural(result.failed, 'file')} failed.</li>}
           </ul>
           {result.errors.length > 0 && (
-            <ul className="flex flex-col gap-1 text-sm text-red-600">
+            <ul className="flex flex-col gap-1 text-sm text-madder">
               {result.errors.map((message) => (
                 <li key={message}>{message}</li>
               ))}
             </ul>
           )}
-          <Link to="/" className="text-sm font-medium text-gray-900 underline">
+          <Link to="/" className="text-sm font-medium text-oxblood underline">
             Open documents
           </Link>
         </div>
       )}
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-madder">{error}</p>}
     </section>
   )
 }

@@ -9,7 +9,7 @@ type Props = {
 }
 
 const buttonClassName =
-  'rounded-md border border-stone-300 bg-stone-50 px-3 py-1.5 text-sm font-medium text-stone-700 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40'
+  'rounded-xs border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-ink-muted transition-colors hover:bg-bright disabled:cursor-not-allowed disabled:opacity-40'
 
 export function Pagination({ page, totalPages, totalItems, pageSize, onPageChange }: Props) {
   if (totalPages <= 1) {
@@ -22,7 +22,7 @@ export function Pagination({ page, totalPages, totalItems, pageSize, onPageChang
 
   return (
     <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
-      <p className="text-sm text-stone-500">
+      <p className="font-mono text-xs tabular-nums text-ink-soft">
         Showing {start}–{end} of {totalItems}
       </p>
 
@@ -42,15 +42,15 @@ export function Pagination({ page, totalPages, totalItems, pageSize, onPageChang
 
           return (
             <span key={pageNumber} className="flex items-center gap-1">
-              {showEllipsis && <span className="px-1 text-sm text-stone-400">…</span>}
+              {showEllipsis && <span className="px-1 text-sm text-ink-faint">…</span>}
               <button
                 type="button"
                 onClick={() => onPageChange(pageNumber)}
                 aria-current={pageNumber === page ? 'page' : undefined}
-                className={`min-w-9 rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
+                className={`min-w-9 rounded-xs px-2 py-1.5 text-sm font-medium transition-colors ${
                   pageNumber === page
-                    ? 'bg-gray-900 text-white hover:bg-gray-700'
-                    : 'text-stone-600 hover:bg-stone-100'
+                    ? 'bg-ink text-paper hover:bg-oxblood'
+                    : 'text-ink-muted hover:text-oxblood'
                 }`}
               >
                 {pageNumber}

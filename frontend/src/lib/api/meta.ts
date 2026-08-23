@@ -1,7 +1,7 @@
 import { apiFetch } from '../apiClient'
 
 export const DEFAULT_APP_NAME = 'Paperless Go'
-export const DEFAULT_ACCENT = '#111827'
+export const DEFAULT_ACCENT = '#7a2e26'
 
 export type AppMeta = {
   appName: string

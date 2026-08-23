@@ -16,10 +16,10 @@ function GitHubIcon() {
 
 export function AppFooter() {
   return (
-    <footer className="mt-auto border-t border-stone-200/60 py-4 text-center text-xs text-stone-400">
+    <footer className="mt-auto border-t border-line py-5 text-center text-[11px] uppercase tracking-[0.14em] text-ink-soft">
       <p className="inline-flex items-center">
         Paperless-Go
-        <span className="mx-2 text-stone-300" aria-hidden="true">
+        <span className="mx-2 text-line-strong" aria-hidden="true">
           ·
         </span>
         <a
@@ -28,11 +28,11 @@ export function AppFooter() {
           rel="noopener noreferrer"
           aria-label="Documentation"
           title="Documentation"
-          className="inline-flex transition-colors hover:text-stone-600"
+          className="inline-flex transition-colors hover:text-oxblood"
         >
           Documentation
         </a>
-        <span className="mx-2 text-stone-300" aria-hidden="true">
+        <span className="mx-2 text-line-strong" aria-hidden="true">
           ·
         </span>
         <a
@@ -41,7 +41,7 @@ export function AppFooter() {
           rel="noopener noreferrer"
           aria-label="GitHub repository"
           title="GitHub"
-          className="inline-flex transition-colors hover:text-stone-600"
+          className="inline-flex transition-colors hover:text-oxblood"
         >
           <GitHubIcon />
         </a>

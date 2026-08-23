@@ -2,16 +2,18 @@ import type { ButtonHTMLAttributes } from 'react'
 import { accentContrastText } from '../lib/accent'
 
 export const inputClassName =
-  'w-full rounded-md border border-stone-300 bg-stone-50 px-3 py-2 text-sm outline-none placeholder:text-stone-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900'
+  'w-full rounded-xs border border-line-strong bg-bright px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood'
 export const labelClassName = 'flex flex-col gap-1'
-export const labelTextClassName = 'text-xs font-medium text-stone-500'
-export const sectionClassName = 'rounded-lg border border-stone-200 bg-stone-50 p-5'
-export const sectionTitleClassName = 'mb-4 text-sm font-semibold text-stone-950'
+export const labelTextClassName =
+  'text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-soft'
+export const sectionClassName = 'border border-line bg-surface p-6'
+export const sectionTitleClassName =
+  'mb-4 border-b border-line pb-2 font-display text-lg font-semibold text-ink'
 
 const buttonVariantClassName = {
-  primary: 'bg-gray-900 text-white hover:bg-gray-700',
-  secondary: 'border border-stone-300 bg-white text-stone-950 hover:bg-stone-100',
-  danger: 'border border-red-300 bg-red-50 text-red-700 hover:bg-red-100',
+  primary: 'bg-ink text-paper hover:bg-oxblood',
+  secondary: 'border border-line-strong bg-surface text-ink hover:border-ink hover:bg-bright',
+  danger: 'border border-madder/40 bg-madder/5 text-madder hover:bg-madder/10',
 } as const
 
 const buttonSizeClassName = {
@@ -36,7 +38,7 @@ export function Button({
   return (
     <button
       type={type}
-      className={`rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${buttonSizeClassName[size]} ${buttonVariantClassName[variant]} ${className}`}
+      className={`rounded-xs font-medium tracking-wide transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood disabled:cursor-not-allowed disabled:opacity-50 ${buttonSizeClassName[size]} ${buttonVariantClassName[variant]} ${className}`}
       {...props}
     />
   )
@@ -46,7 +48,7 @@ export function Button({
 export function AppLogo({ appName, accent }: { appName: string; accent: string }) {
   return (
     <span
-      className="flex h-7 w-7 items-center justify-center rounded-md text-sm"
+      className="flex h-7 w-7 items-center justify-center font-display text-sm font-semibold"
       style={{ backgroundColor: accent, color: accentContrastText(accent) }}
     >
       {appName.trim().charAt(0).toUpperCase() || 'P'}

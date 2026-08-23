@@ -15,7 +15,7 @@ type Props = {
 }
 
 const inputClassName =
-  'w-full rounded-md border border-stone-300 bg-stone-50 py-2 pr-8 pl-3 text-sm outline-none placeholder:text-stone-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900'
+  'w-full rounded-xs border border-line-strong bg-surface py-2 pr-8 pl-3 text-sm outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood'
 
 function normalize(value: string) {
   return value.trim().toLowerCase()
@@ -124,7 +124,7 @@ export function FilterCombobox({
 
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={inputId} className="text-xs font-medium text-stone-500">
+      <label htmlFor={inputId} className="text-xs font-medium text-ink-soft">
         {label}
       </label>
       <div className="relative" ref={rootRef}>
@@ -153,7 +153,7 @@ export function FilterCombobox({
           onKeyDown={onKeyDown}
           className={inputClassName}
         />
-        <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-stone-400" aria-hidden="true">
+        <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-ink-faint" aria-hidden="true">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 20 20"
@@ -171,10 +171,10 @@ export function FilterCombobox({
           <ul
             id={listboxId}
             role="listbox"
-            className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-stone-200 bg-stone-50 py-1 shadow-sm"
+            className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xs border border-line bg-surface py-1 shadow-sm"
           >
             {filteredOptions.length === 0 ? (
-              <li className="px-3 py-1.5 text-sm text-stone-400">No matches</li>
+              <li className="px-3 py-1.5 text-sm text-ink-faint">No matches</li>
             ) : (
               filteredOptions.map((option, index) => {
                 const selected = option.value === value
@@ -187,7 +187,7 @@ export function FilterCombobox({
                     role="option"
                     aria-selected={selected}
                     className={`cursor-pointer px-3 py-1.5 text-sm ${
-                      highlighted ? 'bg-stone-200/80 text-stone-950' : 'text-stone-700'
+                      highlighted ? 'bg-wash text-ink' : 'text-ink-muted'
                     } ${selected ? 'font-medium' : ''}`}
                     onMouseEnter={() => setHighlightedIndex(index)}
                     onMouseDown={(event) => {

@@ -23,9 +23,9 @@ const pendingMethods: LoginMethods = { password: true, oauth: [] }
 function MethodSeparator() {
   return (
     <div className="my-5 flex items-center gap-3" aria-hidden="true">
-      <span className="h-px flex-1 bg-stone-200" />
-      <span className="text-xs font-medium text-stone-400">or</span>
-      <span className="h-px flex-1 bg-stone-200" />
+      <span className="h-px flex-1 bg-wash" />
+      <span className="text-xs font-medium text-ink-faint">or</span>
+      <span className="h-px flex-1 bg-wash" />
     </div>
   )
 }
@@ -69,12 +69,17 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-stone-100">
+    <div className="flex min-h-screen flex-col bg-paper">
       <div className="flex flex-1 items-center justify-center px-6">
-        <section className="w-full max-w-sm rounded-lg border border-stone-200 bg-stone-50 p-6 shadow-sm">
-          <div className="mb-6 flex items-center gap-2">
+        <section className="w-full max-w-sm border border-line-strong bg-surface p-8 shadow-sm shadow-ink/5">
+          <div className="mb-7 flex flex-col items-center gap-3 border-b border-line pb-6 text-center">
             <AppLogo appName={appName} accent={accent} />
-            <h1 className="text-lg font-semibold text-stone-950">{appName}</h1>
+            <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">
+              {appName}
+            </h1>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-ink-soft">
+              Personal document archive
+            </p>
           </div>
 
           {passwordEnabled && (
@@ -103,7 +108,7 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
                 />
               </label>
 
-              {error && <p className="text-sm text-red-600">{error}</p>}
+              {error && <p className="text-sm text-madder">{error}</p>}
 
               <Button type="submit" disabled={busy}>
                 {submitting ? 'Signing in...' : 'Sign in'}
@@ -114,7 +119,7 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
           {oauth.length > 0 && (
             <>
               {passwordEnabled && <MethodSeparator />}
-              {!passwordEnabled && error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+              {!passwordEnabled && error && <p className="mb-4 text-sm text-madder">{error}</p>}
               <div className="flex flex-col gap-2">
                 {oauth.map((provider) => (
                   <Button

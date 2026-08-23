@@ -229,16 +229,16 @@ export function UploadFilesPage() {
   return (
     <section className="flex flex-col gap-6">
       <div>
-        <h2 className="text-lg font-semibold text-stone-950">Upload documents</h2>
-        <p className="text-sm text-stone-500">Supported formats: {SUPPORTED_FORMATS_LABEL}.</p>
+        <h2 className="font-display text-xl font-semibold text-ink">Upload documents</h2>
+        <p className="text-sm text-ink-soft">Supported formats: {SUPPORTED_FORMATS_LABEL}.</p>
       </div>
 
       <form className="flex flex-col gap-4" onSubmit={onSubmit}>
         <label
-          className={`flex min-h-44 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed p-6 text-center transition-colors ${
+          className={`flex min-h-44 cursor-pointer flex-col items-center justify-center gap-1 rounded-none border border-dashed p-6 text-center transition-colors ${
             dragging
-              ? 'border-gray-900 bg-white'
-              : 'border-stone-300 bg-stone-50 hover:border-stone-400 hover:bg-white'
+              ? 'border-ink bg-bright'
+              : 'border-line-strong bg-surface hover:border-ink/50 hover:bg-bright'
           }`}
           onDragOver={onDragOver}
           onDragEnter={onDragEnter}
@@ -253,8 +253,8 @@ export function UploadFilesPage() {
             onChange={(event) => selectFiles(event.target.files)}
             className="hidden"
           />
-          <span className="text-sm font-medium text-stone-950">{dropLabel}</span>
-          {files.length === 0 && <span className="text-xs text-stone-400">or drop them here</span>}
+          <span className="text-sm font-medium text-ink">{dropLabel}</span>
+          {files.length === 0 && <span className="text-xs text-ink-faint">or drop them here</span>}
         </label>
 
         {files.length > 0 && (
@@ -264,19 +264,19 @@ export function UploadFilesPage() {
               return (
                 <li
                   key={fileKey(file)}
-                  className="flex items-start justify-between gap-3 rounded-md border border-stone-200 bg-white px-3 py-2"
+                  className="flex items-start justify-between gap-3 rounded-xs border border-line bg-bright px-3 py-2"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-stone-950">{file.name}</p>
-                    <p className="text-xs text-stone-400">{formatBytes(file.size)}</p>
+                    <p className="truncate text-sm font-medium text-ink">{file.name}</p>
+                    <p className="text-xs text-ink-faint">{formatBytes(file.size)}</p>
                     {fileError && (
-                      <div className="mt-1 flex flex-col gap-1 text-sm text-red-600">
+                      <div className="mt-1 flex flex-col gap-1 text-sm text-madder">
                         <p>{fileError.message}</p>
                         {fileError.duplicateOfId && (
                           <Link
                             to="/document/$documentId"
                             params={{ documentId: fileError.duplicateOfId }}
-                            className="font-medium text-gray-900 underline"
+                            className="font-medium text-oxblood underline"
                           >
                             Open existing document
                           </Link>
@@ -289,7 +289,7 @@ export function UploadFilesPage() {
                     onClick={() => removeFile(index)}
                     disabled={uploading}
                     aria-label={`Remove ${file.name}`}
-                    className="shrink-0 text-xs font-medium text-stone-500 hover:text-stone-900 disabled:opacity-50"
+                    className="shrink-0 text-xs font-medium text-ink-soft hover:text-ink disabled:opacity-50"
                   >
                     Remove
                   </button>
@@ -299,7 +299,7 @@ export function UploadFilesPage() {
           </ul>
         )}
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-madder">{error}</p>}
 
         <Button type="submit" disabled={uploading || files.length === 0}>
           {uploading

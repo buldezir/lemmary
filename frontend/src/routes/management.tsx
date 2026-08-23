@@ -13,7 +13,7 @@ import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
 import { Button, labelTextClassName, sectionClassName, sectionTitleClassName } from '../components/ui'
 
 const selectClassName =
-  'rounded-md border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900'
+  'rounded-xs border border-line-strong bg-bright px-3 py-2 text-sm outline-none focus:border-oxblood focus:ring-1 focus:ring-oxblood'
 
 // How often the in-flight job count is refreshed while the page is open.
 const activeJobsPollMs = 5_000
@@ -204,8 +204,8 @@ export function ManagementPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-stone-950">Management</h1>
-        <p className="mt-1 text-sm text-stone-500">
+        <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">Management</h1>
+        <p className="mt-1 text-sm text-ink-soft">
           Maintenance tasks that run over the whole library. Admin only.
         </p>
       </div>
@@ -213,7 +213,7 @@ export function ManagementPage() {
       <div className="flex flex-col gap-5">
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>Failed processing</h2>
-          <p className="text-xs text-stone-500">
+          <p className="text-xs text-ink-soft">
             Queues a fresh job for documents whose processing failed. Originals are never
             touched. Jobs run one at a time, so a batch drains gradually — reprocess in batches
             rather than all at once to keep OCR and AI spend under control.
@@ -257,7 +257,7 @@ export function ManagementPage() {
                 : `Reprocess ${Math.min(reprocessBatch, failedCount ?? 0)} failed`}
             </Button>
           </div>
-          <p className="mt-3 text-xs text-stone-500">
+          <p className="mt-3 text-xs text-ink-soft">
             {!failedCountLoaded
               ? 'Loading the failed document count...'
               : failedCount === null
@@ -271,7 +271,7 @@ export function ManagementPage() {
 
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>Duplicates</h2>
-          <p className="text-xs text-stone-500">
+          <p className="text-xs text-ink-soft">
             Backfills missing checksums and fingerprints, then marks exact duplicates (and near
             duplicates, if near-duplicate detection is enabled in Settings).
           </p>
@@ -280,7 +280,7 @@ export function ManagementPage() {
               {scanning ? 'Scanning...' : 'Scan for duplicates'}
             </Button>
             {scanResult && (
-              <p className="text-xs text-stone-500">
+              <p className="text-xs text-ink-soft">
                 Backfilled {scanResult.checksum_backfilled} checksums,{' '}
                 {scanResult.fingerprints_filled} fingerprints.
               </p>
@@ -290,7 +290,7 @@ export function ManagementPage() {
 
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>Stale data</h2>
-          <p className="text-xs text-stone-500">
+          <p className="text-xs text-ink-soft">
             Deletes tags, correspondents and document types that no document points at any more —
             left behind by deleted documents, renames, or an aborted import. Documents are never
             touched. Blocked while documents are processing, so entities a job is about to attach
@@ -314,7 +314,7 @@ export function ManagementPage() {
 
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>Search index</h2>
-          <p className="text-xs text-stone-500">
+          <p className="text-xs text-ink-soft">
             Full-text search is a derived Bleve index. Rebuild it if search results look stale after
             imports or a crash.
           </p>
@@ -325,8 +325,8 @@ export function ManagementPage() {
           </div>
         </section>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        {success && <p className="text-sm text-green-700">{success}</p>}
+        {error && <p className="text-sm text-madder">{error}</p>}
+        {success && <p className="text-sm text-forest">{success}</p>}
       </div>
     </div>
   )

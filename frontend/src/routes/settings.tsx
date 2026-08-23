@@ -242,7 +242,7 @@ export function SettingsPage() {
   }
 
   if (loading || !form) {
-    return <p className="text-sm text-stone-500">{error || 'Loading settings...'}</p>
+    return <p className="text-sm text-ink-soft">{error || 'Loading settings...'}</p>
   }
 
   const llmProviders = providers.filter((item) => isLLMProvider(item.sdk))
@@ -250,8 +250,8 @@ export function SettingsPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-stone-950">Settings</h1>
-        <p className="mt-1 text-sm text-stone-500">
+        <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">Settings</h1>
+        <p className="mt-1 text-sm text-ink-soft">
           Runtime configuration for OCR, AI, and the worker. Changes apply immediately.
         </p>
       </div>
@@ -259,15 +259,15 @@ export function SettingsPage() {
       <section className={`${sectionClassName} mb-5`}>
         <h2 className={sectionTitleClassName}>Providers</h2>
         <ul className="mb-4 flex flex-col gap-2">
-          {providers.length === 0 && <li className="text-sm text-stone-500">No providers yet.</li>}
+          {providers.length === 0 && <li className="text-sm text-ink-soft">No providers yet.</li>}
           {providers.map((item) => (
             <li
               key={item.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-stone-200 bg-white px-3 py-2"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-xs border border-line bg-bright px-3 py-2"
             >
               <div>
-                <p className="text-sm font-medium text-stone-950">{item.alias}</p>
-                <p className="text-xs text-stone-500">
+                <p className="text-sm font-medium text-ink">{item.alias}</p>
+                <p className="text-xs text-ink-soft">
                   {sdkLabel(item.sdk)}
                   {item.base_url ? ` · ${item.base_url}` : ''}
                   {item.api_key_set ? ' · key set' : ' · missing key'}
@@ -293,7 +293,7 @@ export function SettingsPage() {
                 <Button
                   variant="secondary"
                   size="xs"
-                  className="text-red-700 hover:bg-red-50"
+                  className="text-madder hover:bg-madder/10"
                   onClick={() => void onDeleteProvider(item.id)}
                 >
                   Delete
@@ -512,7 +512,7 @@ export function SettingsPage() {
               />
             </label>
           </div>
-          <p className="mt-3 text-xs text-stone-500">
+          <p className="mt-3 text-xs text-ink-soft">
             Worker cron schedule stays in <code className="font-mono">WORKER_CRON_EXPR</code> in{' '}
             <code className="font-mono">.env</code>.
           </p>
@@ -521,7 +521,7 @@ export function SettingsPage() {
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>Duplicates</h2>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="flex items-center gap-2 text-sm text-stone-700 sm:col-span-2">
+            <label className="flex items-center gap-2 text-sm text-ink-muted sm:col-span-2">
               <input
                 type="checkbox"
                 checked={form.near_duplicate_detection_enabled}
@@ -542,18 +542,18 @@ export function SettingsPage() {
               />
             </label>
           </div>
-          <p className="mt-3 text-xs text-stone-500">
+          <p className="mt-3 text-xs text-ink-soft">
             Exact file duplicates (same checksum) are always rejected on upload. Near-duplicate
             matching compares OCR text and is off by default. Scan existing documents from{' '}
-            <Link to="/management" className="underline hover:text-stone-950">
+            <Link to="/management" className="underline hover:text-oxblood">
               Management
             </Link>
             .
           </p>
         </section>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        {success && <p className="text-sm text-green-700">{success}</p>}
+        {error && <p className="text-sm text-madder">{error}</p>}
+        {success && <p className="text-sm text-forest">{success}</p>}
 
         <SaveSettingsButton saving={saving} />
       </form>
