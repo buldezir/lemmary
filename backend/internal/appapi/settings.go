@@ -69,17 +69,26 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 			return writeError(e, http.StatusBadRequest, "Invalid request body.")
 		}
 
-		record, err := config.FindSettingsRecord(app)
+		// Load + patch + save in one transaction: settings is a singleton record
+		// saved whole, so two concurrent PATCHes would otherwise silently revert
+		// each other's fields.
+		var patchErr error
+		err := app.RunInTransaction(func(txApp core.App) error {
+			record, err := config.FindSettingsRecord(txApp)
+			if err != nil {
+				return err
+			}
+			if err := applySettingsPatch(txApp, record, req); err != nil {
+				patchErr = err
+				return err
+			}
+			return txApp.Save(record)
+		})
 		if err != nil {
-			app.Logger().Error("load settings record failed", slog.Any("error", err))
-			return writeError(e, http.StatusInternalServerError, "Settings are unavailable.")
-		}
-
-		if err := applySettingsPatch(app, record, req); err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
-		}
-
-		if err := app.Save(record); err != nil {
+			if patchErr != nil {
+				return writeError(e, http.StatusBadRequest, patchErr.Error())
+			}
+			app.Logger().Error("save settings failed", slog.Any("error", err))
 			return writeError(e, http.StatusInternalServerError, "Failed to save settings.")
 		}
 

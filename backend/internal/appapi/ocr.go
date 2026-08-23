@@ -124,7 +124,10 @@ func handleOCRTest(app core.App, rt *config.Runtime) func(*core.RequestEvent) er
 			providerName = ocrProvider.Name()
 		}
 		if err != nil {
-			return writeError(e, 500, err.Error())
+			// Extraction errors can embed server paths and raw upstream response
+			// bodies; log the detail, return a generic message.
+			app.Logger().Error("ocr test failed", "provider", providerName, "error", err)
+			return writeError(e, 500, "OCR extraction failed; check the server logs for details.")
 		}
 
 		return writeJSON(e, 200, ocrTestResponse{

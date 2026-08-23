@@ -22,7 +22,13 @@ func handleExportDocuments(app core.App) func(*core.RequestEvent) error {
 			return writeError(e, http.StatusBadRequest, err.Error())
 		}
 
-		userID := e.Auth.Id
+		// Superuser sessions export their paired user's archive; e.Auth.Id would
+		// be the _superusers record id, which matches no document and would
+		// yield a silently empty zip.
+		userID, err := resolveOwnerUserID(app, e)
+		if err != nil {
+			return writeOwnerError(e, err)
+		}
 		records, err := listOwnedDocuments(app, userID)
 		if err != nil {
 			app.Logger().Error("export list documents failed", "error", err)

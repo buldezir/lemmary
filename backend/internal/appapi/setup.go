@@ -2,6 +2,7 @@ package appapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -11,6 +12,8 @@ import (
 	"paperless-go/backend/internal/aiprovider"
 	"paperless-go/backend/internal/config"
 )
+
+var errAdminExists = errors.New("an admin account already exists")
 
 type setupStatusResponse struct {
 	NeedsAdmin    bool `json:"needs_admin"`
@@ -100,14 +103,30 @@ func handlePostSetupAdmin(app core.App) func(*core.RequestEvent) error {
 		record.SetPassword(req.Password)
 		record.SetVerified(true)
 
-		if err := app.Save(record); err != nil {
-			return writeError(e, http.StatusBadRequest, "Failed to create admin account: "+err.Error())
-		}
-
-		userRecord, err := UpsertPairedUser(app, email, req.Password)
+		// This endpoint is unauthenticated by design, so the needs-admin check
+		// and the create must be atomic: two racing requests would otherwise
+		// both pass the guard at the top and both mint a superuser.
+		var userRecord *core.Record
+		err = app.RunInTransaction(func(txApp core.App) error {
+			stillNeeded, err := needsAdminSetup(txApp)
+			if err != nil {
+				return err
+			}
+			if !stillNeeded {
+				return errAdminExists
+			}
+			if err := txApp.Save(record); err != nil {
+				return err
+			}
+			userRecord, err = UpsertPairedUser(txApp, email, req.Password)
+			return err
+		})
 		if err != nil {
-			_ = app.Delete(record)
-			return writeError(e, http.StatusBadRequest, "Failed to create paired user account: "+err.Error())
+			if errors.Is(err, errAdminExists) {
+				return writeError(e, http.StatusConflict, "An admin account already exists.")
+			}
+			app.Logger().Error("setup admin creation failed", "error", err)
+			return writeError(e, http.StatusBadRequest, "Failed to create admin account.")
 		}
 
 		return writeJSON(e, http.StatusCreated, map[string]string{

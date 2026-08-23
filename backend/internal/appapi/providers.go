@@ -123,11 +123,16 @@ func handlePatchProvider(app core.App) func(*core.RequestEvent) error {
 				return writeError(e, http.StatusBadRequest, "sdk must be openai, openrouter, google_vision, or mistral.")
 			}
 			if !aiprovider.IsLLM(sdk) {
-				if settings, err := config.FindSettingsRecord(app); err == nil {
-					for _, field := range []string{"extract_provider_id", "chat_provider_id", "search_provider_id"} {
-						if strings.TrimSpace(settings.GetString(field)) == record.Id {
-							return writeError(e, http.StatusConflict, "Provider is bound to extraction, chat, or search and must stay an LLM SDK (openai, openrouter, or mistral).")
-						}
+				// A failed settings lookup must not skip this guard: proceeding
+				// would let a provider bound to LLM features become a non-LLM SDK.
+				settings, err := config.FindSettingsRecord(app)
+				if err != nil {
+					app.Logger().Error("provider patch: settings lookup failed", "error", err)
+					return writeError(e, http.StatusInternalServerError, "Failed to verify provider usage.")
+				}
+				for _, field := range []string{"extract_provider_id", "chat_provider_id", "search_provider_id"} {
+					if strings.TrimSpace(settings.GetString(field)) == record.Id {
+						return writeError(e, http.StatusConflict, "Provider is bound to extraction, chat, or search and must stay an LLM SDK (openai, openrouter, or mistral).")
 					}
 				}
 			}
@@ -163,8 +168,15 @@ func handleDeleteProvider(app core.App) func(*core.RequestEvent) error {
 		if err != nil {
 			return writeError(e, http.StatusNotFound, "Provider not found.")
 		}
+		// A failed settings lookup must not skip the in-use check: deleting a
+		// provider still bound to OCR/extraction/chat/search leaves dangling
+		// *_provider_id values in settings.
 		settings, err := config.FindSettingsRecord(app)
-		if err == nil && aiprovider.ReferencedBySettings(settings, id) {
+		if err != nil {
+			app.Logger().Error("provider delete: settings lookup failed", "error", err)
+			return writeError(e, http.StatusInternalServerError, "Failed to verify provider usage.")
+		}
+		if aiprovider.ReferencedBySettings(settings, id) {
 			return writeError(e, http.StatusConflict, "Provider is assigned to OCR, extraction, chat, or search. Unassign it first.")
 		}
 		if err := app.Delete(record); err != nil {

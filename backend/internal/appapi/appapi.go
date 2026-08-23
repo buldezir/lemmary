@@ -26,7 +26,11 @@ func Register(app core.App, rt *config.Runtime, idx *fulltext.Index) {
 			g.POST("/search", bindAuth(handleDeepSearch(app, rt, idx)))
 			g.POST("/search/reindex", bindAdmin(handleSearchReindex(app, idx)))
 			g.GET("/ocr/providers", bindAuth(handleOCRProviders(app, rt)))
-			g.POST("/ocr/test", bindAuth(handleOCRTest(app, rt)))
+			// Without a route-level limit the multipart parse consumes the whole
+			// request under PocketBase's 32MB default before the handler's own
+			// 10MB check can reject it.
+			g.POST("/ocr/test", bindAuth(handleOCRTest(app, rt))).
+				Bind(apis.BodyLimit(ocrTestMaxFileBytes + (1 << 20)))
 			g.GET("/settings", bindAdmin(handleGetSettings(app, rt)))
 			g.PATCH("/settings", bindAdmin(handlePatchSettings(app, rt)))
 			g.GET("/providers", bindAdmin(handleListProviders(app)))
