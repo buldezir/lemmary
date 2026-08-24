@@ -242,3 +242,39 @@ func writeChatJSON(w http.ResponseWriter, content string) {
 		}},
 	})
 }
+
+func TestBuildExtractionSystemPromptForbidsPartialDates(t *testing.T) {
+	t.Parallel()
+	prompt := buildExtractionSystemPrompt("", ExtractionCatalog{})
+
+	for _, want := range []string{
+		"complete calendar date in YYYY-MM-DD form",
+		`Never return a bare year ("2026")`,
+		`a year and month ("2026-03")`,
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("expected system prompt to contain %q, got:\n%s", want, prompt)
+		}
+	}
+}
+
+func TestExtractMetadataCoercesPartialDocumentDate(t *testing.T) {
+	t.Parallel()
+	// Issue #28: a bare year used to fail the whole extraction.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeChatJSON(w, `{"title":"Invoice 001","document_date":"2026","confidence":0.9}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	client := NewOpenAIClient("mistral", "test-key", "mistral-small-latest", srv.URL, "v1", "", 5*time.Second, slog.Default())
+	metadata, err := client.ExtractMetadata(context.Background(), "Invoice from Amazon", ExtractionCatalog{})
+	if err != nil {
+		t.Fatalf("ExtractMetadata: %v", err)
+	}
+	if metadata.DocumentDate != "2026-01-01" {
+		t.Fatalf("expected date 2026-01-01, got %q", metadata.DocumentDate)
+	}
+	if metadata.Title != "Invoice 001" {
+		t.Fatalf("expected title to survive, got %q", metadata.Title)
+	}
+}

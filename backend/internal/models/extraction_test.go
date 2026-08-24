@@ -102,3 +102,52 @@ func TestParseExtractedMetadataTranslatedFields(t *testing.T) {
 		t.Fatalf("expected translated tags, got %v", metadata.TagsTranslated)
 	}
 }
+
+func TestParseExtractedMetadataCoercesPartialDate(t *testing.T) {
+	// Issue #28: a model that answers a bare year must not fail the extraction.
+	raw := `{"title":"Invoice 001","document_date":"2026","confidence":0.9}`
+
+	metadata, notes, err := models.ParseExtractedMetadataWithNotes(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if metadata.DocumentDate != "2026-01-01" {
+		t.Fatalf("expected date 2026-01-01, got %q", metadata.DocumentDate)
+	}
+	if len(notes) != 1 {
+		t.Fatalf("expected one repair note, got %v", notes)
+	}
+}
+
+func TestParseExtractedMetadataDropsUnusableDate(t *testing.T) {
+	raw := `{"title":"Invoice 001","document_date":"sometime last spring","confidence":0.9}`
+
+	metadata, notes, err := models.ParseExtractedMetadataWithNotes(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if metadata.Title != "Invoice 001" {
+		t.Fatalf("expected the rest of the extraction to survive, got title %q", metadata.Title)
+	}
+	if metadata.DocumentDate != "" {
+		t.Fatalf("expected the unusable date to be dropped, got %q", metadata.DocumentDate)
+	}
+	if len(notes) != 1 {
+		t.Fatalf("expected one repair note, got %v", notes)
+	}
+}
+
+func TestParseExtractedMetadataValidDateReportsNoNotes(t *testing.T) {
+	raw := `{"title":"Invoice 001","document_date":"2024-03-15","confidence":0.9}`
+
+	metadata, notes, err := models.ParseExtractedMetadataWithNotes(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if metadata.DocumentDate != "2024-03-15" {
+		t.Fatalf("expected date to pass through, got %q", metadata.DocumentDate)
+	}
+	if len(notes) != 0 {
+		t.Fatalf("expected no repair notes, got %v", notes)
+	}
+}
