@@ -39,25 +39,58 @@ func (m *ExtractedMetadata) Validate() error {
 	if m.Confidence < 0 || m.Confidence > 1 {
 		return fmt.Errorf("confidence must be between 0 and 1")
 	}
+	// Post-normalization invariant. ParseExtractedMetadata runs Normalize
+	// first, so this only fires for metadata built directly in code.
 	if m.DocumentDate != "" {
-		if _, err := time.Parse("2006-01-02", m.DocumentDate); err != nil {
+		if _, err := time.Parse(documentDateLayout, m.DocumentDate); err != nil {
 			return fmt.Errorf("document_date must be YYYY-MM-DD: %w", err)
 		}
 	}
 	return nil
 }
 
+// Normalize repairs best-effort fields in place and returns human-readable
+// notes about anything it changed or dropped, so a caller with a logger can
+// report the repair.
+//
+// document_date is optional metadata: a model that answers "2026" instead of a
+// full calendar date should not sink an otherwise good extraction, so an
+// unusable value is dropped rather than turned into an error.
+func (m *ExtractedMetadata) Normalize() []string {
+	var notes []string
+
+	raw := strings.TrimSpace(m.DocumentDate)
+	normalized, ok := NormalizeDocumentDate(raw)
+	switch {
+	case !ok:
+		notes = append(notes, fmt.Sprintf("document_date %q is not a usable date; dropped", raw))
+	case normalized != m.DocumentDate && raw != "":
+		notes = append(notes, fmt.Sprintf("document_date %q normalized to %q", raw, normalized))
+	}
+	m.DocumentDate = normalized
+
+	return notes
+}
+
 func ParseExtractedMetadata(raw string) (*ExtractedMetadata, error) {
+	metadata, _, err := ParseExtractedMetadataWithNotes(raw)
+	return metadata, err
+}
+
+// ParseExtractedMetadataWithNotes parses a model response and additionally
+// returns the notes from Normalize, for callers that can log them.
+func ParseExtractedMetadataWithNotes(raw string) (*ExtractedMetadata, []string, error) {
 	raw = normalizeExtractionJSON(raw)
 
 	var metadata ExtractedMetadata
 	if err := json.Unmarshal([]byte(raw), &metadata); err != nil {
-		return nil, fmt.Errorf("invalid extraction JSON: %w", err)
+		return nil, nil, fmt.Errorf("invalid extraction JSON: %w", err)
 	}
+	notes := metadata.Normalize()
 	if err := metadata.Validate(); err != nil {
-		return nil, err
+		return nil, notes, err
 	}
-	return &metadata, nil
+	return &metadata, notes, nil
 }
 
 func normalizeExtractionJSON(raw string) string {

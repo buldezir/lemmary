@@ -42,7 +42,7 @@ func buildExtractionSystemPrompt(resultLanguage string, catalog ExtractionCatalo
 Return ONLY valid JSON with these fields:
 - title (string, required)
 - purpose (string)
-- document_date (string, YYYY-MM-DD or empty)
+- document_date (string, the date printed on the document, formatted exactly as YYYY-MM-DD, or empty)
 - document_type (string)
 - correspondent (string, primary sender or issuer)
 - tags (array of strings)
@@ -68,6 +68,8 @@ Also include these fields translated into %s:
 	prompt += formatExistingDocumentTypesPrompt(catalog.DocumentTypes)
 
 	prompt += `
+
+document_date must be a complete calendar date in YYYY-MM-DD form. Never return a bare year ("2026"), a year and month ("2026-03"), or any other date format; use an empty string when the document states no date.
 
 Do not include markdown or explanation.`
 	return prompt
@@ -216,7 +218,10 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 	}
 
 	content := chatResp.Choices[0].Message.Content
-	metadata, err := models.ParseExtractedMetadata(content)
+	metadata, notes, err := models.ParseExtractedMetadataWithNotes(content)
+	for _, note := range notes {
+		c.logger.Warn("extraction metadata repaired", "note", note)
+	}
 	if err != nil {
 		c.logger.Error("parse failed",
 			"content_chars", len(content),
