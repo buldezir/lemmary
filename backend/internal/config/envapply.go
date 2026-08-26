@@ -248,13 +248,18 @@ func envDigest(value string) string {
 // JSON. Both should re-apply the environment once rather than fail the boot: the
 // worst case is that a value the environment already agrees with is written
 // again.
+//
+// Always returns a writable map. An install that existed before the field was
+// added has SQL NULL in the column, which the JSON field reads back as the
+// literal "null" -- and unmarshalling that into a map succeeds while leaving the
+// map nil, so returning it directly would panic on the first digest written.
 func decodeEnvApplied(settings *core.Record) map[string]string {
 	raw := strings.TrimSpace(settings.GetString(EnvAppliedField))
 	if raw == "" {
 		return map[string]string{}
 	}
 	applied := map[string]string{}
-	if err := json.Unmarshal([]byte(raw), &applied); err != nil {
+	if err := json.Unmarshal([]byte(raw), &applied); err != nil || applied == nil {
 		return map[string]string{}
 	}
 	return applied

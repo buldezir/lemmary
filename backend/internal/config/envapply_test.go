@@ -55,14 +55,21 @@ func TestDecodeEnvAppliedToleratesGarbage(t *testing.T) {
 		"blank":         "   ",
 		"not json":      "{oh no",
 		"wrong shape":   `["a","b"]`,
+		// What an install that predates the field actually holds: the column is
+		// SQL NULL and the JSON field reads it back as this literal.
+		"json null": "null",
 	} {
 		t.Run(name, func(t *testing.T) {
 			record := newTestSettingsRecord(t)
 			record.Set(EnvAppliedField, raw)
 
-			if got := decodeEnvApplied(record); len(got) != 0 {
+			got := decodeEnvApplied(record)
+			if len(got) != 0 {
 				t.Fatalf("expected an empty map, got %v", got)
 			}
+			// len() cannot tell an empty map from a nil one, and ApplyEnvChanges
+			// writes into whatever it gets back.
+			got["OPENAI_MODEL"] = envDigest("anything")
 		})
 	}
 }
