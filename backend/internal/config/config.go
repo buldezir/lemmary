@@ -130,6 +130,12 @@ func EnsureDefaults(app core.App) error {
 	if err := aiprovider.SeedFromEnv(app, record); err != nil {
 		return err
 	}
+	// Stamped before the save, not applied: every value on this record already
+	// came from the environment, so without the stamp the next bootstrap would
+	// see all of them as changed and rewrite what was just written.
+	if err := RecordEnvApplied(record); err != nil {
+		return err
+	}
 	if err := app.Save(record); err != nil {
 		// A concurrent caller can seed the singleton between our find and save;
 		// the fixed ID then collides. Treat "someone else seeded it" as success.

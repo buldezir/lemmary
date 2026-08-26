@@ -215,6 +215,15 @@ func RegisterHooks(app core.App, rt *Runtime) {
 			e.App.Logger().Warn("ensure app_settings defaults failed; continuing with env fallback", slog.Any("error", err))
 		}
 
+		// After seeding and before the reload, so a container recreated with
+		// different environment serves the new configuration on its first
+		// request rather than after somebody saves Settings. Warn rather than
+		// fail for the same reason bootstrap tolerates a bad settings record:
+		// the app must come up so an admin can go and look.
+		if err := ApplyEnvChanges(e.App); err != nil {
+			e.App.Logger().Warn("applying environment changes failed; keeping stored settings", slog.Any("error", err))
+		}
+
 		_ = rt.Reload(e.App)
 		return nil
 	})

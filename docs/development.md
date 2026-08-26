@@ -76,25 +76,37 @@ All variables live in `.env` at the project root (see `.env.example`).
 | `VITE_DEV_USER_EMAIL` | — | Dev auto-login email (`users` collection) |
 | `VITE_DEV_USER_PASSWORD` | — | Dev auto-login password |
 
-### Seed-only (first boot → Settings)
+### Applied when changed
 
-These seed `app_settings` and `ai_providers` when the singleton record does not exist yet. After that, edit them in the app **Settings** page (requires a PocketBase superuser login). Changing `.env` alone will not update a running install.
+These seed `app_settings` and `ai_providers` on first boot **and** are re-applied on any later boot where their value has changed since the last one that acted on them. An unchanged variable is left alone, so a value edited in the **Settings** page survives restarts; changing `.env` (or a container's environment) and restarting does take effect.
+
+The comparison uses a SHA-256 digest per variable stored in `app_settings.env_applied` — a digest, not the value, because several of these are API keys. Removing a variable is a change like any other: `OPENAI_MODEL` returns to its code default (nothing falls back to the extraction model), while `OPENAI_CHAT_MODEL` and `OPENAI_SEARCH_MODEL` empty out and fall back through the binding chain.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `OCR_PROVIDER` | `google_vision` | Which env-seeded provider to bind for OCR (`google_vision`, `mistral`, `openai`, `openrouter`) |
-| `GOOGLE_VISION_API_KEY` | empty | Seeds a Google Cloud Vision provider |
-| `MISTRAL_API_KEY` | empty | Seeds a Mistral provider (OCR + chat completions) |
-| `MISTRAL_OCR_MODEL` | `mistral-ocr-latest` | OCR model when seeding Mistral |
-| `MISTRAL_MODEL` | `mistral-small-latest` | Chat model when Mistral is the only LLM (no `OPENAI_API_KEY`) |
+| `OCR_PROVIDER` | `google_vision` | Which env-seeded provider to bind for OCR (`google_vision`, `mistral`, `openai`, `openrouter`). Names an SDK, not a record id — an id is generated at seed time and cannot be known in advance. |
+| `GOOGLE_VISION_API_KEY` | empty | Google Cloud Vision provider key |
+| `MISTRAL_API_KEY` | empty | Mistral provider key (OCR + chat completions) |
 | `MISTRAL_API_BASE_URL` | `https://api.mistral.ai/v1` | Mistral API base URL |
-| `OCR_TIMEOUT_SEC` | `40` | OCR request timeout |
-| `PROCESSING_RESULT_LANGUAGE` | empty | ISO 639-1 code (e.g. `en`, `de`). When set, `title`, `summary`, `purpose`, and `document_type` are stored in this language; originals go in `*_original` fields. |
-| `OPENAI_API_KEY` | empty | Seeds an OpenAI-compatible provider (used for extraction, chat, search, and optional LLM OCR). If unset, a seeded Mistral provider is bound for those tasks instead. |
+| `OPENAI_API_KEY` | empty | OpenAI-compatible provider key (extraction, chat, search, optional LLM OCR). If unset, a seeded Mistral provider is bound for those tasks instead. |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API base URL |
 | `OPENAI_MODEL` | `gpt-5.6-luna` | Model ID for metadata extraction |
 | `OPENAI_CHAT_MODEL` | `OPENAI_MODEL` | Optional model ID for document chat |
 | `OPENAI_SEARCH_MODEL` | `OPENAI_CHAT_MODEL` | Optional model ID for Deep Search |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API base URL |
+| `NEAR_DUPLICATE_DETECTION_ENABLED` | `false` | Whether the pipeline runs near-duplicate detection |
+
+A provider record is matched by the default alias `SeedFromEnv` gives it. A renamed or deleted provider is skipped with a warning rather than recreated — recreating would resurrect a provider an admin deliberately removed, and would do it again on every boot.
+
+### Seed-only (first boot → Settings)
+
+These seed `app_settings` when the singleton record does not exist yet. After that, edit them in the app **Settings** page (requires a PocketBase superuser login). Changing `.env` alone will not update a running install.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MISTRAL_OCR_MODEL` | `mistral-ocr-latest` | OCR model when seeding Mistral |
+| `MISTRAL_MODEL` | `mistral-small-latest` | Chat model when Mistral is the only LLM (no `OPENAI_API_KEY`) |
+| `OCR_TIMEOUT_SEC` | `40` | OCR request timeout |
+| `PROCESSING_RESULT_LANGUAGE` | empty | ISO 639-1 code (e.g. `en`, `de`). When set, `title`, `summary`, `purpose`, and `document_type` are stored in this language; originals go in `*_original` fields. |
 | `OPENAI_TIMEOUT_SEC` | `60` | AI request timeout |
 | `DEEP_SEARCH_LANGUAGES` | empty | Comma-separated ISO 639-1 codes (e.g. `de,en,uk`) for Deep Search keyword expansion |
 | `WORKER_TIMEOUT_SEC` | `300` | Per-job processing timeout |
