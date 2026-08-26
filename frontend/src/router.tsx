@@ -1,4 +1,5 @@
 import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router'
+import { edition } from '@ext'
 import { ensureAuth, isAdmin } from './lib/auth'
 import { RootLayout } from './components/RootLayout'
 import { IndexPage } from './routes/index'
@@ -113,6 +114,14 @@ const documentAskRoute = createRoute({
   component: DocumentAskPage,
 })
 
+// Edition routes are appended last so an edition can never displace a core
+// path: TanStack Router matches in tree order, and a duplicate path added after
+// the core one loses.
+//
+// They are also invisible to the router's type inference, which is what makes
+// `Link to="/documents"` type-checked and an edition's own link a plain string.
+// The trade is deliberate: inferring them would mean generating the route tree
+// at build time, and the generated file would be a shared file every fork edits.
 const routeTree = rootRoute.addChildren([
   indexRoute,
   uploadRoute.addChildren([uploadFilesRoute, uploadAmazonRoute, uploadSplitRoute]),
@@ -124,6 +133,7 @@ const routeTree = rootRoute.addChildren([
   exportRoute,
   documentRoute,
   documentAskRoute,
+  ...edition.routes(rootRoute),
 ])
 
 export const router = createRouter({ routeTree })

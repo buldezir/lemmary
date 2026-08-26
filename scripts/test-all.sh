@@ -28,6 +28,23 @@ stage "API e2e"
   go test ./e2e/ -count=1 -timeout 10m
 ) || fail "API e2e"
 
+stage "Edition seam (lemmary_exttest build)"
+(
+  cd backend
+  # The private edition lives in a fork this repository cannot build, so the
+  # throwaway edition under this tag is the only thing here that proves
+  # ext.Edition is still wired. Without this stage the seam rots upstream with
+  # nothing failing until a fork's next merge.
+  go vet -tags lemmary_exttest ./...
+  go test -tags lemmary_exttest ./e2e/ -run Edition -count=1 -timeout 5m
+) || fail "edition seam"
+
+stage "Frontend unit tests"
+(
+  cd frontend
+  npm test
+) || fail "frontend unit tests"
+
 stage "Frontend build + Playwright e2e"
 (
   cd frontend

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, Outlet, useMatchRoute } from '@tanstack/react-router'
+import { edition } from '@ext'
+import type { EditionNavItem } from '../lib/edition'
 import { pb, pbAdminUrl } from '../lib/pb'
 import { ensureAuth, getUserDisplayName, isAdmin, logout } from '../lib/auth'
 import { getSetupStatus, type SetupStatus } from '../lib/api/meta'
@@ -18,6 +20,28 @@ const iconButtonActiveClass = 'text-oxblood'
 const menuItemClass =
   'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm font-medium text-ink-muted transition-colors hover:bg-wash hover:text-oxblood'
 const menuItemActiveClass = 'text-oxblood'
+
+/**
+ * A "More" menu entry contributed by the edition.
+ *
+ * The cast is the price of routes that are not in the generated route tree:
+ * `to` is typed as the union of core paths, and an edition path is a plain
+ * string known only at runtime. Casting here, once, keeps every core `Link`
+ * type-checked — the alternative is widening `to` everywhere, which would lose
+ * the check on the links that can actually be verified.
+ */
+function EditionMenuItem({ item, onNavigate }: { item: EditionNavItem; onNavigate: () => void }) {
+  return (
+    <Link
+      to={item.to as never}
+      role="menuitem"
+      className={menuItemClass}
+      onClick={onNavigate}
+    >
+      {item.adminOnly ? <AdminMenuLabel>{item.label}</AdminMenuLabel> : item.label}
+    </Link>
+  )
+}
 
 function LogoutIcon() {
   return (
@@ -198,6 +222,11 @@ function MoreNavMenu({ admin }: { admin: boolean }) {
               <AdminMenuLabel>Admin</AdminMenuLabel>
             </a>
           )}
+          {edition.navItems
+            .filter((item) => admin || !item.adminOnly)
+            .map((item) => (
+              <EditionMenuItem key={item.to} item={item} onNavigate={() => setOpen(false)} />
+            ))}
         </div>
       )}
     </div>

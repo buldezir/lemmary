@@ -7,7 +7,15 @@ COPY backend/ .
 
 ARG TARGETOS
 ARG TARGETARCH
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o lemmary .
+
+# EDITION names a private edition to build into this image; empty builds the
+# open-source one. It is passed to both stages from a single build argument on
+# purpose: the backend half is selected by a Go build tag and the frontend half
+# by a module alias, and an image with one of the two would serve pages whose
+# API routes do not exist.
+ARG EDITION=""
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -tags "${EDITION:+lemmary_$EDITION}" -o lemmary .
 
 FROM node:26-alpine AS frontend-builder
 
@@ -16,7 +24,9 @@ COPY frontend/package*.json ./
 RUN npm install
 COPY frontend/ .
 COPY docs/ /app/docs/
-RUN npm run build
+
+ARG EDITION=""
+RUN LEMMARY_EXT="${EDITION:+./src/ext-$EDITION}" npm run build
 
 FROM alpine:3.21
 LABEL org.opencontainers.image.title="Lemmary" \

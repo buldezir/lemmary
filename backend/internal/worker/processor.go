@@ -19,13 +19,29 @@ import (
 type Processor struct {
 	app        core.App
 	rt         *config.Runtime
+	opts       Options
 	processing sync.Mutex
 }
 
-func Register(app core.App, rt *config.Runtime) {
+// Options carry the additions an edition of the binary makes to the pipeline.
+// The zero value is the core pipeline, unchanged.
+type Options struct {
+	// ExtraSteps are appended to the step registry the runner builds on every
+	// job; a factory returning a step whose Name() matches a built-in replaces
+	// that built-in.
+	ExtraSteps []StepFactory
+
+	// StepPlans rewrite the default step list for jobs created from a newly
+	// uploaded document. They never touch a job whose steps the caller named
+	// explicitly — see createStepsFor.
+	StepPlans []StepPlan
+}
+
+func Register(app core.App, rt *config.Runtime, opts Options) {
 	p := &Processor{
-		app: app,
-		rt:  rt,
+		app:  app,
+		rt:   rt,
+		opts: opts,
 	}
 	p.registerHooks()
 
@@ -103,7 +119,7 @@ func (p *Processor) registerHooks() {
 			return err
 		}
 
-		steps := createStepsFor(record)
+		steps := createStepsFor(record, p.opts.StepPlans)
 		_, err := createProcessingJob(e.App, record.Id, steps, nil)
 		return err
 	})
@@ -356,7 +372,7 @@ func (p *Processor) runJob(jobID string, snap config.Snapshot) error {
 		return nil
 	}
 
-	runner := NewPipelineRunner(p.app, snap.Cfg, snap.OCR, snap.AI)
+	runner := NewPipelineRunner(p.app, snap.Cfg, snap.OCR, snap.AI, p.opts.ExtraSteps)
 	return runner.Run(context.Background(), jobID)
 }
 

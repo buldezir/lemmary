@@ -16,6 +16,14 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* The edition module. Resolution is first-match, so a fork that adds
+       src/ext-cloud/ type-checks against its own edition while this repository
+       falls through to the empty one. Keep in step with editionDir() in
+       vite.config.ts. */
+    "paths": {
+      "@ext": ["./src/ext-cloud/index.ts", "./src/ext/index.ts"]
+    },
+
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
