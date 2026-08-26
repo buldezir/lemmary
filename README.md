@@ -89,6 +89,19 @@ cd frontend && npm run test:e2e
 
 First browser run may need Chromium: `cd frontend && npx playwright install chromium`.
 
+## License
+
+Lemmary is **source-available**, not open source. It is licensed under the
+[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0)
+(see [LICENSE](LICENSE)).
+
+| | |
+| --- | --- |
+| ✅ Allowed | Self-hosting for personal or household use; hobby projects, research, study; use by charities, schools, public research, public safety/health, environmental, and government organizations; reading, forking, modifying, and redistributing the source |
+| ❌ Not allowed without a commercial license | Use by or on behalf of a business; offering Lemmary to third parties as a hosted or paid service; bundling it into a commercial product |
+
+For commercial licensing, contact Alexander Arutyunov <licensing@lemmary.app>.
+
 ## Recommended: Opencode Go
 
 [Opencode Go](https://opencode.ai/go?ref=84VDFS18QN) is a perfect plan to use with this project as AI provider. See the [docs](https://opencode.ai/docs/go/).

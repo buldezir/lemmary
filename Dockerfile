@@ -19,6 +19,10 @@ COPY docs/ /app/docs/
 RUN npm run build
 
 FROM alpine:3.21
+LABEL org.opencontainers.image.title="Lemmary" \
+      org.opencontainers.image.description="Source-available document storage with OCR and AI metadata extraction" \
+      org.opencontainers.image.source="https://github.com/buldezir/lemmary" \
+      org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0"
 RUN apk add --no-cache poppler-utils
 WORKDIR /app
 COPY --from=backend-builder /app/backend/lemmary /app/lemmary
