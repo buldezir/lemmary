@@ -137,7 +137,7 @@ func savePDF(path string, src io.Reader) (int, int64, error) {
 		return 0, 0, fmt.Errorf("save upload: %w", err)
 	}
 	if size > MaxPDFBytes {
-		return 0, 0, ErrPDFTooLarge
+		return 0, 0, fmt.Errorf("%w: %d bytes exceeds the %d byte limit", ErrPDFTooLarge, size, MaxPDFBytes)
 	}
 
 	// The declared content type is the client's word; the header and a
