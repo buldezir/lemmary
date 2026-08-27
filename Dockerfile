@@ -42,6 +42,11 @@ RUN chmod +x /app/docker-entrypoint.sh
 
 ENV PORT=80
 EXPOSE ${PORT}
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+# start-period is generous because first boot is the slow one: migrations, and
+# rebuilding the search index over an archive that may already be large. A build
+# that has more to do before it can serve (restoring or unpacking a data
+# directory in a pre-boot step) needs the room too, and a start-period only
+# delays when Docker starts reporting unhealthy — it costs a fast boot nothing.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=120s --retries=3 \
     CMD wget -q --spider "http://127.0.0.1:${PORT}/api/health" || exit 1
 ENTRYPOINT ["/app/docker-entrypoint.sh"]

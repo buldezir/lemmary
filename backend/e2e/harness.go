@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"lemmary/backend/internal/appapi"
 	"lemmary/backend/internal/appwire"
+	"lemmary/backend/internal/boot"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/ngximport"
 
@@ -44,6 +46,7 @@ type Harness struct {
 	AdminUserID string
 
 	cancelServe func()
+	boot        boot.Result
 }
 
 var (
@@ -61,6 +64,13 @@ type Options struct {
 	SkipAuthSeed bool
 	// EmptyAPIKeys leaves OCR/AI API keys unset (for setup wizard tests).
 	EmptyAPIKeys bool
+	// Boot, when non-nil, runs before the app is constructed, the way
+	// internal/boot runs in main. It receives the harness data directory and
+	// may relocate it, wire extra registrations, and clean up on Close.
+	//
+	// The zero value is the default path, so every existing test still
+	// exercises exactly the sequence an ordinary deployment runs.
+	Boot func(dataDir string) (boot.Result, error)
 }
 
 // Start boots a temporary PocketBase instance with mocks and seeded users.
@@ -112,14 +122,31 @@ func Start(opts Options) (*Harness, error) {
 	_ = os.Unsetenv("VITE_DEV_USER_EMAIL")
 	_ = os.Unsetenv("VITE_DEV_USER_PASSWORD")
 
+	appDataDir := dataDir
+	var pre boot.Result
+	if opts.Boot != nil {
+		pre, err = opts.Boot(dataDir)
+		if err != nil {
+			mocks.Close()
+			_ = os.RemoveAll(dataDir)
+			return nil, err
+		}
+		if pre.DataDir != "" {
+			appDataDir = pre.DataDir
+		}
+	}
+
 	app := pocketbase.NewWithConfig(pocketbase.Config{
-		DefaultDataDir:  dataDir,
+		DefaultDataDir:  appDataDir,
 		HideStartBanner: true,
 		DefaultDev:      false,
 	})
 
 	rt := config.NewRuntime()
 	appwire.Register(app, rt, publicDir, true)
+	if pre.Register != nil {
+		pre.Register(app)
+	}
 
 	listenAddr := opts.HTTPAddr
 	var listener net.Listener
@@ -234,6 +261,7 @@ func Start(opts Options) (*Harness, error) {
 
 	h := &Harness{
 		BaseURL:     baseURL,
+		boot:        pre,
 		DataDir:     dataDir,
 		PublicDir:   publicDir,
 		App:         app,
@@ -262,6 +290,13 @@ func (h *Harness) Close() {
 	}
 	if h.cancelServe != nil {
 		h.cancelServe()
+	}
+	if h.boot.Close != nil {
+		// Runs before the mocks and the data directory go: a pre-boot step may
+		// still need to write, and a restart test reads what it wrote.
+		if err := h.boot.Close(); err != nil {
+			log.Printf("e2e: boot cleanup: %v", err)
+		}
 	}
 	if h.Mocks != nil {
 		h.Mocks.Close()
@@ -305,10 +340,18 @@ func closeShared() {
 	}
 }
 
+// createAuthRecord seeds an auth account, reusing one that already exists.
+//
+// Idempotence matters for tests that restart a harness against a database that
+// survived the previous run, which would otherwise fail the unique email
+// constraint. For a fresh database the behaviour is unchanged.
 func createAuthRecord(app core.App, collectionName, email, password string) (string, error) {
 	collection, err := app.FindCollectionByNameOrId(collectionName)
 	if err != nil {
 		return "", err
+	}
+	if existing, err := app.FindAuthRecordByEmail(collectionName, email); err == nil && existing != nil {
+		return existing.Id, nil
 	}
 	record := core.NewRecord(collection)
 	record.SetEmail(email)
