@@ -23,8 +23,8 @@ import (
 // would rot upstream between merges with nothing failing.
 //
 // It exercises every field of ext.Edition. A field that stops being wired makes
-// dev/e2e/edition_exttest_test.go fail -- that assertion lives in the private
-// development suite, present only when it is cloned into backend/dev/, so a
+// e2e/edition_exttest_test.go fail -- that assertion lives in the private
+// development suite, present only when it is cloned into dev/, so a
 // build tagged lemmary_exttest here still has to compile this file either way.
 
 // ExtTestStepName is the step the edition contributes. Exported so the test can

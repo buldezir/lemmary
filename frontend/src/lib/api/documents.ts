@@ -291,18 +291,17 @@ export async function saveDocumentMetadata(
   })
 }
 
-export type ExportArchiveMode = 'originals' | 'ocr' | 'metadata'
-
-/** Fetches the export archive as a blob; the caller decides how to save it. */
-export async function fetchDocumentsArchive(mode: ExportArchiveMode = 'originals'): Promise<Blob> {
+/**
+ * Fetches the backup archive as a blob; the caller decides how to save it.
+ * The archive holds every document with its OCR text, metadata and thumbnail,
+ * plus the whole taxonomy, and is what Import -> Lemmary archive restores from.
+ */
+export async function fetchDocumentsArchive(): Promise<Blob> {
   await ensureAuth()
 
-  const response = await fetch(
-    `${pbUrl}/api/app/documents/export?mode=${encodeURIComponent(mode)}`,
-    {
-      headers: { Authorization: pb.authStore.token },
-    },
-  )
+  const response = await fetch(`${pbUrl}/api/app/documents/export`, {
+    headers: { Authorization: pb.authStore.token },
+  })
 
   if (!response.ok) {
     let data: unknown = null

@@ -9,4 +9,7 @@ backend/pb_data/
 
 # The development suite -- e2e tests, dev runner, verification stack -- is a
 # private repository overlaid at this path: github.com/lemmary/lemmary-dev
-backend/dev/
+#
+# Leading slash on purpose: a bare "dev/" has no separator except the trailing
+# one, so git would match a directory named dev at any depth.
+/dev/

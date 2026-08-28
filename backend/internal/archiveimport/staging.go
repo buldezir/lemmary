@@ -1,4 +1,4 @@
-package amazonimport
+package archiveimport
 
 import (
 	"archive/zip"
@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"lemmary/backend/internal/backup"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/staging"
 )
@@ -23,18 +25,29 @@ type Preview struct {
 	UploadID  string    `json:"upload_id"`
 	FileName  string    `json:"file_name"`
 	ExpiresAt time.Time `json:"expires_at"`
-	// PDFCount is every PDF in the archive, duplicates included.
-	PDFCount int `json:"pdf_count"`
+	// HasManifest is false for an archive exported before manifests existed;
+	// such an archive is restored from its entry names alone.
+	HasManifest   bool `json:"has_manifest"`
+	FormatVersion int  `json:"format_version"`
+	// DocumentCount is every document in the archive, duplicates included.
+	DocumentCount int `json:"document_count"`
 	// ImportableCount is how many of those would become new documents.
 	ImportableCount int `json:"importable_count"`
 	DuplicateCount  int `json:"duplicate_count"`
 	OversizedCount  int `json:"oversized_count"`
-	// IgnoredCount is the non-PDF entries (CSV reports, delivery photos) skipped.
-	IgnoredCount int     `json:"ignored_count"`
-	Files        []Entry `json:"files"`
+	MissingCount    int `json:"missing_count"`
+	// IgnoredCount is the entries that belong to no document.
+	IgnoredCount int `json:"ignored_count"`
+	// TaxonomyCount is the tags, correspondents and document types the archive
+	// restores, including those no document references.
+	TaxonomyCount int     `json:"taxonomy_count"`
+	Files         []Entry `json:"files"`
+
+	// Taxonomy is carried for the restore run, not for the client.
+	Taxonomy backup.Taxonomy `json:"-"`
 }
 
-// stagedArchive is one upload waiting to be imported.
+// stagedArchive is one upload waiting to be restored.
 type stagedArchive = staging.Item[Preview]
 
 var stagingRegistry = newStagingRegistry()
@@ -48,8 +61,8 @@ func newStagingRegistry() *staging.Registry[Preview] {
 	})
 }
 
-// Inspect stages the uploaded archive on disk and describes the PDFs it holds.
-// Nothing is imported until Start is called with the returned upload id.
+// Inspect stages the uploaded archive on disk and describes what it holds.
+// Nothing is restored until Start is called with the returned upload id.
 func Inspect(app core.App, ownerUserID, fileName string, src io.Reader) (Preview, error) {
 	if strings.TrimSpace(ownerUserID) == "" {
 		return Preview{}, fmt.Errorf("owner user id is required")
@@ -83,7 +96,13 @@ func Inspect(app core.App, ownerUserID, fileName string, src io.Reader) (Preview
 		os.Remove(archivePath)
 		return Preview{}, ErrNotArchive
 	}
-	entries, ignored, err := scanPDFs(documentLookup(app, ownerUserID), &zr.Reader)
+	manifest, err := backup.ReadManifest(&zr.Reader)
+	if err != nil {
+		zr.Close()
+		os.Remove(archivePath)
+		return Preview{}, err
+	}
+	entries, taxonomy, ignored, err := scan(documentLookup(app, ownerUserID), &zr.Reader, manifest)
 	zr.Close()
 	if err != nil {
 		os.Remove(archivePath)
@@ -95,31 +114,40 @@ func Inspect(app core.App, ownerUserID, fileName string, src io.Reader) (Preview
 		OwnerUserID: ownerUserID,
 		Path:        archivePath,
 		ExpiresAt:   time.Now().UTC().Add(stagingTTL),
-		Payload:     buildPreview(id, fileName, entries, ignored),
+		Payload:     buildPreview(id, fileName, manifest, entries, taxonomy, ignored),
 	}
 	item.Payload.ExpiresAt = item.ExpiresAt
 	stagingRegistry.Add(item)
 
-	app.Logger().Info("amazon archive staged",
-		"component", "amazon_import",
+	app.Logger().Info("lemmary archive staged",
+		"component", "archive_import",
 		"upload_id", id,
 		"bytes", size,
-		"pdfs", item.Payload.PDFCount,
+		"documents", item.Payload.DocumentCount,
 		"importable", item.Payload.ImportableCount,
+		"manifest", item.Payload.HasManifest,
 	)
 	return item.Payload, nil
 }
 
-func buildPreview(uploadID, fileName string, entries []Entry, ignored int) Preview {
+func buildPreview(uploadID, fileName string, manifest *backup.Manifest, entries []Entry, taxonomy backup.Taxonomy, ignored int) Preview {
 	preview := Preview{
-		UploadID:     uploadID,
-		FileName:     strings.TrimSpace(fileName),
-		PDFCount:     len(entries),
-		IgnoredCount: ignored,
-		Files:        entries,
+		UploadID:      uploadID,
+		FileName:      strings.TrimSpace(fileName),
+		DocumentCount: len(entries),
+		IgnoredCount:  ignored,
+		TaxonomyCount: taxonomy.Count(),
+		Files:         entries,
+		Taxonomy:      taxonomy,
+	}
+	if manifest != nil {
+		preview.HasManifest = true
+		preview.FormatVersion = manifest.Version
 	}
 	for _, entry := range entries {
 		switch {
+		case entry.Missing:
+			preview.MissingCount++
 		case entry.Oversized:
 			preview.OversizedCount++
 		case entry.Duplicate:
@@ -153,7 +181,7 @@ func saveArchive(path string, src io.Reader, limit int64) (int64, error) {
 	return size, nil
 }
 
-// Discard drops a staged archive that the user chose not to import.
+// Discard drops a staged archive that the user chose not to restore.
 func Discard(uploadID, ownerUserID string) bool {
 	item, ok := stagingRegistry.Claim(uploadID, ownerUserID)
 	if !ok {
@@ -164,5 +192,5 @@ func Discard(uploadID, ownerUserID string) bool {
 }
 
 func stagingDir(app core.App) string {
-	return filepath.Join(app.DataDir(), "temp", "amazon_import")
+	return filepath.Join(app.DataDir(), "temp", "archive_import")
 }

@@ -90,6 +90,34 @@ func (r *Registry[T]) Add(item *Item[T]) {
 	r.mu.Unlock()
 }
 
+// DiscardOwned spends every upload this owner still has waiting, and reports
+// how many. It is what keeps a staging area from growing without bound: the
+// confirmation step only ever works on the newest upload, so staging a fresh
+// one makes any earlier one dead weight, and without this an account could
+// keep uploading and fill the data volume before confirming anything.
+//
+// Paths go the moment they are idle, exactly as a discard would; an upload a
+// job is still reading is spent but survives until that job lets go.
+func (r *Registry[T]) DiscardOwned(ownerUserID string) int {
+	r.mu.Lock()
+	ids := make([]string, 0, len(r.items))
+	for id, item := range r.items {
+		if item.OwnerUserID == ownerUserID {
+			ids = append(ids, id)
+		}
+	}
+	r.mu.Unlock()
+
+	discarded := 0
+	for _, id := range ids {
+		if item, ok := r.Claim(id, ownerUserID); ok {
+			r.Release(item)
+			discarded++
+		}
+	}
+	return discarded
+}
+
 // Lookup returns a live upload without touching its lifecycle, so the preview
 // and thumbnail endpoints can be called repeatedly.
 func (r *Registry[T]) Lookup(uploadID, ownerUserID string) (*Item[T], bool) {

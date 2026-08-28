@@ -14,6 +14,8 @@ import { SearchPage } from './routes/search'
 import { SettingsPage } from './routes/settings'
 import { ManagementPage } from './routes/management'
 import { ImportPage } from './routes/import'
+import { ImportNgxPage } from './routes/import.index'
+import { ImportArchivePage } from './routes/import.archive'
 import { ExportPage } from './routes/export'
 
 // Admin-only routes bounce non-admins to the document list before the page
@@ -96,6 +98,19 @@ const importRoute = createRoute({
   component: ImportPage,
 })
 
+// Paperless-ngx is the original import source, so it sits on /import itself.
+const importNgxRoute = createRoute({
+  getParentRoute: () => importRoute,
+  path: '/',
+  component: ImportNgxPage,
+})
+
+const importArchiveRoute = createRoute({
+  getParentRoute: () => importRoute,
+  path: 'archive',
+  component: ImportArchivePage,
+})
+
 const exportRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/export',
@@ -129,7 +144,7 @@ const routeTree = rootRoute.addChildren([
   ocrTestRoute,
   settingsRoute,
   managementRoute,
-  importRoute,
+  importRoute.addChildren([importNgxRoute, importArchiveRoute]),
   exportRoute,
   documentRoute,
   documentAskRoute,

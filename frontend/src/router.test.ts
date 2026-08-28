@@ -30,7 +30,7 @@ describe('route tree', () => {
     const { router } = await import('./router')
     const paths = Object.keys(router.routesById)
 
-    for (const path of ['/', '/upload', '/search', '/settings']) {
+    for (const path of ['/', '/upload', '/search', '/settings', '/import', '/import/archive']) {
       expect(paths).toContain(path)
     }
   })

@@ -23,8 +23,8 @@ import (
 //
 // It exercises every field of Boot and Result. A field that stops being wired
 // makes boot_exttest_test.go fail here, and the HTTP-level assertions in the
-// private development suite (dev/e2e/boot_exttest_test.go, present only when
-// that overlay is cloned into backend/dev/) fail too.
+// private development suite (e2e/boot_exttest_test.go, present only when that
+// overlay is cloned into dev/) fail too.
 
 // ExtTestSubcommand is answered without constructing an app, which is what
 // Result.Handled is for.

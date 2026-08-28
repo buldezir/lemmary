@@ -25,14 +25,34 @@ on:
       - "docker-compose.yml"
   workflow_dispatch:
 
+# One self-hosted runner takes these jobs one at a time, so a superseded run
+# would sit in the queue ahead of the push that replaced it. Pushes to main and
+# tags are never cancelled -- those publish images.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+# Both jobs run on the self-hosted runner by default. Set the CI_RUNNER_LABELS
+# repository variable to a JSON array to move them without editing this file:
+# ["ubuntu-latest"] puts CI back on GitHub's runners while the homelab machine
+# is down, and unsetting it brings CI home again.
+#
+# A self-hosted runner needs Docker with buildx usable by the runner user, and
+# passwordless sudo for the apt steps below (see the runner-smoke workflow,
+# which checks the Docker half).
 jobs:
   test:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    # A fork's pull request must never land on the self-hosted runner: the job
+    # would execute that fork's code on a machine inside a private network,
+    # which is the hazard GitHub warns about for self-hosted runners. Fork PRs
+    # go to a throwaway hosted runner instead, where this workflow already
+    # degrades to unit tests because the private suite's key is withheld.
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted", "linux", "x64", "homelab"]') || 'ubuntu-latest' }}
     permissions:
       contents: read
 
@@ -40,7 +60,7 @@ jobs:
       - uses: actions/checkout@v6
 
       # The e2e suites and the verification stack live in a private repository
-      # overlaid at backend/dev/. GitHub withholds secrets from fork pull
+      # overlaid at dev/. GitHub withholds secrets from fork pull
       # requests, so this job has to detect that and degrade loudly rather than
       # report a green run that never executed e2e. secrets.* is not available
       # in a job-level `if`, which is why the guard is a step.
@@ -61,7 +81,7 @@ jobs:
         with:
           repository: lemmary/lemmary-dev
           ssh-key: ${{ secrets.DEV_REPO_KEY }}
-          path: backend/dev
+          path: dev
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -77,7 +97,15 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+        # A self-hosted runner keeps whatever the last run installed, so only
+        # reach for apt (and the sudo it needs) when poppler is actually
+        # missing. pdftoppm is what the preview step shells out to.
+        run: |
+          if command -v pdftoppm >/dev/null 2>&1; then
+            echo "poppler-utils already present: $(pdftoppm -v 2>&1 | head -1)"
+          else
+            sudo apt-get update && sudo apt-get install -y poppler-utils
+          fi
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -85,24 +113,28 @@ jobs:
 
       - name: Install dev suite dependencies
         if: steps.access.outputs.ok == 'true'
-        working-directory: backend/dev
+        working-directory: dev
         run: npm ci
 
       - name: Install Playwright Chromium
         if: steps.access.outputs.ok == 'true'
-        working-directory: backend/dev
+        working-directory: dev
+        # --with-deps unconditionally: the browser download is cached on a
+        # persistent runner, and only the apt half repeats. Skipping it there
+        # would mean chromium's system libraries had to be provisioned by hand,
+        # which is a worse trade than a few seconds of a satisfied apt run.
         run: npx playwright install --with-deps chromium
 
       - name: Run verification suite
         if: steps.access.outputs.ok == 'true'
-        run: ./backend/dev/scripts/test-all.sh
+        run: ./dev/scripts/test-all.sh
 
       - name: Run unit tests only (private suite unavailable)
         if: steps.access.outputs.ok != 'true'
         run: |
           echo "::warning::e2e suites skipped - the private dev repository is not reachable from a fork pull request. Unit tests and the compile-level extension-seam check ran; API and browser e2e did not."
           cd backend
-          go test $(go list ./... | grep -v '/e2e$') -count=1
+          go test ./... -count=1
           go vet -tags lemmary_exttest ./...
           go test -tags lemmary_exttest ./internal/boot/ -count=1
           cd ../frontend
@@ -115,7 +147,9 @@ jobs:
 
   build:
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    # Only runs on push, tag and manual dispatch from this repository, so there
+    # is no untrusted code to keep off the runner.
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted", "linux", "x64", "homelab"]') }}
     permissions:
       contents: read
       packages: write
