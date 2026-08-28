@@ -83,6 +83,55 @@ jobs:
           ssh-key: ${{ secrets.DEV_REPO_KEY }}
           path: dev
 
+      # A change that spans both repositories is two commits on two branches of
+      # the same name. Checking the overlay out at main would run this pull
+      # request's code against e2e suites that know nothing about it: a behaviour
+      # change would fail against the old assertions, and a new feature would go
+      # green with no coverage at all. So prefer the matching branch when the
+      # overlay has one, and fall back to main, which is what a pull request that
+      # touches only this repository needs.
+      #
+      # Done after the checkout rather than through its `ref` input because that
+      # would need the branch resolved before any credential exists. The checkout
+      # leaves the deploy key configured in dev/.git/config, so ls-remote and
+      # fetch below reuse it.
+      - name: Prefer the matching dev branch
+        if: steps.access.outputs.ok == 'true'
+        working-directory: dev
+        env:
+          # head_ref is the source branch of a pull request; ref_name covers a
+          # push or manual dispatch, should this job ever run on one. For a pull
+          # request ref_name is "<number>/merge", which no overlay branch is
+          # named, so the order matters.
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # Diagnostic only, so it must never be the thing that fails this step.
+          show() { git log -1 --format='dev/ at %h %s' 2>/dev/null || true; }
+
+          fallback() {
+            echo "::notice::Verification suite: lemmary-dev@main ($1)"
+            show
+            exit 0
+          }
+
+          if [ -z "${BRANCH:-}" ]; then
+            fallback "no branch name to match"
+          fi
+          if [ "$BRANCH" = "main" ]; then
+            fallback "already on main"
+          fi
+          if ! git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
+            fallback "no branch named $BRANCH"
+          fi
+
+          # Shallow: the suites are run, not bisected.
+          git fetch --depth=1 origin "refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+          git checkout --force -B "$BRANCH" "refs/remotes/origin/$BRANCH"
+          echo "::notice::Verification suite: lemmary-dev@$BRANCH"
+          show
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
