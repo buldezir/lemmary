@@ -7,7 +7,7 @@ const vuePkg = path.join(frontendRoot, 'node_modules/vue')
 
 export default defineConfig({
   title: 'Lemmary',
-  description: 'Development and setup documentation',
+  description: 'Setup and operation documentation',
   srcDir: '../docs',
   base: '/docs/',
   outDir: '../public/docs',
@@ -29,7 +29,7 @@ export default defineConfig({
   },
   themeConfig: {
     nav: [
-      { text: 'Development', link: '/development' },
+      { text: 'Setup', link: '/setup' },
       { text: 'Google Vision', link: '/google_vision' },
       { text: 'OAuth2', link: '/oauth' },
     ],
@@ -37,7 +37,7 @@ export default defineConfig({
       {
         text: 'Guides',
         items: [
-          { text: 'Development', link: '/development' },
+          { text: 'Setup', link: '/setup' },
           { text: 'Google Vision', link: '/google_vision' },
           { text: 'OAuth2', link: '/oauth' },
         ],

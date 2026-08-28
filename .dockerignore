@@ -6,6 +6,8 @@
 **/.env.*
 **/node_modules
 backend/pb_data*
+# The private development overlay, when cloned into a working tree.
+backend/dev
 *.md
 !docs/
 !docs/**

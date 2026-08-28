@@ -1,4 +1,4 @@
-# Development Guide
+# Setup Guide
 
 ## Prerequisites
 
@@ -9,13 +9,13 @@
 
 On macOS: `brew install poppler`. On Debian/Ubuntu: `apt install poppler-utils`.
 
-## Running locally
+## Running from source
 
 ```bash
 cp .env.example .env
 ```
 
-### 1. Start PocketBase backend
+### Start the backend
 
 ```bash
 cd backend
@@ -33,32 +33,19 @@ On first run, migrations create:
 - `ai_providers` (named OCR/LLM endpoints; seeded from `.env` on first boot)
 - `outbound_emails` (outbound mail log when SMTP is not configured; superuser-only)
 
-### 2. Start React frontend
+### Build the frontend
+
+The Go binary serves the SPA and the compiled docs from `public/`. Build them
+once, then restart the backend:
 
 ```bash
 cd frontend
-npm install
-npm run dev
+npm ci
+npm run build
 ```
 
-This starts the app on `http://127.0.0.1:5173` and a VitePress preview of these docs on `http://127.0.0.1:5174/docs/`. After `npm run build`, the same docs are static files under `public/docs/` and available at `/docs/` when PocketBase serves `public/`.
-
-The frontend auto-logs in a regular `users` account when `VITE_DEV_*` is set.
-
-### 3. Or start everything at once
-
-`scripts/dev.sh` runs the backend, the app and the docs together, binding to the
-machine's LAN IP so other devices can reach them (override with `DEV_HOST=...`):
-
-```bash
-./scripts/dev.sh                  # backend + frontend + docs
-./scripts/dev.sh --no-autologin   # ... without the VITE_DEV_USER_* auto-login
-```
-
-`--no-autologin` blanks `VITE_DEV_USER_EMAIL` / `VITE_DEV_USER_PASSWORD` for that run, so
-the app shows the real login screen instead of signing a user in on load. Useful when
-working on the login screen itself — password errors, OAuth2 provider buttons, the setup
-wizard. `.env` is left untouched.
+This writes the app to `public/` and these docs to `public/docs/`, both served
+at the backend's address.
 
 ## Environment variables
 
@@ -272,36 +259,12 @@ Uses the [Mistral Document OCR API](https://docs.mistral.ai/en/studio-api/docume
 ## Useful commands
 
 ```bash
-# Unit tests (exclude API e2e package)
-cd backend && go test $(go list ./... | grep -v /e2e) -count=1
-
-# API e2e — boots a temp PocketBase with mocked OCR/OpenAI
-cd backend && go test ./e2e/ -count=1 -timeout 10m
-
-# Browser e2e — builds SPA, starts cmd/e2eserver, runs Playwright
-cd frontend && npm run test:e2e
-# First time only:
-cd frontend && npx playwright install chromium
-
-# Full agent verification stack
-./scripts/test-all.sh
-
 # Frontend production build (SPA -> ../public, docs -> ../public/docs)
 cd frontend && npm run build
-
-# Create a new migration
-cd backend && go run . migrate create "your_migration_name"
 
 # Create / update admin (PocketBase superuser + paired users account)
 cd backend && go run . superuser upsert admin@example.com 'your-password'
 ```
-
-### E2E notes
-
-- API and browser e2e use **mocked** Mistral OCR and OpenAI-compatible APIs (no real keys).
-- Browser e2e serves the built SPA from `public/` on `http://127.0.0.1:18090` via [`backend/cmd/e2eserver`](../backend/cmd/e2eserver).
-- Seeded accounts: `e2e@lemmary.local` / `e2epassword123` (regular user) and `admin@lemmary.local` / `adminpassword123` (paired admin: `_superusers` + `users`).
-- `go test ./...` from `backend/` includes the e2e package.
 
 ## Paperless-ngx API compatibility
 

@@ -1,2 +1,0 @@
-Invoice sample for e2e upload without OCR (plain text).
-Acme Plumbing INV-TXT-1

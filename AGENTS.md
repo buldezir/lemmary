@@ -88,40 +88,47 @@ Line coordinates must land on the PR diff; if GitHub rejects them, fix the path/
 
 ## Verification (required)
 
-Before considering a task done, run the full verification stack and fix failures:
+The e2e suites and the full verification stack live in a private repository
+overlaid at `backend/dev/` (see [docs/setup.md](docs/setup.md) for what this
+repo alone contains). If that overlay is present, it owns verification:
 
 ```bash
-./scripts/test-all.sh
+./backend/dev/scripts/test-all.sh
 ```
 
-That covers:
+Without it, run what this repository can verify on its own, and say plainly in
+the report that the e2e suites did not run:
 
-1. Backend unit tests (`go test`, excluding `/e2e`)
-2. Backend API e2e (`go test ./e2e/`)
-3. Frontend Playwright e2e (`npm run test:e2e`)
+```bash
+cd backend && go test $(go list ./... | grep -v '/e2e$') -count=1
+cd backend && go vet -tags lemmary_exttest ./... && go test -tags lemmary_exttest ./internal/boot/ -count=1
+cd frontend && npm test
+```
 
-Do not claim the task is complete if any stage fails. Prefer the full script over running only the package you touched.
+Do not claim a task is complete if any stage fails, and do not claim e2e
+coverage that did not run.
 
-A task is incomplete until `./scripts/test-all.sh` passes and related tests reflect the new behavior.
+## Tests must stay in sync
+
+When changing existing behavior, update or add unit tests for the affected
+packages — they sit beside the code they test. Do not leave tests asserting the
+old behavior; change production code and tests together, and prefer extending
+existing tests over skipping or deleting coverage. New features need tests at
+the same layer as similar code already has.
+
+API and browser e2e updates belong in the private overlay repository; when it
+is present, its `AGENTS.md` covers them.
 
 ## Docker build (when available)
 
-If Docker is usable (`docker info` succeeds), also build the image after any build-related changes (Dockerfile, frontend/backend build scripts, Vite/VitePress config, `docs/` content that is compiled into the image, package lockfiles that affect `npm run build`, Go module files that affect `go build`, and similar):
+If Docker is usable (`docker info` succeeds), also build the image after any
+build-related changes (Dockerfile, frontend/backend build scripts, Vite/VitePress
+config, `docs/` content that is compiled into the image, package lockfiles that
+affect `npm run build`, Go module files that affect `go build`, and similar):
 
 ```bash
 docker info >/dev/null && docker build -t lemmary:local .
 ```
 
-Skip this only when `docker info` fails (daemon missing or unreachable). Do not claim build-related work is done if the Docker build fails.
-
-## Tests must stay in sync
-
-When changing existing behavior:
-
-- Update or add unit tests for the affected packages.
-- Update API e2e under `backend/e2e/` when HTTP/API behavior changes.
-- Update Playwright specs under `frontend/` when UI flows change.
-- Do not leave tests asserting the old behavior; change production code and tests together.
-- Prefer extending existing tests over skipping or deleting coverage.
-
-New features need tests at the same layer as similar code already has.
+Skip this only when `docker info` fails (daemon missing or unreachable). Do not
+claim build-related work is done if the Docker build fails.
