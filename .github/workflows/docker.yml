@@ -40,6 +40,10 @@ env:
 # repository variable to a JSON array to move them without editing this file:
 # ["ubuntu-latest"] puts CI back on GitHub's runners while the homelab machine
 # is down, and unsetting it brings CI home again.
+#
+# A self-hosted runner needs Docker with buildx usable by the runner user, and
+# passwordless sudo for the apt steps below (see the runner-smoke workflow,
+# which checks the Docker half).
 jobs:
   test:
     if: github.event_name == 'pull_request'
@@ -115,15 +119,11 @@ jobs:
       - name: Install Playwright Chromium
         if: steps.access.outputs.ok == 'true'
         working-directory: dev
-        # --with-deps shells out to apt on every run. That is what makes a fresh
-        # hosted runner work, and pure overhead on a persistent one that already
-        # has the libraries -- where the browser download itself is cached too.
-        run: |
-          if [ "$RUNNER_ENVIRONMENT" = "self-hosted" ]; then
-            npx playwright install chromium
-          else
-            npx playwright install --with-deps chromium
-          fi
+        # --with-deps unconditionally: the browser download is cached on a
+        # persistent runner, and only the apt half repeats. Skipping it there
+        # would mean chromium's system libraries had to be provisioned by hand,
+        # which is a worse trade than a few seconds of a satisfied apt run.
+        run: npx playwright install --with-deps chromium
 
       - name: Run verification suite
         if: steps.access.outputs.ok == 'true'
