@@ -86,6 +86,50 @@ gh api repos/OWNER/REPO/pulls/PULL_NUMBER/comments \
 
 Line coordinates must land on the PR diff; if GitHub rejects them, fix the path/line/side (or use a multi-line range) and retry. Leave merging to the user.
 
+## Working in a git worktree
+
+A worktree of this repository starts **without** `dev/`. The verification stack
+is a separate, private repository overlaid at that path and gitignored here, so
+`git worktree add` never brings it along and `./dev/scripts/test-all.sh` is
+missing in the new tree.
+
+When the main checkout has the overlay, attach it to the worktree before
+touching any code — as a worktree of the overlay repository on a branch of the
+**same name** as the feature branch, so the code change and its e2e update stay
+on matching branches in both repositories:
+
+```bash
+# Run from inside the fresh lemmary worktree.
+branch=$(git rev-parse --abbrev-ref HEAD)
+root=$(git rev-parse --show-toplevel)
+main=$(git worktree list --porcelain | sed -n '1s/^worktree //p')
+
+git -C "$main/dev" fetch origin
+git -C "$main/dev" worktree add "$root/dev" -b "$branch" origin/main
+(cd "$root/dev" && npm ci)   # Playwright specs keep their own node_modules
+```
+
+- If that branch already exists in the overlay, check it out instead of
+  creating it: drop `-b "$branch" origin/main` and pass `"$branch"` as the
+  final argument.
+- The overlay's `replace lemmary/backend => ../backend` then resolves to the
+  worktree's own `backend/`, so the suites exercise the worktree's code.
+- `npx playwright install chromium` is only needed once per machine; the
+  browsers live in a shared cache, not in the worktree.
+- If `$main/dev` does not exist, there is no overlay to attach: run the reduced
+  verification below and say plainly that the e2e suites did not run.
+
+When the worktree is finished with, remove the overlay worktree too, or prune
+it afterwards, so the overlay repository does not keep a stale entry:
+
+```bash
+git -C "$main/dev" worktree remove "$root/dev"   # before deleting the worktree
+git -C "$main/dev" worktree prune                # after, if it is already gone
+```
+
+Both branches need pushing — see "Changes that span both repositories" in the
+overlay's `AGENTS.md`.
+
 ## Verification (required)
 
 The e2e suites and the full verification stack live in a private repository
