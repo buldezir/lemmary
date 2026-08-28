@@ -39,6 +39,12 @@ jobs:
           docker buildx version
           docker run --rm hello-world
 
+      - name: Passwordless sudo
+        run: |
+          sudo -n true
+          sudo -n apt-get -qq update
+          echo "sudo ok as $(whoami) -> $(sudo -n id -un)"
+
       - name: Outbound network
         # ghcr.io/v2/ answers 401 to an anonymous probe, so any HTTP status
         # means the runner reached it. Only a transport failure is a problem.
