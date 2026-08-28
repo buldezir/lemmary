@@ -21,6 +21,11 @@ Browsers only run a passkey ceremony on a **hostname** served over a **secure co
 - `http://archive.example.com` — does not work. Plain HTTP on a real hostname is not a secure
   context.
 
+Your authenticator also has to be able to verify **you**, not just that it is present: a
+fingerprint, face, or a PIN. That is what makes a passkey a fair replacement for a password
+rather than a key anybody holding your device could use. A hardware security key with no PIN
+set cannot be enrolled — set a PIN on it first.
+
 Where a passkey cannot be used, the button simply does not appear and the password form is
 unaffected. Opening **More → Account** will tell you which of the conditions is not met.
 
@@ -138,6 +143,14 @@ button keeps waiting.
 
 **"This device already has a passkey for this account."** Nothing to do; use the one you have,
 or remove it from **More → Account** first.
+
+**"This device cannot create a passkey yet."** The authenticator has no screen lock, biometric
+or PIN configured. Set one up and try again — Lemmary requires it, because the passkey stands
+in for your password.
+
+**"Too many sign-in attempts are in progress."** The server is holding as many half-finished
+ceremonies as it will. Wait a minute and try again. An operator seeing this regularly should
+enable PocketBase's rate limiter (**Admin → Settings → Rate limits**).
 
 **"That passkey is no longer valid on this server."** The account behind it is gone, or the
 hostname changed. Sign in another way and remove the entry.

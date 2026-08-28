@@ -22,10 +22,13 @@ import (
 // go-webauthn.
 var passkeyChallenges = passkey.NewChallengeStore()
 
+// errLastSignInMethod aborts the delete transaction when the credential turns out
+// to be the account's only remaining way in.
+var errLastSignInMethod = errors.New("passkey is the last sign-in method")
+
 // passkeyMaxBodyBytes caps the attestation/assertion payload. Real ones run to a
 // few kilobytes; PocketBase's route default is 32MB, which is absurd for a JSON
-// envelope on an endpoint anyone can reach. Applied as a route-level BodyLimit so
-// the cap lands before the handler reads anything.
+// envelope on an endpoint anyone can reach.
 const passkeyMaxBodyBytes = 64 << 10
 
 type passkeyBeginResponse struct {
@@ -134,6 +137,18 @@ func exclusionList(credentials []webauthn.Credential) []protocol.CredentialDescr
 	return webauthn.Credentials(credentials).CredentialDescriptors()
 }
 
+// writeChallengeError renders a challenge-store failure. A full store is load
+// shedding, not a fault, so it answers 429 and says the attempt is worth
+// repeating.
+func writeChallengeError(app core.App, e *core.RequestEvent, err error, fallback string) error {
+	if errors.Is(err, passkey.ErrTooManyChallenges) {
+		return writeError(e, http.StatusTooManyRequests,
+			"Too many sign-in attempts are in progress. Try again in a minute.")
+	}
+	app.Logger().Error("passkey issue challenge failed", "error", err)
+	return writeError(e, http.StatusInternalServerError, fallback)
+}
+
 func handlePostPasskeyRegisterBegin(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		w, err := webauthnFor(app, e)
@@ -168,8 +183,7 @@ func handlePostPasskeyRegisterBegin(app core.App) func(*core.RequestEvent) error
 
 		handle, err := passkeyChallenges.Issue(session)
 		if err != nil {
-			app.Logger().Error("passkey issue challenge failed", "error", err)
-			return writeError(e, http.StatusInternalServerError, "Failed to start passkey registration.")
+			return writeChallengeError(app, e, err, "Failed to start passkey registration.")
 		}
 		return writeJSON(e, http.StatusOK, passkeyBeginResponse{SessionID: handle, Options: creation})
 	}
@@ -271,29 +285,41 @@ func handleDeletePasskey(app core.App) func(*core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		record, err := passkey.FindOwned(app, userRecord.Id, e.Request.PathValue("id"))
-		if err != nil {
-			return writePasskeyLookupError(app, e, err)
-		}
+		recordID := e.Request.PathValue("id")
 
-		last, err := isLastSignInMethod(app, userRecord)
-		if err != nil {
-			app.Logger().Error("passkey last-method check failed", "error", err)
-			return writeError(e, http.StatusInternalServerError, "Failed to remove the passkey.")
-		}
-		if last {
-			total, err := passkey.Count(app, userRecord.Id)
+		// Count, guard and delete inside one transaction, for the same reason
+		// handlePostSetupAdmin does: two concurrent deletes of two different
+		// credentials would otherwise both read a total of two, both pass the
+		// guard, and both delete — leaving a passkey-only account with no way in.
+		// PocketBase serializes writes through a single connection, so the second
+		// transaction's count sees the first one's delete.
+		err = app.RunInTransaction(func(txApp core.App) error {
+			record, err := passkey.FindOwned(txApp, userRecord.Id, recordID)
 			if err != nil {
-				app.Logger().Error("passkey count failed", "error", err)
-				return writeError(e, http.StatusInternalServerError, "Failed to remove the passkey.")
+				return err
 			}
-			if total <= 1 {
-				return writeError(e, http.StatusConflict,
-					"This passkey is the only way to sign in to this account. Enable password sign-in or add another passkey first.")
+			last, err := isLastSignInMethod(txApp, userRecord)
+			if err != nil {
+				return err
 			}
-		}
-
-		if err := app.Delete(record); err != nil {
+			if last {
+				total, err := passkey.Count(txApp, userRecord.Id)
+				if err != nil {
+					return err
+				}
+				if total <= 1 {
+					return errLastSignInMethod
+				}
+			}
+			return txApp.Delete(record)
+		})
+		switch {
+		case errors.Is(err, errLastSignInMethod):
+			return writeError(e, http.StatusConflict,
+				"This passkey is the only way to sign in to this account. Enable password sign-in or add another passkey first.")
+		case errors.Is(err, passkey.ErrNotFound):
+			return writePasskeyLookupError(app, e, err)
+		case err != nil:
 			app.Logger().Error("passkey delete failed", "error", err)
 			return writeError(e, http.StatusInternalServerError, "Failed to remove the passkey.")
 		}
@@ -319,8 +345,7 @@ func handlePostPasskeyLoginBegin(app core.App) func(*core.RequestEvent) error {
 		}
 		handle, err := passkeyChallenges.Issue(session)
 		if err != nil {
-			app.Logger().Error("passkey issue challenge failed", "error", err)
-			return writeError(e, http.StatusInternalServerError, "Failed to start passkey sign-in.")
+			return writeChallengeError(app, e, err, "Failed to start passkey sign-in.")
 		}
 		return writeJSON(e, http.StatusOK, passkeyBeginResponse{SessionID: handle, Options: assertion})
 	}
@@ -379,21 +404,32 @@ func handlePostPasskeyLoginFinish(app core.App) func(*core.RequestEvent) error {
 			return writeError(e, http.StatusInternalServerError, "Failed to complete passkey sign-in.")
 		}
 
+		// The signature counter failed to advance when it should have, which the
+		// spec calls out as a possible cloned authenticator. Refuse the session.
+		//
+		// This does *not* catch the synced-passkey case, which was the worry:
+		// go-webauthn's Authenticator.UpdateCounter sets CloneWarning only when
+		// `authDataCount <= SignCount && (authDataCount != 0 || SignCount != 0)`,
+		// so an authenticator that reports zero forever — iCloud Keychain, Google
+		// Password Manager — leaves the flag clear and signs in normally. The flag
+		// is set only when a real counter went backwards or stalled, so there is no
+		// population of legitimate authenticators to protect by ignoring it, and
+		// logging it while issuing the token anyway would make the check
+		// decorative.
+		if credential.Authenticator.CloneWarning {
+			app.Logger().Warn("passkey sign counter did not advance; refusing the session",
+				"record", matched.Id)
+			return writeError(e, http.StatusUnauthorized, "That passkey was not accepted.")
+		}
+
 		// A counter that never moves is the classic WebAuthn storage bug: it turns
-		// the clone detection the spec provides into a no-op. So the advanced
-		// counter is written back on every login — but a failure here does not
-		// fail the sign-in. The credential has already been verified; refusing the
-		// session over a transient write would lock someone out of their account
-		// to protect bookkeeping.
+		// the clone detection above into a no-op. So the advanced counter is
+		// written back on every login — but a failure here does not fail the
+		// sign-in. The credential has already been verified; refusing the session
+		// over a transient write would lock someone out of their account to protect
+		// bookkeeping.
 		if err := passkey.TouchCredential(app, matched, credential); err != nil {
 			app.Logger().Error("passkey counter write-back failed", "record", matched.Id, "error", err)
-		}
-		// Not fatal either: authenticators that sync across devices (iCloud
-		// Keychain, Google Password Manager) legitimately report a counter of zero
-		// forever, so treating this as cloning would reject the most common
-		// authenticator there is. It is worth a line in the log and nothing more.
-		if credential.Authenticator.CloneWarning {
-			app.Logger().Warn("passkey sign counter did not advance", "record", matched.Id)
 		}
 
 		// PocketBase's own auth response, so the token, the auth hooks and the
@@ -452,14 +488,28 @@ func writePasskeyLookupError(app core.App, e *core.RequestEvent, err error) erro
 // docs/oauth.md describes, where turning identity/password off and then deleting
 // the last passkey would lock the account out of the app entirely.
 func isLastSignInMethod(finder externalAuthFinder, userRecord *core.Record) (bool, error) {
-	if userRecord.Collection().PasswordAuth.Enabled {
+	collection := userRecord.Collection()
+	if collection.PasswordAuth.Enabled {
 		return false, nil
+	}
+	// An _externalAuths row is not by itself a way in. The row survives both
+	// turning OAuth2 off and removing that provider from the collection, and
+	// PocketBase refuses the sign-in in either case — so counting a stale row as a
+	// method is exactly how an account ends up with its last passkey deleted and
+	// nothing that works.
+	if !collection.OAuth2.Enabled {
+		return true, nil
 	}
 	externals, err := finder.FindAllExternalAuthsByRecord(userRecord)
 	if err != nil {
 		return false, err
 	}
-	return len(externals) == 0, nil
+	for _, external := range externals {
+		if _, ok := collection.OAuth2.GetProviderConfig(external.Provider()); ok {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // externalAuthFinder is the slice of core.App this check needs, narrowed so the

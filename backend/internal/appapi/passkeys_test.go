@@ -25,6 +25,32 @@ func testUserRecord(passwordEnabled bool) *core.Record {
 	return record
 }
 
+// testUserRecordWithOAuth builds a record whose collection has OAuth2 enabled and
+// the named providers configured.
+func testUserRecordWithOAuth(passwordEnabled bool, providers ...string) *core.Record {
+	record := testUserRecord(passwordEnabled)
+	collection := record.Collection()
+	collection.OAuth2.Enabled = true
+	for _, name := range providers {
+		collection.OAuth2.Providers = append(collection.OAuth2.Providers, core.OAuth2ProviderConfig{
+			Name:         name,
+			ClientId:     name + "-client",
+			ClientSecret: name + "-secret",
+		})
+	}
+	return record
+}
+
+// testExternalAuth builds the model directly rather than via core.NewExternalAuth,
+// which needs a live app.
+func testExternalAuth(provider string) *core.ExternalAuth {
+	collection := core.NewBaseCollection(core.CollectionNameExternalAuths)
+	collection.Fields.Add(&core.TextField{Name: "provider"})
+	record := core.NewRecord(collection)
+	record.Set("provider", provider)
+	return &core.ExternalAuth{Record: record}
+}
+
 func TestIsLastSignInMethodFalseWhilePasswordAuthIsOn(t *testing.T) {
 	t.Parallel()
 	// The default install. Deleting every passkey has to stay allowed here, or
@@ -51,24 +77,60 @@ func TestIsLastSignInMethodTrueWhenOnlyPasskeysRemain(t *testing.T) {
 	}
 }
 
-func TestIsLastSignInMethodFalseWhenOAuthIsLinked(t *testing.T) {
+func TestIsLastSignInMethodFalseWhenAConfiguredOAuthProviderIsLinked(t *testing.T) {
 	t.Parallel()
-	finder := stubExternalAuths{auths: []*core.ExternalAuth{{}}}
-	last, err := isLastSignInMethod(finder, testUserRecord(false))
+	finder := stubExternalAuths{auths: []*core.ExternalAuth{testExternalAuth("google")}}
+	last, err := isLastSignInMethod(finder, testUserRecordWithOAuth(false, "google"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if last {
-		t.Fatal("a linked OAuth2 provider is still a way in")
+		t.Fatal("a linked OAuth2 provider that is still configured is a way in")
+	}
+}
+
+func TestIsLastSignInMethodIgnoresStaleExternalAuthRows(t *testing.T) {
+	t.Parallel()
+	// An _externalAuths row outlives both turning OAuth2 off and removing that
+	// provider from the collection, and PocketBase refuses the sign-in in either
+	// case. Counting such a row as a working method is how an account ends up with
+	// its last passkey deleted and nothing left that can sign in.
+	cases := []struct {
+		name   string
+		record *core.Record
+	}{
+		{
+			name:   "oauth2 disabled entirely",
+			record: testUserRecord(false),
+		},
+		{
+			name:   "provider no longer configured",
+			record: testUserRecordWithOAuth(false, "github"),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			finder := stubExternalAuths{auths: []*core.ExternalAuth{testExternalAuth("google")}}
+			last, err := isLastSignInMethod(finder, tc.record)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !last {
+				t.Fatal("a stale external-auth row is not a way in")
+			}
+		})
 	}
 }
 
 func TestIsLastSignInMethodPropagatesLookupFailure(t *testing.T) {
 	t.Parallel()
 	// A failed lookup must not be read as "no OAuth2 linked", which would let the
-	// guard pass and delete the account's last credential.
+	// guard pass and delete the account's last credential. The record needs OAuth2
+	// enabled, since that is the only path that consults the finder at all.
 	finder := stubExternalAuths{err: errors.New("boom")}
-	if _, err := isLastSignInMethod(finder, testUserRecord(false)); err == nil {
+	if _, err := isLastSignInMethod(finder, testUserRecordWithOAuth(false, "google")); err == nil {
 		t.Fatal("expected the lookup error to propagate")
 	}
 }

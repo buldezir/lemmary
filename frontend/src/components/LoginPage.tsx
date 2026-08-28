@@ -48,15 +48,25 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
   // passkeysSupported() is synchronous and stable for the life of the page; the
   // server's half arrives with `methods`, which is why this is not state either.
   const passkeyVisible = passkeyOffered && passkeysSupported()
-  const conditional = useRef<ConditionalPasskeyLogin | null>(null)
+  // The *promise* of an armed request, not the request itself. Arming has to
+  // await capability detection and a network round trip, and during that window a
+  // ref holding only the settled handle would still read null — so a submit or a
+  // button click would find nothing to cancel and start a second
+  // credentials.get() (which rejects while one is outstanding), while the late
+  // .then() would overwrite the ref and leave the first request uncancellable.
+  // Storing the promise closes that window: it is non-null the instant arming
+  // starts, so cancellation covers pending setup as well as an active request,
+  // and the same non-null check prevents arming twice.
+  const conditional = useRef<Promise<ConditionalPasskeyLogin | null> | null>(null)
   const onSuccessRef = useRef(onSuccess)
   useEffect(() => {
     onSuccessRef.current = onSuccess
   })
 
   async function cancelConditional() {
-    const request = conditional.current
+    const pending = conditional.current
     conditional.current = null
+    const request = await pending
     await request?.cancel()
   }
 
@@ -64,11 +74,18 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
     if (!passkeyVisible || !passwordEnabled || conditional.current) {
       return
     }
-    void startConditionalPasskeyLogin({
+    const pending = startConditionalPasskeyLogin({
       onSuccess: () => onSuccessRef.current(),
       onError: setError,
-    }).then((request) => {
-      conditional.current = request
+    })
+    conditional.current = pending
+    // A null result means nothing was armed (no conditional mediation, or the
+    // server would not issue a challenge). Release the slot so a later attempt
+    // can try again rather than being blocked by a resolved-null promise.
+    void pending.then((request) => {
+      if (request === null && conditional.current === pending) {
+        conditional.current = null
+      }
     })
   }
 
@@ -76,29 +93,17 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
     // Conditional mediation attaches to the autofill-tagged email field, so this
     // waits for the auth-methods response rather than arming against the
     // optimistic password-only default.
-    if (!methods || !passkeyVisible || !passwordEnabled) {
+    if (!methods) {
       return
     }
-    let cancelled = false
-    void startConditionalPasskeyLogin({
-      onSuccess: () => onSuccessRef.current(),
-      onError: setError,
-    }).then((request) => {
-      if (cancelled) {
-        void request?.cancel()
-        return
-      }
-      conditional.current = request
-    })
+    armConditional()
     return () => {
-      cancelled = true
-      const request = conditional.current
-      conditional.current = null
       // Not optional: RootLayout unmounts this component the moment the gate
       // flips, and an outstanding conditional request would otherwise stay live
       // against a dead page — and could still adopt a session after the fact.
-      void request?.cancel()
+      void cancelConditional()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- armConditional and cancelConditional read refs, not render state
   }, [methods, passkeyVisible, passwordEnabled])
 
   async function onSubmit(event: SubmitEvent<HTMLFormElement>) {

@@ -14,6 +14,10 @@ import (
 // never issued, has already been used, or has expired.
 var ErrUnknownSession = errors.New("passkey challenge expired or already used")
 
+// ErrTooManyChallenges means the store is full of live challenges. Callers render
+// it as 429 rather than 500: nothing is broken, the server is shedding load.
+var ErrTooManyChallenges = errors.New("too many passkey ceremonies in progress")
+
 const (
 	// challengeTTL bounds how long a user has between the button click and the
 	// authenticator prompt being answered. Long enough for a fingerprint reader
@@ -23,10 +27,23 @@ const (
 	// maxChallenges caps the store. login/begin is unauthenticated by necessity —
 	// the whole point is that the caller has no session yet — and this app
 	// configures no rate limiter, so without a cap anyone could grow the map
-	// until the process ran out of memory. Oldest-first eviction means the abuse
-	// costs an attacker nothing but also gains them nothing: the worst outcome is
-	// that a legitimate user's challenge is dropped and they press the button
-	// again.
+	// until the process ran out of memory.
+	//
+	// At capacity a new challenge is refused rather than made room for. Evicting
+	// the oldest live entry was the first design and it was worse: an
+	// unauthenticated caller could push entries until a victim's in-flight handle
+	// fell off the end, invalidating a ceremony the victim had already started and
+	// could otherwise have completed. Refusing instead means a flood can stop new
+	// ceremonies beginning — the same denial either way — but can never destroy one
+	// that is already under way, and the attacker's own entries drain within the
+	// TTL. Failing closed on a bounded resource beats sacrificing valid state.
+	//
+	// Per-IP throttling is deliberately not attempted here. PocketBase's
+	// e.RealIP() honours its TrustedProxy setting, which this app leaves unset, so
+	// behind a reverse proxy every request reports the proxy's address: a per-IP
+	// bucket would either do nothing or lock out every user at once. The operator's
+	// tool is PocketBase's own rate limiter (Admin → Settings → Rate limits), which
+	// composes correctly with TrustedProxy once that is configured.
 	maxChallenges = 4096
 )
 
@@ -60,6 +77,7 @@ func NewChallengeStore() *ChallengeStore {
 }
 
 // Issue stores session data and returns the handle the client must send back.
+// Returns ErrTooManyChallenges when the store is full of live entries.
 func (s *ChallengeStore) Issue(session *webauthn.SessionData) (string, error) {
 	handle, err := newHandle()
 	if err != nil {
@@ -70,7 +88,7 @@ func (s *ChallengeStore) Issue(session *webauthn.SessionData) (string, error) {
 	defer s.mu.Unlock()
 	s.pruneLocked(time.Now())
 	if len(s.entries) >= maxChallenges {
-		s.evictOldestLocked()
+		return "", ErrTooManyChallenges
 	}
 	s.entries[handle] = challengeEntry{
 		session: *session,
@@ -113,19 +131,6 @@ func (s *ChallengeStore) pruneLocked(now time.Time) {
 		if now.After(entry.expires) {
 			delete(s.entries, handle)
 		}
-	}
-}
-
-func (s *ChallengeStore) evictOldestLocked() {
-	oldestHandle := ""
-	var oldest time.Time
-	for handle, entry := range s.entries {
-		if oldestHandle == "" || entry.expires.Before(oldest) {
-			oldestHandle, oldest = handle, entry.expires
-		}
-	}
-	if oldestHandle != "" {
-		delete(s.entries, oldestHandle)
 	}
 }
 

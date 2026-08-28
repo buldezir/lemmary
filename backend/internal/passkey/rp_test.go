@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/go-webauthn/webauthn/protocol"
 )
 
 func TestRPIDFromHost(t *testing.T) {
@@ -133,6 +135,23 @@ func TestNewBuildsInstanceForHostname(t *testing.T) {
 	}
 	if w.Config.RPID != "archive.example.com" {
 		t.Fatalf("RPID = %q, want archive.example.com", w.Config.RPID)
+	}
+}
+
+func TestUserVerificationIsRequiredNotPreferred(t *testing.T) {
+	// Load-bearing, not a preference. go-webauthn only checks the assertion's
+	// user-verified flag when the session requirement is exactly "required"; under
+	// "preferred" a PIN-less authenticator would mint a full session on possession
+	// and a touch alone. A passkey here is the only factor.
+	w, err := New(Caller{Scheme: "https", Host: "archive.example.com"}, "Lemmary")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := w.Config.AuthenticatorSelection.UserVerification; got != protocol.VerificationRequired {
+		t.Fatalf("UserVerification = %q, want %q", got, protocol.VerificationRequired)
+	}
+	if got := w.Config.AuthenticatorSelection.ResidentKey; got != protocol.ResidentKeyRequirementRequired {
+		t.Fatalf("ResidentKey = %q, want %q", got, protocol.ResidentKeyRequirementRequired)
 	}
 }
 

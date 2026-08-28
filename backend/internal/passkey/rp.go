@@ -231,11 +231,21 @@ func New(caller Caller, displayName string) (*webauthn.WebAuthn, error) {
 		AuthenticatorSelection: protocol.AuthenticatorSelection{
 			ResidentKey:        protocol.ResidentKeyRequirementRequired,
 			RequireResidentKey: protocol.ResidentKeyRequired(),
-			// Preferred, not required: every platform authenticator verifies the
-			// user anyway, while "required" would shut out a security key that has
-			// no PIN set — a worse outcome than accepting one for a first factor
-			// that is already phishing-resistant.
-			UserVerification: protocol.VerificationPreferred,
+			// Required, not preferred, and this is a security property rather than
+			// a preference.
+			//
+			// go-webauthn only checks the assertion's user-verified flag when the
+			// session requirement is exactly "required"
+			// (shouldVerifyUser in webauthn/login.go). Under "preferred" a
+			// credential that verified nobody is accepted, so a PIN-less roaming
+			// key would mint a full session on possession and a touch alone. A
+			// passkey here replaces the password outright — it is the only factor —
+			// and both the UI and docs promise a fingerprint, face or device PIN.
+			//
+			// The cost is that an authenticator with no PIN or biometric set cannot
+			// be enrolled. That is the right trade for a sole factor, and the
+			// remedy is in the owner's hands: set a PIN on the key.
+			UserVerification: protocol.VerificationRequired,
 		},
 	})
 	if err != nil {

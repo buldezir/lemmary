@@ -124,17 +124,51 @@ func TestExpiredChallengesArePrunedOnIssue(t *testing.T) {
 func TestStoreIsCappedSoUnauthenticatedCallersCannotGrowItForever(t *testing.T) {
 	t.Parallel()
 	store := NewChallengeStore()
-	for i := 0; i < maxChallenges+50; i++ {
+	for i := 0; i < maxChallenges; i++ {
 		if _, err := store.Issue(testSession("abc")); err != nil {
 			t.Fatalf("Issue %d: %v", i, err)
 		}
+	}
+	if _, err := store.Issue(testSession("one too many")); err != ErrTooManyChallenges {
+		t.Fatalf("error = %v, want ErrTooManyChallenges", err)
 	}
 	if got := store.Len(); got > maxChallenges {
 		t.Fatalf("Len = %d, want at most %d", got, maxChallenges)
 	}
 }
 
-func TestEvictionKeepsTheStoreUsable(t *testing.T) {
+func TestFloodCannotInvalidateACeremonyAlreadyUnderWay(t *testing.T) {
+	t.Parallel()
+	store := NewChallengeStore()
+
+	// A victim starts a ceremony, then an unauthenticated flood fills the store.
+	victim, err := store.Issue(testSession("victim"))
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	refused := 0
+	for i := 0; i < maxChallenges*2; i++ {
+		if _, err := store.Issue(testSession("flood")); err == ErrTooManyChallenges {
+			refused++
+		}
+	}
+	if refused == 0 {
+		t.Fatal("the flood should have been refused once the store filled")
+	}
+
+	// The victim's handle must still redeem. Evicting the oldest live entry to
+	// make room would have destroyed a ceremony already under way, which is why
+	// the store refuses the newcomer instead.
+	session, err := store.Consume(victim)
+	if err != nil {
+		t.Fatalf("the victim's in-flight challenge was lost: %v", err)
+	}
+	if session.Challenge != "victim" {
+		t.Fatalf("Challenge = %q, want victim", session.Challenge)
+	}
+}
+
+func TestCapacityIsReleasedAsChallengesExpire(t *testing.T) {
 	t.Parallel()
 	store := NewChallengeStore()
 	for i := 0; i < maxChallenges; i++ {
@@ -142,17 +176,24 @@ func TestEvictionKeepsTheStoreUsable(t *testing.T) {
 			t.Fatalf("Issue: %v", err)
 		}
 	}
-	// A challenge issued once the store is full must still be redeemable, or a
-	// flood would deny sign-in to everyone rather than just costing a retry.
-	handle, err := store.Issue(testSession("mine"))
-	if err != nil {
-		t.Fatalf("Issue at capacity: %v", err)
+	if _, err := store.Issue(testSession("blocked")); err != ErrTooManyChallenges {
+		t.Fatalf("error = %v, want ErrTooManyChallenges", err)
 	}
-	session, err := store.Consume(handle)
-	if err != nil {
-		t.Fatalf("Consume at capacity: %v", err)
+
+	// A flood costs the attacker nothing but buys them only the TTL: once the
+	// entries age out the store serves normally again.
+	store.mu.Lock()
+	for handle, entry := range store.entries {
+		entry.expires = time.Now().Add(-time.Second)
+		store.entries[handle] = entry
 	}
-	if session.Challenge != "mine" {
-		t.Fatalf("Challenge = %q, want mine", session.Challenge)
+	store.mu.Unlock()
+
+	handle, err := store.Issue(testSession("after expiry"))
+	if err != nil {
+		t.Fatalf("Issue after expiry: %v", err)
+	}
+	if _, err := store.Consume(handle); err != nil {
+		t.Fatalf("Consume after expiry: %v", err)
 	}
 }
