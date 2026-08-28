@@ -11,6 +11,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/importjob"
+	"lemmary/backend/internal/limits"
 	"lemmary/backend/internal/pdfsplit"
 )
 
@@ -166,7 +167,7 @@ func handleGetSplitDetectStatus(app core.App) func(*core.RequestEvent) error {
 }
 
 // handlePostSplit starts the confirmed split of a staged PDF.
-func handlePostSplit(app core.App) func(*core.RequestEvent) error {
+func handlePostSplit(app core.App, lim limits.Limits) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var req splitRequest
 		if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
@@ -179,6 +180,28 @@ func handlePostSplit(app core.App) func(*core.RequestEvent) error {
 		ownerID, err := resolveOwnerUserID(app, e)
 		if err != nil {
 			return writeOwnerError(e, err)
+		}
+
+		// A split is the one bulk path whose page counts are known exactly
+		// before anything is created -- each part is a page range -- so both the
+		// per-file and the instance-wide page limits can be answered here rather
+		// than after some of the parts already exist. Bytes are not knowable
+		// until the parts are extracted, so those stay with the create hook.
+		if len(req.Parts) > 0 {
+			var pages int64
+			for _, part := range req.Parts {
+				partPages := int64(part.To - part.From + 1)
+				if partPages < 1 {
+					continue
+				}
+				pages += partPages
+				if exceeded := limits.AsExceeded(lim.CheckFile(0, partPages)); exceeded != nil {
+					return writeError(e, http.StatusBadRequest, exceeded.Message)
+				}
+			}
+			if exceeded := preflightImport(app, lim, int64(len(req.Parts)), pages, 0); exceeded != nil {
+				return writeError(e, http.StatusBadRequest, exceeded.Message)
+			}
 		}
 
 		jobID, err := pdfsplit.Start(app, ownerID, req.UploadID, req.Parts)

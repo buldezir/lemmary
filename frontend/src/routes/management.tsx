@@ -9,6 +9,8 @@ import {
   type DuplicateScanResult,
   type TaxonomyPruneResult,
 } from '../lib/api/maintenance'
+import { getLimits, type InstanceLimits } from '../lib/api/limits'
+import { LimitsUsage } from '../components/LimitsUsage'
 import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
 import { Button, labelTextClassName, sectionClassName, sectionTitleClassName } from '../components/ui'
 
@@ -54,6 +56,7 @@ export function ManagementPage() {
   const [reindexing, setReindexing] = useState(false)
   const [pruning, setPruning] = useState(false)
   const [activeJobs, setActiveJobs] = useState<ActiveJobCounts | null>(null)
+  const [limits, setLimits] = useState<InstanceLimits | null>(null)
   const [failedCount, setFailedCount] = useState<number | null>(null)
   const [failedCountLoaded, setFailedCountLoaded] = useState(false)
   const [reprocessing, setReprocessing] = useState(false)
@@ -64,6 +67,18 @@ export function ManagementPage() {
 
   // Pruning taxonomy while documents are still processing could delete an entity
   // a running job is about to attach, so the queue is polled to gate that button.
+  useEffect(() => {
+    let active = true
+    getLimits()
+      .then((next) => {
+        if (active) setLimits(next)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+
   useEffect(() => {
     let active = true
 
@@ -311,6 +326,34 @@ export function ManagementPage() {
             )}
           </div>
         </section>
+
+        {limits && (limits.enforced || (limits.misconfigured?.length ?? 0) > 0) && (
+          <section className={sectionClassName}>
+            <h2 className={sectionTitleClassName}>Instance limits</h2>
+            <p className="text-xs text-ink-soft">
+              Set by the operator through <code>LIMIT_*</code> environment variables and read at
+              startup, so they cannot be changed from Settings. Lowering a limit under an existing
+              library never deletes anything &mdash; it only refuses the next addition.
+            </p>
+            {limits.enforced ? (
+              <LimitsUsage limits={limits} className="mt-4 border-0 bg-transparent p-0" />
+            ) : (
+              <p className="mt-4 text-xs text-ink-soft">No limits are in effect.</p>
+            )}
+            {(limits.misconfigured?.length ?? 0) > 0 && (
+              <p className="mt-4 text-sm text-madder">
+                Could not read {limits.misconfigured?.join(', ')}. Each fell back to unlimited, so
+                these are not being enforced.
+              </p>
+            )}
+            {limits.enforced && (
+              <p className="mt-4 text-xs text-ink-faint">
+                Documents added before this version was installed count as zero pages and zero
+                bytes, so those two figures can read low on an upgraded library.
+              </p>
+            )}
+          </section>
+        )}
 
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>Search index</h2>

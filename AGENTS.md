@@ -96,7 +96,12 @@ missing in the new tree.
 When the main checkout has the overlay, attach it to the worktree before
 touching any code — as a worktree of the overlay repository on a branch of the
 **same name** as the feature branch, so the code change and its e2e update stay
-on matching branches in both repositories:
+on matching branches in both repositories.
+
+The name is load-bearing: the pull request job looks in the overlay for a branch
+matching the pull request and falls back to `main` when it finds none, so a
+mismatched name means CI runs the change against suites that know nothing about
+it — and reports green.
 
 ```bash
 # Run from inside the fresh lemmary worktree.
@@ -127,8 +132,13 @@ git -C "$main/dev" worktree remove "$root/dev"   # before deleting the worktree
 git -C "$main/dev" worktree prune                # after, if it is already gone
 ```
 
-Both branches need pushing — see "Changes that span both repositories" in the
-overlay's `AGENTS.md`.
+Both branches need pushing, and the overlay side wants pushing first — until it
+is, the pull request job falls back to the overlay's `main`. See "Changes that
+span both repositories" in the overlay's `AGENTS.md`.
+
+Note that the sandbox may refuse git commands aimed at `$main/dev`, since it
+sits inside the shared checkout. Leaving the worktree (keeping it), running the
+overlay commands, and re-entering is the way through.
 
 ## Verification (required)
 

@@ -60,9 +60,66 @@ All variables live in `.env` at the project root (see `.env.example`).
 | `IMPORT_ALLOW_PRIVATE` | unset (blocked) | Set to `1`/`true` to let ngx import reach loopback and RFC1918 hosts. Link-local / cloud-metadata addresses stay blocked. Needed when Paperless-ngx is on the same LAN or Docker network. |
 | `UPLOAD_MAX_MB` | `100` | Cap on a staged split-document PDF upload, in megabytes. Read at startup, not from Settings: staging a PDF costs several times its size in memory while pages are rendered, so it protects the host as much as it shapes the product. A malformed or non-positive value falls back to the default rather than failing the boot. Per-file uploads are capped separately by the `documents.file` field (20 MB). |
 | `IMPORT_STAGING_MAX_BYTES` | `1073741824` (1 GiB) | Cap on an archive staged for import (Amazon orders, Lemmary backup), in bytes. Staging a new archive discards that account's previous one, so this is also the disk a single account can occupy while deciding whether to confirm — the staging area's ceiling is roughly this times the number of accounts. Lower it on a small volume; raise it for a library whose backup runs past a gigabyte. A malformed value, or one under 1 MiB, falls back to the default rather than rejecting every upload. |
+| `LIMIT_DOCUMENTS` | unset (unlimited) | Total documents this instance may store. |
+| `LIMIT_DOCUMENT_PAGES` | unset (unlimited) | Total pages across all stored documents. Anything that is not a PDF counts as one page &mdash; including a multi-page `.docx` or `.xlsx`, whose real page count is not knowable without converting the file. |
+| `LIMIT_STORAGE_BYTES` | unset (unlimited) | Total bytes of stored document files. Counts the uploaded originals only, not the generated thumbnails or the extracted OCR text. |
+| `LIMIT_FILE_BYTES` | unset (unlimited) | Largest single document file, in bytes. Can only **lower** the effective cap: the `documents.file` field carries its own 20 MB `MaxSize` that PocketBase validates on every save, and no value here can raise it. Distinct from `UPLOAD_MAX_MB`, which caps the one staged PDF a split is cut from rather than each document it produces. |
+| `LIMIT_FILE_PAGES` | unset (unlimited) | Most pages in a single document. |
+| `LIMIT_ADDITIONAL_USERS` | unset (unlimited) | Accounts beyond the admin account. Exactly one account is free, so `0` is a single-account instance. |
 | `VITE_POCKETBASE_URL` | `http://127.0.0.1:8090` | PocketBase API URL (frontend) |
 | `VITE_DEV_USER_EMAIL` | — | Dev auto-login email (`users` collection) |
 | `VITE_DEV_USER_PASSWORD` | — | Dev auto-login password |
+
+#### Instance limits
+
+The six `LIMIT_*` variables bound how much one instance may hold. **All of them are
+unlimited when unset**, so an install that sets none of them behaves exactly as it
+did before they existed — no extra queries per upload, and no quota shown in the UI.
+
+They are read at startup and deliberately never stored in `app_settings`: they say
+what an instance is *allowed* to hold, and an admin editing the Settings page must
+not be able to raise their own allowance. Change one by recreating the container
+with a new value. For the same reason they do not take part in the
+[applied-when-changed](#applied-when-changed) mechanism, which exists to protect
+Settings edits from being reverted — there is no Settings edit here to protect.
+
+- An explicit `0` means zero, not unlimited. `LIMIT_ADDITIONAL_USERS=0` is a
+  single-account instance.
+- A value that cannot be read — a typo, a negative, a decimal — falls back to
+  unlimited and is logged at `ERROR`, and the variable is named in
+  `GET /api/app/limits` for an admin session and on the **Management** page. The
+  fallback direction is deliberate: a stray character in an orchestrator's
+  environment should grant room rather than lock an owner out of their own archive,
+  and being told loudly is what keeps that from going unnoticed.
+- Lowering a limit under a library that already exceeds it never deletes anything.
+  Usage is simply reported as over, and the next addition is refused.
+- The three instance-wide totals are measured from the live rows on each write, so
+  deleting a document (or a user, which cascades to their documents) frees its
+  allowance immediately.
+- Documents created **before** this version was installed count as zero pages and
+  zero bytes: the page and size columns are added without a backfill, because
+  filling them would mean running `pdfinfo` once per existing PDF during a
+  migration. `LIMIT_DOCUMENTS` and `LIMIT_ADDITIONAL_USERS` are exact regardless;
+  the page and byte totals read low on an upgraded library until those documents
+  are replaced.
+- A bulk path — a backup restore, an Amazon-orders import, a document split — is
+  checked against the remaining allowance up front, so the common case of a batch
+  that plainly does not fit is refused before anything is created. That check is
+  **not** a reservation, and a bulk run can still stop partway:
+  - a restore or an Amazon import knows its document count and bytes, but not its
+    page count (an archive's real page counts are only discoverable by opening
+    every PDF in it), so a page limit is enforced per document as the run
+    proceeds;
+  - a split knows its document and page counts exactly, but not the size of parts
+    that do not exist yet, so a storage limit is enforced per part;
+  - a Paperless-ngx import checks only the document count the remote reports;
+  - and any of them can be confirmed minutes after its preview, by which time
+    another upload may have taken the room.
+
+  A run that stops partway keeps what it already created and reports the rest as
+  errors; nothing is rolled back. The per-document checks are what make the limit
+  itself exact — the up-front check is there to turn the common failure into one
+  clear message instead of several hundred.
 
 ### Applied when changed
 

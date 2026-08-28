@@ -9,6 +9,7 @@ import (
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/ext"
 	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/limits"
 	"lemmary/backend/internal/mailsink"
 	"lemmary/backend/internal/ngxapi"
 	"lemmary/backend/internal/worker"
@@ -24,6 +25,12 @@ import (
 func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, indexFallback bool) {
 	ed := edition()
 
+	// Read once, here, so every consumer sees the same numbers: the hooks that
+	// enforce them, the caps the bulk importers lower to match, and the usage
+	// endpoint the UI reads.
+	lim, badLimitKeys := limits.FromEnv(app.Logger())
+	applyPerFileCaps(lim)
+
 	ft := fulltext.New()
 	config.RegisterHooks(app, rt)
 	// Installed before anything can trigger a reload: RegisterHooks only binds
@@ -33,7 +40,11 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	authguard.Register(app)
 	mailsink.Register(app)
 	fulltext.Register(app, ft)
-	appapi.Register(app, rt, ft)
+	// Before worker.Register: PocketBase runs equal-priority handlers in
+	// registration order, so this is what makes an over-limit upload refused
+	// before duplicates.AssignChecksumFromUpload reads the whole file to hash it.
+	limits.Register(app, lim)
+	appapi.Register(app, rt, ft, lim, badLimitKeys)
 	ngxapi.Register(app, ft)
 	worker.Register(app, rt, worker.Options{
 		ExtraSteps: ed.Steps,

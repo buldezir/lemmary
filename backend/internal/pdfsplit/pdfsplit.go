@@ -57,7 +57,7 @@ func maxPDFBytesFromEnv() int64 {
 // maxPartBytes matches the documents.file field limit, so a part that cannot be
 // stored is reported as skipped instead of failing the whole run.
 // A var so tests can shrink it instead of building 20 MB fixtures.
-var maxPartBytes int64 = 20 << 20
+var maxPartBytes = DefaultMaxPartBytes
 
 var (
 	// ErrNotPDF is returned when the upload is not a PDF poppler can read.
