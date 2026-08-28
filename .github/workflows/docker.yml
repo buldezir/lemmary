@@ -40,7 +40,7 @@ jobs:
       - uses: actions/checkout@v6
 
       # The e2e suites and the verification stack live in a private repository
-      # overlaid at backend/dev/. GitHub withholds secrets from fork pull
+      # overlaid at dev/. GitHub withholds secrets from fork pull
       # requests, so this job has to detect that and degrade loudly rather than
       # report a green run that never executed e2e. secrets.* is not available
       # in a job-level `if`, which is why the guard is a step.
@@ -61,7 +61,7 @@ jobs:
         with:
           repository: lemmary/lemmary-dev
           ssh-key: ${{ secrets.DEV_REPO_KEY }}
-          path: backend/dev
+          path: dev
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -85,24 +85,24 @@ jobs:
 
       - name: Install dev suite dependencies
         if: steps.access.outputs.ok == 'true'
-        working-directory: backend/dev
+        working-directory: dev
         run: npm ci
 
       - name: Install Playwright Chromium
         if: steps.access.outputs.ok == 'true'
-        working-directory: backend/dev
+        working-directory: dev
         run: npx playwright install --with-deps chromium
 
       - name: Run verification suite
         if: steps.access.outputs.ok == 'true'
-        run: ./backend/dev/scripts/test-all.sh
+        run: ./dev/scripts/test-all.sh
 
       - name: Run unit tests only (private suite unavailable)
         if: steps.access.outputs.ok != 'true'
         run: |
           echo "::warning::e2e suites skipped - the private dev repository is not reachable from a fork pull request. Unit tests and the compile-level extension-seam check ran; API and browser e2e did not."
           cd backend
-          go test $(go list ./... | grep -v '/e2e$') -count=1
+          go test ./... -count=1
           go vet -tags lemmary_exttest ./...
           go test -tags lemmary_exttest ./internal/boot/ -count=1
           cd ../frontend

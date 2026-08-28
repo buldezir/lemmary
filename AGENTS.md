@@ -89,11 +89,11 @@ Line coordinates must land on the PR diff; if GitHub rejects them, fix the path/
 ## Verification (required)
 
 The e2e suites and the full verification stack live in a private repository
-overlaid at `backend/dev/` (see [docs/setup.md](docs/setup.md) for what this
-repo alone contains). If that overlay is present, it owns verification:
+overlaid at `dev/` (see [docs/setup.md](docs/setup.md) for what this repo alone
+contains). If that overlay is present, it owns verification:
 
 ```bash
-./backend/dev/scripts/test-all.sh
+./dev/scripts/test-all.sh
 ```
 
 Without it, run what this repository can verify on its own, and say plainly in
@@ -101,7 +101,7 @@ the report that the e2e suites did not run:
 
 ```bash
 # Subshells on purpose: run from the repo root, and each line is independent.
-(cd backend && go test $(go list ./... | grep -v '/e2e$') -count=1)
+(cd backend && go test ./... -count=1)
 (cd backend && go vet -tags lemmary_exttest ./... && go test -tags lemmary_exttest ./internal/boot/ -count=1)
 (cd frontend && npm test)
 (cd frontend && npm run build)   # tsc -b + vite + vitepress; nothing else here builds the app
