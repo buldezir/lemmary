@@ -6,16 +6,18 @@ import (
 	"github.com/pocketbase/pocketbase/tools/hook"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/limits"
 	"lemmary/backend/internal/pdfsplit"
 )
 
-func Register(app core.App, rt *config.Runtime, idx *fulltext.Index) {
+func Register(app core.App, rt *config.Runtime, idx *fulltext.Index, lim limits.Limits, badLimitKeys []string) {
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: 45,
 		Func: func(e *core.ServeEvent) error {
 			g := e.Router.Group("/api/app")
 			g.GET("/meta", handleGetMeta(app))
 			g.GET("/me", handleGetMe(app))
+			g.GET("/limits", bindAuth(handleGetLimits(app, lim, badLimitKeys)))
 			g.GET("/setup/status", handleGetSetupStatus(app, rt))
 			g.POST("/setup/admin", handlePostSetupAdmin(app))
 			g.POST("/ensure-user", handlePostEnsureUser(app))
@@ -53,12 +55,12 @@ func Register(app core.App, rt *config.Runtime, idx *fulltext.Index) {
 			g.POST("/taxonomy/prune", bindAdmin(handlePostTaxonomyPrune(app)))
 			g.POST("/import/ngx", bindAuth(handlePostImportNgx(app)))
 			g.GET("/import/ngx/status", bindAuth(handleGetImportNgxStatus(app)))
-			g.POST("/import/amazon/upload", bindAuth(handlePostImportAmazonUpload(app))).
+			g.POST("/import/amazon/upload", bindAuth(handlePostImportAmazonUpload(app, lim))).
 				Bind(apis.BodyLimit(config.StagingMaxBytesFromEnv()))
 			g.DELETE("/import/amazon/upload", bindAuth(handleDeleteImportAmazonUpload(app)))
 			g.POST("/import/amazon", bindAuth(handlePostImportAmazon(app)))
 			g.GET("/import/amazon/status", bindAuth(handleGetImportAmazonStatus(app)))
-			g.POST("/import/archive/upload", bindAuth(handlePostImportArchiveUpload(app))).
+			g.POST("/import/archive/upload", bindAuth(handlePostImportArchiveUpload(app, lim))).
 				Bind(apis.BodyLimit(config.StagingMaxBytesFromEnv()))
 			g.DELETE("/import/archive/upload", bindAuth(handleDeleteImportArchiveUpload(app)))
 			g.POST("/import/archive", bindAuth(handlePostImportArchive(app)))
@@ -72,7 +74,7 @@ func Register(app core.App, rt *config.Runtime, idx *fulltext.Index) {
 			g.GET("/split/page", bindAuth(handleGetSplitPage(app)))
 			g.POST("/split/detect", bindAuth(handlePostSplitDetect(app, rt)))
 			g.GET("/split/detect/status", bindAuth(handleGetSplitDetectStatus(app)))
-			g.POST("/split", bindAuth(handlePostSplit(app)))
+			g.POST("/split", bindAuth(handlePostSplit(app, lim)))
 			g.GET("/split/status", bindAuth(handleGetSplitStatus(app)))
 			return e.Next()
 		},

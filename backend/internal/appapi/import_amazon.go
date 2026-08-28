@@ -10,6 +10,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/amazonimport"
+	"lemmary/backend/internal/limits"
 )
 
 type importAmazonRequest struct {
@@ -18,7 +19,7 @@ type importAmazonRequest struct {
 
 // handlePostImportAmazonUpload stages an Amazon order export so the user can
 // confirm the file count before any document is created.
-func handlePostImportAmazonUpload(app core.App) func(*core.RequestEvent) error {
+func handlePostImportAmazonUpload(app core.App, lim limits.Limits) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		ownerID, err := resolveOwnerUserID(app, e)
 		if err != nil {
@@ -44,6 +45,22 @@ func handlePostImportAmazonUpload(app core.App) func(*core.RequestEvent) error {
 			app.Logger().Error("amazon archive inspect failed", "error", err)
 			return writeError(e, http.StatusInternalServerError, "Failed to read the archive.")
 		}
+
+		// Checked while the user is still deciding whether to confirm, rather
+		// than leaving the create hook to refuse the overflow one PDF at a time
+		// partway through the import.
+		var bytes int64
+		for _, entry := range preview.Files {
+			if entry.Duplicate || entry.Oversized {
+				continue
+			}
+			bytes += entry.Size
+		}
+		if exceeded := preflightImport(app, lim, int64(preview.ImportableCount), 0, bytes); exceeded != nil {
+			amazonimport.Discard(preview.UploadID, ownerID)
+			return writeError(e, http.StatusBadRequest, exceeded.Message)
+		}
+
 		return writeJSON(e, http.StatusOK, preview)
 	}
 }

@@ -3,6 +3,7 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
 import { parseDuplicateOfId } from '../lib/api/documents'
+import { limitFromError, type LimitName } from '../lib/api/limits'
 import { Button } from '../components/ui'
 
 const ACCEPTED_EXTENSIONS = new Set([
@@ -72,6 +73,16 @@ function duplicateIdFromError(err: unknown, message: string): string | null {
   }
   return parseDuplicateOfId(message)
 }
+
+/**
+ * The limits that bound the whole instance, as opposed to one upload. Hitting
+ * one of these means no further file can succeed either.
+ */
+const INSTANCE_WIDE_LIMITS = new Set<LimitName>([
+  'documents',
+  'document_pages',
+  'storage_bytes',
+])
 
 function formatBytes(size: number) {
   if (size < 1024) return `${size} B`
@@ -174,6 +185,10 @@ export function UploadFilesPage() {
       const uploadedIds: string[] = []
       const failures: FileUploadError[] = []
       const failedFiles: File[] = []
+      // Set when an instance allowance ran out and the loop stopped early, so
+      // the summary can say files were not attempted rather than implying they
+      // were tried and failed.
+      let stoppedAt = -1
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
@@ -193,6 +208,18 @@ export function UploadFilesPage() {
             duplicateOfId: duplicateIdFromError(err, message),
           })
           failedFiles.push(file)
+
+          // An instance-wide allowance ran out, so every remaining file would
+          // be refused for the same reason. Stop and keep them staged rather
+          // than printing the same rejection once per file. A per-file limit
+          // (this one is too big) says nothing about the next file, so those
+          // keep going.
+          const limit = limitFromError(err)
+          if (limit && INSTANCE_WIDE_LIMITS.has(limit)) {
+            failedFiles.push(...files.slice(i + 1))
+            stoppedAt = i
+            break
+          }
         }
       }
 
@@ -208,7 +235,15 @@ export function UploadFilesPage() {
       setFiles(failedFiles)
       setFileErrors(failures)
       resetInput()
-      if (uploadedIds.length > 0) {
+      if (stoppedAt >= 0) {
+        const notAttempted = files.length - stoppedAt - 1
+        const uploaded = `Uploaded ${uploadedIds.length} of ${files.length} files.`
+        setError(
+          notAttempted > 0
+            ? `${uploaded} This instance ran out of room, so ${notAttempted} more ${notAttempted === 1 ? 'was' : 'were'} not attempted.`
+            : `${uploaded} This instance ran out of room.`,
+        )
+      } else if (uploadedIds.length > 0) {
         setError(
           `Uploaded ${uploadedIds.length} of ${files.length} files. ${failures.length} failed.`,
         )
