@@ -1,0 +1,44 @@
+name: Self-hosted runner smoke test
+
+# Verifies the homelab self-hosted runner (VM 107 gh-runner, 192.168.20.5) can
+# pick up a job, check out the repo and run Docker. Deliberately not wired to
+# main or to pull_request -- this exercises the runner, not the product.
+on:
+  push:
+    branches: ["ci/runner-smoke"]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: [self-hosted, linux, x64, homelab]
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Runner facts
+        run: |
+          echo "runner name  : $RUNNER_NAME"
+          echo "runner os    : $RUNNER_OS/$RUNNER_ARCH"
+          echo "hostname     : $(hostname)"
+          echo "kernel       : $(uname -srm)"
+          echo "cpus         : $(nproc)"
+          free -h
+          df -h "$GITHUB_WORKSPACE"
+
+      - name: Checkout landed on the runner
+        run: |
+          git log --oneline -1
+          test -f README.md || test -f backend/go.mod
+
+      - name: Docker is usable
+        run: |
+          docker version
+          docker compose version
+          docker buildx version
+          docker run --rm hello-world
+
+      - name: Outbound network
+        run: |
+          curl -fsS -o /dev/null -w 'ghcr.io -> %{http_code}\n' https://ghcr.io/v2/
