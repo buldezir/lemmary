@@ -25,14 +25,30 @@ on:
       - "docker-compose.yml"
   workflow_dispatch:
 
+# One self-hosted runner takes these jobs one at a time, so a superseded run
+# would sit in the queue ahead of the push that replaced it. Pushes to main and
+# tags are never cancelled -- those publish images.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+# Both jobs run on the self-hosted runner by default. Set the CI_RUNNER_LABELS
+# repository variable to a JSON array to move them without editing this file:
+# ["ubuntu-latest"] puts CI back on GitHub's runners while the homelab machine
+# is down, and unsetting it brings CI home again.
 jobs:
   test:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    # A fork's pull request must never land on the self-hosted runner: the job
+    # would execute that fork's code on a machine inside a private network,
+    # which is the hazard GitHub warns about for self-hosted runners. Fork PRs
+    # go to a throwaway hosted runner instead, where this workflow already
+    # degrades to unit tests because the private suite's key is withheld.
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted", "linux", "x64", "homelab"]') || 'ubuntu-latest' }}
     permissions:
       contents: read
 
@@ -77,7 +93,15 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+        # A self-hosted runner keeps whatever the last run installed, so only
+        # reach for apt (and the sudo it needs) when poppler is actually
+        # missing. pdftoppm is what the preview step shells out to.
+        run: |
+          if command -v pdftoppm >/dev/null 2>&1; then
+            echo "poppler-utils already present: $(pdftoppm -v 2>&1 | head -1)"
+          else
+            sudo apt-get update && sudo apt-get install -y poppler-utils
+          fi
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -91,7 +115,15 @@ jobs:
       - name: Install Playwright Chromium
         if: steps.access.outputs.ok == 'true'
         working-directory: dev
-        run: npx playwright install --with-deps chromium
+        # --with-deps shells out to apt on every run. That is what makes a fresh
+        # hosted runner work, and pure overhead on a persistent one that already
+        # has the libraries -- where the browser download itself is cached too.
+        run: |
+          if [ "$RUNNER_ENVIRONMENT" = "self-hosted" ]; then
+            npx playwright install chromium
+          else
+            npx playwright install --with-deps chromium
+          fi
 
       - name: Run verification suite
         if: steps.access.outputs.ok == 'true'
@@ -115,7 +147,9 @@ jobs:
 
   build:
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    # Only runs on push, tag and manual dispatch from this repository, so there
+    # is no untrusted code to keep off the runner.
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted", "linux", "x64", "homelab"]') }}
     permissions:
       contents: read
       packages: write
