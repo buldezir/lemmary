@@ -32,6 +32,7 @@ export default defineConfig({
       { text: 'Setup', link: '/setup' },
       { text: 'Google Vision', link: '/google_vision' },
       { text: 'OAuth2', link: '/oauth' },
+      { text: 'Passkeys', link: '/passkeys' },
     ],
     sidebar: [
       {
@@ -40,6 +41,7 @@ export default defineConfig({
           { text: 'Setup', link: '/setup' },
           { text: 'Google Vision', link: '/google_vision' },
           { text: 'OAuth2', link: '/oauth' },
+          { text: 'Passkeys', link: '/passkeys' },
         ],
       },
     ],

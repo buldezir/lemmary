@@ -122,8 +122,14 @@ function MoreNavMenu({ admin }: { admin: boolean }) {
   const importActive = Boolean(matchRoute({ to: '/import' }))
   const exportActive = Boolean(matchRoute({ to: '/export' }))
   const ocrTestActive = Boolean(matchRoute({ to: '/ocr-test' }))
+  const accountActive = Boolean(matchRoute({ to: '/account' }))
   const menuActive =
-    settingsActive || managementActive || importActive || exportActive || ocrTestActive
+    settingsActive ||
+    managementActive ||
+    importActive ||
+    exportActive ||
+    ocrTestActive ||
+    accountActive
 
   useEffect(() => {
     if (!open) return
@@ -166,6 +172,14 @@ function MoreNavMenu({ admin }: { admin: boolean }) {
           role="menu"
           className="absolute right-0 z-20 mt-2 min-w-44 border border-line-strong bg-surface p-1 shadow-md shadow-ink/10"
         >
+          <Link
+            to="/account"
+            role="menuitem"
+            className={`${menuItemClass} ${accountActive ? menuItemActiveClass : ''}`}
+            onClick={() => setOpen(false)}
+          >
+            Account
+          </Link>
           <Link
             to="/ocr-test"
             role="menuitem"
@@ -360,7 +374,9 @@ export function RootLayout() {
   }
 
   if (gate.kind === 'login') {
-    return <LoginPage appName={appName} accent={accent} onSuccess={() => void refreshGate()} />
+    return (
+      <LoginPage appName={appName} accent={accent} onSuccess={() => void refreshGate()} />
+    )
   }
 
   return (

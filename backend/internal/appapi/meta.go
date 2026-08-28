@@ -22,9 +22,21 @@ func handleGetMeta(app core.App) func(*core.RequestEvent) error {
 		if accent == "" {
 			accent = defaultAccent
 		}
-		return writeJSON(e, http.StatusOK, map[string]string{
+		return writeJSON(e, http.StatusOK, map[string]any{
 			"app_name": name,
 			"accent":   accent,
+			// Whether the login screen should offer the passkey button. This is
+			// the only public, pre-session endpoint, which is why the flag lives
+			// here rather than behind auth.
+			//
+			// Two conditions, both instance-wide. The address has to be one a
+			// credential can be bound to at all — see internal/passkey/rp.go. And
+			// somebody has to have enrolled: a button that opens an empty
+			// authenticator dialog and ends in NotAllowedError is a worse first
+			// impression than no button. Instance-wide rather than per-account is
+			// deliberate — it answers "does this install use passkeys", never
+			// "does this person have one", so it is not an enumeration signal.
+			"passkeys": passkeyLoginAvailable(app, e),
 		})
 	}
 }

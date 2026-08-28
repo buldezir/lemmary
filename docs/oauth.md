@@ -52,3 +52,12 @@ and password form and leaves only the provider buttons. Two things to know first
   against `_superusers` and is unaffected by this setting.
 - The app still shows the password form if you disable identity/password *and* leave no
   OAuth2 provider enabled, so the setting cannot lock everyone out.
+
+---
+
+## See also
+
+[Passkey sign-in](/passkeys) — sign in with a fingerprint, face, or device PIN instead of a
+password. It needs no external provider, and it works alongside OAuth2 and the password form.
+Note that if you turn identity/password off, a passkey counts as a way in: Lemmary will refuse
+to delete an account's last passkey when nothing else remains.
