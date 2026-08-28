@@ -1,5 +1,7 @@
 import { type SubmitEvent, useEffect, useState } from 'react'
 import { loginWithPassword } from '../lib/auth'
+import { registerPasskey } from '../lib/api/passkeys'
+import { defaultPasskeyName, passkeysSupported } from '../lib/webauthn'
 import { createSetupAdmin, getSetupStatus, type SetupStatus } from '../lib/api/meta'
 import {
   createAIProvider,
@@ -23,15 +25,21 @@ type SetupWizardProps = {
   onComplete: () => void
 }
 
-type Step = 'admin' | 'providers' | 'models' | 'done'
+type Step = 'admin' | 'passkey' | 'providers' | 'models' | 'done'
 
+// Deliberately never returns 'passkey'. SetupStatus has no notion of passkeys, so
+// the optional step is reachable only from the in-session transition out of
+// 'admin' -- which is the whole mechanism that stops it resurfacing on a later
+// boot, or on a wizard that resumes at 'providers'.
 function initialStep(status: SetupStatus): Step {
   if (status.needs_admin) return 'admin'
-  if (status.needs_config) {
-    if (!status.provider_count) return 'providers'
-    return 'models'
-  }
-  return 'done'
+  return nextConfigStep(status)
+}
+
+// The step to land on once the admin account exists.
+function nextConfigStep(status: SetupStatus): Step {
+  if (!status.needs_config) return 'done'
+  return status.provider_count ? 'models' : 'providers'
 }
 
 export function SetupWizard({ appName, accent, initialStatus, onComplete }: SetupWizardProps) {
@@ -43,6 +51,12 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
+
+  // Where to go once the optional passkey step is done or skipped. Stashed rather
+  // than re-derived so both paths land in the same place without a second round
+  // trip; nothing can change the setup status while the dialog is open.
+  const [afterPasskey, setAfterPasskey] = useState<Step>('done')
+  const [passkeyName, setPasskeyName] = useState('')
 
   const [providers, setProviders] = useState<AIProvider[]>([])
   const [sdk, setSdk] = useState<ProviderSDK>('openai')
@@ -96,13 +110,33 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       await createSetupAdmin(email.trim(), password, passwordConfirm)
       await loginWithPassword(email.trim(), password)
       const next = await refreshStatus()
-      if (!next.needs_config) {
-        setStep('done')
+      const target = nextConfigStep(next)
+      setAfterPasskey(target)
+      // Offered only where it can actually work. An install reached over plain
+      // HTTP on a LAN address cannot create a passkey, and a dead end here would
+      // be worse than not asking.
+      if (passkeysSupported()) {
+        setPasskeyName(defaultPasskeyName())
+        setStep('passkey')
         return
       }
-      setStep(next.provider_count ? 'models' : 'providers')
+      setStep(target)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create admin')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function onAddPasskey(event: SubmitEvent<HTMLFormElement>) {
+    event.preventDefault()
+    try {
+      setSubmitting(true)
+      setError('')
+      await registerPasskey(passkeyName.trim() || defaultPasskeyName())
+      setStep(afterPasskey)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add the passkey')
     } finally {
       setSubmitting(false)
     }
@@ -184,11 +218,13 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
   const stepLabel =
     step === 'admin'
       ? '1 · Admin account'
-      : step === 'providers'
-        ? '2 · Provider'
-        : step === 'models'
-          ? '3 · Models'
-          : 'Ready'
+      : step === 'passkey'
+        ? 'Optional · Passkey'
+        : step === 'providers'
+          ? '2 · Provider'
+          : step === 'models'
+            ? '3 · Models'
+            : 'Ready'
 
   const llmProviders = providers.filter((item) => isLLMProvider(item.sdk))
 
@@ -205,6 +241,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           </p>
           <h2 className="mb-4 font-display text-lg font-semibold text-ink">
             {step === 'admin' && 'Create your admin account'}
+            {step === 'passkey' && 'Add a passkey'}
             {step === 'providers' && 'Add a provider'}
             {step === 'models' && 'Choose models'}
             {step === 'done' && 'Setup complete'}
@@ -254,6 +291,36 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
               <Button type="submit" disabled={submitting}>
                 {submitting ? 'Creating...' : 'Create admin'}
               </Button>
+            </form>
+          )}
+
+          {step === 'passkey' && (
+            <form className="flex flex-col gap-4" onSubmit={onAddPasskey}>
+              <p className="text-sm text-ink-muted">
+                Sign in later with your fingerprint, face, or device PIN instead of a password. You
+                can add or remove passkeys anytime from the Account page.
+              </p>
+              <label className={labelClassName}>
+                <span className={labelTextClassName}>Name</span>
+                <input
+                  value={passkeyName}
+                  onChange={(e) => setPasskeyName(e.target.value)}
+                  className={inputClassName}
+                />
+              </label>
+              {error && <p className="text-sm text-madder">{error}</p>}
+              <Button type="submit" disabled={submitting}>
+                {submitting ? 'Waiting for your device...' : 'Create passkey'}
+              </Button>
+              {/* Never disabled: a failure on this step must not trap anyone in
+                  an optional detour. */}
+              <button
+                type="button"
+                className="text-left text-xs font-medium text-ink-soft hover:text-ink"
+                onClick={() => setStep(afterPasskey)}
+              >
+                Skip for now
+              </button>
             </form>
           )}
 

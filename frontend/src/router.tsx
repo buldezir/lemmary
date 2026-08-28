@@ -17,6 +17,7 @@ import { ImportPage } from './routes/import'
 import { ImportNgxPage } from './routes/import.index'
 import { ImportArchivePage } from './routes/import.archive'
 import { ExportPage } from './routes/export'
+import { AccountPage } from './routes/account'
 
 // Admin-only routes bounce non-admins to the document list before the page
 // component mounts. RootLayout still runs the login and setup gates.
@@ -111,6 +112,14 @@ const importArchiveRoute = createRoute({
   component: ImportArchivePage,
 })
 
+// No beforeLoad guard on purpose: RootLayout's gate already requires a session,
+// and unlike /settings and /management this page has to work for non-admins.
+const accountRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/account',
+  component: AccountPage,
+})
+
 const exportRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/export',
@@ -146,6 +155,7 @@ const routeTree = rootRoute.addChildren([
   managementRoute,
   importRoute.addChildren([importNgxRoute, importArchiveRoute]),
   exportRoute,
+  accountRoute,
   documentRoute,
   documentAskRoute,
   ...edition.routes(rootRoute),

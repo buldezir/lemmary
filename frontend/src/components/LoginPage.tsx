@@ -1,11 +1,15 @@
-import { type SubmitEvent, useState } from 'react'
+import { type SubmitEvent, useEffect, useRef, useState } from 'react'
 import {
   getLoginMethods,
   loginWithOAuth2,
+  loginWithPasskey,
   loginWithPassword,
+  startConditionalPasskeyLogin,
+  type ConditionalPasskeyLogin,
   type LoginMethods,
   type OAuthProvider,
 } from '../lib/auth'
+import { isAbortError, passkeysSupported } from '../lib/webauthn'
 import { useAsync } from '../hooks/useAsync'
 import { AppFooter } from './AppFooter'
 import { AppLogo, Button, inputClassName, labelClassName, labelTextClassName } from './ui'
@@ -13,6 +17,8 @@ import { AppLogo, Button, inputClassName, labelClassName, labelTextClassName } f
 type LoginPageProps = {
   appName: string
   accent: string
+  /** Whether the server can and should offer passkey sign-in (from /api/app/meta). */
+  passkeysEnabled: boolean
   onSuccess: () => void
 }
 
@@ -30,15 +36,72 @@ function MethodSeparator() {
   )
 }
 
-export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
+export function LoginPage({ appName, accent, passkeysEnabled, onSuccess }: LoginPageProps) {
   const { data: methods } = useAsync(getLoginMethods, [])
   const { password: passwordEnabled, oauth } = methods ?? pendingMethods
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [pendingProvider, setPendingProvider] = useState('')
+  const [passkeyBusy, setPasskeyBusy] = useState(false)
   const [error, setError] = useState('')
-  const busy = submitting || pendingProvider !== ''
+  const busy = submitting || pendingProvider !== '' || passkeyBusy
+
+  // passkeysSupported() is synchronous and stable for the life of the page, so
+  // unlike `methods` it needs no state and cannot flicker.
+  const passkeyVisible = passkeysEnabled && passkeysSupported()
+  const conditional = useRef<ConditionalPasskeyLogin | null>(null)
+  const onSuccessRef = useRef(onSuccess)
+  useEffect(() => {
+    onSuccessRef.current = onSuccess
+  })
+
+  async function cancelConditional() {
+    const request = conditional.current
+    conditional.current = null
+    await request?.cancel()
+  }
+
+  function armConditional() {
+    if (!passkeyVisible || !passwordEnabled || conditional.current) {
+      return
+    }
+    void startConditionalPasskeyLogin({
+      onSuccess: () => onSuccessRef.current(),
+      onError: setError,
+    }).then((request) => {
+      conditional.current = request
+    })
+  }
+
+  useEffect(() => {
+    // Conditional mediation attaches to the autofill-tagged email field, so this
+    // waits for the auth-methods response rather than arming against the
+    // optimistic password-only default.
+    if (!methods || !passkeyVisible || !passwordEnabled) {
+      return
+    }
+    let cancelled = false
+    void startConditionalPasskeyLogin({
+      onSuccess: () => onSuccessRef.current(),
+      onError: setError,
+    }).then((request) => {
+      if (cancelled) {
+        void request?.cancel()
+        return
+      }
+      conditional.current = request
+    })
+    return () => {
+      cancelled = true
+      const request = conditional.current
+      conditional.current = null
+      // Not optional: RootLayout unmounts this component the moment the gate
+      // flips, and an outstanding conditional request would otherwise stay live
+      // against a dead page — and could still adopt a session after the fact.
+      void request?.cancel()
+    }
+  }, [methods, passkeyVisible, passwordEnabled])
 
   async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -46,12 +109,34 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
     try {
       setSubmitting(true)
       setError('')
+      // A conditional request that resolved after this succeeded would overwrite
+      // the session that was just established, possibly with a different account.
+      await cancelConditional()
       await loginWithPassword(email, password)
       onSuccess()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
+      armConditional()
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function onPasskeySignIn() {
+    try {
+      setPasskeyBusy(true)
+      setError('')
+      // A modal get() rejects while a conditional one is still outstanding.
+      await cancelConditional()
+      await loginWithPasskey()
+      onSuccess()
+    } catch (err) {
+      if (!isAbortError(err)) {
+        setError(err instanceof Error ? err.message : 'Passkey sign-in failed')
+      }
+      armConditional()
+    } finally {
+      setPasskeyBusy(false)
     }
   }
 
@@ -59,14 +144,18 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
     try {
       setPendingProvider(provider.name)
       setError('')
+      await cancelConditional()
       await loginWithOAuth2(provider.name)
       onSuccess()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign-in failed')
+      armConditional()
     } finally {
       setPendingProvider('')
     }
   }
+
+  const hasAlternates = passkeyVisible || oauth.length > 0
 
   return (
     <div className="flex min-h-screen flex-col bg-paper">
@@ -88,7 +177,10 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
                 <span className={labelTextClassName}>Email</span>
                 <input
                   type="email"
-                  autoComplete="email"
+                  // The webauthn token is what lets a passkey appear in this
+                  // field's autofill suggestions. It has to sit on a field that
+                  // exists when the conditional get() is made.
+                  autoComplete={passkeyVisible ? 'email webauthn' : 'email'}
                   required
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
@@ -116,11 +208,20 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
             </form>
           )}
 
-          {oauth.length > 0 && (
+          {hasAlternates && (
             <>
               {passwordEnabled && <MethodSeparator />}
               {!passwordEnabled && error && <p className="mb-4 text-sm text-madder">{error}</p>}
               <div className="flex flex-col gap-2">
+                {passkeyVisible && (
+                  <Button
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => void onPasskeySignIn()}
+                  >
+                    {passkeyBusy ? 'Waiting for your passkey...' : 'Sign in with a passkey'}
+                  </Button>
+                )}
                 {oauth.map((provider) => (
                   <Button
                     key={provider.name}

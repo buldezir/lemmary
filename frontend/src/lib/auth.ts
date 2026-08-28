@@ -1,5 +1,14 @@
-import { ClientResponseError } from 'pocketbase'
+import { ClientResponseError, type RecordModel } from 'pocketbase'
 import { pb, pbUrl } from './pb'
+import {
+  assertionToJSON,
+  conditionalMediationAvailable,
+  isAbortError,
+  passkeyErrorMessage,
+  passkeysSupported,
+  passkeyUnavailableHint,
+  toRequestOptions,
+} from './webauthn'
 
 export class AuthRequiredError extends Error {
   constructor() {
@@ -200,6 +209,146 @@ export async function loginWithPassword(email: string, password: string) {
   }
   // App sessions must be users-collection so documents.user relations validate.
   await pb.collection('users').authWithPassword(email, password)
+}
+
+type PasskeyBeginResponse = { session_id: string; options: unknown }
+type PasskeyAuthResponse = { token: string; record: RecordModel }
+
+/**
+ * The two passkey login endpoints are called with a raw fetch rather than
+ * apiFetch, matching the `ensure-user` and `getMe` calls below. Not a style
+ * choice: apiClient.ts imports ensureAuth from this module, so importing it back
+ * would close a cycle.
+ */
+async function postPasskeyPublic<T>(path: string, body: unknown, fallback: string): Promise<T> {
+  const response = await fetch(`${pbUrl}${path}`, {
+    method: 'POST',
+    // The Content-Type matters on the server side: PocketBase's BindBody only
+    // decodes (and, crucially, rewinds) a body that declares itself as JSON.
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const data = (await response.json().catch(() => null)) as (T & { detail?: string }) | null
+  if (!response.ok) {
+    throw new Error(data?.detail ?? fallback)
+  }
+  if (data === null) {
+    throw new Error(fallback)
+  }
+  return data
+}
+
+function beginPasskeyLogin() {
+  return postPasskeyPublic<PasskeyBeginResponse>(
+    '/api/app/passkeys/login/begin',
+    {},
+    'Failed to start passkey sign-in',
+  )
+}
+
+/**
+ * Adopts a token minted by the passkey endpoint. pb.authStore.save is what
+ * authWithPassword does internally, so the gate, the meCache invalidation and
+ * every later request behave identically no matter how the session was created.
+ */
+async function finishPasskeyLogin(sessionId: string, credential: Credential) {
+  const data = await postPasskeyPublic<PasskeyAuthResponse>(
+    '/api/app/passkeys/login/finish',
+    { session_id: sessionId, credential: assertionToJSON(credential) },
+    'Passkey sign-in failed',
+  )
+  clearMeCache()
+  pb.authStore.save(data.token, data.record)
+}
+
+/**
+ * Signs in with a discoverable passkey. Usernameless: the authenticator picks the
+ * account, so nothing is typed and no email is sent to the server first.
+ */
+export async function loginWithPasskey() {
+  if (!passkeysSupported()) {
+    throw new Error(passkeyUnavailableHint())
+  }
+  const begin = await beginPasskeyLogin()
+
+  let credential: Credential | null
+  try {
+    credential = await navigator.credentials.get({ publicKey: toRequestOptions(begin.options) })
+  } catch (err) {
+    // An abort is ours, so it is rethrown for the caller to swallow rather than
+    // being turned into a message.
+    if (isAbortError(err)) {
+      throw err
+    }
+    throw new Error(passkeyErrorMessage(err, 'login'), { cause: err })
+  }
+  if (!credential) {
+    throw new Error('No passkey was selected.')
+  }
+  await finishPasskeyLogin(begin.session_id, credential)
+}
+
+export type ConditionalPasskeyLogin = {
+  /**
+   * Cancels the outstanding request and resolves once the browser has released
+   * it. Must be awaited before any other credentials.get() call.
+   */
+  cancel: () => Promise<void>
+}
+
+/**
+ * Arms the browser's autofill so a passkey can be offered from the email field.
+ *
+ * Returns null — silently — when the browser cannot do this or the server will
+ * not issue a challenge. A background offer the user never asked for must never
+ * put an error on the login screen, so onError fires only for a failure *after*
+ * they picked a credential.
+ */
+export async function startConditionalPasskeyLogin(handlers: {
+  onSuccess: () => void
+  onError: (message: string) => void
+}): Promise<ConditionalPasskeyLogin | null> {
+  if (!(await conditionalMediationAvailable())) {
+    return null
+  }
+  let begin: PasskeyBeginResponse
+  try {
+    begin = await beginPasskeyLogin()
+  } catch {
+    return null
+  }
+
+  const controller = new AbortController()
+  const settled = (async () => {
+    try {
+      const credential = await navigator.credentials.get({
+        publicKey: toRequestOptions(begin.options),
+        mediation: 'conditional',
+        signal: controller.signal,
+      })
+      if (!credential) {
+        return
+      }
+      await finishPasskeyLogin(begin.session_id, credential)
+      handlers.onSuccess()
+    } catch (err) {
+      if (isAbortError(err)) {
+        return
+      }
+      handlers.onError(passkeyErrorMessage(err, 'login'))
+    }
+  })()
+
+  return {
+    async cancel() {
+      controller.abort()
+      // Awaiting is the load-bearing part: a second credentials.get() rejects
+      // while one is still outstanding, and abort() alone does not guarantee the
+      // browser has let go by the time the next call starts. The promise never
+      // rejects — every path above is caught.
+      await settled
+    },
+  }
 }
 
 export type MeInfo = {
