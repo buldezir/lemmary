@@ -23,8 +23,8 @@ func uploadFromBytes(t *testing.T, name string, data []byte) *filesystem.File {
 	if err != nil {
 		t.Fatalf("build upload: %v", err)
 	}
-	// NewFileFromBytes rewrites Name with a random suffix; the extension is what
-	// PageCountOfUpload dispatches on, and that survives.
+	// NewFileFromBytes rewrites Name with a random suffix, keeping the extension.
+	// That only matters for the tests that assert the extension is *ignored*.
 	return file
 }
 
@@ -49,6 +49,53 @@ func TestPageCountOfUploadNonPDFIsOnePage(t *testing.T) {
 		file := uploadFromBytes(t, name, []byte("not a pdf"))
 		if got := PageCountOfUpload(nil, file); got != SinglePage {
 			t.Fatalf("%s counted as %d pages, want %d", name, got, SinglePage)
+		}
+	}
+}
+
+// The name is the client's word. Trusting it made every page limit bypassable
+// with `mv`: .txt, .csv and .docx are all accepted upload types, so a multi-page
+// PDF renamed to one of them was stored as the PDF it is and charged one page.
+func TestPageCountOfUploadIgnoresASpoofedExtension(t *testing.T) {
+	requirePoppler(t)
+	pdf := testpdf.Multipage(7)
+	for _, name := range []string{
+		"notes.txt", "table.csv", "letter.docx", "book.xlsx", "receipt.png",
+		"no-extension-at-all",
+	} {
+		file := uploadFromBytes(t, name, pdf)
+		if got := PageCountOfUpload(nil, file); got != 7 {
+			t.Fatalf("a 7-page PDF named %s counted as %d pages", name, got)
+		}
+	}
+}
+
+// The mirror image: something merely *named* .pdf is not charged for pages it
+// does not have, and never reaches pdfinfo.
+func TestPageCountOfUploadIgnoresAPDFNameWithoutTheHeader(t *testing.T) {
+	file := uploadFromBytes(t, "invoice.pdf", []byte("this is plain text, not a PDF"))
+	if got := PageCountOfUpload(nil, file); got != SinglePage {
+		t.Fatalf("a text file named .pdf counted as %d pages, want %d", got, SinglePage)
+	}
+}
+
+func TestHasPDFHeader(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{"real pdf", testpdf.Multipage(1), true},
+		{"header only", []byte("%PDF-1.7"), true},
+		{"plain text", []byte("hello there"), false},
+		// Shorter than the header, so io.ReadFull cannot fill it. (A wholly
+		// empty upload cannot be constructed, and PocketBase rejects one.)
+		{"truncated", []byte("%PDF"), false},
+		// A PDF header that is not at the very start is not one.
+		{"offset header", append([]byte("junk"), []byte("%PDF-1.7")...), false},
+	} {
+		if got := hasPDFHeader(uploadFromBytes(t, tc.name, tc.data)); got != tc.want {
+			t.Fatalf("%s: hasPDFHeader = %v, want %v", tc.name, got, tc.want)
 		}
 	}
 }

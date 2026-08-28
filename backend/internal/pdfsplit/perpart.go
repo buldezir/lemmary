@@ -16,10 +16,14 @@ const DefaultMaxPartBytes int64 = 20 << 20
 // lower-only setter would leak the smallest limit any earlier boot configured
 // into every later one.
 //
+// A negative n means "use the default"; 0 is a real cap of zero, because an
+// explicit LIMIT_FILE_BYTES=0 is a real (if unusual) plan and must not read as
+// unlimited here while the create hook refuses every file.
+//
 // Clamped to DefaultMaxPartBytes, because nothing here can lift the field's own
 // MaxSize -- PocketBase validates that during the save.
 func SetMaxPartBytes(n int64) {
-	if n <= 0 || n > DefaultMaxPartBytes {
+	if n < 0 || n > DefaultMaxPartBytes {
 		maxPartBytes = DefaultMaxPartBytes
 		return
 	}

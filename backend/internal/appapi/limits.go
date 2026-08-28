@@ -91,14 +91,19 @@ func handleGetLimits(app core.App, lim limits.Limits, badKeys []string) func(*co
 	}
 }
 
-// preflightImport refuses a bulk ingest that could not fit, before any document
-// is created.
+// preflightImport refuses a bulk ingest that plainly could not fit.
 //
-// The create hook would refuse the over-limit documents one by one anyway, but a
-// restore that stops halfway leaves the user with a partial library and a list of
-// several hundred identical errors. Checking the whole batch against the
-// allowance first turns that into one message at the point where they are still
-// deciding whether to confirm.
+// A better error, not a stronger guarantee. The create hook is what actually
+// enforces every limit, and it would refuse the over-limit documents one at a
+// time -- leaving a partial library and several hundred identical errors. This
+// turns the common case into one message while the user is still deciding whether
+// to confirm.
+//
+// It is explicitly not a reservation. Nothing holds the room between this check
+// and the run, so a batch confirmed minutes later, or racing another upload, can
+// still stop partway; and each caller can only offer the dimensions it knows
+// (see below). Do not describe the bulk paths as all-or-nothing on the strength
+// of this function -- docs/setup.md lists what each one can and cannot promise.
 //
 // documents and bytes are the additions the batch would make. pages is passed as
 // 0 by callers that cannot know it: an archive's real page counts are only

@@ -24,12 +24,16 @@ func init() {
 		if err != nil {
 			return err
 		}
-		// Hidden so a client cannot write them. The create hook overwrites
-		// whatever arrives on a create, but an update carrying only
-		// size_bytes = 0 would otherwise hand any account an unlimited
-		// allowance: documents.UpdateRule lets an owner patch their own row.
-		// PocketBase restores a hidden field from the stored value for every
-		// non-superuser write, which closes that without a second guard.
+		// Hidden so a regular account cannot write them: documents.UpdateRule
+		// lets an owner patch their own row, and an update carrying only
+		// size_bytes = 0 would otherwise hand them an unlimited allowance.
+		//
+		// Hidden is only half of it, and on its own would be a false comfort.
+		// PocketBase restores a hidden field from the stored value for a
+		// non-superuser write, but GrantSuperuserAccess is documented as
+		// allowing "changing all system record fields, including those marked
+		// as Hidden". The documents update hook in internal/limits restores
+		// both columns for everyone, which is what actually closes it.
 		if documents.Fields.GetByName("page_count") == nil {
 			documents.Fields.Add(&core.NumberField{
 				Name:    "page_count",

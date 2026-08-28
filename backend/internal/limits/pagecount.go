@@ -5,11 +5,9 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"path/filepath"
 
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 
-	"lemmary/backend/internal/ocr"
 	"lemmary/backend/internal/pdftool"
 )
 
@@ -21,9 +19,17 @@ const SinglePage int64 = 1
 
 // PageCountOfUpload reports how many pages an unsaved upload holds.
 //
-// Only a PDF is inspected, and only by spooling it to a temp file first, because
-// pdfinfo takes a path and the upload is a reader. That cost is paid by PDFs
-// alone: every other accepted type returns SinglePage without touching the disk.
+// Whether the upload is a PDF is decided by its first five bytes, never by its
+// name. The name is the client's word, and every page limit would fall to `mv`
+// if this trusted it: .txt, .csv and .docx are all accepted upload types, and a
+// multi-page PDF renamed to any of them would be charged a single page while
+// being stored as the PDF it is. pdfsplit's staging check makes the same point
+// about a declared content type -- the header and a successful page count are
+// the only things the file itself says.
+//
+// Reading the header costs one open of five bytes. Only an upload that passes it
+// is spooled to a temp file, which pdfinfo needs because it takes a path and an
+// upload is a reader, so an image or a text file still touches no disk here.
 //
 // A PDF whose page count cannot be read counts as SinglePage with a warning
 // rather than failing the upload. pdfinfo failing means the file is not a PDF
@@ -34,7 +40,7 @@ func PageCountOfUpload(logger *slog.Logger, file *filesystem.File) int64 {
 	if file == nil {
 		return SinglePage
 	}
-	if ocr.GuessMimeType(file.Name) != "application/pdf" {
+	if !hasPDFHeader(file) {
 		return SinglePage
 	}
 
@@ -56,9 +62,36 @@ func PageCountOfUpload(logger *slog.Logger, file *filesystem.File) int64 {
 	return int64(count)
 }
 
+// hasPDFHeader reports whether the upload's first five bytes are a PDF header.
+//
+// Mirrors pdfsplit's staging check, on a reader rather than a path. Anything
+// unreadable is treated as not-a-PDF: the page count then falls back to one
+// page, and whatever is actually wrong with the file is the pipeline's to report
+// against the stored document.
+func hasPDFHeader(file *filesystem.File) bool {
+	if file.Reader == nil {
+		return false
+	}
+	reader, err := file.Reader.Open()
+	if err != nil {
+		return false
+	}
+	defer reader.Close()
+
+	var header [5]byte
+	if _, err := io.ReadFull(reader, header[:]); err != nil {
+		return false
+	}
+	return string(header[:]) == "%PDF-"
+}
+
 // spool writes an unsaved upload to a temp file, following the pattern
 // worker.readDocumentToTempFile uses for a stored one: a path plus the cleanup
 // that removes it.
+//
+// The temp name always carries .pdf, whatever the upload is called: only a file
+// whose header said PDF reaches here, and the pdftool helpers key off the
+// extension.
 func spool(file *filesystem.File) (path string, cleanup func(), err error) {
 	noop := func() {}
 	if file.Reader == nil {
@@ -70,7 +103,7 @@ func spool(file *filesystem.File) (path string, cleanup func(), err error) {
 	}
 	defer source.Close()
 
-	tmp, err := os.CreateTemp("", "lemmary-limits-*"+filepath.Ext(file.Name))
+	tmp, err := os.CreateTemp("", "lemmary-limits-*.pdf")
 	if err != nil {
 		return "", noop, err
 	}

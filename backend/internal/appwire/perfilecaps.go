@@ -25,9 +25,11 @@ import (
 // archiveimport and amazonimport are free to import limits, and this direction
 // would close the cycle.
 func applyPerFileCaps(lim limits.Limits) {
-	// Unlimited resolves to 0, which every setter reads as "use your default".
-	// Nothing here can raise a cap above the field's own MaxSize anyway.
-	var effective int64
+	// Unlimited resolves to -1, which every setter reads as "use your default".
+	// It must not resolve to 0: an explicit LIMIT_FILE_BYTES=0 is a real cap, and
+	// collapsing the two would have the previews accept files the create hook
+	// then refuses. Nothing here can raise a cap above the field's own MaxSize.
+	effective := int64(-1)
 	if !lim.FileBytes.IsUnlimited() {
 		effective = lim.FileBytes.Value()
 	}

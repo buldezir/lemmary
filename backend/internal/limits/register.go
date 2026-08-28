@@ -46,6 +46,16 @@ func Register(app core.App, lim Limits) {
 		// record.Set("file", ...) is on a freshly built record -- so in practice
 		// this fires only for a client doing it deliberately.
 		app.OnRecordUpdate("documents").BindFunc(func(e *core.RecordEvent) error {
+			// An update that brings no file must not be able to restate what
+			// this document costs. Marking the two columns Hidden stops a
+			// regular account writing them, but only a regular account:
+			// PocketBase's GrantSuperuserAccess is documented as allowing
+			// "changing all system record fields, including those marked as
+			// Hidden", so a superuser could otherwise PATCH size_bytes to 0 and
+			// mint headroom -- which is precisely the thing these limits exist
+			// to take out of an admin's hands.
+			restoreMeasurements(e.Record)
+
 			// A replacement adds no new document, so the count limit is not in
 			// play: 0 documents, and pages and bytes are charged net of what
 			// this record already contributed.
@@ -127,6 +137,24 @@ func applyDocumentLimits(app core.App, lim Limits, record *core.Record, addsDocu
 	// refuses, and the alternatives -- serializing every upload, or a
 	// transactional counter row -- cost more than the problem.
 	return lim.CheckRoom(usage, addsDocuments, pageCount-priorPages, sizeBytes-priorBytes)
+}
+
+// restoreMeasurements puts the stored size_bytes and page_count back, discarding
+// whatever the request carried.
+//
+// applyDocumentLimits overwrites both from the file whenever an update brings
+// one, so this only has to cover the file-less case -- and it runs before that,
+// so an update that does bring a file still ends up with the measured values.
+// Restoring rather than rejecting matches what PocketBase already does for a
+// hidden field on a non-superuser write, and leaves every other edit on the
+// record working.
+//
+// The cost is that nobody can hand-correct a measurement, superuser included.
+// That is the intended trade: a plan an admin can edit is not a plan.
+func restoreMeasurements(record *core.Record) {
+	original := record.Original()
+	record.Set("size_bytes", original.GetFloat("size_bytes"))
+	record.Set("page_count", original.GetFloat("page_count"))
 }
 
 func needsRoomCheck(lim Limits) bool {

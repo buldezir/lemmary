@@ -103,11 +103,23 @@ Settings edits from being reverted — there is no Settings edit here to protect
   the page and byte totals read low on an upgraded library until those documents
   are replaced.
 - A bulk path — a backup restore, an Amazon-orders import, a document split — is
-  checked against the remaining allowance at preview time and refused before
-  anything is created, so it cannot half-complete. Page totals are the exception
-  for a restore: an archive's real page counts are only discoverable by opening
-  every PDF in it, so the page limit there is enforced per document as the restore
-  runs.
+  checked against the remaining allowance up front, so the common case of a batch
+  that plainly does not fit is refused before anything is created. That check is
+  **not** a reservation, and a bulk run can still stop partway:
+  - a restore or an Amazon import knows its document count and bytes, but not its
+    page count (an archive's real page counts are only discoverable by opening
+    every PDF in it), so a page limit is enforced per document as the run
+    proceeds;
+  - a split knows its document and page counts exactly, but not the size of parts
+    that do not exist yet, so a storage limit is enforced per part;
+  - a Paperless-ngx import checks only the document count the remote reports;
+  - and any of them can be confirmed minutes after its preview, by which time
+    another upload may have taken the room.
+
+  A run that stops partway keeps what it already created and reports the rest as
+  errors; nothing is rolled back. The per-document checks are what make the limit
+  itself exact — the up-front check is there to turn the common failure into one
+  clear message instead of several hundred.
 
 ### Applied when changed
 
