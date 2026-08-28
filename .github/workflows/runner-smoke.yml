@@ -40,5 +40,9 @@ jobs:
           docker run --rm hello-world
 
       - name: Outbound network
+        # ghcr.io/v2/ answers 401 to an anonymous probe, so any HTTP status
+        # means the runner reached it. Only a transport failure is a problem.
         run: |
-          curl -fsS -o /dev/null -w 'ghcr.io -> %{http_code}\n' https://ghcr.io/v2/
+          code=$(curl -sS -o /dev/null -w '%{http_code}' https://ghcr.io/v2/)
+          echo "ghcr.io -> $code"
+          test "$code" != "000"
