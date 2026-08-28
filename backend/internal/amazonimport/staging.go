@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
+	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/staging"
 )
 
@@ -59,6 +60,11 @@ func Inspect(app core.App, ownerUserID, fileName string, src io.Reader) (Preview
 		return Preview{}, fmt.Errorf("prepare staging dir: %w", err)
 	}
 	stagingRegistry.Sweep(dir, time.Now())
+	// One staged upload per owner. The confirmation step only ever works on the
+	// newest one, so an earlier upload is already dead weight -- and without
+	// this an account could stage archive after archive and fill the volume
+	// without ever confirming an import.
+	stagingRegistry.DiscardOwned(ownerUserID)
 
 	id, err := staging.NewID()
 	if err != nil {
@@ -66,7 +72,7 @@ func Inspect(app core.App, ownerUserID, fileName string, src io.Reader) (Preview
 	}
 	archivePath := filepath.Join(dir, id+".zip")
 
-	size, err := saveArchive(archivePath, src, MaxArchiveBytes)
+	size, err := saveArchive(archivePath, src, config.StagingMaxBytesFromEnv())
 	if err != nil {
 		os.Remove(archivePath)
 		return Preview{}, err

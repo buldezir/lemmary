@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"lemmary/backend/internal/config"
 )
 
 // resetStaging isolates the package-level registry between tests.
@@ -56,12 +58,12 @@ func TestBuildPreviewCounts(t *testing.T) {
 func TestSaveArchiveLimits(t *testing.T) {
 	dir := t.TempDir()
 
-	if _, err := saveArchive(filepath.Join(dir, "empty.zip"), bytes.NewReader(nil), MaxArchiveBytes); !errors.Is(err, ErrNotArchive) {
+	if _, err := saveArchive(filepath.Join(dir, "empty.zip"), bytes.NewReader(nil), config.StagingMaxBytesFromEnv()); !errors.Is(err, ErrNotArchive) {
 		t.Fatalf("empty upload err=%v want ErrNotArchive", err)
 	}
 
 	path := filepath.Join(dir, "ok.zip")
-	size, err := saveArchive(path, strings.NewReader("payload"), MaxArchiveBytes)
+	size, err := saveArchive(path, strings.NewReader("payload"), config.StagingMaxBytesFromEnv())
 	if err != nil {
 		t.Fatalf("save: %v", err)
 	}

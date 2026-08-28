@@ -20,10 +20,6 @@ import (
 )
 
 const (
-	// MaxArchiveBytes caps the uploaded zip. Amazon exports with a few hundred
-	// invoices land far below this; the cap only stops runaway uploads.
-	MaxArchiveBytes int64 = 1 << 30 // 1 GiB
-
 	// maxPDFs bounds one import run; each imported PDF also queues a processing job.
 	maxPDFs = 5000
 )
@@ -46,8 +42,8 @@ var (
 	ErrNoPDFs = errors.New("no PDF files found in the archive")
 	// ErrTooManyPDFs is returned when the archive exceeds maxPDFs.
 	ErrTooManyPDFs = fmt.Errorf("the archive holds more than %d PDF files", maxPDFs)
-	// ErrArchiveTooLarge is returned when the upload exceeds MaxArchiveBytes.
-	ErrArchiveTooLarge = fmt.Errorf("the archive is larger than %d bytes", MaxArchiveBytes)
+	// ErrArchiveTooLarge is returned when the upload exceeds the staging limit.
+	ErrArchiveTooLarge = errors.New("the archive is larger than this instance allows")
 	// ErrArchiveTooDense is returned when the archive decompresses far beyond
 	// any realistic export — the signature of a zip bomb.
 	ErrArchiveTooDense = errors.New("the archive decompresses beyond the allowed total size")

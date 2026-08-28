@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"lemmary/backend/internal/backup"
+	"lemmary/backend/internal/config"
 )
 
 // resetStaging isolates the package-level registry between tests.
@@ -72,12 +73,12 @@ func TestBuildPreviewMarksLegacyArchive(t *testing.T) {
 func TestSaveArchiveLimits(t *testing.T) {
 	dir := t.TempDir()
 
-	if _, err := saveArchive(filepath.Join(dir, "empty.zip"), bytes.NewReader(nil), MaxArchiveBytes); !errors.Is(err, ErrNotArchive) {
+	if _, err := saveArchive(filepath.Join(dir, "empty.zip"), bytes.NewReader(nil), config.StagingMaxBytesFromEnv()); !errors.Is(err, ErrNotArchive) {
 		t.Fatalf("empty upload err=%v want ErrNotArchive", err)
 	}
 
 	path := filepath.Join(dir, "ok.zip")
-	size, err := saveArchive(path, strings.NewReader("payload"), MaxArchiveBytes)
+	size, err := saveArchive(path, strings.NewReader("payload"), config.StagingMaxBytesFromEnv())
 	if err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -152,5 +153,81 @@ func TestStartRejectsUnknownModeWithoutClaiming(t *testing.T) {
 	}
 	if _, ok := stagingRegistry.Lookup("upload-1", "owner-a"); !ok {
 		t.Fatal("the archive must still be staged")
+	}
+}
+
+// Staging a second archive must not leave the first one on disk. Without this
+// an account can upload 1 GiB at a time, never confirm, and fill the volume.
+func TestStagingKeepsOneArchivePerOwner(t *testing.T) {
+	resetStaging(t)
+	dir := t.TempDir()
+	expires := time.Now().UTC().Add(time.Hour)
+
+	first := stageFile(t, dir, "upload-1", "owner-a", expires)
+	other := stageFile(t, dir, "upload-2", "owner-b", expires)
+
+	if n := stagingRegistry.DiscardOwned("owner-a"); n != 1 {
+		t.Fatalf("discarded=%d want 1", n)
+	}
+	if _, err := os.Stat(first.Path); !os.IsNotExist(err) {
+		t.Fatalf("the owner's previous archive is still on disk: %v", err)
+	}
+	if _, ok := stagingRegistry.Lookup("upload-1", "owner-a"); ok {
+		t.Fatal("the discarded archive is still staged")
+	}
+
+	// Another account's archive is untouched.
+	if _, err := os.Stat(other.Path); err != nil {
+		t.Fatalf("another owner's archive was discarded: %v", err)
+	}
+	if _, ok := stagingRegistry.Lookup("upload-2", "owner-b"); !ok {
+		t.Fatal("another owner's archive left the registry")
+	}
+
+	if n := stagingRegistry.DiscardOwned("owner-a"); n != 0 {
+		t.Fatalf("discarded=%d want 0 on a second call", n)
+	}
+}
+
+// An archive a restore is still reading must survive the eviction that a new
+// upload triggers, and go only once that job lets it go.
+func TestDiscardOwnedWaitsForARunningImport(t *testing.T) {
+	resetStaging(t)
+	dir := t.TempDir()
+	item := stageFile(t, dir, "upload-1", "owner-a", time.Now().UTC().Add(time.Hour))
+
+	claimed, ok := stagingRegistry.Claim("upload-1", "owner-a")
+	if !ok {
+		t.Fatal("claim")
+	}
+
+	// Claim already took it out of the registry, so there is nothing left to
+	// discard -- and crucially the file is still there for the running job.
+	stagingRegistry.DiscardOwned("owner-a")
+	if _, err := os.Stat(item.Path); err != nil {
+		t.Fatalf("archive being restored was deleted: %v", err)
+	}
+
+	stagingRegistry.Release(claimed)
+	if _, err := os.Stat(item.Path); !os.IsNotExist(err) {
+		t.Fatalf("archive kept after the job finished: %v", err)
+	}
+}
+
+func TestStagingLimitFollowsTheEnvironment(t *testing.T) {
+	if got := config.StagingMaxBytesFromEnv(); got != config.DefaultStagingMaxBytes {
+		t.Fatalf("default=%d want %d", got, config.DefaultStagingMaxBytes)
+	}
+
+	t.Setenv("IMPORT_STAGING_MAX_BYTES", "4194304")
+	if got := config.StagingMaxBytesFromEnv(); got != 4<<20 {
+		t.Fatalf("configured=%d want %d", got, 4<<20)
+	}
+
+	// A value below the floor is a typo, not an instruction to reject every
+	// upload.
+	t.Setenv("IMPORT_STAGING_MAX_BYTES", "12")
+	if got := config.StagingMaxBytesFromEnv(); got != config.DefaultStagingMaxBytes {
+		t.Fatalf("floor=%d want the default %d", got, config.DefaultStagingMaxBytes)
 	}
 }

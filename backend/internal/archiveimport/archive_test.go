@@ -333,3 +333,34 @@ func sha256Of(t *testing.T, body string) string {
 	}
 	return sum
 }
+
+// A backup of a library that has taxonomy but no documents is still a backup:
+// the manifest carries tags that live nowhere else, so it has to be restorable.
+func TestScanAcceptsTaxonomyOnlyArchive(t *testing.T) {
+	manifest := backup.Manifest{
+		Taxonomy: backup.Taxonomy{Tags: []string{"kept", "also-kept"}},
+	}
+	zr := buildZip(t, zipEntry{backup.ManifestName, manifestJSON(t, manifest)})
+	parsed, err := backup.ReadManifest(zr)
+	if err != nil {
+		t.Fatalf("ReadManifest: %v", err)
+	}
+
+	entries, taxonomy, _, err := scan(noDuplicates, zr, parsed)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("entries=%#v", entries)
+	}
+	if taxonomy.Count() != 2 {
+		t.Fatalf("taxonomy=%#v", taxonomy)
+	}
+
+	// With neither documents nor taxonomy there is genuinely nothing to do.
+	empty := buildZip(t, zipEntry{backup.ManifestName, manifestJSON(t, backup.Manifest{})})
+	emptyManifest, _ := backup.ReadManifest(empty)
+	if _, _, _, err := scan(noDuplicates, empty, emptyManifest); !errors.Is(err, ErrNoDocuments) {
+		t.Fatalf("err=%v want ErrNoDocuments", err)
+	}
+}

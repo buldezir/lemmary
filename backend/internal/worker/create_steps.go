@@ -23,6 +23,33 @@ func SetCreateSteps(record *core.Record, steps []string) {
 	record.Set(createStepsKey, append([]string(nil), steps...))
 }
 
+// skipCreateJobKey suppresses the job entirely, travelling the same way.
+const skipCreateJobKey = "__pipeline_skip_job"
+
+// SkipCreateJob asks for no processing job at all when record is saved.
+//
+// It exists for restoring a backup, where the document arrives already
+// processed: its OCR text, metadata and thumbnail come out of the archive, and
+// there is nothing left for the pipeline to derive. Handing it a job anyway is
+// not merely wasted work — the pipeline saves the record as it runs, and those
+// saves race with (and overwrite) the archived created/updated timestamps and
+// processing_status the restore writes back. An empty step list cannot express
+// this: SetCreateSteps reads that as "use the full pipeline".
+func SkipCreateJob(record *core.Record) {
+	if record == nil {
+		return
+	}
+	record.Set(skipCreateJobKey, true)
+}
+
+func skipsCreateJob(record *core.Record) bool {
+	if record == nil {
+		return false
+	}
+	skip, _ := record.GetRaw(skipCreateJobKey).(bool)
+	return skip
+}
+
 // createStepsFor returns the steps requested via SetCreateSteps, or the full
 // pipeline as the edition's plans left it when none were requested.
 //

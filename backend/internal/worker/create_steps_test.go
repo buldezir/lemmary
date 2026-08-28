@@ -127,3 +127,51 @@ func TestStepPlansCannotCorruptTheDefaultPipeline(t *testing.T) {
 		t.Fatalf("later upload saw a corrupted default: %v", got)
 	}
 }
+
+func TestSkipCreateJobIsReadBack(t *testing.T) {
+	t.Parallel()
+
+	record := newTestCreateStepsRecord()
+	if skipsCreateJob(record) {
+		t.Fatal("a plain record must still get a job")
+	}
+	if skipsCreateJob(nil) {
+		t.Fatal("nil record must not report a skip")
+	}
+
+	SkipCreateJob(record)
+	if !skipsCreateJob(record) {
+		t.Fatal("expected the skip to be read back")
+	}
+}
+
+// The transient key must not be persisted: DBExport is what the DB write uses.
+func TestSkipCreateJobIsNotPersisted(t *testing.T) {
+	t.Parallel()
+
+	record := newTestCreateStepsRecord()
+	SkipCreateJob(record)
+
+	if _, ok := record.FieldsData()[skipCreateJobKey]; ok {
+		t.Fatalf("expected %q to stay out of the persisted field data", skipCreateJobKey)
+	}
+}
+
+// Skipping the job is not the same as asking for no steps: an empty step list
+// means "use the full pipeline", which is why the two need separate keys.
+func TestSkipCreateJobIsIndependentOfSteps(t *testing.T) {
+	t.Parallel()
+
+	record := newTestCreateStepsRecord()
+	SkipCreateJob(record)
+
+	if got := createStepsFor(record, nil); !slices.Equal(got, models.FullPipelineSteps) {
+		t.Fatalf("steps=%v", got)
+	}
+
+	stepped := newTestCreateStepsRecord()
+	SetCreateSteps(stepped, models.ImportPreserveSteps)
+	if skipsCreateJob(stepped) {
+		t.Fatal("requesting steps must not suppress the job")
+	}
+}

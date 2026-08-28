@@ -119,6 +119,10 @@ func (p *Processor) registerHooks() {
 			return err
 		}
 
+		if skipsCreateJob(record) {
+			return nil
+		}
+
 		steps := createStepsFor(record, p.opts.StepPlans)
 		_, err := createProcessingJob(e.App, record.Id, steps, nil)
 		return err

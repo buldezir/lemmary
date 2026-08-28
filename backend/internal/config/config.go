@@ -83,6 +83,23 @@ func WorkerCronFromEnv() string {
 	return getEnv("WORKER_CRON_EXPR", "* * * * *")
 }
 
+// DefaultStagingMaxBytes is the fallback for StagingMaxBytesFromEnv.
+const DefaultStagingMaxBytes int64 = 1 << 30 // 1 GiB
+
+// minStagingMaxBytes keeps a typo from setting a limit no real upload can meet.
+const minStagingMaxBytes int64 = 1 << 20 // 1 MiB
+
+// StagingMaxBytesFromEnv is the largest archive an import may stage on disk.
+//
+// An importer discards an owner's previous staged upload before writing a new
+// one, so this is also the disk one account can occupy while it decides whether
+// to confirm: the ceiling on that staging area is roughly this times the number
+// of accounts. Lower it on a small volume; raise it for libraries whose backup
+// runs past a gigabyte.
+func StagingMaxBytesFromEnv() int64 {
+	return envInt64Default("IMPORT_STAGING_MAX_BYTES", DefaultStagingMaxBytes, minStagingMaxBytes)
+}
+
 // findSettingsCollection returns the app_settings collection.
 //
 // The schema itself is owned by migrations/ — this only reports a clear error
@@ -312,6 +329,20 @@ func envIntDefault(key string, fallback, min int) int {
 		return fallback
 	}
 	parsed, err := strconv.Atoi(v)
+	if err != nil || parsed < min {
+		return fallback
+	}
+	return parsed
+}
+
+// envInt64Default parses an int64 env var, falling back when unset, malformed,
+// or below min.
+func envInt64Default(key string, fallback, min int64) int64 {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(v, 10, 64)
 	if err != nil || parsed < min {
 		return fallback
 	}

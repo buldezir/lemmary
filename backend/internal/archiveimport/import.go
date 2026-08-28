@@ -161,9 +161,16 @@ func runImport(app core.App, ownerUserID, mode string, item *stagedArchive, repo
 	total := len(entries)
 	report(0, total)
 
+	// A second budget for the restore pass. Inspection only inflated the
+	// originals and the metadata sidecars; the OCR text and thumbnails are
+	// opened here for the first time, and per-entry caps alone would let a
+	// few thousand highly compressed sidecars add up to an archive that costs
+	// far more to unpack than it does to upload.
+	budget := &scanBudget{remaining: maxTotalScanBytes}
+
 	restored := make([]restoredDocument, 0, total)
 	for i, entry := range entries {
-		if doc := applyEntry(app, collection, ownerUserID, mode, entry, files, resolver, &result); doc != nil {
+		if doc := applyEntry(app, collection, ownerUserID, mode, entry, files, resolver, budget, &result); doc != nil {
 			restored = append(restored, *doc)
 		}
 		report(i+1, total)
@@ -181,6 +188,7 @@ func applyEntry(
 	entry Entry,
 	files map[string]*zip.File,
 	resolver *taxonomyResolver,
+	budget *scanBudget,
 	result *Result,
 ) *restoredDocument {
 	switch {
@@ -197,7 +205,7 @@ func applyEntry(
 		return nil
 	}
 
-	doc, err := restoreOne(app, collection, ownerUserID, mode, entry, files, resolver)
+	doc, err := restoreOne(app, collection, ownerUserID, mode, entry, files, resolver, budget)
 	if err != nil {
 		var dup *duplicates.ErrDuplicate
 		if errors.As(err, &dup) {
@@ -219,12 +227,9 @@ func restoreOne(
 	entry Entry,
 	files map[string]*zip.File,
 	resolver *taxonomyResolver,
+	budget *scanBudget,
 ) (*restoredDocument, error) {
-	file := files[entry.Path]
-	if file == nil {
-		return nil, errors.New("missing from archive")
-	}
-	data, err := readEntry(file, maxEntryBytes)
+	data, err := budget.take(files, entry.Path, maxEntryBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read from archive: %w", err)
 	}
@@ -240,36 +245,41 @@ func restoreOne(
 
 	doc := restoredDocument{ExportedID: entry.DocumentID}
 
-	if mode == ModeRestore {
-		var meta map[string]any
-		if entry.metadataPath != "" {
-			meta, err = readMetadata(files, entry.metadataPath)
-			if err != nil {
-				return nil, err
-			}
-			if err := applyMetadata(record, meta, resolver); err != nil {
-				return nil, err
-			}
-			doc.DuplicateOfExported = stringField(meta, "duplicate_of")
-			doc.Created, _ = parseTimestamp(stringField(meta, "created"))
-			doc.Updated, _ = parseTimestamp(stringField(meta, "updated"))
+	// A restore only has something to restore when the archive carries this
+	// document's metadata. Without a sidecar the entry is just a file, so it
+	// takes the ordinary upload path -- which is also what a pre-manifest
+	// "originals" archive holds.
+	if mode == ModeRestore && entry.metadataPath != "" {
+		meta, err := readMetadataBudgeted(files, entry.metadataPath, budget)
+		if err != nil {
+			return nil, err
 		}
+		if err := applyMetadata(record, meta, resolver); err != nil {
+			return nil, err
+		}
+		doc.DuplicateOfExported = stringField(meta, "duplicate_of")
+		doc.Created, _ = parseTimestamp(stringField(meta, "created"))
+		doc.Updated, _ = parseTimestamp(stringField(meta, "updated"))
+
 		if entry.ocrPath != "" {
-			text, err := readText(files, entry.ocrPath)
+			raw, err := budget.take(files, entry.ocrPath, maxSidecarBytes)
 			if err != nil {
 				return nil, err
 			}
-			if strings.TrimSpace(text) != "" {
+			if text := string(raw); strings.TrimSpace(text) != "" {
 				record.Set("ocr_text", text)
 			}
 		}
-		if previewFile := restorePreview(files, entry.previewPath); previewFile != nil {
+		if previewFile := restorePreview(files, entry.previewPath, budget); previewFile != nil {
 			record.Set("preview", previewFile)
 		}
-		// The preview and OCR steps skip a document that already has those
-		// fields, so a restore re-derives nothing and costs no OCR or LLM call.
-		// Near-duplicate detection still runs, against this instance's library.
-		worker.SetCreateSteps(record, models.ImportPreserveSteps)
+
+		// No processing job at all. Everything a pipeline would derive is
+		// already here, and letting it run would send a document whose OCR text
+		// was legitimately empty to the OCR provider -- the export omits the
+		// sidecar for an empty field, and the OCR step only skips when the
+		// field is non-empty. Its saves would also race the timestamp fixup.
+		worker.SkipCreateJob(record)
 	}
 
 	if err := duplicates.NormalizeSaveError(app, record, app.Save(record)); err != nil {
@@ -287,15 +297,11 @@ var pngMagic = []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
 // maxPreviewBytes matches the documents.preview field limit.
 const maxPreviewBytes = 2 << 20
 
-func restorePreview(files map[string]*zip.File, previewPath string) *filesystem.File {
+func restorePreview(files map[string]*zip.File, previewPath string, budget *scanBudget) *filesystem.File {
 	if previewPath == "" {
 		return nil
 	}
-	file := files[previewPath]
-	if file == nil {
-		return nil
-	}
-	data, err := readEntry(file, maxPreviewBytes)
+	data, err := budget.take(files, previewPath, maxPreviewBytes)
 	if err != nil || !bytes.HasPrefix(data, pngMagic) {
 		return nil
 	}

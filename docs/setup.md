@@ -59,6 +59,7 @@ All variables live in `.env` at the project root (see `.env.example`).
 | `LOG_LEVEL` | unset (no stdout slog) | Min level for JSON slog lines on stdout (`debug`, `info`, `warn`/`warning`, `error`). Ignored while PocketBase `--dev` is on (that mode already prints to the console, including SQL). PocketBase Admin → Settings → Logs still controls the logs table. |
 | `IMPORT_ALLOW_PRIVATE` | unset (blocked) | Set to `1`/`true` to let ngx import reach loopback and RFC1918 hosts. Link-local / cloud-metadata addresses stay blocked. Needed when Paperless-ngx is on the same LAN or Docker network. |
 | `UPLOAD_MAX_MB` | `100` | Cap on a staged split-document PDF upload, in megabytes. Read at startup, not from Settings: staging a PDF costs several times its size in memory while pages are rendered, so it protects the host as much as it shapes the product. A malformed or non-positive value falls back to the default rather than failing the boot. Per-file uploads are capped separately by the `documents.file` field (20 MB). |
+| `IMPORT_STAGING_MAX_BYTES` | `1073741824` (1 GiB) | Cap on an archive staged for import (Amazon orders, Lemmary backup), in bytes. Staging a new archive discards that account's previous one, so this is also the disk a single account can occupy while deciding whether to confirm — the staging area's ceiling is roughly this times the number of accounts. Lower it on a small volume; raise it for a library whose backup runs past a gigabyte. A malformed value, or one under 1 MiB, falls back to the default rather than rejecting every upload. |
 | `VITE_POCKETBASE_URL` | `http://127.0.0.1:8090` | PocketBase API URL (frontend) |
 | `VITE_DEV_USER_EMAIL` | — | Dev auto-login email (`users` collection) |
 | `VITE_DEV_USER_PASSWORD` | — | Dev auto-login password |
@@ -157,9 +158,9 @@ Uploading and importing are two steps, so nothing is created before the user has
 1. `POST /api/app/import/amazon/upload` (multipart, field `file`) streams the zip to `<data dir>/temp/amazon_import/` — it is never buffered in memory, since real exports run to hundreds of MB. The archive is scanned and every PDF is hashed, then returned as a preview: total PDF count, how many are importable, how many are duplicates or oversized, the ignored-entry count, and the per-file list. Duplicates are PDFs whose checksum already exists among the owner's documents (`duplicate_of` names the existing id) or that repeat earlier in the same archive. Imported documents are named `<parent folder>-<file>`, because Amazon numbers the invoices per folder (`1.pdf`, `2.pdf`, …).
 2. `POST /api/app/import/amazon` with `{ "upload_id": "..." }` starts the import and returns `202 Accepted` with `{ "job_id", "status": "running" }`. Poll `GET /api/app/import/amazon/status?job_id=...` for `progress` (`{ done, total }`) until `status` is `completed` (with `result`) or `failed` (with `error`). The `result` counts `imported`, `skipped_duplicates`, `skipped_oversized` and `failed`, plus up to 25 per-file error messages. Each imported document is saved as `pending`, so it goes through the normal OCR + AI [processing flow](#processing-flow).
 
-`DELETE /api/app/import/amazon/upload?upload_id=...` discards a staged archive the user chose not to import. Staged archives expire after 30 minutes and are swept on the next upload, including files left behind by an earlier process — the staging registry and the job state are in memory, so both are lost on restart. Confirming consumes the upload id: the same archive cannot be imported twice, and one import may run at a time per user (a second start returns `409`).
+`DELETE /api/app/import/amazon/upload?upload_id=...` discards a staged archive the user chose not to import. Staged archives expire after 30 minutes and are swept on the next upload, including files left behind by an earlier process — the staging registry and the job state are in memory, so both are lost on restart. Uploading a second archive also discards the account's previous one, so an account holds at most one at a time. Confirming consumes the upload id: the same archive cannot be imported twice, and one import may run at a time per user (a second start returns `409`).
 
-Rejections come back as `400` at preview time rather than mid-import: not a readable zip, no PDFs, more than 5000 PDFs, an upload over 1 GiB, or an archive that decompresses beyond 8 GiB (a zip bomb). A single PDF over the 20 MB `documents.file` limit is not fatal — it is flagged `oversized` in the preview and skipped on import.
+Rejections come back as `400` at preview time rather than mid-import: not a readable zip, no PDFs, more than 5000 PDFs, an upload over `IMPORT_STAGING_MAX_BYTES` (1 GiB by default), or an archive that decompresses beyond 8 GiB (a zip bomb). A single PDF over the 20 MB `documents.file` limit is not fatal — it is flagged `oversized` in the preview and skipped on import.
 
 ### Document splitting
 
@@ -220,8 +221,10 @@ A document whose stored file is missing from storage is skipped and left out of 
 
 Two modes:
 
-- **Restore the archive as it was** (`restore`, the default): recreates titles, tags, correspondents, document types, dates, OCR text and thumbnails, and restores the taxonomy first so records nothing references still land. The preview and OCR pipeline steps skip a document that already has those fields, so a restore makes **no OCR or LLM calls**. Near-duplicate detection still runs against this instance's library.
+- **Restore the archive as it was** (`restore`, the default): recreates titles, tags, correspondents, document types, dates, OCR text and thumbnails, and restores the taxonomy first so records nothing references still land. Restored documents get **no processing job at all** — everything a pipeline would derive is already in the archive — so a restore makes **no OCR or LLM calls** and cannot overwrite what it just restored. A document the archive holds no `.metadata.json` for has nothing to restore, so it takes the ordinary upload path instead; only pre-manifest `originals` archives contain those.
 - **Import the files only and reprocess** (`reprocess`): ignores every sidecar and queues the full OCR + AI pipeline, as for a new upload.
+
+Because a restore does not run the pipeline, near-duplicate detection does not re-run over the restored documents. Exact duplicates are still rejected on create by checksum, and `duplicate_of` / `text_fingerprint` come back from the archive; **Management → Scan for duplicates** re-derives near-duplicate links across the whole library when you want them recomputed. A restored document also keeps whatever thumbnail the archive carried — an older archive without `.preview.png` sidecars leaves those documents without one until they are reprocessed.
 
 What a restore does *not* preserve: **document ids**. Restored documents get fresh ids, and `duplicate_of` is remapped to the restored copy when the original is in the same archive (dropped when it is not). `created` and `updated` are written back after the save, so the library comes back in its original order. Documents whose file checksum is already in your library are skipped, which makes restoring the same archive twice safe.
 
@@ -234,7 +237,9 @@ Archives exported before manifests existed still restore: their documents are re
 3. `POST /api/app/import/archive` with `{ "upload_id": "...", "mode": "restore" | "reprocess" }` returns `202 Accepted` with `{ "job_id", "status": "running" }`.
 4. `GET /api/app/import/archive/status?job_id=...` until `status` is `completed` (with `result`) or `failed` (with `error`).
 
-Job state is in memory for the running process only, and one import may run at a time per user. Uploads are capped at 1 GiB and 5000 documents, each entry at the 20 MB document limit; an archive that decompresses far beyond its size is rejected as a zip bomb.
+Job state is in memory for the running process only, and one import may run at a time per user. Staging a new archive discards the account's previous one, so an account holds at most one at a time. Uploads are capped by `IMPORT_STAGING_MAX_BYTES` (1 GiB by default) and 5000 documents, each entry at the 20 MB document limit; one budget covers everything the inspection and the restore inflate, so an archive that unpacks far beyond its size is rejected as a zip bomb.
+
+An archive with no documents but a non-empty taxonomy is valid and restorable — that is what a backup of a library with tags but no documents looks like.
 
 ## Processing flow
 

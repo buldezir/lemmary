@@ -18,7 +18,7 @@ const modeOptions: { value: ArchiveImportMode; label: string; description: strin
     value: 'restore',
     label: 'Restore the archive as it was',
     description:
-      'Bring back titles, tags, correspondents, document types, dates, OCR text and thumbnails. Nothing is sent to OCR or the AI provider.',
+      'Bring back titles, tags, correspondents, document types, dates, OCR text and thumbnails exactly as the archive holds them. Restored documents are not processed at all, so nothing is sent to OCR or the AI provider.',
   },
   {
     value: 'reprocess',
@@ -38,6 +38,18 @@ function plural(count: number, word: string) {
   return `${count} ${word}${count === 1 ? '' : 's'}`
 }
 
+/** Pluralising a three-noun phrase needs more than a trailing "s". */
+function taxonomyLabel(count: number) {
+  return count === 1
+    ? '1 tag, correspondent or document type'
+    : `${count} tags, correspondents and document types`
+}
+
+/** Entries that will become documents, i.e. everything not being skipped. */
+function importableFiles(preview: ArchivePreview) {
+  return preview.files.filter((file) => !file.duplicate && !file.oversized && !file.missing)
+}
+
 function entryStatus(file: ArchivePreview['files'][number]) {
   if (file.missing) return 'Missing'
   if (file.oversized) return 'Too large'
@@ -55,6 +67,20 @@ export function ImportArchivePage() {
   const [error, setError] = useState('')
 
   const importing = progress !== null
+
+  // A restore can be worth running with no new documents at all: the archive's
+  // tags, correspondents and document types are restored either way, and an
+  // archive can carry taxonomy that no document references.
+  const taxonomyOnly =
+    preview !== null &&
+    mode === 'restore' &&
+    preview.importable_count === 0 &&
+    preview.taxonomy_count > 0
+  const canImport = preview !== null && (preview.importable_count > 0 || taxonomyOnly)
+  // Without a metadata sidecar there is nothing to restore, so those go through
+  // the normal pipeline instead -- which only older archives contain.
+  const withoutMetadata =
+    preview === null ? 0 : importableFiles(preview).filter((file) => !file.has_metadata).length
 
   function resetInput() {
     if (inputRef.current) inputRef.current.value = ''
@@ -155,10 +181,17 @@ export function ImportArchivePage() {
               {preview.oversized_count > 0 && `, ${preview.oversized_count} too large`}
               {preview.missing_count > 0 && `, ${preview.missing_count} missing from the archive`}.
               {preview.taxonomy_count > 0 &&
-                ` ${plural(preview.taxonomy_count, 'tag, correspondent or document type')} will be restored alongside them.`}
+                ` ${taxonomyLabel(preview.taxonomy_count)} will be restored alongside them.`}
               {preview.ignored_count > 0 &&
                 ` ${plural(preview.ignored_count, 'other entry')} ignored.`}
             </p>
+            {mode === 'restore' && withoutMetadata > 0 && (
+              <p className="mt-2 text-sm text-ink-soft">
+                The archive carries no metadata for {plural(withoutMetadata, 'document')}, so
+                {withoutMetadata === 1 ? ' it is' : ' they are'} processed like a new upload
+                instead of restored.
+              </p>
+            )}
             {!preview.has_manifest && (
               <p className="mt-2 text-sm text-ink-soft">
                 This archive predates the backup manifest, so it is read from its file names alone.
@@ -214,12 +247,16 @@ export function ImportArchivePage() {
           {preview.importable_count === 0 && (
             <p className="text-sm text-ink-soft">
               Every document in this archive is already in your library.
+              {taxonomyOnly &&
+                ' Restoring will still bring back its tags, correspondents and document types.'}
             </p>
           )}
 
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => void onConfirm()} disabled={preview.importable_count === 0}>
-              Import {plural(preview.importable_count, 'document')}
+            <Button onClick={() => void onConfirm()} disabled={!canImport}>
+              {taxonomyOnly
+                ? `Restore ${taxonomyLabel(preview.taxonomy_count)}`
+                : `Import ${plural(preview.importable_count, 'document')}`}
             </Button>
             <Button variant="secondary" onClick={() => void onCancel()}>
               Cancel
@@ -235,7 +272,7 @@ export function ImportArchivePage() {
           </p>
           <p className="mt-1 text-sm text-ink-soft">
             {mode === 'restore'
-              ? 'Restored documents keep their OCR text, so nothing is sent to OCR or the AI provider.'
+              ? 'Restored documents go straight into your library; nothing is sent to OCR or the AI provider.'
               : 'Imported documents are queued for OCR and AI processing.'}
           </p>
         </div>

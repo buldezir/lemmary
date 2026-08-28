@@ -24,11 +24,8 @@ import (
 )
 
 const (
-	// MaxArchiveBytes caps the uploaded zip. A library of a few thousand
-	// documents lands far below this; the cap only stops runaway uploads.
-	MaxArchiveBytes int64 = 1 << 30 // 1 GiB
-
-	// maxDocuments bounds one restore; each document also queues a processing job.
+	// maxDocuments bounds one restore. A reprocess also queues a pipeline job
+	// per document, which is the expensive half.
 	maxDocuments = 5000
 )
 
@@ -49,8 +46,8 @@ var (
 	ErrNoDocuments = errors.New("no documents found in the archive")
 	// ErrTooManyDocuments is returned when the archive exceeds maxDocuments.
 	ErrTooManyDocuments = fmt.Errorf("the archive holds more than %d documents", maxDocuments)
-	// ErrArchiveTooLarge is returned when the upload exceeds MaxArchiveBytes.
-	ErrArchiveTooLarge = fmt.Errorf("the archive is larger than %d bytes", MaxArchiveBytes)
+	// ErrArchiveTooLarge is returned when the upload exceeds the staging limit.
+	ErrArchiveTooLarge = errors.New("the archive is larger than this instance allows")
 	// ErrArchiveTooDense is returned when the archive decompresses far beyond
 	// any realistic backup — the signature of a zip bomb.
 	ErrArchiveTooDense = errors.New("the archive decompresses beyond the allowed total size")
@@ -114,7 +111,10 @@ func scan(lookup duplicateLookup, zr *zip.Reader, manifest *backup.Manifest) (en
 	}
 
 	groups, ignored := backup.Groups(zr, manifest)
-	if len(groups) == 0 {
+	// A backup of a library with no documents is still a backup: its manifest
+	// carries the taxonomy, which lives nowhere else in the archive. Rejecting
+	// it would discard the only thing it holds.
+	if len(groups) == 0 && taxonomy.Count() == 0 {
 		return nil, taxonomy, ignored, ErrNoDocuments
 	}
 	if len(groups) > maxDocuments {
@@ -196,13 +196,14 @@ func restoredName(files map[string]*zip.File, group backup.Group, budget *scanBu
 		return fallbackName(group), nil
 	}
 	// A sidecar that is unreadable or absurdly large is not worth failing the
-	// archive over; the entry name still names the document.
-	data, err := readSidecar(files, group.Metadata)
+	// archive over; the entry name still names the document. Running out of
+	// budget is different -- that is the archive as a whole being abusive.
+	data, err := budget.take(files, group.Metadata, maxSidecarBytes)
+	if errors.Is(err, ErrArchiveTooDense) {
+		return "", err
+	}
 	if err != nil {
 		return fallbackName(group), nil
-	}
-	if !budget.spend(int64(len(data))) {
-		return "", ErrArchiveTooDense
 	}
 	var meta map[string]any
 	if json.Unmarshal(data, &meta) == nil {
@@ -309,18 +310,29 @@ func readEntry(f *zip.File, limit int64) ([]byte, error) {
 	return data, nil
 }
 
-// readSidecar returns the bytes of one OCR or metadata sidecar.
-func readSidecar(files map[string]*zip.File, name string) ([]byte, error) {
+// take reads one entry and draws its real size from the budget.
+//
+// It is the only way an entry is read after inspection, so every byte the
+// restore inflates is accounted for. The size is the length actually read, not
+// the zip header's claim, which a crafted archive is free to understate.
+func (b *scanBudget) take(files map[string]*zip.File, name string, limit int64) ([]byte, error) {
 	file := files[name]
 	if file == nil {
 		return nil, fmt.Errorf("%s missing from archive", name)
 	}
-	return readEntry(file, maxSidecarBytes)
+	data, err := readEntry(file, limit)
+	if err != nil {
+		return nil, err
+	}
+	if !b.spend(int64(len(data))) {
+		return nil, ErrArchiveTooDense
+	}
+	return data, nil
 }
 
-// readMetadata parses one metadata sidecar.
-func readMetadata(files map[string]*zip.File, name string) (map[string]any, error) {
-	data, err := readSidecar(files, name)
+// readMetadataBudgeted reads and parses one metadata sidecar.
+func readMetadataBudgeted(files map[string]*zip.File, name string, budget *scanBudget) (map[string]any, error) {
+	data, err := budget.take(files, name, maxSidecarBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -329,15 +341,6 @@ func readMetadata(files map[string]*zip.File, name string) (map[string]any, erro
 		return nil, fmt.Errorf("parse metadata %s: %w", name, err)
 	}
 	return meta, nil
-}
-
-// readText returns a sidecar's contents as text.
-func readText(files map[string]*zip.File, name string) (string, error) {
-	data, err := readSidecar(files, name)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
 }
 
 // countingReader counts the bytes read through it.
