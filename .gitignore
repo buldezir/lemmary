@@ -4,9 +4,9 @@
 public/
 frontend/.vitepress/cache/
 frontend/.vitepress/dist/
-frontend/test-results/
-frontend/playwright-report/
-frontend/blob-report/
-frontend/playwright/.cache/
 backend/pb_data/
 *.test
+
+# The development suite -- e2e tests, dev runner, verification stack -- is a
+# private repository overlaid at this path: github.com/lemmary/lemmary-dev
+backend/dev/

@@ -37,7 +37,8 @@ export default defineConfig({
     alias: { '@ext': editionDir() },
   },
   test: {
-    // Unit tests only; Playwright owns e2e/.
+    // Unit tests only. The browser suite is Playwright's, and lives in the
+    // private development repository rather than here.
     include: ['src/**/*.test.{ts,tsx}'],
   },
   build: {

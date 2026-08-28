@@ -6,7 +6,7 @@ Document storage built with Go + PocketBase and a React + TanStack Router fronte
 
 Lemmary implements a [paperless-ngx](https://github.com/paperless-ngx/paperless-ngx)-compatible REST API under `/api/`, so you can use third-party clients instead of (or alongside) the built-in web UI. Coverage is partial — document list/upload/download, tags, and metadata generally work, but not every paperless-ngx endpoint or feature is implemented.
 
-The API has been tested with the [swift-paperless](https://github.com/paulgessinger/swift-paperless) iOS app and mostly works for browsing and uploading documents. See [docs/development.md](docs/development.md#paperless-ngx-api-compatibility) for connecting external clients.
+The API has been tested with the [swift-paperless](https://github.com/paulgessinger/swift-paperless) iOS app and mostly works for browsing and uploading documents. See [docs/setup.md](docs/setup.md#paperless-ngx-api-compatibility) for connecting external clients.
 
 ## Stack
 
@@ -22,7 +22,7 @@ The API has been tested with the [swift-paperless](https://github.com/paulgessin
 ```text
 backend/    PocketBase app, migrations, OCR/AI worker
 frontend/   React UI
-docs/       Development guide
+docs/       Setup and operation guides
 ```
 
 ## Quick start
@@ -35,11 +35,11 @@ docker compose up --build
 
 Open [http://127.0.0.1:8090](http://127.0.0.1:8090). On first launch, the in-app setup wizard creates your admin account and collects OCR + LLM API keys (hard gate until both are set). A single Mistral key can cover OCR and extraction. Data is stored in a Docker volume (`app_data`).
 
-For local development without Docker, see [docs/development.md](docs/development.md).
+To run without Docker, see [docs/setup.md](docs/setup.md).
 
 ## Environment variables and Settings
 
-See [docs/development.md](docs/development.md) for the full list.
+See [docs/setup.md](docs/setup.md) for the full list.
 
 - `WORKER_CRON_EXPR` and frontend `VITE_*` vars stay in `.env`
 - OCR/AI keys, models, and worker timeouts live in the DB (`app_settings`); seed from `.env` on first boot, complete via the first-launch wizard, then edit in **Settings** as admin
@@ -73,21 +73,15 @@ Deep Search with natural-language queries:
 
 ## Tests
 
+Unit tests live beside the code they cover:
+
 ```bash
-# Unit only (fast)
 cd backend && go test $(go list ./... | grep -v /e2e) -count=1
-
-# API e2e (real PocketBase + mocked OCR/AI)
-cd backend && go test ./e2e/ -count=1 -timeout 10m
-
-# Browser e2e (builds SPA, starts e2e server with mocks, Playwright)
-cd frontend && npm run test:e2e
-
-# Full verification (agents)
-./scripts/test-all.sh
+cd frontend && npm test
 ```
 
-First browser run may need Chromium: `cd frontend && npx playwright install chromium`.
+The end-to-end suites, the dev runner and the full verification stack live in a
+separate private repository and are not part of this one.
 
 ## License
 

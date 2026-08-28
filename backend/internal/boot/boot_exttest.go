@@ -22,7 +22,9 @@ import (
 // with nothing failing.
 //
 // It exercises every field of Boot and Result. A field that stops being wired
-// makes e2e/boot_exttest_test.go or boot_exttest_test.go fail.
+// makes boot_exttest_test.go fail here, and the HTTP-level assertions in the
+// private development suite (dev/e2e/boot_exttest_test.go, present only when
+// that overlay is cloned into backend/dev/) fail too.
 
 // ExtTestSubcommand is answered without constructing an app, which is what
 // Result.Handled is for.

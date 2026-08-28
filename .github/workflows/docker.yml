@@ -12,9 +12,6 @@ on:
       - ".env.example"
       - "docker-compose.yml"
       - "scripts/**"
-      - "frontend/e2e/**"
-      - "frontend/playwright.config.*"
-      - "backend/e2e/**"
       - "**/testdata/**"
       - "**/*_test.go"
   pull_request:
@@ -42,6 +39,30 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # The e2e suites and the verification stack live in a private repository
+      # overlaid at backend/dev/. GitHub withholds secrets from fork pull
+      # requests, so this job has to detect that and degrade loudly rather than
+      # report a green run that never executed e2e. secrets.* is not available
+      # in a job-level `if`, which is why the guard is a step.
+      - name: Detect private suite access
+        id: access
+        env:
+          KEY: ${{ secrets.DEV_REPO_KEY }}
+        run: |
+          if [ -n "$KEY" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out private dev suite
+        if: steps.access.outputs.ok == 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: lemmary/lemmary-dev
+          ssh-key: ${{ secrets.DEV_REPO_KEY }}
+          path: backend/dev
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -62,12 +83,35 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Install dev suite dependencies
+        if: steps.access.outputs.ok == 'true'
+        working-directory: backend/dev
+        run: npm ci
+
       - name: Install Playwright Chromium
-        working-directory: frontend
+        if: steps.access.outputs.ok == 'true'
+        working-directory: backend/dev
         run: npx playwright install --with-deps chromium
 
       - name: Run verification suite
-        run: ./scripts/test-all.sh
+        if: steps.access.outputs.ok == 'true'
+        run: ./backend/dev/scripts/test-all.sh
+
+      - name: Run unit tests only (private suite unavailable)
+        if: steps.access.outputs.ok != 'true'
+        run: |
+          echo "::warning::e2e suites skipped - the private dev repository is not reachable from a fork pull request. Unit tests and the compile-level extension-seam check ran; API and browser e2e did not."
+          cd backend
+          go test $(go list ./... | grep -v '/e2e$') -count=1
+          go vet -tags lemmary_exttest ./...
+          go test -tags lemmary_exttest ./internal/boot/ -count=1
+          cd ../frontend
+          npm test
+          # The full path builds the SPA inside test-all.sh stage 5. Without it
+          # nothing on a pull request compiles the frontend at all -- the build
+          # job is push-only -- so a fork PR could go green with tsc, Vite or
+          # VitePress broken.
+          npm run build
 
   build:
     if: github.event_name != 'pull_request'
