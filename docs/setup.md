@@ -187,6 +187,55 @@ Page text comes from `pdftotext` per page first (`text_source: "pdf"`). A page c
 
 The page texts go to the extraction provider and model in one request asking for `{"parts":[{"from","to","title"}]}`, with a per-page character budget of `max(200, 30000 / pages)` so even a 100-page file arrives whole rather than truncated to its first pages. The answer is then normalized server-side into a contiguous cover of every page: only the cut positions it implies are kept and the parts are rebuilt from them, so an unsorted, gapped, overlapping or out-of-range proposal still yields something `POST /api/app/split` accepts, and an unusable one degrades to a single whole-file part.
 
+## Backup and restore
+
+Any signed-in user can download their whole library as one zip and restore it — into this instance or another one. Export is per user: it contains the caller's documents and taxonomy, never anyone else's, and never the instance's settings or API keys.
+
+### Exporting
+
+**More → Export → Download backup**, or `GET /api/app/documents/export`. The response streams a zip named `lemmary-export.zip`; there are no options.
+
+Every entry lives flat under `lemmary-export/`, so the archive stays browsable by hand:
+
+```text
+lemmary-export/manifest.json
+lemmary-export/[<id>] <title><ext>              the original upload
+lemmary-export/[<id>] <title>.ocr.txt           extracted text (omitted when empty)
+lemmary-export/[<id>] <title>.metadata.json     titles, tags, dates, checksum, timestamps
+lemmary-export/[<id>] <title>.preview.png       generated thumbnail (omitted when there is none)
+```
+
+`<title>` is sanitized and truncated so the longest name stays under the 255-byte limit filesystems put on one path element. Relations are written as **names**, not ids, because ids mean nothing in the instance the archive is restored into.
+
+`manifest.json` is the table of contents: `format`, `version`, `exported_at`, `document_count`, the full `taxonomy`, and the exact entry paths of each document. Two things depend on it:
+
+- **Tags, correspondents and document types no document references.** They exist nowhere else in the archive, so without the manifest a restore would drop them.
+- **Disambiguating sidecars.** A document whose own file is a `.txt` named like an OCR sidecar cannot be told apart from one by name alone.
+
+A document whose stored file is missing from storage is skipped and left out of the manifest, so the manifest never claims something the archive does not hold.
+
+### Restoring
+
+**More → Import → Lemmary archive** (`/import/archive`), or the API below. The archive is streamed to `<data dir>/temp/archive_import/` — never buffered in memory — then scanned and previewed: how many documents it holds, how many are new, how many are duplicates, oversized or missing, how much taxonomy comes with them. Nothing is created until you confirm.
+
+Two modes:
+
+- **Restore the archive as it was** (`restore`, the default): recreates titles, tags, correspondents, document types, dates, OCR text and thumbnails, and restores the taxonomy first so records nothing references still land. The preview and OCR pipeline steps skip a document that already has those fields, so a restore makes **no OCR or LLM calls**. Near-duplicate detection still runs against this instance's library.
+- **Import the files only and reprocess** (`reprocess`): ignores every sidecar and queues the full OCR + AI pipeline, as for a new upload.
+
+What a restore does *not* preserve: **document ids**. Restored documents get fresh ids, and `duplicate_of` is remapped to the restored copy when the original is in the same archive (dropped when it is not). `created` and `updated` are written back after the save, so the library comes back in its original order. Documents whose file checksum is already in your library are skipped, which makes restoring the same archive twice safe.
+
+Archives exported before manifests existed still restore: their documents are reconstructed from the entry names alone. Only orphan taxonomy — and that one sidecar-lookalike case — cannot be recovered from them.
+
+### API
+
+1. `POST /api/app/import/archive/upload` (multipart, field `file`) stages the zip and returns the preview, including `upload_id` and `has_manifest`.
+2. `DELETE /api/app/import/archive/upload?upload_id=...` discards a staged archive. Staged archives also expire on their own after 30 minutes.
+3. `POST /api/app/import/archive` with `{ "upload_id": "...", "mode": "restore" | "reprocess" }` returns `202 Accepted` with `{ "job_id", "status": "running" }`.
+4. `GET /api/app/import/archive/status?job_id=...` until `status` is `completed` (with `result`) or `failed` (with `error`).
+
+Job state is in memory for the running process only, and one import may run at a time per user. Uploads are capped at 1 GiB and 5000 documents, each entry at the 20 MB document limit; an archive that decompresses far beyond its size is rejected as a zip bomb.
+
 ## Processing flow
 
 1. User uploads a document from `/upload`

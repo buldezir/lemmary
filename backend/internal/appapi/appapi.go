@@ -5,6 +5,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
 	"lemmary/backend/internal/amazonimport"
+	"lemmary/backend/internal/archiveimport"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/fulltext"
 	"lemmary/backend/internal/pdfsplit"
@@ -48,6 +49,11 @@ func Register(app core.App, rt *config.Runtime, idx *fulltext.Index) {
 			g.DELETE("/import/amazon/upload", bindAuth(handleDeleteImportAmazonUpload(app)))
 			g.POST("/import/amazon", bindAuth(handlePostImportAmazon(app)))
 			g.GET("/import/amazon/status", bindAuth(handleGetImportAmazonStatus(app)))
+			g.POST("/import/archive/upload", bindAuth(handlePostImportArchiveUpload(app))).
+				Bind(apis.BodyLimit(archiveimport.MaxArchiveBytes))
+			g.DELETE("/import/archive/upload", bindAuth(handleDeleteImportArchiveUpload(app)))
+			g.POST("/import/archive", bindAuth(handlePostImportArchive(app)))
+			g.GET("/import/archive/status", bindAuth(handleGetImportArchiveStatus(app)))
 			// The extra megabyte is headroom for the multipart framing, so a PDF
 			// at the cap still reaches the handler and is rejected with the
 			// message that explains the limit instead of a bare 413.

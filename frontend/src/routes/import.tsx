@@ -1,146 +1,28 @@
-import { type SubmitEvent, useState } from 'react'
-import { importFromNgx, type NgxImportMode, type NgxImportResult } from '../lib/api/imports'
-import { Button, inputClassName, labelClassName, labelTextClassName } from '../components/ui'
+import { Link, Outlet } from '@tanstack/react-router'
 
-const modeOptions: { value: NgxImportMode; label: string; description: string }[] = [
-  {
-    value: 'preserve',
-    label: 'Keep Paperless-ngx metadata',
-    description:
-      'Import title, tags, correspondent, document type, date, and OCR text. Preview and duplicate detection still run; AI does not overwrite metadata.',
-  },
-  {
-    value: 'reprocess',
-    label: 'Import files only and reprocess',
-    description:
-      'Import only the original files, then run the full OCR and AI pipeline as if they were newly uploaded.',
-  },
-]
+const tabClassName =
+  '-mb-px border-b-2 border-transparent px-1 pb-2 pt-1 text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-oxblood data-[status=active]:border-oxblood data-[status=active]:text-oxblood'
 
 export function ImportPage() {
-  const [url, setUrl] = useState('')
-  const [apiKey, setApiKey] = useState('')
-  const [mode, setMode] = useState<NgxImportMode>('preserve')
-  const [running, setRunning] = useState(false)
-  const [error, setError] = useState('')
-  const [result, setResult] = useState<NgxImportResult | null>(null)
-
-  async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!url.trim() || !apiKey.trim()) {
-      setError('URL and API key are required')
-      return
-    }
-
-    try {
-      setRunning(true)
-      setError('')
-      setResult(null)
-      const summary = await importFromNgx(url.trim(), apiKey.trim(), mode)
-      setResult(summary)
-      setApiKey('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Import failed')
-    } finally {
-      setRunning(false)
-    }
-  }
-
   return (
-    <div className="mx-auto max-w-xl space-y-6">
+    <div className="mx-auto flex max-w-xl flex-col gap-6">
       <div>
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">Import from Paperless-ngx</h1>
+        <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">Import</h1>
         <p className="mt-1 text-sm text-ink-soft">
-          Pull documents from an existing Paperless-ngx instance using its URL and API token. The
-          remote token belongs to a specific ngx user, so imported documents are added to your
-          account. Choose whether to keep remote metadata or reprocess files through OCR and AI. The
-          API key is not stored.
+          Bring documents in from somewhere else. Pick a source below.
         </p>
       </div>
 
-      <form onSubmit={onSubmit} className="space-y-4 rounded-none border border-line bg-surface p-5">
-        <label className={labelClassName}>
-          <span className={labelTextClassName}>Paperless-ngx URL</span>
-          <input
-            className={inputClassName}
-            type="url"
-            required
-            placeholder="https://paperless.example.com"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            autoComplete="off"
-          />
-        </label>
-        <label className={labelClassName}>
-          <span className={labelTextClassName}>API key</span>
-          <input
-            className={inputClassName}
-            type="password"
-            required
-            placeholder="Token from Paperless-ngx profile"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            autoComplete="off"
-          />
-        </label>
-        <fieldset className="space-y-2" disabled={running}>
-          <legend className={labelTextClassName}>Import mode</legend>
-          {modeOptions.map((option) => (
-            <label
-              key={option.value}
-              className={`flex cursor-pointer items-start gap-2 rounded-xs border px-3 py-2 text-sm ${
-                mode === option.value
-                  ? 'border-ink bg-bright text-ink'
-                  : 'border-line bg-surface text-ink-muted'
-              }`}
-            >
-              <input
-                type="radio"
-                className="mt-0.5"
-                name="import-mode"
-                value={option.value}
-                checked={mode === option.value}
-                onChange={() => setMode(option.value)}
-              />
-              <span>
-                <span className="font-medium">{option.label}</span>
-                <span className="mt-0.5 block text-xs font-normal text-ink-soft">
-                  {option.description}
-                </span>
-              </span>
-            </label>
-          ))}
-        </fieldset>
-        <Button type="submit" disabled={running}>
-          {running ? 'Importing…' : 'Start import'}
-        </Button>
-      </form>
+      <nav aria-label="Import sources" className="flex flex-wrap items-center gap-5 border-b border-line">
+        <Link to="/import" activeOptions={{ exact: true }} className={tabClassName}>
+          Paperless-ngx
+        </Link>
+        <Link to="/import/archive" className={tabClassName}>
+          Lemmary archive
+        </Link>
+      </nav>
 
-      {error && <p className="text-sm text-madder">{error}</p>}
-
-      {result && (
-        <div className="space-y-2 rounded-none border border-line bg-bright p-5 text-sm text-ink-muted">
-          <p className="font-medium text-ink">Import finished</p>
-          <ul className="list-inside list-disc space-y-1">
-            <li>Imported: {result.imported}</li>
-            <li>Skipped duplicates: {result.skipped_duplicates}</li>
-            <li>Failed: {result.failed}</li>
-            <li>Tags upserted: {result.tags_upserted}</li>
-            <li>Correspondents upserted: {result.correspondents_upserted}</li>
-            <li>Document types upserted: {result.document_types_upserted}</li>
-          </ul>
-          {result.errors.length > 0 && (
-            <div className="mt-3">
-              <p className="font-medium text-ink">Errors</p>
-              <ul className="mt-1 list-inside list-disc space-y-1 text-madder">
-                {result.errors.map((msg) => (
-                  <li key={msg}>{msg}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
+      <Outlet />
     </div>
   )
 }
