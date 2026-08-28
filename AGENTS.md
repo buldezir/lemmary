@@ -100,9 +100,11 @@ Without it, run what this repository can verify on its own, and say plainly in
 the report that the e2e suites did not run:
 
 ```bash
-cd backend && go test $(go list ./... | grep -v '/e2e$') -count=1
-cd backend && go vet -tags lemmary_exttest ./... && go test -tags lemmary_exttest ./internal/boot/ -count=1
-cd frontend && npm test
+# Subshells on purpose: run from the repo root, and each line is independent.
+(cd backend && go test $(go list ./... | grep -v '/e2e$') -count=1)
+(cd backend && go vet -tags lemmary_exttest ./... && go test -tags lemmary_exttest ./internal/boot/ -count=1)
+(cd frontend && npm test)
+(cd frontend && npm run build)   # tsc -b + vite + vitepress; nothing else here builds the app
 ```
 
 Do not claim a task is complete if any stage fails, and do not claim e2e

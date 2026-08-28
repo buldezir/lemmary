@@ -107,6 +107,11 @@ jobs:
           go test -tags lemmary_exttest ./internal/boot/ -count=1
           cd ../frontend
           npm test
+          # The full path builds the SPA inside test-all.sh stage 5. Without it
+          # nothing on a pull request compiles the frontend at all -- the build
+          # job is push-only -- so a fork PR could go green with tsc, Vite or
+          # VitePress broken.
+          npm run build
 
   build:
     if: github.event_name != 'pull_request'
