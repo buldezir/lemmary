@@ -17,14 +17,12 @@ import { AppLogo, Button, inputClassName, labelClassName, labelTextClassName } f
 type LoginPageProps = {
   appName: string
   accent: string
-  /** Whether the server can and should offer passkey sign-in (from /api/app/meta). */
-  passkeysEnabled: boolean
   onSuccess: () => void
 }
 
 // Shown until PocketBase reports what it accepts. Password-only matches every
 // default install, so the form does not flicker in the common case.
-const pendingMethods: LoginMethods = { password: true, oauth: [] }
+const pendingMethods: LoginMethods = { password: true, oauth: [], passkey: false }
 
 function MethodSeparator() {
   return (
@@ -36,9 +34,9 @@ function MethodSeparator() {
   )
 }
 
-export function LoginPage({ appName, accent, passkeysEnabled, onSuccess }: LoginPageProps) {
+export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
   const { data: methods } = useAsync(getLoginMethods, [])
-  const { password: passwordEnabled, oauth } = methods ?? pendingMethods
+  const { password: passwordEnabled, oauth, passkey: passkeyOffered } = methods ?? pendingMethods
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -47,9 +45,9 @@ export function LoginPage({ appName, accent, passkeysEnabled, onSuccess }: Login
   const [error, setError] = useState('')
   const busy = submitting || pendingProvider !== '' || passkeyBusy
 
-  // passkeysSupported() is synchronous and stable for the life of the page, so
-  // unlike `methods` it needs no state and cannot flicker.
-  const passkeyVisible = passkeysEnabled && passkeysSupported()
+  // passkeysSupported() is synchronous and stable for the life of the page; the
+  // server's half arrives with `methods`, which is why this is not state either.
+  const passkeyVisible = passkeyOffered && passkeysSupported()
   const conditional = useRef<ConditionalPasskeyLogin | null>(null)
   const onSuccessRef = useRef(onSuccess)
   useEffect(() => {

@@ -55,9 +55,37 @@ export type LoginMethods = {
   password: boolean
   /** OAuth2 providers enabled on the users collection, in PocketBase order. */
   oauth: OAuthProvider[]
+  /** Whether the server can and should offer passkey sign-in. */
+  passkey: boolean
 }
 
-const fallbackLoginMethods: LoginMethods = { password: true, oauth: [] }
+const fallbackLoginMethods: LoginMethods = { password: true, oauth: [], passkey: false }
+
+/**
+ * Whether the server says passkey sign-in is on offer: the address can carry a
+ * ceremony at all, and at least one credential exists to offer.
+ *
+ * Read here rather than from the app-meta hook because that hook resolves once
+ * per RootLayout mount, and RootLayout does not remount when a session ends. A
+ * user who enrolled a passkey and then signed out in the same tab would be shown
+ * a login screen built from a stale answer. This runs whenever the login screen
+ * appears.
+ *
+ * Raw fetch, like the two calls below: apiClient imports ensureAuth from this
+ * module, so importing it back would close a cycle.
+ */
+async function getPasskeyOffered(): Promise<boolean> {
+  try {
+    const response = await fetch(`${pbUrl}/api/app/meta`)
+    if (!response.ok) {
+      return false
+    }
+    const data = (await response.json()) as { passkeys?: boolean }
+    return data.passkeys === true
+  } catch {
+    return false
+  }
+}
 
 /**
  * Reads the sign-in methods enabled for the users collection in PocketBase, so
@@ -67,11 +95,15 @@ const fallbackLoginMethods: LoginMethods = { password: true, oauth: [] }
  * rather than a login screen with no way in.
  */
 export async function getLoginMethods(): Promise<LoginMethods> {
-  let methods
-  try {
-    methods = await pb.collection('users').listAuthMethods()
-  } catch {
-    return fallbackLoginMethods
+  const [methods, passkey] = await Promise.all([
+    pb
+      .collection('users')
+      .listAuthMethods()
+      .catch(() => null),
+    getPasskeyOffered(),
+  ])
+  if (!methods) {
+    return { ...fallbackLoginMethods, passkey }
   }
 
   const oauth = methods.oauth2.enabled
@@ -82,10 +114,11 @@ export async function getLoginMethods(): Promise<LoginMethods> {
     : []
 
   return {
-    // Hiding the password form is only safe while OAuth2 can take over; with
-    // no provider left it would be a login screen with no controls at all.
-    password: methods.password.enabled || oauth.length === 0,
+    // Hiding the password form is only safe while another method can take over;
+    // with nothing left it would be a login screen with no controls at all.
+    password: methods.password.enabled || (oauth.length === 0 && !passkey),
     oauth,
+    passkey,
   }
 }
 

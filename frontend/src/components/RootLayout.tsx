@@ -286,7 +286,7 @@ async function resolveGate(): Promise<Gate> {
 
 export function RootLayout() {
   const [gate, setGate] = useState<Gate>({ kind: 'loading' })
-  const { appName, accent, passkeys: passkeysEnabled } = useAppMeta()
+  const { appName, accent } = useAppMeta()
   const userDisplayName = gate.kind === 'app' ? getUserDisplayName() : ''
   const admin = gate.kind === 'app' ? gate.admin : false
 
@@ -375,12 +375,7 @@ export function RootLayout() {
 
   if (gate.kind === 'login') {
     return (
-      <LoginPage
-        appName={appName}
-        accent={accent}
-        passkeysEnabled={passkeysEnabled}
-        onSuccess={() => void refreshGate()}
-      />
+      <LoginPage appName={appName} accent={accent} onSuccess={() => void refreshGate()} />
     )
   }
 
