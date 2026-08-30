@@ -18,7 +18,7 @@ type ModelSelectProps = {
   model: string
   models: CatalogModel[]
   loading: boolean
-  onChange: (model: string) => void
+  onChange: (model: string, meta?: CatalogModel) => void
   allowEmpty?: boolean
   disabled?: boolean
 }
@@ -56,7 +56,10 @@ export function ModelSelect({
                 return
               }
               setWantCustom(false)
-              onChange(next)
+              onChange(
+                next,
+                models.find((item) => item.id === next),
+              )
             }}
           >
             {loading ? (
@@ -108,7 +111,7 @@ type ProviderModelFieldsProps = {
   model: string
   purpose: 'ocr' | 'llm'
   onProviderChange: (providerId: string) => void
-  onModelChange: (model: string) => void
+  onModelChange: (model: string, meta?: CatalogModel) => void
   allowEmpty?: boolean
 }
 

@@ -38,6 +38,7 @@ type Config struct {
 	OCRTimeout                    time.Duration
 	ProcessingResultLanguage      string
 	DeepSearchLanguages           string
+	SearchContextTokens           int
 	OpenAITimeout                 time.Duration
 	WorkerCronExpr                string
 	WorkerTimeout                 time.Duration
@@ -67,6 +68,7 @@ func DefaultsFromEnv() Config {
 		OCRTimeout:                    time.Duration(ocrTimeoutSec) * time.Second,
 		ProcessingResultLanguage:      strings.ToLower(strings.TrimSpace(os.Getenv("PROCESSING_RESULT_LANGUAGE"))),
 		DeepSearchLanguages:           NormalizeLanguageList(os.Getenv("DEEP_SEARCH_LANGUAGES")),
+		SearchContextTokens:           envIntDefault("SEARCH_CONTEXT_TOKENS", DefaultSearchContextTokens, 1),
 		OpenAITimeout:                 time.Duration(timeoutSec) * time.Second,
 		WorkerCronExpr:                WorkerCronFromEnv(),
 		WorkerTimeout:                 time.Duration(workerTimeoutSec) * time.Second,
@@ -78,6 +80,12 @@ func DefaultsFromEnv() Config {
 }
 
 const DefaultNearDuplicateThreshold = 0.92
+
+// DefaultSearchContextTokens is the context window assumed when neither the
+// admin nor the provider tells us the real one. Research reads documents until
+// this budget is spent, so it is the one number that decides how much of the
+// archive a single question can draw on.
+const DefaultSearchContextTokens = 128000
 
 func WorkerCronFromEnv() string {
 	return getEnv("WORKER_CRON_EXPR", "* * * * *")
@@ -212,6 +220,11 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 		threshold = DefaultNearDuplicateThreshold
 	}
 
+	searchContextTokens := int(record.GetFloat("search_context_tokens"))
+	if searchContextTokens <= 0 {
+		searchContextTokens = DefaultSearchContextTokens
+	}
+
 	cfg := Config{
 		OCRProviderID:                 strings.TrimSpace(record.GetString("ocr_provider_id")),
 		OCRModel:                      strings.TrimSpace(record.GetString("ocr_model")),
@@ -224,6 +237,7 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 		OCRTimeout:                    time.Duration(ocrTimeoutSec) * time.Second,
 		ProcessingResultLanguage:      strings.ToLower(strings.TrimSpace(record.GetString("processing_result_language"))),
 		DeepSearchLanguages:           NormalizeLanguageList(record.GetString("deep_search_languages")),
+		SearchContextTokens:           searchContextTokens,
 		OpenAITimeout:                 time.Duration(openAITimeoutSec) * time.Second,
 		WorkerCronExpr:                WorkerCronFromEnv(),
 		WorkerTimeout:                 time.Duration(workerTimeoutSec) * time.Second,
@@ -302,6 +316,7 @@ func applyConfigToRecord(record *core.Record, cfg Config) {
 	record.Set("ocr_timeout_sec", int(cfg.OCRTimeout.Seconds()))
 	record.Set("processing_result_language", cfg.ProcessingResultLanguage)
 	record.Set("deep_search_languages", cfg.DeepSearchLanguages)
+	record.Set("search_context_tokens", cfg.SearchContextTokens)
 	record.Set("openai_timeout_sec", int(cfg.OpenAITimeout.Seconds()))
 	record.Set("worker_timeout_sec", int(cfg.WorkerTimeout.Seconds()))
 	record.Set("worker_max_retries", cfg.WorkerMaxRetries)

@@ -213,3 +213,46 @@ func TestListModelsGoogleVisionEmpty(t *testing.T) {
 		t.Fatalf("got %+v", models)
 	}
 }
+
+func TestParseModelsResponseReadsContextWindow(t *testing.T) {
+	t.Parallel()
+	// OpenRouter reports context_length (and repeats it under top_provider),
+	// Mistral reports max_context_length, OpenAI reports neither.
+	models, err := parseModelsResponse([]byte(`{"data":[
+		{"id":"openrouter","context_length":200000},
+		{"id":"openrouter-detail","top_provider":{"context_length":131072}},
+		{"id":"mistral","max_context_length":32768},
+		{"id":"openai"}
+	]}`))
+	if err != nil {
+		t.Fatalf("parseModelsResponse: %v", err)
+	}
+
+	want := map[string]int{
+		"openrouter":        200000,
+		"openrouter-detail": 131072,
+		"mistral":           32768,
+		"openai":            0,
+	}
+	if len(models) != len(want) {
+		t.Fatalf("models = %d, want %d", len(models), len(want))
+	}
+	for _, m := range models {
+		if got := m.ContextWindow; got != want[m.ID] {
+			t.Fatalf("%s context window = %d, want %d", m.ID, got, want[m.ID])
+		}
+	}
+}
+
+func TestPickContextWindowTakesTheFirstPositiveValue(t *testing.T) {
+	t.Parallel()
+	if got := pickContextWindow(0, 0, 4096); got != 4096 {
+		t.Fatalf("got %d, want 4096", got)
+	}
+	if got := pickContextWindow(8192, 4096); got != 8192 {
+		t.Fatalf("got %d, want 8192", got)
+	}
+	if got := pickContextWindow(0, 0); got != 0 {
+		t.Fatalf("got %d, want 0 for an unreported window", got)
+	}
+}

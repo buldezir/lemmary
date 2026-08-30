@@ -51,6 +51,7 @@ func envBindings() []envBinding {
 		// express "no longer pinned".
 		settingsOptionalText("OPENAI_CHAT_MODEL", "chat_model"),
 		settingsOptionalText("OPENAI_SEARCH_MODEL", "search_model"),
+		settingsInt("SEARCH_CONTEXT_TOKENS", "search_context_tokens", DefaultSearchContextTokens, 1),
 		settingsBool("NEAR_DUPLICATE_DETECTION_ENABLED", "near_duplicate_detection_enabled", false),
 
 		providerText("OPENAI_API_KEY", aiprovider.SDKOpenAI, "api_key"),
@@ -106,6 +107,23 @@ func settingsBool(envKey, field string, def bool) envBinding {
 				return nil
 			}
 			settings.Set(field, getEnvBool(envKey, def))
+			return nil
+		},
+	}
+}
+
+// settingsInt writes an integer setting. A removed or unparseable variable
+// lands on def for the same reason settingsBool gives: a typo must not be read
+// as a deliberate value.
+func settingsInt(envKey, field string, def, minimum int) envBinding {
+	return envBinding{
+		EnvKey: envKey,
+		Apply: func(_ core.App, settings *core.Record, value string) error {
+			if value == "" {
+				settings.Set(field, def)
+				return nil
+			}
+			settings.Set(field, envIntDefault(envKey, def, minimum))
 			return nil
 		},
 	}

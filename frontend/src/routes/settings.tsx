@@ -46,6 +46,7 @@ type FormState = {
   ocr_timeout_sec: string
   processing_result_language: string
   deep_search_languages: string
+  search_context_tokens: string
   openai_timeout_sec: string
   worker_timeout_sec: string
   worker_max_retries: string
@@ -66,6 +67,7 @@ function formFromSettings(settings: AppSettings): FormState {
     ocr_timeout_sec: String(settings.ocr_timeout_sec),
     processing_result_language: settings.processing_result_language,
     deep_search_languages: settings.deep_search_languages,
+    search_context_tokens: String(settings.search_context_tokens),
     openai_timeout_sec: String(settings.openai_timeout_sec),
     worker_timeout_sec: String(settings.worker_timeout_sec),
     worker_max_retries: String(settings.worker_max_retries),
@@ -184,6 +186,7 @@ export function SettingsPage() {
     const workerTimeout = Number(form.worker_timeout_sec)
     const maxRetries = Number(form.worker_max_retries)
     const nearThreshold = Number(form.near_duplicate_threshold)
+    const searchContextTokens = Number(form.search_context_tokens)
 
     if (!Number.isFinite(ocrTimeout) || ocrTimeout <= 0) {
       setError('OCR timeout must be a positive number')
@@ -205,6 +208,10 @@ export function SettingsPage() {
       setError('Near-duplicate threshold must be between 0 and 1')
       return
     }
+    if (!Number.isFinite(searchContextTokens) || searchContextTokens <= 0) {
+      setError('Search context window must be a positive number of tokens')
+      return
+    }
 
     try {
       setSaving(true)
@@ -223,6 +230,7 @@ export function SettingsPage() {
         ocr_timeout_sec: ocrTimeout,
         processing_result_language: form.processing_result_language,
         deep_search_languages: form.deep_search_languages,
+        search_context_tokens: searchContextTokens,
         openai_timeout_sec: openAITimeout,
         worker_timeout_sec: workerTimeout,
         worker_max_retries: maxRetries,
@@ -430,14 +438,22 @@ export function SettingsPage() {
             />
             <ProviderModelFields
               label="Search"
-              help="Answers natural-language queries on the Deep Search page, in both normal and deep mode. Leave the provider empty to turn the feature off."
+              help="Answers natural-language queries on the Deep Search page, in both Search and Research mode. Leave the provider empty to turn the feature off."
               providers={llmProviders}
               providerId={form.search_provider_id}
               model={form.search_model}
               purpose="llm"
               allowEmpty
               onProviderChange={(id) => updateField('search_provider_id', id)}
-              onModelChange={(value) => updateField('search_model', value)}
+              onModelChange={(value, meta) => {
+                updateField('search_model', value)
+                // Research reads documents until this window is spent, so a
+                // stale window from a previously chosen model is worth
+                // correcting the moment the provider tells us the real one.
+                if (meta?.context_window) {
+                  updateField('search_context_tokens', String(meta.context_window))
+                }
+              }}
             />
             <div className={labelClassName}>
               <label className={labelClassName}>
@@ -498,6 +514,24 @@ export function SettingsPage() {
               <p className={fieldHintClassName}>
                 Languages deep search translates keywords into, so a German invoice is found by an
                 English question. Leave empty to search only in the language of the question.
+              </p>
+            </div>
+            <div className={labelClassName}>
+              <label className={labelClassName}>
+                <span className={labelTextClassName}>Search context window (tokens)</span>
+                <input
+                  type="number"
+                  min={1}
+                  className={inputClassName}
+                  value={form.search_context_tokens}
+                  onChange={(e) => updateField('search_context_tokens', e.target.value)}
+                />
+              </label>
+              <p className={fieldHintClassName}>
+                The search model&rsquo;s context window. Research mode keeps searching and reading
+                documents until this budget is spent, so it is the only limit on how much of your
+                archive one question can draw on. Filled in automatically when the provider reports
+                it; OpenAI does not.
               </p>
             </div>
           </div>

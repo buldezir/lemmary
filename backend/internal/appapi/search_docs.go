@@ -19,6 +19,10 @@ const (
 	maxSummaryLen      = 300
 	maxSnippetLen      = 220
 	snippetContext     = 80
+
+	// minReadCharsPerDocument keeps a read of many documents at once from
+	// returning slices too short to carry a figure and its label.
+	minReadCharsPerDocument = 500
 )
 
 func searchUserDocuments(app core.App, idx *fulltext.Index, userID string, args ai.SearchDocumentsArgs) ([]ai.DocumentHit, error) {
@@ -105,35 +109,106 @@ func searchUserDocuments(app core.App, idx *fulltext.Index, userID string, args 
 			DocumentDate: truncateDate(record.GetString("document_date")),
 			Summary:      strutil.TruncateRunes(strutil.FirstNonEmpty(record.GetString("summary"), record.GetString("purpose")), maxSummaryLen),
 			OCRSnippet:   snippet,
-			Tags:         []string{},
 		}
 
-		if typeID := record.GetString("document_type"); typeID != "" {
-			if typeRec, err := app.FindRecordById("document_types", typeID); err == nil {
-				hit.DocumentType = typeRec.GetString("name")
-			}
-		}
-		if corrID := record.GetString("correspondent"); corrID != "" {
-			if corrRec, err := app.FindRecordById("correspondents", corrID); err == nil {
-				hit.Correspondent = corrRec.GetString("name")
-			}
-		}
-		for _, tagID := range record.GetStringSlice("tags") {
-			if tagID == "" {
-				continue
-			}
-			tagRec, err := app.FindRecordById("tags", tagID)
-			if err != nil {
-				continue
-			}
-			if name := strings.TrimSpace(tagRec.GetString("name")); name != "" {
-				hit.Tags = append(hit.Tags, name)
-			}
-		}
+		hit.DocumentType = relatedName(app, "document_types", record.GetString("document_type"))
+		hit.Correspondent = relatedName(app, "correspondents", record.GetString("correspondent"))
+		hit.Tags = documentTagNames(app, record)
 
 		hits = append(hits, hit)
 	}
 	return hits, nil
+}
+
+// relatedName resolves a relation id to its display name, tolerating a missing
+// or deleted record the way the hit hydration always has.
+func relatedName(app documentLookup, collection, id string) string {
+	if strings.TrimSpace(id) == "" {
+		return ""
+	}
+	record, err := app.FindRecordById(collection, id)
+	if err != nil {
+		return ""
+	}
+	return record.GetString("name")
+}
+
+func documentTagNames(app documentLookup, record *core.Record) []string {
+	names := []string{}
+	for _, tagID := range record.GetStringSlice("tags") {
+		if tagID == "" {
+			continue
+		}
+		tagRec, err := app.FindRecordById("tags", tagID)
+		if err != nil {
+			continue
+		}
+		if name := strings.TrimSpace(tagRec.GetString("name")); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// readUserDocuments backs the agent's read_documents tool: full extracted text
+// for documents the caller owns, divided across maxTotalChars so a research run
+// cannot overflow the model context window.
+//
+// ocr_text holds up to models.MaxOCRTextRunes runes, so truncation here is not
+// an edge case — it is the normal path for anything longer than a few pages.
+func readUserDocuments(app documentLookup, userID string, ids []string, maxTotalChars int) ([]ai.DocumentContent, error) {
+	if len(ids) == 0 {
+		return []ai.DocumentContent{}, nil
+	}
+	if maxTotalChars <= 0 {
+		return nil, fmt.Errorf("no context budget left to read documents")
+	}
+
+	perDoc := maxTotalChars / len(ids)
+	if perDoc < minReadCharsPerDocument {
+		perDoc = minReadCharsPerDocument
+	}
+
+	docs := make([]ai.DocumentContent, 0, len(ids))
+	spent := 0
+	for _, id := range ids {
+		if spent >= maxTotalChars {
+			break
+		}
+		record, err := app.FindRecordById("documents", id)
+		if err != nil {
+			continue
+		}
+		// Re-check ownership per record. The agent only passes ids it saw from
+		// search_documents, but this is the boundary that has to hold.
+		if userID != "" && record.GetString("user") != userID {
+			continue
+		}
+
+		text := strings.TrimSpace(record.GetString("ocr_text"))
+		limit := perDoc
+		if remaining := maxTotalChars - spent; limit > remaining {
+			limit = remaining
+		}
+		truncated := false
+		if utf8.RuneCountInString(text) > limit {
+			text = strutil.TruncateRunes(text, limit)
+			truncated = true
+		}
+		spent += len(text)
+
+		docs = append(docs, ai.DocumentContent{
+			ID:            record.Id,
+			Title:         strutil.FirstNonEmpty(record.GetString("title"), "Untitled document"),
+			DocumentDate:  truncateDate(record.GetString("document_date")),
+			DocumentType:  relatedName(app, "document_types", record.GetString("document_type")),
+			Correspondent: relatedName(app, "correspondents", record.GetString("correspondent")),
+			Tags:          documentTagNames(app, record),
+			Text:          text,
+			Truncated:     truncated,
+		})
+	}
+	return docs, nil
 }
 
 func findNamedEntityIDs(app core.App, collection, name, userID string) ([]string, error) {

@@ -16,6 +16,7 @@ func newTestSettingsRecord(t testing.TB) *core.Record {
 		&core.TextField{Name: "chat_model"},
 		&core.TextField{Name: "search_model"},
 		&core.BoolField{Name: "near_duplicate_detection_enabled"},
+		&core.NumberField{Name: "search_context_tokens", OnlyInt: true},
 		&core.JSONField{Name: EnvAppliedField, MaxSize: 20000},
 	)
 	return core.NewRecord(collection)
@@ -168,6 +169,47 @@ func TestSettingsBoolFallsBackOnRemovalAndOnGarbage(t *testing.T) {
 		}
 		if !record.GetBool("near_duplicate_detection_enabled") {
 			t.Fatal("expected true")
+		}
+	})
+}
+
+func TestSettingsIntFallsBackOnRemovalAndOnGarbage(t *testing.T) {
+	binding := settingsInt("SEARCH_CONTEXT_TOKENS", "search_context_tokens", DefaultSearchContextTokens, 1)
+
+	t.Run("removal restores the default", func(t *testing.T) {
+		t.Setenv("SEARCH_CONTEXT_TOKENS", "")
+		record := newTestSettingsRecord(t)
+		record.Set("search_context_tokens", 4096)
+
+		if err := binding.Apply(nil, record, ""); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		if got := int(record.GetFloat("search_context_tokens")); got != DefaultSearchContextTokens {
+			t.Fatalf("got %d, want the default %d", got, DefaultSearchContextTokens)
+		}
+	})
+
+	t.Run("a typo does not become the context window", func(t *testing.T) {
+		t.Setenv("SEARCH_CONTEXT_TOKENS", "lots")
+		record := newTestSettingsRecord(t)
+
+		if err := binding.Apply(nil, record, "lots"); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		if got := int(record.GetFloat("search_context_tokens")); got != DefaultSearchContextTokens {
+			t.Fatalf("got %d, want the default %d", got, DefaultSearchContextTokens)
+		}
+	})
+
+	t.Run("a real value is honoured", func(t *testing.T) {
+		t.Setenv("SEARCH_CONTEXT_TOKENS", "200000")
+		record := newTestSettingsRecord(t)
+
+		if err := binding.Apply(nil, record, "200000"); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		if got := int(record.GetFloat("search_context_tokens")); got != 200000 {
+			t.Fatalf("got %d, want 200000", got)
 		}
 	})
 }

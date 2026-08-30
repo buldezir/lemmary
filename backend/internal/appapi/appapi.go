@@ -37,6 +37,7 @@ func Register(app core.App, rt *config.Runtime, idx *fulltext.Index, lim limits.
 			g.GET("/documents/search", bindAuth(handleDocumentSearch(app, idx)))
 			g.POST("/documents/reprocess-failed", bindAuth(handlePostReprocessFailed(app)))
 			g.POST("/search", bindAuth(handleDeepSearch(app, rt, idx)))
+			g.POST("/search/stream", bindAuth(handleResearchStream(app, rt, idx)))
 			g.POST("/search/reindex", bindAdmin(handleSearchReindex(app, idx)))
 			g.GET("/ocr/providers", bindAuth(handleOCRProviders(app, rt)))
 			// Without a route-level limit the multipart parse consumes the whole

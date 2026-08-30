@@ -1,4 +1,4 @@
-import { apiFetch } from '../apiClient'
+import { apiFetch, apiStream } from '../apiClient'
 
 export type ChatMessage = {
   role: 'user' | 'assistant'
@@ -28,15 +28,20 @@ export type SearchDocumentHit = {
   tags?: string[]
 }
 
-export type SearchMode = 'shallow' | 'deep'
+/**
+ * `search` finds documents and lists them as cards. `research` reads the
+ * documents it finds and writes a cited answer — the only bound on it is the
+ * model's context window, so it can take a while and streams its progress.
+ */
+export type SearchMode = 'search' | 'research'
 
-export async function deepSearch(messages: ChatMessage[], mode: SearchMode = 'shallow') {
+export async function deepSearch(messages: ChatMessage[], mode: SearchMode = 'search') {
   const data = await apiFetch<{ message?: ChatMessage; documents?: SearchDocumentHit[] }>(
     '/api/app/search',
     {
       method: 'POST',
       body: { messages, mode },
-      fallbackError: 'Failed to run deep search',
+      fallbackError: 'Failed to run search',
     },
   )
   if (!data.message) {
@@ -46,4 +51,41 @@ export async function deepSearch(messages: ChatMessage[], mode: SearchMode = 'sh
     message: data.message,
     documents: data.documents ?? [],
   }
+}
+
+export type ResearchStepKind = 'search' | 'read' | 'answer'
+
+export type ResearchEvent =
+  | {
+      type: 'step'
+      kind: ResearchStepKind
+      status: 'start' | 'done'
+      query?: string
+      titles?: string[]
+      count?: number
+      context_left_pct?: number
+    }
+  | { type: 'delta'; content: string }
+  | { type: 'documents'; documents?: SearchDocumentHit[] }
+  | { type: 'message'; content: string }
+  | { type: 'error'; message: string }
+  | { type: 'done' }
+
+/**
+ * Runs a research turn, reporting each step as it happens. The answer arrives
+ * twice: as `delta` events for a live preview, then as one `message` event with
+ * the authoritative text — citation-checked, and complete even when the
+ * upstream stream was cut short.
+ */
+export async function researchStream(
+  messages: ChatMessage[],
+  onEvent: (event: ResearchEvent) => void,
+  signal?: AbortSignal,
+) {
+  await apiStream<ResearchEvent>('/api/app/search/stream', {
+    body: { messages, mode: 'research' satisfies SearchMode },
+    onEvent,
+    signal,
+    fallbackError: 'Failed to research your archive',
+  })
 }

@@ -24,15 +24,41 @@ func TestFormatAvailableTagsPrompt(t *testing.T) {
 }
 
 func TestBuildSearchSystemPromptIncludesTags(t *testing.T) {
-	prompt := buildSearchSystemPrompt("en,de", "en", SearchModeDeep, []string{"invoice", "tax"})
+	prompt := buildSearchSystemPrompt("en,de", "en", []string{"invoice", "tax"})
 	if !strings.Contains(prompt, "invoice") || !strings.Contains(prompt, "tax") {
 		t.Fatalf("expected available tags in system prompt, got %q", prompt)
 	}
 	if !strings.Contains(prompt, "tags filter") {
 		t.Fatalf("expected tags filter instruction, got %q", prompt)
 	}
-	if !strings.Contains(prompt, "deep search mode") {
-		t.Fatalf("expected deep mode instruction, got %q", prompt)
+	if !strings.Contains(prompt, "en,de") {
+		t.Fatalf("expected archive languages in system prompt, got %q", prompt)
+	}
+	// Search mode is one round now; the deep-mode knob is gone, and a question
+	// that needs more belongs in Research mode.
+	if strings.Contains(strings.ToLower(prompt), "deep search mode") {
+		t.Fatalf("search prompt still advertises deep mode: %q", prompt)
+	}
+	if !strings.Contains(prompt, "one round of tool calls") {
+		t.Fatalf("expected single-round instruction, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "Research mode") {
+		t.Fatalf("expected a pointer to Research mode, got %q", prompt)
+	}
+}
+
+func TestFormatLanguagePromptFallsBackToResultLanguage(t *testing.T) {
+	withList := formatLanguagePrompt("de,uk", "en")
+	if !strings.Contains(withList, "de,uk") {
+		t.Fatalf("expected the configured list, got %q", withList)
+	}
+
+	withoutList := formatLanguagePrompt("", "en")
+	if !strings.Contains(withoutList, "en") {
+		t.Fatalf("expected the result language as fallback, got %q", withoutList)
+	}
+	if strings.Contains(withoutList, "deep-search") {
+		t.Fatalf("prompt still names the removed deep-search knob: %q", withoutList)
 	}
 }
 

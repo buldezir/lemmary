@@ -16,6 +16,12 @@ type Model struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 
+	// ContextWindow is the model's context length in tokens, when the provider
+	// reports one. OpenAI's /v1/models does not, so zero means "unknown" and
+	// the configured default applies. Research mode reads documents until this
+	// window is spent, which is why it is worth surfacing in Settings.
+	ContextWindow int `json:"context_window,omitempty"`
+
 	// caps is set when the provider returned a capabilities object (Mistral).
 	caps *modelCapabilities
 }
@@ -126,6 +132,17 @@ func modelContains(m Model, needle string) bool {
 	return strings.Contains(strings.ToLower(m.ID), needle) || strings.Contains(strings.ToLower(m.Name), needle)
 }
 
+// pickContextWindow takes the first positive value: providers report the window
+// under different keys and only ever populate one of them.
+func pickContextWindow(values ...int) int {
+	for _, v := range values {
+		if v > 0 {
+			return v
+		}
+	}
+	return 0
+}
+
 func parseModelsResponse(body []byte) ([]Model, error) {
 	var payload struct {
 		Data   []json.RawMessage `json:"data"`
@@ -158,6 +175,12 @@ func modelsFromRaw(raw []json.RawMessage) []Model {
 				CompletionChat bool `json:"completion_chat"`
 				OCR            bool `json:"ocr"`
 			} `json:"capabilities"`
+			// context_length is OpenRouter's; max_context_length is Mistral's.
+			ContextLength    int `json:"context_length"`
+			MaxContextLength int `json:"max_context_length"`
+			TopProvider      *struct {
+				ContextLength int `json:"context_length"`
+			} `json:"top_provider"`
 		}
 		if json.Unmarshal(item, &row) != nil {
 			continue
@@ -177,7 +200,12 @@ func modelsFromRaw(raw []json.RawMessage) []Model {
 		if name == "" {
 			name = id
 		}
-		m := Model{ID: id, Name: name}
+		contextWindow := pickContextWindow(row.ContextLength, row.MaxContextLength)
+		if row.TopProvider != nil {
+			contextWindow = pickContextWindow(contextWindow, row.TopProvider.ContextLength)
+		}
+
+		m := Model{ID: id, Name: name, ContextWindow: contextWindow}
 		if row.Capabilities != nil {
 			m.caps = &modelCapabilities{
 				completionChat: row.Capabilities.CompletionChat,
