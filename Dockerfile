@@ -33,8 +33,12 @@ LABEL org.opencontainers.image.title="Lemmary" \
       org.opencontainers.image.description="Source-available document storage with OCR and AI metadata extraction" \
       org.opencontainers.image.source="https://github.com/buldezir/lemmary" \
       org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0"
-RUN apk add --no-cache poppler-utils
+RUN apk add --no-cache poppler-utils su-exec
 WORKDIR /app
+# The app runs as this user, not root — the entrypoint drops privileges after
+# adopting any pre-existing volume. pb_data is created here so a fresh named
+# volume inherits its ownership instead of being initialised root-owned.
+RUN adduser -D -H -u 1000 app && mkdir -p /app/pb_data && chown app:app /app/pb_data
 COPY --from=backend-builder /app/backend/lemmary /app/lemmary
 COPY --from=frontend-builder /app/public /app/public
 COPY scripts/docker-entrypoint.sh /app/docker-entrypoint.sh
