@@ -57,8 +57,32 @@ export type DocumentRecord = {
   }
 }
 
-export function fileUrl(record: DocumentRecord, filename?: string) {
-  return pb.files.getURL(record, filename ?? record.file)
+// The document file fields are protected, so a bare file URL is refused by the
+// server: access needs a short-lived file token minted for the signed-in user.
+// A plain URL would be a bearer capability — valid for anyone holding the
+// link, surviving logout for as long as the record exists.
+export async function fileUrlWithToken(record: DocumentRecord, filename?: string) {
+  const token = await pb.files.getToken()
+  return pb.files.getURL(record, filename ?? record.file, { token })
+}
+
+// Opens a document file in a new tab. The tab is opened synchronously in the
+// click handler — a window.open that happens after an await is eaten by popup
+// blockers — and pointed at the tokened URL once it arrives.
+export async function openDocumentFile(record: DocumentRecord, filename?: string) {
+  const tab = window.open('', '_blank')
+  try {
+    const url = await fileUrlWithToken(record, filename)
+    if (tab) {
+      tab.opener = null
+      tab.location.replace(url)
+    } else {
+      window.location.assign(url)
+    }
+  } catch (err) {
+    tab?.close()
+    throw err
+  }
 }
 
 export function parseDuplicateOfId(message: string): string | null {

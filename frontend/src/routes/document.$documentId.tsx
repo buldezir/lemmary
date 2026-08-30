@@ -4,7 +4,7 @@ import { ClientResponseError } from 'pocketbase'
 import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
 import {
-  fileUrl,
+  openDocumentFile,
   reprocessDocument,
   saveDocumentMetadata,
   type DocumentRecord,
@@ -347,14 +347,13 @@ export function DocumentDetailPage() {
             Ask AI
           </Link>
           {document.file && (
-            <a
+            <button
+              type="button"
               className="rounded-xs border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-bright"
-              href={fileUrl(document)}
-              target="_blank"
-              rel="noreferrer"
+              onClick={() => void openDocumentFile(document)}
             >
               Open file
-            </a>
+            </button>
           )}
           <Button variant="danger" onClick={() => void onDelete()} disabled={deleting}>
             {deleting ? 'Deleting...' : 'Delete'}
