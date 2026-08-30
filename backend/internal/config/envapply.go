@@ -179,7 +179,7 @@ func ApplyEnvChanges(app core.App) error {
 	for _, binding := range envBindings() {
 		value := os.Getenv(binding.EnvKey)
 		digest := envDigest(value)
-		if recorded, ok := applied[binding.EnvKey]; ok && recorded == digest {
+		if !envChanged(applied, binding.EnvKey, digest) {
 			continue
 		}
 		if err := binding.Apply(app, settings, value); err != nil {
@@ -210,6 +210,21 @@ func ApplyEnvChanges(app core.App) error {
 	// API keys.
 	app.Logger().Info("applied environment changes to stored settings", "variables", changed)
 	return nil
+}
+
+// envChanged reports whether a variable's current digest differs from what this
+// install last acted on.
+//
+// An absent entry reads as the empty digest, which is what an unset variable
+// digests to. That equivalence is the whole point: RecordEnvApplied stores no
+// entry for a variable that is unset, so treating "no entry" as a change made
+// every boot re-apply the empty value — clearing chat_model, search_model and
+// any provider key an admin had set in the Settings page, on every restart,
+// forever. A variable that was set and is now removed still registers as a
+// change, because its recorded digest is not empty; that removal applies once
+// and is then quiet.
+func envChanged(applied map[string]string, key, digest string) bool {
+	return applied[key] != digest
 }
 
 // RecordEnvApplied stamps the current values of every tracked variable without

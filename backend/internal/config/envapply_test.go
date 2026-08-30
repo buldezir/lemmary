@@ -207,3 +207,32 @@ func TestRecordEnvAppliedProducesValidJSON(t *testing.T) {
 		t.Fatalf("stamp is not valid JSON: %v", err)
 	}
 }
+
+// The bug this guards: a variable that is unset has no entry in the digest map
+// and digests to the empty string, and the old check ("an entry exists and it
+// matches") read that as a change on every boot. Recreating the container then
+// re-applied the empty value each time, clearing the chat and search models and
+// the provider keys an admin had set in the Settings page.
+func TestEnvChangedTreatsAnAbsentEntryAsUnset(t *testing.T) {
+	t.Parallel()
+
+	applied := map[string]string{"OPENAI_MODEL": envDigest("pinned")}
+
+	if envChanged(applied, "OPENAI_CHAT_MODEL", envDigest("")) {
+		t.Fatal("an unset variable that was never recorded read as changed")
+	}
+	if !envChanged(applied, "OPENAI_CHAT_MODEL", envDigest("now-set")) {
+		t.Fatal("setting a previously unset variable did not read as changed")
+	}
+	if envChanged(applied, "OPENAI_MODEL", envDigest("pinned")) {
+		t.Fatal("an unchanged variable read as changed")
+	}
+	if !envChanged(applied, "OPENAI_MODEL", envDigest("repinned")) {
+		t.Fatal("a changed variable did not read as changed")
+	}
+	// Removing a variable that was applied is still a change, once: the removal
+	// lands, the entry is deleted, and the next boot is quiet.
+	if !envChanged(applied, "OPENAI_MODEL", envDigest("")) {
+		t.Fatal("removing a set variable did not read as changed")
+	}
+}
