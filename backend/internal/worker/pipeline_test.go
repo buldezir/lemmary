@@ -201,3 +201,34 @@ func TestResolveOCRTextNativeBypassesProvider(t *testing.T) {
 		t.Fatalf("unexpected text %q", text)
 	}
 }
+
+func TestCheckOCRTextFits(t *testing.T) {
+	if err := checkOCRTextFits("native", strings.Repeat("a", models.MaxOCRTextRunes)); err != nil {
+		t.Fatalf("exactly the ceiling should pass: %v", err)
+	}
+
+	err := checkOCRTextFits("google_vision", strings.Repeat("a", models.MaxOCRTextRunes+1))
+	if err == nil {
+		t.Fatal("expected a refusal one character over the ceiling")
+	}
+	// The provider and the count are the whole reason this exists rather than
+	// letting app.Save raise validation_max_text_constraint.
+	if !strings.Contains(err.Error(), "google_vision") {
+		t.Fatalf("error should name the provider: %v", err)
+	}
+}
+
+// TestCheckOCRTextFitsCountsRunesNotBytes pins the unit. PocketBase measures a
+// text field's Max as len([]rune(value)), so a document of multi-byte
+// characters that fits the column must not be refused for its byte count.
+func TestCheckOCRTextFitsCountsRunesNotBytes(t *testing.T) {
+	// Three bytes per rune, so this is well over the ceiling in bytes and
+	// exactly at it in characters.
+	text := strings.Repeat("あ", models.MaxOCRTextRunes)
+	if len(text) <= models.MaxOCRTextRunes {
+		t.Fatalf("fixture is not multi-byte: %d bytes", len(text))
+	}
+	if err := checkOCRTextFits("native", text); err != nil {
+		t.Fatalf("runes fit the column, bytes are not the unit: %v", err)
+	}
+}

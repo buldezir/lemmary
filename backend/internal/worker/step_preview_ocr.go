@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/ocr"
@@ -78,6 +79,10 @@ func (s *OCRStep) Run(ctx context.Context, state *StepState) error {
 		return fmt.Errorf("ocr: %w", err)
 	}
 
+	if err := checkOCRTextFits(providerName, ocrText); err != nil {
+		return err
+	}
+
 	state.OCRText = ocrText
 	state.Document.Set("ocr_text", ocrText)
 	if err := state.App.Save(state.Document); err != nil {
@@ -87,9 +92,35 @@ func (s *OCRStep) Run(ctx context.Context, state *StepState) error {
 	state.Logger.Info("OCR complete",
 		"provider", providerName,
 		"mime", state.MimeType,
-		"chars", len(ocrText),
+		// Runes, matching the unit the field is bounded in.
+		"chars", utf8.RuneCountInString(ocrText),
 	)
 	return nil
+}
+
+// checkOCRTextFits refuses a result the ocr_text column could not hold.
+//
+// The last thing between a provider's answer and the column. The page ceiling
+// in internal/limits is what normally keeps a document under this, but it
+// counts pages with pdfinfo and falls back to one page whenever that cannot
+// read the file -- so on a host without poppler, or for a PDF poppler dislikes,
+// nothing upstream bounded this at all.
+//
+// Refused rather than shortened. Half a document's text reads as the whole of
+// it everywhere it is used afterwards -- search, duplicate detection, the
+// extraction prompt -- and none of those can tell that it was cut. A failed
+// step says so.
+//
+// Runes, because that is the unit PocketBase measures the field in. Without
+// this the same document still failed, as a validation_max_text_constraint
+// raised from inside app.Save that named neither the provider nor a number.
+func checkOCRTextFits(providerName, text string) error {
+	runes := utf8.RuneCountInString(text)
+	if runes <= models.MaxOCRTextRunes {
+		return nil
+	}
+	return fmt.Errorf("ocr: %s returned %d characters, over the %d a document can store",
+		providerName, runes, models.MaxOCRTextRunes)
 }
 
 // resolveOCRText extracts text via native parsers for born-digital formats,

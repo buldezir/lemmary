@@ -43,6 +43,8 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	// Before worker.Register: PocketBase runs equal-priority handlers in
 	// registration order, so this is what makes an over-limit upload refused
 	// before duplicates.AssignChecksumFromUpload reads the whole file to hash it.
+	// The same ordering now carries limits.MaxOCRPages, which binds on every
+	// install and not only where a plan limit is set.
 	limits.Register(app, lim)
 	appapi.Register(app, rt, ft, lim, badLimitKeys)
 	ngxapi.Register(app, ft)

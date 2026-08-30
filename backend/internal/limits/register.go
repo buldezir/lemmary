@@ -1,6 +1,8 @@
 package limits
 
 import (
+	"strings"
+
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -17,57 +19,64 @@ import (
 // PocketBase sorts equal-priority handlers stably, so registration order is what
 // decides that.
 //
-// An unlimited install binds nothing at all: no hook, no query per upload, no
-// page count, no behaviour change whatsoever.
+// Both documents hooks bind on every install, limits or none, because
+// MaxOCRPages is not an allowance a plan sells -- it is what this can extract,
+// and an install cannot be without it. That costs an unlimited install a
+// five-byte header read per upload, plus one pdfinfo and a temp spool for the
+// uploads that turn out to be PDFs. What an unlimited install still does not do
+// is query: no usage aggregate per upload, and no users hook at all.
 func Register(app core.App, lim Limits) {
-	if !lim.Any() {
-		return
+	if lim.Any() {
+		app.Logger().Info("instance limits active", limitAttrs(lim)...)
 	}
 
-	app.Logger().Info("instance limits active", limitAttrs(lim)...)
-
-	if boundsDocuments(lim) {
-		app.OnRecordCreate("documents").BindFunc(func(e *core.RecordEvent) error {
-			if err := applyDocumentLimits(e.App, lim, e.Record, 1); err != nil {
-				if exceeded := AsExceeded(err); exceeded != nil {
-					return exceeded.APIError()
-				}
-				return err
+	// A side effect of binding unconditionally, worth knowing about: size_bytes
+	// and page_count are now stamped on every install rather than only where a
+	// limit is set, so the usage an unlimited instance reports is real rather
+	// than zero.
+	app.OnRecordCreate("documents").BindFunc(func(e *core.RecordEvent) error {
+		if err := applyDocumentLimits(e.App, lim, e.Record, 1); err != nil {
+			if exceeded := AsExceeded(err); exceeded != nil {
+				return exceeded.APIError()
 			}
-			return e.Next()
-		})
+			return err
+		}
+		return e.Next()
+	})
 
-		// An update can replace the file. documents.UpdateRule lets an owner
-		// patch their own row, so without this an account creates a one-page
-		// document and then patches a 500-page file onto it: the stored bytes
-		// change and the measurements this instance charges against do not.
-		//
-		// Nothing in this codebase replaces a document's file -- every
-		// record.Set("file", ...) is on a freshly built record -- so in practice
-		// this fires only for a client doing it deliberately.
-		app.OnRecordUpdate("documents").BindFunc(func(e *core.RecordEvent) error {
-			// An update that brings no file must not be able to restate what
-			// this document costs. Marking the two columns Hidden stops a
-			// regular account writing them, but only a regular account:
-			// PocketBase's GrantSuperuserAccess is documented as allowing
-			// "changing all system record fields, including those marked as
-			// Hidden", so a superuser could otherwise PATCH size_bytes to 0 and
-			// mint headroom -- which is precisely the thing these limits exist
-			// to take out of an admin's hands.
-			restoreMeasurements(e.Record)
+	// An update can replace the file. documents.UpdateRule lets an owner patch
+	// their own row, so without this an account creates a one-page document and
+	// then patches a 500-page file onto it: the stored bytes change and the
+	// measurements this instance charges against do not. The same move would
+	// walk a file past MaxOCRPages, which is the other reason this binds even
+	// where no plan limit is set.
+	//
+	// Nothing in this codebase replaces a document's file -- every
+	// record.Set("file", ...) is on a freshly built record -- so in practice
+	// this fires only for a client doing it deliberately, and costs the many
+	// metadata updates the pipeline makes nothing but an empty GetUnsavedFiles.
+	app.OnRecordUpdate("documents").BindFunc(func(e *core.RecordEvent) error {
+		// An update that brings no file must not be able to restate what this
+		// document costs. Marking the two columns Hidden stops a regular
+		// account writing them, but only a regular account: PocketBase's
+		// GrantSuperuserAccess is documented as allowing "changing all system
+		// record fields, including those marked as Hidden", so a superuser
+		// could otherwise PATCH size_bytes to 0 and mint headroom -- which is
+		// precisely the thing these limits exist to take out of an admin's
+		// hands.
+		restoreMeasurements(e.Record)
 
-			// A replacement adds no new document, so the count limit is not in
-			// play: 0 documents, and pages and bytes are charged net of what
-			// this record already contributed.
-			if err := applyDocumentLimits(e.App, lim, e.Record, 0); err != nil {
-				if exceeded := AsExceeded(err); exceeded != nil {
-					return exceeded.APIError()
-				}
-				return err
+		// A replacement adds no new document, so the count limit is not in
+		// play: 0 documents, and pages and bytes are charged net of what this
+		// record already contributed.
+		if err := applyDocumentLimits(e.App, lim, e.Record, 0); err != nil {
+			if exceeded := AsExceeded(err); exceeded != nil {
+				return exceeded.APIError()
 			}
-			return e.Next()
-		})
-	}
+			return err
+		}
+		return e.Next()
+	})
 
 	if !lim.AdditionalUsers.IsUnlimited() {
 		app.OnRecordCreate("users").BindFunc(func(e *core.RecordEvent) error {
@@ -80,17 +89,6 @@ func Register(app core.App, lim Limits) {
 			return e.Next()
 		})
 	}
-}
-
-// boundsDocuments reports whether any limit touches a document. FileBytes and
-// FilePages alone are enough: the hook also stamps size_bytes and page_count, so
-// it has to run whenever anything measures a document.
-func boundsDocuments(lim Limits) bool {
-	return !lim.Documents.IsUnlimited() ||
-		!lim.DocumentPages.IsUnlimited() ||
-		!lim.StorageBytes.IsUnlimited() ||
-		!lim.FileBytes.IsUnlimited() ||
-		!lim.FilePages.IsUnlimited()
 }
 
 // applyDocumentLimits measures the upload, records the measurements on the
@@ -122,6 +120,29 @@ func applyDocumentLimits(app core.App, lim Limits, record *core.Record, addsDocu
 
 	if err := lim.CheckFile(sizeBytes, pageCount); err != nil {
 		return err
+	}
+
+	// After the plan limits, so an instance that sells fewer pages than this can
+	// extract explains the refusal in the terms it sold. Both refuse the same
+	// file; only the message differs, and the more specific one is the one the
+	// account can act on.
+	//
+	// Skipped only for a new record that arrives carrying its own text. A backup
+	// restore and a paperless-ngx preserve-mode pull both set ocr_text and ask
+	// for no processing job, so no provider will be called and there is nothing
+	// to spend -- and refusing them would make a long document that was archived
+	// before this ceiling existed impossible to restore. Their text is bounded
+	// where it is read instead: archiveimport caps the OCR sidecar, and the
+	// column's own Max catches anything past that.
+	//
+	// The IsNew check is what keeps that from becoming a bypass. An update
+	// replacing the file reads the text the document already had, which says
+	// nothing about the file now being attached -- and a later reprocess clears
+	// ocr_text and sends that file to the provider after all.
+	if !record.IsNew() || strings.TrimSpace(record.GetString("ocr_text")) == "" {
+		if err := CheckOCRPages(pageCount); err != nil {
+			return err
+		}
 	}
 
 	if !needsRoomCheck(lim) {

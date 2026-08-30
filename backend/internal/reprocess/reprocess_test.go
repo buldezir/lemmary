@@ -11,7 +11,7 @@ import (
 
 func newTestDocument(ocrText string) *core.Record {
 	documents := core.NewBaseCollection("documents")
-	documents.Fields.Add(&core.TextField{Name: "ocr_text"})
+	documents.Fields.Add(&core.TextField{Name: "ocr_text", Max: models.MaxOCRTextRunes})
 	record := core.NewRecord(documents)
 	record.Set("ocr_text", ocrText)
 	return record

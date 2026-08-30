@@ -2,6 +2,8 @@ package worker
 
 import (
 	"github.com/pocketbase/pocketbase/core"
+
+	"lemmary/backend/internal/models"
 )
 
 func coreTestJobsCollection() *core.Collection {
@@ -12,6 +14,6 @@ func coreTestJobsCollection() *core.Collection {
 
 func coreTestDocumentsCollection() *core.Collection {
 	docs := core.NewBaseCollection("documents")
-	docs.Fields.Add(&core.TextField{Name: "ocr_text"})
+	docs.Fields.Add(&core.TextField{Name: "ocr_text", Max: models.MaxOCRTextRunes})
 	return docs
 }

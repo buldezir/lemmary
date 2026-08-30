@@ -266,9 +266,13 @@ func indexEntries(zr *zip.Reader) map[string]*zip.File {
 	return files
 }
 
-// maxSidecarBytes bounds an OCR or metadata sidecar. ocr_text is capped at
-// 500k characters by the collection, so anything beyond this is not a sidecar
-// this instance could have written.
+// maxSidecarBytes bounds an OCR or metadata sidecar.
+//
+// Well under models.MaxOCRTextRunes, which is what the collection allows in
+// ocr_text: a sidecar is text this instance wrote out of a document it already
+// held, and one larger than this is not a sidecar it could have written. The
+// two numbers are deliberately not equal -- this one bounds what a restore
+// reads into memory per entry, and only the column has to hold the result.
 const maxSidecarBytes = 4 << 20
 
 // errEntryTooLarge marks an entry that cannot be stored as a document.

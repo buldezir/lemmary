@@ -64,9 +64,9 @@ All variables live in `.env` at the project root (see `.env.example`).
 | `PASSKEY_ORIGINS` | derived from the request scheme + host | Comma-separated full origins (scheme, host and port) allowed to complete a passkey ceremony. Defaults to the origin the request arrived on, using `X-Forwarded-Proto` for the scheme when present. Set it when the app is reachable at more than one origin, or when a TLS-terminating proxy does not set that header. |
 | `LIMIT_DOCUMENTS` | unset (unlimited) | Total documents this instance may store. |
 | `LIMIT_DOCUMENT_PAGES` | unset (unlimited) | Total pages across all stored documents. Anything that is not a PDF counts as one page &mdash; including a multi-page `.docx` or `.xlsx`, whose real page count is not knowable without converting the file. |
-| `LIMIT_STORAGE_BYTES` | unset (unlimited) | Total bytes of stored document files. Counts the uploaded originals only, not the generated thumbnails or the extracted OCR text. |
+| `LIMIT_STORAGE_BYTES` | unset (unlimited) | Total bytes of stored document files. Counts the uploaded originals only, not the generated thumbnails or the extracted OCR text. When sizing a volume, budget for the database separately: extracted text is stored inline in the row and a single document may hold up to 20 Mi characters of it, so a text-heavy library's `data.db` can approach the same order as the files themselves. |
 | `LIMIT_FILE_BYTES` | unset (unlimited) | Largest single document file, in bytes. Can only **lower** the effective cap: the `documents.file` field carries its own 20 MB `MaxSize` that PocketBase validates on every save, and no value here can raise it. Distinct from `UPLOAD_MAX_MB`, which caps the one staged PDF a split is cut from rather than each document it produces. |
-| `LIMIT_FILE_PAGES` | unset (unlimited) | Most pages in a single document. |
+| `LIMIT_FILE_PAGES` | unset (unlimited) | Most pages in a single document. Can only **lower** the effective cap: a 1000-page ceiling applies to every install regardless (see [the page ceiling](#the-page-ceiling)), and no value here can raise it. |
 | `LIMIT_ADDITIONAL_USERS` | unset (unlimited) | Accounts beyond the admin account. Exactly one account is free, so `0` is a single-account instance. |
 | `VITE_POCKETBASE_URL` | `http://127.0.0.1:8090` | PocketBase API URL (frontend) |
 | `VITE_DEV_USER_EMAIL` | — | Dev auto-login email (`users` collection) |
@@ -75,8 +75,9 @@ All variables live in `.env` at the project root (see `.env.example`).
 #### Instance limits
 
 The six `LIMIT_*` variables bound how much one instance may hold. **All of them are
-unlimited when unset**, so an install that sets none of them behaves exactly as it
-did before they existed — no extra queries per upload, and no quota shown in the UI.
+unlimited when unset**, so an install that sets none of them runs no extra queries
+per upload and shows no quota in the UI. It is not entirely unmeasured, though —
+see [the page ceiling](#the-page-ceiling) below, which applies to every install.
 
 They are read at startup and deliberately never stored in `app_settings`: they say
 what an instance is *allowed* to hold, and an admin editing the Settings page must
@@ -122,6 +123,45 @@ Settings edits from being reverted — there is no Settings edit here to protect
   errors; nothing is rolled back. The per-document checks are what make the limit
   itself exact — the up-front check is there to turn the common failure into one
   clear message instead of several hundred.
+
+#### The page ceiling
+
+One bound is not a plan and not configurable: **a document may hold at most 1000
+pages**, on every install. An upload over that is refused with
+`limit_ocr_pages`, before any OCR provider is called.
+
+It exists because of where the text goes. The OCR providers return a document's
+whole text as one string, and that string has to fit the `ocr_text` column,
+which holds 20 Mi characters — the same 20 MB the `documents.file` field accepts,
+counted in characters instead of bytes, so that any text file this instance
+accepts can be stored whole. Nothing else bounds an OCR result: Mistral is the
+only provider that documents a page limit (1000 pages, which is where this
+number comes from), and Google Vision reads however many pages the file has,
+five at a time. The page count, taken before the first provider call, is the one
+measurement that says whether the answer could be stored — and refusing there
+means an over-long document costs nothing rather than being paid for and then
+discarded.
+
+Consequences worth knowing:
+
+- `LIMIT_FILE_PAGES` can lower this and cannot raise it, the same way
+  `LIMIT_FILE_BYTES` relates to the 20 MB `documents.file` cap. When both would
+  refuse a file, the message names the plan limit, since that is the one the
+  account can do something about.
+- Every install now counts the pages of each PDF upload with `pdfinfo`, where
+  before only an install with a limit set did. Other file types cost a five-byte
+  header read. A PDF whose page count cannot be read counts as one page, so on a
+  host without poppler this ceiling is not enforced at upload — the OCR step
+  refuses an over-long result there instead, which fails the document rather than
+  the upload.
+- A restore or a Paperless-ngx import that brings a document's text with it skips
+  the ceiling: no OCR will run, so there is nothing to spend, and a long document
+  archived before this existed stays restorable.
+- DOCX and XLSX are not bounded by page count — a spreadsheet has none — so they
+  are measured as they are parsed instead, and an extraction that runs past the
+  column is abandoned with an error rather than stored short. An XLSX is the case
+  this matters for: cells reference a shared string table, so the text one
+  extracts to is not bounded by the bytes it arrived in.
 
 ### Applied when changed
 
@@ -220,7 +260,7 @@ Uploading and importing are two steps, so nothing is created before the user has
 
 `DELETE /api/app/import/amazon/upload?upload_id=...` discards a staged archive the user chose not to import. Staged archives expire after 30 minutes and are swept on the next upload, including files left behind by an earlier process — the staging registry and the job state are in memory, so both are lost on restart. Uploading a second archive also discards the account's previous one, so an account holds at most one at a time. Confirming consumes the upload id: the same archive cannot be imported twice, and one import may run at a time per user (a second start returns `409`).
 
-Rejections come back as `400` at preview time rather than mid-import: not a readable zip, no PDFs, more than 5000 PDFs, an upload over `IMPORT_STAGING_MAX_BYTES` (1 GiB by default), or an archive that decompresses beyond 8 GiB (a zip bomb). A single PDF over the 20 MB `documents.file` limit is not fatal — it is flagged `oversized` in the preview and skipped on import.
+Rejections come back as `400` at preview time rather than mid-import: not a readable zip, no PDFs, more than 5000 PDFs, an upload over `IMPORT_STAGING_MAX_BYTES` (1 GiB by default), or an archive that decompresses beyond 8 GiB (a zip bomb). A single PDF over the 20 MB `documents.file` limit is not fatal — it is flagged `oversized` in the preview and skipped on import. A PDF over [the page ceiling](#the-page-ceiling) is refused per entry as the run proceeds rather than at preview time, since an archive's real page counts are only discoverable by opening every PDF in it.
 
 ### Document splitting
 
@@ -297,7 +337,7 @@ Archives exported before manifests existed still restore: their documents are re
 3. `POST /api/app/import/archive` with `{ "upload_id": "...", "mode": "restore" | "reprocess" }` returns `202 Accepted` with `{ "job_id", "status": "running" }`.
 4. `GET /api/app/import/archive/status?job_id=...` until `status` is `completed` (with `result`) or `failed` (with `error`).
 
-Job state is in memory for the running process only, and one import may run at a time per user. Staging a new archive discards the account's previous one, so an account holds at most one at a time. Uploads are capped by `IMPORT_STAGING_MAX_BYTES` (1 GiB by default) and 5000 documents, each entry at the 20 MB document limit; one budget covers everything the inspection and the restore inflate, so an archive that unpacks far beyond its size is rejected as a zip bomb.
+Job state is in memory for the running process only, and one import may run at a time per user. Staging a new archive discards the account's previous one, so an account holds at most one at a time. Uploads are capped by `IMPORT_STAGING_MAX_BYTES` (1 GiB by default) and 5000 documents, each entry at the 20 MB document limit; one budget covers everything the inspection and the restore inflate, so an archive that unpacks far beyond its size is rejected as a zip bomb. A restored document that carries its own OCR sidecar is exempt from [the page ceiling](#the-page-ceiling) — it needs no OCR, so a long document archived before that ceiling existed still restores; an entry without a sidecar takes the ordinary upload path and is subject to it.
 
 An archive with no documents but a non-empty taxonomy is valid and restorable — that is what a backup of a library with tags but no documents looks like.
 
@@ -321,7 +361,7 @@ Metadata extraction sends the current document's OCR text **and** up to 500 of t
 Text extraction:
 
 - **PDF and images** — configured OCR provider (Google Vision, Mistral Document OCR, or an OpenAI/OpenRouter model that accepts files/images)
-- **TXT, CSV, DOCX, XLSX** — native parsers (no OCR API call); preview is skipped for these formats
+- **TXT, CSV, DOCX, XLSX** — native parsers (no OCR API call); preview is skipped for these formats. A DOCX or XLSX whose text runs past what `ocr_text` can hold fails the document rather than being stored short; see [the page ceiling](#the-page-ceiling)
 
 Cron jobs are visible and manually triggerable in PocketBase Admin → Settings → Crons.
 
@@ -364,7 +404,7 @@ See [docs/google_vision.md](google_vision.md) for obtaining a Google API key.
 
 ### Mistral OCR
 
-Uses the [Mistral Document OCR API](https://docs.mistral.ai/en/studio-api/document-processing/basic_ocr) when the provider is bound for OCR. Local files are sent as base64 data URLs (up to 10 MB). The same provider can be bound for extraction, chat, and search (chat completions, not this OCR endpoint).
+Uses the [Mistral Document OCR API](https://docs.mistral.ai/en/studio-api/document-processing/basic_ocr) when the provider is bound for OCR. Local files are sent as base64 data URLs, up to Mistral's documented 50 MB — which the 20 MB `documents.file` cap already keeps every upload under. The same provider can be bound for extraction, chat, and search (chat completions, not this OCR endpoint).
 
 - **PDFs and office documents** — `document_url` with a base64 data URL
 - **Images** — `image_url` with a base64 data URL

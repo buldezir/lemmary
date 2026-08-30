@@ -52,8 +52,8 @@ func init() {
 		}
 		// Covering index for the usage aggregate. Without it, summing these two
 		// columns is a scan of the base table -- which stores ocr_text inline,
-		// up to 500 KB a row -- on every upload. With it the sum never touches
-		// the row bodies.
+		// up to models.MaxOCRTextRunes a row -- on every upload. With it the sum
+		// never touches the row bodies.
 		documents.AddIndex("idx_documents_usage", false, "page_count, size_bytes", "")
 		return app.Save(documents)
 	}, func(app core.App) error {

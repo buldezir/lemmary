@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"lemmary/backend/internal/models"
 )
 
 func TestCheckFileBytes(t *testing.T) {
@@ -249,5 +251,49 @@ func TestFormatBytes(t *testing.T) {
 		if got := formatBytes(tc.n); got != tc.want {
 			t.Fatalf("formatBytes(%d) = %q, want %q", tc.n, got, tc.want)
 		}
+	}
+}
+
+func TestCheckOCRPages(t *testing.T) {
+	if err := CheckOCRPages(MaxOCRPages); err != nil {
+		t.Fatalf("exactly the ceiling should pass: %v", err)
+	}
+	err := CheckOCRPages(MaxOCRPages + 1)
+	exceeded := AsExceeded(err)
+	if exceeded == nil {
+		t.Fatalf("got %v, want an *ErrExceeded", err)
+	}
+	if exceeded.Name != NameOCRPages {
+		t.Fatalf("name = %q, want %q", exceeded.Name, NameOCRPages)
+	}
+	if exceeded.Allowed != MaxOCRPages || exceeded.Used != MaxOCRPages+1 {
+		t.Fatalf("allowed=%d used=%d", exceeded.Allowed, exceeded.Used)
+	}
+	if exceeded.Code() != "limit_ocr_pages" {
+		t.Fatalf("code = %q", exceeded.Code())
+	}
+}
+
+// TestCheckOCRPagesIsNotAPlanLimit pins the property the ceiling exists for:
+// it refuses on the zero Limits, which is what an install that sets no LIMIT_*
+// variable runs with.
+func TestCheckOCRPagesIsNotAPlanLimit(t *testing.T) {
+	var unlimited Limits
+	if err := unlimited.CheckFile(1<<40, MaxOCRPages+1); err != nil {
+		t.Fatalf("no plan limit should bound this: %v", err)
+	}
+	if err := CheckOCRPages(MaxOCRPages + 1); err == nil {
+		t.Fatal("the ceiling should refuse it anyway")
+	}
+}
+
+// TestOCRPagesCeilingFitsTheColumn is the arithmetic the two constants are
+// chosen together for: even an implausibly dense page, over the whole ceiling,
+// stays inside what ocr_text can hold.
+func TestOCRPagesCeilingFitsTheColumn(t *testing.T) {
+	const generousCharsPerPage = 20000 // a full A4 of 6pt text is nearer 15000
+	if got := MaxOCRPages * generousCharsPerPage; got > int64(models.MaxOCRTextRunes) {
+		t.Fatalf("%d pages at %d characters is %d, over the %d the column holds",
+			MaxOCRPages, generousCharsPerPage, got, models.MaxOCRTextRunes)
 	}
 }

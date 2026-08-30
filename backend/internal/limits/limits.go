@@ -10,8 +10,16 @@
 // added under, and the reason none of these joins app_settings or the
 // env_applied mechanism.
 //
-// Every limit is unlimited by default, so an install that sets nothing behaves
-// exactly as it did before this package existed.
+// Every limit is unlimited by default, so an install that sets nothing is
+// bounded by none of them.
+//
+// One thing here is not a plan and not read from the environment: MaxOCRPages.
+// It is what this can extract rather than what a plan sells -- the OCR
+// providers hand back a document's whole text in one string, and that string
+// has to fit in the column -- so it applies to every install and an admin
+// cannot raise it either. It lives here because Register's documents hooks are
+// already the one place an upload is measured, and measuring it twice would
+// mean spooling the same file to disk twice.
 package limits
 
 import (
@@ -82,7 +90,9 @@ type Limits struct {
 	// the documents.file field carries its own 20 MB MaxSize, which PocketBase
 	// enforces in the field validator, so a larger value here has no effect.
 	FileBytes Limit
-	// FilePages caps the page count of one document.
+	// FilePages caps the page count of one document. Like FileBytes it can only
+	// lower the effective cap: MaxOCRPages bounds every install, and a larger
+	// value here has no effect.
 	FilePages Limit
 	// AdditionalUsers caps accounts other than the paired admin.
 	AdditionalUsers Limit

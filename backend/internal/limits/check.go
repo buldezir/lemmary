@@ -15,7 +15,29 @@ const (
 	NameFileBytes       = "file_bytes"
 	NameFilePages       = "file_pages"
 	NameAdditionalUsers = "additional_users"
+
+	// NameOCRPages is not one of the six env limits. It identifies the built-in
+	// ceiling below, which every install carries.
+	NameOCRPages = "ocr_pages"
 )
+
+// MaxOCRPages is the most pages a document may hold, on any install.
+//
+// Not an allowance a plan sells -- a property of what this can extract. The OCR
+// providers here return a document's whole text in one string, and that string
+// has to fit models.MaxOCRTextRunes. Nothing else bounds it: Mistral is the only
+// provider that documents a page limit at all (1000 pages, 50 MB), and Google
+// Vision simply loops every page of the file five at a time and concatenates.
+// So the page count is the one measurement taken before any provider is called
+// that says whether the result could be stored.
+//
+// 1000 because that is Mistral's number, and because it is comfortably inside
+// the character ceiling: a full A4 page of 6pt text is around 15,000 characters,
+// so even 20,000 a page over 1000 pages stays under 20,971,520.
+//
+// LIMIT_FILE_PAGES can lower this and cannot raise it, the same way
+// LIMIT_FILE_BYTES relates to the 20 MB documents.file MaxSize.
+const MaxOCRPages int64 = 1000
 
 // ErrExceeded is a limit refusing something. It carries the numbers so a caller
 // can render "3 of 3 used" without measuring again.
@@ -78,6 +100,30 @@ func AsExceeded(err error) *ErrExceeded {
 		return exceeded
 	}
 	return nil
+}
+
+// CheckOCRPages refuses a file with more pages than its text could be stored
+// from.
+//
+// A method on nothing -- it is not one of the env limits and does not vary by
+// install -- but it returns the same *ErrExceeded so a client reads it exactly
+// like the allowances next to it, and so it renders as the same 400.
+//
+// Checked at upload rather than in the OCR step because the point is to spend
+// nothing on a file whose text has nowhere to go: the provider call is the
+// expensive part, and by the time it returns the money is gone.
+func CheckOCRPages(pageCount int64) error {
+	if pageCount <= MaxOCRPages {
+		return nil
+	}
+	return &ErrExceeded{
+		Name:    NameOCRPages,
+		Allowed: MaxOCRPages,
+		Used:    pageCount,
+		Message: fmt.Sprintf(
+			"This file has %d pages. Text can be extracted from at most %d.",
+			pageCount, MaxOCRPages),
+	}
 }
 
 // CheckFile applies the two per-upload limits to one file's own measurements.

@@ -4,6 +4,8 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
 	"github.com/pocketbase/pocketbase/tools/types"
+
+	"lemmary/backend/internal/models"
 )
 
 func init() {
@@ -102,7 +104,7 @@ func init() {
 				CollectionId: correspondents.Id,
 				MaxSelect:    1,
 			},
-			&core.TextField{Name: "ocr_text", Max: 500000},
+			&core.TextField{Name: "ocr_text", Max: models.MaxOCRTextRunes},
 			&core.TextField{Name: "summary", Max: 5000},
 			&core.TextField{Name: "summary_original", Max: 5000},
 			&core.SelectField{
