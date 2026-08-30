@@ -2,6 +2,7 @@ import { pb, pbUrl } from '../pb'
 import { ensureAuth } from '../auth'
 import { apiFetch, errorDetail } from '../apiClient'
 import type { ProcessingStep, ReprocessMode } from '../processing'
+import type { TimelineMonth } from '../timeline'
 
 export type TagRecord = {
   id: string
@@ -230,6 +231,29 @@ export async function searchDocuments(opts: {
     totalItems: data.totalItems ?? 0,
     totalPages: data.totalPages ?? 0,
     items: data.items ?? [],
+  }
+}
+
+export type DocumentTimeline = {
+  months: TimelineMonth[]
+  /** Documents with no document_date; no date range can reach them. */
+  undated: number
+}
+
+/**
+ * Counts the caller's documents per calendar month, newest month first.
+ *
+ * Whole-library counts: they deliberately ignore the list's other filters, so
+ * the timeline is a stable map of the archive rather than a readout of the
+ * current query.
+ */
+export async function fetchDocumentTimeline(): Promise<DocumentTimeline> {
+  const data = await apiFetch<Partial<DocumentTimeline>>('/api/app/documents/timeline', {
+    fallbackError: 'Failed to load the timeline',
+  })
+  return {
+    months: data.months ?? [],
+    undated: data.undated ?? 0,
   }
 }
 

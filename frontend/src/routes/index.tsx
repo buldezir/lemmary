@@ -5,15 +5,18 @@ import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
 import {
   buildDocumentFilter,
+  fetchDocumentTimeline,
   reprocessDocuments,
   searchDocuments,
   type CorrespondentRecord,
   type DocumentRecord,
   type DocumentTypeRecord,
 } from '../lib/api/documents'
+import { activePeriod, periodRange } from '../lib/timeline'
 import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
 import { useAsync } from '../hooks/useAsync'
 import { DocumentCard } from '../components/DocumentCard'
+import { DocumentTimeline } from '../components/DocumentTimeline'
 import { FilterCombobox } from '../components/FilterCombobox'
 import { Pagination } from '../components/Pagination'
 import { Button } from '../components/ui'
@@ -43,6 +46,8 @@ export function IndexPage() {
   const [reprocessMode, setReprocessMode] = useState<ReprocessMode>('auto')
   const [reprocessing, setReprocessing] = useState(false)
   const [message, setMessage] = useState('')
+  // Bumped whenever the library changes, to re-count the timeline.
+  const [timelineVersion, setTimelineVersion] = useState(0)
 
   const filterOptions = useAsync(async () => {
     await ensureAuth()
@@ -52,6 +57,8 @@ export function IndexPage() {
     ])
     return { types, correspondents }
   }, [])
+  const timeline = useAsync(fetchDocumentTimeline, [timelineVersion])
+
   const documentTypes = filterOptions.data?.types ?? []
   const correspondents = filterOptions.data?.correspondents ?? []
 
@@ -127,6 +134,9 @@ export function IndexPage() {
       .collection('documents')
       .subscribe('*', () => {
         void load()
+        // The timeline counts the whole library rather than the current query,
+        // so it only goes stale when the library itself changes.
+        setTimelineVersion((version) => version + 1)
       })
       .then((fn) => {
         unsubscribe = fn
@@ -191,6 +201,15 @@ export function IndexPage() {
     }
   }
 
+  // The timeline has no date filter of its own: picking a period writes the
+  // From/To inputs, and the highlight is read back out of them.
+  function onSelectPeriod(period: string | null) {
+    const range = periodRange(period)
+    setDateFrom(range.from)
+    setDateTo(range.to)
+    setPage(1)
+  }
+
   const hasActiveFilters =
     statusFilter !== 'all' ||
     dateFrom !== '' ||
@@ -214,168 +233,180 @@ export function IndexPage() {
         </Link>
       </div>
 
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <input
-            type="search"
-            placeholder="Search title, tags, purpose, summary..."
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            className="w-full rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood"
-          />
-          <select
-            value={statusFilter}
-            onChange={(event) => {
-              setStatusFilter(event.target.value)
-              setPage(1)
-            }}
-            aria-label="Processing status"
-            className={`${selectClassName} sm:w-48`}
-          >
-            <option value="all">All statuses</option>
-            <option value="pending">Pending</option>
-            <option value="processing">Processing</option>
-            <option value="completed">Completed</option>
-            <option value="needs_review">Needs review</option>
-            <option value="failed">Failed</option>
-          </select>
-        </div>
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+        <DocumentTimeline
+          timeline={timeline.data}
+          active={activePeriod(dateFrom, dateTo)}
+          onSelect={onSelectPeriod}
+          className="order-last lg:order-first lg:sticky lg:top-8 lg:w-52 lg:shrink-0"
+        />
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-ink-soft">From date</span>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(event) => {
-                setDateFrom(event.target.value)
-                setPage(1)
-              }}
-              className={selectClassName}
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-ink-soft">To date</span>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(event) => {
-                setDateTo(event.target.value)
-                setPage(1)
-              }}
-              className={selectClassName}
-            />
-          </label>
-          <FilterCombobox
-            label="Document type"
-            value={documentTypeFilter}
-            allLabel="All types"
-            options={documentTypes.map((type) => ({ value: type.id, label: type.name }))}
-            onChange={(next) => {
-              setDocumentTypeFilter(next)
-              setPage(1)
-            }}
-          />
-          <FilterCombobox
-            label="Correspondent"
-            value={correspondentFilter}
-            allLabel="All correspondents"
-            options={correspondents.map((correspondent) => ({
-              value: correspondent.id,
-              label: correspondent.name,
-            }))}
-            onChange={(next) => {
-              setCorrespondentFilter(next)
-              setPage(1)
-            }}
-          />
-        </div>
-      </div>
-
-      {loading && <p className="text-sm text-ink-soft">Loading documents...</p>}
-      {(error || filterOptions.error) && (
-        <p className="text-sm text-madder">{error || filterOptions.error}</p>
-      )}
-
-      {!loading && documents.length === 0 && (
-        <div className="rounded-none border border-dashed border-line-strong bg-surface py-12 text-center">
-          {hasActiveFilters ? (
-            <p className="text-sm text-ink-soft">No documents match your filters.</p>
-          ) : (
-            <>
-              <p className="text-sm text-ink-soft">No documents yet.</p>
-              <Link to="/upload" className="mt-1 inline-block text-sm font-medium text-oxblood underline">
-                Upload your first document
-              </Link>
-            </>
-          )}
-        </div>
-      )}
-
-      {message && <p className="text-sm text-forest">{message}</p>}
-
-      {!loading && documents.length > 0 && (
-        <>
-          {selectable && (
-            <div className="flex flex-wrap items-center gap-3 rounded-none border border-line bg-surface px-4 py-3">
-              <span className="text-sm text-ink-muted">
-                {selectedOnPage.length === 0
-                  ? 'Select failed documents to reprocess.'
-                  : `${selectedOnPage.length} selected`}
-              </span>
+        {/* min-w-0 so the card grid can shrink instead of pushing the sidebar. */}
+        <div className="flex min-w-0 flex-1 flex-col gap-6">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <input
+                type="search"
+                placeholder="Search title, tags, purpose, summary..."
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                className="w-full rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood"
+              />
               <select
-                value={reprocessMode}
-                onChange={(event) => setReprocessMode(event.target.value as ReprocessMode)}
-                aria-label="Reprocess steps"
-                className={selectClassName}
+                value={statusFilter}
+                onChange={(event) => {
+                  setStatusFilter(event.target.value)
+                  setPage(1)
+                }}
+                aria-label="Processing status"
+                className={`${selectClassName} sm:w-48`}
               >
-                {reprocessModes.map((mode) => (
-                  <option key={mode} value={mode}>
-                    {REPROCESS_MODE_LABELS[mode]}
-                  </option>
-                ))}
+                <option value="all">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="processing">Processing</option>
+                <option value="completed">Completed</option>
+                <option value="needs_review">Needs review</option>
+                <option value="failed">Failed</option>
               </select>
-              <Button
-                disabled={reprocessing || selectedOnPage.length === 0}
-                onClick={() => void onReprocessSelected()}
-              >
-                {reprocessing ? 'Queueing...' : 'Reprocess'}
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => setSelectedIds(new Set(documents.map((document) => document.id)))}
-              >
-                Select all on page
-              </Button>
-              {selectedOnPage.length > 0 && (
-                <Button variant="secondary" onClick={() => setSelectedIds(new Set())}>
-                  Clear
-                </Button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-ink-soft">From date</span>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(event) => {
+                    setDateFrom(event.target.value)
+                    setPage(1)
+                  }}
+                  className={selectClassName}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-ink-soft">To date</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(event) => {
+                    setDateTo(event.target.value)
+                    setPage(1)
+                  }}
+                  className={selectClassName}
+                />
+              </label>
+              <FilterCombobox
+                label="Document type"
+                value={documentTypeFilter}
+                allLabel="All types"
+                options={documentTypes.map((type) => ({ value: type.id, label: type.name }))}
+                onChange={(next) => {
+                  setDocumentTypeFilter(next)
+                  setPage(1)
+                }}
+              />
+              <FilterCombobox
+                label="Correspondent"
+                value={correspondentFilter}
+                allLabel="All correspondents"
+                options={correspondents.map((correspondent) => ({
+                  value: correspondent.id,
+                  label: correspondent.name,
+                }))}
+                onChange={(next) => {
+                  setCorrespondentFilter(next)
+                  setPage(1)
+                }}
+              />
+            </div>
+          </div>
+
+          {loading && <p className="text-sm text-ink-soft">Loading documents...</p>}
+          {(error || filterOptions.error || timeline.error) && (
+            <p className="text-sm text-madder">{error || filterOptions.error || timeline.error}</p>
+          )}
+
+          {!loading && documents.length === 0 && (
+            <div className="rounded-none border border-dashed border-line-strong bg-surface py-12 text-center">
+              {hasActiveFilters ? (
+                <p className="text-sm text-ink-soft">No documents match your filters.</p>
+              ) : (
+                <>
+                  <p className="text-sm text-ink-soft">No documents yet.</p>
+                  <Link to="/upload" className="mt-1 inline-block text-sm font-medium text-oxblood underline">
+                    Upload your first document
+                  </Link>
+                </>
               )}
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {documents.map((document) => (
-              <DocumentCard
-                key={document.id}
-                document={document}
-                selectable={selectable}
-                selected={selectedIds.has(document.id)}
-                onToggleSelect={toggleSelected}
-              />
-            ))}
-          </div>
+          {message && <p className="text-sm text-forest">{message}</p>}
 
-          <Pagination
-            page={page}
-            totalPages={totalPages}
-            totalItems={totalItems}
-            pageSize={PAGE_SIZE}
-            onPageChange={setPage}
-          />
-        </>
-      )}
+          {!loading && documents.length > 0 && (
+            <>
+              {selectable && (
+                <div className="flex flex-wrap items-center gap-3 rounded-none border border-line bg-surface px-4 py-3">
+                  <span className="text-sm text-ink-muted">
+                    {selectedOnPage.length === 0
+                      ? 'Select failed documents to reprocess.'
+                      : `${selectedOnPage.length} selected`}
+                  </span>
+                  <select
+                    value={reprocessMode}
+                    onChange={(event) => setReprocessMode(event.target.value as ReprocessMode)}
+                    aria-label="Reprocess steps"
+                    className={selectClassName}
+                  >
+                    {reprocessModes.map((mode) => (
+                      <option key={mode} value={mode}>
+                        {REPROCESS_MODE_LABELS[mode]}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    disabled={reprocessing || selectedOnPage.length === 0}
+                    onClick={() => void onReprocessSelected()}
+                  >
+                    {reprocessing ? 'Queueing...' : 'Reprocess'}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setSelectedIds(new Set(documents.map((document) => document.id)))}
+                  >
+                    Select all on page
+                  </Button>
+                  {selectedOnPage.length > 0 && (
+                    <Button variant="secondary" onClick={() => setSelectedIds(new Set())}>
+                      Clear
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {documents.map((document) => (
+                  <DocumentCard
+                    key={document.id}
+                    document={document}
+                    selectable={selectable}
+                    selected={selectedIds.has(document.id)}
+                    onToggleSelect={toggleSelected}
+                  />
+                ))}
+              </div>
+
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                totalItems={totalItems}
+                pageSize={PAGE_SIZE}
+                onPageChange={setPage}
+              />
+            </>
+          )}
+        </div>
+      </div>
     </section>
   )
 }
