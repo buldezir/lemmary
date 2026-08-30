@@ -290,7 +290,7 @@ The page texts go to the extraction provider and model in one request asking for
 
 ## Backup and restore
 
-Any signed-in user can download their whole library as one zip and restore it — into this instance or another one. Export is per user: it contains the caller's documents and taxonomy, never anyone else's, and never the instance's settings or API keys.
+Any signed-in user can download their whole library as one zip and restore it — into this instance or another one. Export is per user: it contains the caller's documents and taxonomy, never anyone else's, and never the instance's settings or API keys. Saved AI chats are not included: an export carries the archive, not the conversations about it.
 
 ### Exporting
 
@@ -388,6 +388,31 @@ For a fresh install you can put `OPENAI_API_KEY` and/or `MISTRAL_API_KEY` in `.e
 Without an LLM provider, AI extraction, document chat, and Deep Search return a configuration error.
 
 Deep Search (`/search`) uses a tool-calling agent over the Bleve full-text index. Configure **Search provider/model** and **Deep search languages** in Settings.
+
+## Chat sessions
+
+Deep Search (`/search`) and a document's **Ask AI** page (`/document/<id>/ask`) both save their conversations. Each page lists past chats in a sidebar, gives the open one its own URL (`/search/<chatId>`), and lets you rename or delete a chat.
+
+The server owns the transcript. A request carries a session id and one new message — `POST /api/app/search` with `{"session_id": "...", "content": "...", "mode": "shallow|deep"}`, `POST /api/app/documents/<id>/chat` with `{"session_id": "...", "content": "..."}` — and the history is read back from the database rather than replayed by the browser. An omitted `session_id` starts a new chat, titled after its first message.
+
+A chat is only created once a reply arrives, so a provider that is misconfigured or times out leaves no empty chats behind. If a reply is produced but cannot be stored, the response carries `"saved": false` and the answer is shown without being added to the history.
+
+Managing saved chats:
+
+| Route | Purpose |
+| --- | --- |
+| `GET /api/app/chats` | List chats. Filters: `kind=search\|document`, `document=<id>`; paged with `page` / `perPage` |
+| `GET /api/app/chats/{id}` | One chat with its messages |
+| `PATCH /api/app/chats/{id}` | Rename (`{"title": "..."}`) |
+| `DELETE /api/app/chats/{id}` | Delete the chat and its messages |
+
+Limits:
+
+- A message may be at most 8,000 characters.
+- The model sees the most recent 40 messages, capped at 24,000 characters — older turns drop out of the prompt but stay in the transcript.
+- An account may keep 500 chats. Past that, new ones are refused until some are deleted; nothing is pruned automatically.
+
+Deleting a document deletes its Ask AI chats, and deleting an account deletes all of its chats. The `chat_sessions` and `chat_messages` collections carry no API rules, so — like `passkey_credentials` — they are not reachable through `/api/collections` at all and `/api/app/chats` is the only way in. That is deliberate: a client able to write its own `assistant` messages could plant text that the server would then replay to the model as a genuine prior answer.
 
 ## OCR setup
 

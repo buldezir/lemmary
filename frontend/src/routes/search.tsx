@@ -1,61 +1,118 @@
-import { type SubmitEvent, useEffect, useRef, useState } from 'react'
-import { Link } from '@tanstack/react-router'
-import { MarkdownContent } from '../components/MarkdownContent'
+import { useCallback, useState } from 'react'
+import { Link, useMatchRoute, useNavigate } from '@tanstack/react-router'
 import { Button } from '../components/ui'
+import { ChatPanel } from '../components/ChatPanel'
+import { ChatTranscript } from '../components/ChatTranscript'
+import { ChatComposer } from '../components/ChatComposer'
+import { ChatSessionList } from '../components/ChatSessionList'
+import { useAsync } from '../hooks/useAsync'
+import { useChatSession } from '../hooks/useChatSession'
+import { deepSearch } from '../lib/api/ai'
 import {
-  deepSearch,
-  type ChatMessage,
+  deleteChatSession,
+  getChatSession,
+  listChatSessions,
+  mergeChatSession,
+  renameChatSession,
+  type ChatSession,
+  type ChatTurn,
   type SearchDocumentHit,
-  type SearchMode,
-} from '../lib/api/ai'
-
-type SearchTurn = {
-  message: ChatMessage
-  documents?: SearchDocumentHit[]
-}
+} from '../lib/api/chats'
 
 export function SearchPage() {
-  const [turns, setTurns] = useState<SearchTurn[]>([])
-  const [input, setInput] = useState('')
+  const navigate = useNavigate()
+  // The session id lives on a child route, and a child's params are invisible
+  // to useParams from here — the closest match is /search, which has none.
+  // matchRoute also hands back a fresh object each render, so the id is
+  // destructured out before anything depends on it.
+  const matchRoute = useMatchRoute()
+  const sessionMatch = matchRoute({ to: '/search/$sessionId' })
+  const sessionId = sessionMatch ? (sessionMatch.sessionId as string) : undefined
+
   const [deepMode, setDeepMode] = useState(false)
-  const [sending, setSending] = useState(false)
-  const [error, setError] = useState('')
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [railOpen, setRailOpen] = useState(false)
+  const [justSettled, setJustSettled] = useState<ChatSession | null>(null)
+  const [railBusy, setRailBusy] = useState(false)
+  const [railError, setRailError] = useState('')
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [turns, sending])
+  const sessions = useAsync(() => listChatSessions({ kind: 'search' }), [])
 
-  async function send() {
-    const text = input.trim()
-    if (!text || sending) {
+  const onSessionSettled = useCallback(
+    (session: ChatSession, created: boolean) => {
+      // Merged in straight away so the row is there with the transcript, not a
+      // round trip later.
+      setJustSettled(session)
+      if (created) {
+        // replace: Back should not land on the now-orphaned empty /search.
+        void navigate({
+          to: '/search/$sessionId',
+          params: { sessionId: session.id },
+          replace: true,
+        })
+      }
+      // After every turn, not only the first: last_message_at moved and the row
+      // has to move with it. reload() refreshes without a loading flash.
+      void sessions.reload()
+    },
+    [navigate, sessions],
+  )
+
+  const chat = useChatSession({
+    sessionId,
+    load: getChatSession,
+    send: ({ sessionId: id, content }) =>
+      deepSearch({ sessionId: id, content, mode: deepMode ? 'deep' : 'shallow' }),
+    onSessionSettled,
+  })
+
+  const rows = mergeChatSession(sessions.data ?? [], justSettled)
+
+  function openSession(session: ChatSession) {
+    setRailOpen(false)
+    void navigate({ to: '/search/$sessionId', params: { sessionId: session.id } })
+  }
+
+  function startNewChat() {
+    setRailOpen(false)
+    if (sessionId) {
+      void navigate({ to: '/search' })
       return
     }
+    chat.reset()
+  }
 
-    const userMessage: ChatMessage = { role: 'user', content: text }
-    const history: ChatMessage[] = [...turns.map((turn) => turn.message), userMessage]
-    const mode: SearchMode = deepMode ? 'deep' : 'shallow'
-
+  async function onRename(id: string, title: string) {
     try {
-      setSending(true)
-      setInput('')
-      setError('')
-      setTurns((current) => [...current, { message: userMessage }])
-
-      const result = await deepSearch(history, mode)
-      setTurns((current) => [...current, { message: result.message, documents: result.documents }])
+      setRailBusy(true)
+      setRailError('')
+      const updated = await renameChatSession(id, title)
+      setJustSettled((current) => (current?.id === id ? updated : current))
+      await sessions.reload()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to run deep search')
-      setTurns((current) => current.slice(0, -1))
-      setInput(text)
+      setRailError(err instanceof Error ? err.message : 'Failed to rename the chat')
     } finally {
-      setSending(false)
+      setRailBusy(false)
     }
   }
 
-  function onSubmit(event: SubmitEvent<HTMLFormElement>) {
-    event.preventDefault()
-    void send()
+  async function onDelete(session: ChatSession) {
+    if (!window.confirm(`Delete "${session.title}"? This cannot be undone.`)) {
+      return
+    }
+    try {
+      setRailBusy(true)
+      setRailError('')
+      await deleteChatSession(session.id)
+      setJustSettled((current) => (current?.id === session.id ? null : current))
+      await sessions.reload()
+      if (session.id === sessionId) {
+        void navigate({ to: '/search', replace: true })
+      }
+    } catch (err) {
+      setRailError(err instanceof Error ? err.message : 'Failed to delete the chat')
+    } finally {
+      setRailBusy(false)
+    }
   }
 
   return (
@@ -65,7 +122,7 @@ export function SearchPage() {
           <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">Deep Search</h2>
           <p className="text-sm text-ink-soft">
             Ask in natural language. The AI expands keywords across your archive languages and
-            searches document metadata and OCR text.
+            searches document metadata and OCR text. Chats are saved.
           </p>
         </div>
         <label className="flex cursor-pointer items-center gap-2 rounded-xs border border-line bg-surface px-3 py-2 text-sm text-ink-muted">
@@ -82,76 +139,82 @@ export function SearchPage() {
         </label>
       </div>
 
-      <div className="flex min-h-128 flex-col overflow-hidden rounded-none border border-line bg-surface">
-        <div className="flex-1 space-y-4 overflow-y-auto p-4">
-          {turns.length === 0 && (
-            <p className="text-sm text-ink-faint">
-              Try something like: &quot;plumber invoice from last summer about the leak&quot;
+      <Button
+        variant="secondary"
+        size="sm"
+        aria-expanded={railOpen}
+        onClick={() => setRailOpen((open) => !open)}
+        className="self-start lg:hidden"
+      >
+        Chats ({rows.length})
+      </Button>
+
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
+        {/* One instance across breakpoints, toggled by class: two would put the
+            rows, their aria-current and their rename inputs into the
+            accessibility tree twice. */}
+        <aside className={`${railOpen ? 'block' : 'hidden'} lg:block lg:w-60 lg:shrink-0`}>
+          <ChatSessionList
+            sessions={rows}
+            activeSessionId={sessionId}
+            loading={sessions.loading}
+            error={railError || sessions.error}
+            busy={railBusy}
+            newChatDisabled={!sessionId && chat.turns.length === 0}
+            onSelect={openSession}
+            onNewChat={startNewChat}
+            onRename={onRename}
+            onDelete={onDelete}
+          />
+        </aside>
+
+        {/* min-w-0: without it a wide code block or an unbroken token in a
+            markdown reply stretches this column past the page's max width. */}
+        <div className="min-w-0 flex-1">
+          {chat.loadError && <p className="mb-3 text-sm text-madder">{chat.loadError}</p>}
+          {chat.unsaved && (
+            <p className="mb-3 text-sm text-madder">
+              This answer could not be saved, so the chat will not appear in your history.
             </p>
           )}
-          {turns.map((turn, index) => (
-            <div key={index} className="space-y-3">
-              <div
-                className={`flex ${turn.message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-[85%] rounded-none px-4 py-2.5 text-sm leading-relaxed ${
-                    turn.message.role === 'user'
-                      ? 'whitespace-pre-wrap bg-ink text-paper'
-                      : 'border border-line bg-paper text-ink'
-                  }`}
-                >
-                  {turn.message.role === 'user' ? (
-                    turn.message.content
-                  ) : (
-                    <MarkdownContent content={turn.message.content} />
-                  )}
-                </div>
-              </div>
-              {turn.documents && turn.documents.length > 0 && (
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {turn.documents.map((doc) => (
-                    <SearchHitCard key={doc.id} document={doc} />
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-          {sending && (
-            <div className="flex justify-start">
-              <div className="rounded-none border border-line bg-paper px-4 py-2.5 text-sm text-ink-soft">
-                {deepMode ? 'Searching deeply...' : 'Searching...'}
-              </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        <form onSubmit={onSubmit} className="border-t border-line bg-paper/70 p-4">
-          <div className="flex items-end gap-3">
-            <textarea
-              rows={2}
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault()
-                  void send()
-                }
-              }}
-              autoFocus
-              disabled={sending}
-              placeholder="Describe what you are looking for..."
-              className="min-h-12 flex-1 resize-y rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood disabled:cursor-not-allowed disabled:opacity-50"
+          <ChatPanel>
+            <ChatTranscript
+              turns={chat.turns}
+              loading={chat.loading}
+              sending={chat.sending}
+              sendingLabel={deepMode ? 'Searching deeply...' : 'Searching...'}
+              emptyHint='Try something like: "plumber invoice from last summer about the leak"'
+              renderExtra={(turn) => <SearchHits turn={turn} />}
             />
-            <Button type="submit" disabled={sending || !input.trim()}>
-              {sending ? 'Searching...' : 'Search'}
-            </Button>
-          </div>
-          {error && <p className="mt-2 text-sm text-madder">{error}</p>}
-        </form>
+            <ChatComposer
+              value={chat.input}
+              onChange={chat.setInput}
+              onSubmit={() => void chat.submit()}
+              placeholder="Describe what you are looking for..."
+              submitLabel="Search"
+              sendingLabel="Searching..."
+              sending={chat.sending}
+              disabled={chat.loading}
+              error={chat.error}
+              autoFocus
+            />
+          </ChatPanel>
+        </div>
       </div>
     </section>
+  )
+}
+
+function SearchHits({ turn }: { turn: ChatTurn }) {
+  if (!turn.documents || turn.documents.length === 0) {
+    return null
+  }
+  return (
+    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      {turn.documents.map((doc) => (
+        <SearchHitCard key={doc.id} document={doc} />
+      ))}
+    </div>
   )
 }
 

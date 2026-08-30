@@ -3,6 +3,7 @@ package appapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/chat"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/fulltext"
 )
@@ -20,13 +22,18 @@ import (
 const maxAvailableTagNames = 500
 
 type searchRequest struct {
-	Messages []ai.ChatMessage `json:"messages"`
-	Mode     string           `json:"mode"`
+	// SessionID continues an existing conversation; empty starts a new one.
+	SessionID string `json:"session_id"`
+	Content   string `json:"content"`
+	Mode      string `json:"mode"`
 }
 
 type searchResponse struct {
-	Message   ai.ChatMessage   `json:"message"`
-	Documents []ai.DocumentHit `json:"documents"`
+	// Session is null when Saved is false -- see the AppendTurn failure path.
+	Session   *chat.SessionInfo `json:"session"`
+	Message   chat.MessageInfo  `json:"message"`
+	Documents []ai.DocumentHit  `json:"documents"`
+	Saved     bool              `json:"saved"`
 }
 
 func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) func(*core.RequestEvent) error {
@@ -35,39 +42,54 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 		if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
 			return writeError(e, http.StatusBadRequest, "Invalid request body.")
 		}
-		if len(req.Messages) == 0 {
-			return writeError(e, http.StatusBadRequest, "At least one message is required.")
+		content, err := validateChatContent(req.Content)
+		if err != nil {
+			return writeError(e, http.StatusBadRequest, err.Error())
 		}
 
-		mode := ai.SearchModeShallow
-		if strings.EqualFold(strings.TrimSpace(req.Mode), string(ai.SearchModeDeep)) {
-			mode = ai.SearchModeDeep
-		}
+		mode := parseSearchMode(req.Mode)
 
 		agent := rt.Snapshot().SearchAgent
 		if agent == nil {
 			return writeError(e, http.StatusServiceUnavailable, "AI search is not configured; update Settings.")
 		}
 
-		// Match homepage document listing: regular users are scoped to their own
-		// docs; superusers bypass ownership (PocketBase collection rules do the same).
-		userID := ""
-		if !e.HasSuperuserAuth() {
-			userID = e.Auth.Id
+		// Two different questions, deliberately answered differently.
+		//
+		// ownerID is whose sidebar this conversation belongs in, so a superuser
+		// session resolves to its paired users record. searchUserID is whose
+		// documents the search may see, and there a superuser stays unscoped --
+		// matching the homepage listing and the PocketBase collection rules.
+		// Collapsing them would either hide an admin's own chats or scope an
+		// admin's search to one account.
+		ownerID, err := resolveOwnerUserID(app, e)
+		if err != nil {
+			return writeOwnerError(e, err)
 		}
-		availableTags, err := listAvailableTagNames(app, userID)
+		searchUserID := ""
+		if !e.HasSuperuserAuth() {
+			searchUserID = e.Auth.Id
+		}
+
+		history, err := loadChatHistory(app, ownerID, req.SessionID, chat.KindSearch, "")
+		if err != nil {
+			return writeChatSessionError(e, app, err)
+		}
+		messages := append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content})
+
+		availableTags, err := listAvailableTagNames(app, searchUserID)
 		if err != nil {
 			app.Logger().Error("deep search list tags failed", slog.Any("error", err))
 			return writeError(e, http.StatusInternalServerError, "Search is unavailable.")
 		}
 
 		searcher := func(ctx context.Context, args ai.SearchDocumentsArgs) ([]ai.DocumentHit, error) {
-			return searchUserDocuments(app, idx, userID, args)
+			return searchUserDocuments(app, idx, searchUserID, args)
 		}
 
 		// Use the request context so closing the browser tab cancels the agent
 		// loop instead of leaving several LLM round-trips running.
-		reply, hits, err := agent.Search(e.Request.Context(), req.Messages, mode, availableTags, searcher)
+		reply, hits, err := agent.Search(e.Request.Context(), messages, mode, availableTags, searcher)
 		if err != nil {
 			app.Logger().Error("deep search failed", slog.Any("error", err))
 			return writeError(e, http.StatusBadGateway, "The AI provider could not complete the search.")
@@ -76,12 +98,35 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 			hits = []ai.DocumentHit{}
 		}
 
+		session, err := chat.AppendTurn(app, req.SessionID, chat.NewSession{
+			UserID: ownerID,
+			Kind:   chat.KindSearch,
+		}, chat.Turn{
+			UserContent:      content,
+			AssistantContent: reply,
+			Documents:        hits,
+			Mode:             string(mode),
+		})
+		if err != nil {
+			if errors.Is(err, chat.ErrTooManySessions) {
+				return writeError(e, http.StatusConflict, tooManySessionsMessage)
+			}
+			// The provider already answered. Hand the reply over unsaved rather
+			// than discarding work the user paid for; the client says so.
+			app.Logger().Error("deep search persist failed", slog.Any("error", err))
+			return writeJSON(e, http.StatusOK, searchResponse{
+				Message:   unsavedMessage(chat.RoleAssistant, reply, hits),
+				Documents: hits,
+				Saved:     false,
+			})
+		}
+
+		info := chat.ToSessionInfo(session)
 		return writeJSON(e, http.StatusOK, searchResponse{
-			Message: ai.ChatMessage{
-				Role:    "assistant",
-				Content: reply,
-			},
+			Session:   &info,
+			Message:   latestAssistantMessage(app, session.Id, reply, hits),
 			Documents: hits,
+			Saved:     true,
 		})
 	}
 }

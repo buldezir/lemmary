@@ -1,20 +1,38 @@
-import { type SubmitEvent, useEffect, useRef, useState } from 'react'
-import { Link, useParams } from '@tanstack/react-router'
-import { MarkdownContent } from '../components/MarkdownContent'
+import { useCallback, useState } from 'react'
+import { Link, useMatchRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { Button } from '../components/ui'
+import { ChatPanel } from '../components/ChatPanel'
+import { ChatTranscript } from '../components/ChatTranscript'
+import { ChatComposer } from '../components/ChatComposer'
+import { ChatSessionList } from '../components/ChatSessionList'
 import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
-import { chatWithDocument, type ChatMessage } from '../lib/api/ai'
+import { chatWithDocument } from '../lib/api/ai'
+import {
+  deleteChatSession,
+  getChatSession,
+  listChatSessions,
+  mergeChatSession,
+  renameChatSession,
+  type ChatSession,
+} from '../lib/api/chats'
 import type { DocumentRecord } from '../lib/api/documents'
 import { useAsync } from '../hooks/useAsync'
+import { useChatSession } from '../hooks/useChatSession'
 
 export function DocumentAskPage() {
   const { documentId } = useParams({ from: '/document/$documentId/ask' })
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [input, setInput] = useState('')
-  const [sending, setSending] = useState(false)
-  const [error, setError] = useState('')
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const navigate = useNavigate()
+  // See the note in search.tsx: the id sits on a child match, which useParams
+  // cannot reach from the parent component.
+  const matchRoute = useMatchRoute()
+  const sessionMatch = matchRoute({ to: '/document/$documentId/ask/$sessionId' })
+  const sessionId = sessionMatch ? (sessionMatch.sessionId as string) : undefined
+
+  const [railOpen, setRailOpen] = useState(false)
+  const [justSettled, setJustSettled] = useState<ChatSession | null>(null)
+  const [railBusy, setRailBusy] = useState(false)
+  const [railError, setRailError] = useState('')
 
   const {
     data: document,
@@ -25,41 +43,93 @@ export function DocumentAskPage() {
     return pb.collection('documents').getOne<DocumentRecord>(documentId)
   }, [documentId])
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, sending])
+  const sessions = useAsync(
+    () => listChatSessions({ kind: 'document', documentId }),
+    [documentId],
+  )
+
+  const onSessionSettled = useCallback(
+    (session: ChatSession, created: boolean) => {
+      setJustSettled(session)
+      if (created) {
+        void navigate({
+          to: '/document/$documentId/ask/$sessionId',
+          params: { documentId, sessionId: session.id },
+          replace: true,
+        })
+      }
+      void sessions.reload()
+    },
+    [documentId, navigate, sessions],
+  )
+
+  const chat = useChatSession({
+    sessionId,
+    // A session id from another document's chat must not open here: it would
+    // replay that conversation against this document's OCR text.
+    load: async (id) => {
+      const detail = await getChatSession(id)
+      if (detail.session.document !== documentId) {
+        throw new Error('That chat belongs to a different document.')
+      }
+      return detail
+    },
+    send: ({ sessionId: id, content }) => chatWithDocument({ documentId, sessionId: id, content }),
+    onSessionSettled,
+  })
 
   const hasOcrText = Boolean(document?.ocr_text?.trim())
+  const rows = mergeChatSession(sessions.data ?? [], justSettled)
 
-  async function send() {
-    const text = input.trim()
-    if (!text || sending || !hasOcrText) {
+  function openSession(session: ChatSession) {
+    setRailOpen(false)
+    void navigate({
+      to: '/document/$documentId/ask/$sessionId',
+      params: { documentId, sessionId: session.id },
+    })
+  }
+
+  function startNewChat() {
+    setRailOpen(false)
+    if (sessionId) {
+      void navigate({ to: '/document/$documentId/ask', params: { documentId } })
       return
     }
+    chat.reset()
+  }
 
-    const userMessage: ChatMessage = { role: 'user', content: text }
-    const nextMessages = [...messages, userMessage]
-
+  async function onRename(id: string, title: string) {
     try {
-      setSending(true)
-      setInput('')
-      setError('')
-      setMessages(nextMessages)
-
-      const reply = await chatWithDocument(documentId, nextMessages)
-      setMessages([...nextMessages, reply])
+      setRailBusy(true)
+      setRailError('')
+      const updated = await renameChatSession(id, title)
+      setJustSettled((current) => (current?.id === id ? updated : current))
+      await sessions.reload()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to get AI response')
-      setMessages(messages)
-      setInput(text)
+      setRailError(err instanceof Error ? err.message : 'Failed to rename the chat')
     } finally {
-      setSending(false)
+      setRailBusy(false)
     }
   }
 
-  function onSubmit(event: SubmitEvent<HTMLFormElement>) {
-    event.preventDefault()
-    void send()
+  async function onDelete(session: ChatSession) {
+    if (!window.confirm(`Delete "${session.title}"? This cannot be undone.`)) {
+      return
+    }
+    try {
+      setRailBusy(true)
+      setRailError('')
+      await deleteChatSession(session.id)
+      setJustSettled((current) => (current?.id === session.id ? null : current))
+      await sessions.reload()
+      if (session.id === sessionId) {
+        void navigate({ to: '/document/$documentId/ask', params: { documentId }, replace: true })
+      }
+    } catch (err) {
+      setRailError(err instanceof Error ? err.message : 'Failed to delete the chat')
+    } finally {
+      setRailBusy(false)
+    }
   }
 
   if (loading) {
@@ -91,7 +161,7 @@ export function DocumentAskPage() {
           Ask AI: {document.title || 'Untitled document'}
         </h2>
         <p className="text-sm text-ink-soft">
-          Questions are answered using the document&apos;s OCR text as context.
+          Questions are answered using the document&apos;s OCR text as context. Chats are saved.
         </p>
       </div>
 
@@ -100,67 +170,65 @@ export function DocumentAskPage() {
           This document has no OCR text yet. Run full processing before asking questions.
         </div>
       ) : (
-        <div className="flex min-h-128 flex-col overflow-hidden rounded-none border border-line bg-surface">
-          <div className="flex-1 space-y-4 overflow-y-auto p-4">
-            {messages.length === 0 && (
-              <p className="text-sm text-ink-faint">
-                Ask a question about this document, for example: &quot;What is the total amount?&quot;
-              </p>
-            )}
-            {messages.map((message, index) => (
-              <div
-                key={index}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-[85%] rounded-none px-4 py-2.5 text-sm leading-relaxed ${
-                    message.role === 'user'
-                      ? 'whitespace-pre-wrap bg-ink text-paper'
-                      : 'border border-line bg-paper text-ink'
-                  }`}
-                >
-                  {message.role === 'user' ? (
-                    message.content
-                  ) : (
-                    <MarkdownContent content={message.content} />
-                  )}
-                </div>
-              </div>
-            ))}
-            {sending && (
-              <div className="flex justify-start">
-                <div className="rounded-none border border-line bg-paper px-4 py-2.5 text-sm text-ink-soft">
-                  Thinking...
-                </div>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
+        <>
+          <Button
+            variant="secondary"
+            size="sm"
+            aria-expanded={railOpen}
+            onClick={() => setRailOpen((open) => !open)}
+            className="self-start lg:hidden"
+          >
+            Chats ({rows.length})
+          </Button>
 
-          <form onSubmit={onSubmit} className="border-t border-line bg-paper/70 p-4">
-            <div className="flex items-end gap-3">
-              <textarea
-                rows={2}
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault()
-                    void send()
-                  }
-                }}
-                autoFocus
-                disabled={sending}
-                placeholder="Ask a question about this document..."
-                className="min-h-12 flex-1 resize-y rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood disabled:cursor-not-allowed disabled:opacity-50"
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
+            <aside className={`${railOpen ? 'block' : 'hidden'} lg:block lg:w-52 lg:shrink-0`}>
+              <ChatSessionList
+                sessions={rows}
+                activeSessionId={sessionId}
+                loading={sessions.loading}
+                error={railError || sessions.error}
+                busy={railBusy}
+                compact
+                newChatDisabled={!sessionId && chat.turns.length === 0}
+                onSelect={openSession}
+                onNewChat={startNewChat}
+                onRename={onRename}
+                onDelete={onDelete}
               />
-              <Button type="submit" disabled={sending || !input.trim()}>
-                {sending ? 'Sending...' : 'Send'}
-              </Button>
+            </aside>
+
+            <div className="min-w-0 flex-1">
+              {chat.loadError && <p className="mb-3 text-sm text-madder">{chat.loadError}</p>}
+              {chat.unsaved && (
+                <p className="mb-3 text-sm text-madder">
+                  This answer could not be saved, so the chat will not appear in your history.
+                </p>
+              )}
+              <ChatPanel>
+                <ChatTranscript
+                  turns={chat.turns}
+                  loading={chat.loading}
+                  sending={chat.sending}
+                  sendingLabel="Thinking..."
+                  emptyHint='Ask a question about this document, for example: "What is the total amount?"'
+                />
+                <ChatComposer
+                  value={chat.input}
+                  onChange={chat.setInput}
+                  onSubmit={() => void chat.submit()}
+                  placeholder="Ask a question about this document..."
+                  submitLabel="Send"
+                  sendingLabel="Sending..."
+                  sending={chat.sending}
+                  disabled={chat.loading}
+                  error={chat.error}
+                  autoFocus
+                />
+              </ChatPanel>
             </div>
-            {error && <p className="mt-2 text-sm text-madder">{error}</p>}
-          </form>
-        </div>
+          </div>
+        </>
       )}
     </section>
   )

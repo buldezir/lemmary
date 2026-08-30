@@ -34,10 +34,13 @@ describe('route tree', () => {
       '/',
       '/upload',
       '/search',
+      '/search/$sessionId',
       '/settings',
       '/import',
       '/import/archive',
       '/account',
+      '/document/$documentId/ask',
+      '/document/$documentId/ask/$sessionId',
     ]) {
       expect(paths).toContain(path)
     }

@@ -73,6 +73,19 @@ const searchRoute = createRoute({
   component: SearchPage,
 })
 
+// The open chat's id is a child route that renders nothing, and SearchPage
+// stays on the parent match on purpose. Sending the first message of a new
+// chat promotes /search to /search/<id> while the request is still in flight;
+// with the page on a child (or on a sibling route) that promotion swaps the
+// match and React unmounts the transcript mid-send. Here only a child match is
+// added, and the page — which reads the id with useMatchRoute — keeps running.
+// Neither this route nor its document twin renders an <Outlet/>.
+const searchSessionRoute = createRoute({
+  getParentRoute: () => searchRoute,
+  path: '$sessionId',
+  component: () => null,
+})
+
 const ocrTestRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/ocr-test',
@@ -138,6 +151,14 @@ const documentAskRoute = createRoute({
   component: DocumentAskPage,
 })
 
+// See searchSessionRoute: a placeholder child so the page survives the URL
+// gaining a session id mid-send.
+const documentAskSessionRoute = createRoute({
+  getParentRoute: () => documentAskRoute,
+  path: '$sessionId',
+  component: () => null,
+})
+
 // Edition routes are appended last so an edition can never displace a core
 // path: TanStack Router matches in tree order, and a duplicate path added after
 // the core one loses.
@@ -149,7 +170,7 @@ const documentAskRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   uploadRoute.addChildren([uploadFilesRoute, uploadAmazonRoute, uploadSplitRoute]),
-  searchRoute,
+  searchRoute.addChildren([searchSessionRoute]),
   ocrTestRoute,
   settingsRoute,
   managementRoute,
@@ -157,7 +178,7 @@ const routeTree = rootRoute.addChildren([
   exportRoute,
   accountRoute,
   documentRoute,
-  documentAskRoute,
+  documentAskRoute.addChildren([documentAskSessionRoute]),
   ...edition.routes(rootRoute),
 ])
 
