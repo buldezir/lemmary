@@ -4,7 +4,7 @@
 
 - Go 1.23+
 - Node.js 20+
-- npm
+- [pnpm](https://pnpm.io/installation) 11+ (`npm install -g pnpm`)
 - [poppler-utils](https://poppler.freedesktop.org/) for all PDF work: `pdftoppm` (preview and page thumbnails), `pdfinfo` (page count), `pdftotext` (page text), `pdfseparate` and `pdfunite` (page extraction for [document splitting](#document-splitting))
 
 On macOS: `brew install poppler`. On Debian/Ubuntu: `apt install poppler-utils`.
@@ -40,8 +40,8 @@ once, then restart the backend:
 
 ```bash
 cd frontend
-npm ci
-npm run build
+pnpm install --frozen-lockfile
+pnpm run build
 ```
 
 This writes the app to `public/` and these docs to `public/docs/`, both served
@@ -422,7 +422,7 @@ Uses the [Mistral Document OCR API](https://docs.mistral.ai/en/studio-api/docume
 
 ```bash
 # Frontend production build (SPA -> ../public, docs -> ../public/docs)
-cd frontend && npm run build
+cd frontend && pnpm run build
 
 # Create / update admin (PocketBase superuser + paired users account)
 cd backend && go run . superuser upsert admin@example.com 'your-password'
