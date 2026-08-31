@@ -1,0 +1,14 @@
+# pnpm's settings live here rather than in package.json as of pnpm 11.
+#
+# pnpm does not run a dependency's install scripts unless it is allowed below,
+# and an unapproved one fails the install outright -- including the implicit
+# install check that `pnpm test` and `pnpm run build` perform, so this is not
+# optional. esbuild's postinstall links its platform binary; VitePress pulls it
+# in through Vite 5 and cannot build without it.
+#
+# Keeping the list explicit is the point: anything new that wants to execute
+# code at install time has to be added here deliberately. Note the key is
+# allowBuilds, not pnpm 10's onlyBuiltDependencies, which `pnpm config list`
+# still echoes but this version does not honour.
+allowBuilds:
+  esbuild: true

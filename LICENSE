@@ -144,3 +144,27 @@ software under these terms.
 
 **Use** means anything you do with the software requiring one
 of your licenses.
+
+--------------------------------------------------------------------------------
+CUSTOM TERMS & RESTRICTIONS (AI AND MACHINE LEARNING)
+--------------------------------------------------------------------------------
+
+In addition to the Noncommercial restriction above, your rights under this
+license are subject to the following express conditions:
+
+1. NO AI TRAINING AND INGESTION: You may not use, upload, ingest, or supply this
+   Software, its source code, documentation, or specifications (in whole or in
+   part) to train, fine-tune, align, test, or prompt any artificial intelligence
+   systems, machine learning models, large language models (LLMs), or automated
+   code generators, regardless of whether such activity is conducted for
+   commercial or noncommercial purposes.
+
+2. PROHIBITION OF AI CLEAN-ROOM RECONSTRUCTION: You may not use any AI system
+   or LLM to parse, analyze, or summarize this Software's code or architecture
+   to generate functional equivalents, specifications, pseudo-code, or new
+   source code designed to replicate the structure, sequence, or logic of this
+   Software.
+
+3. DERIVATIVE STATUS OF AI OUTPUTS: Any code, material, or output produced by
+   an AI system that processed or ingested this Software shall be considered
+   a derivative work bound strictly by the terms of this License.

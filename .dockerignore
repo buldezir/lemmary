@@ -6,7 +6,8 @@
 **/.env.*
 **/node_modules
 backend/pb_data*
-# The private development overlay, when cloned into a working tree.
+# The development overlay, when it has been checked out inside the tree (CI
+# does this; a local checkout keeps it outside).
 dev
 *.md
 !docs/
