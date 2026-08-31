@@ -128,8 +128,48 @@ func TestGateUnlockPageRendersWithoutUserInput(t *testing.T) {
 	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
 		t.Fatalf("Cache-Control = %q, want no-store", got)
 	}
+	// This vault is initialised, so the field asks for a password that already
+	// exists and must offer to autofill it.
+	if !strings.Contains(body, `autocomplete="current-password"`) {
+		t.Fatalf("the unlock form does not offer to autofill: %s", body)
+	}
 }
 
+// The same field on a fresh vault is asking the visitor to *choose* the
+// password that will encrypt everything. current-password there makes a
+// password manager offer some unrelated saved credential instead of generating
+// a strong one, which is the opposite of what this one moment needs -- and it
+// is the only moment, because the password cannot be changed afterwards
+// without the archive.
+func TestGateSetupPageAsksForAGeneratedPassword(t *testing.T) {
+	root := t.TempDir()
+	v, err := New(Options{
+		Dir: filepath.Join(root, "vault"), WorkDir: filepath.Join(root, "work"),
+		Enabled: true, AllowDiskWorkDir: true,
+		Log: func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer v.releaseLock()
+	if v.Initialized() {
+		t.Fatal("a fresh directory reports initialised; this test is not exercising the setup branch")
+	}
+
+	rec := httptest.NewRecorder()
+	v.gateHandler(make(chan GateResult, 1)).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "Set up encryption") {
+		t.Fatalf("not the setup page: %s", body)
+	}
+	if !strings.Contains(body, `autocomplete="new-password"`) {
+		t.Fatalf("the setup form does not ask for a generated password: %s", body)
+	}
+}
+
+// An uninitialised vault mints a recovery code on first unlock, and it must be
+// returned exactly once so an operator can write it down.
 func TestGateInitialisationReturnsARecoveryCodeOnce(t *testing.T) {
 	root := t.TempDir()
 	v, err := New(Options{

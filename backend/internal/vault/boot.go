@@ -45,7 +45,17 @@ func Open(argv []string) (*Vault, error) {
 		if !v.Initialized() {
 			return nil, fmt.Errorf("this instance is not initialised yet; start the server once and set an unlock password")
 		}
-		return v, v.Unlock(Credential{Password: os.Getenv(EnvPassphrase)})
+		if err := v.Unlock(Credential{Password: os.Getenv(EnvPassphrase)}); err != nil {
+			return nil, err
+		}
+		// Subcommands get the redirect too. None of them touches a document
+		// today, so this changes nothing now -- but the day one does, the
+		// alternative is plaintext copies written to the container overlay,
+		// which is real disk, by a path nobody would think to check.
+		if err := v.InstallTempDir(); err != nil {
+			return nil, err
+		}
+		return v, nil
 	}
 
 	// The gate takes exactly the address the server is about to take over, and

@@ -285,7 +285,7 @@ var unlockPage = template.Must(template.New("unlock").Parse(`<!doctype html>
 {{end}}
 <form id="f">
   <label for="password">Password</label>
-  <input id="password" name="password" type="password" autocomplete="current-password" autofocus required>
+  <input id="password" name="password" type="password" autocomplete="{{if .Initialized}}current-password{{else}}new-password{{end}}" autofocus required>
   {{if .Initialized}}
   <details><summary>Use a recovery code instead</summary>
     <label for="recovery_code" style="margin-top:.8rem">Recovery code</label>

@@ -108,6 +108,15 @@ func authenticateWithPassword(app core.App, identity, password string) (*core.Re
 	if err != nil {
 		return nil, err
 	}
+	// The collection's own switch, honoured here as well as on PocketBase's
+	// auth routes. Turning password auth off is how an operator moves an
+	// install to OAuth or passkeys only; records keep whatever hash they had,
+	// so without this check every one of those passwords stays a working
+	// credential through POST /api/token and Basic auth -- a door the operator
+	// believes they closed.
+	if !collection.PasswordAuth.Enabled {
+		return nil, errors.New("password authentication is disabled")
+	}
 
 	var record *core.Record
 	for _, field := range collection.PasswordAuth.IdentityFields {

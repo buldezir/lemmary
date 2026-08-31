@@ -38,6 +38,12 @@ services:
     # The shutdown flush is what makes a clean stop lossless, so give it room to
     # finish before Docker escalates to SIGKILL.
     stop_grace_period: 60s
+    # A fork bomb in anything the app shells out to -- poppler runs on
+    # attacker-supplied PDFs -- would otherwise exhaust the host's process
+    # table, and under a vault an OOM or a wedged host loses every write since
+    # the last flush. Generous for a process that runs one worker and a few
+    # short-lived children.
+    pids_limit: 512
     # The app needs almost no capabilities and must not gain privileges: it
     # shells out to poppler on untrusted PDFs, and this bounds what an exploit
     # there gets. The four kept are exactly what the entrypoint uses to adopt a
