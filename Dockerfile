@@ -19,14 +19,18 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
 
 FROM node:26-alpine AS frontend-builder
 
+RUN npm install -g pnpm
+
 WORKDIR /app/frontend
-COPY frontend/package*.json ./
-RUN npm install
+# pnpm-workspace.yaml carries the allowBuilds list, without which the install
+# refuses to run esbuild's postinstall and VitePress cannot build.
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
 COPY frontend/ .
 COPY docs/ /app/docs/
 
 ARG EDITION=""
-RUN LEMMARY_EXT="${EDITION:+./src/ext-$EDITION}" npm run build
+RUN LEMMARY_EXT="${EDITION:+./src/ext-$EDITION}" pnpm run build
 
 FROM alpine:3.21
 LABEL org.opencontainers.image.title="Lemmary" \

@@ -88,81 +88,65 @@ Line coordinates must land on the PR diff; if GitHub rejects them, fix the path/
 
 ## Working in a git worktree
 
-A worktree of this repository starts **without** `dev/`. The verification stack
-is a separate, private repository overlaid at that path and gitignored here, so
-`git worktree add` never brings it along and `./dev/scripts/test-all.sh` is
-missing in the new tree.
+Nothing to set up. `scripts/test-all.sh` is tracked, so every worktree has it
+the moment it exists, and it resolves the verification overlay itself.
 
-When the main checkout has the overlay, attach it to the worktree before
-touching any code — as a worktree of the overlay repository on a branch of the
-**same name** as the feature branch, so the code change and its e2e update stay
-on matching branches in both repositories.
+The overlay — the separate repository holding the e2e suites and the
+verification stack — lives **outside** this tree, beside the main checkout as
+`../lemmary-dev`. It used to be checked out *inside* it, at `dev/`. That is
+worth knowing because of the failure it caused: a second git repository inside
+the working tree means anything that answers "which repository am I in?" by
+walking up from the current directory gets the overlay instead of this repo, so
+worktree tooling broke whenever the current directory was under `dev/`, and
+every new worktree began with no suites at all.
 
-The name is load-bearing: the pull request job looks in the overlay for a branch
-matching the pull request and falls back to `main` when it finds none, so a
-mismatched name means CI runs the change against suites that know nothing about
-it — and reports green.
+`scripts/overlay.sh` locates it, and prefers the overlay branch whose name
+matches the branch you are on — attaching it as a worktree of the overlay, a
+sibling at `../lemmary-dev-worktrees/<branch>`, the first time it is needed. It
+never creates a branch that does not already exist somewhere; finding none, it
+uses whatever the overlay's main checkout is on and says so on stderr. That is
+the same fallback the pull request job makes, so a local run and CI agree about
+which suites apply.
 
-```bash
-# Run from inside the fresh lemmary worktree.
-branch=$(git rev-parse --abbrev-ref HEAD)
-root=$(git rev-parse --show-toplevel)
-main=$(git worktree list --porcelain | sed -n '1s/^worktree //p')
+Matching names are load-bearing, not a convention: a behaviour change and its
+e2e update are two commits in two repositories, and the pull request job looks
+in the overlay for a branch named like the pull request, falling back to `main`
+when it finds none. Name it anything else and CI runs the change against
+`main`'s suites, which know nothing about it — and reports green.
 
-git -C "$main/dev" fetch origin
-git -C "$main/dev" worktree add "$root/dev" -b "$branch" origin/main
-(cd "$root/dev" && npm ci)   # Playwright specs keep their own node_modules
-```
-
-- If that branch already exists in the overlay, check it out instead of
-  creating it: drop `-b "$branch" origin/main` and pass `"$branch"` as the
-  final argument.
-- The overlay's `replace lemmary/backend => ../backend` then resolves to the
-  worktree's own `backend/`, so the suites exercise the worktree's code.
-- `npx playwright install chromium` is only needed once per machine; the
-  browsers live in a shared cache, not in the worktree.
-- If `$main/dev` does not exist, there is no overlay to attach: run the reduced
-  verification below and say plainly that the e2e suites did not run.
-
-When the worktree is finished with, remove the overlay worktree too, or prune
-it afterwards, so the overlay repository does not keep a stale entry:
+So when a change needs an e2e update, make the overlay branch first, and the
+next run picks it up with no further ceremony:
 
 ```bash
-git -C "$main/dev" worktree remove "$root/dev"   # before deleting the worktree
-git -C "$main/dev" worktree prune                # after, if it is already gone
+git -C ../lemmary-dev fetch origin
+git -C ../lemmary-dev switch -c "$(git rev-parse --abbrev-ref HEAD)" origin/main
 ```
 
 Both branches need pushing, and the overlay side wants pushing first — until it
 is, the pull request job falls back to the overlay's `main`. See "Changes that
 span both repositories" in the overlay's `AGENTS.md`.
 
-Note that the sandbox may refuse git commands aimed at `$main/dev`, since it
-sits inside the shared checkout. Leaving the worktree (keeping it), running the
-overlay commands, and re-entering is the way through.
+Two things worth knowing:
+
+- Set `LEMMARY_DEV=/path/to/overlay` to override where it looks, or
+  `LEMMARY_NO_SYNC=1` to stop it attaching worktrees on its own.
+- The sandbox may refuse git commands aimed at the overlay, since it sits
+  outside this checkout. Ask before working around that.
 
 ## Verification (required)
 
-The e2e suites and the full verification stack live in a private repository
-overlaid at `dev/` (see [docs/setup.md](docs/setup.md) for what this repo alone
-contains). If that overlay is present, it owns verification:
-
 ```bash
-./dev/scripts/test-all.sh
+./scripts/test-all.sh
 ```
 
-Without it, run what this repository can verify on its own, and say plainly in
-the report that the e2e suites did not run:
+That is the only command, in a worktree or the main checkout. It delegates to
+the overlay when one is present, and when none is it runs what this repository
+can verify alone — unit tests, the compile-level extension-seam check, frontend
+tests and the SPA build — printing which suites did not run.
 
-```bash
-# Subshells on purpose: run from the repo root, and each line is independent.
-(cd backend && go test ./... -count=1)
-(cd backend && go vet -tags lemmary_exttest ./... && go test -tags lemmary_exttest ./internal/boot/ -count=1)
-(cd frontend && npm test)
-(cd frontend && npm run build)   # tsc -b + vite + vitepress; nothing else here builds the app
-```
-
-Do not claim a task is complete if any stage fails, and do not claim e2e
-coverage that did not run.
+If it took the reduced path, say plainly in the report that the API and browser
+e2e suites did not run. Do not claim a task is complete if any stage fails, and
+do not claim e2e coverage that did not run.
 
 ## Tests must stay in sync
 
@@ -180,7 +164,7 @@ is present, its `AGENTS.md` covers them.
 If Docker is usable (`docker info` succeeds), also build the image after any
 build-related changes (Dockerfile, frontend/backend build scripts, Vite/VitePress
 config, `docs/` content that is compiled into the image, package lockfiles that
-affect `npm run build`, Go module files that affect `go build`, and similar):
+affect `pnpm run build`, Go module files that affect `go build`, and similar):
 
 ```bash
 docker info >/dev/null && docker build -t lemmary:local .
