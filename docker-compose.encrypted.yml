@@ -1,0 +1,55 @@
+# Encryption-at-rest overlay. Everything VAULT_ENABLED=1 needs from the host
+# that the app cannot arrange for itself:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.encrypted.yml up
+#
+# An overlay rather than an edit, because encryption is off by default and the
+# base file has to stay usable without any of this. Read docs/encryption.md
+# first — in particular "Requirements and limits", which explains every setting
+# below and the two the app cannot detect from inside the container.
+
+services:
+  app:
+    tmpfs:
+      # The decrypted archive lives here and nowhere else. size= is not optional:
+      # with a bound, running out of room is an ENOSPC that SQLite rolls back
+      # cleanly; without one it is an OOM kill, which loses everything written
+      # since the last flush. Raise it past your archive size plus headroom for
+      # PDF page rendering, and keep mem_limit comfortably above it.
+      # uid/gid match the image's unprivileged "app" user, which owns the
+      # decrypted tree once the entrypoint drops root.
+      - /app/work:size=2g,mode=0700,uid=1000,gid=1000
+    mem_limit: 3g
+    # Equal to mem_limit on purpose: memory+swap = mem_limit means the container
+    # gets no swap at all. tmpfs pages are swappable — without this line, memory
+    # pressure would page the decrypted archive out to the host's swap device,
+    # which is persistent disk, the very thing VAULT_ENABLED exists to keep
+    # plaintext away from. See "Requirements and limits" in docs/encryption.md, which
+    # also covers host swap and hibernation.
+    memswap_limit: 3g
+    # The unlock form carries the password that decrypts the whole archive, and
+    # this container speaks plain HTTP. Publish it on loopback only, so the form
+    # is reachable through a TLS-terminating proxy on this host and nothing
+    # else. The base file's 0.0.0.0 mapping is fine for an unencrypted LAN
+    # install; it is not fine here. (!override replaces the base list instead of
+    # merging with it.)
+    ports: !override
+      - "127.0.0.1:8090:${PORT:-80}"
+    # The shutdown flush is what makes a clean stop lossless, so give it room to
+    # finish before Docker escalates to SIGKILL.
+    stop_grace_period: 60s
+    # The app needs almost no capabilities and must not gain privileges: it
+    # shells out to poppler on untrusted PDFs, and this bounds what an exploit
+    # there gets. The four kept are exactly what the entrypoint uses to adopt a
+    # pre-existing volume and drop from root to the app user; dropping
+    # privileges via setuid() is still allowed under no-new-privileges, which
+    # only blocks *gaining* them.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, SETGID, SETUID]
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # app_data (the base file's named volume) holds only ciphertext once this is on.
+      VAULT_ENABLED: "1"
+      VAULT_DIR: /app/pb_data
+      VAULT_WORKDIR: /app/work
