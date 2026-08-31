@@ -78,12 +78,14 @@ Deep Search with natural-language queries:
 Unit tests live beside the code they cover:
 
 ```bash
-cd backend && go test $(go list ./... | grep -v /e2e) -count=1
-cd frontend && npm test
+cd backend && go test ./... -count=1
+cd frontend && pnpm test
 ```
 
 The end-to-end suites, the dev runner and the full verification stack live in a
-separate private repository and are not part of this one.
+separate private repository and are not part of this one. `./scripts/test-all.sh`
+runs everything available here either way, and reports which suites it could
+not run.
 
 ## License
 

@@ -7,8 +7,11 @@ frontend/.vitepress/dist/
 backend/pb_data/
 *.test
 
-# The development suite -- e2e tests, dev runner, verification stack -- is a
-# private repository overlaid at this path: github.com/lemmary/lemmary-dev
+# The development suite -- e2e tests, dev runner, verification stack -- lives in
+# a separate repository that is not part of this one. It normally sits beside
+# this checkout rather than inside it, and scripts/overlay.sh locates it. CI is
+# the exception and overlays it here, because actions/checkout cannot place a
+# repository outside the workspace.
 #
 # Leading slash on purpose: a bare "dev/" has no separator except the trailing
 # one, so git would match a directory named dev at any depth.
