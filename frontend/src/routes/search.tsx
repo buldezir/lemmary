@@ -14,6 +14,7 @@ import {
   type ResearchEvent,
   type SearchMode,
 } from '../lib/api/ai'
+import { readPreferredSearchMode, writePreferredSearchMode } from '../lib/searchMode'
 import {
   deleteChatSession,
   getChatSession,
@@ -71,12 +72,20 @@ export function SearchPage() {
   const sessionMatch = matchRoute({ to: '/search/$sessionId' })
   const sessionId = sessionMatch ? (sessionMatch.sessionId as string) : undefined
 
-  // The mode the user picked, remembered against the conversation it was picked
-  // for. Reopening a chat then falls through to the mode its last turn ran in,
-  // so continuing it does not silently switch between listing documents and
-  // answering about them -- and switching conversations drops the pick with no
-  // effect to reset it.
+  // Two layers, because the toggle answers two different questions.
+  //
+  // `picked` is the pick for the conversation on screen, and it outranks that
+  // conversation's own mode so the toggle still moves inside an existing chat.
+  // `preferred` is where a *new* chat starts, and it outlives both the page and
+  // the tab -- see lib/searchMode.
   const [picked, setPicked] = useState<{ sessionId?: string; mode: SearchMode } | null>(null)
+  const [preferred, setPreferred] = useState<SearchMode>(readPreferredSearchMode)
+
+  function pickMode(value: SearchMode) {
+    setPicked({ sessionId, mode: value })
+    setPreferred(value)
+    writePreferredSearchMode(value)
+  }
   const [railOpen, setRailOpen] = useState(false)
   const [justSettled, setJustSettled] = useState<ChatSession | null>(null)
   const [railBusy, setRailBusy] = useState(false)
@@ -218,9 +227,11 @@ export function SearchPage() {
     onSessionSettled,
   })
 
-  // Read below by the send closure, which only runs after this render.
+  // Read below by the send closure, which only runs after this render. A saved
+  // conversation's own mode sits between the two: it loses to a deliberate pick
+  // on that conversation, and beats the preference a new chat would start in.
   const mode: SearchMode =
-    picked && picked.sessionId === sessionId ? picked.mode : (chat.session?.mode ?? 'search')
+    picked && picked.sessionId === sessionId ? picked.mode : (chat.session?.mode ?? preferred)
 
   const rows = mergeChatSession(sessions.data ?? [], justSettled)
   const active = modes.find((item) => item.value === mode) ?? modes[0]
@@ -292,7 +303,7 @@ export function SearchPage() {
               role="radio"
               aria-checked={mode === item.value}
               disabled={chat.sending}
-              onClick={() => setPicked({ sessionId, mode: item.value })}
+              onClick={() => pickMode(item.value)}
               className={`px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                 mode === item.value ? 'bg-ink text-paper' : 'text-ink-muted hover:text-ink'
               }`}

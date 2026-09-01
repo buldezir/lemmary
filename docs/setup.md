@@ -428,6 +428,8 @@ Deep Search (`/search`) uses a tool-calling agent over the Bleve full-text index
 
 Research has no round or document limit. It keeps searching and reading until the conversation fills the model's context window, then answers with what it has — so **Search context window** in Settings is what decides how much of your archive one question can draw on. Picking a model whose provider reports its context length (OpenRouter, Mistral) fills that field in automatically; OpenAI's model list reports none, so the default applies.
 
+The mode toggle is remembered in the browser, so a reload or a trip to another page starts a new chat in the mode you were last using. Reopening a saved chat is the exception: it comes back in the mode its own last turn ran in, since continuing a research conversation as a plain search would answer a different question than the one above it in the transcript.
+
 Configure **Search provider/model**, **Deep search languages**, and **Search context window** in Settings.
 
 ## Chat sessions
