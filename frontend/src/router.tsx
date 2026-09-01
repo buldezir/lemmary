@@ -66,32 +66,52 @@ const uploadSplitRoute = createRoute({
   component: UploadSplitPage,
 })
 
-const searchRoute = createRoute({
+// Deep Search's two modes are two paths, not a flag on one: the mode decides
+// what a question does -- list documents, or read them and answer -- so it
+// belongs in the URL, where a reload, a bookmark and a shared link all keep it.
+// Both render SearchPage, which reads the mode back off the route.
+//
+// They share the /rag parent so one nav entry covers both: a Link marks itself
+// active for its own path and everything under it, and /rag is the only path
+// that is above both modes. It has no component of its own, so it renders an
+// Outlet and contributes nothing but the segment.
+const ragRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/search',
+  path: '/rag',
+})
+
+// /rag alone is not a page. Search is the cheaper of the two modes and the one
+// to land on.
+const ragIndexRoute = createRoute({
+  getParentRoute: () => ragRoute,
+  path: '/',
+  beforeLoad: () => {
+    throw redirect({ to: '/rag/search' })
+  },
+})
+
+const searchRoute = createRoute({
+  getParentRoute: () => ragRoute,
+  path: 'search',
   component: SearchPage,
 })
 
 // The open chat's id is a child route that renders nothing, and SearchPage
 // stays on the parent match on purpose. Sending the first message of a new
-// chat promotes /search to /search/<id> while the request is still in flight;
-// with the page on a child (or on a sibling route) that promotion swaps the
-// match and React unmounts the transcript mid-send. Here only a child match is
-// added, and the page — which reads the id with useMatchRoute — keeps running.
-// Neither this route nor its document twin renders an <Outlet/>.
+// chat promotes /rag/search to /rag/search/<id> while the request is still in
+// flight; with the page on a child (or on a sibling route) that promotion swaps
+// the match and React unmounts the transcript mid-send. Here only a child match
+// is added, and the page — which reads the id with useMatchRoute — keeps
+// running. Neither this route nor its document twin renders an <Outlet/>.
 const searchSessionRoute = createRoute({
   getParentRoute: () => searchRoute,
   path: '$sessionId',
   component: () => null,
 })
 
-// Research is a sibling path rather than a flag on /search: the mode decides
-// what a question does -- list documents, or read them and answer -- so it
-// belongs in the URL, where a reload, a bookmark and a shared link all keep it.
-// Both paths render SearchPage, which reads the mode back off the route.
 const researchRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/research',
+  getParentRoute: () => ragRoute,
+  path: 'research',
   component: SearchPage,
 })
 
@@ -186,8 +206,11 @@ const documentAskSessionRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   uploadRoute.addChildren([uploadFilesRoute, uploadAmazonRoute, uploadSplitRoute]),
-  searchRoute.addChildren([searchSessionRoute]),
-  researchRoute.addChildren([researchSessionRoute]),
+  ragRoute.addChildren([
+    ragIndexRoute,
+    searchRoute.addChildren([searchSessionRoute]),
+    researchRoute.addChildren([researchSessionRoute]),
+  ]),
   ocrTestRoute,
   settingsRoute,
   managementRoute,

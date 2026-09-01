@@ -421,20 +421,22 @@ For a fresh install you can put `AI_API_KEY` in `.env` so a provider row is seed
 
 Without an LLM provider, AI extraction, document chat, and Deep Search return a configuration error.
 
-Deep Search uses a tool-calling agent over the Bleve full-text index, in two modes, one per path:
+Deep Search uses a tool-calling agent over the Bleve full-text index, in two modes, one per path under `/rag`:
 
-- **Search** (`/search`) — one round of `search_documents`, answered from titles, summaries and short OCR snippets. Results are shown as document cards.
-- **Research** (`/research`) — the agent searches, then reads the full text of the documents it finds (`read_documents`), and writes a markdown answer citing each document it used, with the documents it drew on listed under the answer. Progress streams over `POST /api/app/search/stream` (server-sent events), so each search and read appears as it happens.
+- **Search** (`/rag/search`) — one round of `search_documents`, answered from titles, summaries and short OCR snippets. Results are shown as document cards.
+- **Research** (`/rag/research`) — the agent searches, then reads the full text of the documents it finds (`read_documents`), and writes a markdown answer citing each document it used, with the documents it drew on listed under the answer. Progress streams over `POST /api/app/search/stream` (server-sent events), so each search and read appears as it happens.
 
 Research has no round or document limit. It keeps searching and reading until the conversation fills the model's context window, then answers with what it has — so **Search context window** in Settings is what decides how much of your archive one question can draw on. Picking a model whose provider reports its context length (OpenRouter, Mistral) fills that field in automatically; OpenAI's model list reports none, so the default applies.
 
-Each mode is its own path — `/search` and `/research` — so the mode is carried by the URL and survives a reload, the back button, a bookmark and a shared link. Switching mode keeps the open chat: `/search/<chatId>` and `/research/<chatId>` are the same conversation, continued differently. A saved chat reopens on the path matching the mode its last turn ran in, since continuing a research conversation as a plain search would answer a different question than the one above it in the transcript.
+Each mode is its own path — `/rag/search` and `/rag/research` — so the mode is carried by the URL and survives a reload, the back button, a bookmark and a shared link. They share the `/rag` parent, which is what lets one navigation entry cover both; `/rag` on its own redirects to Search.
+
+The mode can only be chosen before a chat has a turn. A transcript is a sequence: its answers were produced by one mode, and the next turn replays them to the model as its own prior work, so switching underneath would answer a later question in a way the earlier ones do not support. Once a chat exists the switch shows which mode it is in and stops being a link — starting a new chat is the way to the other one. A saved chat reopens on the path matching the mode it ran in.
 
 Configure **Search provider/model**, **Deep search languages**, and **Search context window** in Settings.
 
 ## Chat sessions
 
-Deep Search (`/search`, `/research`) and a document's **Ask AI** page (`/document/<id>/ask`) both save their conversations. Each page lists past chats in a sidebar, gives the open one its own URL (`/search/<chatId>`, `/research/<chatId>`, `/document/<id>/ask/<chatId>`), and lets you rename or delete a chat. One sidebar covers both Deep Search modes: a chat is listed whichever mode you are in, and opens on its own mode's path.
+Deep Search (`/rag/search`, `/rag/research`) and a document's **Ask AI** page (`/document/<id>/ask`) both save their conversations. Each page lists past chats in a sidebar, gives the open one its own URL (`/rag/search/<chatId>`, `/rag/research/<chatId>`, `/document/<id>/ask/<chatId>`), and lets you rename or delete a chat. One sidebar covers both Deep Search modes: a chat is listed whichever mode you are in, and opens on its own mode's path.
 
 The server owns the transcript. A request carries a session id and one new message — `POST /api/app/search` with `{"session_id": "...", "content": "...", "mode": "search|research"}`, `POST /api/app/documents/<id>/chat` with `{"session_id": "...", "content": "..."}` — and the history is read back from the database rather than replayed by the browser. An omitted `session_id` starts a new chat, titled after its first message.
 

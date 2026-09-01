@@ -42,12 +42,17 @@ type TurnExtras = {
   incomplete: boolean
 }
 
-const modes: { value: SearchMode; label: string; to: '/search' | '/research'; hint: string }[] = [
-  { value: 'search', label: 'Search', to: '/search', hint: 'Find documents and list them.' },
+const modes: {
+  value: SearchMode
+  label: string
+  to: '/rag/search' | '/rag/research'
+  hint: string
+}[] = [
+  { value: 'search', label: 'Search', to: '/rag/search', hint: 'Find documents and list them.' },
   {
     value: 'research',
     label: 'Research',
-    to: '/research',
+    to: '/rag/research',
     hint: 'Read the documents and answer, with citations.',
   },
 ]
@@ -64,21 +69,21 @@ const examples: Record<SearchMode, string> = {
 
 export function SearchPage() {
   const navigate = useNavigate()
-  // The mode is the path: /search lists documents, /research reads them and
-  // answers. Both render this page, so a reload, a bookmark and a shared link
-  // all carry the mode with them, and there is no state to keep in step.
+  // The mode is the path: /rag/search lists documents, /rag/research reads them
+  // and answers. Both render this page, so a reload, a bookmark and a shared
+  // link all carry the mode with them, and there is no state to keep in step.
   //
   // The session id lives on a child route, and a child's params are invisible
-  // to useParams from here — the closest match is /search, which has none.
+  // to useParams from here — the closest match is /rag/search, which has none.
   // matchRoute also hands back a fresh object each render, so the id is
   // destructured out before anything depends on it.
   const matchRoute = useMatchRoute()
-  const research = Boolean(matchRoute({ to: '/research', fuzzy: true }))
+  const research = Boolean(matchRoute({ to: '/rag/research', fuzzy: true }))
   const mode: SearchMode = research ? 'research' : 'search'
-  const basePath = research ? '/research' : '/search'
+  const basePath = research ? '/rag/research' : '/rag/search'
   const sessionMatch = research
-    ? matchRoute({ to: '/research/$sessionId' })
-    : matchRoute({ to: '/search/$sessionId' })
+    ? matchRoute({ to: '/rag/research/$sessionId' })
+    : matchRoute({ to: '/rag/search/$sessionId' })
   const sessionId = sessionMatch ? (sessionMatch.sessionId as string) : undefined
 
   const [railOpen, setRailOpen] = useState(false)
@@ -224,6 +229,10 @@ export function SearchPage() {
 
   const rows = mergeChatSession(sessions.data ?? [], justSettled)
   const active = modes.find((item) => item.value === mode) ?? modes[0]
+  // A chat is locked to its mode from the moment it has one turn — including
+  // the turn still in flight, whose request already carries the mode it was
+  // sent under.
+  const locked = Boolean(sessionId) || chat.sending
 
   // A chat opens in the mode its last turn ran in, which is also the path it
   // lives on: continuing a research conversation as a plain search would answer
@@ -231,7 +240,7 @@ export function SearchPage() {
   function openSession(session: ChatSession) {
     setRailOpen(false)
     void navigate({
-      to: session.mode === 'research' ? '/research/$sessionId' : '/search/$sessionId',
+      to: session.mode === 'research' ? '/rag/research/$sessionId' : '/rag/search/$sessionId',
       params: { sessionId: session.id },
     })
   }
@@ -284,30 +293,21 @@ export function SearchPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">Deep Search</h2>
-          <p className="text-sm text-ink-soft">{active.hint} Chats are saved.</p>
+          <p className="text-sm text-ink-soft">
+            {active.hint}{' '}
+            {locked ? 'A chat stays in the mode it started in.' : 'Chats are saved.'}
+          </p>
         </div>
-        {/* Links, not a radiogroup: each mode is a path now, so these navigate.
-            That is also what makes them work with the back button, a bookmark
-            and an open-in-new-tab. The open chat rides along, so switching mode
-            mid-conversation continues it rather than abandoning it. */}
-        <nav
-          aria-label="Search mode"
-          className="flex rounded-xs border border-line bg-surface p-1"
-        >
-          {modes.map((item) => (
-            <Link
-              key={item.value}
-              to={sessionId ? `${item.to}/$sessionId` : item.to}
-              params={sessionId ? { sessionId } : {}}
-              aria-current={mode === item.value ? 'page' : undefined}
-              className={`px-3 py-1.5 text-sm transition-colors ${
-                mode === item.value ? 'bg-ink text-paper' : 'text-ink-muted hover:text-ink'
-              }`}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        {/* Links, not a radiogroup: each mode is a path, so these navigate —
+            which is also what makes the back button, a bookmark and an
+            open-in-new-tab work on them.
+
+            They stop being links once the chat exists. A transcript is a
+            sequence: its answers were produced by one mode, and the next turn
+            reads them back to the model as its own prior work. Switching
+            underneath that would answer a later question in a way the earlier
+            ones do not support, so the way to the other mode is a new chat. */}
+        <ModeSwitch mode={mode} locked={locked} />
       </div>
 
       <Button
@@ -501,6 +501,53 @@ function StepList({ steps, collapsed = false }: { steps: ResearchStep[]; collaps
       </summary>
       <div className="mt-1">{list}</div>
     </details>
+  )
+}
+
+/**
+ * The two modes, as the two paths they are — or, once the chat is under way,
+ * as a plain statement of which one it is in.
+ */
+function ModeSwitch({ mode, locked }: { mode: SearchMode; locked: boolean }) {
+  const className = (item: (typeof modes)[number]) =>
+    `px-3 py-1.5 text-sm transition-colors ${
+      mode === item.value ? 'bg-ink text-paper' : 'text-ink-muted'
+    }`
+
+  if (locked) {
+    return (
+      <div
+        role="group"
+        aria-label="Search mode"
+        title="A chat stays in the mode it started in. Start a new chat to switch."
+        className="flex rounded-xs border border-line bg-surface p-1"
+      >
+        {modes.map((item) => (
+          <span
+            key={item.value}
+            aria-current={mode === item.value ? 'true' : undefined}
+            className={`${className(item)} ${mode === item.value ? '' : 'opacity-40'}`}
+          >
+            {item.label}
+          </span>
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <nav aria-label="Search mode" className="flex rounded-xs border border-line bg-surface p-1">
+      {modes.map((item) => (
+        <Link
+          key={item.value}
+          to={item.to}
+          aria-current={mode === item.value ? 'page' : undefined}
+          className={`${className(item)} ${mode === item.value ? '' : 'hover:text-ink'}`}
+        >
+          {item.label}
+        </Link>
+      ))}
+    </nav>
   )
 }
 
