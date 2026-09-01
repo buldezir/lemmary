@@ -3,6 +3,7 @@ package appapi
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/strutil"
@@ -106,9 +107,40 @@ func TestReadUserDocumentsDividesTheBudget(t *testing.T) {
 		}
 		total += len(doc.Text)
 	}
-	// The ellipsis TruncateRunes appends is the only overshoot allowed.
-	if total > 4000+2*len(strutil.Ellipsis) {
-		t.Fatalf("read %d chars, over the 4000 budget", total)
+	if total > 4000 {
+		t.Fatalf("read %d bytes, over the 4000 budget", total)
+	}
+}
+
+// TestReadUserDocumentsBudgetsMultibyteTextInBytes is the same test with text
+// the ASCII one cannot catch. The budget the research loop hands down counts
+// bytes -- len() everywhere in contextBudget -- so truncating to that number of
+// *runes* returned twice the bytes for Cyrillic, and the reader silently
+// overspent the window that had just been reserved for it.
+func TestReadUserDocumentsBudgetsMultibyteTextInBytes(t *testing.T) {
+	// Two bytes per rune.
+	long := strings.Repeat("а", 50000)
+	app := stubDocuments{recs: map[string]*core.Record{
+		"a": readableDocument("a", "me", "A", long),
+		"b": readableDocument("b", "me", "B", long),
+	}}
+
+	got, err := readUserDocuments(app, "me", []string{"a", "b"}, 4000)
+	if err != nil {
+		t.Fatalf("readUserDocuments: %v", err)
+	}
+	total := 0
+	for _, doc := range got {
+		total += len(doc.Text)
+		if !utf8.ValidString(doc.Text) {
+			t.Fatalf("%s was cut mid-rune", doc.ID)
+		}
+	}
+	if total > 4000 {
+		t.Fatalf("read %d bytes, over the 4000 budget", total)
+	}
+	if total == 0 {
+		t.Fatal("nothing was read at all")
 	}
 }
 

@@ -31,6 +31,9 @@ type searchRequest struct {
 type searchResponse struct {
 	Message   ai.ChatMessage   `json:"message"`
 	Documents []ai.DocumentHit `json:"documents"`
+	// Set when a research answer was cut off mid-generation; see
+	// ai.ResearchResult.Incomplete.
+	Incomplete bool `json:"incomplete,omitempty"`
 }
 
 func isResearchMode(mode string) bool {
@@ -93,6 +96,7 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 		// loop instead of leaving several LLM round-trips running.
 		var reply string
 		var hits []ai.DocumentHit
+		incomplete := false
 		if isResearchMode(req.Mode) {
 			// Non-streaming fallback for clients that cannot read SSE.
 			result, researchErr := agent.Research(e.Request.Context(), ai.ResearchRequest{
@@ -101,7 +105,7 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 				Search:        tools.search,
 				Read:          tools.read,
 			}, nil)
-			reply, hits, err = result.Reply, result.Documents, researchErr
+			reply, hits, incomplete, err = result.Reply, result.Documents, result.Incomplete, researchErr
 		} else {
 			reply, hits, err = agent.Search(e.Request.Context(), req.Messages, tools.tags, tools.search)
 		}
@@ -118,7 +122,8 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 				Role:    "assistant",
 				Content: reply,
 			},
-			Documents: hits,
+			Documents:  hits,
+			Incomplete: incomplete,
 		})
 	}
 }
@@ -135,6 +140,13 @@ func handleResearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index)
 		if len(req.Messages) == 0 {
 			return writeError(e, http.StatusBadRequest, "At least one message is required.")
 		}
+		// This endpoint only ever researches, and research is the expensive
+		// mode. Without this, a client that omitted the field — or sent a
+		// legacy "deep" — would get a full research run out of what it thought
+		// was a plain search.
+		if !isResearchMode(req.Mode) {
+			return writeError(e, http.StatusBadRequest, `This endpoint streams research; send mode "research" or use /api/app/search.`)
+		}
 
 		agent := rt.Snapshot().SearchAgent
 		if agent == nil {
@@ -150,6 +162,10 @@ func handleResearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index)
 		// Everything below is streamed, so errors are reported as events —
 		// the status line has already been written by this point.
 		stream := newSSEWriter(e)
+		// Every model completion is a silent gap on this connection, and the
+		// first one comes before any step event. Stopped before returning.
+		stopHeartbeat := stream.Heartbeat(e.Request.Context())
+		defer stopHeartbeat()
 
 		result, err := agent.Research(e.Request.Context(), ai.ResearchRequest{
 			Messages:      req.Messages,
@@ -175,9 +191,15 @@ func handleResearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index)
 		}
 		stream.Send(ai.ResearchEvent{Type: "documents", Documents: documents})
 		// The whole answer follows the deltas: the deltas are a live preview,
-		// this is the authoritative text (citation-checked, and complete even
-		// if the upstream stream was cut short).
-		stream.Send(ai.ResearchEvent{Type: "message", Content: result.Reply})
+		// this is the authoritative text (citation-checked). Incomplete says
+		// whether it is the whole answer — a generation that outran the request
+		// timeout is kept, not discarded, but the client has to be able to tell
+		// the difference and say so.
+		stream.Send(ai.ResearchEvent{
+			Type:       "message",
+			Content:    result.Reply,
+			Incomplete: result.Incomplete,
+		})
 		stream.Send(ai.ResearchEvent{Type: "done"})
 		return nil
 	}

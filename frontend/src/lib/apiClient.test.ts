@@ -31,7 +31,12 @@ describe('createSSEParser', () => {
   })
 
   it('ignores comments, blank frames and non-data lines', () => {
-    expect(collect([': keep-alive\n\ndata: {"type":"done"}\n\n'])).toEqual(['{"type":"done"}'])
+    // ": ping" is what the research stream sends while a model completion is in
+    // flight, so an idle-timeout proxy does not drop the connection. It is not
+    // an event and must never reach onEvent.
+    expect(collect([': keep-alive\n\n: ping\n\ndata: {"type":"done"}\n\n'])).toEqual([
+      '{"type":"done"}',
+    ])
   })
 
   it('reads every data line of a multi-line frame', () => {

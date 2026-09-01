@@ -22,6 +22,8 @@ type SearchTurn = {
   /** Cards, for search mode. Research answers link to documents inline instead. */
   documents?: SearchDocumentHit[]
   steps?: ResearchStep[]
+  /** The generation was cut short; the text is real but not the whole answer. */
+  incomplete?: boolean
 }
 
 const modes: { value: SearchMode; label: string; hint: string }[] = [
@@ -52,10 +54,20 @@ export function SearchPage() {
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  // A research run outlives an unmount unless it is cancelled: the fetch keeps
+  // the stream open, the server keeps calling the provider, and coming back to
+  // this page would start a second run alongside the first.
+  const runRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [turns, sending, steps, draft])
+
+  useEffect(() => () => runRef.current?.abort(), [])
+
+  function cancel() {
+    runRef.current?.abort()
+  }
 
   async function send() {
     const text = input.trim()
@@ -66,6 +78,9 @@ export function SearchPage() {
     const userMessage: ChatMessage = { role: 'user', content: text }
     const history: ChatMessage[] = [...turns.map((turn) => turn.message), userMessage]
 
+    const run = new AbortController()
+    runRef.current = run
+
     try {
       setSending(true)
       setInput('')
@@ -75,7 +90,7 @@ export function SearchPage() {
       setTurns((current) => [...current, { message: userMessage }])
 
       if (mode === 'research') {
-        await runResearch(history)
+        await runResearch(history, run.signal)
       } else {
         const result = await deepSearch(history, 'search')
         setTurns((current) => [
@@ -84,45 +99,58 @@ export function SearchPage() {
         ])
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to run search')
+      // Cancelling is not a failure, and the component may already be gone:
+      // drop the pending turn quietly and say nothing.
+      if (!run.signal.aborted) {
+        setError(err instanceof Error ? err.message : 'Failed to run search')
+      }
       setTurns((current) => current.slice(0, -1))
       setInput(text)
     } finally {
+      if (runRef.current === run) {
+        runRef.current = null
+      }
       setSending(false)
       setSteps([])
       setDraft('')
     }
   }
 
-  async function runResearch(history: ChatMessage[]) {
+  async function runResearch(history: ChatMessage[], signal: AbortSignal) {
     // Collected outside React state as well: the final turn is assembled from
     // these, and state updates are not readable synchronously.
     const collected: ResearchStep[] = []
     let answer = ''
     let streamError = ''
+    let incomplete = false
 
-    await researchStream(history, (event) => {
-      switch (event.type) {
-        case 'step': {
-          applyStep(collected, event)
-          setSteps([...collected])
-          break
+    await researchStream(
+      history,
+      (event) => {
+        switch (event.type) {
+          case 'step': {
+            applyStep(collected, event)
+            setSteps([...collected])
+            break
+          }
+          case 'delta':
+            answer += event.content
+            setDraft(answer)
+            break
+          case 'message':
+            answer = event.content
+            incomplete = event.incomplete ?? false
+            setDraft(answer)
+            break
+          case 'error':
+            streamError = event.message
+            break
+          default:
+            break
         }
-        case 'delta':
-          answer += event.content
-          setDraft(answer)
-          break
-        case 'message':
-          answer = event.content
-          setDraft(answer)
-          break
-        case 'error':
-          streamError = event.message
-          break
-        default:
-          break
-      }
-    })
+      },
+      signal,
+    )
 
     if (streamError) {
       throw new Error(streamError)
@@ -132,6 +160,7 @@ export function SearchPage() {
       {
         message: { role: 'assistant', content: answer },
         steps: collected.map((step) => ({ ...step, done: true })),
+        incomplete,
       },
     ])
   }
@@ -200,6 +229,7 @@ export function SearchPage() {
                   ) : (
                     <MarkdownContent content={turn.message.content} />
                   )}
+                  {turn.incomplete && <IncompleteNotice />}
                 </div>
               </div>
               {turn.documents && turn.documents.length > 0 && (
@@ -253,6 +283,13 @@ export function SearchPage() {
             <Button type="submit" disabled={sending || !input.trim()}>
               {sending ? (mode === 'research' ? 'Researching...' : 'Searching...') : active.label}
             </Button>
+            {sending && mode === 'research' && (
+              // A research run is bounded only by the context window, so there
+              // has to be a way out of one that is taking too long.
+              <Button type="button" variant="secondary" onClick={cancel}>
+                Cancel
+              </Button>
+            )}
           </div>
           {error && <p className="mt-2 text-sm text-madder">{error}</p>}
         </form>
@@ -305,6 +342,19 @@ function doneLabel(event: Extract<ResearchEvent, { type: 'step' }>, fallback?: s
     default:
       return 'Answer written'
   }
+}
+
+/**
+ * Shown under an answer whose generation was cut off. The text above it is
+ * real as far as it goes, which is exactly why it needs saying: a partial
+ * answer reads like a complete one.
+ */
+function IncompleteNotice() {
+  return (
+    <p className="mt-2 border-t border-line pt-2 text-xs text-ink-muted">
+      This answer was cut off before it finished. Ask again to get the rest.
+    </p>
+  )
 }
 
 function StepList({ steps, collapsed = false }: { steps: ResearchStep[]; collapsed?: boolean }) {

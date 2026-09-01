@@ -12,8 +12,6 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
-
-	"lemmary/backend/internal/strutil"
 )
 
 const (
@@ -61,6 +59,10 @@ type ResearchRequest struct {
 type ResearchResult struct {
 	Reply     string
 	Documents []DocumentHit
+	// Incomplete marks an answer that was cut off mid-generation and kept
+	// anyway. The text is real as far as it goes, but it is not the whole
+	// answer, and a caller must not present it as one.
+	Incomplete bool
 }
 
 // ResearchEvent is one line of the run's visible progress. Types: "step",
@@ -76,6 +78,7 @@ type ResearchEvent struct {
 	Content        string        `json:"content,omitempty"`
 	Documents      []DocumentHit `json:"documents,omitempty"`
 	Message        string        `json:"message,omitempty"`
+	Incomplete     bool          `json:"incomplete,omitempty"`
 }
 
 type readDocumentsArgs struct {
@@ -229,7 +232,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 
 	emit(ResearchEvent{Type: "step", Kind: "answer", Status: "start"})
-	reply, err := a.answerResearch(ctx, apiMessages, emit)
+	reply, incomplete, err := a.answerResearch(ctx, apiMessages, emit)
 	if err != nil {
 		return ResearchResult{}, err
 	}
@@ -237,25 +240,37 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	reply = validateCitations(reply, state.seenIDs)
 	if strings.TrimSpace(reply) == "" {
 		reply = synthesizeSearchReply(state.hits)
+		// A synthesized list of hits is a complete answer of its own kind, and
+		// nothing of the cut-off text survives into it.
+		incomplete = false
 	}
 	emit(ResearchEvent{Type: "step", Kind: "answer", Status: "done", Count: len(state.read)})
 
-	return ResearchResult{Reply: reply, Documents: state.hits}, nil
+	return ResearchResult{Reply: reply, Documents: state.hits, Incomplete: incomplete}, nil
 }
 
 // answerResearch is the second phase: one completion with no tools declared, so
 // the model cannot emit tool markup and every chunk is safe to stream.
+// It returns the answer and whether it was cut short: the request timeout
+// covers the whole generation rather than the gap between chunks, so a long
+// answer can fail with most of it already delivered. Keeping that text is right
+// — it is better than nothing and the user has already watched it arrive — but
+// returning it as an ordinary success is not, because every caller then
+// presents a half-finished answer as the finished one.
 func (a *openAISearchAgent) answerResearch(
 	ctx context.Context,
 	apiMessages []openai.ChatCompletionMessageParamUnion,
 	emit func(ResearchEvent),
-) (string, error) {
+) (reply string, incomplete bool, err error) {
 	msgs := append([]openai.ChatCompletionMessageParamUnion{}, apiMessages...)
 	msgs = append(msgs, openai.UserMessage(researchAnswerInstruction))
 
 	params := openai.ChatCompletionNewParams{
-		Model:       shared.ChatModel(a.client.model),
-		Messages:    msgs,
+		Model:    shared.ChatModel(a.client.model),
+		Messages: msgs,
+		// The reserve the whole budget is computed against, made real: without
+		// it the answer is free to run past what was held back for it.
+		MaxTokens:   openai.Int(answerReserveTokens),
 		Temperature: CompletionTemperature(a.client.model, 0.2),
 	}
 
@@ -268,26 +283,27 @@ func (a *openAISearchAgent) answerResearch(
 
 	if err != nil {
 		if ctx.Err() != nil {
-			return "", ctx.Err()
+			return "", false, ctx.Err()
 		}
 		if emitted > 0 && strings.TrimSpace(content) != "" {
 			// Partial answer already on the wire; keep what arrived rather than
-			// replaying a second, different answer over it.
+			// replaying a second, different answer over it — but say that it is
+			// partial.
 			a.client.logger.Warn("research answer stream ended early",
 				"chars", len(content),
 				slog.Any("error", err),
 			)
-			return stripDSMLMarkup(strings.TrimSpace(content)), nil
+			return stripDSMLMarkup(strings.TrimSpace(content)), true, nil
 		}
 		a.client.logger.Warn("research answer stream failed; falling back to a blocking call",
 			slog.Any("error", err),
 		)
 		chatResp, fallbackErr := a.client.complete(ctx, params, "purpose", "research_answer_fallback")
 		if fallbackErr != nil {
-			return "", fmt.Errorf("openai research answer: %w", fallbackErr)
+			return "", false, fmt.Errorf("openai research answer: %w", fallbackErr)
 		}
 		if len(chatResp.Choices) == 0 {
-			return "", fmt.Errorf("openai returned no choices")
+			return "", false, fmt.Errorf("openai returned no choices")
 		}
 		content = chatResp.Choices[0].Message.Content
 	}
@@ -297,7 +313,7 @@ func (a *openAISearchAgent) answerResearch(
 		"streamed", emitted > 0,
 		"duration", time.Since(requestStart).Round(time.Millisecond),
 	)
-	return stripDSMLMarkup(strings.TrimSpace(content)), nil
+	return stripDSMLMarkup(strings.TrimSpace(content)), false, nil
 }
 
 // runResearchTool dispatches one tool call and reports whether it advanced the
@@ -369,15 +385,49 @@ func (a *openAISearchAgent) runSearchTool(
 		ContextLeftPct: state.budget.LeftPercent(),
 	})
 
-	payload, err := json.Marshal(map[string]any{
-		"count":              len(hits),
-		"documents":          hits,
-		"context_chars_left": state.budget.Remaining(),
-	})
+	content, err := encodeSearchResults(hits, state.budget.Remaining())
 	if err != nil {
 		return toolExecResult{ID: callID, Name: name, Content: `{"error":"failed to encode search results"}`}, false
 	}
-	return toolExecResult{ID: callID, Name: name, Content: truncateToolContent(string(payload), state.budget.Remaining())}, found > 0
+	return toolExecResult{ID: callID, Name: name, Content: content}, found > 0
+}
+
+// encodeSearchResults renders the hits as a tool result that fits the remaining
+// budget, dropping whole documents from the tail until it does.
+//
+// It never slices the encoded JSON: a byte-truncated payload is not JSON at
+// all, and near exhaustion — exactly when the model most needs to understand
+// its own situation — that was the common case. When not even one document
+// fits, the model gets the same structured "budget exhausted" answer the read
+// path has always given, so it stops gathering and answers instead.
+func encodeSearchResults(hits []DocumentHit, remaining int) (string, error) {
+	limit := maxToolResultBytes
+	if remaining < limit {
+		limit = remaining
+	}
+	if limit <= 0 {
+		return `{"error":"context budget exhausted","hint":"answer with what you have already found"}`, nil
+	}
+
+	for count := len(hits); count > 0; count-- {
+		payload := map[string]any{
+			"count":              count,
+			"documents":          hits[:count],
+			"context_chars_left": remaining,
+		}
+		if count < len(hits) {
+			payload["note"] = fmt.Sprintf(
+				"only the first %d of %d results fit the remaining context", count, len(hits))
+		}
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			return "", err
+		}
+		if len(encoded) <= limit {
+			return string(encoded), nil
+		}
+	}
+	return `{"error":"context budget exhausted","hint":"answer with what you have already found"}`, nil
 }
 
 func (a *openAISearchAgent) runReadTool(
@@ -498,17 +548,6 @@ func toolCallChars(calls []openai.ChatCompletionMessageToolCall) int {
 		total += len(call.Function.Name) + len(call.Function.Arguments)
 	}
 	return total
-}
-
-func truncateToolContent(content string, remaining int) string {
-	limit := maxToolResultBytes
-	if remaining > 0 && remaining < limit {
-		limit = remaining
-	}
-	if len(content) <= limit {
-		return content
-	}
-	return strutil.Truncate(content, limit) + strutil.Ellipsis
 }
 
 // decodeReadArgs accepts the documented {"ids": [...]} shape and the two forms

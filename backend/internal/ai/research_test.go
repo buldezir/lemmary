@@ -19,6 +19,9 @@ import (
 type scriptedTurn struct {
 	toolCalls []scriptedToolCall
 	content   string
+	// cutOff drops the connection part-way through the streamed answer, the way
+	// a request timeout does once the model has already started talking.
+	cutOff bool
 }
 
 type scriptedToolCall struct {
@@ -50,7 +53,7 @@ func (h *researchHarness) handler(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 
 	if stream, _ := body["stream"].(bool); stream {
-		writeChatStream(w, turn.content)
+		writeChatStream(w, turn.content, turn.cutOff)
 		return
 	}
 	writeToolCallJSON(w, turn)
@@ -92,14 +95,21 @@ func writeToolCallJSON(w http.ResponseWriter, turn scriptedTurn) {
 }
 
 // writeChatStream emits the answer as SSE chunks, one word at a time, the way
-// a real provider does.
-func writeChatStream(w http.ResponseWriter, content string) {
+// a real provider does. cutOff stops half way and drops the connection instead
+// of finishing, which is what a timeout mid-generation looks like to the client.
+func writeChatStream(w http.ResponseWriter, content string, cutOff bool) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.WriteHeader(http.StatusOK)
 	flusher, _ := w.(http.Flusher)
-	for i, word := range strings.SplitAfter(content, " ") {
+	words := strings.SplitAfter(content, " ")
+	for i, word := range words {
 		if word == "" {
 			continue
+		}
+		if cutOff && i >= len(words)/2 {
+			// Abort without the terminating frame: the client sees a broken
+			// stream, with everything before this already delivered.
+			panic(http.ErrAbortHandler)
 		}
 		chunk := map[string]any{
 			"id":      "chatcmpl-test",
@@ -414,4 +424,139 @@ func TestBuildResearchSystemPromptDemandsReadingBeforeClaiming(t *testing.T) {
 			t.Fatalf("research prompt missing %q: %s", want, prompt)
 		}
 	}
+}
+
+// TestResearchMarksACutOffAnswerIncomplete covers the failure that looks most
+// like success: the answer stream dies part-way through, tokens have already
+// reached the user, and the text kept is a fragment. Keeping it is right;
+// presenting it as the whole answer is not.
+func TestResearchMarksACutOffAnswerIncomplete(t *testing.T) {
+	t.Parallel()
+	_, agent := newResearchAgent(t, 128000,
+		scriptedTurn{toolCalls: []scriptedToolCall{{name: "search_documents", args: `{"query":"car insurance"}`}}},
+		scriptedTurn{content: "ready"},
+		scriptedTurn{content: "You paid 200 EUR in total, and the rest of this answer never arrives.", cutOff: true},
+	)
+
+	var events []ResearchEvent
+	result, err := agent.Research(context.Background(), ResearchRequest{
+		Messages: []ChatMessage{{Role: "user", Content: "how much did I pay?"}},
+		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
+			return hitsFor("doc1"), nil
+		},
+		Read: func(_ context.Context, _ []string, _ int) ([]DocumentContent, error) {
+			return nil, nil
+		},
+	}, func(e ResearchEvent) { events = append(events, e) })
+	if err != nil {
+		t.Fatalf("Research: %v", err)
+	}
+
+	if !result.Incomplete {
+		t.Fatalf("a cut-off answer was reported as complete: %q", result.Reply)
+	}
+	// The partial text is kept: the user watched it arrive, and replacing it
+	// with nothing would be worse than saying it is unfinished.
+	if !strings.Contains(result.Reply, "You paid") {
+		t.Fatalf("partial answer was discarded: %q", result.Reply)
+	}
+	var streamed strings.Builder
+	for _, e := range events {
+		if e.Type == "delta" {
+			streamed.WriteString(e.Content)
+		}
+	}
+	if streamed.Len() == 0 {
+		t.Fatal("no deltas reached the client before the cut")
+	}
+}
+
+// TestResearchAnswerCompletesNormally is the control for the test above: the
+// same path with an intact stream must not be flagged.
+func TestResearchAnswerCompletesNormally(t *testing.T) {
+	t.Parallel()
+	h, agent := newResearchAgent(t, 128000,
+		scriptedTurn{toolCalls: []scriptedToolCall{{name: "search_documents", args: `{"query":"car insurance"}`}}},
+		scriptedTurn{content: "ready"},
+		scriptedTurn{content: "You paid 200 EUR in total."},
+	)
+
+	result, err := agent.Research(context.Background(), ResearchRequest{
+		Messages: []ChatMessage{{Role: "user", Content: "how much did I pay?"}},
+		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
+			return hitsFor("doc1"), nil
+		},
+		Read: func(_ context.Context, _ []string, _ int) ([]DocumentContent, error) {
+			return nil, nil
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Research: %v", err)
+	}
+	if result.Incomplete {
+		t.Fatalf("a complete answer was flagged incomplete: %q", result.Reply)
+	}
+
+	// The answer phase caps itself at the reserve the budget was computed
+	// against, so the reserve is a real limit rather than only arithmetic.
+	last := h.request(h.requestCount() - 1)
+	maxTokens, ok := last["max_tokens"].(float64)
+	if !ok {
+		t.Fatalf("answer phase declared no max_tokens: %v", last)
+	}
+	if int(maxTokens) != answerReserveTokens {
+		t.Fatalf("max_tokens = %d, want the answer reserve %d", int(maxTokens), answerReserveTokens)
+	}
+}
+
+func TestEncodeSearchResultsRefusesAnExhaustedBudget(t *testing.T) {
+	t.Parallel()
+	// Zero remaining used to fall through to the 24KB cap, so the largest tool
+	// result of the run was appended exactly when there was no room for it --
+	// eating the answer reserve and failing the completion that follows.
+	for _, remaining := range []int{0, -1} {
+		content, err := encodeSearchResults(hitsFor("doc1", "doc2"), remaining)
+		if err != nil {
+			t.Fatalf("encodeSearchResults: %v", err)
+		}
+		if !strings.Contains(content, "budget exhausted") {
+			t.Fatalf("remaining %d produced a payload rather than a refusal: %s", remaining, content)
+		}
+		assertValidJSON(t, content)
+	}
+}
+
+func TestEncodeSearchResultsDropsDocumentsRatherThanSlicingJSON(t *testing.T) {
+	t.Parallel()
+	hits := hitsFor("doc1", "doc2", "doc3", "doc4", "doc5")
+	full, err := encodeSearchResults(hits, 100000)
+	if err != nil {
+		t.Fatalf("encodeSearchResults: %v", err)
+	}
+	assertValidJSON(t, full)
+
+	// A budget that fits some but not all of them. The old code byte-sliced the
+	// encoded JSON here and appended an ellipsis, so the model was handed
+	// something that was not JSON at all -- near exhaustion, the common case.
+	limit := len(full) / 2
+	partial, err := encodeSearchResults(hits, limit)
+	if err != nil {
+		t.Fatalf("encodeSearchResults: %v", err)
+	}
+	if len(partial) > limit {
+		t.Fatalf("payload of %d bytes exceeds the %d-byte budget", len(partial), limit)
+	}
+	decoded := assertValidJSON(t, partial)
+	if docs, ok := decoded["documents"].([]any); ok && len(docs) >= len(hits) {
+		t.Fatalf("nothing was dropped: %d documents in %d bytes", len(docs), len(partial))
+	}
+}
+
+func assertValidJSON(t *testing.T, content string) map[string]any {
+	t.Helper()
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(content), &decoded); err != nil {
+		t.Fatalf("tool result is not valid JSON (%v): %s", err, content)
+	}
+	return decoded
 }

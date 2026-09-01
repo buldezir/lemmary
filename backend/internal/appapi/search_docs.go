@@ -21,7 +21,8 @@ const (
 	snippetContext     = 80
 
 	// minReadCharsPerDocument keeps a read of many documents at once from
-	// returning slices too short to carry a figure and its label.
+	// returning slices too short to carry a figure and its label. Bytes, like
+	// the research budget it is spent against.
 	minReadCharsPerDocument = 500
 )
 
@@ -190,9 +191,14 @@ func readUserDocuments(app documentLookup, userID string, ids []string, maxTotal
 		if remaining := maxTotalChars - spent; limit > remaining {
 			limit = remaining
 		}
+		// Bytes, not runes: maxTotalChars comes from the research loop's
+		// budget, which counts len() everywhere. Truncating to `limit` *runes*
+		// hands back up to four times that many bytes — for Cyrillic or Greek
+		// OCR, reliably twice — so the reader would overshoot the window the
+		// caller had just reserved for it.
 		truncated := false
-		if utf8.RuneCountInString(text) > limit {
-			text = strutil.TruncateRunes(text, limit)
+		if len(text) > limit {
+			text = strutil.Truncate(text, limit)
 			truncated = true
 		}
 		spent += len(text)

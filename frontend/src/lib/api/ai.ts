@@ -67,15 +67,16 @@ export type ResearchEvent =
     }
   | { type: 'delta'; content: string }
   | { type: 'documents'; documents?: SearchDocumentHit[] }
-  | { type: 'message'; content: string }
+  | { type: 'message'; content: string; incomplete?: boolean }
   | { type: 'error'; message: string }
   | { type: 'done' }
 
 /**
  * Runs a research turn, reporting each step as it happens. The answer arrives
  * twice: as `delta` events for a live preview, then as one `message` event with
- * the authoritative text — citation-checked, and complete even when the
- * upstream stream was cut short.
+ * the authoritative, citation-checked text. That event's `incomplete` says
+ * whether the generation was cut short — the text is kept either way, but a
+ * partial answer must not be shown as a finished one.
  */
 export async function researchStream(
   messages: ChatMessage[],

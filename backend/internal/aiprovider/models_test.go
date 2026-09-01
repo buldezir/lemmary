@@ -221,6 +221,8 @@ func TestParseModelsResponseReadsContextWindow(t *testing.T) {
 	models, err := parseModelsResponse([]byte(`{"data":[
 		{"id":"openrouter","context_length":200000},
 		{"id":"openrouter-detail","top_provider":{"context_length":131072}},
+		{"id":"openrouter-both","context_length":200000,"top_provider":{"context_length":131072}},
+		{"id":"openrouter-both-reversed","context_length":131072,"top_provider":{"context_length":200000}},
 		{"id":"mistral","max_context_length":32768},
 		{"id":"openai"}
 	]}`))
@@ -231,8 +233,15 @@ func TestParseModelsResponseReadsContextWindow(t *testing.T) {
 	want := map[string]int{
 		"openrouter":        200000,
 		"openrouter-detail": 131072,
-		"mistral":           32768,
-		"openai":            0,
+		// Both keys on one model is the normal OpenRouter listing shape, and
+		// the smaller number wins whichever field carries it: top_provider is
+		// the window of the provider a request is actually routed to, and
+		// research spends this number until it is gone. Advertising the model
+		// maximum here means the completion is rejected mid-run.
+		"openrouter-both":          131072,
+		"openrouter-both-reversed": 131072,
+		"mistral":                  32768,
+		"openai":                   0,
 	}
 	if len(models) != len(want) {
 		t.Fatalf("models = %d, want %d", len(models), len(want))
@@ -254,5 +263,28 @@ func TestPickContextWindowTakesTheFirstPositiveValue(t *testing.T) {
 	}
 	if got := pickContextWindow(0, 0); got != 0 {
 		t.Fatalf("got %d, want 0 for an unreported window", got)
+	}
+}
+
+func TestSmallestContextWindowIgnoresMissingValues(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		values []int
+		want   int
+	}{
+		{"both positive", []int{200000, 131072}, 131072},
+		{"either order", []int{131072, 200000}, 131072},
+		{"only one reported", []int{0, 131072}, 131072},
+		{"only the other", []int{131072, 0}, 131072},
+		{"none reported", []int{0, 0}, 0},
+		{"negative is not a window", []int{-1, 8192}, 8192},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := smallestContextWindow(tc.values...); got != tc.want {
+				t.Fatalf("smallestContextWindow(%v) = %d, want %d", tc.values, got, tc.want)
+			}
+		})
 	}
 }

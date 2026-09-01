@@ -134,6 +134,23 @@ func modelContains(m Model, needle string) bool {
 
 // pickContextWindow takes the first positive value: providers report the window
 // under different keys and only ever populate one of them.
+// smallestContextWindow returns the smallest positive value, or 0 when none is
+// positive. Unlike pickContextWindow, which chooses between alternative
+// spellings of one number, this reconciles two numbers that can genuinely
+// differ.
+func smallestContextWindow(values ...int) int {
+	best := 0
+	for _, v := range values {
+		if v <= 0 {
+			continue
+		}
+		if best == 0 || v < best {
+			best = v
+		}
+	}
+	return best
+}
+
 func pickContextWindow(values ...int) int {
 	for _, v := range values {
 		if v > 0 {
@@ -200,9 +217,16 @@ func modelsFromRaw(raw []json.RawMessage) []Model {
 		if name == "" {
 			name = id
 		}
+		// context_length and max_context_length are the same number under two
+		// spellings (OpenRouter, Mistral), so the first positive one wins.
 		contextWindow := pickContextWindow(row.ContextLength, row.MaxContextLength)
 		if row.TopProvider != nil {
-			contextWindow = pickContextWindow(contextWindow, row.TopProvider.ContextLength)
+			// top_provider.context_length is different in kind: the window of
+			// the provider a request is actually routed to, which can be
+			// smaller than the model's advertised maximum. Research spends this
+			// number, so the smaller one is the only safe answer -- overshooting
+			// it means the completion is rejected mid-run.
+			contextWindow = smallestContextWindow(contextWindow, row.TopProvider.ContextLength)
 		}
 
 		m := Model{ID: id, Name: name, ContextWindow: contextWindow}
