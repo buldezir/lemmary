@@ -19,8 +19,8 @@ export type ChatSession = {
   id: string
   kind: ChatSessionKind
   title: string
-  /** The mode the last search turn ran in; absent for document chats. */
-  mode?: 'shallow' | 'deep'
+  /** The mode the last search turn ran in; absent for document chats. Mirrors SearchMode. */
+  mode?: 'search' | 'research'
   /** Set only for kind === 'document'. */
   document?: string
   document_title?: string

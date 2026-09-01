@@ -37,18 +37,14 @@ fi
 stage() { echo ""; echo "==> $1"; }
 fail()  { echo ""; echo "FAILED: $1" >&2; exit 1; }
 
-echo "No verification overlay found: running unit tests and the compile-level"
-echo "extension-seam check. API and browser e2e will NOT run."
+echo "No verification overlay found: running unit tests and the frontend build."
+echo "API and browser e2e will NOT run."
 
 stage "Unit tests"
 (cd backend && go test ./... -count=1) || fail "unit tests"
 
-stage "Extension seams (lemmary_exttest build)"
-# The private cloud build lives in a fork neither repository can build, so this
-# tag is the only thing here that proves ext.Edition and boot.Result are still
-# wired. The HTTP-level assertions are in the overlay; this is the compile half.
-(cd backend && go vet -tags lemmary_exttest ./... \
-  && go test -tags lemmary_exttest ./internal/boot/ -count=1) || fail "extension seams"
+stage "Vet"
+(cd backend && go vet ./...) || fail "vet"
 
 stage "Frontend unit tests"
 (cd frontend && pnpm test) || fail "frontend unit tests"

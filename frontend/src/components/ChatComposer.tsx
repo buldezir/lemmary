@@ -13,6 +13,11 @@ type ChatComposerProps = {
   disabled?: boolean
   error?: string
   autoFocus?: boolean
+  /**
+   * Offers a Cancel button while a reply is in flight. Only for a send with no
+   * useful upper bound on how long it can run.
+   */
+  onCancel?: () => void
 }
 
 export function ChatComposer({
@@ -26,6 +31,7 @@ export function ChatComposer({
   disabled = false,
   error,
   autoFocus = false,
+  onCancel,
 }: ChatComposerProps) {
   function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -53,6 +59,11 @@ export function ChatComposer({
         <Button type="submit" disabled={sending || disabled || !value.trim()}>
           {sending ? sendingLabel : submitLabel}
         </Button>
+        {sending && onCancel && (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
       </div>
       {error && <p className="mt-2 text-sm text-madder">{error}</p>}
     </form>

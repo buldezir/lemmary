@@ -23,6 +23,7 @@ type settingsResponse struct {
 	OCRTimeoutSec                 int     `json:"ocr_timeout_sec"`
 	ProcessingResultLanguage      string  `json:"processing_result_language"`
 	DeepSearchLanguages           string  `json:"deep_search_languages"`
+	SearchContextTokens           int     `json:"search_context_tokens"`
 	OpenAITimeoutSec              int     `json:"openai_timeout_sec"`
 	WorkerTimeoutSec              int     `json:"worker_timeout_sec"`
 	WorkerMaxRetries              int     `json:"worker_max_retries"`
@@ -43,6 +44,7 @@ type settingsPatchRequest struct {
 	OCRTimeoutSec                 *int     `json:"ocr_timeout_sec"`
 	ProcessingResultLanguage      *string  `json:"processing_result_language"`
 	DeepSearchLanguages           *string  `json:"deep_search_languages"`
+	SearchContextTokens           *int     `json:"search_context_tokens"`
 	OpenAITimeoutSec              *int     `json:"openai_timeout_sec"`
 	WorkerTimeoutSec              *int     `json:"worker_timeout_sec"`
 	WorkerMaxRetries              *int     `json:"worker_max_retries"`
@@ -51,9 +53,25 @@ type settingsPatchRequest struct {
 	NearDuplicateThreshold        *float64 `json:"near_duplicate_threshold"`
 }
 
+// touchesManaged is true for the same fields ApplyManaged rewrites. Timeouts,
+// retries, languages and the prompt version are tenant-owned; see AIEnv.
+func (r settingsPatchRequest) touchesManaged() bool {
+	return r.OCRProviderID != nil ||
+		r.OCRModel != nil ||
+		r.ExtractProviderID != nil ||
+		r.ExtractModel != nil ||
+		r.ChatProviderID != nil ||
+		r.ChatModel != nil ||
+		r.SearchProviderID != nil ||
+		r.SearchModel != nil ||
+		r.SearchContextTokens != nil ||
+		r.NearDuplicateDetectionEnabled != nil ||
+		r.NearDuplicateThreshold != nil
+}
+
 func handleGetSettings(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		if err := config.EnsureDefaults(app); err != nil {
+		if err := config.EnsureDefaults(app, rt.Env()); err != nil {
 			app.Logger().Warn("ensure settings before GET failed", "error", err)
 		}
 		// No reload here: the runtime is rebuilt by the app_settings/ai_providers
@@ -68,13 +86,16 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 		if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
 			return writeError(e, http.StatusBadRequest, "Invalid request body.")
 		}
+		if rt.Managed() && req.touchesManaged() {
+			return writeError(e, http.StatusForbidden, managedMessage)
+		}
 
 		// Load + patch + save in one transaction: settings is a singleton record
 		// saved whole, so two concurrent PATCHes would otherwise silently revert
 		// each other's fields.
 		var patchErr error
 		err := app.RunInTransaction(func(txApp core.App) error {
-			record, err := config.FindSettingsRecord(txApp)
+			record, err := config.FindSettingsRecord(txApp, rt.Env())
 			if err != nil {
 				return err
 			}
@@ -114,6 +135,7 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 		OCRTimeoutSec:                 int(cfg.OCRTimeout.Seconds()),
 		ProcessingResultLanguage:      cfg.ProcessingResultLanguage,
 		DeepSearchLanguages:           cfg.DeepSearchLanguages,
+		SearchContextTokens:           cfg.SearchContextTokens,
 		OpenAITimeoutSec:              int(cfg.OpenAITimeout.Seconds()),
 		WorkerTimeoutSec:              int(cfg.WorkerTimeout.Seconds()),
 		WorkerMaxRetries:              cfg.WorkerMaxRetries,
@@ -175,6 +197,12 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	}
 	if req.DeepSearchLanguages != nil {
 		record.Set("deep_search_languages", config.NormalizeLanguageList(*req.DeepSearchLanguages))
+	}
+	if req.SearchContextTokens != nil {
+		if *req.SearchContextTokens <= 0 {
+			return errInvalid("search_context_tokens must be positive")
+		}
+		record.Set("search_context_tokens", *req.SearchContextTokens)
 	}
 	if req.OpenAITimeoutSec != nil {
 		if *req.OpenAITimeoutSec <= 0 {

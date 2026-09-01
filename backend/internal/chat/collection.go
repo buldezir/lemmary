@@ -89,11 +89,11 @@ func ensureSessions(app core.App) (*core.Collection, error) {
 		},
 		&core.TextField{Name: "title", Max: MaxTitleColumnRunes},
 		// The mode the last turn ran in, so reopening a search session restores
-		// the Deep mode toggle. Empty for document chats.
+		// the Search/Research toggle. Empty for document chats.
 		&core.SelectField{
 			Name:      "mode",
 			MaxSelect: 1,
-			Values:    []string{ModeShallow, ModeDeep},
+			Values:    []string{ModeSearch, ModeResearch},
 		},
 		// Not Required: a NumberField's Required means non-zero, and a session
 		// legitimately holds 0 between its creation and its first turn inside

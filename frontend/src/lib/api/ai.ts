@@ -1,4 +1,4 @@
-import { apiFetch } from '../apiClient'
+import { apiFetch, apiStream } from '../apiClient'
 import type { ChatMessageRecord, ChatSession, SearchDocumentHit } from './chats'
 
 export type { SearchDocumentHit } from './chats'
@@ -9,22 +9,31 @@ export type ChatMessage = {
   content: string
 }
 
-export type SearchMode = 'shallow' | 'deep'
+/**
+ * `search` finds documents and lists them as cards. `research` reads the
+ * documents it finds and writes a cited answer — the only bound on it is the
+ * model's context window, so it can take a while and streams its progress.
+ */
+export type SearchMode = 'search' | 'research'
 
 /**
  * A turn the server answered.
  *
  * `session` is null when `saved` is false: the provider replied but the write
  * failed, so the answer is shown and the conversation is not resumable.
+ * `detail` then says why.
  */
 export type ChatTurnResult = {
   session: ChatSession | null
   message: ChatMessageRecord
   saved: boolean
+  detail?: string
 }
 
 export type DeepSearchResult = ChatTurnResult & {
   documents: SearchDocumentHit[]
+  /** The generation was cut short; the text is real but not the whole answer. */
+  incomplete?: boolean
 }
 
 type RawTurnResponse = {
@@ -32,6 +41,8 @@ type RawTurnResponse = {
   message?: ChatMessageRecord
   documents?: SearchDocumentHit[]
   saved?: boolean
+  detail?: string
+  incomplete?: boolean
 }
 
 export async function deepSearch(input: {
@@ -42,7 +53,7 @@ export async function deepSearch(input: {
   const data = await apiFetch<RawTurnResponse>('/api/app/search', {
     method: 'POST',
     body: { session_id: input.sessionId ?? '', content: input.content, mode: input.mode },
-    fallbackError: 'Failed to run deep search',
+    fallbackError: 'Failed to run search',
   })
   if (!data.message) {
     throw new Error('AI response was empty')
@@ -52,6 +63,8 @@ export async function deepSearch(input: {
     message: data.message,
     documents: data.documents ?? [],
     saved: data.saved ?? false,
+    detail: data.detail,
+    incomplete: data.incomplete,
   }
 }
 
@@ -75,5 +88,58 @@ export async function chatWithDocument(input: {
     session: data.session ?? null,
     message: data.message,
     saved: data.saved ?? false,
+    detail: data.detail,
   }
+}
+
+export type ResearchStepKind = 'search' | 'read' | 'answer'
+
+export type ResearchEvent =
+  | {
+      type: 'step'
+      kind: ResearchStepKind
+      status: 'start' | 'done'
+      query?: string
+      titles?: string[]
+      count?: number
+      context_left_pct?: number
+    }
+  | { type: 'delta'; content: string }
+  | { type: 'documents'; documents?: SearchDocumentHit[] }
+  | { type: 'message'; content: string; incomplete?: boolean }
+  // Closes a successful run with the stored turn, which is what makes the
+  // conversation resumable — the answer itself already arrived above.
+  | {
+      type: 'saved'
+      session: ChatSession | null
+      message: ChatMessageRecord
+      documents?: SearchDocumentHit[]
+      saved: boolean
+      detail?: string
+    }
+  | { type: 'error'; message: string }
+  | { type: 'done' }
+
+/**
+ * Runs a research turn, reporting each step as it happens. The answer arrives
+ * twice: as `delta` events for a live preview, then as one `message` event with
+ * the authoritative, citation-checked text. That event's `incomplete` says
+ * whether the generation was cut short — the text is kept either way, but a
+ * partial answer must not be shown as a finished one.
+ */
+export async function researchStream(
+  input: { sessionId?: string; content: string },
+  onEvent: (event: ResearchEvent) => void,
+  signal?: AbortSignal,
+) {
+  await apiStream<ResearchEvent>('/api/app/search/stream', {
+    body: {
+      session_id: input.sessionId ?? '',
+      content: input.content,
+      mode: 'research' satisfies SearchMode,
+    },
+    onEvent,
+    signal,
+    fallbackError: 'Failed to research your archive',
+  })
 }

@@ -13,6 +13,8 @@ export type ChatSendResult = {
   message: ChatMessageRecord
   documents?: SearchDocumentHit[]
   saved: boolean
+  /** Why the turn could not be stored, when `saved` is false. */
+  detail?: string
 }
 
 export type UseChatSessionOptions = {
@@ -37,6 +39,8 @@ export type UseChatSessionResult = {
   loadError: string
   /** True when a turn was answered but could not be stored. */
   unsaved: boolean
+  /** Why, when `unsaved` is true. */
+  unsavedDetail: string
   submit: () => Promise<void>
   /** Abandons an unsaved chat and starts a fresh one in place. */
   reset: () => void
@@ -64,6 +68,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
   const [error, setError] = useState('')
   const [loadError, setLoadError] = useState('')
   const [unsaved, setUnsaved] = useState(false)
+  const [unsavedDetail, setUnsavedDetail] = useState('')
 
   // The session id whose turns are currently in state; null for an unsaved
   // chat. Claimed synchronously on send, before the caller navigates.
@@ -76,8 +81,8 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
   const pendingIdRef = useRef(0)
 
   // Held in refs and refreshed each render, like useAsync's loadRef, so a
-  // caller can pass inline closures (which read live state such as the deep
-  // mode toggle) without them becoming effect dependencies.
+  // caller can pass inline closures (which read live state such as the
+  // Search/Research toggle) without them becoming effect dependencies.
   const loadRef = useRef(options.load)
   const sendRef = useRef(options.send)
   const settledRef = useRef(options.onSessionSettled)
@@ -114,6 +119,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
       setError('')
       setLoadError('')
       setUnsaved(false)
+      setUnsavedDetail('')
 
       if (!next) {
         setLoading(false)
@@ -166,6 +172,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     setInput('')
     setError('')
     setUnsaved(false)
+    setUnsavedDetail('')
     setTurns((current) => [...current, pending])
 
     try {
@@ -185,6 +192,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
       }
       setTurns((current) => [...current, toChatTurn(result.message, result.documents)])
       setUnsaved(!result.saved)
+      setUnsavedDetail(result.saved ? '' : (result.detail ?? ''))
 
       if (result.session) {
         settledRef.current?.(result.session, owner === null)
@@ -213,6 +221,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     setError('')
     setLoadError('')
     setUnsaved(false)
+    setUnsavedDetail('')
     setLoading(false)
   }, [])
 
@@ -226,6 +235,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     error,
     loadError,
     unsaved,
+    unsavedDetail,
     submit,
     reset,
   }

@@ -1,13 +1,19 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useMatchRoute, useNavigate } from '@tanstack/react-router'
 import { Button } from '../components/ui'
 import { ChatPanel } from '../components/ChatPanel'
 import { ChatTranscript } from '../components/ChatTranscript'
 import { ChatComposer } from '../components/ChatComposer'
 import { ChatSessionList } from '../components/ChatSessionList'
+import { MarkdownContent } from '../components/MarkdownContent'
 import { useAsync } from '../hooks/useAsync'
-import { useChatSession } from '../hooks/useChatSession'
-import { deepSearch } from '../lib/api/ai'
+import { useChatSession, type ChatSendResult } from '../hooks/useChatSession'
+import {
+  deepSearch,
+  researchStream,
+  type ResearchEvent,
+  type SearchMode,
+} from '../lib/api/ai'
 import {
   deleteChatSession,
   getChatSession,
@@ -19,6 +25,42 @@ import {
   type SearchDocumentHit,
 } from '../lib/api/chats'
 
+type ResearchStep = {
+  kind: 'search' | 'read' | 'answer'
+  label: string
+  done: boolean
+}
+
+/**
+ * What a research run produced beyond its text. Neither is stored with the
+ * turn — the steps are a record of this run, and `incomplete` describes this
+ * generation rather than the answer — so both are kept in memory, keyed by the
+ * stored message, and are gone when the chat is reopened.
+ */
+type TurnExtras = {
+  steps: ResearchStep[]
+  incomplete: boolean
+}
+
+const modes: { value: SearchMode; label: string; hint: string }[] = [
+  { value: 'search', label: 'Search', hint: 'Find documents and list them.' },
+  {
+    value: 'research',
+    label: 'Research',
+    hint: 'Read the documents and answer, with citations.',
+  },
+]
+
+const placeholders: Record<SearchMode, string> = {
+  search: 'Describe what you are looking for...',
+  research: 'Ask a question about your documents...',
+}
+
+const examples: Record<SearchMode, string> = {
+  search: 'plumber invoice from last summer about the leak',
+  research: 'how much did I spend on the car in 2024?',
+}
+
 export function SearchPage() {
   const navigate = useNavigate()
   // The session id lives on a child route, and a child's params are invisible
@@ -29,13 +71,27 @@ export function SearchPage() {
   const sessionMatch = matchRoute({ to: '/search/$sessionId' })
   const sessionId = sessionMatch ? (sessionMatch.sessionId as string) : undefined
 
-  const [deepMode, setDeepMode] = useState(false)
+  // The mode the user picked, remembered against the conversation it was picked
+  // for. Reopening a chat then falls through to the mode its last turn ran in,
+  // so continuing it does not silently switch between listing documents and
+  // answering about them -- and switching conversations drops the pick with no
+  // effect to reset it.
+  const [picked, setPicked] = useState<{ sessionId?: string; mode: SearchMode } | null>(null)
   const [railOpen, setRailOpen] = useState(false)
   const [justSettled, setJustSettled] = useState<ChatSession | null>(null)
   const [railBusy, setRailBusy] = useState(false)
   const [railError, setRailError] = useState('')
+  // Live progress of a research run, cleared when it ends.
+  const [steps, setSteps] = useState<ResearchStep[]>([])
+  const [draft, setDraft] = useState('')
+  const [extras, setExtras] = useState<Record<string, TurnExtras>>({})
+  // A research run outlives an unmount unless it is cancelled: the fetch keeps
+  // the stream open and the server keeps calling the provider.
+  const runRef = useRef<AbortController | null>(null)
 
   const sessions = useAsync(() => listChatSessions({ kind: 'search' }), [])
+
+  useEffect(() => () => runRef.current?.abort(), [])
 
   const onSessionSettled = useCallback(
     (session: ChatSession, created: boolean) => {
@@ -57,15 +113,117 @@ export function SearchPage() {
     [navigate, sessions],
   )
 
+  /**
+   * Runs a research turn as a stream, resolving with the stored turn so the
+   * conversation hook treats it like any other send. The steps and the streamed
+   * draft are this page's own state — they belong to a run in progress, not to
+   * the transcript.
+   */
+  const runResearch = useCallback(
+    async (id: string | undefined, content: string): Promise<ChatSendResult> => {
+      const run = new AbortController()
+      runRef.current = run
+
+      // Collected outside React state as well: the finished turn is assembled
+      // from these, and state updates are not readable synchronously.
+      const collected: ResearchStep[] = []
+      let answer = ''
+      let streamError = ''
+      let incomplete = false
+      // In a box rather than a plain `let`: TypeScript cannot see an assignment
+      // made inside the stream callback and would narrow the variable to null.
+      const box: { stored: Extract<ResearchEvent, { type: 'saved' }> | null } = { stored: null }
+
+      try {
+        await researchStream(
+          { sessionId: id, content },
+          (event) => {
+            switch (event.type) {
+              case 'step':
+                applyStep(collected, event)
+                setSteps([...collected])
+                break
+              case 'delta':
+                answer += event.content
+                setDraft(answer)
+                break
+              case 'message':
+                answer = event.content
+                incomplete = event.incomplete ?? false
+                setDraft(answer)
+                break
+              case 'saved':
+                box.stored = event
+                break
+              case 'error':
+                streamError = event.message
+                break
+              default:
+                break
+            }
+          },
+          run.signal,
+        )
+      } catch (err) {
+        // Cancelling is not a provider failure, and the fetch reports it as a
+        // DOMException nobody wants to read.
+        if (run.signal.aborted) {
+          throw new Error('Research cancelled.', { cause: err })
+        }
+        throw err
+      } finally {
+        if (runRef.current === run) {
+          runRef.current = null
+        }
+        setSteps([])
+        setDraft('')
+      }
+
+      if (streamError) {
+        throw new Error(streamError)
+      }
+      const stored = box.stored
+      if (!stored) {
+        throw new Error('The research run ended without an answer.')
+      }
+
+      const finished = collected.map((step) => ({ ...step, done: true }))
+      // Keyed by the stored message. An unsaved turn has no id to key on, and
+      // its steps are simply not shown — the unsaved notice is the thing that
+      // matters there.
+      if (stored.message.id) {
+        setExtras((current) => ({
+          ...current,
+          [stored.message.id]: { steps: finished, incomplete },
+        }))
+      }
+      return {
+        session: stored.session,
+        message: stored.message,
+        documents: stored.documents,
+        saved: stored.saved,
+        detail: stored.detail,
+      }
+    },
+    [],
+  )
+
   const chat = useChatSession({
     sessionId,
     load: getChatSession,
     send: ({ sessionId: id, content }) =>
-      deepSearch({ sessionId: id, content, mode: deepMode ? 'deep' : 'shallow' }),
+      mode === 'research'
+        ? runResearch(id, content)
+        : deepSearch({ sessionId: id, content, mode: 'search' }),
     onSessionSettled,
   })
 
+  // Read below by the send closure, which only runs after this render.
+  const mode: SearchMode =
+    picked && picked.sessionId === sessionId ? picked.mode : (chat.session?.mode ?? 'search')
+
   const rows = mergeChatSession(sessions.data ?? [], justSettled)
+  const active = modes.find((item) => item.value === mode) ?? modes[0]
 
   function openSession(session: ChatSession) {
     setRailOpen(false)
@@ -120,23 +278,29 @@ export function SearchPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">Deep Search</h2>
-          <p className="text-sm text-ink-soft">
-            Ask in natural language. The AI expands keywords across your archive languages and
-            searches document metadata and OCR text. Chats are saved.
-          </p>
+          <p className="text-sm text-ink-soft">{active.hint} Chats are saved.</p>
         </div>
-        <label className="flex cursor-pointer items-center gap-2 rounded-xs border border-line bg-surface px-3 py-2 text-sm text-ink-muted">
-          <input
-            type="checkbox"
-            checked={deepMode}
-            onChange={(event) => setDeepMode(event.target.checked)}
-            className="h-4 w-4 rounded border-line-strong text-oxblood focus:ring-oxblood"
-          />
-          <span>
-            Deep mode
-            <span className="ml-1 text-ink-faint">(multi-step refine)</span>
-          </span>
-        </label>
+        <div
+          role="radiogroup"
+          aria-label="Search mode"
+          className="flex rounded-xs border border-line bg-surface p-1"
+        >
+          {modes.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              role="radio"
+              aria-checked={mode === item.value}
+              disabled={chat.sending}
+              onClick={() => setPicked({ sessionId, mode: item.value })}
+              className={`px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                mode === item.value ? 'bg-ink text-paper' : 'text-ink-muted hover:text-ink'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <Button
@@ -174,7 +338,8 @@ export function SearchPage() {
           {chat.loadError && <p className="mb-3 text-sm text-madder">{chat.loadError}</p>}
           {chat.unsaved && (
             <p className="mb-3 text-sm text-madder">
-              This answer could not be saved, so the chat will not appear in your history.
+              {chat.unsavedDetail ||
+                'This answer could not be saved, so the chat will not appear in your history.'}
             </p>
           )}
           <ChatPanel>
@@ -182,20 +347,50 @@ export function SearchPage() {
               turns={chat.turns}
               loading={chat.loading}
               sending={chat.sending}
-              sendingLabel={deepMode ? 'Searching deeply...' : 'Searching...'}
-              emptyHint='Try something like: "plumber invoice from last summer about the leak"'
-              renderExtra={(turn) => <SearchHits turn={turn} />}
+              sendingLabel="Searching..."
+              emptyHint={`Try something like: "${examples[mode]}"`}
+              renderBefore={(turn) => {
+                const turnSteps = extras[turn.id]?.steps
+                return turnSteps && turnSteps.length > 0 ? (
+                  <StepList steps={turnSteps} collapsed />
+                ) : null
+              }}
+              renderExtra={(turn) => (
+                <>
+                  {extras[turn.id]?.incomplete && <IncompleteNotice />}
+                  <SearchHits turn={turn} />
+                </>
+              )}
+              renderSending={
+                mode === 'research'
+                  ? () => (
+                      <div className="space-y-3">
+                        <StepList steps={steps} />
+                        {draft && (
+                          <div className="flex justify-start">
+                            <div className="max-w-[85%] rounded-none border border-line bg-paper px-4 py-2.5 text-sm leading-relaxed text-ink">
+                              <MarkdownContent content={draft} />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  : undefined
+              }
             />
             <ChatComposer
               value={chat.input}
               onChange={chat.setInput}
               onSubmit={() => void chat.submit()}
-              placeholder="Describe what you are looking for..."
-              submitLabel="Search"
-              sendingLabel="Searching..."
+              placeholder={placeholders[mode]}
+              submitLabel={active.label}
+              sendingLabel={mode === 'research' ? 'Researching...' : 'Searching...'}
               sending={chat.sending}
               disabled={chat.loading}
               error={chat.error}
+              // A research run is bounded only by the context window, so there
+              // has to be a way out of one that is taking too long.
+              onCancel={mode === 'research' ? () => runRef.current?.abort() : undefined}
               autoFocus
             />
           </ChatPanel>
@@ -205,6 +400,108 @@ export function SearchPage() {
   )
 }
 
+/**
+ * Folds one event into the visible step list: a "start" appends a pending step,
+ * the matching "done" completes it in place rather than adding a second line.
+ */
+function applyStep(steps: ResearchStep[], event: Extract<ResearchEvent, { type: 'step' }>) {
+  if (event.status === 'start') {
+    steps.push({ kind: event.kind, label: startLabel(event), done: false })
+    return
+  }
+  const pending = [...steps].reverse().find((step) => step.kind === event.kind && !step.done)
+  if (!pending) {
+    steps.push({ kind: event.kind, label: doneLabel(event), done: true })
+    return
+  }
+  pending.label = doneLabel(event, pending.label)
+  pending.done = true
+}
+
+function startLabel(event: Extract<ResearchEvent, { type: 'step' }>) {
+  switch (event.kind) {
+    case 'search':
+      return event.query ? `Searching “${event.query}”` : 'Searching'
+    case 'read':
+      return `Reading ${event.count ?? 0} document${event.count === 1 ? '' : 's'}`
+    default:
+      return 'Writing answer'
+  }
+}
+
+function doneLabel(event: Extract<ResearchEvent, { type: 'step' }>, fallback?: string) {
+  switch (event.kind) {
+    case 'search': {
+      const found = `${event.count ?? 0} document${event.count === 1 ? '' : 's'} found`
+      return event.query ? `“${event.query}” — ${found}` : found
+    }
+    case 'read': {
+      const titles = event.titles ?? []
+      const shown = titles.slice(0, 3).join(', ')
+      const rest = titles.length > 3 ? `, and ${titles.length - 3} more` : ''
+      return titles.length > 0 ? `Read ${shown}${rest}` : (fallback ?? 'Read documents')
+    }
+    default:
+      return 'Answer written'
+  }
+}
+
+/**
+ * Shown under an answer whose generation was cut off. The text above it is
+ * real as far as it goes, which is exactly why it needs saying: a partial
+ * answer reads like a complete one.
+ */
+function IncompleteNotice() {
+  return (
+    <p className="border-t border-line pt-2 text-xs text-ink-muted">
+      This answer was cut off before it finished. Ask again to get the rest.
+    </p>
+  )
+}
+
+function StepList({ steps, collapsed = false }: { steps: ResearchStep[]; collapsed?: boolean }) {
+  if (steps.length === 0) {
+    return (
+      <p className="text-xs text-ink-faint">
+        <span className="animate-pulse">Researching your archive…</span>
+      </p>
+    )
+  }
+
+  const list = (
+    <ol className="space-y-1">
+      {steps.map((step, index) => (
+        <li key={index} className="flex items-baseline gap-2 text-xs text-ink-muted">
+          <span
+            aria-hidden
+            className={`font-mono ${step.done ? 'text-ink-faint' : 'animate-pulse text-oxblood'}`}
+          >
+            {step.done ? '✓' : '·'}
+          </span>
+          <span className={step.done ? '' : 'text-ink'}>{step.label}</span>
+        </li>
+      ))}
+    </ol>
+  )
+
+  if (!collapsed) {
+    return <div className="border-l-2 border-line pl-3">{list}</div>
+  }
+  return (
+    <details className="border-l-2 border-line pl-3">
+      <summary className="cursor-pointer text-xs text-ink-faint">
+        {steps.length} research step{steps.length === 1 ? '' : 's'}
+      </summary>
+      <div className="mt-1">{list}</div>
+    </details>
+  )
+}
+
+/**
+ * The documents behind an answer. Research cites them inline as well, but the
+ * cards are what the stored turn carries, so a reopened chat shows the same
+ * sources as the run that produced it.
+ */
 function SearchHits({ turn }: { turn: ChatTurn }) {
   if (!turn.documents || turn.documents.length === 0) {
     return null

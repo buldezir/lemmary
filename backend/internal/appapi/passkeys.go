@@ -84,9 +84,9 @@ func webauthnFor(app core.App, e *core.RequestEvent) (*webauthn.WebAuthn, error)
 }
 
 // passkeyLoginAvailable reports whether the login screen should offer the passkey
-// button: the request's address can carry a ceremony, and at least one credential
-// exists to offer. Never errors — a failure to answer is answered as "no", since
-// the fallback is the password form that was always there.
+// button: the address can carry a ceremony, and at least one credential exists.
+// Instance-wide rather than per-account so it is not an enumeration signal.
+// Never errors — a failure to answer is "no", since the fallback is the password form.
 func passkeyLoginAvailable(app core.App, e *core.RequestEvent) bool {
 	if !passkey.Available(e.Request) {
 		return false

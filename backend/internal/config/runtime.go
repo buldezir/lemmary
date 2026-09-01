@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log/slog"
 	"sync"
 
@@ -11,60 +12,38 @@ import (
 	"lemmary/backend/internal/ocr"
 )
 
-// Snapshot is an immutable view of the live runtime config and clients.
 type Snapshot struct {
 	Cfg         Config
 	OCR         ocr.Provider
 	AI          ai.Extractor
 	Chatter     ai.Chatter
 	SearchAgent ai.SearchAgent
-	// Splitter proposes document boundaries for the split-documents upload. It
-	// shares the extraction provider: both reason over document text.
+	// Shares the extraction provider: both reason over document text.
 	Splitter ai.Splitter
 }
 
-// SnapshotDecorator may replace clients in a freshly built snapshot before it
-// is published. It runs on every reload, so a decorator that swaps a client
-// keeps swapping it after an admin changes the settings that rebuilt it.
-type SnapshotDecorator func(Snapshot) Snapshot
-
-// Runtime holds the process-global reloadable config and provider clients.
 type Runtime struct {
-	// reloadMu serializes whole Reload calls (DB read + client build +
-	// publish). Without it, two closely-spaced settings saves can race and the
-	// goroutine that read the older record may publish last, serving a stale
-	// provider or API key until the next save.
+	// Serializes whole Reload calls. Without it, two closely-spaced saves can
+	// race and the goroutine that read the older record may publish last.
 	reloadMu sync.Mutex
 	mu       sync.RWMutex
 	snap     Snapshot
 
-	// decorateMu guards decorate alone rather than reusing mu, so apply can
-	// read the hook and call it without holding the lock that Snapshot readers
-	// take. A decorator is edition code: if it called Snapshot while apply held
-	// the write lock, the process would deadlock on its first settings reload.
-	decorateMu sync.RWMutex
-	decorate   SnapshotDecorator
+	// Parsed once before the app exists; never changes, so no lock. Rides here
+	// because Runtime is already threaded to the refuse-write endpoints and /meta.
+	env AIEnv
 }
 
-// SetSnapshotDecorator installs the edition's snapshot hook. Wiring-time only —
-// appwire calls it before any hook that could trigger a reload has fired.
-func (r *Runtime) SetSnapshotDecorator(d SnapshotDecorator) {
-	r.decorateMu.Lock()
-	defer r.decorateMu.Unlock()
-	r.decorate = d
-}
-
-func (r *Runtime) snapshotDecorator() SnapshotDecorator {
-	r.decorateMu.RLock()
-	defer r.decorateMu.RUnlock()
-	return r.decorate
-}
-
-func NewRuntime() *Runtime {
+func NewRuntime(env AIEnv) *Runtime {
 	return &Runtime{
-		snap: Snapshot{Cfg: DefaultsFromEnv()},
+		snap: Snapshot{Cfg: env.Defaults()},
+		env:  env,
 	}
 }
+
+func (r *Runtime) Env() AIEnv { return r.env }
+
+func (r *Runtime) Managed() bool { return r.env.Managed }
 
 func (r *Runtime) Snapshot() Snapshot {
 	r.mu.RLock()
@@ -72,16 +51,15 @@ func (r *Runtime) Snapshot() Snapshot {
 	return r.snap
 }
 
-// Reload reads settings from the DB and rebuilds OCR/AI clients.
-// If the DB settings are unavailable, falls back to env defaults so the process stays up.
-// Missing OCR/AI keys soft-fail: config is still updated and the process stays up.
+// Reload rebuilds OCR/AI clients from the DB. Unavailable settings fall back
+// to env defaults; missing keys soft-fail so the process stays up.
 func (r *Runtime) Reload(app core.App) error {
 	r.reloadMu.Lock()
 	defer r.reloadMu.Unlock()
 	cfg, err := Load(app)
 	if err != nil {
 		app.Logger().Warn("loading app_settings failed; using env defaults", slog.Any("error", err))
-		cfg = DefaultsFromEnv()
+		cfg = r.env.Defaults()
 	}
 	r.apply(app, cfg)
 	return nil
@@ -150,6 +128,7 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 			cfg.OpenAITimeout,
 			cfg.DeepSearchLanguages,
 			cfg.ProcessingResultLanguage,
+			cfg.SearchContextTokens,
 			aiLogger,
 		)
 	}
@@ -162,17 +141,13 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		SearchAgent: searchAgent,
 		Splitter:    splitter,
 	}
-	if decorate := r.snapshotDecorator(); decorate != nil {
-		snap = decorate(snap)
-	}
 
 	r.mu.Lock()
 	r.snap = snap
 	r.mu.Unlock()
 
-	// Logged from the published snapshot, not from the locals above, so a
-	// decorator that swapped a client is visible in the startup line rather
-	// than hidden behind the name of the one it replaced.
+	// Logged from the published snapshot rather than from the locals above, so
+	// the line always describes what readers will actually get.
 	ocrName := "unavailable"
 	if snap.OCR != nil {
 		ocrName = snap.OCR.Name()
@@ -191,10 +166,10 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		"chat_model", cfg.ChatModel,
 		"search_model", cfg.SearchModel,
 		"deep_search_languages", cfg.DeepSearchLanguages,
+		"search_context_tokens", cfg.SearchContextTokens,
 	)
 }
 
-// RegisterHooks seeds defaults, loads runtime state on bootstrap, and reloads on settings changes.
 // Bootstrap never fails due to settings — the app must start so admins can open Settings.
 func RegisterHooks(app core.App, rt *Runtime) {
 	// High-priority hook so the stdout tee is in place before other
@@ -211,17 +186,19 @@ func RegisterHooks(app core.App, rt *Runtime) {
 			e.App.Logger().Warn("app migrations failed", slog.Any("error", err))
 		}
 
-		if err := EnsureDefaults(e.App); err != nil {
+		if err := EnsureDefaults(e.App, rt.env); err != nil {
 			e.App.Logger().Warn("ensure app_settings defaults failed; continuing with env fallback", slog.Any("error", err))
 		}
 
-		// After seeding and before the reload, so a container recreated with
-		// different environment serves the new configuration on its first
-		// request rather than after somebody saves Settings. Warn rather than
-		// fail for the same reason bootstrap tolerates a bad settings record:
-		// the app must come up so an admin can go and look.
-		if err := ApplyEnvChanges(e.App); err != nil {
-			e.App.Logger().Warn("applying environment changes failed; keeping stored settings", slog.Any("error", err))
+		// After seeding, before Reload, so a recreated container serves the
+		// new environment on its first request.
+		//
+		// Fail the boot rather than warn: on a managed instance nobody inside
+		// can repair a failed rewrite.
+		if rt.env.Managed {
+			if err := ApplyManaged(e.App, rt.env); err != nil {
+				return fmt.Errorf("apply managed AI configuration: %w", err)
+			}
 		}
 
 		_ = rt.Reload(e.App)

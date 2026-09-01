@@ -202,7 +202,8 @@ export function DocumentAskPage() {
               {chat.loadError && <p className="mb-3 text-sm text-madder">{chat.loadError}</p>}
               {chat.unsaved && (
                 <p className="mb-3 text-sm text-madder">
-                  This answer could not be saved, so the chat will not appear in your history.
+                  {chat.unsavedDetail ||
+                    'This answer could not be saved, so the chat will not appear in your history.'}
                 </p>
               )}
               <ChatPanel>

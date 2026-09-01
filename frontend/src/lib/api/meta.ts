@@ -6,21 +6,33 @@ export const DEFAULT_ACCENT = '#6e2620'
 export type AppMeta = {
   appName: string
   accent: string
+  /**
+   * Hosting provider owns AI configuration. `undefined` is in-flight or a
+   * failed request: treat as managed. Defaulting to false flashes those
+   * sections and, if meta never arrives, Save sends fields the server
+   * rejects, which fails the whole patch including tenant-owned timeouts.
+   */
+  aiManaged?: boolean
 }
 
 export async function getAppMeta(): Promise<AppMeta> {
   try {
-    const data = await apiFetch<{ app_name?: string; accent?: string }>('/api/app/meta', {
-      public: true,
-      fallbackError: 'Failed to load app meta',
-    })
+    const data = await apiFetch<{ app_name?: string; accent?: string; ai_managed?: boolean }>(
+      '/api/app/meta',
+      {
+        public: true,
+        fallbackError: 'Failed to load app meta',
+      },
+    )
     const appName = typeof data.app_name === 'string' ? data.app_name.trim() : ''
     const accent = typeof data.accent === 'string' ? data.accent.trim() : ''
     return {
       appName: appName || DEFAULT_APP_NAME,
       accent: accent || DEFAULT_ACCENT,
+      aiManaged: data.ai_managed === true,
     }
   } catch {
+    // A name and accent have safe defaults; who owns AI configuration does not.
     return { appName: DEFAULT_APP_NAME, accent: DEFAULT_ACCENT }
   }
 }

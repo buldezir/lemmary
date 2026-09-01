@@ -17,14 +17,13 @@ export class AuthRequiredError extends Error {
   }
 }
 
-// Dev auto-login credentials are only honored in dev builds, so a production
-// bundle can never ship with a working login baked in.
+// Honored only in dev builds. Same SETUP_ADMIN_* pair the server bootstrap uses.
 function devCredentials() {
   if (!import.meta.env.DEV) {
     return null
   }
-  const email = import.meta.env.VITE_DEV_USER_EMAIL
-  const password = import.meta.env.VITE_DEV_USER_PASSWORD
+  const email = import.meta.env.SETUP_ADMIN_EMAIL
+  const password = import.meta.env.SETUP_ADMIN_PASSWORD
   return email && password ? { email, password } : null
 }
 
@@ -62,17 +61,12 @@ export type LoginMethods = {
 const fallbackLoginMethods: LoginMethods = { password: true, oauth: [], passkey: false }
 
 /**
- * Whether the server says passkey sign-in is on offer: the address can carry a
- * ceremony at all, and at least one credential exists to offer.
+ * Whether the server offers passkey sign-in. Read here rather than from
+ * useAppMeta: that hook resolves once per RootLayout mount, which does not
+ * remount on sign-out, so a user who enrolled then signed out would see a
+ * stale answer.
  *
- * Read here rather than from the app-meta hook because that hook resolves once
- * per RootLayout mount, and RootLayout does not remount when a session ends. A
- * user who enrolled a passkey and then signed out in the same tab would be shown
- * a login screen built from a stale answer. This runs whenever the login screen
- * appears.
- *
- * Raw fetch, like the two calls below: apiClient imports ensureAuth from this
- * module, so importing it back would close a cycle.
+ * Raw fetch: apiClient imports ensureAuth from this module.
  */
 async function getPasskeyOffered(): Promise<boolean> {
   try {

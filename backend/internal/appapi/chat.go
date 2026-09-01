@@ -49,12 +49,14 @@ func validateChatContent(raw string) (string, error) {
 	return content, nil
 }
 
-// parseSearchMode reads the mode field, defaulting to shallow.
-func parseSearchMode(raw string) ai.SearchMode {
-	if strings.EqualFold(strings.TrimSpace(raw), string(ai.SearchModeDeep)) {
-		return ai.SearchModeDeep
+// parseSearchMode reads the mode field. Research is the only mode worth naming:
+// anything else -- including a legacy "shallow" or "deep" from an older client
+// -- is plain search, which is also the cheaper of the two to get wrong.
+func parseSearchMode(raw string) string {
+	if strings.EqualFold(strings.TrimSpace(raw), chat.ModeResearch) {
+		return chat.ModeResearch
 	}
-	return ai.SearchModeShallow
+	return chat.ModeSearch
 }
 
 // loadChatHistory returns the prior turns of an existing session, or nil for a

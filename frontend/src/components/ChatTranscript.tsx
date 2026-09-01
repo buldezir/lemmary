@@ -12,6 +12,14 @@ type ChatTranscriptProps = {
   sendingLabel: string
   /** Rendered under an assistant bubble — the search hit grid. */
   renderExtra?: (turn: ChatTurn) => ReactNode
+  /** Rendered above a bubble — the research steps that produced it. */
+  renderBefore?: (turn: ChatTurn) => ReactNode
+  /**
+   * Replaces the placeholder bubble while a reply is in flight, for a send that
+   * has something better to show than one label: research reports each step as
+   * it happens and streams the answer.
+   */
+  renderSending?: () => ReactNode
 }
 
 export function ChatTranscript({
@@ -21,6 +29,8 @@ export function ChatTranscript({
   sending,
   sendingLabel,
   renderExtra,
+  renderBefore,
+  renderSending,
 }: ChatTranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   // Opening a saved conversation should land at the bottom, not animate its
@@ -51,6 +61,7 @@ export function ChatTranscript({
       {!loading && turns.length === 0 && <p className="text-sm text-ink-faint">{emptyHint}</p>}
       {turns.map((turn) => (
         <div key={turn.id} className="space-y-3">
+          {renderBefore?.(turn)}
           <div className={`flex ${turn.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
               className={`max-w-[85%] rounded-none px-4 py-2.5 text-sm leading-relaxed ${
@@ -65,13 +76,14 @@ export function ChatTranscript({
           {renderExtra?.(turn)}
         </div>
       ))}
-      {sending && (
-        <div className="flex justify-start">
-          <div className="rounded-none border border-line bg-paper px-4 py-2.5 text-sm text-ink-soft">
-            {sendingLabel}
+      {sending &&
+        (renderSending?.() ?? (
+          <div className="flex justify-start">
+            <div className="rounded-none border border-line bg-paper px-4 py-2.5 text-sm text-ink-soft">
+              {sendingLabel}
+            </div>
           </div>
-        </div>
-      )}
+        ))}
     </div>
   )
 }

@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/chat"
 )
 
@@ -49,13 +48,16 @@ func TestValidateChatContentCountsRunes(t *testing.T) {
 func TestParseSearchMode(t *testing.T) {
 	for _, tc := range []struct {
 		raw  string
-		want ai.SearchMode
+		want string
 	}{
-		{"deep", ai.SearchModeDeep},
-		{"  DEEP  ", ai.SearchModeDeep},
-		{"shallow", ai.SearchModeShallow},
-		{"", ai.SearchModeShallow},
-		{"nonsense", ai.SearchModeShallow},
+		{"research", chat.ModeResearch},
+		{"  RESEARCH  ", chat.ModeResearch},
+		{"search", chat.ModeSearch},
+		{"", chat.ModeSearch},
+		// The modes an older client would send. Both are plain search now.
+		{"deep", chat.ModeSearch},
+		{"shallow", chat.ModeSearch},
+		{"nonsense", chat.ModeSearch},
 	} {
 		if got := parseSearchMode(tc.raw); got != tc.want {
 			t.Errorf("parseSearchMode(%q) = %q want %q", tc.raw, got, tc.want)

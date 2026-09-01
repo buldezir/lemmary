@@ -30,11 +30,12 @@ const (
 	RoleAssistant = "assistant"
 )
 
-// Search modes, mirroring ai.SearchModeShallow / ai.SearchModeDeep. Duplicated
-// as plain strings so the collection definition does not drag in the ai package.
+// The two things a search turn can be: find documents and list them, or read
+// them and answer with citations. Plain strings so the collection definition
+// does not drag in the ai package.
 const (
-	ModeShallow = "shallow"
-	ModeDeep    = "deep"
+	ModeSearch   = "search"
+	ModeResearch = "research"
 )
 
 // UntitledSession is what a session is called when nothing usable can be

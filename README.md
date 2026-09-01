@@ -15,7 +15,7 @@ The API has been tested with the [swift-paperless](https://github.com/paulgessin
 - **OCR:** Google Cloud Vision (`google_vision`) or Mistral Document OCR (`mistral`), configured in Settings
 - **AI:** OpenAI-compatible chat completions (OpenAI, OpenRouter, or Mistral) via the official OpenAI Go SDK
 - **Search:** [Bleve](https://github.com/blevesearch/bleve) full-text index (token AND, BM25 ranking) over titles, OCR, tags, and metadata
-- **Deep Search:** natural-language archive search via a tool-calling agent over that index (keyword expansion across configured languages)
+- **Deep Search:** natural-language archive search via a tool-calling agent over that index (keyword expansion across configured languages), in two modes — **Search** lists matching documents, **Research** reads them and writes a cited answer
 
 ## Project layout
 
@@ -41,19 +41,21 @@ To run without Docker, see [docs/setup.md](docs/setup.md).
 
 See [docs/setup.md](docs/setup.md) for the full list.
 
-- `WORKER_CRON_EXPR` and frontend `VITE_*` vars stay in `.env`
-- OCR/AI keys, models, and worker timeouts live in the DB (`app_settings`); seed from `.env` on first boot, complete via the first-launch wizard, then edit in **Settings** as admin
+- `WORKER_CRON_EXPR`, the `LIMIT_*` family, `VAULT_*` and the frontend's `VITE_*` stay in `.env`
+- OCR/AI keys, models and worker timeouts live in the DB (`app_settings`). `AI_API_KEY` plus `SETUP_ADMIN_EMAIL`/`SETUP_ADMIN_PASSWORD` in `.env` bring a fresh instance up with nothing to answer; otherwise the first-launch wizard collects them. Either way **Settings** is authoritative afterwards
+- `AI_MANAGED=1` inverts that for a hosted fleet: the environment is re-applied on every boot and the tenant's Settings page has no Providers, Models or Duplicates sections
 
 ## Features
 
 - Upload PDF, image, plain text, CSV, Word (.docx), or Excel (.xlsx) documents
 - Full backup and restore: download your whole library — files, OCR text, metadata, thumbnails and taxonomy — as one zip, and restore it into this or another instance
+- Optional encryption at rest: the volume holds only ciphertext, the instance boots locked until someone signs in, and nobody but your own accounts can unlock it — see [docs/encryption.md](docs/encryption.md)
 - Import the invoice PDFs from an Amazon "Your Orders" data export (**Upload → Amazon orders**); the archive is previewed and only imported after you confirm the file count, duplicates are skipped
 - Async processing jobs with status tracking
 - OCR text extraction (native text extraction for TXT/CSV/DOCX/XLSX)
 - AI metadata extraction: title, purpose, date, type, tags, summary
 - Document list with full-text search and status filters
-- Deep Search chat (`/search`) with optional multi-step refine mode; chats are saved, listed in a sidebar, and resumable by URL
+- Deep Search chat (`/search`) in two modes: **Search** finds documents and lists them as cards; **Research** searches, reads the documents it finds, and answers with links to its sources — bounded only by the search model's context window, streaming each step as it works; chats are saved, listed in a sidebar, and resumable by URL
 - Detail page for reviewing OCR text and correcting metadata
 - Passkey sign-in: register a passkey per device and sign in with a fingerprint, face, or device PIN — no password typed, alongside the existing password and OAuth2 options
 - Admin Settings page for runtime OCR/AI/worker config
