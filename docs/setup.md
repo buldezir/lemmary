@@ -318,7 +318,7 @@ A document whose stored file is missing from storage is skipped and left out of 
 
 ### Restoring
 
-**More → Import → Lemmary archive** (`/import/archive`), or the API below. The archive is streamed to `<data dir>/temp/archive_import/` — never buffered in memory — then scanned and previewed: how many documents it holds, how many are new, how many are duplicates, oversized or missing, how much taxonomy comes with them. Nothing is created until you confirm.
+**More → Import** (`/import`), or the API below. The archive is streamed to `<data dir>/temp/archive_import/` — never buffered in memory — then scanned and previewed: how many documents it holds, how many are new, how many are duplicates, oversized or missing, how much taxonomy comes with them. Nothing is created until you confirm.
 
 Two modes:
 
@@ -446,7 +446,7 @@ API versions 9 and 10 are accepted via the `Accept` header (`application/json; v
 
 Any signed-in user can migrate a Paperless-ngx library into their own Lemmary account. The remote API token authenticates a specific ngx user, so the import runs as the current local user rather than as an admin.
 
-1. Open **Import** in the More menu (or go to `/import`).
+1. Open **Import** in the More menu, then the **Paperless-ngx** tab (or go to `/import/ngx`).
 2. Enter the remote Paperless-ngx base URL and an API token from that instance’s profile.
 3. Choose an import mode:
    - **Keep Paperless-ngx metadata** (`preserve`): upserts tags, correspondents, and document types by name; downloads each document with its OCR `content`, title, date, and taxonomy links. Preview and duplicate detection still run; AI metadata extraction is skipped so remote metadata is kept.

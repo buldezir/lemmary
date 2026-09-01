@@ -51,33 +51,20 @@ func skipsCreateJob(record *core.Record) bool {
 }
 
 // createStepsFor returns the steps requested via SetCreateSteps, or the full
-// pipeline as the edition's plans left it when none were requested.
+// pipeline when none were requested.
 //
 // An explicit request wins outright: the split upload and the reprocess paths
-// name the stages they need, and a plan that rewrote those lists would silently
+// name the stages they need, and handing them the full pipeline would silently
 // re-run OCR on a document that was only asked to have its metadata reapplied.
-func createStepsFor(record *core.Record, plans []StepPlan) []string {
+func createStepsFor(record *core.Record) []string {
 	if record != nil {
 		if steps, ok := record.GetRaw(createStepsKey).([]string); ok && len(steps) > 0 {
 			return steps
 		}
 	}
-	return applyStepPlans(models.FullPipelineSteps, plans)
-}
-
-// applyStepPlans runs plans in order over a copy of steps.
-//
-// The copy is not defensive tidiness: models.FullPipelineSteps is a
-// package-level slice shared by every caller in the process, and a plan that
-// appended to or reordered the slice it was handed would corrupt the default
-// pipeline for every later upload.
-func applyStepPlans(steps []string, plans []StepPlan) []string {
-	out := append([]string(nil), steps...)
-	for _, plan := range plans {
-		if plan == nil {
-			continue
-		}
-		out = plan(out)
-	}
-	return out
+	// A copy, not the package-level slice itself: models.FullPipelineSteps is
+	// shared by every caller in the process, and a caller that appended to or
+	// reordered the slice it was handed would corrupt the default pipeline for
+	// every later upload.
+	return append([]string(nil), models.FullPipelineSteps...)
 }

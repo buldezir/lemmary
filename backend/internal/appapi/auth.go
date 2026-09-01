@@ -37,7 +37,7 @@ func bindAdmin(handler func(*core.RequestEvent) error) func(*core.RequestEvent) 
 		if e.Auth == nil {
 			return writeError(e, http.StatusUnauthorized, "Authentication required.")
 		}
-		if !isAppAdmin(e) {
+		if !IsAppAdmin(e) {
 			return writeError(e, http.StatusForbidden, "Admin access required.")
 		}
 		return handler(e)

@@ -7,7 +7,6 @@ import (
 	"lemmary/backend/internal/appapi"
 	"lemmary/backend/internal/authguard"
 	"lemmary/backend/internal/config"
-	"lemmary/backend/internal/ext"
 	"lemmary/backend/internal/fulltext"
 	"lemmary/backend/internal/limits"
 	"lemmary/backend/internal/mailsink"
@@ -23,8 +22,6 @@ import (
 // Register wires all application hooks, APIs, and the SPA static handler onto app.
 // publicDir is the directory containing the built frontend; indexFallback enables SPA routing.
 func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, indexFallback bool) {
-	ed := edition()
-
 	// Read once, here, so every consumer sees the same numbers: the hooks that
 	// enforce them, the caps the bulk importers lower to match, and the usage
 	// endpoint the UI reads.
@@ -33,10 +30,6 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 
 	ft := fulltext.New()
 	config.RegisterHooks(app, rt)
-	// Installed before anything can trigger a reload: RegisterHooks only binds
-	// OnBootstrap, which does not fire until app.Execute runs, well after this
-	// function returns.
-	rt.SetSnapshotDecorator(ed.DecorateSnapshot)
 	authguard.Register(app)
 	mailsink.Register(app)
 	fulltext.Register(app, ft)
@@ -48,21 +41,7 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	limits.Register(app, lim)
 	appapi.Register(app, rt, ft, lim, badLimitKeys)
 	ngxapi.Register(app, ft)
-	worker.Register(app, rt, worker.Options{
-		ExtraSteps: ed.Steps,
-		StepPlans:  ed.StepPlans,
-	})
-
-	// The edition registers last so its routes and hooks are bound after every
-	// core one. That ordering is what lets it wrap a core route or bind a hook
-	// that runs after the core handler, and it cannot be had the other way
-	// round.
-	for _, register := range ed.Register {
-		register(app, ext.Deps{Runtime: rt, FullText: ft})
-	}
-	if ed.Name != "" {
-		app.Logger().Info("edition registered", "edition", ed.Name)
-	}
+	worker.Register(app, rt)
 
 	// Prefer the in-app setup wizard over PocketBase's browser installer UI.
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{

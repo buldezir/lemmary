@@ -44,11 +44,17 @@ func TestServeDetectionAndAddress(t *testing.T) {
 	}
 }
 
-// With domain arguments PocketBase serves HTTPS on :443 via autocert and uses
-// :80 only to redirect — but before the server starts nothing is listening on
-// :443, so a browser reaching :80 has no TLS to fall back to. Anything that
-// occupies that address first has to be able to tell, because what it collects
-// there would travel in the clear.
+// Whatever occupies the listen address before PocketBase starts speaks plain
+// HTTP and nothing else, because no server and so no TLS configuration exists
+// yet. So the question is not whether TLS is configured somewhere but whether
+// anything off this host can reach the port: what the unlock gate collects there
+// is the password to the whole archive.
+//
+// Loopback is the entire test, and it applies to an explicit --http too. An
+// earlier version exempted every explicit address on the theory that passing
+// --http was a deliberate choice — which exempted the stock container, whose
+// entrypoint passes --http=0.0.0.0:${PORT}, and so let the insecure-gate refusal
+// never fire on the one configuration most people run.
 func TestServeAddrFlagsCleartextAutocertMode(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -58,12 +64,18 @@ func TestServeAddrFlagsCleartextAutocertMode(t *testing.T) {
 	}{
 		{"local default", []string{"serve"}, "127.0.0.1:8090", false},
 		{"explicit local http", []string{"serve", "--http", "127.0.0.1:8090"}, "127.0.0.1:8090", false},
-		{"behind a proxy", []string{"serve", "--http=0.0.0.0:8090"}, "0.0.0.0:8090", false},
+		{"localhost by name", []string{"serve", "--http=localhost:8090"}, "localhost:8090", false},
+		{"ipv6 loopback", []string{"serve", "--http=[::1]:8090"}, "[::1]:8090", false},
+		// What the container's own entrypoint passes. Reachable from the LAN
+		// whenever the port is published on 0.0.0.0, which the base compose file
+		// does.
+		{"all interfaces", []string{"serve", "--http=0.0.0.0:8090"}, "0.0.0.0:8090", true},
+		// The spelling most easily mistaken for loopback: an empty host is every
+		// interface, not none.
+		{"empty host", []string{"serve", "--http=:8090"}, ":8090", true},
 		{"autocert domain", []string{"serve", "example.com"}, "0.0.0.0:80", true},
 		{"two domains", []string{"serve", "a.example.com", "b.example.com"}, "0.0.0.0:80", true},
-		// An explicit --http means the operator chose the address, so autocert
-		// is not in play and this is not the code making it cleartext.
-		{"domain with explicit http", []string{"serve", "example.com", "--http", "127.0.0.1:9000"}, "127.0.0.1:9000", false},
+		{"domain with explicit local http", []string{"serve", "example.com", "--http", "127.0.0.1:9000"}, "127.0.0.1:9000", false},
 		{"domains only reach serve", []string{"migrate", "up"}, "127.0.0.1:8090", false},
 	}
 
@@ -150,5 +162,39 @@ func TestFlag(t *testing.T) {
 				t.Fatalf("Flag(%q, %q) = %q, want %q", tc.args, tc.flag, got, tc.want)
 			}
 		})
+	}
+}
+
+// A help or version flag is not serve, however it is spelled.
+//
+// Treating `lemmary --help` as serve blocks the process on an unlock form to
+// print usage — and, worse, unlocks and restores the archive for a command that
+// never bootstraps the databases, which is the one state a flush must not commit
+// from. The list mirrors PocketBase's own skipBootstrap, so the two agree about
+// which invocations never open a database.
+func TestHelpAndVersionAreNotServe(t *testing.T) {
+	for _, args := range [][]string{
+		{"--help"}, {"-h"}, {"--version"}, {"-v"},
+		{"serve", "--help"}, {"--http", "0.0.0.0:80", "--help"},
+	} {
+		if IsServe(args) {
+			t.Errorf("IsServe(%q) = true", args)
+		}
+		if !HasHelpOrVersionFlag(args) {
+			t.Errorf("HasHelpOrVersionFlag(%q) = false", args)
+		}
+	}
+
+	for _, args := range [][]string{
+		nil, {"serve"}, {"--http", "0.0.0.0:80"}, {"--dev", "serve"},
+		// A flag's value that happens to read like one must not be mistaken for
+		// the flag itself.
+		{"serve", "--publicDir", "--help"},
+		// Past "--" nothing is a flag any more.
+		{"serve", "--", "--help"},
+	} {
+		if !IsServe(args) {
+			t.Errorf("IsServe(%q) = false", args)
+		}
 	}
 }

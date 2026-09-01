@@ -19,21 +19,22 @@ import (
 )
 
 func main() {
-	// run, not main, owns the process exit status. A build can attach cleanup
-	// to boot.Result.Close that must not be skipped, and log.Fatal calls
-	// os.Exit, which skips deferred functions — so nothing between Prepare and
-	// the return below may exit the process directly.
+	// run, not main, owns the process exit status. boot.Result.Close carries
+	// cleanup that must not be skipped — the vault's final flush and the wipe
+	// of its plaintext working directory — and log.Fatal calls os.Exit, which
+	// skips deferred functions. So nothing between Prepare and the return
+	// below may exit the process directly.
 	os.Exit(run())
 }
 
 func run() int {
 	loadEnvFile()
 
-	// Before pocketbase.New on purpose. A build may need the data directory
-	// placed somewhere the default cannot reach, or need to answer this
-	// invocation with no database open at all; neither is expressible once the
-	// app exists. Upstream this returns the zero Result and nothing below
-	// changes. See internal/boot.
+	// Before pocketbase.New on purpose. Encryption at rest needs the data
+	// directory placed somewhere the default cannot reach, and `vault init`
+	// has to answer this invocation with no database open at all; neither is
+	// expressible once the app exists. With encryption off this returns the
+	// zero Result and nothing below changes. See internal/boot.
 	pre, err := boot.Prepare(os.Args[1:])
 	if err != nil {
 		log.Printf("boot: %v", err)
@@ -48,13 +49,6 @@ func run() int {
 	}
 	if pre.Handled {
 		return pre.Code
-	}
-	// Logged separately from the edition line appwire emits, and earlier than
-	// it: a build whose pre-boot step fails never reaches that line, so this is
-	// what distinguishes "the wrong image was deployed" from "the right image
-	// could not start".
-	if name := boot.Name(); name != "" {
-		log.Printf("boot: %s", name)
 	}
 
 	app := pocketbase.New()
@@ -90,7 +84,7 @@ func run() int {
 	rt := config.NewRuntime()
 	appwire.Register(app, rt, publicDir, indexFallback)
 	// After appwire so anything the pre-boot step wires binds behind every
-	// core route and hook, the same ordering ext.Edition.Register gets.
+	// core route and hook — the vault's gate has to sit outside them all.
 	if pre.Register != nil {
 		pre.Register(app)
 	}

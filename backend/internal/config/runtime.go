@@ -23,11 +23,6 @@ type Snapshot struct {
 	Splitter ai.Splitter
 }
 
-// SnapshotDecorator may replace clients in a freshly built snapshot before it
-// is published. It runs on every reload, so a decorator that swaps a client
-// keeps swapping it after an admin changes the settings that rebuilt it.
-type SnapshotDecorator func(Snapshot) Snapshot
-
 // Runtime holds the process-global reloadable config and provider clients.
 type Runtime struct {
 	// reloadMu serializes whole Reload calls (DB read + client build +
@@ -37,27 +32,6 @@ type Runtime struct {
 	reloadMu sync.Mutex
 	mu       sync.RWMutex
 	snap     Snapshot
-
-	// decorateMu guards decorate alone rather than reusing mu, so apply can
-	// read the hook and call it without holding the lock that Snapshot readers
-	// take. A decorator is edition code: if it called Snapshot while apply held
-	// the write lock, the process would deadlock on its first settings reload.
-	decorateMu sync.RWMutex
-	decorate   SnapshotDecorator
-}
-
-// SetSnapshotDecorator installs the edition's snapshot hook. Wiring-time only —
-// appwire calls it before any hook that could trigger a reload has fired.
-func (r *Runtime) SetSnapshotDecorator(d SnapshotDecorator) {
-	r.decorateMu.Lock()
-	defer r.decorateMu.Unlock()
-	r.decorate = d
-}
-
-func (r *Runtime) snapshotDecorator() SnapshotDecorator {
-	r.decorateMu.RLock()
-	defer r.decorateMu.RUnlock()
-	return r.decorate
 }
 
 func NewRuntime() *Runtime {
@@ -163,17 +137,13 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		SearchAgent: searchAgent,
 		Splitter:    splitter,
 	}
-	if decorate := r.snapshotDecorator(); decorate != nil {
-		snap = decorate(snap)
-	}
 
 	r.mu.Lock()
 	r.snap = snap
 	r.mu.Unlock()
 
-	// Logged from the published snapshot, not from the locals above, so a
-	// decorator that swapped a client is visible in the startup line rather
-	// than hidden behind the name of the one it replaced.
+	// Logged from the published snapshot rather than from the locals above, so
+	// the line always describes what readers will actually get.
 	ocrName := "unavailable"
 	if snap.OCR != nil {
 		ocrName = snap.OCR.Name()

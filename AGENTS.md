@@ -141,8 +141,8 @@ Two things worth knowing:
 
 That is the only command, in a worktree or the main checkout. It delegates to
 the overlay when one is present, and when none is it runs what this repository
-can verify alone — unit tests, the compile-level extension-seam check, frontend
-tests and the SPA build — printing which suites did not run.
+can verify alone — Go unit tests, `go vet`, frontend tests and the SPA build —
+printing which suites did not run.
 
 If it took the reduced path, say plainly in the report that the API and browser
 e2e suites did not run. Do not claim a task is complete if any stage fails, and
@@ -158,6 +158,29 @@ the same layer as similar code already has.
 
 API and browser e2e updates belong in the private overlay repository; when it
 is present, its `AGENTS.md` covers them.
+
+## One build, feature flags in the environment
+
+There is one binary and one image. Everything anybody runs is the same build,
+so a bug reproduces everywhere and CI tests what ships.
+
+Optional behaviour is therefore a **runtime flag read from the environment**,
+never a build tag and never a compiled-in variant. `VAULT_ENABLED` and the
+`LIMIT_*` family are the pattern: absent means off, the code path is compiled
+into every build, and turning it on needs no rebuild.
+
+When adding one:
+
+- Read it once, at wiring time, and pass the value down. Scattered
+  `os.Getenv` calls make the effective configuration unanswerable.
+- Off must be the default, and off must be the behaviour this app had before
+  the flag existed.
+- Document it in `.env.example` beside the others, with what it costs — not
+  only what it does.
+
+`internal/boot` is the one exception to "wire it onto a live app": it runs
+before `pocketbase.New`, and only encryption at rest needs it. Read its package
+comment before putting anything else there.
 
 ## Docker build (when available)
 

@@ -23,13 +23,13 @@ type PipelineRunner struct {
 	registry map[string]Step
 }
 
-func NewPipelineRunner(app core.App, cfg config.Config, ocrProvider ocr.Provider, aiExtractor ai.Extractor, extraSteps []StepFactory) *PipelineRunner {
+func NewPipelineRunner(app core.App, cfg config.Config, ocrProvider ocr.Provider, aiExtractor ai.Extractor) *PipelineRunner {
 	return &PipelineRunner{
 		App:      app,
 		Cfg:      cfg,
 		OCR:      ocrProvider,
 		AI:       aiExtractor,
-		registry: buildRegistry(ocrProvider, aiExtractor, extraSteps),
+		registry: buildRegistry(ocrProvider, aiExtractor),
 	}
 }
 
