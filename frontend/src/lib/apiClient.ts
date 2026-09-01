@@ -57,6 +57,81 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions): Promi
   return data as T
 }
 
+/**
+ * Splits an SSE byte stream into event payloads. Kept separate from the fetch
+ * plumbing because the boundary cases — a frame split across two chunks, a
+ * trailing partial frame — are what actually break, and they are worth testing
+ * without a server.
+ */
+export function createSSEParser(onEvent: (payload: string) => void) {
+  let buffer = ''
+  return {
+    push(chunk: string) {
+      buffer += chunk
+      let boundary = buffer.indexOf('\n\n')
+      while (boundary !== -1) {
+        const frame = buffer.slice(0, boundary)
+        buffer = buffer.slice(boundary + 2)
+        for (const line of frame.split('\n')) {
+          if (line.startsWith('data: ')) {
+            onEvent(line.slice(6))
+          }
+        }
+        boundary = buffer.indexOf('\n\n')
+      }
+    },
+  }
+}
+
+type ApiStreamOptions<TEvent> = {
+  body: unknown
+  onEvent: (event: TEvent) => void
+  signal?: AbortSignal
+  fallbackError: string
+}
+
+/**
+ * POSTs to an endpoint that answers with server-sent events and delivers each
+ * one to onEvent. It is a POST because the request carries the conversation, so
+ * EventSource (GET-only) is not an option.
+ */
+export async function apiStream<TEvent>(path: string, options: ApiStreamOptions<TEvent>) {
+  await ensureAuth()
+
+  const response = await fetch(`${pbUrl}${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: pb.authStore.token,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(options.body),
+    signal: options.signal,
+  })
+
+  if (!response.ok) {
+    throw new Error(errorDetail(await readJson(response), options.fallbackError))
+  }
+  if (!response.body) {
+    throw new Error(options.fallbackError)
+  }
+
+  const parser = createSSEParser((payload) => {
+    try {
+      options.onEvent(JSON.parse(payload) as TEvent)
+    } catch {
+      // A malformed frame is not worth failing the whole run over.
+    }
+  })
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    parser.push(decoder.decode(value, { stream: true }))
+  }
+}
+
 export type JobProgress = {
   done: number
   total: number

@@ -16,17 +16,14 @@ import (
 )
 
 const (
-	SearchModeShallow SearchMode = "shallow"
-	SearchModeDeep    SearchMode = "deep"
-
-	maxShallowToolRounds = 1
-	maxDeepToolRounds    = 4
+	// maxSearchToolRounds is the whole of Search mode: expand the request into
+	// keywords, run the lookups, answer. Questions that need more than one pass
+	// belong in Research mode, which is bounded by the context window instead.
+	maxSearchToolRounds = 1
 
 	// maxToolResultBytes caps the JSON fed back to the model per tool call.
 	maxToolResultBytes = 24000
 )
-
-type SearchMode string
 
 type DocumentHit struct {
 	ID            string   `json:"id"`
@@ -121,41 +118,42 @@ func coerceInt(v any) int {
 type DocumentSearcher func(ctx context.Context, args SearchDocumentsArgs) ([]DocumentHit, error)
 
 type SearchAgent interface {
-	Search(ctx context.Context, messages []ChatMessage, mode SearchMode, availableTags []string, search DocumentSearcher) (reply string, hits []DocumentHit, err error)
+	// Search finds documents and answers from their metadata and snippets.
+	Search(ctx context.Context, messages []ChatMessage, availableTags []string, search DocumentSearcher) (reply string, hits []DocumentHit, err error)
+
+	// Research reads the documents it finds and writes a cited answer,
+	// reporting each step through emit as it goes.
+	Research(ctx context.Context, req ResearchRequest, emit func(ResearchEvent)) (ResearchResult, error)
 }
 
 type openAISearchAgent struct {
 	client         *OpenAIClient
 	languages      string
 	resultLanguage string
+	contextTokens  int
 }
 
-func NewSearchAgent(sdk, apiKey, model, baseURL string, timeout time.Duration, languages, resultLanguage string, logger *slog.Logger) SearchAgent {
+func NewSearchAgent(sdk, apiKey, model, baseURL string, timeout time.Duration, languages, resultLanguage string, contextTokens int, logger *slog.Logger) SearchAgent {
 	return &openAISearchAgent{
 		client:         NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", timeout, logger),
 		languages:      strings.TrimSpace(languages),
 		resultLanguage: strings.TrimSpace(resultLanguage),
+		contextTokens:  contextTokens,
 	}
 }
 
-func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, mode SearchMode, availableTags []string, search DocumentSearcher) (string, []DocumentHit, error) {
+func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, availableTags []string, search DocumentSearcher) (string, []DocumentHit, error) {
 	if a.client.apiKey == "" {
 		return "", nil, fmt.Errorf("AI API key is not configured")
 	}
 	if search == nil {
 		return "", nil, fmt.Errorf("document searcher is required")
 	}
-	if mode != SearchModeDeep {
-		mode = SearchModeShallow
-	}
 
-	maxRounds := maxShallowToolRounds
-	if mode == SearchModeDeep {
-		maxRounds = maxDeepToolRounds
-	}
+	maxRounds := maxSearchToolRounds
 
 	apiMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages)+1+maxRounds*4)
-	apiMessages = append(apiMessages, openai.SystemMessage(buildSearchSystemPrompt(a.languages, a.resultLanguage, mode, availableTags)))
+	apiMessages = append(apiMessages, openai.SystemMessage(buildSearchSystemPrompt(a.languages, a.resultLanguage, availableTags)))
 	for _, msg := range messages {
 		role := strings.TrimSpace(msg.Role)
 		content := strings.TrimSpace(msg.Content)
@@ -202,7 +200,6 @@ func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, 
 		requestStart := time.Now()
 		chatResp, err := a.client.complete(ctx, params,
 			"purpose", "search",
-			"mode", mode,
 			"round", round,
 			"allow_tools", allowTools,
 			"messages", len(apiMessages),
@@ -328,7 +325,7 @@ func replyLooksLikeToolMarkup(s string) bool {
 
 func synthesizeSearchReply(hits []DocumentHit) string {
 	if len(hits) == 0 {
-		return "No matching documents were found. Try different keywords or enable Deep mode."
+		return "No matching documents were found. Try different keywords, or switch to Research mode to have the archive read and analysed."
 	}
 	var b strings.Builder
 	b.WriteString("Here are the documents I found:\n\n")
@@ -419,7 +416,7 @@ func (a *openAISearchAgent) executeToolCall(
 	return toolExecResult{ID: callID, Name: name, Content: toolContent}
 }
 
-func buildSearchSystemPrompt(languages, resultLanguage string, mode SearchMode, availableTags []string) string {
+func buildSearchSystemPrompt(languages, resultLanguage string, availableTags []string) string {
 	var b strings.Builder
 	b.WriteString(`You help the user find documents in their personal archive.
 The user may ask in broad natural language that keyword search alone cannot handle.
@@ -431,36 +428,34 @@ Cite real document ids and titles from tool results only. Never invent documents
 If nothing relevant is found, say so clearly and suggest alternative search terms.
 Be concise. Answer in the same language as the user's latest message.
 Never output tool markup, DSML tags, or raw function-call XML in your final answer — only natural language.
-After you receive tool results, your next message must be the final answer for the user (no further tool calls).
+You have one round of tool calls: gather everything you need with search_documents, then answer.
+If answering would require reading the documents themselves, say so and suggest Research mode.
 `)
 
 	b.WriteString(formatAvailableTagsPrompt(availableTags))
+	b.WriteString(formatLanguagePrompt(languages, resultLanguage))
 
+	return b.String()
+}
+
+// formatLanguagePrompt tells the agent which languages to expand keywords into.
+// Shared by Search and Research: recall across a multilingual archive depends on
+// the same translation step in both.
+func formatLanguagePrompt(languages, resultLanguage string) string {
 	if languages != "" {
-		b.WriteString(fmt.Sprintf(`
+		return fmt.Sprintf(`
 Always try keyword searches across these archive languages (translate key terms as needed): %s.
 Call search_documents multiple times when useful — once per language or synonym set.
-`, languages))
-	} else {
-		b.WriteString(`
-No fixed deep-search language list is configured. Expand keywords into the language of the user's query`)
-		if resultLanguage != "" {
-			b.WriteString(fmt.Sprintf(` and into %s`, resultLanguage))
-		}
-		b.WriteString(`. Call search_documents multiple times when useful.
-`)
+`, languages)
 	}
-
-	if mode == SearchModeDeep {
-		b.WriteString(`
-You are in deep search mode: you may refine and search again if the first results are weak or incomplete.
-`)
-	} else {
-		b.WriteString(`
-You are in shallow search mode: gather results with search_documents in one round, then answer.
-`)
+	var b strings.Builder
+	b.WriteString(`
+No fixed archive language list is configured. Expand keywords into the language of the user's query`)
+	if resultLanguage != "" {
+		b.WriteString(fmt.Sprintf(` and into %s`, resultLanguage))
 	}
-
+	b.WriteString(`. Call search_documents multiple times when useful.
+`)
 	return b.String()
 }
 

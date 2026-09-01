@@ -15,7 +15,7 @@ The API has been tested with the [swift-paperless](https://github.com/paulgessin
 - **OCR:** Google Cloud Vision (`google_vision`) or Mistral Document OCR (`mistral`), configured in Settings
 - **AI:** OpenAI-compatible chat completions (OpenAI, OpenRouter, or Mistral) via the official OpenAI Go SDK
 - **Search:** [Bleve](https://github.com/blevesearch/bleve) full-text index (token AND, BM25 ranking) over titles, OCR, tags, and metadata
-- **Deep Search:** natural-language archive search via a tool-calling agent over that index (keyword expansion across configured languages)
+- **Deep Search:** natural-language archive search via a tool-calling agent over that index (keyword expansion across configured languages), in two modes — **Search** lists matching documents, **Research** reads them and writes a cited answer
 
 ## Project layout
 
@@ -54,7 +54,7 @@ See [docs/setup.md](docs/setup.md) for the full list.
 - OCR text extraction (native text extraction for TXT/CSV/DOCX/XLSX)
 - AI metadata extraction: title, purpose, date, type, tags, summary
 - Document list with full-text search and status filters
-- Deep Search chat (`/search`) with optional multi-step refine mode
+- Deep Search chat (`/search`) in two modes: **Search** finds documents and lists them as cards; **Research** searches, reads the documents it finds, and answers with links to its sources — bounded only by the search model's context window, streaming each step as it works
 - Detail page for reviewing OCR text and correcting metadata
 - Passkey sign-in: register a passkey per device and sign in with a fingerprint, face, or device PIN — no password typed, alongside the existing password and OAuth2 options
 - Admin Settings page for runtime OCR/AI/worker config

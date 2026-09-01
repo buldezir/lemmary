@@ -1,6 +1,14 @@
 import type { Components } from 'react-markdown'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { Link } from '@tanstack/react-router'
+
+/**
+ * Research answers cite documents as /document/<id> links. Those have to
+ * navigate in-app: opening a new tab to reload the whole SPA for a citation
+ * would make following one prohibitive.
+ */
+const documentLinkPattern = /^\/document\/([A-Za-z0-9_-]+)$/
 
 const components: Components = {
   p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
@@ -12,11 +20,25 @@ const components: Components = {
       {children}
     </blockquote>
   ),
-  a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="underline hover:text-oxblood">
-      {children}
-    </a>
-  ),
+  a: ({ href, children }) => {
+    const documentId = href?.match(documentLinkPattern)?.[1]
+    if (documentId) {
+      return (
+        <Link
+          to="/document/$documentId"
+          params={{ documentId }}
+          className="underline hover:text-oxblood"
+        >
+          {children}
+        </Link>
+      )
+    }
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="underline hover:text-oxblood">
+        {children}
+      </a>
+    )
+  },
   strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
   h1: ({ children }) => <h1 className="mb-2 text-base font-semibold last:mb-0">{children}</h1>,
   h2: ({ children }) => <h2 className="mb-2 text-base font-semibold last:mb-0">{children}</h2>,

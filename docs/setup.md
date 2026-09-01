@@ -196,6 +196,7 @@ These seed `app_settings` when the singleton record does not exist yet. After th
 | `PROCESSING_RESULT_LANGUAGE` | empty | ISO 639-1 code (e.g. `en`, `de`). When set, `title`, `summary`, `purpose`, and `document_type` are stored in this language; originals go in `*_original` fields. |
 | `OPENAI_TIMEOUT_SEC` | `60` | AI request timeout |
 | `DEEP_SEARCH_LANGUAGES` | empty | Comma-separated ISO 639-1 codes (e.g. `de,en,uk`) for Deep Search keyword expansion |
+| `SEARCH_CONTEXT_TOKENS` | `128000` | Context window of the search model, in tokens — the only limit on a Research run |
 | `WORKER_TIMEOUT_SEC` | `300` | Per-job processing timeout |
 | `WORKER_MAX_RETRIES` | `0` | Max step retry attempts before a job fails |
 | `EXTRACTION_PROMPT_VERSION` | `v1` | Stored on each processing job step run; bookkeeping only, not offered in the Settings UI |
@@ -374,7 +375,7 @@ Query behavior:
 - Terms are **AND**ed (all must match) and ranked with **BM25**. Quoted `"phrases"` must appear in order.
 - Search covers bilingual title/purpose/summary, OCR text, tag/type/correspondent names, and `people_or_organizations`.
 - The homepage search box calls `GET /api/app/documents/search`. An empty search box still lists via PocketBase (sort by created).
-- Deep Search’s `search_documents` tool and paperless-ngx `GET /api/documents/?query=` use the same index.
+- Deep Search’s `search_documents` tool (both modes) and paperless-ngx `GET /api/documents/?query=` use the same index. Research’s `read_documents` reads `ocr_text` straight from the database, not the index.
 - PocketBase collection filters (`field ~ "..."`) remain available to API clients; the UI no longer uses them for the search box.
 
 Admins can force a rebuild from **Management → Rebuild search index** (`POST /api/app/search/reindex`).
@@ -387,7 +388,14 @@ For a fresh install you can put `OPENAI_API_KEY` and/or `MISTRAL_API_KEY` in `.e
 
 Without an LLM provider, AI extraction, document chat, and Deep Search return a configuration error.
 
-Deep Search (`/search`) uses a tool-calling agent over the Bleve full-text index. Configure **Search provider/model** and **Deep search languages** in Settings.
+Deep Search (`/search`) uses a tool-calling agent over the Bleve full-text index, in two modes:
+
+- **Search** — one round of `search_documents`, answered from titles, summaries and short OCR snippets. Results are shown as document cards.
+- **Research** — the agent searches, then reads the full text of the documents it finds (`read_documents`), and writes a markdown answer citing each document it used. The answer links to the documents inline; there is no card grid. Progress streams over `POST /api/app/search/stream` (server-sent events), so each search and read appears as it happens.
+
+Research has no round or document limit. It keeps searching and reading until the conversation fills the model's context window, then answers with what it has — so **Search context window** in Settings is what decides how much of your archive one question can draw on. Picking a model whose provider reports its context length (OpenRouter, Mistral) fills that field in automatically; OpenAI's model list reports none, so the default applies.
+
+Configure **Search provider/model**, **Deep search languages**, and **Search context window** in Settings.
 
 ## OCR setup
 
