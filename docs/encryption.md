@@ -16,7 +16,7 @@ commented block in `.env.example` has them all.
 | `VAULT_DIR` | `pb_data` | Where the encrypted vault lives (the persistent volume). |
 | `VAULT_WORKDIR` | `pb_work` beside `VAULT_DIR` | Where the archive is decrypted. Must be a memory-backed filesystem (tmpfs); startup fails otherwise. |
 | `VAULT_PASSPHRASE` | unset | Unlocks without the web form, for CLI subcommands and tests. Not how a server should normally run: it sits next to the ciphertext it protects. |
-| `VAULT_ALLOW_DISK_WORKDIR` | unset | Permits a working directory that is not memory-backed. Development only — it means plaintext on disk. |
+| `VAULT_ALLOW_DISK_WORKDIR` | unset | Permits a working directory that is not memory-backed, **or one that cannot be checked** — the filesystem-type test is Linux-only, so this is required to run off Linux at all. Development only — it means plaintext on disk. |
 | `VAULT_ALLOW_SHRINK` | unset | Permits a flush that would drop more than half the archive. |
 | `VAULT_ALLOW_INSECURE_GATE` | unset | Permits serving the unlock form on an address reachable from off this host. Only if you accept sending the archive password in the clear. |
 | `VAULT_KEEP_GENERATIONS` | `3` | How many generations are retained, i.e. how far back a rollback can reach. |
@@ -37,8 +37,12 @@ instead.
 
 
 With `VAULT_ENABLED=1` the persistent volume holds only ciphertext: the SQLite
-databases, every uploaded document and preview, and the search index. A stolen disk, a leaked volume snapshot, a `docker cp` of a stopped
-container, or an operator browsing the filesystem all yield nothing.
+databases and every uploaded document and preview. A stolen disk, a leaked volume
+snapshot, a `docker cp` of a stopped container, or an operator browsing the
+filesystem all yield nothing. The full-text index is not on the volume in any
+form — it is derived data, so it is rebuilt into the memory-backed working
+directory on each unlock rather than encrypted and stored, which keeps a
+plaintext shadow of every document's OCR text off the disk entirely.
 
 **Read this whole section before enabling it.** It changes how the instance
 starts, what happens when a password is lost, and which features are available.
@@ -75,6 +79,25 @@ and deep search send OCR text to an LLM, and both full-text search and the SQL
 filters need plaintext on the server.
 
 Also outside the boundary: container logs on the host stay plaintext.
+
+**Revoking an account does not always revoke its key to the archive.** The
+keyring is what unlocks the volume, and it is separate from the login settings
+by necessity: it has to be readable before PocketBase exists, because the users
+collection it would otherwise consult is inside the database still waiting to be
+decrypted. Two consequences an operator has to know about, because neither is
+visible from the admin UI:
+
+- Turning password authentication off stops `POST /api/token`, Basic auth and
+  the PocketBase login routes. It does **not** stop those same passwords
+  unlocking the archive at the boot gate, which cannot see that setting.
+- Deleting a user normally removes their wrap with them. Deleting the **last**
+  remaining account does not: the keyring refuses to drop its only credential,
+  since doing so would destroy the archive. An offboarded final admin's password
+  therefore still decrypts the volume.
+
+Where either matters, rotate: unlock, enrol the credential you intend to keep,
+and delete the account whose key should stop working while another account
+remains.
 
 And the volume itself is not opaque. The blob store reveals how many files an
 instance holds, the plaintext size of each one — the AEAD is length-preserving —

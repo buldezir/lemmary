@@ -141,8 +141,8 @@ Two things worth knowing:
 
 That is the only command, in a worktree or the main checkout. It delegates to
 the overlay when one is present, and when none is it runs what this repository
-can verify alone — unit tests, the compile-level extension-seam check, frontend
-tests and the SPA build — printing which suites did not run.
+can verify alone — Go unit tests, `go vet`, frontend tests and the SPA build —
+printing which suites did not run.
 
 If it took the reduced path, say plainly in the report that the API and browser
 e2e suites did not run. Do not claim a task is complete if any stage fails, and

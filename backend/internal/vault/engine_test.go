@@ -1236,3 +1236,44 @@ func TestWipeEmptiesTheDirectoryAndToleratesAnUnremovableRoot(t *testing.T) {
 		t.Fatalf("the plaintext was not removed: %d entries remain", len(left))
 	}
 }
+
+// Not being able to run the check is not permission to skip it.
+//
+// The filesystem-type test is Linux-only, and a statfs can refuse. Treating
+// either as "carry on" reaches exactly the outcome TestWorkDirMustBeMemoryBacked
+// refuses — the archive decrypted onto ordinary storage with every other
+// guarantee still appearing to hold — only silently, and on every boot.
+func TestWorkDirRefusesWhenMemoryBackingCannotBeChecked(t *testing.T) {
+	root := t.TempDir()
+	vaultDir := filepath.Join(root, "vault")
+
+	original := checkMemoryBacked
+	checkMemoryBacked = func(string) (bool, error) {
+		return false, errors.New("statfs is not implemented on this platform")
+	}
+	t.Cleanup(func() { checkMemoryBacked = original })
+
+	_, err := New(Options{Dir: vaultDir, WorkDir: filepath.Join(root, "work"), Enabled: true})
+	if err == nil {
+		t.Fatal("opening a vault whose working directory could not be checked was allowed")
+	}
+	for _, want := range []string{"cannot verify", EnvAllowDiskWorkDir} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the error must explain the fix; %q is missing from: %v", want, err)
+		}
+	}
+	if _, statErr := os.Stat(filepath.Join(vaultDir, keyringName)); !os.IsNotExist(statErr) {
+		t.Fatal("the refused open left a keyring behind, stranding the volume")
+	}
+
+	// And the escape hatch still works: an operator who knows their platform
+	// says so, and the vault opens.
+	v, err := New(Options{
+		Dir: vaultDir, WorkDir: filepath.Join(root, "work"),
+		Enabled: true, AllowDiskWorkDir: true,
+	})
+	if err != nil {
+		t.Fatalf("%s did not accept an uncheckable working directory: %v", EnvAllowDiskWorkDir, err)
+	}
+	t.Cleanup(func() { _ = v.Close() })
+}

@@ -52,7 +52,7 @@ func registerAPI(app *pocketbase.PocketBase, v *Vault) {
 			v.opts.Log("vault: a new recovery code was issued")
 			return re.JSON(http.StatusOK, map[string]string{
 				"code": code,
-				"note": "Write this down now. It is shown once, and it is the only way back in if every password and passkey is lost.",
+				"note": "Write this down now. It is shown once, and it is the only way back in if every account password is lost.",
 			})
 		})
 

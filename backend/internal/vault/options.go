@@ -28,6 +28,12 @@ const (
 	// EnvPassphrase unlocks non-interactively. It exists for CLI subcommands
 	// and for tests, never as the recommended way to run a server: a passphrase
 	// in the environment sits next to the ciphertext it protects.
+	//
+	// The deliberate exception to the read-once rule below: it is a credential,
+	// not a setting, so it is read with os.Getenv at each of the three points
+	// that consume it and never stored on Options. Options is logged, compared
+	// and carried for the life of the process; the master password for the whole
+	// archive should live in none of those places.
 	EnvPassphrase = "VAULT_PASSPHRASE"
 )
 

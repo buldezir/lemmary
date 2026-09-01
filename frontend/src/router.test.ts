@@ -12,11 +12,18 @@ describe('route tree', () => {
     for (const path of [
       '/',
       '/upload',
+      '/upload/amazon',
+      '/upload/split',
       '/search',
+      '/ocr-test',
       '/settings',
+      '/management',
       '/import',
       '/import/archive',
       '/account',
+      '/export',
+      '/document/$documentId',
+      '/document/$documentId/ask',
     ]) {
       expect(paths).toContain(path)
     }

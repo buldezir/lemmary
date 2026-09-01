@@ -423,6 +423,13 @@ func (v *Vault) checkNoPlaintextInstall() error {
 		v.opts.Dir, strings.Join(found, ", "), EnvDir)
 }
 
+// checkMemoryBacked is isMemoryBacked, indirected so a test can exercise the
+// branch where the filesystem type cannot be determined. That branch is
+// unreachable on Linux, where statfs on a directory MkdirAll has just created
+// does not fail, and it is the branch that decides whether an unverifiable
+// platform boots.
+var checkMemoryBacked = isMemoryBacked
+
 // checkWorkDirIsMemoryBacked refuses to decrypt into ordinary storage.
 //
 // The entire promise here is that plaintext never reaches persistent disk, and
@@ -438,12 +445,19 @@ func (v *Vault) checkWorkDirIsMemoryBacked() error {
 	if err := os.MkdirAll(v.opts.WorkDir, 0o700); err != nil {
 		return err
 	}
-	mem, err := isMemoryBacked(v.opts.WorkDir)
+	mem, err := checkMemoryBacked(v.opts.WorkDir)
 	if err != nil {
-		// Cannot tell (non-Linux, or statfs refused): say so and continue rather
-		// than blocking a platform this check simply does not cover.
-		v.opts.Log("vault: cannot verify that %s is memory-backed: %v", v.opts.WorkDir, err)
-		return nil
+		// Cannot tell: non-Linux, where the check is not implemented at all, or a
+		// statfs that refused. Continuing here would reach the exact outcome the
+		// paragraph above refuses — the archive decrypted onto ordinary storage
+		// with every other guarantee still appearing to hold — just by a
+		// different route, and it would do it silently on every boot. So the
+		// unverifiable case is treated as the unsafe one, and an operator who
+		// knows their platform says so with the same switch that accepts a disk
+		// working directory outright.
+		return fmt.Errorf(
+			"vault: cannot verify that %s is memory-backed (%v), so there is no way from in here to tell whether decrypting into it would write every document to disk in the clear. Mount a tmpfs there (in compose: tmpfs: [\"%s:size=2g,mode=0700\"]), or set %s=1 to accept plaintext on disk",
+			v.opts.WorkDir, err, v.opts.WorkDir, EnvAllowDiskWorkDir)
 	}
 	if !mem {
 		return fmt.Errorf(

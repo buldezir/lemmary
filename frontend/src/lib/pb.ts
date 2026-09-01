@@ -9,11 +9,11 @@ export const pbUrl: string = import.meta.env.VITE_POCKETBASE_URL || fallbackOrig
 export const pb = new PocketBase(pbUrl)
 export const pbAdminUrl = `${pbUrl}/_/`
 
-// A build may serve 423 Locked on every API route while it waits for something
-// only a person can supply — the core build never does, so this is inert here.
-// A tab that was already open when the server restarted into that state would
-// otherwise sit there failing every request; reloading lands it on whatever the
-// locked server serves instead.
+// An encrypted instance answers 423 Locked on every API route until somebody
+// unlocks it: the vault's gate runs before PocketBase exists and serves its own
+// unlock form. A tab that was already open when the server restarted into that
+// state would otherwise sit there failing every request; reloading lands it on
+// the unlock form instead.
 //
 // Guarded by a flag because many requests can fail at once, and each would
 // otherwise trigger its own reload.

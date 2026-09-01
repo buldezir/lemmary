@@ -11,11 +11,23 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"lemmary/backend/internal/crypt"
 )
 
 func newGateHarness(t *testing.T) (*Vault, chan GateResult, http.Handler) {
 	t.Helper()
 	h := newHarness(t)
+	// The gate only ever runs on a *locked* vault — Gate returns before serving
+	// anything once the environment passphrase has opened one. newHarness adopts
+	// the master key, so wind that back to the state a real boot reaches the
+	// gate in; otherwise every test here exercises a handler that has already
+	// been let through, and the unlock it means to assert never happens.
+	h.v.mu.Lock()
+	h.v.loaded = false
+	h.v.mk, h.v.mkey = crypt.Key{}, crypt.Key{}
+	h.v.store, h.v.prev = nil, nil
+	h.v.mu.Unlock()
 	done := make(chan GateResult, 1)
 	return h.v, done, h.v.gateHandler(done)
 }
@@ -442,3 +454,50 @@ func TestGateRefusesAnExposedCleartextAddress(t *testing.T) {
 }
 
 func ctxErr(_ GateResult, err error) error { return err }
+
+// A second unlock on an already-open vault must not run the restore again.
+//
+// Unlock empties the working directory before it materialises anything into it,
+// and gateMu only orders two concurrent requests — it does not stop the second
+// one. Gate's Shutdown gives an in-flight handler five seconds and then returns
+// without stopping its goroutine, so on an archive whose restore outlasts that
+// the second handler deletes the working directory after PocketBase has opened
+// the database inside it. Two tabs on the unlock form is the entire setup.
+func TestGateSecondUnlockDoesNotRestoreAgain(t *testing.T) {
+	v, done, handler := newGateHarness(t)
+
+	unlock := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/unlock", strings.NewReader(`{"password":"test-password"}`))
+		req.Header.Set("Content-Type", "application/json")
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	if rec := unlock(); rec.Code != http.StatusOK {
+		t.Fatalf("first unlock returned %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Stands in for everything the running application puts in the working
+	// directory once the gate has handed the port over — data.db above all.
+	marker := filepath.Join(v.WorkDir(), "opened-by-the-app")
+	if err := os.WriteFile(marker, []byte("live"), 0o600); err != nil {
+		t.Fatalf("writing the marker: %v", err)
+	}
+
+	if rec := unlock(); rec.Code != http.StatusOK {
+		t.Fatalf("second unlock returned %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("the second unlock wiped the working directory: %v", err)
+	}
+
+	// And it must not signal the gate twice. The channel holds one result; a
+	// second send would block forever with gateMu still held.
+	<-done
+	select {
+	case r := <-done:
+		t.Fatalf("the second unlock signalled the gate again: %+v", r)
+	default:
+	}
+}

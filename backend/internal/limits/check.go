@@ -81,8 +81,8 @@ func (e *ErrExceeded) Params() map[string]any {
 // Not 413 or 507: PocketBase's own file-size rejection on documents is already a
 // 400, so a different status for the same class of problem would be the odd one
 // out, and the paperless-ngx clients that also reach these paths understand no
-// quota status either. The 423 handling in the SPA is reserved for a private
-// edition.
+// quota status either. Not 423 either: the SPA reloads on that, because it is
+// what the vault's unlock gate answers while an encrypted instance is locked.
 //
 // The error is put under a "limit" key so the whole payload reads as
 // {"limit": {"code": "limit_documents", "params": {...}}}.

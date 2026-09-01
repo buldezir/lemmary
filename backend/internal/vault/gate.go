@@ -185,6 +185,21 @@ func (v *Vault) gateHandler(done chan<- GateResult) http.Handler {
 		v.gateMu.Lock()
 		defer v.gateMu.Unlock()
 
+		// An open vault must never be unlocked again. Unlock empties the working
+		// directory before restoring into it, and the mutex above only orders
+		// the two requests — it does not stop the second one. Shutdown below
+		// waits five seconds and then abandons a handler that is still running
+		// without stopping its goroutine, so on an archive large enough for the
+		// restore to outlast that timeout the sequence is: the gate returns,
+		// PocketBase opens data.db in the working directory, and the orphaned
+		// handler then deletes it out from under the live SQLite connection.
+		// Two tabs on the unlock form, or one impatient retry, is the whole
+		// setup. Answer the second request from the state the first one reached.
+		if v.Loaded() {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+			return
+		}
+
 		if !v.Initialized() {
 			if req.Password == "" {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"message": "A password is required to initialise this instance."})
