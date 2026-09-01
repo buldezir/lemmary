@@ -19,12 +19,19 @@ export class AuthRequiredError extends Error {
 
 // Dev auto-login credentials are only honored in dev builds, so a production
 // bundle can never ship with a working login baked in.
+//
+// The same pair the server bootstraps the first admin from. That is not a
+// coincidence worth avoiding: SETUP_ADMIN_* creates a _superusers record and
+// the paired users account with identical credentials, and this signs into that
+// users account — so one variable configures both, where a second VITE_ copy
+// was a name that had to be kept in step by hand and silently stopped working
+// when it drifted.
 function devCredentials() {
   if (!import.meta.env.DEV) {
     return null
   }
-  const email = import.meta.env.VITE_DEV_USER_EMAIL
-  const password = import.meta.env.VITE_DEV_USER_PASSWORD
+  const email = import.meta.env.SETUP_ADMIN_EMAIL
+  const password = import.meta.env.SETUP_ADMIN_PASSWORD
   return email && password ? { email, password } : null
 }
 

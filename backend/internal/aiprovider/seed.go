@@ -1,7 +1,6 @@
 package aiprovider
 
 import (
-	"os"
 	"strconv"
 	"strings"
 
@@ -10,38 +9,13 @@ import (
 	"lemmary/backend/internal/strutil"
 )
 
-func SeedFromEnv(app core.App, settings *core.Record) error {
-	if settings == nil {
-		return nil
-	}
-	if alreadyBound(settings) {
-		return nil
-	}
-	count, err := app.CountRecords(CollectionName)
-	if err != nil {
-		return err
-	}
-	if count > 0 {
-		return nil
-	}
-
-	openaiID, err := createEnvProvider(app, SDKOpenAI, "OPENAI_API_KEY", os.Getenv("OPENAI_BASE_URL"))
-	if err != nil {
-		return err
-	}
-	mistralID, err := createEnvProvider(app, SDKMistral, "MISTRAL_API_KEY", strutil.FirstNonEmpty(os.Getenv("MISTRAL_API_BASE_URL"), DefaultBaseURL(SDKMistral)))
-	if err != nil {
-		return err
-	}
-	googleID, err := createEnvProvider(app, SDKGoogleVision, "GOOGLE_VISION_API_KEY", "")
-	if err != nil {
-		return err
-	}
-
-	bindFromIDs(settings, openaiID, mistralID, googleID, envTaskModels())
-	return nil
-}
-
+// MigrateLegacySettings builds provider records from the flat columns an
+// install carried before ai_providers existed.
+//
+// It reads the settings record, never the environment — that separation is what
+// keeps it working now that the environment no longer speaks in OPENAI_* and
+// MISTRAL_* at all. An install last booted before those columns were retired
+// still has them populated, and this is its only route forward.
 func MigrateLegacySettings(app core.App, settings *core.Record) error {
 	if settings == nil {
 		return nil
@@ -71,11 +45,11 @@ func MigrateLegacySettings(app core.App, settings *core.Record) error {
 	}
 
 	models := taskModels{
-		extract:    strutil.FirstNonEmpty(settings.GetString("openai_model"), "gpt-5.6-luna"),
+		extract:    strutil.FirstNonEmpty(settings.GetString("openai_model"), DefaultExtractModel),
 		chat:       strings.TrimSpace(settings.GetString("openai_chat_model")),
 		search:     strings.TrimSpace(settings.GetString("openai_search_model")),
 		ocr:        strutil.FirstNonEmpty(settings.GetString("mistral_ocr_model"), "mistral-ocr-latest"),
-		ocrSDK:     strutil.FirstNonEmpty(settings.GetString("ocr_provider"), "google_vision"),
+		ocrSDK:     strutil.FirstNonEmpty(settings.GetString("ocr_provider"), SDKGoogleVision),
 		mistralLLM: "mistral-small-latest",
 	}
 	bindFromIDs(settings, openaiID, mistralID, googleID, models)
@@ -89,19 +63,6 @@ type taskModels struct {
 	ocr        string
 	ocrSDK     string
 	mistralLLM string
-}
-
-func envTaskModels() taskModels {
-	extract := getenv("OPENAI_MODEL", "gpt-5.6-luna")
-	chat := getenv("OPENAI_CHAT_MODEL", extract)
-	return taskModels{
-		extract:    extract,
-		chat:       chat,
-		search:     getenv("OPENAI_SEARCH_MODEL", chat),
-		ocr:        getenv("MISTRAL_OCR_MODEL", "mistral-ocr-latest"),
-		ocrSDK:     getenv("OCR_PROVIDER", "google_vision"),
-		mistralLLM: getenv("MISTRAL_MODEL", "mistral-small-latest"),
-	}
 }
 
 func bindFromIDs(settings *core.Record, openaiID, mistralID, googleID string, models taskModels) {
@@ -159,14 +120,6 @@ func alreadyBound(settings *core.Record) bool {
 		strings.TrimSpace(settings.GetString("extract_provider_id")) != ""
 }
 
-func createEnvProvider(app core.App, sdk, envKey, baseURL string) (string, error) {
-	key := strings.TrimSpace(os.Getenv(envKey))
-	if key == "" {
-		return "", nil
-	}
-	return createLegacyProvider(app, sdk, key, baseURL, DefaultAlias(sdk))
-}
-
 func createLegacyProvider(app core.App, sdk, apiKey, baseURL, alias string) (string, error) {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
@@ -202,11 +155,4 @@ func uniqueAlias(app core.App, alias string) string {
 		candidate = alias + " " + strconv.Itoa(i)
 	}
 	return alias
-}
-
-func getenv(key, fallback string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		return v
-	}
-	return fallback
 }

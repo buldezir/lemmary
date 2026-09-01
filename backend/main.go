@@ -51,6 +51,17 @@ func run() int {
 		return pre.Code
 	}
 
+	// Before pocketbase.New for the same reason boot.Prepare is: it is a pure
+	// read of the environment with no database behind it, so a managed instance
+	// whose AI configuration is incomplete stops here rather than coming up and
+	// serving a workspace nobody inside it can repair. Off managed mode this
+	// only errors on a value that is malformed rather than merely absent.
+	aiEnv, err := config.AIEnvFromEnv()
+	if err != nil {
+		log.Printf("config: %v", err)
+		return 1
+	}
+
 	app := pocketbase.New()
 	if pre.DataDir != "" {
 		// Mirrors what pocketbase.New does, with the directory replaced: the
@@ -81,7 +92,7 @@ func run() int {
 		Automigrate: osutils.IsProbablyGoRun(),
 	})
 
-	rt := config.NewRuntime()
+	rt := config.NewRuntime(aiEnv)
 	appwire.Register(app, rt, publicDir, indexFallback)
 	// After appwire so anything the pre-boot step wires binds behind every
 	// core route and hook — the vault's gate has to sit outside them all.

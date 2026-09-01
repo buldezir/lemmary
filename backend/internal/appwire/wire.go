@@ -40,6 +40,10 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	// install and not only where a plan limit is set.
 	limits.Register(app, lim)
 	appapi.Register(app, rt, ft, lim, badLimitKeys)
+	// After config.RegisterHooks so the settings singleton and any env-seeded
+	// providers exist by the time an account is minted: an instance that hands
+	// somebody a login should have somewhere for them to land.
+	appapi.RegisterAdminBootstrap(app)
 	ngxapi.Register(app, ft)
 	worker.Register(app, rt)
 

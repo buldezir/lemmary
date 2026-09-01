@@ -32,13 +32,28 @@ type Runtime struct {
 	reloadMu sync.Mutex
 	mu       sync.RWMutex
 	snap     Snapshot
+
+	// env is parsed once, before the app exists, and never changes afterwards
+	// — so it needs no lock. It rides here because the Runtime is already
+	// threaded to everything that has to know whether this instance is managed:
+	// the settings and provider endpoints that refuse writes, and the meta
+	// endpoint the SPA reads to decide what to render.
+	env AIEnv
 }
 
-func NewRuntime() *Runtime {
+func NewRuntime(env AIEnv) *Runtime {
 	return &Runtime{
-		snap: Snapshot{Cfg: DefaultsFromEnv()},
+		snap: Snapshot{Cfg: env.Defaults()},
+		env:  env,
 	}
 }
+
+// Env is the AI environment this process was started with.
+func (r *Runtime) Env() AIEnv { return r.env }
+
+// Managed reports whether the operator owns AI configuration, in which case the
+// Settings page does not offer it and the API refuses to change it.
+func (r *Runtime) Managed() bool { return r.env.Managed }
 
 func (r *Runtime) Snapshot() Snapshot {
 	r.mu.RLock()
@@ -55,7 +70,7 @@ func (r *Runtime) Reload(app core.App) error {
 	cfg, err := Load(app)
 	if err != nil {
 		app.Logger().Warn("loading app_settings failed; using env defaults", slog.Any("error", err))
-		cfg = DefaultsFromEnv()
+		cfg = r.env.Defaults()
 	}
 	r.apply(app, cfg)
 	return nil
@@ -183,7 +198,7 @@ func RegisterHooks(app core.App, rt *Runtime) {
 			e.App.Logger().Warn("app migrations failed", slog.Any("error", err))
 		}
 
-		if err := EnsureDefaults(e.App); err != nil {
+		if err := EnsureDefaults(e.App, rt.env); err != nil {
 			e.App.Logger().Warn("ensure app_settings defaults failed; continuing with env fallback", slog.Any("error", err))
 		}
 
@@ -191,9 +206,13 @@ func RegisterHooks(app core.App, rt *Runtime) {
 		// different environment serves the new configuration on its first
 		// request rather than after somebody saves Settings. Warn rather than
 		// fail for the same reason bootstrap tolerates a bad settings record:
-		// the app must come up so an admin can go and look.
-		if err := ApplyEnvChanges(e.App); err != nil {
-			e.App.Logger().Warn("applying environment changes failed; keeping stored settings", slog.Any("error", err))
+		// the app must come up so an admin can go and look. The environment was
+		// already validated before the app existed, so anything reaching here
+		// is a database problem rather than a misconfiguration.
+		if rt.env.Managed {
+			if err := ApplyManaged(e.App, rt.env); err != nil {
+				e.App.Logger().Warn("applying managed AI configuration failed; keeping stored settings", slog.Any("error", err))
+			}
 		}
 
 		_ = rt.Reload(e.App)
