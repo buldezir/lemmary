@@ -2,12 +2,78 @@
 
 ## Prerequisites
 
-- Go 1.23+
+- Go 1.26+ with cgo enabled (a C toolchain: `gcc` or `clang`)
 - Node.js 20+
 - [pnpm](https://pnpm.io/installation) 11+ (`npm install -g pnpm`)
 - [poppler-utils](https://poppler.freedesktop.org/) for all PDF work: `pdftoppm` (preview and page thumbnails), `pdfinfo` (page count), `pdftotext` (page text), `pdfseparate` and `pdfunite` (page extraction for [document splitting](#document-splitting))
 
 On macOS: `brew install poppler`. On Debian/Ubuntu: `apt install poppler-utils`.
+
+### FAISS (required to build the backend)
+
+Search is backed by [bleve](https://github.com/blevesearch/bleve), whose vector
+support is a cgo binding to FAISS. bleve compiles that API out unless the
+`vectors` build tag is set, and Lemmary is always built with it — one binary,
+one image, no edition without vector search. A build without the tag stops
+immediately on `backend/internal/fulltext/vectors_required.go`.
+
+The library has to be **blevesearch's fork** of FAISS. A distribution
+`libfaiss` package, however recent, is not enough: the Go binding calls C entry
+points (`*_c_ex.h`) that exist only in the fork. `scripts/faiss-build.sh` owns
+the pinned commit — it is the single source of truth, and it moves only when
+bleve moves, from the compatibility table in bleve's `docs/vectors.md`.
+
+Every route below also needs OpenBLAS and libgomp present when the backend is
+linked and when it runs (`apt install libopenblas0-pthread libgomp1`;
+`libopenblas-dev` brings them along).
+
+**Option 1 — system-wide.** One `sudo`, and nothing to set afterwards:
+
+```bash
+sudo apt install cmake ninja-build g++ libopenblas-dev
+sudo scripts/faiss-build.sh --prefix /usr/local
+sudo ldconfig
+```
+
+**Option 2 — in your home directory.** Same build, no root:
+
+```bash
+sudo apt install cmake ninja-build g++ libopenblas-dev
+scripts/faiss-build.sh --prefix "$HOME/.local/faiss"
+```
+
+**Option 3 — out of the Docker build.** No cmake, no compiler, no root at all;
+the `faiss` stage is a `scratch` image holding just the artifacts, so the export
+is about 10 MB rather than a builder's whole root filesystem:
+
+```bash
+docker buildx build --target faiss --output type=local,dest=./.faiss .
+mkdir -p "$HOME/.local/faiss"
+cp -a .faiss/lib .faiss/include "$HOME/.local/faiss/"
+```
+
+Options 2 and 3 put FAISS somewhere neither the compiler nor the loader looks,
+so three variables point them at it:
+
+```bash
+export CGO_CFLAGS=-I$HOME/.local/faiss/include
+export CGO_LDFLAGS=-L$HOME/.local/faiss/lib
+export LD_LIBRARY_PATH=$HOME/.local/faiss/lib
+```
+
+The repository's `.envrc` sets all three when `~/.local/faiss` exists, so with
+[direnv](https://direnv.net) (`direnv allow`) there is nothing to remember.
+
+`.envrc` also exports `GOFLAGS=-tags=vectors`, which is what makes a bare
+`go build`, `go test` and gopls work in this tree. Without direnv, either pass
+`-tags vectors` every time or set it for your user once with
+`go env -w GOFLAGS=-tags=vectors`.
+
+`./scripts/test-all.sh` checks all of this before it runs anything and prints
+these instructions when FAISS is missing.
+
+macOS: `brew install cmake ninja libomp openblas`, then option 1 or 2 (the
+script picks Homebrew's libomp up on its own).
 
 ## Running from source
 

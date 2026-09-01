@@ -9,8 +9,71 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+# The backend does not build without the vectors tag: bleve compiles its kNN API
+# out otherwise, and internal/fulltext/vectors_required.go stops a tag-less
+# build with one readable error. Exported rather than passed per command so the
+# overlay suite, which runs go commands of its own, inherits it too.
+export GOFLAGS=-tags=vectors
+export CGO_ENABLED=1
+
 ARGS=()
 [[ "${1:-}" == --no-sync ]] && { ARGS+=(--no-sync); shift; }
+
+stage() { echo ""; echo "==> $1"; }
+fail()  { echo ""; echo "FAILED: $1" >&2; exit 1; }
+
+# The vectors tag means cgo against blevesearch's FAISS fork. Checked before
+# anything else, including the overlay handoff: without it every Go stage fails
+# with linker output that says nothing about how to fix it.
+faiss_preflight() {
+  stage "FAISS (bleve vector search)"
+
+  # A developer who built FAISS into a prefix of their own says so through
+  # CGO_LDFLAGS, and the library will not be on the default loader path.
+  if [[ -n "${CGO_LDFLAGS:-}" ]]; then
+    echo "CGO_LDFLAGS is set, trusting it: $CGO_LDFLAGS"
+    return
+  fi
+
+  local ldconfig
+  ldconfig="$(command -v ldconfig || echo /sbin/ldconfig)"
+  if [[ -x "$ldconfig" ]] && "$ldconfig" -p 2>/dev/null | grep -q 'libfaiss_c\.'; then
+    echo "libfaiss_c is on the loader path"
+    return
+  fi
+  local f
+  for f in /usr/local/lib/libfaiss_c.so* /usr/lib/libfaiss_c.so* \
+           /usr/local/lib/libfaiss_c.dylib /opt/homebrew/lib/libfaiss_c.dylib; do
+    if [[ -e "$f" ]]; then
+      echo "libfaiss_c found: $f"
+      return
+    fi
+  done
+
+  cat >&2 <<'EOF'
+
+libfaiss_c was not found. The backend links blevesearch's FAISS fork through
+cgo, so nothing here compiles until it is installed. Any one of:
+
+  system-wide (needs root once):
+    sudo apt-get install -y cmake ninja-build g++ libopenblas-dev
+    sudo scripts/faiss-build.sh --prefix /usr/local && sudo ldconfig
+
+  in your home directory (no root):
+    scripts/faiss-build.sh --prefix "$HOME/.local/faiss"
+    export CGO_CFLAGS=-I$HOME/.local/faiss/include
+    export CGO_LDFLAGS=-L$HOME/.local/faiss/lib
+    export LD_LIBRARY_PATH=$HOME/.local/faiss/lib
+
+  out of the Docker build, needing no local toolchain at all:
+    docker buildx build --target faiss --output type=local,dest=./.faiss .
+
+docs/setup.md has the details.
+EOF
+  fail "FAISS preflight"
+}
+
+faiss_preflight
 
 if OVERLAY="$("$ROOT/scripts/overlay.sh" "${ARGS[@]+"${ARGS[@]}"}")"; then
   # Its own dependencies, in its own checkout. pnpm hardlinks from a shared
@@ -33,9 +96,6 @@ if [[ ! -d frontend/node_modules ]]; then
   echo "==> Installing frontend dependencies"
   (cd frontend && pnpm install --frozen-lockfile)
 fi
-
-stage() { echo ""; echo "==> $1"; }
-fail()  { echo ""; echo "FAILED: $1" >&2; exit 1; }
 
 echo "No verification overlay found: running unit tests and the frontend build."
 echo "API and browser e2e will NOT run."
