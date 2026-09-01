@@ -38,11 +38,12 @@ type GateResult struct {
 // It listens on addr, which must be the address PocketBase will later bind, and
 // releases it before returning so the handover can happen.
 //
-// insecure reports that addr will carry cleartext HTTP. The gate refuses to
-// collect a credential in that case unless the operator has explicitly accepted
-// it: this form submits the password that unwraps the master key for the whole
-// archive, and PocketBase's autocert mode leaves nothing listening on 443 while
-// the instance is locked, so a browser has no TLS option to fall back to.
+// insecure reports that addr is reachable from off this host while carrying
+// cleartext HTTP. The gate refuses to collect a credential in that case unless
+// the operator has explicitly accepted it: this form submits the password that
+// unwraps the master key for the whole archive, and nothing is serving TLS while
+// the instance is locked — PocketBase is not running yet, so under autocert
+// there is not even anything listening on 443 to fall back to.
 func (v *Vault) Gate(ctx context.Context, addr string, insecure bool) (GateResult, error) {
 	var result GateResult
 
@@ -60,16 +61,34 @@ func (v *Vault) Gate(ctx context.Context, addr string, insecure bool) (GateResul
 			result.Initialized, result.RecoveryCode = true, code
 			return result, nil
 		}
-		return result, v.Unlock(Credential{Password: pass})
+		err := v.Unlock(Credential{Password: pass})
+		if err == nil {
+			return result, nil
+		}
+		if !errors.Is(err, ErrWrongKey) {
+			return result, err
+		}
+		// A passphrase that no longer opens anything must not be fatal here.
+		// The expected way to reach this is not a typo: provisioning with
+		// VAULT_PASSPHRASE set is documented, and the first account save
+		// deliberately revokes the bootstrap wrap that passphrase created. Leave
+		// the variable in the compose file — the natural thing to do — and the
+		// next restart would fail startup, exit 1, and crash-loop the container
+		// under any restart policy, with the unlock form that would have
+		// accepted an ordinary account password never served. Fall through to
+		// the gate instead; a human at a browser can still get in.
+		v.opts.Log("vault: %s did not unlock the archive (it is probably the bootstrap passphrase, which is revoked once an account is enrolled); waiting for a sign-in instead", EnvPassphrase)
 	}
 
-	if insecure && !envBool(EnvAllowInsecureGate) {
+	if insecure && !v.opts.AllowInsecureGate {
 		return result, fmt.Errorf(
-			"vault: refusing to serve the unlock form on %s in cleartext. That form carries the password "+
-				"which decrypts the whole archive, and with domain arguments nothing is listening on 443 while "+
-				"the instance is locked, so there is no TLS to fall back to. Either terminate TLS in front and "+
-				"bind locally (serve --http 127.0.0.1:8090), or set %s=1 to accept sending the password in the clear",
-			addr, EnvAllowInsecureGate)
+			"vault: refusing to serve the unlock form on %s. That form carries the password which decrypts the "+
+				"whole archive, this gate speaks plain HTTP (it runs before the server exists, so it has no TLS to "+
+				"use), and %s is not a loopback address — so who can reach it is decided outside this process and "+
+				"cannot be checked from in here. Either bind loopback directly (serve --http 127.0.0.1:8090) and "+
+				"put TLS in front, or, in a container where binding 0.0.0.0 is unavoidable, publish the port on "+
+				"127.0.0.1 only and set %s=1 to say so — which is exactly what docker-compose.encrypted.yml does",
+			addr, addr, EnvAllowInsecureGate)
 	}
 
 	ln, err := net.Listen("tcp", addr)

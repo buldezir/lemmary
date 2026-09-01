@@ -5,6 +5,8 @@ import (
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
+
+	"lemmary/backend/internal/appapi"
 )
 
 // registerAPI exposes the small surface an operator and the SPA need.
@@ -32,7 +34,7 @@ func registerAPI(app *pocketbase.PocketBase, v *Vault) {
 		// working. Letting any signed-in user mint one hands a departing user a
 		// permanent way back in.
 		g.POST("/recovery-code", func(re *core.RequestEvent) error {
-			if !isAdmin(re) {
+			if !appapi.IsAppAdmin(re) {
 				return re.JSON(http.StatusForbidden, map[string]string{"message": "Admin access required."})
 			}
 			if !v.Loaded() {
@@ -57,7 +59,7 @@ func registerAPI(app *pocketbase.PocketBase, v *Vault) {
 		// An explicit flush, for operators who want a known-good point before
 		// stopping a container.
 		g.POST("/flush", func(re *core.RequestEvent) error {
-			if !isAdmin(re) {
+			if !appapi.IsAppAdmin(re) {
 				return re.JSON(http.StatusForbidden, map[string]string{"message": "Admin access required."})
 			}
 			if err := v.Flush("api"); err != nil {
@@ -68,19 +70,4 @@ func registerAPI(app *pocketbase.PocketBase, v *Vault) {
 
 		return e.Next()
 	})
-}
-
-// isAdmin mirrors the app's own admin rule: a PocketBase superuser, or a users
-// record flagged as the paired app admin.
-func isAdmin(e *core.RequestEvent) bool {
-	if e.Auth == nil {
-		return false
-	}
-	if e.HasSuperuserAuth() {
-		return true
-	}
-	if e.Auth.Collection().Name != "users" {
-		return false
-	}
-	return e.Auth.GetBool("is_app_admin")
 }

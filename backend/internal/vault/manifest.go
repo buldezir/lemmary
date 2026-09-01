@@ -83,6 +83,23 @@ func (m *Manifest) index() map[string]Entry {
 	return idx
 }
 
+// hasDatabases reports whether a generation carries the application databases.
+//
+// A nil manifest is the never-flushed vault, which correctly has none.
+func (m *Manifest) hasDatabases() bool {
+	if m == nil {
+		return false
+	}
+	for _, e := range m.Entries {
+		for _, db := range databaseFiles {
+			if e.Path == db {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // manifestStreamID binds a manifest's ciphertext to its generation, so an old
 // manifest cannot be renamed forward over a newer one.
 func manifestStreamID(gen uint64) StreamID {

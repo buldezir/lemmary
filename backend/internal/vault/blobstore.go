@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -71,31 +72,81 @@ func hashFile(path string) ([]byte, int64, error) {
 	return h.Sum(nil), n, nil
 }
 
-// put stores a file, returning its blob id and whether it had to be written.
-func (s *blobStore) put(srcPath string) (StreamID, bool, error) {
-	sum, _, err := hashFile(srcPath)
-	if err != nil {
-		return StreamID{}, false, err
-	}
-	id := s.blobID(sum)
-	if s.has(id) {
-		return id, false, nil
-	}
+// putAttempts bounds the retry when a file is rewritten while it is being
+// stored. Two passes losing the race twice in a row means something is
+// rewriting that path continuously, which no number of retries will outlast.
+const putAttempts = 3
 
-	dst := s.path(id)
-	err = writeStreamAtomic(dst, 0o600, func(w io.Writer) error {
-		src, err := os.Open(srcPath)
+// hookAfterHash lets a test rewrite a file in the window between the two passes,
+// which is otherwise a race no test could hit on purpose. Nil in every build;
+// the same seam flush.go uses to prove its commit ordering.
+var hookAfterHash func()
+
+// put stores a file, returning its blob id and whether it had to be written.
+//
+// The two passes are a race, and it is checked rather than assumed. A flush
+// walks the working directory of a live system: between the pass that hashes a
+// file and the pass that seals it, the application can rewrite that path — a
+// regenerated thumbnail, an overwritten storage file — and the blob would then
+// be stored under the content address of bytes it does not contain. Nothing
+// downstream could detect that. The AEAD authenticates the blob against its id,
+// and the blob is internally consistent; it is the *name* that lies. The damage
+// surfaces much later and as silent corruption: some unrelated file whose
+// content genuinely hashes to that address is uploaded, dedupe finds the address
+// already present and reuses it, and after the next restart that document
+// materialises holding the other file's bytes.
+//
+// So the seal pass re-hashes what it actually sealed and compares. This costs
+// one SHA-256 over data already in memory, and turns an undetectable corruption
+// into a retry.
+func (s *blobStore) put(srcPath string) (StreamID, bool, error) {
+	for attempt := 1; ; attempt++ {
+		sum, _, err := hashFile(srcPath)
 		if err != nil {
-			return err
+			return StreamID{}, false, err
 		}
-		defer src.Close()
-		_, err = SealStream(w, src, s.blobKey, kindBlob, id)
-		return err
-	})
-	if err != nil {
-		return StreamID{}, false, fmt.Errorf("vault: seal %s: %w", srcPath, err)
+		id := s.blobID(sum)
+		if s.has(id) {
+			return id, false, nil
+		}
+		if hookAfterHash != nil {
+			hookAfterHash()
+		}
+
+		var sealedSum []byte
+		dst := s.path(id)
+		err = writeStreamAtomic(dst, 0o600, func(w io.Writer) error {
+			src, err := os.Open(srcPath)
+			if err != nil {
+				return err
+			}
+			defer src.Close()
+			h := sha256.New()
+			if _, err := SealStream(w, io.TeeReader(src, h), s.blobKey, kindBlob, id); err != nil {
+				return err
+			}
+			sealedSum = h.Sum(nil)
+			return nil
+		})
+		if err != nil {
+			return StreamID{}, false, fmt.Errorf("vault: seal %s: %w", srcPath, err)
+		}
+		if bytes.Equal(sum, sealedSum) {
+			return id, true, nil
+		}
+
+		// The file changed between the passes. What was just written is a blob
+		// whose name addresses content it does not hold, so it has to go before
+		// anything can find it: flushes are serialised, and this id was absent a
+		// moment ago, so nothing else can be relying on it.
+		if rmErr := os.Remove(dst); rmErr != nil && !os.IsNotExist(rmErr) {
+			return StreamID{}, false, fmt.Errorf("vault: remove mis-addressed blob for %s: %w", srcPath, rmErr)
+		}
+		if attempt >= putAttempts {
+			return StreamID{}, false, fmt.Errorf(
+				"vault: %s was rewritten during each of %d attempts to store it", srcPath, putAttempts)
+		}
 	}
-	return id, true, nil
 }
 
 // get decrypts a blob to dstPath, creating parent directories as needed.

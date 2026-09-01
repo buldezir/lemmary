@@ -60,7 +60,7 @@ func status(limit limits.Limit, used int64) limitStatus {
 func handleGetLimits(app core.App, lim limits.Limits, badKeys []string) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		response := limitsResponse{Enforced: lim.Any()}
-		if isAppAdmin(e) {
+		if IsAppAdmin(e) {
 			response.Misconfigured = badKeys
 		}
 

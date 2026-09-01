@@ -65,23 +65,41 @@ func (v *Vault) flush(reason string, fail failPoint) error {
 	}
 	defer os.RemoveAll(stage)
 
+	v.mu.Lock()
+	prev := v.prev
+	store := v.store
+	mkey := v.mkey
+	snap := v.snap
+	v.mu.Unlock()
+
 	// Step 1: a consistent database snapshot, taken *before* walking storage.
 	//
 	// The order is load-bearing. Snapshotting the database first means the walk
 	// may pick up files uploaded after the snapshot: those become blobs no row
 	// references, which is harmless. The reverse order would produce a database
 	// referencing files the walk never saw — a document whose PDF is missing.
-	if v.snap != nil {
-		if err := v.snap.SnapshotDatabases(stage); err != nil {
+	if snap != nil {
+		if err := snap.SnapshotDatabases(stage); err != nil {
 			return fmt.Errorf("vault: snapshot databases: %w", err)
 		}
+	} else if prev.hasDatabases() {
+		// No snapshotter, but the generation we are about to replace had
+		// databases in it. Committing here would write a manifest listing the
+		// documents and none of the metadata, and the very next unlock would
+		// restore an archive with no database at all.
+		//
+		// This is reachable without anything going wrong. The snapshotter is
+		// installed from OnBootstrap, and PocketBase skips bootstrap entirely
+		// for `--help`, `--version` and any unknown command — while OnTerminate
+		// still fires for all of them, which is what calls Finalize. The shrink
+		// guard does not catch it either: dropping two database entries out of
+		// hundreds of files is nowhere near halving the archive.
+		return fmt.Errorf(
+			"vault: refusing to flush generation %d without a database snapshot; the previous generation has one, "+
+				"so committing would leave the archive with documents and no metadata. This flush is running in a "+
+				"process that never opened the databases",
+			prev.Gen+1)
 	}
-
-	v.mu.Lock()
-	prev := v.prev
-	store := v.store
-	mkey := v.mkey
-	v.mu.Unlock()
 
 	prevIdx := prev.index()
 	// Anything whose mtime is at or after the moment the previous generation was

@@ -59,3 +59,15 @@ services:
       VAULT_ENABLED: "1"
       VAULT_DIR: /app/pb_data
       VAULT_WORKDIR: /app/work
+      # Paired with the loopback-only `ports` mapping above, and only correct
+      # because of it. The app binds 0.0.0.0 inside the container -- it has to,
+      # or Docker could not publish the port at all -- so it cannot tell a
+      # loopback publication from a LAN-wide one, and it refuses to serve the
+      # unlock form on a non-loopback address unless told the exposure has been
+      # handled. This line is that statement, and the `ports` entry above is what
+      # makes it true.
+      #
+      # If you widen that mapping past 127.0.0.1, remove this line: you would be
+      # carrying the password that decrypts the whole archive in cleartext to
+      # wherever the port now reaches.
+      VAULT_ALLOW_INSECURE_GATE: "1"

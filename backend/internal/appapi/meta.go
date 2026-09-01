@@ -49,7 +49,7 @@ func handleGetMe(_ core.App) func(*core.RequestEvent) error {
 		}
 		return writeJSON(e, http.StatusOK, map[string]any{
 			"email":    email,
-			"is_admin": isAppAdmin(e),
+			"is_admin": IsAppAdmin(e),
 		})
 	})
 }

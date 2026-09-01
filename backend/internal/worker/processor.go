@@ -13,6 +13,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/router"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/duplicates"
+	"lemmary/backend/internal/inflight"
 	"lemmary/backend/internal/models"
 )
 
@@ -31,6 +32,11 @@ func Register(app core.App, rt *config.Runtime) {
 
 	cronExpr := config.WorkerCronFromEnv()
 	app.Cron().MustAdd("process_pending_jobs", cronExpr, func() {
+		// Counted as in-flight work so a shutdown can wait for it. Cron jobs
+		// are fired and forgotten, and nothing else would wait: with encryption
+		// at rest on, a job still writing while the archive is sealed and the
+		// working directory wiped loses everything it had done.
+		defer inflight.Begin()()
 		if err := p.processNextPending(); err != nil {
 			app.Logger().Error("cron error", slog.Any("error", err))
 		}

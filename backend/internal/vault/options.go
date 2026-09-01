@@ -33,23 +33,46 @@ const (
 
 // OptionsFromEnv builds vault options from the process environment.
 //
+// Every switch is read here, once, and carried in Options from then on — the
+// house rule for environment flags, and load-bearing for these in particular:
+// a getenv buried in a code path reached only while locked is a setting nobody
+// can answer questions about, and one of these decides whether the archive's
+// password may cross a network in the clear.
+//
 // WorkDir defaults to a sibling of the vault directory rather than to somewhere
 // under it, so a misconfiguration cannot end up writing plaintext inside the
 // directory that is supposed to hold only ciphertext.
-func OptionsFromEnv() Options {
+func OptionsFromEnv() (Options, error) {
 	o := Options{
-		Enabled: envBool(EnvEnabled),
 		Dir:     os.Getenv(EnvDir),
 		WorkDir: os.Getenv(EnvWorkDir),
 		Log: func(format string, args ...any) {
 			slog.Info(strings.TrimSpace(fmt.Sprintf(format, args...)))
 		},
-		AllowShrink:      envBool(EnvAllowShrink),
-		AllowDiskWorkDir: envBool(EnvAllowDiskWorkDir),
 	}
-	if n, err := strconv.Atoi(os.Getenv(EnvKeep)); err == nil && n > 0 {
+
+	var err error
+	for _, f := range []struct {
+		key string
+		dst *bool
+	}{
+		{EnvEnabled, &o.Enabled},
+		{EnvAllowShrink, &o.AllowShrink},
+		{EnvAllowDiskWorkDir, &o.AllowDiskWorkDir},
+		{EnvAllowInsecureGate, &o.AllowInsecureGate},
+	} {
+		if *f.dst, err = envBool(f.key); err != nil {
+			return Options{}, err
+		}
+	}
+
+	// Unlike the booleans, a generation count that does not parse falls back to
+	// the default: too few generations costs rollback depth, never the archive,
+	// and refusing to boot over it would be out of proportion.
+	if n, convErr := strconv.Atoi(os.Getenv(EnvKeep)); convErr == nil && n > 0 {
 		o.KeepGenerations = n
 	}
+
 	if o.Enabled {
 		if o.Dir == "" {
 			o.Dir = "pb_data"
@@ -58,14 +81,30 @@ func OptionsFromEnv() Options {
 			o.WorkDir = filepath.Join(filepath.Dir(strings.TrimRight(o.Dir, string(filepath.Separator))), "pb_work")
 		}
 	}
-	return o
+	return o, nil
 }
 
-func envBool(key string) bool {
+// envBool reads a boolean environment variable, refusing a value it does not
+// recognise.
+//
+// Falling back to false is the wrong answer for this family. VAULT_ENABLED=Y is
+// a plausible thing to write and would leave encryption off while the operator
+// believed it on — the volume filling with plaintext, every guarantee in the
+// documentation silently void, and nothing anywhere saying so. The same
+// reasoning applies to the escape hatches in the other direction. An unparseable
+// value is a mistake, and the only safe response to a mistake in this file is to
+// refuse to start.
+func envBool(key string) (bool, error) {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "":
+		return false, nil
 	case "1", "true", "yes", "on":
-		return true
+		return true, nil
+	case "0", "false", "no", "off":
+		return false, nil
 	default:
-		return false
+		return false, fmt.Errorf(
+			"vault: %s=%q is not a boolean; use 1/true/yes/on or 0/false/no/off, or leave it unset",
+			key, os.Getenv(key))
 	}
 }

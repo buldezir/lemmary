@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"lemmary/backend/internal/crypt"
@@ -477,5 +478,66 @@ func TestPasskeyEnrolmentAlsoAllowsRevokingTheBootstrapWrap(t *testing.T) {
 	}
 	if _, _, err := kr.Unlock(Credential{Password: "provisioning-password"}); !errors.Is(err, ErrWrongKey) {
 		t.Fatalf("the provisioning password still opens the archive: %v", err)
+	}
+}
+
+// One wrap nobody can even attempt must not blind the loop to everyone else's.
+//
+// keyring.json sits on the untrusted volume with no whole-document MAC: the
+// per-wrap AAD is checked at UnwrapKey, which a wrap with unsupported KDF
+// parameters never reaches, because deriving the KEK validates them first. So a
+// single entry written by a newer build, hand-edited, or bit-flipped in a cost
+// field used to abort the whole loop — every user's perfectly good password wrap
+// went untried and password sign-in died instance-wide, leaving only a recovery
+// code.
+func TestUnlockSkipsAWrapItCannotAttempt(t *testing.T) {
+	kr, mk := cheapKeyring(t)
+	good := kr.Wraps[0]
+
+	// A wrap whose KDF parameters no build will accept, ordered first so it is
+	// reached before the usable one.
+	broken := good
+	broken.ID = "u_other:pw"
+	broken.User = "other"
+	bad := *good.KDF
+	bad.MemKiB = 1 // far below the floor Validate enforces
+	broken.KDF = &bad
+	kr.Wraps = append([]Wrap{broken}, kr.Wraps...)
+
+	got, wrapID, err := kr.Unlock(Credential{Password: "test-password"})
+	if err != nil {
+		t.Fatalf("a broken sibling wrap blocked a valid password: %v", err)
+	}
+	if wrapID != good.ID {
+		t.Fatalf("opened wrap %q, want %q", wrapID, good.ID)
+	}
+	if crypt.KeyID(got) != crypt.KeyID(mk) {
+		t.Fatal("Unlock returned a different master key")
+	}
+}
+
+// A wrong password among openable wraps still reads as a wrong password, so the
+// gate keeps answering 401 rather than 500.
+func TestUnlockReportsWrongKeyWhenAWrapWasTried(t *testing.T) {
+	kr, _ := cheapKeyring(t)
+	if _, _, err := kr.Unlock(Credential{Password: "not-the-password"}); !errors.Is(err, ErrWrongKey) {
+		t.Fatalf("err = %v, want ErrWrongKey", err)
+	}
+}
+
+// When nothing could be attempted at all, the operator has to be told why
+// instead of being handed a wrong-password answer for a damaged keyring.
+func TestUnlockReportsWhyWhenNoWrapCouldBeTried(t *testing.T) {
+	kr, _ := cheapKeyring(t)
+	bad := *kr.Wraps[0].KDF
+	bad.MemKiB = 1
+	kr.Wraps[0].KDF = &bad
+
+	_, _, err := kr.Unlock(Credential{Password: "test-password"})
+	if err == nil || errors.Is(err, ErrWrongKey) {
+		t.Fatalf("err = %v, want a diagnostic rather than ErrWrongKey", err)
+	}
+	if !strings.Contains(err.Error(), "unusable") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

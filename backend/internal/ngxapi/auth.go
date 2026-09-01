@@ -108,14 +108,17 @@ func authenticateWithPassword(app core.App, identity, password string) (*core.Re
 	if err != nil {
 		return nil, err
 	}
-	// The collection's own switch, honoured here as well as on PocketBase's
-	// auth routes. Turning password auth off is how an operator moves an
-	// install to OAuth or passkeys only; records keep whatever hash they had,
-	// so without this check every one of those passwords stays a working
-	// credential through POST /api/token and Basic auth -- a door the operator
-	// believes they closed.
-	if !collection.PasswordAuth.Enabled {
-		return nil, errors.New("password authentication is disabled")
+	// The collection's auth policy, honoured here as well as on PocketBase's
+	// own auth routes.
+	//
+	// This flow is hand-rolled because the Paperless-compatible API predates
+	// PocketBase's and has to answer in its own shape, which means every policy
+	// PocketBase enforces has to be enforced again here or it is not enforced at
+	// all -- the records keep their hashes, and POST /api/token and Basic auth
+	// go on accepting them. Each check below is a door an operator believes they
+	// closed.
+	if err := checkCollectionAuthPolicy(collection); err != nil {
+		return nil, err
 	}
 
 	var record *core.Record
@@ -140,6 +143,34 @@ func authenticateWithPassword(app core.App, identity, password string) (*core.Re
 	}
 
 	return record, nil
+}
+
+// checkCollectionAuthPolicy refuses a password-only sign-in the collection's
+// settings say is not enough on its own.
+//
+// Password auth disabled is the plain case: it is how an operator moves an
+// install to OAuth or passkeys only.
+//
+// MFA is the one that matters more, because it fails in the more dangerous
+// direction. With it on, PocketBase's own routes answer a correct password with
+// an mfaId and demand a second factor from a different method; this endpoint
+// would hand out a full auth token for the password alone, so enabling MFA would
+// secure the web UI and leave every Paperless-compatible client -- and anything
+// that can reach /api/token -- as an unguarded way in. Under encryption at rest
+// the stakes are higher still: a password accepted here is also, through
+// enrollment, a key that unwraps the archive.
+//
+// Refusing is the honest answer rather than a silent downgrade. There is no
+// second factor to collect over this API, and it is better for a client to stop
+// working visibly than for the operator to believe MFA covers the instance.
+func checkCollectionAuthPolicy(collection *core.Collection) error {
+	if !collection.PasswordAuth.Enabled {
+		return errors.New("password authentication is disabled")
+	}
+	if collection.MFA.Enabled {
+		return errors.New("multi-factor authentication is required, which this API cannot collect")
+	}
+	return nil
 }
 
 func findUserByField(app core.App, collection *core.Collection, field, value string) (*core.Record, error) {

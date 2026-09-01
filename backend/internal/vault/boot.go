@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"lemmary/backend/internal/appargs"
 	"lemmary/backend/internal/crypt"
@@ -25,19 +26,41 @@ import (
 //
 // A disabled vault returns a usable zero vault immediately and the application
 // runs exactly as it did before.
-func Open(argv []string) (*Vault, error) {
-	opts := OptionsFromEnv()
+func Open(argv []string) (v *Vault, err error) {
+	opts, err := OptionsFromEnv()
+	if err != nil {
+		return nil, err
+	}
 	if !opts.Enabled {
+		if err := checkNotEncrypted(argv, opts); err != nil {
+			return nil, err
+		}
 		return New(opts)
 	}
 	if err := GuardDataDirFlag(argv); err != nil {
 		return nil, err
 	}
 
-	v, err := New(opts)
+	v, err = New(opts)
 	if err != nil {
 		return nil, err
 	}
+
+	// From here on the vault holds the directory lock, and past the unlock below
+	// it also holds a fully decrypted copy of the archive in the working
+	// directory. Every failure after this point has to clean both up: main only
+	// defers Close for a Result it actually received, so an error return would
+	// otherwise leave the plaintext sitting there — persistent, under
+	// VAULT_ALLOW_DISK_WORKDIR, and on tmpfs for as long as a boot loop keeps
+	// failing. That is precisely what Close exists to prevent.
+	defer func() {
+		if err != nil {
+			if cerr := v.Close(); cerr != nil {
+				v.opts.Log("vault: cleanup after a failed start also failed: %v", cerr)
+			}
+			v = nil
+		}
+	}()
 
 	// Only serving needs the interactive gate. CLI subcommands unlock from the
 	// environment or fail, rather than hanging on a web form nobody is watching.
@@ -45,14 +68,14 @@ func Open(argv []string) (*Vault, error) {
 		if !v.Initialized() {
 			return nil, fmt.Errorf("this instance is not initialised yet; start the server once and set an unlock password")
 		}
-		if err := v.Unlock(Credential{Password: os.Getenv(EnvPassphrase)}); err != nil {
+		if err = v.Unlock(Credential{Password: os.Getenv(EnvPassphrase)}); err != nil {
 			return nil, err
 		}
 		// Subcommands get the redirect too. None of them touches a document
 		// today, so this changes nothing now -- but the day one does, the
 		// alternative is plaintext copies written to the container overlay,
 		// which is real disk, by a path nobody would think to check.
-		if err := v.InstallTempDir(); err != nil {
+		if err = v.InstallTempDir(); err != nil {
 			return nil, err
 		}
 		return v, nil
@@ -83,6 +106,76 @@ func Open(argv []string) (*Vault, error) {
 		return nil, err
 	}
 	return v, nil
+}
+
+// checkNotEncrypted refuses to boot a plaintext install on top of an encrypted
+// volume.
+//
+// checkNoPlaintextInstall guards the other direction — switching encryption on
+// over existing plaintext. This is the same mistake mirrored, and it is by far
+// the easier of the two to make, because it is made by *omitting* something:
+// running `docker compose up` without the encrypted overlay, or dropping one
+// line from an environment file.
+//
+// Nothing else would notice. Open returns the zero vault, no data directory is
+// overridden, and PocketBase opens the same volume the ciphertext is on, finds
+// no data.db, creates one, and serves a setup wizard — a fresh empty install
+// with the encrypted archive sitting beside it, and a plaintext database now
+// written into the volume whose whole documented guarantee was that it holds
+// only ciphertext. The operator's first evidence is an archive that appears to
+// have lost every document.
+//
+// It looks where PocketBase is actually about to look, which is why the --dir
+// flag and the executable-relative default are both consulted rather than just
+// VAULT_DIR: the mistake being caught is an environment that is already wrong,
+// so its VAULT_DIR may well be the thing that went missing.
+func checkNotEncrypted(argv []string, opts Options) error {
+	for _, dir := range candidateDataDirs(argv, opts) {
+		if !looksLikeVault(dir) {
+			continue
+		}
+		return fmt.Errorf(
+			"%s holds an encrypted vault (%s and %s are there) but %s is not set, so this process would create a "+
+				"fresh plaintext install beside the ciphertext and serve an empty archive. Set %s=1 — with docker "+
+				"compose, bring the instance up with -f docker-compose.encrypted.yml as docs/encryption.md describes",
+			dir, keyringName, currentName, EnvEnabled, EnvEnabled)
+	}
+	return nil
+}
+
+// candidateDataDirs lists the directories PocketBase might use as its data
+// directory for this invocation.
+func candidateDataDirs(argv []string, opts Options) []string {
+	dirs := []string{}
+	if d := appargs.Flag(argv, "--dir"); d != "" {
+		dirs = append(dirs, d)
+	}
+	// Set but disregarded is the exact shape of the accident: an environment
+	// that still describes an encrypted install with the switch turned off.
+	if opts.Dir != "" {
+		dirs = append(dirs, opts.Dir)
+	}
+	if exe, err := os.Executable(); err == nil {
+		dirs = append(dirs, filepath.Join(filepath.Dir(exe), "pb_data"))
+	}
+	return dirs
+}
+
+// looksLikeVault reports whether a directory holds a vault rather than a
+// PocketBase data directory.
+//
+// Both markers are required. A keyring alone can be left behind by a `vault
+// init` that was never used, and refusing to start over that would strand an
+// install nobody had put any data into yet; CURRENT beside it means a generation
+// was committed, so there is an archive here to lose.
+func looksLikeVault(dir string) bool {
+	for _, name := range []string{keyringName, currentName} {
+		st, err := os.Stat(filepath.Join(dir, name))
+		if err != nil || !st.Mode().IsRegular() {
+			return false
+		}
+	}
+	return true
 }
 
 // IsCommand reports whether argv asks for a vault subcommand, and returns the
@@ -137,7 +230,11 @@ func RunCommand(op string) int {
 // Re-running it is safe, which is what lets a provisioning step retry after a
 // failure later in the sequence without a special case for "maybe it worked".
 func runInit() int {
-	opts := OptionsFromEnv()
+	opts, err := OptionsFromEnv()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "vault init: %v\n", err)
+		return 1
+	}
 	if !opts.Enabled {
 		fmt.Fprintf(os.Stderr, "vault init: %s must be set\n", EnvEnabled)
 		return 1

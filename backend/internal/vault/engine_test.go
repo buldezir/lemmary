@@ -1027,3 +1027,212 @@ func TestFailedInitDoesNotStrandTheVolume(t *testing.T) {
 		t.Fatal("the vault reports initialised after a failed Init")
 	}
 }
+
+// A flush that runs in a process which never opened the databases must not
+// commit, or the next unlock restores documents with no metadata at all.
+//
+// This is reachable without anything going wrong: the snapshotter is installed
+// from OnBootstrap, PocketBase skips bootstrap entirely for --help, --version
+// and any unknown command, and OnTerminate still fires for all of them. The
+// shrink guard does not catch it — dropping two database entries out of many is
+// nowhere near halving the archive — so the first flush would silently replace a
+// good generation with a metadata-free one.
+func TestFlushRefusesWithoutASnapshotterOnceDatabasesExist(t *testing.T) {
+	h := newHarness(t)
+	h.write("storage/a/one.pdf", "first document")
+	h.write("storage/a/two.pdf", "second document")
+	h.write("storage/a/three.pdf", "third document")
+	if err := h.v.Flush("first"); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	good := h.v.Generation()
+
+	// A process that never bootstrapped: unlocked and restored, but with no
+	// snapshotter installed.
+	h.v.SetSnapshotter(nil)
+	err := h.v.Flush("terminate")
+	if err == nil {
+		t.Fatal("a flush with no snapshotter committed over a generation that had databases")
+	}
+	if !strings.Contains(err.Error(), "without a database snapshot") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if h.v.Generation() != good {
+		t.Fatalf("generation moved to %d despite the refusal, want %d", h.v.Generation(), good)
+	}
+
+	// And the archive still restores with its databases.
+	h.reopen()
+	if got := h.read("data.db"); !strings.Contains(got, "pretend database") {
+		t.Fatalf("data.db did not survive: %q", got)
+	}
+}
+
+// A fresh vault has no databases to lose, so the guard must not block the first
+// flush of one that genuinely has none.
+func TestFlushWithoutASnapshotterIsFineWhenNothingHadDatabases(t *testing.T) {
+	h := newHarness(t)
+	h.v.SetSnapshotter(nil)
+	h.write("storage/a/one.pdf", "only a document")
+	if err := h.v.Flush("first"); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	if h.v.Generation() == 0 {
+		t.Fatal("nothing was committed")
+	}
+}
+
+// Nesting the vault inside the working directory is unrecoverable: the working
+// directory is emptied on every unlock, so the wipe would delete the keyring,
+// every manifest and every blob at the one moment the master key existed only in
+// memory. Nothing downstream would notice — the restore succeeds against an
+// empty directory and the first flush commits that emptiness.
+func TestNewRefusesNestedDirectories(t *testing.T) {
+	root := t.TempDir()
+	cases := []struct {
+		name    string
+		dir     string
+		workDir string
+	}{
+		{"vault inside the working directory", filepath.Join(root, "data", "vault"), filepath.Join(root, "data")},
+		{"working directory inside the vault", filepath.Join(root, "data"), filepath.Join(root, "data", "work")},
+		{"the same directory", filepath.Join(root, "data"), filepath.Join(root, "data")},
+		{"the same directory spelled differently", filepath.Join(root, "data"), filepath.Join(root, "data") + string(filepath.Separator) + "."},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			v, err := New(Options{Dir: tc.dir, WorkDir: tc.workDir, Enabled: true, AllowDiskWorkDir: true})
+			if err == nil {
+				v.releaseLock()
+				t.Fatal("a nested configuration was accepted")
+			}
+			if !strings.Contains(err.Error(), "separate trees") && !strings.Contains(err.Error(), "about to open") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// Siblings are the intended layout and must keep working.
+func TestNewAcceptsSiblingDirectories(t *testing.T) {
+	root := t.TempDir()
+	v, err := New(Options{
+		Dir: filepath.Join(root, "vault"), WorkDir: filepath.Join(root, "work"),
+		Enabled: true, AllowDiskWorkDir: true,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	v.releaseLock()
+}
+
+// put hashes a file and then re-reads it to seal. A file rewritten between the
+// two passes would otherwise be stored under the content address of bytes it
+// does not hold — and because the AEAD authenticates the blob against its id,
+// and the blob is internally consistent, nothing downstream could ever detect
+// it. The damage lands much later: some unrelated file whose content genuinely
+// hashes to that address is uploaded, dedupe reuses the blob, and that document
+// silently restores holding the wrong bytes.
+func TestPutDetectsAFileRewrittenBetweenTheHashAndTheSeal(t *testing.T) {
+	h := newHarness(t)
+	store := h.v.store
+
+	path := filepath.Join(h.workDir, "racy.bin")
+	original := bytes.Repeat([]byte("A"), 4096)
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	sum := sha256.Sum256(original)
+	staleID := store.blobID(sum[:])
+
+	// Rewrite the file every time it is opened, so both passes of every attempt
+	// see different content and the retry budget is exhausted.
+	rewritten := 0
+	swap := func() {
+		rewritten++
+		body := bytes.Repeat([]byte{byte('B' + rewritten)}, 4096)
+		if err := os.WriteFile(path, body, 0o600); err != nil {
+			t.Fatalf("rewrite: %v", err)
+		}
+	}
+	orig := hookAfterHash
+	hookAfterHash = swap
+	defer func() { hookAfterHash = orig }()
+
+	if _, _, err := store.put(path); err == nil {
+		t.Fatal("put accepted a file that was rewritten under it")
+	}
+	// Above all: no blob may be left behind under an address it does not match.
+	if store.has(staleID) {
+		t.Fatal("a blob was left stored under the content address of bytes it does not hold")
+	}
+}
+
+// The ordinary case must not pay for the check above.
+func TestPutStoresAStableFileInOnePass(t *testing.T) {
+	h := newHarness(t)
+	path := filepath.Join(h.workDir, "stable.bin")
+	if err := os.WriteFile(path, []byte("unchanging"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	id, written, err := h.v.store.put(path)
+	if err != nil || !written {
+		t.Fatalf("put = %v, written=%v", err, written)
+	}
+	if err := h.v.store.verify(id); err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+}
+
+// Wipe must report success when the working directory is a mount point. In the
+// intended deployment it is a tmpfs mount, unlinking a mount point always fails
+// with EBUSY, and returning that would print an alarming failure to remove the
+// plaintext on every clean shutdown — at the exact moment an operator most needs
+// to trust the message — while the plaintext had in fact been removed.
+func TestWipeEmptiesTheDirectoryAndToleratesAnUnremovableRoot(t *testing.T) {
+	h := newHarness(t)
+	h.write("storage/a/one.pdf", "plaintext that must not survive")
+	h.write("data.db", "plaintext metadata")
+
+	if err := h.v.Wipe(); err != nil {
+		t.Fatalf("Wipe: %v", err)
+	}
+	// An ordinary directory is removed outright; a mount point survives but is
+	// emptied. Either way no plaintext may remain, and neither is an error.
+	entries, err := os.ReadDir(h.workDir)
+	if err == nil && len(entries) != 0 {
+		t.Fatalf("Wipe left %d entries behind", len(entries))
+	}
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("read the working directory: %v", err)
+	}
+
+	// The part that must not be reported as a failure: a root that cannot be
+	// unlinked, which is what a tmpfs mount point is on every clean shutdown.
+	blocked := filepath.Join(t.TempDir(), "mountpoint")
+	if err := os.MkdirAll(filepath.Join(blocked, "sub"), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(blocked, "sub", "doc.pdf"), []byte("plaintext"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	stub := &Vault{opts: Options{Enabled: true, WorkDir: blocked, Log: func(string, ...any) {}}}
+	// Make the root itself unremovable the way a mount point is, by taking away
+	// write permission on its parent.
+	parent := filepath.Dir(blocked)
+	if err := os.Chmod(parent, 0o500); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	defer os.Chmod(parent, 0o700)
+
+	if err := stub.Wipe(); err != nil {
+		t.Fatalf("Wipe reported a failure for an unremovable root: %v", err)
+	}
+	left, err := os.ReadDir(blocked)
+	if err != nil {
+		t.Fatalf("read the working directory: %v", err)
+	}
+	if len(left) != 0 {
+		t.Fatalf("the plaintext was not removed: %d entries remain", len(left))
+	}
+}

@@ -22,6 +22,7 @@
 package vault
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -31,6 +32,7 @@ import (
 	"time"
 
 	"lemmary/backend/internal/crypt"
+	"lemmary/backend/internal/inflight"
 )
 
 // Reserved names inside the working directory.
@@ -113,6 +115,9 @@ type Options struct {
 	// AllowDiskWorkDir permits a working directory that is not memory-backed.
 	// Only tests and local development should set it.
 	AllowDiskWorkDir bool
+	// AllowInsecureGate accepts serving the unlock form over cleartext HTTP on
+	// an address something other than this host can reach.
+	AllowInsecureGate bool
 	// Log receives progress and warnings.
 	Log Logger
 }
@@ -187,16 +192,20 @@ func (v *Vault) Generation() uint64 {
 }
 
 // SetSnapshotter installs the database snapshot strategy.
-func (v *Vault) SetSnapshotter(s Snapshotter) { v.snap = s }
+//
+// It is called from the bootstrap hook, on a different goroutine from the
+// flushes that read it, so it takes the lock like every other field.
+func (v *Vault) SetSnapshotter(s Snapshotter) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.snap = s
+}
 
 // Keyring exposes the keyring for enrollment operations.
 func (v *Vault) Keyring() *Keyring { return v.kr }
 
 // MasterKey returns the unwrapped master key. Callers must not retain it.
 func (v *Vault) MasterKey() crypt.Key { return v.mk }
-
-// SaveKeyring persists keyring changes made through Keyring.
-func (v *Vault) SaveKeyring() error { return v.kr.Save(v.opts.Dir) }
 
 // UpdateKeyring runs fn with exclusive access to the keyring, then persists the
 // result. Every mutation after the vault is serving must go through here: the
@@ -227,6 +236,9 @@ func New(opts Options) (*Vault, error) {
 	}
 	if opts.Dir == "" || opts.WorkDir == "" {
 		return nil, errors.New("vault: Dir and WorkDir are required when enabled")
+	}
+	if err := checkDirsDisjoint(opts.Dir, opts.WorkDir); err != nil {
+		return nil, err
 	}
 	if err := os.MkdirAll(opts.Dir, 0o700); err != nil {
 		return nil, err
@@ -328,6 +340,54 @@ func (v *Vault) adopt(mk crypt.Key) error {
 	return v.restore()
 }
 
+// checkDirsDisjoint refuses a configuration where either directory contains the
+// other.
+//
+// The working directory is emptied on every unlock, before anything is restored
+// into it. Nest the vault inside it — VAULT_WORKDIR=/data with
+// VAULT_DIR=/data/vault, which is a natural enough thing to write — and that
+// wipe deletes the keyring, every manifest and every blob, at the one moment the
+// master key exists only in this process's memory. Nothing downstream would
+// notice: the restore succeeds against an empty directory, the vault reports
+// itself unlocked, and the first flush commits that emptiness. The archive is
+// gone and there is no copy of it anywhere.
+//
+// The reverse nesting is merely bad rather than fatal — plaintext written inside
+// the directory documented to hold only ciphertext — and is refused in the same
+// breath because no correct deployment wants either.
+//
+// Comparison is on cleaned absolute paths. Symlinks are not resolved because
+// neither directory is required to exist yet, and a check that refuses the
+// obvious spelling of the mistake is worth more than one that handles every
+// spelling but cannot run until after the damage.
+func checkDirsDisjoint(dir, workDir string) error {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	absWork, err := filepath.Abs(workDir)
+	if err != nil {
+		return err
+	}
+
+	if absDir == absWork {
+		return fmt.Errorf(
+			"vault: %s and %s are both %s. The working directory is emptied on every unlock, so this would delete the vault it was about to open",
+			EnvDir, EnvWorkDir, absDir)
+	}
+	if withinDir(absWork, absDir) {
+		return fmt.Errorf(
+			"vault: %s (%s) is inside %s (%s). The working directory is emptied on every unlock, which would delete the keyring, the manifests and every blob while the master key existed only in memory — the archive would be unrecoverable. Put them in separate trees",
+			EnvDir, absDir, EnvWorkDir, absWork)
+	}
+	if withinDir(absDir, absWork) {
+		return fmt.Errorf(
+			"vault: %s (%s) is inside %s (%s), so the decrypted archive would be written into the directory that is supposed to hold only ciphertext. Put them in separate trees",
+			EnvWorkDir, absWork, EnvDir, absDir)
+	}
+	return nil
+}
+
 // checkNoPlaintextInstall refuses to create a vault on top of an existing
 // unencrypted install.
 //
@@ -393,12 +453,34 @@ func (v *Vault) checkWorkDirIsMemoryBacked() error {
 	return nil
 }
 
+// drainWait bounds the wait for in-flight work before the shutdown flush.
+//
+// It has to fit inside the container's stop grace period with room for the
+// flush itself to run afterwards; the encrypted compose overlay allows 60s. A
+// variable only so tests need not sit through it.
+var drainWait = 20 * time.Second
+
+// finalizeRetries bounds the re-flush loop that catches work which landed while
+// the previous flush was running.
+const finalizeRetries = 2
+
 // Finalize performs the last flush while the databases are still open.
 //
 // PocketBase triggers OnTerminate for every command, so this runs on a clean
 // exit of any kind; Close then only has to wipe and unlock. Splitting the two
 // matters because by the time a deferred Close runs the databases are closed
 // and the snapshot would fail.
+//
+// It waits for in-flight work first, and that wait is the difference between a
+// clean stop being lossless and only appearing to be. PocketBase's graceful
+// shutdown gives the HTTP server one second and then returns whether or not
+// handlers are still running, and cron jobs are fired and forgotten and never
+// waited for at all. Without this, an upload that finishes a moment after the
+// flush is answered 200, written into the working directory, and then wiped
+// along with it — data acknowledged to a client and lost on a clean SIGTERM.
+//
+// Then it flushes until nothing is dirty, because a write can also land during
+// the flush that was supposed to capture it.
 func (v *Vault) Finalize() {
 	if !v.Enabled() || !v.Loaded() {
 		return
@@ -410,13 +492,49 @@ func (v *Vault) Finalize() {
 	}
 	v.mu.Unlock()
 
-	err := v.Flush("terminate")
+	v.drain()
+
+	var err error
+	for attempt := 0; ; attempt++ {
+		if err = v.Flush("terminate"); err != nil {
+			break
+		}
+		// Anything dirtied while that flush ran is not in it. One more pass
+		// picks it up; the bound is there because a system still taking writes
+		// at shutdown must not keep the process alive indefinitely.
+		if v.dirty.get() == 0 || attempt >= finalizeRetries {
+			break
+		}
+		v.opts.Log("vault: writes landed during the shutdown flush; flushing again")
+	}
 
 	v.mu.Lock()
 	v.finalized = err == nil
 	v.mu.Unlock()
 	if err != nil {
 		v.opts.Log("vault: the shutdown flush failed, so the working directory will be kept: %v", err)
+	}
+}
+
+// drain waits for HTTP handlers and worker jobs to finish before the shutdown
+// flush reads the working directory.
+//
+// A timeout is not fatal. The flush that follows still captures everything
+// written up to this moment, which is strictly better than not waiting; the log
+// line exists so that a stop which may have clipped a write says so, rather than
+// reporting the clean shutdown it did not quite achieve.
+func (v *Vault) drain() {
+	if inflight.Active() == 0 {
+		return
+	}
+	v.opts.Log("vault: waiting for %d in-flight operations before the shutdown flush", inflight.Active())
+
+	ctx, cancel := context.WithTimeout(context.Background(), drainWait)
+	defer cancel()
+	if err := inflight.Wait(ctx); err != nil {
+		v.opts.Log(
+			"vault: %d operations were still running after %s; flushing anyway, so a write finishing now may not be in the archive",
+			inflight.Active(), drainWait)
 	}
 }
 
@@ -459,11 +577,25 @@ func (v *Vault) releaseLock() {
 
 // Wipe removes the plaintext working directory. It is called after a final
 // flush, so that a stopped container leaves nothing behind.
+//
+// Emptying it is the part that matters and the part that is checked. Removing
+// the directory itself is best-effort on purpose: in the intended deployment
+// WorkDir *is* the tmpfs mount point, and unlinking a mount point always fails
+// with EBUSY — so returning that error would report an alarming failure to
+// remove the plaintext on every single clean shutdown, at the exact moment an
+// operator most needs to trust the message, while the plaintext had in fact
+// been removed.
 func (v *Vault) Wipe() error {
 	if v.opts.WorkDir == "" {
 		return nil
 	}
-	return os.RemoveAll(v.opts.WorkDir)
+	if err := removeContents(v.opts.WorkDir); err != nil {
+		return err
+	}
+	if err := os.Remove(v.opts.WorkDir); err != nil && !os.IsNotExist(err) {
+		v.opts.Log("vault: emptied %s but left the directory itself in place (%v); this is expected when it is a mount point", v.opts.WorkDir, err)
+	}
+	return nil
 }
 
 // Stats describes the vault for a status endpoint.

@@ -1,13 +1,16 @@
 package vault
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newGateHarness(t *testing.T) (*Vault, chan GateResult, http.Handler) {
@@ -344,3 +347,98 @@ func TestInitRefusesAnExistingPlaintextInstall(t *testing.T) {
 		})
 	}
 }
+
+// A passphrase that no longer opens anything must fall through to the unlock
+// form, not fail startup.
+//
+// The way to reach this is not a typo. Provisioning with VAULT_PASSPHRASE set is
+// documented, and the first account save deliberately revokes the bootstrap wrap
+// that passphrase created. Leave the variable in the compose file — the natural
+// thing to do — and a hard failure here exits 1 on every restart, crash-looping
+// the container under any restart policy, with the form that would have accepted
+// an ordinary account password never served.
+func TestGateFallsBackToTheFormWhenTheEnvPassphraseIsStale(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv(EnvPassphrase, "the-revoked-bootstrap-passphrase")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// The gate must reach the point of serving and then wait, so it is the
+	// context deadline that ends this, not an unlock error.
+	_, err := h.v.Gate(ctx, "127.0.0.1:0", false)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Gate returned %v, want it to have served the form and waited", err)
+	}
+
+	var served bool
+	for _, line := range h.logs {
+		if strings.Contains(line, "waiting for a sign-in") {
+			served = true
+		}
+	}
+	if !served {
+		t.Fatalf("the gate never served the unlock form; logs: %v", h.logs)
+	}
+}
+
+// A passphrase that does work must still unlock without serving anything, which
+// is what CLI subcommands and the test suite rely on.
+func TestGateUnlocksFromTheEnvironmentWhenThePassphraseIsCurrent(t *testing.T) {
+	root := t.TempDir()
+	dir, workDir := filepath.Join(root, "vault"), filepath.Join(root, "work")
+	opts := Options{Dir: dir, WorkDir: workDir, Enabled: true, AllowDiskWorkDir: true}
+
+	v, err := New(opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, err := v.Init("", "provisioning-passphrase"); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	v.releaseLock()
+
+	v, err = New(opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer v.releaseLock()
+
+	t.Setenv(EnvPassphrase, "provisioning-passphrase")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := v.Gate(ctx, "127.0.0.1:0", false); err != nil {
+		t.Fatalf("Gate: %v", err)
+	}
+	if !v.Loaded() {
+		t.Fatal("the gate returned without unlocking")
+	}
+}
+
+// The refusal to serve the unlock form in the clear has to fire for the address
+// the stock container actually uses. Its entrypoint passes
+// --http=0.0.0.0:${PORT}, and an explicit address used to be exempt — so the
+// check never fired on the one configuration most people run.
+func TestGateRefusesAnExposedCleartextAddress(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv(EnvPassphrase, "")
+
+	_, err := h.v.Gate(context.Background(), "0.0.0.0:80", true)
+	if err == nil {
+		t.Fatal("the gate served the unlock form on an exposed cleartext address")
+	}
+	if !strings.Contains(err.Error(), EnvAllowInsecureGate) {
+		t.Fatalf("the refusal does not name the escape hatch: %v", err)
+	}
+
+	// And the escape hatch has to work, or an operator who accepts the risk
+	// cannot start at all.
+	h.v.opts.AllowInsecureGate = true
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := ctxErr(h.v.Gate(ctx, "127.0.0.1:0", true)); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("with the escape hatch set the gate returned %v, want it to have served", err)
+	}
+}
+
+func ctxErr(_ GateResult, err error) error { return err }

@@ -147,22 +147,46 @@ func kekFor(c Credential, w Wrap) (crypt.Key, bool, error) {
 //
 // It returns ErrWrongKey when nothing matches, and never reports which wrap was
 // tried or how far it got.
+//
+// A wrap this cannot even attempt does not stop the loop. keyring.json sits on
+// the untrusted volume with no whole-document MAC — the per-wrap AAD is checked
+// at UnwrapKey, which a wrap with unsupported KDF parameters never reaches,
+// because deriving the KEK validates them first. So one entry written by a newer
+// build, hand-edited, or bit-flipped in a cost field used to abort the whole
+// loop, and every user's perfectly good password wrap went untried: password
+// sign-in dead for everybody, with only a recovery code left. Skipping the bad
+// wrap costs nothing — an unopenable wrap is exactly as useless either way.
+//
+// The deferred error is reported only when no wrap was usable at all, so a
+// genuine wrong password still reads as ErrWrongKey rather than as corruption,
+// and an operator whose keyring really is damaged still gets told why.
 func (kr *Keyring) Unlock(c Credential) (crypt.Key, string, error) {
 	if kr == nil || len(kr.Wraps) == 0 {
 		return crypt.Key{}, "", ErrNoKeyring
 	}
+	var (
+		tried    bool
+		deferred error
+	)
 	for _, w := range kr.Wraps {
 		kek, usable, err := kekFor(c, w)
 		if err != nil {
-			return crypt.Key{}, "", err
+			if deferred == nil {
+				deferred = fmt.Errorf("vault: wrap %q is unusable: %w", w.ID, err)
+			}
+			continue
 		}
 		if !usable {
 			continue
 		}
 		aad, err := wrapAAD(w)
 		if err != nil {
-			return crypt.Key{}, "", err
+			if deferred == nil {
+				deferred = fmt.Errorf("vault: wrap %q is unusable: %w", w.ID, err)
+			}
+			continue
 		}
+		tried = true
 		mk, err := crypt.UnwrapKey(kek, w.CT, aad)
 		kek.Zero()
 		if err != nil {
@@ -177,6 +201,9 @@ func (kr *Keyring) Unlock(c Credential) (crypt.Key, string, error) {
 			return crypt.Key{}, "", fmt.Errorf("%w: wrap %q holds a foreign master key", ErrCorrupt, w.ID)
 		}
 		return mk, w.ID, nil
+	}
+	if !tried && deferred != nil {
+		return crypt.Key{}, "", deferred
 	}
 	return crypt.Key{}, "", ErrWrongKey
 }

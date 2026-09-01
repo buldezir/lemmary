@@ -18,8 +18,22 @@ commented block in `.env.example` has them all.
 | `VAULT_PASSPHRASE` | unset | Unlocks without the web form, for CLI subcommands and tests. Not how a server should normally run: it sits next to the ciphertext it protects. |
 | `VAULT_ALLOW_DISK_WORKDIR` | unset | Permits a working directory that is not memory-backed. Development only — it means plaintext on disk. |
 | `VAULT_ALLOW_SHRINK` | unset | Permits a flush that would drop more than half the archive. |
-| `VAULT_ALLOW_INSECURE_GATE` | unset | Permits serving the unlock form over cleartext HTTP. Only if you accept sending the archive password in the clear. |
+| `VAULT_ALLOW_INSECURE_GATE` | unset | Permits serving the unlock form on an address reachable from off this host. Only if you accept sending the archive password in the clear. |
 | `VAULT_KEEP_GENERATIONS` | `3` | How many generations are retained, i.e. how far back a rollback can reach. |
+
+Every `VAULT_*` switch above is a strict boolean: `1`/`true`/`yes`/`on` or
+`0`/`false`/`no`/`off`, and anything else refuses to start rather than guessing.
+`VAULT_ENABLED=Y` reading as "off" would run an install you believed was
+encrypted, filling the volume with plaintext while none of the guarantees below
+held — so it is an error, not a default.
+
+The reverse mistake is caught too: starting **without** `VAULT_ENABLED` against a
+volume that holds a vault is refused. Otherwise PocketBase would find no
+database there, create one, and serve a fresh setup wizard beside the
+ciphertext — an archive that appears to have lost every document, and a plaintext
+database now written into the volume that was supposed to hold only ciphertext.
+Forgetting `-f docker-compose.encrypted.yml` is all it takes, so it fails loudly
+instead.
 
 
 With `VAULT_ENABLED=1` the persistent volume holds only ciphertext: the SQLite
@@ -132,6 +146,12 @@ Practically: use the account's own password as `VAULT_PASSPHRASE`, create the
 account in the same provisioning run, and record the recovery code as you go.
 After that, the instance unlocks with account passwords only.
 
+Leaving `VAULT_PASSPHRASE` set afterwards is harmless. Once the bootstrap wrap is
+revoked the passphrase no longer opens anything, and rather than failing startup
+— which would crash-loop the container on every restart — the server logs that
+the passphrase did not work and serves the unlock form as usual. Removing it from
+the environment is still tidier.
+
 ## Serving the unlock page over TLS
 
 The unlock form carries the password that decrypts the whole archive, so it must
@@ -141,19 +161,35 @@ not be served in cleartext. Terminate TLS in front and bind the app locally:
 lemmary serve --http 127.0.0.1:8090   # behind nginx/Caddy/Traefik
 ```
 
-Running `serve yourdomain.com` (PocketBase's built-in autocert) is **refused**
-while encryption is on: in that mode PocketBase serves HTTPS on `:443` and uses
-`:80` only to redirect, but nothing listens on `:443` while the instance is
-locked, so the browser has no TLS to fall back to and the password would cross
-the wire in the clear. Set `VAULT_ALLOW_INSECURE_GATE=1` only if you genuinely
-accept that.
+The gate that serves this form runs *before* PocketBase exists, so it speaks
+plain HTTP and has no TLS configuration to fall back on. Binding a **loopback**
+address is therefore the only configuration it can verify is safe by itself:
 
-An explicit `--http` address is **not** refused, because the server cannot tell
-`0.0.0.0` behind a TLS-terminating proxy from `0.0.0.0` facing the internet
-raw — the two look identical from inside the container. The compose overlay
-therefore publishes the port on `127.0.0.1` only; if you widen that mapping,
-you are choosing to carry the unlock password in cleartext to wherever it
-reaches.
+- `serve --http 127.0.0.1:8090` — allowed. Reachable only through a proxy on this
+  host, which is where TLS belongs.
+- `serve yourdomain.com` (PocketBase's built-in autocert) — refused. In that mode
+  PocketBase serves HTTPS on `:443` and uses `:80` only to redirect, but nothing
+  listens on `:443` while the instance is locked, so a browser reaching `:80` has
+  no TLS to fall back to.
+- any other non-loopback address, `--http 0.0.0.0:8090` included — refused unless
+  `VAULT_ALLOW_INSECURE_GATE=1`.
+
+**In a container that last case is unavoidable and is not itself a problem.** The
+app must bind `0.0.0.0` inside the container or Docker could not publish the port
+at all, and from in there it cannot tell a port published on `127.0.0.1` from one
+published LAN-wide — that decision lives in the compose file. So the compose file
+is where it is stated: `docker-compose.encrypted.yml` publishes the port on
+`127.0.0.1` only *and* sets `VAULT_ALLOW_INSECURE_GATE=1` to say that it has done
+so. The two lines belong together. **If you widen that port mapping, remove the
+flag**, or you are carrying the archive's password in cleartext to wherever the
+port now reaches.
+
+What this catches is the configuration that has neither: enabling the
+`VAULT_*` block in `.env.example` on the base `docker-compose.yml`, which
+publishes on every host interface. That used to start and serve the unlock form
+to the whole LAN, because an explicit `--http` was exempt from the check on the
+grounds that the operator had chosen it — which exempted the stock entrypoint,
+and so every containerised install. Now it refuses to start and says what to do.
 
 ## Requirements and limits
 
@@ -179,7 +215,12 @@ reaches.
   `VAULT_PASSPHRASE`.
 - A hard kill (`kill -9`, OOM, power loss) loses writes since the last flush —
   seconds, not the archive. A clean stop loses nothing, provided
-  `stop_grace_period` is long enough for the shutdown flush.
+  `stop_grace_period` is long enough for the shutdown flush: on `SIGTERM` the
+  server stops the job scheduler, waits up to 20s for in-flight requests and
+  worker jobs to finish, and only then seals the archive — so a request already
+  answered `200` is in it. If that wait times out the shutdown says so in the
+  log and flushes anyway, since hanging until Docker escalates to `SIGKILL`
+  would lose strictly more.
 - PocketBase's own backups and S3 storage are refused while encryption is on:
   both would write unencrypted copies outside the vault. The vault directory is
   itself a consistent encrypted backup — copy it.

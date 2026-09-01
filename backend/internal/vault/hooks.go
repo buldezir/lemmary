@@ -9,6 +9,8 @@ import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
+
+	"lemmary/backend/internal/inflight"
 )
 
 // Flush pacing.
@@ -48,7 +50,14 @@ func Register(app *pocketbase.PocketBase, v *Vault) {
 			}
 			// The databases only exist after bootstrap, so the snapshotter is
 			// installed here rather than at construction.
-			v.SetSnapshotter(NewPocketBaseSnapshotter(e.App.NonconcurrentDB(), e.App.AuxNonconcurrentDB()))
+			//
+			// The concurrent pool, not the nonconcurrent one: VACUUM INTO is a
+			// read transaction, and the whole reason for choosing it over
+			// PocketBase's copy-the-WAL backup was that it does not block
+			// writers. Running it on the single write connection gives that
+			// property straight back — every write on the instance would stall
+			// for the length of a full database read, every flush.
+			v.SetSnapshotter(NewPocketBaseSnapshotter(e.App.ConcurrentDB(), e.App.AuxConcurrentDB()))
 			return nil
 		},
 	})
@@ -144,6 +153,20 @@ func registerFlushTriggers(app *pocketbase.PocketBase, f *flusher) {
 	app.OnRecordAfterDeleteSuccess().BindFunc(mark)
 
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
+		// Count every request as in-flight work, so the shutdown flush can wait
+		// for handlers PocketBase's own graceful shutdown gave up on. The
+		// priority puts it outside every other middleware, which is where the
+		// bracket has to be: a handler that has begun writing to the working
+		// directory must still be counted while it unwinds.
+		e.Router.Bind(&hook.Handler[*core.RequestEvent]{
+			Id:       "vaultInflight",
+			Priority: -99999,
+			Func: func(re *core.RequestEvent) error {
+				defer inflight.Begin()()
+				return re.Next()
+			},
+		})
+
 		if err := e.App.Cron().Add("vault_flush", flushCron, func() {
 			if f.v.dirty.get() == 0 {
 				return
@@ -165,6 +188,12 @@ func registerFlushTriggers(app *pocketbase.PocketBase, f *flusher) {
 		Priority: terminatePriority,
 		Func: func(e *core.TerminateEvent) error {
 			f.stop()
+			// Stop the scheduler before draining, or the drain races the very
+			// thing it is waiting for: PocketBase stops the cron in its
+			// terminate *finalizer*, which runs after every handler here, so a
+			// tick landing in between would start a fresh worker job while this
+			// handler waited for the last one to finish.
+			e.App.Cron().Stop()
 			// Flush before e.Next(): PocketBase's terminate finalizer calls
 			// ResetBootstrapState, which closes the databases the snapshot
 			// needs, and App.Restart() execve's the process from inside that
