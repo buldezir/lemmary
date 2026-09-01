@@ -35,6 +35,7 @@ func Register(app core.App, rt *config.Runtime, idx *fulltext.Index, lim limits.
 			g.POST("/documents/{documentId}/chat", bindAuth(handleDocumentChat(app, rt)))
 			g.GET("/documents/export", bindAuth(handleExportDocuments(app)))
 			g.GET("/documents/search", bindAuth(handleDocumentSearch(app, idx)))
+			g.GET("/documents/timeline", bindAuth(handleDocumentsTimeline(app)))
 			g.POST("/documents/reprocess-failed", bindAuth(handlePostReprocessFailed(app)))
 			g.POST("/search", bindAuth(handleDeepSearch(app, rt, idx)))
 			g.POST("/search/stream", bindAuth(handleResearchStream(app, rt, idx)))

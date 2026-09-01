@@ -2,6 +2,7 @@ import { pb, pbUrl } from '../pb'
 import { ensureAuth } from '../auth'
 import { apiFetch, errorDetail } from '../apiClient'
 import type { ProcessingStep, ReprocessMode } from '../processing'
+import type { TimelineMonth } from '../timeline'
 
 export type TagRecord = {
   id: string
@@ -98,6 +99,18 @@ export type DocumentListFilters = {
   dateTo: string
 }
 
+/**
+ * The day after a "YYYY-MM-DD" date, as "YYYY-MM-DD", so an inclusive To can be
+ * asked as an exclusive `<`. Via UTC, matching how document_date is stored; an
+ * unparseable value is handed back untouched for the filter to reject.
+ */
+function dayAfter(date: string): string {
+  const parsed = new Date(`${date}T00:00:00Z`)
+  if (Number.isNaN(parsed.getTime())) return date
+  parsed.setUTCDate(parsed.getUTCDate() + 1)
+  return parsed.toISOString().slice(0, 10)
+}
+
 /** PocketBase filter for the document list; undefined when nothing is active. */
 export function buildDocumentFilter(filters: DocumentListFilters): string | undefined {
   const parts: string[] = []
@@ -115,7 +128,13 @@ export function buildDocumentFilter(filters: DocumentListFilters): string | unde
     parts.push(pb.filter('document_date >= {:date}', { date: filters.dateFrom }))
   }
   if (filters.dateTo) {
-    parts.push(pb.filter('document_date <= {:date}', { date: filters.dateTo }))
+    // Exclusive next-day bound rather than `<= dateTo`. document_date is a
+    // PocketBase DateField, so it is stored as "YYYY-MM-DD HH:MM:SS.sssZ" and
+    // compared as a string: "2025-03-31 00:00:00.000Z" <= "2025-03-31" is
+    // false, which silently dropped every document dated on the To day. Search
+    // bounds the same filter this way (fulltext.parseDayBoundary), so the two
+    // paths now agree about which documents a From/To range holds.
+    parts.push(pb.filter('document_date < {:date}', { date: dayAfter(filters.dateTo) }))
   }
 
   return parts.length > 0 ? parts.join(' && ') : undefined
@@ -230,6 +249,29 @@ export async function searchDocuments(opts: {
     totalItems: data.totalItems ?? 0,
     totalPages: data.totalPages ?? 0,
     items: data.items ?? [],
+  }
+}
+
+export type DocumentTimeline = {
+  months: TimelineMonth[]
+  /** Documents with no document_date; no date range can reach them. */
+  undated: number
+}
+
+/**
+ * Counts the caller's documents per calendar month, newest month first.
+ *
+ * Whole-library counts: they deliberately ignore the list's other filters, so
+ * the timeline is a stable map of the archive rather than a readout of the
+ * current query.
+ */
+export async function fetchDocumentTimeline(): Promise<DocumentTimeline> {
+  const data = await apiFetch<Partial<DocumentTimeline>>('/api/app/documents/timeline', {
+    fallbackError: 'Failed to load the timeline',
+  })
+  return {
+    months: data.months ?? [],
+    undated: data.undated ?? 0,
   }
 }
 
