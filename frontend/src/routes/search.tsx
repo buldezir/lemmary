@@ -14,7 +14,6 @@ import {
   type ResearchEvent,
   type SearchMode,
 } from '../lib/api/ai'
-import { readPreferredSearchMode, writePreferredSearchMode } from '../lib/searchMode'
 import {
   deleteChatSession,
   getChatSession,
@@ -43,11 +42,12 @@ type TurnExtras = {
   incomplete: boolean
 }
 
-const modes: { value: SearchMode; label: string; hint: string }[] = [
-  { value: 'search', label: 'Search', hint: 'Find documents and list them.' },
+const modes: { value: SearchMode; label: string; to: '/search' | '/research'; hint: string }[] = [
+  { value: 'search', label: 'Search', to: '/search', hint: 'Find documents and list them.' },
   {
     value: 'research',
     label: 'Research',
+    to: '/research',
     hint: 'Read the documents and answer, with citations.',
   },
 ]
@@ -64,28 +64,23 @@ const examples: Record<SearchMode, string> = {
 
 export function SearchPage() {
   const navigate = useNavigate()
+  // The mode is the path: /search lists documents, /research reads them and
+  // answers. Both render this page, so a reload, a bookmark and a shared link
+  // all carry the mode with them, and there is no state to keep in step.
+  //
   // The session id lives on a child route, and a child's params are invisible
   // to useParams from here — the closest match is /search, which has none.
   // matchRoute also hands back a fresh object each render, so the id is
   // destructured out before anything depends on it.
   const matchRoute = useMatchRoute()
-  const sessionMatch = matchRoute({ to: '/search/$sessionId' })
+  const research = Boolean(matchRoute({ to: '/research', fuzzy: true }))
+  const mode: SearchMode = research ? 'research' : 'search'
+  const basePath = research ? '/research' : '/search'
+  const sessionMatch = research
+    ? matchRoute({ to: '/research/$sessionId' })
+    : matchRoute({ to: '/search/$sessionId' })
   const sessionId = sessionMatch ? (sessionMatch.sessionId as string) : undefined
 
-  // Two layers, because the toggle answers two different questions.
-  //
-  // `picked` is the pick for the conversation on screen, and it outranks that
-  // conversation's own mode so the toggle still moves inside an existing chat.
-  // `preferred` is where a *new* chat starts, and it outlives both the page and
-  // the tab -- see lib/searchMode.
-  const [picked, setPicked] = useState<{ sessionId?: string; mode: SearchMode } | null>(null)
-  const [preferred, setPreferred] = useState<SearchMode>(readPreferredSearchMode)
-
-  function pickMode(value: SearchMode) {
-    setPicked({ sessionId, mode: value })
-    setPreferred(value)
-    writePreferredSearchMode(value)
-  }
   const [railOpen, setRailOpen] = useState(false)
   const [justSettled, setJustSettled] = useState<ChatSession | null>(null)
   const [railBusy, setRailBusy] = useState(false)
@@ -110,7 +105,7 @@ export function SearchPage() {
       if (created) {
         // replace: Back should not land on the now-orphaned empty /search.
         void navigate({
-          to: '/search/$sessionId',
+          to: `${basePath}/$sessionId`,
           params: { sessionId: session.id },
           replace: true,
         })
@@ -119,7 +114,7 @@ export function SearchPage() {
       // has to move with it. reload() refreshes without a loading flash.
       void sessions.reload()
     },
-    [navigate, sessions],
+    [basePath, navigate, sessions],
   )
 
   /**
@@ -227,24 +222,24 @@ export function SearchPage() {
     onSessionSettled,
   })
 
-  // Read below by the send closure, which only runs after this render. A saved
-  // conversation's own mode sits between the two: it loses to a deliberate pick
-  // on that conversation, and beats the preference a new chat would start in.
-  const mode: SearchMode =
-    picked && picked.sessionId === sessionId ? picked.mode : (chat.session?.mode ?? preferred)
-
   const rows = mergeChatSession(sessions.data ?? [], justSettled)
   const active = modes.find((item) => item.value === mode) ?? modes[0]
 
+  // A chat opens in the mode its last turn ran in, which is also the path it
+  // lives on: continuing a research conversation as a plain search would answer
+  // a different question than the one above it in the transcript.
   function openSession(session: ChatSession) {
     setRailOpen(false)
-    void navigate({ to: '/search/$sessionId', params: { sessionId: session.id } })
+    void navigate({
+      to: session.mode === 'research' ? '/research/$sessionId' : '/search/$sessionId',
+      params: { sessionId: session.id },
+    })
   }
 
   function startNewChat() {
     setRailOpen(false)
     if (sessionId) {
-      void navigate({ to: '/search' })
+      void navigate({ to: basePath })
       return
     }
     chat.reset()
@@ -275,7 +270,7 @@ export function SearchPage() {
       setJustSettled((current) => (current?.id === session.id ? null : current))
       await sessions.reload()
       if (session.id === sessionId) {
-        void navigate({ to: '/search', replace: true })
+        void navigate({ to: basePath, replace: true })
       }
     } catch (err) {
       setRailError(err instanceof Error ? err.message : 'Failed to delete the chat')
@@ -291,27 +286,28 @@ export function SearchPage() {
           <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">Deep Search</h2>
           <p className="text-sm text-ink-soft">{active.hint} Chats are saved.</p>
         </div>
-        <div
-          role="radiogroup"
+        {/* Links, not a radiogroup: each mode is a path now, so these navigate.
+            That is also what makes them work with the back button, a bookmark
+            and an open-in-new-tab. The open chat rides along, so switching mode
+            mid-conversation continues it rather than abandoning it. */}
+        <nav
           aria-label="Search mode"
           className="flex rounded-xs border border-line bg-surface p-1"
         >
           {modes.map((item) => (
-            <button
+            <Link
               key={item.value}
-              type="button"
-              role="radio"
-              aria-checked={mode === item.value}
-              disabled={chat.sending}
-              onClick={() => pickMode(item.value)}
-              className={`px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              to={sessionId ? `${item.to}/$sessionId` : item.to}
+              params={sessionId ? { sessionId } : {}}
+              aria-current={mode === item.value ? 'page' : undefined}
+              className={`px-3 py-1.5 text-sm transition-colors ${
                 mode === item.value ? 'bg-ink text-paper' : 'text-ink-muted hover:text-ink'
               }`}
             >
               {item.label}
-            </button>
+            </Link>
           ))}
-        </div>
+        </nav>
       </div>
 
       <Button

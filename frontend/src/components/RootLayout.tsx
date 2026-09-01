@@ -258,6 +258,11 @@ async function resolveGate(): Promise<Gate> {
 export function RootLayout() {
   const [gate, setGate] = useState<Gate>({ kind: 'loading' })
   const { appName, accent } = useAppMeta()
+  // Deep Search spans two paths — /search and /research are the two modes — and
+  // a Link only marks itself active for its own. The nav entry points at
+  // /search, so /research needs the active styling applied by hand.
+  const matchRoute = useMatchRoute()
+  const researchActive = Boolean(matchRoute({ to: '/research', fuzzy: true }))
   const userDisplayName = gate.kind === 'app' ? getUserDisplayName() : ''
   const admin = gate.kind === 'app' ? gate.admin : false
 
@@ -378,7 +383,7 @@ export function RootLayout() {
               </Link>
               <Link
                 to="/search"
-                className={navLinkClass}
+                className={`${navLinkClass} ${researchActive ? 'border-oxblood text-oxblood' : ''}`}
               >
                 Deep Search
               </Link>

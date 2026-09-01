@@ -85,6 +85,22 @@ const searchSessionRoute = createRoute({
   component: () => null,
 })
 
+// Research is a sibling path rather than a flag on /search: the mode decides
+// what a question does -- list documents, or read them and answer -- so it
+// belongs in the URL, where a reload, a bookmark and a shared link all keep it.
+// Both paths render SearchPage, which reads the mode back off the route.
+const researchRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/research',
+  component: SearchPage,
+})
+
+const researchSessionRoute = createRoute({
+  getParentRoute: () => researchRoute,
+  path: '$sessionId',
+  component: () => null,
+})
+
 const ocrTestRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/ocr-test',
@@ -171,6 +187,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   uploadRoute.addChildren([uploadFilesRoute, uploadAmazonRoute, uploadSplitRoute]),
   searchRoute.addChildren([searchSessionRoute]),
+  researchRoute.addChildren([researchSessionRoute]),
   ocrTestRoute,
   settingsRoute,
   managementRoute,

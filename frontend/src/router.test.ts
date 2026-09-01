@@ -16,6 +16,8 @@ describe('route tree', () => {
       '/upload/split',
       '/search',
       '/search/$sessionId',
+      '/research',
+      '/research/$sessionId',
       '/ocr-test',
       '/settings',
       '/management',
