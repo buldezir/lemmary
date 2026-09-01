@@ -320,7 +320,7 @@ export function SearchPage() {
         Chats ({rows.length})
       </Button>
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-3">
         {/* One instance across breakpoints, toggled by class: two would put the
             rows, their aria-current and their rename inputs into the
             accessibility tree twice. */}

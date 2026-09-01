@@ -181,7 +181,7 @@ export function DocumentAskPage() {
             Chats ({rows.length})
           </Button>
 
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-3">
             <aside className={`${railOpen ? 'block' : 'hidden'} lg:block lg:w-52 lg:shrink-0`}>
               <ChatSessionList
                 sessions={rows}
