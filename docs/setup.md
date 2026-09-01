@@ -324,7 +324,7 @@ The page texts go to the extraction provider and model in one request asking for
 
 ## Backup and restore
 
-Any signed-in user can download their whole library as one zip and restore it — into this instance or another one. Export is per user: it contains the caller's documents and taxonomy, never anyone else's, and never the instance's settings or API keys.
+Any signed-in user can download their whole library as one zip and restore it — into this instance or another one. Export is per user: it contains the caller's documents and taxonomy, never anyone else's, and never the instance's settings or API keys. Saved AI chats are not included: an export carries the archive, not the conversations about it.
 
 ### Exporting
 
@@ -421,14 +421,47 @@ For a fresh install you can put `AI_API_KEY` in `.env` so a provider row is seed
 
 Without an LLM provider, AI extraction, document chat, and Deep Search return a configuration error.
 
-Deep Search (`/search`) uses a tool-calling agent over the Bleve full-text index, in two modes:
+Deep Search uses a tool-calling agent over the Bleve full-text index, in two modes, one per path under `/rag`:
 
-- **Search** — one round of `search_documents`, answered from titles, summaries and short OCR snippets. Results are shown as document cards.
-- **Research** — the agent searches, then reads the full text of the documents it finds (`read_documents`), and writes a markdown answer citing each document it used. The answer links to the documents inline; there is no card grid. Progress streams over `POST /api/app/search/stream` (server-sent events), so each search and read appears as it happens.
+- **Search** (`/rag/search`) — one round of `search_documents`, answered from titles, summaries and short OCR snippets. Results are shown as document cards.
+- **Research** (`/rag/research`) — the agent searches, then reads the full text of the documents it finds (`read_documents`), and writes a markdown answer citing each document it used, with the documents it drew on listed under the answer. Progress streams over `POST /api/app/search/stream` (server-sent events), so each search and read appears as it happens.
 
 Research has no round or document limit. It keeps searching and reading until the conversation fills the model's context window, then answers with what it has — so **Search context window** in Settings is what decides how much of your archive one question can draw on. Picking a model whose provider reports its context length (OpenRouter, Mistral) fills that field in automatically; OpenAI's model list reports none, so the default applies.
 
+Each mode is its own path — `/rag/search` and `/rag/research` — so the mode is carried by the URL and survives a reload, the back button, a bookmark and a shared link. They share the `/rag` parent, which is what lets one navigation entry cover both; `/rag` on its own redirects to Search.
+
+The mode can only be chosen before a chat has a turn. A transcript is a sequence: its answers were produced by one mode, and the next turn replays them to the model as its own prior work, so switching underneath would answer a later question in a way the earlier ones do not support. Once a chat exists the switch shows which mode it is in and stops being a link — starting a new chat is the way to the other one. The server enforces this too: a turn sent under a mode the chat is not in is a 409, and opening `/rag/search/<research-chat>` redirects to the path that matches. A saved chat reopens on the path matching the mode it ran in.
+
 Configure **Search provider/model**, **Deep search languages**, and **Search context window** in Settings.
+
+## Chat sessions
+
+Deep Search (`/rag/search`, `/rag/research`) and a document's **Ask AI** page (`/document/<id>/ask`) both save their conversations. Each page lists past chats in a sidebar, gives the open one its own URL (`/rag/search/<chatId>`, `/rag/research/<chatId>`, `/document/<id>/ask/<chatId>`), and lets you rename or delete a chat. One sidebar covers both Deep Search modes: a chat is listed whichever mode you are in, and opens on its own mode's path.
+
+The server owns the transcript. A request carries a session id and one new message — `POST /api/app/search` with `{"session_id": "...", "content": "...", "mode": "search|research"}`, `POST /api/app/documents/<id>/chat` with `{"session_id": "...", "content": "..."}` — and the history is read back from the database rather than replayed by the browser. An omitted `session_id` starts a new chat, titled after its first message.
+
+`POST /api/app/search/stream` takes the same body and saves the same way; because its status line goes out with the first step event, the stored turn arrives as the `saved` event that closes the stream rather than as the response body. Reopening a search chat restores the mode its last turn ran in.
+
+A chat is only created once a reply arrives, so a provider that is misconfigured or times out leaves no empty chats behind. If a reply is produced but cannot be stored, the response carries `"saved": false` and the answer is shown without being added to the history.
+
+Managing saved chats:
+
+| Route | Purpose |
+| --- | --- |
+| `GET /api/app/chats` | List chats. Filters: `kind=search\|document`, `document=<id>`; paged with `page` / `perPage` |
+| `GET /api/app/chats/{id}` | One chat with its messages |
+| `PATCH /api/app/chats/{id}` | Rename (`{"title": "..."}`) |
+| `DELETE /api/app/chats/{id}` | Delete the chat and its messages |
+
+The chat list is not paged: one request carries every chat an account can hold, and the sidebar scrolls. A transcript read is capped, and the cap drops the oldest turns — `truncated` says the head was lost, never the live end.
+
+Limits:
+
+- A message may be at most 8,000 characters.
+- The model sees the most recent 40 messages, capped at 24,000 characters — older turns drop out of the prompt but stay in the transcript.
+- An account may keep 500 chats. Past that, new ones are refused until some are deleted; nothing is pruned automatically.
+
+Deleting a document deletes its Ask AI chats, and deleting an account deletes all of its chats. The `chat_sessions` and `chat_messages` collections carry no API rules, so — like `passkey_credentials` — they are not reachable through `/api/collections` at all and `/api/app/chats` is the only way in. That is deliberate: a client able to write its own `assistant` messages could plant text that the server would then replay to the model as a genuine prior answer.
 
 ## OCR setup
 

@@ -54,19 +54,6 @@ func TestSSEWriterFramesEvents(t *testing.T) {
 	}
 }
 
-func TestIsResearchModeIgnoresLegacyValues(t *testing.T) {
-	t.Parallel()
-	if !isResearchMode("research") || !isResearchMode("  Research  ") {
-		t.Fatal("research mode should be recognised regardless of case and padding")
-	}
-	// "deep" is gone; an old client sending it gets plain search, not an error.
-	for _, legacy := range []string{"", "shallow", "deep", "nonsense"} {
-		if isResearchMode(legacy) {
-			t.Fatalf("%q should fall back to search mode", legacy)
-		}
-	}
-}
-
 // TestSSEWriterHeartbeatKeepsTheConnectionBusy covers the gap this stream has
 // by design: nothing is sent for the whole of each model completion, and the
 // first one happens before any step event. A reverse proxy with a 30-60s idle

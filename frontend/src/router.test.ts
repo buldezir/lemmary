@@ -14,7 +14,10 @@ describe('route tree', () => {
       '/upload',
       '/upload/amazon',
       '/upload/split',
-      '/search',
+      '/rag/search',
+      '/rag/search/$sessionId',
+      '/rag/research',
+      '/rag/research/$sessionId',
       '/ocr-test',
       '/settings',
       '/management',
@@ -25,6 +28,7 @@ describe('route tree', () => {
       '/export',
       '/document/$documentId',
       '/document/$documentId/ask',
+      '/document/$documentId/ask/$sessionId',
     ]) {
       expect(paths).toContain(path)
     }

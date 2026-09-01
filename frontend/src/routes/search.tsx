@@ -1,15 +1,29 @@
-import { type SubmitEvent, useEffect, useRef, useState } from 'react'
-import { Link } from '@tanstack/react-router'
-import { MarkdownContent } from '../components/MarkdownContent'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, useMatchRoute, useNavigate } from '@tanstack/react-router'
 import { Button } from '../components/ui'
+import { ChatPanel } from '../components/ChatPanel'
+import { ChatTranscript } from '../components/ChatTranscript'
+import { ChatComposer } from '../components/ChatComposer'
+import { ChatSessionList } from '../components/ChatSessionList'
+import { MarkdownContent } from '../components/MarkdownContent'
+import { useAsync } from '../hooks/useAsync'
+import { useChatSession, type ChatSendResult } from '../hooks/useChatSession'
 import {
   deepSearch,
   researchStream,
-  type ChatMessage,
   type ResearchEvent,
-  type SearchDocumentHit,
   type SearchMode,
 } from '../lib/api/ai'
+import {
+  deleteChatSession,
+  getChatSession,
+  listChatSessions,
+  mergeChatSession,
+  renameChatSession,
+  type ChatSession,
+  type ChatTurn,
+  type SearchDocumentHit,
+} from '../lib/api/chats'
 
 type ResearchStep = {
   kind: 'search' | 'read' | 'answer'
@@ -17,20 +31,28 @@ type ResearchStep = {
   done: boolean
 }
 
-type SearchTurn = {
-  message: ChatMessage
-  /** Cards, for search mode. Research answers link to documents inline instead. */
-  documents?: SearchDocumentHit[]
-  steps?: ResearchStep[]
-  /** The generation was cut short; the text is real but not the whole answer. */
-  incomplete?: boolean
+/**
+ * What a research run produced beyond its text. Neither is stored with the
+ * turn — the steps are a record of this run, and `incomplete` describes this
+ * generation rather than the answer — so both are kept in memory, keyed by the
+ * stored message, and are gone when the chat is reopened.
+ */
+type TurnExtras = {
+  steps: ResearchStep[]
+  incomplete: boolean
 }
 
-const modes: { value: SearchMode; label: string; hint: string }[] = [
-  { value: 'search', label: 'Search', hint: 'Find documents and list them.' },
+const modes: {
+  value: SearchMode
+  label: string
+  to: '/rag/search' | '/rag/research'
+  hint: string
+}[] = [
+  { value: 'search', label: 'Search', to: '/rag/search', hint: 'Find documents and list them.' },
   {
     value: 'research',
     label: 'Research',
+    to: '/rag/research',
     hint: 'Read the documents and answer, with citations.',
   },
 ]
@@ -46,253 +68,394 @@ const examples: Record<SearchMode, string> = {
 }
 
 export function SearchPage() {
-  const [turns, setTurns] = useState<SearchTurn[]>([])
-  const [input, setInput] = useState('')
-  const [mode, setMode] = useState<SearchMode>('search')
-  const [sending, setSending] = useState(false)
+  const navigate = useNavigate()
+  // The mode is the path: /rag/search lists documents, /rag/research reads them
+  // and answers. Both render this page, so a reload, a bookmark and a shared
+  // link all carry the mode with them, and there is no state to keep in step.
+  //
+  // The session id lives on a child route, and a child's params are invisible
+  // to useParams from here — the closest match is /rag/search, which has none.
+  // matchRoute also hands back a fresh object each render, so the id is
+  // destructured out before anything depends on it.
+  const matchRoute = useMatchRoute()
+  const research = Boolean(matchRoute({ to: '/rag/research', fuzzy: true }))
+  const mode: SearchMode = research ? 'research' : 'search'
+  const basePath = research ? '/rag/research' : '/rag/search'
+  const sessionMatch = research
+    ? matchRoute({ to: '/rag/research/$sessionId' })
+    : matchRoute({ to: '/rag/search/$sessionId' })
+  const sessionId = sessionMatch ? (sessionMatch.sessionId as string) : undefined
+
+  const [railOpen, setRailOpen] = useState(false)
+  const [justSettled, setJustSettled] = useState<ChatSession | null>(null)
+  const [railBusy, setRailBusy] = useState(false)
+  const [railError, setRailError] = useState('')
+  // Live progress of a research run, cleared when it ends.
   const [steps, setSteps] = useState<ResearchStep[]>([])
   const [draft, setDraft] = useState('')
-  const [error, setError] = useState('')
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [extras, setExtras] = useState<Record<string, TurnExtras>>({})
   // A research run outlives an unmount unless it is cancelled: the fetch keeps
-  // the stream open, the server keeps calling the provider, and coming back to
-  // this page would start a second run alongside the first.
+  // the stream open and the server keeps calling the provider.
   const runRef = useRef<AbortController | null>(null)
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [turns, sending, steps, draft])
+  const sessions = useAsync(() => listChatSessions({ kind: 'search' }), [])
 
   useEffect(() => () => runRef.current?.abort(), [])
 
-  function cancel() {
-    runRef.current?.abort()
-  }
-
-  async function send() {
-    const text = input.trim()
-    if (!text || sending) {
+  /**
+   * Ends the run that owns the screen.
+   *
+   * Switching conversations does not unmount this page — the session id lives
+   * on a child route — so without this a run started in one chat keeps painting
+   * its steps and its streamed draft over whichever transcript replaced it,
+   * and keeps that chat's composer disabled until the provider is done.
+   *
+   * The server drops a cancelled research turn rather than storing it, but the
+   * abort can land in the moment after it was saved, so the rail is refreshed
+   * either way: a chat that did get written is in the list rather than missing
+   * until the next full reload.
+   */
+  const endRun = useCallback(() => {
+    if (!runRef.current) {
       return
     }
+    runRef.current.abort()
+    runRef.current = null
+    void sessions.reload()
+  }, [sessions])
 
-    const userMessage: ChatMessage = { role: 'user', content: text }
-    const history: ChatMessage[] = [...turns.map((turn) => turn.message), userMessage]
+  const onSessionSettled = useCallback(
+    (session: ChatSession, created: boolean) => {
+      // Merged in straight away so the row is there with the transcript, not a
+      // round trip later.
+      setJustSettled(session)
+      if (created) {
+        // replace: Back should not land on the now-orphaned empty /search.
+        void navigate({
+          to: `${basePath}/$sessionId`,
+          params: { sessionId: session.id },
+          replace: true,
+        })
+      }
+      // After every turn, not only the first: last_message_at moved and the row
+      // has to move with it. reload() refreshes without a loading flash.
+      void sessions.reload()
+    },
+    [basePath, navigate, sessions],
+  )
 
-    const run = new AbortController()
-    runRef.current = run
+  /**
+   * Runs a research turn as a stream, resolving with the stored turn so the
+   * conversation hook treats it like any other send. The steps and the streamed
+   * draft are this page's own state — they belong to a run in progress, not to
+   * the transcript.
+   */
+  const runResearch = useCallback(
+    async (id: string | undefined, content: string): Promise<ChatSendResult> => {
+      const run = new AbortController()
+      runRef.current = run
 
-    try {
-      setSending(true)
-      setInput('')
-      setError('')
-      setSteps([])
-      setDraft('')
-      setTurns((current) => [...current, { message: userMessage }])
+      // Collected outside React state as well: the finished turn is assembled
+      // from these, and state updates are not readable synchronously.
+      const collected: ResearchStep[] = []
+      let answer = ''
+      let streamError = ''
+      let incomplete = false
+      // In a box rather than a plain `let`: TypeScript cannot see an assignment
+      // made inside the stream callback and would narrow the variable to null.
+      const box: { stored: Extract<ResearchEvent, { type: 'saved' }> | null } = { stored: null }
 
-      if (mode === 'research') {
-        await runResearch(history, run.signal)
-      } else {
-        const result = await deepSearch(history, 'search')
-        setTurns((current) => [
+      try {
+        await researchStream(
+          { sessionId: id, content },
+          (event) => {
+            switch (event.type) {
+              case 'step':
+                applyStep(collected, event)
+                setSteps([...collected])
+                break
+              case 'delta':
+                answer += event.content
+                setDraft(answer)
+                break
+              case 'message':
+                answer = event.content
+                incomplete = event.incomplete ?? false
+                setDraft(answer)
+                break
+              case 'saved':
+                box.stored = event
+                break
+              case 'error':
+                streamError = event.message
+                break
+              default:
+                break
+            }
+          },
+          run.signal,
+        )
+      } catch (err) {
+        // Cancelling is not a provider failure, and the fetch reports it as a
+        // DOMException nobody wants to read.
+        if (run.signal.aborted) {
+          throw new Error('Research cancelled.', { cause: err })
+        }
+        throw err
+      } finally {
+        if (runRef.current === run) {
+          runRef.current = null
+        }
+        setSteps([])
+        setDraft('')
+      }
+
+      if (streamError) {
+        throw new Error(streamError)
+      }
+      const stored = box.stored
+      if (!stored) {
+        throw new Error('The research run ended without an answer.')
+      }
+
+      const finished = collected.map((step) => ({ ...step, done: true }))
+      // Keyed by the stored message. An unsaved turn has no id to key on, and
+      // its steps are simply not shown — the unsaved notice is the thing that
+      // matters there.
+      if (stored.message.id) {
+        setExtras((current) => ({
           ...current,
-          { message: result.message, documents: result.documents },
-        ])
+          [stored.message.id]: { steps: finished, incomplete },
+        }))
+      }
+      return {
+        session: stored.session,
+        message: stored.message,
+        documents: stored.documents,
+        saved: stored.saved,
+        detail: stored.detail,
+      }
+    },
+    [],
+  )
+
+  const chat = useChatSession({
+    sessionId,
+    // A document chat's id must not open here: its transcript is about one
+    // document's OCR text, and replaying it into a search turn asks the archive
+    // a question that was never put to it. The Ask AI page makes the mirror
+    // check.
+    load: async (id) => {
+      const detail = await getChatSession(id)
+      if (detail.session.kind !== 'search') {
+        throw new Error('That chat belongs to a different page.')
+      }
+      return detail
+    },
+    send: ({ sessionId: id, content }) =>
+      mode === 'research'
+        ? runResearch(id, content)
+        : deepSearch({ sessionId: id, content, mode: 'search' }),
+    onSessionSettled,
+  })
+
+  // The path says which mode, but a chat's stored mode is what it actually is,
+  // and the two can disagree — a hand-edited URL, or a link to /rag/search/<id>
+  // for a chat that turns out to be Research. Corrected here rather than obeyed,
+  // so the next turn is not sent under a mode the server would refuse.
+  const loadedMode = chat.session?.mode
+  useEffect(() => {
+    if (!sessionId || !loadedMode || loadedMode === mode) {
+      return
+    }
+    void navigate({
+      to: loadedMode === 'research' ? '/rag/research/$sessionId' : '/rag/search/$sessionId',
+      params: { sessionId },
+      replace: true,
+    })
+  }, [loadedMode, mode, navigate, sessionId])
+
+  const rows = mergeChatSession(sessions.data ?? [], justSettled)
+  const active = modes.find((item) => item.value === mode) ?? modes[0]
+  // A chat is locked to its mode from the moment it has one turn — including
+  // the turn still in flight, whose request already carries the mode it was
+  // sent under.
+  const locked = Boolean(sessionId) || chat.sending
+
+  // A chat opens in the mode its last turn ran in, which is also the path it
+  // lives on: continuing a research conversation as a plain search would answer
+  // a different question than the one above it in the transcript.
+  function openSession(session: ChatSession) {
+    setRailOpen(false)
+    endRun()
+    void navigate({
+      to: session.mode === 'research' ? '/rag/research/$sessionId' : '/rag/search/$sessionId',
+      params: { sessionId: session.id },
+    })
+  }
+
+  function startNewChat() {
+    setRailOpen(false)
+    endRun()
+    if (sessionId) {
+      void navigate({ to: basePath })
+      return
+    }
+    chat.reset()
+  }
+
+  async function onRename(id: string, title: string) {
+    try {
+      setRailBusy(true)
+      setRailError('')
+      const updated = await renameChatSession(id, title)
+      setJustSettled((current) => (current?.id === id ? updated : current))
+      await sessions.reload()
+    } catch (err) {
+      setRailError(err instanceof Error ? err.message : 'Failed to rename the chat')
+    } finally {
+      setRailBusy(false)
+    }
+  }
+
+  async function onDelete(session: ChatSession) {
+    if (!window.confirm(`Delete "${session.title}"? This cannot be undone.`)) {
+      return
+    }
+    try {
+      setRailBusy(true)
+      setRailError('')
+      if (session.id === sessionId) {
+        endRun()
+      }
+      await deleteChatSession(session.id)
+      setJustSettled((current) => (current?.id === session.id ? null : current))
+      await sessions.reload()
+      if (session.id === sessionId) {
+        void navigate({ to: basePath, replace: true })
       }
     } catch (err) {
-      // Cancelling is not a failure, and the component may already be gone:
-      // drop the pending turn quietly and say nothing.
-      if (!run.signal.aborted) {
-        setError(err instanceof Error ? err.message : 'Failed to run search')
-      }
-      setTurns((current) => current.slice(0, -1))
-      setInput(text)
+      setRailError(err instanceof Error ? err.message : 'Failed to delete the chat')
     } finally {
-      if (runRef.current === run) {
-        runRef.current = null
-      }
-      setSending(false)
-      setSteps([])
-      setDraft('')
+      setRailBusy(false)
     }
   }
-
-  async function runResearch(history: ChatMessage[], signal: AbortSignal) {
-    // Collected outside React state as well: the final turn is assembled from
-    // these, and state updates are not readable synchronously.
-    const collected: ResearchStep[] = []
-    let answer = ''
-    let streamError = ''
-    let incomplete = false
-
-    await researchStream(
-      history,
-      (event) => {
-        switch (event.type) {
-          case 'step': {
-            applyStep(collected, event)
-            setSteps([...collected])
-            break
-          }
-          case 'delta':
-            answer += event.content
-            setDraft(answer)
-            break
-          case 'message':
-            answer = event.content
-            incomplete = event.incomplete ?? false
-            setDraft(answer)
-            break
-          case 'error':
-            streamError = event.message
-            break
-          default:
-            break
-        }
-      },
-      signal,
-    )
-
-    if (streamError) {
-      throw new Error(streamError)
-    }
-    setTurns((current) => [
-      ...current,
-      {
-        message: { role: 'assistant', content: answer },
-        steps: collected.map((step) => ({ ...step, done: true })),
-        incomplete,
-      },
-    ])
-  }
-
-  function onSubmit(event: SubmitEvent<HTMLFormElement>) {
-    event.preventDefault()
-    void send()
-  }
-
-  const active = modes.find((item) => item.value === mode) ?? modes[0]
 
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">Deep Search</h2>
-          <p className="text-sm text-ink-soft">{active.hint}</p>
+          <p className="text-sm text-ink-soft">
+            {active.hint}{' '}
+            {locked ? 'A chat stays in the mode it started in.' : 'Chats are saved.'}
+          </p>
         </div>
-        <div
-          role="radiogroup"
-          aria-label="Search mode"
-          className="flex rounded-xs border border-line bg-surface p-1"
-        >
-          {modes.map((item) => (
-            <button
-              key={item.value}
-              type="button"
-              role="radio"
-              aria-checked={mode === item.value}
-              disabled={sending}
-              onClick={() => setMode(item.value)}
-              className={`px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                mode === item.value
-                  ? 'bg-ink text-paper'
-                  : 'text-ink-muted hover:text-ink'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+        {/* Links, not a radiogroup: each mode is a path, so these navigate —
+            which is also what makes the back button, a bookmark and an
+            open-in-new-tab work on them.
+
+            They stop being links once the chat exists. A transcript is a
+            sequence: its answers were produced by one mode, and the next turn
+            reads them back to the model as its own prior work. Switching
+            underneath that would answer a later question in a way the earlier
+            ones do not support, so the way to the other mode is a new chat. */}
+        <ModeSwitch mode={mode} locked={locked} />
       </div>
 
-      <div className="flex min-h-128 flex-col overflow-hidden rounded-none border border-line bg-surface">
-        <div className="flex-1 space-y-4 overflow-y-auto p-4">
-          {turns.length === 0 && (
-            <p className="text-sm text-ink-faint">
-              Try something like: &quot;{examples[mode]}&quot;
+      <Button
+        variant="secondary"
+        size="sm"
+        aria-expanded={railOpen}
+        onClick={() => setRailOpen((open) => !open)}
+        className="self-start lg:hidden"
+      >
+        Chats ({rows.length})
+      </Button>
+
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-3">
+        {/* One instance across breakpoints, toggled by class: two would put the
+            rows, their aria-current and their rename inputs into the
+            accessibility tree twice. */}
+        <aside className={`${railOpen ? 'block' : 'hidden'} lg:block lg:w-60 lg:shrink-0`}>
+          <ChatSessionList
+            sessions={rows}
+            activeSessionId={sessionId}
+            loading={sessions.loading}
+            error={railError || sessions.error}
+            busy={railBusy}
+            newChatDisabled={!sessionId && chat.turns.length === 0}
+            onSelect={openSession}
+            onNewChat={startNewChat}
+            onRename={onRename}
+            onDelete={onDelete}
+          />
+        </aside>
+
+        {/* min-w-0: without it a wide code block or an unbroken token in a
+            markdown reply stretches this column past the page's max width. */}
+        <div className="min-w-0 flex-1">
+          {chat.loadError && <p className="mb-3 text-sm text-madder">{chat.loadError}</p>}
+          {chat.unsaved && (
+            <p className="mb-3 text-sm text-madder">
+              {chat.unsavedDetail ||
+                'This answer could not be saved, so the chat will not appear in your history.'}
             </p>
           )}
-          {turns.map((turn, index) => (
-            <div key={index} className="space-y-3">
-              {turn.steps && turn.steps.length > 0 && <StepList steps={turn.steps} collapsed />}
-              <div
-                className={`flex ${turn.message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-[85%] rounded-none px-4 py-2.5 text-sm leading-relaxed ${
-                    turn.message.role === 'user'
-                      ? 'whitespace-pre-wrap bg-ink text-paper'
-                      : 'border border-line bg-paper text-ink'
-                  }`}
-                >
-                  {turn.message.role === 'user' ? (
-                    turn.message.content
-                  ) : (
-                    <MarkdownContent content={turn.message.content} />
-                  )}
-                  {turn.incomplete && <IncompleteNotice />}
-                </div>
-              </div>
-              {turn.documents && turn.documents.length > 0 && (
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {turn.documents.map((doc) => (
-                    <SearchHitCard key={doc.id} document={doc} />
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-          {sending && mode === 'research' && (
-            <div className="space-y-3">
-              <StepList steps={steps} />
-              {draft && (
-                <div className="flex justify-start">
-                  <div className="max-w-[85%] rounded-none border border-line bg-paper px-4 py-2.5 text-sm leading-relaxed text-ink">
-                    <MarkdownContent content={draft} />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-          {sending && mode !== 'research' && (
-            <div className="flex justify-start">
-              <div className="rounded-none border border-line bg-paper px-4 py-2.5 text-sm text-ink-soft">
-                Searching...
-              </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        <form onSubmit={onSubmit} className="border-t border-line bg-paper/70 p-4">
-          <div className="flex items-end gap-3">
-            <textarea
-              rows={2}
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault()
-                  void send()
-                }
+          <ChatPanel>
+            <ChatTranscript
+              conversationId={sessionId}
+              turns={chat.turns}
+              loading={chat.loading}
+              sending={chat.sending}
+              sendingLabel="Searching..."
+              emptyHint={`Try something like: "${examples[mode]}"`}
+              renderBefore={(turn) => {
+                const turnSteps = extras[turn.id]?.steps
+                return turnSteps && turnSteps.length > 0 ? (
+                  <StepList steps={turnSteps} collapsed />
+                ) : null
               }}
-              autoFocus
-              disabled={sending}
-              placeholder={placeholders[mode]}
-              className="min-h-12 flex-1 resize-y rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood disabled:cursor-not-allowed disabled:opacity-50"
+              renderExtra={(turn) => (
+                <>
+                  {extras[turn.id]?.incomplete && <IncompleteNotice />}
+                  <SearchHits turn={turn} />
+                </>
+              )}
+              renderSending={
+                mode === 'research'
+                  ? () => (
+                      <div className="space-y-3">
+                        <StepList steps={steps} />
+                        {draft && (
+                          <div className="flex justify-start">
+                            <div className="max-w-[85%] rounded-none border border-line bg-paper px-4 py-2.5 text-sm leading-relaxed text-ink">
+                              <MarkdownContent content={draft} />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  : undefined
+              }
             />
-            <Button type="submit" disabled={sending || !input.trim()}>
-              {sending ? (mode === 'research' ? 'Researching...' : 'Searching...') : active.label}
-            </Button>
-            {sending && mode === 'research' && (
+            <ChatComposer
+              value={chat.input}
+              onChange={chat.setInput}
+              onSubmit={() => void chat.submit()}
+              placeholder={placeholders[mode]}
+              submitLabel={active.label}
+              sendingLabel={mode === 'research' ? 'Researching...' : 'Searching...'}
+              sending={chat.sending}
+              disabled={chat.loading}
+              error={chat.error}
               // A research run is bounded only by the context window, so there
               // has to be a way out of one that is taking too long.
-              <Button type="button" variant="secondary" onClick={cancel}>
-                Cancel
-              </Button>
-            )}
-          </div>
-          {error && <p className="mt-2 text-sm text-madder">{error}</p>}
-        </form>
+              onCancel={mode === 'research' ? () => runRef.current?.abort() : undefined}
+              autoFocus
+            />
+          </ChatPanel>
+        </div>
       </div>
     </section>
   )
@@ -351,7 +514,7 @@ function doneLabel(event: Extract<ResearchEvent, { type: 'step' }>, fallback?: s
  */
 function IncompleteNotice() {
   return (
-    <p className="mt-2 border-t border-line pt-2 text-xs text-ink-muted">
+    <p className="border-t border-line pt-2 text-xs text-ink-muted">
       This answer was cut off before it finished. Ask again to get the rest.
     </p>
   )
@@ -392,6 +555,71 @@ function StepList({ steps, collapsed = false }: { steps: ResearchStep[]; collaps
       </summary>
       <div className="mt-1">{list}</div>
     </details>
+  )
+}
+
+/**
+ * The two modes, as the two paths they are — or, once the chat is under way,
+ * as a plain statement of which one it is in.
+ */
+function ModeSwitch({ mode, locked }: { mode: SearchMode; locked: boolean }) {
+  const className = (item: (typeof modes)[number]) =>
+    `px-3 py-1.5 text-sm transition-colors ${
+      mode === item.value ? 'bg-ink text-paper' : 'text-ink-muted'
+    }`
+
+  if (locked) {
+    return (
+      <div
+        role="group"
+        aria-label="Search mode"
+        title="A chat stays in the mode it started in. Start a new chat to switch."
+        className="flex rounded-xs border border-line bg-surface p-1"
+      >
+        {modes.map((item) => (
+          <span
+            key={item.value}
+            aria-current={mode === item.value ? 'true' : undefined}
+            className={`${className(item)} ${mode === item.value ? '' : 'opacity-40'}`}
+          >
+            {item.label}
+          </span>
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <nav aria-label="Search mode" className="flex rounded-xs border border-line bg-surface p-1">
+      {modes.map((item) => (
+        <Link
+          key={item.value}
+          to={item.to}
+          aria-current={mode === item.value ? 'page' : undefined}
+          className={`${className(item)} ${mode === item.value ? '' : 'hover:text-ink'}`}
+        >
+          {item.label}
+        </Link>
+      ))}
+    </nav>
+  )
+}
+
+/**
+ * The documents behind an answer. Research cites them inline as well, but the
+ * cards are what the stored turn carries, so a reopened chat shows the same
+ * sources as the run that produced it.
+ */
+function SearchHits({ turn }: { turn: ChatTurn }) {
+  if (!turn.documents || turn.documents.length === 0) {
+    return null
+  }
+  return (
+    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      {turn.documents.map((doc) => (
+        <SearchHitCard key={doc.id} document={doc} />
+      ))}
+    </div>
   )
 }
 

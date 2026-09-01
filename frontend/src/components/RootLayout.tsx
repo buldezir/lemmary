@@ -376,8 +376,10 @@ export function RootLayout() {
               >
                 Upload
               </Link>
+              {/* /rag, not a mode: it is the one path above both, so this
+                  marks itself active in Search and Research alike. */}
               <Link
-                to="/search"
+                to="/rag"
                 className={navLinkClass}
               >
                 Deep Search

@@ -66,10 +66,59 @@ const uploadSplitRoute = createRoute({
   component: UploadSplitPage,
 })
 
-const searchRoute = createRoute({
+// Deep Search's two modes are two paths, not a flag on one: the mode decides
+// what a question does -- list documents, or read them and answer -- so it
+// belongs in the URL, where a reload, a bookmark and a shared link all keep it.
+// Both render SearchPage, which reads the mode back off the route.
+//
+// They share the /rag parent so one nav entry covers both: a Link marks itself
+// active for its own path and everything under it, and /rag is the only path
+// that is above both modes. It has no component of its own, so it renders an
+// Outlet and contributes nothing but the segment.
+const ragRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/search',
+  path: '/rag',
+})
+
+// /rag alone is not a page. Search is the cheaper of the two modes and the one
+// to land on.
+const ragIndexRoute = createRoute({
+  getParentRoute: () => ragRoute,
+  path: '/',
+  beforeLoad: () => {
+    throw redirect({ to: '/rag/search' })
+  },
+})
+
+const searchRoute = createRoute({
+  getParentRoute: () => ragRoute,
+  path: 'search',
   component: SearchPage,
+})
+
+// The open chat's id is a child route that renders nothing, and SearchPage
+// stays on the parent match on purpose. Sending the first message of a new
+// chat promotes /rag/search to /rag/search/<id> while the request is still in
+// flight; with the page on a child (or on a sibling route) that promotion swaps
+// the match and React unmounts the transcript mid-send. Here only a child match
+// is added, and the page — which reads the id with useMatchRoute — keeps
+// running. Neither this route nor its document twin renders an <Outlet/>.
+const searchSessionRoute = createRoute({
+  getParentRoute: () => searchRoute,
+  path: '$sessionId',
+  component: () => null,
+})
+
+const researchRoute = createRoute({
+  getParentRoute: () => ragRoute,
+  path: 'research',
+  component: SearchPage,
+})
+
+const researchSessionRoute = createRoute({
+  getParentRoute: () => researchRoute,
+  path: '$sessionId',
+  component: () => null,
 })
 
 const ocrTestRoute = createRoute({
@@ -146,10 +195,22 @@ const documentAskRoute = createRoute({
   component: DocumentAskPage,
 })
 
+// See searchSessionRoute: a placeholder child so the page survives the URL
+// gaining a session id mid-send.
+const documentAskSessionRoute = createRoute({
+  getParentRoute: () => documentAskRoute,
+  path: '$sessionId',
+  component: () => null,
+})
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   uploadRoute.addChildren([uploadFilesRoute, uploadAmazonRoute, uploadSplitRoute]),
-  searchRoute,
+  ragRoute.addChildren([
+    ragIndexRoute,
+    searchRoute.addChildren([searchSessionRoute]),
+    researchRoute.addChildren([researchSessionRoute]),
+  ]),
   ocrTestRoute,
   settingsRoute,
   managementRoute,
@@ -157,7 +218,7 @@ const routeTree = rootRoute.addChildren([
   exportRoute,
   accountRoute,
   documentRoute,
-  documentAskRoute,
+  documentAskRoute.addChildren([documentAskSessionRoute]),
 ])
 
 export const router = createRouter({ routeTree })

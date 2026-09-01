@@ -32,14 +32,23 @@ func Register(app core.App, rt *config.Runtime, idx *fulltext.Index, lim limits.
 				Bind(apis.BodyLimit(passkeyMaxBodyBytes))
 			g.PATCH("/passkeys/{id}", bindAuth(handlePatchPasskey(app)))
 			g.DELETE("/passkeys/{id}", bindAuth(handleDeletePasskey(app)))
-			g.POST("/documents/{documentId}/chat", bindAuth(handleDocumentChat(app, rt)))
+			g.POST("/documents/{documentId}/chat", bindAuth(handleDocumentChat(app, rt))).
+				Bind(apis.BodyLimit(chatMaxBodyBytes))
 			g.GET("/documents/export", bindAuth(handleExportDocuments(app)))
 			g.GET("/documents/search", bindAuth(handleDocumentSearch(app, idx)))
 			g.GET("/documents/timeline", bindAuth(handleDocumentsTimeline(app)))
 			g.POST("/documents/reprocess-failed", bindAuth(handlePostReprocessFailed(app)))
-			g.POST("/search", bindAuth(handleDeepSearch(app, rt, idx)))
-			g.POST("/search/stream", bindAuth(handleResearchStream(app, rt, idx)))
+			g.POST("/search", bindAuth(handleDeepSearch(app, rt, idx))).
+				Bind(apis.BodyLimit(chatMaxBodyBytes))
+			g.POST("/search/stream", bindAuth(handleResearchStream(app, rt, idx))).
+				Bind(apis.BodyLimit(chatMaxBodyBytes))
 			g.POST("/search/reindex", bindAdmin(handleSearchReindex(app, idx)))
+			// Saved conversations behind both AI chat surfaces. The collections
+			// carry no API rules, so this is their only access path.
+			g.GET("/chats", bindAuth(handleListChats(app)))
+			g.GET("/chats/{id}", bindAuth(handleGetChat(app)))
+			g.PATCH("/chats/{id}", bindAuth(handlePatchChat(app)))
+			g.DELETE("/chats/{id}", bindAuth(handleDeleteChat(app)))
 			g.GET("/ocr/providers", bindAuth(handleOCRProviders(app, rt)))
 			// Without a route-level limit the multipart parse consumes the whole
 			// request under PocketBase's 32MB default before the handler's own
