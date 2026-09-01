@@ -3,9 +3,11 @@ package fulltext
 import (
 	"fmt"
 	"html"
+	"math"
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/blevesearch/bleve/v2"
 	"github.com/blevesearch/bleve/v2/search/query"
@@ -29,12 +31,27 @@ type Query struct {
 	DateTo           string
 	Offset           int
 	Limit            int
+	// Relaxed trades precision for recall: unquoted terms no longer all have
+	// to match, and long words also match with one edit of slack.
+	//
+	// Off by default, and the Documents page leaves it off deliberately. There
+	// the query box is a filter — the user types words they know are in the
+	// document and expects the list to shrink to exactly those — so a result
+	// that matched two words out of three would read as a bug. The agent's
+	// tools turn it on: there the query is a guess the model made from a
+	// question, and a near miss is worth far more than an empty list.
+	Relaxed bool
 }
 
 type Hit struct {
 	ID         string
 	Score      float64
 	OCRSnippet string
+	// OCRFragments is every highlight fragment Bleve produced for the OCR
+	// text, best first. OCRSnippet is the first of them; the agent path quotes
+	// several, because one fragment out of a ten-page document is a hint about
+	// where the answer is rather than the answer.
+	OCRFragments []string
 }
 
 type Result struct {
@@ -103,8 +120,13 @@ func (i *Index) Search(q Query) (Result, error) {
 		hits := make([]Hit, 0, len(res.Hits))
 		for _, h := range res.Hits {
 			hit := Hit{ID: h.ID, Score: h.Score}
-			if frags := h.Fragments[FieldOCRText]; len(frags) > 0 {
-				hit.OCRSnippet = plainFragment(frags[0])
+			for _, frag := range h.Fragments[FieldOCRText] {
+				if plain := plainFragment(frag); plain != "" {
+					hit.OCRFragments = append(hit.OCRFragments, plain)
+				}
+			}
+			if len(hit.OCRFragments) > 0 {
+				hit.OCRSnippet = hit.OCRFragments[0]
 			}
 			hits = append(hits, hit)
 		}
@@ -158,7 +180,7 @@ func buildQuery(q Query, text string) (query.Query, error) {
 	}
 
 	conjuncts := make([]query.Query, 0, 8)
-	conjuncts = append(conjuncts, textQuery(parts))
+	conjuncts = append(conjuncts, textQuery(parts, q.Relaxed))
 
 	if userID := strings.TrimSpace(q.UserID); userID != "" {
 		conjuncts = append(conjuncts, termQuery(FieldUser, userID))
@@ -185,33 +207,108 @@ func buildQuery(q Query, text string) (query.Query, error) {
 	return bleve.NewConjunctionQuery(conjuncts...), nil
 }
 
-func textQuery(parts []queryPart) query.Query {
-	termQueries := make([]query.Query, 0, len(parts))
-	for _, part := range parts {
-		disjuncts := make([]query.Query, 0, len(boostedTextFields))
-		for _, f := range boostedTextFields {
-			var mq query.Query
-			if part.phrase {
-				pq := bleve.NewMatchPhraseQuery(part.text)
-				pq.SetField(f.field)
-				pq.Analyzer = AnalyzerName
-				pq.SetBoost(f.boost)
-				mq = pq
-			} else {
-				tq := bleve.NewMatchQuery(part.text)
-				tq.SetField(f.field)
-				tq.Analyzer = AnalyzerName
-				tq.SetBoost(f.boost)
-				mq = tq
-			}
-			disjuncts = append(disjuncts, mq)
+func textQuery(parts []queryPart, relaxed bool) query.Query {
+	if !relaxed {
+		termQueries := make([]query.Query, 0, len(parts))
+		for _, part := range parts {
+			termQueries = append(termQueries, fieldQuery(part, false))
 		}
-		termQueries = append(termQueries, bleve.NewDisjunctionQuery(disjuncts...))
+		if len(termQueries) == 1 {
+			return termQueries[0]
+		}
+		return bleve.NewConjunctionQuery(termQueries...)
 	}
-	if len(termQueries) == 1 {
-		return termQueries[0]
+
+	// A quoted phrase is an instruction, not a guess: the user (or the model)
+	// asked for those words in that order, so it stays a mandatory conjunct
+	// however many loose terms surround it.
+	must := make([]query.Query, 0, len(parts))
+	should := make([]query.Query, 0, len(parts))
+	for _, part := range parts {
+		if part.phrase {
+			must = append(must, fieldQuery(part, false))
+			continue
+		}
+		should = append(should, fieldQuery(part, true))
 	}
-	return bleve.NewConjunctionQuery(termQueries...)
+	if len(should) > 0 {
+		dq := bleve.NewDisjunctionQuery(should...)
+		dq.SetMin(float64(minShouldMatch(len(should))))
+		must = append(must, dq)
+	}
+	if len(must) == 1 {
+		return must[0]
+	}
+	return bleve.NewConjunctionQuery(must...)
+}
+
+// fieldQuery matches one query part across every searchable field, at that
+// field's boost. With fuzzy on, a long word also matches with one edit of
+// slack at half the boost, so an exact match always outranks an approximate
+// one rather than merely appearing beside it.
+func fieldQuery(part queryPart, fuzzy bool) query.Query {
+	disjuncts := make([]query.Query, 0, 2*len(boostedTextFields))
+	for _, f := range boostedTextFields {
+		if part.phrase {
+			pq := bleve.NewMatchPhraseQuery(part.text)
+			pq.SetField(f.field)
+			pq.Analyzer = AnalyzerName
+			pq.SetBoost(f.boost)
+			disjuncts = append(disjuncts, pq)
+			continue
+		}
+		tq := bleve.NewMatchQuery(part.text)
+		tq.SetField(f.field)
+		tq.Analyzer = AnalyzerName
+		tq.SetBoost(f.boost)
+		disjuncts = append(disjuncts, tq)
+
+		if !fuzzy || !fuzzyWorthy(part.text) {
+			continue
+		}
+		fq := bleve.NewMatchQuery(part.text)
+		fq.SetField(f.field)
+		fq.Analyzer = AnalyzerName
+		fq.SetFuzziness(1)
+		fq.SetPrefix(1)
+		fq.SetBoost(f.boost * 0.5)
+		disjuncts = append(disjuncts, fq)
+	}
+	return bleve.NewDisjunctionQuery(disjuncts...)
+}
+
+// fuzzyWorthy decides which terms get an edit of slack. Short words are out
+// because one edit reaches most of the dictionary from them, and anything with
+// a digit is out because it is an id, an amount or a date — the values where a
+// near miss is a different document, not the same one spelled badly.
+func fuzzyWorthy(term string) bool {
+	if utf8.RuneCountInString(term) < 5 {
+		return false
+	}
+	for _, r := range term {
+		if unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// minShouldMatch is how many of n loose terms a document must carry.
+//
+// Two terms both have to match: dropping one of two leaves a single word, and
+// a single word matches the archive. From three up one term may be missing —
+// the model's keyword guesses are wrong often enough that insisting on all of
+// them is what produces empty result lists — and past five the fraction takes
+// over so a long query is not held to an all-or-nothing standard either.
+func minShouldMatch(n int) int {
+	switch {
+	case n <= 2:
+		return n
+	case n <= 5:
+		return n - 1
+	default:
+		return int(math.Ceil(0.7 * float64(n)))
+	}
 }
 
 func termQuery(field, value string) *query.TermQuery {

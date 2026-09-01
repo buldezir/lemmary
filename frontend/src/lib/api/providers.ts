@@ -95,7 +95,9 @@ export async function deleteAIProvider(id: string) {
   })
 }
 
-export async function listProviderModels(id: string, purpose: 'ocr' | 'llm' = 'llm') {
+export type ModelPurpose = 'ocr' | 'llm' | 'embedding'
+
+export async function listProviderModels(id: string, purpose: ModelPurpose = 'llm') {
   const data = await apiFetch<{ models?: CatalogModel[]; sdk?: string }>(
     `/api/app/providers/${id}/models?for=${purpose}`,
     { fallbackError: 'Failed to load models' },

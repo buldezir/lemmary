@@ -7,6 +7,7 @@ import (
 	"lemmary/backend/internal/appapi"
 	"lemmary/backend/internal/authguard"
 	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/embedstore"
 	"lemmary/backend/internal/fulltext"
 	"lemmary/backend/internal/limits"
 	"lemmary/backend/internal/mailsink"
@@ -39,6 +40,10 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	// The same ordering now carries limits.MaxOCRPages, which binds on every
 	// install and not only where a plan limit is set.
 	limits.Register(app, lim)
+	// Keeps the chunk vectors in step with the documents they describe: a
+	// deleted document takes its rows with it, an edited one is marked stale
+	// for the backfill.
+	embedstore.Register(app)
 	appapi.Register(app, rt, ft, lim, badLimitKeys)
 	// After config.RegisterHooks so the settings singleton and any env-seeded
 	// providers exist by the time an account is minted: an instance that hands

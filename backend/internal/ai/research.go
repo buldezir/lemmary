@@ -31,8 +31,8 @@ const (
 	readEnvelopePerDocChars = 200
 )
 
-// DocumentContent is a document's full extracted text, as read_documents
-// returns it to the model.
+// DocumentContent is what read_documents returns to the model: a document's
+// text, or as much of it as the budget and the request allowed.
 type DocumentContent struct {
 	ID            string   `json:"id"`
 	Title         string   `json:"title"`
@@ -42,18 +42,51 @@ type DocumentContent struct {
 	Tags          []string `json:"tags,omitempty"`
 	Text          string   `json:"text"`
 	Truncated     bool     `json:"truncated,omitempty"`
+	// Excerpted marks text assembled from several parts of the document
+	// around a focus rather than read straight through. The gaps are marked
+	// in the text itself.
+	Excerpted bool `json:"excerpted,omitempty"`
+	// PassagesOmitted counts the matching passages that did not fit, so the
+	// model can tell "that is all of it" from "there is more like this".
+	PassagesOmitted int `json:"passages_omitted,omitempty"`
+	// NextOffset is where a sequential read left off, 0 when the document is
+	// finished. TotalChars is the whole document's length in the same units,
+	// so the model can judge how much is left before spending on it.
+	NextOffset int `json:"next_offset,omitempty"`
+	TotalChars int `json:"total_chars,omitempty"`
 }
 
-// DocumentReader loads full document text for ids the agent has already seen.
-// maxTotalChars is the room left in the context window; implementations divide
-// it across the requested ids.
-type DocumentReader func(ctx context.Context, ids []string, maxTotalChars int) ([]DocumentContent, error)
+// ReadRequest is one read_documents call after validation.
+//
+// Focus and Offset are the two ways to reach past the head of a long document:
+// Focus assembles the parts that match a question, Offset continues straight
+// through from where the last read stopped. Without them the tail of anything
+// longer than the budget was simply unreachable.
+type ReadRequest struct {
+	IDs   []string
+	Focus string
+	// Offset is a byte offset into the document text, as reported by a
+	// previous read's NextOffset.
+	Offset int
+	// MaxTotalChars is the room left in the context window; implementations
+	// divide it across the requested ids.
+	MaxTotalChars int
+}
+
+// DocumentReader loads document text for ids the agent has already seen.
+type DocumentReader func(ctx context.Context, req ReadRequest) ([]DocumentContent, error)
 
 type ResearchRequest struct {
 	Messages      []ChatMessage
 	AvailableTags []string
 	Search        DocumentSearcher
 	Read          DocumentReader
+	// PriorDocuments are the hits earlier turns of this conversation already
+	// found. They are readable by id without searching again -- a follow-up
+	// question about a document the last answer cited should not have to
+	// rediscover it -- but they are not results of this turn, so they only
+	// join the answer's document list if the answer cites them.
+	PriorDocuments []DocumentHit
 }
 
 type ResearchResult struct {
@@ -82,7 +115,9 @@ type ResearchEvent struct {
 }
 
 type readDocumentsArgs struct {
-	IDs []string `json:"ids"`
+	IDs    []string `json:"ids"`
+	Focus  string   `json:"focus"`
+	Offset int      `json:"offset"`
 }
 
 // researchState is everything the loop accumulates across rounds.
@@ -92,7 +127,14 @@ type researchState struct {
 	seenIDs map[string]struct{}
 	titles  map[string]string
 	read    map[string]struct{}
-	ran     map[string]struct{}
+	// readParts is keyed by document, focus and offset: the same document read
+	// with a new question, or continued at next_offset, is progress even
+	// though the document itself is not new.
+	readParts map[string]struct{}
+	ran       map[string]struct{}
+	// prior holds documents carried in from earlier turns, by id. They are
+	// readable but are not this turn's results until the answer cites one.
+	prior map[string]DocumentHit
 }
 
 func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, emit func(ResearchEvent)) (ResearchResult, error) {
@@ -107,13 +149,16 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 
 	state := &researchState{
-		budget:  newContextBudget(a.contextTokens),
-		hits:    make([]DocumentHit, 0),
-		seenIDs: map[string]struct{}{},
-		titles:  map[string]string{},
-		read:    map[string]struct{}{},
-		ran:     map[string]struct{}{},
+		budget:    newContextBudget(a.contextTokens),
+		hits:      make([]DocumentHit, 0),
+		seenIDs:   map[string]struct{}{},
+		titles:    map[string]string{},
+		read:      map[string]struct{}{},
+		readParts: map[string]struct{}{},
+		ran:       map[string]struct{}{},
+		prior:     map[string]DocumentHit{},
 	}
+	state.seedPrior(req.PriorDocuments)
 
 	system := buildResearchSystemPrompt(a.languages, a.resultLanguage, req.AvailableTags)
 	state.budget.Add(len(system))
@@ -238,6 +283,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 
 	reply = validateCitations(reply, state.seenIDs)
+	state.adoptCitedPrior(reply)
 	if strings.TrimSpace(reply) == "" {
 		reply = synthesizeSearchReply(state.hits)
 		// A synthesized list of hits is a complete answer of its own kind, and
@@ -392,8 +438,71 @@ func (a *openAISearchAgent) runSearchTool(
 	return toolExecResult{ID: callID, Name: name, Content: content}, found > 0
 }
 
-// encodeSearchResults renders the hits as a tool result that fits the remaining
-// budget, dropping whole documents from the tail until it does.
+// toolSearchHit is a hit as the model sees it. It exists to drop ocr_snippet
+// once passages are present: the snippet is the first passage shortened, so
+// sending both pays twice for the same sentence out of a budget that is the
+// binding constraint on how much of the archive a run can look at.
+type toolSearchHit struct {
+	ID            string    `json:"id"`
+	Title         string    `json:"title"`
+	DocumentDate  string    `json:"document_date,omitempty"`
+	Summary       string    `json:"summary,omitempty"`
+	OCRSnippet    string    `json:"ocr_snippet,omitempty"`
+	Passages      []Passage `json:"passages,omitempty"`
+	DocumentType  string    `json:"document_type,omitempty"`
+	Correspondent string    `json:"correspondent,omitempty"`
+	Tags          []string  `json:"tags,omitempty"`
+}
+
+// hitTrim is one rung of the fit ladder: what to give up next when the results
+// do not fit the budget.
+type hitTrim int
+
+const (
+	trimNothing hitTrim = iota
+	// trimPassages keeps one passage per document. Three passages each is a
+	// luxury; one is still evidence.
+	trimPassages
+	// trimSummaries drops the model-written summaries, which restate metadata
+	// the hit already carries, and keeps the verbatim passage.
+	trimSummaries
+)
+
+func toolSearchHits(hits []DocumentHit, trim hitTrim) []toolSearchHit {
+	out := make([]toolSearchHit, 0, len(hits))
+	for _, hit := range hits {
+		item := toolSearchHit{
+			ID:            hit.ID,
+			Title:         hit.Title,
+			DocumentDate:  hit.DocumentDate,
+			Summary:       hit.Summary,
+			OCRSnippet:    hit.OCRSnippet,
+			Passages:      hit.Passages,
+			DocumentType:  hit.DocumentType,
+			Correspondent: hit.Correspondent,
+			Tags:          hit.Tags,
+		}
+		if len(item.Passages) > 0 {
+			item.OCRSnippet = ""
+		}
+		if trim >= trimPassages && len(item.Passages) > 1 {
+			item.Passages = item.Passages[:1]
+		}
+		if trim >= trimSummaries {
+			item.Summary = ""
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+// encodeSearchResults renders hits as a tool result that fits the budget: first
+// by giving up detail — the extra passages, then the summaries — and only then
+// by dropping whole documents from the tail.
+//
+// The order is what makes it useful. Losing the third passage of a document
+// costs a little evidence; losing the document costs the model any knowledge
+// that it exists, and it cannot ask for what it was never shown.
 //
 // It never slices the encoded JSON: a byte-truncated payload is not JSON at
 // all, and near exhaustion — exactly when the model most needs to understand
@@ -406,13 +515,13 @@ func encodeSearchResults(hits []DocumentHit, remaining int) (string, error) {
 		limit = remaining
 	}
 	if limit <= 0 {
-		return `{"error":"context budget exhausted","hint":"answer with what you have already found"}`, nil
+		return budgetExhaustedResult, nil
 	}
 
-	for count := len(hits); count > 0; count-- {
+	encode := func(count int, trim hitTrim) (string, bool, error) {
 		payload := map[string]any{
 			"count":              count,
-			"documents":          hits[:count],
+			"documents":          toolSearchHits(hits[:count], trim),
 			"context_chars_left": remaining,
 		}
 		if count < len(hits) {
@@ -421,14 +530,33 @@ func encodeSearchResults(hits []DocumentHit, remaining int) (string, error) {
 		}
 		encoded, err := json.Marshal(payload)
 		if err != nil {
+			return "", false, err
+		}
+		return string(encoded), len(encoded) <= limit, nil
+	}
+
+	for _, trim := range []hitTrim{trimNothing, trimPassages, trimSummaries} {
+		content, fits, err := encode(len(hits), trim)
+		if err != nil {
 			return "", err
 		}
-		if len(encoded) <= limit {
-			return string(encoded), nil
+		if fits {
+			return content, nil
 		}
 	}
-	return `{"error":"context budget exhausted","hint":"answer with what you have already found"}`, nil
+	for count := len(hits) - 1; count > 0; count-- {
+		content, fits, err := encode(count, trimSummaries)
+		if err != nil {
+			return "", err
+		}
+		if fits {
+			return content, nil
+		}
+	}
+	return budgetExhaustedResult, nil
 }
+
+const budgetExhaustedResult = `{"error":"context budget exhausted","hint":"answer with what you have already found"}`
 
 func (a *openAISearchAgent) runReadTool(
 	ctx context.Context,
@@ -437,16 +565,22 @@ func (a *openAISearchAgent) runReadTool(
 	callID, name, argumentsJSON string,
 	emit func(ResearchEvent),
 ) (toolExecResult, bool) {
-	ids, err := decodeReadArgs(argumentsJSON)
+	args, err := decodeReadArgs(argumentsJSON)
 	if err != nil {
 		return toolExecResult{ID: callID, Name: name, Content: `{"error":"invalid tool arguments"}`}, false
 	}
+	focus := strings.TrimSpace(args.Focus)
+	offset := args.Offset
+	if offset < 0 {
+		offset = 0
+	}
 
-	// Only ids the agent has actually seen in this run are readable. Ownership
-	// is re-checked by the reader too; this keeps the model from fishing.
-	wanted := make([]string, 0, len(ids))
+	// Only ids the agent has seen -- in this run or in an earlier turn of the
+	// same conversation -- are readable. Ownership is re-checked by the reader
+	// too; this keeps the model from fishing.
+	wanted := make([]string, 0, len(args.IDs))
 	unknown := make([]string, 0)
-	for _, id := range ids {
+	for _, id := range args.IDs {
 		if _, ok := state.seenIDs[id]; !ok {
 			unknown = append(unknown, id)
 			continue
@@ -461,7 +595,11 @@ func (a *openAISearchAgent) runReadTool(
 		wanted = wanted[:maxReadIDsPerCall]
 		truncatedIDs = true
 	}
-	if repeat, ok := state.claimCall(name, wanted); !ok {
+	// Focus and offset are part of the call's identity: re-reading the same
+	// document with a different question, or continuing it at next_offset, is
+	// new work rather than a repeat.
+	claim := readClaim{IDs: wanted, Focus: focus, Offset: offset}
+	if repeat, ok := state.claimCall(name, claim); !ok {
 		return toolExecResult{ID: callID, Name: name, Content: repeat}, false
 	}
 
@@ -472,7 +610,12 @@ func (a *openAISearchAgent) runReadTool(
 
 	emit(ResearchEvent{Type: "step", Kind: "read", Status: "start", Titles: state.titlesFor(wanted), Count: len(wanted)})
 
-	docs, err := req.Read(ctx, wanted, budget)
+	docs, err := req.Read(ctx, ReadRequest{
+		IDs:           wanted,
+		Focus:         focus,
+		Offset:        offset,
+		MaxTotalChars: budget,
+	})
 	if err != nil {
 		emit(ResearchEvent{Type: "step", Kind: "read", Status: "done"})
 		return toolExecResult{ID: callID, Name: name, Content: fmt.Sprintf(`{"error":%q}`, err.Error())}, false
@@ -480,10 +623,12 @@ func (a *openAISearchAgent) runReadTool(
 
 	newText := 0
 	for _, doc := range docs {
-		if _, ok := state.read[doc.ID]; ok {
+		state.read[doc.ID] = struct{}{}
+		key := fmt.Sprintf("%s\x00%s\x00%d", doc.ID, focus, offset)
+		if _, ok := state.readParts[key]; ok {
 			continue
 		}
-		state.read[doc.ID] = struct{}{}
+		state.readParts[key] = struct{}{}
 		newText += len(doc.Text)
 	}
 
@@ -511,6 +656,67 @@ func (a *openAISearchAgent) runReadTool(
 		return toolExecResult{ID: callID, Name: name, Content: `{"error":"failed to encode documents"}`}, false
 	}
 	return toolExecResult{ID: callID, Name: name, Content: string(encoded)}, newText > 0
+}
+
+// readClaim identifies one read: the same ids asked a different question, or
+// continued from a different offset, are different reads.
+type readClaim struct {
+	IDs    []string `json:"ids"`
+	Focus  string   `json:"focus,omitempty"`
+	Offset int      `json:"offset,omitempty"`
+}
+
+// seedPrior makes the documents of earlier turns readable without searching
+// again. They go into seenIDs and titles but not into hits: this turn has not
+// found them, and listing them as its results would attach documents to an
+// answer that never mentions them.
+//
+// Passages are dropped on the way in. They were selected for the question that
+// turn asked, and quoting them under a different one is misleading; if the
+// document matters here, the model reads it.
+func (state *researchState) seedPrior(docs []DocumentHit) {
+	for _, doc := range docs {
+		if doc.ID == "" {
+			continue
+		}
+		if _, ok := state.prior[doc.ID]; ok {
+			continue
+		}
+		doc.Passages = nil
+		state.prior[doc.ID] = doc
+		state.seenIDs[doc.ID] = struct{}{}
+		if title := strings.TrimSpace(doc.Title); title != "" {
+			state.titles[doc.ID] = title
+		}
+	}
+}
+
+// adoptCitedPrior promotes an earlier turn's document into this turn's results
+// once the answer has cited it, so the citation resolves to a card the user can
+// click. Called after validateCitations, which has already removed links to ids
+// the run never saw.
+func (state *researchState) adoptCitedPrior(reply string) {
+	if len(state.prior) == 0 {
+		return
+	}
+	inHits := make(map[string]struct{}, len(state.hits))
+	for _, hit := range state.hits {
+		inHits[hit.ID] = struct{}{}
+	}
+	for _, match := range citationPattern.FindAllStringSubmatch(reply, -1) {
+		if len(match) != 3 {
+			continue
+		}
+		doc, ok := state.prior[match[2]]
+		if !ok {
+			continue
+		}
+		if _, dup := inHits[doc.ID]; dup {
+			continue
+		}
+		inHits[doc.ID] = struct{}{}
+		state.hits = append(state.hits, doc)
+	}
 }
 
 // claimCall suppresses an identical tool call the run has already made, so a
@@ -551,15 +757,18 @@ func toolCallChars(calls []openai.ChatCompletionMessageToolCall) int {
 }
 
 // decodeReadArgs accepts the documented {"ids": [...]} shape and the two forms
-// models reach for anyway: a bare string id, and {"id": "..."}.
-func decodeReadArgs(data string) ([]string, error) {
+// models reach for anyway: a bare string id, and {"id": "..."}. focus and
+// offset are coerced the same way search arguments are, because a model that
+// sends "offset": "1500" means the number.
+func decodeReadArgs(data string) (readDocumentsArgs, error) {
 	var args readDocumentsArgs
 	if err := json.Unmarshal([]byte(data), &args); err == nil && len(args.IDs) > 0 {
-		return normalizeIDs(args.IDs), nil
+		args.IDs = normalizeIDs(args.IDs)
+		return args, nil
 	}
 	var raw map[string]any
 	if err := json.Unmarshal([]byte(data), &raw); err != nil {
-		return nil, err
+		return readDocumentsArgs{}, err
 	}
 	ids := coerceStringSlice(raw["ids"])
 	if len(ids) == 0 {
@@ -571,9 +780,13 @@ func decodeReadArgs(data string) ([]string, error) {
 		}
 	}
 	if len(ids) == 0 {
-		return nil, fmt.Errorf("no ids")
+		return readDocumentsArgs{}, fmt.Errorf("no ids")
 	}
-	return normalizeIDs(ids), nil
+	return readDocumentsArgs{
+		IDs:    normalizeIDs(ids),
+		Focus:  coerceString(raw["focus"]),
+		Offset: coerceInt(raw["offset"]),
+	}, nil
 }
 
 func normalizeIDs(ids []string) []string {
@@ -594,7 +807,11 @@ func normalizeIDs(ids []string) []string {
 	return out
 }
 
-var citationPattern = regexp.MustCompile(`\[([^\]\n]*)\]\(/document/([A-Za-z0-9_-]+)\)`)
+// citationPattern matches the document links an answer is written with. The
+// optional ?page=N is tolerated rather than required: nothing asks the model
+// for page numbers yet, but a model that adds one must not have its citation
+// silently unwrapped as if the id were invented.
+var citationPattern = regexp.MustCompile(`\[([^\]\n]*)\]\(/document/([A-Za-z0-9_-]+)(?:\?page=\d+)?\)`)
 
 // validateCitations unwraps links to documents the run never saw, so a model
 // that invents an id produces plain text rather than a link to nothing.
@@ -626,8 +843,11 @@ Expand the request into concrete keywords and filters. Search bilingual metadata
 Prefer precise date_from/date_to, document_type, correspondent, or tags filters when the query implies them.
 When filtering by tags, use exact names from the available archive tags list below — never invent tag names.
 
-Never state what a document contains without reading it first. Search results carry a short snippet only; that is a reason to read a document, not evidence about it.
+Never state what a document contains without reading it first. Search results carry a few verbatim passages; a passage is a reason to read the document, not the whole of what it says.
 Read in small batches so each document comes back in full rather than truncated.
+For a long document, pass focus with the question you are trying to answer: the read then returns the parts about it instead of only the beginning, with gaps marked by …
+When a read reports next_offset, the document continues there: call read_documents again with that offset to carry on where you stopped.
+Documents cited earlier in this conversation can be read by id straight away; you do not have to search for them again.
 There is no limit on how many searches or reads you may make. Every tool result reports context_chars_left: when it runs low, stop gathering and write the answer with what you have.
 Cite real document ids from tool results only. Never invent a document or an id.
 If the archive does not contain the answer, say so plainly and say what is missing.
@@ -643,15 +863,25 @@ func researchTools() []openai.ChatCompletionToolParam {
 	tools := searchDocumentsTools()
 	return append(tools, openai.ChatCompletionToolParam{
 		Function: shared.FunctionDefinitionParam{
-			Name:        "read_documents",
-			Description: openai.String("Read the full extracted text of documents already returned by search_documents. Use this before making any claim about what a document says."),
+			Name: "read_documents",
+			Description: openai.String("Read the extracted text of documents already seen in this conversation. " +
+				"Use this before making any claim about what a document says."),
 			Parameters: shared.FunctionParameters{
 				"type": "object",
 				"properties": map[string]any{
 					"ids": map[string]any{
 						"type":        "array",
 						"items":       map[string]any{"type": "string"},
-						"description": fmt.Sprintf("Document ids from earlier search_documents results. At most %d per call; prefer 2-5 so each document is returned in full.", maxReadIDsPerCall),
+						"description": fmt.Sprintf("Document ids from earlier search_documents results, or cited earlier in this conversation. At most %d per call; prefer 2-5 so each document is returned in full.", maxReadIDsPerCall),
+					},
+					"focus": map[string]any{
+						"type": "string",
+						"description": "What you are looking for in these documents. " +
+							"For a document too long to return whole, the passages about this are returned instead of only the beginning, with … marking the gaps.",
+					},
+					"offset": map[string]any{
+						"type":        "integer",
+						"description": "Continue a straight read from this position, as reported by a previous result's next_offset. Omit to start at the beginning.",
 					},
 				},
 				"required": []string{"ids"},

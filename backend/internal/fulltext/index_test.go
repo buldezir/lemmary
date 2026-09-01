@@ -83,6 +83,128 @@ func TestSearchANDVsPhrase(t *testing.T) {
 	if containsID(phraseHits, "split") {
 		t.Fatalf("phrase should not match split terms, got %v", phraseHits)
 	}
+
+	// A third term nothing carries: strict finds nothing at all, which is the
+	// failure the agent tools hit constantly — the model guesses one keyword
+	// wrong and the whole search comes back empty.
+	strictThree := searchIDs(t, idx, Query{Text: "plumber invoice bathroom", UserID: "u1"})
+	if len(strictThree) != 0 {
+		t.Fatalf("strict AND should require every term, got %v", strictThree)
+	}
+	relaxedThree := searchIDs(t, idx, Query{Text: "plumber invoice bathroom", UserID: "u1", Relaxed: true})
+	if !containsID(relaxedThree, "both") {
+		t.Fatalf("relaxed should match 2 of 3 terms, got %v", relaxedThree)
+	}
+
+	// Relaxed still cannot reach a document that carries only one of three.
+	oneOfThree := searchIDs(t, idx, Query{Text: "plumber skylight bathroom", UserID: "u1", Relaxed: true})
+	if len(oneOfThree) != 0 {
+		t.Fatalf("relaxed should still require 2 of 3, got %v", oneOfThree)
+	}
+
+	// A quoted phrase stays mandatory even in relaxed mode: "split" has both
+	// words but not adjacent, and no amount of slack may let it through.
+	relaxedPhrase := searchIDs(t, idx, Query{Text: `"plumber invoice" paid`, UserID: "u1", Relaxed: true})
+	if containsID(relaxedPhrase, "split") {
+		t.Fatalf("relaxed must not drop a quoted phrase, got %v", relaxedPhrase)
+	}
+	if !containsID(relaxedPhrase, "both") {
+		t.Fatalf("relaxed phrase should still match, got %v", relaxedPhrase)
+	}
+}
+
+func TestMinShouldMatch(t *testing.T) {
+	for _, tc := range []struct{ n, want int }{
+		{1, 1}, {2, 2}, {3, 2}, {4, 3}, {5, 4}, {6, 5}, {10, 7},
+	} {
+		if got := minShouldMatch(tc.n); got != tc.want {
+			t.Fatalf("minShouldMatch(%d) = %d, want %d", tc.n, got, tc.want)
+		}
+	}
+}
+
+func TestSearchRelaxedFuzzyMatchesTypos(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "invoice", map[string]any{
+		FieldUser:    "u1",
+		FieldTitle:   "Versicherung Police",
+		FieldOCRText: "Beitragsrechnung 2024 für die Hausratversicherung, Vertragsnummer 4711.",
+		FieldAll:     "Versicherung Police Beitragsrechnung 2024 Hausratversicherung 4711",
+	})
+
+	// One transposed letter. Strict matching cannot reach it.
+	if hits := searchIDs(t, idx, Query{Text: "Versicherugn", UserID: "u1"}); len(hits) != 0 {
+		t.Fatalf("strict should not match a typo, got %v", hits)
+	}
+	hits := searchIDs(t, idx, Query{Text: "Versicherugn", UserID: "u1", Relaxed: true})
+	if !containsID(hits, "invoice") {
+		t.Fatalf("relaxed should match one edit away, got %v", hits)
+	}
+
+	// Short words get no slack: one edit from "Pole" reaches half the archive.
+	if hits := searchIDs(t, idx, Query{Text: "Pole", UserID: "u1", Relaxed: true}); len(hits) != 0 {
+		t.Fatalf("short terms must stay exact, got %v", hits)
+	}
+	// Neither do numbers: 4712 is a different contract, not a misspelt one.
+	if hits := searchIDs(t, idx, Query{Text: "4712", UserID: "u1", Relaxed: true}); len(hits) != 0 {
+		t.Fatalf("terms with digits must stay exact, got %v", hits)
+	}
+}
+
+func TestSearchRelaxedRanksExactAboveFuzzy(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "exact", map[string]any{
+		FieldUser:    "u1",
+		FieldTitle:   "Versicherung",
+		FieldOCRText: "Versicherung",
+		FieldAll:     "Versicherung",
+	})
+	mustPut(t, idx, "fuzzy", map[string]any{
+		FieldUser:    "u1",
+		FieldTitle:   "Versicherunh",
+		FieldOCRText: "Versicherunh",
+		FieldAll:     "Versicherunh",
+	})
+
+	hits := searchIDs(t, idx, Query{Text: "Versicherung", UserID: "u1", Relaxed: true})
+	if len(hits) != 2 {
+		t.Fatalf("relaxed should reach both, got %v", hits)
+	}
+	if hits[0] != "exact" {
+		t.Fatalf("exact match must outrank the fuzzy one, got %v", hits)
+	}
+}
+
+func TestSearchHighlightReturnsFragments(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "doc1", map[string]any{
+		FieldUser:  "u1",
+		FieldTitle: "Invoice",
+		FieldOCRText: "Preface text. The plumber invoice for the leak was paid in July. " +
+			strings.Repeat("Filler sentence with nothing of interest. ", 40) +
+			"A second plumber visit followed in September.",
+		FieldAll: "Invoice plumber",
+	})
+
+	res, err := idx.Search(Query{Text: "plumber", UserID: "u1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Hits) != 1 {
+		t.Fatalf("hits=%d", len(res.Hits))
+	}
+	hit := res.Hits[0]
+	if len(hit.OCRFragments) == 0 {
+		t.Fatal("expected at least one OCR fragment")
+	}
+	if hit.OCRSnippet != hit.OCRFragments[0] {
+		t.Fatalf("snippet %q should be the first fragment %q", hit.OCRSnippet, hit.OCRFragments[0])
+	}
+	for _, frag := range hit.OCRFragments {
+		if strings.Contains(frag, "<mark>") {
+			t.Fatalf("fragments should be plain text: %q", frag)
+		}
+	}
 }
 
 func TestSearchOwnerIsolation(t *testing.T) {

@@ -200,6 +200,12 @@ is dropped.
 | `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK`. |
 | `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. |
 | `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Required unless `OCR_SDK=google_vision`, which reads a document without one. |
+| `AI_EMBEDDING_MODEL` | unset (Deep Search matches keywords only) | An embedding model on the `AI_SDK` provider, so Deep Search can also find documents by meaning. Operator-owned under `AI_MANAGED=1`; removing it there turns the feature off. See below for what it costs. |
+
+There is deliberately no `AI_EMBEDDING_SDK` / `_API_KEY` / `_BASE_URL` trio.
+Pointing embeddings at a different endpoint than the language model is a rare
+enough choice that it belongs in **Settings**, and three more variables would
+mostly be three more ways to half-configure the feature.
 
 A provider record is matched by the default alias it is created with. A renamed
 or deleted provider is left alone rather than reclaimed — renaming one is an
@@ -228,6 +234,38 @@ plan can price them per tier:
 | `SEARCH_CONTEXT_TOKENS` | `128000` | Context window of the search model, in tokens — the only limit on a Research run |
 | `NEAR_DUPLICATE_DETECTION_ENABLED` | `false` | Whether the pipeline runs near-duplicate detection |
 | `NEAR_DUPLICATE_THRESHOLD` | `0.92` | How similar two documents' text must be to count as near-duplicates |
+
+One more is read from the environment on every boot and never stored, because it
+paces spending rather than describing the instance:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `EMBEDDING_BACKFILL_BATCH` | `20` | Documents one backfill tick embeds, on `WORKER_CRON_EXPR`. `0` disables the backfill, so only newly processed documents are embedded and an existing archive is left alone. |
+
+#### What embeddings cost
+
+Turning `AI_EMBEDDING_MODEL` on is a commitment to embed the whole archive, not
+just the next upload, so it is worth knowing the shape of the bill before you
+make it.
+
+- **Tokens.** Each document is cut into ~1100-character passages plus one
+  passage rendered from its metadata, and each passage is one embedding input —
+  roughly one request per 30 KB of text. Embedding models are cheap per token;
+  this is simply every document you have.
+- **Re-embedding.** A document is embedded again whenever its OCR text or its
+  metadata changes: a re-OCR, an edited title, a renamed tag, a reprocess. And
+  *every* document is embedded again when you change the model, because vectors
+  from two models cannot be compared — there is no partial migration.
+- **Space, which under encryption is RAM.** A 1536-dimension vector is about
+  6 KB; a typical document is a handful of passages, so 30–60 KB each inside
+  `data.db`. With `VAULT_ENABLED=1` the archive is decrypted into a tmpfs, so
+  that space is memory. A model with 1024 dimensions or fewer costs
+  proportionally less of it. See [Encryption at rest](/encryption).
+
+The backfill drains at `EMBEDDING_BACKFILL_BATCH` documents a tick and logs what
+it embedded, what failed, and how many are left; **Settings → Models** shows the
+same counts. A provider failure is soft: the document keeps its text, its
+metadata and its place in keyword search, and is retried later with a backoff.
 
 The **result language** has no variable at all. It decides what language a
 document's title, summary and tags are stored in, which is a reader's

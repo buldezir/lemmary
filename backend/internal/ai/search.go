@@ -11,8 +11,6 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
-
-	"lemmary/backend/internal/strutil"
 )
 
 const (
@@ -25,15 +23,30 @@ const (
 	maxToolResultBytes = 24000
 )
 
+// Passage is a verbatim slice of a document's text, quoted by a search hit.
+// Page is filled only when the extraction preserved page boundaries, which no
+// current OCR provider does.
+type Passage struct {
+	Page int    `json:"page,omitempty"`
+	Text string `json:"text"`
+}
+
 type DocumentHit struct {
-	ID            string   `json:"id"`
-	Title         string   `json:"title"`
-	DocumentDate  string   `json:"document_date,omitempty"`
-	Summary       string   `json:"summary,omitempty"`
-	OCRSnippet    string   `json:"ocr_snippet,omitempty"`
-	DocumentType  string   `json:"document_type,omitempty"`
-	Correspondent string   `json:"correspondent,omitempty"`
-	Tags          []string `json:"tags,omitempty"`
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	DocumentDate string `json:"document_date,omitempty"`
+	Summary      string `json:"summary,omitempty"`
+	// OCRSnippet is the first passage shortened for display. Kept filled even
+	// when Passages is set: it is what the stored turn and the result card
+	// show, and neither wants three paragraphs.
+	OCRSnippet string `json:"ocr_snippet,omitempty"`
+	// Passages are the verbatim pieces of the document that matched. One to
+	// three of them: enough that a hit is evidence rather than a filename,
+	// few enough that a result list is not a read.
+	Passages      []Passage `json:"passages,omitempty"`
+	DocumentType  string    `json:"document_type,omitempty"`
+	Correspondent string    `json:"correspondent,omitempty"`
+	Tags          []string  `json:"tags,omitempty"`
 }
 
 type SearchDocumentsArgs struct {
@@ -398,10 +411,11 @@ func (a *openAISearchAgent) executeToolCall(
 		*allHits = append(*allHits, hit)
 	}
 
-	payload, err := json.Marshal(map[string]any{
-		"count":     len(hits),
-		"documents": hits,
-	})
+	// The same encoder Research uses. Search has no running context budget, so
+	// the whole per-call cap is what it may spend -- but it goes through the
+	// fit ladder rather than slicing the encoded JSON, which is what this code
+	// used to do and which handed the model a payload that was not JSON.
+	content, err := encodeSearchResults(hits, maxToolResultBytes)
 	if err != nil {
 		return toolExecResult{
 			ID:      callID,
@@ -409,11 +423,7 @@ func (a *openAISearchAgent) executeToolCall(
 			Content: `{"error":"failed to encode search results"}`,
 		}
 	}
-	toolContent := string(payload)
-	if len(toolContent) > maxToolResultBytes {
-		toolContent = strutil.Truncate(toolContent, maxToolResultBytes) + strutil.Ellipsis
-	}
-	return toolExecResult{ID: callID, Name: name, Content: toolContent}
+	return toolExecResult{ID: callID, Name: name, Content: content}
 }
 
 func buildSearchSystemPrompt(languages, resultLanguage string, availableTags []string) string {
@@ -429,7 +439,8 @@ If nothing relevant is found, say so clearly and suggest alternative search term
 Be concise. Answer in the same language as the user's latest message.
 Never output tool markup, DSML tags, or raw function-call XML in your final answer — only natural language.
 You have one round of tool calls: gather everything you need with search_documents, then answer.
-If answering would require reading the documents themselves, say so and suggest Research mode.
+Each result carries verbatim passages from the document. When a passage literally contains the answer, give it directly and cite the document.
+When answering would need more of a document than the passages show, say what you found and suggest Research mode, which reads the documents.
 `)
 
 	b.WriteString(formatAvailableTagsPrompt(availableTags))
@@ -487,14 +498,16 @@ Available archive tags (pass exact names via the tags filter when relevant): %s.
 func searchDocumentsTools() []openai.ChatCompletionToolParam {
 	return []openai.ChatCompletionToolParam{{
 		Function: shared.FunctionDefinitionParam{
-			Name:        "search_documents",
-			Description: openai.String("Search the user's document archive by keywords and optional filters. Returns matching documents with short snippets."),
+			Name: "search_documents",
+			Description: openai.String("Search the user's document archive by meaning and by keywords, with optional filters. " +
+				"Returns matching documents with 1-3 verbatim passages from each."),
 			Parameters: shared.FunctionParameters{
 				"type": "object",
 				"properties": map[string]any{
 					"query": map[string]any{
-						"type":        "string",
-						"description": "Keyword or short phrase to match against titles, summaries, and OCR text.",
+						"type": "string",
+						"description": "What to look for, as keywords or a short phrase. " +
+							"Matched against titles, summaries and OCR text; not every word has to occur, so describe the thing rather than guessing its exact wording.",
 					},
 					"date_from": map[string]any{
 						"type":        "string",

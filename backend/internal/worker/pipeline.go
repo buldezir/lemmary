@@ -15,21 +15,34 @@ import (
 	"lemmary/backend/internal/ocr"
 )
 
+// ErrStepSoft marks a step failure the pipeline may walk past.
+//
+// A step wrapping it is still recorded as failed, so the failure is visible in
+// step_runs and countable, but the job keeps going and the document's status is
+// untouched. It exists for work that enriches a document rather than producing
+// it: losing the retrieval vectors for one document costs some recall, while
+// failing the job over them would strand a document whose text, metadata and
+// preview are all perfectly good -- and would hand it to the retry machinery
+// that re-runs OCR and extraction to fix an embedding.
+var ErrStepSoft = errors.New("step failed softly")
+
 type PipelineRunner struct {
 	App      core.App
 	Cfg      config.Config
 	OCR      ocr.Provider
 	AI       ai.Extractor
+	Embedder ai.Embedder
 	registry map[string]Step
 }
 
-func NewPipelineRunner(app core.App, cfg config.Config, ocrProvider ocr.Provider, aiExtractor ai.Extractor) *PipelineRunner {
+func NewPipelineRunner(app core.App, cfg config.Config, ocrProvider ocr.Provider, aiExtractor ai.Extractor, embedder ai.Embedder) *PipelineRunner {
 	return &PipelineRunner{
 		App:      app,
 		Cfg:      cfg,
 		OCR:      ocrProvider,
 		AI:       aiExtractor,
-		registry: buildRegistry(ocrProvider, aiExtractor),
+		Embedder: embedder,
+		registry: buildRegistry(ocrProvider, aiExtractor, embedder),
 	}
 }
 
@@ -81,6 +94,7 @@ func (r *PipelineRunner) Run(ctx context.Context, jobID string) error {
 		Document:   document,
 		OCR:        r.OCR,
 		AI:         r.AI,
+		Embedder:   r.Embedder,
 		Metadata:   metadata,
 		MimeType:   ocr.GuessMimeType(document.GetString("file")),
 		ForceSteps: parseForceSteps(job),
@@ -134,6 +148,15 @@ func (r *PipelineRunner) Run(ctx context.Context, jobID string) error {
 		logger.Info("step running", "step", stepName, "attempt", runs[idx].Attempts)
 
 		if err := step.Run(jobCtx, state); err != nil {
+			if errors.Is(err, ErrStepSoft) {
+				markStepSoftFailed(&runs[idx], err)
+				saveStepRuns(job, runs)
+				if saveErr := r.App.Save(job); saveErr != nil {
+					return saveErr
+				}
+				logger.Warn("step failed softly; continuing", "step", stepName, slog.Any("error", err))
+				continue
+			}
 			return r.handleStepFailure(job, document, runs, idx, err)
 		}
 

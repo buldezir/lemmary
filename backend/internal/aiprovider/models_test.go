@@ -9,7 +9,7 @@ import (
 func TestModelsURLOpenRouterOCRAddsFileFilter(t *testing.T) {
 	t.Parallel()
 	p := Provider{SDK: SDKOpenRouter, BaseURL: "https://openrouter.ai/api/v1"}
-	got := ModelsURL(p, true)
+	got := ModelsURL(p, PurposeOCR)
 	if got != "https://openrouter.ai/api/v1/models?input_modalities=file" {
 		t.Fatalf("ModelsURL() = %q", got)
 	}
@@ -18,7 +18,7 @@ func TestModelsURLOpenRouterOCRAddsFileFilter(t *testing.T) {
 func TestModelsURLOpenAIOCRUnfiltered(t *testing.T) {
 	t.Parallel()
 	p := Provider{SDK: SDKOpenAI, BaseURL: "https://api.openai.com/v1"}
-	got := ModelsURL(p, true)
+	got := ModelsURL(p, PurposeOCR)
 	if got != "https://api.openai.com/v1/models" {
 		t.Fatalf("ModelsURL() = %q", got)
 	}
@@ -91,7 +91,7 @@ func TestListModels(t *testing.T) {
 	defer srv.Close()
 
 	p := Provider{SDK: SDKOpenRouter, BaseURL: srv.URL + "/v1", APIKey: "test-key"}
-	models, err := ListModels(t.Context(), p, true, srv.Client(), nil)
+	models, err := ListModels(t.Context(), p, PurposeOCR, srv.Client(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestListModelsMistralFiltersByCapabilities(t *testing.T) {
 	defer srv.Close()
 
 	p := Provider{SDK: SDKMistral, BaseURL: srv.URL + "/v1", APIKey: "test-key"}
-	ocr, err := ListModels(t.Context(), p, true, srv.Client(), nil)
+	ocr, err := ListModels(t.Context(), p, PurposeOCR, srv.Client(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestListModelsMistralFiltersByCapabilities(t *testing.T) {
 		t.Fatalf("ocr catalog=%+v", ocr)
 	}
 
-	llm, err := ListModels(t.Context(), p, false, srv.Client(), nil)
+	llm, err := ListModels(t.Context(), p, PurposeLLM, srv.Client(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestListModelsMistralFallsBackToOCRSubstring(t *testing.T) {
 	defer srv.Close()
 
 	p := Provider{SDK: SDKMistral, BaseURL: srv.URL + "/v1", APIKey: "test-key"}
-	models, err := ListModels(t.Context(), p, true, srv.Client(), nil)
+	models, err := ListModels(t.Context(), p, PurposeOCR, srv.Client(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestListModelsMistralFallsBackToOCRSubstring(t *testing.T) {
 		t.Fatalf("got %+v", models)
 	}
 
-	all, err := ListModels(t.Context(), p, false, srv.Client(), nil)
+	all, err := ListModels(t.Context(), p, PurposeLLM, srv.Client(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,20 +192,95 @@ func TestFilterMistralModelsMixesCapabilitiesAndSubstringFallback(t *testing.T) 
 		{ID: "named", Name: "Has OCR in name"},
 	}
 
-	ocr := filterMistralModels(in, true)
+	ocr := filterModels(in, SDKMistral, PurposeOCR)
 	if len(ocr) != 3 || ocr[0].ID != "mistral-ocr-latest" || ocr[1].ID != "legacy-ocr" || ocr[2].ID != "named" {
 		t.Fatalf("ocr=%+v", ocr)
 	}
 
-	llm := filterMistralModels(in, false)
+	llm := filterModels(in, SDKMistral, PurposeLLM)
 	if len(llm) != 2 || llm[0].ID != "invoice-ocr-extract" || llm[1].ID != "codestral-latest" {
 		t.Fatalf("llm=%+v", llm)
+	}
+
+	// Mistral has no embeddings capability flag, so the embedding model is the
+	// one whose capabilities object claims neither chat nor OCR.
+	embed := filterModels(in, SDKMistral, PurposeEmbedding)
+	if len(embed) != 1 || embed[0].ID != "mistral-embed" {
+		t.Fatalf("embed=%+v", embed)
+	}
+}
+
+// Binding an embedding model to extraction or OCR fails on every document, so
+// the two lists it must never appear in are the two an admin picks from most.
+func TestFilterModelsKeepsEmbeddingModelsOutOfLLMAndOCR(t *testing.T) {
+	t.Parallel()
+	in := []Model{
+		{ID: "gpt-5.6-luna", Name: "gpt-5.6-luna"},
+		{ID: "text-embedding-3-small", Name: "text-embedding-3-small"},
+	}
+
+	for _, purpose := range []ModelPurpose{PurposeLLM, PurposeOCR} {
+		got := filterModels(in, SDKOpenAI, purpose)
+		if len(got) != 1 || got[0].ID != "gpt-5.6-luna" {
+			t.Fatalf("for=%s: %+v", purpose, got)
+		}
+	}
+
+	embed := filterModels(in, SDKOpenAI, PurposeEmbedding)
+	if len(embed) != 1 || embed[0].ID != "text-embedding-3-small" {
+		t.Fatalf("embed=%+v", embed)
+	}
+}
+
+// OpenRouter states the modality outright, which beats the name heuristic: it
+// keeps a chat model whose name happens to contain "embed" out of the
+// embeddings list.
+func TestFilterModelsUsesOpenRouterOutputModalities(t *testing.T) {
+	t.Parallel()
+	in := []Model{
+		{ID: "vendor/embedder-chat", Name: "Embedder Chat", outputModalities: []string{"text"}},
+		{ID: "vendor/qwen3", Name: "Qwen3", outputModalities: []string{"embeddings"}},
+	}
+
+	embed := filterModels(in, SDKOpenRouter, PurposeEmbedding)
+	if len(embed) != 1 || embed[0].ID != "vendor/qwen3" {
+		t.Fatalf("embed=%+v", embed)
+	}
+	llm := filterModels(in, SDKOpenRouter, PurposeLLM)
+	if len(llm) != 1 || llm[0].ID != "vendor/embedder-chat" {
+		t.Fatalf("llm=%+v", llm)
+	}
+}
+
+func TestParseModelPurposeDefaultsToLLM(t *testing.T) {
+	t.Parallel()
+	for raw, want := range map[string]ModelPurpose{
+		"":          PurposeLLM,
+		"llm":       PurposeLLM,
+		"nonsense":  PurposeLLM,
+		"ocr":       PurposeOCR,
+		" OCR ":     PurposeOCR,
+		"embedding": PurposeEmbedding,
+		"Embedding": PurposeEmbedding,
+	} {
+		if got := ParseModelPurpose(raw); got != want {
+			t.Fatalf("ParseModelPurpose(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
+func TestModelsURLEmbeddingIsUnfiltered(t *testing.T) {
+	t.Parallel()
+	p := Provider{SDK: SDKOpenRouter, BaseURL: "https://openrouter.ai/api/v1"}
+
+	if got := ModelsURL(p, PurposeEmbedding); got != "https://openrouter.ai/api/v1/models" {
+		t.Fatalf("ModelsURL() = %q", got)
 	}
 }
 
 func TestListModelsGoogleVisionEmpty(t *testing.T) {
 	t.Parallel()
-	models, err := ListModels(t.Context(), Provider{SDK: SDKGoogleVision, APIKey: "x"}, true, nil, nil)
+	models, err := ListModels(t.Context(), Provider{SDK: SDKGoogleVision, APIKey: "x"}, PurposeOCR, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

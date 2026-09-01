@@ -20,6 +20,10 @@ type Snapshot struct {
 	SearchAgent ai.SearchAgent
 	// Shares the extraction provider: both reason over document text.
 	Splitter ai.Splitter
+	// Embedder is nil unless an embedding model is bound, which is what turns
+	// dense retrieval on: every consumer checks for nil and degrades to
+	// keyword search rather than failing.
+	Embedder ai.Embedder
 }
 
 type Runtime struct {
@@ -118,6 +122,19 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		)
 	}
 
+	var embedder ai.Embedder
+	if HasEmbedding(cfg) {
+		embedder = ai.NewEmbedder(
+			cfg.EmbeddingProvider.SDK,
+			cfg.EmbeddingProvider.APIKey,
+			cfg.EmbeddingModel,
+			cfg.EmbeddingProvider.BaseURL,
+			cfg.EmbeddingDims,
+			cfg.OpenAITimeout,
+			aiLogger,
+		)
+	}
+
 	var searchAgent ai.SearchAgent
 	if cfg.SearchProvider != nil && cfg.SearchProvider.APIKey != "" && aiprovider.IsLLM(cfg.SearchProvider.SDK) {
 		searchAgent = ai.NewSearchAgent(
@@ -140,6 +157,7 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		Chatter:     chatter,
 		SearchAgent: searchAgent,
 		Splitter:    splitter,
+		Embedder:    embedder,
 	}
 
 	r.mu.Lock()
@@ -165,6 +183,8 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		"model", aiModel,
 		"chat_model", cfg.ChatModel,
 		"search_model", cfg.SearchModel,
+		"embedding_model", cfg.EmbeddingModel,
+		"embedding_dims", cfg.EmbeddingDims,
 		"deep_search_languages", cfg.DeepSearchLanguages,
 		"search_context_tokens", cfg.SearchContextTokens,
 	)

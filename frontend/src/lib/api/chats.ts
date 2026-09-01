@@ -9,7 +9,14 @@ export type SearchDocumentHit = {
   title: string
   document_date?: string
   summary?: string
+  /** The best passage, shortened for display. */
   ocr_snippet?: string
+  /**
+   * Verbatim passages from the document that matched. `page` is set only when
+   * the extraction preserved page boundaries, which no current OCR provider
+   * does -- so it is absent in practice today.
+   */
+  passages?: { page?: number; text: string }[]
   document_type?: string
   correspondent?: string
   tags?: string[]

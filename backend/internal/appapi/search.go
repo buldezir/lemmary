@@ -1,7 +1,6 @@
 package appapi
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,6 +52,9 @@ type searchTurn struct {
 	mode      string
 	messages  []ai.ChatMessage
 	tools     agentTools
+	// priorDocuments are the hits earlier turns of this conversation found.
+	// Research may read them by id without searching for them again.
+	priorDocuments []ai.DocumentHit
 }
 
 func (t searchTurn) research() bool { return t.mode == chat.ModeResearch }
@@ -66,19 +68,18 @@ type agentTools struct {
 	read   ai.DocumentReader
 }
 
+// buildAgentTools binds one retriever per request. Both closures share it, so
+// per-turn work is done once rather than per tool call.
 func buildAgentTools(app core.App, idx *fulltext.Index, userID string) (agentTools, error) {
 	tags, err := listAvailableTagNames(app, userID)
 	if err != nil {
 		return agentTools{}, err
 	}
+	retriever := &agentRetriever{app: app, idx: idx, userID: userID}
 	return agentTools{
-		tags: tags,
-		search: func(ctx context.Context, args ai.SearchDocumentsArgs) ([]ai.DocumentHit, error) {
-			return searchUserDocuments(app, idx, userID, args)
-		},
-		read: func(ctx context.Context, ids []string, maxTotalChars int) ([]ai.DocumentContent, error) {
-			return readUserDocuments(app, userID, ids, maxTotalChars)
-		},
+		tags:   tags,
+		search: retriever.search,
+		read:   retriever.read,
 	}, nil
 }
 
@@ -147,14 +148,27 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		return searchTurn{}, true, writeError(e, http.StatusInternalServerError, "Search is unavailable.")
 	}
 
+	// A follow-up question is usually about what the last answer just cited,
+	// and until now the run started with no memory of it at all: the model had
+	// to guess a query that would rediscover a document it had already read.
+	var priorDocuments []ai.DocumentHit
+	if session != nil {
+		priorDocuments, err = chat.PriorHits(app, session.Id)
+		if err != nil {
+			// Losing the carried evidence costs a search, not the answer.
+			app.Logger().Warn("search prior hits failed", slog.Any("error", err))
+		}
+	}
+
 	return searchTurn{
-		agent:     agent,
-		sessionID: req.SessionID,
-		ownerID:   ownerID,
-		content:   content,
-		mode:      mode,
-		messages:  append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content}),
-		tools:     tools,
+		agent:          agent,
+		sessionID:      req.SessionID,
+		ownerID:        ownerID,
+		content:        content,
+		mode:           mode,
+		messages:       append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content}),
+		tools:          tools,
+		priorDocuments: priorDocuments,
 	}, false, nil
 }
 
@@ -211,10 +225,11 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 		if turn.research() {
 			// Non-streaming fallback for clients that cannot read SSE.
 			result, researchErr := turn.agent.Research(e.Request.Context(), ai.ResearchRequest{
-				Messages:      turn.messages,
-				AvailableTags: turn.tools.tags,
-				Search:        turn.tools.search,
-				Read:          turn.tools.read,
+				Messages:       turn.messages,
+				AvailableTags:  turn.tools.tags,
+				Search:         turn.tools.search,
+				Read:           turn.tools.read,
+				PriorDocuments: turn.priorDocuments,
 			}, nil)
 			reply, hits, incomplete, err = result.Reply, result.Documents, result.Incomplete, researchErr
 		} else {
@@ -276,10 +291,11 @@ func handleResearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index)
 		defer stopHeartbeat()
 
 		result, err := turn.agent.Research(e.Request.Context(), ai.ResearchRequest{
-			Messages:      turn.messages,
-			AvailableTags: turn.tools.tags,
-			Search:        turn.tools.search,
-			Read:          turn.tools.read,
+			Messages:       turn.messages,
+			AvailableTags:  turn.tools.tags,
+			Search:         turn.tools.search,
+			Read:           turn.tools.read,
+			PriorDocuments: turn.priorDocuments,
 		}, func(event ai.ResearchEvent) { stream.Send(event) })
 		if err != nil {
 			if e.Request.Context().Err() != nil {

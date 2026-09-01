@@ -35,6 +35,19 @@ const (
 	FieldAll               = "all"
 )
 
+// newMapping builds the one analyzer every text field uses: unicode tokenizer,
+// lowercase, nothing else.
+//
+// No stemmer, and that is a decision rather than an omission. A field mapping
+// picks one analyzer for every document in the index, but a single document
+// here routinely mixes languages — a German invoice with an English summary,
+// Ukrainian OCR under bilingual metadata — so any stemmer would be wrong for
+// part of the text it was applied to. Bleve has no Ukrainian stemmer at all,
+// and a German one applied to Ukrainian does not degrade gracefully, it
+// conflates unrelated words. Morphology is instead covered from two other
+// directions: relaxed queries add one edit of slack for long terms
+// (fulltext.Query.Relaxed), and dense retrieval matches meaning rather than
+// surface form. Revisit only if per-language fields ever exist.
 func newMapping() (mapping.IndexMapping, error) {
 	im := bleve.NewIndexMapping()
 	im.DefaultAnalyzer = AnalyzerName

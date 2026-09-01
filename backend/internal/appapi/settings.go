@@ -5,21 +5,31 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/chunk"
 	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/embedstore"
 )
 
 type settingsResponse struct {
-	OCRProviderID                 string  `json:"ocr_provider_id"`
-	OCRModel                      string  `json:"ocr_model"`
-	ExtractProviderID             string  `json:"extract_provider_id"`
-	ExtractModel                  string  `json:"extract_model"`
-	ChatProviderID                string  `json:"chat_provider_id"`
-	ChatModel                     string  `json:"chat_model"`
-	SearchProviderID              string  `json:"search_provider_id"`
-	SearchModel                   string  `json:"search_model"`
+	OCRProviderID       string `json:"ocr_provider_id"`
+	OCRModel            string `json:"ocr_model"`
+	ExtractProviderID   string `json:"extract_provider_id"`
+	ExtractModel        string `json:"extract_model"`
+	ChatProviderID      string `json:"chat_provider_id"`
+	ChatModel           string `json:"chat_model"`
+	SearchProviderID    string `json:"search_provider_id"`
+	SearchModel         string `json:"search_model"`
+	EmbeddingProviderID string `json:"embedding_provider_id"`
+	EmbeddingModel      string `json:"embedding_model"`
+	// EmbeddingDims is read-only: only the provider knows how long its vectors
+	// are, and it is recorded from the first real response. An admin typing a
+	// number next to a model that disagrees would build an index that silently
+	// drops every vector.
+	EmbeddingDims                 int     `json:"embedding_dims"`
 	OCRTimeoutSec                 int     `json:"ocr_timeout_sec"`
 	ProcessingResultLanguage      string  `json:"processing_result_language"`
 	DeepSearchLanguages           string  `json:"deep_search_languages"`
@@ -41,6 +51,8 @@ type settingsPatchRequest struct {
 	ChatModel                     *string  `json:"chat_model"`
 	SearchProviderID              *string  `json:"search_provider_id"`
 	SearchModel                   *string  `json:"search_model"`
+	EmbeddingProviderID           *string  `json:"embedding_provider_id"`
+	EmbeddingModel                *string  `json:"embedding_model"`
 	OCRTimeoutSec                 *int     `json:"ocr_timeout_sec"`
 	ProcessingResultLanguage      *string  `json:"processing_result_language"`
 	DeepSearchLanguages           *string  `json:"deep_search_languages"`
@@ -64,6 +76,8 @@ func (r settingsPatchRequest) touchesManaged() bool {
 		r.ChatModel != nil ||
 		r.SearchProviderID != nil ||
 		r.SearchModel != nil ||
+		r.EmbeddingProviderID != nil ||
+		r.EmbeddingModel != nil ||
 		r.SearchContextTokens != nil ||
 		r.NearDuplicateDetectionEnabled != nil ||
 		r.NearDuplicateThreshold != nil
@@ -118,6 +132,27 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 	}
 }
 
+// handleGetEmbeddingStats reports how much of the archive is embedded.
+//
+// It is a separate endpoint from the settings body because it is a scan of two
+// tables rather than a read of one record: folding it into GET /settings would
+// make every visit to the Settings page pay for it.
+func handleGetEmbeddingStats(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		cfg := rt.Snapshot().Cfg
+		model := ""
+		if config.HasEmbedding(cfg) {
+			model = cfg.EmbeddingModel
+		}
+		stats, err := embedstore.LoadStats(app.DB(), model, cfg.EmbeddingDims, chunk.Version, time.Now())
+		if err != nil {
+			app.Logger().Error("embedding stats failed", slog.Any("error", err))
+			return writeError(e, http.StatusInternalServerError, "Failed to load embedding statistics.")
+		}
+		return writeJSON(e, http.StatusOK, stats)
+	}
+}
+
 func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 	threshold := cfg.NearDuplicateThreshold
 	if threshold <= 0 || threshold > 1 {
@@ -132,6 +167,9 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 		ChatModel:                     cfg.ChatModel,
 		SearchProviderID:              cfg.SearchProviderID,
 		SearchModel:                   cfg.SearchModel,
+		EmbeddingProviderID:           cfg.EmbeddingProviderID,
+		EmbeddingModel:                cfg.EmbeddingModel,
+		EmbeddingDims:                 cfg.EmbeddingDims,
 		OCRTimeoutSec:                 int(cfg.OCRTimeout.Seconds()),
 		ProcessingResultLanguage:      cfg.ProcessingResultLanguage,
 		DeepSearchLanguages:           cfg.DeepSearchLanguages,
@@ -185,6 +223,21 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	}
 	if req.SearchModel != nil {
 		record.Set("search_model", strings.TrimSpace(*req.SearchModel))
+	}
+	// The embedding binding is read before it is written, so a change can be
+	// detected: switching model or endpoint invalidates the recorded vector
+	// length, and every stored vector along with it.
+	embeddingBefore := strings.TrimSpace(record.GetString("embedding_provider_id")) + "|" +
+		strings.TrimSpace(record.GetString("embedding_model"))
+	if req.EmbeddingProviderID != nil {
+		id := strings.TrimSpace(*req.EmbeddingProviderID)
+		if err := validateProviderID(app, id, true); err != nil {
+			return err
+		}
+		record.Set("embedding_provider_id", id)
+	}
+	if req.EmbeddingModel != nil {
+		record.Set("embedding_model", strings.TrimSpace(*req.EmbeddingModel))
 	}
 	if req.OCRTimeoutSec != nil {
 		if *req.OCRTimeoutSec <= 0 {
@@ -249,6 +302,17 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 		if strings.TrimSpace(record.GetString("extract_model")) == "" {
 			return errInvalid("extract_model is required")
 		}
+	}
+
+	embeddingID := strings.TrimSpace(record.GetString("embedding_provider_id"))
+	embeddingModel := strings.TrimSpace(record.GetString("embedding_model"))
+	if embeddingID != "" && embeddingModel == "" {
+		// Half a binding is worse than none: the feature would read as on and
+		// every document would fail its embed step.
+		return errInvalid("embedding_model is required when an embedding provider is set")
+	}
+	if embeddingBefore != embeddingID+"|"+embeddingModel {
+		record.Set("embedding_dims", 0)
 	}
 	return nil
 }

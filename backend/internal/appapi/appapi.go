@@ -57,6 +57,7 @@ func Register(app core.App, rt *config.Runtime, idx *fulltext.Index, lim limits.
 				Bind(apis.BodyLimit(ocrTestMaxFileBytes + (1 << 20)))
 			g.GET("/settings", bindAdmin(handleGetSettings(app, rt)))
 			g.PATCH("/settings", bindAdmin(handlePatchSettings(app, rt)))
+			g.GET("/settings/embeddings", bindAdmin(handleGetEmbeddingStats(app, rt)))
 			g.GET("/providers", bindAdmin(handleListProviders(app)))
 			g.POST("/providers", bindAdmin(handleCreateProvider(app, rt)))
 			g.PATCH("/providers/{id}", bindAdmin(handlePatchProvider(app, rt)))

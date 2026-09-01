@@ -2,6 +2,7 @@ package chat_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -309,5 +310,112 @@ func TestLimitsAreConsistent(t *testing.T) {
 	if chat.MaxTitleRunes >= chat.MaxTitleColumnRunes {
 		t.Fatalf("MaxTitleRunes (%d) must fit inside MaxTitleColumnRunes (%d)",
 			chat.MaxTitleRunes, chat.MaxTitleColumnRunes)
+	}
+}
+
+func messageRecord(t *testing.T, role string, hits []ai.DocumentHit) *core.Record {
+	t.Helper()
+	collection := core.NewBaseCollection(chat.MessagesCollection)
+	collection.Fields.Add(
+		&core.TextField{Name: "role"},
+		&core.JSONField{Name: "documents", MaxSize: chat.MaxHitsJSONBytes},
+	)
+	record := core.NewRecord(collection)
+	record.Set("role", role)
+	if encoded := chat.EncodeHits(hits); encoded != nil {
+		record.Set("documents", encoded)
+	}
+	return record
+}
+
+// TestPriorHitsDedupesAndCaps: the evidence a conversation carries forward is
+// what the answers actually found, newest version of each document first.
+func TestPriorHitsDedupesAndCaps(t *testing.T) {
+	records := []*core.Record{
+		messageRecord(t, chat.RoleUser, nil),
+		messageRecord(t, chat.RoleAssistant, []ai.DocumentHit{
+			{ID: "a", Title: "Old title", Passages: []ai.Passage{{Text: "old passage"}}},
+			{ID: "b", Title: "B"},
+		}),
+		messageRecord(t, chat.RoleUser, nil),
+		messageRecord(t, chat.RoleAssistant, []ai.DocumentHit{
+			{ID: "a", Title: "New title"},
+			{ID: "c", Title: "C"},
+		}),
+	}
+
+	got := chat.PriorHitsFrom(records)
+	if len(got) != 3 {
+		t.Fatalf("got %d hits, want 3 deduped: %+v", len(got), got)
+	}
+	// Newest turn first, and the newest version of a repeated document wins.
+	if got[0].ID != "a" || got[0].Title != "New title" {
+		t.Fatalf("latest-wins failed: %+v", got[0])
+	}
+	if got[1].ID != "c" || got[2].ID != "b" {
+		t.Fatalf("order = %s,%s,%s; want the newest turn's documents first", got[0].ID, got[1].ID, got[2].ID)
+	}
+	for _, hit := range got {
+		if len(hit.Passages) != 0 {
+			t.Fatalf("passages chosen for an earlier question were carried forward: %+v", hit)
+		}
+	}
+
+	// The user's own turns carry no documents, and are not consulted for them.
+	if hits := chat.PriorHitsFrom([]*core.Record{messageRecord(t, chat.RoleUser, []ai.DocumentHit{{ID: "x"}})}); len(hits) != 0 {
+		t.Fatalf("documents were read off a user turn: %+v", hits)
+	}
+
+	// The cap holds, and it keeps the newest evidence.
+	many := make([]*core.Record, 0, 4)
+	for turn := 0; turn < 4; turn++ {
+		hits := make([]ai.DocumentHit, 0, 40)
+		for i := 0; i < 40; i++ {
+			hits = append(hits, ai.DocumentHit{ID: fmt.Sprintf("t%d-%d", turn, i), Title: "T"})
+		}
+		many = append(many, messageRecord(t, chat.RoleAssistant, hits))
+	}
+	capped := chat.PriorHitsFrom(many)
+	if len(capped) != chat.MaxPriorHits {
+		t.Fatalf("got %d hits, want the %d cap", len(capped), chat.MaxPriorHits)
+	}
+	if !strings.HasPrefix(capped[0].ID, "t3-") {
+		t.Fatalf("the cap kept the oldest evidence: %s", capped[0].ID)
+	}
+}
+
+// Passages are much the largest field on a hit, and the snippet already carries
+// the best of them shortened -- so they are the first thing given up, before
+// anything the result card needs.
+func TestEncodeHitsShedsPassagesFirst(t *testing.T) {
+	hits := make([]ai.DocumentHit, 0, 20)
+	for i := 0; i < 20; i++ {
+		hits = append(hits, ai.DocumentHit{
+			ID:         fmt.Sprintf("d%d", i),
+			Title:      "Invoice",
+			OCRSnippet: strings.Repeat("s", 200),
+			Summary:    strings.Repeat("u", 200),
+			Passages: []ai.Passage{
+				{Text: strings.Repeat("p", 2000)},
+				{Text: strings.Repeat("q", 2000)},
+			},
+		})
+	}
+	encoded := chat.EncodeHits(hits)
+	if len(encoded) > chat.MaxHitsJSONBytes {
+		t.Fatalf("payload is %d bytes, over the %d cap", len(encoded), chat.MaxHitsJSONBytes)
+	}
+	var decoded []ai.DocumentHit
+	if err := json.Unmarshal([]byte(encoded), &decoded); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(decoded) != 20 {
+		t.Fatalf("hits were dropped before passages: kept %d of 20", len(decoded))
+	}
+	if len(decoded[0].Passages) != 0 {
+		t.Fatal("expected passages to be shed first")
+	}
+	if decoded[0].OCRSnippet == "" || decoded[0].Summary == "" {
+		t.Fatal("the card's own fields were shed alongside the passages")
 	}
 }

@@ -13,6 +13,17 @@ func TestChatCompletionsURL(t *testing.T) {
 	}
 }
 
+func TestEmbeddingsURL(t *testing.T) {
+	t.Parallel()
+	got := EmbeddingsURL("https://opencode.ai/zen/go/v1/")
+	if got != "https://opencode.ai/zen/go/v1/embeddings" {
+		t.Fatalf("EmbeddingsURL() = %q", got)
+	}
+	if got := EmbeddingsURL(""); got != "https://api.openai.com/v1/embeddings" {
+		t.Fatalf("default EmbeddingsURL() = %q", got)
+	}
+}
+
 func TestIsLLM(t *testing.T) {
 	t.Parallel()
 	if !IsLLM(SDKOpenAI) || !IsLLM(SDKOpenRouter) || !IsLLM(SDKMistral) {

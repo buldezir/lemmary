@@ -9,6 +9,18 @@ export type AppSettings = {
   chat_model: string
   search_provider_id: string
   search_model: string
+  /**
+   * The retrieval embedding binding. Empty means Deep Search runs on keywords
+   * alone, which is what every install did before this existed.
+   */
+  embedding_provider_id: string
+  embedding_model: string
+  /**
+   * Vector length, reported by the provider on the first real request. Read-only:
+   * only the provider knows it, and a number typed next to a model that
+   * disagrees would build an index that silently drops every vector.
+   */
+  embedding_dims: number
   ocr_timeout_sec: number
   processing_result_language: string
   deep_search_languages: string
@@ -32,7 +44,28 @@ export type AppSettings = {
   near_duplicate_threshold: number
 }
 
-export type AppSettingsPatch = Partial<AppSettings>
+export type AppSettingsPatch = Partial<Omit<AppSettings, 'embedding_dims'>>
+
+/** How much of the archive has been embedded. See GET /api/app/settings/embeddings. */
+export type EmbeddingStats = {
+  enabled: boolean
+  model: string
+  dims: number
+  /** Documents that can be embedded at all: not duplicates, with text, not mid-pipeline. */
+  total: number
+  embedded: number
+  stale: number
+  failed: number
+  /** Documents the backfill still has to get to. */
+  pending: number
+  chunks: number
+}
+
+export function getEmbeddingStats() {
+  return apiFetch<EmbeddingStats>('/api/app/settings/embeddings', {
+    fallbackError: 'Failed to load embedding statistics',
+  })
+}
 
 export function getAppSettings() {
   return apiFetch<AppSettings>('/api/app/settings', {

@@ -78,3 +78,14 @@ func ChatCompletionsURL(baseURL string) string {
 	}
 	return base + "/chat/completions"
 }
+
+// EmbeddingsURL is the /embeddings endpoint for an OpenAI-compatible base URL.
+// It exists for the outbound request log: the SDK builds the real URL itself,
+// and a log line that guessed a different one would be worse than none.
+func EmbeddingsURL(baseURL string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		base = DefaultBaseURL(SDKOpenAI)
+	}
+	return base + "/embeddings"
+}

@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/openai/openai-go/shared"
 )
 
 // scriptedTurn is one canned model response: either tool calls, or the prose
@@ -163,9 +165,9 @@ func TestResearchSearchesThenReadsThenAnswers(t *testing.T) {
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return hitsFor("doc1", "doc2"), nil
 		},
-		Read: func(_ context.Context, ids []string, maxTotalChars int) ([]DocumentContent, error) {
-			readIDs = ids
-			if maxTotalChars <= 0 {
+		Read: func(_ context.Context, req ReadRequest) ([]DocumentContent, error) {
+			readIDs = req.IDs
+			if req.MaxTotalChars <= 0 {
 				t.Fatalf("reader received no budget")
 			}
 			return []DocumentContent{
@@ -240,7 +242,7 @@ func TestResearchIsNotCappedAtFourRounds(t *testing.T) {
 			searches++
 			return hitsFor(fmt.Sprintf("doc%d", searches)), nil
 		},
-		Read: func(_ context.Context, _ []string, _ int) ([]DocumentContent, error) {
+		Read: func(_ context.Context, _ ReadRequest) ([]DocumentContent, error) {
 			return nil, nil
 		},
 	}, nil)
@@ -273,7 +275,7 @@ func TestResearchStopsWhenContextBudgetIsSpent(t *testing.T) {
 			searches++
 			return hitsFor(fmt.Sprintf("doc%d", searches)), nil
 		},
-		Read: func(_ context.Context, _ []string, _ int) ([]DocumentContent, error) {
+		Read: func(_ context.Context, _ ReadRequest) ([]DocumentContent, error) {
 			return nil, nil
 		},
 	}, nil)
@@ -307,7 +309,7 @@ func TestResearchSuppressesRepeatedIdenticalCalls(t *testing.T) {
 			searches++
 			return hitsFor("doc1"), nil
 		},
-		Read: func(_ context.Context, _ []string, _ int) ([]DocumentContent, error) {
+		Read: func(_ context.Context, _ ReadRequest) ([]DocumentContent, error) {
 			return nil, nil
 		},
 	}, nil); err != nil {
@@ -337,7 +339,7 @@ func TestResearchStopsAfterStalledRounds(t *testing.T) {
 			searches++
 			return nil, nil
 		},
-		Read: func(_ context.Context, _ []string, _ int) ([]DocumentContent, error) {
+		Read: func(_ context.Context, _ ReadRequest) ([]DocumentContent, error) {
 			return nil, nil
 		},
 	}, nil); err != nil {
@@ -361,7 +363,7 @@ func TestResearchRefusesToReadUnseenDocuments(t *testing.T) {
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return nil, nil
 		},
-		Read: func(_ context.Context, _ []string, _ int) ([]DocumentContent, error) {
+		Read: func(_ context.Context, _ ReadRequest) ([]DocumentContent, error) {
 			reads++
 			return nil, nil
 		},
@@ -393,20 +395,30 @@ func TestValidateCitationsUnwrapsInventedDocuments(t *testing.T) {
 
 func TestDecodeReadArgsAcceptsLooseShapes(t *testing.T) {
 	t.Parallel()
-	ids, err := decodeReadArgs(`{"ids":["b"," a ","a",""]}`)
+	args, err := decodeReadArgs(`{"ids":["b"," a ","a",""]}`)
 	if err != nil {
 		t.Fatalf("decodeReadArgs: %v", err)
 	}
-	if len(ids) != 2 || ids[0] != "a" || ids[1] != "b" {
-		t.Fatalf("ids = %v, want deduped and sorted [a b]", ids)
+	if len(args.IDs) != 2 || args.IDs[0] != "a" || args.IDs[1] != "b" {
+		t.Fatalf("ids = %v, want deduped and sorted [a b]", args.IDs)
 	}
 
 	// Models reach for a singular id often enough to be worth accepting.
-	if ids, err = decodeReadArgs(`{"id":"solo"}`); err != nil || len(ids) != 1 || ids[0] != "solo" {
-		t.Fatalf("singular id form = %v err=%v", ids, err)
+	if args, err = decodeReadArgs(`{"id":"solo"}`); err != nil || len(args.IDs) != 1 || args.IDs[0] != "solo" {
+		t.Fatalf("singular id form = %v err=%v", args.IDs, err)
 	}
 	if _, err := decodeReadArgs(`{"nope":1}`); err == nil {
 		t.Fatal("expected an error when no ids are present")
+	}
+
+	// focus and offset ride along, and a stringified offset is still a number.
+	args, err = decodeReadArgs(`{"ids":["a"],"focus":"total due","offset":1500}`)
+	if err != nil || args.Focus != "total due" || args.Offset != 1500 {
+		t.Fatalf("focus/offset = %+v err=%v", args, err)
+	}
+	args, err = decodeReadArgs(`{"id":"a","focus":"total due","offset":"1500"}`)
+	if err != nil || args.Focus != "total due" || args.Offset != 1500 {
+		t.Fatalf("coerced offset = %+v err=%v", args, err)
 	}
 }
 
@@ -444,7 +456,7 @@ func TestResearchMarksACutOffAnswerIncomplete(t *testing.T) {
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return hitsFor("doc1"), nil
 		},
-		Read: func(_ context.Context, _ []string, _ int) ([]DocumentContent, error) {
+		Read: func(_ context.Context, _ ReadRequest) ([]DocumentContent, error) {
 			return nil, nil
 		},
 	}, func(e ResearchEvent) { events = append(events, e) })
@@ -486,7 +498,7 @@ func TestResearchAnswerCompletesNormally(t *testing.T) {
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return hitsFor("doc1"), nil
 		},
-		Read: func(_ context.Context, _ []string, _ int) ([]DocumentContent, error) {
+		Read: func(_ context.Context, _ ReadRequest) ([]DocumentContent, error) {
 			return nil, nil
 		},
 	}, nil)
@@ -559,4 +571,264 @@ func assertValidJSON(t *testing.T, content string) map[string]any {
 		t.Fatalf("tool result is not valid JSON (%v): %s", err, content)
 	}
 	return decoded
+}
+
+func hitsWithPassages(n int, passageRunes int) []DocumentHit {
+	hits := make([]DocumentHit, 0, n)
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("doc%d", i)
+		hit := DocumentHit{
+			ID:         id,
+			Title:      "Doc " + id,
+			Summary:    strings.Repeat("s", 200),
+			OCRSnippet: "…snippet…",
+		}
+		for p := 0; p < 3; p++ {
+			hit.Passages = append(hit.Passages, Passage{Text: strings.Repeat("p", passageRunes)})
+		}
+		hits = append(hits, hit)
+	}
+	return hits
+}
+
+// TestEncodeSearchResultsWalksTheFitLadder pins the order things are given up
+// in. Detail before documents: losing a passage costs some evidence, losing a
+// document costs the model any knowledge that it exists.
+func TestEncodeSearchResultsWalksTheFitLadder(t *testing.T) {
+	t.Parallel()
+	hits := hitsWithPassages(4, 400)
+
+	full := assertValidJSON(t, mustEncode(t, hits, 1000000))
+	if docs := full["documents"].([]any); len(docs) != 4 {
+		t.Fatalf("a large budget should keep every document, got %d", len(docs))
+	}
+	first := full["documents"].([]any)[0].(map[string]any)
+	if passages, _ := first["passages"].([]any); len(passages) != 3 {
+		t.Fatalf("a large budget should keep every passage, got %d", len(passages))
+	}
+	// The snippet is the first passage shortened, so it is not sent twice.
+	if _, ok := first["ocr_snippet"]; ok {
+		t.Fatalf("ocr_snippet was paid for alongside passages: %v", first)
+	}
+
+	// Enough for four documents with one passage each, not with three.
+	onePassage := assertValidJSON(t, mustEncode(t, hits, 3400))
+	docs := onePassage["documents"].([]any)
+	if len(docs) != 4 {
+		t.Fatalf("documents were dropped before passages: %d left", len(docs))
+	}
+	for _, doc := range docs {
+		if passages, _ := doc.(map[string]any)["passages"].([]any); len(passages) != 1 {
+			t.Fatalf("expected one passage per document, got %d", len(passages))
+		}
+	}
+
+	// Tighter still: the summaries go, and the passage stays.
+	noSummary := assertValidJSON(t, mustEncode(t, hits, 2600))
+	for _, doc := range noSummary["documents"].([]any) {
+		item := doc.(map[string]any)
+		if _, ok := item["summary"]; ok {
+			t.Fatalf("summary should have been dropped before the passage: %v", item)
+		}
+		if passages, _ := item["passages"].([]any); len(passages) != 1 {
+			t.Fatalf("the verbatim passage should outlive the summary: %v", item)
+		}
+	}
+
+	// Only then do whole documents go.
+	tight := assertValidJSON(t, mustEncode(t, hits, 1200))
+	if docs := tight["documents"].([]any); len(docs) >= 4 {
+		t.Fatalf("nothing was dropped at 1200 bytes: %d documents", len(docs))
+	}
+}
+
+func mustEncode(t *testing.T, hits []DocumentHit, remaining int) string {
+	t.Helper()
+	content, err := encodeSearchResults(hits, remaining)
+	if err != nil {
+		t.Fatalf("encodeSearchResults: %v", err)
+	}
+	if remaining > 0 && len(content) > remaining {
+		t.Fatalf("payload of %d bytes exceeds the %d-byte budget", len(content), remaining)
+	}
+	return content
+}
+
+// TestResearchReadsDocumentsCitedEarlierWithoutSearching is the follow-up
+// question: "and what does the second one say about the deductible?" used to
+// start with an empty seen-id set, so the model had to invent a query that
+// would rediscover a document it had already read.
+func TestResearchReadsDocumentsCitedEarlierWithoutSearching(t *testing.T) {
+	t.Parallel()
+	_, agent := newResearchAgent(t, 128000,
+		scriptedTurn{toolCalls: []scriptedToolCall{{name: "read_documents", args: `{"ids":["prior1"],"focus":"deductible"}`}}},
+		scriptedTurn{content: "ready"},
+		scriptedTurn{content: "The deductible is 300 EUR, see [Prior policy](/document/prior1)."},
+	)
+
+	searches := 0
+	var gotRequest ReadRequest
+	result, err := agent.Research(context.Background(), ResearchRequest{
+		Messages:       []ChatMessage{{Role: "user", Content: "what is the deductible?"}},
+		PriorDocuments: []DocumentHit{{ID: "prior1", Title: "Prior policy", Passages: []Passage{{Text: "stale"}}}},
+		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
+			searches++
+			return nil, nil
+		},
+		Read: func(_ context.Context, req ReadRequest) ([]DocumentContent, error) {
+			gotRequest = req
+			return []DocumentContent{{ID: "prior1", Title: "Prior policy", Text: "Deductible 300 EUR"}}, nil
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Research: %v", err)
+	}
+	if searches != 0 {
+		t.Fatalf("a document already seen this conversation should be readable without searching, got %d searches", searches)
+	}
+	if len(gotRequest.IDs) != 1 || gotRequest.IDs[0] != "prior1" {
+		t.Fatalf("read ids = %v", gotRequest.IDs)
+	}
+	if gotRequest.Focus != "deductible" {
+		t.Fatalf("focus = %q", gotRequest.Focus)
+	}
+	if !strings.Contains(result.Reply, "/document/prior1") {
+		t.Fatalf("citation to a prior document was unwrapped: %q", result.Reply)
+	}
+	// Cited, so it joins this turn's results -- the link has to resolve to a card.
+	if len(result.Documents) != 1 || result.Documents[0].ID != "prior1" {
+		t.Fatalf("documents = %#v", result.Documents)
+	}
+	if len(result.Documents[0].Passages) != 0 {
+		t.Fatalf("passages selected for an earlier question were carried forward: %#v", result.Documents[0].Passages)
+	}
+}
+
+// TestResearchDoesNotListUncitedPriorDocuments is the other half: carried
+// evidence is readable, but it is not a result of this turn until the answer
+// says it is.
+func TestResearchDoesNotListUncitedPriorDocuments(t *testing.T) {
+	t.Parallel()
+	_, agent := newResearchAgent(t, 128000,
+		scriptedTurn{toolCalls: []scriptedToolCall{{name: "search_documents", args: `{"query":"lease"}`}}},
+		scriptedTurn{content: "ready"},
+		scriptedTurn{content: "The rent is 900 EUR, see [Doc doc1](/document/doc1)."},
+	)
+
+	result, err := agent.Research(context.Background(), ResearchRequest{
+		Messages:       []ChatMessage{{Role: "user", Content: "what is the rent?"}},
+		PriorDocuments: []DocumentHit{{ID: "prior1", Title: "Prior policy"}},
+		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
+			return hitsFor("doc1"), nil
+		},
+		Read: func(_ context.Context, _ ReadRequest) ([]DocumentContent, error) {
+			return nil, nil
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Research: %v", err)
+	}
+	if len(result.Documents) != 1 || result.Documents[0].ID != "doc1" {
+		t.Fatalf("an uncited prior document was listed as a result: %#v", result.Documents)
+	}
+}
+
+// TestResearchContinuesAtNextOffset covers the other half of a long document:
+// re-reading the same ids is normally suppressed as a repeat, but continuing at
+// next_offset is new text and has to count as progress.
+func TestResearchContinuesAtNextOffset(t *testing.T) {
+	t.Parallel()
+	_, agent := newResearchAgent(t, 128000,
+		scriptedTurn{toolCalls: []scriptedToolCall{{name: "search_documents", args: `{"query":"lease"}`}}},
+		scriptedTurn{toolCalls: []scriptedToolCall{{name: "read_documents", args: `{"ids":["doc1"]}`}}},
+		scriptedTurn{toolCalls: []scriptedToolCall{{name: "read_documents", args: `{"ids":["doc1"],"offset":4000}`}}},
+		scriptedTurn{content: "ready"},
+		scriptedTurn{content: "done"},
+	)
+
+	var offsets []int
+	if _, err := agent.Research(context.Background(), ResearchRequest{
+		Messages: []ChatMessage{{Role: "user", Content: "summarise the lease"}},
+		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
+			return hitsFor("doc1"), nil
+		},
+		Read: func(_ context.Context, req ReadRequest) ([]DocumentContent, error) {
+			offsets = append(offsets, req.Offset)
+			return []DocumentContent{{
+				ID:         "doc1",
+				Title:      "Doc doc1",
+				Text:       strings.Repeat("x", 4000),
+				Truncated:  true,
+				NextOffset: req.Offset + 4000,
+				TotalChars: 12000,
+			}}, nil
+		},
+	}, nil); err != nil {
+		t.Fatalf("Research: %v", err)
+	}
+	if len(offsets) != 2 || offsets[0] != 0 || offsets[1] != 4000 {
+		t.Fatalf("offsets = %v, want the continuation to reach the reader", offsets)
+	}
+}
+
+func TestResearchPromptExplainsFocusAndOffset(t *testing.T) {
+	t.Parallel()
+	prompt := buildResearchSystemPrompt("en,de", "en", []string{"invoice"})
+	for _, want := range []string{
+		"pass focus with the question",
+		"next_offset",
+		"cited earlier in this conversation can be read by id",
+		"verbatim passages",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("research prompt missing %q: %s", want, prompt)
+		}
+	}
+
+	tools := researchTools()
+	var read *shared.FunctionDefinitionParam
+	for i := range tools {
+		if tools[i].Function.Name == "read_documents" {
+			read = &tools[i].Function
+		}
+	}
+	if read == nil {
+		t.Fatal("read_documents is not declared")
+	}
+	props, _ := read.Parameters["properties"].(map[string]any)
+	for _, want := range []string{"ids", "focus", "offset"} {
+		if _, ok := props[want]; !ok {
+			t.Fatalf("read_documents schema is missing %q: %v", want, props)
+		}
+	}
+}
+
+func TestSearchPromptAnswersFromPassages(t *testing.T) {
+	t.Parallel()
+	prompt := buildSearchSystemPrompt("en,de", "en", nil)
+	for _, want := range []string{
+		"verbatim passages",
+		"When a passage literally contains the answer",
+		"suggest Research mode",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("search prompt missing %q: %s", want, prompt)
+		}
+	}
+	if desc := searchDocumentsTools()[0].Function.Description.Value; !strings.Contains(desc, "verbatim passages") {
+		t.Fatalf("search_documents description does not promise passages: %q", desc)
+	}
+}
+
+func TestValidateCitationsToleratesAPageAnchor(t *testing.T) {
+	t.Parallel()
+	seen := map[string]struct{}{"real1": {}}
+	got := validateCitations("See [Invoice](/document/real1?page=3).", seen)
+	if !strings.Contains(got, "/document/real1?page=3") {
+		t.Fatalf("a page anchor unwrapped a real citation: %q", got)
+	}
+	got = validateCitations("See [Nope](/document/fake9?page=3).", seen)
+	if strings.Contains(got, "/document/") {
+		t.Fatalf("an invented citation survived its page anchor: %q", got)
+	}
 }

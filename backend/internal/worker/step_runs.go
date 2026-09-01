@@ -58,6 +58,13 @@ func nextRunnableIndex(runs []models.StepRun) int {
 		switch run.Status {
 		case models.StepStatusCompleted, models.StepStatusSkipped:
 			continue
+		case models.StepStatusFailed:
+			// A soft failure was already walked past once; picking it up again
+			// would make the loop retry it forever inside the same job.
+			if run.Soft {
+				continue
+			}
+			return i
 		default:
 			return i
 		}
@@ -87,6 +94,11 @@ func setStepRunExecutionDetails(run *models.StepRun, state *StepState) {
 			run.Model = state.AI.Model()
 		}
 		run.PromptVersion = state.Cfg.ExtractionPromptVer
+	case models.StepEmbed:
+		if state.Embedder != nil {
+			run.Provider = state.Embedder.Name()
+			run.Model = state.Embedder.Model()
+		}
 	}
 }
 
@@ -104,6 +116,13 @@ func markStepCompleted(run *models.StepRun, skipped bool) {
 func markStepFailed(run *models.StepRun, err error) {
 	now := nowTimestamp()
 	run.Status = models.StepStatusFailed
+	run.Soft = false
 	run.FinishedAt = now
 	run.Error = strutil.Truncate(err.Error(), 1900)
+}
+
+// markStepSoftFailed records a failure the pipeline is allowed to continue past.
+func markStepSoftFailed(run *models.StepRun, err error) {
+	markStepFailed(run, err)
+	run.Soft = true
 }

@@ -4,6 +4,7 @@ export type ProcessingStep =
   | 'detect_duplicates'
   | 'extract_metadata'
   | 'apply_metadata'
+  | 'embed'
 
 export type StepRunRecord = {
   name: ProcessingStep
@@ -12,6 +13,11 @@ export type StepRunRecord = {
   provider?: string
   model?: string
   prompt_version?: string
+  /**
+   * A failure the pipeline was allowed to continue past. The run is still
+   * 'failed' so it stays visible, but the job and the document were not.
+   */
+  soft?: boolean
   started_at?: string
   finished_at?: string
   error?: string
@@ -36,9 +42,14 @@ export const FULL_PIPELINE_STEPS: ProcessingStep[] = [
   'detect_duplicates',
   'extract_metadata',
   'apply_metadata',
+  'embed',
 ]
 
-export const EXTRACTION_PIPELINE_STEPS: ProcessingStep[] = ['extract_metadata', 'apply_metadata']
+export const EXTRACTION_PIPELINE_STEPS: ProcessingStep[] = [
+  'extract_metadata',
+  'apply_metadata',
+  'embed',
+]
 
 export const PROCESSING_STEP_LABELS: Record<ProcessingStep, string> = {
   preview: 'Preview',
@@ -46,6 +57,7 @@ export const PROCESSING_STEP_LABELS: Record<ProcessingStep, string> = {
   detect_duplicates: 'Detect duplicates',
   extract_metadata: 'Extract metadata',
   apply_metadata: 'Apply metadata',
+  embed: 'Build search vectors',
 }
 
 export const PROCESSING_STEP_DESCRIPTIONS: Record<ProcessingStep, string> = {
@@ -54,6 +66,7 @@ export const PROCESSING_STEP_DESCRIPTIONS: Record<ProcessingStep, string> = {
   detect_duplicates: 'Compare OCR text for near-duplicates (when enabled in Settings)',
   extract_metadata: 'Re-run AI metadata extraction from OCR text',
   apply_metadata: 'Write extracted metadata onto the document',
+  embed: 'Re-build the passage vectors Deep Search retrieves by meaning (when an embedding model is set)',
 }
 
 export function orderedProcessingSteps(selected: Iterable<ProcessingStep>): ProcessingStep[] {

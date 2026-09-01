@@ -202,16 +202,18 @@ func handleListProviderModels(app core.App) func(*core.RequestEvent) error {
 		if err != nil || p == nil {
 			return writeError(e, http.StatusNotFound, "Provider not found.")
 		}
-		forOCR := strings.EqualFold(strings.TrimSpace(e.Request.URL.Query().Get("for")), "ocr")
-		models, err := aiprovider.ListModels(e.Request.Context(), *p, forOCR, nil, app.Logger().With("component", "ai"))
+		purpose := aiprovider.ParseModelPurpose(e.Request.URL.Query().Get("for"))
+		models, err := aiprovider.ListModels(e.Request.Context(), *p, purpose, nil, app.Logger().With("component", "ai"))
 		if err != nil {
 			app.Logger().Warn("list provider models", "provider", p.ID, slog.Any("error", err))
 			return writeError(e, http.StatusBadGateway, "Failed to load models from the provider.")
 		}
 		return writeJSON(e, http.StatusOK, map[string]any{
-			"models":  models,
-			"sdk":     p.SDK,
-			"for_ocr": forOCR,
+			"models": models,
+			"sdk":    p.SDK,
+			"for":    string(purpose),
+			// Kept for the frontend that shipped before `for` existed.
+			"for_ocr": purpose == aiprovider.PurposeOCR,
 		})
 	}
 }

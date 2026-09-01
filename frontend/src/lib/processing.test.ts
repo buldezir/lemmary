@@ -32,6 +32,7 @@ describe('forceStepsForReprocess', () => {
       'ocr',
       'detect_duplicates',
       'extract_metadata',
+      'embed',
     ])
   })
 })
@@ -48,6 +49,6 @@ describe('defaultReprocessSteps', () => {
   it('returns fresh arrays that callers may mutate', () => {
     const steps = defaultReprocessSteps(true)
     steps.push('preview')
-    expect(EXTRACTION_PIPELINE_STEPS).toEqual(['extract_metadata', 'apply_metadata'])
+    expect(EXTRACTION_PIPELINE_STEPS).toEqual(['extract_metadata', 'apply_metadata', 'embed'])
   })
 })

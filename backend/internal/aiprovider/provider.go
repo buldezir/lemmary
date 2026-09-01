@@ -90,7 +90,7 @@ func ReferencedBySettings(settings *core.Record, providerID string) bool {
 	if settings == nil || providerID == "" {
 		return false
 	}
-	for _, field := range []string{"ocr_provider_id", "extract_provider_id", "chat_provider_id", "search_provider_id"} {
+	for _, field := range []string{"ocr_provider_id", "extract_provider_id", "chat_provider_id", "search_provider_id", "embedding_provider_id"} {
 		if strings.TrimSpace(settings.GetString(field)) == providerID {
 			return true
 		}

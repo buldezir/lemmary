@@ -47,6 +47,11 @@ func Register(app core.App, rt *config.Runtime) {
 		return e.Next()
 	})
 
+	// A second cron on the same expression: the job drain only ever reaches
+	// documents a job was created for, and most of the documents that need
+	// embedding never get one.
+	registerEmbeddingBackfill(app, rt)
+
 	app.Logger().Info("worker registered", "cron", cronExpr)
 }
 
@@ -366,7 +371,7 @@ func (p *Processor) runJob(jobID string, snap config.Snapshot) error {
 		return nil
 	}
 
-	runner := NewPipelineRunner(p.app, snap.Cfg, snap.OCR, snap.AI)
+	runner := NewPipelineRunner(p.app, snap.Cfg, snap.OCR, snap.AI, snap.Embedder)
 	return runner.Run(context.Background(), jobID)
 }
 

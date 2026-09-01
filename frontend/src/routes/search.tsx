@@ -625,6 +625,10 @@ function SearchHits({ turn }: { turn: ChatTurn }) {
 
 function SearchHitCard({ document }: { document: SearchDocumentHit }) {
   const meta = [document.document_type, document.correspondent].filter(Boolean).join(' · ')
+  // The snippet is the best matching passage, shortened by the backend. The
+  // page is shown only when the extraction knew one, which no current OCR
+  // provider reports -- so in practice this is never rendered today.
+  const page = document.passages?.[0]?.page
 
   return (
     <Link
@@ -640,7 +644,8 @@ function SearchHitCard({ document }: { document: SearchDocumentHit }) {
       </div>
       {meta && <p className="text-xs text-ink-soft">{meta}</p>}
       <p className="line-clamp-3 text-xs text-ink-muted">
-        {document.ocr_snippet || document.summary || 'No preview.'}
+        {page ? <span className="mr-1 font-mono text-ink-soft">p. {page}</span> : null}
+        {document.ocr_snippet || document.passages?.[0]?.text || document.summary || 'No preview.'}
       </p>
       {document.tags && document.tags.length > 0 && (
         <div className="flex flex-wrap gap-1">

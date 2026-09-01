@@ -2,13 +2,7 @@ import type { Components } from 'react-markdown'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Link } from '@tanstack/react-router'
-
-/**
- * Research answers cite documents as /document/<id> links. Those have to
- * navigate in-app: opening a new tab to reload the whole SPA for a citation
- * would make following one prohibitive.
- */
-const documentLinkPattern = /^\/document\/([A-Za-z0-9_-]+)$/
+import { documentLinkTarget } from '../lib/documentLink'
 
 const components: Components = {
   p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
@@ -21,7 +15,7 @@ const components: Components = {
     </blockquote>
   ),
   a: ({ href, children }) => {
-    const documentId = href?.match(documentLinkPattern)?.[1]
+    const documentId = documentLinkTarget(href)
     if (documentId) {
       return (
         <Link
