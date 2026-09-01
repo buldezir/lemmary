@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"lemmary/backend/internal/config"
 )
 
 const (
@@ -12,7 +14,7 @@ const (
 	defaultAccent  = "#111827" // gray-900, matches previous logo background
 )
 
-func handleGetMeta(app core.App) func(*core.RequestEvent) error {
+func handleGetMeta(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		name := strings.TrimSpace(app.Settings().Meta.AppName)
 		if name == "" {
@@ -37,6 +39,11 @@ func handleGetMeta(app core.App) func(*core.RequestEvent) error {
 			// deliberate — it answers "does this install use passkeys", never
 			// "does this person have one", so it is not an enumeration signal.
 			"passkeys": passkeyLoginAvailable(app, e),
+			// Whether the operator owns AI configuration. Public for the same
+			// reason the passkey flag is: the SPA needs it before anyone has
+			// signed in, to know which Settings sections exist at all. It
+			// leaks nothing — it says who configures this install, never how.
+			"ai_managed": rt.Managed(),
 		})
 	}
 }

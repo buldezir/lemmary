@@ -118,23 +118,28 @@ func TestHasOCR(t *testing.T) {
 	}
 }
 
-func TestDefaultsFromEnvUsesCodeDefaults(t *testing.T) {
+func TestDefaultsUsesCodeDefaults(t *testing.T) {
 	for _, key := range []string{
-		"OPENAI_TIMEOUT_SEC", "OCR_TIMEOUT_SEC", "WORKER_TIMEOUT_SEC", "WORKER_MAX_RETRIES",
-		"OPENAI_MODEL", "OPENAI_CHAT_MODEL", "OPENAI_SEARCH_MODEL", "MISTRAL_OCR_MODEL",
-		"PROCESSING_RESULT_LANGUAGE", "DEEP_SEARCH_LANGUAGES", "EXTRACTION_PROMPT_VERSION",
+		"AI_TIMEOUT_SEC", "OCR_TIMEOUT_SEC", "WORKER_TIMEOUT_SEC", "WORKER_MAX_RETRIES",
+		"AI_SDK", "AI_API_KEY", "AI_MODEL", "AI_BASE_URL", "OCR_SDK", "OCR_API_KEY", "OCR_MODEL",
+		"DEEP_SEARCH_LANGUAGES", "EXTRACTION_PROMPT_VERSION",
 		"NEAR_DUPLICATE_DETECTION_ENABLED", "NEAR_DUPLICATE_THRESHOLD", "WORKER_CRON_EXPR",
+		"AI_MANAGED",
 	} {
 		t.Setenv(key, "")
 	}
 
-	cfg := DefaultsFromEnv()
+	env, err := AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("AIEnvFromEnv: %v", err)
+	}
+	cfg := env.Defaults()
 
 	if cfg.OCRTimeout != 40*time.Second {
 		t.Fatalf("ocr timeout=%s", cfg.OCRTimeout)
 	}
 	if cfg.OpenAITimeout != 60*time.Second {
-		t.Fatalf("openai timeout=%s", cfg.OpenAITimeout)
+		t.Fatalf("ai timeout=%s", cfg.OpenAITimeout)
 	}
 	if cfg.WorkerTimeout != 300*time.Second {
 		t.Fatalf("worker timeout=%s", cfg.WorkerTimeout)
@@ -148,23 +153,33 @@ func TestDefaultsFromEnvUsesCodeDefaults(t *testing.T) {
 	if cfg.WorkerCronExpr != "* * * * *" {
 		t.Fatalf("cron=%q", cfg.WorkerCronExpr)
 	}
+	if env.Managed {
+		t.Fatal("expected managed mode off by default")
+	}
 }
 
-// Chat and search models default to the extraction model unless overridden.
-func TestDefaultsFromEnvModelInheritance(t *testing.T) {
-	t.Setenv("OPENAI_MODEL", "base-model")
-	t.Setenv("OPENAI_CHAT_MODEL", "")
-	t.Setenv("OPENAI_SEARCH_MODEL", "")
+// One model serves extraction, chat and Deep Search: the three separate
+// variables that used to pin them are gone, and so is the fallback chain
+// between them.
+func TestDefaultsShareOneModel(t *testing.T) {
+	t.Setenv("AI_API_KEY", "key")
+	t.Setenv("AI_MODEL", "base-model")
+	t.Setenv("OCR_SDK", "")
+	t.Setenv("OCR_API_KEY", "")
+	t.Setenv("OCR_MODEL", "")
 
-	cfg := DefaultsFromEnv()
+	env, err := AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("AIEnvFromEnv: %v", err)
+	}
+	cfg := env.Defaults()
 
 	if cfg.ExtractModel != "base-model" || cfg.ChatModel != "base-model" || cfg.SearchModel != "base-model" {
 		t.Fatalf("models=%q/%q/%q", cfg.ExtractModel, cfg.ChatModel, cfg.SearchModel)
 	}
-
-	t.Setenv("OPENAI_SEARCH_MODEL", "search-model")
-	if cfg := DefaultsFromEnv(); cfg.SearchModel != "search-model" {
-		t.Fatalf("search model=%q", cfg.SearchModel)
+	// OCR with no provider of its own runs on the language model.
+	if cfg.OCRModel != "base-model" {
+		t.Fatalf("ocr model=%q", cfg.OCRModel)
 	}
 }
 

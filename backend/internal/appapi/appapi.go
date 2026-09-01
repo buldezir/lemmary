@@ -15,7 +15,7 @@ func Register(app core.App, rt *config.Runtime, idx *fulltext.Index, lim limits.
 		Priority: 45,
 		Func: func(e *core.ServeEvent) error {
 			g := e.Router.Group("/api/app")
-			g.GET("/meta", handleGetMeta(app))
+			g.GET("/meta", handleGetMeta(app, rt))
 			g.GET("/me", handleGetMe(app))
 			g.GET("/limits", bindAuth(handleGetLimits(app, lim, badLimitKeys)))
 			g.GET("/setup/status", handleGetSetupStatus(app, rt))
@@ -48,9 +48,9 @@ func Register(app core.App, rt *config.Runtime, idx *fulltext.Index, lim limits.
 			g.GET("/settings", bindAdmin(handleGetSettings(app, rt)))
 			g.PATCH("/settings", bindAdmin(handlePatchSettings(app, rt)))
 			g.GET("/providers", bindAdmin(handleListProviders(app)))
-			g.POST("/providers", bindAdmin(handleCreateProvider(app)))
-			g.PATCH("/providers/{id}", bindAdmin(handlePatchProvider(app)))
-			g.DELETE("/providers/{id}", bindAdmin(handleDeleteProvider(app)))
+			g.POST("/providers", bindAdmin(handleCreateProvider(app, rt)))
+			g.PATCH("/providers/{id}", bindAdmin(handlePatchProvider(app, rt)))
+			g.DELETE("/providers/{id}", bindAdmin(handleDeleteProvider(app, rt)))
 			g.GET("/providers/{id}/models", bindAdmin(handleListProviderModels(app)))
 			g.POST("/duplicates/scan", bindAdmin(handlePostDuplicatesScan(app, rt)))
 			g.POST("/taxonomy/prune", bindAdmin(handlePostTaxonomyPrune(app)))

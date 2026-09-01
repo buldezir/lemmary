@@ -53,9 +53,32 @@ type settingsPatchRequest struct {
 	NearDuplicateThreshold        *float64 `json:"near_duplicate_threshold"`
 }
 
+// touchesManaged reports whether the patch reaches a field AI_MANAGED puts
+// under the operator's control — the same set ApplyManaged rewrites on every
+// boot, and no more. Accepting one of these silently would be worse than
+// refusing it: the edit would appear to work and be gone after the next
+// restart.
+//
+// Timeouts, retries, the languages and the prompt version are absent on
+// purpose. They are tuning with no operator decision behind them, so a managed
+// tenant keeps them.
+func (r settingsPatchRequest) touchesManaged() bool {
+	return r.OCRProviderID != nil ||
+		r.OCRModel != nil ||
+		r.ExtractProviderID != nil ||
+		r.ExtractModel != nil ||
+		r.ChatProviderID != nil ||
+		r.ChatModel != nil ||
+		r.SearchProviderID != nil ||
+		r.SearchModel != nil ||
+		r.SearchContextTokens != nil ||
+		r.NearDuplicateDetectionEnabled != nil ||
+		r.NearDuplicateThreshold != nil
+}
+
 func handleGetSettings(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		if err := config.EnsureDefaults(app); err != nil {
+		if err := config.EnsureDefaults(app, rt.Env()); err != nil {
 			app.Logger().Warn("ensure settings before GET failed", "error", err)
 		}
 		// No reload here: the runtime is rebuilt by the app_settings/ai_providers
@@ -70,13 +93,16 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 		if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
 			return writeError(e, http.StatusBadRequest, "Invalid request body.")
 		}
+		if rt.Managed() && req.touchesManaged() {
+			return writeError(e, http.StatusForbidden, managedMessage)
+		}
 
 		// Load + patch + save in one transaction: settings is a singleton record
 		// saved whole, so two concurrent PATCHes would otherwise silently revert
 		// each other's fields.
 		var patchErr error
 		err := app.RunInTransaction(func(txApp core.App) error {
-			record, err := config.FindSettingsRecord(txApp)
+			record, err := config.FindSettingsRecord(txApp, rt.Env())
 			if err != nil {
 				return err
 			}

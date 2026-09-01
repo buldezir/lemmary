@@ -48,37 +48,6 @@ type Config struct {
 	NearDuplicateThreshold        float64
 }
 
-// DefaultsFromEnv builds a Config from environment variables (and code defaults).
-// Used to seed the DB singleton on first boot and as an in-memory fallback.
-// WorkerCronExpr always comes from env.
-func DefaultsFromEnv() Config {
-	timeoutSec := envIntDefault("OPENAI_TIMEOUT_SEC", 60, 1)
-	ocrTimeoutSec := envIntDefault("OCR_TIMEOUT_SEC", 40, 1)
-	workerTimeoutSec := envIntDefault("WORKER_TIMEOUT_SEC", 300, 1)
-	maxRetries := envIntDefault("WORKER_MAX_RETRIES", 0, 0)
-
-	openAIModel := getEnv("OPENAI_MODEL", "gpt-5.6-luna")
-	chatModel := getEnv("OPENAI_CHAT_MODEL", openAIModel)
-
-	return Config{
-		OCRModel:                      getEnv("MISTRAL_OCR_MODEL", "mistral-ocr-latest"),
-		ExtractModel:                  openAIModel,
-		ChatModel:                     chatModel,
-		SearchModel:                   getEnv("OPENAI_SEARCH_MODEL", chatModel),
-		OCRTimeout:                    time.Duration(ocrTimeoutSec) * time.Second,
-		ProcessingResultLanguage:      strings.ToLower(strings.TrimSpace(os.Getenv("PROCESSING_RESULT_LANGUAGE"))),
-		DeepSearchLanguages:           NormalizeLanguageList(os.Getenv("DEEP_SEARCH_LANGUAGES")),
-		SearchContextTokens:           envIntDefault("SEARCH_CONTEXT_TOKENS", DefaultSearchContextTokens, 1),
-		OpenAITimeout:                 time.Duration(timeoutSec) * time.Second,
-		WorkerCronExpr:                WorkerCronFromEnv(),
-		WorkerTimeout:                 time.Duration(workerTimeoutSec) * time.Second,
-		WorkerMaxRetries:              maxRetries,
-		ExtractionPromptVer:           getEnv("EXTRACTION_PROMPT_VERSION", "v1"),
-		NearDuplicateDetectionEnabled: getEnvBool("NEAR_DUPLICATE_DETECTION_ENABLED", false),
-		NearDuplicateThreshold:        getEnvFloat("NEAR_DUPLICATE_THRESHOLD", DefaultNearDuplicateThreshold),
-	}
-}
-
 const DefaultNearDuplicateThreshold = 0.92
 
 // DefaultSearchContextTokens is the context window assumed when neither the
@@ -121,8 +90,13 @@ func findSettingsCollection(app core.App) (*core.Collection, error) {
 	return collection, nil
 }
 
-// EnsureDefaults seeds the app_settings singleton from env when it is missing.
-func EnsureDefaults(app core.App) error {
+// EnsureDefaults seeds the app_settings singleton from the environment when it
+// is missing.
+//
+// Seeding happens once, on the boot that finds no singleton. After that the
+// Settings page owns every value here — including in managed mode, where
+// ApplyManaged runs afterwards and takes the parts the operator owns back.
+func EnsureDefaults(app core.App, env AIEnv) error {
 	if _, err := aiprovider.EnsureCollection(app); err != nil {
 		return err
 	}
@@ -136,29 +110,11 @@ func EnsureDefaults(app core.App) error {
 		return err
 	}
 
-	cfg := DefaultsFromEnv()
 	record := core.NewRecord(collection)
 	record.Id = SingletonID
 	record.MarkAsNew()
-	applyConfigToRecord(record, cfg)
-	// Keep legacy columns populated so upgrades/migrations can copy them.
-	record.Set("ocr_provider", getEnv("OCR_PROVIDER", "google_vision"))
-	record.Set("google_vision_api_key", os.Getenv("GOOGLE_VISION_API_KEY"))
-	record.Set("mistral_api_key", os.Getenv("MISTRAL_API_KEY"))
-	record.Set("mistral_ocr_model", cfg.OCRModel)
-	record.Set("mistral_api_base_url", getEnv("MISTRAL_API_BASE_URL", aiprovider.DefaultBaseURL(aiprovider.SDKMistral)))
-	record.Set("openai_api_key", os.Getenv("OPENAI_API_KEY"))
-	record.Set("openai_model", cfg.ExtractModel)
-	record.Set("openai_chat_model", cfg.ChatModel)
-	record.Set("openai_search_model", cfg.SearchModel)
-	record.Set("openai_base_url", getEnv("OPENAI_BASE_URL", aiprovider.DefaultBaseURL(aiprovider.SDKOpenAI)))
-	if err := aiprovider.SeedFromEnv(app, record); err != nil {
-		return err
-	}
-	// Stamped before the save, not applied: every value on this record already
-	// came from the environment, so without the stamp the next bootstrap would
-	// see all of them as changed and rewrite what was just written.
-	if err := RecordEnvApplied(record); err != nil {
+	applyConfigToRecord(record, env.Defaults())
+	if err := aiprovider.Apply(app, record, env.Providers); err != nil {
 		return err
 	}
 	if err := app.Save(record); err != nil {
@@ -170,6 +126,39 @@ func EnsureDefaults(app core.App) error {
 		return fmt.Errorf("seed %s: %w", CollectionName, err)
 	}
 	app.Logger().Info("seeded app_settings singleton from env defaults")
+	return nil
+}
+
+// ApplyManaged re-applies the operator-owned settings on every boot.
+//
+// Only called when AI_MANAGED is on, and it writes exactly what the Settings
+// page then refuses to show: the providers, the four task bindings, the
+// research budget and duplicate detection. Timeouts, retries and the language
+// settings are deliberately not here — they are tuning with no operator
+// decision behind them, and resetting somebody's timeout on every restart of a
+// container they do not control would be a bug rather than a policy.
+//
+// There is no digest and nothing to compare against. In managed mode the
+// container's environment simply is the configuration, so the write is
+// unconditional and the same on every boot.
+func ApplyManaged(app core.App, env AIEnv) error {
+	settings, err := app.FindRecordById(CollectionName, SingletonID)
+	if err != nil {
+		return fmt.Errorf("load %s: %w", CollectionName, err)
+	}
+	if err := aiprovider.Apply(app, settings, env.Providers); err != nil {
+		return err
+	}
+	settings.Set("search_context_tokens", env.SearchContextTokens)
+	settings.Set("near_duplicate_detection_enabled", env.NearDuplicateEnabled)
+	settings.Set("near_duplicate_threshold", env.NearDuplicateThreshold)
+	if err := app.Save(settings); err != nil {
+		return fmt.Errorf("save %s: %w", CollectionName, err)
+	}
+	// The variable names are safe to log; the values are not, and one is an
+	// API key.
+	app.Logger().Info("applied managed AI configuration from the environment",
+		"llm_sdk", env.Providers.LLM.SDK, "ocr_sdk", env.Providers.OCRSDK())
 	return nil
 }
 
@@ -194,8 +183,8 @@ func Load(app core.App) (Config, error) {
 	return configFromRecord(app, record)
 }
 
-func FindSettingsRecord(app core.App) (*core.Record, error) {
-	if err := EnsureDefaults(app); err != nil {
+func FindSettingsRecord(app core.App, env AIEnv) (*core.Record, error) {
+	if err := EnsureDefaults(app, env); err != nil {
 		return nil, err
 	}
 	return app.FindRecordById(CollectionName, SingletonID)
