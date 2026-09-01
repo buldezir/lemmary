@@ -1,6 +1,7 @@
 package appapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -70,17 +71,42 @@ type agentTools struct {
 
 // buildAgentTools binds one retriever per request. Both closures share it, so
 // per-turn work is done once rather than per tool call.
-func buildAgentTools(app core.App, idx *fulltext.Index, userID string) (agentTools, error) {
+//
+// The dense half is attached only when both ends of it exist: an embedding
+// model to turn the question into a vector, and a chunk index to search with
+// it. Either one missing leaves the retriever on keywords alone, which is the
+// same code path an instance with no embedding provider has always run.
+func buildAgentTools(app core.App, rt *config.Runtime, idx *fulltext.Index, userID string) (agentTools, error) {
 	tags, err := listAvailableTagNames(app, userID)
 	if err != nil {
 		return agentTools{}, err
 	}
 	retriever := &agentRetriever{app: app, idx: idx, userID: userID}
+	if embedder := rt.Snapshot().Embedder; embedder != nil && idx != nil && idx.ChunksReady() {
+		retriever.embedQuery = embedQueryFunc(embedder)
+		retriever.chunks = idx
+	}
 	return agentTools{
 		tags:   tags,
 		search: retriever.search,
 		read:   retriever.read,
 	}, nil
+}
+
+// embedQueryFunc adapts the embedder to the one vector the retriever wants.
+// The production interface reports token usage and batches, neither of which
+// the retriever has any use for.
+func embedQueryFunc(embedder ai.Embedder) func(context.Context, string) ([]float32, error) {
+	return func(ctx context.Context, text string) ([]float32, error) {
+		result, err := embedder.Embed(ctx, []string{text})
+		if err != nil {
+			return nil, err
+		}
+		if len(result.Vectors) == 0 {
+			return nil, fmt.Errorf("embedding the query returned no vector")
+		}
+		return result.Vectors[0], nil
+	}
 }
 
 // prepareSearchTurn does the work both search handlers share, from decoding the
@@ -142,7 +168,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		}
 	}
 
-	tools, err := buildAgentTools(app, idx, searchUserID)
+	tools, err := buildAgentTools(app, rt, idx, searchUserID)
 	if err != nil {
 		app.Logger().Error("search list tags failed", slog.Any("error", err))
 		return searchTurn{}, true, writeError(e, http.StatusInternalServerError, "Search is unavailable.")

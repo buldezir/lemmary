@@ -145,32 +145,83 @@ func (i *Index) IDsByKeyword(field, value string) ([]string, error) {
 		return nil, nil
 	}
 
-	page := lookupPageSize
-	if page <= 0 {
-		page = defaultLookupPage
-	}
-
 	var ids []string
 	err := i.withIndex(func(b bleve.Index) error {
-		tq := bleve.NewTermQuery(value)
-		tq.SetField(field)
-		offset := 0
-		for {
-			req := bleve.NewSearchRequestOptions(tq, page, offset, false)
-			res, err := b.Search(req)
-			if err != nil {
-				return err
-			}
-			for _, h := range res.Hits {
-				ids = append(ids, h.ID)
-			}
-			if len(res.Hits) < page {
-				return nil
-			}
-			offset += page
-		}
+		var err error
+		ids, err = idsByKeyword(b, field, value)
+		return err
 	})
 	return ids, err
+}
+
+// EligibleIDs lists the documents that satisfy everything in q except its text,
+// up to limit. complete is false when there were more, which is the caller's
+// signal that the list cannot be used as a pre-filter.
+//
+// This is how a filtered agent search reaches the chunk index: the filters are
+// document properties the chunk index deliberately does not carry, so they are
+// resolved here and passed down as ids.
+func (i *Index) EligibleIDs(q Query, limit int) ([]string, bool, error) {
+	filter := filterQuery(q)
+	if filter == nil || limit <= 0 {
+		return nil, true, nil
+	}
+
+	var (
+		ids      []string
+		complete bool
+	)
+	err := i.withIndex(func(b bleve.Index) error {
+		// One over the limit, so a full page is distinguishable from a page
+		// that happened to end exactly there.
+		req := bleve.NewSearchRequestOptions(filter, limit+1, 0, false)
+		res, err := b.Search(req)
+		if err != nil {
+			return err
+		}
+		complete = len(res.Hits) <= limit
+		for n, h := range res.Hits {
+			if n == limit {
+				break
+			}
+			ids = append(ids, h.ID)
+		}
+		return nil
+	})
+	return ids, complete, err
+}
+
+// KeepEligible returns the subset of ids that satisfies q's filters. The
+// post-filter for the case EligibleIDs could not pre-filter: the dense list is
+// short, so it is cheaper to ask about its documents than to enumerate every
+// document the filters allow.
+func (i *Index) KeepEligible(q Query, ids []string) ([]string, error) {
+	filter := filterQuery(q)
+	if filter == nil || len(ids) == 0 {
+		return ids, nil
+	}
+
+	var kept []string
+	err := i.withIndex(func(b bleve.Index) error {
+		bq := bleve.NewConjunctionQuery(filter, bleve.NewDocIDQuery(ids))
+		req := bleve.NewSearchRequestOptions(bq, len(ids), 0, false)
+		res, err := b.Search(req)
+		if err != nil {
+			return err
+		}
+		allowed := make(map[string]struct{}, len(res.Hits))
+		for _, h := range res.Hits {
+			allowed[h.ID] = struct{}{}
+		}
+		kept = make([]string, 0, len(allowed))
+		for _, id := range ids {
+			if _, ok := allowed[id]; ok {
+				kept = append(kept, id)
+			}
+		}
+		return nil
+	})
+	return kept, err
 }
 
 func buildQuery(q Query, text string) (query.Query, error) {
@@ -181,7 +232,18 @@ func buildQuery(q Query, text string) (query.Query, error) {
 
 	conjuncts := make([]query.Query, 0, 8)
 	conjuncts = append(conjuncts, textQuery(parts, q.Relaxed))
+	conjuncts = append(conjuncts, filterConjuncts(q)...)
 
+	if len(conjuncts) == 1 {
+		return conjuncts[0], nil
+	}
+	return bleve.NewConjunctionQuery(conjuncts...), nil
+}
+
+// filterConjuncts is everything in a Query except its text: ownership, status,
+// the named-entity ids and the date range.
+func filterConjuncts(q Query) []query.Query {
+	conjuncts := make([]query.Query, 0, 6)
 	if userID := strings.TrimSpace(q.UserID); userID != "" {
 		conjuncts = append(conjuncts, termQuery(FieldUser, userID))
 	}
@@ -200,11 +262,29 @@ func buildQuery(q Query, text string) (query.Query, error) {
 	if dateQuery := dateRangeQuery(q.DateFrom, q.DateTo); dateQuery != nil {
 		conjuncts = append(conjuncts, dateQuery)
 	}
+	return conjuncts
+}
 
-	if len(conjuncts) == 1 {
-		return conjuncts[0], nil
+// filterQuery is filterConjuncts as one query, or nil when a query filters
+// nothing.
+func filterQuery(q Query) query.Query {
+	conjuncts := filterConjuncts(q)
+	switch len(conjuncts) {
+	case 0:
+		return nil
+	case 1:
+		return conjuncts[0]
+	default:
+		return bleve.NewConjunctionQuery(conjuncts...)
 	}
-	return bleve.NewConjunctionQuery(conjuncts...), nil
+}
+
+// HasDocumentFilters reports whether q restricts the result set by anything
+// other than its owner — the filters the chunk index cannot apply itself.
+func HasDocumentFilters(q Query) bool {
+	bare := q
+	bare.UserID = ""
+	return len(filterConjuncts(bare)) > 0
 }
 
 func textQuery(parts []queryPart, relaxed bool) query.Query {

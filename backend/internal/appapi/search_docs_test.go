@@ -64,7 +64,7 @@ func TestReadUserDocumentsRefusesAnotherOwnersDocument(t *testing.T) {
 		"tsomeone": readableDocument("tsomeone", "someone-else", "Their lease", "rent is 700 EUR"),
 	}}
 
-	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"mine", "tsomeone", "missing"}, MaxTotalChars: 10000})
+	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"mine", "tsomeone", "missing"}, MaxTotalChars: 10000}, nil)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestReadUserDocumentsRefusesAnotherOwnersDocument(t *testing.T) {
 	}
 
 	// A superuser (empty userID) reaches both, matching the search path.
-	asSuper, err := readUserDocuments(app, "", ai.ReadRequest{IDs: []string{"mine", "tsomeone"}, MaxTotalChars: 10000})
+	asSuper, err := readUserDocuments(app, "", ai.ReadRequest{IDs: []string{"mine", "tsomeone"}, MaxTotalChars: 10000}, nil)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestReadUserDocumentsDividesTheBudget(t *testing.T) {
 		"b": readableDocument("b", "me", "B", long),
 	}}
 
-	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a", "b"}, MaxTotalChars: 4000})
+	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a", "b"}, MaxTotalChars: 4000}, nil)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestReadUserDocumentsBudgetsMultibyteTextInBytes(t *testing.T) {
 		"b": readableDocument("b", "me", "B", long),
 	}}
 
-	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a", "b"}, MaxTotalChars: 4000})
+	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a", "b"}, MaxTotalChars: 4000}, nil)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
@@ -150,10 +150,10 @@ func TestReadUserDocumentsRejectsAnEmptyBudget(t *testing.T) {
 	app := stubDocuments{recs: map[string]*core.Record{
 		"a": readableDocument("a", "me", "A", "text"),
 	}}
-	if _, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}}); err == nil {
+	if _, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}}, nil); err == nil {
 		t.Fatal("expected an error when no context budget is left")
 	}
-	got, err := readUserDocuments(app, "me", ai.ReadRequest{MaxTotalChars: 4000})
+	got, err := readUserDocuments(app, "me", ai.ReadRequest{MaxTotalChars: 4000}, nil)
 	if err != nil || len(got) != 0 {
 		t.Fatalf("no ids should be a no-op, got %#v err=%v", got, err)
 	}
@@ -183,7 +183,7 @@ func TestReadUserDocumentsOffsetContinuation(t *testing.T) {
 			IDs:           []string{"a"},
 			Offset:        offset,
 			MaxTotalChars: 1000,
-		})
+		}, nil)
 		if err != nil {
 			t.Fatalf("readUserDocuments: %v", err)
 		}
@@ -216,11 +216,11 @@ func TestReadUserDocumentsOffsetContinuation(t *testing.T) {
 
 	// An offset landing mid-rune is moved forward rather than corrupting the
 	// text, and one past the end is simply the end.
-	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}, Offset: 1, MaxTotalChars: 1000})
+	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}, Offset: 1, MaxTotalChars: 1000}, nil)
 	if err != nil || !utf8.ValidString(got[0].Text) {
 		t.Fatalf("mid-rune offset: %v", err)
 	}
-	got, err = readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}, Offset: len(full) + 500, MaxTotalChars: 1000})
+	got, err = readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}, Offset: len(full) + 500, MaxTotalChars: 1000}, nil)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestReadUserDocumentsFocusReturnsRelevantExcerpts(t *testing.T) {
 		"a": readableDocument("a", "me", "Mietvertrag", full),
 	}}
 
-	plain, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}, MaxTotalChars: 4000})
+	plain, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}, MaxTotalChars: 4000}, nil)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestReadUserDocumentsFocusReturnsRelevantExcerpts(t *testing.T) {
 		IDs:           []string{"a"},
 		Focus:         "Kaltmiete monatlich",
 		MaxTotalChars: 4000,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestReadUserDocumentsFocusReturnsRelevantExcerpts(t *testing.T) {
 	short := stubDocuments{recs: map[string]*core.Record{
 		"s": readableDocument("s", "me", "S", "Kaltmiete 500 EUR"),
 	}}
-	got, err := readUserDocuments(short, "me", ai.ReadRequest{IDs: []string{"s"}, Focus: "Kaltmiete", MaxTotalChars: 4000})
+	got, err := readUserDocuments(short, "me", ai.ReadRequest{IDs: []string{"s"}, Focus: "Kaltmiete", MaxTotalChars: 4000}, nil)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
@@ -308,7 +308,7 @@ func TestReadUserDocumentsFocusKeepsOwnershipCheck(t *testing.T) {
 		IDs:           []string{"mine", "theirs"},
 		Focus:         "Miete",
 		MaxTotalChars: 4000,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestDocumentPassagesQuotesTheMatch(t *testing.T) {
 		"Die Kaution beträgt 3702 EUR. " +
 		strings.Repeat("Nachspann ohne Bedeutung. ", 60)
 
-	got := documentPassages("doc1", ocr, "Kaltmiete Kaution", nil, nil, 900)
+	got := documentPassages("doc1", ocr, "Kaltmiete Kaution", nil, nil, nil, 900)
 	if len(got) < 2 {
 		t.Fatalf("expected several passages, got %#v", got)
 	}
@@ -344,14 +344,14 @@ func TestDocumentPassagesQuotesTheMatch(t *testing.T) {
 
 	// A fuzzy match: the query's word is nowhere in the text, so only the
 	// index's own highlight knows where it matched.
-	fallback := documentPassages("doc1", ocr, "Kaltmiedte", nil, []string{"…Die monatliche Kaltmiete beträgt 1234 EUR.…"}, 900)
+	fallback := documentPassages("doc1", ocr, "Kaltmiedte", nil, nil, []string{"…Die monatliche Kaltmiete beträgt 1234 EUR.…"}, 900)
 	if len(fallback) != 1 || !strings.Contains(fallback[0].Text, "1234 EUR") {
 		t.Fatalf("the highlight fallback did not carry the match: %#v", fallback)
 	}
 
 	// Nothing to quote at all is not an error; the caller falls back to a
 	// plain snippet.
-	if got := documentPassages("doc1", ocr, "Selbstbeteiligung", nil, nil, 900); len(got) != 0 {
+	if got := documentPassages("doc1", ocr, "Selbstbeteiligung", nil, nil, nil, 900); len(got) != 0 {
 		t.Fatalf("a term that occurs nowhere produced passages: %#v", got)
 	}
 }

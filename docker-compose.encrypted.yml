@@ -16,6 +16,11 @@ services:
       # cleanly; without one it is an OOM kill, which loses everything written
       # since the last flush. Raise it past your archive size plus headroom for
       # PDF page rendering, and keep mem_limit comfortably above it.
+      # AI_EMBEDDING_MODEL adds two more tenants here: the vectors inside
+      # data.db and the vector index built from them, together roughly
+      # 2 x chunks x dimensions x 4 bytes. 2g is a starting point for a small
+      # archive without embeddings; see "Requirements and limits" in
+      # docs/encryption.md before turning them on.
       # uid/gid match the image's unprivileged "app" user, which owns the
       # decrypted tree once the entrypoint drops root.
       - /app/work:size=2g,mode=0700,uid=1000,gid=1000

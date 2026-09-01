@@ -515,7 +515,15 @@ Query behavior:
 - Deep Search’s `search_documents` tool (both modes) and paperless-ngx `GET /api/documents/?query=` use the same index. Research’s `read_documents` reads `ocr_text` straight from the database, not the index.
 - PocketBase collection filters (`field ~ "..."`) remain available to API clients; the UI no longer uses them for the search box.
 
-Admins can force a rebuild from **Management → Rebuild search index** (`POST /api/app/search/reindex`).
+With an embedding model bound there is a second index beside it, at
+`{dataDir}/bleve/chunks`: one entry per embedded passage, carrying the passage's
+text and its vector. Only Deep Search's tools query it. It is derived data like
+the first — rebuilt from `data.db` with no calls to the embedding provider — and
+it is versioned by model *and* dimension count, so changing either wipes and
+refills that index alone while keyword search keeps serving. Clearing the
+embedding binding deletes the directory.
+
+Admins can force a rebuild from **Management → Rebuild search index** (`POST /api/app/search/reindex`). It rebuilds both indexes.
 
 ## LLM setup (OpenAI / OpenRouter / Mistral)
 
@@ -529,6 +537,48 @@ Deep Search uses a tool-calling agent over the Bleve full-text index, in two mod
 
 - **Search** (`/rag/search`) — one round of `search_documents`, answered from titles, summaries and short OCR snippets. Results are shown as document cards.
 - **Research** (`/rag/research`) — the agent searches, then reads the full text of the documents it finds (`read_documents`), and writes a markdown answer citing each document it used, with the documents it drew on listed under the answer. Progress streams over `POST /api/app/search/stream` (server-sent events), so each search and read appears as it happens.
+
+### How Deep Search finds documents
+
+Both modes reach the archive through the same `search_documents` tool, and it
+runs up to two searches for every query.
+
+- **Keywords (BM25)** over the documents index, relaxed: from three terms up one
+  may be missing, and a word of five letters or more also matches with one edit
+  of slack. The Documents page keeps the strict behaviour — there the query is a
+  filter you typed, here it is a guess the model made from a question.
+- **Meaning (kNN)** over `bleve/chunks`, a second index holding one entry per
+  embedded passage with its vector, searched by cosine similarity to the
+  embedded question. This half exists only when `AI_EMBEDDING_MODEL` is set and
+  documents have actually been embedded.
+
+The two lists are fused by reciprocal rank fusion: a document scores the sum of
+`1/(60 + rank)` over the lists it appears in. Only positions are read, never
+scores — BM25 and cosine are not on the same scale, and normalising one against
+the other would be guesswork. A document found by either signal survives; one
+found by both rises.
+
+The passages the model is shown come from the same chunk index: a keyword search
+over the passages of exactly the documents being returned, narrowed to the
+sentence around the match. Without a chunk index they are cut from the OCR text
+around the query's terms instead, and failing that from the index's own
+highlight — the model always gets verbatim text, whatever the retrieval was. A
+focused read (`read_documents` with `focus`) ranks that document's passages the
+same way before excerpting it.
+
+Filters — a tag, a type, a correspondent, a date range — are properties of a
+document, and the chunk index deliberately carries none of them, so that
+renaming a tag never rewrites a vector. They are resolved against the documents
+index instead and applied to the passage search as a list of document ids.
+
+What it costs: one embedding request per distinct query string per turn (the
+result is reused for the rest of that turn, including a focused read with the
+same words), and one or two extra index searches. Everything on the dense path
+degrades rather than fails: no model bound, an embedding call that errored, an
+index still rebuilding — the search is the keyword search it has always been.
+Each call logs one line, `deep search retrieval lexical=… dense=… fused=…
+embedded=…`, which is where to look when an answer seems to have missed a
+document.
 
 Research has no round or document limit. It keeps searching and reading until the conversation fills the model's context window, then answers with what it has — so **Search context window** in Settings is what decides how much of your archive one question can draw on. Picking a model whose provider reports its context length (OpenRouter, Mistral) fills that field in automatically; OpenAI's model list reports none, so the default applies.
 

@@ -306,6 +306,25 @@ func ForEachChunk(db dbx.Builder, model string, dims int, fn func(Chunk) error) 
 	}
 }
 
+// CountChunks is how many chunks were written by model at dims.
+//
+// It is what the vector index compares itself against to decide whether it has
+// drifted, so it counts exactly what ForEachChunk would walk: same filter, same
+// reason for it.
+func CountChunks(db dbx.Builder, model string, dims int) (int, error) {
+	if strings.TrimSpace(model) == "" || dims <= 0 {
+		return 0, nil
+	}
+	var n int
+	err := db.NewQuery(`SELECT COUNT(*) FROM ` + tableChunks + `
+		WHERE model = {:model} AND dims = {:dims}`).
+		Bind(dbx.Params{"model": model, "dims": dims}).Row(&n)
+	if err != nil {
+		return 0, fmt.Errorf("embedstore: count chunks: %w", err)
+	}
+	return n, nil
+}
+
 // candidateWhere is the definition of "this document needs embedding", shared
 // by Candidates and Stats so the queue length and the queue cannot disagree.
 //

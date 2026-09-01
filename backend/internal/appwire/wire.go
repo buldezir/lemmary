@@ -7,6 +7,7 @@ import (
 	"lemmary/backend/internal/appapi"
 	"lemmary/backend/internal/authguard"
 	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/embed"
 	"lemmary/backend/internal/embedstore"
 	"lemmary/backend/internal/fulltext"
 	"lemmary/backend/internal/limits"
@@ -30,6 +31,20 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	applyPerFileCaps(lim)
 
 	ft := fulltext.New()
+	// The chunk index is derived from the embedding store, so it is given its
+	// source before anything can open it, and the store is told where to send
+	// its change notifications. Both are process-wide, like the index itself.
+	ft.SetChunkSource(embed.NewChunkSource())
+	embedstore.SetListener(ft)
+	// The dimension count is not known until a provider has answered once, so
+	// the binding the chunk index is built for can change at runtime; every
+	// reload re-points the index and schedules the fill in the background.
+	rt.OnReload(func(reloadApp core.App, snap config.Snapshot) {
+		if err := ft.SetVectorSpec(embed.SpecFrom(snap.Cfg)); err != nil {
+			reloadApp.Logger().Error("chunk index reconfigure failed", "error", err)
+		}
+		ft.EnqueueChunkRebuild(reloadApp)
+	})
 	config.RegisterHooks(app, rt)
 	authguard.Register(app)
 	mailsink.Register(app)

@@ -33,6 +33,12 @@ func Register(app core.App, idx *Index) {
 				e.App.Logger().Error("fulltext index open failed", slog.Any("error", err))
 				return nil
 			}
+			// Straight after Open, because the chunk index's mapping depends on
+			// the embedding binding: this is what reopens it after a restart,
+			// and what removes it when the binding is gone.
+			if err := idx.SetVectorSpec(idx.SourceSpec(e.App)); err != nil {
+				e.App.Logger().Error("chunk index open failed", slog.Any("error", err))
+			}
 			registerRecordHooks(e.App, idx)
 			if idx.NeedsRebuild() || idx.ShouldHeal(e.App) {
 				n, err := idx.Rebuild(e.App)

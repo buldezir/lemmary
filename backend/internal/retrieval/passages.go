@@ -198,6 +198,35 @@ func LexicalChunks(documentID, ocrText, query string, max int) []ChunkHit {
 	return hits
 }
 
+// Narrow shrinks each chunk hit to the text around the query's terms.
+//
+// A stored chunk is a passage-sized block chosen for embedding, not for
+// quoting: the sentence that answers the question can be anywhere in it, and a
+// budget that only pays for a third of the chunk would otherwise quote its
+// opening. A hit whose terms cannot be located — stale offsets, or a chunk that
+// matched by fuzziness rather than literally — is passed through as it came,
+// because a coarse quote is still evidence.
+func Narrow(ocrText, query string, hits []ChunkHit) []ChunkHit {
+	if len(hits) == 0 {
+		return nil
+	}
+	terms := focusTerms(query)
+	out := make([]ChunkHit, 0, len(hits))
+	for _, hit := range hits {
+		narrowed := hit
+		if len(terms) > 0 {
+			w := Window{Ord: hit.Ord, Page: hit.Page, StartByte: hit.StartByte, EndByte: hit.EndByte}
+			if start, end := narrowToMatch(ocrText, w, terms); end > start {
+				narrowed.StartByte = start
+				narrowed.EndByte = end
+				narrowed.Text = strings.TrimSpace(ocrText[start:end])
+			}
+		}
+		out = append(out, narrowed)
+	}
+	return out
+}
+
 // narrowToMatch shrinks a window to the text around its first matched term, so
 // a passage quotes the match rather than whatever happened to start the window.
 func narrowToMatch(ocrText string, w Window, terms []string) (int, int) {

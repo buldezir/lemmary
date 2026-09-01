@@ -36,6 +36,25 @@ type Runtime struct {
 	// Parsed once before the app exists; never changes, so no lock. Rides here
 	// because Runtime is already threaded to the refuse-write endpoints and /meta.
 	env AIEnv
+
+	// Called after every published snapshot, in registration order.
+	onReload []func(core.App, Snapshot)
+}
+
+// OnReload registers a callback for every settings reload.
+//
+// It exists for state that is derived from the configuration but does not live
+// in the snapshot — the vector index, whose mapping depends on the embedding
+// model and on a dimension count that is only known once a provider has
+// answered. A callback runs inside the reload, so it must be quick: schedule
+// the slow half rather than doing it here.
+func (r *Runtime) OnReload(fn func(core.App, Snapshot)) {
+	if fn == nil {
+		return
+	}
+	r.mu.Lock()
+	r.onReload = append(r.onReload, fn)
+	r.mu.Unlock()
 }
 
 func NewRuntime(env AIEnv) *Runtime {
@@ -162,7 +181,15 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 
 	r.mu.Lock()
 	r.snap = snap
+	callbacks := make([]func(core.App, Snapshot), len(r.onReload))
+	copy(callbacks, r.onReload)
 	r.mu.Unlock()
+
+	// Outside the lock: a callback that reached back for the snapshot it was
+	// just handed would otherwise deadlock.
+	for _, fn := range callbacks {
+		fn(app, snap)
+	}
 
 	// Logged from the published snapshot rather than from the locals above, so
 	// the line always describes what readers will actually get.

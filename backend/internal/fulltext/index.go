@@ -55,6 +55,17 @@ type Index struct {
 	versionPath  string
 	needsRebuild bool
 
+	// The chunk index is the same handle pattern one level down: passages
+	// rather than documents, with a vector field. It is optional — nil
+	// whenever no embedding model is bound — and everything that touches it
+	// takes the locks above in the same order.
+	chunkIdx         bleve.Index
+	chunkPath        string
+	chunkVersionPath string
+	chunkRebuild     bool
+	spec             VectorSpec
+	source           ChunkSource
+
 	qMu      sync.Mutex // guards queue, pending, draining, qCond; never held around Bleve ops
 	qCond    *sync.Cond // lazily created under qMu; signaled when pending drops to 0
 	queue    []indexTask
@@ -68,6 +79,9 @@ const (
 	taskUpsert taskKind = iota
 	taskDelete
 	taskReindexEntity
+	taskUpsertChunks
+	taskDeleteChunks
+	taskRebuildChunks
 )
 
 type indexTask struct {
@@ -99,10 +113,14 @@ func (i *Index) Open(dataDir string) error {
 	path := filepath.Join(base, "documents")
 	versionPath := filepath.Join(base, "mapping.version")
 
+	chunkPath := filepath.Join(base, chunkDirName)
+	chunkVersionPath := filepath.Join(base, chunkVersionName)
+
 	if err := os.MkdirAll(base, 0o755); err != nil {
 		return fmt.Errorf("create bleve dir: %w", err)
 	}
 	_ = os.RemoveAll(path + rebuildSuffix)
+	_ = os.RemoveAll(chunkPath + rebuildSuffix)
 
 	versionOK := false
 	if b, err := os.ReadFile(versionPath); err == nil {
@@ -149,6 +167,10 @@ func (i *Index) Open(dataDir string) error {
 	i.path = path
 	i.versionPath = versionPath
 	i.needsRebuild = needsRebuild
+	// The chunk index is not opened here: its mapping depends on the embedding
+	// binding, which only the caller knows. SetVectorSpec follows immediately.
+	i.chunkPath = chunkPath
+	i.chunkVersionPath = chunkVersionPath
 	return nil
 }
 
@@ -162,6 +184,10 @@ func (i *Index) Close() error {
 	defer i.writeMu.Unlock()
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if i.chunkIdx != nil {
+		_ = i.chunkIdx.Close()
+		i.chunkIdx = nil
+	}
 	if i.idx == nil {
 		return nil
 	}
@@ -246,11 +272,33 @@ func (i *Index) drainTasks() {
 }
 
 func (i *Index) runTask(t indexTask) {
+	// A rebuild takes writeMu exclusively and takes it itself, so it must not
+	// run under the writer gate the other tasks hold.
+	if t.kind == taskRebuildChunks {
+		if _, err := i.RebuildChunks(t.app); err != nil {
+			t.app.Logger().Error("chunk index rebuild failed", slog.Any("error", err))
+		}
+		return
+	}
+
 	i.writeMu.RLock()
 	defer i.writeMu.RUnlock()
 	switch t.kind {
 	case taskDelete:
 		_ = i.deleteUnlocked(t.id)
+		// A deleted document takes its passages with it: the chunk rows are
+		// gone from SQLite by now, so nothing would ever repair the index.
+		if err := i.deleteChunksUnlocked(t.id); err != nil && !errors.Is(err, errChunksNotReady) {
+			logChunkTaskError(t.app, "fulltext chunk delete failed", t.id, err)
+		}
+	case taskUpsertChunks:
+		if err := i.upsertChunksUnlocked(t.app, t.id); err != nil && !errors.Is(err, errChunksNotReady) {
+			logChunkTaskError(t.app, "fulltext chunk upsert failed", t.id, err)
+		}
+	case taskDeleteChunks:
+		if err := i.deleteChunksUnlocked(t.id); err != nil && !errors.Is(err, errChunksNotReady) {
+			logChunkTaskError(t.app, "fulltext chunk delete failed", t.id, err)
+		}
 	case taskUpsert:
 		rec, err := t.app.FindRecordById("documents", t.id)
 		if err != nil {
@@ -346,7 +394,37 @@ func (i *Index) ShouldHeal(app core.App) bool {
 	if err != nil {
 		return false
 	}
-	return uint64(n) != count
+	if uint64(n) != count {
+		return true
+	}
+	return i.chunksShouldHeal(app)
+}
+
+// chunksShouldHeal compares the chunk index against the store the same way.
+// It is what turns embeddings on for an existing archive: the first boot after
+// a model is bound finds an empty chunk index over a full table and fills it.
+func (i *Index) chunksShouldHeal(app core.App) bool {
+	i.mu.RLock()
+	src := i.source
+	spec := i.spec
+	ready := i.chunkIdx != nil
+	rebuild := i.chunkRebuild
+	i.mu.RUnlock()
+	if !ready || src == nil || !spec.Valid() {
+		return false
+	}
+	if rebuild {
+		return true
+	}
+	stored, err := src.Count(app, spec)
+	if err != nil {
+		return false
+	}
+	indexed, err := i.ChunkCount()
+	if err != nil {
+		return false
+	}
+	return uint64(stored) != indexed
 }
 
 // Rebuild builds a replacement index and swaps it in only after success.
@@ -384,15 +462,34 @@ func (i *Index) Rebuild(app core.App) (int, error) {
 		return n, err
 	}
 
-	if err := i.installRebuilt(built, builtPath, versionPath); err != nil {
+	// Built before the swap, so a chunk store that errors costs nothing: the
+	// documents index still lands, and the chunk half is retried by the boot
+	// heal rather than leaving both halves half-installed.
+	chunks, chunkErr := i.buildChunkIndex(app)
+	if chunkErr != nil && app != nil {
+		app.Logger().Error("chunk index rebuild failed", slog.Any("error", chunkErr))
+	}
+
+	if err := i.installRebuilt(built, builtPath, versionPath, chunks, chunkErr != nil); err != nil {
 		_ = os.RemoveAll(builtPath)
+		if chunks != nil {
+			_ = chunks.idx.Close()
+			_ = os.RemoveAll(chunks.path)
+		}
 		return n, err
+	}
+	if chunks != nil {
+		logChunkRebuild(app, chunks)
 	}
 	return n, nil
 }
 
-func (i *Index) installRebuilt(built bleve.Index, builtPath, versionPath string) error {
+func (i *Index) installRebuilt(built bleve.Index, builtPath, versionPath string, chunks *chunkBuild, chunksFailed bool) error {
 	if err := built.Close(); err != nil {
+		if chunks != nil {
+			_ = chunks.idx.Close()
+			_ = os.RemoveAll(chunks.path)
+		}
 		return fmt.Errorf("close rebuild index: %w", err)
 	}
 
@@ -430,6 +527,18 @@ func (i *Index) installRebuilt(built bleve.Index, builtPath, versionPath string)
 		return fmt.Errorf("write mapping version: %w", err)
 	}
 	i.needsRebuild = false
+
+	// The chunk half is installed last and reported through needsRebuild
+	// rather than through the error: half a rebuild is still a working keyword
+	// search, and the boot heal will come back for the rest.
+	if chunks != nil {
+		if err := i.installChunkBuild(chunks); err != nil {
+			i.needsRebuild = true
+			return fmt.Errorf("install chunk index: %w", err)
+		}
+	} else if chunksFailed {
+		i.needsRebuild = true
+	}
 	return nil
 }
 
