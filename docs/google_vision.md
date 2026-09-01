@@ -49,4 +49,4 @@ Once the API is enabled, you can generate your actual credentials.
 2. Click the **+ Create Credentials** button at the top of the screen.
 3. Select **API key** from the dropdown list.
 4. A popup will appear displaying your new API key (a long string of letters and numbers).
-5. Copy this key to your clipboard and paste into .env `GOOGLE_VISION_API_KEY=`
+5. Copy this key to your clipboard. Paste it into **Settings → Providers** as a `google_vision` provider, or into `.env` before the first boot as `OCR_API_KEY=`, alongside `OCR_SDK=google_vision`.

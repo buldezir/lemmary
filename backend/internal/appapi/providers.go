@@ -53,8 +53,11 @@ func handleListProviders(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-func handleCreateProvider(app core.App) func(*core.RequestEvent) error {
+func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
+		if refused, err := refuseWhenManaged(e, rt); refused {
+			return err
+		}
 		var req providerWriteRequest
 		if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
 			return writeError(e, http.StatusBadRequest, "Invalid request body.")
@@ -105,8 +108,11 @@ func handleCreateProvider(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-func handlePatchProvider(app core.App) func(*core.RequestEvent) error {
+func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
+		if refused, err := refuseWhenManaged(e, rt); refused {
+			return err
+		}
 		id := strings.TrimSpace(e.Request.PathValue("id"))
 		record, err := app.FindRecordById(aiprovider.CollectionName, id)
 		if err != nil {
@@ -125,7 +131,7 @@ func handlePatchProvider(app core.App) func(*core.RequestEvent) error {
 			if !aiprovider.IsLLM(sdk) {
 				// A failed settings lookup must not skip this guard: proceeding
 				// would let a provider bound to LLM features become a non-LLM SDK.
-				settings, err := config.FindSettingsRecord(app)
+				settings, err := config.FindSettingsRecord(app, rt.Env())
 				if err != nil {
 					app.Logger().Error("provider patch: settings lookup failed", "error", err)
 					return writeError(e, http.StatusInternalServerError, "Failed to verify provider usage.")
@@ -161,8 +167,11 @@ func handlePatchProvider(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-func handleDeleteProvider(app core.App) func(*core.RequestEvent) error {
+func handleDeleteProvider(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
+		if refused, err := refuseWhenManaged(e, rt); refused {
+			return err
+		}
 		id := strings.TrimSpace(e.Request.PathValue("id"))
 		record, err := app.FindRecordById(aiprovider.CollectionName, id)
 		if err != nil {
@@ -171,7 +180,7 @@ func handleDeleteProvider(app core.App) func(*core.RequestEvent) error {
 		// A failed settings lookup must not skip the in-use check: deleting a
 		// provider still bound to OCR/extraction/chat/search leaves dangling
 		// *_provider_id values in settings.
-		settings, err := config.FindSettingsRecord(app)
+		settings, err := config.FindSettingsRecord(app, rt.Env())
 		if err != nil {
 			app.Logger().Error("provider delete: settings lookup failed", "error", err)
 			return writeError(e, http.StatusInternalServerError, "Failed to verify provider usage.")

@@ -15,7 +15,10 @@
 // PocketBase adds a flag that takes a value.
 package appargs
 
-import "strings"
+import (
+	"net"
+	"strings"
+)
 
 // valueFlags are the flags that consume the following argument, so scanning
 // does not mistake a flag's value for the subcommand or vice versa.
@@ -88,28 +91,101 @@ func Flag(args []string, name string) string {
 // An empty subcommand is PocketBase's default, which is serve. Callers use this
 // to tell an interactive path from a one-shot: a CLI subcommand must not block
 // on something a person is expected to answer, because nobody is watching.
+//
+// A help or version flag is not serve however it is spelled, even though it
+// leaves the subcommand empty. Treating `lemmary --help` as serve would block
+// the process on an unlock form to print usage — and, worse, would unlock and
+// restore the archive for a command that never bootstraps the databases, which
+// is the one state a flush must not commit from.
 func IsServe(args []string) bool {
+	if HasHelpOrVersionFlag(args) {
+		return false
+	}
 	sub, _ := scan(args)
 	return sub == "" || sub == "serve"
 }
 
-// ServeAddr returns the address the server will listen on, and whether that
-// address will carry cleartext HTTP.
+// helpOrVersionFlags are the flags cobra answers by printing and exiting.
+//
+// The list mirrors PocketBase's own skipBootstrap exactly: an invocation
+// carrying one of these never opens a database, so anything that assumes an
+// app has bootstrapped must agree with PocketBase about which they are.
+var helpOrVersionFlags = map[string]bool{
+	"-h": true, "--help": true, "-v": true, "--version": true,
+}
+
+// HasHelpOrVersionFlag reports whether argv asks cobra to print and exit.
+func HasHelpOrVersionFlag(args []string) bool {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			return false
+		}
+		if !strings.HasPrefix(a, "-") {
+			continue
+		}
+		if helpOrVersionFlags[a] {
+			return true
+		}
+		if !strings.Contains(a, "=") && valueFlags[a] {
+			i++ // a flag's value is not a flag
+		}
+	}
+	return false
+}
+
+// ServeAddr returns the address the server will listen on, and whether reaching
+// that address means sending cleartext over a network.
+//
+// The gate that occupies this address before PocketBase does speaks plain HTTP
+// and nothing else — it exists precisely because no application, and so no TLS
+// configuration, is running yet. So the question a caller needs answered is not
+// whether TLS is configured somewhere, but whether anything off this host can
+// reach the port: a password typed into a form served on 0.0.0.0:80 crosses the
+// network in the clear, and the same form on 127.0.0.1:8090 does not, because a
+// TLS-terminating proxy on the host is the only way to it.
+//
+// Loopback is therefore the whole test, and it is applied to an explicit --http
+// too. An earlier version exempted every explicit address on the grounds that
+// somebody who passed --http had chosen it deliberately, which quietly excused
+// the stock container: its entrypoint passes --http=0.0.0.0:${PORT}.
 //
 // With domain arguments PocketBase switches to autocert: HTTPS on :443, with
 // :80 used only to redirect. The plain port is still where a browser lands
-// first, so anything occupying the address before the server starts gets it —
-// and is told the connection is unencrypted, which is a fact a caller may need
-// to refuse on.
+// first, so anything occupying the address before the server starts gets it.
 func ServeAddr(args []string) (addr string, cleartext bool) {
 	sub, explicit := scan(args)
 	if explicit != "" {
-		return explicit, false
+		return explicit, !isLoopbackAddr(explicit)
 	}
 	if (sub == "" || sub == "serve") && hasDomainArgs(args, sub) {
 		return "0.0.0.0:80", true
 	}
 	return "127.0.0.1:8090", false
+}
+
+// isLoopbackAddr reports whether a listen address is reachable only from this
+// host.
+//
+// An empty host ("" or ":8090") means every interface, which is the opposite of
+// loopback and is the spelling most likely to be mistaken for one. A name this
+// cannot resolve without DNS is treated as exposed: guessing wrong in that
+// direction only costs an operator one explicit escape hatch, while guessing
+// wrong in the other silently serves the archive's password over the network.
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	host = strings.Trim(host, "[]")
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // scan walks argv once, yielding the subcommand and the value of --http.

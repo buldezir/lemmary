@@ -13,40 +13,30 @@ import (
 	"github.com/pocketbase/pocketbase/tools/router"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/duplicates"
+	"lemmary/backend/internal/inflight"
 	"lemmary/backend/internal/models"
 )
 
 type Processor struct {
 	app        core.App
 	rt         *config.Runtime
-	opts       Options
 	processing sync.Mutex
 }
 
-// Options carry the additions an edition of the binary makes to the pipeline.
-// The zero value is the core pipeline, unchanged.
-type Options struct {
-	// ExtraSteps are appended to the step registry the runner builds on every
-	// job; a factory returning a step whose Name() matches a built-in replaces
-	// that built-in.
-	ExtraSteps []StepFactory
-
-	// StepPlans rewrite the default step list for jobs created from a newly
-	// uploaded document. They never touch a job whose steps the caller named
-	// explicitly — see createStepsFor.
-	StepPlans []StepPlan
-}
-
-func Register(app core.App, rt *config.Runtime, opts Options) {
+func Register(app core.App, rt *config.Runtime) {
 	p := &Processor{
-		app:  app,
-		rt:   rt,
-		opts: opts,
+		app: app,
+		rt:  rt,
 	}
 	p.registerHooks()
 
 	cronExpr := config.WorkerCronFromEnv()
 	app.Cron().MustAdd("process_pending_jobs", cronExpr, func() {
+		// Counted as in-flight work so a shutdown can wait for it. Cron jobs
+		// are fired and forgotten, and nothing else would wait: with encryption
+		// at rest on, a job still writing while the archive is sealed and the
+		// working directory wiped loses everything it had done.
+		defer inflight.Begin()()
 		if err := p.processNextPending(); err != nil {
 			app.Logger().Error("cron error", slog.Any("error", err))
 		}
@@ -123,7 +113,7 @@ func (p *Processor) registerHooks() {
 			return nil
 		}
 
-		steps := createStepsFor(record, p.opts.StepPlans)
+		steps := createStepsFor(record)
 		_, err := createProcessingJob(e.App, record.Id, steps, nil)
 		return err
 	})
@@ -376,7 +366,7 @@ func (p *Processor) runJob(jobID string, snap config.Snapshot) error {
 		return nil
 	}
 
-	runner := NewPipelineRunner(p.app, snap.Cfg, snap.OCR, snap.AI, p.opts.ExtraSteps)
+	runner := NewPipelineRunner(p.app, snap.Cfg, snap.OCR, snap.AI)
 	return runner.Run(context.Background(), jobID)
 }
 

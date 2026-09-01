@@ -99,6 +99,46 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 	return resp, err
 }
 
+// completeStreaming streams a chat completion, handing each content delta to
+// onDelta as it arrives, and returns the accumulated text. Errors come back
+// with whatever text arrived before them, so the caller can choose between
+// keeping a partial answer and retrying without streaming.
+func (c *OpenAIClient) completeStreaming(
+	ctx context.Context,
+	params openai.ChatCompletionNewParams,
+	onDelta func(string),
+	extra ...any,
+) (string, error) {
+	aiprovider.LogRequest(
+		c.logger,
+		c.sdk,
+		http.MethodPost,
+		aiprovider.ChatCompletionsURL(c.baseURL),
+		string(params.Model),
+		append(extra, "stream", true)...,
+	)
+
+	stream := c.client.Chat.Completions.NewStreaming(ctx, params)
+	defer stream.Close()
+
+	var b strings.Builder
+	for stream.Next() {
+		chunk := stream.Current()
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+		delta := chunk.Choices[0].Delta.Content
+		if delta == "" {
+			continue
+		}
+		b.WriteString(delta)
+		if onDelta != nil {
+			onDelta(delta)
+		}
+	}
+	return b.String(), stream.Err()
+}
+
 func (c *OpenAIClient) PromptVersion() string {
 	return c.promptVer
 }

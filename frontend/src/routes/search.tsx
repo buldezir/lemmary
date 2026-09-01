@@ -4,27 +4,70 @@ import { MarkdownContent } from '../components/MarkdownContent'
 import { Button } from '../components/ui'
 import {
   deepSearch,
+  researchStream,
   type ChatMessage,
+  type ResearchEvent,
   type SearchDocumentHit,
   type SearchMode,
 } from '../lib/api/ai'
 
+type ResearchStep = {
+  kind: 'search' | 'read' | 'answer'
+  label: string
+  done: boolean
+}
+
 type SearchTurn = {
   message: ChatMessage
+  /** Cards, for search mode. Research answers link to documents inline instead. */
   documents?: SearchDocumentHit[]
+  steps?: ResearchStep[]
+  /** The generation was cut short; the text is real but not the whole answer. */
+  incomplete?: boolean
+}
+
+const modes: { value: SearchMode; label: string; hint: string }[] = [
+  { value: 'search', label: 'Search', hint: 'Find documents and list them.' },
+  {
+    value: 'research',
+    label: 'Research',
+    hint: 'Read the documents and answer, with citations.',
+  },
+]
+
+const placeholders: Record<SearchMode, string> = {
+  search: 'Describe what you are looking for...',
+  research: 'Ask a question about your documents...',
+}
+
+const examples: Record<SearchMode, string> = {
+  search: 'plumber invoice from last summer about the leak',
+  research: 'how much did I spend on the car in 2024?',
 }
 
 export function SearchPage() {
   const [turns, setTurns] = useState<SearchTurn[]>([])
   const [input, setInput] = useState('')
-  const [deepMode, setDeepMode] = useState(false)
+  const [mode, setMode] = useState<SearchMode>('search')
   const [sending, setSending] = useState(false)
+  const [steps, setSteps] = useState<ResearchStep[]>([])
+  const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  // A research run outlives an unmount unless it is cancelled: the fetch keeps
+  // the stream open, the server keeps calling the provider, and coming back to
+  // this page would start a second run alongside the first.
+  const runRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [turns, sending])
+  }, [turns, sending, steps, draft])
+
+  useEffect(() => () => runRef.current?.abort(), [])
+
+  function cancel() {
+    runRef.current?.abort()
+  }
 
   async function send() {
     const text = input.trim()
@@ -34,23 +77,92 @@ export function SearchPage() {
 
     const userMessage: ChatMessage = { role: 'user', content: text }
     const history: ChatMessage[] = [...turns.map((turn) => turn.message), userMessage]
-    const mode: SearchMode = deepMode ? 'deep' : 'shallow'
+
+    const run = new AbortController()
+    runRef.current = run
 
     try {
       setSending(true)
       setInput('')
       setError('')
+      setSteps([])
+      setDraft('')
       setTurns((current) => [...current, { message: userMessage }])
 
-      const result = await deepSearch(history, mode)
-      setTurns((current) => [...current, { message: result.message, documents: result.documents }])
+      if (mode === 'research') {
+        await runResearch(history, run.signal)
+      } else {
+        const result = await deepSearch(history, 'search')
+        setTurns((current) => [
+          ...current,
+          { message: result.message, documents: result.documents },
+        ])
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to run deep search')
+      // Cancelling is not a failure, and the component may already be gone:
+      // drop the pending turn quietly and say nothing.
+      if (!run.signal.aborted) {
+        setError(err instanceof Error ? err.message : 'Failed to run search')
+      }
       setTurns((current) => current.slice(0, -1))
       setInput(text)
     } finally {
+      if (runRef.current === run) {
+        runRef.current = null
+      }
       setSending(false)
+      setSteps([])
+      setDraft('')
     }
+  }
+
+  async function runResearch(history: ChatMessage[], signal: AbortSignal) {
+    // Collected outside React state as well: the final turn is assembled from
+    // these, and state updates are not readable synchronously.
+    const collected: ResearchStep[] = []
+    let answer = ''
+    let streamError = ''
+    let incomplete = false
+
+    await researchStream(
+      history,
+      (event) => {
+        switch (event.type) {
+          case 'step': {
+            applyStep(collected, event)
+            setSteps([...collected])
+            break
+          }
+          case 'delta':
+            answer += event.content
+            setDraft(answer)
+            break
+          case 'message':
+            answer = event.content
+            incomplete = event.incomplete ?? false
+            setDraft(answer)
+            break
+          case 'error':
+            streamError = event.message
+            break
+          default:
+            break
+        }
+      },
+      signal,
+    )
+
+    if (streamError) {
+      throw new Error(streamError)
+    }
+    setTurns((current) => [
+      ...current,
+      {
+        message: { role: 'assistant', content: answer },
+        steps: collected.map((step) => ({ ...step, done: true })),
+        incomplete,
+      },
+    ])
   }
 
   function onSubmit(event: SubmitEvent<HTMLFormElement>) {
@@ -58,39 +170,50 @@ export function SearchPage() {
     void send()
   }
 
+  const active = modes.find((item) => item.value === mode) ?? modes[0]
+
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">Deep Search</h2>
-          <p className="text-sm text-ink-soft">
-            Ask in natural language. The AI expands keywords across your archive languages and
-            searches document metadata and OCR text.
-          </p>
+          <p className="text-sm text-ink-soft">{active.hint}</p>
         </div>
-        <label className="flex cursor-pointer items-center gap-2 rounded-xs border border-line bg-surface px-3 py-2 text-sm text-ink-muted">
-          <input
-            type="checkbox"
-            checked={deepMode}
-            onChange={(event) => setDeepMode(event.target.checked)}
-            className="h-4 w-4 rounded border-line-strong text-oxblood focus:ring-oxblood"
-          />
-          <span>
-            Deep mode
-            <span className="ml-1 text-ink-faint">(multi-step refine)</span>
-          </span>
-        </label>
+        <div
+          role="radiogroup"
+          aria-label="Search mode"
+          className="flex rounded-xs border border-line bg-surface p-1"
+        >
+          {modes.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              role="radio"
+              aria-checked={mode === item.value}
+              disabled={sending}
+              onClick={() => setMode(item.value)}
+              className={`px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                mode === item.value
+                  ? 'bg-ink text-paper'
+                  : 'text-ink-muted hover:text-ink'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex min-h-128 flex-col overflow-hidden rounded-none border border-line bg-surface">
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
           {turns.length === 0 && (
             <p className="text-sm text-ink-faint">
-              Try something like: &quot;plumber invoice from last summer about the leak&quot;
+              Try something like: &quot;{examples[mode]}&quot;
             </p>
           )}
           {turns.map((turn, index) => (
             <div key={index} className="space-y-3">
+              {turn.steps && turn.steps.length > 0 && <StepList steps={turn.steps} collapsed />}
               <div
                 className={`flex ${turn.message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
@@ -106,6 +229,7 @@ export function SearchPage() {
                   ) : (
                     <MarkdownContent content={turn.message.content} />
                   )}
+                  {turn.incomplete && <IncompleteNotice />}
                 </div>
               </div>
               {turn.documents && turn.documents.length > 0 && (
@@ -117,10 +241,22 @@ export function SearchPage() {
               )}
             </div>
           ))}
-          {sending && (
+          {sending && mode === 'research' && (
+            <div className="space-y-3">
+              <StepList steps={steps} />
+              {draft && (
+                <div className="flex justify-start">
+                  <div className="max-w-[85%] rounded-none border border-line bg-paper px-4 py-2.5 text-sm leading-relaxed text-ink">
+                    <MarkdownContent content={draft} />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {sending && mode !== 'research' && (
             <div className="flex justify-start">
               <div className="rounded-none border border-line bg-paper px-4 py-2.5 text-sm text-ink-soft">
-                {deepMode ? 'Searching deeply...' : 'Searching...'}
+                Searching...
               </div>
             </div>
           )}
@@ -141,17 +277,121 @@ export function SearchPage() {
               }}
               autoFocus
               disabled={sending}
-              placeholder="Describe what you are looking for..."
+              placeholder={placeholders[mode]}
               className="min-h-12 flex-1 resize-y rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood disabled:cursor-not-allowed disabled:opacity-50"
             />
             <Button type="submit" disabled={sending || !input.trim()}>
-              {sending ? 'Searching...' : 'Search'}
+              {sending ? (mode === 'research' ? 'Researching...' : 'Searching...') : active.label}
             </Button>
+            {sending && mode === 'research' && (
+              // A research run is bounded only by the context window, so there
+              // has to be a way out of one that is taking too long.
+              <Button type="button" variant="secondary" onClick={cancel}>
+                Cancel
+              </Button>
+            )}
           </div>
           {error && <p className="mt-2 text-sm text-madder">{error}</p>}
         </form>
       </div>
     </section>
+  )
+}
+
+/**
+ * Folds one event into the visible step list: a "start" appends a pending step,
+ * the matching "done" completes it in place rather than adding a second line.
+ */
+function applyStep(steps: ResearchStep[], event: Extract<ResearchEvent, { type: 'step' }>) {
+  if (event.status === 'start') {
+    steps.push({ kind: event.kind, label: startLabel(event), done: false })
+    return
+  }
+  const pending = [...steps].reverse().find((step) => step.kind === event.kind && !step.done)
+  if (!pending) {
+    steps.push({ kind: event.kind, label: doneLabel(event), done: true })
+    return
+  }
+  pending.label = doneLabel(event, pending.label)
+  pending.done = true
+}
+
+function startLabel(event: Extract<ResearchEvent, { type: 'step' }>) {
+  switch (event.kind) {
+    case 'search':
+      return event.query ? `Searching “${event.query}”` : 'Searching'
+    case 'read':
+      return `Reading ${event.count ?? 0} document${event.count === 1 ? '' : 's'}`
+    default:
+      return 'Writing answer'
+  }
+}
+
+function doneLabel(event: Extract<ResearchEvent, { type: 'step' }>, fallback?: string) {
+  switch (event.kind) {
+    case 'search': {
+      const found = `${event.count ?? 0} document${event.count === 1 ? '' : 's'} found`
+      return event.query ? `“${event.query}” — ${found}` : found
+    }
+    case 'read': {
+      const titles = event.titles ?? []
+      const shown = titles.slice(0, 3).join(', ')
+      const rest = titles.length > 3 ? `, and ${titles.length - 3} more` : ''
+      return titles.length > 0 ? `Read ${shown}${rest}` : (fallback ?? 'Read documents')
+    }
+    default:
+      return 'Answer written'
+  }
+}
+
+/**
+ * Shown under an answer whose generation was cut off. The text above it is
+ * real as far as it goes, which is exactly why it needs saying: a partial
+ * answer reads like a complete one.
+ */
+function IncompleteNotice() {
+  return (
+    <p className="mt-2 border-t border-line pt-2 text-xs text-ink-muted">
+      This answer was cut off before it finished. Ask again to get the rest.
+    </p>
+  )
+}
+
+function StepList({ steps, collapsed = false }: { steps: ResearchStep[]; collapsed?: boolean }) {
+  if (steps.length === 0) {
+    return (
+      <p className="text-xs text-ink-faint">
+        <span className="animate-pulse">Researching your archive…</span>
+      </p>
+    )
+  }
+
+  const list = (
+    <ol className="space-y-1">
+      {steps.map((step, index) => (
+        <li key={index} className="flex items-baseline gap-2 text-xs text-ink-muted">
+          <span
+            aria-hidden
+            className={`font-mono ${step.done ? 'text-ink-faint' : 'animate-pulse text-oxblood'}`}
+          >
+            {step.done ? '✓' : '·'}
+          </span>
+          <span className={step.done ? '' : 'text-ink'}>{step.label}</span>
+        </li>
+      ))}
+    </ol>
+  )
+
+  if (!collapsed) {
+    return <div className="border-l-2 border-line pl-3">{list}</div>
+  }
+  return (
+    <details className="border-l-2 border-line pl-3">
+      <summary className="cursor-pointer text-xs text-ink-faint">
+        {steps.length} research step{steps.length === 1 ? '' : 's'}
+      </summary>
+      <div className="mt-1">{list}</div>
+    </details>
   )
 }
 

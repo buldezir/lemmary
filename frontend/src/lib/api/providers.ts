@@ -20,6 +20,8 @@ export type AIProviderWrite = {
 export type CatalogModel = {
   id: string
   name: string
+  /** Context length in tokens, when the provider reports one (OpenAI does not). */
+  context_window?: number
 }
 
 export const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {

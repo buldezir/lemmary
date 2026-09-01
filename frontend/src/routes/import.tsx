@@ -15,10 +15,10 @@ export function ImportPage() {
 
       <nav aria-label="Import sources" className="flex flex-wrap items-center gap-5 border-b border-line">
         <Link to="/import" activeOptions={{ exact: true }} className={tabClassName}>
-          Paperless-ngx
-        </Link>
-        <Link to="/import/archive" className={tabClassName}>
           Lemmary archive
+        </Link>
+        <Link to="/import/ngx" className={tabClassName}>
+          Paperless-ngx
         </Link>
       </nav>
 

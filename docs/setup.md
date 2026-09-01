@@ -29,7 +29,7 @@ On first run, migrations create:
 - `document_types`
 - `documents`
 - `processing_jobs`
-- `app_settings` (singleton; seeded from `.env` on first boot)
+- `app_settings` (singleton; seeded from `.env` on first boot, and re-applied on every boot under `AI_MANAGED=1`)
 - `ai_providers` (named OCR/LLM endpoints; seeded from `.env` on first boot)
 - `outbound_emails` (outbound mail log when SMTP is not configured; superuser-only)
 
@@ -69,8 +69,8 @@ All variables live in `.env` at the project root (see `.env.example`).
 | `LIMIT_FILE_PAGES` | unset (unlimited) | Most pages in a single document. Can only **lower** the effective cap: a 1000-page ceiling applies to every install regardless (see [the page ceiling](#the-page-ceiling)), and no value here can raise it. |
 | `LIMIT_ADDITIONAL_USERS` | unset (unlimited) | Accounts beyond the admin account. Exactly one account is free, so `0` is a single-account instance. |
 | `VITE_POCKETBASE_URL` | `http://127.0.0.1:8090` | PocketBase API URL (frontend) |
-| `VITE_DEV_USER_EMAIL` | — | Dev auto-login email (`users` collection) |
-| `VITE_DEV_USER_PASSWORD` | — | Dev auto-login password |
+| `SETUP_ADMIN_EMAIL` | — | The first admin account, created on the first boot that finds none. Creates a `_superusers` record **and** the paired `users` account, exactly as the setup wizard does. Never resets a password that already exists. In a development build the SPA also signs itself in with this pair; a production bundle contains neither value. **Commented out in `.env.example`** — uncommenting it in a served install would hand it an admin whose password is published in this repository. |
+| `SETUP_ADMIN_PASSWORD` | — | Its password, at least 8 characters. Readable from `docker inspect` and `/proc/<pid>/environ` for the life of the container, so this is for local and CI instances — a served install should use the wizard or `superuser upsert`. |
 
 #### Instance limits
 
@@ -163,42 +163,76 @@ Consequences worth knowing:
   this matters for: cells reference a shared string table, so the text one
   extracts to is not bounded by the bytes it arrived in.
 
-### Applied when changed
+### AI: bootstrap, and managed mode
 
-These seed `app_settings` and `ai_providers` on first boot **and** are re-applied on any later boot where their value has changed since the last one that acted on them. An unchanged variable is left alone, so a value edited in the **Settings** page survives restarts; changing `.env` (or a container's environment) and restarting does take effect.
+There are two modes and one build. Which one an instance is in is a runtime
+flag, `AI_MANAGED`, and it is the whole of the difference.
 
-The comparison uses a SHA-256 digest per variable stored in `app_settings.env_applied` — a digest, not the value, because several of these are API keys. Removing a variable is a change like any other: `OPENAI_MODEL` returns to its code default (nothing falls back to the extraction model), while `OPENAI_CHAT_MODEL` and `OPENAI_SEARCH_MODEL` empty out and fall back through the binding chain.
+| | self-hosted (default) | managed (`AI_MANAGED=1`) |
+| --- | --- | --- |
+| when the environment is written to the database | the first boot, when the settings singleton does not exist yet | **every** boot |
+| authority afterwards | the **Settings** page | the container's environment |
+| Providers, Models and Duplicates in Settings | editable | not rendered, and the API answers `403` |
+| an incomplete or invalid block | the setup wizard opens and an admin fills it in | the process **refuses to start**, naming the variable |
+
+Self-hosted is the ordinary install: put a key in `.env` so a fresh volume comes
+up ready to use instead of on the wizard, and change your mind later in
+**Settings**. Managed is for a hosted fleet, where the operator carries the AI
+bill and the tenant must not be able to move it onto their own key. Refusing to
+start is the right failure there, because nobody inside a managed instance can
+repair a bad key: the Settings page is gone.
+
+Neither mode compares against what was applied last. An earlier release stored a
+digest per variable in `app_settings.env_applied` and re-applied a variable only
+when it had changed; naming the two modes made that unnecessary, and the column
+is dropped.
+
+#### The provider block
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `OCR_PROVIDER` | `google_vision` | Which env-seeded provider to bind for OCR (`google_vision`, `mistral`, `openai`, `openrouter`). Names an SDK, not a record id — an id is generated at seed time and cannot be known in advance. |
-| `GOOGLE_VISION_API_KEY` | empty | Google Cloud Vision provider key |
-| `MISTRAL_API_KEY` | empty | Mistral provider key (OCR + chat completions) |
-| `MISTRAL_API_BASE_URL` | `https://api.mistral.ai/v1` | Mistral API base URL |
-| `OPENAI_API_KEY` | empty | OpenAI-compatible provider key (extraction, chat, search, optional LLM OCR). If unset, a seeded Mistral provider is bound for those tasks instead. |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API base URL |
-| `OPENAI_MODEL` | `gpt-5.6-luna` | Model ID for metadata extraction |
-| `OPENAI_CHAT_MODEL` | `OPENAI_MODEL` | Optional model ID for document chat |
-| `OPENAI_SEARCH_MODEL` | `OPENAI_CHAT_MODEL` | Optional model ID for Deep Search |
-| `NEAR_DUPLICATE_DETECTION_ENABLED` | `false` | Whether the pipeline runs near-duplicate detection |
+| `AI_MANAGED` | `0` | Whether the operator owns AI configuration. See the table above. |
+| `AI_SDK` | `openai` | The language model's SDK: `openai`, `openrouter` or `mistral`. `google_vision` is refused — it cannot serve extraction. |
+| `AI_API_KEY` | empty | Its credential. **One key is usually the whole configuration**: with this and nothing else the app creates one provider and routes extraction, chat, Deep Search *and* OCR to it. |
+| `AI_MODEL` | `gpt-5.6-luna` | The model for extraction, chat and Deep Search. Be sure it supports the result language set in **Settings**. |
+| `AI_BASE_URL` | the SDK's own endpoint | An OpenAI-compatible base URL, for a gateway or a self-hosted endpoint. |
+| `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `openai`, `openrouter`, `mistral` or `google_vision`. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
+| `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK`. |
+| `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. |
+| `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Required unless `OCR_SDK=google_vision`, which reads a document without one. |
 
-A provider record is matched by the default alias `SeedFromEnv` gives it. A renamed or deleted provider is skipped with a warning rather than recreated — recreating would resurrect a provider an admin deliberately removed, and would do it again on every boot.
+A provider record is matched by the default alias it is created with. A renamed
+or deleted provider is left alone rather than reclaimed — renaming one is an
+edit an admin made, and a boot that undid it would undo it again on every boot
+after that.
 
-### Seed-only (first boot → Settings)
+#### The rest
 
-These seed `app_settings` when the singleton record does not exist yet. After that, edit them in the app **Settings** page (requires a PocketBase superuser login). Changing `.env` alone will not update a running install.
+Seeded on the first boot and edited from **Settings** afterwards, in both modes.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `MISTRAL_OCR_MODEL` | `mistral-ocr-latest` | OCR model when seeding Mistral |
-| `MISTRAL_MODEL` | `mistral-small-latest` | Chat model when Mistral is the only LLM (no `OPENAI_API_KEY`) |
 | `OCR_TIMEOUT_SEC` | `40` | OCR request timeout |
-| `PROCESSING_RESULT_LANGUAGE` | empty | ISO 639-1 code (e.g. `en`, `de`). When set, `title`, `summary`, `purpose`, and `document_type` are stored in this language; originals go in `*_original` fields. |
-| `OPENAI_TIMEOUT_SEC` | `60` | AI request timeout |
-| `DEEP_SEARCH_LANGUAGES` | empty | Comma-separated ISO 639-1 codes (e.g. `de,en,uk`) for Deep Search keyword expansion |
+| `AI_TIMEOUT_SEC` | `60` | Extraction, chat, search and split-detection request timeout |
 | `WORKER_TIMEOUT_SEC` | `300` | Per-job processing timeout |
 | `WORKER_MAX_RETRIES` | `0` | Max step retry attempts before a job fails |
+| `DEEP_SEARCH_LANGUAGES` | empty | Comma-separated ISO 639-1 codes (e.g. `de,en,uk`) for Deep Search keyword expansion |
 | `EXTRACTION_PROMPT_VERSION` | `v1` | Stored on each processing job step run; bookkeeping only, not offered in the Settings UI |
+
+Two more are seeded the same way but are **operator-owned under
+`AI_MANAGED=1`**, because each is a cost rather than a preference — so a hosted
+plan can price them per tier:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `SEARCH_CONTEXT_TOKENS` | `128000` | Context window of the search model, in tokens — the only limit on a Research run |
+| `NEAR_DUPLICATE_DETECTION_ENABLED` | `false` | Whether the pipeline runs near-duplicate detection |
+| `NEAR_DUPLICATE_THRESHOLD` | `0.92` | How similar two documents' text must be to count as near-duplicates |
+
+The **result language** has no variable at all. It decides what language a
+document's title, summary and tags are stored in, which is a reader's
+preference rather than an operator's, so it is set in **Settings** and a managed
+instance keeps it.
 
 ## First-launch setup wizard
 
@@ -209,7 +243,7 @@ On a fresh install the SPA hard-gates until setup is complete:
 3. **Provider** — add at least one API provider (`openai`, `openrouter`, `mistral`, or `google_vision`).
 4. **Models** — pick provider → model for OCR and metadata extraction (chat/search inherit extraction).
 
-You can also create the admin via CLI (`go run . superuser upsert EMAIL PASS` from `backend/`; this also upserts the paired `users` account) and/or seed OCR/AI keys in `.env` before first boot; the wizard skips steps that are already done. Until keys are present, regular users see a “setup incomplete” screen; only an admin can finish configuration.
+You can also create the admin from the environment (`SETUP_ADMIN_EMAIL` and `SETUP_ADMIN_PASSWORD`, applied on the first boot that finds no account) or from the CLI (`go run . superuser upsert EMAIL PASS` from `backend/`; this also upserts the paired `users` account), and seed the AI keys in `.env` before the first boot; the wizard skips steps that are already done. With both, a fresh volume comes up with nothing left to answer. Until keys are present, regular users see a “setup incomplete” screen; only an admin can finish configuration.
 
 ## Settings (admin UI)
 
@@ -317,7 +351,7 @@ A document whose stored file is missing from storage is skipped and left out of 
 
 ### Restoring
 
-**More → Import → Lemmary archive** (`/import/archive`), or the API below. The archive is streamed to `<data dir>/temp/archive_import/` — never buffered in memory — then scanned and previewed: how many documents it holds, how many are new, how many are duplicates, oversized or missing, how much taxonomy comes with them. Nothing is created until you confirm.
+**More → Import** (`/import`), or the API below. The archive is streamed to `<data dir>/temp/archive_import/` — never buffered in memory — then scanned and previewed: how many documents it holds, how many are new, how many are duplicates, oversized or missing, how much taxonomy comes with them. Nothing is created until you confirm.
 
 Two modes:
 
@@ -374,7 +408,7 @@ Query behavior:
 - Terms are **AND**ed (all must match) and ranked with **BM25**. Quoted `"phrases"` must appear in order.
 - Search covers bilingual title/purpose/summary, OCR text, tag/type/correspondent names, and `people_or_organizations`.
 - The homepage search box calls `GET /api/app/documents/search`. An empty search box still lists via PocketBase (sort by created).
-- Deep Search’s `search_documents` tool and paperless-ngx `GET /api/documents/?query=` use the same index.
+- Deep Search’s `search_documents` tool (both modes) and paperless-ngx `GET /api/documents/?query=` use the same index. Research’s `read_documents` reads `ocr_text` straight from the database, not the index.
 - PocketBase collection filters (`field ~ "..."`) remain available to API clients; the UI no longer uses them for the search box.
 
 Admins can force a rebuild from **Management → Rebuild search index** (`POST /api/app/search/reindex`).
@@ -383,11 +417,18 @@ Admins can force a rebuild from **Management → Rebuild search index** (`POST /
 
 Prefer **Settings** in the UI (admin): add a provider with SDK `openai`, `openrouter`, or `mistral`, then select it for extraction, chat, and search. Mistral uses the same [OpenAI-compatible chat completions](https://docs.mistral.ai/api) endpoint as the other LLMs (`/v1/chat/completions`); OCR still uses Mistral’s dedicated Document OCR API.
 
-For a fresh install you can put `OPENAI_API_KEY` and/or `MISTRAL_API_KEY` in `.env` so they seed `ai_providers` rows on first boot. If both are set, OpenAI is bound for LLM tasks and Mistral can still be chosen in Settings. If only Mistral is set, it is bound for extraction, chat, and search using `MISTRAL_MODEL` (default `mistral-small-latest`).
+For a fresh install you can put `AI_API_KEY` in `.env` so a provider row is seeded on the first boot and the instance comes up already configured. One key covers extraction, chat, Deep Search and OCR; add `OCR_SDK` and `OCR_API_KEY` only when OCR should run somewhere else. See [AI: bootstrap, and managed mode](#ai-bootstrap-and-managed-mode).
 
 Without an LLM provider, AI extraction, document chat, and Deep Search return a configuration error.
 
-Deep Search (`/search`) uses a tool-calling agent over the Bleve full-text index. Configure **Search provider/model** and **Deep search languages** in Settings.
+Deep Search (`/search`) uses a tool-calling agent over the Bleve full-text index, in two modes:
+
+- **Search** — one round of `search_documents`, answered from titles, summaries and short OCR snippets. Results are shown as document cards.
+- **Research** — the agent searches, then reads the full text of the documents it finds (`read_documents`), and writes a markdown answer citing each document it used. The answer links to the documents inline; there is no card grid. Progress streams over `POST /api/app/search/stream` (server-sent events), so each search and read appears as it happens.
+
+Research has no round or document limit. It keeps searching and reading until the conversation fills the model's context window, then answers with what it has — so **Search context window** in Settings is what decides how much of your archive one question can draw on. Picking a model whose provider reports its context length (OpenRouter, Mistral) fills that field in automatically; OpenAI's model list reports none, so the default applies.
+
+Configure **Search provider/model**, **Deep search languages**, and **Search context window** in Settings.
 
 ## OCR setup
 
@@ -438,7 +479,7 @@ API versions 9 and 10 are accepted via the `Accept` header (`application/json; v
 
 Any signed-in user can migrate a Paperless-ngx library into their own Lemmary account. The remote API token authenticates a specific ngx user, so the import runs as the current local user rather than as an admin.
 
-1. Open **Import** in the More menu (or go to `/import`).
+1. Open **Import** in the More menu, then the **Paperless-ngx** tab (or go to `/import/ngx`).
 2. Enter the remote Paperless-ngx base URL and an API token from that instance’s profile.
 3. Choose an import mode:
    - **Keep Paperless-ngx metadata** (`preserve`): upserts tags, correspondents, and document types by name; downloads each document with its OCR `content`, title, date, and taxonomy links. Preview and duplicate detection still run; AI metadata extraction is skipped so remote metadata is kept.
@@ -455,7 +496,7 @@ Import fetches only the caller-supplied URL. Private, loopback, and link-local d
 
 ## Troubleshooting
 
-- **Stuck on setup wizard:** create the admin account and add an OCR provider plus an LLM provider (OpenAI, OpenRouter, or Mistral — or seed keys in `.env` before first boot / use `superuser upsert`). Clearing required keys later brings the config steps back for admins.
+- **Stuck on setup wizard:** create the admin account and add an OCR provider plus an LLM provider (OpenAI, OpenRouter, or Mistral — or set `AI_API_KEY` and `SETUP_ADMIN_*` in `.env` before the first boot, or use `superuser upsert`). Clearing required keys later brings the config steps back for admins.
 - **Upload succeeds but stays pending:** ensure the backend server is running; the worker starts with `serve`.
 - **OCR fails:** configure the OCR provider and API key in Settings (or seed `.env` before first boot). For Google Vision, ensure the Vision API is enabled for your project.
 - **AI extraction fails:** configure an LLM provider (OpenAI, OpenRouter, or Mistral) in Settings. Check the processing job error on the document detail page.

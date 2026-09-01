@@ -198,12 +198,12 @@ jobs:
       - name: Run unit tests only (private suite unavailable)
         if: steps.access.outputs.ok != 'true'
         run: |
-          echo "::warning::e2e suites skipped - the private dev repository is not reachable from a fork pull request. Unit tests and the compile-level extension-seam check ran; API and browser e2e did not."
+          echo "::warning::e2e suites skipped - the private dev repository is not reachable from a fork pull request. Go unit tests, go vet, frontend tests and the SPA build ran; API and browser e2e did not."
           # Finding no overlay, the wrapper runs the reduced set by itself:
-          # unit tests, the compile-level seam check, frontend tests, and the
-          # SPA build. That build matters -- the build job is push-only, so
-          # without it a fork pull request compiles the frontend nowhere and
-          # could go green with tsc, Vite or VitePress broken.
+          # Go unit tests, go vet, frontend tests, and the SPA build. That
+          # build matters -- the build job is push-only, so without it a fork
+          # pull request compiles the frontend nowhere and could go green with
+          # tsc, Vite or VitePress broken.
           ./scripts/test-all.sh
 
   build:

@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"lemmary/backend/internal/config"
 )
 
 const (
@@ -12,7 +14,7 @@ const (
 	defaultAccent  = "#111827" // gray-900, matches previous logo background
 )
 
-func handleGetMeta(app core.App) func(*core.RequestEvent) error {
+func handleGetMeta(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		name := strings.TrimSpace(app.Settings().Meta.AppName)
 		if name == "" {
@@ -25,18 +27,9 @@ func handleGetMeta(app core.App) func(*core.RequestEvent) error {
 		return writeJSON(e, http.StatusOK, map[string]any{
 			"app_name": name,
 			"accent":   accent,
-			// Whether the login screen should offer the passkey button. This is
-			// the only public, pre-session endpoint, which is why the flag lives
-			// here rather than behind auth.
-			//
-			// Two conditions, both instance-wide. The address has to be one a
-			// credential can be bound to at all — see internal/passkey/rp.go. And
-			// somebody has to have enrolled: a button that opens an empty
-			// authenticator dialog and ends in NotAllowedError is a worse first
-			// impression than no button. Instance-wide rather than per-account is
-			// deliberate — it answers "does this install use passkeys", never
-			// "does this person have one", so it is not an enumeration signal.
-			"passkeys": passkeyLoginAvailable(app, e),
+			// Public: the SPA needs both before anyone has signed in.
+			"passkeys":   passkeyLoginAvailable(app, e),
+			"ai_managed": rt.Managed(),
 		})
 	}
 }
@@ -49,7 +42,7 @@ func handleGetMe(_ core.App) func(*core.RequestEvent) error {
 		}
 		return writeJSON(e, http.StatusOK, map[string]any{
 			"email":    email,
-			"is_admin": isAppAdmin(e),
+			"is_admin": IsAppAdmin(e),
 		})
 	})
 }
