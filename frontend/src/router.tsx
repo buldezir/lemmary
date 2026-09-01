@@ -13,7 +13,7 @@ import { SearchPage } from './routes/search'
 import { SettingsPage } from './routes/settings'
 import { ManagementPage } from './routes/management'
 import { ImportPage } from './routes/import'
-import { ImportNgxPage } from './routes/import.index'
+import { ImportNgxPage } from './routes/import.ngx'
 import { ImportArchivePage } from './routes/import.archive'
 import { ExportPage } from './routes/export'
 import { AccountPage } from './routes/account'
@@ -98,17 +98,26 @@ const importRoute = createRoute({
   component: ImportPage,
 })
 
-// Paperless-ngx is the original import source, so it sits on /import itself.
-const importNgxRoute = createRoute({
+// Lemmary archive is the default import source, so it sits on /import itself.
+const importArchiveRoute = createRoute({
   getParentRoute: () => importRoute,
   path: '/',
+  component: ImportArchivePage,
+})
+
+const importNgxRoute = createRoute({
+  getParentRoute: () => importRoute,
+  path: 'ngx',
   component: ImportNgxPage,
 })
 
-const importArchiveRoute = createRoute({
+// /import/archive was the archive tab before it moved onto /import.
+const importArchiveAliasRoute = createRoute({
   getParentRoute: () => importRoute,
   path: 'archive',
-  component: ImportArchivePage,
+  beforeLoad: () => {
+    throw redirect({ to: '/import' })
+  },
 })
 
 // No beforeLoad guard on purpose: RootLayout's gate already requires a session,
@@ -144,7 +153,7 @@ const routeTree = rootRoute.addChildren([
   ocrTestRoute,
   settingsRoute,
   managementRoute,
-  importRoute.addChildren([importNgxRoute, importArchiveRoute]),
+  importRoute.addChildren([importArchiveRoute, importNgxRoute, importArchiveAliasRoute]),
   exportRoute,
   accountRoute,
   documentRoute,

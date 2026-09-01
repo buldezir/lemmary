@@ -19,6 +19,7 @@ describe('route tree', () => {
       '/settings',
       '/management',
       '/import',
+      '/import/ngx',
       '/import/archive',
       '/account',
       '/export',

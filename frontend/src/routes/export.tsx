@@ -33,7 +33,7 @@ export function ExportPage() {
         <p className="mt-1 text-sm text-ink-soft">
           Download a full backup of your library as a single zip. It can be restored into this or
           any other Lemmary instance under{' '}
-          <Link to="/import/archive" className="font-medium text-oxblood underline">
+          <Link to="/import" className="font-medium text-oxblood underline">
             Import &rarr; Lemmary archive
           </Link>
           .
