@@ -120,9 +120,25 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		searchUserID = e.Auth.Id
 	}
 
-	history, err := loadChatHistory(app, ownerID, req.SessionID, chat.KindSearch, "")
+	session, history, err := loadChatHistory(app, ownerID, req.SessionID, chat.KindSearch, "")
 	if err != nil {
 		return searchTurn{}, true, writeChatSessionError(e, app, err)
+	}
+
+	// A conversation stays in the mode it started in, and this is where that
+	// holds rather than in the page that hides the switch. The transcript
+	// replayed below was produced by one mode, and answering the next question
+	// under the other one reads that work back as if it were its own -- a
+	// research transcript continued as a listing search, or the reverse, is a
+	// different product answering from the wrong material. Refused rather than
+	// silently corrected, because the client already knows which mode the chat
+	// is in and sending the other one means the two have drifted.
+	mode := parseSearchMode(req.Mode)
+	if session != nil {
+		if stored := session.GetString("mode"); stored != "" && stored != mode {
+			return searchTurn{}, true, writeError(e, http.StatusConflict,
+				"This chat is a "+stored+" chat and cannot change mode. Start a new chat to switch.")
+		}
 	}
 
 	tools, err := buildAgentTools(app, idx, searchUserID)
@@ -136,7 +152,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		sessionID: req.SessionID,
 		ownerID:   ownerID,
 		content:   content,
-		mode:      parseSearchMode(req.Mode),
+		mode:      mode,
 		messages:  append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content}),
 		tools:     tools,
 	}, false, nil

@@ -3,6 +3,8 @@ import { MarkdownContent } from './MarkdownContent'
 import type { ChatTurn } from '../lib/api/chats'
 
 type ChatTranscriptProps = {
+  /** The conversation on screen; changing it starts the scroll behaviour over. */
+  conversationId?: string
   turns: ChatTurn[]
   /** Shown when the conversation is empty. */
   emptyHint: string
@@ -23,6 +25,7 @@ type ChatTranscriptProps = {
 }
 
 export function ChatTranscript({
+  conversationId,
   turns,
   emptyHint,
   loading = false,
@@ -36,6 +39,14 @@ export function ChatTranscript({
   // Opening a saved conversation should land at the bottom, not animate its
   // whole length; only turns arriving afterwards are worth a smooth scroll.
   const settledRef = useRef(false)
+
+  // Per conversation, not per mount. This component stays mounted while the
+  // route swaps the session id, so a flag set by the first transcript would
+  // make every one after it animate — the exact scroll the flag exists to
+  // avoid, on every chat but the first.
+  useEffect(() => {
+    settledRef.current = false
+  }, [conversationId])
 
   useEffect(() => {
     const container = scrollRef.current

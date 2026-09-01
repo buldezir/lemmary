@@ -2,6 +2,7 @@ package chat
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -114,15 +115,25 @@ func sessionFilter(q SessionQuery) dbx.Expression {
 // ListMessages returns a session's turns in the order they happened.
 func ListMessages(app core.App, sessionID string, limit int) ([]*core.Record, error) {
 	records := []*core.Record{}
-	query := app.RecordQuery(MessagesCollection).
-		AndWhere(dbx.HashExp{"session": sessionID}).
-		OrderBy("seq ASC")
-	if limit > 0 {
-		query = query.Limit(int64(limit))
+	query := app.RecordQuery(MessagesCollection).AndWhere(dbx.HashExp{"session": sessionID})
+
+	if limit <= 0 {
+		if err := query.OrderBy("seq ASC").All(&records); err != nil {
+			return nil, err
+		}
+		return records, nil
 	}
-	if err := query.All(&records); err != nil {
+
+	// The newest `limit` turns, not the oldest, which is why the read is
+	// ordered backwards and reversed rather than simply limited. A cap has to
+	// drop the head of a transcript: the tail is the part the user is looking
+	// at, and the part the next question follows from. Limiting an ascending
+	// read returns the far end of a long session -- a stale window replayed to
+	// the model, under a question that answers something else.
+	if err := query.OrderBy("seq DESC").Limit(int64(limit)).All(&records); err != nil {
 		return nil, err
 	}
+	slices.Reverse(records)
 	return records, nil
 }
 

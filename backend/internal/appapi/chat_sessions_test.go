@@ -21,13 +21,13 @@ func TestParseChatListQueryDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if page != 1 || perPage != defaultListPageSize {
+	if page != 1 || perPage != chatListPageSize {
 		t.Fatalf("page=%d perPage=%d", page, perPage)
 	}
 	if q.UserID != "user1" || q.Kind != "" || q.DocumentID != "" {
 		t.Fatalf("unexpected query: %+v", q)
 	}
-	if q.Offset != 0 || q.Limit != defaultListPageSize {
+	if q.Offset != 0 || q.Limit != chatListPageSize {
 		t.Fatalf("offset=%d limit=%d", q.Offset, q.Limit)
 	}
 }
@@ -60,8 +60,8 @@ func TestParseChatListQueryClampsPerPage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if perPage != maxListPageSize {
-		t.Fatalf("perPage = %d, want %d", perPage, maxListPageSize)
+	if perPage != chatListPageSize {
+		t.Fatalf("perPage = %d, want %d", perPage, chatListPageSize)
 	}
 }
 

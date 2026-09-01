@@ -208,8 +208,15 @@ export function ChatSessionList({
       {!loading && sessions.length === 0 && (
         <p className="text-sm text-ink-faint">No chats yet.</p>
       )}
+      {/* The rail is never paged — one request carries every chat an account can
+          hold — so the list scrolls in place instead of running off the bottom
+          of the page. */}
       {sessions.length > 0 && (
-        <ul className={`flex flex-col gap-1.5 ${compact ? 'max-h-64 overflow-y-auto' : ''}`}>
+        <ul
+          className={`flex flex-col gap-1.5 overflow-y-auto ${
+            compact ? 'max-h-64' : 'max-h-[70vh]'
+          }`}
+        >
           {sessions.map((session) => (
             <ChatSessionRow
               key={session.id}

@@ -430,7 +430,7 @@ Research has no round or document limit. It keeps searching and reading until th
 
 Each mode is its own path — `/rag/search` and `/rag/research` — so the mode is carried by the URL and survives a reload, the back button, a bookmark and a shared link. They share the `/rag` parent, which is what lets one navigation entry cover both; `/rag` on its own redirects to Search.
 
-The mode can only be chosen before a chat has a turn. A transcript is a sequence: its answers were produced by one mode, and the next turn replays them to the model as its own prior work, so switching underneath would answer a later question in a way the earlier ones do not support. Once a chat exists the switch shows which mode it is in and stops being a link — starting a new chat is the way to the other one. A saved chat reopens on the path matching the mode it ran in.
+The mode can only be chosen before a chat has a turn. A transcript is a sequence: its answers were produced by one mode, and the next turn replays them to the model as its own prior work, so switching underneath would answer a later question in a way the earlier ones do not support. Once a chat exists the switch shows which mode it is in and stops being a link — starting a new chat is the way to the other one. The server enforces this too: a turn sent under a mode the chat is not in is a 409, and opening `/rag/search/<research-chat>` redirects to the path that matches. A saved chat reopens on the path matching the mode it ran in.
 
 Configure **Search provider/model**, **Deep search languages**, and **Search context window** in Settings.
 
@@ -452,6 +452,8 @@ Managing saved chats:
 | `GET /api/app/chats/{id}` | One chat with its messages |
 | `PATCH /api/app/chats/{id}` | Rename (`{"title": "..."}`) |
 | `DELETE /api/app/chats/{id}` | Delete the chat and its messages |
+
+The chat list is not paged: one request carries every chat an account can hold, and the sidebar scrolls. A transcript read is capped, and the cap drops the oldest turns — `truncated` says the head was lost, never the live end.
 
 Limits:
 

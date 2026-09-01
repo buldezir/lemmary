@@ -102,6 +102,28 @@ export function SearchPage() {
 
   useEffect(() => () => runRef.current?.abort(), [])
 
+  /**
+   * Ends the run that owns the screen.
+   *
+   * Switching conversations does not unmount this page — the session id lives
+   * on a child route — so without this a run started in one chat keeps painting
+   * its steps and its streamed draft over whichever transcript replaced it,
+   * and keeps that chat's composer disabled until the provider is done.
+   *
+   * The server drops a cancelled research turn rather than storing it, but the
+   * abort can land in the moment after it was saved, so the rail is refreshed
+   * either way: a chat that did get written is in the list rather than missing
+   * until the next full reload.
+   */
+  const endRun = useCallback(() => {
+    if (!runRef.current) {
+      return
+    }
+    runRef.current.abort()
+    runRef.current = null
+    void sessions.reload()
+  }, [sessions])
+
   const onSessionSettled = useCallback(
     (session: ChatSession, created: boolean) => {
       // Merged in straight away so the row is there with the transcript, not a
@@ -219,13 +241,39 @@ export function SearchPage() {
 
   const chat = useChatSession({
     sessionId,
-    load: getChatSession,
+    // A document chat's id must not open here: its transcript is about one
+    // document's OCR text, and replaying it into a search turn asks the archive
+    // a question that was never put to it. The Ask AI page makes the mirror
+    // check.
+    load: async (id) => {
+      const detail = await getChatSession(id)
+      if (detail.session.kind !== 'search') {
+        throw new Error('That chat belongs to a different page.')
+      }
+      return detail
+    },
     send: ({ sessionId: id, content }) =>
       mode === 'research'
         ? runResearch(id, content)
         : deepSearch({ sessionId: id, content, mode: 'search' }),
     onSessionSettled,
   })
+
+  // The path says which mode, but a chat's stored mode is what it actually is,
+  // and the two can disagree — a hand-edited URL, or a link to /rag/search/<id>
+  // for a chat that turns out to be Research. Corrected here rather than obeyed,
+  // so the next turn is not sent under a mode the server would refuse.
+  const loadedMode = chat.session?.mode
+  useEffect(() => {
+    if (!sessionId || !loadedMode || loadedMode === mode) {
+      return
+    }
+    void navigate({
+      to: loadedMode === 'research' ? '/rag/research/$sessionId' : '/rag/search/$sessionId',
+      params: { sessionId },
+      replace: true,
+    })
+  }, [loadedMode, mode, navigate, sessionId])
 
   const rows = mergeChatSession(sessions.data ?? [], justSettled)
   const active = modes.find((item) => item.value === mode) ?? modes[0]
@@ -239,6 +287,7 @@ export function SearchPage() {
   // a different question than the one above it in the transcript.
   function openSession(session: ChatSession) {
     setRailOpen(false)
+    endRun()
     void navigate({
       to: session.mode === 'research' ? '/rag/research/$sessionId' : '/rag/search/$sessionId',
       params: { sessionId: session.id },
@@ -247,6 +296,7 @@ export function SearchPage() {
 
   function startNewChat() {
     setRailOpen(false)
+    endRun()
     if (sessionId) {
       void navigate({ to: basePath })
       return
@@ -275,6 +325,9 @@ export function SearchPage() {
     try {
       setRailBusy(true)
       setRailError('')
+      if (session.id === sessionId) {
+        endRun()
+      }
       await deleteChatSession(session.id)
       setJustSettled((current) => (current?.id === session.id ? null : current))
       await sessions.reload()
@@ -351,6 +404,7 @@ export function SearchPage() {
           )}
           <ChatPanel>
             <ChatTranscript
+              conversationId={sessionId}
               turns={chat.turns}
               loading={chat.loading}
               sending={chat.sending}

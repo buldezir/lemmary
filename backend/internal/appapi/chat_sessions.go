@@ -39,15 +39,27 @@ type chatRenameRequest struct {
 	Title string `json:"title"`
 }
 
+// chatListPageSize is how many chats one response carries. It follows
+// MaxSessionsPerUser rather than the document list's 12, because the two lists
+// are not the same shape: documents are a grid the user pages through, and the
+// chat rail is a sidebar that scrolls. An account cannot hold more sessions
+// than this, so one request is always the whole list and a chat can never go
+// missing from the rail without a signal.
+//
+// The document-title lookup below is bounded by the same number. It only runs
+// for document chats, and both rails filter, so the worst case belongs to an
+// unfiltered listing rather than to either page.
+const chatListPageSize = chat.MaxSessionsPerUser
+
 // parseChatListQuery reads the list filters off a query string.
 //
 // Takes url.Values rather than the request event so it can be tested without
 // building one.
 func parseChatListQuery(values url.Values, ownerID string) (chat.SessionQuery, int, int, error) {
 	page := positiveIntValue(values, "page", 1)
-	perPage := positiveIntValue(values, "perPage", defaultListPageSize)
-	if perPage > maxListPageSize {
-		perPage = maxListPageSize
+	perPage := positiveIntValue(values, "perPage", chatListPageSize)
+	if perPage > chatListPageSize {
+		perPage = chatListPageSize
 	}
 
 	q := chat.SessionQuery{
@@ -102,7 +114,7 @@ func handleListChats(app core.App) func(*core.RequestEvent) error {
 		for _, record := range records {
 			info := chat.ToSessionInfo(record)
 			// A document title is worth one primary-key lookup per row here --
-			// at most maxListPageSize of them, against a client that would
+			// at most chatListPageSize of them, against a client that would
 			// otherwise make the same lookups over HTTP. Skipped on error: the
 			// document may be mid-cascade, or belong to another account.
 			if info.Document != "" {
@@ -144,7 +156,9 @@ func handleGetChat(app core.App) func(*core.RequestEvent) error {
 		}
 		truncated := len(records) > chat.MaxReplayMessages
 		if truncated {
-			records = records[:chat.MaxReplayMessages]
+			// Drop the oldest, keep the live end: the extra row came off the
+			// head, and `truncated` is only honest if that is the side lost.
+			records = records[len(records)-chat.MaxReplayMessages:]
 		}
 
 		messages := make([]chat.MessageInfo, 0, len(records))

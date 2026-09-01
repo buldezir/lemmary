@@ -54,7 +54,15 @@ export type ChatTurn = {
   documents?: SearchDocumentHit[]
 }
 
-type ChatSessionListResponse = { items?: ChatSession[] }
+type ChatSessionListResponse = { items?: ChatSession[]; totalItems?: number }
+
+/**
+ * How many chats the rail asks for. The server caps a listing at the same
+ * number of sessions an account may hold, so one request is always the whole
+ * list and the sidebar scrolls rather than paging — asking explicitly keeps
+ * that from resting on whatever the server's default happens to be.
+ */
+const chatListPageSize = 500
 type ChatSessionResponse = { session: ChatSession }
 
 export async function listChatSessions(params?: {
@@ -68,8 +76,8 @@ export async function listChatSessions(params?: {
   if (params?.documentId) {
     query.set('document', params.documentId)
   }
-  const suffix = query.size > 0 ? `?${query.toString()}` : ''
-  const data = await apiFetch<ChatSessionListResponse>(`/api/app/chats${suffix}`, {
+  query.set('perPage', String(chatListPageSize))
+  const data = await apiFetch<ChatSessionListResponse>(`/api/app/chats?${query.toString()}`, {
     fallbackError: 'Failed to load chats',
   })
   return data.items ?? []

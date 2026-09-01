@@ -208,6 +208,7 @@ export function DocumentAskPage() {
               )}
               <ChatPanel>
                 <ChatTranscript
+                  conversationId={sessionId}
                   turns={chat.turns}
                   loading={chat.loading}
                   sending={chat.sending}

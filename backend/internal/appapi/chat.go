@@ -59,29 +59,36 @@ func parseSearchMode(raw string) string {
 	return chat.ModeSearch
 }
 
-// loadChatHistory returns the prior turns of an existing session, or nil for a
-// new one.
+// loadChatHistory returns the prior turns of an existing session, along with
+// the session itself. Both are nil for a new conversation.
 //
 // A session of the wrong kind, or one attached to a different document, is
 // reported as missing rather than forbidden: 404 for every mismatch means a
 // document session's id cannot be probed through the search endpoint, and the
 // document check in particular stops a conversation started against document A
 // from being continued against B's OCR text under A's title.
-func loadChatHistory(app core.App, ownerID, sessionID string, kind chat.Kind, documentID string) ([]ai.ChatMessage, error) {
+//
+// The session comes back so a caller can check what only it knows about --
+// deep search uses it for the mode the conversation is already in.
+func loadChatHistory(app core.App, ownerID, sessionID string, kind chat.Kind, documentID string) (*core.Record, []ai.ChatMessage, error) {
 	if sessionID == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 	session, err := chat.FindOwnedSession(app, ownerID, sessionID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if session.GetString("kind") != string(kind) {
-		return nil, chat.ErrNotFound
+		return nil, nil, chat.ErrNotFound
 	}
 	if documentID != "" && session.GetString("document") != documentID {
-		return nil, chat.ErrNotFound
+		return nil, nil, chat.ErrNotFound
 	}
-	return chat.History(app, session.Id)
+	history, err := chat.History(app, session.Id)
+	if err != nil {
+		return nil, nil, err
+	}
+	return session, history, nil
 }
 
 // writeChatSessionError maps a session lookup failure onto a response.
@@ -156,7 +163,7 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 			return writeOwnerError(e, err)
 		}
 
-		history, err := loadChatHistory(app, ownerID, req.SessionID, chat.KindDocument, documentID)
+		_, history, err := loadChatHistory(app, ownerID, req.SessionID, chat.KindDocument, documentID)
 		if err != nil {
 			return writeChatSessionError(e, app, err)
 		}
