@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log/slog"
 	"sync"
 
@@ -209,9 +210,19 @@ func RegisterHooks(app core.App, rt *Runtime) {
 		// the app must come up so an admin can go and look. The environment was
 		// already validated before the app existed, so anything reaching here
 		// is a database problem rather than a misconfiguration.
+		//
+		// Fails the boot rather than warning, and it is the one place in this
+		// hook that does. Everywhere else "the app must come up so an admin can
+		// go and look" is the right call — but on a managed instance there is
+		// nobody to look: the Providers, Models and Duplicates sections are not
+		// rendered and the API refuses to write them. Warning here would serve
+		// stale routing indefinitely, with the operator's own key possibly
+		// rotated out from under it, and no way to repair it from inside. That
+		// is the same argument AIEnvFromEnv makes for refusing to start on an
+		// incomplete environment, applied to the write that environment implies.
 		if rt.env.Managed {
 			if err := ApplyManaged(e.App, rt.env); err != nil {
-				e.App.Logger().Warn("applying managed AI configuration failed; keeping stored settings", slog.Any("error", err))
+				return fmt.Errorf("apply managed AI configuration: %w", err)
 			}
 		}
 

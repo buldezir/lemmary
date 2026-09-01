@@ -29,6 +29,15 @@ type ProviderSpec struct {
 
 func (s ProviderSpec) Configured() bool { return strings.TrimSpace(s.APIKey) != "" }
 
+// Requested reports whether the environment named this provider at all.
+//
+// Distinct from Configured, and the distinction is load-bearing: an SDK named
+// without a credential is a mistake, not an absence, and conflating the two is
+// how OCR silently ends up on the language model. The parser rejects the case
+// where they can disagree -- a second endpoint with no key -- so past it,
+// Requested is what decides which provider serves OCR.
+func (s ProviderSpec) Requested() bool { return strings.TrimSpace(s.SDK) != "" }
+
 // Bootstrap is the whole of what the environment can say about AI: one language
 // model, and optionally a separate provider for OCR.
 //
@@ -48,15 +57,20 @@ func (b Bootstrap) Configured() bool { return b.LLM.Configured() || b.OCR.Config
 // SharesOneProvider is true when OCR runs on the same endpoint as the language
 // model, which is both the default and the common case: an OpenAI-compatible
 // key configures the entire install.
+//
+// Asks whether an OCR SDK was named, never whether it has a key. Keying this on
+// Configured meant OCR_SDK=google_vision with no OCR_API_KEY read as "no OCR
+// provider asked for", so it bound OCR to the language model and billed the LLM
+// for every page -- and it made the managed check for that case unreachable.
 func (b Bootstrap) SharesOneProvider() bool {
-	return !b.OCR.Configured() || b.OCR.SDK == b.LLM.SDK
+	return !b.OCR.Requested() || b.OCR.SDK == b.LLM.SDK
 }
 
 // OCRModel is the model OCR actually runs with once the default has been
 // resolved: the OCR provider's when one was named, and the language model's
 // otherwise. Empty for Google Vision, which reads a document without one.
 func (b Bootstrap) OCRModel() string {
-	if b.OCR.Configured() {
+	if b.OCR.Requested() {
 		return b.OCR.Model
 	}
 	return b.LLM.Model
@@ -64,7 +78,7 @@ func (b Bootstrap) OCRModel() string {
 
 // OCRSDK is the SDK serving OCR once the default has been resolved.
 func (b Bootstrap) OCRSDK() string {
-	if b.OCR.Configured() {
+	if b.OCR.Requested() {
 		return b.OCR.SDK
 	}
 	return b.LLM.SDK

@@ -80,8 +80,13 @@ const (
 // it can be acted on — the panel's create ladder ends in a health check, so a
 // bad seed fails the provision instead of handing over a broken workspace.
 func AIEnvFromEnv() (AIEnv, error) {
+	managed, err := strictBool(EnvManaged)
+	if err != nil {
+		return AIEnv{}, err
+	}
+
 	env := AIEnv{
-		Managed:                getEnvBool(EnvManaged, false),
+		Managed:                managed,
 		SearchContextTokens:    envIntDefault("SEARCH_CONTEXT_TOKENS", DefaultSearchContextTokens, 1),
 		NearDuplicateEnabled:   getEnvBool("NEAR_DUPLICATE_DETECTION_ENABLED", false),
 		NearDuplicateThreshold: getEnvFloat("NEAR_DUPLICATE_THRESHOLD", DefaultNearDuplicateThreshold),
@@ -109,6 +114,30 @@ func AIEnvFromEnv() (AIEnv, error) {
 		}
 	}
 	return env, nil
+}
+
+// strictBool refuses a value it cannot read, rather than falling back to off.
+//
+// The same judgement vault.envBool makes, for a stronger reason. Everywhere else
+// in this file an unreadable value falls back, because a typo in a timeout must
+// not become a zero-second HTTP deadline. This flag is the billing lock: read as
+// "off", AI_MANAGED=yes leaves the Settings page editable and the environment
+// unapplied, and the operator finds out from an invoice. It also accepts the
+// same spellings .env.example documents for the VAULT_* family, so that
+// 1/true/yes/on mean here what they mean four blocks further down the file.
+func strictBool(key string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "":
+		return false, nil
+	case "1", "true", "yes", "on":
+		return true, nil
+	case "0", "false", "no", "off":
+		return false, nil
+	default:
+		return false, fmt.Errorf(
+			"%s=%q is not a boolean; use 1/true/yes/on or 0/false/no/off, or leave it unset",
+			key, os.Getenv(key))
+	}
 }
 
 func parseLLM() (aiprovider.ProviderSpec, error) {
@@ -162,6 +191,16 @@ func parseOCR(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error) {
 		if baseURL == "" {
 			baseURL = llm.BaseURL
 		}
+	} else if key == "" {
+		// A second endpoint with nothing to authenticate to it. Rejected in
+		// both modes, and rejected here rather than in validateManaged, because
+		// the damage is worse off managed mode than on it: the environment
+		// seeds once and is then inert, so OCR would silently bind to the
+		// language model, bill it for every page, and never prompt the wizard
+		// to ask about the provider that was actually asked for.
+		return aiprovider.ProviderSpec{}, fmt.Errorf(
+			"%s=%q needs %s; it is a different endpoint from %s=%q and cannot borrow its key",
+			EnvOCRSDK, sdk, EnvOCRAPIKey, EnvAISDK, llm.SDK)
 	}
 	if aiprovider.RequiresOCRModel(sdk) && model == "" {
 		if sdk == llm.SDK {
@@ -191,9 +230,11 @@ func (e AIEnv) validateManaged() error {
 	if e.Providers.LLM.Model == "" {
 		return fmt.Errorf("%s=1 requires %s", EnvManaged, EnvAIModel)
 	}
-	if !e.Providers.SharesOneProvider() && !e.Providers.OCR.Configured() {
-		return fmt.Errorf("%s=%q requires %s", EnvOCRSDK, e.Providers.OCR.SDK, EnvOCRAPIKey)
-	}
+	// Nothing here about OCR. parseOCR already refuses a named OCR provider with
+	// no key, in both modes, so by this point OCR either has its own credential
+	// or shares the language model's -- and the language model has one, checked
+	// above. A clause here would be unreachable, and an unreachable check reads
+	// as protection that is not there.
 	return nil
 }
 

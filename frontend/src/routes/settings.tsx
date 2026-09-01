@@ -95,7 +95,14 @@ export function SettingsPage() {
   // bindings and duplicate detection: the container's environment rewrites them
   // on every boot, and the API refuses to change them. Rendering the fields
   // anyway would offer an edit that silently disappears at the next restart.
+  //
+  // Unknown counts as managed. The flag arrives a moment after the first paint,
+  // and treating that moment as "not managed" would flash the operator-owned
+  // sections into view; treating a failed meta request that way would leave them
+  // there for good, and Save would then send fields the server rejects — which
+  // fails the whole patch and loses the timeout edit next to them.
   const { aiManaged } = useAppMeta()
+  const aiEditable = aiManaged === false
   const [form, setForm] = useState<FormState | null>(null)
   const [providers, setProviders] = useState<AIProvider[]>([])
   const [draft, setDraft] = useState<ProviderDraft>(emptyDraft())
@@ -234,9 +241,8 @@ export function SettingsPage() {
         // Omitted rather than sent unchanged on a managed instance: the server
         // refuses the whole patch if it names one of these, so including them
         // would fail the save of the fields that are still editable.
-        ...(aiManaged
-          ? {}
-          : {
+        ...(aiEditable
+          ? {
               ocr_provider_id: form.ocr_provider_id,
               ocr_model: form.ocr_model,
               extract_provider_id: form.extract_provider_id,
@@ -248,7 +254,8 @@ export function SettingsPage() {
               search_context_tokens: searchContextTokens,
               near_duplicate_detection_enabled: form.near_duplicate_detection_enabled,
               near_duplicate_threshold: nearThreshold,
-            }),
+            }
+          : {}),
       })
 
       setForm(formFromSettings(settings))
@@ -273,14 +280,14 @@ export function SettingsPage() {
         <p className="mt-1 text-sm text-ink-soft">
           Runtime configuration for OCR, AI, and the worker. Changes apply immediately.
         </p>
-        {aiManaged && (
+        {!aiEditable && (
           <p className="mt-2 text-sm text-ink-soft">
             AI providers and models are set by your hosting provider and are not editable here.
           </p>
         )}
       </div>
 
-      {!aiManaged && (
+      {aiEditable && (
         <section className={`${sectionClassName} mb-5`}>
           <h2 className={sectionTitleClassName}>Providers</h2>
           <ul className="mb-4 flex flex-col gap-2">
@@ -422,7 +429,7 @@ export function SettingsPage() {
       )}
 
       <form className="flex flex-col gap-5" onSubmit={onSubmit}>
-        {!aiManaged && (
+        {aiEditable && (
           <section className={sectionClassName}>
             <h2 className={sectionTitleClassName}>Models</h2>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -602,7 +609,7 @@ export function SettingsPage() {
           </p>
         </section>
 
-        {!aiManaged && (
+        {aiEditable && (
           <section className={sectionClassName}>
             <h2 className={sectionTitleClassName}>Duplicates</h2>
             <div className="grid gap-4 sm:grid-cols-2">

@@ -3,7 +3,6 @@ package appapi
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -18,6 +17,19 @@ var (
 	errAdminExists  = errors.New("an admin account already exists")
 	errInvalidAdmin = errors.New("invalid admin credentials")
 )
+
+// invalidAdmin is a rejection of what somebody typed, carrying the sentence to
+// show them and nothing else.
+//
+// Wrapping with %w around errInvalidAdmin would put "invalid admin credentials:
+// " in front of every one of these, and the setup wizard renders the message
+// verbatim — so the first thing a new admin saw was "invalid admin credentials:
+// Email is required.". Is() keeps errors.Is working for the caller that has to
+// tell bad input from a database failure.
+type invalidAdmin struct{ msg string }
+
+func (e invalidAdmin) Error() string        { return e.msg }
+func (e invalidAdmin) Is(target error) bool { return target == errInvalidAdmin }
 
 type setupStatusResponse struct {
 	NeedsAdmin    bool `json:"needs_admin"`
@@ -149,23 +161,23 @@ func CreateFirstAdmin(app core.App, email, password string) (superuserID, userID
 	return record.Id, userRecord.Id, nil
 }
 
-// validateAdminCredentials wraps every rejection in errInvalidAdmin so a caller
-// can tell "this input is wrong" — which an HTTP handler reports verbatim and
-// the boot-time bootstrap logs — from a database failure, which neither should
-// show to anyone.
+// validateAdminCredentials reports every rejection as an invalidAdmin, so a
+// caller can tell "this input is wrong" — which an HTTP handler reports verbatim
+// and the boot-time bootstrap logs — from a database failure, which neither
+// should show to anyone.
 func validateAdminCredentials(email, password string) error {
 	switch {
 	case email == "":
-		return fmt.Errorf("%w: Email is required.", errInvalidAdmin)
+		return invalidAdmin{"Email is required."}
 	case email == core.DefaultInstallerEmail:
-		return fmt.Errorf("%w: Invalid email address.", errInvalidAdmin)
+		return invalidAdmin{"Invalid email address."}
 	case password == "":
-		return fmt.Errorf("%w: Password is required.", errInvalidAdmin)
+		return invalidAdmin{"Password is required."}
 	case len(password) < 8:
-		return fmt.Errorf("%w: Password must be at least 8 characters.", errInvalidAdmin)
+		return invalidAdmin{"Password must be at least 8 characters."}
 	}
 	if _, err := mail.ParseAddress(email); err != nil {
-		return fmt.Errorf("%w: Invalid email address.", errInvalidAdmin)
+		return invalidAdmin{"Invalid email address."}
 	}
 	return nil
 }

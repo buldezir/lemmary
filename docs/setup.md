@@ -69,7 +69,7 @@ All variables live in `.env` at the project root (see `.env.example`).
 | `LIMIT_FILE_PAGES` | unset (unlimited) | Most pages in a single document. Can only **lower** the effective cap: a 1000-page ceiling applies to every install regardless (see [the page ceiling](#the-page-ceiling)), and no value here can raise it. |
 | `LIMIT_ADDITIONAL_USERS` | unset (unlimited) | Accounts beyond the admin account. Exactly one account is free, so `0` is a single-account instance. |
 | `VITE_POCKETBASE_URL` | `http://127.0.0.1:8090` | PocketBase API URL (frontend) |
-| `SETUP_ADMIN_EMAIL` | — | The first admin account, created on the first boot that finds none. Creates a `_superusers` record **and** the paired `users` account, exactly as the setup wizard does. Never resets a password that already exists. In a development build the SPA also signs itself in with this pair; a production bundle contains neither value. |
+| `SETUP_ADMIN_EMAIL` | — | The first admin account, created on the first boot that finds none. Creates a `_superusers` record **and** the paired `users` account, exactly as the setup wizard does. Never resets a password that already exists. In a development build the SPA also signs itself in with this pair; a production bundle contains neither value. **Commented out in `.env.example`** — uncommenting it in a served install would hand it an admin whose password is published in this repository. |
 | `SETUP_ADMIN_PASSWORD` | — | Its password, at least 8 characters. Readable from `docker inspect` and `/proc/<pid>/environ` for the life of the container, so this is for local and CI instances — a served install should use the wizard or `superuser upsert`. |
 
 #### Instance limits
