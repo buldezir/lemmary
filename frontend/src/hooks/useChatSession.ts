@@ -101,17 +101,20 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
       return
     }
 
+    const previous = ownedRef.current
     ownedRef.current = next
     const epoch = ++epochRef.current
 
     // The microtask keeps these setState calls out of the effect's synchronous
     // body, so switching conversations cannot cascade renders — the same shape
     // useAsync uses. A cancelled switch is caught by the epoch either way.
+    let started = false
     let cancelled = false
     void Promise.resolve().then(() => {
       if (cancelled || epochRef.current !== epoch) {
         return
       }
+      started = true
 
       setSession(null)
       setTurns([])
@@ -151,6 +154,19 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
 
     return () => {
       cancelled = true
+      // Hand the claim back when the load never got as far as starting.
+      //
+      // React invokes an effect twice on mount in development, and the teardown
+      // in between cancels the queued load. Without this the second run would
+      // find the id already claimed, take the promotion no-op above, and a
+      // conversation opened directly by its URL would never load at all --
+      // visible only in a development build, since a production one mounts
+      // once. Gated on `started` because the promotion itself relies on a claim
+      // outliving its effect: the send sets ownedRef before navigating, and the
+      // teardown that follows must not undo it.
+      if (!started && ownedRef.current === next) {
+        ownedRef.current = previous
+      }
     }
   }, [sessionId])
 
