@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Link } from '@tanstack/react-router'
+import { useCallback, useEffect, useState } from 'react'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { ClientResponseError } from 'pocketbase'
 import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
@@ -13,6 +13,12 @@ import {
   type DocumentTypeRecord,
 } from '../lib/api/documents'
 import { activePeriod, periodRange } from '../lib/timeline'
+import {
+  documentQuerySearch,
+  hasActiveFilters,
+  parseDocumentQuery,
+  type DocumentQuery,
+} from '../lib/documentQuery'
 import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
 import { useAsync } from '../hooks/useAsync'
 import { DocumentCard } from '../components/DocumentCard'
@@ -29,15 +35,27 @@ const selectClassName =
 const reprocessModes: ReprocessMode[] = ['auto', 'full', 'extraction']
 
 export function IndexPage() {
+  // The filters are the URL, not state: reloading, bookmarking or sharing the
+  // page reproduces the list, and Back steps through the filters that made it.
+  // Validated but sparse: the URL only carries the filters that are set, so the
+  // defaults are filled back in here.
+  const query = parseDocumentQuery(useSearch({ from: '/' }))
+  const navigate = useNavigate({ from: '/' })
+  const {
+    q: debouncedSearch,
+    status: statusFilter,
+    from: dateFrom,
+    to: dateTo,
+    type: documentTypeFilter,
+    correspondent: correspondentFilter,
+    page,
+  } = query
+
   const [documents, setDocuments] = useState<DocumentRecord[]>([])
-  const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
-  const [documentTypeFilter, setDocumentTypeFilter] = useState('all')
-  const [correspondentFilter, setCorrespondentFilter] = useState('all')
-  const [page, setPage] = useState(1)
+  // The only filter with a copy outside the URL, because it is typed one letter
+  // at a time and the URL only gets the settled value.
+  const [search, setSearch] = useState(debouncedSearch)
+  const [syncedSearch, setSyncedSearch] = useState(debouncedSearch)
   const [totalItems, setTotalItems] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -48,6 +66,16 @@ export function IndexPage() {
   const [message, setMessage] = useState('')
   // Bumped whenever the library changes, to re-count the timeline.
   const [timelineVersion, setTimelineVersion] = useState(0)
+
+  // URL -> box, for Back/Forward and for a link opened with a term already in
+  // it. Adjusted during render rather than in an effect, so the box never paints
+  // one frame of the old term. syncedSearch is what makes this fire on a URL
+  // change only: a keystroke leaves it alone, so the typing is not overwritten
+  // before the debounce has had a chance to publish it.
+  if (syncedSearch !== debouncedSearch) {
+    setSyncedSearch(debouncedSearch)
+    setSearch(debouncedSearch)
+  }
 
   const filterOptions = useAsync(async () => {
     await ensureAuth()
@@ -62,13 +90,32 @@ export function IndexPage() {
   const documentTypes = filterOptions.data?.types ?? []
   const correspondents = filterOptions.data?.correspondents ?? []
 
+  /**
+   * Writes filters to the URL, which is what re-renders the list.
+   *
+   * A different filter is a different list, so it starts at page one unless the
+   * patch says otherwise. Discrete controls push a history entry — Back undoes
+   * the filter — while the search box replaces, so Back skips the whole phrase
+   * rather than walking back one keystroke at a time.
+   */
+  const updateQuery = useCallback(
+    (patch: Partial<DocumentQuery>, replace = false) => {
+      void navigate({
+        to: '/',
+        search: (current) => documentQuerySearch({ ...parseDocumentQuery(current), page: 1, ...patch }),
+        replace,
+      })
+    },
+    [navigate],
+  )
+
+  // Box -> URL, once the typing settles. Skipped while the two already agree,
+  // so the sync above cannot bounce back as a navigation.
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setDebouncedSearch(search)
-      setPage(1)
-    }, 300)
+    if (search === debouncedSearch) return
+    const timer = window.setTimeout(() => updateQuery({ q: search }, true), 300)
     return () => window.clearTimeout(timer)
-  }, [search])
+  }, [search, debouncedSearch, updateQuery])
 
   useEffect(() => {
     let active = true
@@ -205,21 +252,11 @@ export function IndexPage() {
   // From/To inputs, and the highlight is read back out of them.
   function onSelectPeriod(period: string | null) {
     const range = periodRange(period)
-    setDateFrom(range.from)
-    setDateTo(range.to)
-    setPage(1)
+    updateQuery({ from: range.from, to: range.to })
   }
 
-  const hasActiveFilters =
-    statusFilter !== 'all' ||
-    dateFrom !== '' ||
-    dateTo !== '' ||
-    documentTypeFilter !== 'all' ||
-    correspondentFilter !== 'all' ||
-    debouncedSearch !== ''
-
   return (
-    <section className="flex flex-col gap-6">
+    <section className="flex flex-col gap-4">
       <div className="flex items-end justify-between gap-4">
         <div>
           <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">Documents</h2>
@@ -233,12 +270,12 @@ export function IndexPage() {
         </Link>
       </div>
 
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
         <DocumentTimeline
           timeline={timeline.data}
           active={activePeriod(dateFrom, dateTo)}
           onSelect={onSelectPeriod}
-          className="order-last lg:order-first lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)] lg:w-52 lg:shrink-0 lg:overflow-y-auto"
+          className="order-last lg:order-first lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)] lg:w-44 lg:shrink-0 lg:overflow-y-auto"
         />
 
         {/* min-w-0 so the card grid can shrink instead of pushing the sidebar. */}
@@ -254,10 +291,7 @@ export function IndexPage() {
               />
               <select
                 value={statusFilter}
-                onChange={(event) => {
-                  setStatusFilter(event.target.value)
-                  setPage(1)
-                }}
+                onChange={(event) => updateQuery({ status: event.target.value })}
                 aria-label="Processing status"
                 className={`${selectClassName} sm:w-48`}
               >
@@ -276,10 +310,9 @@ export function IndexPage() {
                 <input
                   type="date"
                   value={dateFrom}
-                  onChange={(event) => {
-                    setDateFrom(event.target.value)
-                    setPage(1)
-                  }}
+                  // replace: a date field fires a change per digit typed into
+                  // the year, and none of those belong in history.
+                  onChange={(event) => updateQuery({ from: event.target.value }, true)}
                   className={selectClassName}
                 />
               </label>
@@ -288,10 +321,7 @@ export function IndexPage() {
                 <input
                   type="date"
                   value={dateTo}
-                  onChange={(event) => {
-                    setDateTo(event.target.value)
-                    setPage(1)
-                  }}
+                  onChange={(event) => updateQuery({ to: event.target.value }, true)}
                   className={selectClassName}
                 />
               </label>
@@ -300,10 +330,7 @@ export function IndexPage() {
                 value={documentTypeFilter}
                 allLabel="All types"
                 options={documentTypes.map((type) => ({ value: type.id, label: type.name }))}
-                onChange={(next) => {
-                  setDocumentTypeFilter(next)
-                  setPage(1)
-                }}
+                onChange={(next) => updateQuery({ type: next })}
               />
               <FilterCombobox
                 label="Correspondent"
@@ -313,10 +340,7 @@ export function IndexPage() {
                   value: correspondent.id,
                   label: correspondent.name,
                 }))}
-                onChange={(next) => {
-                  setCorrespondentFilter(next)
-                  setPage(1)
-                }}
+                onChange={(next) => updateQuery({ correspondent: next })}
               />
             </div>
           </div>
@@ -328,7 +352,7 @@ export function IndexPage() {
 
           {!loading && documents.length === 0 && (
             <div className="rounded-none border border-dashed border-line-strong bg-surface py-12 text-center">
-              {hasActiveFilters ? (
+              {hasActiveFilters(query) ? (
                 <p className="text-sm text-ink-soft">No documents match your filters.</p>
               ) : (
                 <>
@@ -401,7 +425,7 @@ export function IndexPage() {
                 totalPages={totalPages}
                 totalItems={totalItems}
                 pageSize={PAGE_SIZE}
-                onPageChange={setPage}
+                onPageChange={(next) => updateQuery({ page: next })}
               />
             </>
           )}

@@ -1,5 +1,12 @@
-import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router'
+import {
+  createRootRoute,
+  createRoute,
+  createRouter,
+  redirect,
+  type SearchSchemaInput,
+} from '@tanstack/react-router'
 import { ensureAuth, isAdmin } from './lib/auth'
+import { documentQuerySearch, parseDocumentQuery, type DocumentQueryInput } from './lib/documentQuery'
 import { RootLayout } from './components/RootLayout'
 import { IndexPage } from './routes/index'
 import { UploadPage } from './routes/upload'
@@ -35,9 +42,17 @@ const rootRoute = createRootRoute({
   component: RootLayout,
 })
 
+// The document list's filters live in the query string so a reload, a bookmark
+// and a shared link all reproduce the same list. validateSearch is what makes
+// them typed on the way in, and what defaults away anything hand-edited.
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
+  // The SearchSchemaInput brand is what tells the router that the filters are
+  // optional going in even though every one of them is set coming out — without
+  // it, every `to: '/'` in the app would have to spell out a full filter set.
+  validateSearch: (search: DocumentQueryInput & SearchSchemaInput) =>
+    documentQuerySearch(parseDocumentQuery(search)),
   component: IndexPage,
 })
 
