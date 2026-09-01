@@ -238,7 +238,7 @@ export function IndexPage() {
           timeline={timeline.data}
           active={activePeriod(dateFrom, dateTo)}
           onSelect={onSelectPeriod}
-          className="order-last lg:order-first lg:sticky lg:top-8 lg:w-52 lg:shrink-0"
+          className="order-last lg:order-first lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)] lg:w-52 lg:shrink-0 lg:overflow-y-auto"
         />
 
         {/* min-w-0 so the card grid can shrink instead of pushing the sidebar. */}
