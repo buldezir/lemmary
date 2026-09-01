@@ -19,22 +19,14 @@ import (
 )
 
 func main() {
-	// run, not main, owns the process exit status. boot.Result.Close carries
-	// cleanup that must not be skipped — the vault's final flush and the wipe
-	// of its plaintext working directory — and log.Fatal calls os.Exit, which
-	// skips deferred functions. So nothing between Prepare and the return
-	// below may exit the process directly.
+	// run owns the exit status so boot.Result.Close always runs (os.Exit skips defers).
 	os.Exit(run())
 }
 
 func run() int {
 	loadEnvFile()
 
-	// Before pocketbase.New on purpose. Encryption at rest needs the data
-	// directory placed somewhere the default cannot reach, and `vault init`
-	// has to answer this invocation with no database open at all; neither is
-	// expressible once the app exists. With encryption off this returns the
-	// zero Result and nothing below changes. See internal/boot.
+	// Before pocketbase.New; see internal/boot.
 	pre, err := boot.Prepare(os.Args[1:])
 	if err != nil {
 		log.Printf("boot: %v", err)
@@ -51,11 +43,8 @@ func run() int {
 		return pre.Code
 	}
 
-	// Before pocketbase.New for the same reason boot.Prepare is: it is a pure
-	// read of the environment with no database behind it, so a managed instance
-	// whose AI configuration is incomplete stops here rather than coming up and
-	// serving a workspace nobody inside it can repair. Off managed mode this
-	// only errors on a value that is malformed rather than merely absent.
+	// Before pocketbase.New: a managed instance with a bad AI environment must
+	// not come up; nobody inside it can repair it. See config.AIEnv.
 	aiEnv, err := config.AIEnvFromEnv()
 	if err != nil {
 		log.Printf("config: %v", err)
@@ -64,8 +53,7 @@ func run() int {
 
 	app := pocketbase.New()
 	if pre.DataDir != "" {
-		// Mirrors what pocketbase.New does, with the directory replaced: the
-		// data directory is fixed at construction and there is no setter.
+		// Data directory is fixed at construction; there is no setter.
 		app = pocketbase.NewWithConfig(pocketbase.Config{
 			DefaultDataDir: pre.DataDir,
 			DefaultDev:     osutils.IsProbablyGoRun(),
@@ -94,8 +82,7 @@ func run() int {
 
 	rt := config.NewRuntime(aiEnv)
 	appwire.Register(app, rt, publicDir, indexFallback)
-	// After appwire so anything the pre-boot step wires binds behind every
-	// core route and hook — the vault's gate has to sit outside them all.
+	// After appwire so the vault gate binds outside every core route.
 	if pre.Register != nil {
 		pre.Register(app)
 	}

@@ -9,41 +9,24 @@ import (
 	"lemmary/backend/internal/aiprovider"
 )
 
-// AIEnv is everything the environment says about AI, parsed once.
+// AIEnv is the AI configuration read from the environment, once, before the app exists.
 //
-// Two modes share this struct, and the mode is the whole of the difference:
+// Self-hosted (Managed false, the default): values seed the settings singleton
+// on first boot and are inert afterwards; the Settings page is then the authority.
 //
-//   - Self-hosted (Managed false, the default). The values below seed the
-//     settings singleton on the first boot and are inert afterwards. An
-//     operator who wants a test instance up without walking the setup wizard
-//     puts a key in .env; an operator who wants to change one later uses the
-//     Settings page, which is the only authority once the singleton exists.
-//
-//   - Managed (Managed true). The operator owns the AI bill, so these are
-//     re-applied on every boot and the tenant's Settings page does not offer
-//     Providers, Models or duplicate detection at all. What the container's
-//     environment says is what the instance runs.
-//
-// This replaced a digest-per-variable scheme (app_settings.env_applied) whose
-// only job was to let one code path serve both modes: a changed variable was
-// applied, an unchanged one left alone. Naming the modes makes the digests
-// unnecessary, and "which of these two rules am I under" is a question an
-// operator can answer, where "has this variable changed since the last boot
-// that acted on it" was not.
+// Managed (Managed true): the operator owns the AI bill, so these are re-applied
+// on every boot and the tenant cannot edit providers, model bindings, or duplicate
+// detection. Timeouts, retries, and language settings stay tenant-owned.
 type AIEnv struct {
 	Managed   bool
 	Providers aiprovider.Bootstrap
 
-	// Re-applied on every boot in managed mode, because each is a cost the
-	// operator carries rather than a preference the tenant holds: a research
-	// budget, and whether every upload pays for duplicate detection.
+	// Operator-owned in managed mode.
 	SearchContextTokens    int
 	NearDuplicateEnabled   bool
 	NearDuplicateThreshold float64
 
-	// Seed-only in both modes. Tuning an admin does, with no operator decision
-	// behind it, so managed mode leaves these editable rather than resetting
-	// somebody's timeout on every restart.
+	// Seed-only in both modes; managed mode does not reset these on restart.
 	OCRTimeout          time.Duration
 	AITimeout           time.Duration
 	WorkerTimeout       time.Duration
@@ -70,15 +53,8 @@ const (
 
 // AIEnvFromEnv parses the AI environment.
 //
-// It returns an error only in managed mode. Off it, an incomplete environment
-// is not a mistake — it is an install that will be configured from the setup
-// wizard, which is the ordinary self-hosted path. On it, an incomplete
-// environment is unrecoverable from inside the instance: the Settings page is
-// gone and nobody there can supply the missing key, so the honest answer is to
-// refuse to start and say which variable is wrong. That is the same judgement
-// vault.OptionsFromEnv makes about an unparseable boolean, and it lands where
-// it can be acted on — the panel's create ladder ends in a health check, so a
-// bad seed fails the provision instead of handing over a broken workspace.
+// Incomplete values error only in managed mode: the tenant cannot repair a
+// missing key from Settings. Off it, absence means the setup wizard will ask.
 func AIEnvFromEnv() (AIEnv, error) {
 	managed, err := strictBool(EnvManaged)
 	if err != nil {
@@ -117,14 +93,8 @@ func AIEnvFromEnv() (AIEnv, error) {
 }
 
 // strictBool refuses a value it cannot read, rather than falling back to off.
-//
-// The same judgement vault.envBool makes, for a stronger reason. Everywhere else
-// in this file an unreadable value falls back, because a typo in a timeout must
-// not become a zero-second HTTP deadline. This flag is the billing lock: read as
-// "off", AI_MANAGED=yes leaves the Settings page editable and the environment
-// unapplied, and the operator finds out from an invoice. It also accepts the
-// same spellings .env.example documents for the VAULT_* family, so that
-// 1/true/yes/on mean here what they mean four blocks further down the file.
+// AI_MANAGED is the billing lock: a typo read as "off" would leave Settings
+// editable and the environment unapplied. Same spellings as the VAULT_* flags.
 func strictBool(key string) (bool, error) {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
 	case "":
@@ -157,8 +127,7 @@ func parseLLM() (aiprovider.ProviderSpec, error) {
 	return spec, nil
 }
 
-// parseOCR reads the optional second provider. Unset means OCR runs on the
-// language model, which is what makes one API key a complete configuration.
+// parseOCR reads the optional second provider. Unset means OCR runs on the language model.
 func parseOCR(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error) {
 	sdk := strings.TrimSpace(os.Getenv(EnvOCRSDK))
 	key := strings.TrimSpace(os.Getenv(EnvOCRAPIKey))
@@ -167,9 +136,8 @@ func parseOCR(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error) {
 
 	if sdk == "" {
 		if key != "" || baseURL != "" || model != "" {
-			// Naming a key or a model without an SDK is a half-written
-			// intention, and silently folding it into the LLM provider would
-			// point OCR somewhere the operator did not ask for.
+			// A key or model without an SDK is a half-written intention; folding
+			// it into the LLM provider would point OCR somewhere not asked for.
 			return aiprovider.ProviderSpec{}, fmt.Errorf(
 				"%s, %s or %s is set without %s; name the OCR provider's SDK, or leave them all unset to run OCR on the %s provider",
 				EnvOCRAPIKey, EnvOCRBaseURL, EnvOCRModel, EnvOCRSDK, EnvAISDK)
@@ -192,12 +160,8 @@ func parseOCR(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error) {
 			baseURL = llm.BaseURL
 		}
 	} else if key == "" {
-		// A second endpoint with nothing to authenticate to it. Rejected in
-		// both modes, and rejected here rather than in validateManaged, because
-		// the damage is worse off managed mode than on it: the environment
-		// seeds once and is then inert, so OCR would silently bind to the
-		// language model, bill it for every page, and never prompt the wizard
-		// to ask about the provider that was actually asked for.
+		// Rejected in both modes here: off managed, the environment seeds once
+		// and OCR would silently bind to the language model.
 		return aiprovider.ProviderSpec{}, fmt.Errorf(
 			"%s=%q needs %s; it is a different endpoint from %s=%q and cannot borrow its key",
 			EnvOCRSDK, sdk, EnvOCRAPIKey, EnvAISDK, llm.SDK)
@@ -230,20 +194,12 @@ func (e AIEnv) validateManaged() error {
 	if e.Providers.LLM.Model == "" {
 		return fmt.Errorf("%s=1 requires %s", EnvManaged, EnvAIModel)
 	}
-	// Nothing here about OCR. parseOCR already refuses a named OCR provider with
-	// no key, in both modes, so by this point OCR either has its own credential
-	// or shares the language model's -- and the language model has one, checked
-	// above. A clause here would be unreachable, and an unreachable check reads
-	// as protection that is not there.
+	// parseOCR already refuses a named OCR provider with no key.
 	return nil
 }
 
-// Defaults is the Config an install starts from: the environment's values over
-// the code defaults, with everything the environment no longer speaks to left
-// at its zero value for the Settings page to fill in.
-//
-// Also the fallback when the settings record cannot be read, which is why it
-// must never return something unusable.
+// Defaults is the Config an install starts from, and the fallback when the
+// settings record cannot be read — so it must never return something unusable.
 func (e AIEnv) Defaults() Config {
 	return Config{
 		OCRModel:                      e.Providers.OCRModel(),

@@ -88,19 +88,9 @@ function emptyDraft(sdk: ProviderSDK = 'openai'): ProviderDraft {
   return { sdk, alias: '', base_url: SDK_DEFAULT_BASE[sdk], api_key: '' }
 }
 
-// Admin access is enforced by the route's beforeLoad guard, so this page can
-// assume the caller is an admin.
+// Admin access is enforced by the route's beforeLoad guard.
 export function SettingsPage() {
-  // On a managed instance the hosting provider owns the providers, the model
-  // bindings and duplicate detection: the container's environment rewrites them
-  // on every boot, and the API refuses to change them. Rendering the fields
-  // anyway would offer an edit that silently disappears at the next restart.
-  //
-  // Unknown counts as managed. The flag arrives a moment after the first paint,
-  // and treating that moment as "not managed" would flash the operator-owned
-  // sections into view; treating a failed meta request that way would leave them
-  // there for good, and Save would then send fields the server rejects — which
-  // fails the whole patch and loses the timeout edit next to them.
+  // unknown/failed meta counts as managed; see AppMeta.aiManaged
   const { aiManaged } = useAppMeta()
   const aiEditable = aiManaged === false
   const [form, setForm] = useState<FormState | null>(null)
@@ -238,9 +228,7 @@ export function SettingsPage() {
         openai_timeout_sec: openAITimeout,
         worker_timeout_sec: workerTimeout,
         worker_max_retries: maxRetries,
-        // Omitted rather than sent unchanged on a managed instance: the server
-        // refuses the whole patch if it names one of these, so including them
-        // would fail the save of the fields that are still editable.
+        // Omit on a managed instance: naming these fails the whole patch.
         ...(aiEditable
           ? {
               ocr_provider_id: form.ocr_provider_id,

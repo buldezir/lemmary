@@ -9,17 +9,12 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// DefaultExtractModel is the model an install falls back to when nothing names
-// one. It is the only copy: it used to be written out at three call sites, and
-// the three had already begun to disagree about which of them was the default.
+// DefaultExtractModel is the fallback when nothing names a model. One copy so
+// call sites cannot disagree.
 const DefaultExtractModel = "gpt-5.6-luna"
 
-// ProviderSpec is one endpoint the environment asks for: which SDK speaks to
-// it, the credential, where it lives, and the model to use on it.
-//
-// An empty APIKey means "the environment did not ask for this provider", which
-// is not an error outside managed mode — it is an install that intends to be
-// configured from the setup wizard.
+// An empty APIKey means the environment did not ask for this provider, which
+// is not an error outside managed mode — the setup wizard will ask.
 type ProviderSpec struct {
 	SDK     string
 	APIKey  string
@@ -29,46 +24,27 @@ type ProviderSpec struct {
 
 func (s ProviderSpec) Configured() bool { return strings.TrimSpace(s.APIKey) != "" }
 
-// Requested reports whether the environment named this provider at all.
-//
-// Distinct from Configured, and the distinction is load-bearing: an SDK named
-// without a credential is a mistake, not an absence, and conflating the two is
-// how OCR silently ends up on the language model. The parser rejects the case
-// where they can disagree -- a second endpoint with no key -- so past it,
-// Requested is what decides which provider serves OCR.
+// Requested is whether an SDK was named, distinct from Configured (has a key).
+// Conflating them is how OCR silently ends up on the language model.
 func (s ProviderSpec) Requested() bool { return strings.TrimSpace(s.SDK) != "" }
 
-// Bootstrap is the whole of what the environment can say about AI: one language
-// model, and optionally a separate provider for OCR.
-//
-// Two providers rather than the previous three SDK-specific families, because
-// three families forced every reader — including a second repository's console
-// hint — to work out which of nine keys would win. Here the shape answers it:
-// the LLM serves extraction, chat and Deep Search, and OCR runs on whichever
-// provider OCR names, defaulting to the LLM's.
+// Bootstrap is one language model and an optional separate OCR provider.
+// The LLM serves extraction, chat and Deep Search; OCR defaults to the LLM.
 type Bootstrap struct {
 	LLM ProviderSpec
 	OCR ProviderSpec
 }
 
-// Configured reports whether the environment asked for anything at all.
 func (b Bootstrap) Configured() bool { return b.LLM.Configured() || b.OCR.Configured() }
 
-// SharesOneProvider is true when OCR runs on the same endpoint as the language
-// model, which is both the default and the common case: an OpenAI-compatible
-// key configures the entire install.
-//
-// Asks whether an OCR SDK was named, never whether it has a key. Keying this on
-// Configured meant OCR_SDK=google_vision with no OCR_API_KEY read as "no OCR
-// provider asked for", so it bound OCR to the language model and billed the LLM
-// for every page -- and it made the managed check for that case unreachable.
+// SharesOneProvider is true when OCR uses the LLM's endpoint (the default).
+// Keys on whether an OCR SDK was named, never on whether it has a key.
 func (b Bootstrap) SharesOneProvider() bool {
 	return !b.OCR.Requested() || b.OCR.SDK == b.LLM.SDK
 }
 
-// OCRModel is the model OCR actually runs with once the default has been
-// resolved: the OCR provider's when one was named, and the language model's
-// otherwise. Empty for Google Vision, which reads a document without one.
+// OCRModel is the OCR provider's model, or the LLM's when OCR was not named.
+// Empty for Google Vision, which reads a document without a model.
 func (b Bootstrap) OCRModel() string {
 	if b.OCR.Requested() {
 		return b.OCR.Model
@@ -76,7 +52,6 @@ func (b Bootstrap) OCRModel() string {
 	return b.LLM.Model
 }
 
-// OCRSDK is the SDK serving OCR once the default has been resolved.
 func (b Bootstrap) OCRSDK() string {
 	if b.OCR.Requested() {
 		return b.OCR.SDK
@@ -84,15 +59,10 @@ func (b Bootstrap) OCRSDK() string {
 	return b.LLM.SDK
 }
 
-// Apply writes the bootstrap onto the provider collection and the settings
-// record, and is safe to call repeatedly.
-//
-// Repeatable is the point. Managed mode calls this on every boot, so a provider
-// is matched by its default alias and updated in place rather than added
-// beside itself; a fleet restarted a hundred times must not accumulate a
-// hundred "OpenAI 2" rows. The caller saves the settings record — this only
-// stages the bindings on it, so that seeding a brand-new singleton stays one
-// write.
+// Apply writes the bootstrap onto providers and settings, and is safe to call
+// repeatedly: managed mode does this every boot, matching by default alias so
+// restarts do not accumulate duplicate rows. The caller saves settings; this
+// only stages the bindings.
 func Apply(app core.App, settings *core.Record, b Bootstrap) error {
 	if settings == nil || !b.Configured() {
 		return nil
@@ -107,10 +77,8 @@ func Apply(app core.App, settings *core.Record, b Bootstrap) error {
 		llmID = id
 	}
 
-	// The same endpoint under a second name would be a second row carrying the
-	// same credential, and the Settings page would show the duplicate without
-	// being able to explain it. So a separate row is created only for an OCR
-	// provider that really is a different endpoint.
+	// Separate row only when OCR is a different endpoint; otherwise Settings
+	// would show a duplicate credential with no explanation.
 	ocrID := llmID
 	if b.OCR.Configured() && !b.SharesOneProvider() {
 		id, err := upsertProvider(app, b.OCR)
@@ -140,13 +108,9 @@ func Apply(app core.App, settings *core.Record, b Bootstrap) error {
 	return nil
 }
 
-// upsertProvider creates the provider for spec.SDK, or updates the one already
-// carrying that SDK's default alias.
-//
-// Matching by alias rather than by SDK is deliberate and matches what the
-// retired env-apply path did: an admin who renamed a provider owns it, and a
-// boot that silently reclaimed the rename would undo an edit made in the UI.
-// A renamed provider therefore gets a fresh row rather than a hijacked one.
+// upsertProvider creates or updates the provider carrying spec.SDK's default alias.
+// Matching by alias rather than SDK: an admin who renamed a provider owns it;
+// a boot that reclaimed the rename would undo a UI edit.
 func upsertProvider(app core.App, spec ProviderSpec) (string, error) {
 	alias := DefaultAlias(spec.SDK)
 	record, err := FindByAlias(app, alias)

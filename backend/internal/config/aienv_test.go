@@ -189,9 +189,8 @@ func TestAnEmptyEnvironmentIsFineUntilItIsManaged(t *testing.T) {
 	}
 }
 
-// AI_MANAGED is the billing lock, so it takes the same spellings .env.example
-// documents for VAULT_*, and refuses anything else rather than reading it as
-// off.
+// AI_MANAGED accepts the same 1/true/yes/on spellings as VAULT_*, and refuses
+// anything else rather than reading it as off.
 func TestManagedAcceptsTheDocumentedBooleans(t *testing.T) {
 	for _, on := range []string{"1", "true", "yes", "on", "TRUE", " on "} {
 		clearAIEnv(t)

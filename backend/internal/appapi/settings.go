@@ -53,15 +53,8 @@ type settingsPatchRequest struct {
 	NearDuplicateThreshold        *float64 `json:"near_duplicate_threshold"`
 }
 
-// touchesManaged reports whether the patch reaches a field AI_MANAGED puts
-// under the operator's control — the same set ApplyManaged rewrites on every
-// boot, and no more. Accepting one of these silently would be worse than
-// refusing it: the edit would appear to work and be gone after the next
-// restart.
-//
-// Timeouts, retries, the languages and the prompt version are absent on
-// purpose. They are tuning with no operator decision behind them, so a managed
-// tenant keeps them.
+// touchesManaged is true for the same fields ApplyManaged rewrites. Timeouts,
+// retries, languages and the prompt version are tenant-owned; see AIEnv.
 func (r settingsPatchRequest) touchesManaged() bool {
 	return r.OCRProviderID != nil ||
 		r.OCRModel != nil ||

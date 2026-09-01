@@ -12,33 +12,25 @@ import (
 	"lemmary/backend/internal/ocr"
 )
 
-// Snapshot is an immutable view of the live runtime config and clients.
 type Snapshot struct {
 	Cfg         Config
 	OCR         ocr.Provider
 	AI          ai.Extractor
 	Chatter     ai.Chatter
 	SearchAgent ai.SearchAgent
-	// Splitter proposes document boundaries for the split-documents upload. It
-	// shares the extraction provider: both reason over document text.
+	// Shares the extraction provider: both reason over document text.
 	Splitter ai.Splitter
 }
 
-// Runtime holds the process-global reloadable config and provider clients.
 type Runtime struct {
-	// reloadMu serializes whole Reload calls (DB read + client build +
-	// publish). Without it, two closely-spaced settings saves can race and the
-	// goroutine that read the older record may publish last, serving a stale
-	// provider or API key until the next save.
+	// Serializes whole Reload calls. Without it, two closely-spaced saves can
+	// race and the goroutine that read the older record may publish last.
 	reloadMu sync.Mutex
 	mu       sync.RWMutex
 	snap     Snapshot
 
-	// env is parsed once, before the app exists, and never changes afterwards
-	// — so it needs no lock. It rides here because the Runtime is already
-	// threaded to everything that has to know whether this instance is managed:
-	// the settings and provider endpoints that refuse writes, and the meta
-	// endpoint the SPA reads to decide what to render.
+	// Parsed once before the app exists; never changes, so no lock. Rides here
+	// because Runtime is already threaded to the refuse-write endpoints and /meta.
 	env AIEnv
 }
 
@@ -49,11 +41,8 @@ func NewRuntime(env AIEnv) *Runtime {
 	}
 }
 
-// Env is the AI environment this process was started with.
 func (r *Runtime) Env() AIEnv { return r.env }
 
-// Managed reports whether the operator owns AI configuration, in which case the
-// Settings page does not offer it and the API refuses to change it.
 func (r *Runtime) Managed() bool { return r.env.Managed }
 
 func (r *Runtime) Snapshot() Snapshot {
@@ -62,9 +51,8 @@ func (r *Runtime) Snapshot() Snapshot {
 	return r.snap
 }
 
-// Reload reads settings from the DB and rebuilds OCR/AI clients.
-// If the DB settings are unavailable, falls back to env defaults so the process stays up.
-// Missing OCR/AI keys soft-fail: config is still updated and the process stays up.
+// Reload rebuilds OCR/AI clients from the DB. Unavailable settings fall back
+// to env defaults; missing keys soft-fail so the process stays up.
 func (r *Runtime) Reload(app core.App) error {
 	r.reloadMu.Lock()
 	defer r.reloadMu.Unlock()
@@ -182,7 +170,6 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 	)
 }
 
-// RegisterHooks seeds defaults, loads runtime state on bootstrap, and reloads on settings changes.
 // Bootstrap never fails due to settings — the app must start so admins can open Settings.
 func RegisterHooks(app core.App, rt *Runtime) {
 	// High-priority hook so the stdout tee is in place before other
@@ -203,23 +190,11 @@ func RegisterHooks(app core.App, rt *Runtime) {
 			e.App.Logger().Warn("ensure app_settings defaults failed; continuing with env fallback", slog.Any("error", err))
 		}
 
-		// After seeding and before the reload, so a container recreated with
-		// different environment serves the new configuration on its first
-		// request rather than after somebody saves Settings. Warn rather than
-		// fail for the same reason bootstrap tolerates a bad settings record:
-		// the app must come up so an admin can go and look. The environment was
-		// already validated before the app existed, so anything reaching here
-		// is a database problem rather than a misconfiguration.
+		// After seeding, before Reload, so a recreated container serves the
+		// new environment on its first request.
 		//
-		// Fails the boot rather than warning, and it is the one place in this
-		// hook that does. Everywhere else "the app must come up so an admin can
-		// go and look" is the right call — but on a managed instance there is
-		// nobody to look: the Providers, Models and Duplicates sections are not
-		// rendered and the API refuses to write them. Warning here would serve
-		// stale routing indefinitely, with the operator's own key possibly
-		// rotated out from under it, and no way to repair it from inside. That
-		// is the same argument AIEnvFromEnv makes for refusing to start on an
-		// incomplete environment, applied to the write that environment implies.
+		// Fail the boot rather than warn: on a managed instance nobody inside
+		// can repair a failed rewrite.
 		if rt.env.Managed {
 			if err := ApplyManaged(e.App, rt.env); err != nil {
 				return fmt.Errorf("apply managed AI configuration: %w", err)

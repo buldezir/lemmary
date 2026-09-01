@@ -60,28 +60,19 @@ func WorkerCronFromEnv() string {
 	return getEnv("WORKER_CRON_EXPR", "* * * * *")
 }
 
-// DefaultStagingMaxBytes is the fallback for StagingMaxBytesFromEnv.
 const DefaultStagingMaxBytes int64 = 1 << 30 // 1 GiB
 
 // minStagingMaxBytes keeps a typo from setting a limit no real upload can meet.
 const minStagingMaxBytes int64 = 1 << 20 // 1 MiB
 
 // StagingMaxBytesFromEnv is the largest archive an import may stage on disk.
-//
-// An importer discards an owner's previous staged upload before writing a new
-// one, so this is also the disk one account can occupy while it decides whether
-// to confirm: the ceiling on that staging area is roughly this times the number
-// of accounts. Lower it on a small volume; raise it for libraries whose backup
-// runs past a gigabyte.
+// An importer discards the previous staged upload first, so one account can
+// occupy roughly this much while deciding whether to confirm.
 func StagingMaxBytesFromEnv() int64 {
 	return envInt64Default("IMPORT_STAGING_MAX_BYTES", DefaultStagingMaxBytes, minStagingMaxBytes)
 }
 
-// findSettingsCollection returns the app_settings collection.
-//
-// The schema itself is owned by migrations/ — this only reports a clear error
-// when they have not run, instead of maintaining a second copy of the field
-// list that can drift from the migration ladder.
+// The schema is owned by migrations/; this only errors clearly when they have not run.
 func findSettingsCollection(app core.App) (*core.Collection, error) {
 	collection, err := app.FindCollectionByNameOrId(CollectionName)
 	if err != nil {
@@ -91,11 +82,8 @@ func findSettingsCollection(app core.App) (*core.Collection, error) {
 }
 
 // EnsureDefaults seeds the app_settings singleton from the environment when it
-// is missing.
-//
-// Seeding happens once, on the boot that finds no singleton. After that the
-// Settings page owns every value here — including in managed mode, where
-// ApplyManaged runs afterwards and takes the parts the operator owns back.
+// is missing. After that first boot the Settings page owns the values;
+// ApplyManaged then takes back the operator-owned parts in managed mode.
 func EnsureDefaults(app core.App, env AIEnv) error {
 	if _, err := aiprovider.EnsureCollection(app); err != nil {
 		return err
@@ -129,18 +117,9 @@ func EnsureDefaults(app core.App, env AIEnv) error {
 	return nil
 }
 
-// ApplyManaged re-applies the operator-owned settings on every boot.
-//
-// Only called when AI_MANAGED is on, and it writes exactly what the Settings
-// page then refuses to show: the providers, the four task bindings, the
-// research budget and duplicate detection. Timeouts, retries and the language
-// settings are deliberately not here — they are tuning with no operator
-// decision behind them, and resetting somebody's timeout on every restart of a
-// container they do not control would be a bug rather than a policy.
-//
-// There is no digest and nothing to compare against. In managed mode the
-// container's environment simply is the configuration, so the write is
-// unconditional and the same on every boot.
+// ApplyManaged unconditionally rewrites the operator-owned settings (providers,
+// task bindings, research budget, duplicate detection) from the environment.
+// Timeouts and language settings are not here; see AIEnv.
 func ApplyManaged(app core.App, env AIEnv) error {
 	settings, err := app.FindRecordById(CollectionName, SingletonID)
 	if err != nil {
@@ -242,10 +221,8 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 	return cfg, nil
 }
 
-// applyBindingFallbacks fills unset chat/search bindings: chat falls back to the
-// extraction binding, and search falls back to the (already resolved) chat one.
-// Kept separate from the DB lookups so the fallback chain stays easy to reason
-// about and test.
+// chat falls back to extract, search to the resolved chat binding. Separate
+// from the DB lookups so the chain is easy to test.
 func applyBindingFallbacks(cfg *Config) {
 	if cfg.ChatProviderID == "" {
 		cfg.ChatProviderID = cfg.ExtractProviderID
@@ -325,8 +302,8 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-// envIntDefault parses an int env var, falling back when unset, malformed, or
-// below min — a typo like "6O" must not become a zero-second HTTP timeout.
+// envIntDefault falls back when unset, malformed, or below min — a typo like
+// "6O" must not become a zero-second HTTP timeout.
 func envIntDefault(key string, fallback, min int) int {
 	v := strings.TrimSpace(os.Getenv(key))
 	if v == "" {
@@ -339,8 +316,6 @@ func envIntDefault(key string, fallback, min int) int {
 	return parsed
 }
 
-// envInt64Default parses an int64 env var, falling back when unset, malformed,
-// or below min.
 func envInt64Default(key string, fallback, min int64) int64 {
 	v := strings.TrimSpace(os.Getenv(key))
 	if v == "" {

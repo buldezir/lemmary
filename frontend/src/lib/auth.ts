@@ -17,15 +17,7 @@ export class AuthRequiredError extends Error {
   }
 }
 
-// Dev auto-login credentials are only honored in dev builds, so a production
-// bundle can never ship with a working login baked in.
-//
-// The same pair the server bootstraps the first admin from. That is not a
-// coincidence worth avoiding: SETUP_ADMIN_* creates a _superusers record and
-// the paired users account with identical credentials, and this signs into that
-// users account — so one variable configures both, where a second VITE_ copy
-// was a name that had to be kept in step by hand and silently stopped working
-// when it drifted.
+// Honored only in dev builds. Same SETUP_ADMIN_* pair the server bootstrap uses.
 function devCredentials() {
   if (!import.meta.env.DEV) {
     return null
@@ -69,17 +61,12 @@ export type LoginMethods = {
 const fallbackLoginMethods: LoginMethods = { password: true, oauth: [], passkey: false }
 
 /**
- * Whether the server says passkey sign-in is on offer: the address can carry a
- * ceremony at all, and at least one credential exists to offer.
+ * Whether the server offers passkey sign-in. Read here rather than from
+ * useAppMeta: that hook resolves once per RootLayout mount, which does not
+ * remount on sign-out, so a user who enrolled then signed out would see a
+ * stale answer.
  *
- * Read here rather than from the app-meta hook because that hook resolves once
- * per RootLayout mount, and RootLayout does not remount when a session ends. A
- * user who enrolled a passkey and then signed out in the same tab would be shown
- * a login screen built from a stale answer. This runs whenever the login screen
- * appears.
- *
- * Raw fetch, like the two calls below: apiClient imports ensureAuth from this
- * module, so importing it back would close a cycle.
+ * Raw fetch: apiClient imports ensureAuth from this module.
  */
 async function getPasskeyOffered(): Promise<boolean> {
   try {

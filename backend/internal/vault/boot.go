@@ -11,21 +11,11 @@ import (
 	"lemmary/backend/internal/crypt"
 )
 
-// This file is what internal/boot calls. It exists so the vault owns its own
-// startup sequence: main.go knows only that something may need to act before
-// the app is constructed, never that the reason is encryption.
+// Startup sequence owned by the vault so main need not know about encryption.
 
-// Open prepares encryption at rest and, for the serve command, blocks until
-// somebody unlocks the archive.
-//
-// The unlock has to happen before PocketBase is constructed, because
-// PocketBase's data directory is fixed at construction time and because the
-// users collection that would authenticate the request lives inside the
-// encrypted database. That ordering is the whole reason internal/boot exists;
-// an ordinary Register on a live app runs far too late to be of any use here.
-//
-// A disabled vault returns a usable zero vault immediately and the application
-// runs exactly as it did before.
+// Open prepares encryption at rest and, for serve, blocks until unlock.
+// Disabled, it returns a usable zero vault. Unlock has to precede
+// pocketbase.New; see internal/boot.
 func Open(argv []string) (v *Vault, err error) {
 	opts, err := OptionsFromEnv()
 	if err != nil {
@@ -46,13 +36,8 @@ func Open(argv []string) (v *Vault, err error) {
 		return nil, err
 	}
 
-	// From here on the vault holds the directory lock, and past the unlock below
-	// it also holds a fully decrypted copy of the archive in the working
-	// directory. Every failure after this point has to clean both up: main only
-	// defers Close for a Result it actually received, so an error return would
-	// otherwise leave the plaintext sitting there — persistent, under
-	// VAULT_ALLOW_DISK_WORKDIR, and on tmpfs for as long as a boot loop keeps
-	// failing. That is precisely what Close exists to prevent.
+	// Vault holds the directory lock here, and plaintext after unlock. Close
+	// both on any error: main only defers Close for a Result it received.
 	defer func() {
 		if err != nil {
 			if cerr := v.Close(); cerr != nil {

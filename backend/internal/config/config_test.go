@@ -158,9 +158,7 @@ func TestDefaultsUsesCodeDefaults(t *testing.T) {
 	}
 }
 
-// One model serves extraction, chat and Deep Search: the three separate
-// variables that used to pin them are gone, and so is the fallback chain
-// between them.
+// One model serves extraction, chat and Deep Search.
 func TestDefaultsShareOneModel(t *testing.T) {
 	t.Setenv("AI_API_KEY", "key")
 	t.Setenv("AI_MODEL", "base-model")

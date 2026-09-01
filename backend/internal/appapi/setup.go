@@ -18,14 +18,8 @@ var (
 	errInvalidAdmin = errors.New("invalid admin credentials")
 )
 
-// invalidAdmin is a rejection of what somebody typed, carrying the sentence to
-// show them and nothing else.
-//
-// Wrapping with %w around errInvalidAdmin would put "invalid admin credentials:
-// " in front of every one of these, and the setup wizard renders the message
-// verbatim — so the first thing a new admin saw was "invalid admin credentials:
-// Email is required.". Is() keeps errors.Is working for the caller that has to
-// tell bad input from a database failure.
+// invalidAdmin is the sentence shown to the user. Do not wrap it: the setup
+// wizard renders Error() verbatim. Is() keeps errors.Is working.
 type invalidAdmin struct{ msg string }
 
 func (e invalidAdmin) Error() string        { return e.msg }
@@ -104,15 +98,9 @@ func handlePostSetupAdmin(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// CreateFirstAdmin mints the instance's first admin: a _superusers record and
-// the paired users account that owns documents, with the same credentials.
-//
-// Shared by the setup wizard and the SETUP_ADMIN_* bootstrap so the two cannot
-// drift — the pairing is the part that matters, and an admin who exists as a
-// superuser but not as a user cannot own a document they upload.
-//
-// Refuses when an admin already exists. Both callers depend on that: the wizard
-// endpoint is unauthenticated by design, and the bootstrap runs on every boot.
+// CreateFirstAdmin mints the first admin (superuser + paired users account).
+// Shared by the wizard and SETUP_ADMIN_* bootstrap. Refuses if an admin exists:
+// the wizard endpoint is unauthenticated and the bootstrap runs on every boot.
 func CreateFirstAdmin(app core.App, email, password string) (superuserID, userID string, err error) {
 	email = strings.TrimSpace(email)
 	if err := validateAdminCredentials(email, password); err != nil {
@@ -161,10 +149,8 @@ func CreateFirstAdmin(app core.App, email, password string) (superuserID, userID
 	return record.Id, userRecord.Id, nil
 }
 
-// validateAdminCredentials reports every rejection as an invalidAdmin, so a
-// caller can tell "this input is wrong" — which an HTTP handler reports verbatim
-// and the boot-time bootstrap logs — from a database failure, which neither
-// should show to anyone.
+// validateAdminCredentials reports every rejection as an invalidAdmin, so
+// callers can tell bad input from a database failure.
 func validateAdminCredentials(email, password string) error {
 	switch {
 	case email == "":
@@ -182,7 +168,7 @@ func validateAdminCredentials(email, password string) error {
 	return nil
 }
 
-// needsAdminSetup is true when no real superuser exists (excluding PocketBase's installer account).
+// needsAdminSetup ignores PocketBase's installer account.
 func needsAdminSetup(app core.App) (bool, error) {
 	total, err := app.CountRecords(core.CollectionNameSuperusers, dbx.Not(dbx.HashExp{
 		"email": core.DefaultInstallerEmail,

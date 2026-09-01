@@ -6,19 +6,8 @@ import (
 	"lemmary/backend/internal/vault"
 )
 
-// vaultPrepare is the pre-boot step: encryption at rest.
-//
-// Inert unless VAULT_ENABLED is set — a disabled vault leaves the data
-// directory alone, so the same binary serves an ordinary unencrypted install
-// unchanged.
-//
-// Why this cannot attach to a live app the way every other feature does:
-// PocketBase fixes its data directory at construction, so pointing it at the
-// decrypted working directory has to be decided before pocketbase.New; the
-// users collection that would authenticate an unlock lives inside the
-// encrypted database, so the gate cannot be a route; and `vault init` has to
-// run with no database open at all, which a cobra subcommand cannot do because
-// cobra runs inside app.Execute.
+// vaultPrepare is encryption at rest. Inert unless VAULT_ENABLED is set.
+// Why this cannot be an ordinary Register: see the package comment.
 func vaultPrepare(argv []string) (Result, error) {
 	// Answered without constructing an app: bootstrap would run migrations
 	// inside a working directory that is about to be replaced by the restore,
@@ -35,11 +24,7 @@ func vaultPrepare(argv []string) (Result, error) {
 
 	res := Result{
 		Register: func(app *pocketbase.PocketBase) { vault.Register(app, v) },
-		// Flushes the archive and wipes the plaintext working directory. main
-		// runs this through a defer, which is why it is structured as
-		// os.Exit(run()) — a log.Fatal anywhere after Open would skip it and
-		// leave the decrypted archive behind.
-		Close: v.Close,
+		Close:    v.Close, // flush + wipe plaintext; main defers this
 	}
 	if v.Enabled() {
 		res.DataDir = v.WorkDir()

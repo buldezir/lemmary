@@ -7,16 +7,10 @@ export type AppMeta = {
   appName: string
   accent: string
   /**
-   * Whether the hosting provider owns AI configuration. On a managed instance
-   * the Settings page has no Providers, Models or Duplicates sections — the
-   * container's environment decides those, and the API refuses to change them.
-   *
-   * `undefined` means not known yet, or not answerable because the request
-   * failed. Callers must treat that as "assume managed": defaulting it to
-   * `false` renders the operator-owned sections during the first paint and,
-   * when meta never arrives, leaves them rendered — and Save then sends fields
-   * the server rejects, which fails the *whole* patch and takes the settings a
-   * managed tenant really does own down with it.
+   * Hosting provider owns AI configuration. `undefined` is in-flight or a
+   * failed request: treat as managed. Defaulting to false flashes those
+   * sections and, if meta never arrives, Save sends fields the server
+   * rejects, which fails the whole patch including tenant-owned timeouts.
    */
   aiManaged?: boolean
 }
@@ -38,8 +32,7 @@ export async function getAppMeta(): Promise<AppMeta> {
       aiManaged: data.ai_managed === true,
     }
   } catch {
-    // A name and an accent have safe defaults; who owns AI configuration does
-    // not, so it is left unanswered rather than guessed at.
+    // A name and accent have safe defaults; who owns AI configuration does not.
     return { appName: DEFAULT_APP_NAME, accent: DEFAULT_ACCENT }
   }
 }
