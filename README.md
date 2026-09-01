@@ -80,9 +80,24 @@ Deep Search with natural-language queries:
 Unit tests live beside the code they cover:
 
 ```bash
-cd backend && go test ./... -count=1
+cd backend && go test -tags vectors ./... -count=1
 cd frontend && pnpm test
 ```
+
+The `vectors` tag is not optional: bleve's vector search is a cgo binding to
+blevesearch's FAISS fork, and the backend does not build without it. Installing
+FAISS is a one-off, and the shortest route needs no compiler at all:
+
+```bash
+docker buildx build --target faiss --output type=local,dest=./.faiss .
+mkdir -p "$HOME/.local/faiss" && cp -a .faiss/lib .faiss/include "$HOME/.local/faiss/"
+```
+
+With [direnv](https://direnv.net), `direnv allow` then points the toolchain at
+it and sets the tag for you. The other two routes — building it into
+`/usr/local` or into your home directory with `scripts/faiss-build.sh` — are in
+[docs/setup.md](docs/setup.md#faiss-required-to-build-the-backend), along with
+the packages each one needs.
 
 The end-to-end suites, the dev runner and the full verification stack live in a
 separate private repository and are not part of this one. `./scripts/test-all.sh`

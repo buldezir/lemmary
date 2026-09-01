@@ -6,6 +6,10 @@
 **/.env.*
 **/node_modules
 backend/pb_data*
+# FAISS extracted from the faiss stage, and anything else exported out of a
+# build: sending a build's own output back as its context is pure waste.
+.faiss
+.out
 # The development overlay, when it has been checked out inside the tree (CI
 # does this; a local checkout keeps it outside).
 dev

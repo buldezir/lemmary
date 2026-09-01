@@ -14,11 +14,15 @@ fi
 # images (which ran everything as root) can be adopted — ownership is fixed
 # once, then privileges are dropped for good. Binding :80 still works because
 # Docker starts containers with net.ipv4.ip_unprivileged_port_start=0.
+#
+# setpriv rather than su-exec: the image is Debian-based now, and util-linux is
+# Essential there, so this needs nothing installed. --init-groups is what makes
+# it equivalent — without it the process would keep root's supplementary groups.
 if [ "$(id -u)" = "0" ]; then
     if [ -d /app/pb_data ] && [ "$(stat -c %u /app/pb_data)" != "$(id -u app)" ]; then
         chown -R app:app /app/pb_data
     fi
-    exec su-exec app /app/lemmary "$@"
+    exec setpriv --reuid=app --regid=app --init-groups /app/lemmary "$@"
 fi
 
 exec /app/lemmary "$@"

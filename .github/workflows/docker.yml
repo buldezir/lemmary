@@ -11,7 +11,6 @@ on:
       - ".gitignore"
       - ".env.example"
       - "docker-compose.yml"
-      - "scripts/**"
       - "**/testdata/**"
       - "**/*_test.go"
   pull_request:
@@ -168,6 +167,47 @@ jobs:
           else
             sudo apt-get update && sudo apt-get install -y poppler-utils
           fi
+
+      # bleve's vector search is a cgo binding to blevesearch's FAISS fork, and
+      # every go command in this repository carries -tags vectors, so nothing
+      # compiles without it. faiss-build.sh owns the pinned commit and records
+      # it in $PREFIX/lib/faiss.ref; the self-hosted runner keeps that install
+      # between runs, so the usual outcome here is one grep and no build.
+      - name: Restore FAISS cache
+        # Only for the hosted fallback runner, which starts empty every time.
+        # The self-hosted machine keeps /usr/local/lib/faiss.ref between runs
+        # and skips the whole thing a step later.
+        if: runner.environment == 'github-hosted'
+        id: faiss-cache
+        uses: actions/cache@v4
+        with:
+          path: /opt/faiss
+          key: faiss-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/faiss-build.sh') }}
+
+      - name: Install FAISS (bleve vectors)
+        run: |
+          set -euo pipefail
+          pin="$(grep -oP '^FAISS_REF="\K[0-9a-f]+' scripts/faiss-build.sh)"
+          if [ -f /usr/local/lib/faiss.ref ] && [ "$(cat /usr/local/lib/faiss.ref)" = "$pin" ]; then
+            echo "FAISS $pin already installed"
+            exit 0
+          fi
+          sudo apt-get update
+          # A hosted runner starts empty every time; the cache above, when it
+          # hits, turns this into a copy instead of a five-minute compile.
+          if [ ! -f /opt/faiss/lib/faiss.ref ] || [ "$(cat /opt/faiss/lib/faiss.ref)" != "$pin" ]; then
+            sudo apt-get install -y --no-install-recommends cmake ninja-build g++ libopenblas-dev
+            sudo ./scripts/faiss-build.sh --prefix /opt/faiss
+            sudo chown -R "$(id -u):$(id -g)" /opt/faiss
+          fi
+          sudo cp -a /opt/faiss/lib/. /usr/local/lib/
+          sudo cp -a /opt/faiss/include/. /usr/local/include/
+          sudo ldconfig
+          # OpenBLAS and libgomp are what libfaiss.so itself was linked against,
+          # so they have to be here to link the backend and to run it. The -dev
+          # package covers a runner that built FAISS; this covers one that only
+          # restored the cache.
+          sudo apt-get install -y --no-install-recommends libopenblas0-pthread libgomp1
 
       - name: Install frontend dependencies
         working-directory: frontend

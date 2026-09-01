@@ -7,6 +7,13 @@ frontend/.vitepress/dist/
 backend/pb_data/
 *.test
 
+# FAISS extracted from the image's faiss stage:
+#   docker buildx build --target faiss --output type=local,dest=./.faiss .
+# Build output, and the only way to get the library without a local toolchain.
+.faiss/
+# direnv's own cache for .envrc.
+.direnv/
+
 # The development suite -- e2e tests, dev runner, verification stack -- lives in
 # a separate repository that is not part of this one. It normally sits beside
 # this checkout rather than inside it, and scripts/overlay.sh locates it. CI is
