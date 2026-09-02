@@ -9,6 +9,7 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
+	"lemmary/backend/internal/logfmt"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/strutil"
 )
@@ -86,14 +87,14 @@ func (c *OpenAIClient) DetectSplitPoints(ctx context.Context, pages []PageText) 
 	}, "purpose", "split", "messages", 2)
 	if err != nil {
 		c.logger.Error("request failed",
-			"duration", time.Since(requestStart).Round(time.Millisecond),
+			logfmt.Duration("duration", time.Since(requestStart)),
 			slog.Any("error", err),
 		)
 		return nil, fmt.Errorf("openai chat completion: %w", err)
 	}
 	c.logger.Info("response",
 		"choices", len(chatResp.Choices),
-		"duration", time.Since(requestStart).Round(time.Millisecond),
+		logfmt.Duration("duration", time.Since(requestStart)),
 	)
 
 	if len(chatResp.Choices) == 0 {

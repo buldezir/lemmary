@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+
+	"lemmary/backend/internal/logfmt"
 	"strconv"
 	"strings"
 	"time"
@@ -225,14 +227,14 @@ func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, 
 		)
 		if err != nil {
 			a.client.logger.Error("search agent request failed",
-				"duration", time.Since(requestStart).Round(time.Millisecond),
+				logfmt.Duration("duration", time.Since(requestStart)),
 				slog.Any("error", err),
 			)
 			return "", nil, fmt.Errorf("openai search completion: %w", err)
 		}
 		a.client.logger.Info("search agent response",
 			"choices", len(chatResp.Choices),
-			"duration", time.Since(requestStart).Round(time.Millisecond),
+			logfmt.Duration("duration", time.Since(requestStart)),
 		)
 		if len(chatResp.Choices) == 0 {
 			return "", nil, fmt.Errorf("openai returned no choices")
@@ -310,7 +312,7 @@ If nothing relevant was found, say so clearly.`,
 	}, "purpose", "search_final", "messages", len(msgs))
 	if err != nil {
 		a.client.logger.Error("search agent force-final failed",
-			"duration", time.Since(requestStart).Round(time.Millisecond),
+			logfmt.Duration("duration", time.Since(requestStart)),
 			slog.Any("error", err),
 		)
 		return "", hits, err

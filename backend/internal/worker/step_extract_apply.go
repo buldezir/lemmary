@@ -10,6 +10,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/logfmt"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/strutil"
 )
@@ -71,14 +72,14 @@ func (s *ExtractMetadataStep) Run(ctx context.Context, state *StepState) error {
 	metadata, err := s.Extractor.ExtractMetadata(aiCtx, ocrText, catalog)
 	if err != nil {
 		state.Logger.Error("AI extraction failed",
-			"duration", time.Since(aiStart).Round(time.Millisecond),
+			logfmt.Duration("duration", time.Since(aiStart)),
 			slog.Any("error", err),
 		)
 		return fmt.Errorf("ai extraction: %w", err)
 	}
 
 	state.Logger.Info("AI extraction complete",
-		"duration", time.Since(aiStart).Round(time.Millisecond),
+		logfmt.Duration("duration", time.Since(aiStart)),
 		"confidence", metadata.Confidence,
 		"title", strutil.TruncateRunes(metadata.Title, 80),
 		"type", strutil.TruncateRunes(metadata.DocumentType, 40),

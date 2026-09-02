@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+
+	"lemmary/backend/internal/logfmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -234,7 +236,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 		if err != nil {
 			a.client.logger.Error("research request failed",
 				"round", round,
-				"duration", time.Since(requestStart).Round(time.Millisecond),
+				logfmt.Duration("duration", time.Since(requestStart)),
 				slog.Any("error", err),
 			)
 			return ResearchResult{}, fmt.Errorf("openai research completion: %w", err)
@@ -372,7 +374,7 @@ func (a *openAISearchAgent) answerResearch(
 	a.client.logger.Info("research answer complete",
 		"chars", len(content),
 		"streamed", emitted > 0,
-		"duration", time.Since(requestStart).Round(time.Millisecond),
+		logfmt.Duration("duration", time.Since(requestStart)),
 	)
 	return stripDSMLMarkup(strings.TrimSpace(content)), false, usage, nil
 }

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/logfmt"
 )
 
 // mistralOCRMaxFileBytes is Mistral's own documented ceiling for an OCR input,
@@ -84,7 +85,7 @@ func (p *MistralProvider) ExtractText(ctx context.Context, filePath string, mime
 	if err != nil {
 		p.logger.Error("mistral failed",
 			"file", filepath.Base(filePath),
-			"duration", time.Since(start).Round(time.Millisecond),
+			logfmt.Duration("duration", time.Since(start)),
 			slog.Any("error", err),
 		)
 		return "", err
@@ -93,7 +94,7 @@ func (p *MistralProvider) ExtractText(ctx context.Context, filePath string, mime
 	p.logger.Info("mistral complete",
 		"file", filepath.Base(filePath),
 		"chars", len(text),
-		"duration", time.Since(start).Round(time.Millisecond),
+		logfmt.Duration("duration", time.Since(start)),
 	)
 	return text, nil
 }

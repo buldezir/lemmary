@@ -72,6 +72,8 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	ngxapi.Register(app, ft)
 	worker.Register(app, rt, backfill)
 
+	registerCOOPHeader(app)
+
 	// Prefer the in-app setup wizard over PocketBase's browser installer UI.
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: -10000,

@@ -16,6 +16,7 @@ import (
 	"github.com/openai/openai-go/shared"
 	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/logfmt"
 )
 
 const llmOCRMaxFileBytes = 10 * 1024 * 1024
@@ -95,7 +96,7 @@ func (p *LLMProvider) ExtractText(ctx context.Context, filePath string, mimeType
 	if err != nil {
 		p.logger.Error("llm ocr failed",
 			"file", filepath.Base(filePath),
-			"duration", time.Since(start).Round(time.Millisecond),
+			logfmt.Duration("duration", time.Since(start)),
 			slog.Any("error", err),
 		)
 		return "", fmt.Errorf("llm ocr: %w", err)
@@ -111,7 +112,7 @@ func (p *LLMProvider) ExtractText(ctx context.Context, filePath string, mimeType
 	p.logger.Info("llm ocr complete",
 		"file", filepath.Base(filePath),
 		"chars", len(text),
-		"duration", time.Since(start).Round(time.Millisecond),
+		logfmt.Duration("duration", time.Since(start)),
 	)
 	return text, nil
 }

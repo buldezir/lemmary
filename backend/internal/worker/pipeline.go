@@ -11,6 +11,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/logfmt"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/ocr"
 )
@@ -188,7 +189,7 @@ func (r *PipelineRunner) Run(ctx context.Context, jobID string) error {
 
 	logger.Info("pipeline finished",
 		"status", job.GetString("status"),
-		"duration", time.Since(jobStart).Round(time.Millisecond),
+		logfmt.Duration("duration", time.Since(jobStart)),
 	)
 	return r.App.Save(job)
 }

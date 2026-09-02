@@ -14,6 +14,7 @@ import (
 	"cloud.google.com/go/vision/v2/apiv1/visionpb"
 	"google.golang.org/api/option"
 	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/logfmt"
 )
 
 // The gRPC client is goroutine-safe and must be Close()d to release its
@@ -108,7 +109,7 @@ func (p *GoogleVisionProvider) ExtractText(ctx context.Context, filePath string,
 	if err != nil {
 		p.logger.Error("google vision failed",
 			"file", filepath.Base(filePath),
-			"duration", time.Since(start).Round(time.Millisecond),
+			logfmt.Duration("duration", time.Since(start)),
 			slog.Any("error", err),
 		)
 		return "", err
@@ -116,7 +117,7 @@ func (p *GoogleVisionProvider) ExtractText(ctx context.Context, filePath string,
 	p.logger.Info("google vision complete",
 		"file", filepath.Base(filePath),
 		"chars", len(text),
-		"duration", time.Since(start).Round(time.Millisecond),
+		logfmt.Duration("duration", time.Since(start)),
 	)
 	return text, nil
 }
@@ -234,7 +235,7 @@ func (p *GoogleVisionProvider) annotateFile(ctx context.Context, content []byte,
 		"pages", pages,
 		"extracted", len(pageTexts),
 		"total_pages", fileResp.GetTotalPages(),
-		"duration", time.Since(start).Round(time.Millisecond),
+		logfmt.Duration("duration", time.Since(start)),
 	)
 	return fileAnnotateResult{
 		pageTexts:  pageTexts,
@@ -285,7 +286,7 @@ func (p *GoogleVisionProvider) extractImageText(ctx context.Context, content []b
 	p.logger.Info("google vision BatchAnnotateImages",
 		"mime", mimeType,
 		"chars", len(text),
-		"duration", time.Since(start).Round(time.Millisecond),
+		logfmt.Duration("duration", time.Since(start)),
 	)
 	return text, nil
 }

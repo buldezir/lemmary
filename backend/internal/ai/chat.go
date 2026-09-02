@@ -10,6 +10,7 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
 
+	"lemmary/backend/internal/logfmt"
 	"lemmary/backend/internal/strutil"
 )
 
@@ -67,14 +68,14 @@ func (c *OpenAIClient) Chat(ctx context.Context, ocrText string, messages []Chat
 	}, "purpose", "chat", "messages", len(apiMessages))
 	if err != nil {
 		c.logger.Error("chat request failed",
-			"duration", time.Since(requestStart).Round(time.Millisecond),
+			logfmt.Duration("duration", time.Since(requestStart)),
 			slog.Any("error", err),
 		)
 		return "", fmt.Errorf("openai chat completion: %w", err)
 	}
 	c.logger.Info("chat response",
 		"choices", len(chatResp.Choices),
-		"duration", time.Since(requestStart).Round(time.Millisecond),
+		logfmt.Duration("duration", time.Since(requestStart)),
 	)
 
 	if len(chatResp.Choices) == 0 {

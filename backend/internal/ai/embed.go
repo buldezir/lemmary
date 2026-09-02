@@ -15,6 +15,7 @@ import (
 	"github.com/openai/openai-go/option"
 
 	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/logfmt"
 )
 
 // Embedding request shaping. Every provider enforces some version of these
@@ -191,7 +192,7 @@ func (e *openAIEmbedder) embedBatch(ctx context.Context, inputs []string) ([][]f
 		if attempt > 0 {
 			delay := embedRetryBase * time.Duration(1<<(2*(attempt-1))) // 1s, 4s, 16s
 			e.logger.Warn("retrying embeddings request",
-				"model", e.model, "attempt", attempt+1, "in", delay, slog.Any("error", lastErr))
+				"model", e.model, "attempt", attempt+1, logfmt.Duration("in", delay), slog.Any("error", lastErr))
 			e.sleep(delay)
 			if err := ctx.Err(); err != nil {
 				return nil, 0, err

@@ -13,6 +13,7 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
 
+	"lemmary/backend/internal/logfmt"
 	"lemmary/backend/internal/models"
 )
 
@@ -141,7 +142,7 @@ func (h *openAIHelper) Distill(ctx context.Context, req DistillRequest) (Distill
 	h.client.logger.Info("helper distill complete",
 		"documents", len(req.Docs),
 		"rows", len(rows),
-		"duration", time.Since(requestStart).Round(time.Millisecond),
+		logfmt.Duration("duration", time.Since(requestStart)),
 	)
 	return DistillResult{Rows: rows, Usage: usageOf(resp)}, nil
 }
