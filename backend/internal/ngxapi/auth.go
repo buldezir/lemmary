@@ -6,11 +6,25 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// paperlessAPITokenTTL is how long POST /api/token/ JWTs last. Paperless-ngx
+// API tokens do not expire, and clients such as swift-paperless store the
+// returned string and never refresh it. PocketBase session tokens default to
+// five days and the web UI refreshes them; this endpoint must not use that
+// lifetime or those clients die until the server is re-added.
+//
+// JWTs always carry exp (PocketBase's parser validates it), so this is long
+// enough to set up a phone and leave it rather than forever. Changing the
+// account password still rotates tokenKey and invalidates these tokens. Do not
+// raise users.AuthToken.Duration to match: that would also stretch browser
+// sessions.
+const paperlessAPITokenTTL = 10 * 365 * 24 * time.Hour
 
 // dummyPasswordHash is compared when no user matches the identity, so response
 // timing does not reveal whether a username exists. Cost matches PocketBase's
@@ -53,12 +67,16 @@ func handleToken(e *core.RequestEvent) error {
 		return unauthorized(e, "Unable to log in with provided credentials.")
 	}
 
-	token, err := record.NewAuthToken()
+	token, err := mintPaperlessAPIToken(record)
 	if err != nil {
 		return internalError(e, err)
 	}
 
 	return writeJSON(e, http.StatusOK, map[string]string{"token": token})
+}
+
+func mintPaperlessAPIToken(record *core.Record) (string, error) {
+	return record.NewStaticAuthToken(paperlessAPITokenTTL)
 }
 
 func handleTokenMethodNotAllowed(e *core.RequestEvent) error {
@@ -89,6 +107,12 @@ func requireAuth(e *core.RequestEvent) error {
 				e.Auth = record
 				return nil
 			}
+			// Paperless-ngx TokenAuthentication says "Invalid token." when a
+			// token was sent and rejected. The previous catch-all ("credentials
+			// were not provided") made expired JWTs look like a missing header,
+			// which is what swift-paperless showed after the five-day session
+			// token ran out.
+			return unauthorized(e, "Invalid token.")
 		}
 	}
 

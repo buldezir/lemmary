@@ -1,12 +1,17 @@
 package ngxapi
 
 import (
+	"encoding/json"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/security"
 )
 
 func TestTokenGETReturns405ForSupportedAPIVersion(t *testing.T) {
@@ -93,5 +98,120 @@ func TestCollectionAuthPolicyAllowsPlainPasswordAuth(t *testing.T) {
 
 	if err := checkCollectionAuthPolicy(c); err != nil {
 		t.Fatalf("a plain password collection was refused: %v", err)
+	}
+}
+
+// Paperless-ngx tokens do not expire. Clients store POST /api/token/ and never
+// refresh. NewAuthToken() follows users.AuthToken.Duration (five days) and is
+// why swift-paperless used to die until the server was re-added.
+func TestPaperlessAPITokenLastsYearsNotDays(t *testing.T) {
+	t.Parallel()
+
+	users := core.NewAuthCollection("users")
+	users.AuthToken.Duration = 432000 // five-day PocketBase session default
+	record := core.NewRecord(users)
+	record.Id = "userpaperless01"
+	record.SetTokenKey("test-token-key-for-paperless")
+
+	token, err := mintPaperlessAPIToken(record)
+	if err != nil {
+		t.Fatalf("mintPaperlessAPIToken() error: %v", err)
+	}
+
+	claims, err := security.ParseUnverifiedJWT(token)
+	if err != nil {
+		t.Fatalf("ParseUnverifiedJWT() error: %v", err)
+	}
+
+	if refreshable, _ := claims[core.TokenClaimRefreshable].(bool); refreshable {
+		t.Fatal("paperless API tokens must not be refreshable session JWTs")
+	}
+
+	exp := jwtExpUnix(claims["exp"])
+	if exp == 0 {
+		t.Fatalf("missing exp claim: %#v", claims["exp"])
+	}
+
+	now := time.Now().Unix()
+	nineYears := now + int64(9*365*24*time.Hour/time.Second)
+	elevenYears := now + int64(11*365*24*time.Hour/time.Second)
+	if exp < nineYears || exp > elevenYears {
+		t.Fatalf("exp %d is not ~10 years from now (%d); five-day session tokens are the old bug", exp, now)
+	}
+}
+
+func TestRequireAuthMissingHeader(t *testing.T) {
+	t.Parallel()
+
+	e := newAuthRequestEvent(t, "")
+	if err := requireAuth(e); err != nil {
+		t.Fatalf("requireAuth() error: %v", err)
+	}
+	assertUnauthorizedDetail(t, e, "Authentication credentials were not provided.")
+}
+
+func TestRequireAuthInvalidToken(t *testing.T) {
+	e := newAuthRequestEvent(t, "Token not-a-jwt")
+	e.App = bootTestApp(t)
+
+	if err := requireAuth(e); err != nil {
+		t.Fatalf("requireAuth() error: %v", err)
+	}
+	assertUnauthorizedDetail(t, e, "Invalid token.")
+}
+
+func newAuthRequestEvent(t *testing.T, authHeader string) *core.RequestEvent {
+	t.Helper()
+	e := &core.RequestEvent{}
+	e.Request = httptest.NewRequest(http.MethodGet, "/api/documents/", nil)
+	e.Request.Header.Set("Accept", "application/json; version=9")
+	if authHeader != "" {
+		e.Request.Header.Set("Authorization", authHeader)
+	}
+	e.Response = httptest.NewRecorder()
+	return e
+}
+
+func assertUnauthorizedDetail(t *testing.T, e *core.RequestEvent, want string) {
+	t.Helper()
+	rec := e.Response.(*httptest.ResponseRecorder)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401; body %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Detail string `json:"detail"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v (%s)", err, rec.Body.String())
+	}
+	if body.Detail != want {
+		t.Fatalf("detail = %q, want %q", body.Detail, want)
+	}
+}
+
+func bootTestApp(t *testing.T) *pocketbase.PocketBase {
+	t.Helper()
+	app := pocketbase.NewWithConfig(pocketbase.Config{
+		DefaultDataDir:  t.TempDir(),
+		HideStartBanner: true,
+	})
+	if err := app.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = app.ResetBootstrapState() })
+	return app
+}
+
+func jwtExpUnix(v any) int64 {
+	switch n := v.(type) {
+	case float64:
+		return int64(n)
+	case int64:
+		return n
+	case json.Number:
+		i, _ := n.Int64()
+		return i
+	default:
+		return 0
 	}
 }

@@ -662,7 +662,7 @@ Compatibility is intentionally partial: common read/write flows work, but not ev
 ### Connecting external clients
 
 1. Point the client at your Lemmary server URL (scheme + host + port, no `/api` suffix — clients add that themselves).
-2. Sign in with a PocketBase user account. The `/api/token/` endpoint accepts the same username and password as the web UI.
+2. Sign in with a PocketBase user account. The `/api/token/` endpoint accepts the same username and password as the web UI and returns a long-lived JWT (ten years). Paperless-ngx clients store that token and do not refresh it; this is not the five-day web UI session. Changing the account password invalidates it.
 3. Clients that send `Authorization: Token <jwt>` (paperless-ngx style) are supported alongside standard Bearer tokens.
 
 API versions 9 and 10 are accepted via the `Accept` header (`application/json; version=9`).
@@ -685,6 +685,8 @@ Import fetches only the caller-supplied URL. Private, loopback, and link-local d
 ### swift-paperless (iOS)
 
 [swift-paperless](https://github.com/paulgessinger/swift-paperless) is the main mobile client exercised against this API. Browsing documents, viewing details, and uploading generally work. Some paperless-ngx-specific settings or advanced features may be missing or no-ops because Lemmary does not implement the full paperless-ngx surface area.
+
+If the app starts returning 401 after working at add-server time, delete and re-add the server once so it can fetch a new token. Tokens issued before long-lived `/api/token/` JWTs expire after five days and cannot be extended in place.
 
 ## Troubleshooting
 
