@@ -8,7 +8,7 @@
 # FAISS is compiled on the build machine and cross-compiled for the target, so
 # this stage never runs under emulation. The pinned commit lives in the script;
 # this layer is rebuilt only when the script changes.
-FROM --platform=$BUILDPLATFORM golang:1.26-trixie AS faiss-build
+FROM --platform=$BUILDPLATFORM golang:1.27-trixie AS faiss-build
 
 ARG TARGETARCH
 
@@ -32,7 +32,7 @@ RUN /usr/local/bin/faiss-build.sh --prefix /opt/faiss --target-arch "$TARGETARCH
 FROM scratch AS faiss
 COPY --from=faiss-build /opt/faiss/ /
 
-FROM --platform=$BUILDPLATFORM golang:1.26-trixie AS backend-builder
+FROM --platform=$BUILDPLATFORM golang:1.27-trixie AS backend-builder
 
 ARG TARGETOS
 ARG TARGETARCH

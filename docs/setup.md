@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Go 1.26+ with cgo enabled (a C toolchain: `gcc` or `clang`)
+- Go 1.27+ with cgo enabled (a C toolchain: `gcc` or `clang`)
 - Node.js 20+
 - [pnpm](https://pnpm.io/installation) 11+ (`npm install -g pnpm`)
 - [poppler-utils](https://poppler.freedesktop.org/) for all PDF work: `pdftoppm` (preview and page thumbnails), `pdfinfo` (page count), `pdftotext` (page text), `pdfseparate` and `pdfunite` (page extraction for [document splitting](#document-splitting))
