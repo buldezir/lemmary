@@ -12,13 +12,6 @@ export type AppSettings = {
   ocr_timeout_sec: number
   processing_result_language: string
   deep_search_languages: string
-  /**
-   * The search model's context window, in tokens. Research mode reads
-   * documents until this budget is spent, so it is the only thing bounding a
-   * run — too high and requests overflow the model, too low and the answer is
-   * drawn from fewer documents than it should be.
-   */
-  search_context_tokens: number
   openai_timeout_sec: number
   worker_timeout_sec: number
   worker_max_retries: number

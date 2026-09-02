@@ -449,8 +449,8 @@ export function SearchPage() {
               sending={chat.sending}
               disabled={chat.loading}
               error={chat.error}
-              // A research run is bounded only by the context window, so there
-              // has to be a way out of one that is taking too long.
+              // A research run can take a while, so there has to be a way out
+              // of one that is taking too long.
               onCancel={mode === 'research' ? () => runRef.current?.abort() : undefined}
               autoFocus
             />

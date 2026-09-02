@@ -128,7 +128,6 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 			cfg.OpenAITimeout,
 			cfg.DeepSearchLanguages,
 			cfg.ProcessingResultLanguage,
-			cfg.SearchContextTokens,
 			aiLogger,
 		)
 	}
@@ -166,7 +165,6 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		"chat_model", cfg.ChatModel,
 		"search_model", cfg.SearchModel,
 		"deep_search_languages", cfg.DeepSearchLanguages,
-		"search_context_tokens", cfg.SearchContextTokens,
 	)
 }
 

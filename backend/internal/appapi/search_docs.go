@@ -14,16 +14,9 @@ import (
 )
 
 const (
-	defaultSearchLimit = 10
-	maxSearchLimit     = 20
-	maxSummaryLen      = 300
-	maxSnippetLen      = 220
-	snippetContext     = 80
-
-	// minReadCharsPerDocument keeps a read of many documents at once from
-	// returning slices too short to carry a figure and its label. Bytes, like
-	// the research budget it is spent against.
-	minReadCharsPerDocument = 500
+	maxSummaryLen  = 300
+	maxSnippetLen  = 220
+	snippetContext = 80
 )
 
 func searchUserDocuments(app core.App, idx *fulltext.Index, userID string, args ai.SearchDocumentsArgs) ([]ai.DocumentHit, error) {
@@ -35,20 +28,15 @@ func searchUserDocuments(app core.App, idx *fulltext.Index, userID string, args 
 		return nil, fmt.Errorf("search index is not ready")
 	}
 
-	limit := args.Limit
-	if limit <= 0 {
-		limit = defaultSearchLimit
-	}
-	if limit > maxSearchLimit {
-		limit = maxSearchLimit
-	}
-
+	// The tool used to advertise "1-20, default 10", and models still emit that
+	// even after the schema dropped it. Honouring it hid the rest of the archive
+	// from Search and Research. The index page size is the bound.
 	ftQuery := fulltext.Query{
 		Text:     query,
 		UserID:   userID,
 		DateFrom: strings.TrimSpace(args.DateFrom),
 		DateTo:   strings.TrimSpace(args.DateTo),
-		Limit:    limit,
+		Limit:    fulltext.MaxSearchLimit,
 	}
 
 	if typeName := strings.TrimSpace(args.DocumentType); typeName != "" {
@@ -152,30 +140,15 @@ func documentTagNames(app documentLookup, record *core.Record) []string {
 }
 
 // readUserDocuments backs the agent's read_documents tool: full extracted text
-// for documents the caller owns, divided across maxTotalChars so a research run
-// cannot overflow the model context window.
-//
-// ocr_text holds up to models.MaxOCRTextRunes runes, so truncation here is not
-// an edge case — it is the normal path for anything longer than a few pages.
-func readUserDocuments(app documentLookup, userID string, ids []string, maxTotalChars int) ([]ai.DocumentContent, error) {
+// for documents the caller owns. Truncation against a guessed context window
+// used to live here; a run that outgrows the model is now a provider error.
+func readUserDocuments(app documentLookup, userID string, ids []string) ([]ai.DocumentContent, error) {
 	if len(ids) == 0 {
 		return []ai.DocumentContent{}, nil
 	}
-	if maxTotalChars <= 0 {
-		return nil, fmt.Errorf("no context budget left to read documents")
-	}
-
-	perDoc := maxTotalChars / len(ids)
-	if perDoc < minReadCharsPerDocument {
-		perDoc = minReadCharsPerDocument
-	}
 
 	docs := make([]ai.DocumentContent, 0, len(ids))
-	spent := 0
 	for _, id := range ids {
-		if spent >= maxTotalChars {
-			break
-		}
 		record, err := app.FindRecordById("documents", id)
 		if err != nil {
 			continue
@@ -186,23 +159,6 @@ func readUserDocuments(app documentLookup, userID string, ids []string, maxTotal
 			continue
 		}
 
-		text := strings.TrimSpace(record.GetString("ocr_text"))
-		limit := perDoc
-		if remaining := maxTotalChars - spent; limit > remaining {
-			limit = remaining
-		}
-		// Bytes, not runes: maxTotalChars comes from the research loop's
-		// budget, which counts len() everywhere. Truncating to `limit` *runes*
-		// hands back up to four times that many bytes — for Cyrillic or Greek
-		// OCR, reliably twice — so the reader would overshoot the window the
-		// caller had just reserved for it.
-		truncated := false
-		if len(text) > limit {
-			text = strutil.Truncate(text, limit)
-			truncated = true
-		}
-		spent += len(text)
-
 		docs = append(docs, ai.DocumentContent{
 			ID:            record.Id,
 			Title:         strutil.FirstNonEmpty(record.GetString("title"), "Untitled document"),
@@ -210,8 +166,7 @@ func readUserDocuments(app documentLookup, userID string, ids []string, maxTotal
 			DocumentType:  relatedName(app, "document_types", record.GetString("document_type")),
 			Correspondent: relatedName(app, "correspondents", record.GetString("correspondent")),
 			Tags:          documentTagNames(app, record),
-			Text:          text,
-			Truncated:     truncated,
+			Text:          strings.TrimSpace(record.GetString("ocr_text")),
 		})
 	}
 	return docs, nil

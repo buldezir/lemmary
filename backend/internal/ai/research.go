@@ -15,20 +15,10 @@ import (
 )
 
 const (
-	// maxReadIDsPerCall keeps one read_documents call from splitting the
-	// remaining budget so thinly that every document comes back as a stub.
-	maxReadIDsPerCall = 20
-
 	// maxStalledRounds ends the research phase when the model keeps calling
 	// tools that surface nothing new. This is a stall detector, not a round
 	// cap: a run that keeps finding documents is never cut short.
 	maxStalledRounds = 3
-
-	// The read result carries JSON scaffolding around the document text: a fixed
-	// base plus per-document metadata (title, date, correspondent, tags). Held
-	// back from the budget so the reply cannot overshoot it.
-	readEnvelopeBaseChars   = 128
-	readEnvelopePerDocChars = 200
 )
 
 // DocumentContent is a document's full extracted text, as read_documents
@@ -41,13 +31,10 @@ type DocumentContent struct {
 	Correspondent string   `json:"correspondent,omitempty"`
 	Tags          []string `json:"tags,omitempty"`
 	Text          string   `json:"text"`
-	Truncated     bool     `json:"truncated,omitempty"`
 }
 
 // DocumentReader loads full document text for ids the agent has already seen.
-// maxTotalChars is the room left in the context window; implementations divide
-// it across the requested ids.
-type DocumentReader func(ctx context.Context, ids []string, maxTotalChars int) ([]DocumentContent, error)
+type DocumentReader func(ctx context.Context, ids []string) ([]DocumentContent, error)
 
 type ResearchRequest struct {
 	Messages      []ChatMessage
@@ -68,17 +55,16 @@ type ResearchResult struct {
 // ResearchEvent is one line of the run's visible progress. Types: "step",
 // "delta", "documents", "message", "error", "done".
 type ResearchEvent struct {
-	Type           string        `json:"type"`
-	Kind           string        `json:"kind,omitempty"`   // search | read | answer
-	Status         string        `json:"status,omitempty"` // start | done
-	Query          string        `json:"query,omitempty"`
-	Titles         []string      `json:"titles,omitempty"`
-	Count          int           `json:"count,omitempty"`
-	ContextLeftPct int           `json:"context_left_pct,omitempty"`
-	Content        string        `json:"content,omitempty"`
-	Documents      []DocumentHit `json:"documents,omitempty"`
-	Message        string        `json:"message,omitempty"`
-	Incomplete     bool          `json:"incomplete,omitempty"`
+	Type       string        `json:"type"`
+	Kind       string        `json:"kind,omitempty"`   // search | read | answer
+	Status     string        `json:"status,omitempty"` // start | done
+	Query      string        `json:"query,omitempty"`
+	Titles     []string      `json:"titles,omitempty"`
+	Count      int           `json:"count,omitempty"`
+	Content    string        `json:"content,omitempty"`
+	Documents  []DocumentHit `json:"documents,omitempty"`
+	Message    string        `json:"message,omitempty"`
+	Incomplete bool          `json:"incomplete,omitempty"`
 }
 
 type readDocumentsArgs struct {
@@ -87,7 +73,6 @@ type readDocumentsArgs struct {
 
 // researchState is everything the loop accumulates across rounds.
 type researchState struct {
-	budget  *contextBudget
 	hits    []DocumentHit
 	seenIDs map[string]struct{}
 	titles  map[string]string
@@ -107,7 +92,6 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 
 	state := &researchState{
-		budget:  newContextBudget(a.contextTokens),
 		hits:    make([]DocumentHit, 0),
 		seenIDs: map[string]struct{}{},
 		titles:  map[string]string{},
@@ -116,7 +100,6 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 
 	system := buildResearchSystemPrompt(a.languages, a.resultLanguage, req.AvailableTags)
-	state.budget.Add(len(system))
 
 	apiMessages := []openai.ChatCompletionMessageParamUnion{openai.SystemMessage(system)}
 	for _, msg := range req.Messages {
@@ -133,7 +116,6 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 		} else {
 			apiMessages = append(apiMessages, openai.AssistantMessage(content))
 		}
-		state.budget.Add(len(content))
 	}
 	if len(apiMessages) < 2 {
 		return ResearchResult{}, fmt.Errorf("at least one user message is required")
@@ -143,17 +125,14 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	stalled := 0
 	round := 0
 
-	// No round cap: the loop ends when the model is ready, when the context
-	// window is spent, or when it stops making progress. Every iteration
-	// appends at least an assistant message and a tool result, so the budget
-	// is always reached in finite time.
+	// No round cap: the loop ends when the model is ready, when it stops
+	// making progress, or when a completion is rejected — typically because
+	// the conversation outgrew the model's context window. Every iteration
+	// appends at least an assistant message and a tool result, so a run that
+	// keeps gathering is finite: the provider will refuse the next request.
 	for {
 		if err := ctx.Err(); err != nil {
 			return ResearchResult{}, err
-		}
-		if state.budget.Exhausted() {
-			a.client.logger.Info("research budget exhausted", "round", round, "documents", len(state.hits))
-			break
 		}
 		if stalled >= maxStalledRounds {
 			a.client.logger.Info("research stalled; answering", "round", round, "documents", len(state.hits))
@@ -173,7 +152,6 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 			"purpose", "research",
 			"round", round,
 			"messages", len(apiMessages),
-			"context_left_pct", state.budget.LeftPercent(),
 		)
 		if err != nil {
 			a.client.logger.Error("research request failed",
@@ -201,17 +179,14 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 		progressed := false
 		if len(nativeCalls) > 0 {
 			apiMessages = append(apiMessages, msg.ToParam())
-			state.budget.Add(len(msg.Content) + toolCallChars(nativeCalls))
 			for _, call := range nativeCalls {
 				result, advanced := a.runResearchTool(ctx, req, state, call.ID, call.Function.Name, call.Function.Arguments, emit)
 				progressed = progressed || advanced
 				apiMessages = append(apiMessages, openai.ToolMessage(result.Content, call.ID))
-				state.budget.Add(len(result.Content))
 			}
 		} else {
 			// DSML models put tool calls in content; feed results back as a user message.
 			apiMessages = append(apiMessages, openai.AssistantMessage(msg.Content))
-			state.budget.Add(len(msg.Content))
 			results := make([]toolExecResult, 0, len(dsmlCalls))
 			for _, call := range dsmlCalls {
 				result, advanced := a.runResearchTool(ctx, req, state, call.ID, call.Name, call.Arguments, emit)
@@ -220,7 +195,6 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 			}
 			formatted := formatDSMLToolResults(results)
 			apiMessages = append(apiMessages, openai.UserMessage(formatted))
-			state.budget.Add(len(formatted))
 		}
 
 		if progressed {
@@ -266,11 +240,8 @@ func (a *openAISearchAgent) answerResearch(
 	msgs = append(msgs, openai.UserMessage(researchAnswerInstruction))
 
 	params := openai.ChatCompletionNewParams{
-		Model:    shared.ChatModel(a.client.model),
-		Messages: msgs,
-		// The reserve the whole budget is computed against, made real: without
-		// it the answer is free to run past what was held back for it.
-		MaxTokens:   openai.Int(answerReserveTokens),
+		Model:       shared.ChatModel(a.client.model),
+		Messages:    msgs,
 		Temperature: CompletionTemperature(a.client.model, 0.2),
 	}
 
@@ -377,57 +348,29 @@ func (a *openAISearchAgent) runSearchTool(
 	}
 
 	emit(ResearchEvent{
-		Type:           "step",
-		Kind:           "search",
-		Status:         "done",
-		Query:          strings.TrimSpace(args.Query),
-		Count:          len(hits),
-		ContextLeftPct: state.budget.LeftPercent(),
+		Type:   "step",
+		Kind:   "search",
+		Status: "done",
+		Query:  strings.TrimSpace(args.Query),
+		Count:  len(hits),
 	})
 
-	content, err := encodeSearchResults(hits, state.budget.Remaining())
+	content, err := encodeSearchResults(hits)
 	if err != nil {
 		return toolExecResult{ID: callID, Name: name, Content: `{"error":"failed to encode search results"}`}, false
 	}
 	return toolExecResult{ID: callID, Name: name, Content: content}, found > 0
 }
 
-// encodeSearchResults renders the hits as a tool result that fits the remaining
-// budget, dropping whole documents from the tail until it does.
-//
-// It never slices the encoded JSON: a byte-truncated payload is not JSON at
-// all, and near exhaustion — exactly when the model most needs to understand
-// its own situation — that was the common case. When not even one document
-// fits, the model gets the same structured "budget exhausted" answer the read
-// path has always given, so it stops gathering and answers instead.
-func encodeSearchResults(hits []DocumentHit, remaining int) (string, error) {
-	limit := maxToolResultBytes
-	if remaining < limit {
-		limit = remaining
+func encodeSearchResults(hits []DocumentHit) (string, error) {
+	encoded, err := json.Marshal(map[string]any{
+		"count":     len(hits),
+		"documents": hits,
+	})
+	if err != nil {
+		return "", err
 	}
-	if limit <= 0 {
-		return `{"error":"context budget exhausted","hint":"answer with what you have already found"}`, nil
-	}
-
-	for count := len(hits); count > 0; count-- {
-		payload := map[string]any{
-			"count":              count,
-			"documents":          hits[:count],
-			"context_chars_left": remaining,
-		}
-		if count < len(hits) {
-			payload["note"] = fmt.Sprintf(
-				"only the first %d of %d results fit the remaining context", count, len(hits))
-		}
-		encoded, err := json.Marshal(payload)
-		if err != nil {
-			return "", err
-		}
-		if len(encoded) <= limit {
-			return string(encoded), nil
-		}
-	}
-	return `{"error":"context budget exhausted","hint":"answer with what you have already found"}`, nil
+	return string(encoded), nil
 }
 
 func (a *openAISearchAgent) runReadTool(
@@ -456,23 +399,13 @@ func (a *openAISearchAgent) runReadTool(
 	if len(wanted) == 0 {
 		return toolExecResult{ID: callID, Name: name, Content: `{"error":"no readable ids","hint":"pass ids returned by search_documents in this conversation"}`}, false
 	}
-	truncatedIDs := false
-	if len(wanted) > maxReadIDsPerCall {
-		wanted = wanted[:maxReadIDsPerCall]
-		truncatedIDs = true
-	}
 	if repeat, ok := state.claimCall(name, wanted); !ok {
 		return toolExecResult{ID: callID, Name: name, Content: repeat}, false
 	}
 
-	budget := state.budget.Remaining() - readEnvelopeBaseChars - readEnvelopePerDocChars*len(wanted)
-	if budget <= 0 {
-		return toolExecResult{ID: callID, Name: name, Content: `{"error":"reading budget exhausted","hint":"answer with what you have already read"}`}, false
-	}
-
 	emit(ResearchEvent{Type: "step", Kind: "read", Status: "start", Titles: state.titlesFor(wanted), Count: len(wanted)})
 
-	docs, err := req.Read(ctx, wanted, budget)
+	docs, err := req.Read(ctx, wanted)
 	if err != nil {
 		emit(ResearchEvent{Type: "step", Kind: "read", Status: "done"})
 		return toolExecResult{ID: callID, Name: name, Content: fmt.Sprintf(`{"error":%q}`, err.Error())}, false
@@ -488,23 +421,18 @@ func (a *openAISearchAgent) runReadTool(
 	}
 
 	emit(ResearchEvent{
-		Type:           "step",
-		Kind:           "read",
-		Status:         "done",
-		Titles:         state.titlesFor(wanted),
-		Count:          len(docs),
-		ContextLeftPct: state.budget.LeftPercent(),
+		Type:   "step",
+		Kind:   "read",
+		Status: "done",
+		Titles: state.titlesFor(wanted),
+		Count:  len(docs),
 	})
 
 	payload := map[string]any{
-		"documents":          docs,
-		"context_chars_left": state.budget.Remaining(),
+		"documents": docs,
 	}
 	if len(unknown) > 0 {
 		payload["skipped_unknown_ids"] = unknown
-	}
-	if truncatedIDs {
-		payload["note"] = fmt.Sprintf("only the first %d ids were read; call read_documents again for the rest", maxReadIDsPerCall)
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
@@ -539,15 +467,6 @@ func (state *researchState) titlesFor(ids []string) []string {
 		titles = append(titles, id)
 	}
 	return titles
-}
-
-// toolCallChars is what the model's own tool calls cost in the next request.
-func toolCallChars(calls []openai.ChatCompletionMessageToolCall) int {
-	total := 0
-	for _, call := range calls {
-		total += len(call.Function.Name) + len(call.Function.Arguments)
-	}
-	return total
 }
 
 // decodeReadArgs accepts the documented {"ids": [...]} shape and the two forms
@@ -627,8 +546,7 @@ Prefer precise date_from/date_to, document_type, correspondent, or tags filters 
 When filtering by tags, use exact names from the available archive tags list below — never invent tag names.
 
 Never state what a document contains without reading it first. Search results carry a short snippet only; that is a reason to read a document, not evidence about it.
-Read in small batches so each document comes back in full rather than truncated.
-There is no limit on how many searches or reads you may make. Every tool result reports context_chars_left: when it runs low, stop gathering and write the answer with what you have.
+There is no limit on how many searches or reads you may make, or how many documents one call may cover. Stop gathering and write the answer once you have enough evidence.
 Cite real document ids from tool results only. Never invent a document or an id.
 If the archive does not contain the answer, say so plainly and say what is missing.
 `)
@@ -651,7 +569,7 @@ func researchTools() []openai.ChatCompletionToolParam {
 					"ids": map[string]any{
 						"type":        "array",
 						"items":       map[string]any{"type": "string"},
-						"description": fmt.Sprintf("Document ids from earlier search_documents results. At most %d per call; prefer 2-5 so each document is returned in full.", maxReadIDsPerCall),
+						"description": "Document ids from earlier search_documents results.",
 					},
 				},
 				"required": []string{"ids"},

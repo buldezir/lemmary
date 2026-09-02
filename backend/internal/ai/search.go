@@ -11,18 +11,14 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
-
-	"lemmary/backend/internal/strutil"
 )
 
 const (
 	// maxSearchToolRounds is the whole of Search mode: expand the request into
 	// keywords, run the lookups, answer. Questions that need more than one pass
-	// belong in Research mode, which is bounded by the context window instead.
+	// belong in Research mode, which keeps going until the model is ready,
+	// stalls, or the provider rejects the request for exceeding its context.
 	maxSearchToolRounds = 1
-
-	// maxToolResultBytes caps the JSON fed back to the model per tool call.
-	maxToolResultBytes = 24000
 )
 
 type DocumentHit struct {
@@ -43,7 +39,9 @@ type SearchDocumentsArgs struct {
 	DocumentType  string   `json:"document_type,omitempty"`
 	Correspondent string   `json:"correspondent,omitempty"`
 	Tags          []string `json:"tags,omitempty"`
-	Limit         int      `json:"limit,omitempty"`
+	// Limit is still decoded: models emit it from the old "1-20" tool schema.
+	// searchUserDocuments ignores it.
+	Limit int `json:"limit,omitempty"`
 }
 
 // decodeSearchArgs parses tool-call arguments, coercing scalar-kind mismatches
@@ -130,15 +128,13 @@ type openAISearchAgent struct {
 	client         *OpenAIClient
 	languages      string
 	resultLanguage string
-	contextTokens  int
 }
 
-func NewSearchAgent(sdk, apiKey, model, baseURL string, timeout time.Duration, languages, resultLanguage string, contextTokens int, logger *slog.Logger) SearchAgent {
+func NewSearchAgent(sdk, apiKey, model, baseURL string, timeout time.Duration, languages, resultLanguage string, logger *slog.Logger) SearchAgent {
 	return &openAISearchAgent{
 		client:         NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", timeout, logger),
 		languages:      strings.TrimSpace(languages),
 		resultLanguage: strings.TrimSpace(resultLanguage),
-		contextTokens:  contextTokens,
 	}
 }
 
@@ -398,10 +394,7 @@ func (a *openAISearchAgent) executeToolCall(
 		*allHits = append(*allHits, hit)
 	}
 
-	payload, err := json.Marshal(map[string]any{
-		"count":     len(hits),
-		"documents": hits,
-	})
+	encoded, err := encodeSearchResults(hits)
 	if err != nil {
 		return toolExecResult{
 			ID:      callID,
@@ -409,11 +402,7 @@ func (a *openAISearchAgent) executeToolCall(
 			Content: `{"error":"failed to encode search results"}`,
 		}
 	}
-	toolContent := string(payload)
-	if len(toolContent) > maxToolResultBytes {
-		toolContent = strutil.Truncate(toolContent, maxToolResultBytes) + strutil.Ellipsis
-	}
-	return toolExecResult{ID: callID, Name: name, Content: toolContent}
+	return toolExecResult{ID: callID, Name: name, Content: encoded}
 }
 
 func buildSearchSystemPrompt(languages, resultLanguage string, availableTags []string) string {
@@ -516,10 +505,6 @@ func searchDocumentsTools() []openai.ChatCompletionToolParam {
 						"type":        "array",
 						"items":       map[string]any{"type": "string"},
 						"description": "Optional tag name filters. Use exact names from the available archive tags list. Matches documents that have any of these tags.",
-					},
-					"limit": map[string]any{
-						"type":        "integer",
-						"description": "Max results to return (1-20). Default 10.",
 					},
 				},
 				"required": []string{"query"},

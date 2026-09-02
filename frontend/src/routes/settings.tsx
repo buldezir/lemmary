@@ -47,7 +47,6 @@ type FormState = {
   ocr_timeout_sec: string
   processing_result_language: string
   deep_search_languages: string
-  search_context_tokens: string
   openai_timeout_sec: string
   worker_timeout_sec: string
   worker_max_retries: string
@@ -68,7 +67,6 @@ function formFromSettings(settings: AppSettings): FormState {
     ocr_timeout_sec: String(settings.ocr_timeout_sec),
     processing_result_language: settings.processing_result_language,
     deep_search_languages: settings.deep_search_languages,
-    search_context_tokens: String(settings.search_context_tokens),
     openai_timeout_sec: String(settings.openai_timeout_sec),
     worker_timeout_sec: String(settings.worker_timeout_sec),
     worker_max_retries: String(settings.worker_max_retries),
@@ -189,7 +187,6 @@ export function SettingsPage() {
     const workerTimeout = Number(form.worker_timeout_sec)
     const maxRetries = Number(form.worker_max_retries)
     const nearThreshold = Number(form.near_duplicate_threshold)
-    const searchContextTokens = Number(form.search_context_tokens)
 
     if (!Number.isFinite(ocrTimeout) || ocrTimeout <= 0) {
       setError('OCR timeout must be a positive number')
@@ -209,10 +206,6 @@ export function SettingsPage() {
     }
     if (!Number.isFinite(nearThreshold) || nearThreshold <= 0 || nearThreshold > 1) {
       setError('Near-duplicate threshold must be between 0 and 1')
-      return
-    }
-    if (!Number.isFinite(searchContextTokens) || searchContextTokens <= 0) {
-      setError('Search context window must be a positive number of tokens')
       return
     }
 
@@ -239,7 +232,6 @@ export function SettingsPage() {
               chat_model: form.chat_model,
               search_provider_id: form.search_provider_id,
               search_model: form.search_model,
-              search_context_tokens: searchContextTokens,
               near_duplicate_detection_enabled: form.near_duplicate_detection_enabled,
               near_duplicate_threshold: nearThreshold,
             }
@@ -461,34 +453,8 @@ export function SettingsPage() {
                 purpose="llm"
                 allowEmpty
                 onProviderChange={(id) => updateField('search_provider_id', id)}
-                onModelChange={(value, meta) => {
-                  updateField('search_model', value)
-                  // Research reads documents until this window is spent, so a
-                  // stale window from a previously chosen model is worth
-                  // correcting the moment the provider tells us the real one.
-                  if (meta?.context_window) {
-                    updateField('search_context_tokens', String(meta.context_window))
-                  }
-                }}
+                onModelChange={(value) => updateField('search_model', value)}
               />
-              <div className={labelClassName}>
-                <label className={labelClassName}>
-                  <span className={labelTextClassName}>Search context window (tokens)</span>
-                  <input
-                    type="number"
-                    min={1}
-                    className={inputClassName}
-                    value={form.search_context_tokens}
-                    onChange={(e) => updateField('search_context_tokens', e.target.value)}
-                  />
-                </label>
-                <p className={fieldHintClassName}>
-                  The search model&rsquo;s context window. Research mode keeps searching and reading
-                  documents until this budget is spent, so it is the only limit on how much of your
-                  archive one question can draw on. Filled in automatically when the provider reports
-                  it; OpenAI does not.
-                </p>
-              </div>
             </div>
           </section>
         )}

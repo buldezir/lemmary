@@ -22,6 +22,9 @@ type scriptedTurn struct {
 	// cutOff drops the connection part-way through the streamed answer, the way
 	// a request timeout does once the model has already started talking.
 	cutOff bool
+	// httpStatus, when set, is returned instead of a completion — the way a
+	// provider refuses a request that has outgrown the model's context window.
+	httpStatus int
 }
 
 type scriptedToolCall struct {
@@ -54,6 +57,18 @@ func (h *researchHarness) handler(w http.ResponseWriter, r *http.Request) {
 
 	if stream, _ := body["stream"].(bool); stream {
 		writeChatStream(w, turn.content, turn.cutOff)
+		return
+	}
+	if turn.httpStatus != 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(turn.httpStatus)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]any{
+				"message": "This model's maximum context length has been exceeded.",
+				"type":    "invalid_request_error",
+				"code":    "context_length_exceeded",
+			},
+		})
 		return
 	}
 	writeToolCallJSON(w, turn)
@@ -130,12 +145,12 @@ func writeChatStream(w http.ResponseWriter, content string, cutOff bool) {
 	}
 }
 
-func newResearchAgent(t *testing.T, contextTokens int, turns ...scriptedTurn) (*researchHarness, SearchAgent) {
+func newResearchAgent(t *testing.T, turns ...scriptedTurn) (*researchHarness, SearchAgent) {
 	t.Helper()
 	h := &researchHarness{turns: turns}
 	srv := httptest.NewServer(http.HandlerFunc(h.handler))
 	t.Cleanup(srv.Close)
-	agent := NewSearchAgent("openai", "test-key", "mistral-small-latest", srv.URL, 5*time.Second, "en,de", "en", contextTokens, slog.Default())
+	agent := NewSearchAgent("openai", "test-key", "mistral-small-latest", srv.URL, 5*time.Second, "en,de", "en", slog.Default())
 	return h, agent
 }
 
@@ -149,7 +164,7 @@ func hitsFor(ids ...string) []DocumentHit {
 
 func TestResearchSearchesThenReadsThenAnswers(t *testing.T) {
 	t.Parallel()
-	h, agent := newResearchAgent(t, 128000,
+	h, agent := newResearchAgent(t,
 		scriptedTurn{toolCalls: []scriptedToolCall{{name: "search_documents", args: `{"query":"car insurance"}`}}},
 		scriptedTurn{toolCalls: []scriptedToolCall{{name: "read_documents", args: `{"ids":["doc1","doc2"]}`}}},
 		scriptedTurn{content: "ready"},
@@ -163,11 +178,8 @@ func TestResearchSearchesThenReadsThenAnswers(t *testing.T) {
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return hitsFor("doc1", "doc2"), nil
 		},
-		Read: func(_ context.Context, ids []string, maxTotalChars int) ([]DocumentContent, error) {
+		Read: func(_ context.Context, ids []string) ([]DocumentContent, error) {
 			readIDs = ids
-			if maxTotalChars <= 0 {
-				t.Fatalf("reader received no budget")
-			}
 			return []DocumentContent{
 				{ID: "doc1", Title: "Doc doc1", Text: "Premium 200 EUR"},
 				{ID: "doc2", Title: "Doc doc2", Text: "Premium 0 EUR"},
@@ -231,7 +243,7 @@ func TestResearchIsNotCappedAtFourRounds(t *testing.T) {
 		}})
 	}
 	turns = append(turns, scriptedTurn{content: "done"})
-	_, agent := newResearchAgent(t, 128000, turns...)
+	_, agent := newResearchAgent(t, turns...)
 
 	searches := 0
 	result, err := agent.Research(context.Background(), ResearchRequest{
@@ -240,7 +252,7 @@ func TestResearchIsNotCappedAtFourRounds(t *testing.T) {
 			searches++
 			return hitsFor(fmt.Sprintf("doc%d", searches)), nil
 		},
-		Read: func(_ context.Context, _ []string, _ int) ([]DocumentContent, error) {
+		Read: func(_ context.Context, _ []string) ([]DocumentContent, error) {
 			return nil, nil
 		},
 	}, nil)
@@ -255,37 +267,35 @@ func TestResearchIsNotCappedAtFourRounds(t *testing.T) {
 	}
 }
 
-func TestResearchStopsWhenContextBudgetIsSpent(t *testing.T) {
+func TestResearchReturnsAProviderContextError(t *testing.T) {
 	t.Parallel()
-	turns := make([]scriptedTurn, 0, 200)
-	for i := 0; i < 200; i++ {
-		turns = append(turns, scriptedTurn{toolCalls: []scriptedToolCall{
-			{name: "search_documents", args: fmt.Sprintf(`{"query":"term %d"}`, i)},
-		}})
-	}
-	// The smallest window the budget accepts, so it runs out quickly.
-	_, agent := newResearchAgent(t, 1, turns...)
+	// A run that outgrows the model is the provider's to refuse. We used to
+	// guess a window and stop gathering before that happened; now the error
+	// surfaces instead of a synthesized answer.
+	_, agent := newResearchAgent(t,
+		scriptedTurn{toolCalls: []scriptedToolCall{{name: "search_documents", args: `{"query":"everything"}`}}},
+		scriptedTurn{httpStatus: http.StatusBadRequest},
+	)
 
 	searches := 0
-	result, err := agent.Research(context.Background(), ResearchRequest{
+	_, err := agent.Research(context.Background(), ResearchRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "summarise everything"}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			searches++
-			return hitsFor(fmt.Sprintf("doc%d", searches)), nil
+			return hitsFor("doc1"), nil
 		},
-		Read: func(_ context.Context, _ []string, _ int) ([]DocumentContent, error) {
+		Read: func(_ context.Context, _ []string) ([]DocumentContent, error) {
 			return nil, nil
 		},
 	}, nil)
-	if err != nil {
-		t.Fatalf("Research: %v", err)
+	if err == nil {
+		t.Fatal("expected the provider's context-length error")
 	}
-	if searches >= 200 {
-		t.Fatalf("budget did not stop the run: %d searches", searches)
+	if searches != 1 {
+		t.Fatalf("searches = %d, want 1 before the provider refused", searches)
 	}
-	// Exhausting the budget still has to produce an answer, not an error.
-	if strings.TrimSpace(result.Reply) == "" {
-		t.Fatal("budget exhaustion produced no answer")
+	if !strings.Contains(strings.ToLower(err.Error()), "context") && !strings.Contains(err.Error(), "400") {
+		t.Fatalf("error should name the provider refusal, got %v", err)
 	}
 }
 
@@ -298,7 +308,7 @@ func TestResearchSuppressesRepeatedIdenticalCalls(t *testing.T) {
 		}})
 	}
 	turns = append(turns, scriptedTurn{content: "done"})
-	_, agent := newResearchAgent(t, 128000, turns...)
+	_, agent := newResearchAgent(t, turns...)
 
 	searches := 0
 	if _, err := agent.Research(context.Background(), ResearchRequest{
@@ -307,7 +317,7 @@ func TestResearchSuppressesRepeatedIdenticalCalls(t *testing.T) {
 			searches++
 			return hitsFor("doc1"), nil
 		},
-		Read: func(_ context.Context, _ []string, _ int) ([]DocumentContent, error) {
+		Read: func(_ context.Context, _ []string) ([]DocumentContent, error) {
 			return nil, nil
 		},
 	}, nil); err != nil {
@@ -328,7 +338,7 @@ func TestResearchStopsAfterStalledRounds(t *testing.T) {
 			{name: "search_documents", args: fmt.Sprintf(`{"query":"nothing %d"}`, i)},
 		}})
 	}
-	_, agent := newResearchAgent(t, 128000, turns...)
+	_, agent := newResearchAgent(t, turns...)
 
 	searches := 0
 	if _, err := agent.Research(context.Background(), ResearchRequest{
@@ -337,7 +347,7 @@ func TestResearchStopsAfterStalledRounds(t *testing.T) {
 			searches++
 			return nil, nil
 		},
-		Read: func(_ context.Context, _ []string, _ int) ([]DocumentContent, error) {
+		Read: func(_ context.Context, _ []string) ([]DocumentContent, error) {
 			return nil, nil
 		},
 	}, nil); err != nil {
@@ -350,7 +360,7 @@ func TestResearchStopsAfterStalledRounds(t *testing.T) {
 
 func TestResearchRefusesToReadUnseenDocuments(t *testing.T) {
 	t.Parallel()
-	_, agent := newResearchAgent(t, 128000,
+	_, agent := newResearchAgent(t,
 		scriptedTurn{toolCalls: []scriptedToolCall{{name: "read_documents", args: `{"ids":["secret"]}`}}},
 		scriptedTurn{content: "done"},
 	)
@@ -361,7 +371,7 @@ func TestResearchRefusesToReadUnseenDocuments(t *testing.T) {
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return nil, nil
 		},
-		Read: func(_ context.Context, _ []string, _ int) ([]DocumentContent, error) {
+		Read: func(_ context.Context, _ []string) ([]DocumentContent, error) {
 			reads++
 			return nil, nil
 		},
@@ -370,6 +380,47 @@ func TestResearchRefusesToReadUnseenDocuments(t *testing.T) {
 	}
 	if reads != 0 {
 		t.Fatal("agent read an id it never found through search")
+	}
+}
+
+func TestResearchReadsEveryRequestedID(t *testing.T) {
+	t.Parallel()
+	const n = 25
+	ids := make([]string, n)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("doc%d", i+1)
+	}
+	args, err := json.Marshal(map[string]any{"ids": ids})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	_, agent := newResearchAgent(t,
+		scriptedTurn{toolCalls: []scriptedToolCall{{name: "search_documents", args: `{"query":"everything"}`}}},
+		scriptedTurn{toolCalls: []scriptedToolCall{{name: "read_documents", args: string(args)}}},
+		scriptedTurn{content: "ready"},
+		scriptedTurn{content: "done"},
+	)
+
+	var readIDs []string
+	_, err = agent.Research(context.Background(), ResearchRequest{
+		Messages: []ChatMessage{{Role: "user", Content: "read them all"}},
+		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
+			return hitsFor(ids...), nil
+		},
+		Read: func(_ context.Context, got []string) ([]DocumentContent, error) {
+			readIDs = append([]string{}, got...)
+			docs := make([]DocumentContent, 0, len(got))
+			for _, id := range got {
+				docs = append(docs, DocumentContent{ID: id, Title: "Doc " + id, Text: "text"})
+			}
+			return docs, nil
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Research: %v", err)
+	}
+	if len(readIDs) != n {
+		t.Fatalf("read %d ids, want all %d — a per-call cap is hiding documents", len(readIDs), n)
 	}
 }
 
@@ -416,7 +467,6 @@ func TestBuildResearchSystemPromptDemandsReadingBeforeClaiming(t *testing.T) {
 	for _, want := range []string{
 		"read_documents",
 		"Never state what a document contains without reading it",
-		"context_chars_left",
 		"invoice",
 		"en,de",
 	} {
@@ -432,7 +482,7 @@ func TestBuildResearchSystemPromptDemandsReadingBeforeClaiming(t *testing.T) {
 // presenting it as the whole answer is not.
 func TestResearchMarksACutOffAnswerIncomplete(t *testing.T) {
 	t.Parallel()
-	_, agent := newResearchAgent(t, 128000,
+	_, agent := newResearchAgent(t,
 		scriptedTurn{toolCalls: []scriptedToolCall{{name: "search_documents", args: `{"query":"car insurance"}`}}},
 		scriptedTurn{content: "ready"},
 		scriptedTurn{content: "You paid 200 EUR in total, and the rest of this answer never arrives.", cutOff: true},
@@ -444,7 +494,7 @@ func TestResearchMarksACutOffAnswerIncomplete(t *testing.T) {
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return hitsFor("doc1"), nil
 		},
-		Read: func(_ context.Context, _ []string, _ int) ([]DocumentContent, error) {
+		Read: func(_ context.Context, _ []string) ([]DocumentContent, error) {
 			return nil, nil
 		},
 	}, func(e ResearchEvent) { events = append(events, e) })
@@ -475,7 +525,7 @@ func TestResearchMarksACutOffAnswerIncomplete(t *testing.T) {
 // same path with an intact stream must not be flagged.
 func TestResearchAnswerCompletesNormally(t *testing.T) {
 	t.Parallel()
-	h, agent := newResearchAgent(t, 128000,
+	_, agent := newResearchAgent(t,
 		scriptedTurn{toolCalls: []scriptedToolCall{{name: "search_documents", args: `{"query":"car insurance"}`}}},
 		scriptedTurn{content: "ready"},
 		scriptedTurn{content: "You paid 200 EUR in total."},
@@ -486,7 +536,7 @@ func TestResearchAnswerCompletesNormally(t *testing.T) {
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return hitsFor("doc1"), nil
 		},
-		Read: func(_ context.Context, _ []string, _ int) ([]DocumentContent, error) {
+		Read: func(_ context.Context, _ []string) ([]DocumentContent, error) {
 			return nil, nil
 		},
 	}, nil)
@@ -496,59 +546,22 @@ func TestResearchAnswerCompletesNormally(t *testing.T) {
 	if result.Incomplete {
 		t.Fatalf("a complete answer was flagged incomplete: %q", result.Reply)
 	}
-
-	// The answer phase caps itself at the reserve the budget was computed
-	// against, so the reserve is a real limit rather than only arithmetic.
-	last := h.request(h.requestCount() - 1)
-	maxTokens, ok := last["max_tokens"].(float64)
-	if !ok {
-		t.Fatalf("answer phase declared no max_tokens: %v", last)
-	}
-	if int(maxTokens) != answerReserveTokens {
-		t.Fatalf("max_tokens = %d, want the answer reserve %d", int(maxTokens), answerReserveTokens)
-	}
 }
 
-func TestEncodeSearchResultsRefusesAnExhaustedBudget(t *testing.T) {
-	t.Parallel()
-	// Zero remaining used to fall through to the 24KB cap, so the largest tool
-	// result of the run was appended exactly when there was no room for it --
-	// eating the answer reserve and failing the completion that follows.
-	for _, remaining := range []int{0, -1} {
-		content, err := encodeSearchResults(hitsFor("doc1", "doc2"), remaining)
-		if err != nil {
-			t.Fatalf("encodeSearchResults: %v", err)
-		}
-		if !strings.Contains(content, "budget exhausted") {
-			t.Fatalf("remaining %d produced a payload rather than a refusal: %s", remaining, content)
-		}
-		assertValidJSON(t, content)
-	}
-}
-
-func TestEncodeSearchResultsDropsDocumentsRatherThanSlicingJSON(t *testing.T) {
+func TestEncodeSearchResultsKeepsEveryDocument(t *testing.T) {
 	t.Parallel()
 	hits := hitsFor("doc1", "doc2", "doc3", "doc4", "doc5")
-	full, err := encodeSearchResults(hits, 100000)
+	content, err := encodeSearchResults(hits)
 	if err != nil {
 		t.Fatalf("encodeSearchResults: %v", err)
 	}
-	assertValidJSON(t, full)
-
-	// A budget that fits some but not all of them. The old code byte-sliced the
-	// encoded JSON here and appended an ellipsis, so the model was handed
-	// something that was not JSON at all -- near exhaustion, the common case.
-	limit := len(full) / 2
-	partial, err := encodeSearchResults(hits, limit)
-	if err != nil {
-		t.Fatalf("encodeSearchResults: %v", err)
+	decoded := assertValidJSON(t, content)
+	docs, ok := decoded["documents"].([]any)
+	if !ok || len(docs) != len(hits) {
+		t.Fatalf("documents = %v, want all %d hits", decoded["documents"], len(hits))
 	}
-	if len(partial) > limit {
-		t.Fatalf("payload of %d bytes exceeds the %d-byte budget", len(partial), limit)
-	}
-	decoded := assertValidJSON(t, partial)
-	if docs, ok := decoded["documents"].([]any); ok && len(docs) >= len(hits) {
-		t.Fatalf("nothing was dropped: %d documents in %d bytes", len(docs), len(partial))
+	if count, _ := decoded["count"].(float64); int(count) != len(hits) {
+		t.Fatalf("count = %v, want %d", decoded["count"], len(hits))
 	}
 }
 

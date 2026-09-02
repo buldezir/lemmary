@@ -55,7 +55,7 @@ See [docs/setup.md](docs/setup.md) for the full list.
 - OCR text extraction (native text extraction for TXT/CSV/DOCX/XLSX)
 - AI metadata extraction: title, purpose, date, type, tags, summary
 - Document list with full-text search and status filters
-- Deep Search chat in two modes, one per path: **Search** (`/rag/search`) finds documents and lists them as cards; **Research** (`/rag/research`) searches, reads the documents it finds, and answers with links to its sources — bounded only by the search model's context window, streaming each step as it works; chats are saved, listed in a sidebar, and resumable by URL
+- Deep Search chat in two modes, one per path: **Search** (`/rag/search`) finds documents and lists them as cards; **Research** (`/rag/research`) searches, reads the documents it finds, and answers with links to its sources — streaming each step as it works; a run that outgrows the model's context window fails with the provider's error; chats are saved, listed in a sidebar, and resumable by URL
 - Detail page for reviewing OCR text and correcting metadata
 - Passkey sign-in: register a passkey per device and sign in with a fingerprint, face, or device PIN — no password typed, alongside the existing password and OAuth2 options
 - Admin Settings page for runtime OCR/AI/worker config

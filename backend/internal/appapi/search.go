@@ -76,8 +76,8 @@ func buildAgentTools(app core.App, idx *fulltext.Index, userID string) (agentToo
 		search: func(ctx context.Context, args ai.SearchDocumentsArgs) ([]ai.DocumentHit, error) {
 			return searchUserDocuments(app, idx, userID, args)
 		},
-		read: func(ctx context.Context, ids []string, maxTotalChars int) ([]ai.DocumentContent, error) {
-			return readUserDocuments(app, userID, ids, maxTotalChars)
+		read: func(ctx context.Context, ids []string) ([]ai.DocumentContent, error) {
+			return readUserDocuments(app, userID, ids)
 		},
 	}, nil
 }
