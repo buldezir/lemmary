@@ -112,8 +112,21 @@ func coerceInt(v any) int {
 	}
 }
 
+// SearchToolResult is one search_documents answer: the hits, plus how hard the
+// index had to insist on the model's keywords to find them.
+//
+// Terms and Required travel with the hits because the model needs them to read
+// its own result: a keyword-expanded query that matched only some of its terms
+// returns candidates, not answers, and without being told so the model reads a
+// full list as confirmation and cites the first row.
+type SearchToolResult struct {
+	Hits     []DocumentHit
+	Terms    int // unquoted terms in the query
+	Required int // how many of them a hit had to carry
+}
+
 // DocumentSearcher runs a user-scoped keyword search against the document archive.
-type DocumentSearcher func(ctx context.Context, args SearchDocumentsArgs) ([]DocumentHit, error)
+type DocumentSearcher func(ctx context.Context, args SearchDocumentsArgs) (SearchToolResult, error)
 
 type SearchAgent interface {
 	// Search finds documents and answers from their metadata and snippets.
@@ -374,7 +387,7 @@ func (a *openAISearchAgent) executeToolCall(
 		}
 	}
 
-	hits, err := search(ctx, args)
+	res, err := search(ctx, args)
 	if err != nil {
 		return toolExecResult{
 			ID:      callID,
@@ -383,7 +396,7 @@ func (a *openAISearchAgent) executeToolCall(
 		}
 	}
 
-	for _, hit := range hits {
+	for _, hit := range res.Hits {
 		if hit.ID == "" {
 			continue
 		}
@@ -394,7 +407,7 @@ func (a *openAISearchAgent) executeToolCall(
 		*allHits = append(*allHits, hit)
 	}
 
-	encoded, err := encodeSearchResults(hits)
+	encoded, err := encodeSearchResults(res)
 	if err != nil {
 		return toolExecResult{
 			ID:      callID,
@@ -410,6 +423,8 @@ func buildSearchSystemPrompt(languages, resultLanguage string, availableTags []s
 	b.WriteString(`You help the user find documents in their personal archive.
 The user may ask in broad natural language that keyword search alone cannot handle.
 Use the search_documents tool to look up documents. Expand the request into concrete keywords and filters.
+Prefer 2-5 keywords per call rather than one combined bag of synonyms.
+When a result reports terms_required below terms, those hits carry only some of the keywords: verify against the snippet before citing.
 Search bilingual metadata (title/purpose/summary and their *_original fields) plus OCR text.
 Prefer precise date_from/date_to, document_type, correspondent, or tags filters when the query implies them.
 When filtering by tags, use exact names from the available archive tags list below — never invent tag names.
@@ -483,7 +498,7 @@ func searchDocumentsTools() []openai.ChatCompletionToolParam {
 				"properties": map[string]any{
 					"query": map[string]any{
 						"type":        "string",
-						"description": "Keyword or short phrase to match against titles, summaries, and OCR text.",
+						"description": `Keywords, or a "quoted phrase" when words must appear together, matched against titles, summaries, and OCR text. Not every keyword has to match; a quoted phrase always must, so quote sparingly.`,
 					},
 					"date_from": map[string]any{
 						"type":        "string",

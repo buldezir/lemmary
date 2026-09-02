@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
+	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/fulltext"
 	"lemmary/backend/internal/strutil"
 )
 
@@ -107,5 +109,35 @@ func TestReadUserDocumentsNoIDsIsANoOp(t *testing.T) {
 	got, err := readUserDocuments(stubDocuments{}, "me", nil)
 	if err != nil || len(got) != 0 {
 		t.Fatalf("no ids should be a no-op, got %#v err=%v", got, err)
+	}
+}
+
+func TestAgentFulltextQueryRelaxes(t *testing.T) {
+	got := agentFulltextQuery("user1", ai.SearchDocumentsArgs{
+		Query:    "  purchase order receipt  ",
+		DateFrom: " 2024-01-01 ",
+		DateTo:   " 2024-12-31 ",
+	})
+
+	if !got.Relaxed {
+		t.Fatal("the agent path must relax: a keyword-expanded query rarely carries every term")
+	}
+	if got.Limit != fulltext.MaxSearchLimit {
+		t.Fatalf("limit=%d, want the index page size %d", got.Limit, fulltext.MaxSearchLimit)
+	}
+	if got.UserID != "user1" {
+		t.Fatalf("userID=%q", got.UserID)
+	}
+	if got.Text != "purchase order receipt" || got.DateFrom != "2024-01-01" || got.DateTo != "2024-12-31" {
+		t.Fatalf("arguments should be trimmed through: %+v", got)
+	}
+}
+
+// TestDocumentsPageStaysStrict guards the deliberate asymmetry: the Documents
+// page query box is a filter, so a hit that carried only some of the typed
+// words would read as a bug there.
+func TestDocumentsPageStaysStrict(t *testing.T) {
+	if (fulltext.Query{}).Relaxed {
+		t.Fatal("Relaxed must default off so every non-agent caller stays strict")
 	}
 }

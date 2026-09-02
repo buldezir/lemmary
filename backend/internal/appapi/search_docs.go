@@ -2,6 +2,7 @@ package appapi
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"unicode/utf8"
 
@@ -19,33 +20,47 @@ const (
 	snippetContext = 80
 )
 
-func searchUserDocuments(app core.App, idx *fulltext.Index, userID string, args ai.SearchDocumentsArgs) ([]ai.DocumentHit, error) {
-	query := strings.TrimSpace(args.Query)
-	if query == "" {
-		return nil, fmt.Errorf("query is required")
-	}
-	if idx == nil || !idx.Ready() {
-		return nil, fmt.Errorf("search index is not ready")
-	}
-
-	// The tool used to advertise "1-20, default 10", and models still emit that
-	// even after the schema dropped it. Honouring it hid the rest of the archive
-	// from Search and Research. The index page size is the bound.
-	ftQuery := fulltext.Query{
-		Text:     query,
+// agentFulltextQuery is the shape of every agent search. Entity filters are
+// added by the caller once their names resolve to ids.
+//
+// Relaxed is the whole point: the prompts tell the model to expand a question
+// into concrete keywords, and strict AND then asks for one document that is all
+// of those keywords at once, which is how a six-synonym query came back empty
+// while the archive held a document for every word in it.
+//
+// The tool used to advertise "1-20, default 10", and models still emit that even
+// after the schema dropped it. Honouring it hid the rest of the archive from
+// Search and Research. The index page size is the bound.
+func agentFulltextQuery(userID string, args ai.SearchDocumentsArgs) fulltext.Query {
+	return fulltext.Query{
+		Text:     strings.TrimSpace(args.Query),
 		UserID:   userID,
 		DateFrom: strings.TrimSpace(args.DateFrom),
 		DateTo:   strings.TrimSpace(args.DateTo),
 		Limit:    fulltext.MaxSearchLimit,
+		Relaxed:  true,
 	}
+}
+
+func searchUserDocuments(app core.App, idx *fulltext.Index, userID string, args ai.SearchDocumentsArgs) (ai.SearchToolResult, error) {
+	empty := ai.SearchToolResult{Hits: []ai.DocumentHit{}}
+	query := strings.TrimSpace(args.Query)
+	if query == "" {
+		return empty, fmt.Errorf("query is required")
+	}
+	if idx == nil || !idx.Ready() {
+		return empty, fmt.Errorf("search index is not ready")
+	}
+
+	ftQuery := agentFulltextQuery(userID, args)
 
 	if typeName := strings.TrimSpace(args.DocumentType); typeName != "" {
 		typeIDs, err := findNamedEntityIDs(app, "document_types", typeName, userID)
 		if err != nil {
-			return nil, err
+			return empty, err
 		}
 		if len(typeIDs) == 0 {
-			return []ai.DocumentHit{}, nil
+			return empty, nil
 		}
 		ftQuery.DocumentTypeIDs = typeIDs
 	}
@@ -53,10 +68,10 @@ func searchUserDocuments(app core.App, idx *fulltext.Index, userID string, args 
 	if corrName := strings.TrimSpace(args.Correspondent); corrName != "" {
 		corrIDs, err := findNamedEntityIDs(app, "correspondents", corrName, userID)
 		if err != nil {
-			return nil, err
+			return empty, err
 		}
 		if len(corrIDs) == 0 {
-			return []ai.DocumentHit{}, nil
+			return empty, nil
 		}
 		ftQuery.CorrespondentIDs = corrIDs
 	}
@@ -64,17 +79,25 @@ func searchUserDocuments(app core.App, idx *fulltext.Index, userID string, args 
 	if tagNames := normalizeTagNames(args.Tags); len(tagNames) > 0 {
 		tagIDs, err := findTagIDsByNames(app, tagNames, userID)
 		if err != nil {
-			return nil, err
+			return empty, err
 		}
 		if len(tagIDs) == 0 {
-			return []ai.DocumentHit{}, nil
+			return empty, nil
 		}
 		ftQuery.TagIDs = tagIDs
 	}
 
 	result, err := idx.Search(ftQuery)
 	if err != nil {
-		return nil, fmt.Errorf("search documents: %w", err)
+		return empty, fmt.Errorf("search documents: %w", err)
+	}
+	if result.Required < result.Terms {
+		app.Logger().Info("agent search matched only some keywords",
+			slog.String("query", query),
+			slog.Int("terms", result.Terms),
+			slog.Int("required", result.Required),
+			slog.Int("hits", len(result.Hits)),
+		)
 	}
 
 	hits := make([]ai.DocumentHit, 0, len(result.Hits))
@@ -106,7 +129,7 @@ func searchUserDocuments(app core.App, idx *fulltext.Index, userID string, args 
 
 		hits = append(hits, hit)
 	}
-	return hits, nil
+	return ai.SearchToolResult{Hits: hits, Terms: result.Terms, Required: result.Required}, nil
 }
 
 // relatedName resolves a relation id to its display name, tolerating a missing

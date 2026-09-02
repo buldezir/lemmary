@@ -408,6 +408,7 @@ Query behavior:
 - Search covers bilingual title/purpose/summary, OCR text, tag/type/correspondent names, and `people_or_organizations`.
 - The homepage search box calls `GET /api/app/documents/search`. An empty search box still lists via PocketBase (sort by created).
 - Deep Search’s `search_documents` tool (both modes) and paperless-ngx `GET /api/documents/?query=` use the same index. Research’s `read_documents` reads `ocr_text` straight from the database, not the index.
+- **The agent’s searches relax that AND; the search box does not.** The prompts ask the model to expand a question into keywords, and requiring every one of them returned nothing for archives that held a document per keyword. So `search_documents` asks for most of the terms (all of 2, n−1 up to 5, then 70%), and if *that* matches nothing at all it retries for any one of them — with one edit of slack on words of five letters or more that carry no digits — capping the retry at 10 hits and telling the model, via `terms_required` in the tool result, that its hits are partial. A quoted phrase stays mandatory in both attempts. The search box keeps strict AND on purpose: there the query is a filter over documents the user knows, and a hit that dropped a word reads as a bug.
 - PocketBase collection filters (`field ~ "..."`) remain available to API clients; the UI no longer uses them for the search box.
 
 Admins can force a rebuild from **Management → Rebuild search index** (`POST /api/app/search/reindex`).

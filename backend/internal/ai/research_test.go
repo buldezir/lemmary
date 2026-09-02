@@ -175,8 +175,8 @@ func TestResearchSearchesThenReadsThenAnswers(t *testing.T) {
 	var events []ResearchEvent
 	result, err := agent.Research(context.Background(), ResearchRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "how much did I pay?"}},
-		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
-			return hitsFor("doc1", "doc2"), nil
+		Search: func(_ context.Context, _ SearchDocumentsArgs) (SearchToolResult, error) {
+			return SearchToolResult{Hits: hitsFor("doc1", "doc2")}, nil
 		},
 		Read: func(_ context.Context, ids []string) ([]DocumentContent, error) {
 			readIDs = ids
@@ -248,9 +248,9 @@ func TestResearchIsNotCappedAtFourRounds(t *testing.T) {
 	searches := 0
 	result, err := agent.Research(context.Background(), ResearchRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "summarise everything"}},
-		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
+		Search: func(_ context.Context, _ SearchDocumentsArgs) (SearchToolResult, error) {
 			searches++
-			return hitsFor(fmt.Sprintf("doc%d", searches)), nil
+			return SearchToolResult{Hits: hitsFor(fmt.Sprintf("doc%d", searches))}, nil
 		},
 		Read: func(_ context.Context, _ []string) ([]DocumentContent, error) {
 			return nil, nil
@@ -280,9 +280,9 @@ func TestResearchReturnsAProviderContextError(t *testing.T) {
 	searches := 0
 	_, err := agent.Research(context.Background(), ResearchRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "summarise everything"}},
-		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
+		Search: func(_ context.Context, _ SearchDocumentsArgs) (SearchToolResult, error) {
 			searches++
-			return hitsFor("doc1"), nil
+			return SearchToolResult{Hits: hitsFor("doc1")}, nil
 		},
 		Read: func(_ context.Context, _ []string) ([]DocumentContent, error) {
 			return nil, nil
@@ -313,9 +313,9 @@ func TestResearchSuppressesRepeatedIdenticalCalls(t *testing.T) {
 	searches := 0
 	if _, err := agent.Research(context.Background(), ResearchRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "anything"}},
-		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
+		Search: func(_ context.Context, _ SearchDocumentsArgs) (SearchToolResult, error) {
 			searches++
-			return hitsFor("doc1"), nil
+			return SearchToolResult{Hits: hitsFor("doc1")}, nil
 		},
 		Read: func(_ context.Context, _ []string) ([]DocumentContent, error) {
 			return nil, nil
@@ -343,9 +343,9 @@ func TestResearchStopsAfterStalledRounds(t *testing.T) {
 	searches := 0
 	if _, err := agent.Research(context.Background(), ResearchRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "anything"}},
-		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
+		Search: func(_ context.Context, _ SearchDocumentsArgs) (SearchToolResult, error) {
 			searches++
-			return nil, nil
+			return SearchToolResult{}, nil
 		},
 		Read: func(_ context.Context, _ []string) ([]DocumentContent, error) {
 			return nil, nil
@@ -368,8 +368,8 @@ func TestResearchRefusesToReadUnseenDocuments(t *testing.T) {
 	reads := 0
 	if _, err := agent.Research(context.Background(), ResearchRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "read someone else's document"}},
-		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
-			return nil, nil
+		Search: func(_ context.Context, _ SearchDocumentsArgs) (SearchToolResult, error) {
+			return SearchToolResult{}, nil
 		},
 		Read: func(_ context.Context, _ []string) ([]DocumentContent, error) {
 			reads++
@@ -404,8 +404,8 @@ func TestResearchReadsEveryRequestedID(t *testing.T) {
 	var readIDs []string
 	_, err = agent.Research(context.Background(), ResearchRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "read them all"}},
-		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
-			return hitsFor(ids...), nil
+		Search: func(_ context.Context, _ SearchDocumentsArgs) (SearchToolResult, error) {
+			return SearchToolResult{Hits: hitsFor(ids...)}, nil
 		},
 		Read: func(_ context.Context, got []string) ([]DocumentContent, error) {
 			readIDs = append([]string{}, got...)
@@ -491,8 +491,8 @@ func TestResearchMarksACutOffAnswerIncomplete(t *testing.T) {
 	var events []ResearchEvent
 	result, err := agent.Research(context.Background(), ResearchRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "how much did I pay?"}},
-		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
-			return hitsFor("doc1"), nil
+		Search: func(_ context.Context, _ SearchDocumentsArgs) (SearchToolResult, error) {
+			return SearchToolResult{Hits: hitsFor("doc1")}, nil
 		},
 		Read: func(_ context.Context, _ []string) ([]DocumentContent, error) {
 			return nil, nil
@@ -533,8 +533,8 @@ func TestResearchAnswerCompletesNormally(t *testing.T) {
 
 	result, err := agent.Research(context.Background(), ResearchRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "how much did I pay?"}},
-		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
-			return hitsFor("doc1"), nil
+		Search: func(_ context.Context, _ SearchDocumentsArgs) (SearchToolResult, error) {
+			return SearchToolResult{Hits: hitsFor("doc1")}, nil
 		},
 		Read: func(_ context.Context, _ []string) ([]DocumentContent, error) {
 			return nil, nil
@@ -551,7 +551,7 @@ func TestResearchAnswerCompletesNormally(t *testing.T) {
 func TestEncodeSearchResultsKeepsEveryDocument(t *testing.T) {
 	t.Parallel()
 	hits := hitsFor("doc1", "doc2", "doc3", "doc4", "doc5")
-	content, err := encodeSearchResults(hits)
+	content, err := encodeSearchResults(SearchToolResult{Hits: hits})
 	if err != nil {
 		t.Fatalf("encodeSearchResults: %v", err)
 	}
@@ -572,4 +572,39 @@ func assertValidJSON(t *testing.T, content string) map[string]any {
 		t.Fatalf("tool result is not valid JSON (%v): %s", err, content)
 	}
 	return decoded
+}
+
+func TestEncodeSearchResultsFlagsPartialMatches(t *testing.T) {
+	t.Parallel()
+
+	partial := assertValidJSON(t, mustEncode(t, SearchToolResult{
+		Hits: hitsFor("doc1", "doc2"), Terms: 6, Required: 1,
+	}))
+	if terms, _ := partial["terms"].(float64); int(terms) != 6 {
+		t.Fatalf("terms = %v, want 6", partial["terms"])
+	}
+	if req, _ := partial["terms_required"].(float64); int(req) != 1 {
+		t.Fatalf("terms_required = %v, want 1", partial["terms_required"])
+	}
+	note, _ := partial["note"].(string)
+	if !strings.Contains(note, "at least 1 of 6") {
+		t.Fatalf("a partial result must say so plainly, got %q", note)
+	}
+
+	// An all-terms match is not a candidate list, and must not be labelled as one.
+	full := assertValidJSON(t, mustEncode(t, SearchToolResult{
+		Hits: hitsFor("doc1"), Terms: 2, Required: 2,
+	}))
+	if _, ok := full["note"]; ok {
+		t.Fatalf("a full match should carry no caveat, got %v", full["note"])
+	}
+}
+
+func mustEncode(t *testing.T, res SearchToolResult) string {
+	t.Helper()
+	content, err := encodeSearchResults(res)
+	if err != nil {
+		t.Fatalf("encodeSearchResults: %v", err)
+	}
+	return content
 }

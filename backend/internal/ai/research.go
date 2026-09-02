@@ -327,14 +327,14 @@ func (a *openAISearchAgent) runSearchTool(
 
 	emit(ResearchEvent{Type: "step", Kind: "search", Status: "start", Query: strings.TrimSpace(args.Query)})
 
-	hits, err := req.Search(ctx, args)
+	res, err := req.Search(ctx, args)
 	if err != nil {
 		emit(ResearchEvent{Type: "step", Kind: "search", Status: "done", Query: strings.TrimSpace(args.Query)})
 		return toolExecResult{ID: callID, Name: name, Content: fmt.Sprintf(`{"error":%q}`, err.Error())}, false
 	}
 
 	found := 0
-	for _, hit := range hits {
+	for _, hit := range res.Hits {
 		if hit.ID == "" {
 			continue
 		}
@@ -352,21 +352,37 @@ func (a *openAISearchAgent) runSearchTool(
 		Kind:   "search",
 		Status: "done",
 		Query:  strings.TrimSpace(args.Query),
-		Count:  len(hits),
+		Count:  len(res.Hits),
 	})
 
-	content, err := encodeSearchResults(hits)
+	content, err := encodeSearchResults(res)
 	if err != nil {
 		return toolExecResult{ID: callID, Name: name, Content: `{"error":"failed to encode search results"}`}, false
 	}
 	return toolExecResult{ID: callID, Name: name, Content: content}, found > 0
 }
 
-func encodeSearchResults(hits []DocumentHit) (string, error) {
-	encoded, err := json.Marshal(map[string]any{
-		"count":     len(hits),
-		"documents": hits,
-	})
+func encodeSearchResults(res SearchToolResult) (string, error) {
+	hits := res.Hits
+	if hits == nil {
+		hits = []DocumentHit{}
+	}
+	payload := map[string]any{
+		"count":          len(hits),
+		"terms":          res.Terms,
+		"terms_required": res.Required,
+		"documents":      hits,
+	}
+	// Spell out a partial match rather than leaving the model to infer it from
+	// two integers. Relaxed matching hands back documents that carry only some
+	// of the keywords, and a list that looks complete gets cited as if it were.
+	if res.Required < res.Terms {
+		payload["note"] = fmt.Sprintf(
+			"No document matched all keywords; these match at least %d of %d. Treat them as candidates and check the snippet before citing.",
+			res.Required, res.Terms,
+		)
+	}
+	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
 	}
@@ -542,6 +558,8 @@ func buildResearchSystemPrompt(languages, resultLanguage string, availableTags [
 	b.WriteString(`You are researching the user's personal document archive to answer their question.
 Work in steps. First find candidate documents with search_documents, then read the promising ones with read_documents.
 Expand the request into concrete keywords and filters. Search bilingual metadata (title/purpose/summary and their *_original fields) plus OCR text.
+Prefer 2-5 keywords per call rather than one combined bag of synonyms.
+When a search result reports terms_required below terms, those hits carry only some of the keywords: read the document before relying on it.
 Prefer precise date_from/date_to, document_type, correspondent, or tags filters when the query implies them.
 When filtering by tags, use exact names from the available archive tags list below — never invent tag names.
 
