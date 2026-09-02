@@ -21,6 +21,7 @@ func Register(
 	badLimitKeys []string,
 	sweeper EmbeddingSweeper,
 ) {
+	RegisterAppName(app)
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: 45,
 		Func: func(e *core.ServeEvent) error {

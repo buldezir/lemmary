@@ -50,8 +50,10 @@ func mapUiSettings(app core.App, user *core.Record) map[string]any {
 }
 
 func defaultUiSettings(app core.App) map[string]any {
+	// PocketBase seeds Meta.AppName as "Acme"; treat it as unset, same as
+	// appapi.resolvedAppName. A custom name still wins.
 	appTitle := "Lemmary"
-	if name := strings.TrimSpace(app.Settings().Meta.AppName); name != "" {
+	if name := strings.TrimSpace(app.Settings().Meta.AppName); name != "" && name != "Acme" {
 		appTitle = name
 	}
 	return map[string]any{
