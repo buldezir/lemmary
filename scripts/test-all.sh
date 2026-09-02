@@ -38,39 +38,55 @@ echo "No verification overlay found: running unit tests and the frontend build."
 echo "API and browser e2e will NOT run."
 
 stage "Unit tests"
+# apt-get needs root; tests must not run as root (vault Wipe as uid 0 unlinks
+# a chmod-0500 parent that stands in for a tmpfs mount).
 docker run --rm \
   -v "$ROOT:$ROOT" \
   -w "$ROOT/backend" \
-  -e GOCACHE=/tmp/go-build \
-  -e GOMODCACHE=/tmp/go-mod \
-  -e GOTOOLCHAIN=local \
+  -e HOST_UID="$(id -u)" \
+  -e HOST_GID="$(id -g)" \
   golang:1.26.3-bookworm \
   bash -c 'set -euo pipefail
     apt-get update -qq
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq poppler-utils
-    GOWORK=off go test ./... -count=1
-    echo
-    echo "==> Vet"
-    GOWORK=off go vet ./...
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq poppler-utils gosu
+    mkdir -p /tmp/go-build /tmp/go-mod
+    chown "$HOST_UID:$HOST_GID" /tmp/go-build /tmp/go-mod
+    export GOCACHE=/tmp/go-build GOMODCACHE=/tmp/go-mod GOTOOLCHAIN=local HOME=/tmp
+    run_go() {
+      GOWORK=off go test ./... -count=1
+      echo
+      echo "==> Vet"
+      GOWORK=off go vet ./...
+    }
+    if [[ "$HOST_UID" != 0 ]]; then
+      groupadd -g "$HOST_GID" -o lemmary 2>/dev/null || true
+      useradd -u "$HOST_UID" -g "$HOST_GID" -o -M -d /tmp -s /bin/bash lemmary 2>/dev/null || true
+      exec gosu "$HOST_UID:$HOST_GID" bash -c "$(declare -f run_go); run_go"
+    fi
+    run_go
   ' || fail "unit tests"
 
 stage "Frontend unit tests"
+# Node 26 does not ship corepack. npm install -g needs root if it writes to
+# /usr/local, so install pnpm under $HOME as the bind-mount user: that keeps
+# frontend/node_modules and public/ host-owned, and puts pnpm on PATH for
+# `pnpm run docs:build` inside the build script. Pin matches package.json.
 docker run --rm \
   -u "$(id -u):$(id -g)" \
   -e HOME=/tmp/lemmary-reduced \
-  -e COREPACK_HOME=/tmp/lemmary-reduced/corepack \
-  -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
   -e npm_config_cache=/tmp/lemmary-reduced/npm \
   -v "$ROOT:$ROOT" \
   -w "$ROOT/frontend" \
   node:26-bookworm \
   bash -c 'set -euo pipefail
-    mkdir -p "$HOME" "$COREPACK_HOME"
-    corepack pnpm install --frozen-lockfile
-    corepack pnpm test
+    mkdir -p "$HOME"
+    npm install -g pnpm@11.24.0 --prefix "$HOME"
+    export PATH="$HOME/bin:$PATH"
+    pnpm install --frozen-lockfile
+    pnpm test
     echo
     echo "==> Frontend build"
-    corepack pnpm run build
+    pnpm run build
   ' || fail "frontend unit tests"
 
 echo ""
