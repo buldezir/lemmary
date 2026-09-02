@@ -1,6 +1,7 @@
 import { pb } from '../pb'
 import { ensureAuth } from '../auth'
 import { apiFetch } from '../apiClient'
+import type { EmbeddingStats } from './settings'
 
 export type DuplicateScanResult = {
   scanned: number
@@ -25,6 +26,36 @@ export function reindexSearch() {
   return apiFetch<SearchReindexResult>('/api/app/search/reindex', {
     method: 'POST',
     fallbackError: 'Search reindex failed',
+  })
+}
+
+/**
+ * The embedding backfill's state. `started` says whether this call is what
+ * started the sweep; `running` says whether one is in flight either way, so a
+ * click that lands on an already-running sweep reads as "still going" rather
+ * than as a failure.
+ */
+export type EmbeddingBackfillState = {
+  started: boolean
+  running: boolean
+  stats: EmbeddingStats
+}
+
+/**
+ * Starts a sweep over every document that still needs embedding. It returns as
+ * soon as the sweep is queued — progress comes from polling
+ * getEmbeddingBackfillState.
+ */
+export function startEmbeddingBackfill() {
+  return apiFetch<EmbeddingBackfillState>('/api/app/embeddings/backfill', {
+    method: 'POST',
+    fallbackError: 'Embedding backfill failed',
+  })
+}
+
+export function getEmbeddingBackfillState() {
+  return apiFetch<EmbeddingBackfillState>('/api/app/embeddings/backfill', {
+    fallbackError: 'Failed to load the embedding backfill state',
   })
 }
 

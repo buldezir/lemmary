@@ -10,7 +10,17 @@ import (
 	"lemmary/backend/internal/pdfsplit"
 )
 
-func Register(app core.App, rt *config.Runtime, idx *fulltext.Index, lim limits.Limits, badLimitKeys []string) {
+// sweeper is the embedding backfill the Management page starts by hand. It is
+// the same instance the worker's cron uses, which is what stops a click and a
+// tick from embedding the same documents twice.
+func Register(
+	app core.App,
+	rt *config.Runtime,
+	idx *fulltext.Index,
+	lim limits.Limits,
+	badLimitKeys []string,
+	sweeper EmbeddingSweeper,
+) {
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: 45,
 		Func: func(e *core.ServeEvent) error {
@@ -58,6 +68,8 @@ func Register(app core.App, rt *config.Runtime, idx *fulltext.Index, lim limits.
 			g.GET("/settings", bindAdmin(handleGetSettings(app, rt)))
 			g.PATCH("/settings", bindAdmin(handlePatchSettings(app, rt)))
 			g.GET("/settings/embeddings", bindAdmin(handleGetEmbeddingStats(app, rt)))
+			g.GET("/embeddings/backfill", bindAdmin(handleGetEmbeddingBackfill(app, rt, sweeper)))
+			g.POST("/embeddings/backfill", bindAdmin(handlePostEmbeddingBackfill(app, rt, sweeper)))
 			g.GET("/providers", bindAdmin(handleListProviders(app)))
 			g.POST("/providers", bindAdmin(handleCreateProvider(app, rt)))
 			g.PATCH("/providers/{id}", bindAdmin(handlePatchProvider(app, rt)))

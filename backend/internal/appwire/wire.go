@@ -59,13 +59,18 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	// deleted document takes its rows with it, an edited one is marked stale
 	// for the backfill.
 	embedstore.Register(app)
-	appapi.Register(app, rt, ft, lim, badLimitKeys)
+	// One backfiller for both callers: the worker's cron below and the manual
+	// sweep the API exposes. It is built here because appapi binds its routes
+	// before worker.Register runs, and two instances would each think they had
+	// the backlog to themselves.
+	backfill := worker.NewBackfiller(app, rt)
+	appapi.Register(app, rt, ft, lim, badLimitKeys, backfill)
 	// After config.RegisterHooks so the settings singleton and any env-seeded
 	// providers exist by the time an account is minted: an instance that hands
 	// somebody a login should have somewhere for them to land.
 	appapi.RegisterAdminBootstrap(app)
 	ngxapi.Register(app, ft)
-	worker.Register(app, rt)
+	worker.Register(app, rt, backfill)
 
 	// Prefer the in-app setup wizard over PocketBase's browser installer UI.
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{

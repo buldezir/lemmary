@@ -5,13 +5,10 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/aiprovider"
-	"lemmary/backend/internal/chunk"
 	"lemmary/backend/internal/config"
-	"lemmary/backend/internal/embedstore"
 )
 
 type settingsResponse struct {
@@ -136,12 +133,7 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 // make every visit to the Settings page pay for it.
 func handleGetEmbeddingStats(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		cfg := rt.Snapshot().Cfg
-		model := ""
-		if config.HasEmbedding(cfg) {
-			model = cfg.EmbeddingModel
-		}
-		stats, err := embedstore.LoadStats(app.DB(), model, cfg.EmbeddingDims, chunk.Version, time.Now())
+		stats, err := loadEmbeddingStats(app, rt.Snapshot().Cfg)
 		if err != nil {
 			app.Logger().Error("embedding stats failed", slog.Any("error", err))
 			return writeError(e, http.StatusInternalServerError, "Failed to load embedding statistics.")

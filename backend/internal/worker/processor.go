@@ -23,7 +23,7 @@ type Processor struct {
 	processing sync.Mutex
 }
 
-func Register(app core.App, rt *config.Runtime) {
+func Register(app core.App, rt *config.Runtime, backfill *Backfiller) {
 	p := &Processor{
 		app: app,
 		rt:  rt,
@@ -49,8 +49,9 @@ func Register(app core.App, rt *config.Runtime) {
 
 	// A second cron on the same expression: the job drain only ever reaches
 	// documents a job was created for, and most of the documents that need
-	// embedding never get one.
-	registerEmbeddingBackfill(app, rt)
+	// embedding never get one. The instance is passed in because the API binds
+	// its manual sweep to the same one.
+	registerEmbeddingBackfill(app, backfill)
 
 	app.Logger().Info("worker registered", "cron", cronExpr)
 }

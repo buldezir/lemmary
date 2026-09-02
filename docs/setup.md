@@ -308,7 +308,7 @@ paces spending rather than describing the instance:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `EMBEDDING_BACKFILL_BATCH` | `20` | Documents one backfill tick embeds, on `WORKER_CRON_EXPR`. `0` disables the backfill, so only newly processed documents are embedded and an existing archive is left alone. |
+| `EMBEDDING_BACKFILL_BATCH` | `20` | Documents one backfill tick embeds, on `WORKER_CRON_EXPR`. `0` disables the scheduled backfill, so only newly processed documents are embedded and an existing archive is left alone — **Management → Embeddings** still embeds it on demand. |
 
 #### What embeddings cost
 
@@ -332,8 +332,10 @@ make it.
 
 The backfill drains at `EMBEDDING_BACKFILL_BATCH` documents a tick and logs what
 it embedded, what failed, and how many are left; **Settings → Models** shows the
-same counts. A provider failure is soft: the document keeps its text, its
-metadata and its place in keyword search, and is retried later with a backoff.
+same counts, and **Management → Embeddings** both shows them and runs the whole
+backlog on demand rather than waiting a tick a minute. A provider failure is
+soft: the document keeps its text, its metadata and its place in keyword search,
+and is retried later with a backoff.
 
 The **result language** has no variable at all. It decides what language a
 document's title, summary and tags are stored in, which is a reader's
@@ -368,6 +370,7 @@ You can also create the admin from the environment (`SETUP_ADMIN_EMAIL` and `SET
 - **Clear stale data** — `POST /api/app/taxonomy/prune` deletes every tag, correspondent and document type that no document references any more (left behind by deleted documents, renames, or an aborted import). Documents are never modified. Reference collection and deletion share one transaction, so a document saved concurrently either counts as a reference or fails its own relation check; it cannot keep a dangling id.
   The button is disabled while any processing job is `pending` or `running`, so an entity a job is about to attach cannot be swept up. The count comes from the PocketBase collection API (`GET /api/collections/processing_jobs/records`), polled every 5s and re-checked on click. That list rule is `document.user = @request.auth.id`, so the gate only sees jobs on the admin's own documents — another user's in-flight upload does not block the button.
 - **Rebuild search index** — `POST /api/app/search/reindex`, see [Full-text search](#full-text-search).
+- **Embed N missing documents** — `POST /api/app/embeddings/backfill` sweeps every document that still needs passage vectors: the archive that existed before an embedding model was bound, restored backups (whose documents get no processing job at all), documents edited since they were embedded, and anything a model or chunker change invalidated. It answers immediately with `{ "started", "running", "stats" }` and works through the backlog in the background, in batches, for up to 30 minutes; `GET` on the same path returns `{ "running", "stats" }`, which is what the progress line polls every 3s. The section is disabled with a pointer to Settings when no embedding model is bound (`409`), and the button is disabled while a sweep is running. A sweep and the `EMBEDDING_BACKFILL_BATCH` cron share one lock, so they never embed the same document twice — and `EMBEDDING_BACKFILL_BATCH=0` disables only the cron, never this button.
 
 Admin-only items in the nav menu are prefixed with a shield icon (decorative — the items only render for admins in the first place).
 
