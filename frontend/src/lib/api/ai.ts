@@ -11,8 +11,9 @@ export type ChatMessage = {
 
 /**
  * `search` finds documents and lists them as cards. `research` reads the
- * documents it finds and writes a cited answer — the only bound on it is the
- * model's context window, so it can take a while and streams its progress.
+ * documents it finds and writes a cited answer — it can take a while and
+ * streams its progress. A run that outgrows the model's context window fails
+ * with the provider's error.
  */
 export type SearchMode = 'search' | 'research'
 
@@ -102,7 +103,6 @@ export type ResearchEvent =
       query?: string
       titles?: string[]
       count?: number
-      context_left_pct?: number
     }
   | { type: 'delta'; content: string }
   | { type: 'documents'; documents?: SearchDocumentHit[] }

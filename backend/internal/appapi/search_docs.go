@@ -20,16 +20,9 @@ import (
 )
 
 const (
-	defaultSearchLimit = 10
-	maxSearchLimit     = 20
-	maxSummaryLen      = 300
-	maxSnippetLen      = 220
-	snippetContext     = 80
-
-	// minReadCharsPerDocument keeps a read of many documents at once from
-	// returning slices too short to carry a figure and its label. Bytes, like
-	// the research budget it is spent against.
-	minReadCharsPerDocument = 500
+	maxSummaryLen  = 300
+	maxSnippetLen  = 220
+	snippetContext = 80
 )
 
 // agentRetriever is what the Deep Search tools run against: one per request,
@@ -75,14 +68,16 @@ type retrieverApp interface {
 	) ([]*core.Record, error)
 }
 
-// searchCandidateFactor widens the lexical list before fusion: the document
-// that answers the question is often not in the lexical top ten, and fusion can
-// only reorder what it was given.
-const searchCandidateFactor = 3
-
-// maxSearchCandidates caps that widening. Each candidate costs a record read
-// during hydration, so this is what keeps one tool call bounded.
-const maxSearchCandidates = 60
+// maxSearchDocuments is how many documents one agent search returns.
+//
+// The tool used to advertise "1-20, default 10" and honour whatever the model
+// sent, so a number the model had guessed decided how much of the archive it
+// was shown. The index is asked for its whole page now and fusion reorders all
+// of it; this is the only bound left, and it is set by what a returned hit
+// costs rather than by the model — each one is a record read during hydration
+// and a share of the passage budget. Recall past it is the next search's job,
+// or read_documents'.
+const maxSearchDocuments = 60
 
 // denseCandidateFactor is how many chunks the dense leg asks for per document
 // candidate. A document is many passages, and the four best chunks of the
@@ -96,9 +91,19 @@ const denseCandidateFactor = 4
 const maxPreFilterIDs = 1024
 
 // passageCapBytes is the total the passages of one search may quote, divided
-// across its hits. Roughly a tenth of a tool result: enough to answer a simple
-// question from the result list, not enough to make the list a read.
+// across its hits (and floored per document, so a long result list still gets
+// usable quotes). Enough to answer a simple question from the result list, not
+// enough to make the list a read.
 const passageCapBytes = 6000
+
+// focusExcerptBytes is how much of a document a focused read returns: its head
+// plus the passages most relevant to the focus, gaps marked.
+//
+// A passage-selection choice, not a guess at anybody's context window. A read
+// with no focus returns the whole text however long it is; naming a focus asks
+// for the relevant parts instead, and the size is what makes "the relevant
+// parts" mean a handful of passages rather than the document again.
+const focusExcerptBytes = 12000
 
 func (r *agentRetriever) search(ctx context.Context, args ai.SearchDocumentsArgs) ([]ai.DocumentHit, error) {
 	query := strings.TrimSpace(args.Query)
@@ -109,18 +114,10 @@ func (r *agentRetriever) search(ctx context.Context, args ai.SearchDocumentsArgs
 		return nil, fmt.Errorf("search index is not ready")
 	}
 
-	limit := args.Limit
-	if limit <= 0 {
-		limit = defaultSearchLimit
-	}
-	if limit > maxSearchLimit {
-		limit = maxSearchLimit
-	}
-	candidates := limit * searchCandidateFactor
-	if candidates > maxSearchCandidates {
-		candidates = maxSearchCandidates
-	}
-
+	// args.Limit is decoded for compatibility with the old tool schema and
+	// then ignored: the index is asked for a whole page, because the document
+	// that answers the question is often not in the lexical top ten and fusion
+	// can only reorder what it was given.
 	ftQuery := fulltext.Query{
 		Text:   query,
 		UserID: r.userID,
@@ -130,7 +127,7 @@ func (r *agentRetriever) search(ctx context.Context, args ai.SearchDocumentsArgs
 		Relaxed:  true,
 		DateFrom: strings.TrimSpace(args.DateFrom),
 		DateTo:   strings.TrimSpace(args.DateTo),
-		Limit:    candidates,
+		Limit:    fulltext.MaxSearchLimit,
 	}
 
 	if typeName := strings.TrimSpace(args.DocumentType); typeName != "" {
@@ -184,29 +181,29 @@ func (r *agentRetriever) search(ctx context.Context, args ai.SearchDocumentsArgs
 	// returns it in order.
 	var dense []retrieval.Ranked
 	var denseChunks map[string][]retrieval.ChunkHit
-	if chunkHits := r.searchChunks(ctx, ftQuery, query, candidates*denseCandidateFactor); len(chunkHits) > 0 {
+	if chunkHits := r.searchChunks(ctx, ftQuery, query, maxSearchDocuments*denseCandidateFactor); len(chunkHits) > 0 {
 		dense, denseChunks = retrieval.GroupChunks(chunkHits, retrieval.MaxPassagesPerDocument)
 	}
 
 	fused := retrieval.RRF(lexical, dense)
 
 	// Hydration drops documents that were deleted or changed hands since they
-	// were indexed, so the candidates are walked until `limit` survive rather
-	// than cut to `limit` first — otherwise a stale index entry silently
-	// shortens the result list.
-	want := limit
+	// were indexed, so the candidates are walked until maxSearchDocuments
+	// survive rather than cut to that many first — otherwise a stale index
+	// entry silently shortens the result list.
+	want := maxSearchDocuments
 	if len(fused) < want {
 		want = len(fused)
 	}
 	// Asked for once, for the whole result list: a chunk-level keyword search
 	// over exactly the documents about to be returned, so each hit can quote
 	// the passage that matched rather than the top of the document.
-	lexicalChunks := r.chunkTextHits(ctx, query, retrieval.IDs(fused), 2*limit)
+	lexicalChunks := r.chunkTextHits(ctx, query, retrieval.IDs(fused), 2*maxSearchDocuments)
 
 	budget := retrieval.PassageBudgetPerDoc(passageCapBytes, want)
 	hits := make([]ai.DocumentHit, 0, want)
 	for _, item := range fused {
-		if len(hits) == limit {
+		if len(hits) == maxSearchDocuments {
 			break
 		}
 		hit, ok := r.hydrate(item.ID, byID[item.ID], denseChunks[item.ID], lexicalChunks[item.ID], query, budget)
@@ -583,44 +580,24 @@ func (r *agentRetriever) focusRanker(ctx context.Context) focusRanker {
 // them by their ordinal.
 type focusRanker func(documentID, ocrText, focus string) ([]retrieval.Window, []retrieval.Ranked)
 
-// readUserDocuments returns document text for documents the caller owns,
-// divided across req.MaxTotalChars so a research run cannot overflow the model
-// context window.
+// readUserDocuments returns document text for documents the caller owns.
+// Truncation against a guessed context window used to live here; a run that
+// outgrows the model is now a provider error.
 //
-// ocr_text holds up to models.MaxOCRTextRunes runes, so not returning all of it
-// is not an edge case — it is the normal path for anything longer than a few
-// pages, and it used to mean the tail of a long document was unreachable
-// forever. Two ways past that, and the request picks one:
-//
-//   - Focus assembles the parts of the document that match a question, with the
-//     head and tail always included and the gaps marked.
-//   - Offset continues a straight read where the last one stopped, so the
-//     concatenation of successive reads is the document, byte for byte.
-//
-// Focus wins when both are given: a question is a better guide to what to
-// return than a position, and the excerpt already includes the head.
-// rank is the dense/lexical chunk ranking for a focused read, or nil when the
-// document's own text is all there is to rank.
+// A read with no focus returns the whole of ocr_text. A focused read returns
+// the document's head plus the passages most relevant to the focus, with the
+// gaps marked — because ocr_text runs to models.MaxOCRTextRunes, and on
+// anything longer than a few pages "the beginning" is rarely where the answer
+// is. rank is the dense/lexical chunk ranking used to choose those passages,
+// or nil when the document's own text is all there is to rank.
 func readUserDocuments(app documentLookup, userID string, req ai.ReadRequest, rank focusRanker) ([]ai.DocumentContent, error) {
 	if len(req.IDs) == 0 {
 		return []ai.DocumentContent{}, nil
 	}
-	if req.MaxTotalChars <= 0 {
-		return nil, fmt.Errorf("no context budget left to read documents")
-	}
-
-	perDoc := req.MaxTotalChars / len(req.IDs)
-	if perDoc < minReadCharsPerDocument {
-		perDoc = minReadCharsPerDocument
-	}
 	focus := strings.TrimSpace(req.Focus)
 
 	docs := make([]ai.DocumentContent, 0, len(req.IDs))
-	spent := 0
 	for _, id := range req.IDs {
-		if spent >= req.MaxTotalChars {
-			break
-		}
 		record, err := app.FindRecordById("documents", id)
 		if err != nil {
 			continue
@@ -632,23 +609,13 @@ func readUserDocuments(app documentLookup, userID string, req ai.ReadRequest, ra
 		}
 
 		// The raw column, never a trimmed copy. Every byte offset in the
-		// system -- a stored chunk's StartByte/EndByte, the next_offset a
-		// continued read is asked to resume from, the windows an excerpt is
-		// assembled out of -- is measured from byte 0 of documents.ocr_text as
-		// it is stored. Trimming here would shift all of them by the length of
-		// the leading whitespace, so a focused read would quote a passage a few
-		// characters off the one that was embedded. Leading and trailing
+		// system -- a stored chunk's StartByte/EndByte, the windows an excerpt
+		// is assembled out of -- is measured from byte 0 of documents.ocr_text
+		// as it is stored. Trimming here would shift all of them by the length
+		// of the leading whitespace, so a focused read would quote a passage a
+		// few characters off the one that was embedded. Leading and trailing
 		// whitespace is the reader's to skip, not to renumber.
 		full := record.GetString("ocr_text")
-		// Bytes, not runes: MaxTotalChars comes from the research loop's
-		// budget, which counts len() everywhere. Truncating to `limit` *runes*
-		// hands back up to four times that many bytes — for Cyrillic or Greek
-		// OCR, reliably twice — so the reader would overshoot the window the
-		// caller had just reserved for it.
-		limit := perDoc
-		if remaining := req.MaxTotalChars - spent; limit > remaining {
-			limit = remaining
-		}
 
 		doc := ai.DocumentContent{
 			ID:            record.Id,
@@ -657,10 +624,9 @@ func readUserDocuments(app documentLookup, userID string, req ai.ReadRequest, ra
 			DocumentType:  relatedName(app, "document_types", record.GetString("document_type")),
 			Correspondent: relatedName(app, "correspondents", record.GetString("correspondent")),
 			Tags:          documentTagNames(app, record),
-			TotalChars:    len(full),
 		}
 
-		if focus != "" && len(full) > limit {
+		if focus != "" && len(full) > focusExcerptBytes {
 			var windows []retrieval.Window
 			var ranked []retrieval.Ranked
 			if rank != nil {
@@ -673,43 +639,17 @@ func readUserDocuments(app documentLookup, userID string, req ai.ReadRequest, ra
 				windows = retrieval.Windows(full, nil)
 				ranked = retrieval.TermOverlap(full, windows, focus)
 			}
-			text, omitted := retrieval.Excerpt(full, windows, ranked, limit)
+			text, omitted := retrieval.Excerpt(full, windows, ranked, focusExcerptBytes)
 			doc.Text = text
-			doc.Truncated = true
 			doc.Excerpted = true
 			doc.PassagesOmitted = omitted
 		} else {
-			start := alignRuneStart(full, req.Offset)
-			text := full[start:]
-			if len(text) > limit {
-				text = strutil.Truncate(text, limit)
-				doc.Truncated = true
-			}
-			doc.Text = text
-			if next := start + len(text); next < len(full) {
-				doc.NextOffset = next
-			}
+			doc.Text = full
 		}
 
-		spent += len(doc.Text)
 		docs = append(docs, doc)
 	}
 	return docs, nil
-}
-
-// alignRuneStart clamps an offset into s and moves it onto a rune boundary, so
-// a continued read never starts in the middle of a character.
-func alignRuneStart(s string, offset int) int {
-	if offset <= 0 {
-		return 0
-	}
-	if offset >= len(s) {
-		return len(s)
-	}
-	for offset < len(s) && !utf8.RuneStart(s[offset]) {
-		offset++
-	}
-	return offset
 }
 
 func findNamedEntityIDs(app retrieverApp, collection, name, userID string) ([]string, error) {

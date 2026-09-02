@@ -67,7 +67,7 @@ func TestReadUserDocumentsRefusesAnotherOwnersDocument(t *testing.T) {
 		"tsomeone": readableDocument("tsomeone", "someone-else", "Their lease", "rent is 700 EUR"),
 	}}
 
-	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"mine", "tsomeone", "missing"}, MaxTotalChars: 10000}, nil)
+	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"mine", "tsomeone", "missing"}}, nil)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
@@ -77,12 +77,9 @@ func TestReadUserDocumentsRefusesAnotherOwnersDocument(t *testing.T) {
 	if got[0].Text != "rent is 900 EUR" {
 		t.Fatalf("text = %q", got[0].Text)
 	}
-	if got[0].Truncated {
-		t.Fatal("short document should not be marked truncated")
-	}
 
 	// A superuser (empty userID) reaches both, matching the search path.
-	asSuper, err := readUserDocuments(app, "", ai.ReadRequest{IDs: []string{"mine", "tsomeone"}, MaxTotalChars: 10000}, nil)
+	asSuper, err := readUserDocuments(app, "", ai.ReadRequest{IDs: []string{"mine", "tsomeone"}}, nil)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
@@ -91,145 +88,56 @@ func TestReadUserDocumentsRefusesAnotherOwnersDocument(t *testing.T) {
 	}
 }
 
-func TestReadUserDocumentsDividesTheBudget(t *testing.T) {
+func TestReadUserDocumentsReturnsFullText(t *testing.T) {
 	long := strings.Repeat("x", 50000)
 	app := stubDocuments{recs: map[string]*core.Record{
 		"a": readableDocument("a", "me", "A", long),
 		"b": readableDocument("b", "me", "B", long),
 	}}
 
-	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a", "b"}, MaxTotalChars: 4000}, nil)
+	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a", "b"}}, nil)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
 	if len(got) != 2 {
 		t.Fatalf("expected both documents, got %d", len(got))
 	}
-	total := 0
 	for _, doc := range got {
-		if !doc.Truncated {
-			t.Fatalf("%s should be marked truncated", doc.ID)
+		if doc.Text != long {
+			t.Fatalf("%s was shortened: got %d bytes, want %d", doc.ID, len(doc.Text), len(long))
 		}
-		total += len(doc.Text)
-	}
-	if total > 4000 {
-		t.Fatalf("read %d bytes, over the 4000 budget", total)
+		if doc.Excerpted {
+			t.Fatalf("%s was excerpted without a focus: %+v", doc.ID, doc)
+		}
 	}
 }
 
-// TestReadUserDocumentsBudgetsMultibyteTextInBytes is the same test with text
-// the ASCII one cannot catch. The budget the research loop hands down counts
-// bytes -- len() everywhere in contextBudget -- so truncating to that number of
-// *runes* returned twice the bytes for Cyrillic, and the reader silently
-// overspent the window that had just been reserved for it.
-func TestReadUserDocumentsBudgetsMultibyteTextInBytes(t *testing.T) {
+// TestReadUserDocumentsReturnsMultibyteTextIntact is the same read over text
+// the ASCII one cannot catch: nothing slices the column any more, so nothing
+// can cut a rune in half either.
+func TestReadUserDocumentsReturnsMultibyteTextIntact(t *testing.T) {
 	// Two bytes per rune.
 	long := strings.Repeat("а", 50000)
 	app := stubDocuments{recs: map[string]*core.Record{
 		"a": readableDocument("a", "me", "A", long),
-		"b": readableDocument("b", "me", "B", long),
 	}}
 
-	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a", "b"}, MaxTotalChars: 4000}, nil)
+	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}}, nil)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
-	total := 0
-	for _, doc := range got {
-		total += len(doc.Text)
-		if !utf8.ValidString(doc.Text) {
-			t.Fatalf("%s was cut mid-rune", doc.ID)
-		}
+	if len(got) != 1 || got[0].Text != long {
+		t.Fatalf("read %d bytes, want the whole %d", len(got[0].Text), len(long))
 	}
-	if total > 4000 {
-		t.Fatalf("read %d bytes, over the 4000 budget", total)
-	}
-	if total == 0 {
-		t.Fatal("nothing was read at all")
+	if !utf8.ValidString(got[0].Text) {
+		t.Fatal("the text was cut mid-rune")
 	}
 }
 
-func TestReadUserDocumentsRejectsAnEmptyBudget(t *testing.T) {
-	app := stubDocuments{recs: map[string]*core.Record{
-		"a": readableDocument("a", "me", "A", "text"),
-	}}
-	if _, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}}, nil); err == nil {
-		t.Fatal("expected an error when no context budget is left")
-	}
-	got, err := readUserDocuments(app, "me", ai.ReadRequest{MaxTotalChars: 4000}, nil)
+func TestReadUserDocumentsNoIDsIsANoOp(t *testing.T) {
+	got, err := readUserDocuments(stubDocuments{}, "me", ai.ReadRequest{}, nil)
 	if err != nil || len(got) != 0 {
 		t.Fatalf("no ids should be a no-op, got %#v err=%v", got, err)
-	}
-}
-
-// TestReadUserDocumentsOffsetContinuation is the tail of a long document,
-// which used to be unreachable: the reader always started at byte 0 and cut at
-// the budget, so anything past the first few pages could not be read at all.
-// Successive reads at next_offset must reassemble the document byte for byte.
-func TestReadUserDocumentsOffsetContinuation(t *testing.T) {
-	// Two bytes per rune, so an offset that is not aligned is a real risk. The
-	// leading whitespace is the point: offsets are into the raw column, so a
-	// reader that trimmed first would hand back next_offset values that are off
-	// by the length of that prefix -- and a stored chunk's StartByte, measured
-	// on the raw text, would point a few characters into the wrong passage.
-	full := "\n\n  " + strings.Repeat("Договір оренди квартири. ", 400)
-	app := stubDocuments{recs: map[string]*core.Record{
-		"a": readableDocument("a", "me", "A", full),
-	}}
-
-	var rebuilt strings.Builder
-	offset := 0
-	for reads := 0; ; reads++ {
-		if reads > 50 {
-			t.Fatal("the read never reached the end of the document")
-		}
-		got, err := readUserDocuments(app, "me", ai.ReadRequest{
-			IDs:           []string{"a"},
-			Offset:        offset,
-			MaxTotalChars: 1000,
-		}, nil)
-		if err != nil {
-			t.Fatalf("readUserDocuments: %v", err)
-		}
-		if len(got) != 1 {
-			t.Fatalf("expected one document, got %d", len(got))
-		}
-		doc := got[0]
-		if !utf8.ValidString(doc.Text) {
-			t.Fatal("a continued read was cut mid-rune")
-		}
-		if doc.TotalChars != len(full) {
-			t.Fatalf("total_chars = %d, want %d", doc.TotalChars, len(full))
-		}
-		rebuilt.WriteString(doc.Text)
-		if doc.NextOffset == 0 {
-			if doc.Truncated {
-				t.Fatal("the last slice reported more to come")
-			}
-			break
-		}
-		if doc.NextOffset <= offset {
-			t.Fatalf("next_offset %d did not advance past %d", doc.NextOffset, offset)
-		}
-		offset = doc.NextOffset
-	}
-
-	if rebuilt.String() != full {
-		t.Fatalf("reassembled %d bytes, want %d", rebuilt.Len(), len(full))
-	}
-
-	// An offset landing mid-rune is moved forward rather than corrupting the
-	// text, and one past the end is simply the end.
-	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}, Offset: 1, MaxTotalChars: 1000}, nil)
-	if err != nil || !utf8.ValidString(got[0].Text) {
-		t.Fatalf("mid-rune offset: %v", err)
-	}
-	got, err = readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}, Offset: len(full) + 500, MaxTotalChars: 1000}, nil)
-	if err != nil {
-		t.Fatalf("readUserDocuments: %v", err)
-	}
-	if got[0].Text != "" || got[0].NextOffset != 0 {
-		t.Fatalf("an offset past the end should read nothing, got %+v", got[0])
 	}
 }
 
@@ -245,18 +153,22 @@ func TestReadUserDocumentsFocusReturnsRelevantExcerpts(t *testing.T) {
 		"a": readableDocument("a", "me", "Mietvertrag", full),
 	}}
 
-	plain, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}, MaxTotalChars: 4000}, nil)
+	// The fixture has to be longer than one focused excerpt, or there is
+	// nothing for the focus to choose between.
+	if len(full) <= focusExcerptBytes {
+		t.Fatalf("fixture of %d bytes fits one excerpt of %d", len(full), focusExcerptBytes)
+	}
+	plain, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}}, nil)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
-	if strings.Contains(plain[0].Text, "1234 EUR") {
-		t.Fatal("the fixture is not long enough: a plain read already reaches the figure")
+	if plain[0].Text != full {
+		t.Fatalf("an unfocused read returned %d bytes, want the whole %d", len(plain[0].Text), len(full))
 	}
 
 	focused, err := readUserDocuments(app, "me", ai.ReadRequest{
-		IDs:           []string{"a"},
-		Focus:         "Kaltmiete monatlich",
-		MaxTotalChars: 4000,
+		IDs:   []string{"a"},
+		Focus: "Kaltmiete monatlich",
 	}, nil)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
@@ -279,18 +191,18 @@ func TestReadUserDocumentsFocusReturnsRelevantExcerpts(t *testing.T) {
 	if !strings.HasSuffix(doc.Text, "Unterschrift des Vermieters.") {
 		t.Fatalf("the tail was dropped:\n%s", doc.Text)
 	}
-	if len(doc.Text) > 4000 {
-		t.Fatalf("excerpt of %d bytes overran the 4000 budget", len(doc.Text))
+	if len(doc.Text) > focusExcerptBytes {
+		t.Fatalf("excerpt of %d bytes overran the %d-byte excerpt size", len(doc.Text), focusExcerptBytes)
 	}
-	if doc.TotalChars != len(full) {
-		t.Fatalf("total_chars = %d, want %d", doc.TotalChars, len(full))
+	if len(doc.Text) >= len(full) {
+		t.Fatalf("a focused read returned the whole document: %d of %d bytes", len(doc.Text), len(full))
 	}
 
-	// A document that fits is returned whole, focus or not.
+	// A document that fits one excerpt is returned whole, focus or not.
 	short := stubDocuments{recs: map[string]*core.Record{
 		"s": readableDocument("s", "me", "S", "Kaltmiete 500 EUR"),
 	}}
-	got, err := readUserDocuments(short, "me", ai.ReadRequest{IDs: []string{"s"}, Focus: "Kaltmiete", MaxTotalChars: 4000}, nil)
+	got, err := readUserDocuments(short, "me", ai.ReadRequest{IDs: []string{"s"}, Focus: "Kaltmiete"}, nil)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
@@ -302,16 +214,15 @@ func TestReadUserDocumentsFocusReturnsRelevantExcerpts(t *testing.T) {
 // The ownership boundary has to hold on the focused path too: it is a second
 // way into the same records.
 func TestReadUserDocumentsFocusKeepsOwnershipCheck(t *testing.T) {
-	long := strings.Repeat("Vertrauliche Angaben zur Miete. ", 400)
+	long := strings.Repeat("Vertrauliche Angaben zur Miete. ", 800)
 	app := stubDocuments{recs: map[string]*core.Record{
 		"mine":   readableDocument("mine", "me", "Mine", long),
 		"theirs": readableDocument("theirs", "someone-else", "Theirs", long),
 	}}
 
 	got, err := readUserDocuments(app, "me", ai.ReadRequest{
-		IDs:           []string{"mine", "theirs"},
-		Focus:         "Miete",
-		MaxTotalChars: 4000,
+		IDs:   []string{"mine", "theirs"},
+		Focus: "Miete",
 	}, nil)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
@@ -419,9 +330,8 @@ func TestReadUserDocumentsFocusHonoursRawOffsets(t *testing.T) {
 	}
 
 	got, err := readUserDocuments(app, "me", ai.ReadRequest{
-		IDs:           []string{"a"},
-		Focus:         "Kaltmiete monatlich",
-		MaxTotalChars: 4000,
+		IDs:   []string{"a"},
+		Focus: "Kaltmiete monatlich",
 	}, rank)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
@@ -435,10 +345,5 @@ func TestReadUserDocumentsFocusHonoursRawOffsets(t *testing.T) {
 	}
 	if !strings.Contains(doc.Text, needle) {
 		t.Fatalf("the passage the focus named is missing:\n%s", doc.Text)
-	}
-	// TotalChars counts the same bytes the offsets are measured in, or the
-	// model cannot tell how far a next_offset it was handed still has to go.
-	if doc.TotalChars != len(full) {
-		t.Fatalf("total_chars = %d, want %d (the raw column)", doc.TotalChars, len(full))
 	}
 }

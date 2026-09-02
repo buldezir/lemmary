@@ -16,11 +16,9 @@ import (
 const (
 	// maxSearchToolRounds is the whole of Search mode: expand the request into
 	// keywords, run the lookups, answer. Questions that need more than one pass
-	// belong in Research mode, which is bounded by the context window instead.
+	// belong in Research mode, which keeps going until the model is ready,
+	// stalls, or the provider rejects the request for exceeding its context.
 	maxSearchToolRounds = 1
-
-	// maxToolResultBytes caps the JSON fed back to the model per tool call.
-	maxToolResultBytes = 24000
 )
 
 // Passage is a verbatim slice of a document's text, quoted by a search hit.
@@ -56,7 +54,9 @@ type SearchDocumentsArgs struct {
 	DocumentType  string   `json:"document_type,omitempty"`
 	Correspondent string   `json:"correspondent,omitempty"`
 	Tags          []string `json:"tags,omitempty"`
-	Limit         int      `json:"limit,omitempty"`
+	// Limit is still decoded: models emit it from the old "1-20" tool schema.
+	// The retriever ignores it.
+	Limit int `json:"limit,omitempty"`
 }
 
 // decodeSearchArgs parses tool-call arguments, coercing scalar-kind mismatches
@@ -143,15 +143,13 @@ type openAISearchAgent struct {
 	client         *OpenAIClient
 	languages      string
 	resultLanguage string
-	contextTokens  int
 }
 
-func NewSearchAgent(sdk, apiKey, model, baseURL string, timeout time.Duration, languages, resultLanguage string, contextTokens int, logger *slog.Logger) SearchAgent {
+func NewSearchAgent(sdk, apiKey, model, baseURL string, timeout time.Duration, languages, resultLanguage string, logger *slog.Logger) SearchAgent {
 	return &openAISearchAgent{
 		client:         NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", timeout, logger),
 		languages:      strings.TrimSpace(languages),
 		resultLanguage: strings.TrimSpace(resultLanguage),
-		contextTokens:  contextTokens,
 	}
 }
 
@@ -411,11 +409,8 @@ func (a *openAISearchAgent) executeToolCall(
 		*allHits = append(*allHits, hit)
 	}
 
-	// The same encoder Research uses. Search has no running context budget, so
-	// the whole per-call cap is what it may spend -- but it goes through the
-	// fit ladder rather than slicing the encoded JSON, which is what this code
-	// used to do and which handed the model a payload that was not JSON.
-	content, err := encodeSearchResults(hits, maxToolResultBytes)
+	// The same encoder Research uses.
+	content, err := encodeSearchResults(hits)
 	if err != nil {
 		return toolExecResult{
 			ID:      callID,
@@ -529,10 +524,6 @@ func searchDocumentsTools() []openai.ChatCompletionToolParam {
 						"type":        "array",
 						"items":       map[string]any{"type": "string"},
 						"description": "Optional tag name filters. Use exact names from the available archive tags list. Matches documents that have any of these tags.",
-					},
-					"limit": map[string]any{
-						"type":        "integer",
-						"description": "Max results to return (1-20). Default 10.",
 					},
 				},
 				"required": []string{"query"},

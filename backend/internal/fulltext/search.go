@@ -18,6 +18,11 @@ const (
 	// MaxSearchLimit is the largest page size Search will return. Callers must
 	// use this cap when computing offsets so pages do not skip hits.
 	MaxSearchLimit = 500
+	// relaxedFallbackLimit caps the last rung of the relaxation ladder. Those
+	// hits carry one keyword out of several, so a long list of them is noise the
+	// caller pays for; the disjunction's coord factor has already put the best
+	// coverage first.
+	relaxedFallbackLimit = 10
 )
 
 type Query struct {
@@ -31,8 +36,8 @@ type Query struct {
 	DateTo           string
 	Offset           int
 	Limit            int
-	// Relaxed trades precision for recall: unquoted terms no longer all have
-	// to match, and long words also match with one edit of slack.
+	// Relaxed trades precision for recall: unquoted terms no longer all have to
+	// match.
 	//
 	// Off by default, and the Documents page leaves it off deliberately. There
 	// the query box is a filter — the user types words they know are in the
@@ -57,11 +62,39 @@ type Hit struct {
 type Result struct {
 	Hits  []Hit
 	Total uint64
+	// Terms is how many unquoted terms the query text had; Required is how many
+	// of them a hit had to carry. Required < Terms means every hit is a partial
+	// match, and Total is then "documents matching at least Required terms" —
+	// not comparable with the strict path's Total. Both zero when Relaxed is off.
+	Terms    int
+	Required int
 }
 
 type queryPart struct {
 	text   string
 	phrase bool
+	// closed is false for a phrase that never got its closing quote. The strict
+	// path still honours it; a relaxed query demotes it to a loose term, because
+	// an unterminated quote is a typo, not an instruction.
+	closed bool
+}
+
+// relaxMode is how hard a query insists on its own terms.
+type relaxMode int
+
+const (
+	relaxOff  relaxMode = iota // every term mandatory (Documents page, ngxapi)
+	relaxSome                  // minShouldMatch(n) of n terms
+	relaxAny                   // 1 of n terms, plus a fuzzy leg per long term
+)
+
+// searchPlan is the relaxation ladder for one query: the rung to try, and the
+// wider rung to fall back on when the first matches nothing at all.
+type searchPlan struct {
+	primary  query.Query
+	fallback query.Query // nil unless relaxing further would change the query
+	terms    int
+	required int
 }
 
 var boostedTextFields = []struct {
@@ -101,20 +134,29 @@ func (i *Index) Search(q Query) (Result, error) {
 		offset = 0
 	}
 
-	bq, err := buildQuery(q, text)
+	plan, err := buildSearchPlan(q, text)
 	if err != nil {
 		return empty, err
 	}
 
 	var result Result
+	// Both rungs run inside one closure so a concurrent Rebuild cannot swap the
+	// index out from under the fallback.
 	err = i.withIndex(func(b bleve.Index) error {
-		req := bleve.NewSearchRequestOptions(bq, limit, offset, false)
-		req.Highlight = bleve.NewHighlight()
-		req.Highlight.Fields = []string{FieldOCRText}
-
-		res, err := b.Search(req)
+		required := plan.required
+		res, err := runTier(b, plan.primary, limit, offset)
 		if err != nil {
-			return fmt.Errorf("bleve search: %w", err)
+			return err
+		}
+		// Escalate on Total, never on len(Hits): an Offset past the end of a
+		// result set empties the hit slice while Total stays nonzero, and
+		// widening the query there would swap the corpus under a paging caller.
+		if res.Total == 0 && plan.fallback != nil {
+			res, err = runTier(b, plan.fallback, min(limit, relaxedFallbackLimit), offset)
+			if err != nil {
+				return err
+			}
+			required = 1
 		}
 
 		hits := make([]Hit, 0, len(res.Hits))
@@ -130,7 +172,7 @@ func (i *Index) Search(q Query) (Result, error) {
 			}
 			hits = append(hits, hit)
 		}
-		result = Result{Hits: hits, Total: res.Total}
+		result = Result{Hits: hits, Total: res.Total, Terms: plan.terms, Required: required}
 		return nil
 	})
 	if err != nil {
@@ -139,17 +181,48 @@ func (i *Index) Search(q Query) (Result, error) {
 	return result, nil
 }
 
+func runTier(b bleve.Index, bq query.Query, limit, offset int) (*bleve.SearchResult, error) {
+	req := bleve.NewSearchRequestOptions(bq, limit, offset, false)
+	req.Highlight = bleve.NewHighlight()
+	req.Highlight.Fields = []string{FieldOCRText}
+
+	res, err := b.Search(req)
+	if err != nil {
+		return nil, fmt.Errorf("bleve search: %w", err)
+	}
+	return res, nil
+}
+
 func (i *Index) IDsByKeyword(field, value string) ([]string, error) {
 	value = strings.TrimSpace(value)
 	if field == "" || value == "" {
 		return nil, nil
 	}
 
+	page := lookupPageSize
+	if page <= 0 {
+		page = defaultLookupPage
+	}
+
 	var ids []string
 	err := i.withIndex(func(b bleve.Index) error {
-		var err error
-		ids, err = idsByKeyword(b, field, value)
-		return err
+		tq := bleve.NewTermQuery(value)
+		tq.SetField(field)
+		offset := 0
+		for {
+			req := bleve.NewSearchRequestOptions(tq, page, offset, false)
+			res, err := b.Search(req)
+			if err != nil {
+				return err
+			}
+			for _, h := range res.Hits {
+				ids = append(ids, h.ID)
+			}
+			if len(res.Hits) < page {
+				return nil
+			}
+			offset += page
+		}
 	})
 	return ids, err
 }
@@ -224,24 +297,38 @@ func (i *Index) KeepEligible(q Query, ids []string) ([]string, error) {
 	return kept, err
 }
 
-func buildQuery(q Query, text string) (query.Query, error) {
+func buildSearchPlan(q Query, text string) (searchPlan, error) {
 	parts := parseQueryParts(text)
 	if len(parts) == 0 {
-		return nil, fmt.Errorf("query has no searchable terms")
+		return searchPlan{}, fmt.Errorf("query has no searchable terms")
+	}
+	filters := filterConjuncts(q)
+
+	if !q.Relaxed {
+		return searchPlan{primary: withFilters(textQuery(parts, relaxOff), filters)}, nil
 	}
 
-	conjuncts := make([]query.Query, 0, 8)
-	conjuncts = append(conjuncts, textQuery(parts, q.Relaxed))
-	conjuncts = append(conjuncts, filterConjuncts(q)...)
-
-	if len(conjuncts) == 1 {
-		return conjuncts[0], nil
+	loose := looseParts(parts)
+	plan := searchPlan{
+		primary: withFilters(textQuery(parts, relaxSome), filters),
+		terms:   len(loose),
 	}
-	return bleve.NewConjunctionQuery(conjuncts...), nil
+	if len(loose) == 0 {
+		// Every part is a closed phrase, so there is nothing left to relax.
+		return plan, nil
+	}
+	plan.required = minShouldMatch(len(loose))
+	// Only build the wider rung when it would actually differ. A single short
+	// term is already its own floor; a single long one still earns a rung,
+	// because there the fallback degenerates into a spelling-correction retry.
+	if plan.required > 1 || anyFuzzyWorthy(loose) {
+		plan.fallback = withFilters(textQuery(parts, relaxAny), filters)
+	}
+	return plan, nil
 }
 
 // filterConjuncts is everything in a Query except its text: ownership, status,
-// the named-entity ids and the date range.
+// the named-entity ids and the date range. Mandatory in every relax mode.
 func filterConjuncts(q Query) []query.Query {
 	conjuncts := make([]query.Query, 0, 6)
 	if userID := strings.TrimSpace(q.UserID); userID != "" {
@@ -263,6 +350,16 @@ func filterConjuncts(q Query) []query.Query {
 		conjuncts = append(conjuncts, dateQuery)
 	}
 	return conjuncts
+}
+
+func withFilters(text query.Query, filters []query.Query) query.Query {
+	if len(filters) == 0 {
+		return text
+	}
+	conjuncts := make([]query.Query, 0, len(filters)+1)
+	conjuncts = append(conjuncts, text)
+	conjuncts = append(conjuncts, filters...)
+	return bleve.NewConjunctionQuery(conjuncts...)
 }
 
 // filterQuery is filterConjuncts as one query, or nil when a query filters
@@ -287,33 +384,57 @@ func HasDocumentFilters(q Query) bool {
 	return len(filterConjuncts(bare)) > 0
 }
 
-func textQuery(parts []queryPart, relaxed bool) query.Query {
-	if !relaxed {
-		termQueries := make([]query.Query, 0, len(parts))
-		for _, part := range parts {
-			termQueries = append(termQueries, fieldQuery(part, false))
-		}
-		if len(termQueries) == 1 {
-			return termQueries[0]
-		}
-		return bleve.NewConjunctionQuery(termQueries...)
-	}
-
-	// A quoted phrase is an instruction, not a guess: the user (or the model)
-	// asked for those words in that order, so it stays a mandatory conjunct
-	// however many loose terms surround it.
-	must := make([]query.Query, 0, len(parts))
-	should := make([]query.Query, 0, len(parts))
+// looseParts is the parts a relaxed query is allowed to drop: everything but a
+// properly closed phrase.
+func looseParts(parts []queryPart) []queryPart {
+	loose := make([]queryPart, 0, len(parts))
 	for _, part := range parts {
-		if part.phrase {
-			must = append(must, fieldQuery(part, false))
+		if mandatoryPhrase(part) {
 			continue
 		}
-		should = append(should, fieldQuery(part, true))
+		part.phrase = false
+		loose = append(loose, part)
 	}
-	if len(should) > 0 {
+	return loose
+}
+
+// mandatoryPhrase reports whether a part is a phrase the caller really asked
+// for. A quoted phrase is an instruction, not a guess, so it stays a mandatory
+// conjunct however many loose terms surround it — but only once it was actually
+// closed, since an unterminated quote is a typo.
+func mandatoryPhrase(part queryPart) bool {
+	return part.phrase && part.closed
+}
+
+func textQuery(parts []queryPart, mode relaxMode) query.Query {
+	if mode == relaxOff {
+		conjuncts := make([]query.Query, 0, len(parts))
+		for _, part := range parts {
+			conjuncts = append(conjuncts, fieldQuery(part, false))
+		}
+		if len(conjuncts) == 1 {
+			return conjuncts[0]
+		}
+		return bleve.NewConjunctionQuery(conjuncts...)
+	}
+
+	must := make([]query.Query, 0, len(parts))
+	for _, part := range parts {
+		if mandatoryPhrase(part) {
+			must = append(must, fieldQuery(part, false))
+		}
+	}
+	if loose := looseParts(parts); len(loose) > 0 {
+		should := make([]query.Query, 0, len(loose))
+		for _, part := range loose {
+			should = append(should, fieldQuery(part, mode == relaxAny))
+		}
 		dq := bleve.NewDisjunctionQuery(should...)
-		dq.SetMin(float64(minShouldMatch(len(should))))
+		if mode == relaxAny {
+			dq.SetMin(1)
+		} else {
+			dq.SetMin(float64(minShouldMatch(len(should))))
+		}
 		must = append(must, dq)
 	}
 	if len(must) == 1 {
@@ -323,9 +444,14 @@ func textQuery(parts []queryPart, relaxed bool) query.Query {
 }
 
 // fieldQuery matches one query part across every searchable field, at that
-// field's boost. With fuzzy on, a long word also matches with one edit of
-// slack at half the boost, so an exact match always outranks an approximate
-// one rather than merely appearing beside it.
+// field's boost. With fuzzy on, a long word also matches with one edit of slack
+// at half the boost, so an exact match always outranks an approximate one
+// rather than merely appearing beside it.
+//
+// Known limitation: a part that analyzes to no tokens at all (a lone "—" or
+// "#") becomes a match-none clause that still counts toward the disjunction's
+// numerator, tightening a relaxSome floor it can never satisfy. The relaxAny
+// rung absorbs it, and detecting it properly needs the index's analyzer.
 func fieldQuery(part queryPart, fuzzy bool) query.Query {
 	disjuncts := make([]query.Query, 0, 2*len(boostedTextFields))
 	for _, f := range boostedTextFields {
@@ -354,6 +480,9 @@ func fieldQuery(part queryPart, fuzzy bool) query.Query {
 		fq.SetBoost(f.boost * 0.5)
 		disjuncts = append(disjuncts, fq)
 	}
+	if len(disjuncts) == 1 {
+		return disjuncts[0]
+	}
 	return bleve.NewDisjunctionQuery(disjuncts...)
 }
 
@@ -361,6 +490,10 @@ func fieldQuery(part queryPart, fuzzy bool) query.Query {
 // because one edit reaches most of the dictionary from them, and anything with
 // a digit is out because it is an id, an amount or a date — the values where a
 // near miss is a different document, not the same one spelled badly.
+//
+// Fuzziness is confined to the relaxAny rung on cost grounds: it adds a
+// dictionary automaton scan per field per term, over an OCR vocabulary full of
+// garbage tokens, so only a query that already found nothing pays for it.
 func fuzzyWorthy(term string) bool {
 	if utf8.RuneCountInString(term) < 5 {
 		return false
@@ -371,6 +504,15 @@ func fuzzyWorthy(term string) bool {
 		}
 	}
 	return true
+}
+
+func anyFuzzyWorthy(parts []queryPart) bool {
+	for _, part := range parts {
+		if fuzzyWorthy(part.text) {
+			return true
+		}
+	}
+	return false
 }
 
 // minShouldMatch is how many of n loose terms a document must carry.
@@ -460,30 +602,30 @@ func parseQueryParts(q string) []queryPart {
 	var parts []queryPart
 	var buf strings.Builder
 	inQuote := false
-	flush := func(phrase bool) {
+	flush := func(phrase, closed bool) {
 		s := strings.TrimSpace(buf.String())
 		buf.Reset()
 		if s != "" {
-			parts = append(parts, queryPart{text: s, phrase: phrase})
+			parts = append(parts, queryPart{text: s, phrase: phrase, closed: closed})
 		}
 	}
 	for _, r := range q {
 		switch {
 		case r == '"':
 			if inQuote {
-				flush(true)
+				flush(true, true)
 				inQuote = false
 			} else {
-				flush(false)
+				flush(false, false)
 				inQuote = true
 			}
 		case unicode.IsSpace(r) && !inQuote:
-			flush(false)
+			flush(false, false)
 		default:
 			buf.WriteRune(r)
 		}
 	}
-	flush(inQuote)
+	flush(inQuote, false)
 	return parts
 }
 

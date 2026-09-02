@@ -33,7 +33,6 @@ type settingsResponse struct {
 	OCRTimeoutSec                 int     `json:"ocr_timeout_sec"`
 	ProcessingResultLanguage      string  `json:"processing_result_language"`
 	DeepSearchLanguages           string  `json:"deep_search_languages"`
-	SearchContextTokens           int     `json:"search_context_tokens"`
 	OpenAITimeoutSec              int     `json:"openai_timeout_sec"`
 	WorkerTimeoutSec              int     `json:"worker_timeout_sec"`
 	WorkerMaxRetries              int     `json:"worker_max_retries"`
@@ -56,7 +55,6 @@ type settingsPatchRequest struct {
 	OCRTimeoutSec                 *int     `json:"ocr_timeout_sec"`
 	ProcessingResultLanguage      *string  `json:"processing_result_language"`
 	DeepSearchLanguages           *string  `json:"deep_search_languages"`
-	SearchContextTokens           *int     `json:"search_context_tokens"`
 	OpenAITimeoutSec              *int     `json:"openai_timeout_sec"`
 	WorkerTimeoutSec              *int     `json:"worker_timeout_sec"`
 	WorkerMaxRetries              *int     `json:"worker_max_retries"`
@@ -78,7 +76,6 @@ func (r settingsPatchRequest) touchesManaged() bool {
 		r.SearchModel != nil ||
 		r.EmbeddingProviderID != nil ||
 		r.EmbeddingModel != nil ||
-		r.SearchContextTokens != nil ||
 		r.NearDuplicateDetectionEnabled != nil ||
 		r.NearDuplicateThreshold != nil
 }
@@ -173,7 +170,6 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 		OCRTimeoutSec:                 int(cfg.OCRTimeout.Seconds()),
 		ProcessingResultLanguage:      cfg.ProcessingResultLanguage,
 		DeepSearchLanguages:           cfg.DeepSearchLanguages,
-		SearchContextTokens:           cfg.SearchContextTokens,
 		OpenAITimeoutSec:              int(cfg.OpenAITimeout.Seconds()),
 		WorkerTimeoutSec:              int(cfg.WorkerTimeout.Seconds()),
 		WorkerMaxRetries:              cfg.WorkerMaxRetries,
@@ -250,12 +246,6 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	}
 	if req.DeepSearchLanguages != nil {
 		record.Set("deep_search_languages", config.NormalizeLanguageList(*req.DeepSearchLanguages))
-	}
-	if req.SearchContextTokens != nil {
-		if *req.SearchContextTokens <= 0 {
-			return errInvalid("search_context_tokens must be positive")
-		}
-		record.Set("search_context_tokens", *req.SearchContextTokens)
 	}
 	if req.OpenAITimeoutSec != nil {
 		if *req.OpenAITimeoutSec <= 0 {

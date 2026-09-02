@@ -96,10 +96,21 @@ func TestSearchANDVsPhrase(t *testing.T) {
 		t.Fatalf("relaxed should match 2 of 3 terms, got %v", relaxedThree)
 	}
 
-	// Relaxed still cannot reach a document that carries only one of three.
-	oneOfThree := searchIDs(t, idx, Query{Text: "plumber skylight bathroom", UserID: "u1", Relaxed: true})
-	if len(oneOfThree) != 0 {
-		t.Fatalf("relaxed should still require 2 of 3, got %v", oneOfThree)
+	// Two of the three terms is the floor the first rung asks for, and it is
+	// the requirement reported back while that rung answers.
+	firstRung := mustSearch(t, idx, Query{Text: "plumber invoice bathroom", UserID: "u1", Relaxed: true})
+	if firstRung.Required != 2 || firstRung.Terms != 3 {
+		t.Fatalf("terms=%d required=%d, want 3 and the 2-of-3 floor", firstRung.Terms, firstRung.Required)
+	}
+
+	// Only when nothing clears that floor does the wider rung run, and it
+	// reports the lower requirement so the caller can say the hits are partial.
+	oneOfThree := mustSearch(t, idx, Query{Text: "plumber skylight bathroom", UserID: "u1", Relaxed: true})
+	if oneOfThree.Required != 1 || oneOfThree.Terms != 3 {
+		t.Fatalf("terms=%d required=%d, want 3 and 1", oneOfThree.Terms, oneOfThree.Required)
+	}
+	if !containsID(resultIDs(oneOfThree), "both") {
+		t.Fatalf("the fallback rung should rescue a one-term match, got %v", resultIDs(oneOfThree))
 	}
 
 	// A quoted phrase stays mandatory even in relaxed mode: "split" has both
@@ -110,16 +121,6 @@ func TestSearchANDVsPhrase(t *testing.T) {
 	}
 	if !containsID(relaxedPhrase, "both") {
 		t.Fatalf("relaxed phrase should still match, got %v", relaxedPhrase)
-	}
-}
-
-func TestMinShouldMatch(t *testing.T) {
-	for _, tc := range []struct{ n, want int }{
-		{1, 1}, {2, 2}, {3, 2}, {4, 3}, {5, 4}, {6, 5}, {10, 7},
-	} {
-		if got := minShouldMatch(tc.n); got != tc.want {
-			t.Fatalf("minShouldMatch(%d) = %d, want %d", tc.n, got, tc.want)
-		}
 	}
 }
 
@@ -166,7 +167,13 @@ func TestSearchRelaxedRanksExactAboveFuzzy(t *testing.T) {
 		FieldAll:     "Versicherunh",
 	})
 
-	hits := searchIDs(t, idx, Query{Text: "Versicherung", UserID: "u1", Relaxed: true})
+	// The fuzzy leg only exists on the fallback rung, so the query has to be
+	// one the first rung cannot answer: neither document carries both terms.
+	res := mustSearch(t, idx, Query{Text: "Versicherung Zahnarztrechnung", UserID: "u1", Relaxed: true})
+	if res.Required != 1 {
+		t.Fatalf("expected the fallback rung, required=%d", res.Required)
+	}
+	hits := resultIDs(res)
 	if len(hits) != 2 {
 		t.Fatalf("relaxed should reach both, got %v", hits)
 	}
@@ -559,5 +566,264 @@ func TestIDsByKeywordPaginates(t *testing.T) {
 	}
 	if len(ids) != 5 {
 		t.Fatalf("expected 5 ids across pages, got %v", ids)
+	}
+}
+
+// synonymBag is the query shape that motivated relaxed matching: a model told
+// to "expand the request into concrete keywords" emits alternative names for
+// one thing, and strict AND asks for a document that is all of them at once.
+const synonymBag = "purchase order receipt invoice payment amount"
+
+func mustSearch(t *testing.T, idx *Index, q Query) Result {
+	t.Helper()
+	res, err := idx.Search(q)
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	return res
+}
+
+func resultIDs(res Result) []string {
+	ids := make([]string, 0, len(res.Hits))
+	for _, h := range res.Hits {
+		ids = append(ids, h.ID)
+	}
+	return ids
+}
+
+func ocrDoc(title, ocr string) map[string]any {
+	return map[string]any{
+		FieldUser:    "u1",
+		FieldTitle:   title,
+		FieldOCRText: ocr,
+		FieldAll:     title + " " + ocr,
+	}
+}
+
+func putSynonymBagDocs(t *testing.T, idx *Index) {
+	t.Helper()
+	mustPut(t, idx, "po", ocrDoc("Purchase order 4711", "Bestellung an den Lieferanten"))
+	mustPut(t, idx, "rcpt", ocrDoc("Receipt", "Kassenbon vom Baumarkt"))
+	mustPut(t, idx, "inv", ocrDoc("Invoice", "Rechnung des Klempners"))
+	mustPut(t, idx, "pay", ocrDoc("Payment confirmation", "Ueberweisung ausgefuehrt"))
+}
+
+func TestRelaxedFindsSynonymBag(t *testing.T) {
+	idx := testIndex(t)
+	putSynonymBagDocs(t, idx)
+
+	strict := mustSearch(t, idx, Query{Text: synonymBag, UserID: "u1"})
+	if len(strict.Hits) != 0 {
+		t.Fatalf("strict AND should find nothing for a synonym bag, got %v", resultIDs(strict))
+	}
+	if strict.Terms != 0 || strict.Required != 0 {
+		t.Fatalf("strict path should not report term counts: %+v", strict)
+	}
+
+	relaxed := mustSearch(t, idx, Query{Text: synonymBag, UserID: "u1", Relaxed: true})
+	for _, want := range []string{"po", "rcpt", "inv", "pay"} {
+		if !containsID(resultIDs(relaxed), want) {
+			t.Fatalf("relaxed should find %s, got %v", want, resultIDs(relaxed))
+		}
+	}
+	if relaxed.Terms != 6 || relaxed.Required != 1 {
+		t.Fatalf("terms=%d required=%d, want 6 and 1", relaxed.Terms, relaxed.Required)
+	}
+}
+
+// TestRelaxedTierAKeepsPrecision is the guard against "simplifying" the ladder
+// into a single min=1 query: when most terms do match, the near misses must
+// stay out.
+func TestRelaxedTierAKeepsPrecision(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "all", ocrDoc("Plumber invoice", "Paid the plumber invoice in July"))
+	mustPut(t, idx, "one", ocrDoc("Plumber visit", "The plumber came by"))
+
+	res := mustSearch(t, idx, Query{Text: "plumber invoice july", UserID: "u1", Relaxed: true})
+	if !containsID(resultIDs(res), "all") {
+		t.Fatalf("should match the document carrying every term, got %v", resultIDs(res))
+	}
+	if containsID(resultIDs(res), "one") {
+		t.Fatalf("one term out of three should not be enough while better hits exist: %v", resultIDs(res))
+	}
+	if res.Required != 2 {
+		t.Fatalf("required=%d, want 2 of 3", res.Required)
+	}
+}
+
+// TestRelaxedRanksMoreTermsFirst pins bleve's disjunction coord factor
+// (countMatch/countTotal). Without it the fallback rung would be unordered
+// noise, and a bleve upgrade that dropped it should fail here.
+func TestRelaxedRanksMoreTermsFirst(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "many", ocrDoc("Ledger", "purchase order receipt invoice"))
+	mustPut(t, idx, "few", ocrDoc("Ledger", "amount"))
+
+	res := mustSearch(t, idx, Query{Text: synonymBag, UserID: "u1", Relaxed: true})
+	if res.Required != 1 {
+		t.Fatalf("expected the fallback rung, required=%d", res.Required)
+	}
+	if len(res.Hits) != 2 {
+		t.Fatalf("hits=%v", resultIDs(res))
+	}
+	if res.Hits[0].ID != "many" {
+		t.Fatalf("the document carrying more terms should rank first, got %v", resultIDs(res))
+	}
+}
+
+func TestRelaxedKeepsPhraseMandatory(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "phrase", ocrDoc("Ledger", "purchase order for one invoice"))
+	mustPut(t, idx, "loose", ocrDoc("Ledger", "invoice receipt payment"))
+
+	res := mustSearch(t, idx, Query{
+		Text:    `"purchase order" invoice receipt payment`,
+		UserID:  "u1",
+		Relaxed: true,
+	})
+	if !containsID(resultIDs(res), "phrase") {
+		t.Fatalf("should match the document containing the phrase, got %v", resultIDs(res))
+	}
+	if containsID(resultIDs(res), "loose") {
+		t.Fatalf("a quoted phrase stays mandatory in every rung, got %v", resultIDs(res))
+	}
+}
+
+func TestRelaxedDemotesUnclosedQuote(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "inv", ocrDoc("Invoice", "Rechnung des Klempners"))
+
+	unbalanced := `invoice "purchase order`
+
+	strict := mustSearch(t, idx, Query{Text: unbalanced, UserID: "u1"})
+	if len(strict.Hits) != 0 {
+		t.Fatalf("strict path still honours the phrase, got %v", resultIDs(strict))
+	}
+
+	relaxed := mustSearch(t, idx, Query{Text: unbalanced, UserID: "u1", Relaxed: true})
+	if !containsID(resultIDs(relaxed), "inv") {
+		t.Fatalf("an unterminated quote is a typo, not an instruction: %v", resultIDs(relaxed))
+	}
+}
+
+func TestRelaxedFuzzyOnlyInFallback(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "inv", ocrDoc("Invoice", "Paid the plumber invoice"))
+	mustPut(t, idx, "ref", ocrDoc("Reference 12346", "Order reference"))
+	mustPut(t, idx, "bill", ocrDoc("Bill", "The bill arrived"))
+
+	typo := mustSearch(t, idx, Query{Text: "invoce", UserID: "u1", Relaxed: true})
+	if !containsID(resultIDs(typo), "inv") {
+		t.Fatalf("one edit of slack should reach invoice, got %v", resultIDs(typo))
+	}
+
+	// A digit-bearing term is an id, an amount or a date: a near miss there is a
+	// different document, not the same one spelled badly.
+	digits := mustSearch(t, idx, Query{Text: "12345", UserID: "u1", Relaxed: true})
+	if len(digits.Hits) != 0 {
+		t.Fatalf("digits must not match fuzzily, got %v", resultIDs(digits))
+	}
+
+	// Too short: one edit reaches most of the dictionary from three runes.
+	short := mustSearch(t, idx, Query{Text: "bil", UserID: "u1", Relaxed: true})
+	if len(short.Hits) != 0 {
+		t.Fatalf("short terms must not match fuzzily, got %v", resultIDs(short))
+	}
+
+	// Fuzziness must not creep into the first rung: a query that matches
+	// exactly is answered there, and reports the stricter floor.
+	exact := mustSearch(t, idx, Query{Text: "plumber invoice", UserID: "u1", Relaxed: true})
+	if !containsID(resultIDs(exact), "inv") {
+		t.Fatalf("exact query should match, got %v", resultIDs(exact))
+	}
+	if exact.Required != 2 {
+		t.Fatalf("required=%d, want the strict floor of 2", exact.Required)
+	}
+}
+
+func TestRelaxedRespectsFilters(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "mine", map[string]any{
+		FieldUser:         "u1",
+		FieldTitle:        "Invoice",
+		FieldDocumentDate: time.Date(2024, 7, 15, 0, 0, 0, 0, time.UTC),
+		FieldAll:          "Invoice",
+	})
+	mustPut(t, idx, "stale", map[string]any{
+		FieldUser:         "u1",
+		FieldTitle:        "Receipt",
+		FieldDocumentDate: time.Date(2019, 1, 1, 0, 0, 0, 0, time.UTC),
+		FieldAll:          "Receipt",
+	})
+	mustPut(t, idx, "theirs", map[string]any{
+		FieldUser:         "u2",
+		FieldTitle:        "Invoice",
+		FieldDocumentDate: time.Date(2024, 7, 15, 0, 0, 0, 0, time.UTC),
+		FieldAll:          "Invoice",
+	})
+
+	owned := mustSearch(t, idx, Query{Text: synonymBag, UserID: "u1", Relaxed: true})
+	if containsID(resultIDs(owned), "theirs") {
+		t.Fatalf("relaxing text must never relax ownership: %v", resultIDs(owned))
+	}
+
+	dated := mustSearch(t, idx, Query{
+		Text:     synonymBag,
+		UserID:   "u1",
+		DateFrom: "2024-07-01",
+		DateTo:   "2024-07-31",
+		Relaxed:  true,
+	})
+	if !containsID(resultIDs(dated), "mine") || containsID(resultIDs(dated), "stale") {
+		t.Fatalf("date range must survive both rungs: %v", resultIDs(dated))
+	}
+}
+
+// TestRelaxedDoesNotEscalatePastEnd pins the escalation predicate: paging past
+// the end of a result set empties the hit slice, and widening the query there
+// would swap the corpus under the caller.
+func TestRelaxedDoesNotEscalatePastEnd(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "all", ocrDoc("Plumber invoice", "Paid the plumber invoice"))
+	mustPut(t, idx, "one", ocrDoc("Plumber visit", "The plumber came by"))
+
+	res := mustSearch(t, idx, Query{Text: "plumber invoice", UserID: "u1", Relaxed: true, Offset: 10})
+	if len(res.Hits) != 0 {
+		t.Fatalf("offset past the end should be empty, got %v", resultIDs(res))
+	}
+	if res.Total != 1 {
+		t.Fatalf("total=%d, want the first rung's 1", res.Total)
+	}
+	if res.Required != 2 {
+		t.Fatalf("required=%d, want no escalation", res.Required)
+	}
+}
+
+func TestRelaxedFallbackLimit(t *testing.T) {
+	idx := testIndex(t)
+	terms := []string{"purchase", "order", "receipt", "invoice", "payment", "amount"}
+	for n := 0; n < 15; n++ {
+		mustPut(t, idx, fmt.Sprintf("doc%02d", n), ocrDoc("Ledger", terms[n%len(terms)]))
+	}
+
+	res := mustSearch(t, idx, Query{Text: synonymBag, UserID: "u1", Relaxed: true, Limit: MaxSearchLimit})
+	if res.Required != 1 {
+		t.Fatalf("expected the fallback rung, required=%d", res.Required)
+	}
+	if len(res.Hits) != relaxedFallbackLimit {
+		t.Fatalf("hits=%d, want the fallback cap of %d", len(res.Hits), relaxedFallbackLimit)
+	}
+	if res.Total != 15 {
+		t.Fatalf("total=%d, want all 15 reported", res.Total)
+	}
+}
+
+func TestMinShouldMatch(t *testing.T) {
+	for _, tc := range []struct{ n, want int }{
+		{0, 0}, {1, 1}, {2, 2}, {3, 2}, {4, 3}, {5, 4}, {6, 5}, {10, 7},
+	} {
+		if got := minShouldMatch(tc.n); got != tc.want {
+			t.Errorf("minShouldMatch(%d)=%d, want %d", tc.n, got, tc.want)
+		}
 	}
 }

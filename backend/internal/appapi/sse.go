@@ -12,10 +12,10 @@ import (
 )
 
 // heartbeatInterval is how often an idle stream sends a comment frame. A
-// research run is silent for the whole of each model completion, and with a
-// full context window one of those routinely outlasts the 30-60s idle timeout
-// a reverse proxy applies -- which drops the connection while the server is
-// still working. Well under the shortest of those defaults.
+// research run is silent for the whole of each model completion, and a long
+// one routinely outlasts the 30-60s idle timeout a reverse proxy applies --
+// which drops the connection while the server is still working. Well under
+// the shortest of those defaults.
 const heartbeatInterval = 15 * time.Second
 
 // sseWriter streams server-sent events over a request that is otherwise an

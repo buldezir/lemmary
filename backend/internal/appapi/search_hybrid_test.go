@@ -199,12 +199,17 @@ func TestSearchWithoutADenseIndexIsUnchanged(t *testing.T) {
 
 // TestReadFocusRanksWithTheChunkIndex checks the other half of the wiring: a
 // focused read of a long document uses the stored chunks to decide what to
-// show, so the answer in the middle survives the budget.
+// show, so the answer in the middle survives the excerpt.
 func TestReadFocusRanksWithTheChunkIndex(t *testing.T) {
-	head := strings.Repeat("Vorspann ohne Bedeutung. ", 80)
+	// Long enough that one excerpt cannot hold it, and with the answer far
+	// enough in that the head-and-first-windows excerpt cannot reach it.
+	head := strings.Repeat("Vorspann ohne Bedeutung. ", 800)
 	middle := "Die Selbstbeteiligung beträgt 150 EUR je Schadensfall. "
-	tail := strings.Repeat("Nachspann ohne Bedeutung. ", 80)
+	tail := strings.Repeat("Nachspann ohne Bedeutung. ", 800)
 	full := head + middle + tail
+	if len(full) <= focusExcerptBytes {
+		t.Fatalf("fixture of %d bytes fits one excerpt of %d", len(full), focusExcerptBytes)
+	}
 
 	chunks := []retrieval.MemoryChunk{
 		{DocumentID: "doc1", UserID: "u1", Ord: 0, StartByte: 0, EndByte: len(head), Text: head},
@@ -236,7 +241,7 @@ func TestReadFocusRanksWithTheChunkIndex(t *testing.T) {
 	// A focus whose words appear nowhere in the document: term overlap over
 	// windows cut from the text finds nothing, so the excerpt would be the head
 	// and the tail, and the sentence in the middle would be unreachable.
-	req := ai.ReadRequest{IDs: []string{"doc1"}, Focus: "Selbstbehalt", MaxTotalChars: 2600}
+	req := ai.ReadRequest{IDs: []string{"doc1"}, Focus: "Selbstbehalt"}
 
 	control, err := readUserDocuments(app, "u1", req, nil)
 	if err != nil {

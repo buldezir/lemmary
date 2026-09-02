@@ -47,6 +47,18 @@ func TestBuildSearchSystemPromptIncludesTags(t *testing.T) {
 	}
 }
 
+func TestSearchDocumentsToolsDoesNotAdvertiseAResultCap(t *testing.T) {
+	t.Parallel()
+	tools := searchDocumentsTools()
+	if len(tools) != 1 {
+		t.Fatalf("tools = %d, want 1", len(tools))
+	}
+	props, _ := tools[0].Function.Parameters["properties"].(map[string]any)
+	if _, ok := props["limit"]; ok {
+		t.Fatal("search_documents still advertises limit; models then cap themselves at 10-20")
+	}
+}
+
 func TestFormatLanguagePromptFallsBackToResultLanguage(t *testing.T) {
 	withList := formatLanguagePrompt("de,uk", "en")
 	if !strings.Contains(withList, "de,uk") {

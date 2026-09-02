@@ -164,7 +164,6 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 			cfg.OpenAITimeout,
 			cfg.DeepSearchLanguages,
 			cfg.ProcessingResultLanguage,
-			cfg.SearchContextTokens,
 			aiLogger,
 		)
 	}
@@ -213,7 +212,6 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		"embedding_model", cfg.EmbeddingModel,
 		"embedding_dims", cfg.EmbeddingDims,
 		"deep_search_languages", cfg.DeepSearchLanguages,
-		"search_context_tokens", cfg.SearchContextTokens,
 	)
 }
 

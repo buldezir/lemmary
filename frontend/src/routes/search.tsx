@@ -419,7 +419,7 @@ export function SearchPage() {
               renderExtra={(turn) => (
                 <>
                   {extras[turn.id]?.incomplete && <IncompleteNotice />}
-                  <SearchHits turn={turn} />
+                  {mode === 'search' && <SearchHits turn={turn} />}
                 </>
               )}
               renderSending={
@@ -449,8 +449,8 @@ export function SearchPage() {
               sending={chat.sending}
               disabled={chat.loading}
               error={chat.error}
-              // A research run is bounded only by the context window, so there
-              // has to be a way out of one that is taking too long.
+              // A research run can take a while, so there has to be a way out
+              // of one that is taking too long.
               onCancel={mode === 'research' ? () => runRef.current?.abort() : undefined}
               autoFocus
             />
@@ -606,16 +606,22 @@ function ModeSwitch({ mode, locked }: { mode: SearchMode; locked: boolean }) {
 }
 
 /**
- * The documents behind an answer. Research cites them inline as well, but the
- * cards are what the stored turn carries, so a reopened chat shows the same
- * sources as the run that produced it.
+ * The documents behind an answer, in Search mode only.
+ *
+ * In Search the cards are the answer: the mode's whole job is to find documents
+ * and list them. Research answers in prose and cites what it actually read
+ * inline, so the same grid there would restate the citations and, worse, show
+ * every document the search turned up beside them — including the ones the run
+ * looked at and discarded. A reader cannot tell those apart from sources, so
+ * the cards would make the answer look better evidenced than it is. The hits
+ * are still stored with the turn either way; Research just does not draw them.
  */
 function SearchHits({ turn }: { turn: ChatTurn }) {
   if (!turn.documents || turn.documents.length === 0) {
     return null
   }
   return (
-    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+    <div data-testid="search-hits" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
       {turn.documents.map((doc) => (
         <SearchHitCard key={doc.id} document={doc} />
       ))}
