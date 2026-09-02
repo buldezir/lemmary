@@ -4,6 +4,7 @@ import { pb, pbAdminUrl } from '../lib/pb'
 import { ensureAuth, getUserDisplayName, isAdmin, logout } from '../lib/auth'
 import { getSetupStatus, type SetupStatus } from '../lib/api/meta'
 import { useAppMeta } from '../hooks/useAppMeta'
+import { primaryNavItems, secondaryNavItems, visibleNavItems, type NavItem } from '../lib/nav'
 import { AppFooter } from './AppFooter'
 import { Button } from './ui'
 import { AppLogo } from './ui'
@@ -16,8 +17,12 @@ const iconButtonClass =
   'p-1.5 text-ink-soft transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood'
 const iconButtonActiveClass = 'text-oxblood'
 const menuItemClass =
-  'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm font-medium text-ink-muted transition-colors hover:bg-wash hover:text-oxblood'
-const menuItemActiveClass = 'text-oxblood'
+  'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm font-medium text-ink-muted transition-colors hover:bg-wash hover:text-oxblood data-[status=active]:text-oxblood'
+// The narrow layout has no room for a bar, so the whole link set stacks: each
+// row is a full-width tap target with a hairline under it, the way a table of
+// contents reads, rather than a 12px label crowded against its neighbours.
+const panelItemClass =
+  'flex w-full items-center gap-2 border-t border-line/70 px-0.5 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft transition-colors first:border-t-0 hover:text-oxblood focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood data-[status=active]:text-oxblood'
 
 function LogoutIcon() {
   return (
@@ -58,6 +63,45 @@ function MoreIcon() {
   )
 }
 
+function MenuIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-5 w-5"
+      aria-hidden="true"
+    >
+      <line x1="4" y1="7" x2="20" y2="7" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <line x1="4" y1="17" x2="20" y2="17" />
+    </svg>
+  )
+}
+
+function CloseIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-5 w-5"
+      aria-hidden="true"
+    >
+      <line x1="6" y1="6" x2="18" y2="18" />
+      <line x1="18" y1="6" x2="6" y2="18" />
+    </svg>
+  )
+}
+
 function AdminIcon() {
   return (
     <svg
@@ -89,23 +133,58 @@ function AdminMenuLabel({ children }: { children: string }) {
   )
 }
 
-function MoreNavMenu({ admin }: { admin: boolean }) {
+/**
+ * One header link, in either shape. The router handles internal paths so a tap
+ * does not reload the app; the PocketBase dashboard is a real page elsewhere.
+ */
+function NavItemLink({
+  item,
+  className,
+  role,
+  onNavigate,
+}: {
+  item: NavItem
+  className: string
+  role?: string
+  onNavigate?: () => void
+}) {
+  const label = item.admin ? <AdminMenuLabel>{item.label}</AdminMenuLabel> : item.label
+
+  if (item.kind === 'external') {
+    return (
+      <a
+        href={item.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        role={role}
+        className={className}
+        onClick={onNavigate}
+      >
+        {label}
+      </a>
+    )
+  }
+
+  return (
+    <Link
+      to={item.to}
+      role={role}
+      className={className}
+      activeOptions={item.exact ? { exact: true } : undefined}
+      onClick={onNavigate}
+    >
+      {label}
+    </Link>
+  )
+}
+
+function MoreNavMenu({ items }: { items: NavItem[] }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const matchRoute = useMatchRoute()
-  const settingsActive = Boolean(matchRoute({ to: '/settings' }))
-  const managementActive = Boolean(matchRoute({ to: '/management' }))
-  const importActive = Boolean(matchRoute({ to: '/import' }))
-  const exportActive = Boolean(matchRoute({ to: '/export' }))
-  const ocrTestActive = Boolean(matchRoute({ to: '/ocr-test' }))
-  const accountActive = Boolean(matchRoute({ to: '/account' }))
-  const menuActive =
-    settingsActive ||
-    managementActive ||
-    importActive ||
-    exportActive ||
-    ocrTestActive ||
-    accountActive
+  const menuActive = items.some(
+    (item) => item.kind === 'route' && Boolean(matchRoute({ to: item.to })),
+  )
 
   useEffect(() => {
     if (!open) return
@@ -148,73 +227,141 @@ function MoreNavMenu({ admin }: { admin: boolean }) {
           role="menu"
           className="absolute right-0 z-20 mt-2 min-w-44 border border-line-strong bg-surface p-1 shadow-md shadow-ink/10"
         >
-          <Link
-            to="/account"
-            role="menuitem"
-            className={`${menuItemClass} ${accountActive ? menuItemActiveClass : ''}`}
-            onClick={() => setOpen(false)}
-          >
-            Account
-          </Link>
-          <Link
-            to="/ocr-test"
-            role="menuitem"
-            className={`${menuItemClass} ${ocrTestActive ? menuItemActiveClass : ''}`}
-            onClick={() => setOpen(false)}
-          >
-            OCR test
-          </Link>
-          <Link
-            to="/export"
-            role="menuitem"
-            className={`${menuItemClass} ${exportActive ? menuItemActiveClass : ''}`}
-            onClick={() => setOpen(false)}
-          >
-            Export
-          </Link>
-          <Link
-            to="/import"
-            role="menuitem"
-            className={`${menuItemClass} ${importActive ? menuItemActiveClass : ''}`}
-            onClick={() => setOpen(false)}
-          >
-            Import
-          </Link>
-          {admin && (
-            <Link
-              to="/settings"
-              role="menuitem"
-              className={`${menuItemClass} ${settingsActive ? menuItemActiveClass : ''}`}
-              onClick={() => setOpen(false)}
-            >
-              <AdminMenuLabel>Settings</AdminMenuLabel>
-            </Link>
-          )}
-          {admin && (
-            <Link
-              to="/management"
-              role="menuitem"
-              className={`${menuItemClass} ${managementActive ? menuItemActiveClass : ''}`}
-              onClick={() => setOpen(false)}
-            >
-              <AdminMenuLabel>Management</AdminMenuLabel>
-            </Link>
-          )}
-          {admin && (
-            <a
-              href={pbAdminUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+          {items.map((item) => (
+            <NavItemLink
+              key={item.label}
+              item={item}
               role="menuitem"
               className={menuItemClass}
-              onClick={() => setOpen(false)}
-            >
-              <AdminMenuLabel>Admin</AdminMenuLabel>
-            </a>
-          )}
+              onNavigate={() => setOpen(false)}
+            />
+          ))}
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * The header, in two layouts.
+ *
+ * A phone cannot hold nine links, a user name and a bar of icons on one row --
+ * they used to run straight off the side of the screen -- so below `md` the row
+ * keeps only the wordmark and a toggle, and everything else stacks into a panel
+ * underneath it. Both layouts render from the same item list.
+ */
+function AppHeader({
+  appName,
+  accent,
+  admin,
+  userDisplayName,
+}: {
+  appName: string
+  accent: string
+  admin: boolean
+  userDisplayName: string
+}) {
+  const [open, setOpen] = useState(false)
+  const secondaryItems = visibleNavItems(secondaryNavItems(pbAdminUrl), admin)
+  const panelItems = [...primaryNavItems, ...secondaryItems]
+
+  useEffect(() => {
+    if (!open) return
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setOpen(false)
+      }
+    }
+
+    // Widening the viewport hides the panel by CSS. Closing it too keeps the
+    // toggle's state honest for the trip back to a narrow one.
+    const wide = window.matchMedia('(min-width: 48rem)')
+    function onWide(event: MediaQueryListEvent) {
+      if (event.matches) {
+        setOpen(false)
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    wide.addEventListener('change', onWide)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      wide.removeEventListener('change', onWide)
+    }
+  }, [open])
+
+  return (
+    <header className="border-b-3 border-double border-line-strong bg-paper">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4 sm:px-6 md:py-5">
+        <Link
+          to="/"
+          className="flex min-w-0 items-center gap-2.5 font-display text-lg font-semibold tracking-tight text-ink transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-oxblood sm:text-xl"
+        >
+          <AppLogo appName={appName} accent={accent} />
+          <span className="truncate">{appName}</span>
+        </Link>
+        <div className="hidden items-center gap-4 md:flex">
+          <nav className="flex items-center gap-5" aria-label="Main">
+            {primaryNavItems.map((item) => (
+              <NavItemLink key={item.label} item={item} className={navLinkClass} />
+            ))}
+            <MoreNavMenu items={secondaryItems} />
+          </nav>
+          <div className="flex items-center gap-2 border-l border-line pl-4">
+            {userDisplayName && (
+              <span className="max-w-40 truncate text-sm text-ink-muted" title={userDisplayName}>
+                {userDisplayName}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={logout}
+              className={iconButtonClass}
+              aria-label="Log out"
+              title="Log out"
+            >
+              <LogoutIcon />
+            </button>
+          </div>
+        </div>
+        <button
+          type="button"
+          className={`${iconButtonClass} -mr-1.5 shrink-0 md:hidden`}
+          aria-label={open ? 'Close menu' : 'Menu'}
+          aria-expanded={open}
+          aria-controls="header-nav-panel"
+          onClick={() => setOpen((value) => !value)}
+        >
+          {open ? <CloseIcon /> : <MenuIcon />}
+        </button>
+      </div>
+      {open && (
+        <div id="header-nav-panel" className="border-t border-line bg-surface md:hidden">
+          <nav className="mx-auto max-w-7xl px-4 sm:px-6" aria-label="Main">
+            {panelItems.map((item) => (
+              <NavItemLink
+                key={item.label}
+                item={item}
+                className={panelItemClass}
+                onNavigate={() => setOpen(false)}
+              />
+            ))}
+          </nav>
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 border-t border-line-strong px-4 py-3 sm:px-6">
+            <span className="min-w-0 truncate text-sm text-ink-muted">{userDisplayName}</span>
+            <button
+              type="button"
+              onClick={logout}
+              className="flex shrink-0 items-center gap-2 px-0.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood"
+            >
+              <LogoutIcon />
+              Log out
+            </button>
+          </div>
+        </div>
+      )}
+    </header>
   )
 }
 
@@ -352,60 +499,13 @@ export function RootLayout() {
 
   return (
     <div className="flex min-h-screen flex-col bg-paper text-ink">
-      <header className="border-b-3 border-double border-line-strong bg-paper">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
-          <Link
-            to="/"
-            className="flex items-center gap-2.5 font-display text-xl font-semibold tracking-tight text-ink transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-oxblood"
-          >
-            <AppLogo appName={appName} accent={accent} />
-            {appName}
-          </Link>
-          <div className="flex items-center gap-4">
-            <nav className="flex items-center gap-5">
-              <Link
-                to="/"
-                className={navLinkClass}
-                activeOptions={{ exact: true }}
-              >
-                Documents
-              </Link>
-              <Link
-                to="/upload"
-                className={navLinkClass}
-              >
-                Upload
-              </Link>
-              {/* /rag, not a mode: it is the one path above both, so this
-                  marks itself active in Search and Research alike. */}
-              <Link
-                to="/rag"
-                className={navLinkClass}
-              >
-                Deep Search
-              </Link>
-              <MoreNavMenu admin={admin} />
-            </nav>
-            <div className="flex items-center gap-2 border-l border-line pl-4">
-              {userDisplayName && (
-                <span className="max-w-40 truncate text-sm text-ink-muted" title={userDisplayName}>
-                  {userDisplayName}
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={logout}
-                className={iconButtonClass}
-                aria-label="Log out"
-                title="Log out"
-              >
-                <LogoutIcon />
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
-      <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-8">
+      <AppHeader
+        appName={appName}
+        accent={accent}
+        admin={admin}
+        userDisplayName={userDisplayName}
+      />
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
         <Outlet />
       </main>
       <AppFooter />

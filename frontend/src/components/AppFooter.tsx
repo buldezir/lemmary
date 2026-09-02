@@ -16,7 +16,7 @@ function GitHubIcon() {
 
 export function AppFooter() {
   return (
-    <footer className="mt-auto border-t border-line py-5 text-center text-[11px] uppercase tracking-[0.14em] text-ink-soft">
+    <footer className="mt-auto border-t border-line px-4 py-5 text-center text-[11px] uppercase tracking-[0.14em] text-ink-soft">
       <p className="inline-flex items-center">
         Lemmary
         <span className="mx-2 text-line-strong" aria-hidden="true">
