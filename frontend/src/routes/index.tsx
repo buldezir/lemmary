@@ -21,6 +21,7 @@ import {
 } from '../lib/documentQuery'
 import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
 import { useAsync } from '../hooks/useAsync'
+import { useStoredFlag } from '../hooks/useStoredFlag'
 import { DocumentCard } from '../components/DocumentCard'
 import { DocumentTimeline } from '../components/DocumentTimeline'
 import { FilterCombobox } from '../components/FilterCombobox'
@@ -66,6 +67,10 @@ export function IndexPage() {
   const [message, setMessage] = useState('')
   // Bumped whenever the library changes, to re-count the timeline.
   const [timelineVersion, setTimelineVersion] = useState(0)
+  // A view preference, not a filter, so it lives in localStorage rather than the
+  // URL: a shared link describes the list, not how the reader arranged their own
+  // screen, but their own arrangement should survive a reload.
+  const [showTimeline, setShowTimeline] = useStoredFlag('lemmary.showTimeline', true)
 
   // URL -> box, for Back/Forward and for a link opened with a term already in
   // it. Adjusted during render rather than in an effect, so the box never paints
@@ -275,7 +280,15 @@ export function IndexPage() {
           timeline={timeline.data}
           active={activePeriod(dateFrom, dateTo)}
           onSelect={onSelectPeriod}
-          className="order-last lg:order-first lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)] lg:w-44 lg:shrink-0 lg:overflow-y-auto"
+          expanded={showTimeline}
+          onToggleExpanded={() => setShowTimeline((shown) => !shown)}
+          className={
+            showTimeline
+              ? 'order-last lg:order-first lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)] lg:w-44 lg:shrink-0 lg:overflow-y-auto'
+              : // Collapsed it is a rule down the side of the grid, so it wants the
+                // row's height rather than a sticky box of its own.
+                'order-last h-4 lg:order-first lg:h-auto lg:w-4 lg:shrink-0 lg:self-stretch'
+          }
         />
 
         {/* min-w-0 so the card grid can shrink instead of pushing the sidebar. */}
