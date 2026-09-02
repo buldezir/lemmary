@@ -71,3 +71,18 @@ html {
     cursor: pointer;
   }
 }
+
+/*
+ * Mobile Safari zooms the viewport in whenever a focused field's text is
+ * smaller than 16px, and it never zooms back out. The Deep Search composer
+ * autofocuses on load, so the page arrived already scaled up and scrolling
+ * sideways. Hold every field at the no-zoom threshold on phone widths and let
+ * wider viewports keep the smaller editorial type.
+ */
+@media (max-width: 640px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
