@@ -24,7 +24,7 @@ func TestFormatAvailableTagsPrompt(t *testing.T) {
 }
 
 func TestBuildSearchSystemPromptIncludesTags(t *testing.T) {
-	prompt := buildSearchSystemPrompt("en,de", "en", []string{"invoice", "tax"})
+	prompt := buildSearchSystemPrompt("en,de", "en", []string{"invoice", "tax"}, false)
 	if !strings.Contains(prompt, "invoice") || !strings.Contains(prompt, "tax") {
 		t.Fatalf("expected available tags in system prompt, got %q", prompt)
 	}
@@ -60,12 +60,12 @@ func TestSearchDocumentsToolsDoesNotAdvertiseAResultCap(t *testing.T) {
 }
 
 func TestFormatLanguagePromptFallsBackToResultLanguage(t *testing.T) {
-	withList := formatLanguagePrompt("de,uk", "en")
+	withList := formatLanguagePrompt("de,uk", "en", false)
 	if !strings.Contains(withList, "de,uk") {
 		t.Fatalf("expected the configured list, got %q", withList)
 	}
 
-	withoutList := formatLanguagePrompt("", "en")
+	withoutList := formatLanguagePrompt("", "en", false)
 	if !strings.Contains(withoutList, "en") {
 		t.Fatalf("expected the result language as fallback, got %q", withoutList)
 	}
@@ -98,5 +98,23 @@ func TestDecodeSearchArgsCoercesScalarKinds(t *testing.T) {
 
 	if _, err := decodeSearchArgs(`not json`); err == nil {
 		t.Fatal("expected error for non-JSON arguments")
+	}
+}
+
+func TestFormatLanguagePromptWithDenseRetrievalStopsPerLanguageSearches(t *testing.T) {
+	dense := formatLanguagePrompt("de,uk", "en", true)
+	if !strings.Contains(dense, "Do not repeat a search translated into another language") {
+		t.Fatalf("dense prompt still invites per-language searches: %q", dense)
+	}
+	if strings.Contains(dense, "once per language") {
+		t.Fatalf("dense prompt kept the keyword-only instruction: %q", dense)
+	}
+	if !strings.Contains(dense, "de,uk") {
+		t.Fatalf("dense prompt should still name the archive languages for exact terms: %q", dense)
+	}
+
+	keyword := formatLanguagePrompt("de,uk", "en", false)
+	if !strings.Contains(keyword, "once per language") {
+		t.Fatalf("keyword-only prompt lost the per-language instruction: %q", keyword)
 	}
 }

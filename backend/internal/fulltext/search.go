@@ -52,6 +52,11 @@ type Hit struct {
 	ID         string
 	Score      float64
 	OCRSnippet string
+	// OCRFragments is every highlight fragment Bleve produced for the OCR
+	// text, best first. OCRSnippet is the first of them; the agent path quotes
+	// several, because one fragment out of a ten-page document is a hint about
+	// where the answer is rather than the answer.
+	OCRFragments []string
 }
 
 type Result struct {
@@ -157,8 +162,13 @@ func (i *Index) Search(q Query) (Result, error) {
 		hits := make([]Hit, 0, len(res.Hits))
 		for _, h := range res.Hits {
 			hit := Hit{ID: h.ID, Score: h.Score}
-			if frags := h.Fragments[FieldOCRText]; len(frags) > 0 {
-				hit.OCRSnippet = plainFragment(frags[0])
+			for _, frag := range h.Fragments[FieldOCRText] {
+				if plain := plainFragment(frag); plain != "" {
+					hit.OCRFragments = append(hit.OCRFragments, plain)
+				}
+			}
+			if len(hit.OCRFragments) > 0 {
+				hit.OCRSnippet = hit.OCRFragments[0]
 			}
 			hits = append(hits, hit)
 		}
@@ -215,6 +225,150 @@ func (i *Index) IDsByKeyword(field, value string) ([]string, error) {
 		}
 	})
 	return ids, err
+}
+
+// EligibleIDs lists the documents that satisfy everything in q except its text,
+// up to limit. complete is false when there were more, which is the caller's
+// signal that the list cannot be used as a pre-filter.
+//
+// This is how a filtered agent search reaches the chunk index: the filters are
+// document properties the chunk index deliberately does not carry, so they are
+// resolved here and passed down as ids.
+func (i *Index) EligibleIDs(q Query, limit int) ([]string, bool, error) {
+	filter := filterQuery(q)
+	if filter == nil || limit <= 0 {
+		return nil, true, nil
+	}
+
+	var (
+		ids      []string
+		complete bool
+	)
+	err := i.withIndex(func(b bleve.Index) error {
+		// One over the limit, so a full page is distinguishable from a page
+		// that happened to end exactly there.
+		req := bleve.NewSearchRequestOptions(filter, limit+1, 0, false)
+		res, err := b.Search(req)
+		if err != nil {
+			return err
+		}
+		complete = len(res.Hits) <= limit
+		for n, h := range res.Hits {
+			if n == limit {
+				break
+			}
+			ids = append(ids, h.ID)
+		}
+		return nil
+	})
+	return ids, complete, err
+}
+
+// MatchingIDs enumerates the documents matching q -- text and filters, strict
+// matching -- up to limit, without highlighting. total is the full match
+// count whatever the limit; complete is whether ids holds all of it.
+//
+// This is what a grouped count runs on: the query says which documents, the
+// database says how they break down. Search itself is the wrong tool for it
+// because it highlights every hit, and a count wants none of that.
+func (i *Index) MatchingIDs(q Query, limit int) (ids []string, total uint64, complete bool, err error) {
+	i.WaitIdle()
+	text := strings.TrimSpace(q.Text)
+	if text == "" {
+		return nil, 0, false, fmt.Errorf("query text is required")
+	}
+	if limit <= 0 {
+		return nil, 0, false, nil
+	}
+	q.Relaxed = false
+	plan, err := buildSearchPlan(q, text)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	err = i.withIndex(func(b bleve.Index) error {
+		offset := 0
+		for len(ids) < limit {
+			page := min(MaxSearchLimit, limit-len(ids))
+			req := bleve.NewSearchRequestOptions(plan.primary, page, offset, false)
+			res, err := b.Search(req)
+			if err != nil {
+				return fmt.Errorf("bleve search: %w", err)
+			}
+			total = res.Total
+			for _, h := range res.Hits {
+				ids = append(ids, h.ID)
+			}
+			offset += len(res.Hits)
+			if len(res.Hits) == 0 || uint64(offset) >= res.Total {
+				break
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, 0, false, err
+	}
+	return ids, total, uint64(len(ids)) >= total, nil
+}
+
+// CountMatching is the strict match count for q -- text and filters -- with
+// nothing fetched. The text is required; a filters-only count is the
+// database's job.
+func (i *Index) CountMatching(q Query) (uint64, error) {
+	i.WaitIdle()
+	text := strings.TrimSpace(q.Text)
+	if text == "" {
+		return 0, fmt.Errorf("query text is required")
+	}
+	q.Relaxed = false
+	plan, err := buildSearchPlan(q, text)
+	if err != nil {
+		return 0, err
+	}
+	var total uint64
+	err = i.withIndex(func(b bleve.Index) error {
+		req := bleve.NewSearchRequestOptions(plan.primary, 0, 0, false)
+		res, err := b.Search(req)
+		if err != nil {
+			return fmt.Errorf("bleve search: %w", err)
+		}
+		total = res.Total
+		return nil
+	})
+	return total, err
+}
+
+// KeepEligible returns the subset of ids that satisfies q's filters. The
+// post-filter for the case EligibleIDs could not pre-filter: the dense list is
+// short, so it is cheaper to ask about its documents than to enumerate every
+// document the filters allow.
+func (i *Index) KeepEligible(q Query, ids []string) ([]string, error) {
+	filter := filterQuery(q)
+	if filter == nil || len(ids) == 0 {
+		return ids, nil
+	}
+
+	var kept []string
+	err := i.withIndex(func(b bleve.Index) error {
+		bq := bleve.NewConjunctionQuery(filter, bleve.NewDocIDQuery(ids))
+		req := bleve.NewSearchRequestOptions(bq, len(ids), 0, false)
+		res, err := b.Search(req)
+		if err != nil {
+			return err
+		}
+		allowed := make(map[string]struct{}, len(res.Hits))
+		for _, h := range res.Hits {
+			allowed[h.ID] = struct{}{}
+		}
+		kept = make([]string, 0, len(allowed))
+		for _, id := range ids {
+			if _, ok := allowed[id]; ok {
+				kept = append(kept, id)
+			}
+		}
+		return nil
+	})
+	return kept, err
 }
 
 func buildSearchPlan(q Query, text string) (searchPlan, error) {
@@ -280,6 +434,28 @@ func withFilters(text query.Query, filters []query.Query) query.Query {
 	conjuncts = append(conjuncts, text)
 	conjuncts = append(conjuncts, filters...)
 	return bleve.NewConjunctionQuery(conjuncts...)
+}
+
+// filterQuery is filterConjuncts as one query, or nil when a query filters
+// nothing.
+func filterQuery(q Query) query.Query {
+	conjuncts := filterConjuncts(q)
+	switch len(conjuncts) {
+	case 0:
+		return nil
+	case 1:
+		return conjuncts[0]
+	default:
+		return bleve.NewConjunctionQuery(conjuncts...)
+	}
+}
+
+// HasDocumentFilters reports whether q restricts the result set by anything
+// other than its owner — the filters the chunk index cannot apply itself.
+func HasDocumentFilters(q Query) bool {
+	bare := q
+	bare.UserID = ""
+	return len(filterConjuncts(bare)) > 0
 }
 
 // looseParts is the parts a relaxed query is allowed to drop: everything but a

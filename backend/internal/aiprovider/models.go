@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
@@ -24,6 +25,9 @@ type Model struct {
 
 	// caps is set when the provider returned a capabilities object (Mistral).
 	caps *modelCapabilities
+	// outputModalities is OpenRouter's architecture.output_modalities, the one
+	// place a provider says outright that a model returns embeddings.
+	outputModalities []string
 }
 
 type modelCapabilities struct {
@@ -33,30 +37,74 @@ type modelCapabilities struct {
 
 const modelsListTimeout = 20 * time.Second
 
-func ModelsURL(p Provider, forOCR bool) string {
+// ModelPurpose is the task a model is being picked for. It decides both which
+// endpoint filter is asked for and which models are kept from the answer.
+//
+// It replaced a forOCR bool once embeddings arrived: the three lists are
+// genuinely disjoint (an OCR model does not chat, an embedding model does
+// neither), and a boolean could only ever express two of them.
+type ModelPurpose string
+
+const (
+	PurposeLLM       ModelPurpose = "llm"
+	PurposeOCR       ModelPurpose = "ocr"
+	PurposeEmbedding ModelPurpose = "embedding"
+)
+
+// ParseModelPurpose reads the `for=` query parameter. Anything unrecognised is
+// the language-model list, which is the safe default: it is the longest list
+// and the one an admin can always type past.
+func ParseModelPurpose(raw string) ModelPurpose {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case string(PurposeOCR):
+		return PurposeOCR
+	case string(PurposeEmbedding):
+		return PurposeEmbedding
+	default:
+		return PurposeLLM
+	}
+}
+
+func ModelsURL(p Provider, purpose ModelPurpose) string {
 	base := strings.TrimRight(p.BaseURL, "/")
 	if base == "" {
 		return ""
 	}
 	endpoint := base + "/models"
-	if forOCR && p.SDK == SDKOpenRouter {
+	// OpenRouter is the only provider that filters server-side. Two of its
+	// filters matter here: input_modalities=file for OCR, and
+	// output_modalities=embeddings for embedding models -- which the plain
+	// catalogue leaves out altogether, so without the parameter the embedding
+	// picker is empty for every OpenRouter user. The response is still run
+	// through filterModels afterwards; the parameter is what makes the models
+	// appear at all.
+	if p.SDK == SDKOpenRouter {
+		var key, value string
+		switch purpose {
+		case PurposeOCR:
+			key, value = "input_modalities", "file"
+		case PurposeEmbedding:
+			key, value = "output_modalities", "embeddings"
+		default:
+			return endpoint
+		}
 		u, err := url.Parse(endpoint)
 		if err != nil {
-			return endpoint + "?input_modalities=file"
+			return endpoint + "?" + key + "=" + value
 		}
 		q := u.Query()
-		q.Set("input_modalities", "file")
+		q.Set(key, value)
 		u.RawQuery = q.Encode()
 		return u.String()
 	}
 	return endpoint
 }
 
-func ListModels(ctx context.Context, p Provider, forOCR bool, client *http.Client, logger *slog.Logger) ([]Model, error) {
+func ListModels(ctx context.Context, p Provider, purpose ModelPurpose, client *http.Client, logger *slog.Logger) ([]Model, error) {
 	if p.SDK == SDKGoogleVision {
 		return nil, nil
 	}
-	endpoint := ModelsURL(p, forOCR)
+	endpoint := ModelsURL(p, purpose)
 	if endpoint == "" {
 		return nil, fmt.Errorf("provider has no base URL")
 	}
@@ -68,7 +116,7 @@ func ListModels(ctx context.Context, p Provider, forOCR bool, client *http.Clien
 		client = &http.Client{Timeout: modelsListTimeout}
 	}
 
-	LogRequest(logger, p.SDK, http.MethodGet, endpoint, "", "for_ocr", forOCR)
+	LogRequest(logger, p.SDK, http.MethodGet, endpoint, "", "for", string(purpose))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -99,33 +147,66 @@ func ListModels(ctx context.Context, p Provider, forOCR bool, client *http.Clien
 	if err != nil {
 		return nil, err
 	}
-	if p.SDK == SDKMistral {
-		models = filterMistralModels(models, forOCR)
-	}
-	return models, nil
+	return filterModels(models, p.SDK, purpose), nil
 }
 
-func filterMistralModels(models []Model, forOCR bool) []Model {
+// filterModels keeps only the models that can serve purpose.
+//
+// Providers describe their catalogue very differently -- Mistral ships a
+// capabilities object, OpenRouter ships modality lists, OpenAI ships nothing at
+// all -- so the rules are per-SDK with a name heuristic underneath. The
+// heuristic is deliberately one-sided: an embedding model must never appear in
+// the LLM or OCR lists, because binding one there fails on every document,
+// while a model missing from a list costs an admin one line of typing, which
+// the Custom model id field exists for.
+func filterModels(models []Model, sdk string, purpose ModelPurpose) []Model {
 	out := make([]Model, 0, len(models))
 	for _, m := range models {
-		if includeMistralModel(m, forOCR) {
+		if includeModel(m, sdk, purpose) {
 			out = append(out, m)
 		}
 	}
 	return out
 }
 
-func includeMistralModel(m Model, forOCR bool) bool {
+func includeModel(m Model, sdk string, purpose ModelPurpose) bool {
+	if purpose == PurposeEmbedding {
+		return isEmbeddingModel(m, sdk)
+	}
+	if isEmbeddingModel(m, sdk) {
+		return false
+	}
+	if sdk != SDKMistral {
+		return true
+	}
 	if m.caps != nil {
-		if forOCR {
+		if purpose == PurposeOCR {
 			return m.caps.ocr
 		}
 		return m.caps.completionChat
 	}
-	if forOCR {
+	if purpose == PurposeOCR {
 		return modelContains(m, "ocr")
 	}
 	return !modelContains(m, "ocr")
+}
+
+func isEmbeddingModel(m Model, sdk string) bool {
+	switch sdk {
+	case SDKMistral:
+		// Mistral's capabilities object names chat and OCR but has no flag for
+		// embeddings, so an embedding model is the one that admits to neither.
+		if m.caps != nil {
+			return !m.caps.completionChat && !m.caps.ocr && modelContains(m, "embed")
+		}
+	case SDKOpenRouter:
+		// OpenRouter is explicit, and its "embeddings" output modality is the
+		// only authoritative answer any provider gives us.
+		if len(m.outputModalities) > 0 {
+			return slices.Contains(m.outputModalities, "embeddings")
+		}
+	}
+	return modelContains(m, "embed")
 }
 
 func modelContains(m Model, needle string) bool {
@@ -192,6 +273,9 @@ func modelsFromRaw(raw []json.RawMessage) []Model {
 				CompletionChat bool `json:"completion_chat"`
 				OCR            bool `json:"ocr"`
 			} `json:"capabilities"`
+			Architecture *struct {
+				OutputModalities []string `json:"output_modalities"`
+			} `json:"architecture"`
 			// context_length is OpenRouter's; max_context_length is Mistral's.
 			ContextLength    int `json:"context_length"`
 			MaxContextLength int `json:"max_context_length"`
@@ -235,6 +319,9 @@ func modelsFromRaw(raw []json.RawMessage) []Model {
 				completionChat: row.Capabilities.CompletionChat,
 				ocr:            row.Capabilities.OCR,
 			}
+		}
+		if row.Architecture != nil {
+			m.outputModalities = row.Architecture.OutputModalities
 		}
 		out = append(out, m)
 	}

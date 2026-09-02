@@ -154,6 +154,62 @@ func History(app core.App, sessionID string) ([]ai.ChatMessage, error) {
 	return ClampHistory(messages), nil
 }
 
+// MaxPriorHits caps the evidence one conversation carries forward. Well past
+// what a transcript that fits the replay budget can hold, so it is a guard
+// against a pathological session rather than a working limit.
+const MaxPriorHits = 100
+
+// PriorHits returns the documents a session's earlier answers found, so a
+// follow-up question can read one by id instead of guessing a query that would
+// rediscover it.
+//
+// Latest wins on a repeat: a document found again in a later turn is carried
+// with that turn's metadata, at that turn's position. Passages are dropped —
+// they were selected for the question that turn asked, and quoting them under a
+// different one is misleading.
+func PriorHits(app core.App, sessionID string) ([]ai.DocumentHit, error) {
+	if sessionID == "" {
+		return nil, nil
+	}
+	records, err := ListMessages(app, sessionID, MaxReplayMessages)
+	if err != nil {
+		return nil, err
+	}
+	return PriorHitsFrom(records), nil
+}
+
+// PriorHitsFrom is PriorHits over an already-loaded transcript, in the order
+// the turns happened.
+func PriorHitsFrom(records []*core.Record) []ai.DocumentHit {
+	// Newest first, so the first version of a document seen while walking
+	// backwards is the newest one and the cap keeps the most recent evidence.
+	records = slices.Clone(records)
+	slices.Reverse(records)
+
+	hits := make([]ai.DocumentHit, 0, MaxPriorHits)
+	seen := map[string]struct{}{}
+	for _, record := range records {
+		if record.GetString("role") != RoleAssistant {
+			continue
+		}
+		for _, hit := range DecodeHits(record) {
+			if hit.ID == "" {
+				continue
+			}
+			if _, ok := seen[hit.ID]; ok {
+				continue
+			}
+			seen[hit.ID] = struct{}{}
+			hit.Passages = nil
+			hits = append(hits, hit)
+			if len(hits) >= MaxPriorHits {
+				return hits
+			}
+		}
+	}
+	return hits
+}
+
 // AppendTurn writes both halves of one exchange, creating the session first
 // when sessionID is empty. It returns the session record either way.
 //

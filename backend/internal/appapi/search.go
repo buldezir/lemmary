@@ -53,6 +53,9 @@ type searchTurn struct {
 	mode      string
 	messages  []ai.ChatMessage
 	tools     agentTools
+	// priorDocuments are the hits earlier turns of this conversation found.
+	// Research may read them by id without searching for them again.
+	priorDocuments []ai.DocumentHit
 }
 
 func (t searchTurn) research() bool { return t.mode == chat.ModeResearch }
@@ -64,22 +67,60 @@ type agentTools struct {
 	tags   []string
 	search ai.DocumentSearcher
 	read   ai.DocumentReader
+	// survey and count are nil when the tools are unavailable: no helper
+	// model for a survey, no database for a count.
+	survey ai.DocumentSurveyor
+	count  ai.DocumentCounter
+	// dense is set when the retriever has an embedding leg; the prompt is
+	// worded differently for a search that crosses languages by itself.
+	dense bool
 }
 
-func buildAgentTools(app core.App, idx *fulltext.Index, userID string) (agentTools, error) {
+// buildAgentTools binds one retriever per request. Both closures share it, so
+// per-turn work is done once rather than per tool call.
+//
+// The dense half is attached only when both ends of it exist: an embedding
+// model to turn the question into a vector, and a chunk index to search with
+// it. Either one missing leaves the retriever on keywords alone, which is the
+// same code path an instance with no embedding provider has always run.
+func buildAgentTools(app core.App, rt *config.Runtime, idx *fulltext.Index, userID string) (agentTools, error) {
 	tags, err := listAvailableTagNames(app, userID)
 	if err != nil {
 		return agentTools{}, err
 	}
-	return agentTools{
-		tags: tags,
-		search: func(ctx context.Context, args ai.SearchDocumentsArgs) (ai.SearchToolResult, error) {
-			return searchUserDocuments(app, idx, userID, args)
-		},
-		read: func(ctx context.Context, ids []string) ([]ai.DocumentContent, error) {
-			return readUserDocuments(app, userID, ids)
-		},
-	}, nil
+	snap := rt.Snapshot()
+	retriever := &agentRetriever{app: app, idx: idx, userID: userID, helper: snap.SearchHelper}
+	if embedder := snap.Embedder; embedder != nil && idx != nil && idx.ChunksReady() {
+		retriever.embedQuery = embedQueryFunc(embedder)
+		retriever.chunks = idx
+	}
+	tools := agentTools{
+		tags:   tags,
+		search: retriever.search,
+		read:   retriever.read,
+		count:  retriever.count,
+		dense:  retriever.embedQuery != nil,
+	}
+	if retriever.helper != nil {
+		tools.survey = retriever.survey
+	}
+	return tools, nil
+}
+
+// embedQueryFunc adapts the embedder to the one vector the retriever wants.
+// The production interface reports token usage and batches, neither of which
+// the retriever has any use for.
+func embedQueryFunc(embedder ai.Embedder) func(context.Context, string) ([]float32, error) {
+	return func(ctx context.Context, text string) ([]float32, error) {
+		result, err := embedder.Embed(ctx, []string{text})
+		if err != nil {
+			return nil, err
+		}
+		if len(result.Vectors) == 0 {
+			return nil, fmt.Errorf("embedding the query returned no vector")
+		}
+		return result.Vectors[0], nil
+	}
 }
 
 // prepareSearchTurn does the work both search handlers share, from decoding the
@@ -141,20 +182,33 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		}
 	}
 
-	tools, err := buildAgentTools(app, idx, searchUserID)
+	tools, err := buildAgentTools(app, rt, idx, searchUserID)
 	if err != nil {
 		app.Logger().Error("search list tags failed", slog.Any("error", err))
 		return searchTurn{}, true, writeError(e, http.StatusInternalServerError, "Search is unavailable.")
 	}
 
+	// A follow-up question is usually about what the last answer just cited,
+	// and until now the run started with no memory of it at all: the model had
+	// to guess a query that would rediscover a document it had already read.
+	var priorDocuments []ai.DocumentHit
+	if session != nil {
+		priorDocuments, err = chat.PriorHits(app, session.Id)
+		if err != nil {
+			// Losing the carried evidence costs a search, not the answer.
+			app.Logger().Warn("search prior hits failed", slog.Any("error", err))
+		}
+	}
+
 	return searchTurn{
-		agent:     agent,
-		sessionID: req.SessionID,
-		ownerID:   ownerID,
-		content:   content,
-		mode:      mode,
-		messages:  append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content}),
-		tools:     tools,
+		agent:          agent,
+		sessionID:      req.SessionID,
+		ownerID:        ownerID,
+		content:        content,
+		mode:           mode,
+		messages:       append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content}),
+		tools:          tools,
+		priorDocuments: priorDocuments,
 	}, false, nil
 }
 
@@ -211,14 +265,18 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 		if turn.research() {
 			// Non-streaming fallback for clients that cannot read SSE.
 			result, researchErr := turn.agent.Research(e.Request.Context(), ai.ResearchRequest{
-				Messages:      turn.messages,
-				AvailableTags: turn.tools.tags,
-				Search:        turn.tools.search,
-				Read:          turn.tools.read,
+				Messages:       turn.messages,
+				AvailableTags:  turn.tools.tags,
+				Search:         turn.tools.search,
+				Read:           turn.tools.read,
+				PriorDocuments: turn.priorDocuments,
+				DenseRetrieval: turn.tools.dense,
+				Survey:         turn.tools.survey,
+				Count:          turn.tools.count,
 			}, nil)
 			reply, hits, incomplete, err = result.Reply, result.Documents, result.Incomplete, researchErr
 		} else {
-			reply, hits, err = turn.agent.Search(e.Request.Context(), turn.messages, turn.tools.tags, turn.tools.search)
+			reply, hits, err = turn.agent.Search(e.Request.Context(), turn.messages, turn.tools.tags, turn.tools.search, ai.SearchOptions{DenseRetrieval: turn.tools.dense})
 		}
 		if err != nil {
 			app.Logger().Error("deep search failed", "mode", turn.mode, slog.Any("error", err))
@@ -276,10 +334,14 @@ func handleResearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index)
 		defer stopHeartbeat()
 
 		result, err := turn.agent.Research(e.Request.Context(), ai.ResearchRequest{
-			Messages:      turn.messages,
-			AvailableTags: turn.tools.tags,
-			Search:        turn.tools.search,
-			Read:          turn.tools.read,
+			Messages:       turn.messages,
+			AvailableTags:  turn.tools.tags,
+			Search:         turn.tools.search,
+			Read:           turn.tools.read,
+			PriorDocuments: turn.priorDocuments,
+			DenseRetrieval: turn.tools.dense,
+			Survey:         turn.tools.survey,
+			Count:          turn.tools.count,
 		}, func(event ai.ResearchEvent) { stream.Send(event) })
 		if err != nil {
 			if e.Request.Context().Err() != nil {

@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import { countFailedDocuments, reprocessFailedDocuments } from '../lib/api/documents'
 import {
   getActiveJobCounts,
+  getEmbeddingBackfillState,
   pruneStaleTaxonomy,
   reindexSearch,
   scanDuplicates,
+  startEmbeddingBackfill,
   type ActiveJobCounts,
   type DuplicateScanResult,
+  type EmbeddingBackfillState,
   type TaxonomyPruneResult,
 } from '../lib/api/maintenance'
 import { getLimits, type InstanceLimits } from '../lib/api/limits'
@@ -19,6 +23,11 @@ const selectClassName =
 
 // How often the in-flight job count is refreshed while the page is open.
 const activeJobsPollMs = 5_000
+
+// How often the embedding backlog is re-read while a sweep is running. Only
+// while: the counts move in batches of a few dozen, so polling a finished
+// backlog would be a scan of two tables for no news.
+const embeddingPollMs = 3_000
 
 // Batch sizes offered for a reprocess sweep. The worker drains serially, so a
 // bigger batch does not finish sooner — it only commits more AI spend up front.
@@ -62,8 +71,15 @@ export function ManagementPage() {
   const [reprocessing, setReprocessing] = useState(false)
   const [reprocessMode, setReprocessMode] = useState<ReprocessMode>('auto')
   const [reprocessBatch, setReprocessBatch] = useState<number>(100)
+  const [embedding, setEmbedding] = useState<EmbeddingBackfillState | null>(null)
+  const [embeddingLoaded, setEmbeddingLoaded] = useState(false)
+  const [embeddingStarting, setEmbeddingStarting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  // Declared above the effect that polls on it: a sweep runs in the background
+  // on the server, so this flag is what turns the poll on and off.
+  const embeddingRunning = embedding?.running ?? false
 
   // Pruning taxonomy while documents are still processing could delete an entity
   // a running job is about to attach, so the queue is polled to gate that button.
@@ -158,6 +174,65 @@ export function ManagementPage() {
     }
   }
 
+  // Read once on load, then polled only while a sweep is running: the backlog
+  // is a scan of two tables, and nothing but a sweep moves it from this page.
+  useEffect(() => {
+    let active = true
+
+    async function refresh() {
+      try {
+        const next = await getEmbeddingBackfillState()
+        if (active) setEmbedding(next)
+      } catch {
+        // An unknown backlog must not wedge the page: treat it as "cannot tell".
+        if (active) setEmbedding(null)
+      } finally {
+        if (active) setEmbeddingLoaded(true)
+      }
+    }
+
+    void refresh()
+    if (!embeddingRunning) {
+      return () => {
+        active = false
+      }
+    }
+    const timer = setInterval(() => void refresh(), embeddingPollMs)
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [embeddingRunning])
+
+  async function onEmbedMissing() {
+    const missing = embedding?.stats.pending ?? 0
+    if (!missing) return
+
+    const confirmed = window.confirm(
+      `Embed ${countLabel(missing, 'document', 'documents')}?\n\n` +
+        'Their text is sent to the embedding provider, which bills for it.',
+    )
+    if (!confirmed) return
+
+    try {
+      setEmbeddingStarting(true)
+      setError('')
+      setSuccess('')
+      const next = await startEmbeddingBackfill()
+      setEmbedding(next)
+      setEmbeddingLoaded(true)
+      setSuccess(
+        next.started
+          ? `Embedding ${countLabel(missing, 'document', 'documents')} in the background.`
+          : 'A sweep is already running; this page follows its progress.',
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Embedding backfill failed')
+    } finally {
+      setEmbeddingStarting(false)
+    }
+  }
+
   async function onScanDuplicates() {
     try {
       setScanning(true)
@@ -215,6 +290,8 @@ export function ManagementPage() {
   }
 
   const jobsInFlight = activeJobsTotal(activeJobs) > 0
+  const embeddingStats = embedding?.stats ?? null
+  const embeddingMissing = embeddingStats?.pending ?? 0
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -366,6 +443,56 @@ export function ManagementPage() {
               {reindexing ? 'Reindexing...' : 'Rebuild search index'}
             </Button>
           </div>
+        </section>
+
+        <section className={sectionClassName}>
+          <h2 className={sectionTitleClassName}>Embeddings</h2>
+          <p className="text-xs text-ink-soft">
+            Deep Search also retrieves by meaning, which needs a vector for every passage. Uploads
+            are embedded as they are processed; documents that pre-date the embedding model, that
+            arrived through an import, or whose text has since changed are not. This works through
+            those in the background, a batch at a time.
+          </p>
+          {!embeddingLoaded ? (
+            <p className="mt-4 text-xs text-ink-soft">Loading the embedding backlog...</p>
+          ) : embeddingStats === null ? (
+            <p className="mt-4 text-xs text-ink-soft">Could not read the embedding backlog.</p>
+          ) : !embeddingStats.enabled ? (
+            <p className="mt-4 text-xs text-amber-700">
+              No embedding model is bound, so there is nothing to embed with. Choose one in{' '}
+              <Link to="/settings" className="font-medium underline">
+                Settings
+              </Link>
+              .
+            </p>
+          ) : (
+            <>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <Button
+                  variant="secondary"
+                  disabled={embeddingStarting || embeddingRunning || embeddingMissing === 0}
+                  onClick={() => void onEmbedMissing()}
+                >
+                  {embeddingRunning
+                    ? `Embedding... ${embeddingStats.embedded.toLocaleString()} of ${embeddingStats.total.toLocaleString()}`
+                    : `Embed ${countLabel(embeddingMissing, 'missing document', 'missing documents')}`}
+                </Button>
+                {embeddingRunning && (
+                  <p className="text-xs text-ink-soft">
+                    Running in the background. Leaving this page does not stop it.
+                  </p>
+                )}
+              </div>
+              <p className="mt-3 text-xs text-ink-soft">
+                {embeddingStats.embedded.toLocaleString()} of{' '}
+                {embeddingStats.total.toLocaleString()} documents embedded with{' '}
+                {embeddingStats.model}
+                {embeddingStats.chunks > 0 && ` · ${embeddingStats.chunks.toLocaleString()} passages`}
+                {embeddingStats.stale > 0 && ` · ${embeddingStats.stale.toLocaleString()} stale`}
+                {embeddingStats.failed > 0 && ` · ${embeddingStats.failed.toLocaleString()} failed`}.
+              </p>
+            </>
+          )}
         </section>
 
         {error && <p className="text-sm text-madder">{error}</p>}

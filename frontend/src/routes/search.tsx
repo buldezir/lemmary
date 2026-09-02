@@ -12,6 +12,7 @@ import {
   deepSearch,
   researchStream,
   type ResearchEvent,
+  type ResearchStepKind,
   type SearchMode,
 } from '../lib/api/ai'
 import {
@@ -26,7 +27,7 @@ import {
 } from '../lib/api/chats'
 
 type ResearchStep = {
-  kind: 'search' | 'read' | 'answer'
+  kind: ResearchStepKind
   label: string
   done: boolean
 }
@@ -471,6 +472,12 @@ function applyStep(steps: ResearchStep[], event: Extract<ResearchEvent, { type: 
     return
   }
   const pending = [...steps].reverse().find((step) => step.kind === event.kind && !step.done)
+  if (event.status === 'progress') {
+    // A running count rewrites the pending line in place; a progress event
+    // with nothing pending is a stray and is dropped rather than shown twice.
+    if (pending) pending.label = progressLabel(event)
+    return
+  }
   if (!pending) {
     steps.push({ kind: event.kind, label: doneLabel(event), done: true })
     return
@@ -479,15 +486,29 @@ function applyStep(steps: ResearchStep[], event: Extract<ResearchEvent, { type: 
   pending.done = true
 }
 
+function plural(n: number, noun: string) {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`
+}
+
 function startLabel(event: Extract<ResearchEvent, { type: 'step' }>) {
   switch (event.kind) {
     case 'search':
       return event.query ? `Searching “${event.query}”` : 'Searching'
     case 'read':
-      return `Reading ${event.count ?? 0} document${event.count === 1 ? '' : 's'}`
+      return `Reading ${plural(event.count ?? 0, 'document')}`
+    case 'survey':
+      return event.query ? `Surveying documents for “${event.query}”` : 'Surveying documents'
+    case 'count':
+      return event.query ? `Counting documents matching “${event.query}”` : 'Counting documents'
     default:
       return 'Writing answer'
   }
+}
+
+function progressLabel(event: Extract<ResearchEvent, { type: 'step' }>) {
+  const total = event.count ?? 0
+  const done = event.done ?? 0
+  return total > 0 ? `Surveyed ${done} of ${plural(total, 'document')}` : 'Surveying documents'
 }
 
 function doneLabel(event: Extract<ResearchEvent, { type: 'step' }>, fallback?: string) {
@@ -500,7 +521,16 @@ function doneLabel(event: Extract<ResearchEvent, { type: 'step' }>, fallback?: s
       const titles = event.titles ?? []
       const shown = titles.slice(0, 3).join(', ')
       const rest = titles.length > 3 ? `, and ${titles.length - 3} more` : ''
-      return titles.length > 0 ? `Read ${shown}${rest}` : (fallback ?? 'Read documents')
+      const verb = event.distilled ? 'Read and summarised' : 'Read'
+      return titles.length > 0 ? `${verb} ${shown}${rest}` : (fallback ?? `${verb} documents`)
+    }
+    case 'survey': {
+      const surveyed = `Surveyed ${plural(event.count ?? 0, 'document')}`
+      return event.query ? `${surveyed} for “${event.query}”` : surveyed
+    }
+    case 'count': {
+      const counted = `Counted ${plural(event.count ?? 0, 'document')}`
+      return event.query ? `${counted} matching “${event.query}”` : counted
     }
     default:
       return 'Answer written'
@@ -631,6 +661,10 @@ function SearchHits({ turn }: { turn: ChatTurn }) {
 
 function SearchHitCard({ document }: { document: SearchDocumentHit }) {
   const meta = [document.document_type, document.correspondent].filter(Boolean).join(' · ')
+  // The snippet is the best matching passage, shortened by the backend. The
+  // page is shown only when the extraction knew one, which no current OCR
+  // provider reports -- so in practice this is never rendered today.
+  const page = document.passages?.[0]?.page
 
   return (
     <Link
@@ -646,7 +680,8 @@ function SearchHitCard({ document }: { document: SearchDocumentHit }) {
       </div>
       {meta && <p className="text-xs text-ink-soft">{meta}</p>}
       <p className="line-clamp-3 text-xs text-ink-muted">
-        {document.ocr_snippet || document.summary || 'No preview.'}
+        {page ? <span className="mr-1 font-mono text-ink-soft">p. {page}</span> : null}
+        {document.ocr_snippet || document.passages?.[0]?.text || document.summary || 'No preview.'}
       </p>
       {document.tags && document.tags.length > 0 && (
         <div className="flex flex-wrap gap-1">

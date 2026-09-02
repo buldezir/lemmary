@@ -200,7 +200,9 @@ func ClampHistory(messages []ai.ChatMessage) []ai.ChatMessage {
 //
 // Over budget, the long free-text fields go before any hit does -- losing a
 // snippet costs a preview line, losing a hit costs a result card the answer
-// refers to by name.
+// refers to by name. Passages go first of all: they are by far the largest
+// field, and the snippet already carries the best of them shortened, which is
+// all the card ever shows.
 func EncodeHits(hits []ai.DocumentHit) types.JSONRaw {
 	if len(hits) == 0 {
 		return nil
@@ -219,6 +221,16 @@ func EncodeHits(hits []ai.DocumentHit) types.JSONRaw {
 
 	trimmed := make([]ai.DocumentHit, len(hits))
 	copy(trimmed, hits)
+	for i := range trimmed {
+		trimmed[i].Passages = nil
+	}
+	if encoded, err = json.Marshal(trimmed); err != nil {
+		return nil
+	}
+	if len(encoded) <= MaxHitsJSONBytes {
+		return types.JSONRaw(encoded)
+	}
+
 	for i := range trimmed {
 		trimmed[i].OCRSnippet = ""
 		trimmed[i].Summary = ""

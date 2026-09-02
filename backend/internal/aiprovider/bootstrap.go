@@ -20,6 +20,18 @@ type ProviderSpec struct {
 	APIKey  string
 	BaseURL string
 	Model   string
+
+	// EmbeddingModel is the retrieval embedding model on this same endpoint.
+	// It rides on the provider rather than being a provider of its own because
+	// there is no environment variable for a separate embedding endpoint: one
+	// key, one address, a second model name. Pointing embeddings somewhere else
+	// is a Settings-only choice. Empty means dense retrieval is off.
+	EmbeddingModel string
+
+	// HelperModel is the Deep Search helper on this same endpoint, the model
+	// that distils and surveys documents in bulk. Empty means the search
+	// model does that work itself.
+	HelperModel string
 }
 
 func (s ProviderSpec) Configured() bool { return strings.TrimSpace(s.APIKey) != "" }
@@ -104,8 +116,51 @@ func Apply(app core.App, settings *core.Record, b Bootstrap) error {
 			model = DefaultExtractModel
 		}
 		bindLLM(settings, llmID, model, model, model)
+		bindHelper(settings, llmID, b.LLM.HelperModel)
+		bindEmbedding(settings, llmID, b.LLM.EmbeddingModel)
 	}
 	return nil
+}
+
+// bindHelper points the Deep Search helper binding at the language model's
+// provider. An empty model clears the binding so the fallback to the search
+// model takes over, the same way removing AI_EMBEDDING_MODEL turns dense
+// retrieval off rather than leaving a stale binding standing.
+func bindHelper(settings *core.Record, providerID, model string) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		settings.Set("search_helper_provider_id", "")
+		settings.Set("search_helper_model", "")
+		return
+	}
+	settings.Set("search_helper_provider_id", providerID)
+	settings.Set("search_helper_model", model)
+}
+
+// bindEmbedding points the retrieval embedding binding at the language model's
+// provider.
+//
+// Two behaviours are deliberate. An empty model clears the binding rather than
+// leaving the previous one standing, so removing AI_EMBEDDING_MODEL from a
+// managed instance actually turns dense retrieval off. And embedding_dims is
+// reset only when the binding actually changed: it is a fact learned from the
+// provider's first response, and rewriting it on every boot would make the
+// whole archive look stale once a minute.
+func bindEmbedding(settings *core.Record, providerID, model string) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		settings.Set("embedding_provider_id", "")
+		settings.Set("embedding_model", "")
+		settings.Set("embedding_dims", 0)
+		return
+	}
+	changed := strings.TrimSpace(settings.GetString("embedding_provider_id")) != providerID ||
+		strings.TrimSpace(settings.GetString("embedding_model")) != model
+	settings.Set("embedding_provider_id", providerID)
+	settings.Set("embedding_model", model)
+	if changed {
+		settings.Set("embedding_dims", 0)
+	}
 }
 
 // upsertProvider creates or updates the provider carrying spec.SDK's default alias.

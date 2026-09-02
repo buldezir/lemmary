@@ -30,10 +30,32 @@ type Config struct {
 	SearchProviderID  string
 	SearchModel       string
 
-	OCRProvider     *aiprovider.Provider
-	ExtractProvider *aiprovider.Provider
-	ChatProvider    *aiprovider.Provider
-	SearchProvider  *aiprovider.Provider
+	// SearchHelperProviderID/SearchHelperModel bind the model Deep Search
+	// sends bulk per-document work to: distilling long reads into notes and
+	// surveying many documents for one question. Many cheap calls rather
+	// than a few expensive ones, so a smaller model than the search agent's
+	// is usually right. Unset falls back to the search binding.
+	SearchHelperProviderID string
+	SearchHelperModel      string
+
+	// EmbeddingProviderID/EmbeddingModel bind the retrieval embedding model.
+	// Unset means dense retrieval is off and the archive is searched by
+	// keywords alone, which is the behaviour every install had before this
+	// existed -- so absent is a working state, not a broken one.
+	EmbeddingProviderID string
+	EmbeddingModel      string
+	// EmbeddingDims is the vector length the provider actually answered with,
+	// learned from its first response rather than configured. It is what lets
+	// the vector index be sized before a single embedding call, and what makes
+	// a model switch detectable.
+	EmbeddingDims int
+
+	OCRProvider          *aiprovider.Provider
+	ExtractProvider      *aiprovider.Provider
+	ChatProvider         *aiprovider.Provider
+	SearchProvider       *aiprovider.Provider
+	SearchHelperProvider *aiprovider.Provider
+	EmbeddingProvider    *aiprovider.Provider
 
 	OCRTimeout                    time.Duration
 	ProcessingResultLanguage      string
@@ -189,6 +211,11 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 		ChatModel:                     strings.TrimSpace(record.GetString("chat_model")),
 		SearchProviderID:              strings.TrimSpace(record.GetString("search_provider_id")),
 		SearchModel:                   strings.TrimSpace(record.GetString("search_model")),
+		SearchHelperProviderID:        strings.TrimSpace(record.GetString("search_helper_provider_id")),
+		SearchHelperModel:             strings.TrimSpace(record.GetString("search_helper_model")),
+		EmbeddingProviderID:           strings.TrimSpace(record.GetString("embedding_provider_id")),
+		EmbeddingModel:                strings.TrimSpace(record.GetString("embedding_model")),
+		EmbeddingDims:                 max(int(record.GetFloat("embedding_dims")), 0),
 		OCRTimeout:                    time.Duration(ocrTimeoutSec) * time.Second,
 		ProcessingResultLanguage:      strings.ToLower(strings.TrimSpace(record.GetString("processing_result_language"))),
 		DeepSearchLanguages:           NormalizeLanguageList(record.GetString("deep_search_languages")),
@@ -207,8 +234,14 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 	return cfg, nil
 }
 
-// chat falls back to extract, search to the resolved chat binding. Separate
-// from the DB lookups so the chain is easy to test.
+// chat falls back to extract, search to the resolved chat binding, and the
+// search helper to the resolved search binding. Separate from the DB lookups
+// so the chain is easy to test.
+//
+// Embeddings are deliberately not in the chain. Every other binding falls back
+// to a language model that can serve it; an embedding endpoint cannot be
+// guessed from one, and a wrong guess would spend money on every document in
+// the archive before failing. Unset means off.
 func applyBindingFallbacks(cfg *Config) {
 	if cfg.ChatProviderID == "" {
 		cfg.ChatProviderID = cfg.ExtractProviderID
@@ -221,6 +254,12 @@ func applyBindingFallbacks(cfg *Config) {
 	}
 	if cfg.SearchModel == "" {
 		cfg.SearchModel = cfg.ChatModel
+	}
+	if cfg.SearchHelperProviderID == "" {
+		cfg.SearchHelperProviderID = cfg.SearchProviderID
+	}
+	if cfg.SearchHelperModel == "" {
+		cfg.SearchHelperModel = cfg.SearchModel
 	}
 }
 
@@ -235,6 +274,8 @@ func resolveProviders(app core.App, cfg *Config) error {
 		{cfg.ExtractProviderID, &cfg.ExtractProvider},
 		{cfg.ChatProviderID, &cfg.ChatProvider},
 		{cfg.SearchProviderID, &cfg.SearchProvider},
+		{cfg.SearchHelperProviderID, &cfg.SearchHelperProvider},
+		{cfg.EmbeddingProviderID, &cfg.EmbeddingProvider},
 	} {
 		provider, err := lookupProvider(app, binding.id)
 		if err != nil {
@@ -265,6 +306,11 @@ func applyConfigToRecord(record *core.Record, cfg Config) {
 	record.Set("chat_model", cfg.ChatModel)
 	record.Set("search_provider_id", cfg.SearchProviderID)
 	record.Set("search_model", cfg.SearchModel)
+	record.Set("search_helper_provider_id", cfg.SearchHelperProviderID)
+	record.Set("search_helper_model", cfg.SearchHelperModel)
+	record.Set("embedding_provider_id", cfg.EmbeddingProviderID)
+	record.Set("embedding_model", cfg.EmbeddingModel)
+	record.Set("embedding_dims", max(cfg.EmbeddingDims, 0))
 	record.Set("ocr_timeout_sec", int(cfg.OCRTimeout.Seconds()))
 	record.Set("processing_result_language", cfg.ProcessingResultLanguage)
 	record.Set("deep_search_languages", cfg.DeepSearchLanguages)
@@ -362,6 +408,41 @@ func HasLLM(cfg Config) bool {
 		p = cfg.ChatProvider
 	}
 	return p != nil && p.APIKey != "" && aiprovider.IsLLM(p.SDK)
+}
+
+// HasEmbedding reports whether dense retrieval can run. A provider without a
+// key or without a model is half a configuration, and treating it as on would
+// make every document fail its embed step instead of skipping it.
+func HasEmbedding(cfg Config) bool {
+	p := cfg.EmbeddingProvider
+	return p != nil && p.APIKey != "" && aiprovider.IsLLM(p.SDK) &&
+		strings.TrimSpace(cfg.EmbeddingModel) != ""
+}
+
+// RecordEmbeddingDims stores the vector length the provider answered with, once.
+//
+// It is called from the pipeline rather than from Settings because nobody can
+// know the number before the first request: an admin types a model name, and
+// the provider decides how long its vectors are. Writing it back saves the
+// settings record, which reloads the runtime, which is how the rest of the
+// process learns the number.
+func RecordEmbeddingDims(app core.App, dims int) error {
+	if dims <= 0 {
+		return nil
+	}
+	record, err := app.FindRecordById(CollectionName, SingletonID)
+	if err != nil {
+		return fmt.Errorf("load %s: %w", CollectionName, err)
+	}
+	if int(record.GetFloat("embedding_dims")) == dims {
+		return nil
+	}
+	record.Set("embedding_dims", dims)
+	if err := app.Save(record); err != nil {
+		return fmt.Errorf("save embedding_dims: %w", err)
+	}
+	app.Logger().Info("recorded embedding dimensions", "dims", dims)
+	return nil
 }
 
 func HasOCR(cfg Config) bool {

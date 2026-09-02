@@ -2,12 +2,81 @@
 
 ## Prerequisites
 
-- Go 1.23+
+- Go 1.26+ with cgo enabled (a C toolchain: `gcc` or `clang`)
 - Node.js 20+
 - [pnpm](https://pnpm.io/installation) 11+ (`npm install -g pnpm`)
 - [poppler-utils](https://poppler.freedesktop.org/) for all PDF work: `pdftoppm` (preview and page thumbnails), `pdfinfo` (page count), `pdftotext` (page text), `pdfseparate` and `pdfunite` (page extraction for [document splitting](#document-splitting))
 
 On macOS: `brew install poppler`. On Debian/Ubuntu: `apt install poppler-utils`.
+
+### FAISS (required to build the backend)
+
+Search is backed by [bleve](https://github.com/blevesearch/bleve), whose vector
+support is a cgo binding to FAISS. bleve compiles that API out unless the
+`vectors` build tag is set, and Lemmary is always built with it — one binary,
+one image, no edition without vector search. A build without the tag stops
+immediately on `backend/internal/fulltext/vectors_required.go`.
+
+The library has to be **blevesearch's fork** of FAISS. A distribution
+`libfaiss` package, however recent, is not enough: the Go binding calls C entry
+points (`*_c_ex.h`) that exist only in the fork. `scripts/faiss-build.sh` owns
+the pinned commit — it is the single source of truth, and it moves only when
+bleve moves, from the compatibility table in bleve's `docs/vectors.md`.
+
+Every route below also needs OpenBLAS and libgomp present when the backend is
+linked and when it runs (`apt install libopenblas0-pthread libgomp1`;
+`libopenblas-dev` brings them along).
+
+**Option 1 — system-wide.** One `sudo`, and nothing to set afterwards:
+
+```bash
+sudo apt install cmake ninja-build g++ libopenblas-dev
+sudo scripts/faiss-build.sh --prefix /usr/local
+sudo ldconfig
+```
+
+**Option 2 — in your home directory.** Same build, no root:
+
+```bash
+sudo apt install cmake ninja-build g++ libopenblas-dev
+scripts/faiss-build.sh --prefix "$HOME/.local/faiss"
+```
+
+**Option 3 — out of the Docker build.** No cmake, no compiler, no root at all;
+the `faiss` stage is a `scratch` image holding just the artifacts, so the export
+is about 10 MB rather than a builder's whole root filesystem:
+
+```bash
+docker buildx build --target faiss --output type=local,dest=./.faiss .
+mkdir -p "$HOME/.local/faiss"
+cp -a .faiss/lib .faiss/include "$HOME/.local/faiss/"
+```
+
+Options 2 and 3 put FAISS somewhere neither the compiler nor the loader looks,
+so three variables point them at it:
+
+```bash
+export CGO_CFLAGS=-I$HOME/.local/faiss/include
+export CGO_LDFLAGS=-L$HOME/.local/faiss/lib
+export LD_LIBRARY_PATH=$HOME/.local/faiss/lib
+```
+
+The repository's `.envrc` sets all three when `~/.local/faiss` exists, so with
+[direnv](https://direnv.net) (`direnv allow`) there is nothing to remember.
+
+`.envrc` also exports `GOFLAGS=-tags=vectors`, which is what makes a bare
+`go build`, `go test` and gopls work in this tree. Without direnv, either pass
+`-tags vectors` every time or set it for your user once with
+`go env -w GOFLAGS=-tags=vectors`.
+
+FAISS has to be on this machine only for Go commands you run here: a plain
+`go build`/`go test`, or `LEMMARY_VERIFY_HOST=1 ./scripts/test-all.sh`. The
+plain `./scripts/test-all.sh` delegates to the overlay, which runs every stage
+in a Docker image that already carries FAISS, so nothing has to be installed on
+the host for that path.
+
+macOS: `brew install cmake ninja libomp openblas`, then option 1 or 2 (the
+script picks Homebrew's libomp up on its own).
 
 ## Running from source
 
@@ -200,6 +269,13 @@ is dropped.
 | `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK`. |
 | `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. |
 | `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Required unless `OCR_SDK=google_vision`, which reads a document without one. |
+| `AI_EMBEDDING_MODEL` | unset (Deep Search matches keywords only) | An embedding model on the `AI_SDK` provider, so Deep Search can also find documents by meaning. Operator-owned under `AI_MANAGED=1`; removing it there turns the feature off. See below for what it costs. |
+| `AI_SEARCH_HELPER_MODEL` | unset (the Search model does this work) | A cheaper model on the `AI_SDK` provider for Deep Search's bulk per-document work: distilling long reads into notes and surveying many documents for one question. Operator-owned under `AI_MANAGED=1`. See "How Research covers a topic" below. |
+
+There is deliberately no `AI_EMBEDDING_SDK` / `_API_KEY` / `_BASE_URL` trio.
+Pointing embeddings at a different endpoint than the language model is a rare
+enough choice that it belongs in **Settings**, and three more variables would
+mostly be three more ways to half-configure the feature.
 
 A provider record is matched by the default alias it is created with. A renamed
 or deleted provider is left alone rather than reclaimed — renaming one is an
@@ -216,7 +292,7 @@ Seeded on the first boot and edited from **Settings** afterwards, in both modes.
 | `AI_TIMEOUT_SEC` | `60` | Extraction, chat, search and split-detection request timeout |
 | `WORKER_TIMEOUT_SEC` | `300` | Per-job processing timeout |
 | `WORKER_MAX_RETRIES` | `0` | Max step retry attempts before a job fails |
-| `DEEP_SEARCH_LANGUAGES` | empty | Comma-separated ISO 639-1 codes (e.g. `de,en,uk`) for Deep Search keyword expansion |
+| `DEEP_SEARCH_LANGUAGES` | empty | Comma-separated ISO 639-1 codes (e.g. `de,en,uk`) for Deep Search keyword expansion. Only drives per-language searches when no embedding model is set; with one, a single search already crosses languages |
 | `EXTRACTION_PROMPT_VERSION` | `v1` | Stored on each processing job step run; bookkeeping only, not offered in the Settings UI |
 
 Two more are seeded the same way but are **operator-owned under
@@ -227,6 +303,40 @@ plan can price them per tier:
 | --- | --- | --- |
 | `NEAR_DUPLICATE_DETECTION_ENABLED` | `false` | Whether the pipeline runs near-duplicate detection |
 | `NEAR_DUPLICATE_THRESHOLD` | `0.92` | How similar two documents' text must be to count as near-duplicates |
+
+One more is read from the environment on every boot and never stored, because it
+paces spending rather than describing the instance:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `EMBEDDING_BACKFILL_BATCH` | `20` | Documents one backfill tick embeds, on `WORKER_CRON_EXPR`. `0` disables the scheduled backfill, so only newly processed documents are embedded and an existing archive is left alone — **Management → Embeddings** still embeds it on demand. |
+
+#### What embeddings cost
+
+Turning `AI_EMBEDDING_MODEL` on is a commitment to embed the whole archive, not
+just the next upload, so it is worth knowing the shape of the bill before you
+make it.
+
+- **Tokens.** Each document is cut into ~1100-character passages plus one
+  passage rendered from its metadata, and each passage is one embedding input —
+  roughly one request per 30 KB of text. Embedding models are cheap per token;
+  this is simply every document you have.
+- **Re-embedding.** A document is embedded again whenever its OCR text or its
+  metadata changes: a re-OCR, an edited title, a renamed tag, a reprocess. And
+  *every* document is embedded again when you change the model, because vectors
+  from two models cannot be compared — there is no partial migration.
+- **Space, which under encryption is RAM.** A 1536-dimension vector is about
+  6 KB; a typical document is a handful of passages, so 30–60 KB each inside
+  `data.db`. With `VAULT_ENABLED=1` the archive is decrypted into a tmpfs, so
+  that space is memory. A model with 1024 dimensions or fewer costs
+  proportionally less of it. See [Encryption at rest](/encryption).
+
+The backfill drains at `EMBEDDING_BACKFILL_BATCH` documents a tick and logs what
+it embedded, what failed, and how many are left; **Settings → Models** shows the
+same counts, and **Management → Embeddings** both shows them and runs the whole
+backlog on demand rather than waiting a tick a minute. A provider failure is
+soft: the document keeps its text, its metadata and its place in keyword search,
+and is retried later with a backoff.
 
 The **result language** has no variable at all. It decides what language a
 document's title, summary and tags are stored in, which is a reader's
@@ -261,6 +371,7 @@ You can also create the admin from the environment (`SETUP_ADMIN_EMAIL` and `SET
 - **Clear stale data** — `POST /api/app/taxonomy/prune` deletes every tag, correspondent and document type that no document references any more (left behind by deleted documents, renames, or an aborted import). Documents are never modified. Reference collection and deletion share one transaction, so a document saved concurrently either counts as a reference or fails its own relation check; it cannot keep a dangling id.
   The button is disabled while any processing job is `pending` or `running`, so an entity a job is about to attach cannot be swept up. The count comes from the PocketBase collection API (`GET /api/collections/processing_jobs/records`), polled every 5s and re-checked on click. That list rule is `document.user = @request.auth.id`, so the gate only sees jobs on the admin's own documents — another user's in-flight upload does not block the button.
 - **Rebuild search index** — `POST /api/app/search/reindex`, see [Full-text search](#full-text-search).
+- **Embed N missing documents** — `POST /api/app/embeddings/backfill` sweeps every document that still needs passage vectors: the archive that existed before an embedding model was bound, restored backups (whose documents get no processing job at all), documents edited since they were embedded, and anything a model or chunker change invalidated. It answers immediately with `{ "started", "running", "stats" }` and works through the backlog in the background, in batches, for up to 30 minutes; `GET` on the same path returns `{ "running", "stats" }`, which is what the progress line polls every 3s. The section is disabled with a pointer to Settings when no embedding model is bound (`409`), and the button is disabled while a sweep is running. A sweep and the `EMBEDDING_BACKFILL_BATCH` cron share one lock, so they never embed the same document twice — and `EMBEDDING_BACKFILL_BATCH=0` disables only the cron, never this button.
 
 Admin-only items in the nav menu are prefixed with a shield icon (decorative — the items only render for admins in the first place).
 
@@ -408,10 +519,18 @@ Query behavior:
 - Search covers bilingual title/purpose/summary, OCR text, tag/type/correspondent names, and `people_or_organizations`.
 - The homepage search box calls `GET /api/app/documents/search`. An empty search box still lists via PocketBase (sort by created).
 - Deep Search’s `search_documents` tool (both modes) and paperless-ngx `GET /api/documents/?query=` use the same index. Research’s `read_documents` reads `ocr_text` straight from the database, not the index.
-- **The agent’s searches relax that AND; the search box does not.** The prompts ask the model to expand a question into keywords, and requiring every one of them returned nothing for archives that held a document per keyword. So `search_documents` asks for most of the terms (all of 2, n−1 up to 5, then 70%), and if *that* matches nothing at all it retries for any one of them — with one edit of slack on words of five letters or more that carry no digits — capping the retry at 10 hits and telling the model, via `terms_required` in the tool result, that its hits are partial. A quoted phrase stays mandatory in both attempts. The search box keeps strict AND on purpose: there the query is a filter over documents the user knows, and a hit that dropped a word reads as a bug.
+- **The agent’s searches relax that AND; the search box does not.** The prompts ask the model to expand a question into keywords, and requiring every one of them returned nothing for archives that held a document per keyword. So `search_documents` asks for most of the terms (all of 2, n−1 up to 5, then 70%), and if *that* matches nothing at all it retries for any one of them — with one edit of slack on words of five letters or more that carry no digits — capping the retry at 10 hits. A quoted phrase stays mandatory in both attempts. The search box keeps strict AND on purpose: there the query is a filter over documents the user knows, and a hit that dropped a word reads as a bug.
 - PocketBase collection filters (`field ~ "..."`) remain available to API clients; the UI no longer uses them for the search box.
 
-Admins can force a rebuild from **Management → Rebuild search index** (`POST /api/app/search/reindex`).
+With an embedding model bound there is a second index beside it, at
+`{dataDir}/bleve/chunks`: one entry per embedded passage, carrying the passage's
+text and its vector. Only Deep Search's tools query it. It is derived data like
+the first — rebuilt from `data.db` with no calls to the embedding provider — and
+it is versioned by model *and* dimension count, so changing either wipes and
+refills that index alone while keyword search keeps serving. Clearing the
+embedding binding deletes the directory.
+
+Admins can force a rebuild from **Management → Rebuild search index** (`POST /api/app/search/reindex`). It rebuilds both indexes.
 
 ## LLM setup (OpenAI / OpenRouter / Mistral)
 
@@ -424,15 +543,110 @@ Without an LLM provider, AI extraction, document chat, and Deep Search return a 
 Deep Search uses a tool-calling agent over the Bleve full-text index, in two modes, one per path under `/rag`:
 
 - **Search** (`/rag/search`) — one round of `search_documents`, answered from titles, summaries and short OCR snippets. Results are shown as document cards.
-- **Research** (`/rag/research`) — the agent searches, then reads the full text of the documents it finds (`read_documents`), and writes a markdown answer citing each document it used, with the documents it drew on listed under the answer. Progress streams over `POST /api/app/search/stream` (server-sent events), so each search and read appears as it happens.
+- **Research** (`/rag/research`) — the agent searches, reads the documents it finds (`read_documents`), surveys many at once when the question spans a topic (`survey_documents`), counts when asked how many (`count_documents`), and writes a markdown answer citing each document it used, with the documents it drew on listed under the answer. Progress streams over `POST /api/app/search/stream` (server-sent events), so each search, read, survey and count appears as it happens.
+
+### How Deep Search finds documents
+
+Both modes reach the archive through the same `search_documents` tool, and it
+runs up to two searches for every query.
+
+- **Keywords (BM25)** over the documents index, relaxed in two rungs: first most
+  of the terms (all of 2, n−1 up to 5, then 70%), and only if that matches
+  nothing at all, any one of them — with one edit of slack on words of five
+  letters or more that carry no digits, capped at 10 hits. The Documents page
+  keeps the strict behaviour — there the query is a filter you typed, here it is
+  a guess the model made from a question.
+- **Meaning (kNN)** over `bleve/chunks`, a second index holding one entry per
+  embedded passage with its vector, searched by cosine similarity to the
+  embedded question. This half exists only when `AI_EMBEDDING_MODEL` is set and
+  documents have actually been embedded.
+
+The two lists are fused by reciprocal rank fusion: a document scores the sum of
+`1/(60 + rank)` over the lists it appears in. Only positions are read, never
+scores — BM25 and cosine are not on the same scale, and normalising one against
+the other would be guesswork. A document found by either signal survives; one
+found by both rises.
+
+The passages the model is shown come from the same chunk index: a keyword search
+over the passages of exactly the documents being returned, narrowed to the
+sentence around the match. Without a chunk index they are cut from the OCR text
+around the query's terms instead, and failing that from the index's own
+highlight — the model always gets verbatim text, whatever the retrieval was. A
+read of a long document is always an excerpt: its head plus the passages ranked
+the same way against the read's `focus`, or against the user's question when the
+model named none. The whole text of a long document is never handed to the
+research model.
+
+With an embedding model set, the prompt tells the model that one search already
+crosses languages and not to repeat a search translated into another one; the
+`DEEP_SEARCH_LANGUAGES` list is then only a hint for spelling exact terms.
+Without one, the model is asked to search once per configured language, since
+translation is the only thing carrying an English question to a German invoice.
+
+Filters — a tag, a type, a correspondent, a date range — are properties of a
+document, and the chunk index deliberately carries none of them, so that
+renaming a tag never rewrites a vector. They are resolved against the documents
+index instead and applied to the passage search as a list of document ids.
+
+What it costs: one embedding request per distinct query string per turn (the
+result is reused for the rest of that turn, including a focused read with the
+same words), and one or two extra index searches. Everything on the dense path
+degrades rather than fails: no model bound, an embedding call that errored, an
+index still rebuilding — the search is the keyword search it has always been.
+Each call logs one line, `deep search retrieval lexical=… dense=… fused=…
+embedded=…`, which is where to look when an answer seems to have missed a
+document.
 
 Research has no round or document limit. It keeps searching and reading until it can answer, the model stops making progress, or a completion is rejected because the conversation exceeded the model's context window.
+
+### How Research covers a topic
+
+Reading documents one call at a time is right for a needle question and wrong
+for a topic: two hundred documents read into one conversation is two hundred
+documents re-sent on every later round. Three things keep a broad question
+affordable.
+
+- **Distilled reads.** When a `read_documents` call would put more than about
+  32 KB of text, or more than five documents, into the conversation, the
+  documents are read by the **Deep Search helper** model instead. The research
+  model gets, per document, notes on what it says about the focus, verbatim
+  quotes to cite, and any requested values — never the text. Smaller reads pass
+  through as excerpts, because on a needle question the exact wording is the
+  point. The helper is shown each document whole, up to 400 KB, and several
+  short documents share one call.
+- **`survey_documents`.** For "everything about X" or "the total of Y over the
+  year": the same retrieval as a search, kept to 300 documents by default and
+  1000 at most, every document read by the helper for one question, one compact
+  row back per document. Number fields (`fields: [{name, type: "number"}]`) are
+  summed, averaged and bounded on the server, per currency, and the model is
+  told to report those figures rather than add rows itself. Progress streams as
+  "Surveyed 120 of 300 documents".
+- **`count_documents`.** For "how many" and "how are they distributed": filters
+  alone are answered by the database (`COUNT(*)`, optionally `GROUP BY` type,
+  correspondent, year, month or tag); with query text the index reports the
+  exact strict-match total, and a grouped breakdown takes the index's ids to the
+  database (marked approximate past 5000 matches). A filter naming a type,
+  correspondent or tag that does not exist counts zero and says which name did
+  not resolve, rather than matching everything.
+
+The helper is a separate binding (`AI_SEARCH_HELPER_MODEL`, or **Deep Search
+helper** in Settings) because this work is many cheap calls where the research
+loop is a few expensive ones; unset, it falls back to the Search model and the
+same features run at the Search model's price. Helpers that reject JSON mode
+are retried in plain text and parsed leniently. Every completion logs its token
+usage (`ai completion usage prompt_tokens=… cached_tokens=… completion_tokens=…`)
+and a research run logs its total, which is where to look when checking what a
+question cost.
+
+Models that emit tool calls in their content rather than natively (the DSML
+path) are told to answer after one round of tool results, so they cannot chain a
+count into a survey into a read; they get one tool round and the answer.
 
 Each mode is its own path — `/rag/search` and `/rag/research` — so the mode is carried by the URL and survives a reload, the back button, a bookmark and a shared link. They share the `/rag` parent, which is what lets one navigation entry cover both; `/rag` on its own redirects to Search.
 
 The mode can only be chosen before a chat has a turn. A transcript is a sequence: its answers were produced by one mode, and the next turn replays them to the model as its own prior work, so switching underneath would answer a later question in a way the earlier ones do not support. Once a chat exists the switch shows which mode it is in and stops being a link — starting a new chat is the way to the other one. The server enforces this too: a turn sent under a mode the chat is not in is a 409, and opening `/rag/search/<research-chat>` redirects to the path that matches. A saved chat reopens on the path matching the mode it ran in.
 
-Configure **Search provider/model** and **Deep search languages** in Settings.
+Configure **Search provider/model**, **Deep Search helper** and **Deep search languages** in Settings.
 
 ## Chat sessions
 

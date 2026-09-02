@@ -93,16 +93,21 @@ export async function chatWithDocument(input: {
   }
 }
 
-export type ResearchStepKind = 'search' | 'read' | 'answer'
+export type ResearchStepKind = 'search' | 'read' | 'survey' | 'count' | 'answer'
 
 export type ResearchEvent =
   | {
       type: 'step'
       kind: ResearchStepKind
-      status: 'start' | 'done'
+      /** `progress` is a survey's running count; only surveys emit it. */
+      status: 'start' | 'progress' | 'done'
       query?: string
       titles?: string[]
       count?: number
+      /** Documents finished so far, out of `count`, on a progress event. */
+      done?: number
+      /** A read the helper model summarised instead of passing text through. */
+      distilled?: boolean
     }
   | { type: 'delta'; content: string }
   | { type: 'documents'; documents?: SearchDocumentHit[] }

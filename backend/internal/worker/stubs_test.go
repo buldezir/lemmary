@@ -24,6 +24,15 @@ func (stubExtractor) ExtractMetadata(context.Context, string, ai.ExtractionCatal
 	return nil, nil
 }
 
+type stubEmbedder struct{}
+
+func (stubEmbedder) Name() string  { return "stub-embed" }
+func (stubEmbedder) Model() string { return "stub-embed-model" }
+func (stubEmbedder) Dims() int     { return 4 }
+func (stubEmbedder) Embed(context.Context, []string) (ai.EmbedResult, error) {
+	return ai.EmbedResult{}, nil
+}
+
 func snapshotWithProviders(o ocr.Provider, a ai.Extractor) config.Snapshot {
 	return config.Snapshot{OCR: o, AI: a}
 }

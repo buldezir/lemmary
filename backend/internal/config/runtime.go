@@ -18,8 +18,16 @@ type Snapshot struct {
 	AI          ai.Extractor
 	Chatter     ai.Chatter
 	SearchAgent ai.SearchAgent
+	// SearchHelper does Deep Search's bulk per-document work. Nil when the
+	// search agent itself is unavailable; otherwise always set, on the helper
+	// binding or, through the fallback chain, on the search model.
+	SearchHelper ai.Helper
 	// Shares the extraction provider: both reason over document text.
 	Splitter ai.Splitter
+	// Embedder is nil unless an embedding model is bound, which is what turns
+	// dense retrieval on: every consumer checks for nil and degrades to
+	// keyword search rather than failing.
+	Embedder ai.Embedder
 }
 
 type Runtime struct {
@@ -32,6 +40,25 @@ type Runtime struct {
 	// Parsed once before the app exists; never changes, so no lock. Rides here
 	// because Runtime is already threaded to the refuse-write endpoints and /meta.
 	env AIEnv
+
+	// Called after every published snapshot, in registration order.
+	onReload []func(core.App, Snapshot)
+}
+
+// OnReload registers a callback for every settings reload.
+//
+// It exists for state that is derived from the configuration but does not live
+// in the snapshot — the vector index, whose mapping depends on the embedding
+// model and on a dimension count that is only known once a provider has
+// answered. A callback runs inside the reload, so it must be quick: schedule
+// the slow half rather than doing it here.
+func (r *Runtime) OnReload(fn func(core.App, Snapshot)) {
+	if fn == nil {
+		return
+	}
+	r.mu.Lock()
+	r.onReload = append(r.onReload, fn)
+	r.mu.Unlock()
 }
 
 func NewRuntime(env AIEnv) *Runtime {
@@ -118,6 +145,19 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		)
 	}
 
+	var embedder ai.Embedder
+	if HasEmbedding(cfg) {
+		embedder = ai.NewEmbedder(
+			cfg.EmbeddingProvider.SDK,
+			cfg.EmbeddingProvider.APIKey,
+			cfg.EmbeddingModel,
+			cfg.EmbeddingProvider.BaseURL,
+			cfg.EmbeddingDims,
+			cfg.OpenAITimeout,
+			aiLogger,
+		)
+	}
+
 	var searchAgent ai.SearchAgent
 	if cfg.SearchProvider != nil && cfg.SearchProvider.APIKey != "" && aiprovider.IsLLM(cfg.SearchProvider.SDK) {
 		searchAgent = ai.NewSearchAgent(
@@ -132,18 +172,40 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		)
 	}
 
+	var searchHelper ai.Helper
+	if cfg.SearchHelperProvider != nil && cfg.SearchHelperProvider.APIKey != "" && aiprovider.IsLLM(cfg.SearchHelperProvider.SDK) {
+		searchHelper = ai.NewHelper(
+			cfg.SearchHelperProvider.SDK,
+			cfg.SearchHelperProvider.APIKey,
+			cfg.SearchHelperModel,
+			cfg.SearchHelperProvider.BaseURL,
+			cfg.OpenAITimeout,
+			aiLogger,
+		)
+	}
+
 	snap := Snapshot{
-		Cfg:         cfg,
-		OCR:         ocrProvider,
-		AI:          extractor,
-		Chatter:     chatter,
-		SearchAgent: searchAgent,
-		Splitter:    splitter,
+		Cfg:          cfg,
+		OCR:          ocrProvider,
+		AI:           extractor,
+		Chatter:      chatter,
+		SearchAgent:  searchAgent,
+		SearchHelper: searchHelper,
+		Splitter:     splitter,
+		Embedder:     embedder,
 	}
 
 	r.mu.Lock()
 	r.snap = snap
+	callbacks := make([]func(core.App, Snapshot), len(r.onReload))
+	copy(callbacks, r.onReload)
 	r.mu.Unlock()
+
+	// Outside the lock: a callback that reached back for the snapshot it was
+	// just handed would otherwise deadlock.
+	for _, fn := range callbacks {
+		fn(app, snap)
+	}
 
 	// Logged from the published snapshot rather than from the locals above, so
 	// the line always describes what readers will actually get.
@@ -164,6 +226,9 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		"model", aiModel,
 		"chat_model", cfg.ChatModel,
 		"search_model", cfg.SearchModel,
+		"search_helper_model", cfg.SearchHelperModel,
+		"embedding_model", cfg.EmbeddingModel,
+		"embedding_dims", cfg.EmbeddingDims,
 		"deep_search_languages", cfg.DeepSearchLanguages,
 	)
 }

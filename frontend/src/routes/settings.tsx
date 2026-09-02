@@ -12,7 +12,13 @@ import {
   type AIProvider,
   type ProviderSDK,
 } from '../lib/api/providers'
-import { getAppSettings, updateAppSettings, type AppSettings } from '../lib/api/settings'
+import {
+  getAppSettings,
+  getEmbeddingStats,
+  updateAppSettings,
+  type AppSettings,
+  type EmbeddingStats,
+} from '../lib/api/settings'
 import { ProviderModelFields } from '../components/ProviderModelFields'
 import { useAppMeta } from '../hooks/useAppMeta'
 import {
@@ -44,6 +50,10 @@ type FormState = {
   chat_model: string
   search_provider_id: string
   search_model: string
+  search_helper_provider_id: string
+  search_helper_model: string
+  embedding_provider_id: string
+  embedding_model: string
   ocr_timeout_sec: string
   processing_result_language: string
   deep_search_languages: string
@@ -64,6 +74,10 @@ function formFromSettings(settings: AppSettings): FormState {
     chat_model: settings.chat_model,
     search_provider_id: settings.search_provider_id,
     search_model: settings.search_model,
+    search_helper_provider_id: settings.search_helper_provider_id,
+    search_helper_model: settings.search_helper_model,
+    embedding_provider_id: settings.embedding_provider_id,
+    embedding_model: settings.embedding_model,
     ocr_timeout_sec: String(settings.ocr_timeout_sec),
     processing_result_language: settings.processing_result_language,
     deep_search_languages: settings.deep_search_languages,
@@ -86,12 +100,29 @@ function emptyDraft(sdk: ProviderSDK = 'openai'): ProviderDraft {
   return { sdk, alias: '', base_url: SDK_DEFAULT_BASE[sdk], api_key: '' }
 }
 
+// EmbeddingStatsLine says how much of the archive the chosen model has actually
+// covered. Without it, switching the model looks instantaneous while the
+// backfill is in fact working through the archive a batch a minute, and nothing
+// on the page would say so.
+function EmbeddingStatsLine({ stats }: { stats: EmbeddingStats | null }) {
+  if (!stats || !stats.enabled) return null
+
+  const parts = [`${stats.embedded} of ${stats.total} documents embedded`]
+  if (stats.dims > 0) parts.push(`${stats.dims} dimensions`)
+  if (stats.chunks > 0) parts.push(`${stats.chunks} passages`)
+  if (stats.pending > 0) parts.push(`${stats.pending} queued`)
+  if (stats.failed > 0) parts.push(`${stats.failed} failed`)
+
+  return <p className={fieldHintClassName}>{parts.join(' · ')}.</p>
+}
+
 // Admin access is enforced by the route's beforeLoad guard.
 export function SettingsPage() {
   // unknown/failed meta counts as managed; see AppMeta.aiManaged
   const { aiManaged } = useAppMeta()
   const aiEditable = aiManaged === false
   const [form, setForm] = useState<FormState | null>(null)
+  const [embeddingStats, setEmbeddingStats] = useState<EmbeddingStats | null>(null)
   const [providers, setProviders] = useState<AIProvider[]>([])
   const [draft, setDraft] = useState<ProviderDraft>(emptyDraft())
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -116,6 +147,13 @@ export function SettingsPage() {
         if (!active) return
         setForm(formFromSettings(settings))
         setProviders(nextProviders)
+        // Separately, and allowed to fail: it scans two tables, and a slow or
+        // broken count must not keep the Settings form off the screen.
+        getEmbeddingStats()
+          .then((stats) => {
+            if (active) setEmbeddingStats(stats)
+          })
+          .catch(() => {})
         setError('')
       } catch (err) {
         if (active) {
@@ -232,6 +270,10 @@ export function SettingsPage() {
               chat_model: form.chat_model,
               search_provider_id: form.search_provider_id,
               search_model: form.search_model,
+              search_helper_provider_id: form.search_helper_provider_id,
+              search_helper_model: form.search_helper_model,
+              embedding_provider_id: form.embedding_provider_id,
+              embedding_model: form.embedding_model,
               near_duplicate_detection_enabled: form.near_duplicate_detection_enabled,
               near_duplicate_threshold: nearThreshold,
             }
@@ -455,6 +497,31 @@ export function SettingsPage() {
                 onProviderChange={(id) => updateField('search_provider_id', id)}
                 onModelChange={(value) => updateField('search_model', value)}
               />
+              <ProviderModelFields
+                label="Deep Search helper"
+                help="Cheaper model Deep Search uses to read and extract from many documents at once: it turns long reads into notes and surveys whole topics one document at a time. Leave empty to have the Search model do this work itself."
+                providers={llmProviders}
+                providerId={form.search_helper_provider_id}
+                model={form.search_helper_model}
+                purpose="llm"
+                allowEmpty
+                onProviderChange={(id) => updateField('search_helper_provider_id', id)}
+                onModelChange={(value) => updateField('search_helper_model', value)}
+              />
+              <ProviderModelFields
+                label="Embeddings"
+                help="Lets Deep Search find documents by meaning as well as by keyword, which is what makes a question phrased in one language reach a document written in another. Leave the provider empty to search by keyword only."
+                providers={llmProviders}
+                providerId={form.embedding_provider_id}
+                model={form.embedding_model}
+                purpose="embedding"
+                allowEmpty
+                onProviderChange={(id) => updateField('embedding_provider_id', id)}
+                onModelChange={(value) => updateField('embedding_model', value)}
+              />
+              <div className="sm:col-span-2">
+                <EmbeddingStatsLine stats={embeddingStats} />
+              </div>
             </div>
           </section>
         )}
@@ -524,8 +591,9 @@ export function SettingsPage() {
                 />
               </label>
               <p className={fieldHintClassName}>
-                Languages deep search translates keywords into, so a German invoice is found by an
-                English question. Leave empty to search only in the language of the question.
+                {form.embedding_model.trim() !== ''
+                  ? 'With an embedding model configured, one search already reaches documents in every language; this list is only used when Deep Search falls back to keyword search.'
+                  : 'Languages deep search translates keywords into, so a German invoice is found by an English question. Leave empty to search only in the language of the question.'}
               </p>
             </div>
           </div>

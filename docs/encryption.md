@@ -44,6 +44,14 @@ form — it is derived data, so it is rebuilt into the memory-backed working
 directory on each unlock rather than encrypted and stored, which keeps a
 plaintext shadow of every document's OCR text off the disk entirely.
 
+Deep Search's passage vectors follow the same split. The vectors themselves live
+in `data.db`, so they are encrypted on the volume like every other row and are
+covered by the vault's snapshots and by PocketBase's backups without any extra
+step. The vector index built from them is derived data like the text index: it is
+rebuilt into the working directory on each unlock, from the stored vectors,
+without a single request to the embedding provider — so unlocking costs nothing
+and works with the provider offline.
+
 **Read this whole section before enabling it.** It changes how the instance
 starts, what happens when a password is lost, and which features are available.
 
@@ -230,7 +238,22 @@ and so every containerised install. Now it refuses to start and says what to do.
   host **hibernation** writes all of RAM, tmpfs included, to disk — do not
   hibernate a host that runs unlocked instances.
 - The whole archive is resident in RAM while unlocked, so RAM bounds how large an
-  instance can grow.
+  instance can grow. **Embeddings enlarge it twice over**: once for the vectors
+  stored in `data.db`, and again for the vector index built from them at
+  `bleve/chunks`. Budget roughly `chunks x dimensions x 4 bytes` for each, plus
+  the passage text the index stores for quoting — a 1536-dimension model over an
+  archive of 10,000 documents at ~5 passages each is about 300 MB of vectors plus
+  a similar index, so half a gigabyte of tmpfs that an unembedded instance does
+  not need. A model with 1024 dimensions or fewer costs proportionally less,
+  which is the reason to prefer one here even where the accuracy of a larger
+  model would be free. Size the tmpfs in `docker-compose.encrypted.yml`
+  accordingly before turning `AI_EMBEDDING_MODEL` on, and see
+  [Setup](/setup#what-embeddings-cost).
+- Nothing about the vector index costs an API call. Like the text index it is
+  derived data, rebuilt inside the vault from the vectors in `data.db` — so an
+  unlock, a restore, or a wiped work directory costs a rebuild, never a second
+  pass over the embedding provider. The vectors themselves are ciphertext at
+  rest, because they live in `data.db` like everything else.
 - **Only one process may use a vault at a time.** `superuser upsert`, `migrate`
   and other CLI subcommands cannot run against a running server: each process
   would decrypt its own private copy and the last one to flush would silently

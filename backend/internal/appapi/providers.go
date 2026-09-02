@@ -108,6 +108,31 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 	}
 }
 
+// llmBindingFields are the settings bindings that only an LLM SDK can serve.
+// OCR is deliberately absent: it is the one binding google_vision exists for.
+//
+// Embeddings belong here because the embedding client speaks the OpenAI-shaped
+// /embeddings API, which google_vision has no equivalent of: switching a
+// provider bound to it would leave Deep Search's dense half calling an endpoint
+// that does not exist, and nothing would say so until a search came back thin.
+var llmBindingFields = []string{
+	"extract_provider_id", "chat_provider_id", "search_provider_id", "embedding_provider_id",
+}
+
+// boundToLLMFeature reports whether a provider is assigned to a feature that
+// requires an LLM SDK.
+func boundToLLMFeature(settings *core.Record, providerID string) bool {
+	if settings == nil || strings.TrimSpace(providerID) == "" {
+		return false
+	}
+	for _, field := range llmBindingFields {
+		if strings.TrimSpace(settings.GetString(field)) == providerID {
+			return true
+		}
+	}
+	return false
+}
+
 func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		if refused, err := refuseWhenManaged(e, rt); refused {
@@ -136,10 +161,8 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 					app.Logger().Error("provider patch: settings lookup failed", "error", err)
 					return writeError(e, http.StatusInternalServerError, "Failed to verify provider usage.")
 				}
-				for _, field := range []string{"extract_provider_id", "chat_provider_id", "search_provider_id"} {
-					if strings.TrimSpace(settings.GetString(field)) == record.Id {
-						return writeError(e, http.StatusConflict, "Provider is bound to extraction, chat, or search and must stay an LLM SDK (openai, openrouter, or mistral).")
-					}
+				if boundToLLMFeature(settings, record.Id) {
+					return writeError(e, http.StatusConflict, "Provider is bound to extraction, chat, search, or embeddings and must stay an LLM SDK (openai, openrouter, or mistral).")
 				}
 			}
 			record.Set("sdk", sdk)
@@ -178,15 +201,15 @@ func handleDeleteProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 			return writeError(e, http.StatusNotFound, "Provider not found.")
 		}
 		// A failed settings lookup must not skip the in-use check: deleting a
-		// provider still bound to OCR/extraction/chat/search leaves dangling
-		// *_provider_id values in settings.
+		// provider still bound to OCR/extraction/chat/search/embeddings leaves
+		// dangling *_provider_id values in settings.
 		settings, err := config.FindSettingsRecord(app, rt.Env())
 		if err != nil {
 			app.Logger().Error("provider delete: settings lookup failed", "error", err)
 			return writeError(e, http.StatusInternalServerError, "Failed to verify provider usage.")
 		}
 		if aiprovider.ReferencedBySettings(settings, id) {
-			return writeError(e, http.StatusConflict, "Provider is assigned to OCR, extraction, chat, or search. Unassign it first.")
+			return writeError(e, http.StatusConflict, "Provider is assigned to OCR, extraction, chat, search, or embeddings. Unassign it first.")
 		}
 		if err := app.Delete(record); err != nil {
 			return writeError(e, http.StatusInternalServerError, "Failed to delete provider.")
@@ -202,16 +225,18 @@ func handleListProviderModels(app core.App) func(*core.RequestEvent) error {
 		if err != nil || p == nil {
 			return writeError(e, http.StatusNotFound, "Provider not found.")
 		}
-		forOCR := strings.EqualFold(strings.TrimSpace(e.Request.URL.Query().Get("for")), "ocr")
-		models, err := aiprovider.ListModels(e.Request.Context(), *p, forOCR, nil, app.Logger().With("component", "ai"))
+		purpose := aiprovider.ParseModelPurpose(e.Request.URL.Query().Get("for"))
+		models, err := aiprovider.ListModels(e.Request.Context(), *p, purpose, nil, app.Logger().With("component", "ai"))
 		if err != nil {
 			app.Logger().Warn("list provider models", "provider", p.ID, slog.Any("error", err))
 			return writeError(e, http.StatusBadGateway, "Failed to load models from the provider.")
 		}
 		return writeJSON(e, http.StatusOK, map[string]any{
-			"models":  models,
-			"sdk":     p.SDK,
-			"for_ocr": forOCR,
+			"models": models,
+			"sdk":    p.SDK,
+			"for":    string(purpose),
+			// Kept for the frontend that shipped before `for` existed.
+			"for_ocr": purpose == aiprovider.PurposeOCR,
 		})
 	}
 }

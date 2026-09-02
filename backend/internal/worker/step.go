@@ -24,6 +24,7 @@ type StepState struct {
 	Document *core.Record
 	OCR      ocr.Provider
 	AI       ai.Extractor
+	Embedder ai.Embedder
 	Logger   *slog.Logger
 
 	TmpPath  string
@@ -44,13 +45,14 @@ func (s *StepState) forced(stepName string) bool {
 // Built per reload rather than once at wiring time: the OCR provider and the
 // extractor are rebuilt whenever an admin changes the settings, and a registry
 // constructed at boot would keep dispatching to the clients that existed then.
-func buildRegistry(ocrProvider ocr.Provider, aiExtractor ai.Extractor) map[string]Step {
+func buildRegistry(ocrProvider ocr.Provider, aiExtractor ai.Extractor, embedder ai.Embedder) map[string]Step {
 	steps := []Step{
 		&PreviewStep{},
 		&OCRStep{Provider: ocrProvider},
 		&DetectDuplicatesStep{},
 		&ExtractMetadataStep{Extractor: aiExtractor},
 		&ApplyMetadataStep{},
+		&EmbedStep{Embedder: embedder},
 	}
 	registry := make(map[string]Step, len(steps))
 	for _, step := range steps {

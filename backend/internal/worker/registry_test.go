@@ -13,7 +13,7 @@ import (
 func TestBuildRegistryIsExactlyTheFullPipeline(t *testing.T) {
 	t.Parallel()
 
-	registry := buildRegistry(stubOCR{}, stubExtractor{})
+	registry := buildRegistry(stubOCR{}, stubExtractor{}, stubEmbedder{})
 
 	if len(registry) != len(models.FullPipelineSteps) {
 		t.Fatalf("registry has %d steps, want %d", len(registry), len(models.FullPipelineSteps))

@@ -44,6 +44,19 @@ const (
 	EnvAIBaseURL = "AI_BASE_URL"
 	EnvAIModel   = "AI_MODEL"
 
+	// EnvAIEmbeddingModel names the retrieval embedding model on the AI_SDK
+	// provider. There is deliberately no AI_EMBEDDING_SDK / _API_KEY / _BASE_URL
+	// trio: a separate embedding endpoint is a rare enough choice that it
+	// belongs in Settings, and three more variables would mostly be three more
+	// ways to half-configure the feature.
+	EnvAIEmbeddingModel = "AI_EMBEDDING_MODEL"
+
+	// EnvAISearchHelperModel names the model on the AI_SDK provider that Deep
+	// Search hands bulk per-document work to. Same reasoning as the embedding
+	// model: one provider, a second model name; a separate endpoint is a
+	// Settings choice. Empty falls back to the search model.
+	EnvAISearchHelperModel = "AI_SEARCH_HELPER_MODEL"
+
 	EnvOCRSDK     = "OCR_SDK"
 	EnvOCRAPIKey  = "OCR_API_KEY"
 	EnvOCRBaseURL = "OCR_BASE_URL"
@@ -117,10 +130,12 @@ func parseLLM() (aiprovider.ProviderSpec, error) {
 	}
 
 	spec := aiprovider.ProviderSpec{
-		SDK:     sdk,
-		APIKey:  strings.TrimSpace(os.Getenv(EnvAIAPIKey)),
-		BaseURL: aiprovider.NormalizeBaseURL(sdk, os.Getenv(EnvAIBaseURL)),
-		Model:   strings.TrimSpace(getEnv(EnvAIModel, aiprovider.DefaultExtractModel)),
+		SDK:            sdk,
+		APIKey:         strings.TrimSpace(os.Getenv(EnvAIAPIKey)),
+		BaseURL:        aiprovider.NormalizeBaseURL(sdk, os.Getenv(EnvAIBaseURL)),
+		Model:          strings.TrimSpace(getEnv(EnvAIModel, aiprovider.DefaultExtractModel)),
+		EmbeddingModel: strings.TrimSpace(os.Getenv(EnvAIEmbeddingModel)),
+		HelperModel:    strings.TrimSpace(os.Getenv(EnvAISearchHelperModel)),
 	}
 	return spec, nil
 }
@@ -204,6 +219,8 @@ func (e AIEnv) Defaults() Config {
 		ExtractModel:                  e.Providers.LLM.Model,
 		ChatModel:                     e.Providers.LLM.Model,
 		SearchModel:                   e.Providers.LLM.Model,
+		SearchHelperModel:             e.Providers.LLM.HelperModel,
+		EmbeddingModel:                e.Providers.LLM.EmbeddingModel,
 		OCRTimeout:                    e.OCRTimeout,
 		DeepSearchLanguages:           e.DeepSearchLanguages,
 		OpenAITimeout:                 e.AITimeout,

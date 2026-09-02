@@ -207,6 +207,14 @@ export function DocumentDetailPage() {
       const steps = orderedProcessingSteps(reprocessSteps)
       await reprocessDocument(document.id, steps, forceStepsForReprocess(steps))
 
+      // Confirmed as soon as the job exists, before the refresh below. Queueing
+      // flips the document to pending, which wakes the realtime subscription,
+      // whose load() then autocancels the two requests here -- and the user is
+      // owed the confirmation whether or not this particular refresh survived.
+      setMessage(
+        `Document queued for reprocessing (${steps.map((step) => PROCESSING_STEP_LABELS[step]).join(', ')}).`,
+      )
+
       const doc = await pb.collection('documents').getOne<DocumentRecord>(document.id, {
         expand: 'tags,document_type,correspondent,duplicate_of',
       })
@@ -217,10 +225,12 @@ export function DocumentDetailPage() {
 
       applyLoadedDocument(doc)
       setJob(jobs.items[0] ?? null)
-      setMessage(
-        `Document queued for reprocessing (${steps.map((step) => PROCESSING_STEP_LABELS[step]).join(', ')}).`,
-      )
     } catch (err) {
+      // An autocancel means the refresh above lost a race it did not need to
+      // win: the surviving load() has the fresh document and the new job.
+      if (err instanceof ClientResponseError && err.isAbort) {
+        return
+      }
       setError(err instanceof Error ? err.message : 'Failed to reprocess document')
     } finally {
       setReprocessing(false)
@@ -358,74 +368,90 @@ export function DocumentDetailPage() {
           <Button variant="danger" onClick={() => void onDelete()} disabled={deleting}>
             {deleting ? 'Deleting...' : 'Delete'}
           </Button>
-          {job ? (
-            <button
-              type="button"
-              onClick={() => setShowProcessingJob((visible) => !visible)}
-              aria-label={showProcessingJob ? 'Hide processing job details' : 'Show processing job details'}
-              aria-pressed={showProcessingJob}
-              title={showProcessingJob ? 'Hide processing job' : 'Show processing job'}
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xs border transition-colors ${
-                showProcessingJob
-                  ? 'border-ink bg-ink text-paper hover:bg-oxblood'
-                  : 'border-line-strong bg-surface text-ink-soft hover:bg-bright hover:text-ink-muted'
-              }`}
+          {/* Always offered, job or no job: a document restored from an export
+              or added before the pipeline existed has no job record, and
+              hiding the panel was what left it with no way to be reprocessed. */}
+          <button
+            type="button"
+            onClick={() => setShowProcessingJob((visible) => !visible)}
+            aria-label={
+              showProcessingJob ? 'Hide processing job details' : 'Show processing job details'
+            }
+            aria-pressed={showProcessingJob}
+            title={showProcessingJob ? 'Hide processing job' : 'Show processing job'}
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xs border transition-colors ${
+              showProcessingJob
+                ? 'border-ink bg-ink text-paper hover:bg-oxblood'
+                : 'border-line-strong bg-surface text-ink-soft hover:bg-bright hover:text-ink-muted'
+            }`}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="h-4 w-4"
+              aria-hidden="true"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                className="h-4 w-4"
-                aria-hidden="true"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </button>
-          ) : null}
+              <path
+                fillRule="evenodd"
+                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </button>
         </div>
       </div>
 
-      {job && showProcessingJob && (
+      {showProcessingJob && (
         <div className="rounded-none border border-line bg-surface p-3">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <h3 className="text-sm font-semibold text-ink">Processing job</h3>
-            <span className="bg-wash px-1.5 py-0.5 text-xs font-medium text-ink-muted">
-              {job.status}
-            </span>
-            {job.current_step ? (
-              <span className="text-xs text-ink-soft">current: {job.current_step}</span>
-            ) : null}
-            <span className="text-xs text-ink-soft">
-              {(job.steps ?? []).join(' → ') || 'n/a'}
-            </span>
-          </div>
-          {job.step_runs && job.step_runs.length > 0 ? (
-            <ul className="mt-2 flex flex-col gap-1 text-sm text-ink-muted">
-              {job.step_runs.map((run) => (
-                <li key={run.name} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                  <span className="font-medium">{run.name}</span>
-                  <span className="bg-wash px-1.5 py-0.5 text-xs">{run.status}</span>
-                  {run.attempts > 0 ? (
-                    <span className="text-xs text-ink-soft">attempts: {run.attempts}</span>
-                  ) : null}
-                  {run.provider ? (
-                    <span className="text-xs text-ink-soft">provider: {run.provider}</span>
-                  ) : null}
-                  {run.model ? (
-                    <span className="text-xs text-ink-soft">model: {run.model}</span>
-                  ) : null}
-                  {run.prompt_version ? (
-                    <span className="text-xs text-ink-soft">prompt: {run.prompt_version}</span>
-                  ) : null}
-                  {run.error ? <span className="text-xs text-madder">{run.error}</span> : null}
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          {job ? (
+            <>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <h3 className="text-sm font-semibold text-ink">Processing job</h3>
+                <span className="bg-wash px-1.5 py-0.5 text-xs font-medium text-ink-muted">
+                  {job.status}
+                </span>
+                {job.current_step ? (
+                  <span className="text-xs text-ink-soft">current: {job.current_step}</span>
+                ) : null}
+                <span className="text-xs text-ink-soft">
+                  {(job.steps ?? []).join(' → ') || 'n/a'}
+                </span>
+              </div>
+              {job.step_runs && job.step_runs.length > 0 ? (
+                <ul className="mt-2 flex flex-col gap-1 text-sm text-ink-muted">
+                  {job.step_runs.map((run) => (
+                    <li key={run.name} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span className="font-medium">{run.name}</span>
+                      <span className="bg-wash px-1.5 py-0.5 text-xs">{run.status}</span>
+                      {run.attempts > 0 ? (
+                        <span className="text-xs text-ink-soft">attempts: {run.attempts}</span>
+                      ) : null}
+                      {run.provider ? (
+                        <span className="text-xs text-ink-soft">provider: {run.provider}</span>
+                      ) : null}
+                      {run.model ? (
+                        <span className="text-xs text-ink-soft">model: {run.model}</span>
+                      ) : null}
+                      {run.prompt_version ? (
+                        <span className="text-xs text-ink-soft">prompt: {run.prompt_version}</span>
+                      ) : null}
+                      {run.error ? <span className="text-xs text-madder">{run.error}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </>
+          ) : (
+            <div className="flex flex-col gap-1">
+              <h3 className="text-sm font-semibold text-ink">Processing job</h3>
+              <p className="text-xs text-ink-soft">
+                No processing job is recorded for this document. It was imported from an export or
+                added before the pipeline kept a history. Reprocessing it below creates one and
+                runs the steps you choose.
+              </p>
+            </div>
+          )}
 
           <form
             className="mt-3 flex flex-col gap-2 border-t border-line pt-3"

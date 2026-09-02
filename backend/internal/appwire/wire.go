@@ -7,6 +7,8 @@ import (
 	"lemmary/backend/internal/appapi"
 	"lemmary/backend/internal/authguard"
 	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/embed"
+	"lemmary/backend/internal/embedstore"
 	"lemmary/backend/internal/fulltext"
 	"lemmary/backend/internal/limits"
 	"lemmary/backend/internal/mailsink"
@@ -29,6 +31,20 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	applyPerFileCaps(lim)
 
 	ft := fulltext.New()
+	// The chunk index is derived from the embedding store, so it is given its
+	// source before anything can open it, and the store is told where to send
+	// its change notifications. Both are process-wide, like the index itself.
+	ft.SetChunkSource(embed.NewChunkSource())
+	embedstore.SetListener(ft)
+	// The dimension count is not known until a provider has answered once, so
+	// the binding the chunk index is built for can change at runtime; every
+	// reload re-points the index and schedules the fill in the background.
+	rt.OnReload(func(reloadApp core.App, snap config.Snapshot) {
+		if err := ft.SetVectorSpec(embed.SpecFrom(snap.Cfg)); err != nil {
+			reloadApp.Logger().Error("chunk index reconfigure failed", "error", err)
+		}
+		ft.EnqueueChunkRebuild(reloadApp)
+	})
 	config.RegisterHooks(app, rt)
 	authguard.Register(app)
 	mailsink.Register(app)
@@ -39,13 +55,22 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	// The same ordering now carries limits.MaxOCRPages, which binds on every
 	// install and not only where a plan limit is set.
 	limits.Register(app, lim)
-	appapi.Register(app, rt, ft, lim, badLimitKeys)
+	// Keeps the chunk vectors in step with the documents they describe: a
+	// deleted document takes its rows with it, an edited one is marked stale
+	// for the backfill.
+	embedstore.Register(app)
+	// One backfiller for both callers: the worker's cron below and the manual
+	// sweep the API exposes. It is built here because appapi binds its routes
+	// before worker.Register runs, and two instances would each think they had
+	// the backlog to themselves.
+	backfill := worker.NewBackfiller(app, rt)
+	appapi.Register(app, rt, ft, lim, badLimitKeys, backfill)
 	// After config.RegisterHooks so the settings singleton and any env-seeded
 	// providers exist by the time an account is minted: an instance that hands
 	// somebody a login should have somewhere for them to land.
 	appapi.RegisterAdminBootstrap(app)
 	ngxapi.Register(app, ft)
-	worker.Register(app, rt)
+	worker.Register(app, rt, backfill)
 
 	// Prefer the in-app setup wizard over PocketBase's browser installer UI.
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{

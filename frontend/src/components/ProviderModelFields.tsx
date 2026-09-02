@@ -7,6 +7,7 @@ import {
   OCR_MODEL_WARNING,
   type AIProvider,
   type CatalogModel,
+  type ModelPurpose,
 } from '../lib/api/providers'
 import { useAsync } from '../hooks/useAsync'
 import { Combobox, type ComboboxOption } from './Combobox'
@@ -105,7 +106,7 @@ type ProviderModelFieldsProps = {
   providers: AIProvider[]
   providerId: string
   model: string
-  purpose: 'ocr' | 'llm'
+  purpose: ModelPurpose
   onProviderChange: (providerId: string) => void
   onModelChange: (model: string, meta?: CatalogModel) => void
   allowEmpty?: boolean

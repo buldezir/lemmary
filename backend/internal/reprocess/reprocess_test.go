@@ -67,6 +67,24 @@ func TestStepsForExplicitModesIgnoreOCRText(t *testing.T) {
 	}
 }
 
+// A reprocess is exactly when a document's vectors have to be rebuilt: its OCR
+// text or its metadata is about to change under them.
+func TestStepsForRunsAndForcesEmbed(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []Mode{ModeAuto, ModeFull, ModeExtraction} {
+		for _, ocrText := range []string{"", "extracted text"} {
+			steps, forceSteps := StepsFor(newTestDocument(ocrText), mode)
+			if !slices.Contains(steps, models.StepEmbed) {
+				t.Fatalf("mode=%s: embed is missing from %v", mode, steps)
+			}
+			if !slices.Contains(forceSteps, models.StepEmbed) {
+				t.Fatalf("mode=%s: embed must be forced, got %v", mode, forceSteps)
+			}
+		}
+	}
+}
+
 // Forcing apply_metadata would overwrite metadata the user corrected by hand.
 func TestStepsForNeverForcesApplyMetadata(t *testing.T) {
 	t.Parallel()

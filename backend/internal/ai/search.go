@@ -21,15 +21,30 @@ const (
 	maxSearchToolRounds = 1
 )
 
+// Passage is a verbatim slice of a document's text, quoted by a search hit.
+// Page is filled only when the extraction preserved page boundaries, which no
+// current OCR provider does.
+type Passage struct {
+	Page int    `json:"page,omitempty"`
+	Text string `json:"text"`
+}
+
 type DocumentHit struct {
-	ID            string   `json:"id"`
-	Title         string   `json:"title"`
-	DocumentDate  string   `json:"document_date,omitempty"`
-	Summary       string   `json:"summary,omitempty"`
-	OCRSnippet    string   `json:"ocr_snippet,omitempty"`
-	DocumentType  string   `json:"document_type,omitempty"`
-	Correspondent string   `json:"correspondent,omitempty"`
-	Tags          []string `json:"tags,omitempty"`
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	DocumentDate string `json:"document_date,omitempty"`
+	Summary      string `json:"summary,omitempty"`
+	// OCRSnippet is the first passage shortened for display. Kept filled even
+	// when Passages is set: it is what the stored turn and the result card
+	// show, and neither wants three paragraphs.
+	OCRSnippet string `json:"ocr_snippet,omitempty"`
+	// Passages are the verbatim pieces of the document that matched. One to
+	// three of them: enough that a hit is evidence rather than a filename,
+	// few enough that a result list is not a read.
+	Passages      []Passage `json:"passages,omitempty"`
+	DocumentType  string    `json:"document_type,omitempty"`
+	Correspondent string    `json:"correspondent,omitempty"`
+	Tags          []string  `json:"tags,omitempty"`
 }
 
 type SearchDocumentsArgs struct {
@@ -40,7 +55,7 @@ type SearchDocumentsArgs struct {
 	Correspondent string   `json:"correspondent,omitempty"`
 	Tags          []string `json:"tags,omitempty"`
 	// Limit is still decoded: models emit it from the old "1-20" tool schema.
-	// searchUserDocuments ignores it.
+	// The retriever ignores it.
 	Limit int `json:"limit,omitempty"`
 }
 
@@ -112,25 +127,20 @@ func coerceInt(v any) int {
 	}
 }
 
-// SearchToolResult is one search_documents answer: the hits, plus how hard the
-// index had to insist on the model's keywords to find them.
-//
-// Terms and Required travel with the hits because the model needs them to read
-// its own result: a keyword-expanded query that matched only some of its terms
-// returns candidates, not answers, and without being told so the model reads a
-// full list as confirmation and cites the first row.
-type SearchToolResult struct {
-	Hits     []DocumentHit
-	Terms    int // unquoted terms in the query
-	Required int // how many of them a hit had to carry
-}
-
 // DocumentSearcher runs a user-scoped keyword search against the document archive.
-type DocumentSearcher func(ctx context.Context, args SearchDocumentsArgs) (SearchToolResult, error)
+type DocumentSearcher func(ctx context.Context, args SearchDocumentsArgs) ([]DocumentHit, error)
+
+// SearchOptions is what the prompt needs to know about the retriever behind
+// the tools: the instructions differ with what a search can find.
+type SearchOptions struct {
+	// DenseRetrieval is set when searches also match by meaning, across
+	// languages. The prompt then stops asking for one search per language.
+	DenseRetrieval bool
+}
 
 type SearchAgent interface {
 	// Search finds documents and answers from their metadata and snippets.
-	Search(ctx context.Context, messages []ChatMessage, availableTags []string, search DocumentSearcher) (reply string, hits []DocumentHit, err error)
+	Search(ctx context.Context, messages []ChatMessage, availableTags []string, search DocumentSearcher, opts SearchOptions) (reply string, hits []DocumentHit, err error)
 
 	// Research reads the documents it finds and writes a cited answer,
 	// reporting each step through emit as it goes.
@@ -151,7 +161,7 @@ func NewSearchAgent(sdk, apiKey, model, baseURL string, timeout time.Duration, l
 	}
 }
 
-func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, availableTags []string, search DocumentSearcher) (string, []DocumentHit, error) {
+func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, availableTags []string, search DocumentSearcher, opts SearchOptions) (string, []DocumentHit, error) {
 	if a.client.apiKey == "" {
 		return "", nil, fmt.Errorf("AI API key is not configured")
 	}
@@ -162,7 +172,7 @@ func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, 
 	maxRounds := maxSearchToolRounds
 
 	apiMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages)+1+maxRounds*4)
-	apiMessages = append(apiMessages, openai.SystemMessage(buildSearchSystemPrompt(a.languages, a.resultLanguage, availableTags)))
+	apiMessages = append(apiMessages, openai.SystemMessage(buildSearchSystemPrompt(a.languages, a.resultLanguage, availableTags, opts.DenseRetrieval)))
 	for _, msg := range messages {
 		role := strings.TrimSpace(msg.Role)
 		content := strings.TrimSpace(msg.Content)
@@ -387,7 +397,7 @@ func (a *openAISearchAgent) executeToolCall(
 		}
 	}
 
-	res, err := search(ctx, args)
+	hits, err := search(ctx, args)
 	if err != nil {
 		return toolExecResult{
 			ID:      callID,
@@ -396,7 +406,7 @@ func (a *openAISearchAgent) executeToolCall(
 		}
 	}
 
-	for _, hit := range res.Hits {
+	for _, hit := range hits {
 		if hit.ID == "" {
 			continue
 		}
@@ -407,7 +417,8 @@ func (a *openAISearchAgent) executeToolCall(
 		*allHits = append(*allHits, hit)
 	}
 
-	encoded, err := encodeSearchResults(res)
+	// The same encoder Research uses.
+	content, err := encodeSearchResults(hits)
 	if err != nil {
 		return toolExecResult{
 			ID:      callID,
@@ -415,16 +426,14 @@ func (a *openAISearchAgent) executeToolCall(
 			Content: `{"error":"failed to encode search results"}`,
 		}
 	}
-	return toolExecResult{ID: callID, Name: name, Content: encoded}
+	return toolExecResult{ID: callID, Name: name, Content: content}
 }
 
-func buildSearchSystemPrompt(languages, resultLanguage string, availableTags []string) string {
+func buildSearchSystemPrompt(languages, resultLanguage string, availableTags []string, dense bool) string {
 	var b strings.Builder
 	b.WriteString(`You help the user find documents in their personal archive.
 The user may ask in broad natural language that keyword search alone cannot handle.
 Use the search_documents tool to look up documents. Expand the request into concrete keywords and filters.
-Prefer 2-5 keywords per call rather than one combined bag of synonyms.
-When a result reports terms_required below terms, those hits carry only some of the keywords: verify against the snippet before citing.
 Search bilingual metadata (title/purpose/summary and their *_original fields) plus OCR text.
 Prefer precise date_from/date_to, document_type, correspondent, or tags filters when the query implies them.
 When filtering by tags, use exact names from the available archive tags list below — never invent tag names.
@@ -433,19 +442,41 @@ If nothing relevant is found, say so clearly and suggest alternative search term
 Be concise. Answer in the same language as the user's latest message.
 Never output tool markup, DSML tags, or raw function-call XML in your final answer — only natural language.
 You have one round of tool calls: gather everything you need with search_documents, then answer.
-If answering would require reading the documents themselves, say so and suggest Research mode.
+Each result carries verbatim passages from the document. When a passage literally contains the answer, give it directly and cite the document.
+When answering would need more of a document than the passages show, say what you found and suggest Research mode, which reads the documents.
 `)
 
 	b.WriteString(formatAvailableTagsPrompt(availableTags))
-	b.WriteString(formatLanguagePrompt(languages, resultLanguage))
+	b.WriteString(formatLanguagePrompt(languages, resultLanguage, dense))
 
 	return b.String()
 }
 
-// formatLanguagePrompt tells the agent which languages to expand keywords into.
-// Shared by Search and Research: recall across a multilingual archive depends on
-// the same translation step in both.
-func formatLanguagePrompt(languages, resultLanguage string) string {
+// formatLanguagePrompt tells the agent how languages figure in a search.
+// Shared by Search and Research.
+//
+// With dense retrieval the same question phrased in three languages returns
+// the same fused list -- the embedding is what crosses the language line, and
+// it does so in one call -- so a search per language is a round spent on a
+// result the model already has. The list is still shown: a keyword hit on an
+// exact term (a name, a product code) is still spelled in the document's own
+// language. Without dense retrieval, translation is the only thing that
+// carries an English question to a German invoice, so the model is asked for
+// it.
+func formatLanguagePrompt(languages, resultLanguage string, dense bool) string {
+	if dense {
+		var b strings.Builder
+		b.WriteString(`
+Search matches by meaning across languages: one search in the user's own wording covers documents written in any language`)
+		if languages != "" {
+			b.WriteString(fmt.Sprintf(` (the archive holds: %s)`, languages))
+		}
+		b.WriteString(`.
+Do not repeat a search translated into another language. Search again only for a different concept, a synonym with a different meaning, or different filters.
+Spell exact terms that must match literally -- names, product codes, reference numbers -- as they appear in the documents.
+`)
+		return b.String()
+	}
 	if languages != "" {
 		return fmt.Sprintf(`
 Always try keyword searches across these archive languages (translate key terms as needed): %s.
@@ -491,14 +522,16 @@ Available archive tags (pass exact names via the tags filter when relevant): %s.
 func searchDocumentsTools() []openai.ChatCompletionToolParam {
 	return []openai.ChatCompletionToolParam{{
 		Function: shared.FunctionDefinitionParam{
-			Name:        "search_documents",
-			Description: openai.String("Search the user's document archive by keywords and optional filters. Returns matching documents with short snippets."),
+			Name: "search_documents",
+			Description: openai.String("Search the user's document archive by meaning and by keywords, with optional filters. " +
+				"Returns matching documents with 1-3 verbatim passages from each."),
 			Parameters: shared.FunctionParameters{
 				"type": "object",
 				"properties": map[string]any{
 					"query": map[string]any{
-						"type":        "string",
-						"description": `Keywords, or a "quoted phrase" when words must appear together, matched against titles, summaries, and OCR text. Not every keyword has to match; a quoted phrase always must, so quote sparingly.`,
+						"type": "string",
+						"description": "What to look for, as keywords or a short phrase. " +
+							"Matched against titles, summaries and OCR text; not every word has to occur, so describe the thing rather than guessing its exact wording.",
 					},
 					"date_from": map[string]any{
 						"type":        "string",

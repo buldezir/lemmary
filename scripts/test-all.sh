@@ -5,6 +5,13 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+# The backend does not build without the vectors tag: bleve compiles its kNN API
+# out otherwise, and internal/fulltext/vectors_required.go stops a tag-less
+# build with one readable error. Exported rather than passed per command so the
+# overlay suite, which runs go commands of its own, inherits it too.
+export GOFLAGS=-tags=vectors
+export CGO_ENABLED=1
+
 ARGS=()
 [[ "${1:-}" == --no-sync ]] && { ARGS+=(--no-sync); shift; }
 
