@@ -11,6 +11,7 @@ import (
 )
 
 func Register(app core.App, rt *config.Runtime, idx *fulltext.Index, lim limits.Limits, badLimitKeys []string) {
+	RegisterAppName(app)
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: 45,
 		Func: func(e *core.ServeEvent) error {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -51,28 +50,11 @@ type passkeyRenameRequest struct {
 	Name string `json:"name"`
 }
 
-// pocketBaseDefaultAppName is what PocketBase seeds Meta.AppName with on a fresh
-// install. Treated as "not set yet" for passkeys specifically: this string is
-// baked into the platform passkey manager at creation time and cannot be changed
-// afterwards, so an install whose admin has not renamed the app yet would leave
-// "Acme" in somebody's iCloud Keychain permanently. The header can show the
-// placeholder harmlessly; a credential cannot.
-const pocketBaseDefaultAppName = "Acme"
-
-// passkeyDisplayName is the relying-party name shown in the OS credential picker.
-func passkeyDisplayName(app core.App) string {
-	name := strings.TrimSpace(app.Settings().Meta.AppName)
-	if name == "" || name == pocketBaseDefaultAppName {
-		return defaultAppName
-	}
-	return name
-}
-
 // webauthnFor builds the relying-party config for this request, mapping the
 // "this address cannot carry a passkey" cases to a 4xx with an explanation rather
 // than a 500.
 func webauthnFor(app core.App, e *core.RequestEvent) (*webauthn.WebAuthn, error) {
-	w, err := passkey.NewForRequest(e.Request, passkeyDisplayName(app))
+	w, err := passkey.NewForRequest(e.Request, resolvedAppName(app))
 	if err != nil {
 		if passkey.IsOriginError(err) {
 			return nil, writeError(e, http.StatusBadRequest, passkey.Message(err))
