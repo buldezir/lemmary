@@ -28,7 +28,7 @@ The PR job uses the overlay branch named like the PR, else `main`. A mismatched 
 ./scripts/test-all.sh
 ```
 
-That is the only command. It locates the overlay and delegates; the overlay runs the suite in Docker. With no overlay it runs Go tests, `go vet`, frontend tests and the SPA build in official images, and prints what it skipped. Report that API and browser e2e did not run. Do not claim a task complete if any stage fails, or claim e2e that did not run.
+That is the only command. It locates the overlay and delegates; the overlay runs the suite in Docker. No overlay is a failure, not a reduced pass. Do not claim a task complete if the script fails.
 
 ## Tests
 
