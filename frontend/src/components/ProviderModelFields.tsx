@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import {
   listProviderModels,
   modelOptionLabel,
@@ -9,6 +9,7 @@ import {
   type CatalogModel,
 } from '../lib/api/providers'
 import { useAsync } from '../hooks/useAsync'
+import { Combobox, type ComboboxOption } from './Combobox'
 import { fieldHintClassName, inputClassName, labelClassName, labelTextClassName } from './ui'
 
 const CUSTOM_MODEL = '__custom__'
@@ -32,6 +33,7 @@ export function ModelSelect({
   allowEmpty = false,
   disabled = false,
 }: ModelSelectProps) {
+  const inputId = useId()
   const inCatalog = models.some((item) => item.id === model)
   const [wantCustom, setWantCustom] = useState(false)
   const showCustomInput =
@@ -39,55 +41,49 @@ export function ModelSelect({
   const useSelect = loading || models.length > 0
   const selectValue = showCustomInput ? CUSTOM_MODEL : model
 
+  const options: ComboboxOption[] = [
+    ...(allowEmpty ? [{ value: '', label: 'None', pinned: true }] : []),
+    ...models.map((item) => ({ value: item.id, label: modelOptionLabel(item) })),
+    { value: CUSTOM_MODEL, label: 'Custom model id…', pinned: true },
+  ]
+
   return (
     <div className={labelClassName}>
-      <label className={labelClassName}>
-        <span className={labelTextClassName}>{label} model</span>
-        {useSelect ? (
-          <select
-            className={`${inputClassName} disabled:cursor-not-allowed disabled:opacity-50`}
-            value={loading ? '' : selectValue}
-            disabled={disabled || loading}
-            onChange={(event) => {
-              const next = event.target.value
-              if (next === CUSTOM_MODEL) {
-                setWantCustom(true)
-                if (inCatalog) onChange('')
-                return
-              }
-              setWantCustom(false)
-              onChange(
-                next,
-                models.find((item) => item.id === next),
-              )
-            }}
-          >
-            {loading ? (
-              <option value="">Loading models…</option>
-            ) : (
-              <>
-                {allowEmpty || !selectValue ? (
-                  <option value="">{allowEmpty ? 'None' : 'Select a model'}</option>
-                ) : null}
-                {models.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {modelOptionLabel(item)}
-                  </option>
-                ))}
-                <option value={CUSTOM_MODEL}>Custom model id…</option>
-              </>
-            )}
-          </select>
-        ) : (
-          <input
-            className={inputClassName}
-            value={model}
-            placeholder="Model id"
-            disabled={disabled}
-            onChange={(event) => onChange(event.target.value)}
-          />
-        )}
+      <label htmlFor={inputId} className={labelTextClassName}>
+        {label} model
       </label>
+      {useSelect ? (
+        <Combobox
+          id={inputId}
+          value={selectValue}
+          options={options}
+          placeholder={allowEmpty ? 'None' : 'Select a model'}
+          loading={loading}
+          loadingLabel="Loading models…"
+          disabled={disabled}
+          onChange={(next) => {
+            if (next === CUSTOM_MODEL) {
+              setWantCustom(true)
+              if (inCatalog) onChange('')
+              return
+            }
+            setWantCustom(false)
+            onChange(
+              next,
+              models.find((item) => item.id === next),
+            )
+          }}
+        />
+      ) : (
+        <input
+          id={inputId}
+          className={inputClassName}
+          value={model}
+          placeholder="Model id"
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
       {showCustomInput ? (
         <input
           className={inputClassName}
@@ -126,6 +122,7 @@ export function ProviderModelFields({
   onModelChange,
   allowEmpty = false,
 }: ProviderModelFieldsProps) {
+  const providerInputId = useId()
   const selected = providers.find((item) => item.id === providerId)
   const hideModel = purpose === 'ocr' && selected?.sdk === 'google_vision'
   const showWarning = purpose === 'ocr' && showsOCRModelWarning(selected?.sdk)
@@ -140,26 +137,24 @@ export function ProviderModelFields({
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 sm:col-span-2">
-      <label className={labelClassName}>
-        <span className={labelTextClassName}>{label} provider</span>
-        <select
-          className={inputClassName}
+      <div className={labelClassName}>
+        <label htmlFor={providerInputId} className={labelTextClassName}>
+          {label} provider
+        </label>
+        <Combobox
+          id={providerInputId}
           value={providerId}
-          onChange={(event) => {
-            onProviderChange(event.target.value)
+          options={[
+            ...(allowEmpty ? [{ value: '', label: 'None', pinned: true }] : []),
+            ...providers.map((item) => ({ value: item.id, label: providerOptionLabel(item) })),
+          ]}
+          placeholder={allowEmpty ? 'None' : 'Select a provider'}
+          onChange={(next) => {
+            onProviderChange(next)
             onModelChange('')
           }}
-        >
-          {allowEmpty || providers.length === 0 || !providerId ? (
-            <option value="">Select a provider</option>
-          ) : null}
-          {providers.map((item) => (
-            <option key={item.id} value={item.id}>
-              {providerOptionLabel(item)}
-            </option>
-          ))}
-        </select>
-      </label>
+        />
+      </div>
       {!hideModel && (
         <ModelSelect
           key={providerId || 'none'}
