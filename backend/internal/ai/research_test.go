@@ -434,7 +434,7 @@ func TestDecodeReadArgsAcceptsLooseShapes(t *testing.T) {
 
 func TestBuildResearchSystemPromptDemandsReadingBeforeClaiming(t *testing.T) {
 	t.Parallel()
-	prompt := buildResearchSystemPrompt("en,de", "en", []string{"invoice"})
+	prompt := buildResearchSystemPrompt("en,de", "en", []string{"invoice"}, false)
 	for _, want := range []string{
 		"read_documents",
 		"Never state what a document contains without reading it",
@@ -736,9 +736,11 @@ func TestResearchRereadsWithANewFocus(t *testing.T) {
 
 func TestResearchPromptExplainsFocus(t *testing.T) {
 	t.Parallel()
-	prompt := buildResearchSystemPrompt("en,de", "en", []string{"invoice"})
+	prompt := buildResearchSystemPrompt("en,de", "en", []string{"invoice"}, false)
 	for _, want := range []string{
-		"pass focus with the question",
+		"Pass focus to steer the excerpt",
+		"survey_documents once",
+		"count_documents with the filters",
 		"cited earlier in this conversation can be read by id",
 		"verbatim passages",
 	} {
@@ -820,7 +822,7 @@ func TestResearchReadsEveryRequestedID(t *testing.T) {
 
 func TestSearchPromptAnswersFromPassages(t *testing.T) {
 	t.Parallel()
-	prompt := buildSearchSystemPrompt("en,de", "en", nil)
+	prompt := buildSearchSystemPrompt("en,de", "en", nil, false)
 	for _, want := range []string{
 		"verbatim passages",
 		"When a passage literally contains the answer",

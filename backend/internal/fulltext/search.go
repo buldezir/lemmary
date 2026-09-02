@@ -264,6 +264,80 @@ func (i *Index) EligibleIDs(q Query, limit int) ([]string, bool, error) {
 	return ids, complete, err
 }
 
+// MatchingIDs enumerates the documents matching q -- text and filters, strict
+// matching -- up to limit, without highlighting. total is the full match
+// count whatever the limit; complete is whether ids holds all of it.
+//
+// This is what a grouped count runs on: the query says which documents, the
+// database says how they break down. Search itself is the wrong tool for it
+// because it highlights every hit, and a count wants none of that.
+func (i *Index) MatchingIDs(q Query, limit int) (ids []string, total uint64, complete bool, err error) {
+	i.WaitIdle()
+	text := strings.TrimSpace(q.Text)
+	if text == "" {
+		return nil, 0, false, fmt.Errorf("query text is required")
+	}
+	if limit <= 0 {
+		return nil, 0, false, nil
+	}
+	q.Relaxed = false
+	plan, err := buildSearchPlan(q, text)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	err = i.withIndex(func(b bleve.Index) error {
+		offset := 0
+		for len(ids) < limit {
+			page := min(MaxSearchLimit, limit-len(ids))
+			req := bleve.NewSearchRequestOptions(plan.primary, page, offset, false)
+			res, err := b.Search(req)
+			if err != nil {
+				return fmt.Errorf("bleve search: %w", err)
+			}
+			total = res.Total
+			for _, h := range res.Hits {
+				ids = append(ids, h.ID)
+			}
+			offset += len(res.Hits)
+			if len(res.Hits) == 0 || uint64(offset) >= res.Total {
+				break
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, 0, false, err
+	}
+	return ids, total, uint64(len(ids)) >= total, nil
+}
+
+// CountMatching is the strict match count for q -- text and filters -- with
+// nothing fetched. The text is required; a filters-only count is the
+// database's job.
+func (i *Index) CountMatching(q Query) (uint64, error) {
+	i.WaitIdle()
+	text := strings.TrimSpace(q.Text)
+	if text == "" {
+		return 0, fmt.Errorf("query text is required")
+	}
+	q.Relaxed = false
+	plan, err := buildSearchPlan(q, text)
+	if err != nil {
+		return 0, err
+	}
+	var total uint64
+	err = i.withIndex(func(b bleve.Index) error {
+		req := bleve.NewSearchRequestOptions(plan.primary, 0, 0, false)
+		res, err := b.Search(req)
+		if err != nil {
+			return fmt.Errorf("bleve search: %w", err)
+		}
+		total = res.Total
+		return nil
+	})
+	return total, err
+}
+
 // KeepEligible returns the subset of ids that satisfies q's filters. The
 // post-filter for the case EligibleIDs could not pre-filter: the dense list is
 // short, so it is cheaper to ask about its documents than to enumerate every

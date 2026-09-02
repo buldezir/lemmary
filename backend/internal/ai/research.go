@@ -30,14 +30,30 @@ type DocumentContent struct {
 	DocumentType  string   `json:"document_type,omitempty"`
 	Correspondent string   `json:"correspondent,omitempty"`
 	Tags          []string `json:"tags,omitempty"`
-	Text          string   `json:"text"`
+	Text          string   `json:"text,omitempty"`
 	// Excerpted marks text assembled from several parts of the document
 	// around a focus rather than read straight through. The gaps are marked
 	// in the text itself.
 	Excerpted bool `json:"excerpted,omitempty"`
+	// FocusUsed names the question the excerpt was chosen by when the call
+	// gave no focus of its own, so the model knows what the passages answer.
+	FocusUsed string `json:"focus_used,omitempty"`
 	// PassagesOmitted counts the matching passages that did not fit, so the
 	// model can tell "that is all of it" from "there is more like this".
 	PassagesOmitted int `json:"passages_omitted,omitempty"`
+
+	// Distilled marks a document the helper model read on the agent's
+	// behalf: Notes, Quotes and Values stand in for Text, which is absent.
+	// The agent never sees the document itself, only what it says about the
+	// question -- that is what keeps a read of twenty documents from being
+	// twenty documents' worth of conversation.
+	Distilled bool `json:"distilled,omitempty"`
+	// Relevant is the helper's judgement of whether the document bears on
+	// the question at all. Meaningful only when Distilled.
+	Relevant bool              `json:"relevant,omitempty"`
+	Notes    string            `json:"notes,omitempty"`
+	Quotes   []string          `json:"quotes,omitempty"`
+	Values   map[string]string `json:"values,omitempty"`
 }
 
 // ReadRequest is one read_documents call after validation.
@@ -49,6 +65,10 @@ type DocumentContent struct {
 type ReadRequest struct {
 	IDs   []string
 	Focus string
+	// Question is the user's latest message. A long document read with no
+	// focus is excerpted around it, because "the beginning" is rarely where
+	// the answer is, and it is what a distilled read is distilled toward.
+	Question string
 }
 
 // DocumentReader loads document text for ids the agent has already seen.
@@ -65,6 +85,13 @@ type ResearchRequest struct {
 	// rediscover it -- but they are not results of this turn, so they only
 	// join the answer's document list if the answer cites them.
 	PriorDocuments []DocumentHit
+	// DenseRetrieval says searches match by meaning as well as by keyword;
+	// see SearchOptions.
+	DenseRetrieval bool
+	// Survey and Count back survey_documents and count_documents. Either may
+	// be nil, and the tool is then not offered.
+	Survey DocumentSurveyor
+	Count  DocumentCounter
 }
 
 type ResearchResult struct {
@@ -79,12 +106,18 @@ type ResearchResult struct {
 // ResearchEvent is one line of the run's visible progress. Types: "step",
 // "delta", "documents", "message", "error", "done".
 type ResearchEvent struct {
-	Type       string        `json:"type"`
-	Kind       string        `json:"kind,omitempty"`   // search | read | answer
-	Status     string        `json:"status,omitempty"` // start | done
-	Query      string        `json:"query,omitempty"`
-	Titles     []string      `json:"titles,omitempty"`
-	Count      int           `json:"count,omitempty"`
+	Type   string   `json:"type"`
+	Kind   string   `json:"kind,omitempty"`   // search | read | survey | count | answer
+	Status string   `json:"status,omitempty"` // start | progress | done
+	Query  string   `json:"query,omitempty"`
+	Titles []string `json:"titles,omitempty"`
+	Count  int      `json:"count,omitempty"`
+	// Done is the running count of a step with progress: documents surveyed
+	// so far, out of Count.
+	Done int `json:"done,omitempty"`
+	// Distilled marks a read step whose documents the helper model read and
+	// summarised rather than being passed through whole.
+	Distilled  bool          `json:"distilled,omitempty"`
 	Content    string        `json:"content,omitempty"`
 	Documents  []DocumentHit `json:"documents,omitempty"`
 	Message    string        `json:"message,omitempty"`
@@ -109,6 +142,9 @@ type researchState struct {
 	// prior holds documents carried in from earlier turns, by id. They are
 	// readable but are not this turn's results until the answer cites one.
 	prior map[string]DocumentHit
+	// question is the user's latest message, handed to every read so a
+	// document read without a focus is still read for something.
+	question string
 }
 
 func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, emit func(ResearchEvent)) (ResearchResult, error) {
@@ -132,8 +168,9 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 		prior:     map[string]DocumentHit{},
 	}
 	state.seedPrior(req.PriorDocuments)
+	state.question = latestUserMessage(req.Messages)
 
-	system := buildResearchSystemPrompt(a.languages, a.resultLanguage, req.AvailableTags)
+	system := buildResearchSystemPrompt(a.languages, a.resultLanguage, req.AvailableTags, req.DenseRetrieval)
 
 	apiMessages := []openai.ChatCompletionMessageParamUnion{openai.SystemMessage(system)}
 	for _, msg := range req.Messages {
@@ -156,8 +193,15 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 
 	tools := researchTools()
+	if req.Survey != nil {
+		tools = append(tools, surveyDocumentsTool())
+	}
+	if req.Count != nil {
+		tools = append(tools, countDocumentsTool())
+	}
 	stalled := 0
 	round := 0
+	var usage Usage
 
 	// No round cap: the loop ends when the model is ready, when it stops
 	// making progress, or when a completion is rejected — typically because
@@ -198,6 +242,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 		if len(chatResp.Choices) == 0 {
 			return ResearchResult{}, fmt.Errorf("openai returned no choices")
 		}
+		usage.Add(usageOf(chatResp))
 
 		msg := chatResp.Choices[0].Message
 		nativeCalls := msg.ToolCalls
@@ -240,10 +285,19 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 
 	emit(ResearchEvent{Type: "step", Kind: "answer", Status: "start"})
-	reply, incomplete, err := a.answerResearch(ctx, apiMessages, emit)
+	reply, incomplete, answerUsage, err := a.answerResearch(ctx, apiMessages, emit)
 	if err != nil {
 		return ResearchResult{}, err
 	}
+	usage.Add(answerUsage)
+	a.client.logger.Info("research run usage",
+		"rounds", round,
+		"documents", len(state.hits),
+		"read", len(state.read),
+		"prompt_tokens", usage.Prompt,
+		"cached_tokens", usage.Cached,
+		"completion_tokens", usage.Completion,
+	)
 
 	reply = validateCitations(reply, state.seenIDs)
 	state.adoptCitedPrior(reply)
@@ -270,7 +324,7 @@ func (a *openAISearchAgent) answerResearch(
 	ctx context.Context,
 	apiMessages []openai.ChatCompletionMessageParamUnion,
 	emit func(ResearchEvent),
-) (reply string, incomplete bool, err error) {
+) (reply string, incomplete bool, usage Usage, err error) {
 	msgs := append([]openai.ChatCompletionMessageParamUnion{}, apiMessages...)
 	msgs = append(msgs, openai.UserMessage(researchAnswerInstruction))
 
@@ -282,14 +336,14 @@ func (a *openAISearchAgent) answerResearch(
 
 	emitted := 0
 	requestStart := time.Now()
-	content, err := a.client.completeStreaming(ctx, params, func(delta string) {
+	content, usage, err := a.client.completeStreaming(ctx, params, func(delta string) {
 		emitted++
 		emit(ResearchEvent{Type: "delta", Content: delta})
 	}, "purpose", "research_answer", "messages", len(msgs))
 
 	if err != nil {
 		if ctx.Err() != nil {
-			return "", false, ctx.Err()
+			return "", false, usage, ctx.Err()
 		}
 		if emitted > 0 && strings.TrimSpace(content) != "" {
 			// Partial answer already on the wire; keep what arrived rather than
@@ -299,18 +353,19 @@ func (a *openAISearchAgent) answerResearch(
 				"chars", len(content),
 				slog.Any("error", err),
 			)
-			return stripDSMLMarkup(strings.TrimSpace(content)), true, nil
+			return stripDSMLMarkup(strings.TrimSpace(content)), true, usage, nil
 		}
 		a.client.logger.Warn("research answer stream failed; falling back to a blocking call",
 			slog.Any("error", err),
 		)
 		chatResp, fallbackErr := a.client.complete(ctx, params, "purpose", "research_answer_fallback")
 		if fallbackErr != nil {
-			return "", false, fmt.Errorf("openai research answer: %w", fallbackErr)
+			return "", false, usage, fmt.Errorf("openai research answer: %w", fallbackErr)
 		}
 		if len(chatResp.Choices) == 0 {
-			return "", false, fmt.Errorf("openai returned no choices")
+			return "", false, usage, fmt.Errorf("openai returned no choices")
 		}
+		usage = usageOf(chatResp)
 		content = chatResp.Choices[0].Message.Content
 	}
 
@@ -319,7 +374,7 @@ func (a *openAISearchAgent) answerResearch(
 		"streamed", emitted > 0,
 		"duration", time.Since(requestStart).Round(time.Millisecond),
 	)
-	return stripDSMLMarkup(strings.TrimSpace(content)), false, nil
+	return stripDSMLMarkup(strings.TrimSpace(content)), false, usage, nil
 }
 
 // runResearchTool dispatches one tool call and reports whether it advanced the
@@ -336,6 +391,10 @@ func (a *openAISearchAgent) runResearchTool(
 		return a.runSearchTool(ctx, req, state, callID, name, argumentsJSON, emit)
 	case "read_documents":
 		return a.runReadTool(ctx, req, state, callID, name, argumentsJSON, emit)
+	case "survey_documents":
+		return a.runSurveyTool(ctx, req, state, callID, name, argumentsJSON, emit)
+	case "count_documents":
+		return a.runCountTool(ctx, req, state, callID, name, argumentsJSON, emit)
 	default:
 		return toolExecResult{
 			ID:      callID,
@@ -486,29 +545,32 @@ func (a *openAISearchAgent) runReadTool(
 
 	emit(ResearchEvent{Type: "step", Kind: "read", Status: "start", Titles: state.titlesFor(wanted), Count: len(wanted)})
 
-	docs, err := req.Read(ctx, ReadRequest{IDs: wanted, Focus: focus})
+	docs, err := req.Read(ctx, ReadRequest{IDs: wanted, Focus: focus, Question: state.question})
 	if err != nil {
 		emit(ResearchEvent{Type: "step", Kind: "read", Status: "done"})
 		return toolExecResult{ID: callID, Name: name, Content: fmt.Sprintf(`{"error":%q}`, err.Error())}, false
 	}
 
 	newText := 0
+	distilled := false
 	for _, doc := range docs {
 		state.read[doc.ID] = struct{}{}
+		distilled = distilled || doc.Distilled
 		key := doc.ID + "\x00" + focus
 		if _, ok := state.readParts[key]; ok {
 			continue
 		}
 		state.readParts[key] = struct{}{}
-		newText += len(doc.Text)
+		newText += len(doc.Text) + len(doc.Notes)
 	}
 
 	emit(ResearchEvent{
-		Type:   "step",
-		Kind:   "read",
-		Status: "done",
-		Titles: state.titlesFor(wanted),
-		Count:  len(docs),
+		Type:      "step",
+		Kind:      "read",
+		Status:    "done",
+		Titles:    state.titlesFor(wanted),
+		Count:     len(docs),
+		Distilled: distilled,
 	})
 
 	payload := map[string]any{
@@ -644,6 +706,16 @@ func decodeReadArgs(data string) (readDocumentsArgs, error) {
 	}, nil
 }
 
+// latestUserMessage is the question the run is answering: the last user turn.
+func latestUserMessage(messages []ChatMessage) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if strings.TrimSpace(messages[i].Role) == "user" {
+			return strings.TrimSpace(messages[i].Content)
+		}
+	}
+	return ""
+}
+
 func normalizeIDs(ids []string) []string {
 	out := make([]string, 0, len(ids))
 	seen := map[string]struct{}{}
@@ -686,11 +758,11 @@ func validateCitations(reply string, seenIDs map[string]struct{}) string {
 const researchAnswerInstruction = `Stop searching and reading. Do not call any tools and do not output tool markup.
 Write the final answer for the user now, in markdown, using only what the tool results above actually contain.
 Cite each claim with a markdown link to the document it came from: [Document title](/document/<id>), using ids from the tool results.
-If you were asked for a total or a comparison, list the per-document figures you extracted before giving the result.
+If you were asked for a total or a comparison, list the per-document figures you extracted before giving the result; when a survey reported totals, use those figures rather than adding rows yourself.
 If the evidence is incomplete, say what is missing instead of filling the gap.
 Answer in the same language as the user's latest message.`
 
-func buildResearchSystemPrompt(languages, resultLanguage string, availableTags []string) string {
+func buildResearchSystemPrompt(languages, resultLanguage string, availableTags []string, dense bool) string {
 	var b strings.Builder
 	b.WriteString(`You are researching the user's personal document archive to answer their question.
 Work in steps. First find candidate documents with search_documents, then read the promising ones with read_documents.
@@ -699,15 +771,18 @@ Prefer precise date_from/date_to, document_type, correspondent, or tags filters 
 When filtering by tags, use exact names from the available archive tags list below — never invent tag names.
 
 Never state what a document contains without reading it first. Search results carry a few verbatim passages; a passage is a reason to read the document, not the whole of what it says.
-For a long document, pass focus with the question you are trying to answer: the read then returns the parts about it instead of only the beginning, with gaps marked by …
+A long document is returned as an excerpt around a focus, with gaps marked by …; without a focus of your own the user's question is used. Pass focus to steer the excerpt toward what you need.
+A read of many documents, or of a lot of text, comes back distilled: for each document, notes on what it says about the focus and verbatim quotes, instead of the text itself. Cite distilled documents as you would any other.
 Documents cited earlier in this conversation can be read by id straight away; you do not have to search for them again.
-There is no limit on how many searches or reads you may make, or how many documents one call may cover. Stop gathering and write the answer once you have enough evidence.
+For a question about many documents at once -- a topic, everything from one correspondent, a total over a year -- use survey_documents once with the question and the fields you need instead of reading documents one by one. Its rows and totals are evidence you may cite.
+For how-many or distribution questions call count_documents with the filters instead of counting search results: a search result is a capped page, not the archive.
+There is no limit on how many searches or reads you may make. Stop gathering and write the answer once you have enough evidence.
 Cite real document ids from tool results only. Never invent a document or an id.
 If the archive does not contain the answer, say so plainly and say what is missing.
 `)
 
 	b.WriteString(formatAvailableTagsPrompt(availableTags))
-	b.WriteString(formatLanguagePrompt(languages, resultLanguage))
+	b.WriteString(formatLanguagePrompt(languages, resultLanguage, dense))
 
 	return b.String()
 }
@@ -717,8 +792,10 @@ func researchTools() []openai.ChatCompletionToolParam {
 	return append(tools, openai.ChatCompletionToolParam{
 		Function: shared.FunctionDefinitionParam{
 			Name: "read_documents",
-			Description: openai.String("Read the extracted text of documents already seen in this conversation. " +
-				"Use this before making any claim about what a document says."),
+			Description: openai.String("Read documents already seen in this conversation. " +
+				"Use this before making any claim about what a document says. " +
+				"Long documents come back as excerpts around the focus (or the user's question); " +
+				"reading many documents at once comes back as per-document notes and quotes rather than text."),
 			Parameters: shared.FunctionParameters{
 				"type": "object",
 				"properties": map[string]any{
@@ -730,7 +807,8 @@ func researchTools() []openai.ChatCompletionToolParam {
 					"focus": map[string]any{
 						"type": "string",
 						"description": "What you are looking for in these documents. " +
-							"For a long document the passages about this are returned instead of only the beginning, with … marking the gaps.",
+							"For a long document the passages about this are returned instead of only the beginning, with … marking the gaps. " +
+							"Defaults to the user's question.",
 					},
 				},
 				"required": []string{"ids"},

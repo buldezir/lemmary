@@ -18,6 +18,10 @@ type Snapshot struct {
 	AI          ai.Extractor
 	Chatter     ai.Chatter
 	SearchAgent ai.SearchAgent
+	// SearchHelper does Deep Search's bulk per-document work. Nil when the
+	// search agent itself is unavailable; otherwise always set, on the helper
+	// binding or, through the fallback chain, on the search model.
+	SearchHelper ai.Helper
 	// Shares the extraction provider: both reason over document text.
 	Splitter ai.Splitter
 	// Embedder is nil unless an embedding model is bound, which is what turns
@@ -168,14 +172,27 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		)
 	}
 
+	var searchHelper ai.Helper
+	if cfg.SearchHelperProvider != nil && cfg.SearchHelperProvider.APIKey != "" && aiprovider.IsLLM(cfg.SearchHelperProvider.SDK) {
+		searchHelper = ai.NewHelper(
+			cfg.SearchHelperProvider.SDK,
+			cfg.SearchHelperProvider.APIKey,
+			cfg.SearchHelperModel,
+			cfg.SearchHelperProvider.BaseURL,
+			cfg.OpenAITimeout,
+			aiLogger,
+		)
+	}
+
 	snap := Snapshot{
-		Cfg:         cfg,
-		OCR:         ocrProvider,
-		AI:          extractor,
-		Chatter:     chatter,
-		SearchAgent: searchAgent,
-		Splitter:    splitter,
-		Embedder:    embedder,
+		Cfg:          cfg,
+		OCR:          ocrProvider,
+		AI:           extractor,
+		Chatter:      chatter,
+		SearchAgent:  searchAgent,
+		SearchHelper: searchHelper,
+		Splitter:     splitter,
+		Embedder:     embedder,
 	}
 
 	r.mu.Lock()
@@ -209,6 +226,7 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		"model", aiModel,
 		"chat_model", cfg.ChatModel,
 		"search_model", cfg.SearchModel,
+		"search_helper_model", cfg.SearchHelperModel,
 		"embedding_model", cfg.EmbeddingModel,
 		"embedding_dims", cfg.EmbeddingDims,
 		"deep_search_languages", cfg.DeepSearchLanguages,

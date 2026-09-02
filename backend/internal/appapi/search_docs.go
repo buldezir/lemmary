@@ -45,6 +45,9 @@ type agentRetriever struct {
 	embedQuery func(ctx context.Context, text string) ([]float32, error)
 	// chunks is the passage-level index searched by vector.
 	chunks retrieval.ChunkSearcher
+	// helper distils and surveys documents in bulk; nil means every read is
+	// passed through as text.
+	helper ai.Helper
 
 	// vectors memoizes the query embeddings this turn has already paid for.
 	// A research run searches several times and often repeats a phrase, and a
@@ -96,13 +99,15 @@ const maxPreFilterIDs = 1024
 // enough to make the list a read.
 const passageCapBytes = 6000
 
-// focusExcerptBytes is how much of a document a focused read returns: its head
-// plus the passages most relevant to the focus, gaps marked.
+// focusExcerptBytes is how much of a document a read returns: its head plus
+// the passages most relevant to the focus, gaps marked.
 //
-// A passage-selection choice, not a guess at anybody's context window. A read
-// with no focus returns the whole text however long it is; naming a focus asks
-// for the relevant parts instead, and the size is what makes "the relevant
-// parts" mean a handful of passages rather than the document again.
+// A passage-selection choice, not a guess at anybody's context window. Every
+// read of a long document is an excerpt now -- around the focus the model
+// named, or around the user's question when it named none -- and the size is
+// what makes "the relevant parts" mean a handful of passages rather than the
+// document again. The whole text is never handed to the research model: on a
+// fifty-page statement it was the most expensive way to find one paragraph.
 const focusExcerptBytes = 12000
 
 func (r *agentRetriever) search(ctx context.Context, args ai.SearchDocumentsArgs) ([]ai.DocumentHit, error) {
@@ -114,12 +119,71 @@ func (r *agentRetriever) search(ctx context.Context, args ai.SearchDocumentsArgs
 		return nil, fmt.Errorf("search index is not ready")
 	}
 
+	ftQuery, unresolved, err := r.resolveFilters(args)
+	if err != nil {
+		return nil, err
+	}
+	if len(unresolved) > 0 {
+		// A filter naming a type, correspondent or tag that does not exist
+		// matches nothing, rather than everything.
+		return []ai.DocumentHit{}, nil
+	}
+
+	cands, err := r.candidates(ctx, ftQuery, query, maxSearchDocuments)
+	if err != nil {
+		return nil, err
+	}
+
+	// Hydration drops documents that were deleted or changed hands since they
+	// were indexed, so the candidates are walked until maxSearchDocuments
+	// survive rather than cut to that many first — otherwise a stale index
+	// entry silently shortens the result list.
+	want := maxSearchDocuments
+	if len(cands.fused) < want {
+		want = len(cands.fused)
+	}
+	// Asked for once, for the whole result list: a chunk-level keyword search
+	// over exactly the documents about to be returned, so each hit can quote
+	// the passage that matched rather than the top of the document.
+	lexicalChunks := r.chunkTextHits(ctx, query, retrieval.IDs(cands.fused), 2*maxSearchDocuments)
+
+	budget := retrieval.PassageBudgetPerDoc(passageCapBytes, want)
+	hits := make([]ai.DocumentHit, 0, want)
+	for _, item := range cands.fused {
+		if len(hits) == maxSearchDocuments {
+			break
+		}
+		hit, ok := r.hydrate(item.ID, cands.lexical[item.ID], cands.denseChunks[item.ID], lexicalChunks[item.ID], query, budget)
+		if !ok {
+			continue
+		}
+		hits = append(hits, hit)
+	}
+
+	// embedded says whether the question reached a vector, which is not the
+	// same as dense finding something: an archive with no embedded document
+	// yet answers every query with an empty dense list, and the two cases need
+	// different fixing.
+	r.app.Logger().Info("deep search retrieval",
+		"lexical", len(cands.lexical),
+		"dense", cands.dense,
+		"fused", len(hits),
+		"embedded", r.embeddedQuery(query),
+	)
+	return hits, nil
+}
+
+// resolveFilters turns the agent's named filters into the index's id filters.
+// unresolved lists the names that matched nothing, which callers treat as
+// "matches no document" -- a misspelt tag must not widen a search to the
+// whole archive -- and which the count tool reports back by name.
+func (r *agentRetriever) resolveFilters(args ai.SearchDocumentsArgs) (fulltext.Query, []string, error) {
 	// args.Limit is decoded for compatibility with the old tool schema and
 	// then ignored: the index is asked for a whole page, because the document
 	// that answers the question is often not in the lexical top ten and fusion
 	// can only reorder what it was given.
 	ftQuery := fulltext.Query{
-		Text:   query,
+		Text:   strings.TrimSpace(args.Query),
 		UserID: r.userID,
 		// The agent's query is a guess the model made from a question, not a
 		// filter the user typed. A near miss is worth far more here than an
@@ -129,14 +193,15 @@ func (r *agentRetriever) search(ctx context.Context, args ai.SearchDocumentsArgs
 		DateTo:   strings.TrimSpace(args.DateTo),
 		Limit:    fulltext.MaxSearchLimit,
 	}
+	var unresolved []string
 
 	if typeName := strings.TrimSpace(args.DocumentType); typeName != "" {
 		typeIDs, err := findNamedEntityIDs(r.app, "document_types", typeName, r.userID)
 		if err != nil {
-			return nil, err
+			return ftQuery, nil, err
 		}
 		if len(typeIDs) == 0 {
-			return []ai.DocumentHit{}, nil
+			unresolved = append(unresolved, "document_type: "+typeName)
 		}
 		ftQuery.DocumentTypeIDs = typeIDs
 	}
@@ -144,10 +209,10 @@ func (r *agentRetriever) search(ctx context.Context, args ai.SearchDocumentsArgs
 	if corrName := strings.TrimSpace(args.Correspondent); corrName != "" {
 		corrIDs, err := findNamedEntityIDs(r.app, "correspondents", corrName, r.userID)
 		if err != nil {
-			return nil, err
+			return ftQuery, nil, err
 		}
 		if len(corrIDs) == 0 {
-			return []ai.DocumentHit{}, nil
+			unresolved = append(unresolved, "correspondent: "+corrName)
 		}
 		ftQuery.CorrespondentIDs = corrIDs
 	}
@@ -155,17 +220,33 @@ func (r *agentRetriever) search(ctx context.Context, args ai.SearchDocumentsArgs
 	if tagNames := normalizeTagNames(args.Tags); len(tagNames) > 0 {
 		tagIDs, err := findTagIDsByNames(r.app, tagNames, r.userID)
 		if err != nil {
-			return nil, err
+			return ftQuery, nil, err
 		}
 		if len(tagIDs) == 0 {
-			return []ai.DocumentHit{}, nil
+			unresolved = append(unresolved, "tags: "+strings.Join(tagNames, ", "))
 		}
 		ftQuery.TagIDs = tagIDs
 	}
+	return ftQuery, unresolved, nil
+}
 
+// candidateSet is what retrieval found before hydration: the fused ranking
+// and the per-document evidence each leg brought.
+type candidateSet struct {
+	fused       []retrieval.Ranked
+	lexical     map[string]fulltext.Hit
+	denseChunks map[string][]retrieval.ChunkHit
+	dense       int
+}
+
+// candidates runs both legs and fuses them. want is how many documents the
+// caller means to keep; the dense leg is asked for denseCandidateFactor
+// chunks per document, since the four best chunks of the archive can easily
+// all belong to one file.
+func (r *agentRetriever) candidates(ctx context.Context, ftQuery fulltext.Query, query string, want int) (candidateSet, error) {
 	result, err := r.idx.Search(ftQuery)
 	if err != nil {
-		return nil, fmt.Errorf("search documents: %w", err)
+		return candidateSet{}, fmt.Errorf("search documents: %w", err)
 	}
 
 	lexical := make([]retrieval.Ranked, 0, len(result.Hits))
@@ -181,49 +262,16 @@ func (r *agentRetriever) search(ctx context.Context, args ai.SearchDocumentsArgs
 	// returns it in order.
 	var dense []retrieval.Ranked
 	var denseChunks map[string][]retrieval.ChunkHit
-	if chunkHits := r.searchChunks(ctx, ftQuery, query, maxSearchDocuments*denseCandidateFactor); len(chunkHits) > 0 {
+	if chunkHits := r.searchChunks(ctx, ftQuery, query, want*denseCandidateFactor); len(chunkHits) > 0 {
 		dense, denseChunks = retrieval.GroupChunks(chunkHits, retrieval.MaxPassagesPerDocument)
 	}
 
-	fused := retrieval.RRF(lexical, dense)
-
-	// Hydration drops documents that were deleted or changed hands since they
-	// were indexed, so the candidates are walked until maxSearchDocuments
-	// survive rather than cut to that many first — otherwise a stale index
-	// entry silently shortens the result list.
-	want := maxSearchDocuments
-	if len(fused) < want {
-		want = len(fused)
-	}
-	// Asked for once, for the whole result list: a chunk-level keyword search
-	// over exactly the documents about to be returned, so each hit can quote
-	// the passage that matched rather than the top of the document.
-	lexicalChunks := r.chunkTextHits(ctx, query, retrieval.IDs(fused), 2*maxSearchDocuments)
-
-	budget := retrieval.PassageBudgetPerDoc(passageCapBytes, want)
-	hits := make([]ai.DocumentHit, 0, want)
-	for _, item := range fused {
-		if len(hits) == maxSearchDocuments {
-			break
-		}
-		hit, ok := r.hydrate(item.ID, byID[item.ID], denseChunks[item.ID], lexicalChunks[item.ID], query, budget)
-		if !ok {
-			continue
-		}
-		hits = append(hits, hit)
-	}
-
-	// embedded says whether the question reached a vector, which is not the
-	// same as dense finding something: an archive with no embedded document
-	// yet answers every query with an empty dense list, and the two cases need
-	// different fixing.
-	r.app.Logger().Info("deep search retrieval",
-		"lexical", len(lexical),
-		"dense", len(dense),
-		"fused", len(hits),
-		"embedded", r.embeddedQuery(query),
-	)
-	return hits, nil
+	return candidateSet{
+		fused:       retrieval.RRF(lexical, dense),
+		lexical:     byID,
+		denseChunks: denseChunks,
+		dense:       len(dense),
+	}, nil
 }
 
 // searchChunks runs the dense leg. Any failure — no embedder, an embedding
@@ -517,8 +565,45 @@ func documentTagNames(app documentLookup, record *core.Record) []string {
 
 // read backs the agent's read_documents tool. The retriever holds it as a
 // method so the dense ranking used by a focused read has somewhere to live.
+//
+// With a helper model bound, a large read is distilled: the helper reads the
+// documents -- whole, up to helperInputBytes each -- and the agent gets notes
+// and quotes per document instead of text. A small read passes through as
+// excerpts, because for a needle question the exact wording is the point.
 func (r *agentRetriever) read(ctx context.Context, req ai.ReadRequest) ([]ai.DocumentContent, error) {
-	return readUserDocuments(r.app, r.userID, req, r.focusRanker(ctx))
+	if r.helper == nil {
+		return readUserDocuments(r.app, r.userID, req, r.focusRanker(ctx), focusExcerptBytes)
+	}
+	docs, err := readUserDocuments(r.app, r.userID, req, r.focusRanker(ctx), helperInputBytes)
+	if err != nil {
+		return nil, err
+	}
+	if !shouldDistill(docs) {
+		return trimToExcerpts(r.app, r.userID, req, r.focusRanker(ctx), docs), nil
+	}
+	question := strutil.FirstNonEmpty(strings.TrimSpace(req.Focus), strings.TrimSpace(req.Question))
+	return r.distillDocuments(ctx, question, nil, docs), nil
+}
+
+// trimToExcerpts brings documents read at the helper's generous cap back to
+// the agent's own: a read that turned out small enough to pass through raw
+// must still not carry a whole long document into the conversation.
+func trimToExcerpts(app documentLookup, userID string, req ai.ReadRequest, rank focusRanker, docs []ai.DocumentContent) []ai.DocumentContent {
+	needsTrim := false
+	for _, doc := range docs {
+		if len(doc.Text) > focusExcerptBytes {
+			needsTrim = true
+			break
+		}
+	}
+	if !needsTrim {
+		return docs
+	}
+	trimmed, err := readUserDocuments(app, userID, req, rank, focusExcerptBytes)
+	if err != nil {
+		return docs
+	}
+	return trimmed
 }
 
 // focusChunkK is how many of a document's passages a focused read ranks. A
@@ -584,17 +669,24 @@ type focusRanker func(documentID, ocrText, focus string) ([]retrieval.Window, []
 // Truncation against a guessed context window used to live here; a run that
 // outgrows the model is now a provider error.
 //
-// A read with no focus returns the whole of ocr_text. A focused read returns
-// the document's head plus the passages most relevant to the focus, with the
-// gaps marked — because ocr_text runs to models.MaxOCRTextRunes, and on
-// anything longer than a few pages "the beginning" is rarely where the answer
-// is. rank is the dense/lexical chunk ranking used to choose those passages,
-// or nil when the document's own text is all there is to rank.
-func readUserDocuments(app documentLookup, userID string, req ai.ReadRequest, rank focusRanker) ([]ai.DocumentContent, error) {
+// A document longer than excerptBytes is returned as its head plus the
+// passages most relevant to the focus, with the gaps marked -- because
+// ocr_text runs to models.MaxOCRTextRunes, and on anything longer than a few
+// pages "the beginning" is rarely where the answer is. When the call named no
+// focus the user's question stands in, and the document says so in FocusUsed.
+// A shorter document comes back whole. rank is the dense/lexical chunk ranking
+// used to choose the passages, or nil when the document's own text is all
+// there is to rank.
+func readUserDocuments(app documentLookup, userID string, req ai.ReadRequest, rank focusRanker, excerptBytes int) ([]ai.DocumentContent, error) {
 	if len(req.IDs) == 0 {
 		return []ai.DocumentContent{}, nil
 	}
 	focus := strings.TrimSpace(req.Focus)
+	focusUsed := ""
+	if focus == "" {
+		focus = strings.TrimSpace(req.Question)
+		focusUsed = focus
+	}
 
 	docs := make([]ai.DocumentContent, 0, len(req.IDs))
 	for _, id := range req.IDs {
@@ -626,23 +718,12 @@ func readUserDocuments(app documentLookup, userID string, req ai.ReadRequest, ra
 			Tags:          documentTagNames(app, record),
 		}
 
-		if focus != "" && len(full) > focusExcerptBytes {
-			var windows []retrieval.Window
-			var ranked []retrieval.Ranked
-			if rank != nil {
-				windows, ranked = rank(record.Id, full, focus)
-			}
-			if len(windows) == 0 {
-				// No chunk index, or none of its offsets still fit the text:
-				// cut windows out of the text itself and rank them by how much
-				// of the question they carry.
-				windows = retrieval.Windows(full, nil)
-				ranked = retrieval.TermOverlap(full, windows, focus)
-			}
-			text, omitted := retrieval.Excerpt(full, windows, ranked, focusExcerptBytes)
+		if len(full) > excerptBytes {
+			text, omitted := excerptDocument(record.Id, full, focus, rank, excerptBytes)
 			doc.Text = text
 			doc.Excerpted = true
 			doc.PassagesOmitted = omitted
+			doc.FocusUsed = focusUsed
 		} else {
 			doc.Text = full
 		}
@@ -650,6 +731,25 @@ func readUserDocuments(app documentLookup, userID string, req ai.ReadRequest, ra
 		docs = append(docs, doc)
 	}
 	return docs, nil
+}
+
+// excerptDocument assembles the head of a document plus the passages most
+// relevant to focus, within budget. With an empty focus there is nothing to
+// rank by and the head alone is returned, gap marked.
+func excerptDocument(documentID, full, focus string, rank focusRanker, budget int) (string, int) {
+	var windows []retrieval.Window
+	var ranked []retrieval.Ranked
+	if focus != "" && rank != nil {
+		windows, ranked = rank(documentID, full, focus)
+	}
+	if len(windows) == 0 {
+		// No chunk index, or none of its offsets still fit the text: cut
+		// windows out of the text itself and rank them by how much of the
+		// question they carry.
+		windows = retrieval.Windows(full, nil)
+		ranked = retrieval.TermOverlap(full, windows, focus)
+	}
+	return retrieval.Excerpt(full, windows, ranked, budget)
 }
 
 func findNamedEntityIDs(app retrieverApp, collection, name, userID string) ([]string, error) {

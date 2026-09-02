@@ -243,7 +243,7 @@ func TestReadFocusRanksWithTheChunkIndex(t *testing.T) {
 	// and the tail, and the sentence in the middle would be unreachable.
 	req := ai.ReadRequest{IDs: []string{"doc1"}, Focus: "Selbstbehalt"}
 
-	control, err := readUserDocuments(app, "u1", req, nil)
+	control, err := readUserDocuments(app, "u1", req, nil, focusExcerptBytes)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}

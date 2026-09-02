@@ -93,6 +93,14 @@ func ParseExtractedMetadataWithNotes(raw string) (*ExtractedMetadata, []string, 
 	return &metadata, notes, nil
 }
 
+// NormalizeJSONObject strips what models wrap a JSON object in -- code
+// fences, reasoning tags, prose before the brace -- and returns the object.
+// Shared by every caller that asks a model for JSON, because the same models
+// misbehave the same way whatever the question.
+func NormalizeJSONObject(raw string) string {
+	return normalizeExtractionJSON(raw)
+}
+
 func normalizeExtractionJSON(raw string) string {
 	raw = strings.TrimSpace(raw)
 	raw = strings.TrimPrefix(raw, "```json")

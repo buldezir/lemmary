@@ -30,6 +30,14 @@ type Config struct {
 	SearchProviderID  string
 	SearchModel       string
 
+	// SearchHelperProviderID/SearchHelperModel bind the model Deep Search
+	// sends bulk per-document work to: distilling long reads into notes and
+	// surveying many documents for one question. Many cheap calls rather
+	// than a few expensive ones, so a smaller model than the search agent's
+	// is usually right. Unset falls back to the search binding.
+	SearchHelperProviderID string
+	SearchHelperModel      string
+
 	// EmbeddingProviderID/EmbeddingModel bind the retrieval embedding model.
 	// Unset means dense retrieval is off and the archive is searched by
 	// keywords alone, which is the behaviour every install had before this
@@ -42,11 +50,12 @@ type Config struct {
 	// a model switch detectable.
 	EmbeddingDims int
 
-	OCRProvider       *aiprovider.Provider
-	ExtractProvider   *aiprovider.Provider
-	ChatProvider      *aiprovider.Provider
-	SearchProvider    *aiprovider.Provider
-	EmbeddingProvider *aiprovider.Provider
+	OCRProvider          *aiprovider.Provider
+	ExtractProvider      *aiprovider.Provider
+	ChatProvider         *aiprovider.Provider
+	SearchProvider       *aiprovider.Provider
+	SearchHelperProvider *aiprovider.Provider
+	EmbeddingProvider    *aiprovider.Provider
 
 	OCRTimeout                    time.Duration
 	ProcessingResultLanguage      string
@@ -202,6 +211,8 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 		ChatModel:                     strings.TrimSpace(record.GetString("chat_model")),
 		SearchProviderID:              strings.TrimSpace(record.GetString("search_provider_id")),
 		SearchModel:                   strings.TrimSpace(record.GetString("search_model")),
+		SearchHelperProviderID:        strings.TrimSpace(record.GetString("search_helper_provider_id")),
+		SearchHelperModel:             strings.TrimSpace(record.GetString("search_helper_model")),
 		EmbeddingProviderID:           strings.TrimSpace(record.GetString("embedding_provider_id")),
 		EmbeddingModel:                strings.TrimSpace(record.GetString("embedding_model")),
 		EmbeddingDims:                 max(int(record.GetFloat("embedding_dims")), 0),
@@ -223,8 +234,9 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 	return cfg, nil
 }
 
-// chat falls back to extract, search to the resolved chat binding. Separate
-// from the DB lookups so the chain is easy to test.
+// chat falls back to extract, search to the resolved chat binding, and the
+// search helper to the resolved search binding. Separate from the DB lookups
+// so the chain is easy to test.
 //
 // Embeddings are deliberately not in the chain. Every other binding falls back
 // to a language model that can serve it; an embedding endpoint cannot be
@@ -243,6 +255,12 @@ func applyBindingFallbacks(cfg *Config) {
 	if cfg.SearchModel == "" {
 		cfg.SearchModel = cfg.ChatModel
 	}
+	if cfg.SearchHelperProviderID == "" {
+		cfg.SearchHelperProviderID = cfg.SearchProviderID
+	}
+	if cfg.SearchHelperModel == "" {
+		cfg.SearchHelperModel = cfg.SearchModel
+	}
 }
 
 func resolveProviders(app core.App, cfg *Config) error {
@@ -256,6 +274,7 @@ func resolveProviders(app core.App, cfg *Config) error {
 		{cfg.ExtractProviderID, &cfg.ExtractProvider},
 		{cfg.ChatProviderID, &cfg.ChatProvider},
 		{cfg.SearchProviderID, &cfg.SearchProvider},
+		{cfg.SearchHelperProviderID, &cfg.SearchHelperProvider},
 		{cfg.EmbeddingProviderID, &cfg.EmbeddingProvider},
 	} {
 		provider, err := lookupProvider(app, binding.id)
@@ -287,6 +306,8 @@ func applyConfigToRecord(record *core.Record, cfg Config) {
 	record.Set("chat_model", cfg.ChatModel)
 	record.Set("search_provider_id", cfg.SearchProviderID)
 	record.Set("search_model", cfg.SearchModel)
+	record.Set("search_helper_provider_id", cfg.SearchHelperProviderID)
+	record.Set("search_helper_model", cfg.SearchHelperModel)
 	record.Set("embedding_provider_id", cfg.EmbeddingProviderID)
 	record.Set("embedding_model", cfg.EmbeddingModel)
 	record.Set("embedding_dims", max(cfg.EmbeddingDims, 0))

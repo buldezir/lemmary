@@ -130,9 +130,17 @@ func coerceInt(v any) int {
 // DocumentSearcher runs a user-scoped keyword search against the document archive.
 type DocumentSearcher func(ctx context.Context, args SearchDocumentsArgs) ([]DocumentHit, error)
 
+// SearchOptions is what the prompt needs to know about the retriever behind
+// the tools: the instructions differ with what a search can find.
+type SearchOptions struct {
+	// DenseRetrieval is set when searches also match by meaning, across
+	// languages. The prompt then stops asking for one search per language.
+	DenseRetrieval bool
+}
+
 type SearchAgent interface {
 	// Search finds documents and answers from their metadata and snippets.
-	Search(ctx context.Context, messages []ChatMessage, availableTags []string, search DocumentSearcher) (reply string, hits []DocumentHit, err error)
+	Search(ctx context.Context, messages []ChatMessage, availableTags []string, search DocumentSearcher, opts SearchOptions) (reply string, hits []DocumentHit, err error)
 
 	// Research reads the documents it finds and writes a cited answer,
 	// reporting each step through emit as it goes.
@@ -153,7 +161,7 @@ func NewSearchAgent(sdk, apiKey, model, baseURL string, timeout time.Duration, l
 	}
 }
 
-func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, availableTags []string, search DocumentSearcher) (string, []DocumentHit, error) {
+func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, availableTags []string, search DocumentSearcher, opts SearchOptions) (string, []DocumentHit, error) {
 	if a.client.apiKey == "" {
 		return "", nil, fmt.Errorf("AI API key is not configured")
 	}
@@ -164,7 +172,7 @@ func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, 
 	maxRounds := maxSearchToolRounds
 
 	apiMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages)+1+maxRounds*4)
-	apiMessages = append(apiMessages, openai.SystemMessage(buildSearchSystemPrompt(a.languages, a.resultLanguage, availableTags)))
+	apiMessages = append(apiMessages, openai.SystemMessage(buildSearchSystemPrompt(a.languages, a.resultLanguage, availableTags, opts.DenseRetrieval)))
 	for _, msg := range messages {
 		role := strings.TrimSpace(msg.Role)
 		content := strings.TrimSpace(msg.Content)
@@ -421,7 +429,7 @@ func (a *openAISearchAgent) executeToolCall(
 	return toolExecResult{ID: callID, Name: name, Content: content}
 }
 
-func buildSearchSystemPrompt(languages, resultLanguage string, availableTags []string) string {
+func buildSearchSystemPrompt(languages, resultLanguage string, availableTags []string, dense bool) string {
 	var b strings.Builder
 	b.WriteString(`You help the user find documents in their personal archive.
 The user may ask in broad natural language that keyword search alone cannot handle.
@@ -439,15 +447,36 @@ When answering would need more of a document than the passages show, say what yo
 `)
 
 	b.WriteString(formatAvailableTagsPrompt(availableTags))
-	b.WriteString(formatLanguagePrompt(languages, resultLanguage))
+	b.WriteString(formatLanguagePrompt(languages, resultLanguage, dense))
 
 	return b.String()
 }
 
-// formatLanguagePrompt tells the agent which languages to expand keywords into.
-// Shared by Search and Research: recall across a multilingual archive depends on
-// the same translation step in both.
-func formatLanguagePrompt(languages, resultLanguage string) string {
+// formatLanguagePrompt tells the agent how languages figure in a search.
+// Shared by Search and Research.
+//
+// With dense retrieval the same question phrased in three languages returns
+// the same fused list -- the embedding is what crosses the language line, and
+// it does so in one call -- so a search per language is a round spent on a
+// result the model already has. The list is still shown: a keyword hit on an
+// exact term (a name, a product code) is still spelled in the document's own
+// language. Without dense retrieval, translation is the only thing that
+// carries an English question to a German invoice, so the model is asked for
+// it.
+func formatLanguagePrompt(languages, resultLanguage string, dense bool) string {
+	if dense {
+		var b strings.Builder
+		b.WriteString(`
+Search matches by meaning across languages: one search in the user's own wording covers documents written in any language`)
+		if languages != "" {
+			b.WriteString(fmt.Sprintf(` (the archive holds: %s)`, languages))
+		}
+		b.WriteString(`.
+Do not repeat a search translated into another language. Search again only for a different concept, a synonym with a different meaning, or different filters.
+Spell exact terms that must match literally -- names, product codes, reference numbers -- as they appear in the documents.
+`)
+		return b.String()
+	}
 	if languages != "" {
 		return fmt.Sprintf(`
 Always try keyword searches across these archive languages (translate key terms as needed): %s.

@@ -34,3 +34,19 @@ func isUnsupportedTemperatureError(err error) bool {
 	return strings.Contains(msg, "temperature") &&
 		(strings.Contains(msg, "does not support") || strings.Contains(msg, "unsupported"))
 }
+
+// isUnsupportedResponseFormatError recognises a provider refusing JSON mode.
+// Providers word it differently; the parameter name is the common thread.
+func isUnsupportedResponseFormatError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var apiErr *openai.Error
+	if errors.As(err, &apiErr) {
+		if strings.EqualFold(strings.TrimSpace(apiErr.Param), "response_format") {
+			return true
+		}
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "response_format") || strings.Contains(msg, "json_object")
+}

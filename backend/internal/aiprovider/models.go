@@ -71,17 +71,29 @@ func ModelsURL(p Provider, purpose ModelPurpose) string {
 		return ""
 	}
 	endpoint := base + "/models"
-	// OpenRouter is the only provider that filters server-side, and only on
-	// input modalities. Embedding models are told apart by their output
-	// modality, which the catalogue does not accept as a query parameter, so
-	// that filter is applied to the response instead.
-	if purpose == PurposeOCR && p.SDK == SDKOpenRouter {
+	// OpenRouter is the only provider that filters server-side. Two of its
+	// filters matter here: input_modalities=file for OCR, and
+	// output_modalities=embeddings for embedding models -- which the plain
+	// catalogue leaves out altogether, so without the parameter the embedding
+	// picker is empty for every OpenRouter user. The response is still run
+	// through filterModels afterwards; the parameter is what makes the models
+	// appear at all.
+	if p.SDK == SDKOpenRouter {
+		var key, value string
+		switch purpose {
+		case PurposeOCR:
+			key, value = "input_modalities", "file"
+		case PurposeEmbedding:
+			key, value = "output_modalities", "embeddings"
+		default:
+			return endpoint
+		}
 		u, err := url.Parse(endpoint)
 		if err != nil {
-			return endpoint + "?input_modalities=file"
+			return endpoint + "?" + key + "=" + value
 		}
 		q := u.Query()
-		q.Set("input_modalities", "file")
+		q.Set(key, value)
 		u.RawQuery = q.Encode()
 		return u.String()
 	}

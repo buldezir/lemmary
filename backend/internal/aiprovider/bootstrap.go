@@ -27,6 +27,11 @@ type ProviderSpec struct {
 	// key, one address, a second model name. Pointing embeddings somewhere else
 	// is a Settings-only choice. Empty means dense retrieval is off.
 	EmbeddingModel string
+
+	// HelperModel is the Deep Search helper on this same endpoint, the model
+	// that distils and surveys documents in bulk. Empty means the search
+	// model does that work itself.
+	HelperModel string
 }
 
 func (s ProviderSpec) Configured() bool { return strings.TrimSpace(s.APIKey) != "" }
@@ -111,9 +116,25 @@ func Apply(app core.App, settings *core.Record, b Bootstrap) error {
 			model = DefaultExtractModel
 		}
 		bindLLM(settings, llmID, model, model, model)
+		bindHelper(settings, llmID, b.LLM.HelperModel)
 		bindEmbedding(settings, llmID, b.LLM.EmbeddingModel)
 	}
 	return nil
+}
+
+// bindHelper points the Deep Search helper binding at the language model's
+// provider. An empty model clears the binding so the fallback to the search
+// model takes over, the same way removing AI_EMBEDDING_MODEL turns dense
+// retrieval off rather than leaving a stale binding standing.
+func bindHelper(settings *core.Record, providerID, model string) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		settings.Set("search_helper_provider_id", "")
+		settings.Set("search_helper_model", "")
+		return
+	}
+	settings.Set("search_helper_provider_id", providerID)
+	settings.Set("search_helper_model", model)
 }
 
 // bindEmbedding points the retrieval embedding binding at the language model's

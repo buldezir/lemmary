@@ -269,12 +269,22 @@ func TestParseModelPurposeDefaultsToLLM(t *testing.T) {
 	}
 }
 
-func TestModelsURLEmbeddingIsUnfiltered(t *testing.T) {
+// OpenRouter's plain catalogue omits embedding models entirely; only the
+// output_modalities filter brings them back. Other SDKs have no such filter
+// and stay on the bare endpoint.
+func TestModelsURLEmbeddingFiltersOpenRouterByOutputModality(t *testing.T) {
 	t.Parallel()
 	p := Provider{SDK: SDKOpenRouter, BaseURL: "https://openrouter.ai/api/v1"}
-
-	if got := ModelsURL(p, PurposeEmbedding); got != "https://openrouter.ai/api/v1/models" {
+	if got := ModelsURL(p, PurposeEmbedding); got != "https://openrouter.ai/api/v1/models?output_modalities=embeddings" {
 		t.Fatalf("ModelsURL() = %q", got)
+	}
+
+	other := Provider{SDK: SDKOpenAI, BaseURL: "https://api.openai.com/v1"}
+	if got := ModelsURL(other, PurposeEmbedding); got != "https://api.openai.com/v1/models" {
+		t.Fatalf("ModelsURL() = %q", got)
+	}
+	if got := ModelsURL(p, PurposeLLM); got != "https://openrouter.ai/api/v1/models" {
+		t.Fatalf("LLM listing should stay unfiltered, got %q", got)
 	}
 }
 

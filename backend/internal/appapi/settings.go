@@ -12,16 +12,20 @@ import (
 )
 
 type settingsResponse struct {
-	OCRProviderID       string `json:"ocr_provider_id"`
-	OCRModel            string `json:"ocr_model"`
-	ExtractProviderID   string `json:"extract_provider_id"`
-	ExtractModel        string `json:"extract_model"`
-	ChatProviderID      string `json:"chat_provider_id"`
-	ChatModel           string `json:"chat_model"`
-	SearchProviderID    string `json:"search_provider_id"`
-	SearchModel         string `json:"search_model"`
-	EmbeddingProviderID string `json:"embedding_provider_id"`
-	EmbeddingModel      string `json:"embedding_model"`
+	OCRProviderID     string `json:"ocr_provider_id"`
+	OCRModel          string `json:"ocr_model"`
+	ExtractProviderID string `json:"extract_provider_id"`
+	ExtractModel      string `json:"extract_model"`
+	ChatProviderID    string `json:"chat_provider_id"`
+	ChatModel         string `json:"chat_model"`
+	SearchProviderID  string `json:"search_provider_id"`
+	SearchModel       string `json:"search_model"`
+	// The Deep Search helper binding. Empty means the search model does the
+	// bulk per-document work itself.
+	SearchHelperProviderID string `json:"search_helper_provider_id"`
+	SearchHelperModel      string `json:"search_helper_model"`
+	EmbeddingProviderID    string `json:"embedding_provider_id"`
+	EmbeddingModel         string `json:"embedding_model"`
 	// EmbeddingDims is read-only: only the provider knows how long its vectors
 	// are, and it is recorded from the first real response. An admin typing a
 	// number next to a model that disagrees would build an index that silently
@@ -47,6 +51,8 @@ type settingsPatchRequest struct {
 	ChatModel                     *string  `json:"chat_model"`
 	SearchProviderID              *string  `json:"search_provider_id"`
 	SearchModel                   *string  `json:"search_model"`
+	SearchHelperProviderID        *string  `json:"search_helper_provider_id"`
+	SearchHelperModel             *string  `json:"search_helper_model"`
 	EmbeddingProviderID           *string  `json:"embedding_provider_id"`
 	EmbeddingModel                *string  `json:"embedding_model"`
 	OCRTimeoutSec                 *int     `json:"ocr_timeout_sec"`
@@ -71,6 +77,8 @@ func (r settingsPatchRequest) touchesManaged() bool {
 		r.ChatModel != nil ||
 		r.SearchProviderID != nil ||
 		r.SearchModel != nil ||
+		r.SearchHelperProviderID != nil ||
+		r.SearchHelperModel != nil ||
 		r.EmbeddingProviderID != nil ||
 		r.EmbeddingModel != nil ||
 		r.NearDuplicateDetectionEnabled != nil ||
@@ -156,6 +164,8 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 		ChatModel:                     cfg.ChatModel,
 		SearchProviderID:              cfg.SearchProviderID,
 		SearchModel:                   cfg.SearchModel,
+		SearchHelperProviderID:        cfg.SearchHelperProviderID,
+		SearchHelperModel:             cfg.SearchHelperModel,
 		EmbeddingProviderID:           cfg.EmbeddingProviderID,
 		EmbeddingModel:                cfg.EmbeddingModel,
 		EmbeddingDims:                 cfg.EmbeddingDims,
@@ -211,6 +221,16 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	}
 	if req.SearchModel != nil {
 		record.Set("search_model", strings.TrimSpace(*req.SearchModel))
+	}
+	if req.SearchHelperProviderID != nil {
+		id := strings.TrimSpace(*req.SearchHelperProviderID)
+		if err := validateProviderID(app, id, true); err != nil {
+			return err
+		}
+		record.Set("search_helper_provider_id", id)
+	}
+	if req.SearchHelperModel != nil {
+		record.Set("search_helper_model", strings.TrimSpace(*req.SearchHelperModel))
 	}
 	// The embedding binding is read before it is written, so a change can be
 	// detected: switching model or endpoint invalidates the recorded vector

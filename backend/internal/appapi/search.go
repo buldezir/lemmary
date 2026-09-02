@@ -67,6 +67,13 @@ type agentTools struct {
 	tags   []string
 	search ai.DocumentSearcher
 	read   ai.DocumentReader
+	// survey and count are nil when the tools are unavailable: no helper
+	// model for a survey, no database for a count.
+	survey ai.DocumentSurveyor
+	count  ai.DocumentCounter
+	// dense is set when the retriever has an embedding leg; the prompt is
+	// worded differently for a search that crosses languages by itself.
+	dense bool
 }
 
 // buildAgentTools binds one retriever per request. Both closures share it, so
@@ -81,16 +88,23 @@ func buildAgentTools(app core.App, rt *config.Runtime, idx *fulltext.Index, user
 	if err != nil {
 		return agentTools{}, err
 	}
-	retriever := &agentRetriever{app: app, idx: idx, userID: userID}
-	if embedder := rt.Snapshot().Embedder; embedder != nil && idx != nil && idx.ChunksReady() {
+	snap := rt.Snapshot()
+	retriever := &agentRetriever{app: app, idx: idx, userID: userID, helper: snap.SearchHelper}
+	if embedder := snap.Embedder; embedder != nil && idx != nil && idx.ChunksReady() {
 		retriever.embedQuery = embedQueryFunc(embedder)
 		retriever.chunks = idx
 	}
-	return agentTools{
+	tools := agentTools{
 		tags:   tags,
 		search: retriever.search,
 		read:   retriever.read,
-	}, nil
+		count:  retriever.count,
+		dense:  retriever.embedQuery != nil,
+	}
+	if retriever.helper != nil {
+		tools.survey = retriever.survey
+	}
+	return tools, nil
 }
 
 // embedQueryFunc adapts the embedder to the one vector the retriever wants.
@@ -256,10 +270,13 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 				Search:         turn.tools.search,
 				Read:           turn.tools.read,
 				PriorDocuments: turn.priorDocuments,
+				DenseRetrieval: turn.tools.dense,
+				Survey:         turn.tools.survey,
+				Count:          turn.tools.count,
 			}, nil)
 			reply, hits, incomplete, err = result.Reply, result.Documents, result.Incomplete, researchErr
 		} else {
-			reply, hits, err = turn.agent.Search(e.Request.Context(), turn.messages, turn.tools.tags, turn.tools.search)
+			reply, hits, err = turn.agent.Search(e.Request.Context(), turn.messages, turn.tools.tags, turn.tools.search, ai.SearchOptions{DenseRetrieval: turn.tools.dense})
 		}
 		if err != nil {
 			app.Logger().Error("deep search failed", "mode", turn.mode, slog.Any("error", err))
@@ -322,6 +339,9 @@ func handleResearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index)
 			Search:         turn.tools.search,
 			Read:           turn.tools.read,
 			PriorDocuments: turn.priorDocuments,
+			DenseRetrieval: turn.tools.dense,
+			Survey:         turn.tools.survey,
+			Count:          turn.tools.count,
 		}, func(event ai.ResearchEvent) { stream.Send(event) })
 		if err != nil {
 			if e.Request.Context().Err() != nil {

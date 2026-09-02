@@ -51,6 +51,12 @@ const (
 	// ways to half-configure the feature.
 	EnvAIEmbeddingModel = "AI_EMBEDDING_MODEL"
 
+	// EnvAISearchHelperModel names the model on the AI_SDK provider that Deep
+	// Search hands bulk per-document work to. Same reasoning as the embedding
+	// model: one provider, a second model name; a separate endpoint is a
+	// Settings choice. Empty falls back to the search model.
+	EnvAISearchHelperModel = "AI_SEARCH_HELPER_MODEL"
+
 	EnvOCRSDK     = "OCR_SDK"
 	EnvOCRAPIKey  = "OCR_API_KEY"
 	EnvOCRBaseURL = "OCR_BASE_URL"
@@ -129,6 +135,7 @@ func parseLLM() (aiprovider.ProviderSpec, error) {
 		BaseURL:        aiprovider.NormalizeBaseURL(sdk, os.Getenv(EnvAIBaseURL)),
 		Model:          strings.TrimSpace(getEnv(EnvAIModel, aiprovider.DefaultExtractModel)),
 		EmbeddingModel: strings.TrimSpace(os.Getenv(EnvAIEmbeddingModel)),
+		HelperModel:    strings.TrimSpace(os.Getenv(EnvAISearchHelperModel)),
 	}
 	return spec, nil
 }
@@ -212,6 +219,7 @@ func (e AIEnv) Defaults() Config {
 		ExtractModel:                  e.Providers.LLM.Model,
 		ChatModel:                     e.Providers.LLM.Model,
 		SearchModel:                   e.Providers.LLM.Model,
+		SearchHelperModel:             e.Providers.LLM.HelperModel,
 		EmbeddingModel:                e.Providers.LLM.EmbeddingModel,
 		OCRTimeout:                    e.OCRTimeout,
 		DeepSearchLanguages:           e.DeepSearchLanguages,

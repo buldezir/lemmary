@@ -270,6 +270,7 @@ is dropped.
 | `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. |
 | `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Required unless `OCR_SDK=google_vision`, which reads a document without one. |
 | `AI_EMBEDDING_MODEL` | unset (Deep Search matches keywords only) | An embedding model on the `AI_SDK` provider, so Deep Search can also find documents by meaning. Operator-owned under `AI_MANAGED=1`; removing it there turns the feature off. See below for what it costs. |
+| `AI_SEARCH_HELPER_MODEL` | unset (the Search model does this work) | A cheaper model on the `AI_SDK` provider for Deep Search's bulk per-document work: distilling long reads into notes and surveying many documents for one question. Operator-owned under `AI_MANAGED=1`. See "How Research covers a topic" below. |
 
 There is deliberately no `AI_EMBEDDING_SDK` / `_API_KEY` / `_BASE_URL` trio.
 Pointing embeddings at a different endpoint than the language model is a rare
@@ -291,7 +292,7 @@ Seeded on the first boot and edited from **Settings** afterwards, in both modes.
 | `AI_TIMEOUT_SEC` | `60` | Extraction, chat, search and split-detection request timeout |
 | `WORKER_TIMEOUT_SEC` | `300` | Per-job processing timeout |
 | `WORKER_MAX_RETRIES` | `0` | Max step retry attempts before a job fails |
-| `DEEP_SEARCH_LANGUAGES` | empty | Comma-separated ISO 639-1 codes (e.g. `de,en,uk`) for Deep Search keyword expansion |
+| `DEEP_SEARCH_LANGUAGES` | empty | Comma-separated ISO 639-1 codes (e.g. `de,en,uk`) for Deep Search keyword expansion. Only drives per-language searches when no embedding model is set; with one, a single search already crosses languages |
 | `EXTRACTION_PROMPT_VERSION` | `v1` | Stored on each processing job step run; bookkeeping only, not offered in the Settings UI |
 
 Two more are seeded the same way but are **operator-owned under
@@ -542,7 +543,7 @@ Without an LLM provider, AI extraction, document chat, and Deep Search return a 
 Deep Search uses a tool-calling agent over the Bleve full-text index, in two modes, one per path under `/rag`:
 
 - **Search** (`/rag/search`) — one round of `search_documents`, answered from titles, summaries and short OCR snippets. Results are shown as document cards.
-- **Research** (`/rag/research`) — the agent searches, then reads the full text of the documents it finds (`read_documents`), and writes a markdown answer citing each document it used, with the documents it drew on listed under the answer. Progress streams over `POST /api/app/search/stream` (server-sent events), so each search and read appears as it happens.
+- **Research** (`/rag/research`) — the agent searches, reads the documents it finds (`read_documents`), surveys many at once when the question spans a topic (`survey_documents`), counts when asked how many (`count_documents`), and writes a markdown answer citing each document it used, with the documents it drew on listed under the answer. Progress streams over `POST /api/app/search/stream` (server-sent events), so each search, read, survey and count appears as it happens.
 
 ### How Deep Search finds documents
 
@@ -571,8 +572,16 @@ over the passages of exactly the documents being returned, narrowed to the
 sentence around the match. Without a chunk index they are cut from the OCR text
 around the query's terms instead, and failing that from the index's own
 highlight — the model always gets verbatim text, whatever the retrieval was. A
-focused read (`read_documents` with `focus`) ranks that document's passages the
-same way before excerpting it.
+read of a long document is always an excerpt: its head plus the passages ranked
+the same way against the read's `focus`, or against the user's question when the
+model named none. The whole text of a long document is never handed to the
+research model.
+
+With an embedding model set, the prompt tells the model that one search already
+crosses languages and not to repeat a search translated into another one; the
+`DEEP_SEARCH_LANGUAGES` list is then only a hint for spelling exact terms.
+Without one, the model is asked to search once per configured language, since
+translation is the only thing carrying an English question to a German invoice.
 
 Filters — a tag, a type, a correspondent, a date range — are properties of a
 document, and the chunk index deliberately carries none of them, so that
@@ -590,11 +599,54 @@ document.
 
 Research has no round or document limit. It keeps searching and reading until it can answer, the model stops making progress, or a completion is rejected because the conversation exceeded the model's context window.
 
+### How Research covers a topic
+
+Reading documents one call at a time is right for a needle question and wrong
+for a topic: two hundred documents read into one conversation is two hundred
+documents re-sent on every later round. Three things keep a broad question
+affordable.
+
+- **Distilled reads.** When a `read_documents` call would put more than about
+  32 KB of text, or more than five documents, into the conversation, the
+  documents are read by the **Deep Search helper** model instead. The research
+  model gets, per document, notes on what it says about the focus, verbatim
+  quotes to cite, and any requested values — never the text. Smaller reads pass
+  through as excerpts, because on a needle question the exact wording is the
+  point. The helper is shown each document whole, up to 400 KB, and several
+  short documents share one call.
+- **`survey_documents`.** For "everything about X" or "the total of Y over the
+  year": the same retrieval as a search, kept to 300 documents by default and
+  1000 at most, every document read by the helper for one question, one compact
+  row back per document. Number fields (`fields: [{name, type: "number"}]`) are
+  summed, averaged and bounded on the server, per currency, and the model is
+  told to report those figures rather than add rows itself. Progress streams as
+  "Surveyed 120 of 300 documents".
+- **`count_documents`.** For "how many" and "how are they distributed": filters
+  alone are answered by the database (`COUNT(*)`, optionally `GROUP BY` type,
+  correspondent, year, month or tag); with query text the index reports the
+  exact strict-match total, and a grouped breakdown takes the index's ids to the
+  database (marked approximate past 5000 matches). A filter naming a type,
+  correspondent or tag that does not exist counts zero and says which name did
+  not resolve, rather than matching everything.
+
+The helper is a separate binding (`AI_SEARCH_HELPER_MODEL`, or **Deep Search
+helper** in Settings) because this work is many cheap calls where the research
+loop is a few expensive ones; unset, it falls back to the Search model and the
+same features run at the Search model's price. Helpers that reject JSON mode
+are retried in plain text and parsed leniently. Every completion logs its token
+usage (`ai completion usage prompt_tokens=… cached_tokens=… completion_tokens=…`)
+and a research run logs its total, which is where to look when checking what a
+question cost.
+
+Models that emit tool calls in their content rather than natively (the DSML
+path) are told to answer after one round of tool results, so they cannot chain a
+count into a survey into a read; they get one tool round and the answer.
+
 Each mode is its own path — `/rag/search` and `/rag/research` — so the mode is carried by the URL and survives a reload, the back button, a bookmark and a shared link. They share the `/rag` parent, which is what lets one navigation entry cover both; `/rag` on its own redirects to Search.
 
 The mode can only be chosen before a chat has a turn. A transcript is a sequence: its answers were produced by one mode, and the next turn replays them to the model as its own prior work, so switching underneath would answer a later question in a way the earlier ones do not support. Once a chat exists the switch shows which mode it is in and stops being a link — starting a new chat is the way to the other one. The server enforces this too: a turn sent under a mode the chat is not in is a 409, and opening `/rag/search/<research-chat>` redirects to the path that matches. A saved chat reopens on the path matching the mode it ran in.
 
-Configure **Search provider/model** and **Deep search languages** in Settings.
+Configure **Search provider/model**, **Deep Search helper** and **Deep search languages** in Settings.
 
 ## Chat sessions
 

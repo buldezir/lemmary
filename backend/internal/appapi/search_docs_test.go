@@ -67,7 +67,7 @@ func TestReadUserDocumentsRefusesAnotherOwnersDocument(t *testing.T) {
 		"tsomeone": readableDocument("tsomeone", "someone-else", "Their lease", "rent is 700 EUR"),
 	}}
 
-	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"mine", "tsomeone", "missing"}}, nil)
+	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"mine", "tsomeone", "missing"}}, nil, focusExcerptBytes)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestReadUserDocumentsRefusesAnotherOwnersDocument(t *testing.T) {
 	}
 
 	// A superuser (empty userID) reaches both, matching the search path.
-	asSuper, err := readUserDocuments(app, "", ai.ReadRequest{IDs: []string{"mine", "tsomeone"}}, nil)
+	asSuper, err := readUserDocuments(app, "", ai.ReadRequest{IDs: []string{"mine", "tsomeone"}}, nil, focusExcerptBytes)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
@@ -88,14 +88,17 @@ func TestReadUserDocumentsRefusesAnotherOwnersDocument(t *testing.T) {
 	}
 }
 
-func TestReadUserDocumentsReturnsFullText(t *testing.T) {
+// TestReadUserDocumentsReturnsFullTextUnderTheCap: the excerpt size is the
+// only thing that shortens a read. Under it the text comes back whole, and
+// the cap is the caller's -- the helper's generous one here -- not a guess.
+func TestReadUserDocumentsReturnsFullTextUnderTheCap(t *testing.T) {
 	long := strings.Repeat("x", 50000)
 	app := stubDocuments{recs: map[string]*core.Record{
 		"a": readableDocument("a", "me", "A", long),
 		"b": readableDocument("b", "me", "B", long),
 	}}
 
-	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a", "b"}}, nil)
+	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a", "b"}}, nil, helperInputBytes)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
@@ -107,14 +110,35 @@ func TestReadUserDocumentsReturnsFullText(t *testing.T) {
 			t.Fatalf("%s was shortened: got %d bytes, want %d", doc.ID, len(doc.Text), len(long))
 		}
 		if doc.Excerpted {
-			t.Fatalf("%s was excerpted without a focus: %+v", doc.ID, doc)
+			t.Fatalf("%s was excerpted under the cap: %+v", doc.ID, doc)
 		}
 	}
 }
 
-// TestReadUserDocumentsReturnsMultibyteTextIntact is the same read over text
-// the ASCII one cannot catch: nothing slices the column any more, so nothing
-// can cut a rune in half either.
+// TestReadUserDocumentsNeverReturnsAWholeLongDocument: over the cap, a read
+// with neither focus nor question still comes back as an excerpt -- the head,
+// gap marked -- rather than the whole text. The whole of a long document is
+// the one thing the research model is never handed.
+func TestReadUserDocumentsNeverReturnsAWholeLongDocument(t *testing.T) {
+	long := strings.Repeat("x", 50000)
+	app := stubDocuments{recs: map[string]*core.Record{
+		"a": readableDocument("a", "me", "A", long),
+	}}
+
+	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}}, nil, focusExcerptBytes)
+	if err != nil {
+		t.Fatalf("readUserDocuments: %v", err)
+	}
+	if len(got) != 1 || !got[0].Excerpted || len(got[0].Text) > focusExcerptBytes {
+		t.Fatalf("a long unfocused read should be an excerpt within %d bytes, got %d excerpted=%v", focusExcerptBytes, len(got[0].Text), got[0].Excerpted)
+	}
+	if got[0].FocusUsed != "" {
+		t.Fatalf("no question was given, so none should be reported as used: %q", got[0].FocusUsed)
+	}
+}
+
+// TestReadUserDocumentsReturnsMultibyteTextIntact: neither the whole-text
+// path nor the excerpt path may cut a rune in half.
 func TestReadUserDocumentsReturnsMultibyteTextIntact(t *testing.T) {
 	// Two bytes per rune.
 	long := strings.Repeat("а", 50000)
@@ -122,20 +146,24 @@ func TestReadUserDocumentsReturnsMultibyteTextIntact(t *testing.T) {
 		"a": readableDocument("a", "me", "A", long),
 	}}
 
-	got, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}}, nil)
+	whole, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}}, nil, helperInputBytes)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
-	if len(got) != 1 || got[0].Text != long {
-		t.Fatalf("read %d bytes, want the whole %d", len(got[0].Text), len(long))
+	if len(whole) != 1 || whole[0].Text != long {
+		t.Fatalf("read %d bytes, want the whole %d", len(whole[0].Text), len(long))
 	}
-	if !utf8.ValidString(got[0].Text) {
-		t.Fatal("the text was cut mid-rune")
+	excerpt, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}}, nil, focusExcerptBytes)
+	if err != nil {
+		t.Fatalf("readUserDocuments: %v", err)
+	}
+	if !utf8.ValidString(excerpt[0].Text) {
+		t.Fatal("the excerpt was cut mid-rune")
 	}
 }
 
 func TestReadUserDocumentsNoIDsIsANoOp(t *testing.T) {
-	got, err := readUserDocuments(stubDocuments{}, "me", ai.ReadRequest{}, nil)
+	got, err := readUserDocuments(stubDocuments{}, "me", ai.ReadRequest{}, nil, focusExcerptBytes)
 	if err != nil || len(got) != 0 {
 		t.Fatalf("no ids should be a no-op, got %#v err=%v", got, err)
 	}
@@ -158,18 +186,27 @@ func TestReadUserDocumentsFocusReturnsRelevantExcerpts(t *testing.T) {
 	if len(full) <= focusExcerptBytes {
 		t.Fatalf("fixture of %d bytes fits one excerpt of %d", len(full), focusExcerptBytes)
 	}
-	plain, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}}, nil)
+	// No focus, but the user's question: the excerpt is chosen by it, and
+	// the document says which question chose it. The whole text is never
+	// returned for a document this long.
+	plain, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}, Question: "Wie hoch ist die Kaltmiete monatlich?"}, nil, focusExcerptBytes)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
-	if plain[0].Text != full {
-		t.Fatalf("an unfocused read returned %d bytes, want the whole %d", len(plain[0].Text), len(full))
+	if plain[0].Text == full || len(plain[0].Text) > focusExcerptBytes {
+		t.Fatalf("an unfocused read returned %d bytes of %d; want an excerpt", len(plain[0].Text), len(full))
+	}
+	if !plain[0].Excerpted || plain[0].FocusUsed != "Wie hoch ist die Kaltmiete monatlich?" {
+		t.Fatalf("an unfocused read should say the question chose its excerpt: %+v", plain[0])
+	}
+	if !strings.Contains(plain[0].Text, "1234 EUR") {
+		t.Fatalf("the question did not reach the figure:\n%s", plain[0].Text)
 	}
 
 	focused, err := readUserDocuments(app, "me", ai.ReadRequest{
 		IDs:   []string{"a"},
 		Focus: "Kaltmiete monatlich",
-	}, nil)
+	}, nil, focusExcerptBytes)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
@@ -202,7 +239,7 @@ func TestReadUserDocumentsFocusReturnsRelevantExcerpts(t *testing.T) {
 	short := stubDocuments{recs: map[string]*core.Record{
 		"s": readableDocument("s", "me", "S", "Kaltmiete 500 EUR"),
 	}}
-	got, err := readUserDocuments(short, "me", ai.ReadRequest{IDs: []string{"s"}, Focus: "Kaltmiete"}, nil)
+	got, err := readUserDocuments(short, "me", ai.ReadRequest{IDs: []string{"s"}, Focus: "Kaltmiete"}, nil, focusExcerptBytes)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
@@ -223,7 +260,7 @@ func TestReadUserDocumentsFocusKeepsOwnershipCheck(t *testing.T) {
 	got, err := readUserDocuments(app, "me", ai.ReadRequest{
 		IDs:   []string{"mine", "theirs"},
 		Focus: "Miete",
-	}, nil)
+	}, nil, focusExcerptBytes)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}
@@ -332,7 +369,7 @@ func TestReadUserDocumentsFocusHonoursRawOffsets(t *testing.T) {
 	got, err := readUserDocuments(app, "me", ai.ReadRequest{
 		IDs:   []string{"a"},
 		Focus: "Kaltmiete monatlich",
-	}, rank)
+	}, rank, focusExcerptBytes)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
 	}

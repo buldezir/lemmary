@@ -10,6 +10,13 @@ export type AppSettings = {
   search_provider_id: string
   search_model: string
   /**
+   * The Deep Search helper binding: the cheaper model that distils long reads
+   * into notes and surveys many documents for one question. Empty means the
+   * search model does that work itself.
+   */
+  search_helper_provider_id: string
+  search_helper_model: string
+  /**
    * The retrieval embedding binding. Empty means Deep Search runs on keywords
    * alone, which is what every install did before this existed.
    */

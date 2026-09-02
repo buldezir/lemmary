@@ -21,6 +21,35 @@ func TestApplyBindingFallbacksChainsExtractToChatToSearch(t *testing.T) {
 	if cfg.SearchProviderID != "provider-extract" || cfg.SearchModel != "extract-model" {
 		t.Fatalf("search should fall back through chat, got %q/%q", cfg.SearchProviderID, cfg.SearchModel)
 	}
+	if cfg.SearchHelperProviderID != "provider-extract" || cfg.SearchHelperModel != "extract-model" {
+		t.Fatalf("search helper should fall back through search, got %q/%q", cfg.SearchHelperProviderID, cfg.SearchHelperModel)
+	}
+}
+
+// The helper inherits the resolved search binding, not chat or extract, and an
+// explicit helper binding is kept.
+func TestApplyBindingFallbacksHelperFollowsSearch(t *testing.T) {
+	cfg := Config{
+		ExtractProviderID: "provider-extract",
+		ExtractModel:      "extract-model",
+		SearchProviderID:  "provider-search",
+		SearchModel:       "search-model",
+	}
+	applyBindingFallbacks(&cfg)
+	if cfg.SearchHelperProviderID != "provider-search" || cfg.SearchHelperModel != "search-model" {
+		t.Fatalf("helper should inherit search, got %q/%q", cfg.SearchHelperProviderID, cfg.SearchHelperModel)
+	}
+
+	explicit := Config{
+		ExtractProviderID:      "provider-extract",
+		ExtractModel:           "extract-model",
+		SearchHelperProviderID: "provider-helper",
+		SearchHelperModel:      "helper-model",
+	}
+	applyBindingFallbacks(&explicit)
+	if explicit.SearchHelperProviderID != "provider-helper" || explicit.SearchHelperModel != "helper-model" {
+		t.Fatalf("explicit helper binding was overwritten: %q/%q", explicit.SearchHelperProviderID, explicit.SearchHelperModel)
+	}
 }
 
 func TestApplyBindingFallbacksKeepsExplicitValues(t *testing.T) {

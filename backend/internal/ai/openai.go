@@ -80,7 +80,34 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 		extra...,
 	)
 	resp, err := client.Chat.Completions.New(ctx, params)
-	if err != nil && params.Temperature.Valid() && isUnsupportedTemperatureError(err) {
+	if err == nil {
+		logUsage(logger, string(params.Model), usageOf(resp), extra...)
+		return resp, nil
+	}
+	// JSON mode is a request, not a requirement: the callers that ask for it
+	// all parse leniently, so a provider that rejects response_format is
+	// asked again in plain text rather than treated as broken.
+	if params.ResponseFormat.OfJSONObject != nil && isUnsupportedResponseFormatError(err) {
+		logger.Warn("model rejected response_format; retrying without JSON mode",
+			"model", params.Model,
+			slog.Any("error", err),
+		)
+		params.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{}
+		aiprovider.LogRequest(
+			logger,
+			sdk,
+			http.MethodPost,
+			aiprovider.ChatCompletionsURL(baseURL),
+			string(params.Model),
+			append(extra, "retry", "omit_response_format")...,
+		)
+		resp, err = client.Chat.Completions.New(ctx, params)
+		if err == nil {
+			logUsage(logger, string(params.Model), usageOf(resp), extra...)
+			return resp, nil
+		}
+	}
+	if params.Temperature.Valid() && isUnsupportedTemperatureError(err) {
 		logger.Warn("model rejected temperature; retrying with API default",
 			"model", params.Model,
 			slog.Any("error", err),
@@ -94,21 +121,72 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 			string(params.Model),
 			append(extra, "retry", "omit_temperature")...,
 		)
-		return client.Chat.Completions.New(ctx, params)
+		resp, err = client.Chat.Completions.New(ctx, params)
+		if err == nil {
+			logUsage(logger, string(params.Model), usageOf(resp), extra...)
+		}
 	}
 	return resp, err
 }
 
+// Usage is what one completion cost in tokens. Cached counts the part of the
+// prompt the provider served from its prefix cache, when it reports one; it is
+// included in Prompt, not additional to it.
+type Usage struct {
+	Prompt     int
+	Completion int
+	Cached     int
+}
+
+// Add sums another completion into the total.
+func (u *Usage) Add(o Usage) {
+	u.Prompt += o.Prompt
+	u.Completion += o.Completion
+	u.Cached += o.Cached
+}
+
+func usageOf(resp *openai.ChatCompletion) Usage {
+	if resp == nil {
+		return Usage{}
+	}
+	return usageFrom(resp.Usage)
+}
+
+func usageFrom(u openai.CompletionUsage) Usage {
+	return Usage{
+		Prompt:     int(u.PromptTokens),
+		Completion: int(u.CompletionTokens),
+		Cached:     int(u.PromptTokensDetails.CachedTokens),
+	}
+}
+
+// logUsage records what a completion cost next to the request that made it.
+// Providers that report no usage produce a line of zeros, which is still
+// worth having: it says the provider is not telling us.
+func logUsage(logger *slog.Logger, model string, u Usage, extra ...any) {
+	args := []any{
+		"model", model,
+		"prompt_tokens", u.Prompt,
+		"cached_tokens", u.Cached,
+		"completion_tokens", u.Completion,
+	}
+	logger.Info("ai completion usage", append(args, extra...)...)
+}
+
 // completeStreaming streams a chat completion, handing each content delta to
-// onDelta as it arrives, and returns the accumulated text. Errors come back
-// with whatever text arrived before them, so the caller can choose between
-// keeping a partial answer and retrying without streaming.
+// onDelta as it arrives, and returns the accumulated text with what it cost.
+// Errors come back with whatever text arrived before them, so the caller can
+// choose between keeping a partial answer and retrying without streaming.
+//
+// Usage arrives in a final chunk with no choices, and only when asked for;
+// providers that do not implement stream_options simply never send it.
 func (c *OpenAIClient) completeStreaming(
 	ctx context.Context,
 	params openai.ChatCompletionNewParams,
 	onDelta func(string),
 	extra ...any,
-) (string, error) {
+) (string, Usage, error) {
+	params.StreamOptions = openai.ChatCompletionStreamOptionsParam{IncludeUsage: openai.Bool(true)}
 	aiprovider.LogRequest(
 		c.logger,
 		c.sdk,
@@ -122,8 +200,12 @@ func (c *OpenAIClient) completeStreaming(
 	defer stream.Close()
 
 	var b strings.Builder
+	var usage Usage
 	for stream.Next() {
 		chunk := stream.Current()
+		if chunk.Usage.PromptTokens > 0 || chunk.Usage.CompletionTokens > 0 {
+			usage = usageFrom(chunk.Usage)
+		}
 		if len(chunk.Choices) == 0 {
 			continue
 		}
@@ -136,7 +218,11 @@ func (c *OpenAIClient) completeStreaming(
 			onDelta(delta)
 		}
 	}
-	return b.String(), stream.Err()
+	err := stream.Err()
+	if err == nil {
+		logUsage(c.logger, string(params.Model), usage, append(extra, "stream", true)...)
+	}
+	return b.String(), usage, err
 }
 
 func (c *OpenAIClient) PromptVersion() string {

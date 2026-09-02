@@ -50,6 +50,8 @@ type FormState = {
   chat_model: string
   search_provider_id: string
   search_model: string
+  search_helper_provider_id: string
+  search_helper_model: string
   embedding_provider_id: string
   embedding_model: string
   ocr_timeout_sec: string
@@ -72,6 +74,8 @@ function formFromSettings(settings: AppSettings): FormState {
     chat_model: settings.chat_model,
     search_provider_id: settings.search_provider_id,
     search_model: settings.search_model,
+    search_helper_provider_id: settings.search_helper_provider_id,
+    search_helper_model: settings.search_helper_model,
     embedding_provider_id: settings.embedding_provider_id,
     embedding_model: settings.embedding_model,
     ocr_timeout_sec: String(settings.ocr_timeout_sec),
@@ -266,6 +270,8 @@ export function SettingsPage() {
               chat_model: form.chat_model,
               search_provider_id: form.search_provider_id,
               search_model: form.search_model,
+              search_helper_provider_id: form.search_helper_provider_id,
+              search_helper_model: form.search_helper_model,
               embedding_provider_id: form.embedding_provider_id,
               embedding_model: form.embedding_model,
               near_duplicate_detection_enabled: form.near_duplicate_detection_enabled,
@@ -492,6 +498,17 @@ export function SettingsPage() {
                 onModelChange={(value) => updateField('search_model', value)}
               />
               <ProviderModelFields
+                label="Deep Search helper"
+                help="Cheaper model Deep Search uses to read and extract from many documents at once: it turns long reads into notes and surveys whole topics one document at a time. Leave empty to have the Search model do this work itself."
+                providers={llmProviders}
+                providerId={form.search_helper_provider_id}
+                model={form.search_helper_model}
+                purpose="llm"
+                allowEmpty
+                onProviderChange={(id) => updateField('search_helper_provider_id', id)}
+                onModelChange={(value) => updateField('search_helper_model', value)}
+              />
+              <ProviderModelFields
                 label="Embeddings"
                 help="Lets Deep Search find documents by meaning as well as by keyword, which is what makes a question phrased in one language reach a document written in another. Leave the provider empty to search by keyword only."
                 providers={llmProviders}
@@ -574,8 +591,9 @@ export function SettingsPage() {
                 />
               </label>
               <p className={fieldHintClassName}>
-                Languages deep search translates keywords into, so a German invoice is found by an
-                English question. Leave empty to search only in the language of the question.
+                {form.embedding_model.trim() !== ''
+                  ? 'With an embedding model configured, one search already reaches documents in every language; this list is only used when Deep Search falls back to keyword search.'
+                  : 'Languages deep search translates keywords into, so a German invoice is found by an English question. Leave empty to search only in the language of the question.'}
               </p>
             </div>
           </div>
