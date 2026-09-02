@@ -41,9 +41,9 @@ env:
 # ["ubuntu-latest"] puts CI back on GitHub's runners while the homelab machine
 # is down, and unsetting it brings CI home again.
 #
-# A self-hosted runner needs Docker with buildx usable by the runner user, and
-# passwordless sudo for the apt steps below (see the runner-smoke workflow,
-# which checks the Docker half).
+# A self-hosted runner needs Docker with buildx usable by the runner user
+# (see the runner-smoke workflow). The test job runs verification inside
+# Docker; it does not install Go, Node, Playwright or poppler on the host.
 jobs:
   test:
     if: github.event_name == 'pull_request'
@@ -132,61 +132,6 @@ jobs:
           echo "::notice::Verification suite: lemmary-dev@$BRANCH"
           show
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.sum
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          # There is no package.json at the repository root for the action to
-          # read a packageManager field from, so the version is explicit here.
-          # Keep it in step with frontend/package.json and the Dockerfile.
-          version: 11.24.0
-
-      - name: Set up Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: "26"
-          # Must come after pnpm is installed: this step primes pnpm's store
-          # cache and needs the binary to locate it.
-          cache: pnpm
-          # Only the frontend lockfile. A fork pull request gets no dev/, and a
-          # cache path that matches nothing fails this step -- while the dev
-          # suite's single dependency is not worth caching anyway.
-          cache-dependency-path: frontend/pnpm-lock.yaml
-
-      - name: Install system dependencies
-        # A self-hosted runner keeps whatever the last run installed, so only
-        # reach for apt (and the sudo it needs) when poppler is actually
-        # missing. pdftoppm is what the preview step shells out to.
-        run: |
-          if command -v pdftoppm >/dev/null 2>&1; then
-            echo "poppler-utils already present: $(pdftoppm -v 2>&1 | head -1)"
-          else
-            sudo apt-get update && sudo apt-get install -y poppler-utils
-          fi
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: pnpm install --frozen-lockfile
-
-      - name: Install dev suite dependencies
-        if: steps.access.outputs.ok == 'true'
-        working-directory: dev
-        run: pnpm install --frozen-lockfile
-
-      - name: Install Playwright Chromium
-        if: steps.access.outputs.ok == 'true'
-        working-directory: dev
-        # --with-deps unconditionally: the browser download is cached on a
-        # persistent runner, and only the apt half repeats. Skipping it there
-        # would mean chromium's system libraries had to be provisioned by hand,
-        # which is a worse trade than a few seconds of a satisfied apt run.
-        run: pnpm exec playwright install --with-deps chromium
-
       - name: Run verification suite
         if: steps.access.outputs.ok == 'true'
         # The wrapper resolves the overlay (checked out at dev/ above, since
@@ -198,7 +143,7 @@ jobs:
       - name: Run unit tests only (private suite unavailable)
         if: steps.access.outputs.ok != 'true'
         run: |
-          echo "::warning::e2e suites skipped - the private dev repository is not reachable from a fork pull request. Go unit tests, go vet, frontend tests and the SPA build ran; API and browser e2e did not."
+          echo "::warning::e2e suites skipped - the private dev repository is not reachable from a fork pull request. Go unit tests, go vet, frontend tests and the SPA build ran in official images; API and browser e2e did not."
           # Finding no overlay, the wrapper runs the reduced set by itself:
           # Go unit tests, go vet, frontend tests, and the SPA build. That
           # build matters -- the build job is push-only, so without it a fork

@@ -20,6 +20,7 @@ The PR job uses the overlay branch named like the PR, else `main`. A mismatched 
 
 - `LEMMARY_DEV` overrides the path; `LEMMARY_NO_SYNC=1` skips attaching worktrees.
 - The sandbox may refuse git against the overlay (it sits outside this checkout). Ask before working around that.
+- Verification runs in Docker and bind-mounts this tree and the overlay. The daemon must be able to see both paths.
 
 ## Verification (required)
 
@@ -27,7 +28,7 @@ The PR job uses the overlay branch named like the PR, else `main`. A mismatched 
 ./scripts/test-all.sh
 ```
 
-That is the only command. With no overlay it runs Go tests, `go vet`, frontend tests and the SPA build, and prints what it skipped. Report that API and browser e2e did not run. Do not claim a task complete if any stage fails, or claim e2e that did not run.
+That is the only command. It locates the overlay and delegates; the overlay runs the suite in Docker. With no overlay it runs Go tests, `go vet`, frontend tests and the SPA build in official images, and prints what it skipped. Report that API and browser e2e did not run. Do not claim a task complete if any stage fails, or claim e2e that did not run.
 
 ## Tests
 
