@@ -76,15 +76,17 @@ func HeaderFor(app core.App, doc *core.Record) chunk.Header {
 		}
 	}
 	return chunk.Header{
-		Title:         strings.TrimSpace(doc.GetString("title")),
-		TitleOriginal: strings.TrimSpace(doc.GetString("title_original")),
-		Purpose:       strings.TrimSpace(doc.GetString("purpose")),
-		Summary:       strings.TrimSpace(doc.GetString("summary")),
-		DocumentType:  lookupName(app, "document_types", doc.GetString("document_type")),
-		Correspondent: lookupName(app, "correspondents", doc.GetString("correspondent")),
-		Date:          strings.TrimSpace(doc.GetString("document_date")),
-		Tags:          tags,
-		People:        models.PeopleOrOrganizations(doc),
+		Title:           strings.TrimSpace(doc.GetString("title")),
+		TitleOriginal:   strings.TrimSpace(doc.GetString("title_original")),
+		Purpose:         strings.TrimSpace(doc.GetString("purpose")),
+		PurposeOriginal: strings.TrimSpace(doc.GetString("purpose_original")),
+		Summary:         strings.TrimSpace(doc.GetString("summary")),
+		SummaryOriginal: strings.TrimSpace(doc.GetString("summary_original")),
+		DocumentType:    lookupName(app, "document_types", doc.GetString("document_type")),
+		Correspondent:   lookupName(app, "correspondents", doc.GetString("correspondent")),
+		Date:            strings.TrimSpace(doc.GetString("document_date")),
+		Tags:            tags,
+		People:          models.PeopleOrOrganizations(doc),
 	}
 }
 
@@ -125,10 +127,6 @@ func EmbedDocument(
 	}
 
 	ocrText := doc.GetString("ocr_text")
-	if strings.TrimSpace(ocrText) == "" {
-		return Result{Skipped: true}, nil
-	}
-
 	headerText := HeaderFor(app, doc).Text()
 	textHash := embedstore.TextHash(ocrText)
 	headerHash := embedstore.TextHash(headerText)
@@ -141,10 +139,14 @@ func EmbedDocument(
 		return Result{Skipped: true, Chunks: state.ChunkCount, Dims: state.Dims}, nil
 	}
 
+	if strings.TrimSpace(ocrText) == "" {
+		return markNothingToEmbed(app, doc, embedder, textHash, headerHash, logger)
+	}
+
 	pieces, truncated := chunk.Split(ocrText, chunk.DefaultOptions())
 	inputs, chunks := plan(doc, headerText, ocrText, pieces)
 	if len(inputs) == 0 {
-		return Result{Skipped: true}, nil
+		return markNothingToEmbed(app, doc, embedder, textHash, headerHash, logger)
 	}
 
 	embedded, err := embedder.Embed(ctx, inputs)
@@ -199,6 +201,53 @@ func EmbedDocument(
 		PromptTokens: embedded.PromptTokens,
 		Requests:     embedded.Requests,
 	}, nil
+}
+
+// markNothingToEmbed records that this exact text and metadata produced no
+// passages at all -- a scan that OCRed to whitespace, or a document whose every
+// chunk was blank.
+//
+// The row is the point. Without it the document has no state, so the backfill's
+// candidate query selects it again on the next tick and every tick after that,
+// paying for a record read and a chunker pass forever. Written with the current
+// model, dimensions and hashes, it reads as fresh until one of them changes --
+// which is exactly when the question is worth asking again.
+func markNothingToEmbed(
+	app core.App,
+	doc *core.Record,
+	embedder ai.Embedder,
+	textHash, headerHash string,
+	logger *slog.Logger,
+) (Result, error) {
+	state := emptyState(doc, embedder, textHash, headerHash)
+	err := app.RunInTransaction(func(txApp core.App) error {
+		return embedstore.Replace(txApp.DB(), state, nil)
+	})
+	if err != nil {
+		logger.Warn("recording an unembeddable document failed",
+			"document", doc.Id, slog.Any("error", err))
+		return Result{Skipped: true}, nil
+	}
+	// Replace dropped whatever a previous run stored, so the derived index has
+	// to drop it too.
+	embedstore.NotifyReplaced(app, doc.Id)
+	return Result{Skipped: true, Dims: state.Dims}, nil
+}
+
+// emptyState is the terminal row markNothingToEmbed writes. Separate because it
+// is the half worth testing: IsFresh has to accept it, or the loop it exists to
+// break comes straight back.
+func emptyState(doc *core.Record, embedder ai.Embedder, textHash, headerHash string) embedstore.State {
+	return embedstore.State{
+		DocumentID:     doc.Id,
+		UserID:         doc.GetString("user"),
+		Model:          embedder.Model(),
+		Dims:           embedder.Dims(),
+		ChunkerVersion: chunk.Version,
+		TextHash:       textHash,
+		HeaderHash:     headerHash,
+		Status:         embedstore.StatusOK,
+	}
 }
 
 // plan builds the inputs to embed and the rows to store, in one pass so their

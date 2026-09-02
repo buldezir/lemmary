@@ -233,15 +233,17 @@ func TestSplitNormalizesZeroOptions(t *testing.T) {
 func TestHeaderTextRendersLabelledMetadata(t *testing.T) {
 	t.Parallel()
 	h := Header{
-		Title:         "Stromrechnung Januar",
-		TitleOriginal: "Stromrechnung Januar",
-		Purpose:       "Monthly electricity bill",
-		Summary:       "128,40 EUR due on 3 February.",
-		DocumentType:  "Invoice",
-		Correspondent: "Stadtwerke",
-		Date:          "2026-01-31",
-		Tags:          []string{"utilities", " ", "electricity"},
-		People:        []string{"Anna Muster"},
+		Title:           "Stromrechnung Januar",
+		TitleOriginal:   "Stromrechnung Januar",
+		Purpose:         "Monthly electricity bill",
+		PurposeOriginal: "Monatliche Stromrechnung",
+		Summary:         "128,40 EUR due on 3 February.",
+		SummaryOriginal: "128,40 EUR fällig am 3. Februar.",
+		DocumentType:    "Invoice",
+		Correspondent:   "Stadtwerke",
+		Date:            "2026-01-31",
+		Tags:            []string{"utilities", " ", "electricity"},
+		People:          []string{"Anna Muster"},
 	}
 
 	text := h.Text()
@@ -254,6 +256,11 @@ func TestHeaderTextRendersLabelledMetadata(t *testing.T) {
 		"People or organizations: Anna Muster",
 		"Purpose: Monthly electricity bill",
 		"Summary: 128,40 EUR due on 3 February.",
+		// The pre-translation wording is embedded too: the archive is
+		// bilingual on both sides, and a question about "Stromrechnung" has to
+		// reach a document summarised in English.
+		"Original purpose: Monatliche Stromrechnung",
+		"Original summary: 128,40 EUR fällig am 3. Februar.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("header text is missing %q:\n%s", want, text)
@@ -263,6 +270,27 @@ func TestHeaderTextRendersLabelledMetadata(t *testing.T) {
 	// the same words twice.
 	if strings.Contains(text, "Original title") {
 		t.Fatalf("identical original title should not be repeated:\n%s", text)
+	}
+}
+
+// A monolingual document has the same words in both fields, and paying for them
+// twice would spend the header window on nothing.
+func TestHeaderTextSkipsOriginalsThatSayTheSameThing(t *testing.T) {
+	t.Parallel()
+	h := Header{
+		Title:           "Invoice",
+		TitleOriginal:   "invoice",
+		Purpose:         "Monthly electricity bill",
+		PurposeOriginal: "Monthly electricity bill",
+		Summary:         "128,40 EUR due.",
+		SummaryOriginal: " 128,40 EUR due. ",
+	}
+
+	text := h.Text()
+	for _, unwanted := range []string{"Original title", "Original purpose", "Original summary"} {
+		if strings.Contains(text, unwanted) {
+			t.Fatalf("%s was repeated for identical wording:\n%s", unwanted, text)
+		}
 	}
 }
 

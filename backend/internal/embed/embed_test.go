@@ -1,12 +1,15 @@
 package embed
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 
+	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/chunk"
 	"lemmary/backend/internal/embedstore"
 	"lemmary/backend/internal/models"
@@ -81,7 +84,9 @@ func headerTestDocument(t *testing.T, set func(*core.Record)) *core.Record {
 		&core.TextField{Name: "title", Max: 500},
 		&core.TextField{Name: "title_original", Max: 500},
 		&core.TextField{Name: "purpose", Max: 2000},
+		&core.TextField{Name: "purpose_original", Max: 2000},
 		&core.TextField{Name: "summary", Max: 5000},
+		&core.TextField{Name: "summary_original", Max: 5000},
 		&core.TextField{Name: "document_type", Max: 15},
 		&core.TextField{Name: "correspondent", Max: 15},
 		&core.TextField{Name: "document_date", Max: 30},
@@ -100,7 +105,9 @@ func TestHeaderForRendersTheDocumentsOwnFields(t *testing.T) {
 	doc := headerTestDocument(t, func(r *core.Record) {
 		r.Set("title", "Stromrechnung Januar")
 		r.Set("purpose", "Monthly electricity bill")
+		r.Set("purpose_original", "Monatliche Stromrechnung")
 		r.Set("summary", "128,40 EUR due on 3 February.")
+		r.Set("summary_original", "128,40 EUR fällig am 3. Februar.")
 		r.Set("document_date", "2026-01-31")
 		r.Set("people_or_organizations", []string{"Anna Muster"})
 	})
@@ -118,9 +125,22 @@ func TestHeaderForRendersTheDocumentsOwnFields(t *testing.T) {
 		t.Fatalf("unresolvable relations should be empty, got %+v", header)
 	}
 
+	// The bilingual pair the keyword index already carries has to reach the
+	// header passage too, or a question asked in the document's own language
+	// only ever matches its body.
+	if header.PurposeOriginal != "Monatliche Stromrechnung" || header.SummaryOriginal != "128,40 EUR fällig am 3. Februar." {
+		t.Fatalf("the original wording was dropped: %+v", header)
+	}
+
 	text := header.Text()
-	if !strings.Contains(text, "Title: Stromrechnung Januar") {
-		t.Fatalf("header text = %q", text)
+	for _, want := range []string{
+		"Title: Stromrechnung Januar",
+		"Original purpose: Monatliche Stromrechnung",
+		"Original summary: 128,40 EUR fällig am 3. Februar.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("header text is missing %q:\n%s", want, text)
+		}
 	}
 }
 
@@ -203,6 +223,50 @@ func TestPlanWithoutAHeaderStartsAtOrdinalZero(t *testing.T) {
 	}
 	if chunks[0].Kind != embedstore.KindBody || chunks[0].Ordinal != 0 {
 		t.Fatalf("chunk = %+v", chunks[0])
+	}
+}
+
+// stubEmbedder is a binding, not a client: the tests that use it never embed
+// anything, they only ask what model and length a row should record.
+type stubEmbedder struct {
+	model string
+	dims  int
+}
+
+func (s stubEmbedder) Name() string  { return "stub" }
+func (s stubEmbedder) Model() string { return s.model }
+func (s stubEmbedder) Dims() int     { return s.dims }
+func (s stubEmbedder) Embed(context.Context, []string) (ai.EmbedResult, error) {
+	return ai.EmbedResult{}, errors.New("stubEmbedder does not embed")
+}
+
+// A document that yields no passages -- a scan that OCRed to whitespace, a
+// header-less document whose every chunk was blank -- used to return Skipped
+// without writing anything, so the backfill selected it again on the next tick
+// and on every tick after that. The row it writes now has to read as fresh, or
+// the loop simply comes back.
+func TestEmptyStateStopsTheDocumentComingBack(t *testing.T) {
+	t.Parallel()
+	embedder := stubEmbedder{model: "text-embedding-3-small", dims: 1536}
+	doc := planTestDocument(t, "\n\n  \t\n")
+	textHash := embedstore.TextHash(doc.GetString("ocr_text"))
+	headerHash := embedstore.TextHash("")
+
+	state := emptyState(doc, embedder, textHash, headerHash)
+
+	if state.DocumentID != doc.Id || state.Status != embedstore.StatusOK || state.ChunkCount != 0 {
+		t.Fatalf("terminal row = %+v", state)
+	}
+	if !IsFresh(state, embedder.Model(), embedder.Dims(), textHash, headerHash) {
+		t.Fatalf("the terminal row does not read as fresh: %+v", state)
+	}
+	// It is terminal for this text only: re-OCR the document and it is a
+	// candidate again, which is the one moment asking again is worth anything.
+	if IsFresh(state, embedder.Model(), embedder.Dims(), embedstore.TextHash("real text now"), headerHash) {
+		t.Fatal("re-OCRed text should not be covered by the previous terminal row")
+	}
+	if IsFresh(state, "another-model", embedder.Dims(), textHash, headerHash) {
+		t.Fatal("a model switch should not be covered by the previous terminal row")
 	}
 }
 

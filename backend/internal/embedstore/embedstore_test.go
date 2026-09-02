@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/core"
 	_ "modernc.org/sqlite"
 )
 
@@ -358,6 +360,86 @@ func TestCandidatesIgnoresDimsBeforeTheFirstResponse(t *testing.T) {
 	}
 }
 
+// A scan that OCRed to a couple of newlines is not embeddable: the embedder
+// skips it without writing a row, so a predicate that only compared against the
+// empty string handed it back as a candidate on every tick for the life of the
+// archive.
+func TestCandidatesSkipsWhitespaceOnlyOCR(t *testing.T) {
+	t.Parallel()
+	db := openTestDB(t)
+	now := time.Now()
+
+	insertDocument(t, db, "doc-blank", "")
+	insertDocument(t, db, "doc-spaces", "   ")
+	insertDocument(t, db, "doc-newlines", "\n\n\t \r\n")
+	insertDocument(t, db, "doc-real", "an actual invoice")
+
+	got, err := Candidates(db, "m", 0, 1, 10, now)
+	if err != nil {
+		t.Fatalf("Candidates: %v", err)
+	}
+	if len(got) != 1 || got[0] != "doc-real" {
+		t.Fatalf("candidates = %v, want only doc-real", got)
+	}
+
+	// The same definition backs the progress bar, or the Settings page would
+	// count documents the queue will never reach.
+	stats, err := LoadStats(db, "m", 0, 1, now)
+	if err != nil {
+		t.Fatalf("LoadStats: %v", err)
+	}
+	if stats.Total != 1 {
+		t.Fatalf("total = %d, want 1 embeddable document", stats.Total)
+	}
+}
+
+// The predicate and Go's own idea of whitespace do not have to agree
+// character for character, so the embedder's terminal row is the second
+// guard: a document it could make nothing of stops being a candidate for
+// good, rather than costing a record read on every tick.
+func TestATerminalRowEndsTheCandidateLoop(t *testing.T) {
+	t.Parallel()
+	db := openTestDB(t)
+	now := time.Now()
+	const model = "text-embedding-3-small"
+
+	// A non-breaking space: not blank to SQLite's trim(), blank to the
+	// embedder, which is the mismatch that used to loop.
+	insertDocument(t, db, "doc1", " ")
+
+	first, err := Candidates(db, model, 4, 1, 10, now)
+	if err != nil {
+		t.Fatalf("Candidates: %v", err)
+	}
+	if len(first) != 1 || first[0] != "doc1" {
+		t.Fatalf("first tick = %v, want doc1", first)
+	}
+
+	// What the embedder writes when a document yields no passages at all:
+	// current model, current chunker, no chunks.
+	terminal := State{
+		DocumentID:     "doc1",
+		UserID:         "user1",
+		Model:          model,
+		Dims:           4,
+		ChunkerVersion: 1,
+		TextHash:       TextHash(" "),
+		HeaderHash:     TextHash(""),
+		Status:         StatusOK,
+	}
+	if err := Replace(db, terminal, nil); err != nil {
+		t.Fatalf("Replace: %v", err)
+	}
+
+	second, err := Candidates(db, model, 4, 1, 10, now)
+	if err != nil {
+		t.Fatalf("Candidates: %v", err)
+	}
+	if len(second) != 0 {
+		t.Fatalf("second tick = %v, want the document to stay out of the queue", second)
+	}
+}
+
 func TestCandidatesReturnsNothingWithoutAModel(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
@@ -424,18 +506,72 @@ func TestDeleteOrphansSweepsRowsWithNoDocument(t *testing.T) {
 		t.Fatalf("delete document: %v", err)
 	}
 
-	n, err := DeleteOrphans(db)
+	got, err := DeleteOrphans(db)
 	if err != nil {
 		t.Fatalf("DeleteOrphans: %v", err)
 	}
-	if n != 1 {
-		t.Fatalf("DeleteOrphans removed %d states, want 1", n)
+	if len(got) != 1 || got[0] != "gone" {
+		t.Fatalf("DeleteOrphans swept %v, want [gone]", got)
 	}
 	if chunks, err := Chunks(db, "gone"); err != nil || len(chunks) != 0 {
 		t.Fatalf("orphan chunks survived: %d (%v)", len(chunks), err)
 	}
 	if chunks, err := Chunks(db, "kept"); err != nil || len(chunks) != 3 {
 		t.Fatalf("live chunks were swept: %d (%v)", len(chunks), err)
+	}
+
+	// A second sweep has nothing to do and must not report work.
+	if got, err := DeleteOrphans(db); err != nil || len(got) != 0 {
+		t.Fatalf("second sweep = %v (%v), want nothing", got, err)
+	}
+}
+
+// recordingListener is the derived vector index as this package sees it.
+type recordingListener struct {
+	mu      sync.Mutex
+	deleted map[string]int
+}
+
+func (l *recordingListener) ChunksReplaced(core.App, string) {}
+
+func (l *recordingListener) ChunksDeleted(documentID string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.deleted == nil {
+		l.deleted = map[string]int{}
+	}
+	l.deleted[documentID]++
+}
+
+func (l *recordingListener) count(documentID string) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.deleted[documentID]
+}
+
+// The sweep deletes by SQL, which no hook sees. Without an explicit
+// notification the vectors stay in the Bleve chunk index and keep answering
+// searches for a document that is gone, until the next boot heals it.
+func TestDeleteOrphansNotifiesTheIndex(t *testing.T) {
+	// Not parallel: the listener is process-wide.
+	db := openTestDB(t)
+	insertDocument(t, db, "orphan-notify", "text")
+	if err := Replace(db, sampleState("orphan-notify"), sampleChunks("orphan-notify")); err != nil {
+		t.Fatalf("Replace: %v", err)
+	}
+	if _, err := db.Delete("documents", dbx.HashExp{"id": "orphan-notify"}).Execute(); err != nil {
+		t.Fatalf("delete document: %v", err)
+	}
+
+	listener := &recordingListener{}
+	SetListener(listener)
+	t.Cleanup(func() { SetListener(nil) })
+
+	if _, err := DeleteOrphans(db); err != nil {
+		t.Fatalf("DeleteOrphans: %v", err)
+	}
+	if got := listener.count("orphan-notify"); got != 1 {
+		t.Fatalf("the index was told %d times about the orphan, want 1", got)
 	}
 }
 

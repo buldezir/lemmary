@@ -19,16 +19,23 @@ const HeaderMaxRunes = 2000
 // electricity contract" matches a summary and a tag long before it matches the
 // wording on the page. Embedding the metadata as its own passage is what lets a
 // document be found by what it is, not only by what it says.
+// The *Original fields carry the pre-translation wording. They are embedded
+// beside the translated ones, and only when they differ, because the archive is
+// bilingual on both sides: a document written in German is stored with an
+// English summary, and the question about it can arrive in either language.
+// This is the same pairing the keyword index already carries.
 type Header struct {
-	Title         string
-	TitleOriginal string
-	Purpose       string
-	Summary       string
-	DocumentType  string
-	Correspondent string
-	Date          string
-	Tags          []string
-	People        []string
+	Title           string
+	TitleOriginal   string
+	Purpose         string
+	PurposeOriginal string
+	Summary         string
+	SummaryOriginal string
+	DocumentType    string
+	Correspondent   string
+	Date            string
+	Tags            []string
+	People          []string
 }
 
 // Text renders the header, or "" when there is no metadata worth embedding.
@@ -50,17 +57,26 @@ func (h Header) Text() string {
 		b.WriteString(value)
 	}
 
-	write("Title", h.Title)
-	if !strings.EqualFold(strings.TrimSpace(h.TitleOriginal), strings.TrimSpace(h.Title)) {
-		write("Original title", h.TitleOriginal)
+	// The original wording is written only when it differs from the translation,
+	// so a monolingual archive does not spend half its header window saying
+	// everything twice.
+	writeOriginal := func(label, original, translated string) {
+		if !strings.EqualFold(strings.TrimSpace(original), strings.TrimSpace(translated)) {
+			write(label, original)
+		}
 	}
+
+	write("Title", h.Title)
+	writeOriginal("Original title", h.TitleOriginal, h.Title)
 	write("Type", h.DocumentType)
 	write("Correspondent", h.Correspondent)
 	write("Date", h.Date)
 	write("Tags", joinList(h.Tags))
 	write("People or organizations", joinList(h.People))
 	write("Purpose", h.Purpose)
+	writeOriginal("Original purpose", h.PurposeOriginal, h.Purpose)
 	write("Summary", h.Summary)
+	writeOriginal("Original summary", h.SummaryOriginal, h.Summary)
 
 	return strutil.TruncateRunes(b.String(), HeaderMaxRunes)
 }

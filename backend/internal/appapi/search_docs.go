@@ -631,7 +631,15 @@ func readUserDocuments(app documentLookup, userID string, req ai.ReadRequest, ra
 			continue
 		}
 
-		full := strings.TrimSpace(record.GetString("ocr_text"))
+		// The raw column, never a trimmed copy. Every byte offset in the
+		// system -- a stored chunk's StartByte/EndByte, the next_offset a
+		// continued read is asked to resume from, the windows an excerpt is
+		// assembled out of -- is measured from byte 0 of documents.ocr_text as
+		// it is stored. Trimming here would shift all of them by the length of
+		// the leading whitespace, so a focused read would quote a passage a few
+		// characters off the one that was embedded. Leading and trailing
+		// whitespace is the reader's to skip, not to renumber.
+		full := record.GetString("ocr_text")
 		// Bytes, not runes: MaxTotalChars comes from the research loop's
 		// budget, which counts len() everywhere. Truncating to `limit` *runes*
 		// hands back up to four times that many bytes — for Cyrillic or Greek

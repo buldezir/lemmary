@@ -11,6 +11,7 @@ import (
 	"github.com/blevesearch/bleve/v2/mapping"
 	index "github.com/blevesearch/bleve_index_api"
 
+	"lemmary/backend/internal/chunk"
 	"lemmary/backend/internal/strutil"
 )
 
@@ -18,12 +19,17 @@ import (
 // MappingVersion. It is only the first field of the version file: the model and
 // its dimensions are part of the same string, because a vector field's length
 // is fixed at mapping time and vectors of another length are dropped silently.
-const ChunkMappingVersion = "1"
+const ChunkMappingVersion = "2"
 
 // Chunk index fields. They are deliberately few: the chunk index answers
 // "which passage, of whose document" and nothing else. Everything a result
-// needs beyond that is read from SQLite by document id, so a tag rename never
-// has to rewrite a vector.
+// needs beyond that -- the title, the tags, the correspondent -- is read from
+// SQLite by document id, so a rename never has to touch a body chunk.
+//
+// The header chunk is the exception, and it is not one this mapping can help
+// with: it embeds the resolved names, so renaming a tag dates its *vector* and
+// the document has to be re-embedded (embedstore's entity hooks mark it stale).
+// What the mapping buys is that every other passage is left alone.
 const (
 	FieldChunkDocumentID = "document_id"
 	FieldChunkUser       = "user"
@@ -35,10 +41,14 @@ const (
 	FieldChunkVector     = "vector"
 )
 
-// maxChunkTextRunes caps the copy of a passage the index stores. A chunk is
-// ~1400 runes by construction, so this only bites on a header chunk that
-// rendered a lot of metadata, and it bounds what one hit can cost.
-const maxChunkTextRunes = 1200
+// maxChunkTextRunes caps the copy of a passage the index stores.
+//
+// Derived from the chunker's own ceilings rather than guessed at: the stored
+// copy is what retrieval quotes (it is preferred over re-slicing the column),
+// so a cap below either ceiling would silently truncate real passages -- the
+// tail of every full-size body chunk, and most of a header that rendered a
+// summary. It is a ceiling, not a target: an average chunk is well under it.
+var maxChunkTextRunes = max(chunk.DefaultOptions().MaxRunes, chunk.HeaderMaxRunes)
 
 // VectorSpec is the embedding binding the chunk index is built for: vectors of
 // one length, produced by one model. Both halves matter — two models with the

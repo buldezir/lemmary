@@ -11,9 +11,11 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/pocketbase/pocketbase/core"
 
+	"lemmary/backend/internal/chunk"
 	"lemmary/backend/internal/retrieval"
 )
 
@@ -245,6 +247,40 @@ func TestChunkSearchReturnsStoredFields(t *testing.T) {
 	// would mean the passage layer is ranking on something else entirely.
 	if got.Score < 0 || got.Score > 1.0001 {
 		t.Fatalf("cosine score out of range: %v", got.Score)
+	}
+}
+
+// The stored copy is what retrieval quotes -- it is preferred over re-slicing
+// the OCR column -- so the cap has to clear both of the chunker's ceilings. A
+// cap below them silently ate the tail of every full-size body chunk and most
+// of a header that rendered a summary, and nothing anywhere said so.
+func TestChunkTextSurvivesAFullSizeChunkAndHeader(t *testing.T) {
+	body := strings.Repeat("ä", chunk.DefaultOptions().MaxRunes)
+	header := strings.Repeat("ö", chunk.HeaderMaxRunes)
+	src := &fakeChunkSource{spec: testChunkSpec(), chunks: []Chunk{
+		chunkOf("doc1", "u1", 0, 0, header),
+		chunkOf("doc1", "u1", 1, 1, body),
+	}}
+	idx := testChunkIndex(t, src)
+	mustRebuildChunks(t, idx)
+
+	for _, tc := range []struct {
+		name string
+		axis int
+		want string
+	}{
+		{"header", 0, header},
+		{"body", 1, body},
+	} {
+		hits := searchChunks(t, idx, retrieval.ChunkQuery{Vector: unit(4, tc.axis), UserID: "u1", K: 5})
+		if len(hits) == 0 || hits[0].Text != tc.want {
+			got := ""
+			if len(hits) > 0 {
+				got = hits[0].Text
+			}
+			t.Fatalf("the %s chunk came back %d runes, want %d",
+				tc.name, utf8.RuneCountInString(got), utf8.RuneCountInString(tc.want))
+		}
 	}
 }
 

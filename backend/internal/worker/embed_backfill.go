@@ -103,10 +103,10 @@ func (b *backfiller) tick() {
 	// Swept every tick rather than only on delete, so rows left behind by a
 	// deletion that happened while the feature was off, or by a restored
 	// backup, do not sit in the index forever.
-	if n, err := embedstore.DeleteOrphans(b.app.DB()); err != nil {
+	if swept, err := embedstore.DeleteOrphans(b.app.DB()); err != nil {
 		logger.Warn("orphan sweep failed", slog.Any("error", err))
-	} else if n > 0 {
-		logger.Info("removed embeddings for deleted documents", "documents", n)
+	} else if len(swept) > 0 {
+		logger.Info("removed embeddings for deleted documents", "documents", len(swept))
 	}
 
 	model := snap.Embedder.Model()

@@ -1,6 +1,7 @@
 package appapi
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -8,6 +9,8 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/chunk"
+	"lemmary/backend/internal/retrieval"
 	"lemmary/backend/internal/strutil"
 )
 
@@ -164,11 +167,12 @@ func TestReadUserDocumentsRejectsAnEmptyBudget(t *testing.T) {
 // the budget, so anything past the first few pages could not be read at all.
 // Successive reads at next_offset must reassemble the document byte for byte.
 func TestReadUserDocumentsOffsetContinuation(t *testing.T) {
-	// Two bytes per rune, so an offset that is not aligned is a real risk.
-	// Trimmed, because the reader trims: offsets are into the text it returns,
-	// and a test that measured the untrimmed original would be off by one from
-	// the first read onwards.
-	full := strings.TrimSpace(strings.Repeat("Договір оренди квартири. ", 400))
+	// Two bytes per rune, so an offset that is not aligned is a real risk. The
+	// leading whitespace is the point: offsets are into the raw column, so a
+	// reader that trimmed first would hand back next_offset values that are off
+	// by the length of that prefix -- and a stored chunk's StartByte, measured
+	// on the raw text, would point a few characters into the wrong passage.
+	full := "\n\n  " + strings.Repeat("Договір оренди квартири. ", 400)
 	app := stubDocuments{recs: map[string]*core.Record{
 		"a": readableDocument("a", "me", "A", full),
 	}}
@@ -371,5 +375,70 @@ func TestFragmentChunksRankAndNeverCollideWithRealChunks(t *testing.T) {
 		if hit.DocumentID != "doc1" {
 			t.Fatalf("document id was not carried: %+v", hit)
 		}
+	}
+}
+
+// TestReadUserDocumentsFocusHonoursRawOffsets pins the one coordinate system
+// every offset in the feature is measured in: byte 0 of documents.ocr_text as
+// it is stored. Stored chunk boundaries come from chunk.Split over the raw
+// column, so a reader that trimmed the text before slicing would quote a
+// passage shifted by the length of the leading whitespace -- a few characters
+// off the passage whose vector actually matched.
+func TestReadUserDocumentsFocusHonoursRawOffsets(t *testing.T) {
+	const needle = "Die monatliche Kaltmiete beträgt 1234 EUR."
+	filler := strings.Repeat("Allgemeine Vertragsbedingungen ohne Zahlen. ", 200)
+	// Leading whitespace, as a scan with a blank first line produces.
+	full := "\n\n  Mietvertrag Kopf.\n\n" + filler + "\n\n" + needle + "\n\n" + filler + "\n\nUnterschrift des Vermieters.\n"
+	app := stubDocuments{recs: map[string]*core.Record{
+		"a": readableDocument("a", "me", "Mietvertrag", full),
+	}}
+
+	// The windows the ranker points at are real stored chunks: cut by the same
+	// chunker the embedder runs, over the same raw text it stores offsets into.
+	pieces, _ := chunk.Split(full, chunk.DefaultOptions())
+	at := strings.Index(full, needle)
+	want := ""
+	var windows []retrieval.Window
+	var ranked []retrieval.Ranked
+	for i, piece := range pieces {
+		windows = append(windows, retrieval.Window{Ord: i, StartByte: piece.Start, EndByte: piece.End})
+		// Best first, the way a chunk search returns its hits: the passage the
+		// focus is about, then whatever else the chunker cut.
+		if want == "" && piece.Start <= at && at+len(needle) <= piece.End {
+			want = full[piece.Start:piece.End]
+			ranked = append([]retrieval.Ranked{{ID: strconv.Itoa(i), Score: 1}}, ranked...)
+			continue
+		}
+		ranked = append(ranked, retrieval.Ranked{ID: strconv.Itoa(i), Score: 0.1})
+	}
+	if want == "" {
+		t.Fatal("the fixture has no single chunk holding the whole passage")
+	}
+	rank := func(string, string, string) ([]retrieval.Window, []retrieval.Ranked) {
+		return windows, ranked
+	}
+
+	got, err := readUserDocuments(app, "me", ai.ReadRequest{
+		IDs:           []string{"a"},
+		Focus:         "Kaltmiete monatlich",
+		MaxTotalChars: 4000,
+	}, rank)
+	if err != nil {
+		t.Fatalf("readUserDocuments: %v", err)
+	}
+	doc := got[0]
+	if !doc.Excerpted {
+		t.Fatalf("an assembled read should say it is excerpted: %+v", doc)
+	}
+	if !strings.Contains(doc.Text, want) {
+		t.Fatalf("the excerpt does not quote the chunk the ranking chose.\nwant a slice containing:\n%q\ngot:\n%s", want, doc.Text)
+	}
+	if !strings.Contains(doc.Text, needle) {
+		t.Fatalf("the passage the focus named is missing:\n%s", doc.Text)
+	}
+	// TotalChars counts the same bytes the offsets are measured in, or the
+	// model cannot tell how far a next_offset it was handed still has to go.
+	if doc.TotalChars != len(full) {
+		t.Fatalf("total_chars = %d, want %d (the raw column)", doc.TotalChars, len(full))
 	}
 }

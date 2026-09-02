@@ -325,6 +325,16 @@ func CountChunks(db dbx.Builder, model string, dims int) (int, error) {
 	return n, nil
 }
 
+// hasOCRText is "this document has something to embed".
+//
+// Whitespace-only OCR has to read as empty here, not merely as short: the
+// embedder skips such a document without writing a row, so a bare comparison
+// against the empty string made it a candidate again on every tick, forever.
+// The character class is spelled out because SQLite string literals have no
+// escape sequences: a backslash-t written there is a backslash and a letter t,
+// and would trim words rather than whitespace.
+const hasOCRText = "trim(d.ocr_text, '" + " \t\r\n\v\f" + "') <> ''"
+
 // candidateWhere is the definition of "this document needs embedding", shared
 // by Candidates and Stats so the queue length and the queue cannot disagree.
 //
@@ -337,7 +347,7 @@ func CountChunks(db dbx.Builder, model string, dims int) (int, error) {
 // changed retry immediately and keep failing, defeating the backoff at the one
 // moment it matters.
 const candidateWhere = `
-	d.duplicate_of = '' AND d.ocr_text <> ''
+	d.duplicate_of = '' AND ` + hasOCRText + `
 	AND d.processing_status NOT IN ('pending', 'processing')
 	AND (
 		e.document_id IS NULL
@@ -380,25 +390,46 @@ func candidateParams(model string, dims, chunkerVersion int, now time.Time, limi
 	}
 }
 
-// DeleteOrphans removes rows whose document is gone.
+// DeleteOrphans removes rows whose document is gone and returns the ids it
+// swept.
 //
 // The record hook already deletes on the way out, so this is the repair path
 // for everything that bypasses it: a document deleted while the feature was
 // off, a restored backup, a cascade the hook missed because the process died
 // between the two writes.
-func DeleteOrphans(db dbx.Builder) (int, error) {
-	total := 0
+//
+// The ids are collected before the delete rather than counted after it, because
+// the listener has to be told: a plain `DELETE ... NOT IN` empties the tables
+// but leaves the vectors sitting in the derived Bleve index, where they keep
+// answering searches for a document that no longer exists until the next boot
+// heals it.
+func DeleteOrphans(db dbx.Builder) ([]string, error) {
+	var ids []string
+	query := `SELECT document_id FROM ` + tableEmbeddings + `
+			WHERE document_id NOT IN (SELECT id FROM documents)
+		UNION
+		SELECT document_id FROM ` + tableChunks + `
+			WHERE document_id NOT IN (SELECT id FROM documents)`
+	if err := db.NewQuery(query).Column(&ids); err != nil {
+		return nil, fmt.Errorf("embedstore: find orphans: %w", err)
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
 	for _, table := range []string{tableChunks, tableEmbeddings} {
-		res, err := db.NewQuery(`DELETE FROM ` + table + `
-			WHERE document_id NOT IN (SELECT id FROM documents)`).Execute()
-		if err != nil {
-			return total, fmt.Errorf("embedstore: delete orphans from %s: %w", table, err)
-		}
-		if n, err := res.RowsAffected(); err == nil && table == tableEmbeddings {
-			total = int(n)
+		if _, err := db.NewQuery(`DELETE FROM ` + table + `
+			WHERE document_id NOT IN (SELECT id FROM documents)`).Execute(); err != nil {
+			return nil, fmt.Errorf("embedstore: delete orphans from %s: %w", table, err)
 		}
 	}
-	return total, nil
+
+	// After the delete, like every other notification here: a listener that
+	// reads the rows back must never see them half gone.
+	for _, id := range ids {
+		NotifyDeleted(id)
+	}
+	return ids, nil
 }
 
 // LoadStats counts the backlog for the Settings page. Total is the documents that
@@ -416,7 +447,7 @@ func LoadStats(db dbx.Builder, model string, dims, chunkerVersion int, now time.
 		bind  dbx.Params
 	}{
 		{&out.Total, `SELECT COUNT(*) FROM documents d
-			WHERE d.duplicate_of = '' AND d.ocr_text <> ''
+			WHERE d.duplicate_of = '' AND ` + hasOCRText + `
 			AND d.processing_status NOT IN ('pending', 'processing')`, nil},
 		{&out.Embedded, `SELECT COUNT(*) FROM ` + tableEmbeddings + `
 			WHERE status = {:ok} AND stale = 0 AND model = {:model}
