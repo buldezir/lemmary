@@ -257,7 +257,7 @@ function PasskeysSection() {
 
 export function AccountPage() {
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6">
+    <div className="mx-auto flex max-w-3xl flex-col gap-5">
       <div>
         <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">Account</h1>
         <p className="mt-1 text-sm text-ink-soft">How you sign in to this archive.</p>

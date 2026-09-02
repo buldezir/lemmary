@@ -8,9 +8,9 @@ export const labelTextClassName =
   'text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-soft'
 /** Small explanation shown under a form field. */
 export const fieldHintClassName = 'text-xs text-ink-soft'
-export const sectionClassName = 'border border-line bg-surface p-6'
+export const sectionClassName = 'border border-line bg-surface p-5'
 export const sectionTitleClassName =
-  'mb-4 border-b border-line pb-2 font-display text-lg font-semibold text-ink'
+  'mb-3 border-b border-line pb-2 font-display text-lg font-semibold text-ink'
 
 const buttonVariantClassName = {
   primary: 'bg-ink text-paper hover:bg-oxblood',

@@ -134,7 +134,7 @@ export function ImportArchivePage() {
   }
 
   return (
-    <section className="flex flex-col gap-6">
+    <section className="flex flex-col gap-5">
       <div>
         <h2 className="font-display text-xl font-semibold text-ink">Restore a Lemmary archive</h2>
         <p className="mt-1 text-sm text-ink-soft">

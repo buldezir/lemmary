@@ -262,7 +262,7 @@ export function UploadFilesPage() {
         : `${files.length} files selected`
 
   return (
-    <section className="flex flex-col gap-6">
+    <section className="flex flex-col gap-5">
       <div>
         <h2 className="font-display text-xl font-semibold text-ink">Upload documents</h2>
         <p className="text-sm text-ink-soft">Supported formats: {SUPPORTED_FORMATS_LABEL}.</p>

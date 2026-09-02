@@ -63,7 +63,7 @@ export function DocumentCard({ document, selectable, selected, onToggleSelect }:
   return (
     <article
       data-document-id={document.id}
-      className={`relative flex flex-col gap-3 border bg-surface p-5 transition-colors hover:border-ink/50 hover:bg-bright hover:shadow-sm hover:shadow-ink/10 ${
+      className={`relative flex flex-col border bg-surface p-4 transition-colors hover:border-ink/50 hover:bg-bright hover:shadow-sm hover:shadow-ink/10 ${
         selected ? 'border-oxblood ring-1 ring-oxblood' : 'border-line'
       }`}
     >
@@ -73,7 +73,7 @@ export function DocumentCard({ document, selectable, selected, onToggleSelect }:
         aria-label={title}
         className="absolute inset-0 z-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood"
       />
-      <div className="pointer-events-none relative flex flex-col gap-3">
+      <div className="pointer-events-none relative flex flex-col gap-2.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             {/* Sits above the full-bleed link so ticking it does not navigate. */}
@@ -97,7 +97,7 @@ export function DocumentCard({ document, selectable, selected, onToggleSelect }:
           )}
         </div>
 
-        <div className="border-t border-line pt-3">
+        <div className="border-t border-line pt-2.5">
           <h3 className="font-display text-lg font-semibold leading-snug text-ink">{title}</h3>
           <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-soft">
             {[documentType || 'Unknown type', correspondent].filter(Boolean).join(' · ')}

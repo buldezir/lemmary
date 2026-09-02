@@ -141,7 +141,7 @@ export function OCRTestPage() {
   }
 
   return (
-    <section className="mx-auto flex max-w-3xl flex-col gap-6">
+    <section className="mx-auto flex max-w-3xl flex-col gap-5">
       <div>
         <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">OCR test</h2>
         <p className="text-sm text-ink-soft">

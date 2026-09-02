@@ -261,7 +261,7 @@ export function IndexPage() {
   }
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-3">
       <div className="flex items-end justify-between gap-4">
         <div>
           <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">Documents</h2>
@@ -284,7 +284,7 @@ export function IndexPage() {
           onToggleExpanded={() => setShowTimeline((shown) => !shown)}
           className={
             showTimeline
-              ? 'order-last lg:order-first lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)] lg:w-44 lg:shrink-0 lg:overflow-y-auto'
+              ? 'order-last lg:order-first lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:w-44 lg:shrink-0 lg:overflow-y-auto'
               : // Collapsed it is a rule down the side of the grid, so it wants the
                 // row's height rather than a sticky box of its own.
                 'order-last h-4 lg:order-first lg:h-auto lg:w-4 lg:shrink-0 lg:self-stretch'
@@ -292,7 +292,7 @@ export function IndexPage() {
         />
 
         {/* min-w-0 so the card grid can shrink instead of pushing the sidebar. */}
-        <div className="flex min-w-0 flex-1 flex-col gap-6">
+        <div className="flex min-w-0 flex-1 flex-col gap-4">
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-3 sm:flex-row">
               <input
@@ -364,7 +364,7 @@ export function IndexPage() {
           )}
 
           {!loading && documents.length === 0 && (
-            <div className="rounded-none border border-dashed border-line-strong bg-surface py-12 text-center">
+            <div className="rounded-none border border-dashed border-line-strong bg-surface py-10 text-center">
               {hasActiveFilters(query) ? (
                 <p className="text-sm text-ink-soft">No documents match your filters.</p>
               ) : (
@@ -421,7 +421,7 @@ export function IndexPage() {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {documents.map((document) => (
                   <DocumentCard
                     key={document.id}

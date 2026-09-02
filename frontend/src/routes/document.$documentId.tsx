@@ -316,7 +316,7 @@ export function DocumentDetailPage() {
   }
 
   return (
-    <section className="flex flex-col gap-6">
+    <section className="flex flex-col gap-5">
       {document.duplicate_of && (
         <div className="rounded-xs border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Possible duplicate of{' '}
@@ -513,7 +513,7 @@ export function DocumentDetailPage() {
       )}
 
       <form
-        className="grid grid-cols-1 gap-4 rounded-none border border-line bg-surface p-6 sm:grid-cols-2"
+        className="grid grid-cols-1 gap-4 rounded-none border border-line bg-surface p-5 sm:grid-cols-2"
         onSubmit={onSave}
       >
         <label className={labelClass}>

@@ -217,7 +217,7 @@ export function UploadSplitPage() {
   }
 
   return (
-    <section className="flex flex-col gap-6">
+    <section className="flex flex-col gap-5">
       <div>
         <h2 className="font-display text-xl font-semibold text-ink">Split documents</h2>
         <p className="mt-1 text-sm text-ink-soft">

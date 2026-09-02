@@ -47,7 +47,7 @@ export function ImportNgxPage() {
   }
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-5">
       <div>
         <h2 className="font-display text-xl font-semibold text-ink">Import from Paperless-ngx</h2>
         <p className="mt-1 text-sm text-ink-soft">
