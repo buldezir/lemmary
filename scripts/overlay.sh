@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Resolve the verification overlay for this checkout and print its path.
 #
-# The e2e suites and the verification stack live in a separate repository. A
-# clone of this one does not have it, so every caller must cope with it being
-# absent: this script exits 3 and prints nothing when there is none.
+# The e2e suites and the verification stack live in a separate repository.
+# A clone of this one does not have it. Callers must handle absence:
+# scripts/test-all.sh treats it as failure; scripts/dev.sh explains and exits.
+# This script exits 3 and prints nothing on stdout when there is none.
 #
 # It used to be checked out *inside* this tree, at dev/. That put a second git
 # repository in the working tree, so anything that answers "which repository am

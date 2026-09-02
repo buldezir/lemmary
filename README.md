@@ -86,8 +86,7 @@ cd frontend && pnpm test
 
 The end-to-end suites, the dev runner and the full verification stack live in a
 separate private repository and are not part of this one. `./scripts/test-all.sh`
-runs everything available here either way, and reports which suites it could
-not run.
+requires that overlay; without it the command fails.
 
 ## License
 
