@@ -68,3 +68,59 @@ func TestKeepEligibleFiltersAShortList(t *testing.T) {
 		t.Fatalf("an unfiltered query should keep every id: %v, %v", same, err)
 	}
 }
+
+// TestFieldsRestrictsWhichFieldsMatch is what lets the paperless-ngx
+// compatibility layer answer title__icontains and content__icontains
+// differently. Without it every text query searches every field, so a
+// title-only filter would also match the OCR body and report the result as
+// though the filter had been applied.
+func TestFieldsRestrictsWhichFieldsMatch(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "titled", map[string]any{
+		FieldUser: "u1", FieldTitle: "Lease", FieldOCRText: "nothing relevant", FieldAll: "Lease",
+	})
+	mustPut(t, idx, "bodied", map[string]any{
+		FieldUser: "u1", FieldTitle: "Invoice", FieldOCRText: "the lease runs to 2030", FieldAll: "Invoice",
+	})
+
+	// Unrestricted, both match -- that is the archive-wide search box.
+	if ids := searchIDs(t, idx, Query{UserID: "u1", Text: "lease"}); len(ids) != 2 {
+		t.Fatalf("unrestricted ids = %v, want both documents", ids)
+	}
+
+	titleOnly := searchIDs(t, idx, Query{
+		UserID: "u1", Text: "lease", Fields: []string{FieldTitle, FieldTitleOriginal},
+	})
+	if len(titleOnly) != 1 || titleOnly[0] != "titled" {
+		t.Fatalf("title-only ids = %v, want [titled]", titleOnly)
+	}
+
+	contentOnly := searchIDs(t, idx, Query{
+		UserID: "u1", Text: "lease", Fields: []string{FieldOCRText},
+	})
+	if len(contentOnly) != 1 || contentOnly[0] != "bodied" {
+		t.Fatalf("content-only ids = %v, want [bodied]", contentOnly)
+	}
+}
+
+// TestSearchFieldsKeepsTheTableOrderAndBoosts: the restriction selects from the
+// boost table rather than rebuilding it, so a restricted query still ranks the
+// fields it kept exactly as an unrestricted one would.
+func TestSearchFieldsKeepsTheTableOrderAndBoosts(t *testing.T) {
+	t.Parallel()
+	if got := searchFields(nil); len(got) != len(boostedTextFields) {
+		t.Fatalf("no restriction selected %d fields, want the whole table", len(got))
+	}
+	got := searchFields([]string{FieldOCRText, FieldTitle})
+	if len(got) != 2 || got[0].field != FieldTitle || got[1].field != FieldOCRText {
+		t.Fatalf("searchFields = %+v, want title then ocr_text in table order", got)
+	}
+	if got[0].boost <= got[1].boost {
+		t.Fatalf("boosts were not preserved: %+v", got)
+	}
+	// An unknown name selects nothing rather than quietly widening back to
+	// every field, which would turn a title filter into an archive search.
+	if got := searchFields([]string{"no_such_field"}); len(got) != 0 {
+		t.Fatalf("searchFields(unknown) = %+v, want none", got)
+	}
+}

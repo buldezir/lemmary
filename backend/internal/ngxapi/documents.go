@@ -20,72 +20,188 @@ var errSearchIndexNotReady = errors.New("search index is not ready")
 func handleListDocuments(idx *fulltext.Index) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		page, pageSize := paginationParams(e)
-		authID := e.Auth.Id
+		query := e.Request.URL.Query()
 
-		query := strings.TrimSpace(e.Request.URL.Query().Get("query"))
-		if query != "" {
-			return listDocumentsFulltext(e, idx, authID, query, page, clampSearchPageSize(pageSize))
+		filters, err := parseDocumentFilters(e.App, e.Auth.Id, query)
+		if err != nil {
+			return badRequest(e, err.Error())
+		}
+		// A filter naming something that does not exist matches nothing. It
+		// must not fall through to the unfiltered archive -- which is what this
+		// endpoint returned for every filter before it understood any of them,
+		// so the client rendered the whole library as the answer to "tagged
+		// Invoice".
+		if filters.impossible {
+			return paginatedList(e, 0, page, pageSize, nil)
 		}
 
-		filter, params := ownerScope(authID)
+		exprs := append([]dbx.Expression{dbx.HashExp{"user": e.Auth.Id}}, documentFilterExprs(filters)...)
+		ordering := strings.TrimSpace(query.Get("ordering"))
 
-		total, err := e.App.CountRecords("documents", dbx.NewExp(filter, params))
+		if filters.hasText() {
+			return listDocumentsByText(e, idx, filters, exprs, ordering, page, clampSearchPageSize(pageSize))
+		}
+
+		total, err := e.App.CountRecords("documents", exprs...)
 		if err != nil {
 			return internalError(e, err)
 		}
 
-		sort := documentSortField(e.Request.URL.Query().Get("ordering"))
-		offset := (page - 1) * pageSize
-
-		records, err := e.App.FindRecordsByFilter(
-			"documents",
-			filter,
-			sort,
-			pageSize,
-			offset,
-			params,
-		)
-		if err != nil {
+		records := []*core.Record{}
+		q := e.App.RecordQuery("documents")
+		for _, expr := range exprs {
+			q.AndWhere(expr)
+		}
+		for _, order := range documentSortColumns(ordering) {
+			q.AndOrderBy(order)
+		}
+		if err := q.Limit(int64(pageSize)).Offset(int64((page - 1) * pageSize)).All(&records); err != nil {
 			return internalError(e, err)
 		}
 
-		results := make([]any, 0, len(records))
-		for _, record := range records {
-			results = append(results, mapDocument(e.App, record))
-		}
-
-		return paginatedList(e, total, page, pageSize, results)
+		return paginatedList(e, total, page, pageSize, mapDocuments(e.App, records, filters.truncateContent))
 	}
 }
 
-func listDocumentsFulltext(e *core.RequestEvent, idx *fulltext.Index, authID, query string, page, pageSize int) error {
+// maxTextIDs caps how many index matches one request enumerates.
+//
+// The text query and the filters live in different stores, so the only exact
+// way to combine them is to enumerate the text matches and intersect. Past the
+// cap the count under-reports -- but self-consistently: paginatedList derives
+// both totalPages and the next link from that same number, so a client is never
+// handed a link to a page that cannot be served. 5000 is what the agent's
+// grouped count already uses (appapi.maxCountIDs), and what paperless-ngx
+// itself switches intersection strategies at.
+const maxTextIDs = 5000
+
+// listDocumentsByText answers a request carrying a text filter: the index says
+// which documents match the words, the database says which of those match
+// everything else, and the intersection is the page.
+//
+// The order is the index's unless the client asked for one. Relevance is the
+// only ranking a search has, and a client that sent no ordering wants it.
+func listDocumentsByText(
+	e *core.RequestEvent,
+	idx *fulltext.Index,
+	filters documentFilters,
+	exprs []dbx.Expression,
+	ordering string,
+	page, pageSize int,
+) error {
 	if idx == nil || !idx.Ready() {
 		return internalError(e, errSearchIndexNotReady)
 	}
 
-	result, err := idx.Search(fulltext.Query{
-		Text:   query,
-		UserID: authID,
-		Offset: (page - 1) * pageSize,
-		Limit:  pageSize,
-	})
+	ranked, err := textMatchIDs(idx, filters, e.Auth.Id)
+	if err != nil {
+		return internalError(e, err)
+	}
+	if len(ranked) == 0 {
+		return paginatedList(e, 0, page, pageSize, nil)
+	}
+
+	// An id-only scan rather than an IN list of every hit: the survivor set is
+	// what both the count and the page need, and binding thousands of
+	// parameters to learn it is the cost this avoids.
+	survivors, err := filteredDocumentIDs(e.App, exprs, ordering)
 	if err != nil {
 		return internalError(e, err)
 	}
 
-	results := make([]any, 0, len(result.Hits))
-	for _, hit := range result.Hits {
-		record, err := e.App.FindRecordById("documents", hit.ID)
+	// Whichever list carries the wanted order drives the walk; the other
+	// becomes the membership test.
+	source, filter := ranked, survivors
+	if ordering != "" {
+		source, filter = survivors, ranked
+	}
+	allowed := make(map[string]struct{}, len(filter))
+	for _, id := range filter {
+		allowed[id] = struct{}{}
+	}
+
+	ordered := make([]string, 0, min(len(source), len(allowed)))
+	for _, id := range source {
+		if _, ok := allowed[id]; ok {
+			ordered = append(ordered, id)
+		}
+	}
+
+	total := int64(len(ordered))
+	offset := (page - 1) * pageSize
+	if offset >= len(ordered) {
+		return paginatedList(e, total, page, pageSize, nil)
+	}
+	end := min(offset+pageSize, len(ordered))
+
+	records := make([]*core.Record, 0, end-offset)
+	for _, id := range ordered[offset:end] {
+		record, err := e.App.FindRecordById("documents", id)
 		if err != nil {
 			continue
 		}
-		if authID != "" && record.GetString("user") != authID {
-			continue
-		}
-		results = append(results, mapDocument(e.App, record))
+		records = append(records, record)
 	}
 
-	return paginatedList(e, int64(result.Total), page, pageSize, results)
+	return paginatedList(e, total, page, pageSize, mapDocuments(e.App, records, filters.truncateContent))
+}
+
+// textMatchIDs runs every text criterion and intersects them, keeping the
+// first one's ranking. They are ANDed because that is what a client combining
+// `query` with `title__icontains` is asking for.
+func textMatchIDs(idx *fulltext.Index, filters documentFilters, authID string) ([]string, error) {
+	var ranked []string
+	for i, criterion := range filters.text {
+		ids, _, _, err := idx.MatchingIDs(fulltext.Query{
+			Text:   criterion.text,
+			Fields: criterion.fields,
+			UserID: authID,
+		}, maxTextIDs)
+		if err != nil {
+			return nil, err
+		}
+		if i == 0 {
+			ranked = ids
+			continue
+		}
+		keep := make(map[string]struct{}, len(ids))
+		for _, id := range ids {
+			keep[id] = struct{}{}
+		}
+		kept := ranked[:0]
+		for _, id := range ranked {
+			if _, ok := keep[id]; ok {
+				kept = append(kept, id)
+			}
+		}
+		ranked = kept
+	}
+	return ranked, nil
+}
+
+// filteredDocumentIDs lists the ids matching exprs, in ordering's order.
+func filteredDocumentIDs(app core.App, exprs []dbx.Expression, ordering string) ([]string, error) {
+	q := app.RecordQuery("documents").Select("[[documents.id]]")
+	for _, expr := range exprs {
+		q.AndWhere(expr)
+	}
+	if ordering != "" {
+		for _, order := range documentSortColumns(ordering) {
+			q.AndOrderBy(order)
+		}
+	}
+	var ids []string
+	if err := q.Column(&ids); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+func mapDocuments(app core.App, records []*core.Record, truncate bool) []any {
+	results := make([]any, 0, len(records))
+	for _, record := range records {
+		results = append(results, mapDocument(app, record, truncate))
+	}
+	return results
 }
 
 func handleGetDocument(e *core.RequestEvent) error {
@@ -93,7 +209,7 @@ func handleGetDocument(e *core.RequestEvent) error {
 	if err != nil {
 		return notFound(e, "Not found.")
 	}
-	return writeJSON(e, http.StatusOK, mapDocument(e.App, record))
+	return writeJSON(e, http.StatusOK, mapDocument(e.App, record, false))
 }
 
 func handlePatchDocument(e *core.RequestEvent) error {
@@ -150,7 +266,7 @@ func handlePatchDocument(e *core.RequestEvent) error {
 		return saveError(e, err)
 	}
 
-	return writeJSON(e, http.StatusOK, mapDocument(e.App, record))
+	return writeJSON(e, http.StatusOK, mapDocument(e.App, record, false))
 }
 
 func handleDeleteDocument(e *core.RequestEvent) error {
@@ -349,29 +465,43 @@ func parseTagIDs(form url.Values) []string {
 	return ids
 }
 
-func documentSortField(ordering string) string {
-	if ordering == "" {
-		return "-created"
+// documentSortColumns maps a paperless ordering to quoted ORDER BY clauses.
+//
+// The id tiebreaker is not decoration: several documents routinely share a
+// created timestamp or a document_date, and SQLite is free to return tied rows
+// in any order it likes. Without a total order, paging the same list twice can
+// show a row twice and never show another -- the bug is invisible on page one
+// and reliable at a page boundary.
+func documentSortColumns(ordering string) []string {
+	direction := " ASC"
+	if strings.HasPrefix(ordering, "-") {
+		direction = " DESC"
 	}
 	field := strings.TrimPrefix(strings.TrimPrefix(ordering, "-"), "+")
-	desc := strings.HasPrefix(ordering, "-")
 
-	var pbField string
+	var column string
 	switch field {
 	case "created", "created_date":
-		pbField = "document_date"
+		column = "document_date"
 	case "added":
-		pbField = "created"
+		column = "created"
 	case "modified":
-		pbField = "updated"
+		column = "updated"
 	case "title":
-		pbField = "title"
+		column = "title"
+	case "id":
+		column = "id"
 	default:
-		pbField = "created"
+		// Unknown orderings, and the empty one, fall back to newest first.
+		column = "created"
+		if ordering == "" {
+			direction = " DESC"
+		}
 	}
 
-	if desc {
-		return "-" + pbField
+	columns := []string{"[[documents." + column + "]]" + direction}
+	if column != "id" {
+		columns = append(columns, "[[documents.id]]"+direction)
 	}
-	return pbField
+	return columns
 }

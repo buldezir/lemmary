@@ -12,7 +12,10 @@ import (
 
 var htmlTagRE = regexp.MustCompile(`<[^>]*>`)
 
-func mapDocument(app core.App, record *core.Record) map[string]any {
+// mapDocument renders one document in paperless-ngx's shape. truncate is the
+// client's truncate_content flag: list responses over a large archive are
+// mostly OCR text, and a client that will only show a preview line says so.
+func mapDocument(app core.App, record *core.Record, truncate bool) map[string]any {
 	created := record.GetString("created")
 	updated := record.GetString("updated")
 	docDate := record.GetString("document_date")
@@ -27,6 +30,9 @@ func mapDocument(app core.App, record *core.Record) map[string]any {
 
 	fileName := record.GetString("file")
 	content := stripHTML(record.GetString("ocr_text"))
+	if truncate {
+		content = truncateContent(content)
+	}
 	createdFormatted := formatNgxCreatedDate(docDate)
 
 	var owner any
@@ -188,6 +194,19 @@ func latestStepError(job *core.Record) string {
 		}
 	}
 	return ""
+}
+
+// truncateContent cuts on a rune boundary, so a multi-byte character straddling
+// the limit does not reach the client as a replacement character.
+func truncateContent(s string) string {
+	if len(s) <= truncatedContentLen {
+		return s
+	}
+	runes := []rune(s)
+	if len(runes) <= truncatedContentLen {
+		return s
+	}
+	return string(runes[:truncatedContentLen])
 }
 
 func stripHTML(s string) string {

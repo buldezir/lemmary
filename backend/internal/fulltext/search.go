@@ -34,8 +34,14 @@ type Query struct {
 	TagIDs           []string
 	DateFrom         string
 	DateTo           string
-	Offset           int
-	Limit            int
+	// Fields narrows the text match to a subset of the searchable fields, by
+	// their index field name. Empty means every field, which is what the
+	// archive-wide search box and the agent both want; the paperless-ngx
+	// compatibility layer uses it to honour title-only and content-only
+	// filters, which name a field where a general query names none.
+	Fields []string
+	Offset int
+	Limit  int
 	// Relaxed trades precision for recall: unquoted terms no longer all have to
 	// match.
 	//
@@ -97,10 +103,13 @@ type searchPlan struct {
 	required int
 }
 
-var boostedTextFields = []struct {
+// boostedField is one searchable field and how much a match in it counts.
+type boostedField struct {
 	field string
 	boost float64
-}{
+}
+
+var boostedTextFields = []boostedField{
 	{FieldTitle, 4},
 	{FieldTitleOriginal, 4},
 	{FieldTagNames, 3},
@@ -377,14 +386,15 @@ func buildSearchPlan(q Query, text string) (searchPlan, error) {
 		return searchPlan{}, fmt.Errorf("query has no searchable terms")
 	}
 	filters := filterConjuncts(q)
+	fields := searchFields(q.Fields)
 
 	if !q.Relaxed {
-		return searchPlan{primary: withFilters(textQuery(parts, relaxOff), filters)}, nil
+		return searchPlan{primary: withFilters(textQuery(parts, relaxOff, fields), filters)}, nil
 	}
 
 	loose := looseParts(parts)
 	plan := searchPlan{
-		primary: withFilters(textQuery(parts, relaxSome), filters),
+		primary: withFilters(textQuery(parts, relaxSome, fields), filters),
 		terms:   len(loose),
 	}
 	if len(loose) == 0 {
@@ -396,7 +406,7 @@ func buildSearchPlan(q Query, text string) (searchPlan, error) {
 	// term is already its own floor; a single long one still earns a rung,
 	// because there the fallback degenerates into a spelling-correction retry.
 	if plan.required > 1 || anyFuzzyWorthy(loose) {
-		plan.fallback = withFilters(textQuery(parts, relaxAny), filters)
+		plan.fallback = withFilters(textQuery(parts, relaxAny, fields), filters)
 	}
 	return plan, nil
 }
@@ -480,11 +490,11 @@ func mandatoryPhrase(part queryPart) bool {
 	return part.phrase && part.closed
 }
 
-func textQuery(parts []queryPart, mode relaxMode) query.Query {
+func textQuery(parts []queryPart, mode relaxMode, fields []boostedField) query.Query {
 	if mode == relaxOff {
 		conjuncts := make([]query.Query, 0, len(parts))
 		for _, part := range parts {
-			conjuncts = append(conjuncts, fieldQuery(part, false))
+			conjuncts = append(conjuncts, fieldQuery(part, false, fields))
 		}
 		if len(conjuncts) == 1 {
 			return conjuncts[0]
@@ -495,13 +505,13 @@ func textQuery(parts []queryPart, mode relaxMode) query.Query {
 	must := make([]query.Query, 0, len(parts))
 	for _, part := range parts {
 		if mandatoryPhrase(part) {
-			must = append(must, fieldQuery(part, false))
+			must = append(must, fieldQuery(part, false, fields))
 		}
 	}
 	if loose := looseParts(parts); len(loose) > 0 {
 		should := make([]query.Query, 0, len(loose))
 		for _, part := range loose {
-			should = append(should, fieldQuery(part, mode == relaxAny))
+			should = append(should, fieldQuery(part, mode == relaxAny, fields))
 		}
 		dq := bleve.NewDisjunctionQuery(should...)
 		if mode == relaxAny {
@@ -517,6 +527,32 @@ func textQuery(parts []queryPart, mode relaxMode) query.Query {
 	return bleve.NewConjunctionQuery(must...)
 }
 
+// searchFields resolves a Query's field restriction to the boost table rows it
+// names, keeping the table's own order and boosts. An empty restriction is the
+// whole table.
+//
+// A name the table does not carry is dropped rather than ignored, so a caller
+// that asks only for unknown fields gets a query that matches nothing. That is
+// the honest answer: the alternative -- quietly widening back to every field --
+// would turn a title-only filter into an archive-wide search and report the
+// result as if the filter had been applied.
+func searchFields(names []string) []boostedField {
+	if len(names) == 0 {
+		return boostedTextFields
+	}
+	wanted := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		wanted[name] = struct{}{}
+	}
+	fields := make([]boostedField, 0, len(names))
+	for _, f := range boostedTextFields {
+		if _, ok := wanted[f.field]; ok {
+			fields = append(fields, f)
+		}
+	}
+	return fields
+}
+
 // fieldQuery matches one query part across every searchable field, at that
 // field's boost. With fuzzy on, a long word also matches with one edit of slack
 // at half the boost, so an exact match always outranks an approximate one
@@ -526,9 +562,9 @@ func textQuery(parts []queryPart, mode relaxMode) query.Query {
 // "#") becomes a match-none clause that still counts toward the disjunction's
 // numerator, tightening a relaxSome floor it can never satisfy. The relaxAny
 // rung absorbs it, and detecting it properly needs the index's analyzer.
-func fieldQuery(part queryPart, fuzzy bool) query.Query {
-	disjuncts := make([]query.Query, 0, 2*len(boostedTextFields))
-	for _, f := range boostedTextFields {
+func fieldQuery(part queryPart, fuzzy bool, fields []boostedField) query.Query {
+	disjuncts := make([]query.Query, 0, 2*len(fields))
+	for _, f := range fields {
 		if part.phrase {
 			pq := bleve.NewMatchPhraseQuery(part.text)
 			pq.SetField(f.field)

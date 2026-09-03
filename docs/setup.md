@@ -714,6 +714,32 @@ Lemmary exposes a paperless-ngx-compatible REST API on the same host as PocketBa
 
 Compatibility is intentionally partial: common read/write flows work, but not every paperless-ngx feature is available (for example, some list endpoints return empty stubs where Lemmary has no equivalent data).
 
+### Document list filters
+
+`GET /api/documents/` understands the filters clients actually send:
+
+| Filter | Parameters |
+| --- | --- |
+| Full text | `query` |
+| Title and content | `title_content`, `title__icontains`, `content__icontains` |
+| Tags | `tags__id`, `tags__id__all`, `tags__id__in`, `tags__id__none`, `is_tagged` |
+| Document type | `document_type__id`, `document_type__id__in`, `document_type__id__none`, `document_type__isnull` |
+| Correspondent | `correspondent__id`, `correspondent__id__in`, `correspondent__id__none`, `correspondent__isnull` |
+| Document date | `created__date__{gt,gte,lt,lte}`, `created__{gt,gte,lt,lte}`, `created__year` |
+| Upload date | `added__date__{gt,gte,lt,lte}`, `added__{gt,gte,lt,lte}` |
+| Specific documents | `id`, `id__in` |
+| Paging and shaping | `page`, `page_size`, `ordering`, `truncate_content` |
+
+Filters combine, and `count` always matches the filtered set, so paging through a filtered list is safe.
+
+Three things behave differently from paperless-ngx, deliberately:
+
+- **A filter Lemmary cannot honour is a `400`, not an unfiltered page.** Lemmary has no storage paths, custom fields, or archive serial numbers, so a request that filters on them is refused with `{"detail": "Unsupported filter \"…\"."}`. Returning a `200` that ignored the filter would be worse: the client renders it as though the filter had applied, so "documents tagged Invoice" silently becomes the whole archive.
+- **Text search matches whole words, not substrings.** All four text filters run through the same Bleve index as the web UI's search box, which is tokenised. Searching `rechn` will not find `Rechnung`; searching `rechnung` will.
+- **A filtered text search enumerates at most 5000 matches.** Beyond that the reported `count` under-reports — consistently, so the paging links never point past what can be served.
+
+Results are ranked by relevance when a text filter is present and no `ordering` is given, and by `ordering` otherwise.
+
 ### Connecting external clients
 
 1. Point the client at your Lemmary server URL (scheme + host + port, no `/api` suffix — clients add that themselves).
@@ -739,7 +765,7 @@ Import fetches only the caller-supplied URL. Private, loopback, and link-local d
 
 ### swift-paperless (iOS)
 
-[swift-paperless](https://github.com/paulgessinger/swift-paperless) is the main mobile client exercised against this API. Browsing documents, viewing details, and uploading generally work. Some paperless-ngx-specific settings or advanced features may be missing or no-ops because Lemmary does not implement the full paperless-ngx surface area.
+[swift-paperless](https://github.com/paulgessinger/swift-paperless) is the main mobile client exercised against this API. Browsing documents, viewing details, searching, filtering, and uploading generally work. Some paperless-ngx-specific settings or advanced features may be missing or no-ops because Lemmary does not implement the full paperless-ngx surface area.
 
 If the app starts returning 401 after working at add-server time, delete and re-add the server once so it can fetch a new token. Tokens issued before long-lived `/api/token/` JWTs expire after five days and cannot be extended in place.
 
