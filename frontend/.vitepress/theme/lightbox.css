@@ -1,0 +1,201 @@
+/* Click-to-enlarge overlay for the docs screenshots. See lightbox.ts. */
+
+/* Inline: a screenshot is a control, so it should look like one. */
+.vp-doc img[data-lemmary-zoomable] {
+  cursor: zoom-in;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.vp-doc img[data-lemmary-zoomable]:hover,
+.vp-doc img[data-lemmary-zoomable]:focus-visible {
+  border-color: var(--vp-c-brand-1);
+  box-shadow: 0 2px 14px rgb(0 0 0 / 12%);
+  outline: none;
+}
+
+html.lb-locked,
+html.lb-locked body {
+  overflow: hidden;
+}
+
+.lb {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: none;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--vp-c-bg) 88%, black);
+  backdrop-filter: blur(3px);
+}
+
+.lb.is-open {
+  display: flex;
+}
+
+.lb-bar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg);
+}
+
+.lb-caption {
+  margin: 0;
+  overflow: hidden;
+  color: var(--vp-c-text-1);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lb-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.lb-counter {
+  color: var(--vp-c-text-3);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.lb-btn:hover {
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-brand-1);
+}
+
+.lb-btn.lb-icon {
+  width: 30px;
+  padding: 0;
+}
+
+.lb-pane {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  overflow: hidden;
+}
+
+/* Actual size: the pane becomes the scroller and stops centring, so a tall
+   capture starts at its top edge instead of the middle of nowhere. */
+.lb-pane.is-actual {
+  align-items: flex-start;
+  justify-content: flex-start;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.lb-img {
+  /* Never wider than full size: these are 2x captures, so filling a large
+     screen with one would just upscale it into blur. */
+  max-width: min(100%, var(--lb-full-width, 1400px));
+  max-height: 100%;
+  border-radius: 4px;
+  box-shadow: 0 8px 40px rgb(0 0 0 / 30%);
+  cursor: zoom-in;
+  object-fit: contain;
+}
+
+.lb-img.is-actual {
+  max-width: none;
+  max-height: none;
+  /* Set per image in lightbox.ts: half the intrinsic width for a hidpi
+     capture, so this is the app at the size it really has. */
+  width: var(--lb-full-width, 1400px);
+  cursor: zoom-out;
+}
+
+/* The fitted view is already showing it whole at full size. */
+.lb.is-fitting-whole .lb-zoom {
+  display: none;
+}
+
+.lb.is-fitting-whole .lb-img {
+  cursor: default;
+}
+
+.lb-nav {
+  position: absolute;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 56px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg);
+  color: var(--vp-c-text-2);
+  cursor: pointer;
+  opacity: 0.85;
+  transform: translateY(-50%);
+  transition:
+    opacity 0.15s ease,
+    color 0.15s ease;
+}
+
+.lb-nav:hover {
+  color: var(--vp-c-brand-1);
+  opacity: 1;
+}
+
+.lb-prev {
+  left: 10px;
+}
+
+.lb-next {
+  right: 10px;
+}
+
+.lb.is-single .lb-nav {
+  display: none;
+}
+
+@media (width <= 640px) {
+  .lb-original,
+  .lb-nav {
+    display: none;
+  }
+
+  .lb-bar {
+    padding: 8px 10px;
+  }
+
+  .lb-pane {
+    padding: 8px;
+  }
+}

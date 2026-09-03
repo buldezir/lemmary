@@ -19,4 +19,14 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    // The docs theme is VitePress and Vue, not React. Its setup() is a Vue
+    // composition entry point, which the React rules read as a misnamed
+    // component calling a hook.
+    files: ['.vitepress/**/*.ts'],
+    rules: {
+      'react-hooks/rules-of-hooks': 'off',
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ])

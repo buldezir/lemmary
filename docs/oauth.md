@@ -4,6 +4,8 @@ The login screen mirrors whatever the PocketBase `users` collection accepts. Ena
 OAuth2 provider there and a **Continue with …** button appears next to the email and
 password form — no rebuild or environment variable needed.
 
+![The login screen with a provider button next to the password form](./screenshots/login.png)
+
 ---
 
 ## Step 1: Enable a provider in PocketBase
