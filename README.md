@@ -8,6 +8,22 @@ Lemmary implements a [paperless-ngx](https://github.com/paperless-ngx/paperless-
 
 The API has been tested with the [swift-paperless](https://github.com/paulgessinger/swift-paperless) iOS app and mostly works for browsing and uploading documents. See [docs/setup.md](docs/setup.md#paperless-ngx-api-compatibility) for connecting external clients.
 
+## Features
+
+- Upload PDF, image, plain text, CSV, Word (.docx), or Excel (.xlsx) documents
+- Full backup and restore: download your whole library — files, OCR text, metadata, thumbnails and taxonomy — as one zip, and restore it into this or another instance
+- Optional encryption at rest: the volume holds only ciphertext, the instance boots locked until someone signs in, and nobody but your own accounts can unlock it — see [docs/encryption.md](docs/encryption.md)
+- Import the invoice PDFs from an Amazon "Your Orders" data export (**Upload → Amazon orders**); the archive is previewed and only imported after you confirm the file count, duplicates are skipped
+- Async processing jobs with status tracking
+- OCR text extraction (native text extraction for TXT/CSV/DOCX/XLSX)
+- AI metadata extraction: title, purpose, date, type, tags, summary
+- Document list with full-text search and status filters
+- Deep Search chat in two modes, one per path: **Search** (`/rag/search`) finds documents and lists them as cards; **Research** (`/rag/research`) searches, reads the documents it finds, surveys hundreds at once through a helper model, counts and totals, and answers with links to its sources — streaming each step as it works; a run that outgrows the model's context window fails with the provider's error; chats are saved, listed in a sidebar, and resumable by URL
+- Detail page for reviewing OCR text and correcting metadata
+- Passkey sign-in: register a passkey per device and sign in with a fingerprint, face, or device PIN — no password typed, alongside the existing password and OAuth2 options
+- Admin Settings page for runtime OCR/AI/worker config
+- First-launch setup wizard (admin account + required OCR/AI keys)
+
 ### Screenshots
 
 Every screen has one in [docs/screenshots.md](docs/screenshots.md). The library
@@ -79,22 +95,6 @@ See [docs/setup.md](docs/setup.md) for the full list.
 - `WORKER_CRON_EXPR`, the `LIMIT_*` family, `VAULT_*` and the frontend's `VITE_*` stay in `.env`
 - OCR/AI keys, models and worker timeouts live in the DB (`app_settings`). `AI_API_KEY` plus `SETUP_ADMIN_EMAIL`/`SETUP_ADMIN_PASSWORD` in `.env` bring a fresh instance up with nothing to answer; otherwise the first-launch wizard collects them. Either way **Settings** is authoritative afterwards
 - `AI_MANAGED=1` inverts that for a hosted fleet: the environment is re-applied on every boot and the tenant's Settings page has no Providers, Models or Duplicates sections
-
-## Features
-
-- Upload PDF, image, plain text, CSV, Word (.docx), or Excel (.xlsx) documents
-- Full backup and restore: download your whole library — files, OCR text, metadata, thumbnails and taxonomy — as one zip, and restore it into this or another instance
-- Optional encryption at rest: the volume holds only ciphertext, the instance boots locked until someone signs in, and nobody but your own accounts can unlock it — see [docs/encryption.md](docs/encryption.md)
-- Import the invoice PDFs from an Amazon "Your Orders" data export (**Upload → Amazon orders**); the archive is previewed and only imported after you confirm the file count, duplicates are skipped
-- Async processing jobs with status tracking
-- OCR text extraction (native text extraction for TXT/CSV/DOCX/XLSX)
-- AI metadata extraction: title, purpose, date, type, tags, summary
-- Document list with full-text search and status filters
-- Deep Search chat in two modes, one per path: **Search** (`/rag/search`) finds documents and lists them as cards; **Research** (`/rag/research`) searches, reads the documents it finds, surveys hundreds at once through a helper model, counts and totals, and answers with links to its sources — streaming each step as it works; a run that outgrows the model's context window fails with the provider's error; chats are saved, listed in a sidebar, and resumable by URL
-- Detail page for reviewing OCR text and correcting metadata
-- Passkey sign-in: register a passkey per device and sign in with a fingerprint, face, or device PIN — no password typed, alongside the existing password and OAuth2 options
-- Admin Settings page for runtime OCR/AI/worker config
-- First-launch setup wizard (admin account + required OCR/AI keys)
 
 ## Tests
 
