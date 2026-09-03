@@ -80,7 +80,7 @@ type openAIEmbedder struct {
 // NewEmbedder builds an embedding client on the OpenAI-compatible /embeddings
 // endpoint. dims is the length already recorded for this model (0 when
 // unknown); a response that disagrees with a non-zero value is refused.
-func NewEmbedder(sdk, apiKey, model, baseURL string, dims int, timeout time.Duration, logger *slog.Logger) Embedder {
+func NewEmbedder(sdk, apiKey, model, baseURL string, dims int, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) Embedder {
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithHTTPClient(&http.Client{Timeout: timeout}),
@@ -90,6 +90,9 @@ func NewEmbedder(sdk, apiKey, model, baseURL string, dims int, timeout time.Dura
 		option.WithMaxRetries(0),
 		option.WithMiddleware(aiprovider.SessionMiddleware()),
 	}
+	// Tests pass RewriteHostMiddleware here so a base URL of opencode.ai still
+	// lands on httptest. Production callers pass none.
+	opts = append(opts, extra...)
 	if strings.TrimSpace(baseURL) != "" {
 		opts = append(opts, option.WithBaseURL(strings.TrimRight(baseURL, "/")))
 	}

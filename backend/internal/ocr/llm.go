@@ -31,7 +31,7 @@ type LLMProvider struct {
 	logger  *slog.Logger
 }
 
-func NewLLMProvider(p aiprovider.Provider, model string, timeout time.Duration, logger *slog.Logger) *LLMProvider {
+func NewLLMProvider(p aiprovider.Provider, model string, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) *LLMProvider {
 	if timeout <= 0 {
 		timeout = 40 * time.Second
 	}
@@ -42,6 +42,9 @@ func NewLLMProvider(p aiprovider.Provider, model string, timeout time.Duration, 
 		option.WithMaxRetries(0),
 		option.WithMiddleware(aiprovider.SessionMiddleware()),
 	}
+	// Tests pass RewriteHostMiddleware here so a base URL of opencode.ai still
+	// lands on httptest. Production callers pass none.
+	opts = append(opts, extra...)
 	if strings.TrimSpace(p.BaseURL) != "" {
 		opts = append(opts, option.WithBaseURL(strings.TrimRight(p.BaseURL, "/")))
 	}

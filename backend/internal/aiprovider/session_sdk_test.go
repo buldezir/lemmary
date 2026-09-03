@@ -60,10 +60,7 @@ func TestSessionMiddlewareStampsThroughTheSDK(t *testing.T) {
 		option.WithBaseURL("http://opencode.ai/zen/go/v1"),
 		option.WithMaxRetries(0),
 		option.WithMiddleware(SessionMiddleware()),
-		option.WithMiddleware(func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
-			req.URL.Host = srv.Listener.Addr().String()
-			return next(req)
-		}),
+		option.WithMiddleware(RewriteHostMiddleware(srv.Listener.Addr().String())),
 	)
 
 	completeOnce(t, client, WithSession(context.Background(), "conv123"))

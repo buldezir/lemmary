@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,6 +13,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"github.com/openai/openai-go/option"
 
 	"lemmary/backend/internal/aiprovider"
 )
@@ -415,5 +418,34 @@ func TestEmbedderReportsNameAndModel(t *testing.T) {
 	}
 	if e.Model() != "mistral-embed" {
 		t.Fatalf("Model() = %q", e.Model())
+	}
+}
+
+// TestEmbedSendsSessionHeaderToOpenCode is the production-client case: dropping
+// SessionMiddleware from NewEmbedder must fail this, not only the hand-built
+// SDK wiring test.
+func TestEmbedSendsSessionHeaderToOpenCode(t *testing.T) {
+	var seen string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Header.Get(aiprovider.SessionHeader)
+		writeEmbeddings(w, 1, 3, false)
+	}))
+	t.Cleanup(srv.Close)
+
+	e, ok := NewEmbedder("openai", "test-key", "test-embed",
+		"http://opencode.ai/zen/go/v1", 0, 5*time.Second, slog.Default(),
+		option.WithMiddleware(aiprovider.RewriteHostMiddleware(srv.Listener.Addr().String())),
+	).(*openAIEmbedder)
+	if !ok {
+		t.Fatal("NewEmbedder did not return the OpenAI implementation")
+	}
+	e.sleep = func(time.Duration) {}
+
+	ctx := aiprovider.WithSession(context.Background(), "conv123")
+	if _, err := e.Embed(ctx, []string{"hello"}); err != nil {
+		t.Fatalf("embed: %v", err)
+	}
+	if seen != "conv123" {
+		t.Errorf("%s = %q, want %q", aiprovider.SessionHeader, seen, "conv123")
 	}
 }

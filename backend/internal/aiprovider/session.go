@@ -103,3 +103,16 @@ func SessionMiddleware() option.Middleware {
 		return next(req)
 	}
 }
+
+// RewriteHostMiddleware sends the request to host instead of req.URL.Host.
+// Tests register it after SessionMiddleware so a client whose base URL is
+// opencode.ai (the session gate opens) still talks to an httptest server
+// rather than the internet. Production callers never pass it.
+func RewriteHostMiddleware(host string) option.Middleware {
+	return func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
+		if req != nil && req.URL != nil {
+			req.URL.Host = host
+		}
+		return next(req)
+	}
+}

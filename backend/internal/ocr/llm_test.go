@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 	"lemmary/backend/internal/aiprovider"
 )
 
@@ -136,5 +137,55 @@ func TestExtractTextRetriesWithoutTemperatureForUnknownModel(t *testing.T) {
 	}
 	if strings.Contains(secondBody, `"temperature"`) {
 		t.Fatalf("retry should omit temperature, got %s", secondBody)
+	}
+}
+
+// TestExtractTextSendsSessionHeaderToOpenCode is the production-client case:
+// NewLLMProvider itself must install SessionMiddleware.
+func TestExtractTextSendsSessionHeaderToOpenCode(t *testing.T) {
+	var seen string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Header.Get(aiprovider.SessionHeader)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id":      "chatcmpl-ocr",
+			"object":  "chat.completion",
+			"created": 1,
+			"model":   "test-model",
+			"choices": []map[string]any{{
+				"index": 0,
+				"message": map[string]any{
+					"role":    "assistant",
+					"content": "Invoice INV-1001",
+				},
+				"finish_reason": "stop",
+			}},
+		})
+	}))
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "scan.png")
+	if err := os.WriteFile(path, []byte("png-bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	p := NewLLMProvider(aiprovider.Provider{
+		SDK:     aiprovider.SDKOpenAI,
+		APIKey:  "test-key",
+		BaseURL: "http://opencode.ai/zen/go/v1",
+	}, "test-model", 5*time.Second, slog.Default(),
+		option.WithMiddleware(aiprovider.RewriteHostMiddleware(srv.Listener.Addr().String())),
+	)
+	ctx := aiprovider.WithSession(context.Background(), "conv123")
+	text, err := p.ExtractText(ctx, path, "image/png")
+	if err != nil {
+		t.Fatalf("ExtractText: %v", err)
+	}
+	if text != "Invoice INV-1001" {
+		t.Fatalf("text = %q", text)
+	}
+	if seen != "conv123" {
+		t.Errorf("%s = %q, want %q", aiprovider.SessionHeader, seen, "conv123")
 	}
 }

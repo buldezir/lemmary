@@ -24,7 +24,7 @@ type OpenAIClient struct {
 	logger         *slog.Logger
 }
 
-func NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage string, timeout time.Duration, logger *slog.Logger) *OpenAIClient {
+func NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage string, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) *OpenAIClient {
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithHTTPClient(&http.Client{Timeout: timeout}),
@@ -32,6 +32,9 @@ func NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage stri
 		option.WithMaxRetries(0),
 		option.WithMiddleware(aiprovider.SessionMiddleware()),
 	}
+	// Tests pass RewriteHostMiddleware here so a base URL of opencode.ai still
+	// lands on httptest. Production callers pass none.
+	opts = append(opts, extra...)
 	if strings.TrimSpace(baseURL) != "" {
 		opts = append(opts, option.WithBaseURL(strings.TrimRight(baseURL, "/")))
 	}

@@ -85,6 +85,9 @@ func TestListModels(t *testing.T) {
 			http.Error(w, "missing filter", http.StatusBadRequest)
 			return
 		}
+		if got := r.Header.Get(SessionHeader); got != "" {
+			t.Errorf("%s sent to a non-OpenCode host: %q", SessionHeader, got)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"data":[{"id":"google/gemini-flash"}]}`))
 	}))
@@ -97,6 +100,44 @@ func TestListModels(t *testing.T) {
 	}
 	if len(models) != 1 || models[0].ID != "google/gemini-flash" {
 		t.Fatalf("got %+v", models)
+	}
+}
+
+// rewriteHostTransport delivers a ListModels request to an httptest server
+// after SessionHost has already seen opencode.ai and stamped the header.
+type rewriteHostTransport struct{ host string }
+
+func (t rewriteHostTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	clone := req.Clone(req.Context())
+	clone.URL.Host = t.host
+	clone.Host = t.host
+	return http.DefaultTransport.RoundTrip(clone)
+}
+
+// TestListModelsSendsSessionHeaderToOpenCode is the hand-rolled path: ListModels
+// does not go through the SDK middleware, so dropping the header set there
+// would stay green without this.
+func TestListModelsSendsSessionHeaderToOpenCode(t *testing.T) {
+	t.Parallel()
+	var seen string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Header.Get(SessionHeader)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"kimi-k3"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	client := &http.Client{Transport: rewriteHostTransport{host: srv.Listener.Addr().String()}}
+	p := Provider{SDK: SDKOpenAI, BaseURL: "http://opencode.ai/zen/go/v1", APIKey: "test-key"}
+	models, err := ListModels(t.Context(), p, PurposeLLM, client, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 1 || models[0].ID != "kimi-k3" {
+		t.Fatalf("got %+v", models)
+	}
+	if want := SessionFor("models"); seen != want {
+		t.Errorf("%s = %q, want the models purpose id %q", SessionHeader, seen, want)
 	}
 }
 
