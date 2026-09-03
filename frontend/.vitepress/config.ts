@@ -8,6 +8,7 @@ const vuePkg = path.join(frontendRoot, 'node_modules/vue')
 export default defineConfig({
   title: 'Lemmary',
   description: 'Setup and operation documentation',
+  head: [['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }]],
   srcDir: '../docs',
   base: '/docs/',
   outDir: '../public/docs',
@@ -31,8 +32,8 @@ export default defineConfig({
     nav: [
       { text: 'Screenshots', link: '/screenshots' },
       { text: 'Setup', link: '/setup' },
-      { text: 'Google Vision', link: '/google_vision' },
-      { text: 'OAuth2', link: '/oauth' },
+      { text: 'Self-hosting', link: '/self_hosting' },
+      { text: 'AI providers', link: '/ai_providers' },
       { text: 'Passkeys', link: '/passkeys' },
     ],
     sidebar: [
@@ -41,6 +42,8 @@ export default defineConfig({
         items: [
           { text: 'Screenshots', link: '/screenshots' },
           { text: 'Setup', link: '/setup' },
+          { text: 'Self-hosting with Docker', link: '/self_hosting' },
+          { text: 'AI providers and models', link: '/ai_providers' },
           { text: 'Google Vision', link: '/google_vision' },
           { text: 'OAuth2', link: '/oauth' },
           { text: 'Passkeys', link: '/passkeys' },

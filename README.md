@@ -63,8 +63,8 @@ Admin Settings: providers, models and worker timeouts as runtime configuration:
 
 - **Backend:** Go, [PocketBase as a framework](https://pocketbase.io/docs/use-as-framework/)
 - **Frontend:** React, TanStack Router, PocketBase JS SDK
-- **OCR:** Google Cloud Vision (`google_vision`) or Mistral Document OCR (`mistral`), configured in Settings
-- **AI:** OpenAI-compatible chat completions (OpenAI, OpenRouter, or Mistral) via the official OpenAI Go SDK
+- **OCR:** Mistral Document OCR (`mistral`), Google Cloud Vision (`google_vision`), or a file-capable OpenAI/OpenRouter model, configured in Settings
+- **AI:** OpenAI-compatible chat completions (Mistral, OpenAI, or OpenRouter) via the official OpenAI Go SDK — see [docs/ai_providers.md](docs/ai_providers.md)
 - **Search:** [Bleve](https://github.com/blevesearch/bleve) full-text index (token AND for the search box, relaxed to most-terms for the agent, BM25 ranking) over titles, OCR, tags, and metadata
 - **Deep Search:** natural-language archive search via a tool-calling agent over that index (hybrid keyword and embedding retrieval; keyword expansion across configured languages when no embedding model is set), in two modes — **Search** lists matching documents, **Research** reads them, surveys and counts across the archive with a cheaper helper model, and writes a cited answer
 
@@ -81,16 +81,16 @@ docs/       Setup and operation guides
 ```bash
 cp .env.example .env
 # Optional: seed OCR/AI keys in .env for first boot (skips those wizard steps)
-docker compose up --build
+docker compose up -d
 ```
 
-Open [http://127.0.0.1:8090](http://127.0.0.1:8090). On first launch, the in-app setup wizard creates your admin account and collects OCR + LLM API keys (hard gate until both are set). A single Mistral key can cover OCR and extraction. Data is stored in a Docker volume (`app_data`).
+Open [http://127.0.0.1:8090](http://127.0.0.1:8090). On first launch, the in-app setup wizard creates your admin account and collects OCR + LLM API keys (hard gate until both are set). A single Mistral key covers OCR, extraction and embeddings. Data is stored in a Docker volume (`app_data`).
 
-To run without Docker, see [docs/setup.md](docs/setup.md).
+Volumes, reverse proxies, backups and upgrades: [docs/self_hosting.md](docs/self_hosting.md). To run without Docker, see [docs/setup.md](docs/setup.md).
 
 ## Environment variables and Settings
 
-See [docs/setup.md](docs/setup.md) for the full list.
+[docs/setup.md](docs/setup.md) has the full list; [docs/ai_providers.md](docs/ai_providers.md) covers the AI ones.
 
 - `WORKER_CRON_EXPR`, the `LIMIT_*` family, `VAULT_*` and the frontend's `VITE_*` stay in `.env`
 - OCR/AI keys, models and worker timeouts live in the DB (`app_settings`). `AI_API_KEY` plus `SETUP_ADMIN_EMAIL`/`SETUP_ADMIN_PASSWORD` in `.env` bring a fresh instance up with nothing to answer; otherwise the first-launch wizard collects them. Either way **Settings** is authoritative afterwards

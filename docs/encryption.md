@@ -248,7 +248,7 @@ and so every containerised install. Now it refuses to start and says what to do.
   which is the reason to prefer one here even where the accuracy of a larger
   model would be free. Size the tmpfs in `docker-compose.encrypted.yml`
   accordingly before turning `AI_EMBEDDING_MODEL` on, and see
-  [Setup](/setup#what-embeddings-cost).
+  [AI providers](/ai_providers#what-embeddings-cost).
 - Nothing about the vector index costs an API call. Like the text index it is
   derived data, rebuilt inside the vault from the vectors in `data.db` — so an
   unlock, a restore, or a wiped work directory costs a rebuild, never a second

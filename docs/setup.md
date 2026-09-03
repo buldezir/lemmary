@@ -1,5 +1,13 @@
 # Setup Guide
 
+Running from source, environment variables, and how each feature behaves. Two
+things live in their own guides:
+
+- [Self-hosting with Docker](/self_hosting) — the published image, volumes,
+  proxies, backups and upgrades
+- [AI providers and models](/ai_providers) — which provider to pick, the
+  `AI_*` / `OCR_*` block, and what embeddings cost
+
 ## Prerequisites
 
 - Go 1.27+ with cgo enabled (a C toolchain: `gcc` or `clang`)
@@ -20,36 +28,26 @@ immediately on `backend/internal/fulltext/vectors_required.go`.
 The library has to be **blevesearch's fork** of FAISS. A distribution
 `libfaiss` package, however recent, is not enough: the Go binding calls C entry
 points (`*_c_ex.h`) that exist only in the fork. `scripts/faiss-build.sh` owns
-the pinned commit — it is the single source of truth, and it moves only when
-bleve moves, from the compatibility table in bleve's `docs/vectors.md`.
+the pinned commit — the single source of truth, moved only when bleve moves,
+from the compatibility table in bleve's `docs/vectors.md`.
 
 Every route below also needs OpenBLAS and libgomp present when the backend is
 linked and when it runs (`apt install libopenblas0-pthread libgomp1`;
 `libopenblas-dev` brings them along).
 
-**Option 1 — system-wide.** One `sudo`, and nothing to set afterwards:
-
 ```bash
+# Option 1 — system-wide. One sudo, and nothing to set afterwards.
 sudo apt install cmake ninja-build g++ libopenblas-dev
-sudo scripts/faiss-build.sh --prefix /usr/local
-sudo ldconfig
-```
+sudo scripts/faiss-build.sh --prefix /usr/local && sudo ldconfig
 
-**Option 2 — in your home directory.** Same build, no root:
-
-```bash
-sudo apt install cmake ninja-build g++ libopenblas-dev
+# Option 2 — in your home directory. Same build, no root.
 scripts/faiss-build.sh --prefix "$HOME/.local/faiss"
-```
 
-**Option 3 — out of the Docker build.** No cmake, no compiler, no root at all;
-the `faiss` stage is a `scratch` image holding just the artifacts, so the export
-is about 10 MB rather than a builder's whole root filesystem:
-
-```bash
+# Option 3 — out of the Docker build. No cmake, no compiler, no root: the
+# `faiss` stage is a scratch image holding just the artifacts, so the export is
+# about 10 MB rather than a builder's whole root filesystem.
 docker buildx build --target faiss --output type=local,dest=./.faiss .
-mkdir -p "$HOME/.local/faiss"
-cp -a .faiss/lib .faiss/include "$HOME/.local/faiss/"
+mkdir -p "$HOME/.local/faiss" && cp -a .faiss/lib .faiss/include "$HOME/.local/faiss/"
 ```
 
 Options 2 and 3 put FAISS somewhere neither the compiler nor the loader looks,
@@ -62,18 +60,15 @@ export LD_LIBRARY_PATH=$HOME/.local/faiss/lib
 ```
 
 The repository's `.envrc` sets all three when `~/.local/faiss` exists, so with
-[direnv](https://direnv.net) (`direnv allow`) there is nothing to remember.
-
-`.envrc` also exports `GOFLAGS=-tags=vectors`, which is what makes a bare
-`go build`, `go test` and gopls work in this tree. Without direnv, either pass
-`-tags vectors` every time or set it for your user once with
-`go env -w GOFLAGS=-tags=vectors`.
+[direnv](https://direnv.net) (`direnv allow`) there is nothing to remember. It
+also exports `GOFLAGS=-tags=vectors`, which is what makes a bare `go build`,
+`go test` and gopls work in this tree; without direnv, either pass
+`-tags vectors` every time or set it once with `go env -w GOFLAGS=-tags=vectors`.
 
 FAISS has to be on this machine only for Go commands you run here: a plain
 `go build`/`go test`, or `LEMMARY_VERIFY_HOST=1 ./scripts/test-all.sh`. The
 plain `./scripts/test-all.sh` delegates to the overlay, which runs every stage
-in a Docker image that already carries FAISS, so nothing has to be installed on
-the host for that path.
+in a Docker image that already carries FAISS.
 
 macOS: `brew install cmake ninja libomp openblas`, then option 1 or 2 (the
 script picks Homebrew's libomp up on its own).
@@ -118,7 +113,9 @@ at the backend's address.
 
 ## Environment variables
 
-All variables live in `.env` at the project root (see `.env.example`).
+All variables live in `.env` at the project root (see `.env.example`). The
+`AI_*` and `OCR_*` families are documented in
+[AI providers and models](/ai_providers#the-provider-block).
 
 ### Always env-backed
 
@@ -151,9 +148,7 @@ see [the page ceiling](#the-page-ceiling) below, which applies to every install.
 They are read at startup and deliberately never stored in `app_settings`: they say
 what an instance is *allowed* to hold, and an admin editing the Settings page must
 not be able to raise their own allowance. Change one by recreating the container
-with a new value. For the same reason they do not take part in the
-[applied-when-changed](#applied-when-changed) mechanism, which exists to protect
-Settings edits from being reverted — there is no Settings edit here to protect.
+with a new value.
 
 - An explicit `0` means zero, not unlimited. `LIMIT_ADDITIONAL_USERS=0` is a
   single-account instance.
@@ -202,14 +197,13 @@ pages**, on every install. An upload over that is refused with
 It exists because of where the text goes. The OCR providers return a document's
 whole text as one string, and that string has to fit the `ocr_text` column,
 which holds 20 Mi characters — the same 20 MB the `documents.file` field accepts,
-counted in characters instead of bytes, so that any text file this instance
-accepts can be stored whole. Nothing else bounds an OCR result: Mistral is the
-only provider that documents a page limit (1000 pages, which is where this
-number comes from), and Google Vision reads however many pages the file has,
-five at a time. The page count, taken before the first provider call, is the one
-measurement that says whether the answer could be stored — and refusing there
-means an over-long document costs nothing rather than being paid for and then
-discarded.
+counted in characters instead of bytes. Nothing else bounds an OCR result:
+Mistral is the only provider that documents a page limit (1000 pages, which is
+where this number comes from), and Google Vision reads however many pages the
+file has, five at a time. The page count, taken before the first provider call,
+is the one measurement that says whether the answer could be stored — and
+refusing there means an over-long document costs nothing rather than being paid
+for and then discarded.
 
 Consequences worth knowing:
 
@@ -232,132 +226,28 @@ Consequences worth knowing:
   this matters for: cells reference a shared string table, so the text one
   extracts to is not bounded by the bytes it arrived in.
 
-### AI: bootstrap, and managed mode
-
-There are two modes and one build. Which one an instance is in is a runtime
-flag, `AI_MANAGED`, and it is the whole of the difference.
-
-| | self-hosted (default) | managed (`AI_MANAGED=1`) |
-| --- | --- | --- |
-| when the environment is written to the database | the first boot, when the settings singleton does not exist yet | **every** boot |
-| authority afterwards | the **Settings** page | the container's environment |
-| Providers, Models and Duplicates in Settings | editable | not rendered, and the API answers `403` |
-| an incomplete or invalid block | the setup wizard opens and an admin fills it in | the process **refuses to start**, naming the variable |
-
-Self-hosted is the ordinary install: put a key in `.env` so a fresh volume comes
-up ready to use instead of on the wizard, and change your mind later in
-**Settings**. Managed is for a hosted fleet, where the operator carries the AI
-bill and the tenant must not be able to move it onto their own key. Refusing to
-start is the right failure there, because nobody inside a managed instance can
-repair a bad key: the Settings page is gone.
-
-Neither mode compares against what was applied last. An earlier release stored a
-digest per variable in `app_settings.env_applied` and re-applied a variable only
-when it had changed; naming the two modes made that unnecessary, and the column
-is dropped.
-
-#### The provider block
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `AI_MANAGED` | `0` | Whether the operator owns AI configuration. See the table above. |
-| `AI_SDK` | `openai` | The language model's SDK: `openai`, `openrouter` or `mistral`. `google_vision` is refused — it cannot serve extraction. |
-| `AI_API_KEY` | empty | Its credential. **One key is usually the whole configuration**: with this and nothing else the app creates one provider and routes extraction, chat, Deep Search *and* OCR to it. |
-| `AI_MODEL` | `gpt-5.6-luna` | The model for extraction, chat and Deep Search. Be sure it supports the result language set in **Settings**. |
-| `AI_BASE_URL` | the SDK's own endpoint | An OpenAI-compatible base URL, for a gateway or a self-hosted endpoint. |
-| `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `openai`, `openrouter`, `mistral` or `google_vision`. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
-| `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK`. |
-| `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. |
-| `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Required unless `OCR_SDK=google_vision`, which reads a document without one. |
-| `AI_EMBEDDING_MODEL` | unset (Deep Search matches keywords only) | An embedding model on the `AI_SDK` provider, so Deep Search can also find documents by meaning. Operator-owned under `AI_MANAGED=1`; removing it there turns the feature off. See below for what it costs. |
-| `AI_SEARCH_HELPER_MODEL` | unset (the Search model does this work) | A cheaper model on the `AI_SDK` provider for Deep Search's bulk per-document work: distilling long reads into notes and surveying many documents for one question. Operator-owned under `AI_MANAGED=1`. See "How Research covers a topic" below. |
-
-There is deliberately no `AI_EMBEDDING_SDK` / `_API_KEY` / `_BASE_URL` trio.
-Pointing embeddings at a different endpoint than the language model is a rare
-enough choice that it belongs in **Settings**, and three more variables would
-mostly be three more ways to half-configure the feature.
-
-A provider record is matched by the default alias it is created with. A renamed
-or deleted provider is left alone rather than reclaimed — renaming one is an
-edit an admin made, and a boot that undid it would undo it again on every boot
-after that.
-
-#### The rest
-
-Seeded on the first boot and edited from **Settings** afterwards, in both modes.
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `OCR_TIMEOUT_SEC` | `40` | OCR request timeout |
-| `AI_TIMEOUT_SEC` | `60` | Extraction, chat, search and split-detection request timeout |
-| `WORKER_TIMEOUT_SEC` | `300` | Per-job processing timeout |
-| `WORKER_MAX_RETRIES` | `0` | Max step retry attempts before a job fails |
-| `DEEP_SEARCH_LANGUAGES` | empty | Comma-separated ISO 639-1 codes (e.g. `de,en,uk`) for Deep Search keyword expansion. Only drives per-language searches when no embedding model is set; with one, a single search already crosses languages |
-| `EXTRACTION_PROMPT_VERSION` | `v1` | Stored on each processing job step run; bookkeeping only, not offered in the Settings UI |
-
-Two more are seeded the same way but are **operator-owned under
-`AI_MANAGED=1`**, because each is a cost rather than a preference — so a hosted
-plan can price them per tier:
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `NEAR_DUPLICATE_DETECTION_ENABLED` | `false` | Whether the pipeline runs near-duplicate detection |
-| `NEAR_DUPLICATE_THRESHOLD` | `0.92` | How similar two documents' text must be to count as near-duplicates |
-
-One more is read from the environment on every boot and never stored, because it
-paces spending rather than describing the instance:
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `EMBEDDING_BACKFILL_BATCH` | `20` | Documents one backfill tick embeds, on `WORKER_CRON_EXPR`. `0` disables the scheduled backfill, so only newly processed documents are embedded and an existing archive is left alone — **Management → Embeddings** still embeds it on demand. |
-
-#### What embeddings cost
-
-Turning `AI_EMBEDDING_MODEL` on is a commitment to embed the whole archive, not
-just the next upload, so it is worth knowing the shape of the bill before you
-make it.
-
-- **Tokens.** Each document is cut into ~1100-character passages plus one
-  passage rendered from its metadata, and each passage is one embedding input —
-  roughly one request per 30 KB of text. Embedding models are cheap per token;
-  this is simply every document you have.
-- **Re-embedding.** A document is embedded again whenever its OCR text or its
-  metadata changes: a re-OCR, an edited title, a renamed tag, a reprocess. And
-  *every* document is embedded again when you change the model, because vectors
-  from two models cannot be compared — there is no partial migration.
-- **Space, which under encryption is RAM.** A 1536-dimension vector is about
-  6 KB; a typical document is a handful of passages, so 30–60 KB each inside
-  `data.db`. With `VAULT_ENABLED=1` the archive is decrypted into a tmpfs, so
-  that space is memory. A model with 1024 dimensions or fewer costs
-  proportionally less of it. See [Encryption at rest](/encryption).
-
-The backfill drains at `EMBEDDING_BACKFILL_BATCH` documents a tick and logs what
-it embedded, what failed, and how many are left; **Settings → Models** shows the
-same counts, and **Management → Embeddings** both shows them and runs the whole
-backlog on demand rather than waiting a tick a minute. A provider failure is
-soft: the document keeps its text, its metadata and its place in keyword search,
-and is retried later with a backoff.
-
-The **result language** has no variable at all. It decides what language a
-document's title, summary and tags are stored in, which is a reader's
-preference rather than an operator's, so it is set in **Settings** and a managed
-instance keeps it.
-
 ## First-launch setup wizard
 
 On a fresh install the SPA hard-gates until setup is complete:
 
 1. **Create admin** — email + password. Creates a PocketBase `_superusers` account **and** a matching `users` account (same credentials) so the admin can own documents. Replaces PocketBase’s browser installer UI.
 2. **Passkey** *(optional)* — offer to add a [passkey](/passkeys) for the account just created. Skipping it changes nothing and the offer does not come back; a passkey can be added later from **More → Account**. The step is hidden on an address where a passkey cannot be created (an IP address, or plain HTTP outside `localhost`).
-3. **Provider** — add at least one API provider (`openai`, `openrouter`, `mistral`, or `google_vision`).
+3. **Provider** — add at least one API provider (`mistral`, `openai`, `openrouter`, or `google_vision`).
 4. **Models** — pick provider → model for OCR and metadata extraction (chat/search inherit extraction).
 
-You can also create the admin from the environment (`SETUP_ADMIN_EMAIL` and `SETUP_ADMIN_PASSWORD`, applied on the first boot that finds no account) or from the CLI (`go run . superuser upsert EMAIL PASS` from `backend/`; this also upserts the paired `users` account), and seed the AI keys in `.env` before the first boot; the wizard skips steps that are already done. With both, a fresh volume comes up with nothing left to answer. Until keys are present, regular users see a “setup incomplete” screen; only an admin can finish configuration.
+Steps 3 and 4 are skipped when `.env` already carries the keys — see
+[AI providers and models](/ai_providers). The admin can likewise come from the
+environment (`SETUP_ADMIN_EMAIL` / `SETUP_ADMIN_PASSWORD`, applied on the first
+boot that finds no account) or from the CLI (`go run . superuser upsert EMAIL
+PASS` from `backend/`, which also upserts the paired `users` account). With
+both, a fresh volume comes up with nothing left to answer. Until keys are
+present, regular users see a “setup incomplete” screen; only an admin can finish
+configuration.
 
 ## Settings (admin UI)
 
 1. Sign in with the **admin** email/password (login prefers the `users` account; legacy `_superusers`-only installs are linked automatically via `/api/app/ensure-user`, which sets a hidden `is_app_admin` flag on the paired `users` record).
-2. Open **Settings** in the nav (shown when `/api/app/me` reports `is_admin`). Add providers, then bind OCR / extraction / chat / search to a provider and model. Changes hot-reload the in-process clients (no restart).
+2. Open **Settings** in the nav (shown when `/api/app/me` reports `is_admin`). Add providers, then bind OCR / extraction / chat / search to a provider and model — see [Binding models in Settings](/ai_providers#binding-models-in-settings). Changes hot-reload the in-process clients (no restart).
 
 `WORKER_CRON_EXPR` is not editable there; change `.env` and restart, or use PocketBase Admin → Settings → Crons.
 
@@ -532,30 +422,24 @@ embedding binding deletes the directory.
 
 Admins can force a rebuild from **Management → Rebuild search index** (`POST /api/app/search/reindex`). It rebuilds both indexes.
 
-## LLM setup (OpenAI / OpenRouter / Mistral)
-
-Prefer **Settings** in the UI (admin): add a provider with SDK `openai`, `openrouter`, or `mistral`, then select it for extraction, chat, and search. Mistral uses the same [OpenAI-compatible chat completions](https://docs.mistral.ai/api) endpoint as the other LLMs (`/v1/chat/completions`); OCR still uses Mistral’s dedicated Document OCR API.
-
-For a fresh install you can put `AI_API_KEY` in `.env` so a provider row is seeded on the first boot and the instance comes up already configured. One key covers extraction, chat, Deep Search and OCR; add `OCR_SDK` and `OCR_API_KEY` only when OCR should run somewhere else. See [AI: bootstrap, and managed mode](#ai-bootstrap-and-managed-mode).
-
-Without an LLM provider, AI extraction, document chat, and Deep Search return a configuration error.
+## Deep Search
 
 Deep Search uses a tool-calling agent over the Bleve full-text index, in two modes, one per path under `/rag`:
 
 - **Search** (`/rag/search`) — one round of `search_documents`, answered from titles, summaries and short OCR snippets. Results are shown as document cards.
 - **Research** (`/rag/research`) — the agent searches, reads the documents it finds (`read_documents`), surveys many at once when the question spans a topic (`survey_documents`), counts when asked how many (`count_documents`), and writes a markdown answer citing each document it used, with the documents it drew on listed under the answer. Progress streams over `POST /api/app/search/stream` (server-sent events), so each search, read, survey and count appears as it happens.
 
+Research has no round or document limit. It keeps searching and reading until it can answer, the model stops making progress, or a completion is rejected because the conversation exceeded the model's context window. Without a language-model provider, Deep Search returns a configuration error — see [AI providers and models](/ai_providers).
+
 ### How Deep Search finds documents
 
 Both modes reach the archive through the same `search_documents` tool, and it
 runs up to two searches for every query.
 
-- **Keywords (BM25)** over the documents index, relaxed in two rungs: first most
-  of the terms (all of 2, n−1 up to 5, then 70%), and only if that matches
-  nothing at all, any one of them — with one edit of slack on words of five
-  letters or more that carry no digits, capped at 10 hits. The Documents page
-  keeps the strict behaviour — there the query is a filter you typed, here it is
-  a guess the model made from a question.
+- **Keywords (BM25)** over the documents index, [relaxed in two
+  rungs](#full-text-search) rather than the strict AND the Documents page keeps:
+  there the query is a filter you typed, here it is a guess the model made from
+  a question.
 - **Meaning (kNN)** over `bleve/chunks`, a second index holding one entry per
   embedded passage with its vector, searched by cosine similarity to the
   embedded question. This half exists only when `AI_EMBEDDING_MODEL` is set and
@@ -597,8 +481,6 @@ Each call logs one line, `deep search retrieval lexical=… dense=… fused=…
 embedded=…`, which is where to look when an answer seems to have missed a
 document.
 
-Research has no round or document limit. It keeps searching and reading until it can answer, the model stops making progress, or a completion is rejected because the conversation exceeded the model's context window.
-
 ### How Research covers a topic
 
 Reading documents one call at a time is right for a needle question and wrong
@@ -632,11 +514,11 @@ affordable.
 The helper is a separate binding (`AI_SEARCH_HELPER_MODEL`, or **Deep Search
 helper** in Settings) because this work is many cheap calls where the research
 loop is a few expensive ones; unset, it falls back to the Search model and the
-same features run at the Search model's price. Helpers that reject JSON mode
-are retried in plain text and parsed leniently. Every completion logs its token
-usage (`ai completion usage prompt_tokens=… cached_tokens=… completion_tokens=…`)
-and a research run logs its total, which is where to look when checking what a
-question cost.
+same features run at the Search model's price. Helpers that reject JSON mode are
+retried in plain text and parsed leniently. Every completion logs its token usage
+(`ai completion usage prompt_tokens=… cached_tokens=… completion_tokens=…`) and a
+research run logs its total, which is where to look when checking what a question
+cost.
 
 Models that emit tool calls in their content rather than natively (the DSML
 path) are told to answer after one round of tool results, so they cannot chain a
@@ -646,7 +528,7 @@ Each mode is its own path — `/rag/search` and `/rag/research` — so the mode 
 
 The mode can only be chosen before a chat has a turn. A transcript is a sequence: its answers were produced by one mode, and the next turn replays them to the model as its own prior work, so switching underneath would answer a later question in a way the earlier ones do not support. Once a chat exists the switch shows which mode it is in and stops being a link — starting a new chat is the way to the other one. The server enforces this too: a turn sent under a mode the chat is not in is a 409, and opening `/rag/search/<research-chat>` redirects to the path that matches. A saved chat reopens on the path matching the mode it ran in.
 
-Configure **Search provider/model**, **Deep Search helper** and **Deep search languages** in Settings.
+Configure **Search provider/model**, **Deep Search helper** and **Deep search languages** in [Settings](/ai_providers#binding-models-in-settings).
 
 ## Chat sessions
 
@@ -676,27 +558,6 @@ Limits:
 - An account may keep 500 chats. Past that, new ones are refused until some are deleted; nothing is pruned automatically.
 
 Deleting a document deletes its Ask AI chats, and deleting an account deletes all of its chats. The `chat_sessions` and `chat_messages` collections carry no API rules, so — like `passkey_credentials` — they are not reachable through `/api/collections` at all and `/api/app/chats` is the only way in. That is deliberate: a client able to write its own `assistant` messages could plant text that the server would then replay to the model as a genuine prior answer.
-
-## OCR setup
-
-Add an OCR-capable provider in **Settings** (or seed via `.env` on first boot), then bind it under **Models**. OpenRouter OCR lists only models that advertise `file` input. Mistral OCR lists models whose ids contain `ocr`. Other SDKs show the full catalog with a warning to choose a file-capable model.
-
-### Google Cloud Vision
-
-Uses the official [Go client library](https://docs.cloud.google.com/vision/docs/detect-labels-image-client-libraries).
-
-- **Images** — `BatchAnnotateImages` with `DOCUMENT_TEXT_DETECTION` via `images:annotate`
-- **PDFs** — `BatchAnnotateFiles` via `files:annotate` (base64 upload, no Cloud Storage). Pages are processed in batches of up to 5 per request.
-
-See [docs/google_vision.md](google_vision.md) for obtaining a Google API key.
-
-### Mistral OCR
-
-Uses the [Mistral Document OCR API](https://docs.mistral.ai/en/studio-api/document-processing/basic_ocr) when the provider is bound for OCR. Local files are sent as base64 data URLs, up to Mistral's documented 50 MB — which the 20 MB `documents.file` cap already keeps every upload under. The same provider can be bound for extraction, chat, and search (chat completions, not this OCR endpoint).
-
-- **PDFs and office documents** — `document_url` with a base64 data URL
-- **Images** — `image_url` with a base64 data URL
-- **Output** — page markdown joined into plain text
 
 ## Useful commands
 
@@ -791,10 +652,8 @@ If the app starts returning 401 after working at add-server time, delete and re-
 
 ## Troubleshooting
 
-- **Stuck on setup wizard:** create the admin account and add an OCR provider plus an LLM provider (OpenAI, OpenRouter, or Mistral — or set `AI_API_KEY` and `SETUP_ADMIN_*` in `.env` before the first boot, or use `superuser upsert`). Clearing required keys later brings the config steps back for admins.
+- **Stuck on setup wizard, OCR fails, AI extraction fails:** see [AI providers → Troubleshooting](/ai_providers#troubleshooting).
 - **Upload succeeds but stays pending:** ensure the backend server is running; the worker starts with `serve`.
-- **OCR fails:** configure the OCR provider and API key in Settings (or seed `.env` before first boot). For Google Vision, ensure the Vision API is enabled for your project.
-- **AI extraction fails:** configure an LLM provider (OpenAI, OpenRouter, or Mistral) in Settings. Check the processing job error on the document detail page.
 - **Settings page missing:** log in with the admin email (the account created at setup / `superuser upsert`). Regular non-admin users do not see Settings.
-- **Auth errors in frontend:** delete PocketBase data dir (`backend/pb_data`) and restart to recreate collections, then reload the app. This also deletes the Bleve index (rebuilt on next boot).
+- **Auth errors in frontend:** delete the PocketBase data dir (`backend/pb_data`) and restart to recreate collections, then reload the app. This also deletes the Bleve index (rebuilt on next boot).
 - **Search misses a document:** wait for processing to finish, then retry. Admins can use **Management → Rebuild search index**, or delete `backend/pb_data/bleve` and restart.
