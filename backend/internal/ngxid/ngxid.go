@@ -148,8 +148,28 @@ func Register(app core.App) {
 	// system record fields, including those marked as Hidden", so without this
 	// an admin PATCH could repoint a client's cached id at a different record,
 	// or clear it and make the record invisible to every paperless client.
+	//
+	// An update is also the second chance at an id: a row still holding 0 is
+	// unreachable through the paperless API, so it is stamped here.
 	app.OnRecordUpdate(Names()...).BindFunc(func(e *core.RecordEvent) error {
-		Restore(e.Record)
+		if Restore(e.Record); e.Record.GetInt(Field) == 0 {
+			if err := Assign(e.App, e.Record); err != nil {
+				return err
+			}
+		}
+		return e.Next()
+	})
+
+	// The migration backfill runs once, so it does not cover rows written by a
+	// rollback to a build without these hooks. OnServe rather than OnBootstrap:
+	// pending migrations run inside the serve command, and this reads a column
+	// they may still be adding.
+	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
+		if err := Sweep(e.App); err != nil {
+			// Those rows were already unreachable; refusing to serve helps
+			// nobody.
+			e.App.Logger().Error("ngxid: boot sweep failed", "error", err)
+		}
 		return e.Next()
 	})
 }
@@ -164,6 +184,65 @@ func Restore(record *core.Record) {
 	}
 }
 
+// Sweep stamps every row in Collections that carries no client-facing id.
+//
+// Raw SQL rather than app.Save: saving fires the record hooks, which would
+// reindex and mark embeddings stale once per row, at boot.
+func Sweep(app core.App) error {
+	for _, c := range Collections {
+		if err := sweepCollection(app, c); err != nil {
+			return fmt.Errorf("ngxid: sweep %s: %w", c.Name, err)
+		}
+	}
+	return nil
+}
+
+func sweepCollection(app core.App, c Collection) error {
+	collection, err := app.FindCollectionByNameOrId(c.Name)
+	if err != nil {
+		return nil
+	}
+	if collection.Fields.GetByName(Field) == nil {
+		return nil
+	}
+
+	type row struct {
+		ID    string `db:"id"`
+		Owner string `db:"owner"`
+	}
+	owner := "''"
+	if c.Owner != "" {
+		owner = "[[" + c.Owner + "]]"
+	}
+	var rows []row
+	query := fmt.Sprintf(
+		"SELECT [[id]], %s AS [[owner]] FROM {{%s}} WHERE COALESCE([[%s]], 0) = 0 ORDER BY [[id]] ASC",
+		owner, c.Name, Field,
+	)
+	if err := app.DB().NewQuery(query).All(&rows); err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+
+	update := fmt.Sprintf("UPDATE {{%s}} SET [[%s]] = {:value} WHERE [[id]] = {:id}", c.Name, Field)
+	// Each row is written before the next is probed, so the probe sees what
+	// this loop has already handed out.
+	for _, r := range rows {
+		id, err := freeIDFor(app, c, r.Owner, Hash(r.ID))
+		if err != nil {
+			return err
+		}
+		if _, err := app.DB().NewQuery(update).Bind(dbx.Params{"value": id, "id": r.ID}).Execute(); err != nil {
+			return err
+		}
+	}
+	app.Logger().Info("ngxid: stamped records that carried no client-facing id",
+		"collection", c.Name, "count", len(rows))
+	return nil
+}
+
 // Assign gives record its client-facing id, leaving an id it already carries
 // alone so a restore or an import can bring its own.
 func Assign(app core.App, record *core.Record) error {
@@ -174,24 +253,43 @@ func Assign(app core.App, record *core.Record) error {
 		return errors.New("ngxid: record has no id to derive from")
 	}
 
-	collection := record.Collection().Name
-	ownerField, known := ownerFieldOf(collection)
-	if !known {
-		return fmt.Errorf("ngxid: %s carries no client-facing id", collection)
+	// The hook binds before pending migrations run, and one of them creates
+	// records (1730000011 clones a shared tag per owner). Probing there would
+	// query a column no migration has added yet and take the boot down with it;
+	// the backfill and Sweep number those rows instead.
+	collection := record.Collection()
+	if collection.Fields.GetByName(Field) == nil {
+		return nil
 	}
 
+	name := collection.Name
+	ownerField, known := ownerFieldOf(name)
+	if !known {
+		return fmt.Errorf("ngxid: %s carries no client-facing id", name)
+	}
+
+	id, err := freeIDFor(app, Collection{Name: name, Owner: ownerField}, record.GetString(ownerField), Hash(record.Id))
+	if err != nil {
+		return err
+	}
+	record.Set(Field, id)
+	return nil
+}
+
+// freeIDFor walks from seed to the first id no record of this owner holds.
+func freeIDFor(app core.App, c Collection, ownerID string, seed int) (int, error) {
 	scope := dbx.HashExp{Field: nil}
-	if ownerField != "" {
-		scope[ownerField] = record.GetString(ownerField)
+	if c.Owner != "" {
+		scope[c.Owner] = ownerID
 	}
 
 	var probeErr error
-	id := Free(Hash(record.Id), func(candidate int) bool {
+	id := Free(seed, func(candidate int) bool {
 		if probeErr != nil {
 			return false
 		}
 		scope[Field] = candidate
-		n, err := app.CountRecords(collection, scope)
+		n, err := app.CountRecords(c.Name, scope)
 		if err != nil {
 			probeErr = err
 			return false
@@ -199,12 +297,10 @@ func Assign(app core.App, record *core.Record) error {
 		return n > 0
 	})
 	if probeErr != nil {
-		return probeErr
+		return 0, probeErr
 	}
 	if id == 0 {
-		return fmt.Errorf("ngxid: no free id for %s near %d", collection, Hash(record.Id))
+		return 0, fmt.Errorf("ngxid: no free id for %s near %d", c.Name, seed)
 	}
-
-	record.Set(Field, id)
-	return nil
+	return id, nil
 }

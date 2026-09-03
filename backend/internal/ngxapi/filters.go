@@ -25,10 +25,19 @@ type textCriterion struct {
 	fields []string
 }
 
+// dateBound is one comparison against a date column. value is already in the
+// spelling the column is compared against; day compares the leading ten
+// characters only, which is all a date filter can mean.
+type dateBound struct {
+	op    string // ">=", ">", "<=" or "<"
+	value string
+	day   bool
+}
+
 // documentFilters is a parsed paperless-ngx document list query. Ids are
-// already translated to PocketBase ids, and dates are already normalised to an
-// inclusive YYYY-MM-DD range, so building the SQL from it needs no further
-// knowledge of paperless' parameter spelling.
+// already translated to PocketBase ids, and dates are already normalised to
+// bounds the SQL can compare directly, so building the query from it needs no
+// further knowledge of paperless' parameter spelling.
 type documentFilters struct {
 	text []textCriterion
 
@@ -45,9 +54,10 @@ type documentFilters struct {
 	corrsNone []string
 	corrUnset *bool
 
-	// createdFrom/To filter document_date, addedFrom/To the created timestamp.
-	createdFrom, createdTo string
-	addedFrom, addedTo     string
+	// created bounds the date a client is shown for a document; added bounds
+	// the moment it was uploaded.
+	created []dateBound
+	added   []dateBound
 
 	ids []string
 
@@ -68,54 +78,134 @@ func (f documentFilters) hasText() bool {
 	return len(f.text) > 0
 }
 
-// handledParams are the query parameters the document list understands. The
-// value says how the parameter is read, which is also the switch the parser
-// runs on.
+// textParams are the text filters and the index fields each may match. The
+// general query is first because its ranking is the one worth keeping.
+var textParams = []struct {
+	param  string
+	fields []string
+}{
+	{"query", nil},
+	{"title_content", []string{fulltext.FieldTitle, fulltext.FieldTitleOriginal, fulltext.FieldOCRText}},
+	{"title__icontains", []string{fulltext.FieldTitle, fulltext.FieldTitleOriginal}},
+	{"content__icontains", []string{fulltext.FieldOCRText}},
+}
+
+// relationSpec is one single-relation filter family.
+type relationSpec struct {
+	collection               string
+	single, in, none, isnull string
+}
+
+var relationSpecs = []relationSpec{
+	{
+		collection: "document_types",
+		single:     "document_type__id", in: "document_type__id__in",
+		none: "document_type__id__none", isnull: "document_type__isnull",
+	},
+	{
+		collection: "correspondents",
+		single:     "correspondent__id", in: "correspondent__id__in",
+		none: "correspondent__id__none", isnull: "correspondent__isnull",
+	},
+}
+
+var tagParams = []string{"tags__id", "tags__id__all", "tags__id__in", "tags__id__none", "is_tagged"}
+
+var documentIDParams = []string{"id", "id__in"}
+
+// ownerParams: see applyOwnerFilters.
+var ownerParams = []string{"owner__id", "owner__id__in", "owner__id__none", "owner__isnull"}
+
+// otherParams are answered from what Lemmary does not have.
+var otherParams = []string{"storage_path__isnull"}
+
+// nonFilterParams shape the response rather than narrowing it.
+var nonFilterParams = []string{
+	"page", "page_size", "ordering",
+	"format", "full_perms", "truncate_content",
+	// swift-paperless sends `fields=id` on the sweep that reconciles remote
+	// deletions and swallows the error, so a 400 here stops deletions reaching
+	// the device. Lemmary always returns the full shape; this narrows nothing.
+	"fields",
+}
+
+// dateFieldSpec is one paperless date filter family. datetime says the column
+// carries a time of day, so the bare comparators compare the whole instant.
+type dateFieldSpec struct {
+	param    string
+	datetime bool
+}
+
+var dateFieldSpecs = []dateFieldSpec{
+	{param: "created", datetime: false},
+	{param: "added", datetime: true},
+}
+
+// dateSuffixes are the comparators paperless spells. dayOnly marks the
+// __date__ forms, which mean a day whatever the column holds.
+var dateSuffixes = []struct {
+	suffix  string
+	op      string
+	dayOnly bool
+}{
+	{"__date__gt", ">", true},
+	{"__date__gte", ">=", true},
+	{"__date__lt", "<", true},
+	{"__date__lte", "<=", true},
+	{"__gt", ">", false},
+	{"__gte", ">=", false},
+	{"__lt", "<", false},
+	{"__lte", "<=", false},
+}
+
+// handledParams are the query parameters the document list understands.
 //
 // Anything not in here is refused rather than ignored. Ignoring an unknown
 // filter is the bug this whole file exists to fix: the client renders a 200 as
 // though the filter had been applied, so "documents tagged Invoice" quietly
 // becomes "every document". A 400 is wrong far more visibly.
-var handledParams = map[string]struct{}{
-	"query": {}, "title_content": {}, "title__icontains": {}, "content__icontains": {},
+//
+// Derived from the tables the parser reads rather than kept by hand: the two
+// had already drifted, refusing added__year that the parser handled fine.
+var handledParams = buildHandledParams()
 
-	"tags__id": {}, "tags__id__all": {}, "tags__id__in": {}, "tags__id__none": {},
-	"is_tagged": {},
-
-	"document_type__id": {}, "document_type__id__in": {},
-	"document_type__id__none": {}, "document_type__isnull": {},
-
-	"correspondent__id": {}, "correspondent__id__in": {},
-	"correspondent__id__none": {}, "correspondent__isnull": {},
-
-	"created__date__gt": {}, "created__date__gte": {},
-	"created__date__lt": {}, "created__date__lte": {},
-	"created__gt": {}, "created__gte": {}, "created__lt": {}, "created__lte": {},
-	"created__year": {},
-
-	"added__date__gt": {}, "added__date__gte": {},
-	"added__date__lt": {}, "added__date__lte": {},
-	"added__gt": {}, "added__gte": {}, "added__lt": {}, "added__lte": {},
-
-	"id": {}, "id__in": {},
-
-	"storage_path__isnull": {},
-
-	// Not filters: paging, ordering, and response shaping.
-	"page": {}, "page_size": {}, "ordering": {},
-	"format": {}, "full_perms": {}, "truncate_content": {},
+func buildHandledParams() map[string]struct{} {
+	out := map[string]struct{}{}
+	add := func(names ...string) {
+		for _, name := range names {
+			out[name] = struct{}{}
+		}
+	}
+	for _, spec := range textParams {
+		add(spec.param)
+	}
+	for _, spec := range relationSpecs {
+		add(spec.single, spec.in, spec.none, spec.isnull)
+	}
+	for _, field := range dateFieldSpecs {
+		for _, suffix := range dateSuffixes {
+			add(field.param + suffix.suffix)
+		}
+		add(field.param + "__year")
+	}
+	add(tagParams...)
+	add(documentIDParams...)
+	add(ownerParams...)
+	add(otherParams...)
+	add(nonFilterParams...)
+	return out
 }
 
 // parseDocumentFilters reads a paperless-ngx document list query. The returned
 // error is already client-facing text.
 func parseDocumentFilters(app core.App, authID string, q url.Values) (documentFilters, error) {
-	return parseDocumentFiltersWith(requestNgxIDs(app, authID), q)
+	return parseDocumentFiltersWith(requestNgxIDs(app, authID), toNgxID(authID), q)
 }
 
-// parseDocumentFiltersWith is parseDocumentFilters with the id resolver handed
-// in, which is the seam the parser tests use: everything except id translation
-// is pure, and pre-seeding the resolver keeps it that way.
-func parseDocumentFiltersWith(ids *ngxIDs, q url.Values) (documentFilters, error) {
+// parseDocumentFiltersWith is parseDocumentFilters with the id resolver and the
+// caller's own client-facing id handed in, which is the seam the parser tests
+// use: everything except id translation is pure.
+func parseDocumentFiltersWith(ids *ngxIDs, ownerID int, q url.Values) (documentFilters, error) {
 	var f documentFilters
 
 	for name := range q {
@@ -153,16 +243,17 @@ func parseDocumentFiltersWith(ids *ngxIDs, q url.Values) (documentFilters, error
 		f.tagsNone = resolved
 	}
 
-	for _, spec := range []struct {
-		collection       string
-		single, in, none string
-		isnull           string
-		dst, dstNone     *[]string
-		unset            **bool
+	// Destinations are paired with the specs here rather than stored in them,
+	// so the parameter names stay in the one table handledParams derives from.
+	for _, target := range []struct {
+		spec         relationSpec
+		dst, dstNone *[]string
+		unset        **bool
 	}{
-		{"document_types", "document_type__id", "document_type__id__in", "document_type__id__none", "document_type__isnull", &f.docTypes, &f.docTypesNone, &f.docTypeUnset},
-		{"correspondents", "correspondent__id", "correspondent__id__in", "correspondent__id__none", "correspondent__isnull", &f.corrs, &f.corrsNone, &f.corrUnset},
+		{relationSpecs[0], &f.docTypes, &f.docTypesNone, &f.docTypeUnset},
+		{relationSpecs[1], &f.corrs, &f.corrsNone, &f.corrUnset},
 	} {
+		spec := target.spec
 		raw := append(csvValues(q, spec.single), csvValues(q, spec.in)...)
 		if len(raw) > 0 {
 			resolved, _, err := ids.resolveAll(spec.collection, raw)
@@ -170,20 +261,20 @@ func parseDocumentFiltersWith(ids *ngxIDs, q url.Values) (documentFilters, error
 				return f, err
 			}
 			f.impossible = f.impossible || len(resolved) == 0
-			*spec.dst = resolved
+			*target.dst = resolved
 		}
 		if raw := csvValues(q, spec.none); len(raw) > 0 {
 			resolved, _, err := ids.resolveAll(spec.collection, raw)
 			if err != nil {
 				return f, err
 			}
-			*spec.dstNone = resolved
+			*target.dstNone = resolved
 		}
 		v, err := boolParam(q, spec.isnull)
 		if err != nil {
 			return f, err
 		}
-		*spec.unset = v
+		*target.unset = v
 	}
 
 	if raw := csvValues(q, "id"); len(raw) > 0 {
@@ -203,6 +294,10 @@ func parseDocumentFiltersWith(ids *ngxIDs, q url.Values) (documentFilters, error
 		f.ids = append(f.ids, resolved...)
 	}
 
+	if err := applyOwnerFilters(&f, ownerID, q); err != nil {
+		return f, err
+	}
+
 	tagged, err := boolParam(q, "is_tagged")
 	if err != nil {
 		return f, err
@@ -218,10 +313,10 @@ func parseDocumentFiltersWith(ids *ngxIDs, q url.Values) (documentFilters, error
 		f.impossible = true
 	}
 
-	if f.createdFrom, f.createdTo, err = parseDateRange(q, "created"); err != nil {
+	if f.created, err = parseDateBounds(q, dateFieldSpecs[0]); err != nil {
 		return f, err
 	}
-	if f.addedFrom, f.addedTo, err = parseDateRange(q, "added"); err != nil {
+	if f.added, err = parseDateBounds(q, dateFieldSpecs[1]); err != nil {
 		return f, err
 	}
 
@@ -234,20 +329,60 @@ func parseDocumentFiltersWith(ids *ngxIDs, q url.Values) (documentFilters, error
 	return f, nil
 }
 
-// parseTextCriteria collects the text filters in a fixed order: the general
-// query first, because when several are present its ranking is the one worth
-// keeping.
+// applyOwnerFilters answers the owner pill from the one fact this endpoint
+// guarantees: every document it can return belongs to the caller. So a filter
+// either names them and narrows nothing, or names somebody else and matches
+// nothing. Refusing these turned "My documents" into an error.
+func applyOwnerFilters(f *documentFilters, ownerID int, q url.Values) error {
+	named := func(param string) (map[int]bool, error) {
+		raw := csvValues(q, param)
+		if len(raw) == 0 {
+			return nil, nil
+		}
+		out := make(map[int]bool, len(raw))
+		for _, value := range raw {
+			id, err := strconv.Atoi(value)
+			if err != nil {
+				return nil, fmt.Errorf("Invalid id %q.", value)
+			}
+			out[id] = true
+		}
+		return out, nil
+	}
+
+	for _, param := range []string{"owner__id", "owner__id__in"} {
+		wanted, err := named(param)
+		if err != nil {
+			return err
+		}
+		if wanted != nil && !wanted[ownerID] {
+			f.impossible = true
+		}
+	}
+
+	excluded, err := named("owner__id__none")
+	if err != nil {
+		return err
+	}
+	if excluded[ownerID] {
+		f.impossible = true
+	}
+
+	// Every document here has an owner.
+	unowned, err := boolParam(q, "owner__isnull")
+	if err != nil {
+		return err
+	}
+	if unowned != nil && *unowned {
+		f.impossible = true
+	}
+	return nil
+}
+
+// parseTextCriteria collects the text filters in textParams' order.
 func parseTextCriteria(q url.Values) []textCriterion {
 	var out []textCriterion
-	for _, spec := range []struct {
-		param  string
-		fields []string
-	}{
-		{"query", nil},
-		{"title_content", []string{fulltext.FieldTitle, fulltext.FieldTitleOriginal, fulltext.FieldOCRText}},
-		{"title__icontains", []string{fulltext.FieldTitle, fulltext.FieldTitleOriginal}},
-		{"content__icontains", []string{fulltext.FieldOCRText}},
-	} {
+	for _, spec := range textParams {
 		if text := strings.TrimSpace(q.Get(spec.param)); text != "" {
 			out = append(out, textCriterion{text: text, fields: spec.fields})
 		}
@@ -378,61 +513,52 @@ func boolParam(q url.Values, name string) (*bool, error) {
 	}
 }
 
-// parseDateRange folds every comparator paperless spells for one field into a
-// single inclusive [from, to] pair of YYYY-MM-DD days. Strict bounds become the
-// neighbouring day, and repeated bounds keep the tighter one, so
-// created__date__gt=2025-01-01&created__date__gte=2025-06-01 means June.
-func parseDateRange(q url.Values, field string) (from, to string, err error) {
-	for _, spec := range []struct {
-		suffix string
-		lower  bool
-		shift  int
-	}{
-		{"__date__gt", true, 1},
-		{"__gt", true, 1},
-		{"__date__gte", true, 0},
-		{"__gte", true, 0},
-		{"__date__lt", false, -1},
-		{"__lt", false, -1},
-		{"__date__lte", false, 0},
-		{"__lte", false, 0},
-	} {
-		raw := strings.TrimSpace(q.Get(field + spec.suffix))
+const (
+	dayLayout = "2006-01-02"
+	// storedTimeLayout is how PocketBase writes a datetime column. Bounds are
+	// normalised to it so the comparison stays lexical over TEXT.
+	storedTimeLayout = "2006-01-02 15:04:05.000Z"
+)
+
+// parseDateBounds reads every comparator paperless spells for one date field.
+//
+// One bound per comparator rather than a folded [from, to] pair: ANDing keeps
+// the tightest automatically, and it lets a datetime bound stay a datetime.
+// Folding to days made added__gt=...T10:00:00Z drop that whole afternoon.
+func parseDateBounds(q url.Values, field dateFieldSpec) ([]dateBound, error) {
+	var bounds []dateBound
+	for _, spec := range dateSuffixes {
+		name := field.param + spec.suffix
+		raw := strings.TrimSpace(q.Get(name))
 		if raw == "" {
 			continue
 		}
-		day, dayErr := parseFilterDay(raw)
-		if dayErr != nil {
-			return "", "", fmt.Errorf("Invalid date %q for %q.", raw, field+spec.suffix)
-		}
-		bound := day.AddDate(0, 0, spec.shift).Format("2006-01-02")
-		if spec.lower {
-			if from == "" || bound > from {
-				from = bound
+		if spec.dayOnly || !field.datetime {
+			day, err := parseFilterDay(raw)
+			if err != nil {
+				return nil, fmt.Errorf("Invalid date %q for %q.", raw, name)
 			}
+			bounds = append(bounds, dateBound{op: spec.op, value: day.Format(dayLayout), day: true})
 			continue
 		}
-		if to == "" || bound < to {
-			to = bound
+		at, err := parseFilterTime(raw)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid date %q for %q.", raw, name)
 		}
+		bounds = append(bounds, dateBound{op: spec.op, value: at.UTC().Format(storedTimeLayout)})
 	}
 
-	if raw := strings.TrimSpace(q.Get(field + "__year")); raw != "" {
-		year, convErr := strconv.Atoi(raw)
-		if convErr != nil || year < 1 || year > 9999 {
-			return "", "", fmt.Errorf("Invalid year %q for %q.", raw, field+"__year")
+	if raw := strings.TrimSpace(q.Get(field.param + "__year")); raw != "" {
+		year, err := strconv.Atoi(raw)
+		if err != nil || year < 1 || year > 9999 {
+			return nil, fmt.Errorf("Invalid year %q for %q.", raw, field.param+"__year")
 		}
-		lower := fmt.Sprintf("%04d-01-01", year)
-		upper := fmt.Sprintf("%04d-12-31", year)
-		if from == "" || lower > from {
-			from = lower
-		}
-		if to == "" || upper < to {
-			to = upper
-		}
+		bounds = append(bounds,
+			dateBound{op: ">=", value: fmt.Sprintf("%04d-01-01", year), day: true},
+			dateBound{op: "<=", value: fmt.Sprintf("%04d-12-31", year), day: true},
+		)
 	}
-
-	return from, to, nil
+	return bounds, nil
 }
 
 // parseFilterDay accepts the day itself or a full timestamp, which is what
@@ -441,8 +567,34 @@ func parseFilterDay(raw string) (time.Time, error) {
 	if len(raw) > 10 {
 		raw = raw[:10]
 	}
-	return time.Parse("2006-01-02", raw)
+	return time.Parse(dayLayout, raw)
 }
+
+// parseFilterTime reads an instant, or a bare day as its midnight.
+func parseFilterTime(raw string) (time.Time, error) {
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04",
+		storedTimeLayout,
+		"2006-01-02 15:04:05",
+		dayLayout,
+	} {
+		if at, err := time.Parse(layout, raw); err == nil {
+			return at, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unrecognised timestamp %q", raw)
+}
+
+// createdValueSQL is the created date a client is shown: the document's own, or
+// its upload day when it has none. mapDocument renders exactly this, so the
+// filter and the sort must read it too -- otherwise every undated document is
+// missing from a range covering the date on its own card.
+const createdValueSQL = `COALESCE(NULLIF([[documents.document_date]], ''), [[documents.created]])`
+
+// addedValueSQL is the upload timestamp, which paperless calls added.
+const addedValueSQL = `[[documents.created]]`
 
 // documentFilterExprs compiles the filter set to SQL.
 //
@@ -514,8 +666,8 @@ func documentFilterExprs(f documentFilters) []dbx.Expression {
 		}
 	}
 
-	exprs = append(exprs, dateRangeExprs("document_date", f.createdFrom, f.createdTo, names)...)
-	exprs = append(exprs, dateRangeExprs("created", f.addedFrom, f.addedTo, names)...)
+	exprs = append(exprs, dateBoundExprs(createdValueSQL, "created", f.created, names)...)
+	exprs = append(exprs, dateBoundExprs(addedValueSQL, "added", f.added, names)...)
 
 	if len(f.ids) > 0 {
 		exprs = append(exprs, dbx.In("documents.id", anyValues(f.ids)...))
@@ -551,26 +703,25 @@ func tagsExpr(ids []string, negate bool, names *paramNamer) dbx.Expression {
 	), params)
 }
 
-// dateRangeExprs compares the first ten characters of a date column: the column
-// is TEXT and holds both "YYYY-MM-DD" and "YYYY-MM-DD HH:MM:SS.sssZ". An empty
-// date is excluded from any range rather than sorting below every bound.
-func dateRangeExprs(column, from, to string, names *paramNamer) []dbx.Expression {
-	if from == "" && to == "" {
+// dateBoundExprs compares value against every bound. A day bound reads the
+// first ten characters, because a date column is TEXT and holds both
+// "YYYY-MM-DD" and "YYYY-MM-DD HH:MM:SS.sssZ". An empty value is excluded from
+// any range rather than sorting below every bound.
+func dateBoundExprs(value, prefix string, bounds []dateBound, names *paramNamer) []dbx.Expression {
+	if len(bounds) == 0 {
 		return nil
 	}
 	exprs := []dbx.Expression{
-		dbx.NewExp(fmt.Sprintf("COALESCE([[documents.%s]], '') != ''", column)),
+		dbx.NewExp(fmt.Sprintf("COALESCE(%s, '') != ''", value)),
 	}
-	if from != "" {
-		placeholder, params := names.bindOne(column+"_from", from)
+	for _, bound := range bounds {
+		lhs := value
+		if bound.day {
+			lhs = fmt.Sprintf("substr(%s, 1, 10)", value)
+		}
+		placeholder, params := names.bindOne(prefix, bound.value)
 		exprs = append(exprs, dbx.NewExp(
-			fmt.Sprintf("substr([[documents.%s]], 1, 10) >= %s", column, placeholder), params,
-		))
-	}
-	if to != "" {
-		placeholder, params := names.bindOne(column+"_to", to)
-		exprs = append(exprs, dbx.NewExp(
-			fmt.Sprintf("substr([[documents.%s]], 1, 10) <= %s", column, placeholder), params,
+			fmt.Sprintf("%s %s %s", lhs, bound.op, placeholder), params,
 		))
 	}
 	return exprs

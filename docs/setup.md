@@ -732,11 +732,17 @@ Upgrading numbers the existing library in one migration. Two of an account's rec
 | Document type | `document_type__id`, `document_type__id__in`, `document_type__id__none`, `document_type__isnull` |
 | Correspondent | `correspondent__id`, `correspondent__id__in`, `correspondent__id__none`, `correspondent__isnull` |
 | Document date | `created__date__{gt,gte,lt,lte}`, `created__{gt,gte,lt,lte}`, `created__year` |
-| Upload date | `added__date__{gt,gte,lt,lte}`, `added__{gt,gte,lt,lte}` |
+| Upload date | `added__date__{gt,gte,lt,lte}`, `added__{gt,gte,lt,lte}`, `added__year` |
+| Owner | `owner__id`, `owner__id__in`, `owner__id__none`, `owner__isnull` |
 | Specific documents | `id`, `id__in` |
-| Paging and shaping | `page`, `page_size`, `ordering`, `truncate_content` |
+| Paging and shaping | `page`, `page_size`, `ordering`, `truncate_content`, `fields` |
 
 Filters combine, and `count` always matches the filtered set, so paging through a filtered list is safe.
+
+Two of those groups need a word on granularity and scope:
+
+- **`added__{gt,gte,lt,lte}` compare the whole instant**, so `added__gt=2025-06-15T10:00:00Z` returns uploads from later that same morning. The `added__date__` forms compare the day, as does every `created` comparator: a document's own date carries no time of day. A document with no date of its own answers on the day it was uploaded, which is the date the client is shown for it.
+- **Owner filters are answered, not applied.** Every document this API can return belongs to the caller, so naming them narrows nothing and naming anybody else matches nothing.
 
 Three things behave differently from paperless-ngx, deliberately:
 
@@ -744,7 +750,7 @@ Three things behave differently from paperless-ngx, deliberately:
 - **Text search matches whole words, not substrings.** All four text filters run through the same Bleve index as the web UI's search box, which is tokenised. Searching `rechn` will not find `Rechnung`; searching `rechnung` will.
 - **A filtered text search enumerates at most 5000 matches.** Beyond that the reported `count` under-reports — consistently, so the paging links never point past what can be served.
 
-Results are ranked by relevance when a text filter is present and no `ordering` is given, and by `ordering` otherwise.
+Results are ranked by relevance when a text filter is present and the `ordering` is absent, `score`, `-score`, or a field this server does not sort on — which is what paperless-ngx does too. Any other `ordering` is served by the database. `ordering=id` sorts by the integer id the client was shown, and `ordering=created` by the same date the response reports. A list with no text filter and no recognised `ordering` comes back newest upload first.
 
 ### Connecting external clients
 

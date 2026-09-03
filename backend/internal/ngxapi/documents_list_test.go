@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/pocketbase/pocketbase"
@@ -547,4 +548,120 @@ func storedID(t *testing.T, app core.App, collection, pbID string) int {
 		t.Fatalf("load %s %s: %v", collection, pbID, err)
 	}
 	return ngxIDOf(record)
+}
+
+// TestSearchOrderingByScoreKeepsRelevance: swift-paperless sends `score`
+// whenever a search is active, and treating any non-empty ordering as a
+// database sort threw the index's ranking away.
+func TestSearchOrderingByScoreKeepsRelevance(t *testing.T) {
+	f := newListFixture(t)
+
+	doc, err := f.app.FindRecordById("documents", f.docNone)
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+	// A body mention against a title match, which the index boosts far higher.
+	doc.Set("ocr_text", "a note that merely mentions One in passing")
+	if err := f.app.Save(doc); err != nil {
+		t.Fatalf("save ocr text: %v", err)
+	}
+	idx := f.indexed(t)
+
+	best := f.search(t, idx, "query=One&ordering=-score")
+	if got := f.titles(best.Results); len(got) != 2 || got[0] != "One" {
+		t.Fatalf("ordering=-score gave %v, want the title match first", got)
+	}
+
+	// Ascending relevance is the same list, read from the other end.
+	worst := f.search(t, idx, "query=One&ordering=score")
+	if got := f.titles(worst.Results); len(got) != 2 || got[0] != "None" {
+		t.Fatalf("ordering=score gave %v, want the weakest match first", got)
+	}
+}
+
+// TestSearchWithNoSearchableTermsIsAnEmptyPage: a client re-querying per
+// keystroke sends a lone quote, which the handler used to turn into a 500.
+func TestSearchWithNoSearchableTermsIsAnEmptyPage(t *testing.T) {
+	f := newListFixture(t)
+	idx := f.indexed(t)
+
+	for _, query := range []string{`query=%22`, `title_content=%22`, `content__icontains=%22%22`} {
+		body := f.search(t, idx, query)
+		if body.Count != 0 || len(body.Results) != 0 {
+			t.Fatalf("%s: returned %d documents, want an empty page", query, body.Count)
+		}
+	}
+}
+
+// TestListAcceptsTheClientsOwnerAndFieldsParams: both used to be 400s. The
+// client swallows the one on its deletion-reconcile sweep, so remote deletions
+// quietly stopped reaching the device.
+func TestListAcceptsTheClientsOwnerAndFieldsParams(t *testing.T) {
+	f := newListFixture(t)
+
+	mine := toNgxID(f.userID)
+	for _, query := range []string{
+		"fields=id&page_size=25000",
+		fmt.Sprintf("owner__id__in=%d", mine),
+		fmt.Sprintf("owner__id=%d", mine),
+		"owner__isnull=false",
+	} {
+		status, body := f.list(t, query)
+		if status != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200", query, status)
+		}
+		if body.Count != 3 {
+			t.Fatalf("%s: count = %d, want the owner's 3 documents", query, body.Count)
+		}
+	}
+
+	// Somebody else's documents are answerable, and the answer is none.
+	status, none := f.list(t, fmt.Sprintf("owner__id__in=%d", toNgxID(f.otherID)))
+	if status != http.StatusOK || none.Count != 0 {
+		t.Fatalf("another owner: status %d count %d, want 200 and nothing", status, none.Count)
+	}
+}
+
+// TestListSortsByTheIDTheClientWasShown: ordering=id used to sort by the random
+// PocketBase string, which has nothing to do with the response.
+func TestListSortsByTheIDTheClientWasShown(t *testing.T) {
+	f := newListFixture(t)
+
+	_, body := f.list(t, "ordering=id")
+	ids := make([]int, 0, len(body.Results))
+	for _, result := range body.Results {
+		ids = append(ids, int(result["id"].(float64)))
+	}
+	if len(ids) != 3 {
+		t.Fatalf("listed %d documents, want 3", len(ids))
+	}
+	if !slices.IsSorted(ids) {
+		t.Fatalf("ordering=id returned %v, want them ascending", ids)
+	}
+}
+
+// TestUndatedDocumentIsFoundByTheDateItShows: an upload with no extracted date
+// was missing from every created range, including one covering its own card.
+func TestUndatedDocumentIsFoundByTheDateItShows(t *testing.T) {
+	f := newListFixture(t)
+
+	doc, err := f.app.FindRecordById("documents", f.docNone)
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+	doc.Set("document_date", "")
+	if err := f.app.Save(doc); err != nil {
+		t.Fatalf("clear the document date: %v", err)
+	}
+
+	_, body := f.list(t, "is_tagged=false")
+	shown := fmt.Sprint(body.Results[0]["created_date"])
+	if shown == "" {
+		t.Fatal("an undated document was rendered with no created date")
+	}
+
+	_, ranged := f.list(t, "created__date__gte="+shown+"&created__date__lte="+shown)
+	if got := f.titles(ranged.Results); len(got) != 1 || got[0] != "None" {
+		t.Fatalf("a range covering the date on the card matched %v, want [None]", got)
+	}
 }

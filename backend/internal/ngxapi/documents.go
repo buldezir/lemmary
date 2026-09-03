@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/fulltext"
 	"lemmary/backend/internal/models"
+	"lemmary/backend/internal/ngxid"
 )
 
 var errSearchIndexNotReady = errors.New("search index is not ready")
@@ -35,11 +37,15 @@ func handleListDocuments(idx *fulltext.Index) func(*core.RequestEvent) error {
 			return paginatedList(e, 0, page, pageSize, nil)
 		}
 
-		exprs := append([]dbx.Expression{dbx.HashExp{"user": e.Auth.Id}}, documentFilterExprs(filters)...)
+		// Kept apart because the search path needs to know whether the database
+		// has anything to say beyond the owner scope the index already applied.
+		filterExprs := documentFilterExprs(filters)
+		exprs := append([]dbx.Expression{dbx.HashExp{"user": e.Auth.Id}}, filterExprs...)
 		ordering := strings.TrimSpace(query.Get("ordering"))
 
 		if filters.hasText() {
-			return listDocumentsByText(e, idx, filters, exprs, ordering, page, clampSearchPageSize(pageSize))
+			return listDocumentsByText(e, idx, filters, exprs, len(filterExprs) > 0,
+				ordering, page, clampSearchPageSize(pageSize))
 		}
 
 		total, err := e.App.CountRecords("documents", exprs...)
@@ -52,7 +58,8 @@ func handleListDocuments(idx *fulltext.Index) func(*core.RequestEvent) error {
 		for _, expr := range exprs {
 			q.AndWhere(expr)
 		}
-		for _, order := range documentSortColumns(ordering) {
+		columns, _ := documentOrder(ordering)
+		for _, order := range columns {
 			q.AndOrderBy(order)
 		}
 		if err := q.Limit(int64(pageSize)).Offset(int64((page - 1) * pageSize)).All(&records); err != nil {
@@ -78,17 +85,26 @@ func handleListDocuments(idx *fulltext.Index) func(*core.RequestEvent) error {
 // itself switches intersection strategies at.
 const maxTextIDs = 5000
 
+// maxPushedIDs is how many index hits go to SQLite as an IN list rather than
+// being intersected in Go. Above it the parameter list nears SQLite's variable
+// limit and scanning the owner's id column is cheaper.
+const maxPushedIDs = 500
+
 // listDocumentsByText answers a request carrying a text filter: the index says
 // which documents match the words, the database says which of those match
-// everything else, and the intersection is the page.
+// everything else, and the intersection is the page. The order is the index's
+// unless the client asked for one the database can serve.
 //
-// The order is the index's unless the client asked for one. Relevance is the
-// only ranking a search has, and a client that sent no ordering wants it.
+// When dbFiltered is false and the wanted order is relevance, the database is
+// not consulted at all -- selecting the owner's every document id to intersect
+// with a list the index already agrees with is what a search over a large
+// archive cost per keystroke.
 func listDocumentsByText(
 	e *core.RequestEvent,
 	idx *fulltext.Index,
 	filters documentFilters,
 	exprs []dbx.Expression,
+	dbFiltered bool,
 	ordering string,
 	page, pageSize int,
 ) error {
@@ -104,30 +120,25 @@ func listDocumentsByText(
 		return paginatedList(e, 0, page, pageSize, nil)
 	}
 
-	// An id-only scan rather than an IN list of every hit: the survivor set is
-	// what both the count and the page need, and binding thousands of
-	// parameters to learn it is the cost this avoids.
-	survivors, err := filteredDocumentIDs(e.App, exprs, ordering)
-	if err != nil {
-		return internalError(e, err)
-	}
+	columns, dbSorted := documentOrder(ordering)
 
-	// Whichever list carries the wanted order drives the walk; the other
-	// becomes the membership test.
-	source, filter := ranked, survivors
-	if ordering != "" {
-		source, filter = survivors, ranked
-	}
-	allowed := make(map[string]struct{}, len(filter))
-	for _, id := range filter {
-		allowed[id] = struct{}{}
-	}
-
-	ordered := make([]string, 0, min(len(source), len(allowed)))
-	for _, id := range source {
-		if _, ok := allowed[id]; ok {
-			ordered = append(ordered, id)
+	ordered := ranked
+	if dbFiltered || dbSorted {
+		survivors, err := filteredDocumentIDs(e.App, exprs, columns, dbSorted, ranked)
+		if err != nil {
+			return internalError(e, err)
 		}
+		// Whichever list carries the wanted order drives the walk; the other
+		// becomes the membership test.
+		if dbSorted {
+			ordered = intersectKeepingOrder(survivors, ranked)
+		} else {
+			ordered = intersectKeepingOrder(ranked, survivors)
+		}
+	}
+	// Ascending relevance: the same list read from the other end.
+	if !dbSorted && ordering == "score" {
+		slices.Reverse(ordered)
 	}
 
 	total := int64(len(ordered))
@@ -137,20 +148,52 @@ func listDocumentsByText(
 	}
 	end := min(offset+pageSize, len(ordered))
 
-	records := make([]*core.Record, 0, end-offset)
-	for _, id := range ordered[offset:end] {
-		record, err := e.App.FindRecordById("documents", id)
-		if err != nil {
-			continue
-		}
-		records = append(records, record)
+	// One query for the page, not a point lookup per row: a page is 250
+	// documents by default.
+	wanted := ordered[offset:end]
+	found, err := e.App.FindRecordsByIds("documents", wanted)
+	if err != nil {
+		return internalError(e, err)
 	}
+	records := inOrder(found, wanted)
 
 	results, err := mapDocuments(e.App, records, filters.truncateContent)
 	if err != nil {
 		return internalError(e, err)
 	}
 	return paginatedList(e, total, page, pageSize, results)
+}
+
+// intersectKeepingOrder is the members of source that also appear in filter, in
+// source's order.
+func intersectKeepingOrder(source, filter []string) []string {
+	allowed := make(map[string]struct{}, len(filter))
+	for _, id := range filter {
+		allowed[id] = struct{}{}
+	}
+	out := make([]string, 0, min(len(source), len(allowed)))
+	for _, id := range source {
+		if _, ok := allowed[id]; ok {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// inOrder puts records back into the order their ids were asked in;
+// FindRecordsByIds answers in whatever order the query produced.
+func inOrder(records []*core.Record, ids []string) []*core.Record {
+	byID := make(map[string]*core.Record, len(records))
+	for _, record := range records {
+		byID[record.Id] = record
+	}
+	out := make([]*core.Record, 0, len(ids))
+	for _, id := range ids {
+		if record, ok := byID[id]; ok {
+			out = append(out, record)
+		}
+	}
+	return out
 }
 
 // textMatchIDs runs every text criterion and intersects them, keeping the
@@ -165,6 +208,11 @@ func textMatchIDs(idx *fulltext.Index, filters documentFilters, authID string) (
 			UserID: authID,
 		}, maxTextIDs)
 		if err != nil {
+			// A lone quote from a client re-querying per keystroke is a query
+			// with no matches, not a server fault.
+			if errors.Is(err, fulltext.ErrNoSearchableTerms) {
+				return nil, nil
+			}
 			return nil, err
 		}
 		if i == 0 {
@@ -186,14 +234,25 @@ func textMatchIDs(idx *fulltext.Index, filters documentFilters, authID string) (
 	return ranked, nil
 }
 
-// filteredDocumentIDs lists the ids matching exprs, in ordering's order.
-func filteredDocumentIDs(app core.App, exprs []dbx.Expression, ordering string) ([]string, error) {
+// filteredDocumentIDs lists the ids matching exprs. restrictTo is the index's
+// hits: a short list is pushed into the query so only those rows are read, a
+// long one is left to the caller to intersect.
+func filteredDocumentIDs(
+	app core.App,
+	exprs []dbx.Expression,
+	columns []string,
+	applyOrder bool,
+	restrictTo []string,
+) ([]string, error) {
 	q := app.RecordQuery("documents").Select("[[documents.id]]")
 	for _, expr := range exprs {
 		q.AndWhere(expr)
 	}
-	if ordering != "" {
-		for _, order := range documentSortColumns(ordering) {
+	if len(restrictTo) > 0 && len(restrictTo) <= maxPushedIDs {
+		q.AndWhere(dbx.In("documents.id", anyValues(restrictTo)...))
+	}
+	if applyOrder {
+		for _, order := range columns {
 			q.AndOrderBy(order)
 		}
 	}
@@ -494,43 +553,46 @@ func parseTagIDs(form url.Values) []string {
 	return ids
 }
 
-// documentSortColumns maps a paperless ordering to quoted ORDER BY clauses.
+// documentOrder maps a paperless ordering to quoted ORDER BY clauses.
 //
-// The id tiebreaker is not decoration: several documents routinely share a
-// created timestamp or a document_date, and SQLite is free to return tied rows
-// in any order it likes. Without a total order, paging the same list twice can
-// show a row twice and never show another -- the bug is invisible on page one
-// and reliable at a page boundary.
-func documentSortColumns(ordering string) []string {
-	direction := " ASC"
-	if strings.HasPrefix(ordering, "-") {
-		direction = " DESC"
-	}
+// dbSorted is false when the database cannot serve the ordering: relevance,
+// which paperless spells score, or a field this server does not know. The plain
+// list then falls back to the columns returned; the search path reads the flag
+// and lets the index's ranking stand, as paperless-ngx does.
+//
+// The id tiebreaker is not decoration: documents routinely share a timestamp,
+// and without a total order paging shows one row twice and another never.
+func documentOrder(ordering string) (columns []string, dbSorted bool) {
+	descending := strings.HasPrefix(ordering, "-")
 	field := strings.TrimPrefix(strings.TrimPrefix(ordering, "-"), "+")
 
 	var column string
 	switch field {
 	case "created", "created_date":
-		column = "document_date"
+		column = createdValueSQL
 	case "added":
-		column = "created"
+		column = addedValueSQL
 	case "modified":
-		column = "updated"
+		column = "[[documents.updated]]"
 	case "title":
-		column = "title"
+		column = "[[documents.title]]"
 	case "id":
-		column = "id"
+		// The integer id the client was shown, not the random PocketBase string
+		// behind it, whose order has nothing to do with the response.
+		column = "[[documents." + ngxid.Field + "]]"
 	default:
-		// Unknown orderings, and the empty one, fall back to newest first.
-		column = "created"
-		if ordering == "" {
-			direction = " DESC"
-		}
+		return newestFirst(), false
 	}
 
-	columns := []string{"[[documents." + column + "]]" + direction}
-	if column != "id" {
-		columns = append(columns, "[[documents.id]]"+direction)
+	direction := " ASC"
+	if descending {
+		direction = " DESC"
 	}
-	return columns
+	return []string{column + direction, "[[documents.id]]" + direction}, true
+}
+
+// newestFirst is the default page order. A fresh slice per call, because
+// callers append to what documentOrder hands back.
+func newestFirst() []string {
+	return []string{addedValueSQL + " DESC", "[[documents.id]] DESC"}
 }

@@ -1,6 +1,7 @@
 package fulltext
 
 import (
+	"errors"
 	"fmt"
 	"html"
 	"math"
@@ -24,6 +25,11 @@ const (
 	// coverage first.
 	relaxedFallbackLimit = 10
 )
+
+// ErrNoSearchableTerms is text that is not empty but tokenises to nothing: a
+// lone quote, punctuation on its own. A sentinel so a caller can answer it with
+// an empty page rather than a 500.
+var ErrNoSearchableTerms = errors.New("query has no searchable terms")
 
 type Query struct {
 	Text             string
@@ -383,7 +389,7 @@ func (i *Index) KeepEligible(q Query, ids []string) ([]string, error) {
 func buildSearchPlan(q Query, text string) (searchPlan, error) {
 	parts := parseQueryParts(text)
 	if len(parts) == 0 {
-		return searchPlan{}, fmt.Errorf("query has no searchable terms")
+		return searchPlan{}, ErrNoSearchableTerms
 	}
 	filters := filterConjuncts(q)
 	fields := searchFields(q.Fields)
