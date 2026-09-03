@@ -656,7 +656,7 @@ The server owns the transcript. A request carries a session id and one new messa
 
 `POST /api/app/search/stream` takes the same body and saves the same way; because its status line goes out with the first step event, the stored turn arrives as the `saved` event that closes the stream rather than as the response body. Reopening a search chat restores the mode its last turn ran in.
 
-A chat is only created once a reply arrives, so a provider that is misconfigured or times out leaves no empty chats behind. If a reply is produced but cannot be stored, the response carries `"saved": false` and the answer is shown without being added to the history.
+A chat is created as soon as the first message is submitted, before the model is called, so the whole run happens inside the conversation it will be stored in — that id is also the `x-opencode-session` an OpenCode request carries, so every turn of one chat shares a prompt cache. A first turn that never produces an answer takes its chat back with it, so a provider that is misconfigured or times out still leaves no empty chats behind. A breach of the 500-chat limit is refused up front with `409` rather than after a reply has been paid for. If a reply is produced but cannot be stored, the response carries `"saved": false` and the answer is shown without being added to the history.
 
 Managing saved chats:
 

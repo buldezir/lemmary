@@ -3,7 +3,6 @@ package chat
 import (
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -22,15 +21,17 @@ type SessionQuery struct {
 	Limit      int
 }
 
-// NewSession describes the session AppendTurn creates when none was given.
+// NewSession describes a conversation to open.
 type NewSession struct {
 	UserID     string
 	Kind       Kind
 	DocumentID string
-	// ID, when set, is the record id to create the session under instead of a
-	// generated one. The handlers mint it before the first turn so the id they
-	// send the provider as a cache key is the id the conversation keeps.
-	ID string
+	// Mode is the search mode the conversation runs in, and is fixed for its
+	// lifetime. Empty for document chats.
+	Mode string
+	// FirstMessage is the question that started the conversation; the title is
+	// derived from it.
+	FirstMessage string
 }
 
 // Turn is one exchange: what the user asked and what the model answered.
@@ -215,55 +216,99 @@ func PriorHitsFrom(records []*core.Record) []ai.DocumentHit {
 	return hits
 }
 
-// AppendTurn writes both halves of one exchange, creating the session first
-// when sessionID is empty. It returns the session record either way.
+// CreateSession opens an empty conversation.
+//
+// Called before the provider is, not after it answers. The record is what the
+// turn, the sidebar row and the provider's cache key all name, and a first
+// question that had none of those until the answer came back left the two ends
+// of one conversation disagreeing about which conversation it was. Opening it
+// up front also means the session cap is refused before a provider call is
+// spent rather than after -- and on the research stream, where the status line
+// has long gone out by the time an answer exists, it is the only point a cap
+// breach can still be an honest HTTP error.
+//
+// An empty session is a real one, so a first turn that never completes has to
+// be cleaned up: see DiscardEmptySession.
+func CreateSession(app core.App, spec NewSession) (*core.Record, error) {
+	var session *core.Record
+
+	err := app.RunInTransaction(func(txApp core.App) error {
+		total, err := CountSessions(txApp, spec.UserID)
+		if err != nil {
+			return err
+		}
+		if total >= MaxSessionsPerUser {
+			return ErrTooManySessions
+		}
+		collection, err := txApp.FindCollectionByNameOrId(SessionsCollection)
+		if err != nil {
+			return err
+		}
+		session = core.NewRecord(collection)
+		session.Set("user", spec.UserID)
+		session.Set("kind", string(spec.Kind))
+		if spec.DocumentID != "" {
+			session.Set("document", spec.DocumentID)
+		}
+		if spec.Mode != "" {
+			session.Set("mode", spec.Mode)
+		}
+		session.Set("title", DeriveTitle(spec.FirstMessage))
+		session.Set("message_count", 0)
+		// Stamped now rather than left empty, so a session whose first answer
+		// is still being generated sorts where the user expects in a sidebar
+		// ordered by last_message_at. AppendTurn moves it again.
+		session.Set("last_message_at", types.NowDateTime())
+		return txApp.Save(session)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+// DiscardEmptySession removes a conversation that never got a turn -- a first
+// question the provider failed, or one the user abandoned by closing the tab.
+//
+// Guarded on the transcript rather than on message_count, which the caller
+// holding a stale record could read as 0 after a turn had landed. A session
+// with any message in it is left alone, so the guard can only ever err towards
+// keeping a conversation.
+func DiscardEmptySession(app core.App, session *core.Record) error {
+	if session == nil {
+		return nil
+	}
+	total, err := app.CountRecords(MessagesCollection, dbx.HashExp{"session": session.Id})
+	if err != nil {
+		return err
+	}
+	if total > 0 {
+		return nil
+	}
+	return app.Delete(session)
+}
+
+// AppendTurn writes both halves of one exchange into an existing session,
+// re-reading it under the owner so a request cannot append to someone else's
+// conversation. It returns the updated session record.
 //
 // Called only after the model has answered. Writing the user message up front
 // would look more natural but leaves a dangling half-turn behind every failure
 // -- and Deep Search makes up to five sequential provider calls per request, so
 // abandoned tabs and provider timeouts are the ordinary case, not the edge. A
 // transcript ending in an unanswered user message also feeds the next request a
-// duplicated question. Nothing here consults the request context, so a client
-// that disconnects while the response is being written still finds the turn on
+// duplicated question. The session record is older than the answer; its
+// messages are not. Nothing here consults the request context, so a client that
+// disconnects while the response is being written still finds the turn on
 // reload.
-func AppendTurn(app core.App, sessionID string, spec NewSession, turn Turn) (*core.Record, error) {
+func AppendTurn(app core.App, userID, sessionID string, turn Turn) (*core.Record, error) {
 	var session *core.Record
 
 	err := app.RunInTransaction(func(txApp core.App) error {
 		var err error
-
-		if sessionID == "" {
-			total, err := CountSessions(txApp, spec.UserID)
-			if err != nil {
-				return err
-			}
-			if total >= MaxSessionsPerUser {
-				return ErrTooManySessions
-			}
-			collection, err := txApp.FindCollectionByNameOrId(SessionsCollection)
-			if err != nil {
-				return err
-			}
-			session = core.NewRecord(collection)
-			if id := strings.TrimSpace(spec.ID); id != "" {
-				session.Id = id
-			}
-			session.Set("user", spec.UserID)
-			session.Set("kind", string(spec.Kind))
-			if spec.DocumentID != "" {
-				session.Set("document", spec.DocumentID)
-			}
-			session.Set("title", DeriveTitle(turn.UserContent))
-			session.Set("message_count", 0)
-			// Saved before the messages because they need its id.
-			if err := txApp.Save(session); err != nil {
-				return err
-			}
-		} else {
-			session, err = FindOwnedSession(txApp, spec.UserID, sessionID)
-			if err != nil {
-				return err
-			}
+		session, err = FindOwnedSession(txApp, userID, sessionID)
+		if err != nil {
+			return err
 		}
 
 		next, err := nextSeq(txApp, session.Id)

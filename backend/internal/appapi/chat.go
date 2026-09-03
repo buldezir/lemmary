@@ -23,20 +23,6 @@ const chatMaxBodyBytes = 64 << 10
 
 const tooManySessionsMessage = "You have reached the maximum number of saved chats. Delete some to start a new one."
 
-// conversationSession resolves the id that both the provider's cache key and
-// the chat_sessions record will carry.
-//
-// A first turn has no session id yet: chat.AppendTurn mints one, and only after
-// the provider has already answered. Minting it here instead means turn one and
-// turn two name the same conversation, so the prompt prefix turn one warmed is
-// still there for turn two.
-func conversationSession(sessionID string) string {
-	if id := strings.TrimSpace(sessionID); id != "" {
-		return id
-	}
-	return core.GenerateDefaultRandomId()
-}
-
 type chatRequest struct {
 	SessionID string `json:"session_id"`
 	Content   string `json:"content"`
@@ -104,6 +90,19 @@ func loadChatHistory(app core.App, ownerID, sessionID string, kind chat.Kind, do
 		return nil, nil, err
 	}
 	return session, history, nil
+}
+
+// discardEmptySession drops a session opened for a turn that never landed, so
+// a failed or abandoned first question does not leave an empty chat in the
+// sidebar. Best effort: the answer, or the error being reported, is the thing
+// the caller owes the user.
+func discardEmptySession(app core.App, session *core.Record) {
+	if session == nil {
+		return
+	}
+	if err := chat.DiscardEmptySession(app, session); err != nil {
+		app.Logger().Error("discard empty chat session failed", "session", session.Id, slog.Any("error", err))
+	}
 }
 
 // writeChatSessionError maps a session lookup failure onto a response.
@@ -178,35 +177,50 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 			return writeOwnerError(e, err)
 		}
 
-		_, history, err := loadChatHistory(app, ownerID, req.SessionID, chat.KindDocument, documentID)
+		session, history, err := loadChatHistory(app, ownerID, req.SessionID, chat.KindDocument, documentID)
 		if err != nil {
 			return writeChatSessionError(e, app, err)
 		}
 		messages := append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content})
 
-		conversationID := conversationSession(req.SessionID)
+		// The conversation exists before the question is asked, so the id the
+		// provider is given as a cache key is the id the chat keeps. opened
+		// holds the record only when this request is what created it: a
+		// conversation that was already there is never this request's to
+		// take back.
+		var opened *core.Record
+		if session == nil {
+			session, err = chat.CreateSession(app, chat.NewSession{
+				UserID:       ownerID,
+				Kind:         chat.KindDocument,
+				DocumentID:   documentID,
+				FirstMessage: content,
+			})
+			if err != nil {
+				if errors.Is(err, chat.ErrTooManySessions) {
+					return writeError(e, http.StatusConflict, tooManySessionsMessage)
+				}
+				app.Logger().Error("document chat session create failed", "document", documentID, slog.Any("error", err))
+				return writeError(e, http.StatusInternalServerError, "Chat is unavailable.")
+			}
+			opened = session
+		}
 
 		// Request context: closing the tab cancels the upstream LLM call.
-		reply, err := chatter.Chat(aiprovider.WithSession(e.Request.Context(), conversationID), ocrText, messages)
+		reply, err := chatter.Chat(aiprovider.WithSession(e.Request.Context(), session.Id), ocrText, messages)
 		if err != nil {
 			app.Logger().Error("document chat failed", "document", documentID, slog.Any("error", err))
+			discardEmptySession(app, opened)
 			return writeError(e, http.StatusBadGateway, "The AI provider could not complete the request.")
 		}
 
-		session, err := chat.AppendTurn(app, req.SessionID, chat.NewSession{
-			ID:         conversationID,
-			UserID:     ownerID,
-			Kind:       chat.KindDocument,
-			DocumentID: documentID,
-		}, chat.Turn{
+		session, err = chat.AppendTurn(app, ownerID, session.Id, chat.Turn{
 			UserContent:      content,
 			AssistantContent: reply,
 		})
 		if err != nil {
-			if errors.Is(err, chat.ErrTooManySessions) {
-				return writeError(e, http.StatusConflict, tooManySessionsMessage)
-			}
 			app.Logger().Error("document chat persist failed", "document", documentID, slog.Any("error", err))
+			discardEmptySession(app, opened)
 			return writeJSON(e, http.StatusOK, chatResponse{
 				Message: unsavedMessage(chat.RoleAssistant, reply, nil),
 				Saved:   false,

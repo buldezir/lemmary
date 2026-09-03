@@ -47,16 +47,18 @@ type searchResponse struct {
 // called: whose conversation it is, what the model is shown, and what it may
 // search.
 type searchTurn struct {
-	agent     ai.SearchAgent
-	sessionID string
-	// conversationID is sessionID once there is one, and the id the session
-	// will be created under on a first turn. See conversationSession.
-	conversationID string
-	ownerID        string
-	content        string
-	mode           string
-	messages       []ai.ChatMessage
-	tools          agentTools
+	agent ai.SearchAgent
+	// session is the conversation this turn belongs to, opened before the
+	// provider is called rather than after it answers. opened holds the same
+	// record only when this request is what created it -- what may be taken
+	// back when the turn never lands.
+	session  *core.Record
+	opened   *core.Record
+	ownerID  string
+	content  string
+	mode     string
+	messages []ai.ChatMessage
+	tools    agentTools
 	// priorDocuments are the hits earlier turns of this conversation found.
 	// Research may read them by id without searching for them again.
 	priorDocuments []ai.DocumentHit
@@ -68,7 +70,7 @@ func (t searchTurn) research() bool { return t.mode == chat.ModeResearch }
 // so every completion it makes -- rounds, the final answer, and the helper
 // calls its tools fan out -- reaches the provider under one cache key.
 func (t searchTurn) agentContext(parent context.Context) context.Context {
-	return aiprovider.WithSession(parent, t.conversationID)
+	return aiprovider.WithSession(parent, t.session.Id)
 }
 
 // agentTools resolves the per-request scoping shared by both modes: the tag
@@ -211,10 +213,32 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		}
 	}
 
+	// Last, so a failure above cannot leave an empty conversation behind, and
+	// before the provider, so the agent loop runs inside the session it will be
+	// stored in. Hitting the cap is a plain 409 here; once the stream has
+	// started there is no status line left to say so with.
+	var opened *core.Record
+	if session == nil {
+		session, err = chat.CreateSession(app, chat.NewSession{
+			UserID:       ownerID,
+			Kind:         chat.KindSearch,
+			Mode:         mode,
+			FirstMessage: content,
+		})
+		if err != nil {
+			if errors.Is(err, chat.ErrTooManySessions) {
+				return searchTurn{}, true, writeError(e, http.StatusConflict, tooManySessionsMessage)
+			}
+			app.Logger().Error("search session create failed", slog.Any("error", err))
+			return searchTurn{}, true, writeError(e, http.StatusInternalServerError, "Search is unavailable.")
+		}
+		opened = session
+	}
+
 	return searchTurn{
 		agent:          agent,
-		sessionID:      req.SessionID,
-		conversationID: conversationSession(req.SessionID),
+		session:        session,
+		opened:         opened,
 		ownerID:        ownerID,
 		content:        content,
 		mode:           mode,
@@ -228,30 +252,25 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 //
 // A storage failure is not allowed to swallow the answer: the provider has
 // already been paid for it, so the reply is handed over unsaved and the
-// conversation simply does not become resumable. The one failure passed back to
-// the caller is ErrTooManySessions, which is the user's to act on.
-func persistSearchTurn(app core.App, t searchTurn, reply string, hits []ai.DocumentHit) (searchResponse, error) {
-	session, err := chat.AppendTurn(app, t.sessionID, chat.NewSession{
-		ID:     t.conversationID,
-		UserID: t.ownerID,
-		Kind:   chat.KindSearch,
-	}, chat.Turn{
+// conversation simply does not become resumable -- which is why a session this
+// request opened is dropped again on that path. The session cap cannot surface
+// here at all any more: prepareSearchTurn answers it before the run starts.
+func persistSearchTurn(app core.App, t searchTurn, reply string, hits []ai.DocumentHit) searchResponse {
+	session, err := chat.AppendTurn(app, t.ownerID, t.session.Id, chat.Turn{
 		UserContent:      t.content,
 		AssistantContent: reply,
 		Documents:        hits,
 		Mode:             t.mode,
 	})
 	if err != nil {
-		if errors.Is(err, chat.ErrTooManySessions) {
-			return searchResponse{}, err
-		}
 		app.Logger().Error("search persist failed", slog.Any("error", err))
+		discardEmptySession(app, t.opened)
 		return searchResponse{
 			Message:   unsavedMessage(chat.RoleAssistant, reply, hits),
 			Documents: hits,
 			Saved:     false,
 			Detail:    "This answer could not be saved, so the chat will not appear in your history.",
-		}, nil
+		}
 	}
 
 	info := chat.ToSessionInfo(session)
@@ -260,7 +279,7 @@ func persistSearchTurn(app core.App, t searchTurn, reply string, hits []ai.Docum
 		Message:   latestAssistantMessage(app, session.Id, reply, hits),
 		Documents: hits,
 		Saved:     true,
-	}, nil
+	}
 }
 
 func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) func(*core.RequestEvent) error {
@@ -293,16 +312,14 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 		}
 		if err != nil {
 			app.Logger().Error("deep search failed", "mode", turn.mode, slog.Any("error", err))
+			discardEmptySession(app, turn.opened)
 			return writeError(e, http.StatusBadGateway, "The AI provider could not complete the search.")
 		}
 		if hits == nil {
 			hits = []ai.DocumentHit{}
 		}
 
-		response, err := persistSearchTurn(app, turn, reply, hits)
-		if err != nil {
-			return writeError(e, http.StatusConflict, tooManySessionsMessage)
-		}
+		response := persistSearchTurn(app, turn, reply, hits)
 		response.Incomplete = incomplete
 		return writeJSON(e, http.StatusOK, response)
 	}
@@ -357,6 +374,8 @@ func handleResearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index)
 			Count:          turn.tools.count,
 		}, func(event ai.ResearchEvent) { stream.Send(event) })
 		if err != nil {
+			// Either way the conversation this request opened never got a turn.
+			discardEmptySession(app, turn.opened)
 			if e.Request.Context().Err() != nil {
 				// The client hung up; nothing left to report it to.
 				app.Logger().Info("research cancelled by client")
@@ -384,20 +403,11 @@ func handleResearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index)
 			Incomplete: result.Incomplete,
 		})
 
-		// Stored only now, with the answer complete. Note the client is already
-		// showing it: this event is what makes the conversation resumable, not
-		// what makes it visible. Hitting the session cap cannot be a 409 here --
-		// the status line went out with the first step event -- so it is
-		// reported the same way as any other failure to store: the answer
-		// stands, the chat is not saved, and Detail says why.
-		saved, err := persistSearchTurn(app, turn, result.Reply, documents)
-		if err != nil {
-			saved = searchResponse{
-				Message:   unsavedMessage(chat.RoleAssistant, result.Reply, documents),
-				Documents: documents,
-				Detail:    tooManySessionsMessage,
-			}
-		}
+		// The turn is stored only now, with the answer complete -- the session
+		// itself has been there since before the run started. Note the client is
+		// already showing the answer: this event is what makes the conversation
+		// resumable, not what makes it visible.
+		saved := persistSearchTurn(app, turn, result.Reply, documents)
 		stream.Send(searchSavedEvent{
 			Type:      "saved",
 			Session:   saved.Session,
