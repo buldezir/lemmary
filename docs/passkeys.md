@@ -8,6 +8,12 @@ service, and it works alongside the email and password form and any
 On the login screen it is one button: **Sign in with a passkey**. You do not type an email
 address — the authenticator knows which account the passkey belongs to.
 
+![The login screen, with password, passkey and OAuth2 sign-in](./screenshots/login.png)
+
+Enrolment lives under **More → Account**, one passkey per device.
+
+![The Account page, with an enrolled passkey](./screenshots/account.png)
+
 ---
 
 ## Requirements

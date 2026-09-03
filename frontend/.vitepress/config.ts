@@ -29,6 +29,7 @@ export default defineConfig({
   },
   themeConfig: {
     nav: [
+      { text: 'Screenshots', link: '/screenshots' },
       { text: 'Setup', link: '/setup' },
       { text: 'Google Vision', link: '/google_vision' },
       { text: 'OAuth2', link: '/oauth' },
@@ -38,10 +39,12 @@ export default defineConfig({
       {
         text: 'Guides',
         items: [
+          { text: 'Screenshots', link: '/screenshots' },
           { text: 'Setup', link: '/setup' },
           { text: 'Google Vision', link: '/google_vision' },
           { text: 'OAuth2', link: '/oauth' },
           { text: 'Passkeys', link: '/passkeys' },
+          { text: 'Encryption at rest', link: '/encryption' },
         ],
       },
     ],

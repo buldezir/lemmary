@@ -2,6 +2,7 @@
 
 Setup and operation guides for Lemmary.
 
+- [Screenshots](/screenshots) — a tour of every screen, from the setup wizard to Deep Search
 - [Setup Guide](/setup) — run from source, env vars, OCR, features, troubleshooting
 - [Google Vision API key](/google_vision) — obtain a Cloud Vision API key for OCR
 - [OAuth2 / SSO sign-in](/oauth) — enable provider sign-in on the app login screen

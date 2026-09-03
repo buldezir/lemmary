@@ -63,17 +63,38 @@ See [docs/setup.md](docs/setup.md) for the full list.
 
 ### Screenshots
 
-Documents list with AI-extracted titles, summaries, and tags:
+Every screen has one in [docs/screenshots.md](docs/screenshots.md). The library
+in all of them is a demo archive of invented documents, so nothing in these
+images belongs to anybody. A few to start with:
+
+Documents list with AI-extracted titles, summaries, and tags, and a timeline
+that counts the archive by month:
 
 ![Documents](docs/screenshots/documents.png)
 
-Document detail with editable metadata, summary, and OCR text:
+Document detail with editable metadata, summary, and OCR text. Fields the model
+wrote in the document's own language keep the original under the translation:
 
 ![Document detail](docs/screenshots/document-detail.png)
 
-Deep Search with natural-language queries:
+Deep Search in **Search** mode — a natural-language query, and the documents it
+matched:
 
 ![Deep Search](docs/screenshots/deep-search.png)
+
+Deep Search in **Research** mode — the same archive read rather than listed,
+answered with links to the documents each figure came from:
+
+![Deep Search, Research mode](docs/screenshots/deep-search-research.png)
+
+Split a scanner's multi-document PDF back into one document per part, by hand or
+with the cuts the model proposes:
+
+![Split documents](docs/screenshots/upload-split.png)
+
+Admin Settings: providers, models and worker timeouts as runtime configuration:
+
+![Settings](docs/screenshots/settings-top.png)
 
 ## Tests
 
