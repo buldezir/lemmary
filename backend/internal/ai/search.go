@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
 	"strconv"
 	"strings"
@@ -170,6 +171,7 @@ func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, 
 	if search == nil {
 		return "", nil, fmt.Errorf("document searcher is required")
 	}
+	ctx = aiprovider.EnsureSession(ctx, "search")
 
 	maxRounds := maxSearchToolRounds
 

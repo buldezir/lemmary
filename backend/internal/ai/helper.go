@@ -13,6 +13,7 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
 
+	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
 	"lemmary/backend/internal/models"
 )
@@ -106,6 +107,9 @@ func (h *openAIHelper) Distill(ctx context.Context, req DistillRequest) (Distill
 	if len(req.Docs) == 0 {
 		return DistillResult{}, nil
 	}
+	// Normally the surrounding research turn's conversation, inherited from the
+	// context the tool call was made under.
+	ctx = aiprovider.EnsureSession(ctx, "distill")
 	question := strings.TrimSpace(req.Question)
 	if question == "" {
 		return DistillResult{}, fmt.Errorf("distill needs a question")

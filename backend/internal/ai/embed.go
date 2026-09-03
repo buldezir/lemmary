@@ -88,6 +88,7 @@ func NewEmbedder(sdk, apiKey, model, baseURL string, dims int, timeout time.Dura
 		// Retries are ours: only 429/5xx/network are worth repeating, and the
 		// backoff has to be long enough to outlast a rate-limit window.
 		option.WithMaxRetries(0),
+		option.WithMiddleware(aiprovider.SessionMiddleware()),
 	}
 	if strings.TrimSpace(baseURL) != "" {
 		opts = append(opts, option.WithBaseURL(strings.TrimRight(baseURL, "/")))
@@ -131,6 +132,8 @@ func (e *openAIEmbedder) Embed(ctx context.Context, inputs []string) (EmbedResul
 	if len(inputs) == 0 {
 		return EmbedResult{}, nil
 	}
+	// Embeddings have no prompt to cache, but the header is still required.
+	ctx = aiprovider.EnsureSession(ctx, "embed")
 
 	prepared := make([]string, len(inputs))
 	for i, in := range inputs {

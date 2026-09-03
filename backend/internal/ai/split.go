@@ -9,6 +9,7 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
+	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/strutil"
@@ -64,6 +65,7 @@ func (c *OpenAIClient) DetectSplitPoints(ctx context.Context, pages []PageText) 
 	if len(pages) == 0 {
 		return nil, fmt.Errorf("no pages to inspect")
 	}
+	ctx = aiprovider.EnsureSession(ctx, "split")
 
 	userMessage := buildSplitUserMessage(pages)
 	c.logger.Info("split detection starting",

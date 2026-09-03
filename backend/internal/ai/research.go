@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
 	"regexp"
 	"sort"
@@ -159,6 +160,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	if emit == nil {
 		emit = func(ResearchEvent) {}
 	}
+	ctx = aiprovider.EnsureSession(ctx, "research")
 
 	state := &researchState{
 		hits:      make([]DocumentHit, 0),

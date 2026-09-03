@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"lemmary/backend/internal/aiprovider"
 )
 
 type embedRequestBody struct {
@@ -35,6 +37,10 @@ func newEmbedServer(t *testing.T, srv *embedServer) *httptest.Server {
 		srv.dims = 3
 	}
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// This server is not OpenCode, so the session header must not be sent.
+		if got := r.Header.Get(aiprovider.SessionHeader); got != "" {
+			t.Errorf("%s sent to a non-OpenCode host: %q", aiprovider.SessionHeader, got)
+		}
 		raw, _ := io.ReadAll(r.Body)
 		var body embedRequestBody
 		if err := json.Unmarshal(raw, &body); err != nil {

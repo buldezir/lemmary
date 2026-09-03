@@ -13,6 +13,7 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
 
+	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/strutil"
@@ -176,6 +177,7 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 	if c.apiKey == "" {
 		return nil, fmt.Errorf("AI API key is not configured")
 	}
+	ctx = aiprovider.EnsureSession(ctx, "extract")
 
 	inputChars := len(ocrText)
 	sentChars := len(strutil.Truncate(ocrText, 12000))

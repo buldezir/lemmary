@@ -40,6 +40,7 @@ func NewLLMProvider(p aiprovider.Provider, model string, timeout time.Duration, 
 		option.WithHTTPClient(&http.Client{Timeout: timeout}),
 		option.WithRequestTimeout(timeout),
 		option.WithMaxRetries(0),
+		option.WithMiddleware(aiprovider.SessionMiddleware()),
 	}
 	if strings.TrimSpace(p.BaseURL) != "" {
 		opts = append(opts, option.WithBaseURL(strings.TrimRight(p.BaseURL, "/")))
@@ -62,6 +63,8 @@ func (p *LLMProvider) Name() string {
 
 func (p *LLMProvider) ExtractText(ctx context.Context, filePath string, mimeType string) (string, error) {
 	start := time.Now()
+	ctx = aiprovider.EnsureSession(ctx, "ocr")
+
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return "", fmt.Errorf("read file for OCR: %w", err)

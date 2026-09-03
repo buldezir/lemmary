@@ -13,6 +13,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/chat"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/fulltext"
@@ -48,17 +49,27 @@ type searchResponse struct {
 type searchTurn struct {
 	agent     ai.SearchAgent
 	sessionID string
-	ownerID   string
-	content   string
-	mode      string
-	messages  []ai.ChatMessage
-	tools     agentTools
+	// conversationID is sessionID once there is one, and the id the session
+	// will be created under on a first turn. See conversationSession.
+	conversationID string
+	ownerID        string
+	content        string
+	mode           string
+	messages       []ai.ChatMessage
+	tools          agentTools
 	// priorDocuments are the hits earlier turns of this conversation found.
 	// Research may read them by id without searching for them again.
 	priorDocuments []ai.DocumentHit
 }
 
 func (t searchTurn) research() bool { return t.mode == chat.ModeResearch }
+
+// agentContext names the conversation on the context the agent loop runs under,
+// so every completion it makes -- rounds, the final answer, and the helper
+// calls its tools fan out -- reaches the provider under one cache key.
+func (t searchTurn) agentContext(parent context.Context) context.Context {
+	return aiprovider.WithSession(parent, t.conversationID)
+}
 
 // agentTools resolves the per-request scoping shared by both modes: the tag
 // catalogue offered to the agent, and the searcher/reader closures bound to the
@@ -203,6 +214,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 	return searchTurn{
 		agent:          agent,
 		sessionID:      req.SessionID,
+		conversationID: conversationSession(req.SessionID),
 		ownerID:        ownerID,
 		content:        content,
 		mode:           mode,
@@ -220,6 +232,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 // the caller is ErrTooManySessions, which is the user's to act on.
 func persistSearchTurn(app core.App, t searchTurn, reply string, hits []ai.DocumentHit) (searchResponse, error) {
 	session, err := chat.AppendTurn(app, t.sessionID, chat.NewSession{
+		ID:     t.conversationID,
 		UserID: t.ownerID,
 		Kind:   chat.KindSearch,
 	}, chat.Turn{
@@ -264,7 +277,7 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 		incomplete := false
 		if turn.research() {
 			// Non-streaming fallback for clients that cannot read SSE.
-			result, researchErr := turn.agent.Research(e.Request.Context(), ai.ResearchRequest{
+			result, researchErr := turn.agent.Research(turn.agentContext(e.Request.Context()), ai.ResearchRequest{
 				Messages:       turn.messages,
 				AvailableTags:  turn.tools.tags,
 				Search:         turn.tools.search,
@@ -276,7 +289,7 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 			}, nil)
 			reply, hits, incomplete, err = result.Reply, result.Documents, result.Incomplete, researchErr
 		} else {
-			reply, hits, err = turn.agent.Search(e.Request.Context(), turn.messages, turn.tools.tags, turn.tools.search, ai.SearchOptions{DenseRetrieval: turn.tools.dense})
+			reply, hits, err = turn.agent.Search(turn.agentContext(e.Request.Context()), turn.messages, turn.tools.tags, turn.tools.search, ai.SearchOptions{DenseRetrieval: turn.tools.dense})
 		}
 		if err != nil {
 			app.Logger().Error("deep search failed", "mode", turn.mode, slog.Any("error", err))
@@ -333,7 +346,7 @@ func handleResearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index)
 		stopHeartbeat := stream.Heartbeat(e.Request.Context())
 		defer stopHeartbeat()
 
-		result, err := turn.agent.Research(e.Request.Context(), ai.ResearchRequest{
+		result, err := turn.agent.Research(turn.agentContext(e.Request.Context()), ai.ResearchRequest{
 			Messages:       turn.messages,
 			AvailableTags:  turn.tools.tags,
 			Search:         turn.tools.search,

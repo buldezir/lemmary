@@ -3,6 +3,7 @@ package chat
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -26,6 +27,10 @@ type NewSession struct {
 	UserID     string
 	Kind       Kind
 	DocumentID string
+	// ID, when set, is the record id to create the session under instead of a
+	// generated one. The handlers mint it before the first turn so the id they
+	// send the provider as a cache key is the id the conversation keeps.
+	ID string
 }
 
 // Turn is one exchange: what the user asked and what the model answered.
@@ -240,6 +245,9 @@ func AppendTurn(app core.App, sessionID string, spec NewSession, turn Turn) (*co
 				return err
 			}
 			session = core.NewRecord(collection)
+			if id := strings.TrimSpace(spec.ID); id != "" {
+				session.Id = id
+			}
 			session.Set("user", spec.UserID)
 			session.Set("kind", string(spec.Kind))
 			if spec.DocumentID != "" {

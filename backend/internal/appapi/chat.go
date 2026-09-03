@@ -11,6 +11,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/chat"
 	"lemmary/backend/internal/config"
 )
@@ -21,6 +22,20 @@ import (
 const chatMaxBodyBytes = 64 << 10
 
 const tooManySessionsMessage = "You have reached the maximum number of saved chats. Delete some to start a new one."
+
+// conversationSession resolves the id that both the provider's cache key and
+// the chat_sessions record will carry.
+//
+// A first turn has no session id yet: chat.AppendTurn mints one, and only after
+// the provider has already answered. Minting it here instead means turn one and
+// turn two name the same conversation, so the prompt prefix turn one warmed is
+// still there for turn two.
+func conversationSession(sessionID string) string {
+	if id := strings.TrimSpace(sessionID); id != "" {
+		return id
+	}
+	return core.GenerateDefaultRandomId()
+}
 
 type chatRequest struct {
 	SessionID string `json:"session_id"`
@@ -169,14 +184,17 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 		}
 		messages := append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content})
 
+		conversationID := conversationSession(req.SessionID)
+
 		// Request context: closing the tab cancels the upstream LLM call.
-		reply, err := chatter.Chat(e.Request.Context(), ocrText, messages)
+		reply, err := chatter.Chat(aiprovider.WithSession(e.Request.Context(), conversationID), ocrText, messages)
 		if err != nil {
 			app.Logger().Error("document chat failed", "document", documentID, slog.Any("error", err))
 			return writeError(e, http.StatusBadGateway, "The AI provider could not complete the request.")
 		}
 
 		session, err := chat.AppendTurn(app, req.SessionID, chat.NewSession{
+			ID:         conversationID,
 			UserID:     ownerID,
 			Kind:       chat.KindDocument,
 			DocumentID: documentID,

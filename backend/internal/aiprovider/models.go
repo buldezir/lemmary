@@ -124,6 +124,11 @@ func ListModels(ctx context.Context, p Provider, purpose ModelPurpose, client *h
 	}
 	req.Header.Set("Authorization", "Bearer "+p.APIKey)
 	req.Header.Set("Accept", "application/json")
+	// Hand-rolled request, so the SDK middleware that stamps this everywhere
+	// else does not see it.
+	if SessionHost(req.URL.Host) {
+		req.Header.Set(SessionHeader, SessionFor("models"))
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
