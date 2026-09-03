@@ -8,6 +8,11 @@ payslips, contracts, statements and receipts addressed to a fictional
 is made up; the metadata, OCR text and Deep Search answers around them are real
 output from the pipeline reading those files.
 
+Every image on this page opens on click. The captures are taken at twice the
+size, so **Full size** in the viewer shows the interface exactly as it appears
+on screen — which is the only way the text in them is readable. Once open, `←`
+and `→` walk the whole tour, `z` toggles the size, and `Esc` closes.
+
 ## First launch
 
 The in-app wizard runs once, on an instance with no admin account. It creates
