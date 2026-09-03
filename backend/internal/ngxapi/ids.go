@@ -3,93 +3,142 @@ package ngxapi
 import (
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+
+	"lemmary/backend/internal/ngxid"
 )
 
+// toNgxID derives a client-facing id from a PocketBase id.
+//
+// Only for the collections that carry no ngxid.Field column -- users and
+// processing jobs -- whose ids a client reads and never sends back. Everything
+// a client can address is read from its stored column: see ngxIDOf.
 func toNgxID(pbID string) int {
-	if pbID == "" {
-		return 0
-	}
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(pbID))
-	id := int(h.Sum32() & 0x7fffffff)
-	if id == 0 {
-		return 1
-	}
-	return id
+	return ngxid.Hash(pbID)
+}
+
+// ngxIDOf reads the client-facing id a record was stamped with on create.
+func ngxIDOf(record *core.Record) int {
+	return record.GetInt(ngxid.Field)
 }
 
 func parseNgxID(raw string) (int, error) {
 	return strconv.Atoi(strings.TrimSpace(raw))
 }
 
-// ngxIDMap is the client-facing id to PocketBase id map for one collection and
-// owner, built by hashing every candidate.
+// findRecordByNgxID resolves one client-facing id inside an owner's scope.
 //
-// It selects the id column alone. The obvious implementation pages whole
-// records through FindRecordsByFilter, which hydrates every field to read one:
-// on the documents collection that means pulling the OCR text of the entire
-// archive -- megabytes -- to answer "which record is 944698583", once per
-// request. A thumbnail grid asks that twenty-five times per screen.
-//
-// Ties are broken toward the lowest PocketBase id, so a hash collision always
-// resolves to the same record as it did before this was a map.
-//
-// The result is cacheable whole: see ngxIDScopes.
-func ngxIDMap(app core.App, collection, ownerUserID string) (map[int]string, error) {
-	idColumn := "[[" + collection + ".id]]"
-	q := app.RecordQuery(collection).Select(idColumn).OrderBy(idColumn + " ASC")
-	if ownerUserID != "" {
-		q.AndWhere(dbx.HashExp{"user": ownerUserID})
+// One index seek, on the unique (user, ngx_id) index. It used to be a scan of
+// the owner's whole table per call, because the id was an FNV hash of the
+// PocketBase id and inverting it meant hashing every candidate -- and the
+// caller that matters most is a thumbnail, which swift-paperless requests once
+// per tile for a whole page of documents at a time.
+func findRecordByNgxID(app core.App, collection string, ngxID int, ownerUserID string) (*core.Record, error) {
+	// 0 is not an id this server ever issues, and it is what the column holds
+	// for a row no create hook stamped. Matching it would hand a client a
+	// record by asking for nothing.
+	if ngxID <= 0 {
+		return nil, errors.New("not found")
 	}
 
-	var ids []string
-	if err := q.Column(&ids); err != nil {
+	// The literal "ngx_id > 0" is not redundant with the guard above: the
+	// unique index is partial on exactly that predicate, and SQLite will only
+	// use a partial index when the query restates its WHERE clause. Without it
+	// the planner falls back to whichever index covers user alone and scans
+	// that owner's rows -- which is the cost this column exists to remove.
+	filter := "ngx_id > 0 && ngx_id = {:ngxID}"
+	params := dbx.Params{"ngxID": ngxID}
+	if ownerUserID != "" {
+		filter += " && user = {:userID}"
+		params["userID"] = ownerUserID
+	}
+	return app.FindFirstRecordByFilter(collection, filter, params)
+}
+
+// ngxIDsByPBID reads the client-facing ids of a known set of records in one
+// query.
+//
+// The reason it is batched: a document names its tags, type and correspondent
+// by PocketBase id, and rendering those as client ids now means reading the
+// related rows. Per field that is five hundred point lookups for a page of two
+// hundred and fifty documents -- the same shape of traffic this whole change
+// exists to remove.
+func ngxIDsByPBID(app core.App, collection string, pbIDs []string) (map[string]int, error) {
+	if len(pbIDs) == 0 {
+		return map[string]int{}, nil
+	}
+
+	values := make([]any, 0, len(pbIDs))
+	for _, id := range pbIDs {
+		values = append(values, id)
+	}
+
+	type idRow struct {
+		PBID  string `db:"id"`
+		NgxID int    `db:"ngx_id"`
+	}
+	var rows []idRow
+	err := app.RecordQuery(collection).
+		Select("[["+collection+".id]]", "[["+collection+".ngx_id]]").
+		AndWhere(dbx.In("[["+collection+".id]]", values...)).
+		All(&rows)
+	if err != nil {
 		return nil, err
 	}
 
-	known := make(map[int]string, len(ids))
-	for _, id := range ids {
-		ngxID := toNgxID(id)
-		if _, seen := known[ngxID]; !seen {
-			known[ngxID] = id
-		}
+	known := make(map[string]int, len(rows))
+	for _, row := range rows {
+		known[row.PBID] = row.NgxID
 	}
 	return known, nil
 }
 
-func findRecordByNgxID(app core.App, collection string, ngxID int, ownerUserID string) (*core.Record, error) {
-	// A hit skips the scan entirely: the mapping is permanent, because neither
-	// a PocketBase id nor its hash ever changes. Everything that could have
-	// gone stale -- the record deleted, or a collision resolving to somebody
-	// else's row -- is caught by the fetch and the ownership check below, which
-	// fall through to a fresh scan rather than answering wrongly.
-	scope := ngxIDScope{collection: collection, owner: ownerUserID}
-	if pbID, ok := ngxIDScopes.get(scope, ngxID); ok {
-		if record, err := app.FindRecordById(collection, pbID); err == nil {
-			if ownerUserID == "" || record.GetString("user") == ownerUserID {
-				return record, nil
-			}
+// pbIDsByNgxID is the reverse of ngxIDsByPBID: the PocketBase ids behind a set
+// of client ids, scoped to one owner, in one query. Ids the owner does not have
+// are simply absent, which is what tells a filter to match nothing.
+func pbIDsByNgxID(app core.App, collection, ownerUserID string, ngxIDs []int) (map[int]string, error) {
+	if len(ngxIDs) == 0 {
+		return map[int]string{}, nil
+	}
+
+	values := make([]any, 0, len(ngxIDs))
+	for _, id := range ngxIDs {
+		if id > 0 {
+			values = append(values, id)
 		}
 	}
+	if len(values) == 0 {
+		return map[int]string{}, nil
+	}
 
-	known, err := ngxIDMap(app, collection, ownerUserID)
-	if err != nil {
+	type idRow struct {
+		PBID  string `db:"id"`
+		NgxID int    `db:"ngx_id"`
+	}
+	q := app.RecordQuery(collection).
+		Select("[["+collection+".id]]", "[["+collection+".ngx_id]]").
+		// Restating the partial index's own predicate is what lets SQLite use
+		// it -- see findRecordByNgxID.
+		AndWhere(dbx.NewExp("[[" + collection + ".ngx_id]] > 0")).
+		AndWhere(dbx.In("[["+collection+".ngx_id]]", values...))
+	if ownerUserID != "" {
+		q.AndWhere(dbx.HashExp{"user": ownerUserID})
+	}
+
+	var rows []idRow
+	if err := q.All(&rows); err != nil {
 		return nil, err
 	}
-	ngxIDScopes.put(scope, known)
 
-	pbID, ok := known[ngxID]
-	if !ok {
-		return nil, errors.New("not found")
+	known := make(map[int]string, len(rows))
+	for _, row := range rows {
+		known[row.NgxID] = row.PBID
 	}
-	return app.FindRecordById(collection, pbID)
+	return known, nil
 }
 
 func findOwnedDocumentByNgxID(app core.App, authID string, ngxID int) (*core.Record, error) {
@@ -111,14 +160,6 @@ func findOwnedDocument(app core.App, authID, id string) (*core.Record, error) {
 		return nil, err
 	}
 	return findOwnedDocumentByNgxID(app, authID, ngxID)
-}
-
-func ngxRelationID(record *core.Record, field string) any {
-	id := record.GetString(field)
-	if id == "" {
-		return nil
-	}
-	return toNgxID(id)
 }
 
 func resolvePBRelationID(app core.App, collection string, raw any, ownerUserID string) string {
@@ -187,61 +228,4 @@ func resolveTagPBIDs(app core.App, rawIDs []string, ownerUserID string) ([]strin
 		result = append(result, tag.Id)
 	}
 	return result, nil
-}
-
-func ngxTagIDs(app core.App, pbIDs []string) []int {
-	result := make([]int, 0, len(pbIDs))
-	for _, id := range pbIDs {
-		if id != "" {
-			result = append(result, toNgxID(id))
-		}
-	}
-	return result
-}
-
-// ngxIDScopes caches the whole client-id-to-PocketBase-id map per collection
-// and owner.
-//
-// Caching one resolution at a time was not enough, and the reason is what the
-// traffic looks like: a thumbnail grid is twenty-five requests for twenty-five
-// *different* ids, so every one of them missed and rescanned. Storing the map
-// the scan already built means the first tile pays for the whole screen.
-//
-// Every entry is a hint, never an answer. A hit is still fetched by primary key
-// and ownership-checked, so a deleted record or a hash collision landing on
-// somebody else's row falls through to a fresh scan instead of answering
-// wrongly. A miss always rescans, which is what keeps a document created since
-// the map was built reachable.
-var ngxIDScopes = &ngxIDCache{scopes: map[ngxIDScope]map[int]string{}}
-
-// maxNgxIDScopes bounds the cache by owner-collection pairs rather than by
-// entries, because a scope is only useful whole. Eviction drops everything: the
-// cost is one scan per live scope, and a partial policy would be code to
-// maintain for no gain.
-const maxNgxIDScopes = 64
-
-type ngxIDScope struct {
-	collection string
-	owner      string
-}
-
-type ngxIDCache struct {
-	mu     sync.RWMutex
-	scopes map[ngxIDScope]map[int]string
-}
-
-func (c *ngxIDCache) get(scope ngxIDScope, ngxID int) (string, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	pbID, ok := c.scopes[scope][ngxID]
-	return pbID, ok
-}
-
-func (c *ngxIDCache) put(scope ngxIDScope, known map[int]string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if len(c.scopes) >= maxNgxIDScopes {
-		c.scopes = make(map[ngxIDScope]map[int]string, maxNgxIDScopes)
-	}
-	c.scopes[scope] = known
 }

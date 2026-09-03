@@ -10,10 +10,22 @@ import (
 	"lemmary/backend/internal/fulltext"
 )
 
-// seededIDs is an ngxIDs whose cache is already warm, so the parser can be
-// tested without an app: load() short-circuits on a populated collection.
+// seededIDs is an ngxIDs backed by a fixed table rather than a database, so
+// the parser can be tested without an app: everything in it except id
+// translation is pure, and this is the seam that keeps it that way.
 func seededIDs(byCollection map[string]map[int]string) *ngxIDs {
-	return &ngxIDs{byCollection: byCollection}
+	return &ngxIDs{
+		memo: map[string]map[int]string{},
+		lookup: func(collection string, ids []int) (map[int]string, error) {
+			found := map[int]string{}
+			for _, id := range ids {
+				if pbID, ok := byCollection[collection][id]; ok {
+					found[id] = pbID
+				}
+			}
+			return found, nil
+		},
+	}
 }
 
 func tagIDs() *ngxIDs {

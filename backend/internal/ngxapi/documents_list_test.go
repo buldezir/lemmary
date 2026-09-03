@@ -12,6 +12,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 
 	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/ngxid"
 
 	_ "lemmary/backend/migrations"
 )
@@ -19,12 +20,17 @@ import (
 // bootSchemaTestApp is bootTestApp plus the Lemmary schema. Bootstrap runs only
 // PocketBase's system migrations, so documents, tags and the rest do not exist
 // until the app migrations run too.
+//
+// It binds ngxid.Register for the same reason appwire does: a record created
+// without it carries no client-facing id, and nothing in this package could
+// then address it.
 func bootSchemaTestApp(t *testing.T) *pocketbase.PocketBase {
 	t.Helper()
 	app := bootTestApp(t)
 	if err := app.RunAppMigrations(); err != nil {
 		t.Fatalf("run app migrations: %v", err)
 	}
+	ngxid.Register(app)
 	return app
 }
 
@@ -472,4 +478,73 @@ func TestListDocumentsTitleContentSearchesTitleAndBody(t *testing.T) {
 	if titleOnly.Count != 0 {
 		t.Fatalf("content__icontains matched %d documents on their title alone", titleOnly.Count)
 	}
+}
+
+// TestListRendersStoredRelationIDs: the ids in a response have to be the ones
+// the client can send back. They come from the related rows now rather than
+// from a hash of a PocketBase id, so a document's tags, type and correspondent
+// must round-trip through the filters that resolve them.
+func TestListRendersStoredRelationIDs(t *testing.T) {
+	f := newListFixture(t)
+
+	invoiceType := createNamed(t, f.app, "document_types", "Invoice", f.userID)
+	acme := createNamed(t, f.app, "correspondents", "Acme", f.userID)
+	doc, err := f.app.FindRecordById("documents", f.docOne)
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+	doc.Set("document_type", invoiceType)
+	doc.Set("correspondent", acme)
+	if err := f.app.Save(doc); err != nil {
+		t.Fatalf("assign taxonomy: %v", err)
+	}
+
+	_, body := f.list(t, "is_tagged=true&tags__id__all="+fmt.Sprint(storedID(t, f.app, "tags", f.tagOne)))
+	var one map[string]any
+	for _, result := range body.Results {
+		if result["title"] == "One" {
+			one = result
+		}
+	}
+	if one == nil {
+		t.Fatalf("document One is missing from %v", f.titles(body.Results))
+	}
+
+	if got, want := int(one["id"].(float64)), storedID(t, f.app, "documents", f.docOne); got != want {
+		t.Fatalf("document id = %d, want the stored %d", got, want)
+	}
+	if got, want := int(one["document_type"].(float64)), storedID(t, f.app, "document_types", invoiceType); got != want {
+		t.Fatalf("document_type = %d, want the stored %d", got, want)
+	}
+	if got, want := int(one["correspondent"].(float64)), storedID(t, f.app, "correspondents", acme); got != want {
+		t.Fatalf("correspondent = %d, want the stored %d", got, want)
+	}
+	tags, _ := one["tags"].([]any)
+	if len(tags) != 1 || int(tags[0].(float64)) != storedID(t, f.app, "tags", f.tagOne) {
+		t.Fatalf("tags = %v, want the stored id of the one tag", tags)
+	}
+}
+
+// TestRenderingAPageBatchesRelationLookups is the cost of reading ids from
+// related rows instead of hashing them. Per field it would be one query per tag
+// per document -- the same per-row traffic the stored id was added to remove.
+func TestRenderingAPageBatchesRelationLookups(t *testing.T) {
+	f := newListFixture(t)
+
+	queries := countTableQueries(t, f.app, "tags")
+	if _, body := f.list(t, ""); len(body.Results) != 3 {
+		t.Fatalf("listed %d documents, want 3", len(body.Results))
+	}
+	if n := queries(); n != 1 {
+		t.Fatalf("rendering a page ran %d tag queries, want 1 for the whole page", n)
+	}
+}
+
+func storedID(t *testing.T, app core.App, collection, pbID string) int {
+	t.Helper()
+	record, err := app.FindRecordById(collection, pbID)
+	if err != nil {
+		t.Fatalf("load %s %s: %v", collection, pbID, err)
+	}
+	return ngxIDOf(record)
 }

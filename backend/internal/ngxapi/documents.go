@@ -59,7 +59,11 @@ func handleListDocuments(idx *fulltext.Index) func(*core.RequestEvent) error {
 			return internalError(e, err)
 		}
 
-		return paginatedList(e, total, page, pageSize, mapDocuments(e.App, records, filters.truncateContent))
+		results, err := mapDocuments(e.App, records, filters.truncateContent)
+		if err != nil {
+			return internalError(e, err)
+		}
+		return paginatedList(e, total, page, pageSize, results)
 	}
 }
 
@@ -142,7 +146,11 @@ func listDocumentsByText(
 		records = append(records, record)
 	}
 
-	return paginatedList(e, total, page, pageSize, mapDocuments(e.App, records, filters.truncateContent))
+	results, err := mapDocuments(e.App, records, filters.truncateContent)
+	if err != nil {
+		return internalError(e, err)
+	}
+	return paginatedList(e, total, page, pageSize, results)
 }
 
 // textMatchIDs runs every text criterion and intersects them, keeping the
@@ -196,12 +204,25 @@ func filteredDocumentIDs(app core.App, exprs []dbx.Expression, ordering string) 
 	return ids, nil
 }
 
-func mapDocuments(app core.App, records []*core.Record, truncate bool) []any {
+func mapDocuments(app core.App, records []*core.Record, truncate bool) ([]any, error) {
+	lens, err := newNgxIDLens(app, records)
+	if err != nil {
+		return nil, err
+	}
 	results := make([]any, 0, len(records))
 	for _, record := range records {
-		results = append(results, mapDocument(app, record, truncate))
+		results = append(results, mapDocument(lens, record, truncate))
 	}
-	return results
+	return results, nil
+}
+
+// mapOneDocument is mapDocuments for a single-record response.
+func mapOneDocument(app core.App, record *core.Record) (map[string]any, error) {
+	lens, err := newNgxIDLens(app, []*core.Record{record})
+	if err != nil {
+		return nil, err
+	}
+	return mapDocument(lens, record, false), nil
 }
 
 func handleGetDocument(e *core.RequestEvent) error {
@@ -209,7 +230,11 @@ func handleGetDocument(e *core.RequestEvent) error {
 	if err != nil {
 		return notFound(e, "Not found.")
 	}
-	return writeJSON(e, http.StatusOK, mapDocument(e.App, record, false))
+	mapped, err := mapOneDocument(e.App, record)
+	if err != nil {
+		return internalError(e, err)
+	}
+	return writeJSON(e, http.StatusOK, mapped)
 }
 
 func handlePatchDocument(e *core.RequestEvent) error {
@@ -266,7 +291,11 @@ func handlePatchDocument(e *core.RequestEvent) error {
 		return saveError(e, err)
 	}
 
-	return writeJSON(e, http.StatusOK, mapDocument(e.App, record, false))
+	mapped, err := mapOneDocument(e.App, record)
+	if err != nil {
+		return internalError(e, err)
+	}
+	return writeJSON(e, http.StatusOK, mapped)
 }
 
 func handleDeleteDocument(e *core.RequestEvent) error {

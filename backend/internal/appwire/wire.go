@@ -13,6 +13,7 @@ import (
 	"lemmary/backend/internal/limits"
 	"lemmary/backend/internal/mailsink"
 	"lemmary/backend/internal/ngxapi"
+	"lemmary/backend/internal/ngxid"
 	"lemmary/backend/internal/worker"
 
 	"github.com/pocketbase/pocketbase"
@@ -46,6 +47,10 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 		ft.EnqueueChunkRebuild(reloadApp)
 	})
 	config.RegisterHooks(app, rt)
+	// Before anything that creates records: the paperless-ngx API addresses
+	// documents and taxonomy by an integer id stored on the row, and a record
+	// that slipped in unstamped would be invisible to every paperless client.
+	ngxid.Register(app)
 	authguard.Register(app)
 	mailsink.Register(app)
 	fulltext.Register(app, ft)

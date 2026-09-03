@@ -109,7 +109,7 @@ var handledParams = map[string]struct{}{
 // parseDocumentFilters reads a paperless-ngx document list query. The returned
 // error is already client-facing text.
 func parseDocumentFilters(app core.App, authID string, q url.Values) (documentFilters, error) {
-	return parseDocumentFiltersWith(&ngxIDs{app: app, authID: authID, byCollection: map[string]map[int]string{}}, q)
+	return parseDocumentFiltersWith(requestNgxIDs(app, authID), q)
 }
 
 // parseDocumentFiltersWith is parseDocumentFilters with the id resolver handed
@@ -255,34 +255,55 @@ func parseTextCriteria(q url.Values) []textCriterion {
 	return out
 }
 
-// ngxIDs translates the FNV-hashed ids clients see back into PocketBase ids for
-// the life of one request.
+// ngxIDs translates the integer ids a client sends into PocketBase ids for the
+// life of one request.
 //
-// The hash is one-way, so the only way back is to hash every candidate. Holding
-// the map per collection is what keeps a request naming three tag ids to one
-// pass over the tag table instead of three.
+// It resolves in batches and remembers what it resolved, so a request naming
+// three tag ids costs one query rather than three, and naming the same tag in
+// two filters costs nothing the second time.
 type ngxIDs struct {
-	app          core.App
-	authID       string
-	byCollection map[string]map[int]string
+	// lookup is injected rather than called directly on an app: everything in
+	// the parser except id translation is pure, and handing this in is what
+	// lets the parser tests stay that way.
+	lookup func(collection string, ids []int) (map[int]string, error)
+	memo   map[string]map[int]string
 }
 
-func (r *ngxIDs) load(collection string) (map[int]string, error) {
-	if known, ok := r.byCollection[collection]; ok {
+func requestNgxIDs(app core.App, authID string) *ngxIDs {
+	return &ngxIDs{
+		lookup: func(collection string, ids []int) (map[int]string, error) {
+			return pbIDsByNgxID(app, collection, authID, ids)
+		},
+		memo: map[string]map[int]string{},
+	}
+}
+
+// resolve reads a batch of client ids, consulting the memo first and querying
+// only for what is left.
+func (r *ngxIDs) resolve(collection string, ids []int) (map[int]string, error) {
+	known := r.memo[collection]
+	if known == nil {
+		known = map[int]string{}
+		r.memo[collection] = known
+	}
+
+	pending := make([]int, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := known[id]; !ok {
+			pending = append(pending, id)
+		}
+	}
+	if len(pending) == 0 || r.lookup == nil {
 		return known, nil
 	}
-	// Deliberately a fresh scan rather than the shared cache: a filter reads a
-	// miss as "no such tag, match nothing", so serving it a map built before
-	// the tag existed would answer an empty page for a document the client can
-	// see. The result still warms the cache for the item lookups that follow --
-	// listing a page of documents is immediately followed by fetching their
-	// thumbnails.
-	known, err := ngxIDMap(r.app, collection, r.authID)
+
+	found, err := r.lookup(collection, pending)
 	if err != nil {
 		return nil, err
 	}
-	ngxIDScopes.put(ngxIDScope{collection: collection, owner: r.authID}, known)
-	r.byCollection[collection] = known
+	for ngxID, pbID := range found {
+		known[ngxID] = pbID
+	}
 	return known, nil
 }
 
@@ -293,18 +314,24 @@ func (r *ngxIDs) resolveAll(collection string, raw []string) (resolved []string,
 	if len(raw) == 0 {
 		return nil, true, nil
 	}
-	known, err := r.load(collection)
+
+	wanted := make([]int, 0, len(raw))
+	for _, value := range raw {
+		ngxID, convErr := strconv.Atoi(value)
+		if convErr != nil {
+			return nil, false, fmt.Errorf("Invalid id %q.", value)
+		}
+		wanted = append(wanted, ngxID)
+	}
+
+	known, err := r.resolve(collection, wanted)
 	if err != nil {
 		return nil, false, err
 	}
 
 	complete = true
 	seen := map[string]struct{}{}
-	for _, value := range raw {
-		ngxID, convErr := strconv.Atoi(value)
-		if convErr != nil {
-			return nil, false, fmt.Errorf("Invalid id %q.", value)
-		}
+	for _, ngxID := range wanted {
 		pbID, ok := known[ngxID]
 		if !ok {
 			complete = false

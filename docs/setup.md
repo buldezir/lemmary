@@ -714,6 +714,12 @@ Lemmary exposes a paperless-ngx-compatible REST API on the same host as PocketBa
 
 Compatibility is intentionally partial: common read/write flows work, but not every paperless-ngx feature is available (for example, some list endpoints return empty stubs where Lemmary has no equivalent data).
 
+### Document ids
+
+Paperless-ngx addresses records by integer id; PocketBase uses 15-character strings. Lemmary stores an `ngx_id` alongside every document, tag, correspondent and document type, seeded from a hash of the PocketBase id so ids issued before this column existed keep pointing at the same records. It is unique per account, assigned on create, and never changes afterwards — clients cache it, and swift-paperless keys its thumbnail cache on a URL containing it.
+
+Upgrading numbers the existing library in one migration. Two of an account's records that seed to the same value are resolved by giving the second one the next free id; before the column, the second was unreachable through the paperless API entirely.
+
 ### Document list filters
 
 `GET /api/documents/` understands the filters clients actually send:
@@ -748,6 +754,12 @@ Results are ranked by relevance when a text filter is present and no `ordering` 
 
 API versions 9 and 10 are accepted via the `Accept` header (`application/json; version=9`).
 
+### Tasks
+
+`GET /api/tasks/` reports Lemmary's processing jobs as paperless tasks, newest first, capped at 100 per response. `POST /api/acknowledge_tasks/` (and `/api/tasks/acknowledge/`, its name since paperless-ngx 2.14) dismisses them by id.
+
+Acknowledgement is stored in an `ngx_acknowledged` column on `processing_jobs` that only this API reads or writes — Lemmary's own UI shows processing state on the document and has no notion of dismissing it. `acknowledged=true` and `acknowledged=false` filter on it; omitting the parameter returns both.
+
 ### Importing from Paperless-ngx
 
 Any signed-in user can migrate a Paperless-ngx library into their own Lemmary account. The remote API token authenticates a specific ngx user, so the import runs as the current local user rather than as an admin.
@@ -766,6 +778,8 @@ Import fetches only the caller-supplied URL. Private, loopback, and link-local d
 ### swift-paperless (iOS)
 
 [swift-paperless](https://github.com/paulgessinger/swift-paperless) is the main mobile client exercised against this API. Browsing documents, viewing details, searching, filtering, and uploading generally work. Some paperless-ngx-specific settings or advanced features may be missing or no-ops because Lemmary does not implement the full paperless-ngx surface area.
+
+Opening the document list fetches 250 documents and then a thumbnail for every one of them, each as its own `GET /api/documents/{id}/thumb` — paperless-ngx has no batch thumbnail endpoint, and swift-paperless prefetches the whole page rather than the visible rows. That burst is expected, and it is a cold-cache cost: thumbnails are served with a 30-day `Cache-Control` and the app keeps its own on-disk cache keyed on the URL.
 
 If the app starts returning 401 after working at add-server time, delete and re-add the server once so it can fetch a new token. Tokens issued before long-lived `/api/token/` JWTs expire after five days and cannot be extended in place.
 

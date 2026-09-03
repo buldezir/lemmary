@@ -66,6 +66,12 @@ func Register(app core.App, idx *fulltext.Index) {
 
 			g.GET("/tasks/", bindAuth(handleListTasks))
 			g.GET("/tasks", bindAuth(handleListTasks))
+			for _, path := range []string{
+				"/acknowledge_tasks/", "/acknowledge_tasks",
+				"/tasks/acknowledge/", "/tasks/acknowledge",
+			} {
+				g.POST(path, bindAuth(handleAcknowledgeTasks))
+			}
 
 			return e.Next()
 		},
