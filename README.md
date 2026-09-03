@@ -8,6 +8,41 @@ Lemmary implements a [paperless-ngx](https://github.com/paperless-ngx/paperless-
 
 The API has been tested with the [swift-paperless](https://github.com/paulgessinger/swift-paperless) iOS app and mostly works for browsing and uploading documents. See [docs/setup.md](docs/setup.md#paperless-ngx-api-compatibility) for connecting external clients.
 
+### Screenshots
+
+Every screen has one in [docs/screenshots.md](docs/screenshots.md). The library
+in all of them is a demo archive of invented documents, so nothing in these
+images belongs to anybody. A few to start with:
+
+Documents list with AI-extracted titles, summaries, and tags, and a timeline
+that counts the archive by month:
+
+![Documents](docs/screenshots/documents.png)
+
+Document detail with editable metadata, summary, and OCR text. Fields the model
+wrote in the document's own language keep the original under the translation:
+
+![Document detail](docs/screenshots/document-detail.png)
+
+Deep Search in **Search** mode — a natural-language query, and the documents it
+matched:
+
+![Deep Search](docs/screenshots/deep-search.png)
+
+Deep Search in **Research** mode — the same archive read rather than listed,
+answered with links to the documents each figure came from:
+
+![Deep Search, Research mode](docs/screenshots/deep-search-research.png)
+
+Split a scanner's multi-document PDF back into one document per part, by hand or
+with the cuts the model proposes:
+
+![Split documents](docs/screenshots/upload-split.png)
+
+Admin Settings: providers, models and worker timeouts as runtime configuration:
+
+![Settings](docs/screenshots/settings-top.png)
+
 ## Stack
 
 - **Backend:** Go, [PocketBase as a framework](https://pocketbase.io/docs/use-as-framework/)
@@ -60,41 +95,6 @@ See [docs/setup.md](docs/setup.md) for the full list.
 - Passkey sign-in: register a passkey per device and sign in with a fingerprint, face, or device PIN — no password typed, alongside the existing password and OAuth2 options
 - Admin Settings page for runtime OCR/AI/worker config
 - First-launch setup wizard (admin account + required OCR/AI keys)
-
-### Screenshots
-
-Every screen has one in [docs/screenshots.md](docs/screenshots.md). The library
-in all of them is a demo archive of invented documents, so nothing in these
-images belongs to anybody. A few to start with:
-
-Documents list with AI-extracted titles, summaries, and tags, and a timeline
-that counts the archive by month:
-
-![Documents](docs/screenshots/documents.png)
-
-Document detail with editable metadata, summary, and OCR text. Fields the model
-wrote in the document's own language keep the original under the translation:
-
-![Document detail](docs/screenshots/document-detail.png)
-
-Deep Search in **Search** mode — a natural-language query, and the documents it
-matched:
-
-![Deep Search](docs/screenshots/deep-search.png)
-
-Deep Search in **Research** mode — the same archive read rather than listed,
-answered with links to the documents each figure came from:
-
-![Deep Search, Research mode](docs/screenshots/deep-search-research.png)
-
-Split a scanner's multi-document PDF back into one document per part, by hand or
-with the cuts the model proposes:
-
-![Split documents](docs/screenshots/upload-split.png)
-
-Admin Settings: providers, models and worker timeouts as runtime configuration:
-
-![Settings](docs/screenshots/settings-top.png)
 
 ## Tests
 
