@@ -16,6 +16,9 @@ import {
   orderedProcessingSteps,
   PROCESSING_STEP_DESCRIPTIONS,
   PROCESSING_STEP_LABELS,
+  formatDuration,
+  jobDurationMs,
+  stepDurationMs,
   type ProcessingJobRecord,
   type ProcessingStep,
 } from '../lib/processing'
@@ -151,6 +154,28 @@ export function DocumentDetailPage() {
 
   const canReprocess =
     document?.processing_status !== 'processing' && document?.processing_status !== 'pending'
+
+  // A clock for the durations that are still counting: the running step's
+  // elapsed, and the job total before the job has finished. Everything else is
+  // measured from the two timestamps the worker recorded and needs no clock at
+  // all.
+  //
+  // In state rather than read during render, which would be an impure read
+  // that advanced only when something else happened to re-render. The timer
+  // runs only while there is something unfinished on screen, so a settled job
+  // leaves nothing ticking -- and it is separate from the one-second document
+  // poll above, so the elapsed keeps time even if a refresh is slow.
+  const [tick, setTick] = useState(() => Date.now())
+  const jobUnfinished = Boolean(job?.started_at) && !job?.finished_at
+  const stepRunning = (job?.step_runs ?? []).some((run) => run.status === 'running')
+  const needsClock = jobUnfinished || stepRunning
+  useEffect(() => {
+    if (!needsClock) return
+    const id = setInterval(() => setTick(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [needsClock])
+
+  const jobTotalMs = job ? jobDurationMs(job, tick) : null
 
   function toggleReprocessStep(step: ProcessingStep) {
     setReprocessSteps((current) => {
@@ -417,6 +442,9 @@ export function DocumentDetailPage() {
                 <span className="text-xs text-ink-soft">
                   {(job.steps ?? []).join(' → ') || 'n/a'}
                 </span>
+                {jobTotalMs !== null ? (
+                  <span className="text-xs text-ink-soft">total: {formatDuration(jobTotalMs)}</span>
+                ) : null}
               </div>
               {job.step_runs && job.step_runs.length > 0 ? (
                 <ul className="mt-2 flex flex-col gap-1 text-sm text-ink-muted">
@@ -424,6 +452,27 @@ export function DocumentDetailPage() {
                     <li key={run.name} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <span className="font-medium">{run.name}</span>
                       <span className="bg-wash px-1.5 py-0.5 text-xs">{run.status}</span>
+                      {(() => {
+                        // Absent for a pending step and for a skipped one,
+                        // which finishes without ever having started.
+                        const ms = stepDurationMs(run, tick)
+                        if (ms === null) return null
+                        return (
+                          <span
+                            className="text-xs tabular-nums text-ink-soft"
+                            title={
+                              run.status === 'running'
+                                ? 'Elapsed so far'
+                                : run.attempts > 1
+                                  ? `Duration of attempt ${run.attempts}`
+                                  : 'Duration'
+                            }
+                          >
+                            {formatDuration(ms)}
+                            {run.status === 'running' ? '…' : ''}
+                          </span>
+                        )
+                      })()}
                       {run.attempts > 0 ? (
                         <span className="text-xs text-ink-soft">attempts: {run.attempts}</span>
                       ) : null}
