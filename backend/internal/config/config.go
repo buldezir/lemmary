@@ -447,7 +447,11 @@ func RecordEmbeddingDims(app core.App, dims int) error {
 
 func HasOCR(cfg Config) bool {
 	p := cfg.OCRProvider
-	if p == nil || p.APIKey == "" {
+	// Configured, not APIKey != "": a hosted provider needs a credential, a
+	// local sidecar needs an address, and asking for the key unconditionally is
+	// what would leave a working docling container reported as unconfigured
+	// with the setup wizard standing in front of it.
+	if p == nil || !p.Configured() {
 		return false
 	}
 	if aiprovider.RequiresOCRModel(p.SDK) && strings.TrimSpace(cfg.OCRModel) == "" {

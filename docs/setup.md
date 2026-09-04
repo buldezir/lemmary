@@ -232,7 +232,7 @@ On a fresh install the SPA hard-gates until setup is complete:
 
 1. **Create admin** — email + password. Creates a PocketBase `_superusers` account **and** a matching `users` account (same credentials) so the admin can own documents. Replaces PocketBase’s browser installer UI.
 2. **Passkey** *(optional)* — offer to add a [passkey](/passkeys) for the account just created. Skipping it changes nothing and the offer does not come back; a passkey can be added later from **More → Account**. The step is hidden on an address where a passkey cannot be created (an IP address, or plain HTTP outside `localhost`).
-3. **Provider** — add at least one API provider (`mistral`, `openai`, `openrouter`, or `google_vision`).
+3. **Provider** — add at least one provider (`mistral`, `openai`, `openrouter`, `google_vision`, or a keyless local OCR sidecar: `docling`, `paddleocr`).
 4. **Models** — pick provider → model for OCR and metadata extraction (chat/search inherit extraction).
 
 Steps 3 and 4 are skipped when `.env` already carries the keys — see
@@ -394,7 +394,7 @@ Metadata extraction sends the current document's OCR text **and** up to 500 of t
 
 Text extraction:
 
-- **PDF and images** — configured OCR provider (Google Vision, Mistral Document OCR, or an OpenAI/OpenRouter model that accepts files/images)
+- **PDF and images** — configured OCR provider (Google Vision, Mistral Document OCR, an OpenAI/OpenRouter model that accepts files/images, or a [local sidecar](/local_ocr): Docling or PaddleOCR)
 - **TXT, CSV, DOCX, XLSX** — native parsers (no OCR API call); preview is skipped for these formats. A DOCX or XLSX whose text runs past what `ocr_text` can hold fails the document rather than being stored short; see [the page ceiling](#the-page-ceiling)
 
 Cron jobs are visible and manually triggerable in PocketBase Admin → Settings → Crons.

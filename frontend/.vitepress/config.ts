@@ -44,6 +44,7 @@ export default defineConfig({
           { text: 'Setup', link: '/setup' },
           { text: 'Self-hosting with Docker', link: '/self_hosting' },
           { text: 'AI providers and models', link: '/ai_providers' },
+          { text: 'Local OCR', link: '/local_ocr' },
           { text: 'Google Vision', link: '/google_vision' },
           { text: 'OAuth2', link: '/oauth' },
           { text: 'Passkeys', link: '/passkeys' },

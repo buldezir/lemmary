@@ -172,9 +172,13 @@ func parseOCR(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error) {
 		if baseURL == "" {
 			baseURL = llm.BaseURL
 		}
-	} else if key == "" {
+	} else if key == "" && aiprovider.RequiresAPIKey(sdk) {
 		// Rejected in both modes here: off managed, the environment seeds once
 		// and OCR would silently bind to the language model.
+		//
+		// A local sidecar is exempt because it has no key to give -- it is
+		// reached by URL alone, and NormalizeBaseURL below supplies the compose
+		// default when OCR_BASE_URL was left empty.
 		return aiprovider.ProviderSpec{}, fmt.Errorf(
 			"%s=%q needs %s; it is a different endpoint from %s=%q and cannot borrow its key",
 			EnvOCRSDK, sdk, EnvOCRAPIKey, EnvAISDK, llm.SDK)
@@ -184,8 +188,8 @@ func parseOCR(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error) {
 			model = llm.Model
 		} else {
 			return aiprovider.ProviderSpec{}, fmt.Errorf(
-				"%s=%q needs %s; only %s reads a document without one",
-				EnvOCRSDK, sdk, EnvOCRModel, aiprovider.SDKGoogleVision)
+				"%s=%q needs %s; only %s read a document without one",
+				EnvOCRSDK, sdk, EnvOCRModel, strings.Join(aiprovider.ModellessOCRSDKs(), ", "))
 		}
 	}
 
@@ -207,7 +211,16 @@ func (e AIEnv) validateManaged() error {
 	if e.Providers.LLM.Model == "" {
 		return fmt.Errorf("%s=1 requires %s", EnvManaged, EnvAIModel)
 	}
-	// parseOCR already refuses a named OCR provider with no key.
+	// parseOCR already refuses a named OCR provider with no key. The keyless
+	// SDKs it lets through instead need an address, which NormalizeBaseURL
+	// always supplies from DefaultBaseURL -- so this can only fire if that
+	// default is ever removed, and it fires here rather than at the first
+	// upload because a managed instance has no Settings page to fix it in.
+	ocr := e.Providers.OCR
+	if ocr.Requested() && aiprovider.RequiresBaseURL(ocr.SDK) && strings.TrimSpace(ocr.BaseURL) == "" {
+		return fmt.Errorf("%s=1 with %s=%q requires %s; a local OCR engine is reached by address alone",
+			EnvManaged, EnvOCRSDK, ocr.SDK, EnvOCRBaseURL)
+	}
 	return nil
 }
 

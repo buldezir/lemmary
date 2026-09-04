@@ -1,6 +1,7 @@
 package appapi
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -65,5 +66,34 @@ func TestBoundToLLMFeatureCoversEveryLLMBinding(t *testing.T) {
 
 	if boundToLLMFeature(nil, "provider1") || boundToLLMFeature(providerBindingsForTest(t), "  ") {
 		t.Fatal("a missing record or a blank id is not a binding")
+	}
+}
+
+// The sentence naming the accepted SDKs was a literal in two handlers, and both
+// still said "openai, openrouter, google_vision, or mistral" while a fifth and
+// sixth SDK were being added. Building it from the list is only a fix if
+// something notices when the list grows again.
+func TestInvalidSDKMessageNamesEverySDK(t *testing.T) {
+	t.Parallel()
+	message := invalidSDKMessage()
+	for _, sdk := range aiprovider.ValidSDKs {
+		if !strings.Contains(message, sdk) {
+			t.Errorf("%q does not name %s", message, sdk)
+		}
+	}
+}
+
+// A local OCR provider is not an LLM SDK, so binding it to OCR must not make
+// the LLM guard fire -- but deleting it while OCR points at it still must.
+func TestLocalOCRProviderIsBoundButNotToAnLLMFeature(t *testing.T) {
+	t.Parallel()
+	settings := providerBindingsForTest(t)
+	settings.Set("ocr_provider_id", "docling1")
+
+	if boundToLLMFeature(settings, "docling1") {
+		t.Error("an OCR-only binding must not require an LLM SDK")
+	}
+	if !aiprovider.ReferencedBySettings(settings, "docling1") {
+		t.Error("an OCR binding must still block deletion")
 	}
 }

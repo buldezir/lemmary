@@ -247,3 +247,68 @@ func TestRunDetectTreatsAMostlyScannedFileAsAScan(t *testing.T) {
 		t.Fatalf("ocr calls=%d want 5", ocrStub.calls())
 	}
 }
+
+// limitedOCR is a sidecar-shaped provider: it says one at a time, and records
+// whether anybody ignored that.
+type limitedOCR struct {
+	stubOCR
+	inFlight atomic.Int64
+	maxSeen  atomic.Int64
+}
+
+func (l *limitedOCR) MaxConcurrency() int { return 1 }
+
+func (l *limitedOCR) ExtractText(ctx context.Context, filePath, mimeType string) (string, error) {
+	current := l.inFlight.Add(1)
+	defer l.inFlight.Add(-1)
+	for {
+		seen := l.maxSeen.Load()
+		if current <= seen || l.maxSeen.CompareAndSwap(seen, current) {
+			break
+		}
+	}
+	// Long enough that a second worker would overlap if one were started.
+	time.Sleep(5 * time.Millisecond)
+	return l.stubOCR.ExtractText(ctx, filePath, mimeType)
+}
+
+// The fan-out is tuned for hosted providers, where four requests cost about
+// what one does because the time goes on the network. A local sidecar spends
+// this host's CPUs instead: four at a time queues rather than overlapping, and
+// each page's OCR timeout is already counting down while it waits its turn.
+func TestOCRPagesHonoursAProviderConcurrencyLimit(t *testing.T) {
+	provider := &limitedOCR{}
+	pages := make([]ai.PageText, 8)
+	for i := range pages {
+		pages[i].Page = i + 1
+	}
+
+	source := writeSourcePDF(t, len(pages))
+	deps := DetectDeps{OCR: provider, OCRTimeout: 5 * time.Second}
+	if err := ocrPages(pages, source, t.TempDir(), deps, func(int, int) {}); err != nil {
+		t.Fatalf("ocrPages: %v", err)
+	}
+
+	if got := provider.maxSeen.Load(); got != 1 {
+		t.Errorf("saw %d concurrent OCR calls, want 1", got)
+	}
+	if provider.calls() != len(pages) {
+		t.Errorf("read %d pages, want %d", provider.calls(), len(pages))
+	}
+	// Order is preserved even single-file, because each worker writes its slot.
+	for i, page := range pages {
+		if page.Text == "" {
+			t.Errorf("page %d has no text", i+1)
+		}
+	}
+}
+
+// Providers that say nothing keep the fan-out they have always had.
+func TestProviderConcurrencyDefaultsToTheFanOut(t *testing.T) {
+	if got := providerConcurrency(&stubOCR{}); got != detectOCRWorkers {
+		t.Errorf("providerConcurrency(stub) = %d, want %d", got, detectOCRWorkers)
+	}
+	if got := providerConcurrency(&limitedOCR{}); got != 1 {
+		t.Errorf("providerConcurrency(limited) = %d, want 1", got)
+	}
+}

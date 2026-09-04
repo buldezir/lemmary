@@ -45,6 +45,13 @@ func TestOCRResolutionFollowsTheSDK(t *testing.T) {
 			ocr:        ProviderSpec{SDK: SDKGoogleVision},
 			wantShares: false, wantSDK: SDKGoogleVision, wantModel: "",
 		},
+		{
+			// A local sidecar has no key by design, and no model either. The
+			// resolution keys on the SDK, so it lands here unchanged.
+			name:       "a keyless local SDK",
+			ocr:        ProviderSpec{SDK: SDKDocling, BaseURL: "http://docling:5001"},
+			wantShares: false, wantSDK: SDKDocling, wantModel: "",
+		},
 	}
 
 	for _, tc := range cases {
@@ -71,6 +78,15 @@ func TestNothingConfiguredIsNotAnInstruction(t *testing.T) {
 	}
 	if (Bootstrap{LLM: ProviderSpec{SDK: SDKOpenAI}}).Configured() {
 		t.Fatal("an SDK with no key should not count as configured")
+	}
+	// The keyless SDKs move the requirement rather than removing it: an
+	// address instead of a credential. A docling spec with neither is still
+	// half a configuration and must not be applied.
+	if (Bootstrap{OCR: ProviderSpec{SDK: SDKDocling}}).Configured() {
+		t.Fatal("a local SDK with no address should not count as configured")
+	}
+	if !(Bootstrap{OCR: ProviderSpec{SDK: SDKDocling, BaseURL: "http://docling:5001"}}).Configured() {
+		t.Fatal("a local SDK with an address is a complete configuration")
 	}
 }
 

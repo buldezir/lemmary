@@ -18,6 +18,23 @@ type Provider struct {
 	APIKey  string
 }
 
+// Configured is whether this row can actually serve a request.
+//
+// What that takes differs by SDK: a credential for the hosted ones, an address
+// for the local sidecars, which have no account behind them. Every caller that
+// used to spell this as `p.APIKey != ""` now asks here instead -- otherwise a
+// working sidecar reads as unconfigured and disappears from the OCR picker,
+// the readiness check and the setup wizard's idea of a finished install.
+//
+// The record-level twin of ProviderSpec.Configured, which answers the same
+// question about the environment before any record exists.
+func (p Provider) Configured() bool {
+	if RequiresAPIKey(p.SDK) {
+		return strings.TrimSpace(p.APIKey) != ""
+	}
+	return strings.TrimSpace(p.BaseURL) != ""
+}
+
 func FromRecord(record *core.Record) Provider {
 	sdk := strings.TrimSpace(record.GetString("sdk"))
 	return Provider{

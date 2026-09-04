@@ -34,7 +34,19 @@ type ProviderSpec struct {
 	HelperModel string
 }
 
-func (s ProviderSpec) Configured() bool { return strings.TrimSpace(s.APIKey) != "" }
+// Configured is whether this spec names a provider the app can actually reach.
+//
+// For a hosted SDK that is a credential. For a local OCR sidecar there is no
+// credential to have, so naming the SDK is the whole of it: NormalizeBaseURL
+// has already supplied the compose default when OCR_BASE_URL was left empty.
+// Keying this on the API key for everything is what would silently drop a
+// keyless provider before Apply ever saw it.
+func (s ProviderSpec) Configured() bool {
+	if !RequiresAPIKey(s.SDK) {
+		return s.Requested() && strings.TrimSpace(s.BaseURL) != ""
+	}
+	return strings.TrimSpace(s.APIKey) != ""
+}
 
 // Requested is whether an SDK was named, distinct from Configured (has a key).
 // Conflating them is how OCR silently ends up on the language model.
@@ -56,7 +68,7 @@ func (b Bootstrap) SharesOneProvider() bool {
 }
 
 // OCRModel is the OCR provider's model, or the LLM's when OCR was not named.
-// Empty for Google Vision, which reads a document without a model.
+// Empty for the SDKs in ModellessOCRSDKs, which read a document without one.
 func (b Bootstrap) OCRModel() string {
 	if b.OCR.Requested() {
 		return b.OCR.Model
@@ -102,8 +114,9 @@ func Apply(app core.App, settings *core.Record, b Bootstrap) error {
 
 	if ocrID != "" {
 		settings.Set("ocr_provider_id", ocrID)
-		// Google Vision takes no model, and storing one would fail the
-		// Settings page's own validation the next time an admin saved it.
+		// Google Vision and the local sidecars take no model, and storing one
+		// would fail the Settings page's own validation the next time an admin
+		// saved it.
 		if RequiresOCRModel(b.OCRSDK()) {
 			settings.Set("ocr_model", b.OCRModel())
 		} else {

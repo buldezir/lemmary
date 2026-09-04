@@ -5,8 +5,10 @@ import {
   deleteAIProvider,
   isLLMProvider,
   listAIProviders,
+  requiresAPIKey,
   sdkLabel,
   updateAIProvider,
+  LOCAL_OCR_HINT,
   SDK_DEFAULT_BASE,
   SDK_OPTIONS,
   type AIProvider,
@@ -324,7 +326,11 @@ export function SettingsPage() {
                   <p className="text-xs text-ink-soft">
                     {sdkLabel(item.sdk)}
                     {item.base_url ? ` · ${item.base_url}` : ''}
-                    {item.api_key_set ? ' · key set' : ' · missing key'}
+                    {requiresAPIKey(item.sdk)
+                      ? item.api_key_set
+                        ? ' · key set'
+                        : ' · missing key'
+                      : ' · no key needed'}
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -384,6 +390,9 @@ export function SettingsPage() {
                         current.base_url === SDK_DEFAULT_BASE[current.sdk]
                           ? SDK_DEFAULT_BASE[sdk]
                           : current.base_url,
+                      // The key field is about to disappear; a value typed
+                      // before the switch would otherwise be posted invisibly.
+                      api_key: requiresAPIKey(sdk) ? current.api_key : '',
                     }))
                   }}
                 >
@@ -415,21 +424,25 @@ export function SettingsPage() {
                   />
                 </label>
               )}
-              <label className={`${labelClassName} sm:col-span-2`}>
-                <span className={labelTextClassName}>
-                  API key{editingId ? ' (leave blank to keep)' : ''}
-                </span>
-                <input
-                  type="password"
-                  autoComplete="off"
-                  className={inputClassName}
-                  value={draft.api_key}
-                  required={!editingId}
-                  onChange={(event) =>
-                    setDraft((current) => ({ ...current, api_key: event.target.value }))
-                  }
-                />
-              </label>
+              {requiresAPIKey(draft.sdk) ? (
+                <label className={`${labelClassName} sm:col-span-2`}>
+                  <span className={labelTextClassName}>
+                    API key{editingId ? ' (leave blank to keep)' : ''}
+                  </span>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    className={inputClassName}
+                    value={draft.api_key}
+                    required={!editingId}
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, api_key: event.target.value }))
+                    }
+                  />
+                </label>
+              ) : (
+                <p className={`${fieldHintClassName} sm:col-span-2`}>{LOCAL_OCR_HINT}</p>
+              )}
               <div className="flex gap-2 sm:col-span-2">
                 <Button type="submit" size="sm">
                   {editingId ? 'Update provider' : 'Save provider'}

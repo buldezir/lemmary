@@ -205,7 +205,7 @@ func ocrPages(
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	workers := min(detectOCRWorkers, len(pages))
+	workers := min(detectOCRWorkers, len(pages), providerConcurrency(deps.OCR))
 	var (
 		next atomic.Int64
 		mu   sync.Mutex
@@ -248,6 +248,22 @@ func ocrPages(
 		}
 	}
 	return nil
+}
+
+// providerConcurrency is how many pages this provider wants in flight at once.
+//
+// detectOCRWorkers is tuned for the hosted providers, where the time is spent
+// on the network and four requests cost about what one does. A local sidecar
+// spends this host's CPUs instead: four at a time does not overlap, it queues,
+// and each page's OCRTimeout is already counting down while it waits its turn.
+// Providers that know this say so by implementing ocr.LimitedConcurrency; the
+// rest keep the fan-out they have always had.
+func providerConcurrency(provider ocr.Provider) int {
+	limited, ok := provider.(ocr.LimitedConcurrency)
+	if !ok {
+		return detectOCRWorkers
+	}
+	return max(1, limited.MaxConcurrency())
 }
 
 // ocrOnePage extracts a single page to its own PDF and runs the OCR provider on

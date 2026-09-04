@@ -63,7 +63,7 @@ Admin Settings: providers, models and worker timeouts as runtime configuration:
 
 - **Backend:** Go, [PocketBase as a framework](https://pocketbase.io/docs/use-as-framework/)
 - **Frontend:** React, TanStack Router, PocketBase JS SDK
-- **OCR:** Mistral Document OCR (`mistral`), Google Cloud Vision (`google_vision`), or a file-capable OpenAI/OpenRouter model, configured in Settings
+- **OCR:** Mistral Document OCR (`mistral`), Google Cloud Vision (`google_vision`), a file-capable OpenAI/OpenRouter model, or a keyless sidecar on your own host — Docling (`docling`) or PaddleOCR (`paddleocr`), so scans never leave the machine; see [docs/local_ocr.md](docs/local_ocr.md). Configured in Settings
 - **AI:** OpenAI-compatible chat completions (Mistral, OpenAI, or OpenRouter) via the official OpenAI Go SDK — see [docs/ai_providers.md](docs/ai_providers.md)
 - **Search:** [Bleve](https://github.com/blevesearch/bleve) full-text index (token AND for the search box, relaxed to most-terms for the agent, BM25 ranking) over titles, OCR, tags, and metadata
 - **Deep Search:** natural-language archive search via a tool-calling agent over that index (hybrid keyword and embedding retrieval; keyword expansion across configured languages when no embedding model is set), in two modes — **Search** lists matching documents, **Research** reads them, surveys and counts across the archive with a cheaper helper model, and writes a cited answer

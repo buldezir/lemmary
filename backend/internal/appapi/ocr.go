@@ -40,7 +40,10 @@ func handleOCRProviders(app core.App, rt *config.Runtime) func(*core.RequestEven
 		var first *ocr.ProviderInfo
 		rest := make([]ocr.ProviderInfo, 0, len(providers))
 		for _, p := range providers {
-			if p.APIKey == "" {
+			// A local sidecar has an address instead of a key; skipping on the
+			// key alone would hide it from the very page an operator opens
+			// first to check the container is working.
+			if !p.Configured() {
 				continue
 			}
 			info := ocr.ProviderInfo{ID: p.ID, Name: p.Alias, SDK: p.SDK}
