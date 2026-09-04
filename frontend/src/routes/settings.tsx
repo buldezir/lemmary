@@ -6,6 +6,7 @@ import {
   isLLMProvider,
   listAIProviders,
   sdkLabel,
+  sdkRequiresKey,
   updateAIProvider,
   SDK_DEFAULT_BASE,
   SDK_OPTIONS,
@@ -324,7 +325,11 @@ export function SettingsPage() {
                   <p className="text-xs text-ink-soft">
                     {sdkLabel(item.sdk)}
                     {item.base_url ? ` · ${item.base_url}` : ''}
-                    {item.api_key_set ? ' · key set' : ' · missing key'}
+                    {item.api_key_set
+                      ? ' · key set'
+                      : sdkRequiresKey(item.sdk)
+                        ? ' · missing key'
+                        : ' · no key needed'}
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -417,14 +422,19 @@ export function SettingsPage() {
               )}
               <label className={`${labelClassName} sm:col-span-2`}>
                 <span className={labelTextClassName}>
-                  API key{editingId ? ' (leave blank to keep)' : ''}
+                  API key
+                  {editingId
+                    ? ' (leave blank to keep)'
+                    : sdkRequiresKey(draft.sdk)
+                      ? ''
+                      : ' (optional)'}
                 </span>
                 <input
                   type="password"
                   autoComplete="off"
                   className={inputClassName}
                   value={draft.api_key}
-                  required={!editingId}
+                  required={!editingId && sdkRequiresKey(draft.sdk)}
                   onChange={(event) =>
                     setDraft((current) => ({ ...current, api_key: event.target.value }))
                   }

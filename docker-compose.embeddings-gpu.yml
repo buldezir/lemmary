@@ -1,0 +1,65 @@
+# Local embeddings overlay (NVIDIA GPU). The same sidecar as
+# docker-compose.embeddings.yml, on a CUDA image and with a device reserved:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.embeddings-gpu.yml up
+#
+# Use this file *instead of* the CPU one, not alongside it. Everything the two
+# share is explained there; only the differences are commented here. Requires
+# the NVIDIA Container Toolkit on the host (`docker info | grep -i nvidia`
+# should list the runtime).
+#
+# A GPU is worth it for the first backfill of a large archive, which is the one
+# time embedding is throughput-bound. Steady state -- a handful of documents an
+# upload -- does not need one.
+
+services:
+  embeddings:
+    # PICK THE TAG FOR YOUR CARD. A mismatched one fails to start or falls back
+    # to a slow path; there is no single "cuda" tag that covers every card.
+    #
+    #   turing-1.9   T4, RTX 2000 series          (compute 7.5)
+    #   1.9          A100, A30                    (compute 8.0)
+    #   86-1.9       A10, A40, RTX 3000 series    (compute 8.6)
+    #   89-1.9       L4, L40, RTX 4000 series     (compute 8.9)
+    #   hopper-1.9   H100                         (compute 9.0)
+    #   100-1.9      B100, B200                   (compute 10.0)
+    image: ghcr.io/huggingface/text-embeddings-inference:89-1.9
+    restart: unless-stopped
+    command:
+      - --model-id=${EMBEDDINGS_MODEL:-BAAI/bge-m3}
+      - --auto-truncate
+      - --max-client-batch-size=64
+      - --max-batch-tokens=65536
+      - --json-output
+      # float16 halves the weights in VRAM and is what these models are
+      # published for. Drop this line if a card predates fast fp16.
+      - --dtype=float16
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - embeddings_cache:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 900s
+
+  app:
+    depends_on:
+      embeddings:
+        condition: service_healthy
+    environment:
+      AI_EMBEDDING_SDK: local
+      AI_EMBEDDING_BASE_URL: http://embeddings:80/v1
+      AI_EMBEDDING_MODEL: ${EMBEDDINGS_MODEL:-BAAI/bge-m3}
+
+volumes:
+  embeddings_cache:

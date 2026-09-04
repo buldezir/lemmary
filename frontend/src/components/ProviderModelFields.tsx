@@ -3,6 +3,7 @@ import {
   listProviderModels,
   modelOptionLabel,
   providerOptionLabel,
+  providerServesPurpose,
   showsOCRModelWarning,
   OCR_MODEL_WARNING,
   type AIProvider,
@@ -125,6 +126,14 @@ export function ProviderModelFields({
 }: ProviderModelFieldsProps) {
   const providerInputId = useId()
   const selected = providers.find((item) => item.id === providerId)
+  // Only offer providers this binding can actually use. The API refuses the
+  // rest anyway; showing them meant the only way to learn that a local endpoint
+  // cannot do extraction was to save and read the error. A provider already
+  // bound is kept in the list whatever its SDK, so an existing binding never
+  // renders as blank.
+  const eligible = providers.filter(
+    (item) => item.id === providerId || providerServesPurpose(item.sdk, purpose),
+  )
   const hideModel = purpose === 'ocr' && selected?.sdk === 'google_vision'
   const showWarning = purpose === 'ocr' && showsOCRModelWarning(selected?.sdk)
 
@@ -147,7 +156,7 @@ export function ProviderModelFields({
           value={providerId}
           options={[
             ...(allowEmpty ? [{ value: '', label: 'None', pinned: true }] : []),
-            ...providers.map((item) => ({ value: item.id, label: providerOptionLabel(item) })),
+            ...eligible.map((item) => ({ value: item.id, label: providerOptionLabel(item) })),
           ]}
           placeholder={allowEmpty ? 'None' : 'Select a provider'}
           onChange={(next) => {

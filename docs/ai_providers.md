@@ -16,6 +16,7 @@ to use.
 | `openai` | ✅ | ✅ models that accept files/images | ✅ |
 | `openrouter` | ✅ many vendors on one key | ✅ models advertising `file` input | ✅ |
 | `google_vision` | ❌ | ✅ | ❌ |
+| `local` | ❌ | ❌ | ✅ a model on your own hardware |
 
 **Start with Mistral.** It is the only SDK that covers every job Lemmary has, so
 one key and one provider row configure the whole instance — OCR, extraction,
@@ -36,6 +37,10 @@ The alternatives are worth naming:
 - **`google_vision`** — OCR only; it cannot serve extraction and is refused as
   `AI_SDK`. Worth pairing with an LLM when its free tier (1000 pages a month)
   matters. See [Google Vision API key](/google_vision).
+- **`local`** — embeddings only, on a model you run yourself, and the one SDK
+  that takes no API key. It is the mirror image of `google_vision`: a single
+  job, done off the network. See [Embeddings on your own
+  hardware](#embeddings-on-your-own-hardware).
 
 Without a language-model provider, AI extraction, document chat and Deep Search
 return a configuration error.
@@ -74,21 +79,42 @@ after that.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `AI_MANAGED` | `0` | Whether the operator owns AI configuration. See the table above. |
-| `AI_SDK` | `openai` | The language model's SDK: `openai`, `openrouter` or `mistral`. `google_vision` is refused — it cannot serve extraction. |
+| `AI_SDK` | `openai` | The language model's SDK: `openai`, `openrouter` or `mistral`. `google_vision` and `local` are refused — neither can serve extraction. |
 | `AI_API_KEY` | empty | Its credential. **One key is usually the whole configuration**: with this and nothing else the app creates one provider and routes extraction, chat, Deep Search *and* OCR to it. |
 | `AI_MODEL` | `gpt-5.6-luna` | The model for extraction, chat and Deep Search. Be sure it supports the result language set in **Settings**. |
 | `AI_BASE_URL` | the SDK's own endpoint | An OpenAI-compatible base URL, for a gateway or a self-hosted endpoint. |
-| `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `openai`, `openrouter`, `mistral` or `google_vision`. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
+| `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `openai`, `openrouter`, `mistral` or `google_vision`. `local` is refused — it serves embeddings only. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
 | `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK`. |
 | `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. |
 | `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Required unless `OCR_SDK=google_vision`, which reads a document without one. |
-| `AI_EMBEDDING_MODEL` | unset (Deep Search matches keywords only) | An embedding model on the `AI_SDK` provider, so Deep Search can also find documents by meaning. Operator-owned under `AI_MANAGED=1`; removing it there turns the feature off. See [what embeddings cost](#what-embeddings-cost). |
+| `AI_EMBEDDING_MODEL` | unset (Deep Search matches keywords only) | An embedding model — on the `AI_SDK` provider, or on the `AI_EMBEDDING_SDK` one when that is set — so Deep Search can also find documents by meaning. Operator-owned under `AI_MANAGED=1`; removing it there turns the feature off. See [what embeddings cost](#what-embeddings-cost). |
 | `AI_SEARCH_HELPER_MODEL` | unset (the Search model does this work) | A cheaper model on the `AI_SDK` provider for Deep Search's bulk per-document work: distilling long reads into notes and surveying many documents for one question. Operator-owned under `AI_MANAGED=1`. See [How Research covers a topic](/setup#how-research-covers-a-topic). |
 
-There is deliberately no `AI_EMBEDDING_SDK` / `_API_KEY` / `_BASE_URL` trio.
-Pointing embeddings at a different endpoint than the language model is a rare
-enough choice that it belongs in **Settings**, and three more variables would
+### The embedding provider
+
+An earlier release had no `AI_EMBEDDING_SDK` / `_API_KEY` / `_BASE_URL`, on the
+reasoning that pointing embeddings somewhere other than the language model was a
+rare enough choice to belong in **Settings**, and that three more variables would
 mostly be three more ways to half-configure the feature.
+
+Running the embedding model yourself is the case that reasoning did not
+anticipate. A sidecar on the compose network *is* a different endpoint, by
+definition and not by preference — so without these an operator could not bring
+an instance up on one from `.env` at all, and a managed instance could not use
+one at any price. They are here, shaped exactly like the `OCR_*` block above,
+which has always been how a second provider for one job is described.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `AI_EMBEDDING_SDK` | unset (embeddings run on the `AI_SDK` provider) | A separate provider for embeddings: `openai`, `openrouter`, `mistral` or `local`. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. `google_vision` is refused — it has no `/embeddings` endpoint. |
+| `AI_EMBEDDING_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an SDK that differs from `AI_SDK`, **except `local`**, which takes none. |
+| `AI_EMBEDDING_BASE_URL` | the SDK's own endpoint, or `AI_BASE_URL` when the SDKs match | Where that provider lives. For `local` this defaults to `http://embeddings:80/v1`, the compose overlay's service. |
+
+Unset, all three change nothing: embeddings ride on the `AI_SDK` provider,
+exactly as they did before the block existed. Setting `AI_EMBEDDING_SDK` without
+`AI_EMBEDDING_MODEL` is refused rather than ignored — it would create a provider
+with nothing bound to it, which reads as a configured feature that never embeds
+anything.
 
 ### Seeded settings
 
@@ -159,12 +185,90 @@ make it.
   that space is memory. A model with 1024 dimensions or fewer costs
   proportionally less of it. See [Encryption at rest](/encryption).
 
+Running the model yourself moves the first two costs rather than removing them:
+there is no token bill and no per-document price at all, but the same work
+happens on your CPU, and the first backfill of a large archive is the one time
+that is slow enough to notice. The third cost — space, and under a vault RAM —
+is unchanged, and depends only on the dimension count you pick. See [Embeddings
+on your own hardware](#embeddings-on-your-own-hardware).
+
 The backfill drains at `EMBEDDING_BACKFILL_BATCH` documents a tick and logs what
 it embedded, what failed, and how many are left; **Settings → Models** shows the
 same counts, and **Management → Embeddings** both shows them and runs the whole
 backlog on demand rather than waiting a tick a minute. A provider failure is
 soft: the document keeps its text, its metadata and its place in keyword search,
 and is retried later with a backoff.
+
+## Embeddings on your own hardware
+
+The `local` SDK is any OpenAI-compatible `/v1/embeddings` endpoint you run
+yourself. It embeds and nothing else: it is refused as `AI_SDK` and `OCR_SDK`,
+and it is the only SDK that takes no API key, because a service on a private
+network has nobody to authenticate to.
+
+Two compose overlays run [text-embeddings-inference][tei] as a sidecar. They add
+a service, no published port, and the three variables that bind it — nothing in
+the base file changes.
+
+[tei]: https://github.com/huggingface/text-embeddings-inference
+
+```bash
+# CPU, runs anywhere
+docker compose -f docker-compose.yml -f docker-compose.embeddings.yml up
+
+# NVIDIA GPU -- instead of the CPU file, not alongside it. Pick the image tag
+# for your card; the file lists them.
+docker compose -f docker-compose.yml -f docker-compose.embeddings-gpu.yml up
+```
+
+Both compose with [encryption at rest](/encryption), which only touches the
+`app` service:
+
+```bash
+docker compose -f docker-compose.yml \
+               -f docker-compose.encrypted.yml \
+               -f docker-compose.embeddings.yml up
+```
+
+On a fresh volume that is the whole configuration: the instance comes up with a
+**Local embeddings** provider already bound, and **Settings → Models** shows the
+one model the sidecar is serving.
+
+### Choosing a model
+
+`EMBEDDINGS_MODEL` names it once, for both the sidecar and the binding.
+
+| Model | Dimensions | Window | Weights | |
+| --- | --- | --- | --- | --- |
+| `BAAI/bge-m3` (the default) | 1024 | 8192 tokens | ~2.2 GB | Strongly multilingual, which is the point: crossing languages in one search is what dense retrieval buys you. Slow on a small CPU. |
+| `intfloat/multilingual-e5-small` | 384 | 512 tokens | ~470 MB | Fast, and a quarter of the index RAM. Weaker retrieval, and our ~1100-character passages sit near its truncation limit. |
+
+Both cost less space than a hosted 1536-dimension model, which matters most
+under `VAULT_ENABLED=1` where the index lives in a tmpfs. Anything
+text-embeddings-inference supports will work; those two are the ends of the
+range worth starting from.
+
+The sidecar is started with `--auto-truncate`, and with
+`--max-client-batch-size=64` and `--max-batch-tokens=65536` to match the batches
+Lemmary sends. A third-party endpoint left at the defaults answers `413` on a
+full batch, which fails the document loudly rather than retrying.
+
+### Changing the model
+
+Vectors from two models cannot be compared, so switching is a re-embed of the
+whole archive — and on a self-hosted instance it takes **two** steps, because
+outside `AI_MANAGED=1` the environment seeds the database on the first boot only:
+
+1. Change `EMBEDDINGS_MODEL` and recreate the sidecar.
+2. Change the model in **Settings → Models** as well.
+
+Doing only the first leaves the binding naming the old model against a sidecar
+serving the new one. That is caught rather than silently wrong — the app records
+the vector length from the provider's first response and refuses a later
+disagreement — but the archive stops embedding until the binding is corrected.
+Changing it in Settings resets the recorded dimensions and rebuilds the chunk
+index, which is what a model switch actually requires. Under `AI_MANAGED=1` the
+environment is authoritative on every boot, so step 1 is enough.
 
 ## OCR, per provider
 
@@ -216,3 +320,13 @@ See [Google Vision API key](/google_vision) for obtaining a key.
   is a chat model, not an embedding or OCR model.
 - **A managed instance will not start** — the log names the missing or invalid
   variable in the provider block; nothing inside the instance can repair it.
+- **The local sidecar embeds nothing** — `docker compose logs embeddings`. On a
+  first boot it is downloading weights and the container is unhealthy until that
+  finishes, which is why the app waits on its healthcheck; embed steps fail soft
+  meanwhile and are retried, so no document is lost. A `413` in the app's log
+  means the endpoint's batch limits are below what Lemmary sends — see the flags
+  above.
+- **The embedding model picker is empty for a local provider** — the catalogue
+  comes from the sidecar's `/info`, which also reports what kind of model it is.
+  A reranker or a classifier is deliberately not offered: bound as an embedding
+  model it would fail on every document.

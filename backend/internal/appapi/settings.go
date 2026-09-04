@@ -184,7 +184,7 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequest) error {
 	if req.OCRProviderID != nil {
 		id := strings.TrimSpace(*req.OCRProviderID)
-		if err := validateProviderID(app, id, false); err != nil {
+		if err := validateProviderID(app, id, needOCR); err != nil {
 			return err
 		}
 		record.Set("ocr_provider_id", id)
@@ -194,7 +194,7 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	}
 	if req.ExtractProviderID != nil {
 		id := strings.TrimSpace(*req.ExtractProviderID)
-		if err := validateProviderID(app, id, true); err != nil {
+		if err := validateProviderID(app, id, needLLM); err != nil {
 			return err
 		}
 		record.Set("extract_provider_id", id)
@@ -204,7 +204,7 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	}
 	if req.ChatProviderID != nil {
 		id := strings.TrimSpace(*req.ChatProviderID)
-		if err := validateProviderID(app, id, true); err != nil {
+		if err := validateProviderID(app, id, needLLM); err != nil {
 			return err
 		}
 		record.Set("chat_provider_id", id)
@@ -214,7 +214,7 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	}
 	if req.SearchProviderID != nil {
 		id := strings.TrimSpace(*req.SearchProviderID)
-		if err := validateProviderID(app, id, true); err != nil {
+		if err := validateProviderID(app, id, needLLM); err != nil {
 			return err
 		}
 		record.Set("search_provider_id", id)
@@ -224,7 +224,7 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	}
 	if req.SearchHelperProviderID != nil {
 		id := strings.TrimSpace(*req.SearchHelperProviderID)
-		if err := validateProviderID(app, id, true); err != nil {
+		if err := validateProviderID(app, id, needLLM); err != nil {
 			return err
 		}
 		record.Set("search_helper_provider_id", id)
@@ -239,7 +239,7 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 		strings.TrimSpace(record.GetString("embedding_model"))
 	if req.EmbeddingProviderID != nil {
 		id := strings.TrimSpace(*req.EmbeddingProviderID)
-		if err := validateProviderID(app, id, true); err != nil {
+		if err := validateProviderID(app, id, needEmbedding); err != nil {
 			return err
 		}
 		record.Set("embedding_provider_id", id)
@@ -319,7 +319,23 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	return nil
 }
 
-func validateProviderID(app core.App, id string, llmOnly bool) error {
+// providerNeed is what a binding requires of the provider assigned to it.
+//
+// It replaced a bool once the local SDK arrived: "not LLM-only" and "can embed"
+// used to be the same set, and a boolean could only ever express two of the
+// three answers.
+type providerNeed int
+
+const (
+	// needOCR admits google_vision, the SDK that binding exists for, and every
+	// SDK that can send a file to a model -- but not local, which serves
+	// embeddings and has no way to read a document.
+	needOCR providerNeed = iota
+	needLLM
+	needEmbedding
+)
+
+func validateProviderID(app core.App, id string, need providerNeed) error {
 	if id == "" {
 		return nil
 	}
@@ -327,8 +343,19 @@ func validateProviderID(app core.App, id string, llmOnly bool) error {
 	if err != nil || p == nil {
 		return errInvalid("unknown provider")
 	}
-	if llmOnly && !aiprovider.IsLLM(p.SDK) {
-		return errInvalid("extraction, chat, and search require an openai, openrouter, or mistral provider")
+	switch need {
+	case needLLM:
+		if !aiprovider.IsLLM(p.SDK) {
+			return errInvalid("extraction, chat, and search require an openai, openrouter, or mistral provider")
+		}
+	case needEmbedding:
+		if !aiprovider.CanEmbed(p.SDK) {
+			return errInvalid("embeddings require an openai, openrouter, mistral, or local provider")
+		}
+	case needOCR:
+		if !aiprovider.CanOCR(p.SDK) {
+			return errInvalid("OCR requires an openai, openrouter, mistral, or google_vision provider")
+		}
 	}
 	return nil
 }

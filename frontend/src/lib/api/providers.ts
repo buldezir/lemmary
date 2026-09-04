@@ -1,6 +1,6 @@
 import { apiFetch } from '../apiClient'
 
-export type ProviderSDK = 'openai' | 'openrouter' | 'google_vision' | 'mistral'
+export type ProviderSDK = 'openai' | 'openrouter' | 'google_vision' | 'mistral' | 'local'
 
 export type AIProvider = {
   id: string
@@ -17,6 +17,8 @@ export type AIProviderWrite = {
   api_key?: string
 }
 
+export type ModelPurpose = 'ocr' | 'llm' | 'embedding'
+
 export type CatalogModel = {
   id: string
   name: string
@@ -29,6 +31,9 @@ export const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
   openrouter: 'https://openrouter.ai/api/v1',
   mistral: 'https://api.mistral.ai/v1',
   google_vision: '',
+  // The service name in docker-compose.embeddings.yml. Keep in step with
+  // aiprovider.DefaultBaseURL(SDKLocal).
+  local: 'http://embeddings:80/v1',
 }
 
 export const SDK_OPTIONS: { value: ProviderSDK; label: string }[] = [
@@ -36,6 +41,7 @@ export const SDK_OPTIONS: { value: ProviderSDK; label: string }[] = [
   { value: 'openrouter', label: 'OpenRouter' },
   { value: 'mistral', label: 'Mistral' },
   { value: 'google_vision', label: 'Google Cloud Vision' },
+  { value: 'local', label: 'Local (self-hosted)' },
 ]
 
 export function sdkLabel(sdk: ProviderSDK | string) {
@@ -44,6 +50,33 @@ export function sdkLabel(sdk: ProviderSDK | string) {
 
 export function isLLMProvider(sdk: string) {
   return sdk === 'openai' || sdk === 'openrouter' || sdk === 'mistral'
+}
+
+/**
+ * Whether an SDK can serve the embedding binding. Deliberately not
+ * isLLMProvider, which it used to coincide with: `local` embeds without
+ * chatting, and google_vision does neither. Mirrors aiprovider.CanEmbed.
+ */
+export function canEmbedProvider(sdk: string) {
+  return isLLMProvider(sdk) || sdk === 'local'
+}
+
+/**
+ * Whether a provider of this SDK needs a credential. Only `local` does not: a
+ * sidecar on the compose network has nobody to authenticate to. Mirrors
+ * aiprovider.RequiresAPIKey.
+ */
+export function sdkRequiresKey(sdk: string) {
+  return sdk !== 'local'
+}
+
+/** Which SDKs may be bound to a given task, for the provider pickers. */
+export function providerServesPurpose(sdk: string, purpose: ModelPurpose) {
+  if (purpose === 'embedding') return canEmbedProvider(sdk)
+  if (purpose === 'llm') return isLLMProvider(sdk)
+  // OCR is the binding google_vision exists for, and the one a local endpoint
+  // cannot serve.
+  return sdk !== 'local'
 }
 
 export function providerOptionLabel(item: Pick<AIProvider, 'alias' | 'sdk'>) {
@@ -94,8 +127,6 @@ export async function deleteAIProvider(id: string) {
     fallbackError: 'Failed to delete provider',
   })
 }
-
-export type ModelPurpose = 'ocr' | 'llm' | 'embedding'
 
 export async function listProviderModels(id: string, purpose: ModelPurpose = 'llm') {
   const data = await apiFetch<{ models?: CatalogModel[]; sdk?: string }>(

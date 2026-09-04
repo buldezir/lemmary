@@ -65,10 +65,28 @@ func ParseModelPurpose(raw string) ModelPurpose {
 	}
 }
 
+// InfoURL is text-embeddings-inference's /info, which sits beside the /v1
+// prefix rather than under it. It is the local catalogue: TEI serves exactly
+// one model, and /info is where it names it.
+func InfoURL(baseURL string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		return ""
+	}
+	return strings.TrimSuffix(base, "/v1") + "/info"
+}
+
 func ModelsURL(p Provider, purpose ModelPurpose) string {
 	base := strings.TrimRight(p.BaseURL, "/")
 	if base == "" {
 		return ""
+	}
+	// A local endpoint has no /v1/models: text-embeddings-inference does not
+	// document one, so a picker built on it would be empty or wrong depending
+	// on the version. /info is in its OpenAPI spec and names the one model it
+	// is serving.
+	if p.SDK == SDKLocal {
+		return InfoURL(base)
 	}
 	endpoint := base + "/models"
 	// OpenRouter is the only provider that filters server-side. Two of its
@@ -108,7 +126,7 @@ func ListModels(ctx context.Context, p Provider, purpose ModelPurpose, client *h
 	if endpoint == "" {
 		return nil, fmt.Errorf("provider has no base URL")
 	}
-	if p.APIKey == "" {
+	if p.APIKey == "" && RequiresAPIKey(p.SDK) {
 		return nil, fmt.Errorf("provider API key is not set")
 	}
 
@@ -122,7 +140,11 @@ func ListModels(ctx context.Context, p Provider, purpose ModelPurpose, client *h
 	if err != nil {
 		return nil, fmt.Errorf("create models request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+p.APIKey)
+	// No blank Bearer for a keyless provider: an endpoint that does check the
+	// header would rather see none than see an empty one.
+	if p.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+p.APIKey)
+	}
 	req.Header.Set("Accept", "application/json")
 	// Hand-rolled request, so the SDK middleware that stamps this everywhere
 	// else does not see it.
@@ -148,11 +170,73 @@ func ListModels(ctx context.Context, p Provider, purpose ModelPurpose, client *h
 		return nil, fmt.Errorf("list models: HTTP %d: %s", resp.StatusCode, msg)
 	}
 
+	if p.SDK == SDKLocal {
+		models, err := parseInfoResponse(body)
+		if err != nil {
+			return nil, err
+		}
+		return filterModels(models, p.SDK, purpose), nil
+	}
+
 	models, err := parseModelsResponse(body)
 	if err != nil {
 		return nil, err
 	}
 	return filterModels(models, p.SDK, purpose), nil
+}
+
+// parseInfoResponse reads text-embeddings-inference's /info into the one model
+// it is serving.
+//
+// model_type is the field that matters: TEI serves rerankers and classifiers
+// from the same image and the same endpoint shape, and either one bound as an
+// embedding model would fail on every document with nothing in the UI to
+// explain why. An unrecognised type yields no models rather than a guess.
+func parseInfoResponse(body []byte) ([]Model, error) {
+	var info struct {
+		ModelID         string `json:"model_id"`
+		ServedModelName string `json:"served_model_name"`
+		ModelType       any    `json:"model_type"`
+		MaxInputLength  int    `json:"max_input_length"`
+	}
+	if err := json.Unmarshal(body, &info); err != nil {
+		return nil, fmt.Errorf("decode info response: %w", err)
+	}
+	if !infoIsEmbedding(info.ModelType) {
+		return nil, nil
+	}
+	id := strings.TrimSpace(info.ServedModelName)
+	if id == "" {
+		id = strings.TrimSpace(info.ModelID)
+	}
+	if id == "" {
+		return nil, fmt.Errorf("info response names no model")
+	}
+	name := strings.TrimSpace(info.ModelID)
+	if name == "" {
+		name = id
+	}
+	// max_input_length is in tokens, the same unit ContextWindow is in
+	// everywhere else.
+	return []Model{{ID: id, Name: name, ContextWindow: info.MaxInputLength}}, nil
+}
+
+// infoIsEmbedding reads TEI's model_type, which is a tagged union: a bare
+// "embedding" string in some versions, an object keyed by the variant name
+// ({"embedding":{"pooling":"cls"}}) in others. Both spellings have shipped and
+// both mean the same thing, so both are accepted.
+func infoIsEmbedding(modelType any) bool {
+	switch v := modelType.(type) {
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "embedding")
+	case map[string]any:
+		for key := range v {
+			if strings.EqualFold(strings.TrimSpace(key), "embedding") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // filterModels keeps only the models that can serve purpose.
@@ -175,6 +259,13 @@ func filterModels(models []Model, sdk string, purpose ModelPurpose) []Model {
 }
 
 func includeModel(m Model, sdk string, purpose ModelPurpose) bool {
+	// A local endpoint serves embeddings and nothing else, and the model it
+	// serves is whatever the operator started it with -- "BAAI/bge-m3" carries
+	// no "embed" for the name heuristic to find, so asking the heuristic here
+	// would empty the one picker this SDK exists for.
+	if sdk == SDKLocal {
+		return purpose == PurposeEmbedding
+	}
 	if purpose == PurposeEmbedding {
 		return isEmbeddingModel(m, sdk)
 	}

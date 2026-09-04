@@ -21,11 +21,12 @@ type ProviderSpec struct {
 	BaseURL string
 	Model   string
 
-	// EmbeddingModel is the retrieval embedding model on this same endpoint.
-	// It rides on the provider rather than being a provider of its own because
-	// there is no environment variable for a separate embedding endpoint: one
-	// key, one address, a second model name. Pointing embeddings somewhere else
-	// is a Settings-only choice. Empty means dense retrieval is off.
+	// EmbeddingModel is the retrieval embedding model. It rides on the LLM spec
+	// rather than being a field of the embedding spec because the common case
+	// is still one endpoint serving both: one key, one address, a second model
+	// name. AI_EMBEDDING_SDK is what moves it onto its own endpoint, and the
+	// model name is read from the same variable either way. Empty means dense
+	// retrieval is off.
 	EmbeddingModel string
 
 	// HelperModel is the Deep Search helper on this same endpoint, the model
@@ -36,18 +37,35 @@ type ProviderSpec struct {
 
 func (s ProviderSpec) Configured() bool { return strings.TrimSpace(s.APIKey) != "" }
 
+// Usable is Configured widened by the one SDK that needs no credential. Kept
+// separate from Configured because the OCR half-configuration rules key on
+// "has a key" specifically, and must not shift underneath them.
+func (s ProviderSpec) Usable() bool {
+	return s.Configured() || (s.Requested() && !RequiresAPIKey(s.SDK))
+}
+
 // Requested is whether an SDK was named, distinct from Configured (has a key).
 // Conflating them is how OCR silently ends up on the language model.
 func (s ProviderSpec) Requested() bool { return strings.TrimSpace(s.SDK) != "" }
 
-// Bootstrap is one language model and an optional separate OCR provider.
-// The LLM serves extraction, chat and Deep Search; OCR defaults to the LLM.
+// Bootstrap is one language model plus optional separate OCR and embedding
+// providers. The LLM serves extraction, chat and Deep Search; OCR and
+// embeddings default to the LLM.
 type Bootstrap struct {
-	LLM ProviderSpec
-	OCR ProviderSpec
+	LLM       ProviderSpec
+	OCR       ProviderSpec
+	Embedding ProviderSpec
 }
 
-func (b Bootstrap) Configured() bool { return b.LLM.Configured() || b.OCR.Configured() }
+func (b Bootstrap) Configured() bool {
+	return b.LLM.Configured() || b.OCR.Configured() || b.Embedding.Usable()
+}
+
+// SharesEmbeddingProvider is true when embeddings run on the LLM's endpoint,
+// which is the default and was the only possibility before AI_EMBEDDING_SDK.
+func (b Bootstrap) SharesEmbeddingProvider() bool {
+	return !b.Embedding.Requested() || b.Embedding.SDK == b.LLM.SDK
+}
 
 // SharesOneProvider is true when OCR uses the LLM's endpoint (the default).
 // Keys on whether an OCR SDK was named, never on whether it has a key.
@@ -110,6 +128,18 @@ func Apply(app core.App, settings *core.Record, b Bootstrap) error {
 			settings.Set("ocr_model", "")
 		}
 	}
+	// Same again for embeddings, which since AI_EMBEDDING_SDK can be a third
+	// endpoint -- a local one, most of the time, which is the case the whole
+	// variable exists for.
+	embeddingID := llmID
+	if b.Embedding.Usable() && !b.SharesEmbeddingProvider() {
+		id, err := upsertProvider(app, b.Embedding)
+		if err != nil {
+			return err
+		}
+		embeddingID = id
+	}
+
 	if llmID != "" {
 		model := strings.TrimSpace(b.LLM.Model)
 		if model == "" {
@@ -117,7 +147,12 @@ func Apply(app core.App, settings *core.Record, b Bootstrap) error {
 		}
 		bindLLM(settings, llmID, model, model, model)
 		bindHelper(settings, llmID, b.LLM.HelperModel)
-		bindEmbedding(settings, llmID, b.LLM.EmbeddingModel)
+	}
+	// Outside the llmID block: a local embedding endpoint is a complete
+	// configuration on its own, and an instance whose language model is still
+	// to be filled in from the wizard should not lose it.
+	if embeddingID != "" {
+		bindEmbedding(settings, embeddingID, b.LLM.EmbeddingModel)
 	}
 	return nil
 }

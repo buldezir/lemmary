@@ -410,12 +410,17 @@ func HasLLM(cfg Config) bool {
 	return p != nil && p.APIKey != "" && aiprovider.IsLLM(p.SDK)
 }
 
-// HasEmbedding reports whether dense retrieval can run. A provider without a
-// key or without a model is half a configuration, and treating it as on would
-// make every document fail its embed step instead of skipping it.
+// HasEmbedding reports whether dense retrieval can run. A provider missing the
+// credential its SDK needs, or missing a model, is half a configuration, and
+// treating it as on would make every document fail its embed step instead of
+// skipping it.
+//
+// CanEmbed rather than IsLLM, and HasCredential rather than a bare key test:
+// the local SDK embeds without chatting and authenticates to nobody, so both of
+// the old shorthands would read a working configuration as absent.
 func HasEmbedding(cfg Config) bool {
 	p := cfg.EmbeddingProvider
-	return p != nil && p.APIKey != "" && aiprovider.IsLLM(p.SDK) &&
+	return p != nil && aiprovider.CanEmbed(p.SDK) && aiprovider.HasCredential(*p) &&
 		strings.TrimSpace(cfg.EmbeddingModel) != ""
 }
 

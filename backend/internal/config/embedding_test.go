@@ -1,13 +1,15 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
 	"lemmary/backend/internal/aiprovider"
 )
 
-// One variable, on the provider AI_SDK already names: naming a second endpoint
-// is a Settings-only choice, so the environment cannot half-configure it.
+// One variable is still the ordinary configuration: AI_EMBEDDING_MODEL alone
+// embeds on the provider AI_SDK already names, and the embedding provider block
+// stays out of the way.
 func TestAIEnvReadsTheEmbeddingModel(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAIAPIKey, "sk-test")
@@ -102,6 +104,21 @@ func TestHasEmbedding(t *testing.T) {
 				EmbeddingModel:    "m",
 			}, false,
 		},
+		// The local SDK is the exception to "no key means half a
+		// configuration": a sidecar on the compose network has nobody to
+		// authenticate to, and reading it as absent would leave dense
+		// retrieval silently off on an instance configured for it.
+		"a keyless local provider with a model": {
+			Config{
+				EmbeddingProvider: &aiprovider.Provider{SDK: aiprovider.SDKLocal, BaseURL: "http://embeddings:80/v1"},
+				EmbeddingModel:    "BAAI/bge-m3",
+			}, true,
+		},
+		"a keyless local provider without a model": {
+			Config{
+				EmbeddingProvider: &aiprovider.Provider{SDK: aiprovider.SDKLocal, BaseURL: "http://embeddings:80/v1"},
+			}, false,
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -109,5 +126,154 @@ func TestHasEmbedding(t *testing.T) {
 				t.Fatalf("HasEmbedding() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// Unset, the embedding provider block changes nothing: embeddings ride on the
+// AI_SDK provider exactly as they did before it existed.
+func TestNoEmbeddingSDKLeavesEmbeddingsOnTheLanguageModel(t *testing.T) {
+	clearAIEnv(t)
+	t.Setenv(EnvAIAPIKey, "sk-test")
+	t.Setenv(EnvAIModel, "some-model")
+	t.Setenv(EnvAIEmbeddingModel, "text-embedding-3-small")
+
+	env, err := AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("AIEnvFromEnv: %v", err)
+	}
+	if env.Providers.Embedding.Requested() {
+		t.Fatal("no embedding provider was asked for")
+	}
+	if !env.Providers.SharesEmbeddingProvider() {
+		t.Fatal("embeddings should share the language model's provider")
+	}
+}
+
+// The case the block exists for: an endpoint on the compose network, with no
+// credential because there is nobody to authenticate to.
+func TestLocalEmbeddingProviderNeedsNoKey(t *testing.T) {
+	clearAIEnv(t)
+	t.Setenv(EnvAIAPIKey, "sk-test")
+	t.Setenv(EnvAIModel, "some-model")
+	t.Setenv(EnvAIEmbeddingSDK, aiprovider.SDKLocal)
+	t.Setenv(EnvAIEmbeddingModel, "BAAI/bge-m3")
+
+	env, err := AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("AIEnvFromEnv: %v", err)
+	}
+	spec := env.Providers.Embedding
+	if spec.SDK != aiprovider.SDKLocal {
+		t.Fatalf("embedding sdk=%q", spec.SDK)
+	}
+	if spec.APIKey != "" {
+		t.Fatalf("embedding key=%q, want none borrowed from the language model", spec.APIKey)
+	}
+	if spec.BaseURL != aiprovider.DefaultBaseURL(aiprovider.SDKLocal) {
+		t.Fatalf("embedding base url=%q", spec.BaseURL)
+	}
+	if !spec.Usable() {
+		t.Fatal("a keyless local spec is a complete configuration")
+	}
+	if spec.Configured() {
+		t.Fatal("Configured still means 'has a key' and must not have shifted")
+	}
+	if env.Providers.SharesEmbeddingProvider() {
+		t.Fatal("a local endpoint is not the language model's endpoint")
+	}
+	if !env.Providers.Configured() {
+		t.Fatal("a usable embedding provider is part of a configured bootstrap")
+	}
+}
+
+// Every way to half-write the block, refused with the variable named. Off
+// managed mode these still error: the environment seeds once, so a silent
+// fallback would bind embeddings somewhere nobody asked for and there would be
+// nothing later to correct it.
+func TestEmbeddingProviderHalfConfigurations(t *testing.T) {
+	cases := map[string]struct {
+		env  map[string]string
+		want string
+	}{
+		"a key without an SDK": {
+			env:  map[string]string{EnvAIEmbeddingAPIKey: "sk-other"},
+			want: EnvAIEmbeddingSDK,
+		},
+		"a base URL without an SDK": {
+			env:  map[string]string{EnvAIEmbeddingBaseURL: "http://embeddings:80/v1"},
+			want: EnvAIEmbeddingSDK,
+		},
+		"an SDK that cannot embed": {
+			env:  map[string]string{EnvAIEmbeddingSDK: aiprovider.SDKGoogleVision, EnvAIEmbeddingModel: "m"},
+			want: "cannot serve embeddings",
+		},
+		"an SDK with no model to bind": {
+			env:  map[string]string{EnvAIEmbeddingSDK: aiprovider.SDKLocal},
+			want: EnvAIEmbeddingModel,
+		},
+		"a different SDK that cannot borrow the language model's key": {
+			env: map[string]string{
+				EnvAIEmbeddingSDK:   aiprovider.SDKMistral,
+				EnvAIEmbeddingModel: "mistral-embed",
+			},
+			want: EnvAIEmbeddingAPIKey,
+		},
+		// The mirror of the above: `local` is a valid SDK, so ValidSDK alone
+		// would let it serve OCR and the mismatch would not surface until
+		// somebody uploaded a document.
+		"the local SDK asked to do OCR": {
+			env: map[string]string{
+				EnvOCRSDK:    aiprovider.SDKLocal,
+				EnvOCRModel:  "BAAI/bge-m3",
+				EnvOCRAPIKey: "unused",
+			},
+			want: "cannot read a document",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			clearAIEnv(t)
+			t.Setenv(EnvAIAPIKey, "sk-test")
+			t.Setenv(EnvAIModel, "some-model")
+			for key, value := range tc.env {
+				t.Setenv(key, value)
+			}
+
+			_, err := AIEnvFromEnv()
+			if err == nil {
+				t.Fatal("expected an error naming the variable")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error %q does not name %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// Naming the language model's own SDK is a way to say "a different embedding
+// model on the same endpoint", so the key and address are reused rather than
+// written out twice -- the same courtesy OCR_SDK has always had.
+func TestEmbeddingSDKMatchingTheLanguageModelReusesItsEndpoint(t *testing.T) {
+	clearAIEnv(t)
+	t.Setenv(EnvAISDK, aiprovider.SDKOpenAI)
+	t.Setenv(EnvAIAPIKey, "sk-test")
+	t.Setenv(EnvAIModel, "some-model")
+	t.Setenv(EnvAIBaseURL, "https://gateway.example/v1")
+	t.Setenv(EnvAIEmbeddingSDK, aiprovider.SDKOpenAI)
+	t.Setenv(EnvAIEmbeddingModel, "text-embedding-3-small")
+
+	env, err := AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("AIEnvFromEnv: %v", err)
+	}
+	spec := env.Providers.Embedding
+	if spec.APIKey != "sk-test" {
+		t.Fatalf("embedding key=%q, want the language model's", spec.APIKey)
+	}
+	if spec.BaseURL != "https://gateway.example/v1" {
+		t.Fatalf("embedding base url=%q, want the language model's", spec.BaseURL)
+	}
+	if !env.Providers.SharesEmbeddingProvider() {
+		t.Fatal("the same SDK is the same endpoint, so no second provider row")
 	}
 }

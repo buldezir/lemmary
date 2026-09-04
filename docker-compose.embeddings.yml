@@ -1,0 +1,84 @@
+# Local embeddings overlay (CPU). Runs the embedding model on this host instead
+# of sending every passage of every document to a hosted provider:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.embeddings.yml up
+#
+# An overlay rather than an edit, because embeddings are off by default and the
+# base file has to stay usable without any of this. It composes with the
+# encryption overlay too -- that one only touches the `app` service:
+#
+#   docker compose -f docker-compose.yml \
+#                  -f docker-compose.encrypted.yml \
+#                  -f docker-compose.embeddings.yml up
+#
+# Read docs/ai_providers.md, in particular "Embeddings on your own hardware",
+# before turning this on. Nothing else moves: OCR, extraction, chat and the Deep
+# Search agent stay on whatever provider AI_SDK names. For an NVIDIA GPU use
+# docker-compose.embeddings-gpu.yml instead of this file.
+
+services:
+  embeddings:
+    # cpu-1.9 runs anywhere, including arm64 hosts via cpu-arm64-1.9. It is
+    # genuinely usable: embedding is a small forward pass, not generation, and a
+    # few documents a minute is well within a couple of cores.
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
+    restart: unless-stopped
+    # No `ports`. Nothing outside this compose project has any business reaching
+    # the model, and publishing it would put an unauthenticated inference
+    # endpoint on the host -- which is also why no API key is configured below.
+    command:
+      # One variable names the model for the sidecar and for the app's binding
+      # further down, so the two cannot disagree. Changing it later is not
+      # enough on its own; see "Changing the model" in docs/ai_providers.md.
+      - --model-id=${EMBEDDINGS_MODEL:-BAAI/bge-m3}
+      # Our client cuts inputs at 8000 runes, which is inside bge-m3's 8192
+      # token window but not inside a 512-token model's. Without this, one long
+      # passage is a 413 that fails the document instead of being shortened.
+      - --auto-truncate
+      # These two match internal/ai/embed.go, which batches at 64 inputs and
+      # 120k runes per request. TEI's defaults (32 inputs, 16384 tokens) are
+      # below that, and the overflow is a 413 the client correctly refuses to
+      # retry -- so the server is raised to the client rather than the client
+      # lowered for one provider.
+      - --max-client-batch-size=64
+      - --max-batch-tokens=65536
+      # The image's own default, kept so its logs read as upstream documents.
+      - --json-output
+    environment:
+      # Only needed for a gated model; unset for bge-m3 and the e5 family.
+      HF_TOKEN: ${HF_TOKEN:-}
+      # The image defaults to 8. On a small host that is the app's cores too,
+      # and a backfill would then compete with the request the user is waiting
+      # on -- the same reasoning behind OPENBLAS_NUM_THREADS=1 in the Dockerfile.
+      RAYON_NUM_THREADS: ${EMBEDDINGS_THREADS:-4}
+    volumes:
+      # Model weights, ~2.2 GB for bge-m3. A named volume so the first boot's
+      # download is paid once rather than on every recreate.
+      - embeddings_cache:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # The first boot downloads the weights before it can answer anything.
+      # Generous on purpose: a slow link should not look like a crash loop.
+      start_period: 900s
+
+  app:
+    depends_on:
+      embeddings:
+        # Only the ordering, and only best-effort: if the model is still
+        # loading, the embed step fails soft -- the document keeps its text, its
+        # metadata and its place in keyword search, and is retried with a
+        # backoff. Nothing is lost by starting early.
+        condition: service_healthy
+    environment:
+      # `local` is an OpenAI-compatible /v1/embeddings endpoint you run
+      # yourself. It embeds and nothing else, needs no API key, and is refused
+      # as AI_SDK or OCR_SDK.
+      AI_EMBEDDING_SDK: local
+      AI_EMBEDDING_BASE_URL: http://embeddings:80/v1
+      AI_EMBEDDING_MODEL: ${EMBEDDINGS_MODEL:-BAAI/bge-m3}
+
+volumes:
+  embeddings_cache:

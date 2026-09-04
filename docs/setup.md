@@ -443,7 +443,8 @@ runs up to two searches for every query.
 - **Meaning (kNN)** over `bleve/chunks`, a second index holding one entry per
   embedded passage with its vector, searched by cosine similarity to the
   embedded question. This half exists only when `AI_EMBEDDING_MODEL` is set and
-  documents have actually been embedded.
+  documents have actually been embedded. The model can be a hosted one or [one
+  you run yourself](/ai_providers#embeddings-on-your-own-hardware).
 
 The two lists are fused by reciprocal rank fusion: a document scores the sum of
 `1/(60 + rank)` over the lists it appears in. Only positions are read, never
