@@ -52,8 +52,6 @@ services:
       # request at a time (see ocr.LimitedConcurrency).
       UVICORN_WORKERS: "1"
       DOCLING_SERVE_ENABLE_UI: "false"
-    ports:
-      - "5001:5001"
     volumes:
       # Model weights are downloaded on first use. Without this volume that
       # happens again after every `docker compose down`, and the first document
