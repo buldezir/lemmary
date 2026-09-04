@@ -3,7 +3,7 @@ import {
   listProviderModels,
   modelOptionLabel,
   providerOptionLabel,
-  providerServesPurpose,
+  eligibleProviders,
   showsOCRModelWarning,
   localOCRModelHint,
   OCR_MODEL_WARNING,
@@ -129,12 +129,10 @@ export function ProviderModelFields({
   const selected = providers.find((item) => item.id === providerId)
   // Only offer providers this binding can actually use. The API refuses the
   // rest anyway; showing them meant the only way to learn that a local endpoint
-  // cannot do extraction was to save and read the error. A provider already
-  // bound is kept in the list whatever its SDK, so an existing binding never
-  // renders as blank.
-  const eligible = providers.filter(
-    (item) => item.id === providerId || providerServesPurpose(item.sdk, purpose),
-  )
+  // cannot do extraction was to save and read the error. Callers pass every
+  // provider they have -- narrowing the list before it gets here is what hid
+  // the local SDK from the embedding picker.
+  const eligible = eligibleProviders(providers, purpose, providerId)
   const hideModel = purpose === 'ocr' && selected?.sdk === 'google_vision'
   const showWarning = purpose === 'ocr' && showsOCRModelWarning(selected?.sdk)
   // A local sidecar has no catalogue to list, so the picker falls back to a

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   canEmbedProvider,
   isLLMProvider,
+  eligibleProviders,
   providerServesPurpose,
   requiresAPIKey,
   SDK_DEFAULT_BASE,
@@ -79,5 +80,36 @@ describe('the local SDK is offered and addressed', () => {
     // name in docker-compose.embeddings.yml, or the overlay comes up
     // unconfigured.
     expect(SDK_DEFAULT_BASE.local).toBe('http://embeddings:80/v1')
+  })
+})
+
+
+// The bug this guards: Settings built its own `providers.filter(isLLMProvider)`
+// list and handed it to every picker including Embeddings, so a `local`
+// provider was gone before providerServesPurpose ever ran. Adding one in
+// Settings appeared to work and it was simply absent from the Embeddings
+// dropdown, with nothing to say why.
+describe('eligibleProviders', () => {
+  const all = [
+    { id: 'p1', sdk: 'openai' },
+    { id: 'p2', sdk: 'google_vision' },
+    { id: 'p3', sdk: 'local' },
+    { id: 'p4', sdk: 'docling' },
+  ]
+
+  it('offers the local sidecar to the embedding picker', () => {
+    expect(eligibleProviders(all, 'embedding').map((p) => p.id)).toEqual(['p1', 'p3'])
+  })
+
+  it('offers both OCR engines but not the embeddings one', () => {
+    expect(eligibleProviders(all, 'ocr').map((p) => p.id)).toEqual(['p1', 'p2', 'p4'])
+  })
+
+  it('offers only chat-capable SDKs to an LLM binding', () => {
+    expect(eligibleProviders(all, 'llm').map((p) => p.id)).toEqual(['p1'])
+  })
+
+  it('keeps an already-bound provider whatever its SDK, so it never renders blank', () => {
+    expect(eligibleProviders(all, 'llm', 'p3').map((p) => p.id)).toEqual(['p1', 'p3'])
   })
 })

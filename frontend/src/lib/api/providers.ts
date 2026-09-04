@@ -94,6 +94,26 @@ export function providerServesPurpose(sdk: string, purpose: ModelPurpose) {
 }
 
 /**
+ * The providers a binding may be offered, which is `providerServesPurpose` plus
+ * the one already bound -- kept whatever its SDK, so an existing binding never
+ * renders as blank.
+ *
+ * It exists so no call site pre-filters its own list. Settings passed the
+ * embedding picker a list already narrowed to `isLLMProvider`, which stripped
+ * every `local` provider before the purpose filter could see it: the SDK that
+ * embeds without chatting was the one binding it could not reach.
+ */
+export function eligibleProviders<T extends { id: string; sdk: string }>(
+  providers: T[],
+  purpose: ModelPurpose,
+  boundId?: string,
+) {
+  return providers.filter(
+    (item) => item.id === boundId || providerServesPurpose(item.sdk, purpose),
+  )
+}
+
+/**
  * Mirrors aiprovider.RequiresOCRModel: the SDKs that read a document without
  * being told a model. Google Vision has none to give; for the sidecar, what
  * looks like a model is an optional OCR engine name.
