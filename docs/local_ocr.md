@@ -66,22 +66,32 @@ variables, and read [the response-shape caveat](#a-note-on-paddlex-versions).
 
 ## What it costs
 
-**Disk.** The Docling CPU image is about 4.4 GB on arm64 and 8.7 GB on amd64.
-The PaddleX image is comparable. Model weights are downloaded on first use into
-a named volume, another gigabyte or so; without that volume they would be
-downloaded again after every `docker compose down`.
+Measured on an amd64 host, 10 cores, running the overlay as shipped. Your
+numbers will differ, but the shape will not.
 
-**Memory.** Budget 4 GB for Docling and 6 GB for PaddleOCR on top of what the
-app already uses — the `mem_limit` lines in the overlay say as much. Under
-[encryption at rest](/encryption) that is *on top of* the tmpfs holding the
+**Disk.** The Docling CPU image is 7.1 GB pulled on amd64 (smaller on arm64).
+On first boot it downloads about 1.3 GB of model weights into the named volume;
+without that volume it would download them again for every new container.
+
+**Memory.** Docling settled at **1.1 GB** resident against the overlay's 4 GB
+`mem_limit` — the headroom is for larger documents, not for idling. Budget 6 GB
+for PaddleOCR, which runs a heavier stack. Under
+[encryption at rest](/encryption) this is *on top of* the tmpfs holding the
 decrypted archive, so a host sized for 3 GB before will not do.
 
-**Time.** A scanned page is seconds to tens of seconds on CPU, against
-milliseconds of latency for a hosted API. The first request after a container
-start is worse still: the models load then.
+**Startup.** About **90 seconds** on a cold volume, almost all of it model
+download; **10 seconds** on a warm one. That is what the overlay's
+`start_period: 180s` covers, and why the volume is not optional.
 
-**Time, again — this is the setting people miss.** `OCR_TIMEOUT_SEC` defaults
-to 40 seconds, which is not enough:
+**Time per document.** On this host, a one-page born-digital PDF took **2 s**
+and a one-page 150 dpi scan **4 s** — against tens of milliseconds for a hosted
+API. Real scans are denser than a test fixture, so treat those as a floor and
+measure your own.
+
+**The setting people miss.** `OCR_TIMEOUT_SEC` defaults to 40 seconds. That
+survives a small scan on a fast host and nothing else — a dense multi-page
+document, a busy machine, or the first request after a restart will all exceed
+it:
 
 ```bash
 OCR_TIMEOUT_SEC=300
@@ -99,9 +109,9 @@ what the client asked for. The overlay sets it to 900. Keep it above
 
 **The practical page ceiling is the worker timeout, not the page limit.**
 Lemmary refuses documents over 1000 pages, a limit that comes from Mistral. At
-ten seconds a page a local engine would need three hours for one of those, far
-past any sane `WORKER_TIMEOUT_SEC`. Work out your own seconds-per-page from the
-first few documents and size the timeout from that.
+even four seconds a page a local engine needs over an hour for one of those,
+far past any sane `WORKER_TIMEOUT_SEC`. Work out your own seconds-per-page from
+the first few documents and size the timeout from that.
 
 **Concurrency.** The app sends one page at a time to a local engine, on purpose.
 The split detector normally reads four pages in parallel, which hides network
@@ -124,10 +134,18 @@ For `docling` it names the OCR engine:
 | `easyocr` | broad language coverage |
 | `tesseract`, `tesserocr` | the classic; fastest, weakest on messy scans |
 
-Lemmary sends this as docling's `ocr_engine` form field, which is what the
-pinned image accepts. Newer Docling releases renamed it `ocr_preset` and kept
-`ocr_engine` working as a deprecated alias that forwards to it, so the same
-values keep working across an image bump.
+The pinned image's default is `rapidocr`.
+
+Lemmary sends this as docling's `ocr_engine` form field. The pinned image
+accepts both that and its successor `ocr_preset`, and marks `ocr_engine`
+deprecated — it still forwards, so the same values keep working across an image
+bump until it is removed.
+
+**A name it does not recognise is accepted silently.** The field is a free
+string rather than an enum: binding `tesserract` returns HTTP 200, falls back to
+the default engine, and reports nothing. If a bound engine seems to make no
+difference, check the spelling against the table above — nothing else will tell
+you.
 
 For `paddleocr` it names the served pipeline, which is also the endpoint:
 `pp-structurev3` (the default — markdown with tables and reading order) or `ocr`
@@ -159,6 +177,9 @@ overlay anyway rather than tracking `latest`.
 - **`connection refused` naming `docling`.** The sidecar is not running, or is
   running without its profile. `docker compose ps` should list it; the command
   needs `--profile docling`.
+- **`HTTP 401: Unauthorized`.** The sidecar was started with
+  `DOCLING_SERVE_API_KEY` but the provider has no key. Put the same value in
+  `OCR_API_KEY`, or in the provider's API key field in **Settings**.
 - **A DOCX or PPTX fails on `paddleocr`.** It reads pixels, not office files.
   Use `docling`, which reads both. TXT, CSV, DOCX and XLSX never reach an OCR
   provider at all — Lemmary parses those itself.
