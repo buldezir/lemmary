@@ -4,6 +4,7 @@ import {
   modelOptionLabel,
   providerOptionLabel,
   showsOCRModelWarning,
+  localOCRModelHint,
   OCR_MODEL_WARNING,
   type AIProvider,
   type CatalogModel,
@@ -127,6 +128,10 @@ export function ProviderModelFields({
   const selected = providers.find((item) => item.id === providerId)
   const hideModel = purpose === 'ocr' && selected?.sdk === 'google_vision'
   const showWarning = purpose === 'ocr' && showsOCRModelWarning(selected?.sdk)
+  // A local sidecar has no catalogue to list, so the picker falls back to a
+  // free-text box. Left bare that box reads as a required model id; the hint is
+  // what says it is optional and what the handful of accepted words are.
+  const localHint = purpose === 'ocr' ? localOCRModelHint(selected?.sdk) : ''
 
   const modelsState = useAsync(async () => {
     if (!providerId || hideModel) {
@@ -167,6 +172,7 @@ export function ProviderModelFields({
           onChange={onModelChange}
         />
       )}
+      {localHint && <p className={`${fieldHintClassName} sm:col-span-2`}>{localHint}</p>}
       {help && <p className={`${fieldHintClassName} sm:col-span-2`}>{help}</p>}
       {modelsState.error && (
         <p className="text-xs text-amber-700 sm:col-span-2">

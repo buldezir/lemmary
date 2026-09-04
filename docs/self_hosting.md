@@ -174,6 +174,23 @@ OpenMP each start a thread per core by default, inside a process that is already
 serving requests concurrently, and one thread apiece keeps a vector search from
 stalling the rest of the server on a small machine.
 
+## Local OCR
+
+By default OCR is a hosted API, which means every scan is uploaded to somebody
+else. A second overlay puts the OCR engine on this host instead — a sidecar
+container with no port published and no API key:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local-ocr.yml \
+  --profile docling up -d
+```
+
+Then `OCR_SDK=docling` in `.env` on a fresh volume, or a Docling provider under
+**Settings → Providers** on an instance that has already booted. It is not free:
+a multi-gigabyte image, several gigabytes of RAM, and seconds a page instead of
+milliseconds. Read [Local OCR](/local_ocr) first, in particular the timeout,
+which has to go up.
+
 ## Encryption at rest
 
 `VAULT_ENABLED=1` makes the volume ciphertext-only and boots the instance

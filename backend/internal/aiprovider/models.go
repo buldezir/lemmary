@@ -101,7 +101,13 @@ func ModelsURL(p Provider, purpose ModelPurpose) string {
 }
 
 func ListModels(ctx context.Context, p Provider, purpose ModelPurpose, client *http.Client, logger *slog.Logger) ([]Model, error) {
-	if p.SDK == SDKGoogleVision {
+	// An SDK that is not a language model has no catalogue to list: Google
+	// Vision annotates without a model, and each local sidecar serves one
+	// pipeline. Returning nothing here rather than falling through is what
+	// keeps the checks below -- which demand an API key -- from turning a
+	// perfectly healthy keyless sidecar into a 502 and an error banner in
+	// Settings.
+	if !IsLLM(p.SDK) {
 		return nil, nil
 	}
 	endpoint := ModelsURL(p, purpose)

@@ -7,7 +7,9 @@ import {
   createAIProvider,
   isLLMProvider,
   listAIProviders,
+  requiresAPIKey,
   sdkLabel,
+  LOCAL_OCR_HINT,
   SDK_DEFAULT_BASE,
   SDK_OPTIONS,
   type AIProvider,
@@ -16,7 +18,14 @@ import {
 import { getAppSettings, updateAppSettings } from '../lib/api/settings'
 import { AppFooter } from './AppFooter'
 import { ProviderModelFields } from './ProviderModelFields'
-import { AppLogo, Button, inputClassName, labelClassName, labelTextClassName } from './ui'
+import {
+  AppLogo,
+  Button,
+  fieldHintClassName,
+  inputClassName,
+  labelClassName,
+  labelTextClassName,
+} from './ui'
 
 type SetupWizardProps = {
   appName: string
@@ -147,7 +156,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
     try {
       setSubmitting(true)
       setError('')
-      if (!apiKey.trim()) {
+      if (requiresAPIKey(sdk) && !apiKey.trim()) {
         throw new Error('Enter an API key.')
       }
       await createAIProvider({
@@ -327,8 +336,10 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           {step === 'providers' && (
             <form className="flex flex-col gap-4" onSubmit={onSaveProvider}>
               <p className="text-sm text-ink-muted">
-                Add an API provider. OpenAI, OpenRouter, or Mistral can run extraction and chat;
-                Google Vision or Mistral OCR can run OCR. One Mistral provider covers both.
+                Add a provider. OpenAI, OpenRouter, or Mistral can run extraction and chat;
+                Google Vision or Mistral OCR can run OCR, and one Mistral provider covers both.
+                Docling runs OCR on your own host — no API key, but you need the local-OCR
+                compose overlay running first.
               </p>
               {providers.length > 0 && (
                 <p className="text-xs text-ink-soft">
@@ -373,17 +384,21 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                   />
                 </label>
               )}
-              <label className={labelClassName}>
-                <span className={labelTextClassName}>API key</span>
-                <input
-                  type="password"
-                  autoComplete="off"
-                  required
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  className={inputClassName}
-                />
-              </label>
+              {requiresAPIKey(sdk) ? (
+                <label className={labelClassName}>
+                  <span className={labelTextClassName}>API key</span>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    required
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    className={inputClassName}
+                  />
+                </label>
+              ) : (
+                <p className={fieldHintClassName}>{LOCAL_OCR_HINT}</p>
+              )}
               {error && <p className="text-sm text-madder">{error}</p>}
               <Button type="submit" disabled={submitting}>
                 {submitting ? 'Saving...' : 'Continue'}

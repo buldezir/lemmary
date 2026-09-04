@@ -1,0 +1,79 @@
+# Local OCR overlay: an OCR engine that runs on your own hardware, so scanned
+# documents are read here instead of being uploaded to somebody else's API.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local-ocr.yml up -d
+#
+# and two lines in .env, because this SDK is keyless -- the address is the whole
+# configuration:
+#
+#   OCR_SDK=docling
+#   OCR_BASE_URL=http://docling:5001
+#
+# An overlay rather than an edit, because local OCR is off by default and the
+# base file has to stay usable without any of this. Read docs/local_ocr.md
+# first -- in particular "What it costs", which covers the image sizes, the
+# first-run model download, and why OCR_TIMEOUT_SEC has to go up.
+#
+# Docling is the only engine here, and that is a decision rather than a gap. Its
+# default OCR engine is RapidOCR, which is PaddleOCR's own PP-OCR models
+# exported to ONNX -- so a second PaddleOCR container would be several more
+# gigabytes to run recognition this one already does. Set the OCR model binding
+# to pick the engine; see docs/local_ocr.md.
+#
+# Three things here are deliberate and easy to undo by accident:
+#
+#   * The service sits behind a `profiles:` key, so a command has to name it.
+#     Without that, every `up` on this overlay would pull a multi-gigabyte image
+#     whether or not the operator meant to run local OCR.
+#
+#   * There is no `environment:` block on `app`. The base file passes config
+#     with `env_file: .env`, and compose's `environment:` overrides that -- so
+#     pinning OCR_SDK here would take it out of the operator's hands.
+#
+#   * There is no `depends_on`, which would enable the profile implicitly and
+#     start the sidecar for someone who did not ask. The app tolerates a sidecar
+#     that is not up yet: the job stays pending and the cron retries.
+
+services:
+  docling:
+    # Pin the tag. Docling's convert response is stable, but the CPU image is
+    # ~4.4 GB on arm64 and ~8.7 GB on amd64, and :latest means re-pulling that
+    # on a schedule nobody chose. -cu128 / -cu130 are the CUDA variants.
+    image: ghcr.io/docling-project/docling-serve-cpu:v1.32.0
+    restart: unless-stopped
+    environment:
+      # The synchronous convert endpoint gives up after this many seconds
+      # whatever the client asked for, and its default of 120 is short for a
+      # long scan on CPU. Keep it above OCR_TIMEOUT_SEC.
+      DOCLING_SERVE_MAX_SYNC_WAIT: "900"
+      # One worker on purpose. Docling already threads inside a conversion, and
+      # a second uvicorn process would load its own full copy of the model
+      # weights for no extra throughput. The app knows this and sends one
+      # request at a time (see ocr.LimitedConcurrency).
+      UVICORN_WORKERS: "1"
+      DOCLING_SERVE_ENABLE_UI: "false"
+    volumes:
+      # Model weights are downloaded on first use. Without this volume that
+      # happens again after every `docker compose down`, and the first document
+      # of the day takes minutes rather than seconds.
+      - docling_models:/opt/app-root/src/.cache
+    # No `ports:` on purpose. Only the app talks to this, over the compose
+    # network, which is the entire security argument for running it without a
+    # credential. Publishing it would put a service that converts arbitrary
+    # uploads on the LAN with no authentication in front of it.
+    healthcheck:
+      # /ready, not /health: /health answers as soon as uvicorn is listening,
+      # which is minutes before the models have finished downloading and
+      # loading. /ready is 503 until they have, so `docker compose ps` says
+      # "starting" for exactly as long as the container is not yet useful.
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:5001/ready')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      # Long, because the first start downloads the models. This is for your
+      # `docker compose ps` output, not for ordering -- see the note above.
+      start_period: 180s
+    mem_limit: 4g
+
+volumes:
+  docling_models:
