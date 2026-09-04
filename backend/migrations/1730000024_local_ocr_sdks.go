@@ -8,7 +8,7 @@ import (
 	"lemmary/backend/internal/aiprovider"
 )
 
-// Widens ai_providers.sdk to the local OCR sidecars, docling and paddleocr.
+// Widens ai_providers.sdk to the local OCR sidecar, docling.
 //
 // aiprovider.EnsureCollection builds that select field's values from ValidSDKs,
 // but it returns an existing collection untouched -- which is every install
@@ -38,11 +38,9 @@ func init() {
 		// at a deleted provider would dangle. Best-effort throughout: a
 		// down-migration that halts halfway is worse than one that leaves a
 		// stale binding an admin can see and clear.
-		for _, sdk := range []string{aiprovider.SDKDocling, aiprovider.SDKPaddleOCR} {
-			records, err := app.FindAllRecords(aiprovider.CollectionName, dbx.HashExp{"sdk": sdk})
-			if err != nil {
-				continue
-			}
+		records, err := app.FindAllRecords(aiprovider.CollectionName,
+			dbx.HashExp{"sdk": aiprovider.SDKDocling})
+		if err == nil {
 			for _, record := range records {
 				clearOCRBinding(app, record.Id)
 				_ = app.Delete(record)

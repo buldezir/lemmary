@@ -338,8 +338,8 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
               <p className="text-sm text-ink-muted">
                 Add a provider. OpenAI, OpenRouter, or Mistral can run extraction and chat;
                 Google Vision or Mistral OCR can run OCR, and one Mistral provider covers both.
-                Docling and PaddleOCR run OCR on your own host — no API key, but you need the
-                local-OCR compose overlay running first.
+                Docling runs OCR on your own host — no API key, but you need the local-OCR
+                compose overlay running first.
               </p>
               {providers.length > 0 && (
                 <p className="text-xs text-ink-soft">

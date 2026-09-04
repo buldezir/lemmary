@@ -1,12 +1,6 @@
 import { apiFetch } from '../apiClient'
 
-export type ProviderSDK =
-  | 'openai'
-  | 'openrouter'
-  | 'google_vision'
-  | 'mistral'
-  | 'docling'
-  | 'paddleocr'
+export type ProviderSDK = 'openai' | 'openrouter' | 'google_vision' | 'mistral' | 'docling'
 
 export type AIProvider = {
   id: string
@@ -32,8 +26,8 @@ export type CatalogModel = {
 
 /**
  * Must stay identical to aiprovider.DefaultBaseURL in backend/internal/aiprovider/sdk.go.
- * The two local entries are the service names from docker-compose.local-ocr.yml,
- * so a provider added from the wizard needs nothing typed.
+ * The docling entry is the service name from docker-compose.local-ocr.yml, so a
+ * provider added from the wizard needs nothing typed.
  */
 export const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
   openai: 'https://api.openai.com/v1',
@@ -41,7 +35,6 @@ export const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
   mistral: 'https://api.mistral.ai/v1',
   google_vision: '',
   docling: 'http://docling:5001',
-  paddleocr: 'http://paddleocr:8080',
 }
 
 export const SDK_OPTIONS: { value: ProviderSDK; label: string }[] = [
@@ -50,7 +43,6 @@ export const SDK_OPTIONS: { value: ProviderSDK; label: string }[] = [
   { value: 'mistral', label: 'Mistral' },
   { value: 'google_vision', label: 'Google Cloud Vision' },
   { value: 'docling', label: 'Docling (local)' },
-  { value: 'paddleocr', label: 'PaddleOCR (local)' },
 ]
 
 export function sdkLabel(sdk: ProviderSDK | string) {
@@ -62,37 +54,31 @@ export function isLLMProvider(sdk: string) {
 }
 
 /**
- * Mirrors aiprovider.RequiresAPIKey. The local OCR sidecars run on the
- * operator's own host and are reached by address alone; everything else needs a
+ * Mirrors aiprovider.RequiresAPIKey. The local OCR sidecar runs on the
+ * operator's own host and is reached by address alone; everything else needs a
  * credential. Default-true like the Go side, so an unknown SDK still asks.
  */
 export function requiresAPIKey(sdk?: string) {
-  return sdk !== 'docling' && sdk !== 'paddleocr'
+  return sdk !== 'docling'
 }
 
 /**
  * Mirrors aiprovider.RequiresOCRModel: the SDKs that read a document without
- * being told a model. Google Vision has none to give; the sidecars each serve
- * one pipeline, and what looks like a model there is an optional engine name.
+ * being told a model. Google Vision has none to give; for the sidecar, what
+ * looks like a model is an optional OCR engine name.
  */
 export function usesOCRModel(sdk?: string) {
-  return sdk !== 'google_vision' && sdk !== 'docling' && sdk !== 'paddleocr'
+  return sdk !== 'google_vision' && sdk !== 'docling'
 }
 
 /**
- * What the OCR "model" means for a local sidecar, shown under the free-text box
- * the picker falls back to when the provider has no catalogue. Empty for every
- * other SDK, where the field really does name a model.
+ * What the OCR "model" means for the local sidecar, shown under the free-text
+ * box the picker falls back to when the provider has no catalogue. Empty for
+ * every other SDK, where the field really does name a model.
  */
 export function localOCRModelHint(sdk?: string) {
-  switch (sdk) {
-    case 'docling':
-      return 'Optional. Names Docling\u2019s OCR engine — rapidocr, easyocr, tesserocr or tesseract. Leave blank to use the container\u2019s default.'
-    case 'paddleocr':
-      return 'Optional. Names the served pipeline — pp-structurev3 (default, markdown with tables) or ocr (faster, plain lines).'
-    default:
-      return ''
-  }
+  if (sdk !== 'docling') return ''
+  return 'Optional. Names Docling\u2019s OCR engine \u2014 rapidocr (the default, PaddleOCR\u2019s PP-OCR models), easyocr, tesserocr or tesseract. An unrecognised name is ignored silently, so check the spelling.'
 }
 
 /** The hint shown under a local provider's Base URL, in place of an API key. */

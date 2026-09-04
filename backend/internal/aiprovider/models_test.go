@@ -332,10 +332,10 @@ func TestModelsURLEmbeddingFiltersOpenRouterByOutputModality(t *testing.T) {
 // An SDK that is not a language model has no catalogue, and must say so by
 // answering nothing rather than by failing.
 //
-// The keyless rows are the ones that regressed: they carry a base URL and no
-// key, which is exactly the combination the checks below the early return turn
-// into "provider API key is not set" -- a 502 from the models endpoint and a
-// red banner over a picker that was working.
+// The keyless row is the one that regressed: it carries a base URL and no key,
+// which is exactly the combination the checks below the early return turn into
+// "provider API key is not set" -- a 502 from the models endpoint and a red
+// banner over a picker that was working.
 func TestListModelsHasNoCatalogueForNonLLMSDKs(t *testing.T) {
 	t.Parallel()
 	calls := 0
@@ -348,7 +348,6 @@ func TestListModelsHasNoCatalogueForNonLLMSDKs(t *testing.T) {
 	providers := []Provider{
 		{SDK: SDKGoogleVision, APIKey: "x"},
 		{SDK: SDKDocling, BaseURL: server.URL},
-		{SDK: SDKPaddleOCR, BaseURL: server.URL},
 	}
 	for _, p := range providers {
 		for _, purpose := range []ModelPurpose{PurposeOCR, PurposeLLM, PurposeEmbedding} {

@@ -24,16 +24,10 @@ import (
 //	  --profile docling up -d
 //	LEMMARY_DOCLING_URL=http://127.0.0.1:5001 \
 //	  go test -tags vectors ./internal/ocr/ -run Live -v
-//
-// The PaddleOCR half is the same shape:
-//
-//	LEMMARY_PADDLEOCR_URL=http://127.0.0.1:8080 \
-//	  go test -tags vectors ./internal/ocr/ -run Live -v
 const (
 	envDoclingURL     = "LEMMARY_DOCLING_URL"
 	envDoclingAuthURL = "LEMMARY_DOCLING_AUTH_URL"
 	envDoclingAuthKey = "LEMMARY_DOCLING_AUTH_KEY"
-	envPaddleOCRURL   = "LEMMARY_PADDLEOCR_URL"
 )
 
 // liveTimeout is generous on purpose. A local engine reads a page in seconds to
@@ -115,9 +109,9 @@ func TestLiveDoclingReadsAScan(t *testing.T) {
 	assertReadsInvoice(t, provider, liveScan(t), "image/png")
 }
 
-// The office formats are the reason to prefer docling over paddleocr, and the
-// only ones that reach an OCR provider at all -- textextract claims txt, csv,
-// docx and xlsx first, leaving pptx.
+// Docling reads every format Lemmary accepts, so this is about what it refuses
+// rather than what it lacks: an archive or another binary must fail here, by
+// name, instead of reaching the sidecar and coming back as an opaque 500.
 func TestLiveDoclingRejectsWhatItCannotRead(t *testing.T) {
 	provider := NewDoclingProvider(liveURL(t, envDoclingURL), "", "", liveTimeout, nil)
 
@@ -128,16 +122,6 @@ func TestLiveDoclingRejectsWhatItCannotRead(t *testing.T) {
 	if _, err := provider.ExtractText(context.Background(), path, ""); err == nil {
 		t.Fatal("want an error for an unsupported mime type")
 	}
-}
-
-func TestLivePaddleOCRReadsAScan(t *testing.T) {
-	provider := NewPaddleOCRProvider(liveURL(t, envPaddleOCRURL), "", liveTimeout, nil)
-	assertReadsInvoice(t, provider, liveScan(t), "image/png")
-}
-
-func TestLivePaddleOCRReadsAPDF(t *testing.T) {
-	provider := NewPaddleOCRProvider(liveURL(t, envPaddleOCRURL), "", liveTimeout, nil)
-	assertReadsInvoice(t, provider, livePDF(t), "application/pdf")
 }
 
 // The engine binding is an optional free-text field, not an enum, and docling

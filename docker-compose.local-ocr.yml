@@ -1,11 +1,10 @@
 # Local OCR overlay: an OCR engine that runs on your own hardware, so scanned
 # documents are read here instead of being uploaded to somebody else's API.
 #
-#   docker compose -f docker-compose.yml -f docker-compose.local-ocr.yml \
-#     --profile docling up -d
+#   docker compose -f docker-compose.yml -f docker-compose.local-ocr.yml up -d
 #
-# and two lines in .env, because these SDKs are keyless -- the address is the
-# whole configuration:
+# and two lines in .env, because this SDK is keyless -- the address is the whole
+# configuration:
 #
 #   OCR_SDK=docling
 #   OCR_BASE_URL=http://docling:5001
@@ -15,27 +14,32 @@
 # first -- in particular "What it costs", which covers the image sizes, the
 # first-run model download, and why OCR_TIMEOUT_SEC has to go up.
 #
+# Docling is the only engine here, and that is a decision rather than a gap. Its
+# default OCR engine is RapidOCR, which is PaddleOCR's own PP-OCR models
+# exported to ONNX -- so a second PaddleOCR container would be several more
+# gigabytes to run recognition this one already does. Set the OCR model binding
+# to pick the engine; see docs/local_ocr.md.
+#
 # Three things here are deliberate and easy to undo by accident:
 #
-#   * Both services sit behind a `profiles:` key, so a command has to name one.
-#     Without that, `up` would pull both a multi-gigabyte Docling image and a
-#     multi-gigabyte PaddleX one for someone who wanted a single engine.
+#   * The service sits behind a `profiles:` key, so a command has to name it.
+#     Without that, every `up` on this overlay would pull a multi-gigabyte image
+#     whether or not the operator meant to run local OCR.
 #
 #   * There is no `environment:` block on `app`. The base file passes config
 #     with `env_file: .env`, and compose's `environment:` overrides that -- so
-#     pinning OCR_SDK here would make .env unable to select the other engine.
+#     pinning OCR_SDK here would take it out of the operator's hands.
 #
-#   * There is no `depends_on`. Compose enables a profile implicitly to satisfy
-#     one, which would drag Docling in for a PaddleOCR user. The app tolerates a
-#     sidecar that is not up yet: the job stays pending and the cron retries.
+#   * There is no `depends_on`, which would enable the profile implicitly and
+#     start the sidecar for someone who did not ask. The app tolerates a sidecar
+#     that is not up yet: the job stays pending and the cron retries.
 
 services:
   docling:
-    profiles: ["docling"]
     # Pin the tag. Docling's convert response is stable, but the CPU image is
     # ~4.4 GB on arm64 and ~8.7 GB on amd64, and :latest means re-pulling that
     # on a schedule nobody chose. -cu128 / -cu130 are the CUDA variants.
-    image: ghcr.io/docling-project/docling-serve-cpu:v1.18.0
+    image: ghcr.io/docling-project/docling-serve-cpu:v1.32.0
     restart: unless-stopped
     environment:
       # The synchronous convert endpoint gives up after this many seconds
@@ -48,6 +52,8 @@ services:
       # request at a time (see ocr.LimitedConcurrency).
       UVICORN_WORKERS: "1"
       DOCLING_SERVE_ENABLE_UI: "false"
+    ports:
+      - "5001:5001"
     volumes:
       # Model weights are downloaded on first use. Without this volume that
       # happens again after every `docker compose down`, and the first document
@@ -71,29 +77,5 @@ services:
       start_period: 180s
     mem_limit: 4g
 
-  paddleocr:
-    profiles: ["paddleocr"]
-    # PaddleX's official images live on Baidu's registry rather than a public
-    # one, which is why this is opt-in rather than the default engine. Pin the
-    # tag: the serving response shape has moved between PaddleX releases, and
-    # the parser in internal/ocr/paddleocr.go tolerates that rather than
-    # licensing a floating tag.
-    image: ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlex/paddlex:paddlex3.4-paddlepaddle3.2-cpu
-    restart: unless-stopped
-    command:
-      ["paddlex", "--serve", "--pipeline", "PP-StructureV3", "--host", "0.0.0.0", "--port", "8080"]
-    volumes:
-      - paddlex_models:/root/.paddlex
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import socket;socket.create_connection(('127.0.0.1',8080),2)\""]
-      interval: 15s
-      timeout: 5s
-      retries: 40
-      start_period: 300s
-    # PP-StructureV3 runs a stack of models per page -- layout, table, formula
-    # -- and is heavier than Docling on both RAM and CPU.
-    mem_limit: 6g
-
 volumes:
   docling_models:
-  paddlex_models:

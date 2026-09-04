@@ -20,7 +20,7 @@ type Provider interface {
 //
 // The hosted providers all want to be called in parallel: the time is spent on
 // the network, so a second request costs nothing while the first is in flight.
-// A local sidecar is the opposite -- it is spending this host's CPUs, so a
+// The local sidecar is the opposite -- it is spending this host's CPUs, so a
 // second request does not hide latency, it multiplies it, and every caller's
 // timeout is already running while it waits for a core.
 //
@@ -67,10 +67,6 @@ func NewFromAIProvider(p aiprovider.Provider, model string, timeout time.Duratio
 		// choice to the server. p.APIKey is optional and usually empty.
 		logger.Info("using provider", "provider", p.Alias, "sdk", p.SDK, "engine", model, "base_url", p.BaseURL)
 		return NewDoclingProvider(p.BaseURL, model, p.APIKey, timeout, logger), nil
-	case aiprovider.SDKPaddleOCR:
-		// model names the served pipeline, which is also the endpoint path.
-		logger.Info("using provider", "provider", p.Alias, "sdk", p.SDK, "pipeline", model, "base_url", p.BaseURL)
-		return NewPaddleOCRProvider(p.BaseURL, model, timeout, logger), nil
 	default:
 		return nil, fmt.Errorf("unsupported OCR sdk %q", p.SDK)
 	}

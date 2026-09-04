@@ -25,11 +25,6 @@ func TestNewFromAIProviderRequirements(t *testing.T) {
 			wantName: aiprovider.SDKDocling,
 		},
 		{
-			name:     "paddleocr needs neither key nor model",
-			provider: aiprovider.Provider{SDK: aiprovider.SDKPaddleOCR, Alias: "PaddleOCR", BaseURL: "http://paddleocr:8080"},
-			wantName: aiprovider.SDKPaddleOCR,
-		},
-		{
 			name:     "docling still needs an address",
 			provider: aiprovider.Provider{SDK: aiprovider.SDKDocling, Alias: "Docling"},
 			wantErr:  "base URL",

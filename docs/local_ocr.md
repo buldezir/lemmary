@@ -10,29 +10,26 @@ images are large, the first document is slow, and a page takes seconds rather
 than milliseconds. If your archive is not sensitive and you are happy paying a
 hosted provider, [Mistral](/ai_providers) is faster and less to run.
 
-## Two engines
+## One container, several engines
 
-| | `docling` | `paddleocr` |
-| --- | --- | --- |
-| Project | [docling-serve](https://github.com/docling-project/docling-serve) | [PaddleX serving](https://paddlepaddle.github.io/PaddleX/latest/en/pipeline_deploy/serving.html) running PP-StructureV3 |
-| Reads | PDF, images, DOCX, PPTX, XLSX, HTML | PDF and images only |
-| Output | markdown, with tables and reading order | markdown, with tables and reading order |
-| Image | `ghcr.io/docling-project/docling-serve-cpu`, public | Baidu's registry, `ccr-2vdh3abv-pub.cnc.bj.baidubce.com` |
-| Strength | the general answer, and the only one that reads office files | dense and CJK scans |
+The SDK is `docling`, and the container is
+[docling-serve](https://github.com/docling-project/docling-serve): a public
+image on GHCR that reads PDF, images, DOCX, PPTX, XLSX and HTML, and returns
+markdown with layout and tables.
 
-**Start with `docling`.** Its image comes from a public registry, it reads every
-format Lemmary accepts, and its API has been stable. Reach for `paddleocr` when
-Docling's recognition is not good enough on your particular documents — dense
-tabular scans and Chinese, Japanese or Korean text are where it wins.
-
-Docling can also run PaddleOCR's recognition models underneath, via the RapidOCR
-engine, without the second container. See [Choosing an engine](#choosing-an-engine).
+There is deliberately no separate PaddleOCR SDK, because you already have
+PaddleOCR. Docling's default recognition engine is RapidOCR, which is
+PaddleOCR's own PP-OCR models exported to ONNX — a fresh container downloads
+`ch_PP-OCRv4_det_mobile.onnx` and `ch_PP-OCRv4_rec_mobile.onnx` and reads with
+those. A second multi-gigabyte container to run the same models would buy
+nothing, and PaddleOCR's own serving images are published only on Baidu's
+registry. If you want a different recognizer, change the engine rather than the
+container: see [Choosing an engine](#choosing-an-engine).
 
 ## Bringing it up
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.local-ocr.yml \
-  --profile docling up -d
+docker compose -f docker-compose.yml -f docker-compose.local-ocr.yml up -d
 ```
 
 Both services sit behind a compose profile, so the command has to name one.
@@ -61,21 +58,17 @@ seeds the database on the **first** boot only. Add the provider under
 **Settings → Providers** instead (the base URL is prefilled and there is no API
 key field), then bind it under **Settings → Models → OCR**.
 
-For PaddleOCR, swap `docling` for `paddleocr` in both the profile and the two
-variables, and read [the response-shape caveat](#a-note-on-paddlex-versions).
-
 ## What it costs
 
 Measured on an amd64 host, 10 cores, running the overlay as shipped. Your
 numbers will differ, but the shape will not.
 
-**Disk.** The Docling CPU image is 7.1 GB pulled on amd64 (smaller on arm64).
+**Disk.** The CPU image is 7.1 GB pulled on amd64 (smaller on arm64).
 On first boot it downloads about 1.3 GB of model weights into the named volume;
 without that volume it would download them again for every new container.
 
 **Memory.** Docling settled at **1.1 GB** resident against the overlay's 4 GB
-`mem_limit` — the headroom is for larger documents, not for idling. Budget 6 GB
-for PaddleOCR, which runs a heavier stack. Under
+`mem_limit` — the headroom is for larger documents, not for idling. Under
 [encryption at rest](/encryption) this is *on top of* the tmpfs holding the
 decrypted archive, so a host sized for 3 GB before will not do.
 
@@ -123,18 +116,15 @@ would only queue, while each page's timeout ran down waiting for a core. So a
 
 Bind an **OCR model** in **Settings → Models** to change what runs inside the
 sidecar. It is optional — blank uses the container's default, which is the right
-answer for most installs.
-
-For `docling` it names the OCR engine:
+answer for most installs. For this SDK the field names an OCR engine rather than
+a model:
 
 | value | notes |
 | --- | --- |
 | *(blank)* | the container's default |
-| `rapidocr` | ONNX builds of PaddleOCR's models — PaddleOCR's recognition without the second container |
+| `rapidocr` | the default: PaddleOCR's PP-OCR models as ONNX |
 | `easyocr` | broad language coverage |
 | `tesseract`, `tesserocr` | the classic; fastest, weakest on messy scans |
-
-The pinned image's default is `rapidocr`.
 
 Lemmary sends this as docling's `ocr_engine` form field. The pinned image
 accepts both that and its successor `ocr_preset`, and marks `ocr_engine`
@@ -147,25 +137,12 @@ the default engine, and reports nothing. If a bound engine seems to make no
 difference, check the spelling against the table above — nothing else will tell
 you.
 
-For `paddleocr` it names the served pipeline, which is also the endpoint:
-`pp-structurev3` (the default — markdown with tables and reading order) or `ocr`
-(faster, plain recognised lines with no layout).
-
 ## GPU
 
 Docling publishes CUDA images: `docling-serve-cu128` and `docling-serve-cu130`.
 Swap the `image:` line in the overlay, add a `deploy.resources.reservations.devices`
 block for the GPU, and per-page time drops by an order of magnitude. The app
 needs no change — it is the same HTTP API.
-
-## A note on PaddleX versions
-
-PaddleX's serving response has been spelled several ways across releases: 3.x
-returns the text under `layoutParsingResults[].markdown.text`, earlier builds
-used `layoutElements[].text`, and the plain `ocr` pipeline returns neither, only
-recognised lines. Lemmary reads all of them and takes the first that yields
-text, so an image bump is unlikely to break silently — but pin the tag in the
-overlay anyway rather than tracking `latest`.
 
 ## Troubleshooting
 
@@ -180,9 +157,8 @@ overlay anyway rather than tracking `latest`.
 - **`HTTP 401: Unauthorized`.** The sidecar was started with
   `DOCLING_SERVE_API_KEY` but the provider has no key. Put the same value in
   `OCR_API_KEY`, or in the provider's API key field in **Settings**.
-- **A DOCX or PPTX fails on `paddleocr`.** It reads pixels, not office files.
-  Use `docling`, which reads both. TXT, CSV, DOCX and XLSX never reach an OCR
-  provider at all — Lemmary parses those itself.
+- **TXT, CSV, DOCX and XLSX never reach the sidecar.** Lemmary parses those
+  itself, so a problem with one of them is not an OCR problem.
 - **Try it before trusting it.** The **OCR test** page runs one file through a
   provider without touching the pipeline. A local sidecar appears there as soon
   as it is added under **Providers**, before it is bound to OCR.

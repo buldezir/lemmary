@@ -17,7 +17,6 @@ to use.
 | `openrouter` | ✅ many vendors on one key | ✅ models advertising `file` input | ✅ |
 | `google_vision` | ❌ | ✅ | ❌ |
 | `docling` | ❌ | ✅ **on your own host** | ❌ |
-| `paddleocr` | ❌ | ✅ **on your own host** | ❌ |
 
 **Start with Mistral.** It is the only SDK that covers every job Lemmary has, so
 one key and one provider row configure the whole instance — OCR, extraction,
@@ -38,14 +37,15 @@ The alternatives are worth naming:
 - **`google_vision`** — OCR only; it cannot serve extraction and is refused as
   `AI_SDK`. Worth pairing with an LLM when its free tier (1000 pages a month)
   matters. See [Google Vision API key](/google_vision).
-- **`docling` and `paddleocr`** — OCR only, and the only providers that read a
-  document without sending it anywhere: they are a sidecar container beside the
-  app, with no port published and **no API key at all** — the base URL is the
-  whole configuration. Reach for these when the archive is confidential enough
-  that a hosted OCR API is not an option, or when the host has no outbound
-  internet. Pair either with a local OpenAI-compatible endpoint under
-  `AI_BASE_URL` and nothing leaves the machine. The price is real: multi-gigabyte
-  images, and seconds rather than milliseconds a page. See [Local OCR](/local_ocr).
+- **`docling`** — OCR only, and the only provider that reads a document without
+  sending it anywhere: a sidecar container beside the app, with no port
+  published and **no API key at all** — the base URL is the whole configuration.
+  Reach for it when the archive is confidential enough that a hosted OCR API is
+  not an option, or when the host has no outbound internet; pair it with a local
+  OpenAI-compatible endpoint under `AI_BASE_URL` and nothing leaves the machine.
+  Its default recognizer is PaddleOCR's PP-OCR models, so there is no separate
+  PaddleOCR provider to choose. The price is real: a multi-gigabyte image, and
+  seconds rather than milliseconds a page. See [Local OCR](/local_ocr).
 
 Without a language-model provider, AI extraction, document chat and Deep Search
 return a configuration error.
@@ -88,10 +88,10 @@ after that.
 | `AI_API_KEY` | empty | Its credential. **One key is usually the whole configuration**: with this and nothing else the app creates one provider and routes extraction, chat, Deep Search *and* OCR to it. |
 | `AI_MODEL` | `gpt-5.6-luna` | The model for extraction, chat and Deep Search. Be sure it supports the result language set in **Settings**. |
 | `AI_BASE_URL` | the SDK's own endpoint | An OpenAI-compatible base URL, for a gateway or a self-hosted endpoint. |
-| `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `openai`, `openrouter`, `mistral`, `google_vision`, `docling` or `paddleocr`. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
-| `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK` — except `docling` and `paddleocr`, which have no account behind them. Optional for `docling` if you started the sidecar with `DOCLING_SERVE_API_KEY`. |
-| `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. For the local SDKs the default is the compose service name — `http://docling:5001`, `http://paddleocr:8080` — so `OCR_SDK=docling` alone is a complete configuration under the overlay. |
-| `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Not required for `google_vision`, `docling` or `paddleocr`, which read a document without one; for the two local SDKs it optionally names the OCR engine or the served pipeline instead. See [Choosing an engine](/local_ocr#choosing-an-engine). |
+| `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `openai`, `openrouter`, `mistral`, `google_vision` or `docling`. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
+| `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK` — except `docling`, which has no account behind it. Optional there, and only if you started the sidecar with `DOCLING_SERVE_API_KEY`. |
+| `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. For `docling` the default is the compose service name, `http://docling:5001`, so `OCR_SDK=docling` alone is a complete configuration under the overlay. |
+| `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Not required for `google_vision` or `docling`, which read a document without one; for `docling` it optionally names the OCR engine instead. See [Choosing an engine](/local_ocr#choosing-an-engine). |
 | `AI_EMBEDDING_MODEL` | unset (Deep Search matches keywords only) | An embedding model on the `AI_SDK` provider, so Deep Search can also find documents by meaning. Operator-owned under `AI_MANAGED=1`; removing it there turns the feature off. See [what embeddings cost](#what-embeddings-cost). |
 | `AI_SEARCH_HELPER_MODEL` | unset (the Search model does this work) | A cheaper model on the `AI_SDK` provider for Deep Search's bulk per-document work: distilling long reads into notes and surveying many documents for one question. Operator-owned under `AI_MANAGED=1`. See [How Research covers a topic](/setup#how-research-covers-a-topic). |
 
@@ -214,20 +214,20 @@ Uses the official [Go client library](https://docs.cloud.google.com/vision/docs/
 
 See [Google Vision API key](/google_vision) for obtaining a key.
 
-### Local sidecar: Docling and PaddleOCR
+### Local sidecar: Docling
 
-A container beside the app rather than an API: `docling` speaks
-docling-serve's `POST /v1/convert/file` and gets markdown back; `paddleocr`
-speaks PaddleX serving's `POST /layout-parsing` and gets the same. Both are
-keyless — the address is the whole configuration — and neither publishes a port,
-so only the app can reach them.
+A container beside the app rather than an API. It speaks docling-serve's
+`POST /v1/convert/file` and gets markdown back, reading PDFs, images and office
+documents. It is keyless — the address is the whole configuration — and
+publishes no port, so only the app can reach it.
 
-- **Docling** — PDFs, images and office documents; the general answer.
-- **PaddleOCR** — PDFs and images only; better on dense and CJK scans.
+Its default recognizer is RapidOCR, which is PaddleOCR's PP-OCR models as ONNX,
+and the OCR model binding switches that to EasyOCR or Tesseract. That is why
+there is no second local SDK: the PaddleOCR recognition is already here.
 
-Bring them up with the `docker-compose.local-ocr.yml` overlay and raise
-`OCR_TIMEOUT_SEC`, which is the setting people miss. Everything else — image
-sizes, memory, GPU variants and the per-page cost — is in
+Bring it up with the `docker-compose.local-ocr.yml` overlay and raise
+`OCR_TIMEOUT_SEC`, which is the setting people miss. Everything else — the image
+size, memory, GPU variants and the per-page cost — is in
 [Local OCR](/local_ocr).
 
 ## Troubleshooting

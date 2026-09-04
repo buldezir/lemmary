@@ -109,7 +109,7 @@ func TestKeylessOCRSDKNeedsNoKeyAndNoModel(t *testing.T) {
 // The language model is a separate problem, and the setup wizard still asks.
 func TestKeylessOCRConfiguresWithoutAnyHostedKey(t *testing.T) {
 	clearAIEnv(t)
-	t.Setenv(EnvOCRSDK, aiprovider.SDKPaddleOCR)
+	t.Setenv(EnvOCRSDK, aiprovider.SDKDocling)
 
 	env, err := AIEnvFromEnv()
 	if err != nil {
@@ -121,7 +121,7 @@ func TestKeylessOCRConfiguresWithoutAnyHostedKey(t *testing.T) {
 	if !env.Providers.Configured() {
 		t.Fatal("a keyless OCR provider alone should still be a configuration")
 	}
-	if got := env.Providers.OCRSDK(); got != aiprovider.SDKPaddleOCR {
+	if got := env.Providers.OCRSDK(); got != aiprovider.SDKDocling {
 		t.Fatalf("ocr sdk=%q", got)
 	}
 }

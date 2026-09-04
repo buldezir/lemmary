@@ -29,7 +29,7 @@ func TestIsLLM(t *testing.T) {
 	if !IsLLM(SDKOpenAI) || !IsLLM(SDKOpenRouter) || !IsLLM(SDKMistral) {
 		t.Fatal("openai, openrouter, and mistral should be LLM SDKs")
 	}
-	for _, sdk := range []string{SDKGoogleVision, SDKDocling, SDKPaddleOCR, "unknown"} {
+	for _, sdk := range []string{SDKGoogleVision, SDKDocling, "unknown"} {
 		if IsLLM(sdk) {
 			t.Fatalf("%s should not be an LLM SDK", sdk)
 		}
@@ -56,7 +56,6 @@ func TestSDKCapabilities(t *testing.T) {
 		{SDKMistral, true, false, true, false, "https://api.mistral.ai/v1", "Mistral"},
 		{SDKGoogleVision, true, false, false, false, "", "Google Cloud Vision"},
 		{SDKDocling, false, true, false, true, "http://docling:5001", "Docling"},
-		{SDKPaddleOCR, false, true, false, true, "http://paddleocr:8080", "PaddleOCR"},
 		// The rows that matter most: an unrecognised or empty SDK must fall on
 		// the side that still demands a key, because every call site now reads
 		// RequiresAPIKey instead of testing the key itself.
@@ -104,7 +103,7 @@ func TestEverySDKInValidSDKsIsValid(t *testing.T) {
 // naming google_vision from memory, which is how that sentence went stale.
 func TestModellessOCRSDKsMatchesRequiresOCRModel(t *testing.T) {
 	t.Parallel()
-	want := map[string]bool{SDKGoogleVision: true, SDKDocling: true, SDKPaddleOCR: true}
+	want := map[string]bool{SDKGoogleVision: true, SDKDocling: true}
 	got := map[string]bool{}
 	for _, sdk := range ModellessOCRSDKs() {
 		got[sdk] = true
