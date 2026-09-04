@@ -249,7 +249,7 @@ and so every containerised install. Now it refuses to start and says what to do.
   model would be free. Size the tmpfs in `docker-compose.encrypted.yml`
   accordingly before turning `AI_EMBEDDING_MODEL` on, and see
   [AI providers](/ai_providers#what-embeddings-cost).
-- An [embedding model you run yourself](/ai_providers#embeddings-on-your-own-hardware)
+- An [embedding model you run yourself](/local_embeddings)
   costs RAM in a *second*, separate place: the sidecar's own container, ~2.2 GB
   of weights for the default `BAAI/bge-m3`. That memory is outside the `app`
   container's `mem_limit` and outside the tmpfs, so it adds to the host's

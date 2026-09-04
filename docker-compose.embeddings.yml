@@ -11,8 +11,7 @@
 #                  -f docker-compose.encrypted.yml \
 #                  -f docker-compose.embeddings.yml up
 #
-# Read docs/ai_providers.md, in particular "Embeddings on your own hardware",
-# before turning this on. Nothing else moves: OCR, extraction, chat and the Deep
+# Read docs/local_embeddings.md before turning this on. Nothing else moves: OCR, extraction, chat and the Deep
 # Search agent stay on whatever provider AI_SDK names. For an NVIDIA GPU use
 # docker-compose.embeddings-gpu.yml instead of this file.
 

@@ -233,4 +233,4 @@ docker compose -f docker-compose.yml \
 Budget for the model on top of the vectors — ~2.2 GB of weights for the default
 `BAAI/bge-m3` — and note that under a vault the vectors themselves live in the
 tmpfs. See [Embeddings on your own
-hardware](/ai_providers#embeddings-on-your-own-hardware).
+hardware](/local_embeddings).
