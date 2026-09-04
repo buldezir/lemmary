@@ -18,6 +18,7 @@ import {
   PROCESSING_STEP_LABELS,
   formatDuration,
   jobDurationMs,
+  jobStillRunning,
   stepDurationMs,
   type ProcessingJobRecord,
   type ProcessingStep,
@@ -98,7 +99,14 @@ export function DocumentDetailPage() {
         }
         setError('')
 
-        const inFlight = doc.processing_status === 'processing' || doc.processing_status === 'pending'
+        // The job, not just the document: apply_metadata marks the document
+        // completed and saves it before embed runs, so watching the document
+        // alone stops the poll mid-pipeline and freezes the panel with embed
+        // reading 'running' and no duration that ever settles.
+        const inFlight =
+          doc.processing_status === 'processing' ||
+          doc.processing_status === 'pending' ||
+          jobStillRunning(jobs.items[0])
         if (inFlight && poll == null) {
           poll = setInterval(() => {
             void load()
@@ -166,9 +174,8 @@ export function DocumentDetailPage() {
   // leaves nothing ticking -- and it is separate from the one-second document
   // poll above, so the elapsed keeps time even if a refresh is slow.
   const [tick, setTick] = useState(() => Date.now())
-  const jobUnfinished = Boolean(job?.started_at) && !job?.finished_at
   const stepRunning = (job?.step_runs ?? []).some((run) => run.status === 'running')
-  const needsClock = jobUnfinished || stepRunning
+  const needsClock = jobStillRunning(job) || stepRunning
   useEffect(() => {
     if (!needsClock) return
     const id = setInterval(() => setTick(Date.now()), 1000)

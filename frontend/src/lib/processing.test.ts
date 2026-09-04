@@ -3,6 +3,7 @@ import {
   defaultReprocessSteps,
   formatDuration,
   jobDurationMs,
+  jobStillRunning,
   parseStepTimestamp,
   stepDurationMs,
   type ProcessingJobRecord,
@@ -156,5 +157,37 @@ describe('formatDuration', () => {
   it('shows hours and padded minutes for a long backfill', () => {
     expect(formatDuration(3600000)).toBe('1h 00m')
     expect(formatDuration(3840000)).toBe('1h 04m')
+  })
+})
+
+
+// The bug: the document page stopped polling on the document's own status, and
+// apply_metadata marks the document completed *before* embed runs. The panel
+// froze mid-pipeline with embed reading 'running', and its duration counted up
+// for ever because nothing was left to fetch the finish.
+describe('jobStillRunning', () => {
+  const job = (over: Partial<ProcessingJobRecord>): ProcessingJobRecord => ({
+    id: 'j1', document: 'd1', status: 'completed', steps: [],
+    started_at: '', finished_at: '', created: '', updated: '', ...over,
+  })
+
+  it('is true while embed runs, though the job status already says completed', () => {
+    expect(
+      jobStillRunning(job({ status: 'completed', started_at: '2026-09-04 15:11:35.176Z' })),
+    ).toBe(true)
+  })
+
+  it('is false once finished_at is written, which happens once at the very end', () => {
+    expect(
+      jobStillRunning(
+        job({ started_at: '2026-09-04 15:11:35.176Z', finished_at: '2026-09-04 15:11:50.117Z' }),
+      ),
+    ).toBe(false)
+  })
+
+  it('is false for a job that never started, and for no job at all', () => {
+    expect(jobStillRunning(job({}))).toBe(false)
+    expect(jobStillRunning(null)).toBe(false)
+    expect(jobStillRunning(undefined)).toBe(false)
   })
 })

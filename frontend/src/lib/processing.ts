@@ -131,6 +131,23 @@ export function stepDurationMs(run: StepRunRecord, now: number = Date.now()): nu
   return Math.max(0, now - started)
 }
 
+/**
+ * Whether the job is still running, which is *not* what the document's
+ * processing_status says.
+ *
+ * apply_metadata sets the document to 'completed' and saves it, and only then
+ * does embed run -- eight seconds of it against a local sidecar. A caller that
+ * reads the document alone stops watching while the pipeline is still working,
+ * and is left holding a job whose last step reads 'running' for ever.
+ *
+ * finished_at rather than status, because status is set to completed by
+ * apply_metadata too. finished_at is written once, at the very end of
+ * PipelineRunner.Run, and is the only field that means the whole job is done.
+ */
+export function jobStillRunning(job: ProcessingJobRecord | null | undefined): boolean {
+  return Boolean(job?.started_at) && !job?.finished_at
+}
+
 /** Total wall-clock for the job, on the same rules as a single step. */
 export function jobDurationMs(job: ProcessingJobRecord, now: number = Date.now()): number | null {
   const started = parseStepTimestamp(job.started_at)
