@@ -449,3 +449,35 @@ func TestEmbedSendsSessionHeaderToOpenCode(t *testing.T) {
 		t.Errorf("%s = %q, want %q", aiprovider.SessionHeader, seen, "conv123")
 	}
 }
+
+// A local endpoint on the compose network has nobody to authenticate to. The
+// round trip has to work with no credential at all, and the header must be
+// absent rather than an empty "Bearer " -- a sidecar started with --api-key
+// would read a blank credential as a wrong one.
+func TestEmbedAgainstAKeylessEndpoint(t *testing.T) {
+	t.Parallel()
+	var authSeen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authSeen = r.Header.Values("Authorization")
+		writeEmbeddings(w, 1, 1024, false)
+	}))
+	t.Cleanup(srv.Close)
+
+	e := NewEmbedder(aiprovider.SDKLocal, "", "BAAI/bge-m3", srv.URL+"/v1", 0, 5*time.Second, slog.Default())
+	result, err := e.Embed(context.Background(), []string{"hello"})
+	if err != nil {
+		t.Fatalf("embed: %v", err)
+	}
+	if len(authSeen) != 0 {
+		t.Fatalf("Authorization = %q, want none sent", authSeen)
+	}
+	if len(result.Vectors) != 1 || len(result.Vectors[0]) != 1024 {
+		t.Fatalf("vectors = %d, first length %d", len(result.Vectors), len(result.Vectors[0]))
+	}
+	if e.Dims() != 1024 {
+		t.Fatalf("Dims() = %d, want the length learned from the response", e.Dims())
+	}
+	if e.Name() != aiprovider.SDKLocal {
+		t.Fatalf("Name() = %q", e.Name())
+	}
+}

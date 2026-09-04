@@ -1,6 +1,12 @@
 import { apiFetch } from '../apiClient'
 
-export type ProviderSDK = 'openai' | 'openrouter' | 'google_vision' | 'mistral' | 'docling'
+export type ProviderSDK =
+  | 'openai'
+  | 'openrouter'
+  | 'google_vision'
+  | 'mistral'
+  | 'local'
+  | 'docling'
 
 export type AIProvider = {
   id: string
@@ -17,6 +23,8 @@ export type AIProviderWrite = {
   api_key?: string
 }
 
+export type ModelPurpose = 'ocr' | 'llm' | 'embedding'
+
 export type CatalogModel = {
   id: string
   name: string
@@ -26,7 +34,7 @@ export type CatalogModel = {
 
 /**
  * Must stay identical to aiprovider.DefaultBaseURL in backend/internal/aiprovider/sdk.go.
- * The docling entry is the service name from docker-compose.local-ocr.yml, so a
+ * The two sidecar entries are the service names from the compose overlays, so a
  * provider added from the wizard needs nothing typed.
  */
 export const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
@@ -34,6 +42,9 @@ export const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
   openrouter: 'https://openrouter.ai/api/v1',
   mistral: 'https://api.mistral.ai/v1',
   google_vision: '',
+  // The service names in docker-compose.embeddings.yml and
+  // docker-compose.local-ocr.yml.
+  local: 'http://embeddings:80/v1',
   docling: 'http://docling:5001',
 }
 
@@ -42,6 +53,7 @@ export const SDK_OPTIONS: { value: ProviderSDK; label: string }[] = [
   { value: 'openrouter', label: 'OpenRouter' },
   { value: 'mistral', label: 'Mistral' },
   { value: 'google_vision', label: 'Google Cloud Vision' },
+  { value: 'local', label: 'Local embeddings (self-hosted)' },
   { value: 'docling', label: 'Docling (local)' },
 ]
 
@@ -54,12 +66,51 @@ export function isLLMProvider(sdk: string) {
 }
 
 /**
- * Mirrors aiprovider.RequiresAPIKey. The local OCR sidecar runs on the
- * operator's own host and is reached by address alone; everything else needs a
- * credential. Default-true like the Go side, so an unknown SDK still asks.
+ * Whether an SDK can serve the embedding binding. Deliberately not
+ * isLLMProvider, which it used to coincide with: `local` embeds without
+ * chatting, and google_vision and docling do neither. Mirrors
+ * aiprovider.CanEmbed.
+ */
+export function canEmbedProvider(sdk: string) {
+  return isLLMProvider(sdk) || sdk === 'local'
+}
+
+/**
+ * Mirrors aiprovider.RequiresAPIKey. Only the two sidecars are exempt: they run
+ * on the operator's own host and are reached by address alone. Default-true
+ * like the Go side, so an unknown SDK still asks.
  */
 export function requiresAPIKey(sdk?: string) {
-  return sdk !== 'docling'
+  return sdk !== 'local' && sdk !== 'docling'
+}
+
+/** Which SDKs may be bound to a given task, for the provider pickers. */
+export function providerServesPurpose(sdk: string, purpose: ModelPurpose) {
+  if (purpose === 'embedding') return canEmbedProvider(sdk)
+  if (purpose === 'llm') return isLLMProvider(sdk)
+  // OCR is the binding google_vision and docling exist for, and the one a
+  // local embeddings endpoint cannot serve. Mirrors aiprovider.CanOCR.
+  return sdk !== 'local'
+}
+
+/**
+ * The providers a binding may be offered, which is `providerServesPurpose` plus
+ * the one already bound -- kept whatever its SDK, so an existing binding never
+ * renders as blank.
+ *
+ * It exists so no call site pre-filters its own list. Settings passed the
+ * embedding picker a list already narrowed to `isLLMProvider`, which stripped
+ * every `local` provider before the purpose filter could see it: the SDK that
+ * embeds without chatting was the one binding it could not reach.
+ */
+export function eligibleProviders<T extends { id: string; sdk: string }>(
+  providers: T[],
+  purpose: ModelPurpose,
+  boundId?: string,
+) {
+  return providers.filter(
+    (item) => item.id === boundId || providerServesPurpose(item.sdk, purpose),
+  )
 }
 
 /**
@@ -81,9 +132,15 @@ export function localOCRModelHint(sdk?: string) {
   return 'Optional. Names Docling\u2019s OCR engine \u2014 rapidocr (the default, PaddleOCR\u2019s PP-OCR models), easyocr, tesserocr or tesseract. An unrecognised name is ignored silently, so check the spelling.'
 }
 
-/** The hint shown under a local provider's Base URL, in place of an API key. */
-export const LOCAL_OCR_HINT =
-  'Runs on your own host, so no API key is needed — the address is the whole configuration. The default is the service name from docker-compose.local-ocr.yml.'
+/**
+ * The hint shown under a keyless provider's Base URL, in place of an API key.
+ * Empty for the hosted SDKs, which show the key field instead.
+ */
+export function keylessProviderHint(sdk?: string) {
+  if (requiresAPIKey(sdk)) return ''
+  const overlay = sdk === 'local' ? 'docker-compose.embeddings.yml' : 'docker-compose.local-ocr.yml'
+  return `Runs on your own host, so no API key is needed \u2014 the address is the whole configuration. The default is the service name from ${overlay}.`
+}
 
 export function providerOptionLabel(item: Pick<AIProvider, 'alias' | 'sdk'>) {
   const sdk = sdkLabel(item.sdk)
@@ -133,8 +190,6 @@ export async function deleteAIProvider(id: string) {
     fallbackError: 'Failed to delete provider',
   })
 }
-
-export type ModelPurpose = 'ocr' | 'llm' | 'embedding'
 
 export async function listProviderModels(id: string, purpose: ModelPurpose = 'llm') {
   const data = await apiFetch<{ models?: CatalogModel[]; sdk?: string }>(

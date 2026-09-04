@@ -249,6 +249,14 @@ and so every containerised install. Now it refuses to start and says what to do.
   model would be free. Size the tmpfs in `docker-compose.encrypted.yml`
   accordingly before turning `AI_EMBEDDING_MODEL` on, and see
   [AI providers](/ai_providers#what-embeddings-cost).
+- An [embedding model you run yourself](/local_embeddings)
+  costs RAM in a *second*, separate place: the sidecar's own container, ~2.2 GB
+  of weights for the default `BAAI/bge-m3`. That memory is outside the `app`
+  container's `mem_limit` and outside the tmpfs, so it adds to the host's
+  budget rather than competing for the vault's — but it is the same RAM, and a
+  host sized exactly for an encrypted instance has none spare for it. Its
+  choice of model also decides the dimension count above, which is where a
+  1024- or 384-dimension local model pays for itself twice.
 - Nothing about the vector index costs an API call. Like the text index it is
   derived data, rebuilt inside the vault from the vectors in `data.db` — so an
   unlock, a restore, or a wiped work directory costs a rebuild, never a second

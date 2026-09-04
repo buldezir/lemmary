@@ -44,12 +44,24 @@ const (
 	EnvAIBaseURL = "AI_BASE_URL"
 	EnvAIModel   = "AI_MODEL"
 
-	// EnvAIEmbeddingModel names the retrieval embedding model on the AI_SDK
-	// provider. There is deliberately no AI_EMBEDDING_SDK / _API_KEY / _BASE_URL
-	// trio: a separate embedding endpoint is a rare enough choice that it
-	// belongs in Settings, and three more variables would mostly be three more
-	// ways to half-configure the feature.
+	// EnvAIEmbeddingModel names the retrieval embedding model -- on the AI_SDK
+	// provider by default, or on the AI_EMBEDDING_SDK one when that is set.
 	EnvAIEmbeddingModel = "AI_EMBEDDING_MODEL"
+
+	// The embedding provider block. An earlier release had none, on the
+	// reasoning that a separate embedding endpoint was a rare Settings-only
+	// choice and three more variables would be three more ways to
+	// half-configure the feature. Running the embedding model yourself is the
+	// case that reasoning did not anticipate: a sidecar on the compose network
+	// is by definition a different endpoint from the language model, so without
+	// these an operator could not bring an instance up on it from .env at all,
+	// and a managed instance could not use one.
+	//
+	// Unset (the default) still means embeddings ride on the AI_SDK provider,
+	// which is exactly what they did before.
+	EnvAIEmbeddingSDK     = "AI_EMBEDDING_SDK"
+	EnvAIEmbeddingAPIKey  = "AI_EMBEDDING_API_KEY"
+	EnvAIEmbeddingBaseURL = "AI_EMBEDDING_BASE_URL"
 
 	// EnvAISearchHelperModel names the model on the AI_SDK provider that Deep
 	// Search hands bulk per-document work to. Same reasoning as the embedding
@@ -93,7 +105,11 @@ func AIEnvFromEnv() (AIEnv, error) {
 	if err != nil {
 		return AIEnv{}, err
 	}
-	env.Providers = aiprovider.Bootstrap{LLM: llm, OCR: ocr}
+	embedding, err := parseEmbedding(llm)
+	if err != nil {
+		return AIEnv{}, err
+	}
+	env.Providers = aiprovider.Bootstrap{LLM: llm, OCR: ocr, Embedding: embedding}
 
 	if env.Managed {
 		if err := env.validateManaged(); err != nil {
@@ -162,6 +178,13 @@ func parseOCR(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error) {
 			"%s=%q is not a known SDK (want one of %s)",
 			EnvOCRSDK, sdk, strings.Join(aiprovider.ValidSDKs, ", "))
 	}
+	if !aiprovider.CanOCR(sdk) {
+		// Valid as an SDK, just not for this job. Caught here rather than on the
+		// first uploaded document.
+		return aiprovider.ProviderSpec{}, fmt.Errorf(
+			"%s=%q cannot read a document; it serves embeddings only",
+			EnvOCRSDK, sdk)
+	}
 
 	// The same SDK is the same endpoint: reuse the language model's credential
 	// and address rather than making an operator write them out twice.
@@ -191,6 +214,65 @@ func parseOCR(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error) {
 				"%s=%q needs %s; only %s read a document without one",
 				EnvOCRSDK, sdk, EnvOCRModel, strings.Join(aiprovider.ModellessOCRSDKs(), ", "))
 		}
+	}
+
+	return aiprovider.ProviderSpec{
+		SDK:     sdk,
+		APIKey:  key,
+		BaseURL: aiprovider.NormalizeBaseURL(sdk, baseURL),
+		Model:   model,
+	}, nil
+}
+
+// parseEmbedding reads the optional third provider. Unset means embeddings run
+// on the language model, which is what they always did.
+//
+// It mirrors parseOCR, the existing precedent for "a second provider for one
+// job", with one rule of its own: naming an SDK without a model would create a
+// provider row with nothing bound to it, which reads as a configured feature
+// that never embeds anything.
+func parseEmbedding(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error) {
+	sdk := strings.TrimSpace(os.Getenv(EnvAIEmbeddingSDK))
+	key := strings.TrimSpace(os.Getenv(EnvAIEmbeddingAPIKey))
+	baseURL := strings.TrimSpace(os.Getenv(EnvAIEmbeddingBaseURL))
+	model := strings.TrimSpace(os.Getenv(EnvAIEmbeddingModel))
+
+	if sdk == "" {
+		if key != "" || baseURL != "" {
+			// Same half-written intention parseOCR refuses: folding these into
+			// the language model would point embeddings somewhere not asked
+			// for. AI_EMBEDDING_MODEL alone is not in this list -- on its own it
+			// is the ordinary "embed on the AI_SDK provider" configuration.
+			return aiprovider.ProviderSpec{}, fmt.Errorf(
+				"%s or %s is set without %s; name the embedding provider's SDK, or leave them both unset to embed on the %s provider",
+				EnvAIEmbeddingAPIKey, EnvAIEmbeddingBaseURL, EnvAIEmbeddingSDK, EnvAISDK)
+		}
+		return aiprovider.ProviderSpec{}, nil
+	}
+	if !aiprovider.CanEmbed(sdk) {
+		return aiprovider.ProviderSpec{}, fmt.Errorf(
+			"%s=%q cannot serve embeddings (want one of %s)",
+			EnvAIEmbeddingSDK, sdk, strings.Join(aiprovider.EmbeddingSDKs(), ", "))
+	}
+	if model == "" {
+		return aiprovider.ProviderSpec{}, fmt.Errorf(
+			"%s=%q needs %s; without it the provider is created and nothing binds to it",
+			EnvAIEmbeddingSDK, sdk, EnvAIEmbeddingModel)
+	}
+
+	// The same SDK is the same endpoint: reuse the language model's credential
+	// and address rather than making an operator write them out twice.
+	if sdk == llm.SDK {
+		if key == "" {
+			key = llm.APIKey
+		}
+		if baseURL == "" {
+			baseURL = llm.BaseURL
+		}
+	} else if key == "" && aiprovider.RequiresAPIKey(sdk) {
+		return aiprovider.ProviderSpec{}, fmt.Errorf(
+			"%s=%q needs %s; it is a different endpoint from %s=%q and cannot borrow its key",
+			EnvAIEmbeddingSDK, sdk, EnvAIEmbeddingAPIKey, EnvAISDK, llm.SDK)
 	}
 
 	return aiprovider.ProviderSpec{

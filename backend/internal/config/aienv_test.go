@@ -13,6 +13,7 @@ func clearAIEnv(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
 		EnvManaged, EnvAISDK, EnvAIAPIKey, EnvAIBaseURL, EnvAIModel, EnvAIEmbeddingModel,
+		EnvAIEmbeddingSDK, EnvAIEmbeddingAPIKey, EnvAIEmbeddingBaseURL,
 		EnvOCRSDK, EnvOCRAPIKey, EnvOCRBaseURL, EnvOCRModel,
 		"NEAR_DUPLICATE_DETECTION_ENABLED",
 		"NEAR_DUPLICATE_THRESHOLD", "OCR_TIMEOUT_SEC", "AI_TIMEOUT_SEC",

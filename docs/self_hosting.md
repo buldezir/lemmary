@@ -205,3 +205,32 @@ The overlay also sizes the tmpfs, disables container swap, and republishes the
 port on loopback only. Read [Encryption at rest](/encryption) before enabling
 it: losing every account password *and* the recovery code loses the archive, and
 there is no operator override.
+
+## Local embeddings
+
+Deep Search can find documents by meaning rather than only by keyword, which
+needs an embedding model. Two more overlays run one on this host instead of
+sending every passage of every document to a hosted provider:
+
+```bash
+# CPU, runs anywhere
+docker compose -f docker-compose.yml -f docker-compose.embeddings.yml up -d
+
+# NVIDIA GPU -- instead of the CPU file, not alongside it
+docker compose -f docker-compose.yml -f docker-compose.embeddings-gpu.yml up -d
+```
+
+They add a sidecar with no published port and bind it, changing nothing else:
+OCR, extraction and chat stay wherever they were. Overlays stack, so encryption
+and local embeddings compose:
+
+```bash
+docker compose -f docker-compose.yml \
+               -f docker-compose.encrypted.yml \
+               -f docker-compose.embeddings.yml up -d
+```
+
+Budget for the model on top of the vectors — ~2.2 GB of weights for the default
+`BAAI/bge-m3` — and note that under a vault the vectors themselves live in the
+tmpfs. See [Embeddings on your own
+hardware](/local_embeddings).

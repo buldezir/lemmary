@@ -9,7 +9,7 @@ import {
   listAIProviders,
   requiresAPIKey,
   sdkLabel,
-  LOCAL_OCR_HINT,
+  keylessProviderHint,
   SDK_DEFAULT_BASE,
   SDK_OPTIONS,
   type AIProvider,
@@ -338,8 +338,9 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
               <p className="text-sm text-ink-muted">
                 Add a provider. OpenAI, OpenRouter, or Mistral can run extraction and chat;
                 Google Vision or Mistral OCR can run OCR, and one Mistral provider covers both.
-                Docling runs OCR on your own host — no API key, but you need the local-OCR
-                compose overlay running first.
+                Docling runs OCR on your own host and Local embeddings serves Deep Search's
+                dense half — neither needs an API key, but each needs its compose overlay
+                running first.
               </p>
               {providers.length > 0 && (
                 <p className="text-xs text-ink-soft">
@@ -397,7 +398,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                   />
                 </label>
               ) : (
-                <p className={fieldHintClassName}>{LOCAL_OCR_HINT}</p>
+                <p className={fieldHintClassName}>{keylessProviderHint(sdk)}</p>
               )}
               {error && <p className="text-sm text-madder">{error}</p>}
               <Button type="submit" disabled={submitting}>

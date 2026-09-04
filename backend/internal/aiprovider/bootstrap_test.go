@@ -88,6 +88,49 @@ func TestNothingConfiguredIsNotAnInstruction(t *testing.T) {
 	if !(Bootstrap{OCR: ProviderSpec{SDK: SDKDocling, BaseURL: "http://docling:5001"}}).Configured() {
 		t.Fatal("a local SDK with an address is a complete configuration")
 	}
+	// The embedding half reads the same way, and only when the SDK was
+	// actually asked for: a keyless spec with no SDK named is still nothing.
+	if !(Bootstrap{Embedding: ProviderSpec{SDK: SDKLocal, BaseURL: "http://embeddings:80/v1", Model: "BAAI/bge-m3"}}).Configured() {
+		t.Fatal("a keyless local embedding provider is a complete instruction")
+	}
+	if (Bootstrap{Embedding: ProviderSpec{SDK: SDKLocal, Model: "BAAI/bge-m3"}}).Configured() {
+		t.Fatal("a local embedding spec with no address is half a configuration")
+	}
+}
+
+// SharesEmbeddingProvider decides whether Apply writes a second provider row.
+// Keying it on whether an SDK was named -- never on whether it has a key -- is
+// the same rule SharesOneProvider follows, and for the same reason: conflating
+// the two is how a binding silently lands on the language model.
+func TestSharesEmbeddingProvider(t *testing.T) {
+	t.Parallel()
+	cases := map[string]struct {
+		b    Bootstrap
+		want bool
+	}{
+		"nothing asked for": {
+			Bootstrap{LLM: ProviderSpec{SDK: SDKOpenAI, APIKey: "sk"}}, true,
+		},
+		"the same SDK is the same endpoint": {
+			Bootstrap{
+				LLM:       ProviderSpec{SDK: SDKOpenAI, APIKey: "sk"},
+				Embedding: ProviderSpec{SDK: SDKOpenAI, APIKey: "sk", Model: "text-embedding-3-small"},
+			}, true,
+		},
+		"a local endpoint is somewhere else": {
+			Bootstrap{
+				LLM:       ProviderSpec{SDK: SDKOpenAI, APIKey: "sk"},
+				Embedding: ProviderSpec{SDK: SDKLocal, Model: "BAAI/bge-m3"},
+			}, false,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := tc.b.SharesEmbeddingProvider(); got != tc.want {
+				t.Fatalf("SharesEmbeddingProvider() = %v, want %v", got, tc.want)
+			}
+		})
+	}
 }
 
 func settingsRecordForTest() *core.Record {

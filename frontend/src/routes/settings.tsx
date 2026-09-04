@@ -3,12 +3,11 @@ import { Link } from '@tanstack/react-router'
 import {
   createAIProvider,
   deleteAIProvider,
-  isLLMProvider,
   listAIProviders,
   requiresAPIKey,
   sdkLabel,
   updateAIProvider,
-  LOCAL_OCR_HINT,
+  keylessProviderHint,
   SDK_DEFAULT_BASE,
   SDK_OPTIONS,
   type AIProvider,
@@ -295,7 +294,6 @@ export function SettingsPage() {
     return <p className="text-sm text-ink-soft">{error || 'Loading settings...'}</p>
   }
 
-  const llmProviders = providers.filter((item) => isLLMProvider(item.sdk))
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -441,7 +439,9 @@ export function SettingsPage() {
                   />
                 </label>
               ) : (
-                <p className={`${fieldHintClassName} sm:col-span-2`}>{LOCAL_OCR_HINT}</p>
+                <p className={`${fieldHintClassName} sm:col-span-2`}>
+                  {keylessProviderHint(draft.sdk)}
+                </p>
               )}
               <div className="flex gap-2 sm:col-span-2">
                 <Button type="submit" size="sm">
@@ -481,7 +481,7 @@ export function SettingsPage() {
               <ProviderModelFields
                 label="Extraction"
                 help="Turns a document's text into its title, date, type, correspondent, tags and summary. Also proposes the cuts for Detect automatically when splitting a PDF."
-                providers={llmProviders}
+                providers={providers}
                 providerId={form.extract_provider_id}
                 model={form.extract_model}
                 purpose="llm"
@@ -491,7 +491,7 @@ export function SettingsPage() {
               <ProviderModelFields
                 label="Chat"
                 help="Answers questions about a single document on its Ask AI page. Leave the provider empty to turn the feature off."
-                providers={llmProviders}
+                providers={providers}
                 providerId={form.chat_provider_id}
                 model={form.chat_model}
                 purpose="llm"
@@ -502,7 +502,7 @@ export function SettingsPage() {
               <ProviderModelFields
                 label="Search"
                 help="Answers natural-language queries on the Deep Search page, in both Search and Research mode. Leave the provider empty to turn the feature off."
-                providers={llmProviders}
+                providers={providers}
                 providerId={form.search_provider_id}
                 model={form.search_model}
                 purpose="llm"
@@ -513,7 +513,7 @@ export function SettingsPage() {
               <ProviderModelFields
                 label="Deep Search helper"
                 help="Cheaper model Deep Search uses to read and extract from many documents at once: it turns long reads into notes and surveys whole topics one document at a time. Leave empty to have the Search model do this work itself."
-                providers={llmProviders}
+                providers={providers}
                 providerId={form.search_helper_provider_id}
                 model={form.search_helper_model}
                 purpose="llm"
@@ -524,7 +524,7 @@ export function SettingsPage() {
               <ProviderModelFields
                 label="Embeddings"
                 help="Lets Deep Search find documents by meaning as well as by keyword, which is what makes a question phrased in one language reach a document written in another. Leave the provider empty to search by keyword only."
-                providers={llmProviders}
+                providers={providers}
                 providerId={form.embedding_provider_id}
                 model={form.embedding_model}
                 purpose="embedding"

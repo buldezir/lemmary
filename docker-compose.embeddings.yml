@@ -1,0 +1,128 @@
+# Local embeddings overlay (CPU). Runs the embedding model on this host instead
+# of sending every passage of every document to a hosted provider:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.embeddings.yml up
+#
+# An overlay rather than an edit, because embeddings are off by default and the
+# base file has to stay usable without any of this. It composes with the
+# encryption overlay too -- that one only touches the `app` service:
+#
+#   docker compose -f docker-compose.yml \
+#                  -f docker-compose.encrypted.yml \
+#                  -f docker-compose.embeddings.yml up
+#
+# Read docs/local_embeddings.md before turning this on. Nothing else moves: OCR, extraction, chat and the Deep
+# Search agent stay on whatever provider AI_SDK names. For an NVIDIA GPU use
+# docker-compose.embeddings-gpu.yml instead of this file.
+
+services:
+  embeddings:
+    # amd64 only, despite the name: the cpu-* tags publish one linux/amd64
+    # manifest each, and there is no cpu-arm64-1.9 (the arm64 line is published
+    # unversioned, as cpu-arm64-latest). On an arm64 host swap the tag for that
+    # one and accept that it is not pinned.
+    #
+    # CPU is genuinely usable here: embedding is a small forward pass, not
+    # generation, and a few documents a minute is well within a couple of cores.
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
+    restart: unless-stopped
+    # Loopback only. TEI has no authentication -- which is the point, a service
+    # on the compose network has nobody to authenticate to -- so `8999:80`
+    # would bind 0.0.0.0 and put an unauthenticated inference API on the LAN.
+    # Nothing in Lemmary uses this: the app reaches the sidecar by service name.
+    # It is here for `curl 127.0.0.1:8999/info` while setting the model up, and
+    # can be deleted outright.
+    ports: ["127.0.0.1:8999:80"]
+    command:
+      # One variable names the model for the sidecar and for the app's binding
+      # further down, so the two cannot disagree. Changing it later is not
+      # enough on its own; see "Changing the model" in docs/ai_providers.md.
+      - --model-id=${EMBEDDINGS_MODEL:-BAAI/bge-m3}
+      # Our client cuts inputs at 8000 runes, which is inside bge-m3's 8192
+      # token window but not inside a 512-token model's. Without this, one long
+      # passage is a 413 that fails the document instead of being shortened.
+      - --auto-truncate
+      # --max-client-batch-size matches internal/ai/embed.go, which batches at
+      # 64 inputs per request. TEI's default is 32, and the overflow is a 413
+      # the client correctly refuses to retry -- so the server is raised to the
+      # client rather than the client lowered for one provider.
+      - --max-client-batch-size=64
+      # --max-batch-tokens is a different question, and was set to 65536 on the
+      # mistaken reading that it guards the same 413. It does not: the per-
+      # request cap is --max-client-batch-size above, and per-input length is
+      # handled by --auto-truncate. This is TEI's *forward-pass* budget, and on
+      # CPU it is the single largest driver of resident memory.
+      #
+      # Measured on a 15.6 GB host, bge-m3 (fp32 ONNX, 2.27 GB of weights):
+      #
+      #   65536  OOM-killed during warmup   (the host had ~11.6 GB to give)
+      #   16384  OOM-killed during warmup
+      #    8192  OOM-killed during warmup
+      #    6144  ready, ~8.1 GB peak        <- this
+      #    4096  ready, ~6.5 GB peak
+      #
+      # 6144 is chosen against what one input can actually be. embed.go caps a
+      # single input at 8000 runes; the densest script measured, CJK, tokenizes
+      # that to 5723 tokens, which fits. 4096 does not: a 5723-token input then
+      # embeds byte-identically to its 4096-token prefix -- HTTP 200, no
+      # warning, the tail silently gone.
+      #
+      # It is not a guarantee for every input. Text tokenizing between 6144 and
+      # bge-m3's 8192-token window is still truncated here, and only
+      # --max-batch-tokens=8192 would match the model's own limit. That needs
+      # more RAM than this default assumes; a host with room to spare should
+      # raise it, and a host with less should use a smaller model (see the
+      # table in docs/ai_providers.md) rather than lowering this further.
+      - --max-batch-tokens=6144
+      # The image's own default, kept so its logs read as upstream documents.
+      - --json-output
+    # Warmup peaks around 8.1 GB with the defaults above, so this is headroom
+    # rather than a target. It exists because the failure it bounds was a
+    # *global* OOM: with no limit the kernel picked the largest process, which
+    # happened to be this one, but on a busier host it could as easily have
+    # been the app or the database. A cgroup limit makes an overshoot kill the
+    # sidecar and nothing else -- and a sidecar that dies is a soft failure, as
+    # the depends_on comment below explains.
+    #
+    # Raise it with --max-batch-tokens, and lower both together for a smaller
+    # model. Docker needs no swap accounting for this to work; there is no
+    # swap on most container hosts anyway.
+    mem_limit: 10g
+    environment:
+      # Only needed for a gated model; unset for bge-m3 and the e5 family.
+      HF_TOKEN: ${HF_TOKEN:-}
+      # The image defaults to 8. On a small host that is the app's cores too,
+      # and a backfill would then compete with the request the user is waiting
+      # on -- the same reasoning behind OPENBLAS_NUM_THREADS=1 in the Dockerfile.
+      RAYON_NUM_THREADS: ${EMBEDDINGS_THREADS:-4}
+    volumes:
+      # Model weights, ~2.2 GB for bge-m3. A named volume so the first boot's
+      # download is paid once rather than on every recreate.
+      - embeddings_cache:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # The first boot downloads the weights before it can answer anything.
+      # Generous on purpose: a slow link should not look like a crash loop.
+      start_period: 900s
+
+#  app:
+#    depends_on:
+#      embeddings:
+        # Only the ordering, and only best-effort: if the model is still
+        # loading, the embed step fails soft -- the document keeps its text, its
+        # metadata and its place in keyword search, and is retried with a
+        # backoff. Nothing is lost by starting early.
+#        condition: service_healthy
+#    environment:
+      # `local` is an OpenAI-compatible /v1/embeddings endpoint you run
+      # yourself. It embeds and nothing else, needs no API key, and is refused
+      # as AI_SDK or OCR_SDK.
+#      AI_EMBEDDING_SDK: local
+#      AI_EMBEDDING_BASE_URL: http://embeddings:80/v1
+#      AI_EMBEDDING_MODEL: ${EMBEDDINGS_MODEL:-BAAI/bge-m3}
+
+volumes:
+  embeddings_cache:

@@ -82,13 +82,19 @@ type openAIEmbedder struct {
 // unknown); a response that disagrees with a non-zero value is refused.
 func NewEmbedder(sdk, apiKey, model, baseURL string, dims int, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) Embedder {
 	opts := []option.RequestOption{
-		option.WithAPIKey(apiKey),
 		option.WithHTTPClient(&http.Client{Timeout: timeout}),
 		option.WithRequestTimeout(timeout),
 		// Retries are ours: only 429/5xx/network are worth repeating, and the
 		// backoff has to be long enough to outlast a rate-limit window.
 		option.WithMaxRetries(0),
 		option.WithMiddleware(aiprovider.SessionMiddleware()),
+	}
+	// A keyless provider sends no Authorization header at all, rather than an
+	// empty "Bearer ". The local SDK is the case: a sidecar on the compose
+	// network has nobody to authenticate to, and an endpoint that does read the
+	// header would rather see none than see a blank credential.
+	if strings.TrimSpace(apiKey) != "" {
+		opts = append(opts, option.WithAPIKey(apiKey))
 	}
 	// Tests pass RewriteHostMiddleware here so a base URL of opencode.ai still
 	// lands on httptest. Production callers pass none.

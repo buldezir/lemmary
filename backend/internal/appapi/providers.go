@@ -126,22 +126,35 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 
 // llmBindingFields are the settings bindings that only an LLM SDK can serve.
 // OCR is deliberately absent: it is the one binding google_vision exists for.
+// So is the embedding binding, which has its own predicate below -- the local
+// SDK embeds without chatting, so the two questions have different answers.
 //
-// Embeddings belong here because the embedding client speaks the OpenAI-shaped
-// /embeddings API, which google_vision has no equivalent of: switching a
-// provider bound to it would leave Deep Search's dense half calling an endpoint
-// that does not exist, and nothing would say so until a search came back thin.
+// search_helper_provider_id is here because applySettingsPatch already refuses
+// a non-LLM provider on write; without it there, a bound helper provider could
+// be switched to google_vision through this handler and leave Deep Search's
+// bulk reading pointed at an endpoint that cannot serve it.
 var llmBindingFields = []string{
-	"extract_provider_id", "chat_provider_id", "search_provider_id", "embedding_provider_id",
+	"extract_provider_id", "chat_provider_id", "search_provider_id", "search_helper_provider_id",
 }
 
-// boundToLLMFeature reports whether a provider is assigned to a feature that
-// requires an LLM SDK.
-func boundToLLMFeature(settings *core.Record, providerID string) bool {
+// embeddingBindingField is checked against CanEmbed rather than IsLLM: the
+// embedding client speaks the OpenAI-shaped /embeddings API, which
+// google_vision has no equivalent of, so switching a bound provider to it would
+// leave Deep Search's dense half calling an endpoint that does not exist and
+// nothing would say so until a search came back thin.
+const embeddingBindingField = "embedding_provider_id"
+
+// ocrBindingField is checked against CanOCR, which admits everything but the
+// local SDK. It needed no guard while every SDK but google_vision could read a
+// document and google_vision was the one this binding existed for; a local
+// endpoint is the first SDK that can be bound here and do nothing.
+const ocrBindingField = "ocr_provider_id"
+
+func boundTo(settings *core.Record, providerID string, fields ...string) bool {
 	if settings == nil || strings.TrimSpace(providerID) == "" {
 		return false
 	}
-	for _, field := range llmBindingFields {
+	for _, field := range fields {
 		if strings.TrimSpace(settings.GetString(field)) == providerID {
 			return true
 		}
@@ -169,16 +182,23 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 			if !aiprovider.ValidSDK(sdk) {
 				return writeError(e, http.StatusBadRequest, invalidSDKMessage())
 			}
-			if !aiprovider.IsLLM(sdk) {
-				// A failed settings lookup must not skip this guard: proceeding
-				// would let a provider bound to LLM features become a non-LLM SDK.
+			if !aiprovider.IsLLM(sdk) || !aiprovider.CanEmbed(sdk) || !aiprovider.CanOCR(sdk) {
+				// A failed settings lookup must not skip these guards:
+				// proceeding would let a bound provider become an SDK that
+				// cannot serve what it is bound to.
 				settings, err := config.FindSettingsRecord(app, rt.Env())
 				if err != nil {
 					app.Logger().Error("provider patch: settings lookup failed", "error", err)
 					return writeError(e, http.StatusInternalServerError, "Failed to verify provider usage.")
 				}
-				if boundToLLMFeature(settings, record.Id) {
-					return writeError(e, http.StatusConflict, "Provider is bound to extraction, chat, search, or embeddings and must stay an LLM SDK (openai, openrouter, or mistral).")
+				if !aiprovider.IsLLM(sdk) && boundTo(settings, record.Id, llmBindingFields...) {
+					return writeError(e, http.StatusConflict, "Provider is bound to extraction, chat, or search and must stay an LLM SDK ("+strings.Join(aiprovider.LLMSDKs(), ", ")+").")
+				}
+				if !aiprovider.CanEmbed(sdk) && boundTo(settings, record.Id, embeddingBindingField) {
+					return writeError(e, http.StatusConflict, "Provider is bound to embeddings and must stay an SDK that can embed ("+strings.Join(aiprovider.EmbeddingSDKs(), ", ")+").")
+				}
+				if !aiprovider.CanOCR(sdk) && boundTo(settings, record.Id, ocrBindingField) {
+					return writeError(e, http.StatusConflict, "Provider is bound to OCR and must stay an SDK that can read a document ("+strings.Join(aiprovider.OCRSDKs(), ", ")+").")
 				}
 			}
 			record.Set("sdk", sdk)

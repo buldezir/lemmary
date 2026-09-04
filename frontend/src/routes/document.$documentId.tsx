@@ -16,6 +16,10 @@ import {
   orderedProcessingSteps,
   PROCESSING_STEP_DESCRIPTIONS,
   PROCESSING_STEP_LABELS,
+  formatDuration,
+  jobDurationMs,
+  jobStillRunning,
+  stepDurationMs,
   type ProcessingJobRecord,
   type ProcessingStep,
 } from '../lib/processing'
@@ -95,7 +99,14 @@ export function DocumentDetailPage() {
         }
         setError('')
 
-        const inFlight = doc.processing_status === 'processing' || doc.processing_status === 'pending'
+        // The job, not just the document: apply_metadata marks the document
+        // completed and saves it before embed runs, so watching the document
+        // alone stops the poll mid-pipeline and freezes the panel with embed
+        // reading 'running' and no duration that ever settles.
+        const inFlight =
+          doc.processing_status === 'processing' ||
+          doc.processing_status === 'pending' ||
+          jobStillRunning(jobs.items[0])
         if (inFlight && poll == null) {
           poll = setInterval(() => {
             void load()
@@ -149,8 +160,35 @@ export function DocumentDetailPage() {
 
   const hasOcrText = Boolean(document?.ocr_text?.trim())
 
+  // The job as well as the document, for the reason the poll gate above gives:
+  // apply_metadata marks the document completed while embed is still running,
+  // so trusting the document alone re-enables this form mid-pipeline and
+  // invites a second job over a document the first one is still writing.
   const canReprocess =
-    document?.processing_status !== 'processing' && document?.processing_status !== 'pending'
+    document?.processing_status !== 'processing' &&
+    document?.processing_status !== 'pending' &&
+    !jobStillRunning(job)
+
+  // A clock for the durations that are still counting: the running step's
+  // elapsed, and the job total before the job has finished. Everything else is
+  // measured from the two timestamps the worker recorded and needs no clock at
+  // all.
+  //
+  // In state rather than read during render, which would be an impure read
+  // that advanced only when something else happened to re-render. The timer
+  // runs only while there is something unfinished on screen, so a settled job
+  // leaves nothing ticking -- and it is separate from the one-second document
+  // poll above, so the elapsed keeps time even if a refresh is slow.
+  const [tick, setTick] = useState(() => Date.now())
+  const stepRunning = (job?.step_runs ?? []).some((run) => run.status === 'running')
+  const needsClock = jobStillRunning(job) || stepRunning
+  useEffect(() => {
+    if (!needsClock) return
+    const id = setInterval(() => setTick(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [needsClock])
+
+  const jobTotalMs = job ? jobDurationMs(job, tick) : null
 
   function toggleReprocessStep(step: ProcessingStep) {
     setReprocessSteps((current) => {
@@ -417,6 +455,9 @@ export function DocumentDetailPage() {
                 <span className="text-xs text-ink-soft">
                   {(job.steps ?? []).join(' → ') || 'n/a'}
                 </span>
+                {jobTotalMs !== null ? (
+                  <span className="text-xs text-ink-soft">total: {formatDuration(jobTotalMs)}</span>
+                ) : null}
               </div>
               {job.step_runs && job.step_runs.length > 0 ? (
                 <ul className="mt-2 flex flex-col gap-1 text-sm text-ink-muted">
@@ -424,6 +465,27 @@ export function DocumentDetailPage() {
                     <li key={run.name} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <span className="font-medium">{run.name}</span>
                       <span className="bg-wash px-1.5 py-0.5 text-xs">{run.status}</span>
+                      {(() => {
+                        // Absent for a pending step and for a skipped one,
+                        // which finishes without ever having started.
+                        const ms = stepDurationMs(run, tick)
+                        if (ms === null) return null
+                        return (
+                          <span
+                            className="text-xs tabular-nums text-ink-soft"
+                            title={
+                              run.status === 'running'
+                                ? 'Elapsed so far'
+                                : run.attempts > 1
+                                  ? `Duration of attempt ${run.attempts}`
+                                  : 'Duration'
+                            }
+                          >
+                            {formatDuration(ms)}
+                            {run.status === 'running' ? '…' : ''}
+                          </span>
+                        )
+                      })()}
                       {run.attempts > 0 ? (
                         <span className="text-xs text-ink-soft">attempts: {run.attempts}</span>
                       ) : null}

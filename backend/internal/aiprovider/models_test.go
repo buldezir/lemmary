@@ -439,3 +439,135 @@ func TestSmallestContextWindowIgnoresMissingValues(t *testing.T) {
 		})
 	}
 }
+
+// text-embeddings-inference does not document a /v1/models, so the local
+// catalogue is /info -- which sits beside the /v1 prefix, not under it.
+func TestModelsURLLocalUsesInfo(t *testing.T) {
+	t.Parallel()
+	p := Provider{SDK: SDKLocal, BaseURL: "http://embeddings:80/v1"}
+	for _, purpose := range []ModelPurpose{PurposeEmbedding, PurposeLLM, PurposeOCR} {
+		if got := ModelsURL(p, purpose); got != "http://embeddings:80/info" {
+			t.Fatalf("ModelsURL(%s) = %q", purpose, got)
+		}
+	}
+	// A base URL written without the /v1 suffix still resolves.
+	bare := Provider{SDK: SDKLocal, BaseURL: "http://embeddings:80"}
+	if got := ModelsURL(bare, PurposeEmbedding); got != "http://embeddings:80/info" {
+		t.Fatalf("ModelsURL(bare) = %q", got)
+	}
+}
+
+func TestParseInfoResponse(t *testing.T) {
+	t.Parallel()
+	// model_type is a tagged union: an object in some TEI versions, a bare
+	// string in others. Both have shipped and both mean the same thing.
+	cases := []struct {
+		name string
+		body string
+		want string
+		dims int
+	}{
+		{
+			name: "object model_type",
+			body: `{"model_id":"BAAI/bge-m3","served_model_name":"BAAI/bge-m3","model_type":{"embedding":{"pooling":"cls"}},"max_input_length":8192}`,
+			want: "BAAI/bge-m3",
+			dims: 8192,
+		},
+		{
+			name: "string model_type",
+			body: `{"model_id":"thenlper/gte-base","served_model_name":"thenlper/gte-base","model_type":"embedding","max_input_length":512}`,
+			want: "thenlper/gte-base",
+			dims: 512,
+		},
+		{
+			name: "served name wins over model id",
+			body: `{"model_id":"/data/models--BAAI--bge-m3","served_model_name":"bge","model_type":"embedding"}`,
+			want: "bge",
+		},
+		{
+			name: "model id when nothing is served under a name",
+			body: `{"model_id":"BAAI/bge-m3","model_type":"embedding"}`,
+			want: "BAAI/bge-m3",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			models, err := parseInfoResponse([]byte(tc.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(models) != 1 {
+				t.Fatalf("len=%d want 1: %+v", len(models), models)
+			}
+			if models[0].ID != tc.want {
+				t.Fatalf("id=%q want %q", models[0].ID, tc.want)
+			}
+			if models[0].ContextWindow != tc.dims {
+				t.Fatalf("context window=%d want %d", models[0].ContextWindow, tc.dims)
+			}
+		})
+	}
+}
+
+// TEI serves rerankers and classifiers from the same image and the same
+// endpoint shape. Either one bound as an embedding model would fail on every
+// document with nothing in the UI to explain why, so an unrecognised type
+// yields no models rather than a guess.
+func TestParseInfoResponseRefusesANonEmbeddingModel(t *testing.T) {
+	t.Parallel()
+	for _, body := range []string{
+		`{"model_id":"BAAI/bge-reranker-v2-m3","model_type":{"reranker":{}},"max_input_length":512}`,
+		`{"model_id":"some/classifier","model_type":"classifier"}`,
+		`{"model_id":"mystery","model_type":null}`,
+	} {
+		models, err := parseInfoResponse([]byte(body))
+		if err != nil {
+			t.Fatalf("%s: %v", body, err)
+		}
+		if len(models) != 0 {
+			t.Fatalf("%s: got %+v, want none", body, models)
+		}
+	}
+}
+
+// The local picker must not go through the name heuristic: "BAAI/bge-m3"
+// carries no "embed" for it to find, so asking it would empty the one picker
+// this SDK exists for. And a keyless provider must send no Authorization header
+// at all rather than a blank Bearer.
+func TestListModelsLocalReadsInfoWithoutAKey(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/info" {
+			http.NotFound(w, r)
+			return
+		}
+		if _, ok := r.Header["Authorization"]; ok {
+			t.Errorf("a keyless provider sent an Authorization header")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"model_id":"BAAI/bge-m3","served_model_name":"BAAI/bge-m3","model_type":{"embedding":{"pooling":"cls"}},"max_input_length":8192,"max_client_batch_size":64}`))
+	}))
+	defer srv.Close()
+
+	p := Provider{SDK: SDKLocal, BaseURL: srv.URL + "/v1"}
+
+	models, err := ListModels(t.Context(), p, PurposeEmbedding, srv.Client(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 1 || models[0].ID != "BAAI/bge-m3" {
+		t.Fatalf("embedding models = %+v", models)
+	}
+
+	// It cannot chat or read a document, so it must offer nothing to those
+	// pickers even though /info answers the same way for all three.
+	for _, purpose := range []ModelPurpose{PurposeLLM, PurposeOCR} {
+		models, err := ListModels(t.Context(), p, purpose, srv.Client(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(models) != 0 {
+			t.Fatalf("%s models = %+v, want none", purpose, models)
+		}
+	}
+}
