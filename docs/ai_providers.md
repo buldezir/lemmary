@@ -16,7 +16,8 @@ to use.
 | `openai` | ✅ | ✅ models that accept files/images | ✅ |
 | `openrouter` | ✅ many vendors on one key | ✅ models advertising `file` input | ✅ |
 | `google_vision` | ❌ | ✅ | ❌ |
-| `local` | ❌ | ❌ | ✅ a model on your own hardware |
+| `docling` | ❌ | ✅ **on your own host** | ❌ |
+| `local` | ❌ | ❌ | ✅ **a model on your own hardware** |
 
 **Start with Mistral.** It is the only SDK that covers every job Lemmary has, so
 one key and one provider row configure the whole instance — OCR, extraction,
@@ -37,10 +38,23 @@ The alternatives are worth naming:
 - **`google_vision`** — OCR only; it cannot serve extraction and is refused as
   `AI_SDK`. Worth pairing with an LLM when its free tier (1000 pages a month)
   matters. See [Google Vision API key](/google_vision).
-- **`local`** — embeddings only, on a model you run yourself, and the one SDK
-  that takes no API key. It is the mirror image of `google_vision`: a single
-  job, done off the network. See [Embeddings on your own
-  hardware](#embeddings-on-your-own-hardware).
+- **`docling`** — OCR only, and the only provider that reads a document without
+  sending it anywhere: a sidecar container beside the app, with no port
+  published and **no API key at all** — the base URL is the whole configuration.
+  Reach for it when the archive is confidential enough that a hosted OCR API is
+  not an option, or when the host has no outbound internet; pair it with a local
+  OpenAI-compatible endpoint under `AI_BASE_URL` and nothing leaves the machine.
+  Its default recognizer is PaddleOCR's PP-OCR models, so there is no separate
+  PaddleOCR provider to choose. The price is real: a multi-gigabyte image, and
+  seconds rather than milliseconds a page. See [Local OCR](/local_ocr).
+- **`local`** — embeddings only, on a model you run yourself. Like `docling` it
+  takes no API key: the base URL is the whole configuration. It is the mirror
+  image of `google_vision` — a single job, done off the network. See [Embeddings
+  on your own hardware](#embeddings-on-your-own-hardware).
+
+Together, `docling` and `local` are the two halves of an install where nothing
+leaves the host: point `AI_BASE_URL` at Ollama or vLLM, `OCR_SDK` at the docling
+sidecar and `AI_EMBEDDING_SDK` at the embeddings one.
 
 Without a language-model provider, AI extraction, document chat and Deep Search
 return a configuration error.
@@ -79,14 +93,14 @@ after that.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `AI_MANAGED` | `0` | Whether the operator owns AI configuration. See the table above. |
-| `AI_SDK` | `openai` | The language model's SDK: `openai`, `openrouter` or `mistral`. `google_vision` and `local` are refused — neither can serve extraction. |
+| `AI_SDK` | `openai` | The language model's SDK: `openai`, `openrouter` or `mistral`. `google_vision`, `docling` and `local` are refused — none of them can serve extraction. |
 | `AI_API_KEY` | empty | Its credential. **One key is usually the whole configuration**: with this and nothing else the app creates one provider and routes extraction, chat, Deep Search *and* OCR to it. |
 | `AI_MODEL` | `gpt-5.6-luna` | The model for extraction, chat and Deep Search. Be sure it supports the result language set in **Settings**. |
 | `AI_BASE_URL` | the SDK's own endpoint | An OpenAI-compatible base URL, for a gateway or a self-hosted endpoint. |
-| `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `openai`, `openrouter`, `mistral` or `google_vision`. `local` is refused — it serves embeddings only. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
-| `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK`. |
-| `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. |
-| `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Required unless `OCR_SDK=google_vision`, which reads a document without one. |
+| `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `openai`, `openrouter`, `mistral`, `google_vision` or `docling`. `local` is refused — it serves embeddings only. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
+| `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK` — except `docling`, which has no account behind it. Optional there, and only if you started the sidecar with `DOCLING_SERVE_API_KEY`. |
+| `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. For `docling` the default is the compose service name, `http://docling:5001`, so `OCR_SDK=docling` alone is a complete configuration under the overlay. |
+| `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Not required for `google_vision` or `docling`, which read a document without one; for `docling` it optionally names the OCR engine instead. See [Choosing an engine](/local_ocr#choosing-an-engine). |
 | `AI_EMBEDDING_MODEL` | unset (Deep Search matches keywords only) | An embedding model — on the `AI_SDK` provider, or on the `AI_EMBEDDING_SDK` one when that is set — so Deep Search can also find documents by meaning. Operator-owned under `AI_MANAGED=1`; removing it there turns the feature off. See [what embeddings cost](#what-embeddings-cost). |
 | `AI_SEARCH_HELPER_MODEL` | unset (the Search model does this work) | A cheaper model on the `AI_SDK` provider for Deep Search's bulk per-document work: distilling long reads into notes and surveying many documents for one question. Operator-owned under `AI_MANAGED=1`. See [How Research covers a topic](/setup#how-research-covers-a-topic). |
 
@@ -106,7 +120,7 @@ which has always been how a second provider for one job is described.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `AI_EMBEDDING_SDK` | unset (embeddings run on the `AI_SDK` provider) | A separate provider for embeddings: `openai`, `openrouter`, `mistral` or `local`. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. `google_vision` is refused — it has no `/embeddings` endpoint. |
+| `AI_EMBEDDING_SDK` | unset (embeddings run on the `AI_SDK` provider) | A separate provider for embeddings: `openai`, `openrouter`, `mistral` or `local`. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. `google_vision` and `docling` are refused — neither has an `/embeddings` endpoint. |
 | `AI_EMBEDDING_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an SDK that differs from `AI_SDK`, **except `local`**, which takes none. |
 | `AI_EMBEDDING_BASE_URL` | the SDK's own endpoint, or `AI_BASE_URL` when the SDKs match | Where that provider lives. For `local` this defaults to `http://embeddings:80/v1`, the compose overlay's service. |
 
@@ -123,7 +137,7 @@ afterwards, in both modes.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `OCR_TIMEOUT_SEC` | `40` | OCR request timeout |
+| `OCR_TIMEOUT_SEC` | `40` | OCR request timeout. Far too low for [local OCR](/local_ocr), which needs seconds to tens of seconds a page |
 | `AI_TIMEOUT_SEC` | `60` | Extraction, chat, search and split-detection request timeout |
 | `WORKER_TIMEOUT_SEC` | `300` | Per-job processing timeout |
 | `WORKER_MAX_RETRIES` | `0` | Max step retry attempts before a job fails |
@@ -308,6 +322,22 @@ Uses the official [Go client library](https://docs.cloud.google.com/vision/docs/
 
 See [Google Vision API key](/google_vision) for obtaining a key.
 
+### Local sidecar: Docling
+
+A container beside the app rather than an API. It speaks docling-serve's
+`POST /v1/convert/file` and gets markdown back, reading PDFs, images and office
+documents. It is keyless — the address is the whole configuration — and
+publishes no port, so only the app can reach it.
+
+Its default recognizer is RapidOCR, which is PaddleOCR's PP-OCR models as ONNX,
+and the OCR model binding switches that to EasyOCR or Tesseract. That is why
+there is no second local SDK: the PaddleOCR recognition is already here.
+
+Bring it up with the `docker-compose.local-ocr.yml` overlay and raise
+`OCR_TIMEOUT_SEC`, which is the setting people miss. Everything else — the image
+size, memory, GPU variants and the per-page cost — is in
+[Local OCR](/local_ocr).
+
 ## Troubleshooting
 
 - **Stuck on the setup wizard** — add an OCR provider and a language-model
@@ -316,6 +346,10 @@ See [Google Vision API key](/google_vision) for obtaining a key.
 - **OCR fails** — check the provider and key in Settings, and the processing job
   error on the document detail page. For Google Vision, make sure the Vision API
   is enabled for the project.
+- **Local OCR times out** — raise `OCR_TIMEOUT_SEC`. On an instance that has
+  already booted it must be raised in **Settings**, not `.env`: it is a seeded
+  setting, so the environment applies only on the first boot. See
+  [Local OCR](/local_ocr#what-it-costs).
 - **AI extraction fails** — check that an extraction model is bound and that it
   is a chat model, not an embedding or OCR model.
 - **A managed instance will not start** — the log names the missing or invalid

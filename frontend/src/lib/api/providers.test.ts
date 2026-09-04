@@ -4,7 +4,7 @@ import {
   canEmbedProvider,
   isLLMProvider,
   providerServesPurpose,
-  sdkRequiresKey,
+  requiresAPIKey,
   SDK_DEFAULT_BASE,
   SDK_OPTIONS,
 } from './providers'
@@ -32,11 +32,14 @@ describe('SDK capabilities', () => {
     }
   })
 
-  it('asks for a key everywhere but local', () => {
-    expect(sdkRequiresKey('local')).toBe(false)
+  it('asks for a key everywhere but the two sidecars', () => {
+    expect(requiresAPIKey('local')).toBe(false)
+    expect(requiresAPIKey('docling')).toBe(false)
     for (const sdk of ['openai', 'openrouter', 'mistral', 'google_vision']) {
-      expect(sdkRequiresKey(sdk)).toBe(true)
+      expect(requiresAPIKey(sdk)).toBe(true)
     }
+    // Default-true like the Go side, so an unknown SDK still asks.
+    expect(requiresAPIKey(undefined)).toBe(true)
   })
 })
 
@@ -45,6 +48,12 @@ describe('providerServesPurpose', () => {
     expect(providerServesPurpose('local', 'embedding')).toBe(true)
     expect(providerServesPurpose('local', 'llm')).toBe(false)
     expect(providerServesPurpose('local', 'ocr')).toBe(false)
+  })
+
+  it('offers the docling sidecar to OCR only', () => {
+    expect(providerServesPurpose('docling', 'ocr')).toBe(true)
+    expect(providerServesPurpose('docling', 'llm')).toBe(false)
+    expect(providerServesPurpose('docling', 'embedding')).toBe(false)
   })
 
   it('offers google_vision to OCR only', () => {

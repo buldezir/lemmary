@@ -13,6 +13,7 @@ func TestNeedsConfigSetup(t *testing.T) {
 	google := &aiprovider.Provider{SDK: aiprovider.SDKGoogleVision, APIKey: "g"}
 	mistral := &aiprovider.Provider{SDK: aiprovider.SDKMistral, APIKey: "m"}
 	openai := &aiprovider.Provider{SDK: aiprovider.SDKOpenAI, APIKey: "o"}
+	docling := &aiprovider.Provider{SDK: aiprovider.SDKDocling, BaseURL: "http://docling:5001"}
 
 	tests := []struct {
 		name string
@@ -33,6 +34,17 @@ func TestNeedsConfigSetup(t *testing.T) {
 			cfg: config.Config{
 				OCRProvider:     mistral,
 				OCRModel:        "mistral-ocr-latest",
+				ExtractProvider: openai,
+				ExtractModel:    "gpt",
+			},
+			want: false,
+		},
+		{
+			// The wizard must not reopen over a working sidecar just because it
+			// has no API key -- that is the whole point of the keyless SDKs.
+			name: "ready with a local OCR sidecar",
+			cfg: config.Config{
+				OCRProvider:     docling,
 				ExtractProvider: openai,
 				ExtractModel:    "gpt",
 			},

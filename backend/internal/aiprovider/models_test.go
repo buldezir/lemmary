@@ -329,14 +329,39 @@ func TestModelsURLEmbeddingFiltersOpenRouterByOutputModality(t *testing.T) {
 	}
 }
 
-func TestListModelsGoogleVisionEmpty(t *testing.T) {
+// An SDK that is not a language model has no catalogue, and must say so by
+// answering nothing rather than by failing.
+//
+// The keyless row is the one that regressed: it carries a base URL and no key,
+// which is exactly the combination the checks below the early return turn into
+// "provider API key is not set" -- a 502 from the models endpoint and a red
+// banner over a picker that was working.
+func TestListModelsHasNoCatalogueForNonLLMSDKs(t *testing.T) {
 	t.Parallel()
-	models, err := ListModels(t.Context(), Provider{SDK: SDKGoogleVision, APIKey: "x"}, PurposeOCR, nil, nil)
-	if err != nil {
-		t.Fatal(err)
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	providers := []Provider{
+		{SDK: SDKGoogleVision, APIKey: "x"},
+		{SDK: SDKDocling, BaseURL: server.URL},
 	}
-	if len(models) != 0 {
-		t.Fatalf("got %+v", models)
+	for _, p := range providers {
+		for _, purpose := range []ModelPurpose{PurposeOCR, PurposeLLM, PurposeEmbedding} {
+			models, err := ListModels(t.Context(), p, purpose, nil, nil)
+			if err != nil {
+				t.Fatalf("%s/%s: %v", p.SDK, purpose, err)
+			}
+			if len(models) != 0 {
+				t.Fatalf("%s/%s: got %+v", p.SDK, purpose, models)
+			}
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("a catalogue-less SDK made %d HTTP calls", calls)
 	}
 }
 

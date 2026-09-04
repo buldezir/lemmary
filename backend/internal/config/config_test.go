@@ -145,6 +145,17 @@ func TestHasOCR(t *testing.T) {
 	if !HasOCR(Config{OCRProvider: mistral, OCRModel: "mistral-ocr-latest"}) {
 		t.Fatal("expected mistral OCR with a model to be usable")
 	}
+
+	// A local sidecar carries an address where a hosted provider carries a
+	// credential. Asking for the key here is what would report a working
+	// container as unconfigured and leave the setup wizard in front of it.
+	docling := &aiprovider.Provider{SDK: aiprovider.SDKDocling, BaseURL: "http://docling:5001"}
+	if !HasOCR(Config{OCRProvider: docling}) {
+		t.Fatal("expected docling to need neither a key nor a model")
+	}
+	if HasOCR(Config{OCRProvider: &aiprovider.Provider{SDK: aiprovider.SDKDocling}}) {
+		t.Fatal("expected no OCR for a local provider with no address")
+	}
 }
 
 func TestDefaultsUsesCodeDefaults(t *testing.T) {

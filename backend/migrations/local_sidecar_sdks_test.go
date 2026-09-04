@@ -18,7 +18,7 @@ import (
 func TestWideningTheProviderSDKField(t *testing.T) {
 	app := bootMigratedApp(t)
 
-	// Rebuild the collection the way a pre-local release left it.
+	// Rebuild the collection the way a pre-sidecar release left it.
 	priorValues := []string{
 		aiprovider.SDKOpenAI, aiprovider.SDKOpenRouter,
 		aiprovider.SDKGoogleVision, aiprovider.SDKMistral,
@@ -36,17 +36,28 @@ func TestWideningTheProviderSDKField(t *testing.T) {
 		t.Fatalf("narrow the field: %v", err)
 	}
 
-	// A local provider must be refused while the field is narrow, or this test
-	// would pass without the migration doing anything.
-	if err := saveLocalProvider(app, "before"); err == nil {
-		t.Fatal("a narrowed sdk field accepted a local provider")
+	// Both sidecar providers must be refused while the field is narrow, or
+	// this test would pass without the migration doing anything.
+	for _, sdk := range []string{aiprovider.SDKLocal, aiprovider.SDKDocling} {
+		if err := saveSidecarProvider(app, sdk, sdk+"-before"); err == nil {
+			t.Fatalf("a narrowed sdk field accepted a %s provider", sdk)
+		}
 	}
 
 	if err := setProviderSDKValues(app, aiprovider.ValidSDKs); err != nil {
 		t.Fatalf("widen: %v", err)
 	}
-	if err := saveLocalProvider(app, "after"); err != nil {
-		t.Fatalf("save a local provider after widening: %v", err)
+	for _, sdk := range []string{aiprovider.SDKLocal, aiprovider.SDKDocling} {
+		if err := saveSidecarProvider(app, sdk, sdk+"-after"); err != nil {
+			t.Fatalf("save a %s provider after widening: %v", sdk, err)
+		}
+	}
+
+	// priorSDKs is what the down-migration narrows back to, and it has to be
+	// exactly the list rebuilt above -- derived from RequiresAPIKey rather than
+	// written out, so a third sidecar needs no edit here.
+	if !slices.Equal(priorSDKs(), priorValues) {
+		t.Fatalf("priorSDKs() = %v, want %v", priorSDKs(), priorValues)
 	}
 
 	// Idempotent: managed instances re-run migrations on every boot, and this
@@ -93,14 +104,14 @@ func TestWideningWithoutAProviderCollection(t *testing.T) {
 	}
 }
 
-func saveLocalProvider(app core.App, alias string) error {
+func saveSidecarProvider(app core.App, sdk, alias string) error {
 	collection, err := app.FindCollectionByNameOrId(aiprovider.CollectionName)
 	if err != nil {
 		return err
 	}
 	record := core.NewRecord(collection)
-	record.Set("sdk", aiprovider.SDKLocal)
+	record.Set("sdk", sdk)
 	record.Set("alias", alias)
-	record.Set("base_url", aiprovider.DefaultBaseURL(aiprovider.SDKLocal))
+	record.Set("base_url", aiprovider.DefaultBaseURL(sdk))
 	return app.Save(record)
 }

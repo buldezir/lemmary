@@ -1,6 +1,12 @@
 import { apiFetch } from '../apiClient'
 
-export type ProviderSDK = 'openai' | 'openrouter' | 'google_vision' | 'mistral' | 'local'
+export type ProviderSDK =
+  | 'openai'
+  | 'openrouter'
+  | 'google_vision'
+  | 'mistral'
+  | 'local'
+  | 'docling'
 
 export type AIProvider = {
   id: string
@@ -26,14 +32,20 @@ export type CatalogModel = {
   context_window?: number
 }
 
+/**
+ * Must stay identical to aiprovider.DefaultBaseURL in backend/internal/aiprovider/sdk.go.
+ * The two sidecar entries are the service names from the compose overlays, so a
+ * provider added from the wizard needs nothing typed.
+ */
 export const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
   openai: 'https://api.openai.com/v1',
   openrouter: 'https://openrouter.ai/api/v1',
   mistral: 'https://api.mistral.ai/v1',
   google_vision: '',
-  // The service name in docker-compose.embeddings.yml. Keep in step with
-  // aiprovider.DefaultBaseURL(SDKLocal).
+  // The service names in docker-compose.embeddings.yml and
+  // docker-compose.local-ocr.yml.
   local: 'http://embeddings:80/v1',
+  docling: 'http://docling:5001',
 }
 
 export const SDK_OPTIONS: { value: ProviderSDK; label: string }[] = [
@@ -41,7 +53,8 @@ export const SDK_OPTIONS: { value: ProviderSDK; label: string }[] = [
   { value: 'openrouter', label: 'OpenRouter' },
   { value: 'mistral', label: 'Mistral' },
   { value: 'google_vision', label: 'Google Cloud Vision' },
-  { value: 'local', label: 'Local (self-hosted)' },
+  { value: 'local', label: 'Local embeddings (self-hosted)' },
+  { value: 'docling', label: 'Docling (local)' },
 ]
 
 export function sdkLabel(sdk: ProviderSDK | string) {
@@ -55,28 +68,58 @@ export function isLLMProvider(sdk: string) {
 /**
  * Whether an SDK can serve the embedding binding. Deliberately not
  * isLLMProvider, which it used to coincide with: `local` embeds without
- * chatting, and google_vision does neither. Mirrors aiprovider.CanEmbed.
+ * chatting, and google_vision and docling do neither. Mirrors
+ * aiprovider.CanEmbed.
  */
 export function canEmbedProvider(sdk: string) {
   return isLLMProvider(sdk) || sdk === 'local'
 }
 
 /**
- * Whether a provider of this SDK needs a credential. Only `local` does not: a
- * sidecar on the compose network has nobody to authenticate to. Mirrors
- * aiprovider.RequiresAPIKey.
+ * Mirrors aiprovider.RequiresAPIKey. Only the two sidecars are exempt: they run
+ * on the operator's own host and are reached by address alone. Default-true
+ * like the Go side, so an unknown SDK still asks.
  */
-export function sdkRequiresKey(sdk: string) {
-  return sdk !== 'local'
+export function requiresAPIKey(sdk?: string) {
+  return sdk !== 'local' && sdk !== 'docling'
 }
 
 /** Which SDKs may be bound to a given task, for the provider pickers. */
 export function providerServesPurpose(sdk: string, purpose: ModelPurpose) {
   if (purpose === 'embedding') return canEmbedProvider(sdk)
   if (purpose === 'llm') return isLLMProvider(sdk)
-  // OCR is the binding google_vision exists for, and the one a local endpoint
-  // cannot serve.
+  // OCR is the binding google_vision and docling exist for, and the one a
+  // local embeddings endpoint cannot serve. Mirrors aiprovider.CanOCR.
   return sdk !== 'local'
+}
+
+/**
+ * Mirrors aiprovider.RequiresOCRModel: the SDKs that read a document without
+ * being told a model. Google Vision has none to give; for the sidecar, what
+ * looks like a model is an optional OCR engine name.
+ */
+export function usesOCRModel(sdk?: string) {
+  return sdk !== 'google_vision' && sdk !== 'docling'
+}
+
+/**
+ * What the OCR "model" means for the local sidecar, shown under the free-text
+ * box the picker falls back to when the provider has no catalogue. Empty for
+ * every other SDK, where the field really does name a model.
+ */
+export function localOCRModelHint(sdk?: string) {
+  if (sdk !== 'docling') return ''
+  return 'Optional. Names Docling\u2019s OCR engine \u2014 rapidocr (the default, PaddleOCR\u2019s PP-OCR models), easyocr, tesserocr or tesseract. An unrecognised name is ignored silently, so check the spelling.'
+}
+
+/**
+ * The hint shown under a keyless provider's Base URL, in place of an API key.
+ * Empty for the hosted SDKs, which show the key field instead.
+ */
+export function keylessProviderHint(sdk?: string) {
+  if (requiresAPIKey(sdk)) return ''
+  const overlay = sdk === 'local' ? 'docker-compose.embeddings.yml' : 'docker-compose.local-ocr.yml'
+  return `Runs on your own host, so no API key is needed \u2014 the address is the whole configuration. The default is the service name from ${overlay}.`
 }
 
 export function providerOptionLabel(item: Pick<AIProvider, 'alias' | 'sdk'>) {

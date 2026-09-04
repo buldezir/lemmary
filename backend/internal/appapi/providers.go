@@ -26,6 +26,15 @@ type providerWriteRequest struct {
 	APIKey  *string `json:"api_key"`
 }
 
+// invalidSDKMessage names every SDK the API accepts.
+//
+// Built from the list rather than written out: this sentence was a literal in
+// two handlers, and both still said "openai, openrouter, google_vision, or
+// mistral" long enough for a third and fourth SDK to be a real prospect.
+func invalidSDKMessage() string {
+	return "sdk must be one of " + strings.Join(aiprovider.ValidSDKs, ", ") + "."
+}
+
 func providerJSON(p aiprovider.Provider) providerResponse {
 	return providerResponse{
 		ID:        p.ID,
@@ -67,7 +76,7 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 			sdk = strings.TrimSpace(*req.SDK)
 		}
 		if !aiprovider.ValidSDK(sdk) {
-			return writeError(e, http.StatusBadRequest, "sdk must be openai, openrouter, google_vision, or mistral.")
+			return writeError(e, http.StatusBadRequest, invalidSDKMessage())
 		}
 		alias := ""
 		if req.Alias != nil {
@@ -83,12 +92,19 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 		if req.APIKey != nil {
 			apiKey = strings.TrimSpace(*req.APIKey)
 		}
-		if apiKey == "" {
+		if apiKey == "" && aiprovider.RequiresAPIKey(sdk) {
 			return writeError(e, http.StatusBadRequest, "api_key is required.")
 		}
 		baseURL := ""
 		if req.BaseURL != nil {
 			baseURL = strings.TrimSpace(*req.BaseURL)
+		}
+		// A local OCR engine carries an address where a hosted one carries a
+		// credential, and there is no public endpoint to fall back on, so the
+		// requirement moves rather than disappearing. NormalizeBaseURL fills in
+		// the compose default, so this only fires if one was blanked on purpose.
+		if aiprovider.RequiresBaseURL(sdk) && aiprovider.NormalizeBaseURL(sdk, baseURL) == "" {
+			return writeError(e, http.StatusBadRequest, "base_url is required for a local OCR provider.")
 		}
 
 		collection, err := aiprovider.EnsureCollection(app)
@@ -107,11 +123,6 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 		return writeJSON(e, http.StatusCreated, providerJSON(p))
 	}
 }
-
-// invalidSDKMessage names the SDKs a provider may carry. One copy, because the
-// create and patch handlers both say it and a reader comparing two different
-// lists would not know which one is current.
-const invalidSDKMessage = "sdk must be openai, openrouter, google_vision, mistral, or local."
 
 // llmBindingFields are the settings bindings that only an LLM SDK can serve.
 // OCR is deliberately absent: it is the one binding google_vision exists for.
@@ -169,7 +180,7 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 		if req.SDK != nil {
 			sdk = strings.TrimSpace(*req.SDK)
 			if !aiprovider.ValidSDK(sdk) {
-				return writeError(e, http.StatusBadRequest, invalidSDKMessage)
+				return writeError(e, http.StatusBadRequest, invalidSDKMessage())
 			}
 			if !aiprovider.IsLLM(sdk) || !aiprovider.CanEmbed(sdk) || !aiprovider.CanOCR(sdk) {
 				// A failed settings lookup must not skip these guards:

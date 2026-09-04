@@ -415,12 +415,13 @@ func HasLLM(cfg Config) bool {
 // treating it as on would make every document fail its embed step instead of
 // skipping it.
 //
-// CanEmbed rather than IsLLM, and HasCredential rather than a bare key test:
-// the local SDK embeds without chatting and authenticates to nobody, so both of
-// the old shorthands would read a working configuration as absent.
+// CanEmbed rather than IsLLM, and Configured rather than a bare key test: the
+// local SDK embeds without chatting and authenticates to nobody, so both of the
+// old shorthands would read a working configuration as absent. Configured is
+// the same question HasOCR asks of its own provider.
 func HasEmbedding(cfg Config) bool {
 	p := cfg.EmbeddingProvider
-	return p != nil && aiprovider.CanEmbed(p.SDK) && aiprovider.HasCredential(*p) &&
+	return p != nil && aiprovider.CanEmbed(p.SDK) && p.Configured() &&
 		strings.TrimSpace(cfg.EmbeddingModel) != ""
 }
 
@@ -452,7 +453,11 @@ func RecordEmbeddingDims(app core.App, dims int) error {
 
 func HasOCR(cfg Config) bool {
 	p := cfg.OCRProvider
-	if p == nil || p.APIKey == "" {
+	// Configured, not APIKey != "": a hosted provider needs a credential, a
+	// local sidecar needs an address, and asking for the key unconditionally is
+	// what would leave a working docling container reported as unconfigured
+	// with the setup wizard standing in front of it.
+	if p == nil || !p.Configured() {
 		return false
 	}
 	if aiprovider.RequiresOCRModel(p.SDK) && strings.TrimSpace(cfg.OCRModel) == "" {

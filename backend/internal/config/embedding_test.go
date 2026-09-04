@@ -172,11 +172,13 @@ func TestLocalEmbeddingProviderNeedsNoKey(t *testing.T) {
 	if spec.BaseURL != aiprovider.DefaultBaseURL(aiprovider.SDKLocal) {
 		t.Fatalf("embedding base url=%q", spec.BaseURL)
 	}
-	if !spec.Usable() {
-		t.Fatal("a keyless local spec is a complete configuration")
+	// Configured, not "has a key": the sidecar's address is its whole
+	// configuration, and NormalizeBaseURL supplied it above.
+	if !spec.Configured() {
+		t.Fatal("a keyless local spec with an address is a complete configuration")
 	}
-	if spec.Configured() {
-		t.Fatal("Configured still means 'has a key' and must not have shifted")
+	if (aiprovider.ProviderSpec{SDK: aiprovider.SDKLocal}).Configured() {
+		t.Fatal("a local spec with no address is half a configuration")
 	}
 	if env.Providers.SharesEmbeddingProvider() {
 		t.Fatal("a local endpoint is not the language model's endpoint")

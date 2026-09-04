@@ -40,7 +40,12 @@ func handleOCRProviders(app core.App, rt *config.Runtime) func(*core.RequestEven
 		var first *ocr.ProviderInfo
 		rest := make([]ocr.ProviderInfo, 0, len(providers))
 		for _, p := range providers {
-			if p.APIKey == "" {
+			// A local sidecar has an address instead of a key; skipping on the
+			// key alone would hide it from the very page an operator opens
+			// first to check the container is working. CanOCR is the other
+			// half: the local embeddings sidecar is configured and keyless too,
+			// and cannot read a document at all.
+			if !p.Configured() || !aiprovider.CanOCR(p.SDK) {
 				continue
 			}
 			info := ocr.ProviderInfo{ID: p.ID, Name: p.Alias, SDK: p.SDK}

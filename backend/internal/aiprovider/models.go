@@ -119,7 +119,15 @@ func ModelsURL(p Provider, purpose ModelPurpose) string {
 }
 
 func ListModels(ctx context.Context, p Provider, purpose ModelPurpose, client *http.Client, logger *slog.Logger) ([]Model, error) {
-	if p.SDK == SDKGoogleVision {
+	// An SDK that neither chats nor embeds has no catalogue to list: Google
+	// Vision annotates without a model, and docling serves one pipeline.
+	// Returning nothing here rather than falling through is what keeps the
+	// checks below from turning a perfectly healthy keyless sidecar into a 502
+	// and an error banner in Settings.
+	//
+	// It is not plain !IsLLM: the local embeddings sidecar is keyless too, but
+	// it does name its one model, at TEI's /info rather than /v1/models.
+	if !IsLLM(p.SDK) && !CanEmbed(p.SDK) {
 		return nil, nil
 	}
 	endpoint := ModelsURL(p, purpose)

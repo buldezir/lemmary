@@ -74,6 +74,73 @@ func TestSeparateOCRProvider(t *testing.T) {
 	}
 }
 
+// A local OCR sidecar is reached by address alone. It has to survive both of
+// the checks that a second provider normally faces -- "bring your own key" and
+// "name a model" -- because it has neither to give.
+func TestKeylessOCRSDKNeedsNoKeyAndNoModel(t *testing.T) {
+	clearAIEnv(t)
+	t.Setenv(EnvAIAPIKey, "sk-test")
+	t.Setenv(EnvAIModel, "some-model")
+	t.Setenv(EnvOCRSDK, aiprovider.SDKDocling)
+
+	env, err := AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("AIEnvFromEnv: %v", err)
+	}
+	if env.Providers.SharesOneProvider() {
+		t.Fatal("expected a provider of its own for OCR")
+	}
+	if got := env.Providers.OCR.APIKey; got != "" {
+		t.Fatalf("ocr api key=%q, want empty", got)
+	}
+	// The compose service name, so OCR_SDK=docling alone is a complete
+	// configuration for anyone running the overlay unedited.
+	if got := env.Providers.OCR.BaseURL; got != "http://docling:5001" {
+		t.Fatalf("ocr base url=%q", got)
+	}
+	if got := env.Providers.OCRModel(); got != "" {
+		t.Fatalf("ocr model=%q, want empty for docling", got)
+	}
+	if !env.Providers.OCR.Configured() {
+		t.Fatal("a docling spec with an address should be configured")
+	}
+}
+
+// The case the feature exists for: no hosted key anywhere, OCR still runs.
+// The language model is a separate problem, and the setup wizard still asks.
+func TestKeylessOCRConfiguresWithoutAnyHostedKey(t *testing.T) {
+	clearAIEnv(t)
+	t.Setenv(EnvOCRSDK, aiprovider.SDKDocling)
+
+	env, err := AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("AIEnvFromEnv: %v", err)
+	}
+	if env.Providers.LLM.Configured() {
+		t.Fatal("no AI_API_KEY was set; the language model must stay unconfigured")
+	}
+	if !env.Providers.Configured() {
+		t.Fatal("a keyless OCR provider alone should still be a configuration")
+	}
+	if got := env.Providers.OCRSDK(); got != aiprovider.SDKDocling {
+		t.Fatalf("ocr sdk=%q", got)
+	}
+}
+
+func TestOCRBaseURLOverridesTheSidecarDefault(t *testing.T) {
+	clearAIEnv(t)
+	t.Setenv(EnvOCRSDK, aiprovider.SDKDocling)
+	t.Setenv(EnvOCRBaseURL, "http://ocr.lan:5001/")
+
+	env, err := AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("AIEnvFromEnv: %v", err)
+	}
+	if got := env.Providers.OCR.BaseURL; got != "http://ocr.lan:5001" {
+		t.Fatalf("ocr base url=%q, want the override, right-trimmed", got)
+	}
+}
+
 // Naming the same SDK for both means one endpoint, so the key and the model
 // carry over rather than having to be written out twice.
 func TestOCRReusesTheLLMCredentialOnTheSameSDK(t *testing.T) {
@@ -270,6 +337,21 @@ func TestOCRProviderResolution(t *testing.T) {
 				t.Errorf("OCRModel()=%q, want %q", got, tc.wantModel)
 			}
 		})
+	}
+}
+
+// Managed mode refuses to start on a configuration nobody inside the instance
+// could repair. A keyless OCR SDK is not one of those: it needs no key, and its
+// address always resolves to the compose default.
+func TestManagedAcceptsAKeylessOCRSDK(t *testing.T) {
+	clearAIEnv(t)
+	t.Setenv(EnvManaged, "1")
+	t.Setenv(EnvAIAPIKey, "sk-test")
+	t.Setenv(EnvAIModel, "some-model")
+	t.Setenv(EnvOCRSDK, aiprovider.SDKDocling)
+
+	if _, err := AIEnvFromEnv(); err != nil {
+		t.Fatalf("AIEnvFromEnv: %v", err)
 	}
 }
 
