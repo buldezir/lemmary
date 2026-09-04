@@ -61,13 +61,19 @@ func Register(app core.App, rt *config.Runtime, backfill *Backfiller) {
 // strands the job (nextDueJob only picks pending) and its document in
 // "processing" with no path back — bulk reprocess skips processing documents.
 func (p *Processor) recoverStaleRunningJobs() {
+	// Unfinished and not already queued, rather than status = running. A crash
+	// during embed strands a job whose status apply_metadata already set to
+	// completed, so a status test walks straight past the one window where the
+	// pipeline spends real time -- and with the enqueue guard now keyed on
+	// finished_at, such a job would block its document from ever being
+	// reprocessed.
 	jobs, err := p.app.FindRecordsByFilter(
 		"processing_jobs",
-		"status = {:status}",
+		"finished_at = '' && status != {:pending}",
 		"",
 		0,
 		0,
-		map[string]any{"status": models.JobStatusRunning},
+		map[string]any{"pending": models.JobStatusPending},
 	)
 	if err != nil {
 		p.app.Logger().Error("list stale running jobs", slog.Any("error", err))
@@ -165,17 +171,24 @@ func createProcessingJob(app core.App, documentID string, steps []string, forceS
 	// Ensure-queued semantics: a document with an active job must not get a
 	// second one — concurrent reprocess requests would otherwise run OCR and
 	// AI extraction twice for the same document.
+	//
+	// Active is finished_at = '', not a status test. apply_metadata sets the
+	// job's status to completed and saves it, and only then does embed run --
+	// so for the whole of that window (eight seconds against a local sidecar,
+	// longer on a backfill) a running job reads status=completed. Keying on
+	// pending/running let a second pipeline in for exactly that window, and
+	// the two then mutated the same document.
+	//
+	// Both terminal paths write finished_at: the end of PipelineRunner.Run and
+	// failJob. A retry leaves it empty and re-pends, which is correct -- that
+	// job is still active.
 	existing, err := app.FindRecordsByFilter(
 		"processing_jobs",
-		"document = {:doc} && (status = {:pending} || status = {:running})",
+		"document = {:doc} && finished_at = ''",
 		"-created",
 		1,
 		0,
-		map[string]any{
-			"doc":     documentID,
-			"pending": models.JobStatusPending,
-			"running": models.JobStatusRunning,
-		},
+		map[string]any{"doc": documentID},
 	)
 	if err != nil {
 		return nil, err

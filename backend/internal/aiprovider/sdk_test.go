@@ -1,6 +1,9 @@
 package aiprovider
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestChatCompletionsURL(t *testing.T) {
 	t.Parallel()
@@ -161,13 +164,44 @@ func TestLocalSDKEmbedsWithoutChatting(t *testing.T) {
 // document someone uploaded.
 func TestCanOCR(t *testing.T) {
 	t.Parallel()
-	for _, sdk := range []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKGoogleVision} {
+	// docling belongs in this list as much as google_vision does: it is an OCR
+	// engine, and leaving it out let a whitelist of the other four stay green
+	// while refusing every sidecar OCR binding.
+	for _, sdk := range []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKGoogleVision, SDKDocling} {
 		if !CanOCR(sdk) {
 			t.Fatalf("CanOCR(%q) = false", sdk)
 		}
 	}
 	if CanOCR(SDKLocal) {
 		t.Fatal("a local embeddings endpoint cannot read a document")
+	}
+}
+
+// The messages that enumerate SDKs are derived from the predicates, so a new
+// SDK cannot leave a sentence naming an old list. These assert the derivation,
+// not the wording.
+func TestSDKListsMatchTheirPredicates(t *testing.T) {
+	t.Parallel()
+	cases := map[string]struct {
+		got  []string
+		want []string
+	}{
+		"llm":       {LLMSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral}},
+		"embedding": {EmbeddingSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKLocal}},
+		"ocr":       {OCRSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKDocling}},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if !slices.Equal(tc.got, tc.want) {
+				t.Fatalf("%s SDKs = %v, want %v", name, tc.got, tc.want)
+			}
+		})
+	}
+	// Every valid SDK serves at least one binding, or it is unreachable.
+	for _, sdk := range ValidSDKs {
+		if !IsLLM(sdk) && !CanEmbed(sdk) && !CanOCR(sdk) {
+			t.Errorf("%s is a valid SDK that no binding accepts", sdk)
+		}
 	}
 }
 

@@ -30,7 +30,7 @@ They are not quite twins, so check which one you are using:
 | | CPU (`docker-compose.embeddings.yml`) | GPU (`docker-compose.embeddings-gpu.yml`) |
 | --- | --- | --- |
 | Binds the app to the sidecar | no — the `app` block is commented out | yes, all three variables |
-| Published port | `8999:80` on the host | none; reachable only on the compose network |
+| Published port | `127.0.0.1:8999` for debugging | none; reachable only on the compose network |
 
 On the GPU overlay that is the whole configuration on a fresh volume: the
 instance comes up with a **Local embeddings** provider already bound. On the CPU
@@ -43,10 +43,17 @@ AI_EMBEDDING_BASE_URL=http://embeddings:80/v1
 AI_EMBEDDING_MODEL=BAAI/bge-m3
 ```
 
-The published port on the CPU overlay puts an unauthenticated inference
-endpoint on the host, which is worth knowing before you run it on anything
-reachable. Delete the `ports:` line if you do not want it; nothing in Lemmary
-uses it, since the app reaches the sidecar by service name.
+The CPU overlay's published port is bound to loopback on purpose. TEI has no
+authentication — that is the point of a service nothing outside the compose
+network can reach — so a bare `8999:80` would bind `0.0.0.0` and put an
+unauthenticated inference API on the LAN. Nothing in Lemmary uses the port; it
+is there for `curl 127.0.0.1:8999/info` while you are setting the model up, and
+you can delete the line.
+
+Neither image is multi-arch. The `cpu-*` tags are `linux/amd64`, and there is no
+`cpu-arm64-1.9` — the arm64 line is published unversioned as
+`cpu-arm64-latest`. On an arm64 host swap the tag and accept that it is not
+pinned.
 
 [tei]: https://github.com/huggingface/text-embeddings-inference
 

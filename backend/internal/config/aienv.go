@@ -251,9 +251,8 @@ func parseEmbedding(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error
 	}
 	if !aiprovider.CanEmbed(sdk) {
 		return aiprovider.ProviderSpec{}, fmt.Errorf(
-			"%s=%q cannot serve embeddings (want one of %s, %s, %s, %s)",
-			EnvAIEmbeddingSDK, sdk,
-			aiprovider.SDKOpenAI, aiprovider.SDKOpenRouter, aiprovider.SDKMistral, aiprovider.SDKLocal)
+			"%s=%q cannot serve embeddings (want one of %s)",
+			EnvAIEmbeddingSDK, sdk, strings.Join(aiprovider.EmbeddingSDKs(), ", "))
 	}
 	if model == "" {
 		return aiprovider.ProviderSpec{}, fmt.Errorf(

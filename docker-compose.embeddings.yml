@@ -17,15 +17,22 @@
 
 services:
   embeddings:
-    # cpu-1.9 runs anywhere, including arm64 hosts via cpu-arm64-1.9. It is
-    # genuinely usable: embedding is a small forward pass, not generation, and a
-    # few documents a minute is well within a couple of cores.
+    # amd64 only, despite the name: the cpu-* tags publish one linux/amd64
+    # manifest each, and there is no cpu-arm64-1.9 (the arm64 line is published
+    # unversioned, as cpu-arm64-latest). On an arm64 host swap the tag for that
+    # one and accept that it is not pinned.
+    #
+    # CPU is genuinely usable here: embedding is a small forward pass, not
+    # generation, and a few documents a minute is well within a couple of cores.
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
     restart: unless-stopped
-    ports: ["8999:80"]
-    # No `ports`. Nothing outside this compose project has any business reaching
-    # the model, and publishing it would put an unauthenticated inference
-    # endpoint on the host -- which is also why no API key is configured below.
+    # Loopback only. TEI has no authentication -- which is the point, a service
+    # on the compose network has nobody to authenticate to -- so `8999:80`
+    # would bind 0.0.0.0 and put an unauthenticated inference API on the LAN.
+    # Nothing in Lemmary uses this: the app reaches the sidecar by service name.
+    # It is here for `curl 127.0.0.1:8999/info` while setting the model up, and
+    # can be deleted outright.
+    ports: ["127.0.0.1:8999:80"]
     command:
       # One variable names the model for the sidecar and for the app's binding
       # further down, so the two cannot disagree. Changing it later is not

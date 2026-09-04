@@ -139,6 +139,28 @@ func RequiresOCRModel(sdk string) bool {
 	}
 }
 
+// sdksWhere names every valid SDK a predicate accepts, in ValidSDKs order.
+//
+// Every "want one of ..." message is built through this rather than written
+// out. The four-name list in the OCR conflict message was already wrong when
+// docling shipped -- it named openai, openrouter, mistral and google_vision,
+// and an admin who believed it would not have tried the one SDK that reads a
+// document on their own hardware.
+func sdksWhere(pred func(string) bool) []string {
+	out := make([]string, 0, len(ValidSDKs))
+	for _, sdk := range ValidSDKs {
+		if pred(sdk) {
+			out = append(out, sdk)
+		}
+	}
+	return out
+}
+
+// LLMSDKs, EmbeddingSDKs and OCRSDKs name the SDKs each binding accepts.
+func LLMSDKs() []string       { return sdksWhere(IsLLM) }
+func EmbeddingSDKs() []string { return sdksWhere(CanEmbed) }
+func OCRSDKs() []string       { return sdksWhere(CanOCR) }
+
 // ModellessOCRSDKs names the SDKs that read a document without a model, for the
 // error messages that have to list them. Derived rather than written out, so it
 // cannot drift from RequiresOCRModel the way the old message naming only

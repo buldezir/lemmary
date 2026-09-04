@@ -192,13 +192,13 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 					return writeError(e, http.StatusInternalServerError, "Failed to verify provider usage.")
 				}
 				if !aiprovider.IsLLM(sdk) && boundTo(settings, record.Id, llmBindingFields...) {
-					return writeError(e, http.StatusConflict, "Provider is bound to extraction, chat, or search and must stay an LLM SDK (openai, openrouter, or mistral).")
+					return writeError(e, http.StatusConflict, "Provider is bound to extraction, chat, or search and must stay an LLM SDK ("+strings.Join(aiprovider.LLMSDKs(), ", ")+").")
 				}
 				if !aiprovider.CanEmbed(sdk) && boundTo(settings, record.Id, embeddingBindingField) {
-					return writeError(e, http.StatusConflict, "Provider is bound to embeddings and must stay an SDK that can embed (openai, openrouter, mistral, or local).")
+					return writeError(e, http.StatusConflict, "Provider is bound to embeddings and must stay an SDK that can embed ("+strings.Join(aiprovider.EmbeddingSDKs(), ", ")+").")
 				}
 				if !aiprovider.CanOCR(sdk) && boundTo(settings, record.Id, ocrBindingField) {
-					return writeError(e, http.StatusConflict, "Provider is bound to OCR and must stay an SDK that can read a document (openai, openrouter, mistral, or google_vision).")
+					return writeError(e, http.StatusConflict, "Provider is bound to OCR and must stay an SDK that can read a document ("+strings.Join(aiprovider.OCRSDKs(), ", ")+").")
 				}
 			}
 			record.Set("sdk", sdk)

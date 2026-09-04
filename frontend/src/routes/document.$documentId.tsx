@@ -160,8 +160,14 @@ export function DocumentDetailPage() {
 
   const hasOcrText = Boolean(document?.ocr_text?.trim())
 
+  // The job as well as the document, for the reason the poll gate above gives:
+  // apply_metadata marks the document completed while embed is still running,
+  // so trusting the document alone re-enables this form mid-pipeline and
+  // invites a second job over a document the first one is still writing.
   const canReprocess =
-    document?.processing_status !== 'processing' && document?.processing_status !== 'pending'
+    document?.processing_status !== 'processing' &&
+    document?.processing_status !== 'pending' &&
+    !jobStillRunning(job)
 
   // A clock for the durations that are still counting: the running step's
   // elapsed, and the job total before the job has finished. Everything else is
