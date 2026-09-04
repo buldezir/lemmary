@@ -262,10 +262,35 @@ under `VAULT_ENABLED=1` where the index lives in a tmpfs. Anything
 text-embeddings-inference supports will work; those two are the ends of the
 range worth starting from.
 
-The sidecar is started with `--auto-truncate`, and with
-`--max-client-batch-size=64` and `--max-batch-tokens=65536` to match the batches
-Lemmary sends. A third-party endpoint left at the defaults answers `413` on a
-full batch, which fails the document loudly rather than retrying.
+The sidecar is started with `--auto-truncate` and `--max-client-batch-size=64`,
+which is the batch size Lemmary sends. A third-party endpoint left at TEI's
+default of 32 answers `413` on a full batch, which fails the document loudly
+rather than retrying.
+
+`--max-batch-tokens` is a separate lever and the one that decides how much
+memory the sidecar needs. It is TEI's forward-pass budget, not a request-size
+guard, and on CPU it dominates resident memory. The overlay ships **6144**,
+chosen against the longest input Lemmary can send: a single chunk is capped at
+8000 runes, which is 5723 tokens in the densest script measured. Below that
+figure TEI truncates silently — at 4096 a 5723-token input embeds
+byte-identically to its first 4096 tokens, with a `200` and no warning.
+
+Budget host memory accordingly, because exceeding it is an OOM kill during
+warmup rather than a clean error. Measured for `bge-m3` on CPU:
+
+| `--max-batch-tokens` | Peak resident | |
+| --- | --- | --- |
+| 8192 | — | Matches the model's own window, so nothing is ever truncated. Needs more RAM than a 16 GB host has free. |
+| **6144** | **~8.1 GB** | The default. Covers the 8000-rune input cap in every script tested. |
+| 4096 | ~6.5 GB | Fits a smaller host, but truncates dense passages without saying so. |
+
+The overlay also sets `mem_limit: 10g`. Warmup does not come near it; it is
+there so that an overshoot kills the sidecar instead of whatever else the host
+is running, since the kernel's own OOM killer picks by size and not by
+importance. A sidecar that dies is a soft failure — documents keep their text,
+their metadata and their place in keyword search, and are retried with a
+backoff. On a host with less memory to spare, move to a smaller model rather
+than lowering `--max-batch-tokens` past the truncation floor.
 
 ### Changing the model
 

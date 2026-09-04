@@ -29,7 +29,19 @@ services:
       - --model-id=${EMBEDDINGS_MODEL:-BAAI/bge-m3}
       - --auto-truncate
       - --max-client-batch-size=64
-      - --max-batch-tokens=65536
+      # 16384, not the 65536 this file carried, for the reason set out at
+      # length in the CPU overlay: --max-batch-tokens is TEI's forward-pass
+      # budget, not the 413 guard it was mistaken for. The floor is the same on
+      # either device -- embed.go caps one input at 8000 runes, which is 5723
+      # tokens of dense CJK -- and 16384 clears it with room for real batching
+      # while staying at TEI's own documented default.
+      #
+      # Unmeasured, unlike the CPU numbers: there is no GPU on the machine this
+      # was corrected on. VRAM is the constraint here rather than host RAM, and
+      # a card with headroom can raise this for backfill throughput -- which is
+      # the one time a GPU is worth having. Watch `nvidia-smi` while the first
+      # backfill runs before going much above it.
+      - --max-batch-tokens=16384
       - --json-output
       # float16 halves the weights in VRAM and is what these models are
       # published for. Drop this line if a card predates fast fp16.
