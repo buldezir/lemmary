@@ -3,7 +3,6 @@ package ai
 import (
 	"errors"
 	"strings"
-	"sync"
 
 	"github.com/openai/openai-go"
 )
@@ -36,39 +35,4 @@ func isReasoningEffortToolConflictError(err error) bool {
 func mentionsReasoningEffortToolConflict(msg string) bool {
 	msg = strings.ToLower(msg)
 	return strings.Contains(msg, "reasoning_effort") && strings.Contains(msg, "function tools")
-}
-
-// Models that have already refused tools alongside their default
-// reasoning_effort. Remembering them keeps the cost of the discovery at one
-// rejected request per model per process, rather than one per agent round —
-// the research loop is uncapped, so paying it every round adds up.
-var noReasoningEffortModels sync.Map
-
-func rememberNoReasoningEffort(model string) {
-	if key := modelKey(model); key != "" {
-		noReasoningEffortModels.Store(key, struct{}{})
-	}
-}
-
-func needsNoReasoningEffort(model string) bool {
-	key := modelKey(model)
-	if key == "" {
-		return false
-	}
-	_, ok := noReasoningEffortModels.Load(key)
-	return ok
-}
-
-// resetNoReasoningEffort clears what the process has learned. Tests only.
-func resetNoReasoningEffort() {
-	noReasoningEffortModels.Range(func(k, _ any) bool {
-		noReasoningEffortModels.Delete(k)
-		return true
-	})
-}
-
-// modelKey normalises a configured model string for the two per-model notes
-// this package keeps (see also responses.go).
-func modelKey(model string) string {
-	return strings.ToLower(strings.TrimSpace(model))
 }

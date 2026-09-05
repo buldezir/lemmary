@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/shared"
 )
 
 // reasoningHarness fakes the gpt-5-family behaviour from issue #49: a request
@@ -25,12 +26,41 @@ type reasoningHarness struct {
 	turns      []scriptedTurn
 	next       int
 	rejections int
+	// responsesTurns, when set, makes /responses a working endpoint serving
+	// these turns. Absent, the provider has no such endpoint and answers 404 --
+	// which is the case where reasoning_effort=none is the only way out.
+	responsesTurns []scriptedTurn
+	responsesNext  int
+	responsesTried int
 }
 
 func (h *reasoningHarness) handler(w http.ResponseWriter, r *http.Request) {
 	raw, _ := io.ReadAll(r.Body)
 	var body map[string]any
 	_ = json.Unmarshal(raw, &body)
+
+	if strings.HasSuffix(r.URL.Path, "/responses") {
+		h.mu.Lock()
+		h.responsesTried++
+		serve := len(h.responsesTurns) > 0
+		turn := scriptedTurn{content: "No further information."}
+		if h.responsesNext < len(h.responsesTurns) {
+			turn = h.responsesTurns[h.responsesNext]
+			h.responsesNext++
+		}
+		h.mu.Unlock()
+		if !serve {
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "unknown endpoint"}})
+			return
+		}
+		if stream, _ := body["stream"].(bool); stream {
+			writeResponsesStream(w, turn.content)
+			return
+		}
+		writeResponsesJSON(w, turn, "")
+		return
+	}
 
 	h.mu.Lock()
 	h.requests = append(h.requests, body)
@@ -93,13 +123,13 @@ func hasTools(body map[string]any) bool {
 	return len(tools) > 0
 }
 
-// Issue #49: the research loop used to die on the first round because the model
-// defaults reasoning_effort server-side and then refuses the tools we sent.
-func TestResearchRetriesOnceWithReasoningEffortNoneThenRemembers(t *testing.T) {
+// Issue #49, on a provider with no Responses endpoint to move to: the refusal's
+// other option, reasoning_effort=none, is then the only way to keep the tools.
+func TestResearchFallsBackToReasoningEffortNoneAndRemembers(t *testing.T) {
 	// Not parallel: the learned-model set is process-wide.
 	model := "gpt-5.6-luna-research-test"
-	resetNoReasoningEffort()
-	t.Cleanup(resetNoReasoningEffort)
+	resetModelNotes()
+	t.Cleanup(resetModelNotes)
 
 	h := &reasoningHarness{turns: []scriptedTurn{
 		{toolCalls: []scriptedToolCall{{name: "search_documents", args: `{"query":"car insurance"}`}}},
@@ -108,7 +138,8 @@ func TestResearchRetriesOnceWithReasoningEffortNoneThenRemembers(t *testing.T) {
 	}}
 	srv := httptest.NewServer(http.HandlerFunc(h.handler))
 	t.Cleanup(srv.Close)
-	agent := NewSearchAgent("openai", "test-key", model, srv.URL, 5*time.Second, "en,de", "en", slog.Default())
+	base := srv.URL
+	agent := NewSearchAgent("openai", "test-key", model, base, 5*time.Second, "en,de", "en", slog.Default())
 
 	result, err := agent.Research(context.Background(), ResearchRequest{
 		Messages: []ChatMessage{{Role: "user", Content: "how much did I pay?"}},
@@ -129,6 +160,11 @@ func TestResearchRetriesOnceWithReasoningEffortNoneThenRemembers(t *testing.T) {
 	if h.rejections != 1 {
 		t.Fatalf("rejections = %d, want exactly 1: the model should be remembered after the first refusal", h.rejections)
 	}
+	// /responses is the better of the two options the refusal names, so it has
+	// to be offered the request before "none" is settled for.
+	if h.responsesTried != 1 {
+		t.Fatalf("responses attempts = %d, want 1 before falling back to none", h.responsesTried)
+	}
 	if got := effortOf(h.request(0)); got != "" {
 		t.Fatalf("first request already sent reasoning_effort=%q; we should not send it unprompted", got)
 	}
@@ -142,7 +178,7 @@ func TestResearchRetriesOnceWithReasoningEffortNoneThenRemembers(t *testing.T) {
 			t.Fatalf("request %d carries tools but reasoning_effort = %q", i, effortOf(body))
 		}
 	}
-	if !needsNoReasoningEffort(model) {
+	if !needsNoReasoningEffort(base, model) {
 		t.Fatal("model was not remembered")
 	}
 }
@@ -151,13 +187,102 @@ func TestResearchRetriesOnceWithReasoningEffortNoneThenRemembers(t *testing.T) {
 // reasoning rather than inheriting "none" from the tool rounds.
 func TestReasoningEffortNoneIsNotAppliedWithoutTools(t *testing.T) {
 	model := "gpt-5.6-luna-extract-test"
-	resetNoReasoningEffort()
-	t.Cleanup(resetNoReasoningEffort)
-	rememberNoReasoningEffort(model)
+	resetModelNotes()
+	t.Cleanup(resetModelNotes)
 
-	body := captureChatBody(t, model)
+	var body string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		body = string(raw)
+		writeChatJSON(w, extractTestJSON)
+	}))
+	t.Cleanup(srv.Close)
+	rememberNoReasoningEffort(srv.URL, model)
+
+	client := NewOpenAIClient("openai", "test-key", model, srv.URL, "v1", "", 5*time.Second, slog.Default())
+	if _, err := client.ExtractMetadata(context.Background(), "Invoice from Acme", ExtractionCatalog{}); err != nil {
+		t.Fatalf("ExtractMetadata: %v", err)
+	}
 	if strings.Contains(body, "reasoning_effort") {
 		t.Fatalf("tool-less request sent reasoning_effort: %s", body)
+	}
+}
+
+// The refusal names /responses first because it keeps the tools *and* the
+// reasoning; "none" keeps the tools by switching the reasoning off. Where both
+// are available, the request must take the first.
+func TestReasoningEffortConflictPrefersTheResponsesAPI(t *testing.T) {
+	model := "gpt-5.6-luna-prefers-responses"
+	resetModelNotes()
+	t.Cleanup(resetModelNotes)
+
+	h := &reasoningHarness{responsesTurns: []scriptedTurn{
+		{toolCalls: []scriptedToolCall{{name: "search_documents", args: `{"query":"insurance"}`}}},
+		{content: "ready"},
+		{content: "Answer with [Doc doc1](/document/doc1)."},
+	}}
+	srv := httptest.NewServer(http.HandlerFunc(h.handler))
+	t.Cleanup(srv.Close)
+	base := srv.URL
+	agent := NewSearchAgent("openai", "test-key", model, base, 5*time.Second, "en,de", "en", slog.Default())
+
+	if _, err := agent.Research(context.Background(), ResearchRequest{
+		Messages: []ChatMessage{{Role: "user", Content: "how much did I pay?"}},
+		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
+			return hitsFor("doc1"), nil
+		},
+		Read: func(_ context.Context, _ ReadRequest) ([]DocumentContent, error) {
+			return []DocumentContent{{ID: "doc1", Title: "Doc doc1", Text: "Premium 200 EUR"}}, nil
+		},
+	}, func(ResearchEvent) {}); err != nil {
+		t.Fatalf("Research: %v", err)
+	}
+
+	if needsNoReasoningEffort(base, model) {
+		t.Fatal("the model was pinned to reasoning_effort=none even though /responses served it")
+	}
+	if !needsResponsesAPI(base, model) {
+		t.Fatal("the model was not remembered as a Responses one")
+	}
+	// One refused chat request, and nothing sent to /chat/completions after it.
+	for i, body := range h.requests {
+		if effortOf(body) == "none" {
+			t.Fatalf("request %d switched the reasoning off: %v", i, body)
+		}
+	}
+	if len(h.requests) != 1 {
+		t.Fatalf("chat/completions requests = %d, want 1", len(h.requests))
+	}
+}
+
+// A "none" the provider also refuses is not worth pinning: the next call would
+// send a value already known to fail.
+func TestReasoningEffortNoneIsNotRememberedWhenItAlsoFails(t *testing.T) {
+	model := "gpt-5.6-luna-none-also-fails"
+	resetModelNotes()
+	t.Cleanup(resetModelNotes)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/responses") {
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "unknown endpoint"}})
+			return
+		}
+		writeReasoningEffortConflict(w)
+	}))
+	t.Cleanup(srv.Close)
+
+	client := NewOpenAIClient("openai", "test-key", model, srv.URL, "v1", "", 5*time.Second, slog.Default())
+	_, err := CompleteChat(context.Background(), client.client, slog.Default(), "openai", srv.URL, openai.ChatCompletionNewParams{
+		Model:    shared.ChatModel(model),
+		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
+		Tools:    []openai.ChatCompletionToolParam{{Function: shared.FunctionDefinitionParam{Name: "search_documents"}}},
+	})
+	if err == nil {
+		t.Fatal("expected the refusal to surface")
+	}
+	if needsNoReasoningEffort(srv.URL, model) {
+		t.Fatal("a value the provider rejected was remembered anyway")
 	}
 }
 

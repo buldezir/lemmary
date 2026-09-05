@@ -30,6 +30,11 @@ type responsesHarness struct {
 	respTurns     []scriptedTurn
 	respNext      int
 	responsesGone bool
+	// respStatus, when set, is the status the Response body reports -- the
+	// Responses API says a generation failed with a 200 and a status field.
+	respStatus string
+	// streamError makes the /responses stream end with an error event.
+	streamError bool
 }
 
 func (h *responsesHarness) handle(w http.ResponseWriter, r *http.Request) {
@@ -53,10 +58,14 @@ func (h *responsesHarness) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if stream, _ := body["stream"].(bool); stream {
+			if h.streamError {
+				writeResponsesStreamError(w)
+				return
+			}
 			writeResponsesStream(w, turn.content)
 			return
 		}
-		writeResponsesJSON(w, turn)
+		writeResponsesJSON(w, turn, h.respStatus)
 		return
 	}
 
@@ -85,7 +94,7 @@ func (h *responsesHarness) responsesBody(i int) map[string]any {
 }
 
 // writeResponsesJSON renders a scripted turn in the Responses output shape.
-func writeResponsesJSON(w http.ResponseWriter, turn scriptedTurn) {
+func writeResponsesJSON(w http.ResponseWriter, turn scriptedTurn, status string) {
 	output := []map[string]any{}
 	// A reasoning item the caller must skip over rather than mistake for text.
 	output = append(output, map[string]any{
@@ -109,9 +118,13 @@ func writeResponsesJSON(w http.ResponseWriter, turn scriptedTurn) {
 			"content": []map[string]any{{"type": "output_text", "text": turn.content, "annotations": []any{}}},
 		})
 	}
+	if status == "" {
+		status = "completed"
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"id": "resp_test", "object": "response", "created_at": 1, "status": "completed",
+		"id": "resp_test", "object": "response", "created_at": 1, "status": status,
+		"error": map[string]any{"code": "server_error", "message": "the model gave up"},
 		"model": "test-model", "output": output,
 		"usage": map[string]any{
 			"input_tokens":          11,
@@ -156,6 +169,22 @@ func writeResponsesStream(w http.ResponseWriter, content string) {
 	})
 }
 
+// writeResponsesStreamError ends a stream the way the Responses API reports an
+// in-band failure: a top-level code and message, with no nested "error" object
+// for the SDK's decoder to notice.
+func writeResponsesStreamError(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	flusher, _ := w.(http.Flusher)
+	_, _ = fmt.Fprint(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"half \",\"sequence_number\":1}\n\n")
+	if flusher != nil {
+		flusher.Flush()
+	}
+	_, _ = fmt.Fprint(w, "data: {\"type\":\"error\",\"code\":\"server_error\",\"message\":\"upstream exploded\",\"param\":null,\"sequence_number\":2}\n\n")
+	if flusher != nil {
+		flusher.Flush()
+	}
+}
+
 func newResponsesHarness(t *testing.T, h *responsesHarness) string {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(h.handle))
@@ -167,8 +196,8 @@ func newResponsesHarness(t *testing.T, h *responsesHarness) string {
 // there directly, for tool rounds and the streamed answer alike.
 func TestResearchFallsBackToResponsesAndRemembers(t *testing.T) {
 	model := "responses-only-research"
-	resetResponsesAPI()
-	t.Cleanup(resetResponsesAPI)
+	resetModelNotes()
+	t.Cleanup(resetModelNotes)
 
 	h := &responsesHarness{chatStatus: http.StatusInternalServerError, respTurns: []scriptedTurn{
 		{toolCalls: []scriptedToolCall{{name: "search_documents", args: `{"query":"car insurance"}`}}},
@@ -200,13 +229,17 @@ func TestResearchFallsBackToResponsesAndRemembers(t *testing.T) {
 	}
 
 	chat, resp := h.counts()
-	if chat != 1 {
-		t.Fatalf("chat/completions attempts = %d, want 1: the model should be remembered after the first refusal", chat)
+	// Two, not one. A 500 does not say whether the endpoint refuses this model
+	// or is simply having a bad minute, so the first one is acted on but not
+	// believed; the second makes it a pattern and the model is rerouted for
+	// good. Both requests still succeed, via the fallback.
+	if chat != 2 {
+		t.Fatalf("chat/completions attempts = %d, want 2 before an ambiguous refusal is believed", chat)
 	}
 	if resp < 3 {
 		t.Fatalf("responses requests = %d, want the tool rounds and the answer", resp)
 	}
-	if !needsResponsesAPI(model) {
+	if !needsResponsesAPI(base, model) {
 		t.Fatal("model was not remembered")
 	}
 }
@@ -215,12 +248,11 @@ func TestResearchFallsBackToResponsesAndRemembers(t *testing.T) {
 // completions has to arrive as an equivalent Responses call.
 func TestResponsesRequestShape(t *testing.T) {
 	model := "responses-only-shape"
-	resetResponsesAPI()
-	t.Cleanup(resetResponsesAPI)
-	rememberResponsesAPI(model)
-
+	resetModelNotes()
+	t.Cleanup(resetModelNotes)
 	h := &responsesHarness{respTurns: []scriptedTurn{{content: "ok"}}}
 	base := newResponsesHarness(t, h)
+	rememberResponsesAPI(base, model)
 	client := NewOpenAIClient("openai", "test-key", model, base, "v1", "", 5*time.Second, slog.Default())
 
 	params := openai.ChatCompletionNewParams{
@@ -354,8 +386,8 @@ func TestChatCompletionFromResponse(t *testing.T) {
 
 func TestStreamingFallsBackToResponses(t *testing.T) {
 	model := "responses-only-stream"
-	resetResponsesAPI()
-	t.Cleanup(resetResponsesAPI)
+	resetModelNotes()
+	t.Cleanup(resetModelNotes)
 
 	h := &responsesHarness{chatStatus: http.StatusInternalServerError, respTurns: []scriptedTurn{
 		{content: "streamed from responses"},
@@ -380,8 +412,136 @@ func TestStreamingFallsBackToResponses(t *testing.T) {
 	if usage.Prompt != 7 || usage.Completion != 2 || usage.Cached != 3 {
 		t.Fatalf("usage = %+v, want the totals from response.completed", usage)
 	}
-	if !needsResponsesAPI(model) {
-		t.Fatal("model was not remembered")
+	// One ambiguous 500 is acted on but not believed.
+	if needsResponsesAPI(base, model) {
+		t.Fatal("a single 500 rerouted the model for the rest of the process")
+	}
+	h.respTurns = append(h.respTurns, scriptedTurn{content: "again"})
+	h.respNext = 0
+	if _, _, err := client.completeStreaming(context.Background(), openai.ChatCompletionNewParams{
+		Model:    shared.ChatModel(model),
+		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
+	}, nil); err != nil {
+		t.Fatalf("second completeStreaming: %v", err)
+	}
+	if !needsResponsesAPI(base, model) {
+		t.Fatal("a second refusal should have settled it")
+	}
+}
+
+// A 500 from an endpoint that has already served this model is the provider
+// having a bad minute, not a model that lives elsewhere. The SDK is configured
+// with no retries of its own, so without this one hiccup would be enough to
+// reroute a model permanently.
+func TestAProvenModelIsNotReroutedByATransient500(t *testing.T) {
+	model := "dual-api-model"
+	resetModelNotes()
+	t.Cleanup(resetModelNotes)
+
+	h := &responsesHarness{respTurns: []scriptedTurn{{content: "from responses"}}}
+	base := newResponsesHarness(t, h)
+	client := NewOpenAIClient("openai", "test-key", model, base, "v1", "", 5*time.Second, slog.Default())
+	params := openai.ChatCompletionNewParams{
+		Model:    shared.ChatModel(model),
+		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
+	}
+
+	// It works here first.
+	if _, err := CompleteChat(context.Background(), client.client, slog.Default(), "openai", base, params); err != nil {
+		t.Fatalf("first CompleteChat: %v", err)
+	}
+	// Then the provider has a bad minute.
+	h.mu.Lock()
+	h.chatStatus = http.StatusInternalServerError
+	h.mu.Unlock()
+	if _, err := CompleteChat(context.Background(), client.client, slog.Default(), "openai", base, params); err == nil {
+		t.Fatal("expected the 500 to surface rather than being papered over")
+	}
+	if _, resp := h.counts(); resp != 0 {
+		t.Fatalf("a proven model was sent to /responses %d times", resp)
+	}
+	if needsResponsesAPI(base, model) {
+		t.Fatal("a proven model was rerouted by one 500")
+	}
+}
+
+// 401 and 403 are what OpenCode Zen returns for grok-4.6 and the muse-spark
+// models. Unlike a 500 they are not something a working endpoint says about a
+// model it serves, so one is enough.
+func TestCertainMismatchIsBelievedImmediately(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			model := fmt.Sprintf("certain-%d", status)
+			resetModelNotes()
+			t.Cleanup(resetModelNotes)
+
+			h := &responsesHarness{chatStatus: status, respTurns: []scriptedTurn{{content: "from responses"}}}
+			base := newResponsesHarness(t, h)
+			client := NewOpenAIClient("openai", "test-key", model, base, "v1", "", 5*time.Second, slog.Default())
+
+			resp, err := CompleteChat(context.Background(), client.client, slog.Default(), "openai", base, openai.ChatCompletionNewParams{
+				Model:    shared.ChatModel(model),
+				Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
+			})
+			if err != nil {
+				t.Fatalf("CompleteChat: %v", err)
+			}
+			if resp.Choices[0].Message.Content != "from responses" {
+				t.Fatalf("content = %q", resp.Choices[0].Message.Content)
+			}
+			if !needsResponsesAPI(base, model) {
+				t.Fatal("an unambiguous mismatch should be believed the first time")
+			}
+		})
+	}
+}
+
+// The Responses API reports a generation it gave up on in the body, with a 200.
+// Handed back as a completion it would reach the caller as a successful empty
+// answer -- and would count as proof that the endpoint works.
+func TestFailedResponseIsNotASuccess(t *testing.T) {
+	model := "failed-status-model"
+	resetModelNotes()
+	t.Cleanup(resetModelNotes)
+
+	h := &responsesHarness{chatStatus: http.StatusNotFound, respStatus: "failed"}
+	base := newResponsesHarness(t, h)
+	client := NewOpenAIClient("openai", "test-key", model, base, "v1", "", 5*time.Second, slog.Default())
+
+	_, err := CompleteChat(context.Background(), client.client, slog.Default(), "openai", base, openai.ChatCompletionNewParams{
+		Model:    shared.ChatModel(model),
+		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
+	})
+	if err == nil {
+		t.Fatal("a failed generation was returned as a successful empty answer")
+	}
+	if needsResponsesAPI(base, model) {
+		t.Fatal("a failed generation counted as proof the endpoint serves this model")
+	}
+}
+
+// A Responses error event puts its code and message at the top level, with no
+// nested "error" object, so the SDK's stream decoder does not raise it. Unread,
+// an exploded generation looks like a short but successful answer.
+func TestStreamErrorEventIsNotSilentlySwallowed(t *testing.T) {
+	model := "stream-error-model"
+	resetModelNotes()
+	t.Cleanup(resetModelNotes)
+
+	h := &responsesHarness{streamError: true}
+	base := newResponsesHarness(t, h)
+	rememberResponsesAPI(base, model)
+	client := NewOpenAIClient("openai", "test-key", model, base, "v1", "", 5*time.Second, slog.Default())
+
+	text, _, err := client.completeStreaming(context.Background(), openai.ChatCompletionNewParams{
+		Model:    shared.ChatModel(model),
+		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
+	}, nil)
+	if err == nil {
+		t.Fatalf("the stream failed but came back as a success with %q", text)
+	}
+	if !strings.Contains(err.Error(), "upstream exploded") {
+		t.Fatalf("error = %v, want the provider's message", err)
 	}
 }
 
@@ -389,8 +549,8 @@ func TestStreamingFallsBackToResponses(t *testing.T) {
 // different endpoint.
 func TestTransientErrorDoesNotFallBackToResponses(t *testing.T) {
 	model := "transient-model"
-	resetResponsesAPI()
-	t.Cleanup(resetResponsesAPI)
+	resetModelNotes()
+	t.Cleanup(resetModelNotes)
 
 	h := &responsesHarness{chatStatus: http.StatusServiceUnavailable}
 	base := newResponsesHarness(t, h)
@@ -406,7 +566,7 @@ func TestTransientErrorDoesNotFallBackToResponses(t *testing.T) {
 	if _, resp := h.counts(); resp != 0 {
 		t.Fatalf("a 503 triggered %d Responses attempts", resp)
 	}
-	if needsResponsesAPI(model) {
+	if needsResponsesAPI(base, model) {
 		t.Fatal("a transient failure must not reroute the model")
 	}
 }
@@ -415,8 +575,8 @@ func TestTransientErrorDoesNotFallBackToResponses(t *testing.T) {
 // original failure rather than a 404 from an endpoint the provider never had.
 func TestFallbackKeepsTheOriginalError(t *testing.T) {
 	model := "no-responses-endpoint"
-	resetResponsesAPI()
-	t.Cleanup(resetResponsesAPI)
+	resetModelNotes()
+	t.Cleanup(resetModelNotes)
 
 	h := &responsesHarness{chatStatus: http.StatusInternalServerError, responsesGone: true}
 	base := newResponsesHarness(t, h)
@@ -432,7 +592,7 @@ func TestFallbackKeepsTheOriginalError(t *testing.T) {
 	if !strings.Contains(err.Error(), "500") {
 		t.Fatalf("error = %v, want the original chat/completions failure", err)
 	}
-	if needsResponsesAPI(model) {
+	if needsResponsesAPI(base, model) {
 		t.Fatal("a failed fallback must not be remembered")
 	}
 }
@@ -440,8 +600,8 @@ func TestFallbackKeepsTheOriginalError(t *testing.T) {
 // Models the provider serves normally must never be rerouted.
 func TestOrdinaryModelStaysOnChatCompletions(t *testing.T) {
 	model := "ordinary-model"
-	resetResponsesAPI()
-	t.Cleanup(resetResponsesAPI)
+	resetModelNotes()
+	t.Cleanup(resetModelNotes)
 
 	h := &responsesHarness{}
 	base := newResponsesHarness(t, h)

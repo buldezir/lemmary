@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/packages/param"
@@ -28,55 +27,65 @@ import (
 // to ResponseNewParams, and the Response to a *openai.ChatCompletion the
 // existing call sites already know how to read. No caller changes.
 
-// responsesModels remembers the models whose completions had to be translated,
-// so the discovery costs one rejected request per model per process instead of
-// one per agent round.
-var responsesModels sync.Map
+// endpointVerdict is what a failed /chat/completions request says about
+// whether this endpoint serves this model at all.
+type endpointVerdict int
 
-func rememberResponsesAPI(model string) {
-	if key := modelKey(model); key != "" {
-		responsesModels.Store(key, struct{}{})
-	}
-}
+const (
+	// notAMismatch: the failure says nothing about the endpoint.
+	notAMismatch endpointVerdict = iota
+	// ambiguousMismatch: could be either. 500 is what OpenCode Zen answers for
+	// a Responses-only model, and also the generic internal error every
+	// provider returns when it is having a bad minute.
+	ambiguousMismatch
+	// certainMismatch: a status a working endpoint does not return for a model
+	// it serves.
+	certainMismatch
+)
 
-func needsResponsesAPI(model string) bool {
-	key := modelKey(model)
-	if key == "" {
-		return false
-	}
-	_, ok := responsesModels.Load(key)
-	return ok
-}
-
-// resetResponsesAPI clears what the process has learned. Tests only.
-func resetResponsesAPI() {
-	responsesModels.Range(func(k, _ any) bool {
-		responsesModels.Delete(k)
-		return true
-	})
-}
-
-// isEndpointMismatchError reports whether a failed /chat/completions request
-// looks like the endpoint refusing to serve this model at all, rather than
-// disliking something we sent. OpenCode answers 500 for a Responses-only model
-// even for a bare "say hi"; 401 and 403 are what it returns for the others, on
-// a key that works everywhere else. 502/503/504 are deliberately absent: those
-// are ordinary transient failures and retrying them on a different endpoint
-// would be guessing.
-func isEndpointMismatchError(err error) bool {
+// classifyEndpointError reads a failed /chat/completions request for whether
+// the endpoint is refusing to serve this model at all, rather than disliking
+// something we sent. 502/503/504 are deliberately absent: those are ordinary
+// transient failures, and rerouting on them would be guessing.
+func classifyEndpointError(err error) endpointVerdict {
 	if err == nil {
-		return false
+		return notAMismatch
 	}
 	var apiErr *openai.Error
 	if !errors.As(err, &apiErr) {
-		return false
+		return notAMismatch
 	}
 	switch apiErr.StatusCode {
+	case http.StatusInternalServerError:
+		return ambiguousMismatch
 	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound,
-		http.StatusMethodNotAllowed, http.StatusInternalServerError, http.StatusNotImplemented:
-		return true
+		http.StatusMethodNotAllowed, http.StatusNotImplemented:
+		return certainMismatch
 	}
-	return false
+	return notAMismatch
+}
+
+// shouldTryResponses decides whether to translate a refused request, and
+// whether a success would be worth remembering.
+//
+// An endpoint that has already served this model is not an endpoint that does
+// not serve it, so a later refusal there is transient however it is worded --
+// the SDK is configured with no retries of its own, so a single hiccup would
+// otherwise be enough to reroute a model permanently. An ambiguous refusal on a
+// model never seen to work is worth translating immediately, because the caller
+// is waiting, but only worth remembering once it has happened twice: a
+// provider's bad minute does not repeat, a wrong endpoint does.
+func shouldTryResponses(err error, baseURL, model string) (try bool, remember bool) {
+	switch classifyEndpointError(err) {
+	case certainMismatch:
+		return true, true
+	case ambiguousMismatch:
+		if chatCompletionsHasWorked(baseURL, model) {
+			return false, false
+		}
+		return true, countAmbiguousRefusal(baseURL, model) > 1
+	}
+	return false, false
 }
 
 // CompleteViaResponses runs a chat-completions-shaped request through the
@@ -108,7 +117,29 @@ func CompleteViaResponses(
 	if err != nil {
 		return nil, err
 	}
+	if err := responseFailure(resp); err != nil {
+		return nil, err
+	}
 	return chatCompletionFrom(resp), nil
+}
+
+// responseFailure turns a generation the provider gave up on into an error.
+// The Responses API reports that in the body with a 200, so the SDK hands it
+// back as a success; left alone it would reach the caller as an empty answer,
+// and would count as proof that the endpoint works.
+func responseFailure(resp *responses.Response) error {
+	if resp == nil {
+		return fmt.Errorf("responses: no response")
+	}
+	switch resp.Status {
+	// Empty covers gateways that do not report a status at all.
+	case "", "completed", "incomplete", "in_progress":
+		return nil
+	}
+	if msg := strings.TrimSpace(resp.Error.Message); msg != "" {
+		return fmt.Errorf("responses: %s: %s", resp.Status, msg)
+	}
+	return fmt.Errorf("responses: %s", resp.Status)
 }
 
 // completeStreamingViaResponses is the streaming twin: text deltas arrive as
@@ -138,6 +169,12 @@ func (c *OpenAIClient) completeStreamingViaResponses(
 
 	var b strings.Builder
 	var usage Usage
+	// A stream can fail in-band. ssestream only raises an event as an error
+	// when it carries a nested "error" object, and a Responses error event puts
+	// its code and message at the top level instead -- so an exploded
+	// generation arrives here as an ordinary event and, unread, would look like
+	// a short but successful answer.
+	var failed error
 	for stream.Next() {
 		event := stream.Current()
 		switch event.Type {
@@ -150,15 +187,32 @@ func (c *OpenAIClient) completeStreamingViaResponses(
 			if onDelta != nil {
 				onDelta(delta)
 			}
-		case "response.completed", "response.incomplete", "response.failed":
+		case "response.completed", "response.incomplete":
 			usage = usageFromResponses(event.Response.Usage)
+		case "response.failed":
+			usage = usageFromResponses(event.Response.Usage)
+			failed = responseFailure(&event.Response)
+		case "error":
+			failed = fmt.Errorf("responses stream: %s", streamEventMessage(event))
 		}
 	}
-	err = stream.Err()
+	if err = stream.Err(); err == nil {
+		err = failed
+	}
 	if err == nil {
 		logUsage(c.logger, string(params.Model), usage, append(extra, "stream", true, "api", "responses")...)
 	}
 	return b.String(), usage, err
+}
+
+func streamEventMessage(event responses.ResponseStreamEventUnion) string {
+	if msg := strings.TrimSpace(event.Message); msg != "" {
+		return msg
+	}
+	if code := strings.TrimSpace(event.Code); code != "" {
+		return code
+	}
+	return "the provider ended the stream with an error"
 }
 
 // responsesParamsFrom translates a chat completion request into a Responses

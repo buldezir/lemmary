@@ -25,8 +25,8 @@ func TestLiveResponsesOnlyModel(t *testing.T) {
 	if key == "" || base == "" || model == "" {
 		t.Skip("set LIVE_AI_KEY, LIVE_AI_BASE_URL and LIVE_AI_MODEL to run the live check")
 	}
-	resetResponsesAPI()
-	t.Cleanup(resetResponsesAPI)
+	resetModelNotes()
+	t.Cleanup(resetModelNotes)
 	ctx := context.Background()
 
 	t.Run("research", func(t *testing.T) {

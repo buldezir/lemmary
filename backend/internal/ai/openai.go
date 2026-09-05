@@ -76,15 +76,15 @@ func (c *OpenAIClient) complete(ctx context.Context, params openai.ChatCompletio
 // "none" if the model will not take tools alongside it, temperature falls back
 // to the API default, and finally the whole request is translated to the
 // Responses API if this endpoint turns out not to serve the model at all. Each
-// of the last two is remembered per model, so the discovery costs one rejected
-// request per process rather than one per call.
+// of the last two is remembered per model and endpoint, so the discovery costs
+// one rejected request per process rather than one per call.
 func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger, sdk, baseURL string, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	// A model already known to live on the Responses API never touches
 	// /chat/completions again.
-	if needsResponsesAPI(string(params.Model)) {
+	if needsResponsesAPI(baseURL, string(params.Model)) {
 		resp, err := CompleteViaResponses(ctx, client, logger, sdk, baseURL, params, extra...)
 		if err == nil {
 			logUsage(logger, string(params.Model), usageOf(resp), extra...)
@@ -95,7 +95,7 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 	// reasoning_effort gets the working value up front. Only tool-carrying
 	// requests: pinning "none" on the rest would drop the model's reasoning
 	// where nothing asked us to.
-	if len(params.Tools) > 0 && needsNoReasoningEffort(string(params.Model)) {
+	if len(params.Tools) > 0 && needsNoReasoningEffort(baseURL, string(params.Model)) {
 		params.ReasoningEffort = shared.ReasoningEffort(reasoningEffortNone)
 		extra = append(extra, "reasoning_effort", reasoningEffortNone)
 	}
@@ -109,6 +109,7 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 	)
 	resp, err := client.Chat.Completions.New(ctx, params)
 	if err == nil {
+		rememberChatCompletionsWorked(baseURL, string(params.Model))
 		logUsage(logger, string(params.Model), usageOf(resp), extra...)
 		return resp, nil
 	}
@@ -136,16 +137,27 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 		}
 	}
 	// Some gpt-5-family models default reasoning_effort server-side and then
-	// refuse the request because function tools are present, naming "none" as
-	// the way to keep the tools. Take them up on it rather than failing the
-	// whole search.
+	// refuse the request because function tools are present. The refusal names
+	// two ways out, and they are not equal: /responses keeps the tools and the
+	// reasoning, while reasoning_effort=none keeps the tools by turning the
+	// reasoning off. Take the first, and settle for the second only where
+	// there is no Responses endpoint to take it to.
 	if len(params.Tools) > 0 && isReasoningEffortToolConflictError(err) {
-		logger.Warn("model rejected reasoning_effort with function tools; retrying with reasoning_effort=none",
+		logger.Warn("model rejected reasoning_effort with function tools; retrying on the Responses API",
 			"model", params.Model,
 			slog.Any("error", err),
 		)
+		if viaResponses, respErr := CompleteViaResponses(ctx, client, logger, sdk, baseURL, params, extra...); respErr == nil {
+			rememberResponsesAPI(baseURL, string(params.Model))
+			logUsage(logger, string(params.Model), usageOf(viaResponses), extra...)
+			return viaResponses, nil
+		} else {
+			logger.Warn("the Responses API could not serve it either; falling back to reasoning_effort=none",
+				"model", params.Model,
+				slog.Any("error", respErr),
+			)
+		}
 		params.ReasoningEffort = shared.ReasoningEffort(reasoningEffortNone)
-		rememberNoReasoningEffort(string(params.Model))
 		aiprovider.LogRequest(
 			logger,
 			sdk,
@@ -156,6 +168,10 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 		)
 		resp, err = client.Chat.Completions.New(ctx, params)
 		if err == nil {
+			// Remembered only now that the value is known to work: a "none"
+			// the provider also refuses is not worth pinning.
+			rememberNoReasoningEffort(baseURL, string(params.Model))
+			rememberChatCompletionsWorked(baseURL, string(params.Model))
 			logUsage(logger, string(params.Model), usageOf(resp), extra...)
 			return resp, nil
 		}
@@ -176,6 +192,7 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 		)
 		resp, err = client.Chat.Completions.New(ctx, params)
 		if err == nil {
+			rememberChatCompletionsWorked(baseURL, string(params.Model))
 			logUsage(logger, string(params.Model), usageOf(resp), extra...)
 		}
 	}
@@ -184,13 +201,16 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 	// anything at all. Try there once, and keep the original error if that was
 	// not the problem -- a Responses error for a provider that has no such
 	// endpoint would only mislead.
-	if isEndpointMismatchError(err) {
+	if try, remember := shouldTryResponses(err, baseURL, string(params.Model)); try {
 		logger.Warn("chat completions refused this model; retrying on the Responses API",
 			"model", params.Model,
+			"remember", remember,
 			slog.Any("error", err),
 		)
 		if viaResponses, respErr := CompleteViaResponses(ctx, client, logger, sdk, baseURL, params, extra...); respErr == nil {
-			rememberResponsesAPI(string(params.Model))
+			if remember {
+				rememberResponsesAPI(baseURL, string(params.Model))
+			}
 			logUsage(logger, string(params.Model), usageOf(viaResponses), extra...)
 			return viaResponses, nil
 		}
@@ -255,7 +275,7 @@ func (c *OpenAIClient) completeStreaming(
 	onDelta func(string),
 	extra ...any,
 ) (string, Usage, error) {
-	if needsResponsesAPI(string(params.Model)) {
+	if needsResponsesAPI(c.baseURL, string(params.Model)) {
 		return c.completeStreamingViaResponses(ctx, params, onDelta, extra...)
 	}
 	params.StreamOptions = openai.ChatCompletionStreamOptionsParam{IncludeUsage: openai.Bool(true)}
@@ -292,20 +312,28 @@ func (c *OpenAIClient) completeStreaming(
 	}
 	err := stream.Err()
 	if err == nil {
+		rememberChatCompletionsWorked(c.baseURL, string(params.Model))
 		logUsage(c.logger, string(params.Model), usage, append(extra, "stream", true)...)
 		return b.String(), usage, nil
 	}
 	// Same fallback as CompleteChat, but only while nothing has reached the
 	// reader yet: once deltas are on the wire, a second stream would replay a
 	// different answer over the first.
-	if b.Len() == 0 && isEndpointMismatchError(err) {
+	if b.Len() == 0 {
+		try, remember := shouldTryResponses(err, c.baseURL, string(params.Model))
+		if !try {
+			return b.String(), usage, err
+		}
 		c.logger.Warn("chat completions refused this model; retrying the stream on the Responses API",
 			"model", params.Model,
+			"remember", remember,
 			slog.Any("error", err),
 		)
 		text, respUsage, respErr := c.completeStreamingViaResponses(ctx, params, onDelta, extra...)
 		if respErr == nil {
-			rememberResponsesAPI(string(params.Model))
+			if remember {
+				rememberResponsesAPI(c.baseURL, string(params.Model))
+			}
 			return text, respUsage, nil
 		}
 	}
