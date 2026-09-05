@@ -26,7 +26,9 @@ on:
 
 # One self-hosted runner takes these jobs one at a time, so a superseded run
 # would sit in the queue ahead of the push that replaced it. Pushes to main and
-# tags are never cancelled -- those publish images.
+# tags are never cancelled -- those publish the images everything else pulls.
+# A superseded pull request build is cancelled with the rest of its run: its
+# image is a preview of a commit nobody is looking at any more.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -141,9 +143,13 @@ jobs:
         run: ./scripts/test-all.sh
 
   build:
-    if: github.event_name != 'pull_request'
-    # Only runs on push, tag and manual dispatch from this repository, so there
-    # is no untrusted code to keep off the runner.
+    # A fork's pull request never builds. The job holds a package-write token
+    # and runs on the self-hosted runner, and a fork's code must have neither;
+    # skipping is the only safe answer, since there is no fork equivalent of
+    # the test job's throwaway-runner fallback once GHCR push is involved.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Otherwise only push, tag and manual dispatch from this repository, so
+    # there is no untrusted code to keep off the runner.
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted", "linux", "x64", "homelab"]') }}
     permissions:
       contents: read
@@ -165,17 +171,45 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # A branch name may contain characters a Docker tag may not -- "/" above
+      # all, which every feat/… branch has. metadata-action sanitizes the refs
+      # it derives itself, but not a type=raw value, so the branch tag is
+      # sanitized here instead: anything outside the tag alphabet becomes "-".
+      - name: Tag name for this pull request
+        if: github.event_name == 'pull_request'
+        id: branch
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          tag=$(printf '%s' "$HEAD_REF" | tr -c 'A-Za-z0-9_.-' '-')
+          # A tag may not open with a separator, and is capped at 128 chars.
+          tag=$(printf '%s' "$tag" | sed 's/^[^A-Za-z0-9_]*//' | cut -c1-128)
+          if [ -z "$tag" ]; then
+            echo "::error::Could not derive a Docker tag from branch '$HEAD_REF'"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "::notice::Pull request image tag: $tag"
+
+      # A pull request gets exactly one tag, the source branch name, so a
+      # reviewer can pull the branch and run it. Deliberately not the sha, the
+      # semver or `latest`: those name releases, and a tag that moves with the
+      # branch means "whatever this PR currently is", which is what someone
+      # testing a PR actually wants. type=ref,event=pr would tag it `pr-<n>`,
+      # naming the review rather than the thing under review.
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
+            type=raw,value=${{ steps.branch.outputs.tag }},enable=${{ github.event_name == 'pull_request' }}
+            type=ref,event=branch,enable=${{ github.event_name != 'pull_request' }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=sha,prefix=
+            type=sha,prefix=,enable=${{ github.event_name != 'pull_request' }}
             type=raw,value=latest,enable={{is_default_branch}}
           labels: |
             org.opencontainers.image.title=Lemmary
