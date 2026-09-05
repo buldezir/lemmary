@@ -36,6 +36,11 @@ type ProviderInfo struct {
 }
 
 func NewFromAIProvider(p aiprovider.Provider, model string, timeout time.Duration, logger *slog.Logger) (Provider, error) {
+	// Asked first, so an SDK that can never read a document says so instead of
+	// complaining about a missing model or key it would have no use for.
+	if !aiprovider.CanOCR(p.SDK) {
+		return nil, fmt.Errorf("sdk %s cannot read a document; want one of %s", p.SDK, strings.Join(aiprovider.OCRSDKs(), ", "))
+	}
 	if aiprovider.RequiresAPIKey(p.SDK) && p.APIKey == "" {
 		return nil, fmt.Errorf("provider %q has no API key", p.Alias)
 	}

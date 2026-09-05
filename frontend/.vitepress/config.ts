@@ -47,6 +47,7 @@ export default defineConfig({
           { text: 'Local OCR', link: '/local_ocr' },
           { text: 'Local embeddings', link: '/local_embeddings' },
           { text: 'Google Vision', link: '/google_vision' },
+          { text: 'ChatGPT sign-in', link: '/chatgpt_login' },
           { text: 'OAuth2', link: '/oauth' },
           { text: 'Passkeys', link: '/passkeys' },
           { text: 'Encryption at rest', link: '/encryption' },

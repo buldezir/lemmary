@@ -358,7 +358,11 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                   }}
                   className={inputClassName}
                 >
-                  {SDK_OPTIONS.map((option) => (
+                  {/* chatgpt is not offered here whatever AI_CHATGPT_LOGIN
+                      says: signing in needs a saved provider row to store the
+                      token against, so it cannot be finished in one step of a
+                      wizard. Add it from Settings afterwards. */}
+                  {SDK_OPTIONS.filter((option) => option.value !== 'chatgpt').map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>

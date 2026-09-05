@@ -3,12 +3,15 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
+	"github.com/openai/openai-go/option"
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/applog"
+	"lemmary/backend/internal/chatgpt"
 	"lemmary/backend/internal/ocr"
 )
 
@@ -72,6 +75,11 @@ func (r *Runtime) Env() AIEnv { return r.env }
 
 func (r *Runtime) Managed() bool { return r.env.Managed }
 
+// ChatGPTLogin reports whether the chatgpt SDK may be used at all. Read by the
+// provider endpoints, which refuse it when off, and by /meta, which is how the
+// SPA knows whether to offer the sign-in button.
+func (r *Runtime) ChatGPTLogin() bool { return r.env.ChatGPTLogin }
+
 func (r *Runtime) Snapshot() Snapshot {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -92,6 +100,51 @@ func (r *Runtime) Reload(app core.App) error {
 	return nil
 }
 
+// usableLLM reports whether a provider row can back a language-model binding.
+//
+// Configured rather than APIKey != "": the chatgpt SDK holds no key, and asking
+// the old question would have left every chatgpt binding silently unavailable
+// with nothing in the log but "ai: unavailable".
+func usableLLM(p *aiprovider.Provider) bool {
+	return p != nil && p.Configured() && aiprovider.IsLLM(p.SDK)
+}
+
+// llmCredential is what an LLM client is built with: the key to pass, and any
+// extra SDK options the provider needs.
+//
+// Every SDK but one hands over its API key and asks for nothing else. The
+// chatgpt SDK has no key to hand over -- its credential is a token that expires
+// hourly -- so it contributes a middleware that mints one per request instead,
+// plus a placeholder for the SDK's own insistence on a non-empty key.
+func llmCredential(app core.App, p *aiprovider.Provider, logger *slog.Logger) (string, []option.RequestOption) {
+	if p == nil {
+		return "", nil
+	}
+	if !aiprovider.RequiresOAuth(p.SDK) {
+		return p.APIKey, nil
+	}
+	src := chatgpt.SourceFor(p.ID, p.OAuth, persistOAuth(app), logger)
+	return chatgpt.PlaceholderKey, []option.RequestOption{
+		option.WithMiddleware(chatgpt.Middleware(src, logger)),
+	}
+}
+
+// persistOAuth stores a rotated token back on the provider row.
+//
+// Saved through the record so the value passes the same field validation as any
+// other write. It fires the ai_providers update hook, which is why that hook
+// skips the reload when oauth is the only field that moved: see reloadProviders.
+func persistOAuth(app core.App) chatgpt.Persist {
+	return func(providerID, oauth string) error {
+		record, err := app.FindRecordById(aiprovider.CollectionName, providerID)
+		if err != nil {
+			return err
+		}
+		record.Set(aiprovider.OAuthField, oauth)
+		return app.Save(record)
+	}
+}
+
 func (r *Runtime) apply(app core.App, cfg Config) {
 	logger := app.Logger()
 	ocrLogger := logger.With("component", "ocr")
@@ -107,41 +160,50 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		}
 	}
 
+	// One credential for the extraction provider, shared by the two clients
+	// built on it: asking twice would put two middlewares over one token
+	// source, and the splitter is always the extractor's provider.
+	extractKey, extractOpts := llmCredential(app, cfg.ExtractProvider, aiLogger)
+
 	var extractor ai.Extractor
-	if cfg.ExtractProvider != nil && cfg.ExtractProvider.APIKey != "" && aiprovider.IsLLM(cfg.ExtractProvider.SDK) {
+	if usableLLM(cfg.ExtractProvider) {
 		extractor = ai.NewExtractor(
 			cfg.ExtractProvider.SDK,
-			cfg.ExtractProvider.APIKey,
+			extractKey,
 			cfg.ExtractModel,
 			cfg.ExtractProvider.BaseURL,
 			cfg.ExtractionPromptVer,
 			cfg.ProcessingResultLanguage,
 			cfg.OpenAITimeout,
 			aiLogger,
+			extractOpts...,
 		)
 	}
 
 	var chatter ai.Chatter
-	if cfg.ChatProvider != nil && cfg.ChatProvider.APIKey != "" && aiprovider.IsLLM(cfg.ChatProvider.SDK) {
+	if usableLLM(cfg.ChatProvider) {
+		key, opts := llmCredential(app, cfg.ChatProvider, aiLogger)
 		chatter = ai.NewChatter(
 			cfg.ChatProvider.SDK,
-			cfg.ChatProvider.APIKey,
+			key,
 			cfg.ChatModel,
 			cfg.ChatProvider.BaseURL,
 			cfg.OpenAITimeout,
 			aiLogger,
+			opts...,
 		)
 	}
 
 	var splitter ai.Splitter
-	if cfg.ExtractProvider != nil && cfg.ExtractProvider.APIKey != "" && aiprovider.IsLLM(cfg.ExtractProvider.SDK) {
+	if usableLLM(cfg.ExtractProvider) {
 		splitter = ai.NewSplitter(
 			cfg.ExtractProvider.SDK,
-			cfg.ExtractProvider.APIKey,
+			extractKey,
 			cfg.ExtractModel,
 			cfg.ExtractProvider.BaseURL,
 			cfg.OpenAITimeout,
 			aiLogger,
+			extractOpts...,
 		)
 	}
 
@@ -159,28 +221,32 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 	}
 
 	var searchAgent ai.SearchAgent
-	if cfg.SearchProvider != nil && cfg.SearchProvider.APIKey != "" && aiprovider.IsLLM(cfg.SearchProvider.SDK) {
+	if usableLLM(cfg.SearchProvider) {
+		key, opts := llmCredential(app, cfg.SearchProvider, aiLogger)
 		searchAgent = ai.NewSearchAgent(
 			cfg.SearchProvider.SDK,
-			cfg.SearchProvider.APIKey,
+			key,
 			cfg.SearchModel,
 			cfg.SearchProvider.BaseURL,
 			cfg.OpenAITimeout,
 			cfg.DeepSearchLanguages,
 			cfg.ProcessingResultLanguage,
 			aiLogger,
+			opts...,
 		)
 	}
 
 	var searchHelper ai.Helper
-	if cfg.SearchHelperProvider != nil && cfg.SearchHelperProvider.APIKey != "" && aiprovider.IsLLM(cfg.SearchHelperProvider.SDK) {
+	if usableLLM(cfg.SearchHelperProvider) {
+		key, opts := llmCredential(app, cfg.SearchHelperProvider, aiLogger)
 		searchHelper = ai.NewHelper(
 			cfg.SearchHelperProvider.SDK,
-			cfg.SearchHelperProvider.APIKey,
+			key,
 			cfg.SearchHelperModel,
 			cfg.SearchHelperProvider.BaseURL,
 			cfg.OpenAITimeout,
 			aiLogger,
+			opts...,
 		)
 	}
 
@@ -289,7 +355,52 @@ func RegisterHooks(app core.App, rt *Runtime) {
 		_ = rt.Reload(e.App)
 		return nil
 	}
+	updateProviders := func(e *core.RecordEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
+		if onlyTokenRotated(e.Record) {
+			return nil
+		}
+		_ = rt.Reload(e.App)
+		return nil
+	}
 	app.OnRecordAfterCreateSuccess(aiprovider.CollectionName).BindFunc(reloadProviders)
-	app.OnRecordAfterUpdateSuccess(aiprovider.CollectionName).BindFunc(reloadProviders)
+	app.OnRecordAfterUpdateSuccess(aiprovider.CollectionName).BindFunc(updateProviders)
 	app.OnRecordAfterDeleteSuccess(aiprovider.CollectionName).BindFunc(reloadProviders)
+}
+
+// onlyTokenRotated reports a write that did nothing but replace one live
+// ChatGPT token with another.
+//
+// The token refreshes about once an hour, and every refresh saves the provider
+// row. Reloading on those would rebuild every AI client on a timer -- swapping
+// the extractor out from under a running job, and re-reading a row the token
+// source itself has just written.
+//
+// A rotation, not merely "oauth moved". Signing in and signing out also touch
+// no other field, and both change what the row can serve: after a sign-in the
+// clients do not exist yet, because the last apply saw an unconfigured row, and
+// after a sign-out the built clients would keep answering from the token still
+// held by the middleware, which Forget cannot reach. Both must reload, so the
+// test is that the row was usable before and stays usable after.
+func onlyTokenRotated(record *core.Record) bool {
+	if record == nil {
+		return false
+	}
+	original := record.Original()
+	if original == nil {
+		return false
+	}
+	before := strings.TrimSpace(original.GetString(aiprovider.OAuthField))
+	after := strings.TrimSpace(record.GetString(aiprovider.OAuthField))
+	if before == after || before == "" || after == "" {
+		return false
+	}
+	for _, field := range []string{"sdk", "alias", "base_url", "api_key"} {
+		if record.GetString(field) != original.GetString(field) {
+			return false
+		}
+	}
+	return true
 }

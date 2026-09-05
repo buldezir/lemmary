@@ -8,6 +8,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/chatgpt"
 	"lemmary/backend/internal/config"
 )
 
@@ -17,6 +18,14 @@ type providerResponse struct {
 	Alias     string `json:"alias"`
 	BaseURL   string `json:"base_url"`
 	APIKeySet bool   `json:"api_key_set"`
+
+	// SignedIn is api_key_set's counterpart for the SDKs that sign in. The
+	// token itself never leaves the server, exactly as the key never does;
+	// the account and plan are here so Settings can say whose subscription is
+	// about to be spent without decoding a JWT in the browser.
+	SignedIn bool   `json:"signed_in"`
+	Account  string `json:"account,omitempty"`
+	Plan     string `json:"plan,omitempty"`
 }
 
 type providerWriteRequest struct {
@@ -26,23 +35,60 @@ type providerWriteRequest struct {
 	APIKey  *string `json:"api_key"`
 }
 
-// invalidSDKMessage names every SDK the API accepts.
+// invalidSDKMessage names every SDK this instance accepts.
 //
 // Built from the list rather than written out: this sentence was a literal in
 // two handlers, and both still said "openai, openrouter, google_vision, or
 // mistral" long enough for a third and fourth SDK to be a real prospect.
-func invalidSDKMessage() string {
-	return "sdk must be one of " + strings.Join(aiprovider.ValidSDKs, ", ") + "."
+//
+// It takes the runtime because one SDK is conditional. Naming chatgpt on an
+// instance that will refuse it would send an admin looking for a typo in a
+// value that was never going to work.
+func invalidSDKMessage(rt *config.Runtime) string {
+	return "sdk must be one of " + strings.Join(availableSDKs(rt), ", ") + "."
+}
+
+func availableSDKs(rt *config.Runtime) []string {
+	out := make([]string, 0, len(aiprovider.ValidSDKs))
+	for _, sdk := range aiprovider.ValidSDKs {
+		if sdk == aiprovider.SDKChatGPT && !rt.ChatGPTLogin() {
+			continue
+		}
+		out = append(out, sdk)
+	}
+	return out
 }
 
 func providerJSON(p aiprovider.Provider) providerResponse {
-	return providerResponse{
+	out := providerResponse{
 		ID:        p.ID,
 		SDK:       p.SDK,
 		Alias:     p.Alias,
 		BaseURL:   p.BaseURL,
 		APIKeySet: p.APIKey != "",
+		SignedIn:  p.OAuth != "",
 	}
+	if out.SignedIn {
+		// A token that will not parse is a row nobody can use, so it reads as
+		// signed out rather than as a signed-in account with no name.
+		tok, err := chatgpt.ParseToken(p.OAuth)
+		if err != nil || !tok.Valid() {
+			out.SignedIn = false
+		} else {
+			out.Account = firstNonBlank(tok.Email, tok.AccountID)
+			out.Plan = tok.Plan
+		}
+	}
+	return out
+}
+
+func firstNonBlank(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func handleListProviders(app core.App) func(*core.RequestEvent) error {
@@ -76,7 +122,12 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 			sdk = strings.TrimSpace(*req.SDK)
 		}
 		if !aiprovider.ValidSDK(sdk) {
-			return writeError(e, http.StatusBadRequest, invalidSDKMessage())
+			return writeError(e, http.StatusBadRequest, invalidSDKMessage(rt))
+		}
+		if sdk == aiprovider.SDKChatGPT {
+			if refused, err := refuseWhenChatGPTDisabled(e, rt); refused {
+				return err
+			}
 		}
 		alias := ""
 		if req.Alias != nil {
@@ -180,7 +231,12 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 		if req.SDK != nil {
 			sdk = strings.TrimSpace(*req.SDK)
 			if !aiprovider.ValidSDK(sdk) {
-				return writeError(e, http.StatusBadRequest, invalidSDKMessage())
+				return writeError(e, http.StatusBadRequest, invalidSDKMessage(rt))
+			}
+			if sdk == aiprovider.SDKChatGPT {
+				if refused, err := refuseWhenChatGPTDisabled(e, rt); refused {
+					return err
+				}
 			}
 			if !aiprovider.IsLLM(sdk) || !aiprovider.CanEmbed(sdk) || !aiprovider.CanOCR(sdk) {
 				// A failed settings lookup must not skip these guards:

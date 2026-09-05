@@ -402,12 +402,20 @@ func NormalizeLanguageList(raw string) string {
 	return strings.Join(out, ",")
 }
 
+// HasLLM reports whether anything can reason over a document yet. It is what
+// the setup wizard and the readiness check ask before declaring an install
+// finished.
+//
+// Configured rather than APIKey != "", for the same reason HasOCR and
+// HasEmbedding ask it: the chatgpt SDK holds a token instead of a key, and the
+// bare key test would have left a signed-in instance stuck on the setup wizard
+// with a working provider in front of it.
 func HasLLM(cfg Config) bool {
 	p := cfg.ExtractProvider
 	if p == nil {
 		p = cfg.ChatProvider
 	}
-	return p != nil && p.APIKey != "" && aiprovider.IsLLM(p.SDK)
+	return p != nil && p.Configured() && aiprovider.IsLLM(p.SDK)
 }
 
 // HasEmbedding reports whether dense retrieval can run. A provider missing the

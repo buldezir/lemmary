@@ -186,7 +186,7 @@ func TestSDKListsMatchTheirPredicates(t *testing.T) {
 		got  []string
 		want []string
 	}{
-		"llm":       {LLMSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral}},
+		"llm":       {LLMSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKChatGPT}},
 		"embedding": {EmbeddingSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKLocal}},
 		"ocr":       {OCRSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKDocling}},
 	}

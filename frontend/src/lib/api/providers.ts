@@ -5,6 +5,7 @@ export type ProviderSDK =
   | 'openrouter'
   | 'google_vision'
   | 'mistral'
+  | 'chatgpt'
   | 'local'
   | 'docling'
 
@@ -14,6 +15,11 @@ export type AIProvider = {
   alias: string
   base_url: string
   api_key_set: boolean
+  /** api_key_set's counterpart for the SDKs that sign in instead of taking a key. */
+  signed_in: boolean
+  /** Email or account id of the signed-in ChatGPT account. Never a token. */
+  account?: string
+  plan?: string
 }
 
 export type AIProviderWrite = {
@@ -42,6 +48,9 @@ export const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
   openrouter: 'https://openrouter.ai/api/v1',
   mistral: 'https://api.mistral.ai/v1',
   google_vision: '',
+  // Not a /v1 root: the Codex backend serves one endpoint, and the middleware
+  // behind this SDK rewrites the SDK's /chat/completions into it.
+  chatgpt: 'https://chatgpt.com/backend-api/codex',
   // The service names in docker-compose.embeddings.yml and
   // docker-compose.local-ocr.yml.
   local: 'http://embeddings:80/v1',
@@ -53,6 +62,7 @@ export const SDK_OPTIONS: { value: ProviderSDK; label: string }[] = [
   { value: 'openrouter', label: 'OpenRouter' },
   { value: 'mistral', label: 'Mistral' },
   { value: 'google_vision', label: 'Google Cloud Vision' },
+  { value: 'chatgpt', label: 'ChatGPT subscription' },
   { value: 'local', label: 'Local embeddings (self-hosted)' },
   { value: 'docling', label: 'Docling (local)' },
 ]
@@ -62,7 +72,29 @@ export function sdkLabel(sdk: ProviderSDK | string) {
 }
 
 export function isLLMProvider(sdk: string) {
-  return sdk === 'openai' || sdk === 'openrouter' || sdk === 'mistral'
+  return sdk === 'openai' || sdk === 'openrouter' || sdk === 'mistral' || sdk === 'chatgpt'
+}
+
+/**
+ * Mirrors aiprovider.RequiresOAuth. The one SDK whose credential is minted by
+ * signing in rather than typed, so the provider form shows a sign-in panel
+ * where every other SDK shows an API key field.
+ */
+export function requiresSignIn(sdk?: string) {
+  return sdk === 'chatgpt'
+}
+
+/**
+ * Whether a provider row can actually serve a request. Mirrors
+ * aiprovider.Provider.Configured, including the order it asks in: a signed-in
+ * SDK is judged by its token, a hosted one by its key, a sidecar by its address.
+ */
+export function providerConfigured(
+  item: Pick<AIProvider, 'sdk' | 'api_key_set' | 'signed_in' | 'base_url'>,
+) {
+  if (requiresSignIn(item.sdk)) return item.signed_in
+  if (requiresAPIKey(item.sdk)) return item.api_key_set
+  return item.base_url.trim() !== ''
 }
 
 /**
@@ -72,25 +104,29 @@ export function isLLMProvider(sdk: string) {
  * aiprovider.CanEmbed.
  */
 export function canEmbedProvider(sdk: string) {
-  return isLLMProvider(sdk) || sdk === 'local'
+  // chatgpt is the second SDK to force these apart: it chats without embedding,
+  // because the Codex backend serves no /embeddings at all.
+  return (isLLMProvider(sdk) && sdk !== 'chatgpt') || sdk === 'local'
 }
 
 /**
- * Mirrors aiprovider.RequiresAPIKey. Only the two sidecars are exempt: they run
- * on the operator's own host and are reached by address alone. Default-true
- * like the Go side, so an unknown SDK still asks.
+ * Mirrors aiprovider.RequiresAPIKey. The two sidecars are exempt because they
+ * run on the operator's own host and are reached by address alone; chatgpt is
+ * exempt because it signs in instead. Default-true like the Go side, so an
+ * unknown SDK still asks.
  */
 export function requiresAPIKey(sdk?: string) {
-  return sdk !== 'local' && sdk !== 'docling'
+  return sdk !== 'local' && sdk !== 'docling' && sdk !== 'chatgpt'
 }
 
 /** Which SDKs may be bound to a given task, for the provider pickers. */
 export function providerServesPurpose(sdk: string, purpose: ModelPurpose) {
   if (purpose === 'embedding') return canEmbedProvider(sdk)
   if (purpose === 'llm') return isLLMProvider(sdk)
-  // OCR is the binding google_vision and docling exist for, and the one a
-  // local embeddings endpoint cannot serve. Mirrors aiprovider.CanOCR.
-  return sdk !== 'local'
+  // OCR is the binding google_vision and docling exist for, and the one neither
+  // a local embeddings endpoint nor the Codex backend can serve. Mirrors
+  // aiprovider.CanOCR.
+  return sdk !== 'local' && sdk !== 'chatgpt'
 }
 
 /**
@@ -137,7 +173,10 @@ export function localOCRModelHint(sdk?: string) {
  * Empty for the hosted SDKs, which show the key field instead.
  */
 export function keylessProviderHint(sdk?: string) {
-  if (requiresAPIKey(sdk)) return ''
+  // requiresSignIn is checked too: chatgpt needs no key either, but it is not
+  // keyless — it has a credential, obtained by signing in, and the panel that
+  // does that stands where this hint would.
+  if (requiresAPIKey(sdk) || requiresSignIn(sdk)) return ''
   const overlay = sdk === 'local' ? 'docker-compose.embeddings.yml' : 'docker-compose.local-ocr.yml'
   return `Runs on your own host, so no API key is needed \u2014 the address is the whole configuration. The default is the service name from ${overlay}.`
 }
@@ -197,6 +236,50 @@ export async function listProviderModels(id: string, purpose: ModelPurpose = 'll
     { fallbackError: 'Failed to load models' },
   )
   return { models: data.models ?? [], sdk: data.sdk ?? '' }
+}
+
+export type ChatGPTDeviceLogin = {
+  user_code: string
+  verification_url: string
+  interval_seconds: number
+  expires_in: number
+}
+
+export type ChatGPTLoginStatus = {
+  status: 'pending' | 'complete' | 'expired'
+  provider?: AIProvider
+}
+
+/**
+ * Starts the device-code sign-in and returns the code to read out and the page
+ * to type it into. The device auth id stays on the server: it is the half that
+ * would let anyone holding it finish somebody else's login.
+ */
+export function startChatGPTLogin(id: string) {
+  return apiFetch<ChatGPTDeviceLogin>(`/api/app/providers/${id}/chatgpt/device`, {
+    method: 'POST',
+    fallbackError: 'Failed to start the ChatGPT sign-in',
+  })
+}
+
+/**
+ * Checks once whether the code has been approved. The caller drives the
+ * interval, so a sign-in nobody completes costs one small request every few
+ * seconds rather than a connection held open for fifteen minutes.
+ */
+export function pollChatGPTLogin(id: string) {
+  return apiFetch<ChatGPTLoginStatus>(`/api/app/providers/${id}/chatgpt/device/poll`, {
+    method: 'POST',
+    fallbackError: 'Failed to check the ChatGPT sign-in',
+  })
+}
+
+/** Clears the stored token. The provider row stays, ready for another account. */
+export function signOutChatGPT(id: string) {
+  return apiFetch<AIProvider>(`/api/app/providers/${id}/chatgpt`, {
+    method: 'DELETE',
+    fallbackError: 'Failed to sign out of ChatGPT',
+  })
 }
 
 export type OCRProviderInfo = {

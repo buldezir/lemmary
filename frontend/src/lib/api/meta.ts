@@ -13,23 +13,33 @@ export type AppMeta = {
    * rejects, which fails the whole patch including tenant-owned timeouts.
    */
   aiManaged?: boolean
+  /**
+   * Whether this instance allows signing in with a ChatGPT subscription
+   * (AI_CHATGPT_LOGIN). Unknown reads as off, the opposite default to
+   * aiManaged and for the same reason: both err towards offering less. An SDK
+   * shown here that the server refuses is a dead end an admin cannot diagnose.
+   */
+  chatgptLogin?: boolean
 }
 
 export async function getAppMeta(): Promise<AppMeta> {
   try {
-    const data = await apiFetch<{ app_name?: string; accent?: string; ai_managed?: boolean }>(
-      '/api/app/meta',
-      {
-        public: true,
-        fallbackError: 'Failed to load app meta',
-      },
-    )
+    const data = await apiFetch<{
+      app_name?: string
+      accent?: string
+      ai_managed?: boolean
+      chatgpt_login?: boolean
+    }>('/api/app/meta', {
+      public: true,
+      fallbackError: 'Failed to load app meta',
+    })
     const appName = typeof data.app_name === 'string' ? data.app_name.trim() : ''
     const accent = typeof data.accent === 'string' ? data.accent.trim() : ''
     return {
       appName: appName || DEFAULT_APP_NAME,
       accent: accent || DEFAULT_ACCENT,
       aiManaged: data.ai_managed === true,
+      chatgptLogin: data.chatgpt_login === true,
     }
   } catch {
     // A name and accent have safe defaults; who owns AI configuration does not.

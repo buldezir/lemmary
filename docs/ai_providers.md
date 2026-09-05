@@ -16,6 +16,7 @@ to use.
 | `openai` | ✅ | ✅ models that accept files/images | ✅ |
 | `openrouter` | ✅ many vendors on one key | ✅ models advertising `file` input | ✅ |
 | `google_vision` | ❌ | ✅ | ❌ |
+| `chatgpt` | ✅ **on a ChatGPT subscription** | ❌ | ❌ |
 | `docling` | ❌ | ✅ **on your own host** | ❌ |
 | `local` | ❌ | ❌ | ✅ **a model on your own hardware** |
 
@@ -47,6 +48,13 @@ The alternatives are worth naming:
   Its default recognizer is PaddleOCR's PP-OCR models, so there is no separate
   PaddleOCR provider to choose. The price is real: a multi-gigabyte image, and
   seconds rather than milliseconds a page. See [Local OCR](/local_ocr).
+- **`chatgpt`** — chat only, billed against a ChatGPT Plus, Pro or Business
+  subscription instead of per token. There is no key to paste: you add the
+  provider, sign in with a device code, and bind chat, extraction or Deep Search
+  to it. Embeddings and OCR are refused, because the endpoint behind it serves
+  neither. Off unless `AI_CHATGPT_LOGIN=1`, and refused on a managed instance —
+  it reaches OpenAI's own Codex endpoints, so the account you sign in with is
+  the one carrying the risk. See [ChatGPT sign-in](/chatgpt_login).
 - **`local`** — embeddings only, on a model you run yourself. Like `docling` it
   takes no API key: the base URL is the whole configuration. It is the mirror
   image of `google_vision` — a single job, done off the network. See [Local
@@ -93,11 +101,12 @@ after that.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `AI_MANAGED` | `0` | Whether the operator owns AI configuration. See the table above. |
-| `AI_SDK` | `openai` | The language model's SDK: `openai`, `openrouter` or `mistral`. `google_vision`, `docling` and `local` are refused — none of them can serve extraction. |
+| `AI_CHATGPT_LOGIN` | `0` | Whether **Settings** offers the `chatgpt` SDK, which bills a ChatGPT subscription instead of a metered key. Off unless set, and refused together with `AI_MANAGED=1`. It is not an `AI_SDK` value: the provider is added and signed in to from Settings, because its credential is minted rather than typed. See [ChatGPT sign-in](/chatgpt_login). |
+| `AI_SDK` | `openai` | The language model's SDK: `openai`, `openrouter` or `mistral`. `google_vision`, `docling` and `local` are refused — none of them can serve extraction. `chatgpt` too: it has no key to seed from the environment. |
 | `AI_API_KEY` | empty | Its credential. **One key is usually the whole configuration**: with this and nothing else the app creates one provider and routes extraction, chat, Deep Search *and* OCR to it. |
 | `AI_MODEL` | `gpt-5.6-luna` | The model for extraction, chat and Deep Search. Be sure it supports the result language set in **Settings**. |
 | `AI_BASE_URL` | the SDK's own endpoint | An OpenAI-compatible base URL, for a gateway or a self-hosted endpoint. |
-| `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `openai`, `openrouter`, `mistral`, `google_vision` or `docling`. `local` is refused — it serves embeddings only. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
+| `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `openai`, `openrouter`, `mistral`, `google_vision` or `docling`. `local` and `chatgpt` are refused — neither can read a document. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
 | `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK` — except `docling`, which has no account behind it. Optional there, and only if you started the sidecar with `DOCLING_SERVE_API_KEY`. |
 | `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. For `docling` the default is the compose service name, `http://docling:5001`, so `OCR_SDK=docling` alone is a complete configuration under the overlay. |
 | `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Not required for `google_vision` or `docling`, which read a document without one; for `docling` it optionally names the OCR engine instead. See [Choosing an engine](/local_ocr#choosing-an-engine). |

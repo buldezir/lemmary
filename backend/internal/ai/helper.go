@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/shared"
 
 	"lemmary/backend/internal/aiprovider"
@@ -89,8 +90,8 @@ type DistillResult struct {
 }
 
 // NewHelper builds a Helper on an OpenAI-compatible chat endpoint.
-func NewHelper(sdk, apiKey, model, baseURL string, timeout time.Duration, logger *slog.Logger) Helper {
-	return &openAIHelper{client: NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", timeout, logger)}
+func NewHelper(sdk, apiKey, model, baseURL string, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) Helper {
+	return &openAIHelper{client: NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", timeout, logger, extra...)}
 }
 
 type openAIHelper struct {

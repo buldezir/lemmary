@@ -4,8 +4,10 @@ import {
   canEmbedProvider,
   isLLMProvider,
   eligibleProviders,
+  providerConfigured,
   providerServesPurpose,
   requiresAPIKey,
+  requiresSignIn,
   SDK_DEFAULT_BASE,
   SDK_OPTIONS,
 } from './providers'
@@ -111,5 +113,37 @@ describe('eligibleProviders', () => {
 
   it('keeps an already-bound provider whatever its SDK, so it never renders blank', () => {
     expect(eligibleProviders(all, 'llm', 'p3').map((p) => p.id)).toEqual(['p1', 'p3'])
+  })
+})
+
+// chatgpt is the mirror image of local: it chats and does nothing else, where
+// local embeds and does nothing else. Both exist to keep these predicates from
+// collapsing back into one "is it a hosted LLM" question.
+describe('the ChatGPT subscription SDK', () => {
+  it('chats but neither embeds nor reads a document', () => {
+    expect(isLLMProvider('chatgpt')).toBe(true)
+    expect(canEmbedProvider('chatgpt')).toBe(false)
+    expect(providerServesPurpose('chatgpt', 'llm')).toBe(true)
+    expect(providerServesPurpose('chatgpt', 'embedding')).toBe(false)
+    expect(providerServesPurpose('chatgpt', 'ocr')).toBe(false)
+  })
+
+  it('signs in instead of taking a key', () => {
+    expect(requiresSignIn('chatgpt')).toBe(true)
+    expect(requiresAPIKey('chatgpt')).toBe(false)
+    for (const sdk of ['openai', 'openrouter', 'mistral', 'google_vision', 'local', 'docling']) {
+      expect(requiresSignIn(sdk)).toBe(false)
+    }
+  })
+
+  it('is configured by its token, not by a key or an address', () => {
+    const row = { sdk: 'chatgpt' as const, api_key_set: true, signed_in: false, base_url: 'x' }
+    expect(providerConfigured(row)).toBe(false)
+    expect(providerConfigured({ ...row, signed_in: true })).toBe(true)
+  })
+
+  it('is offered in the SDK picker with a default base URL', () => {
+    expect(SDK_OPTIONS.some((option) => option.value === 'chatgpt')).toBe(true)
+    expect(SDK_DEFAULT_BASE.chatgpt).toBe('https://chatgpt.com/backend-api/codex')
   })
 })

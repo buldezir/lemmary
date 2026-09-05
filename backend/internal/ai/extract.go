@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/shared"
 
 	"lemmary/backend/internal/aiprovider"
@@ -242,6 +243,6 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 	return metadata, nil
 }
 
-func NewExtractor(sdk, apiKey, model, baseURL, promptVer, resultLanguage string, timeout time.Duration, logger *slog.Logger) Extractor {
-	return NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage, timeout, logger)
+func NewExtractor(sdk, apiKey, model, baseURL, promptVer, resultLanguage string, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) Extractor {
+	return NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage, timeout, logger, extra...)
 }
