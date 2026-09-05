@@ -1,115 +1,14 @@
-# Setup Guide
+# Configuration Guide
 
-Running from source, environment variables, and how each feature behaves. Two
-things live in their own guides:
+Runtime configuration, first-launch choices, and how Lemmary's features
+behave. For the usual installation path, start with
+[Self-hosting with Docker](/self_hosting). Host toolchains and source builds
+live separately in [Development environment](/development).
 
-- [Self-hosting with Docker](/self_hosting) — the published image, volumes,
-  proxies, backups and upgrades
+Two configuration areas have their own guides:
+
 - [AI providers and models](/ai_providers) — which provider to pick, the
   `AI_*` / `OCR_*` block, and what embeddings cost
-
-## Prerequisites
-
-- Go 1.27+ with cgo enabled (a C toolchain: `gcc` or `clang`)
-- Node.js 20+
-- [pnpm](https://pnpm.io/installation) 11+ (`npm install -g pnpm`)
-- [poppler-utils](https://poppler.freedesktop.org/) for all PDF work: `pdftoppm` (preview and page thumbnails), `pdfinfo` (page count), `pdftotext` (page text), `pdfseparate` and `pdfunite` (page extraction for [document splitting](#document-splitting))
-
-On macOS: `brew install poppler`. On Debian/Ubuntu: `apt install poppler-utils`.
-
-### FAISS (required to build the backend)
-
-Search is backed by [bleve](https://github.com/blevesearch/bleve), whose vector
-support is a cgo binding to FAISS. bleve compiles that API out unless the
-`vectors` build tag is set, and Lemmary is always built with it — one binary,
-one image, no edition without vector search. A build without the tag stops
-immediately on `backend/internal/fulltext/vectors_required.go`.
-
-The library has to be **blevesearch's fork** of FAISS. A distribution
-`libfaiss` package, however recent, is not enough: the Go binding calls C entry
-points (`*_c_ex.h`) that exist only in the fork. `scripts/faiss-build.sh` owns
-the pinned commit — the single source of truth, moved only when bleve moves,
-from the compatibility table in bleve's `docs/vectors.md`.
-
-Every route below also needs OpenBLAS and libgomp present when the backend is
-linked and when it runs (`apt install libopenblas0-pthread libgomp1`;
-`libopenblas-dev` brings them along).
-
-```bash
-# Option 1 — system-wide. One sudo, and nothing to set afterwards.
-sudo apt install cmake ninja-build g++ libopenblas-dev
-sudo scripts/faiss-build.sh --prefix /usr/local && sudo ldconfig
-
-# Option 2 — in your home directory. Same build, no root.
-scripts/faiss-build.sh --prefix "$HOME/.local/faiss"
-
-# Option 3 — out of the Docker build. No cmake, no compiler, no root: the
-# `faiss` stage is a scratch image holding just the artifacts, so the export is
-# about 10 MB rather than a builder's whole root filesystem.
-docker buildx build --target faiss --output type=local,dest=./.faiss .
-mkdir -p "$HOME/.local/faiss" && cp -a .faiss/lib .faiss/include "$HOME/.local/faiss/"
-```
-
-Options 2 and 3 put FAISS somewhere neither the compiler nor the loader looks,
-so three variables point them at it:
-
-```bash
-export CGO_CFLAGS=-I$HOME/.local/faiss/include
-export CGO_LDFLAGS=-L$HOME/.local/faiss/lib
-export LD_LIBRARY_PATH=$HOME/.local/faiss/lib
-```
-
-The repository's `.envrc` sets all three when `~/.local/faiss` exists, so with
-[direnv](https://direnv.net) (`direnv allow`) there is nothing to remember. It
-also exports `GOFLAGS=-tags=vectors`, which is what makes a bare `go build`,
-`go test` and gopls work in this tree; without direnv, either pass
-`-tags vectors` every time or set it once with `go env -w GOFLAGS=-tags=vectors`.
-
-FAISS has to be on this machine only for Go commands you run here: a plain
-`go build`/`go test`, or `LEMMARY_VERIFY_HOST=1 ./scripts/test-all.sh`. The
-plain `./scripts/test-all.sh` delegates to the overlay, which runs every stage
-in a Docker image that already carries FAISS.
-
-macOS: `brew install cmake ninja libomp openblas`, then option 1 or 2 (the
-script picks Homebrew's libomp up on its own).
-
-## Running from source
-
-```bash
-cp .env.example .env
-```
-
-### Start the backend
-
-```bash
-cd backend
-go run . serve --http=127.0.0.1:8090
-```
-
-On first run, migrations create:
-
-- `tags`
-- `correspondents`
-- `document_types`
-- `documents`
-- `processing_jobs`
-- `app_settings` (singleton; seeded from `.env` on first boot, and re-applied on every boot under `AI_MANAGED=1`)
-- `ai_providers` (named OCR/LLM endpoints; seeded from `.env` on first boot)
-- `outbound_emails` (outbound mail log when SMTP is not configured; superuser-only)
-
-### Build the frontend
-
-The Go binary serves the SPA and the compiled docs from `public/`. Build them
-once, then restart the backend:
-
-```bash
-cd frontend
-pnpm install --frozen-lockfile
-pnpm run build
-```
-
-This writes the app to `public/` and these docs to `public/docs/`, both served
-at the backend's address.
 
 ## Environment variables
 
@@ -559,16 +458,6 @@ Limits:
 - An account may keep 500 chats. Past that, new ones are refused until some are deleted; nothing is pruned automatically.
 
 Deleting a document deletes its Ask AI chats, and deleting an account deletes all of its chats. The `chat_sessions` and `chat_messages` collections carry no API rules, so — like `passkey_credentials` — they are not reachable through `/api/collections` at all and `/api/app/chats` is the only way in. That is deliberate: a client able to write its own `assistant` messages could plant text that the server would then replay to the model as a genuine prior answer.
-
-## Useful commands
-
-```bash
-# Frontend production build (SPA -> ../public, docs -> ../public/docs)
-cd frontend && pnpm run build
-
-# Create / update admin (PocketBase superuser + paired users account)
-cd backend && go run . superuser upsert admin@example.com 'your-password'
-```
 
 ## Paperless-ngx API compatibility
 

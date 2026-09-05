@@ -31,8 +31,9 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: 'Screenshots', link: '/screenshots' },
-      { text: 'Setup', link: '/setup' },
+      { text: 'Compare', link: '/comparison' },
       { text: 'Self-hosting', link: '/self_hosting' },
+      { text: 'Configure', link: '/setup' },
       { text: 'AI providers', link: '/ai_providers' },
       { text: 'Passkeys', link: '/passkeys' },
     ],
@@ -41,8 +42,11 @@ export default defineConfig({
         text: 'Guides',
         items: [
           { text: 'Screenshots', link: '/screenshots' },
-          { text: 'Setup', link: '/setup' },
+          { text: 'Lemmary vs alternatives', link: '/comparison' },
           { text: 'Self-hosting with Docker', link: '/self_hosting' },
+          { text: 'Configuration Guide', link: '/setup' },
+          { text: 'Development environment', link: '/development' },
+          { text: 'Storage', link: '/storage' },
           { text: 'AI providers and models', link: '/ai_providers' },
           { text: 'Local OCR', link: '/local_ocr' },
           { text: 'Local embeddings', link: '/local_embeddings' },

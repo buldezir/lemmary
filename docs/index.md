@@ -3,8 +3,11 @@
 Setup and operation guides for Lemmary.
 
 - [Screenshots](/screenshots) — a tour of every screen, from the setup wizard to Deep Search
-- [Setup Guide](/setup) — run from source, env vars, features, troubleshooting
+- [Lemmary vs Paperless-ngx vs Papra](/comparison) — compare focus, OCR, AI, sharing, automation, encryption, and licensing
 - [Self-hosting with Docker](/self_hosting) — the image, volumes, proxies, backups, upgrades
+- [Configuration Guide](/setup) — environment variables, first launch, features, and troubleshooting
+- [Development environment](/development) — host prerequisites, FAISS, and running from source
+- [Storage](/storage) — where SQLite, local or S3 document files, embeddings, and search indexes live
 - [AI providers and models](/ai_providers) — pick a provider, seed the keys, bind the models
 - [Local OCR](/local_ocr) — run the OCR engine yourself, so scans never leave the host
 - [Local embeddings](/local_embeddings) — run the embedding model yourself, so Deep Search costs no tokens

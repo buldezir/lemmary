@@ -28,7 +28,7 @@ RUN /usr/local/bin/faiss-build.sh --prefix /opt/faiss --target-arch "$TARGETARCH
 
 # Just the artifacts, so `docker buildx build --target faiss
 # --output type=local,dest=./.faiss .` gives a developer lib/ and include/
-# rather than a builder's whole root filesystem. See docs/setup.md.
+# rather than a builder's whole root filesystem. See docs/development.md.
 FROM scratch AS faiss
 COPY --from=faiss-build /opt/faiss/ /
 

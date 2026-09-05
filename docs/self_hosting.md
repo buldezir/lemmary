@@ -4,7 +4,7 @@ The published image carries everything Lemmary needs — the Go binary, the buil
 SPA and these docs, poppler for PDF work, and the FAISS build its vector search
 links against. Nothing has to be installed on the host but Docker.
 
-To run from source instead, see the [Setup Guide](/setup#running-from-source).
+To run from source instead, see [Development environment](/development).
 
 ## Quick start
 
@@ -37,7 +37,11 @@ pulling it. Published tags are `latest` (default branch), the release version
 
 ## What lives where
 
-Everything stateful is under `/app/pb_data`, on the `app_data` volume:
+For the short architectural overview, including S3 document storage and where
+embedding vectors live, see [Storage](/storage).
+
+With the default local file storage, everything stateful is under
+`/app/pb_data`, on the `app_data` volume:
 
 | Path | Contents |
 | --- | --- |
