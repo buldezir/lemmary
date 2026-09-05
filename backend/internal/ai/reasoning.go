@@ -67,6 +67,8 @@ func resetNoReasoningEffort() {
 	})
 }
 
+// modelKey normalises a configured model string for the two per-model notes
+// this package keeps (see also responses.go).
 func modelKey(model string) string {
 	return strings.ToLower(strings.TrimSpace(model))
 }

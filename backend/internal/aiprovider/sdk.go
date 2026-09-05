@@ -233,6 +233,16 @@ func ChatCompletionsURL(baseURL string) string {
 	return base + "/chat/completions"
 }
 
+// ResponsesURL is the /responses endpoint for an OpenAI-compatible base URL.
+// Some models are served only there; see internal/ai/responses.go.
+func ResponsesURL(baseURL string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		base = DefaultBaseURL(SDKOpenAI)
+	}
+	return base + "/responses"
+}
+
 // EmbeddingsURL is the /embeddings endpoint for an OpenAI-compatible base URL.
 // It exists for the outbound request log: the SDK builds the real URL itself,
 // and a log line that guessed a different one would be worse than none.

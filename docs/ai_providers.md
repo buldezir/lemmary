@@ -290,6 +290,15 @@ size, memory, GPU variants and the per-page cost — is in
   [Local OCR](/local_ocr#what-it-costs).
 - **AI extraction fails** — check that an extraction model is bound and that it
   is a chat model, not an embedding or OCR model.
+- **A model in the picker answers every request with a 500** — some models are
+  served only by the OpenAI *Responses* API, and their gateway returns a bare
+  500 on `/chat/completions` even for a one-word prompt. OpenCode Zen routes
+  `gpt-5.6-luna`, `grok-4.6` and the `muse-spark` models that way. Lemmary now
+  discovers this by itself: the first request to such a model is refused, sent
+  again to `/responses`, and every later request for that model goes straight
+  there. The log line is `chat completions refused this model; retrying on the
+  Responses API`, and it appears once per model per restart, not once per
+  request. Nothing to configure.
 - **A managed instance will not start** — the log names the missing or invalid
   variable in the provider block; nothing inside the instance can repair it.
 - **Local Embeddings embeds nothing** — `docker compose logs embeddings`. On a
