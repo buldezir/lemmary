@@ -182,3 +182,25 @@ func TestHelperDistillRejectsAnEmptyQuestion(t *testing.T) {
 		t.Fatal("a distil without a question should be refused")
 	}
 }
+
+// The helper inherits the general AI timeout, which is sized for the main
+// model. A helper call is the cheap, disposable leg of a run -- a batch that
+// fails is passed through as raw text -- so waiting minutes on one buys
+// nothing and lengthens the run for every batch that hangs.
+func TestHelperTimeoutIsCapped(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		give time.Duration
+		want time.Duration
+	}{
+		{"a generous shared timeout is capped", 10 * time.Minute, maxHelperTimeout},
+		{"unset falls back to the cap", 0, maxHelperTimeout},
+		{"a shorter timeout is respected", 10 * time.Second, 10 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := helperTimeout(tc.give); got != tc.want {
+				t.Fatalf("timeout = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}

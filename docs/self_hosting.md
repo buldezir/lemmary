@@ -121,7 +121,19 @@ different proxy can get wrong:
   `IMPORT_STAGING_MAX_BYTES` or archive uploads start failing.
 - **Deep Search keeps streaming.** `POST /api/app/search/stream` is
   server-sent events, and Traefik streams responses rather than buffering them,
-  so each search, read and survey still appears as it happens.
+  so each search, read and survey still appears as it happens. Do not put a
+  `compress` middleware in front of it without excluding `text/event-stream`,
+  or the steps arrive in one lump at the end.
+- **Long answers need room.** A research run is minutes of work, and the
+  stream sends a comment frame every 15 seconds so the connection is never
+  idle. That satisfies `idleTimeout`, but **not**
+  `respondingTimeouts.writeTimeout`: like Go's `http.Server.WriteTimeout`, it
+  is an absolute deadline from the start of the response, and no amount of
+  heartbeat refreshes it. Leave it at 0 on the entrypoint that serves the app,
+  or set it past the longest run you expect. `forwardingTimeouts.responseHeaderTimeout`
+  matters for the same reason — it caps the wait for the backend's first byte.
+  Losing the connection no longer loses the answer (the run finishes and the
+  turn is saved either way), but the user watching it does lose the progress.
 
 With [encryption at rest](/encryption), add `VAULT_ALLOW_INSECURE_GATE=1`: the
 unlock gate refuses a non-loopback bind address, and inside a container the app

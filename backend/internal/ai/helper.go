@@ -88,9 +88,31 @@ type DistillResult struct {
 	Usage Usage
 }
 
+// maxHelperTimeout caps how long one distill call may take, however generous
+// the shared AI timeout is.
+//
+// The helper is the fast leg of a research run: many short calls whose failure
+// is survivable, since a batch that does not come back is passed through as
+// raw text instead. So a slow helper endpoint is not worth waiting on. Left
+// uncapped it inherited the general AI timeout, and a helper that simply never
+// answered burned that in full, per batch, several batches to a run --
+// observed as three consecutive two-minute waits that produced no rows at all,
+// turning a one-minute run into a five-minute one for no gain. Failing fast
+// reaches the same fallback sooner.
+const maxHelperTimeout = 45 * time.Second
+
+// helperTimeout clamps the shared AI timeout down to what a helper call is
+// worth waiting for.
+func helperTimeout(shared time.Duration) time.Duration {
+	if shared <= 0 || shared > maxHelperTimeout {
+		return maxHelperTimeout
+	}
+	return shared
+}
+
 // NewHelper builds a Helper on an OpenAI-compatible chat endpoint.
 func NewHelper(sdk, apiKey, model, baseURL string, timeout time.Duration, logger *slog.Logger) Helper {
-	return &openAIHelper{client: NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", timeout, logger)}
+	return &openAIHelper{client: NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", helperTimeout(timeout), logger)}
 }
 
 type openAIHelper struct {
