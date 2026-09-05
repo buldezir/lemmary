@@ -143,11 +143,25 @@ jobs:
         run: ./scripts/test-all.sh
 
   build:
-    # A fork's pull request never builds. The job holds a package-write token
-    # and runs on the self-hosted runner, and a fork's code must have neither;
-    # skipping is the only safe answer, since there is no fork equivalent of
-    # the test job's throwaway-runner fallback once GHCR push is involved.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Never publish an image for a red pull request: the tag moves with the
+    # branch, so pushing one for a failed run would leave whoever pulls it
+    # running code the suite rejected, with nothing in the tag to say so.
+    needs: test
+    # `always()` so this is evaluated at all when `test` did not succeed --
+    # without it a failed dependency skips the job silently instead of on the
+    # terms below. A push or tag skips `test` outright (it is pull-request
+    # only), and a skipped dependency must not block the release build, hence
+    # accepting "skipped" alongside "success".
+    #
+    # A fork's pull request never builds either. The job holds a package-write
+    # token and runs on the self-hosted runner, and a fork's code must have
+    # neither; skipping is the only safe answer, since there is no fork
+    # equivalent of the test job's throwaway-runner fallback once GHCR push is
+    # involved.
+    if: >-
+      always()
+      && (needs.test.result == 'success' || needs.test.result == 'skipped')
+      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     # Otherwise only push, tag and manual dispatch from this repository, so
     # there is no untrusted code to keep off the runner.
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted", "linux", "x64", "homelab"]') }}
