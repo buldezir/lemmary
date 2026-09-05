@@ -326,8 +326,14 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 			reply, hits, err = turn.agent.Search(turn.agentContext(ctx), turn.messages, turn.tools.tags, turn.tools.search, ai.SearchOptions{DenseRetrieval: turn.tools.dense})
 		}
 		if err != nil {
-			app.Logger().Error("deep search failed", "mode", turn.mode, slog.Any("error", err))
 			discardEmptySession(app, turn.opened)
+			// Running out of budget is not the provider failing, and saying so
+			// sends the caller to check an AI configuration that is fine.
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				app.Logger().Warn("deep search ran out of budget", "mode", turn.mode, "budget", searchRunBudget.String())
+				return writeError(e, http.StatusGatewayTimeout, runTooLongMessage)
+			}
+			app.Logger().Error("deep search failed", "mode", turn.mode, slog.Any("error", err))
 			return writeError(e, http.StatusBadGateway, "The AI provider could not complete the search.")
 		}
 		if hits == nil {
@@ -413,11 +419,19 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 		if err != nil {
 			// Either way the conversation this request opened never got a turn.
 			discardEmptySession(app, turn.opened)
-			if ctx.Err() != nil {
-				// The run itself was stopped -- cancelled by the client through
-				// /search/cancel, or out of budget. Not the same as the client
-				// merely hanging up, which no longer reaches here at all.
-				app.Logger().Info("search run stopped", "mode", turn.mode, slog.Any("error", ctx.Err()))
+			if runErr := ctx.Err(); runErr != nil {
+				// The run itself was stopped -- out of budget, or cancelled
+				// through /search/cancel. Not the same as the client merely
+				// hanging up, which no longer reaches here at all.
+				app.Logger().Info("search run stopped", "mode", turn.mode, slog.Any("error", runErr))
+				// Someone may still be watching. A cancel they asked for needs
+				// no explanation, but a run that ran out of budget would
+				// otherwise end as a bare EOF, which the page can only report
+				// as having produced no answer at all.
+				if errors.Is(runErr, context.DeadlineExceeded) {
+					stream.Send(ai.ResearchEvent{Type: "error", Message: runTooLongMessage})
+				}
+				stream.Send(ai.ResearchEvent{Type: "done"})
 				return nil
 			}
 			app.Logger().Error("search run failed", "mode", turn.mode, slog.Any("error", err))
@@ -430,6 +444,18 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 		if documents == nil {
 			documents = []ai.DocumentHit{}
 		}
+
+		// Stored before anything else is written, and this order is the point.
+		// The session has been there since before the run started; the turn is
+		// what was missing, and it must not be made to wait behind a socket.
+		// A write to a half-closed connection can block until the kernel gives
+		// up on it, and every one of those blocked between a finished answer
+		// and the save that keeps it -- which is the failure this whole change
+		// exists to end. Unconditional for the same reason: a client that hung
+		// up mid-run is exactly the case that must still find its answer
+		// waiting in the sidebar.
+		saved := persistSearchTurn(app, turn, result.Reply, documents)
+
 		stream.Send(ai.ResearchEvent{Type: "documents", Documents: documents})
 		// The whole answer follows the deltas: the deltas are a live preview,
 		// this is the authoritative text (citation-checked). Incomplete says
@@ -441,14 +467,8 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 			Content:    result.Reply,
 			Incomplete: result.Incomplete,
 		})
-
-		// The turn is stored only now, with the answer complete -- the session
-		// itself has been there since before the run started. Unconditional: a
-		// client that hung up mid-run is exactly the case that must still find
-		// its answer waiting in the sidebar. For one that is still here, this
-		// event is what makes the conversation resumable, not what makes the
-		// answer visible -- it is already on screen from the events above.
-		saved := persistSearchTurn(app, turn, result.Reply, documents)
+		// For a client still here, this is what makes the conversation
+		// resumable, not what makes the answer visible -- that arrived above.
 		stream.Send(searchSavedEvent{
 			Type:      "saved",
 			Session:   saved.Session,

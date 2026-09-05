@@ -104,16 +104,13 @@ export function SearchPage() {
 
   const sessions = useAsync(() => listChatSessions({ kind: 'search' }), [])
 
-  useEffect(
-    () => () => {
-      const run = runRef.current
-      if (run) {
-        run.controller.abort()
-        void cancelSearchRun(run.id)
-      }
-    },
-    [],
-  )
+  // Unmounting stops this page painting the run. It deliberately does not stop
+  // the run: leaving the page, closing the tab and losing the network are the
+  // same event to everything downstream, and cancelling here would restore the
+  // exact behaviour this change removed -- an answer thrown away because
+  // nobody was watching it arrive. Cancelling is `endRun`, which is reached
+  // only by someone actually asking for it.
+  useEffect(() => () => runRef.current?.controller.abort(), [])
 
   /**
    * Ends the run that owns the screen.
@@ -219,14 +216,26 @@ export function SearchPage() {
           run.controller.signal,
         )
       } catch (err) {
-        // Cancelling is not a provider failure, and the fetch reports it as a
-        // DOMException nobody wants to read.
-        if (run.controller.signal.aborted) {
+        // A turn that was already stored is not a failed send, however the
+        // stream ended.
+        //
+        // The `saved` event can be the last thing to arrive before a drop, and
+        // treating that as a failure was expensive: the composer came back
+        // with the question still in it, the answer vanished, and retrying
+        // bought a second run of research that had already been paid for --
+        // plus a second chat, since the session is created before the agent
+        // starts and the page has not learnt its id yet.
+        if (box.stored) {
+          streamError = ''
+        } else if (run.controller.signal.aborted) {
+          // Cancelling is not a provider failure, and the fetch reports it as
+          // a DOMException nobody wants to read.
           throw new Error(turnMode === 'research' ? 'Research cancelled.' : 'Search cancelled.', {
             cause: err,
           })
+        } else {
+          throw err
         }
-        throw err
       } finally {
         if (runRef.current === run) {
           runRef.current = null
@@ -240,7 +249,11 @@ export function SearchPage() {
       }
       const stored = box.stored
       if (!stored) {
-        throw new Error('The research run ended without an answer.')
+        throw new Error(
+          turnMode === 'research'
+            ? 'The research run ended without an answer.'
+            : 'The search ended without an answer.',
+        )
       }
 
       const finished = collected.map((step) => ({ ...step, done: true }))

@@ -25,9 +25,41 @@ export function errorDetail(data: unknown, fallback: string): string {
   return typeof detail === 'string' && detail ? detail : fallback
 }
 
-/** What the user is told when the connection itself failed. */
-export const connectionLostMessage =
-  'The connection to the server was interrupted. If the answer finished, it is saved in your chat history.'
+/**
+ * What the user is told when a plain request never made it.
+ *
+ * Deliberately says nothing about what happens next: `apiFetch` carries
+ * documents, settings, imports and passkeys, and a POST that failed on the
+ * wire may or may not have been applied. Only the search stream can promise
+ * more, and it does -- see `streamConnectionLostMessage`.
+ */
+export const connectionLostMessage = 'Could not reach the server. Check your connection and try again.'
+
+/**
+ * The same failure on a search stream, where more is known.
+ *
+ * A run outlives its connection: the server finishes it and stores the turn
+ * whether or not anyone is still reading. So losing the stream is not losing
+ * the answer, and saying so is the difference between a user who waits and one
+ * who pays for the same research twice.
+ */
+export const streamConnectionLostMessage =
+  'The connection to the server was interrupted. The run continues, and its answer will be in your chat history.'
+
+/**
+ * A stream that broke after the run had already started.
+ *
+ * Typed rather than a plain Error because callers must treat it differently
+ * from a send that failed: the question reached the server and is being
+ * answered, so putting it back in the composer invites the user to pay for the
+ * same run twice.
+ */
+export class StreamInterruptedError extends Error {
+  constructor(cause: unknown) {
+    super(streamConnectionLostMessage, { cause })
+    this.name = 'StreamInterruptedError'
+  }
+}
 
 /**
  * Turns a transport failure into something worth reading.
@@ -139,6 +171,8 @@ export async function apiStream<TEvent>(path: string, options: ApiStreamOptions<
       signal: options.signal,
     })
   } catch (err) {
+    // The generic message, not the stream's: this request never connected, so
+    // there is no run on the other side to promise anything about.
     if (isConnectionError(err)) {
       throw new Error(connectionLostMessage, { cause: err })
     }
@@ -171,7 +205,7 @@ export async function apiStream<TEvent>(path: string, options: ApiStreamOptions<
       // `TypeError: Error in input stream`, which is not something to show
       // anyone; the run itself may well be finishing on the server.
       if (isConnectionError(err)) {
-        throw new Error(connectionLostMessage, { cause: err })
+        throw new StreamInterruptedError(err)
       }
       throw err
     }

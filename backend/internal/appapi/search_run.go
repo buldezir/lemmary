@@ -13,6 +13,11 @@ import (
 // provider and not a limit on how long research may legitimately take.
 const searchRunBudget = 20 * time.Minute
 
+// runTooLongMessage is what a caller is told when a run hit that ceiling. It
+// names no provider: the provider is usually fine, and pointing at it sends
+// people to re-check an AI configuration that was never the problem.
+const runTooLongMessage = "This run took too long and was stopped."
+
 // searchRuns holds the cancel func of every run currently in flight, so an
 // explicit cancel request can stop one.
 //
