@@ -10,6 +10,7 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
+	"github.com/openai/openai-go/shared"
 	"lemmary/backend/internal/aiprovider"
 )
 
@@ -69,11 +70,23 @@ func (c *OpenAIClient) complete(ctx context.Context, params openai.ChatCompletio
 	return CompleteChat(ctx, c.client, c.logger, c.sdk, c.baseURL, params, extra...)
 }
 
-// CompleteChat sends a chat completion and retries once without temperature
-// if the model rejects a custom value.
+// CompleteChat sends a chat completion, and gives a provider that refuses it a
+// second chance rather than treating the model as broken: JSON mode is dropped
+// if response_format is rejected, reasoning_effort is pinned to "none" if the
+// model will not take tools alongside it, and temperature falls back to the API
+// default. The reasoning_effort verdict is remembered per model, so it costs one
+// rejected request per process rather than one per call.
 func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger, sdk, baseURL string, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	// A model that has already refused tools alongside its default
+	// reasoning_effort gets the working value up front. Only tool-carrying
+	// requests: pinning "none" on the rest would drop the model's reasoning
+	// where nothing asked us to.
+	if len(params.Tools) > 0 && needsNoReasoningEffort(string(params.Model)) {
+		params.ReasoningEffort = shared.ReasoningEffort(reasoningEffortNone)
+		extra = append(extra, "reasoning_effort", reasoningEffortNone)
 	}
 	aiprovider.LogRequest(
 		logger,
@@ -104,6 +117,31 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 			aiprovider.ChatCompletionsURL(baseURL),
 			string(params.Model),
 			append(extra, "retry", "omit_response_format")...,
+		)
+		resp, err = client.Chat.Completions.New(ctx, params)
+		if err == nil {
+			logUsage(logger, string(params.Model), usageOf(resp), extra...)
+			return resp, nil
+		}
+	}
+	// Some gpt-5-family models default reasoning_effort server-side and then
+	// refuse the request because function tools are present, naming "none" as
+	// the way to keep the tools. Take them up on it rather than failing the
+	// whole search.
+	if len(params.Tools) > 0 && isReasoningEffortToolConflictError(err) {
+		logger.Warn("model rejected reasoning_effort with function tools; retrying with reasoning_effort=none",
+			"model", params.Model,
+			slog.Any("error", err),
+		)
+		params.ReasoningEffort = shared.ReasoningEffort(reasoningEffortNone)
+		rememberNoReasoningEffort(string(params.Model))
+		aiprovider.LogRequest(
+			logger,
+			sdk,
+			http.MethodPost,
+			aiprovider.ChatCompletionsURL(baseURL),
+			string(params.Model),
+			append(extra, "retry", "reasoning_effort_none")...,
 		)
 		resp, err = client.Chat.Completions.New(ctx, params)
 		if err == nil {
