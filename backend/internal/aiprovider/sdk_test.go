@@ -148,13 +148,13 @@ func TestProviderConfigured(t *testing.T) {
 // that answered one answered the other.
 func TestLocalSDKEmbedsWithoutChatting(t *testing.T) {
 	t.Parallel()
-	if !ValidSDK(SDKLocal) {
+	if !ValidSDK(SDKLocalEmbeddings) {
 		t.Fatal("local must be a valid SDK")
 	}
-	if IsLLM(SDKLocal) {
+	if IsLLM(SDKLocalEmbeddings) {
 		t.Fatal("local cannot serve extraction or chat and must not read as an LLM")
 	}
-	if !CanEmbed(SDKLocal) {
+	if !CanEmbed(SDKLocalEmbeddings) {
 		t.Fatal("local must be able to serve the embedding binding")
 	}
 }
@@ -172,7 +172,7 @@ func TestCanOCR(t *testing.T) {
 			t.Fatalf("CanOCR(%q) = false", sdk)
 		}
 	}
-	if CanOCR(SDKLocal) {
+	if CanOCR(SDKLocalEmbeddings) {
 		t.Fatal("a local embeddings endpoint cannot read a document")
 	}
 }
@@ -187,7 +187,7 @@ func TestSDKListsMatchTheirPredicates(t *testing.T) {
 		want []string
 	}{
 		"llm":       {LLMSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral}},
-		"embedding": {EmbeddingSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKLocal}},
+		"embedding": {EmbeddingSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKLocalEmbeddings}},
 		"ocr":       {OCRSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKDocling}},
 	}
 	for name, tc := range cases {
@@ -207,7 +207,7 @@ func TestSDKListsMatchTheirPredicates(t *testing.T) {
 
 func TestCanEmbed(t *testing.T) {
 	t.Parallel()
-	for _, sdk := range []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKLocal} {
+	for _, sdk := range []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKLocalEmbeddings} {
 		if !CanEmbed(sdk) {
 			t.Fatalf("CanEmbed(%q) = false", sdk)
 		}
@@ -224,7 +224,7 @@ func TestCanEmbed(t *testing.T) {
 // into "reachable", by asking for the address instead.
 func TestRequiresAPIKey(t *testing.T) {
 	t.Parallel()
-	for _, sdk := range []string{SDKLocal, SDKDocling} {
+	for _, sdk := range []string{SDKLocalEmbeddings, SDKDocling} {
 		if RequiresAPIKey(sdk) {
 			t.Fatalf("RequiresAPIKey(%q) = true; a sidecar has no account behind it", sdk)
 		}
@@ -235,10 +235,10 @@ func TestRequiresAPIKey(t *testing.T) {
 		}
 	}
 
-	if !(Provider{SDK: SDKLocal, BaseURL: "http://embeddings:80/v1"}).Configured() {
+	if !(Provider{SDK: SDKLocalEmbeddings, BaseURL: "http://embeddings:80/v1"}).Configured() {
 		t.Fatal("a keyless local provider with an address is fully configured")
 	}
-	if (Provider{SDK: SDKLocal}).Configured() {
+	if (Provider{SDK: SDKLocalEmbeddings}).Configured() {
 		t.Fatal("a local provider with no address is half a configuration")
 	}
 	if (Provider{SDK: SDKOpenAI}).Configured() {
@@ -256,10 +256,10 @@ func TestDefaultBaseURLLocalPointsAtTheSidecar(t *testing.T) {
 	t.Parallel()
 	// The service name in docker-compose.embeddings.yml. If one of these moves
 	// the other has to move with it, or the overlay comes up unconfigured.
-	if got := DefaultBaseURL(SDKLocal); got != "http://embeddings:80/v1" {
+	if got := DefaultBaseURL(SDKLocalEmbeddings); got != "http://embeddings:80/v1" {
 		t.Fatalf("DefaultBaseURL(local) = %q", got)
 	}
-	if got := DefaultAlias(SDKLocal); got != "Local embeddings" {
+	if got := DefaultAlias(SDKLocalEmbeddings); got != "Local embeddings" {
 		t.Fatalf("DefaultAlias(local) = %q", got)
 	}
 }

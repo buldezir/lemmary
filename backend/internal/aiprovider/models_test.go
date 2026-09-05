@@ -444,14 +444,14 @@ func TestSmallestContextWindowIgnoresMissingValues(t *testing.T) {
 // catalogue is /info -- which sits beside the /v1 prefix, not under it.
 func TestModelsURLLocalUsesInfo(t *testing.T) {
 	t.Parallel()
-	p := Provider{SDK: SDKLocal, BaseURL: "http://embeddings:80/v1"}
+	p := Provider{SDK: SDKLocalEmbeddings, BaseURL: "http://embeddings:80/v1"}
 	for _, purpose := range []ModelPurpose{PurposeEmbedding, PurposeLLM, PurposeOCR} {
 		if got := ModelsURL(p, purpose); got != "http://embeddings:80/info" {
 			t.Fatalf("ModelsURL(%s) = %q", purpose, got)
 		}
 	}
 	// A base URL written without the /v1 suffix still resolves.
-	bare := Provider{SDK: SDKLocal, BaseURL: "http://embeddings:80"}
+	bare := Provider{SDK: SDKLocalEmbeddings, BaseURL: "http://embeddings:80"}
 	if got := ModelsURL(bare, PurposeEmbedding); got != "http://embeddings:80/info" {
 		t.Fatalf("ModelsURL(bare) = %q", got)
 	}
@@ -549,7 +549,7 @@ func TestListModelsLocalReadsInfoWithoutAKey(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := Provider{SDK: SDKLocal, BaseURL: srv.URL + "/v1"}
+	p := Provider{SDK: SDKLocalEmbeddings, BaseURL: srv.URL + "/v1"}
 
 	models, err := ListModels(t.Context(), p, PurposeEmbedding, srv.Client(), nil)
 	if err != nil {

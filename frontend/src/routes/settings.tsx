@@ -5,8 +5,10 @@ import {
   deleteAIProvider,
   listAIProviders,
   requiresAPIKey,
+  sdkAliasDefault,
   sdkLabel,
   updateAIProvider,
+  keylessProviderDocs,
   keylessProviderHint,
   SDK_DEFAULT_BASE,
   SDK_OPTIONS,
@@ -24,6 +26,7 @@ import { ProviderModelFields } from '../components/ProviderModelFields'
 import { useAppMeta } from '../hooks/useAppMeta'
 import {
   Button,
+  DocsLink,
   inputClassName,
   labelClassName,
   fieldHintClassName,
@@ -191,7 +194,7 @@ export function SettingsPage() {
       } else {
         await createAIProvider({
           sdk: draft.sdk,
-          alias: draft.alias.trim() || sdkLabel(draft.sdk),
+          alias: draft.alias.trim() || sdkAliasDefault(draft.sdk),
           base_url: draft.base_url.trim(),
           api_key: draft.api_key.trim(),
         })
@@ -293,6 +296,8 @@ export function SettingsPage() {
   if (loading || !form) {
     return <p className="text-sm text-ink-soft">{error || 'Loading settings...'}</p>
   }
+
+  const keylessDocs = keylessProviderDocs(draft.sdk)
 
 
   return (
@@ -406,7 +411,7 @@ export function SettingsPage() {
                 <input
                   className={inputClassName}
                   value={draft.alias}
-                  placeholder={sdkLabel(draft.sdk)}
+                  placeholder={sdkAliasDefault(draft.sdk)}
                   onChange={(event) => setDraft((current) => ({ ...current, alias: event.target.value }))}
                 />
               </label>
@@ -440,7 +445,10 @@ export function SettingsPage() {
                 </label>
               ) : (
                 <p className={`${fieldHintClassName} sm:col-span-2`}>
-                  {keylessProviderHint(draft.sdk)}
+                  {keylessProviderHint(draft.sdk)}{' '}
+                  {keylessDocs && (
+                    <DocsLink href={keylessDocs.href}>Read the {keylessDocs.label} guide.</DocsLink>
+                  )}
                 </p>
               )}
               <div className="flex gap-2 sm:col-span-2">

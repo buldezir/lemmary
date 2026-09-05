@@ -53,12 +53,27 @@ export const SDK_OPTIONS: { value: ProviderSDK; label: string }[] = [
   { value: 'openrouter', label: 'OpenRouter' },
   { value: 'mistral', label: 'Mistral' },
   { value: 'google_vision', label: 'Google Cloud Vision' },
-  { value: 'local', label: 'Local embeddings (self-hosted)' },
-  { value: 'docling', label: 'Docling (local)' },
+  { value: 'local', label: 'Local Embeddings (huggingface/text-embeddings-inference)' },
+  { value: 'docling', label: 'Local OCR (Docling)' },
 ]
 
 export function sdkLabel(sdk: ProviderSDK | string) {
   return SDK_OPTIONS.find((option) => option.value === sdk)?.label ?? sdk
+}
+
+/**
+ * The alias a provider gets when the field is left blank, and what the field
+ * suggests. Mirrors aiprovider.DefaultAlias.
+ *
+ * Deliberately not sdkLabel, whose job is to tell two dropdown rows apart and
+ * which names the upstream project to do it. Stored as an alias that reads back
+ * through providerOptionLabel as `alias (sdk label)`, it nests its own
+ * parentheses inside the label's.
+ */
+export function sdkAliasDefault(sdk: ProviderSDK | string) {
+  if (sdk === 'local') return 'Local embeddings'
+  if (sdk === 'docling') return 'Docling'
+  return sdkLabel(sdk)
 }
 
 export function isLLMProvider(sdk: string) {
@@ -140,6 +155,26 @@ export function keylessProviderHint(sdk?: string) {
   if (requiresAPIKey(sdk)) return ''
   const overlay = sdk === 'local' ? 'docker-compose.embeddings.yml' : 'docker-compose.local-ocr.yml'
   return `Runs on your own host, so no API key is needed \u2014 the address is the whole configuration. The default is the service name from ${overlay}.`
+}
+
+/**
+ * The guide behind a keyless provider's hint. Neither sidecar answers until its
+ * compose overlay is up, and that is the one thing the hint cannot fit; the
+ * link is how an operator gets from the dropdown to the instructions. Null for
+ * the hosted SDKs, which have a key field there instead.
+ *
+ * The `.html` is load-bearing. VitePress has no cleanUrls, so the built pages
+ * are files, and the static handler in appwire/wire.go never tries an .html
+ * suffix -- a bare /docs/local_ocr falls through to the SPA.
+ */
+export function keylessProviderDocs(sdk?: string) {
+  if (sdk === 'local') {
+    return { href: '/docs/local_embeddings.html', label: 'Local embeddings' }
+  }
+  if (sdk === 'docling') {
+    return { href: '/docs/local_ocr.html', label: 'Local OCR' }
+  }
+  return null
 }
 
 export function providerOptionLabel(item: Pick<AIProvider, 'alias' | 'sdk'>) {

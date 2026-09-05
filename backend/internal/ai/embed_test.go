@@ -463,7 +463,7 @@ func TestEmbedAgainstAKeylessEndpoint(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	e := NewEmbedder(aiprovider.SDKLocal, "", "BAAI/bge-m3", srv.URL+"/v1", 0, 5*time.Second, slog.Default())
+	e := NewEmbedder(aiprovider.SDKLocalEmbeddings, "", "BAAI/bge-m3", srv.URL+"/v1", 0, 5*time.Second, slog.Default())
 	result, err := e.Embed(context.Background(), []string{"hello"})
 	if err != nil {
 		t.Fatalf("embed: %v", err)
@@ -477,7 +477,7 @@ func TestEmbedAgainstAKeylessEndpoint(t *testing.T) {
 	if e.Dims() != 1024 {
 		t.Fatalf("Dims() = %d, want the length learned from the response", e.Dims())
 	}
-	if e.Name() != aiprovider.SDKLocal {
+	if e.Name() != aiprovider.SDKLocalEmbeddings {
 		t.Fatalf("Name() = %q", e.Name())
 	}
 }

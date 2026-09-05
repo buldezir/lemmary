@@ -8,7 +8,8 @@ import {
   isLLMProvider,
   listAIProviders,
   requiresAPIKey,
-  sdkLabel,
+  sdkAliasDefault,
+  keylessProviderDocs,
   keylessProviderHint,
   SDK_DEFAULT_BASE,
   SDK_OPTIONS,
@@ -21,6 +22,7 @@ import { ProviderModelFields } from './ProviderModelFields'
 import {
   AppLogo,
   Button,
+  DocsLink,
   fieldHintClassName,
   inputClassName,
   labelClassName,
@@ -161,7 +163,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       }
       await createAIProvider({
         sdk,
-        alias: alias.trim() || sdkLabel(sdk),
+        alias: alias.trim() || sdkAliasDefault(sdk),
         base_url: baseURL.trim(),
         api_key: apiKey.trim(),
       })
@@ -236,6 +238,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
             : 'Ready'
 
   const llmProviders = providers.filter((item) => isLLMProvider(item.sdk))
+  const keylessDocs = keylessProviderDocs(sdk)
 
   return (
     <div className="flex min-h-screen flex-col bg-paper">
@@ -338,9 +341,9 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
               <p className="text-sm text-ink-muted">
                 Add a provider. OpenAI, OpenRouter, or Mistral can run extraction and chat;
                 Google Vision or Mistral OCR can run OCR, and one Mistral provider covers both.
-                Docling runs OCR on your own host and Local embeddings serves Deep Search's
-                dense half — neither needs an API key, but each needs its compose overlay
-                running first.
+                Local OCR runs Docling on your own host and Local Embeddings serves Deep
+                Search's dense half — neither needs an API key, but each needs its compose
+                overlay running first.
               </p>
               {providers.length > 0 && (
                 <p className="text-xs text-ink-soft">
@@ -369,7 +372,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 <span className={labelTextClassName}>Alias</span>
                 <input
                   value={alias}
-                  placeholder={sdkLabel(sdk)}
+                  placeholder={sdkAliasDefault(sdk)}
                   onChange={(e) => setAlias(e.target.value)}
                   className={inputClassName}
                 />
@@ -398,7 +401,12 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                   />
                 </label>
               ) : (
-                <p className={fieldHintClassName}>{keylessProviderHint(sdk)}</p>
+                <p className={fieldHintClassName}>
+                  {keylessProviderHint(sdk)}{' '}
+                  {keylessDocs && (
+                    <DocsLink href={keylessDocs.href}>Read the {keylessDocs.label} guide.</DocsLink>
+                  )}
+                </p>
               )}
               {error && <p className="text-sm text-madder">{error}</p>}
               <Button type="submit" disabled={submitting}>

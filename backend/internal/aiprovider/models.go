@@ -85,7 +85,7 @@ func ModelsURL(p Provider, purpose ModelPurpose) string {
 	// document one, so a picker built on it would be empty or wrong depending
 	// on the version. /info is in its OpenAPI spec and names the one model it
 	// is serving.
-	if p.SDK == SDKLocal {
+	if p.SDK == SDKLocalEmbeddings {
 		return InfoURL(base)
 	}
 	endpoint := base + "/models"
@@ -178,7 +178,7 @@ func ListModels(ctx context.Context, p Provider, purpose ModelPurpose, client *h
 		return nil, fmt.Errorf("list models: HTTP %d: %s", resp.StatusCode, msg)
 	}
 
-	if p.SDK == SDKLocal {
+	if p.SDK == SDKLocalEmbeddings {
 		models, err := parseInfoResponse(body)
 		if err != nil {
 			return nil, err
@@ -271,7 +271,7 @@ func includeModel(m Model, sdk string, purpose ModelPurpose) bool {
 	// serves is whatever the operator started it with -- "BAAI/bge-m3" carries
 	// no "embed" for the name heuristic to find, so asking the heuristic here
 	// would empty the one picker this SDK exists for.
-	if sdk == SDKLocal {
+	if sdk == SDKLocalEmbeddings {
 		return purpose == PurposeEmbedding
 	}
 	if purpose == PurposeEmbedding {

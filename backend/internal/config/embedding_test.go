@@ -110,13 +110,13 @@ func TestHasEmbedding(t *testing.T) {
 		// retrieval silently off on an instance configured for it.
 		"a keyless local provider with a model": {
 			Config{
-				EmbeddingProvider: &aiprovider.Provider{SDK: aiprovider.SDKLocal, BaseURL: "http://embeddings:80/v1"},
+				EmbeddingProvider: &aiprovider.Provider{SDK: aiprovider.SDKLocalEmbeddings, BaseURL: "http://embeddings:80/v1"},
 				EmbeddingModel:    "BAAI/bge-m3",
 			}, true,
 		},
 		"a keyless local provider without a model": {
 			Config{
-				EmbeddingProvider: &aiprovider.Provider{SDK: aiprovider.SDKLocal, BaseURL: "http://embeddings:80/v1"},
+				EmbeddingProvider: &aiprovider.Provider{SDK: aiprovider.SDKLocalEmbeddings, BaseURL: "http://embeddings:80/v1"},
 			}, false,
 		},
 	}
@@ -155,7 +155,7 @@ func TestLocalEmbeddingProviderNeedsNoKey(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAIAPIKey, "sk-test")
 	t.Setenv(EnvAIModel, "some-model")
-	t.Setenv(EnvAIEmbeddingSDK, aiprovider.SDKLocal)
+	t.Setenv(EnvAIEmbeddingSDK, aiprovider.SDKLocalEmbeddings)
 	t.Setenv(EnvAIEmbeddingModel, "BAAI/bge-m3")
 
 	env, err := AIEnvFromEnv()
@@ -163,13 +163,13 @@ func TestLocalEmbeddingProviderNeedsNoKey(t *testing.T) {
 		t.Fatalf("AIEnvFromEnv: %v", err)
 	}
 	spec := env.Providers.Embedding
-	if spec.SDK != aiprovider.SDKLocal {
+	if spec.SDK != aiprovider.SDKLocalEmbeddings {
 		t.Fatalf("embedding sdk=%q", spec.SDK)
 	}
 	if spec.APIKey != "" {
 		t.Fatalf("embedding key=%q, want none borrowed from the language model", spec.APIKey)
 	}
-	if spec.BaseURL != aiprovider.DefaultBaseURL(aiprovider.SDKLocal) {
+	if spec.BaseURL != aiprovider.DefaultBaseURL(aiprovider.SDKLocalEmbeddings) {
 		t.Fatalf("embedding base url=%q", spec.BaseURL)
 	}
 	// Configured, not "has a key": the sidecar's address is its whole
@@ -177,7 +177,7 @@ func TestLocalEmbeddingProviderNeedsNoKey(t *testing.T) {
 	if !spec.Configured() {
 		t.Fatal("a keyless local spec with an address is a complete configuration")
 	}
-	if (aiprovider.ProviderSpec{SDK: aiprovider.SDKLocal}).Configured() {
+	if (aiprovider.ProviderSpec{SDK: aiprovider.SDKLocalEmbeddings}).Configured() {
 		t.Fatal("a local spec with no address is half a configuration")
 	}
 	if env.Providers.SharesEmbeddingProvider() {
@@ -210,7 +210,7 @@ func TestEmbeddingProviderHalfConfigurations(t *testing.T) {
 			want: "cannot serve embeddings",
 		},
 		"an SDK with no model to bind": {
-			env:  map[string]string{EnvAIEmbeddingSDK: aiprovider.SDKLocal},
+			env:  map[string]string{EnvAIEmbeddingSDK: aiprovider.SDKLocalEmbeddings},
 			want: EnvAIEmbeddingModel,
 		},
 		"a different SDK that cannot borrow the language model's key": {
@@ -225,7 +225,7 @@ func TestEmbeddingProviderHalfConfigurations(t *testing.T) {
 		// somebody uploaded a document.
 		"the local SDK asked to do OCR": {
 			env: map[string]string{
-				EnvOCRSDK:    aiprovider.SDKLocal,
+				EnvOCRSDK:    aiprovider.SDKLocalEmbeddings,
 				EnvOCRModel:  "BAAI/bge-m3",
 				EnvOCRAPIKey: "unused",
 			},

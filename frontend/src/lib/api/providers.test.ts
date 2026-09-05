@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   canEmbedProvider,
   isLLMProvider,
+  keylessProviderDocs,
   eligibleProviders,
   providerServesPurpose,
   requiresAPIKey,
@@ -76,10 +77,34 @@ describe('the local SDK is offered and addressed', () => {
   })
 
   it('defaults to the compose service name', () => {
-    // Keep in step with aiprovider.DefaultBaseURL(SDKLocal) and the service
+    // Keep in step with aiprovider.DefaultBaseURL(SDKLocalEmbeddings) and the service
     // name in docker-compose.embeddings.yml, or the overlay comes up
     // unconfigured.
     expect(SDK_DEFAULT_BASE.local).toBe('http://embeddings:80/v1')
+  })
+})
+
+// The hint under a keyless provider's Base URL is the only place the setup
+// instructions are reachable from the form, so every SDK that shows that hint
+// has to have somewhere to send the operator.
+describe('keylessProviderDocs', () => {
+  it('covers every SDK that shows the keyless hint', () => {
+    for (const { value } of SDK_OPTIONS) {
+      if (requiresAPIKey(value)) continue
+      expect(keylessProviderDocs(value)?.href).toBeTruthy()
+    }
+  })
+
+  it('points each sidecar at its own guide', () => {
+    expect(keylessProviderDocs('local')?.href).toBe('/docs/local_embeddings.html')
+    expect(keylessProviderDocs('docling')?.href).toBe('/docs/local_ocr.html')
+  })
+
+  // The .html matters: VitePress has no cleanUrls and the static handler in
+  // appwire/wire.go never tries the suffix, so a bare path lands on the SPA.
+  it('has nothing to say about the hosted SDKs', () => {
+    expect(keylessProviderDocs('openai')).toBeNull()
+    expect(keylessProviderDocs(undefined)).toBeNull()
   })
 })
 

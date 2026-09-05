@@ -8,17 +8,17 @@ const (
 	SDKGoogleVision = "google_vision"
 	SDKMistral      = "mistral"
 
-	// SDKLocal is an OpenAI-compatible embeddings endpoint the operator runs
-	// themselves -- text-embeddings-inference in the compose overlay, though
-	// anything that serves /v1/embeddings will do. It embeds and nothing else:
-	// it is refused as AI_SDK and OCR_SDK, and like SDKDocling it needs no
-	// credential, because a service on the compose network has nobody to
-	// authenticate to.
-	SDKLocal = "local"
+	// SDKLocalEmbeddings is an OpenAI-compatible embeddings endpoint the
+	// operator runs themselves -- text-embeddings-inference in the compose
+	// overlay, though anything that serves /v1/embeddings will do. It embeds
+	// and nothing else: it is refused as AI_SDK and OCR_SDK, and like
+	// SDKDocling it needs no credential, because a service on the compose
+	// network has nobody to authenticate to.
+	SDKLocalEmbeddings = "local"
 
 	// SDKDocling is an OCR engine the operator runs themselves, as a sidecar
-	// container beside the app. Like SDKLocal it is reached without a
-	// credential: see RequiresAPIKey.
+	// container beside the app. Like SDKLocalEmbeddings it is reached without
+	// a credential: see RequiresAPIKey.
 	//
 	// One local OCR SDK rather than several, on purpose. Docling's default
 	// engine is RapidOCR, which is PaddleOCR's own PP-OCR models exported to
@@ -29,11 +29,11 @@ const (
 	CollectionName = "ai_providers"
 )
 
-var ValidSDKs = []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKLocal, SDKDocling}
+var ValidSDKs = []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKLocalEmbeddings, SDKDocling}
 
 func ValidSDK(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
-	case SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKLocal, SDKDocling:
+	case SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKLocalEmbeddings, SDKDocling:
 		return true
 	default:
 		return false
@@ -52,29 +52,30 @@ func IsLLM(sdk string) bool {
 // CanEmbed reports whether an SDK can serve the retrieval embedding binding.
 //
 // It is deliberately not IsLLM, which it used to be by coincidence: every SDK
-// that chatted also embedded, so one predicate covered both. SDKLocal embeds
-// without chatting, which is what forces them apart -- and asking the right
-// question at each binding is what keeps a local provider out of the extraction
-// picker and a Google Vision provider out of the embedding one.
+// that chatted also embedded, so one predicate covered both.
+// SDKLocalEmbeddings embeds without chatting, which is what forces them apart
+// -- and asking the right question at each binding is what keeps a local
+// provider out of the extraction picker and a Google Vision provider out of the
+// embedding one.
 func CanEmbed(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
-	case SDKOpenAI, SDKOpenRouter, SDKMistral, SDKLocal:
+	case SDKOpenAI, SDKOpenRouter, SDKMistral, SDKLocalEmbeddings:
 		return true
 	default:
 		return false
 	}
 }
 
-// CanOCR reports whether an SDK can read a document. Everything but SDKLocal
-// can: google_vision and docling are engines OCR exists for, and the three LLM
-// SDKs send the file to a model. A local embeddings endpoint has no way to do
-// it at all.
+// CanOCR reports whether an SDK can read a document. Everything but
+// SDKLocalEmbeddings can: google_vision and docling are engines OCR exists for,
+// and the three LLM SDKs send the file to a model. A local embeddings endpoint
+// has no way to do it at all.
 //
 // Without this, ValidSDK would let OCR_SDK=local through -- it is a valid SDK,
 // just not for this job -- and the failure would only appear on the first
 // document uploaded.
 func CanOCR(sdk string) bool {
-	return strings.TrimSpace(sdk) != SDKLocal
+	return strings.TrimSpace(sdk) != SDKLocalEmbeddings
 }
 
 // RequiresAPIKey reports whether an SDK is reached with a credential.
@@ -92,7 +93,7 @@ func CanOCR(sdk string) bool {
 // key.
 func RequiresAPIKey(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
-	case SDKLocal, SDKDocling:
+	case SDKLocalEmbeddings, SDKDocling:
 		return false
 	default:
 		return true
@@ -102,8 +103,8 @@ func RequiresAPIKey(sdk string) bool {
 // IsLocalOCR reports whether the SDK is an OCR engine on the operator's own
 // hardware. Named separately from !RequiresAPIKey because the call sites mean
 // different things: one is about authentication, the other about where the
-// document goes and how long it takes to read. SDKLocal is not one of these --
-// it cannot read a document at all.
+// document goes and how long it takes to read. SDKLocalEmbeddings is not one
+// of these -- it cannot read a document at all.
 func IsLocalOCR(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
 	case SDKDocling:
@@ -123,7 +124,7 @@ func IsLocalOCR(sdk string) bool {
 // DefaultBaseURL can do no better than guess at the compose service name.
 func RequiresBaseURL(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
-	case SDKLocal, SDKDocling:
+	case SDKLocalEmbeddings, SDKDocling:
 		return true
 	default:
 		return false
@@ -183,7 +184,7 @@ func DefaultBaseURL(sdk string) string {
 		return "https://openrouter.ai/api/v1"
 	case SDKMistral:
 		return "https://api.mistral.ai/v1"
-	case SDKLocal:
+	case SDKLocalEmbeddings:
 		// The service name in docker-compose.embeddings.yml, so the default is
 		// already right for the overlay and inert for anyone not running it.
 		return "http://embeddings:80/v1"
@@ -207,7 +208,7 @@ func DefaultAlias(sdk string) string {
 		return "Google Cloud Vision"
 	case SDKMistral:
 		return "Mistral"
-	case SDKLocal:
+	case SDKLocalEmbeddings:
 		return "Local embeddings"
 	case SDKDocling:
 		return "Docling"
