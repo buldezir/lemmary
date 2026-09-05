@@ -10,6 +10,7 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
+	"github.com/openai/openai-go/shared"
 	"lemmary/backend/internal/aiprovider"
 )
 
@@ -69,11 +70,34 @@ func (c *OpenAIClient) complete(ctx context.Context, params openai.ChatCompletio
 	return CompleteChat(ctx, c.client, c.logger, c.sdk, c.baseURL, params, extra...)
 }
 
-// CompleteChat sends a chat completion and retries once without temperature
-// if the model rejects a custom value.
+// CompleteChat sends a chat completion, and gives a provider that refuses it a
+// second chance rather than treating the model as broken. In order: JSON mode
+// is dropped if response_format is rejected, reasoning_effort is pinned to
+// "none" if the model will not take tools alongside it, temperature falls back
+// to the API default, and finally the whole request is translated to the
+// Responses API if this endpoint turns out not to serve the model at all. Each
+// of the last two is remembered per model and endpoint, so the discovery costs
+// one rejected request per process rather than one per call.
 func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger, sdk, baseURL string, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	// A model already known to live on the Responses API never touches
+	// /chat/completions again.
+	if needsResponsesAPI(baseURL, string(params.Model)) {
+		resp, err := CompleteViaResponses(ctx, client, logger, sdk, baseURL, params, extra...)
+		if err == nil {
+			logUsage(logger, string(params.Model), usageOf(resp), extra...)
+		}
+		return resp, err
+	}
+	// A model that has already refused tools alongside its default
+	// reasoning_effort gets the working value up front. Only tool-carrying
+	// requests: pinning "none" on the rest would drop the model's reasoning
+	// where nothing asked us to.
+	if len(params.Tools) > 0 && needsNoReasoningEffort(baseURL, string(params.Model)) {
+		params.ReasoningEffort = shared.ReasoningEffort(reasoningEffortNone)
+		extra = append(extra, "reasoning_effort", reasoningEffortNone)
 	}
 	aiprovider.LogRequest(
 		logger,
@@ -85,6 +109,7 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 	)
 	resp, err := client.Chat.Completions.New(ctx, params)
 	if err == nil {
+		rememberChatCompletionsWorked(baseURL, string(params.Model))
 		logUsage(logger, string(params.Model), usageOf(resp), extra...)
 		return resp, nil
 	}
@@ -111,6 +136,46 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 			return resp, nil
 		}
 	}
+	// Some gpt-5-family models default reasoning_effort server-side and then
+	// refuse the request because function tools are present. The refusal names
+	// two ways out, and they are not equal: /responses keeps the tools and the
+	// reasoning, while reasoning_effort=none keeps the tools by turning the
+	// reasoning off. Take the first, and settle for the second only where
+	// there is no Responses endpoint to take it to.
+	if len(params.Tools) > 0 && isReasoningEffortToolConflictError(err) {
+		logger.Warn("model rejected reasoning_effort with function tools; retrying on the Responses API",
+			"model", params.Model,
+			slog.Any("error", err),
+		)
+		if viaResponses, respErr := CompleteViaResponses(ctx, client, logger, sdk, baseURL, params, extra...); respErr == nil {
+			rememberResponsesAPI(baseURL, string(params.Model))
+			logUsage(logger, string(params.Model), usageOf(viaResponses), extra...)
+			return viaResponses, nil
+		} else {
+			logger.Warn("the Responses API could not serve it either; falling back to reasoning_effort=none",
+				"model", params.Model,
+				slog.Any("error", respErr),
+			)
+		}
+		params.ReasoningEffort = shared.ReasoningEffort(reasoningEffortNone)
+		aiprovider.LogRequest(
+			logger,
+			sdk,
+			http.MethodPost,
+			aiprovider.ChatCompletionsURL(baseURL),
+			string(params.Model),
+			append(extra, "retry", "reasoning_effort_none")...,
+		)
+		resp, err = client.Chat.Completions.New(ctx, params)
+		if err == nil {
+			// Remembered only now that the value is known to work: a "none"
+			// the provider also refuses is not worth pinning.
+			rememberNoReasoningEffort(baseURL, string(params.Model))
+			rememberChatCompletionsWorked(baseURL, string(params.Model))
+			logUsage(logger, string(params.Model), usageOf(resp), extra...)
+			return resp, nil
+		}
+	}
 	if params.Temperature.Valid() && isUnsupportedTemperatureError(err) {
 		logger.Warn("model rejected temperature; retrying with API default",
 			"model", params.Model,
@@ -127,7 +192,27 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 		)
 		resp, err = client.Chat.Completions.New(ctx, params)
 		if err == nil {
+			rememberChatCompletionsWorked(baseURL, string(params.Model))
 			logUsage(logger, string(params.Model), usageOf(resp), extra...)
+		}
+	}
+	// Last resort: the endpoint may simply not serve this model. OpenCode Zen
+	// routes gpt-5.6-luna and friends to /responses and answers 500 here for
+	// anything at all. Try there once, and keep the original error if that was
+	// not the problem -- a Responses error for a provider that has no such
+	// endpoint would only mislead.
+	if try, remember := shouldTryResponses(err, baseURL, string(params.Model)); try {
+		logger.Warn("chat completions refused this model; retrying on the Responses API",
+			"model", params.Model,
+			"remember", remember,
+			slog.Any("error", err),
+		)
+		if viaResponses, respErr := CompleteViaResponses(ctx, client, logger, sdk, baseURL, params, extra...); respErr == nil {
+			if remember {
+				rememberResponsesAPI(baseURL, string(params.Model))
+			}
+			logUsage(logger, string(params.Model), usageOf(viaResponses), extra...)
+			return viaResponses, nil
 		}
 	}
 	return resp, err
@@ -190,6 +275,9 @@ func (c *OpenAIClient) completeStreaming(
 	onDelta func(string),
 	extra ...any,
 ) (string, Usage, error) {
+	if needsResponsesAPI(c.baseURL, string(params.Model)) {
+		return c.completeStreamingViaResponses(ctx, params, onDelta, extra...)
+	}
 	params.StreamOptions = openai.ChatCompletionStreamOptionsParam{IncludeUsage: openai.Bool(true)}
 	aiprovider.LogRequest(
 		c.logger,
@@ -224,7 +312,30 @@ func (c *OpenAIClient) completeStreaming(
 	}
 	err := stream.Err()
 	if err == nil {
+		rememberChatCompletionsWorked(c.baseURL, string(params.Model))
 		logUsage(c.logger, string(params.Model), usage, append(extra, "stream", true)...)
+		return b.String(), usage, nil
+	}
+	// Same fallback as CompleteChat, but only while nothing has reached the
+	// reader yet: once deltas are on the wire, a second stream would replay a
+	// different answer over the first.
+	if b.Len() == 0 {
+		try, remember := shouldTryResponses(err, c.baseURL, string(params.Model))
+		if !try {
+			return b.String(), usage, err
+		}
+		c.logger.Warn("chat completions refused this model; retrying the stream on the Responses API",
+			"model", params.Model,
+			"remember", remember,
+			slog.Any("error", err),
+		)
+		text, respUsage, respErr := c.completeStreamingViaResponses(ctx, params, onDelta, extra...)
+		if respErr == nil {
+			if remember {
+				rememberResponsesAPI(c.baseURL, string(params.Model))
+			}
+			return text, respUsage, nil
+		}
 	}
 	return b.String(), usage, err
 }
