@@ -6,7 +6,7 @@
   "type": "module",
   "packageManager": "pnpm@12.1.0",
   "scripts": {
-    "dev": "concurrently -k -n app,docs -c yellow,cyan \"vite --host ${DEV_HOST:-127.0.0.1} --port 5173\" \"vitepress dev --host ${DEV_HOST:-127.0.0.1} --port 5174\"",
+    "dev": "vite --host ${DEV_HOST:-127.0.0.1} --port 5173",
     "build": "tsc -b && vite build && pnpm run docs:build",
     "lint": "eslint .",
     "test": "vitest run",

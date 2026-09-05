@@ -50,7 +50,7 @@ func TestProviderBoundToEmbeddingsMustKeepAnEmbeddingSDK(t *testing.T) {
 	if boundTo(record, "provider1", llmBindingFields...) {
 		t.Fatal("the embedding binding must not force an LLM SDK")
 	}
-	if !aiprovider.CanEmbed(aiprovider.SDKLocal) || aiprovider.IsLLM(aiprovider.SDKLocal) {
+	if !aiprovider.CanEmbed(aiprovider.SDKLocalEmbeddings) || aiprovider.IsLLM(aiprovider.SDKLocalEmbeddings) {
 		t.Fatal("the local SDK must embed without counting as a language model")
 	}
 	if aiprovider.CanEmbed(aiprovider.SDKGoogleVision) {
@@ -97,7 +97,7 @@ func TestProviderBoundToOCRMustKeepAnOCRSDK(t *testing.T) {
 	if !boundTo(record, "provider1", ocrBindingField) {
 		t.Fatal("a provider bound to OCR must not be switched to an SDK that cannot read a document")
 	}
-	if aiprovider.CanOCR(aiprovider.SDKLocal) {
+	if aiprovider.CanOCR(aiprovider.SDKLocalEmbeddings) {
 		t.Fatal("a local embeddings endpoint cannot serve OCR")
 	}
 	// google_vision must still be allowed here: it is what the binding is for.

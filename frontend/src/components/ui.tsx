@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from 'react'
+import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { accentContrastText } from '../lib/accent'
 
 export const inputClassName =
@@ -8,6 +8,25 @@ export const labelTextClassName =
   'text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-soft'
 /** Small explanation shown under a form field. */
 export const fieldHintClassName = 'text-xs text-ink-soft'
+
+/**
+ * Link into the bundled docs site, for the explanations under a form field that
+ * are too long to fit there. Opens in a new tab: these appear mid-form, and a
+ * same-tab navigation would throw away whatever is half-typed.
+ */
+export function DocsLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="underline hover:text-oxblood"
+    >
+      {children}
+    </a>
+  )
+}
+
 export const sectionClassName = 'border border-line bg-surface p-5'
 export const sectionTitleClassName =
   'mb-3 border-b border-line pb-2 font-display text-lg font-semibold text-ink'

@@ -31,7 +31,7 @@ func init() {
 		// at a deleted provider would dangle. Best-effort throughout: a
 		// down-migration that halts halfway is worse than one that leaves a
 		// stale binding an admin can see and clear.
-		for _, sdk := range []string{aiprovider.SDKDocling, aiprovider.SDKLocal} {
+		for _, sdk := range []string{aiprovider.SDKDocling, aiprovider.SDKLocalEmbeddings} {
 			records, err := app.FindAllRecords(aiprovider.CollectionName, dbx.HashExp{"sdk": sdk})
 			if err != nil {
 				continue

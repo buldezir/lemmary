@@ -38,7 +38,7 @@ func TestWideningTheProviderSDKField(t *testing.T) {
 
 	// Both sidecar providers must be refused while the field is narrow, or
 	// this test would pass without the migration doing anything.
-	for _, sdk := range []string{aiprovider.SDKLocal, aiprovider.SDKDocling} {
+	for _, sdk := range []string{aiprovider.SDKLocalEmbeddings, aiprovider.SDKDocling} {
 		if err := saveSidecarProvider(app, sdk, sdk+"-before"); err == nil {
 			t.Fatalf("a narrowed sdk field accepted a %s provider", sdk)
 		}
@@ -47,7 +47,7 @@ func TestWideningTheProviderSDKField(t *testing.T) {
 	if err := setProviderSDKValues(app, aiprovider.ValidSDKs); err != nil {
 		t.Fatalf("widen: %v", err)
 	}
-	for _, sdk := range []string{aiprovider.SDKLocal, aiprovider.SDKDocling} {
+	for _, sdk := range []string{aiprovider.SDKLocalEmbeddings, aiprovider.SDKDocling} {
 		if err := saveSidecarProvider(app, sdk, sdk+"-after"); err != nil {
 			t.Fatalf("save a %s provider after widening: %v", sdk, err)
 		}

@@ -90,10 +90,10 @@ func TestNothingConfiguredIsNotAnInstruction(t *testing.T) {
 	}
 	// The embedding half reads the same way, and only when the SDK was
 	// actually asked for: a keyless spec with no SDK named is still nothing.
-	if !(Bootstrap{Embedding: ProviderSpec{SDK: SDKLocal, BaseURL: "http://embeddings:80/v1", Model: "BAAI/bge-m3"}}).Configured() {
+	if !(Bootstrap{Embedding: ProviderSpec{SDK: SDKLocalEmbeddings, BaseURL: "http://embeddings:80/v1", Model: "BAAI/bge-m3"}}).Configured() {
 		t.Fatal("a keyless local embedding provider is a complete instruction")
 	}
-	if (Bootstrap{Embedding: ProviderSpec{SDK: SDKLocal, Model: "BAAI/bge-m3"}}).Configured() {
+	if (Bootstrap{Embedding: ProviderSpec{SDK: SDKLocalEmbeddings, Model: "BAAI/bge-m3"}}).Configured() {
 		t.Fatal("a local embedding spec with no address is half a configuration")
 	}
 }
@@ -120,7 +120,7 @@ func TestSharesEmbeddingProvider(t *testing.T) {
 		"a local endpoint is somewhere else": {
 			Bootstrap{
 				LLM:       ProviderSpec{SDK: SDKOpenAI, APIKey: "sk"},
-				Embedding: ProviderSpec{SDK: SDKLocal, Model: "BAAI/bge-m3"},
+				Embedding: ProviderSpec{SDK: SDKLocalEmbeddings, Model: "BAAI/bge-m3"},
 			}, false,
 		},
 	}
