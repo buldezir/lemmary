@@ -9,6 +9,7 @@ Setup and operation guides for Lemmary.
 - [Development environment](/development) — host prerequisites, FAISS, and running from source
 - [Storage](/storage) — where SQLite, local or S3 document files, embeddings, and search indexes live
 - [AI providers and models](/ai_providers) — pick a provider, seed the keys, bind the models
+- [Paperless-ngx API compatibility](/paperless_ngx) — connect third-party clients, migrate an existing library
 - [Local OCR](/local_ocr) — run the OCR engine yourself, so scans never leave the host
 - [Local embeddings](/local_embeddings) — run the embedding model yourself, so Deep Search costs no tokens
 - [Google Vision API key](/google_vision) — obtain a Cloud Vision API key for OCR

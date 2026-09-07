@@ -48,6 +48,7 @@ export default defineConfig({
           { text: 'Development environment', link: '/development' },
           { text: 'Storage', link: '/storage' },
           { text: 'AI providers and models', link: '/ai_providers' },
+          { text: 'Paperless-ngx API', link: '/paperless_ngx' },
           { text: 'Local OCR', link: '/local_ocr' },
           { text: 'Local embeddings', link: '/local_embeddings' },
           { text: 'Google Vision', link: '/google_vision' },

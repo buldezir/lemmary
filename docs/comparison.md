@@ -48,7 +48,7 @@ Its `/api/` surface also implements a useful subset of the Paperless-ngx REST
 API, so compatible mobile clients can browse and upload, but Lemmary is **not a
 drop-in Paperless-ngx server**: workflows, permissions, saved views, custom
 fields, and many endpoints are outside that compatibility layer. See
-[Paperless-ngx API compatibility](/setup#paperless-ngx-api-compatibility).
+[Paperless-ngx API compatibility](/paperless_ngx).
 
 There is no direct Papra importer. Export the original files from Papra and
 upload them to Lemmary; expect to recreate tags and other metadata unless you
