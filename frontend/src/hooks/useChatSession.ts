@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { StreamInterruptedError } from '../lib/apiClient'
 import {
   toChatTurn,
   type ChatMessageRecord,
@@ -219,7 +220,14 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
       }
       setError(err instanceof Error ? err.message : 'Failed to get AI response')
       setTurns((current) => current.filter((turn) => turn.id !== pending.id))
-      setInput(text)
+      // The question goes back in the composer so it is not lost -- except
+      // when it is already being answered. A stream that broke after the run
+      // started leaves the server working on this exact question, and handing
+      // it back invites the user to submit it a second time and pay for the
+      // same run twice. The error text tells them where the answer will be.
+      if (!(err instanceof StreamInterruptedError)) {
+        setInput(text)
+      }
     } finally {
       // Unconditional: the request is over whichever conversation is on screen.
       // Gating this on the epoch strands the spinner forever when the user

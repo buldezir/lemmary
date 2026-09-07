@@ -45,12 +45,6 @@ export function ChatComposer({
           rows={2}
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault()
-              onSubmit()
-            }
-          }}
           autoFocus={autoFocus}
           disabled={sending || disabled}
           placeholder={placeholder}

@@ -31,42 +31,11 @@ export type ChatTurnResult = {
   detail?: string
 }
 
-export type DeepSearchResult = ChatTurnResult & {
-  documents: SearchDocumentHit[]
-  /** The generation was cut short; the text is real but not the whole answer. */
-  incomplete?: boolean
-}
-
 type RawTurnResponse = {
   session?: ChatSession | null
   message?: ChatMessageRecord
-  documents?: SearchDocumentHit[]
   saved?: boolean
   detail?: string
-  incomplete?: boolean
-}
-
-export async function deepSearch(input: {
-  sessionId?: string
-  content: string
-  mode: SearchMode
-}): Promise<DeepSearchResult> {
-  const data = await apiFetch<RawTurnResponse>('/api/app/search', {
-    method: 'POST',
-    body: { session_id: input.sessionId ?? '', content: input.content, mode: input.mode },
-    fallbackError: 'Failed to run search',
-  })
-  if (!data.message) {
-    throw new Error('AI response was empty')
-  }
-  return {
-    session: data.session ?? null,
-    message: data.message,
-    documents: data.documents ?? [],
-    saved: data.saved ?? false,
-    detail: data.detail,
-    incomplete: data.incomplete,
-  }
 }
 
 export async function chatWithDocument(input: {
@@ -126,14 +95,25 @@ export type ResearchEvent =
   | { type: 'done' }
 
 /**
- * Runs a research turn, reporting each step as it happens. The answer arrives
- * twice: as `delta` events for a live preview, then as one `message` event with
- * the authoritative, citation-checked text. That event's `incomplete` says
- * whether the generation was cut short — the text is kept either way, but a
- * partial answer must not be shown as a finished one.
+ * Runs a search turn as a stream.
+ *
+ * Research reports each step as it happens, and its answer arrives twice: as
+ * `delta` events for a live preview, then as one `message` event with the
+ * authoritative, citation-checked text. That event's `incomplete` says whether
+ * the generation was cut short — the text is kept either way, but a partial
+ * answer must not be shown as a finished one.
+ *
+ * Plain search emits none of those, only `documents`, `message` and `saved`.
+ * It streams regardless, because the alternative is a POST that writes nothing
+ * for however long the model takes, and a reverse proxy cannot tell that apart
+ * from a backend that has hung.
+ *
+ * `runId` is what makes the run cancellable: the server no longer stops when
+ * this connection closes, so cancelling has to be said out loud with
+ * `cancelSearchRun`.
  */
-export async function researchStream(
-  input: { sessionId?: string; content: string },
+export async function searchStream(
+  input: { sessionId?: string; content: string; mode: SearchMode; runId: string },
   onEvent: (event: ResearchEvent) => void,
   signal?: AbortSignal,
 ) {
@@ -141,10 +121,34 @@ export async function researchStream(
     body: {
       session_id: input.sessionId ?? '',
       content: input.content,
-      mode: 'research' satisfies SearchMode,
+      mode: input.mode,
+      run_id: input.runId,
     },
     onEvent,
     signal,
-    fallbackError: 'Failed to research your archive',
+    fallbackError:
+      input.mode === 'research' ? 'Failed to research your archive' : 'Failed to search your archive',
   })
+}
+
+/**
+ * Stops a run started with `searchStream`.
+ *
+ * Abandoning the stream is not enough on its own and is no longer meant to be:
+ * the server keeps a run alive through a dropped connection so a network blip
+ * cannot destroy an answer it has already paid for, which means a deliberate
+ * cancel needs a request of its own. Best-effort — a run that already finished
+ * has nothing to stop, and a failure here must not surface over a turn the user
+ * has abandoned anyway.
+ */
+export async function cancelSearchRun(runId: string): Promise<void> {
+  try {
+    await apiFetch('/api/app/search/cancel', {
+      method: 'POST',
+      body: { run_id: runId },
+      fallbackError: 'Failed to cancel the run',
+    })
+  } catch {
+    // Nothing to tell the user: they have already moved on.
+  }
 }

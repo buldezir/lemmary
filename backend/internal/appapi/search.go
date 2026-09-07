@@ -27,6 +27,11 @@ type searchRequest struct {
 	SessionID string `json:"session_id"`
 	Content   string `json:"content"`
 	Mode      string `json:"mode"`
+	// RunID lets the client cancel this run explicitly. A run outlives its
+	// connection now, so hanging up no longer stops it; a client that wants it
+	// stopped generates an id here and POSTs it to /search/cancel. Optional:
+	// omitting it costs the ability to cancel, nothing else.
+	RunID string `json:"run_id"`
 }
 
 type searchResponse struct {
@@ -55,6 +60,7 @@ type searchTurn struct {
 	session  *core.Record
 	opened   *core.Record
 	ownerID  string
+	runID    string
 	content  string
 	mode     string
 	messages []ai.ChatMessage
@@ -240,6 +246,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		session:        session,
 		opened:         opened,
 		ownerID:        ownerID,
+		runID:          strings.TrimSpace(req.RunID),
 		content:        content,
 		mode:           mode,
 		messages:       append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content}),
@@ -289,14 +296,22 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 			return err
 		}
 
-		// Use the request context so closing the browser tab cancels the agent
-		// loop instead of leaving several LLM round-trips running.
+		// Detached from the connection. This endpoint writes nothing until the
+		// whole answer is ready, so it is silent for its entire duration --
+		// exactly what a reverse proxy with a read timeout hangs up on. Tying
+		// the agent loop to the socket meant such a hangup cancelled the run
+		// and discarded an answer the provider had already been paid for. Now
+		// the run finishes and the turn is stored either way; only the delivery
+		// of this response depends on the caller still being there.
+		ctx, stopRun := startSearchRun(e.Request.Context(), turn.ownerID, turn.runID)
+		defer stopRun()
+
 		var reply string
 		var hits []ai.DocumentHit
 		incomplete := false
 		if turn.research() {
 			// Non-streaming fallback for clients that cannot read SSE.
-			result, researchErr := turn.agent.Research(turn.agentContext(e.Request.Context()), ai.ResearchRequest{
+			result, researchErr := turn.agent.Research(turn.agentContext(ctx), ai.ResearchRequest{
 				Messages:       turn.messages,
 				AvailableTags:  turn.tools.tags,
 				Search:         turn.tools.search,
@@ -308,11 +323,17 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 			}, nil)
 			reply, hits, incomplete, err = result.Reply, result.Documents, result.Incomplete, researchErr
 		} else {
-			reply, hits, err = turn.agent.Search(turn.agentContext(e.Request.Context()), turn.messages, turn.tools.tags, turn.tools.search, ai.SearchOptions{DenseRetrieval: turn.tools.dense})
+			reply, hits, err = turn.agent.Search(turn.agentContext(ctx), turn.messages, turn.tools.tags, turn.tools.search, ai.SearchOptions{DenseRetrieval: turn.tools.dense})
 		}
 		if err != nil {
-			app.Logger().Error("deep search failed", "mode", turn.mode, slog.Any("error", err))
 			discardEmptySession(app, turn.opened)
+			// Running out of budget is not the provider failing, and saying so
+			// sends the caller to check an AI configuration that is fine.
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				app.Logger().Warn("deep search ran out of budget", "mode", turn.mode, "budget", searchRunBudget.String())
+				return writeError(e, http.StatusGatewayTimeout, runTooLongMessage)
+			}
+			app.Logger().Error("deep search failed", "mode", turn.mode, slog.Any("error", err))
 			return writeError(e, http.StatusBadGateway, "The AI provider could not complete the search.")
 		}
 		if hits == nil {
@@ -338,21 +359,23 @@ type searchSavedEvent struct {
 	Detail    string            `json:"detail,omitempty"`
 }
 
-// handleResearchStream runs a research turn and reports each step as it
-// happens, then streams the answer. A research run can spend a minute searching
-// and reading, which is far too long to show as a single spinner.
-func handleResearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) func(*core.RequestEvent) error {
+// handleSearchStream runs a search turn over SSE. Research reports each step as
+// it happens, then streams the answer -- a research run can spend a minute
+// searching and reading, which is far too long to show as a single spinner.
+// Plain search has no steps to report, but it streams anyway, for the
+// heartbeat: a response that writes nothing until it is finished looks
+// indistinguishable from a hung backend to whatever proxy sits in front.
+//
+// This used to refuse anything but research, to stop a client that omitted the
+// mode from being billed for the expensive one. Serving both makes that guard
+// unnecessary rather than absent: an unrecognised mode parses as "search", so
+// the failure of omitting it is now a cheap search rather than a costly
+// surprise.
+func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		turn, handled, err := prepareSearchTurn(app, rt, idx, e)
 		if handled {
 			return err
-		}
-		// This endpoint only ever researches, and research is the expensive
-		// mode. Without this, a client that omitted the field -- or sent a
-		// legacy "deep" -- would get a full research run out of what it thought
-		// was a plain search.
-		if !turn.research() {
-			return writeError(e, http.StatusBadRequest, `This endpoint streams research; send mode "research" or use /api/app/search.`)
 		}
 
 		// Everything below is streamed, so errors are reported as events —
@@ -360,29 +383,59 @@ func handleResearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index)
 		stream := newSSEWriter(e)
 		// Every model completion is a silent gap on this connection, and the
 		// first one comes before any step event. Stopped before returning.
+		//
+		// On the request context, not the run's: this keeps the socket warm
+		// while someone is listening, and there is nothing to keep warm once
+		// nobody is.
 		stopHeartbeat := stream.Heartbeat(e.Request.Context())
 		defer stopHeartbeat()
 
-		result, err := turn.agent.Research(turn.agentContext(e.Request.Context()), ai.ResearchRequest{
-			Messages:       turn.messages,
-			AvailableTags:  turn.tools.tags,
-			Search:         turn.tools.search,
-			Read:           turn.tools.read,
-			PriorDocuments: turn.priorDocuments,
-			DenseRetrieval: turn.tools.dense,
-			Survey:         turn.tools.survey,
-			Count:          turn.tools.count,
-		}, func(event ai.ResearchEvent) { stream.Send(event) })
+		// Detached from the connection, so a dropped socket costs the view of
+		// the run and not the run itself. The answer is stored below whether or
+		// not anyone is still reading this stream, which is the difference
+		// between a network blip losing a paragraph of progress and losing a
+		// finished, already-paid-for answer. Deliberate cancellation comes
+		// through /search/cancel instead -- see startSearchRun.
+		ctx, stopRun := startSearchRun(e.Request.Context(), turn.ownerID, turn.runID)
+		defer stopRun()
+		ctx = turn.agentContext(ctx)
+
+		var result ai.ResearchResult
+		if turn.research() {
+			result, err = turn.agent.Research(ctx, ai.ResearchRequest{
+				Messages:       turn.messages,
+				AvailableTags:  turn.tools.tags,
+				Search:         turn.tools.search,
+				Read:           turn.tools.read,
+				PriorDocuments: turn.priorDocuments,
+				DenseRetrieval: turn.tools.dense,
+				Survey:         turn.tools.survey,
+				Count:          turn.tools.count,
+			}, func(event ai.ResearchEvent) { stream.Send(event) })
+		} else {
+			reply, hits, searchErr := turn.agent.Search(ctx, turn.messages, turn.tools.tags, turn.tools.search, ai.SearchOptions{DenseRetrieval: turn.tools.dense})
+			result, err = ai.ResearchResult{Reply: reply, Documents: hits}, searchErr
+		}
 		if err != nil {
 			// Either way the conversation this request opened never got a turn.
 			discardEmptySession(app, turn.opened)
-			if e.Request.Context().Err() != nil {
-				// The client hung up; nothing left to report it to.
-				app.Logger().Info("research cancelled by client")
+			if runErr := ctx.Err(); runErr != nil {
+				// The run itself was stopped -- out of budget, or cancelled
+				// through /search/cancel. Not the same as the client merely
+				// hanging up, which no longer reaches here at all.
+				app.Logger().Info("search run stopped", "mode", turn.mode, slog.Any("error", runErr))
+				// Someone may still be watching. A cancel they asked for needs
+				// no explanation, but a run that ran out of budget would
+				// otherwise end as a bare EOF, which the page can only report
+				// as having produced no answer at all.
+				if errors.Is(runErr, context.DeadlineExceeded) {
+					stream.Send(ai.ResearchEvent{Type: "error", Message: runTooLongMessage})
+				}
+				stream.Send(ai.ResearchEvent{Type: "done"})
 				return nil
 			}
-			app.Logger().Error("research failed", slog.Any("error", err))
-			stream.Send(ai.ResearchEvent{Type: "error", Message: "The AI provider could not complete the research."})
+			app.Logger().Error("search run failed", "mode", turn.mode, slog.Any("error", err))
+			stream.Send(ai.ResearchEvent{Type: "error", Message: "The AI provider could not complete the search."})
 			stream.Send(ai.ResearchEvent{Type: "done"})
 			return nil
 		}
@@ -391,6 +444,18 @@ func handleResearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index)
 		if documents == nil {
 			documents = []ai.DocumentHit{}
 		}
+
+		// Stored before anything else is written, and this order is the point.
+		// The session has been there since before the run started; the turn is
+		// what was missing, and it must not be made to wait behind a socket.
+		// A write to a half-closed connection can block until the kernel gives
+		// up on it, and every one of those blocked between a finished answer
+		// and the save that keeps it -- which is the failure this whole change
+		// exists to end. Unconditional for the same reason: a client that hung
+		// up mid-run is exactly the case that must still find its answer
+		// waiting in the sidebar.
+		saved := persistSearchTurn(app, turn, result.Reply, documents)
+
 		stream.Send(ai.ResearchEvent{Type: "documents", Documents: documents})
 		// The whole answer follows the deltas: the deltas are a live preview,
 		// this is the authoritative text (citation-checked). Incomplete says
@@ -402,12 +467,8 @@ func handleResearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index)
 			Content:    result.Reply,
 			Incomplete: result.Incomplete,
 		})
-
-		// The turn is stored only now, with the answer complete -- the session
-		// itself has been there since before the run started. Note the client is
-		// already showing the answer: this event is what makes the conversation
-		// resumable, not what makes it visible.
-		saved := persistSearchTurn(app, turn, result.Reply, documents)
+		// For a client still here, this is what makes the conversation
+		// resumable, not what makes the answer visible -- that arrived above.
 		stream.Send(searchSavedEvent{
 			Type:      "saved",
 			Session:   saved.Session,
@@ -418,6 +479,35 @@ func handleResearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index)
 		})
 		stream.Send(ai.ResearchEvent{Type: "done"})
 		return nil
+	}
+}
+
+type searchCancelRequest struct {
+	RunID string `json:"run_id"`
+}
+
+// handleSearchCancel stops a run the caller started. It exists because runs no
+// longer die with their connection: to the server a closed socket is a closed
+// socket, whether the user pressed Cancel or their wifi dropped, and only one
+// of those should throw the work away. So stopping is said out loud, here.
+//
+// An id that is not running answers 200 all the same -- a run that finished
+// while the cancel was in flight is not a client error, and saying so would
+// only give the page an error to render over a result that is already correct.
+func handleSearchCancel(app core.App) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		var req searchCancelRequest
+		if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
+			return writeError(e, http.StatusBadRequest, "Invalid request body.")
+		}
+		ownerID, err := resolveOwnerUserID(app, e)
+		if err != nil {
+			return writeOwnerError(e, err)
+		}
+		// Scoped to the owner inside cancelSearchRun, so a guessed id from
+		// another account finds nothing.
+		stopped := cancelSearchRun(ownerID, strings.TrimSpace(req.RunID))
+		return writeJSON(e, http.StatusOK, map[string]bool{"stopped": stopped})
 	}
 }
 

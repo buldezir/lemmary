@@ -6,7 +6,7 @@ Document storage built with Go + PocketBase and a React + TanStack Router fronte
 
 Lemmary implements a [paperless-ngx](https://github.com/paperless-ngx/paperless-ngx)-compatible REST API under `/api/`, so you can use third-party clients instead of (or alongside) the built-in web UI. Coverage is partial — document list/upload/download, tags, metadata, and the document list's search and filters generally work, but not every paperless-ngx endpoint or feature is implemented.
 
-The API has been tested with the [swift-paperless](https://github.com/paulgessinger/swift-paperless) iOS app and mostly works for browsing and uploading documents. See [docs/setup.md](docs/setup.md#paperless-ngx-api-compatibility) for connecting external clients.
+The API has been tested with the [swift-paperless](https://github.com/paulgessinger/swift-paperless) iOS app and mostly works for browsing and uploading documents. See [docs/paperless_ngx.md](docs/paperless_ngx.md) for connecting external clients.
 
 ## Features
 
@@ -86,11 +86,12 @@ docker compose up -d
 
 Open [http://127.0.0.1:8090](http://127.0.0.1:8090). On first launch, the in-app setup wizard creates your admin account and collects OCR + LLM API keys (hard gate until both are set). A single Mistral key covers OCR, extraction and embeddings. Data is stored in a Docker volume (`app_data`).
 
-Volumes, reverse proxies, backups and upgrades: [docs/self_hosting.md](docs/self_hosting.md). To run without Docker, see [docs/setup.md](docs/setup.md).
+Volumes, reverse proxies, backups and upgrades: [docs/self_hosting.md](docs/self_hosting.md). To run without Docker, see [docs/development.md](docs/development.md).
 
 ## Environment variables and Settings
 
-[docs/setup.md](docs/setup.md) has the full list; [docs/ai_providers.md](docs/ai_providers.md) covers the AI ones.
+[docs/setup.md](docs/setup.md) is the configuration reference;
+[docs/ai_providers.md](docs/ai_providers.md) covers the AI-specific options.
 
 - `WORKER_CRON_EXPR`, the `LIMIT_*` family, `VAULT_*` and the frontend's `VITE_*` stay in `.env`
 - OCR/AI keys, models and worker timeouts live in the DB (`app_settings`). `AI_API_KEY` plus `SETUP_ADMIN_EMAIL`/`SETUP_ADMIN_PASSWORD` in `.env` bring a fresh instance up with nothing to answer; otherwise the first-launch wizard collects them. Either way **Settings** is authoritative afterwards
@@ -119,7 +120,7 @@ mkdir -p "$HOME/.local/faiss" && cp -a .faiss/lib .faiss/include "$HOME/.local/f
 With [direnv](https://direnv.net), `direnv allow` then points the toolchain at
 it and sets the tag for you. The other two routes — building it into
 `/usr/local` or into your home directory with `scripts/faiss-build.sh` — are in
-[docs/setup.md](docs/setup.md#faiss-required-to-build-the-backend), along with
+[docs/development.md](docs/development.md#faiss), along with
 the packages each one needs.
 
 The end-to-end suites, the dev runner and the full verification stack live in a

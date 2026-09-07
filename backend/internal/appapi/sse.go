@@ -23,6 +23,12 @@ const heartbeatInterval = 15 * time.Second
 // this with fetch() rather than EventSource.
 type sseWriter struct {
 	e *core.RequestEvent
+	// The request's context, watched only to stop writing. A run outlives its
+	// connection deliberately, and a write to a half-closed socket can block
+	// for as long as the kernel's send buffer stays full -- which would stall
+	// the goroutine that still has a turn to store. Once the client is known
+	// gone there is nobody to write for, so every frame is dropped instead.
+	ctx context.Context
 	// Guards the response writer: the heartbeat runs on its own goroutine, and
 	// a ResponseWriter may not be written by two at once.
 	mu sync.Mutex
@@ -38,18 +44,27 @@ func newSSEWriter(e *core.RequestEvent) *sseWriter {
 	header.Set("X-Accel-Buffering", "no")
 	e.Response.WriteHeader(http.StatusOK)
 	_ = e.Flush()
-	return &sseWriter{e: e}
+	return &sseWriter{e: e, ctx: e.Request.Context()}
 }
+
+// gone reports that the client has hung up, so there is nothing to write to.
+func (w *sseWriter) gone() bool { return w.ctx != nil && w.ctx.Err() != nil }
 
 // Send writes one event. A write failure means the client is gone; the caller
 // finds that out through the request context rather than through an error here.
 func (w *sseWriter) Send(payload any) {
+	if w.gone() {
+		return
+	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.gone() {
+		return
+	}
 	if _, err := fmt.Fprintf(w.e.Response, "data: %s\n\n", encoded); err != nil {
 		return
 	}
@@ -59,8 +74,14 @@ func (w *sseWriter) Send(payload any) {
 // ping writes a comment frame. Every SSE client ignores it -- it exists so the
 // connection is not idle -- so it carries no payload and no event type.
 func (w *sseWriter) ping() {
+	if w.gone() {
+		return
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.gone() {
+		return
+	}
 	if _, err := fmt.Fprint(w.e.Response, ": ping\n\n"); err != nil {
 		return
 	}

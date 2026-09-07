@@ -1,0 +1,133 @@
+name: Prune images
+
+# Publishing a multi-architecture image leaves untagged manifests behind. Each
+# architecture is built and pushed on its own runner as an image identified only
+# by its digest, and the merge job then assembles a fresh manifest list from the
+# two. That list references the platform manifests and their attestations -- but
+# the two intermediate indexes the build jobs pushed are referenced by nothing
+# from that moment on, and GHCR keeps them forever. Two per build adds up.
+#
+# Deleting them is more delicate than "delete untagged versions". Every tag this
+# repository publishes is a manifest list, and the platform manifests and
+# attestation manifests it points at are themselves untagged package versions --
+# so a tool that treats untagged as unreferenced hollows out `latest` while
+# leaving the tag in place, and nothing looks wrong until someone pulls it. This
+# action walks the manifest lists and keeps what they reference, which is the
+# whole reason it is this one and not actions/delete-package-versions.
+on:
+  schedule:
+    # Weekly. There is no urgency -- untagged manifests cost storage, not
+    # correctness -- and a prune that runs rarely is a prune whose blast radius
+    # stays small.
+    - cron: "17 4 * * 0"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Log what would be deleted without deleting it"
+        type: boolean
+        default: true
+
+# Never two prunes at once, and never a prune racing its own previous run.
+concurrency:
+  group: prune-images
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      # Pinned to a patch rather than the major, unlike every other action in
+      # this repository. The others build things; this one deletes them, and an
+      # unattended weekly job is the wrong place to find out what changed inside
+      # a major version.
+      - uses: dataaxiom/ghcr-cleanup-action@v1.2.2
+        with:
+          # owner, package and token all default to this repository and its
+          # GITHUB_TOKEN, which is what we want: no PAT, and no way for this to
+          # reach a package belonging to something else.
+          delete-untagged: true
+
+          # A build in flight has pushed its per-architecture images but may not
+          # have merged them yet, and between those two moments they are
+          # indistinguishable from the orphans this job exists to remove. An age
+          # floor is what keeps a scheduled prune from deleting the halves of an
+          # image that is still being assembled.
+          older-than: 7 days
+
+          # Nothing here is deletable under the single rule above: every one of
+          # these is tagged, and delete-untagged does not consider tagged images
+          # at all. They are named anyway, because that protection is a property
+          # of the rule set rather than of this list, and the day someone adds a
+          # keep-n-tagged or delete-tags rule it evaporates silently. exclude-tags
+          # takes priority over every other rule, so listing them here is what
+          # makes it survive a rule this file does not have yet.
+          #
+          # `latest` and `main` are what docker-compose.yml and the self-hosting
+          # guide tell people to pull; buildcache-* is the layer cache CI builds
+          # from, and losing it costs a cold FAISS compile on both architectures.
+          exclude-tags: latest,main,buildcache-amd64,buildcache-arm64
+
+          # Re-reads every multi-architecture image afterwards and reports any
+          # that lost a platform child. Left on for the log, but it does not
+          # decide anything: the action raises those as core.warning and drops
+          # the result on the floor (image-validator.ts fills in `hasErrors`,
+          # cleanup-orchestrator.ts discards it, nothing calls setFailed), so a
+          # hollowed-out tag would leave this job green. The step below is what
+          # actually gates.
+          validate: true
+
+          dry-run: ${{ inputs.dry-run || false }}
+
+      # The failure this job risks is silent: a tag that still exists, still
+      # resolves, and no longer has an image for one of its architectures --
+      # visible only when someone pulls it on that architecture. So the tags are
+      # re-read here and the job fails on its own account rather than trusting a
+      # warning nobody reads.
+      - name: Verify every tagged image still resolves on both architectures
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          PACKAGE: ${{ github.event.repository.name }}
+          IMAGE: ghcr.io/${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          tags=$(gh api --paginate \
+            "/users/$OWNER/packages/container/$PACKAGE/versions" \
+            --jq '.[].metadata.container.tags[]' | sort -u)
+
+          if [ -z "$tags" ]; then
+            echo "::error::Could not list tags for $PACKAGE -- verification did not run"
+            exit 1
+          fi
+
+          broken=""
+          checked=0
+          for tag in $tags; do
+            # The buildcache-* tags are BuildKit cache manifests, not images:
+            # they carry no platforms and are not meant to be pulled.
+            case "$tag" in
+              buildcache-*) continue ;;
+            esac
+
+            if ! raw=$(docker buildx imagetools inspect "$IMAGE:$tag" --raw 2>&1); then
+              broken="$broken $tag(unresolvable)"
+              continue
+            fi
+
+            for want in amd64 arm64; do
+              printf '%s' "$raw" \
+                | jq -e --arg a "$want" \
+                  '[.manifests[]? | select(.platform.os == "linux" and .platform.architecture == $a)] | length > 0' \
+                  >/dev/null 2>&1 || broken="$broken $tag(no-linux/$want)"
+            done
+            checked=$((checked + 1))
+          done
+
+          if [ -n "$broken" ]; then
+            echo "::error::Tags left incomplete by the prune:$broken"
+            exit 1
+          fi
+          echo "::notice::$checked tagged images verified, all carrying linux/amd64 and linux/arm64"

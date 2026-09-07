@@ -4,7 +4,7 @@ The published image carries everything Lemmary needs — the Go binary, the buil
 SPA and these docs, poppler for PDF work, and the FAISS build its vector search
 links against. Nothing has to be installed on the host but Docker.
 
-To run from source instead, see the [Setup Guide](/setup#running-from-source).
+To run from source instead, see [Development environment](/development).
 
 ## Quick start
 
@@ -37,7 +37,11 @@ pulling it. Published tags are `latest` (default branch), the release version
 
 ## What lives where
 
-Everything stateful is under `/app/pb_data`, on the `app_data` volume:
+For the short architectural overview, including S3 document storage and where
+embedding vectors live, see [Storage](/storage).
+
+With the default local file storage, everything stateful is under
+`/app/pb_data`, on the `app_data` volume:
 
 | Path | Contents |
 | --- | --- |
@@ -117,7 +121,19 @@ different proxy can get wrong:
   `IMPORT_STAGING_MAX_BYTES` or archive uploads start failing.
 - **Deep Search keeps streaming.** `POST /api/app/search/stream` is
   server-sent events, and Traefik streams responses rather than buffering them,
-  so each search, read and survey still appears as it happens.
+  so each search, read and survey still appears as it happens. Do not put a
+  `compress` middleware in front of it without excluding `text/event-stream`,
+  or the steps arrive in one lump at the end.
+- **Long answers need room.** A research run is minutes of work, and the
+  stream sends a comment frame every 15 seconds so the connection is never
+  idle. That satisfies `idleTimeout`, but **not**
+  `respondingTimeouts.writeTimeout`: like Go's `http.Server.WriteTimeout`, it
+  is an absolute deadline from the start of the response, and no amount of
+  heartbeat refreshes it. Leave it at 0 on the entrypoint that serves the app,
+  or set it past the longest run you expect. `forwardingTimeouts.responseHeaderTimeout`
+  matters for the same reason — it caps the wait for the backend's first byte.
+  Losing the connection no longer loses the answer (the run finishes and the
+  turn is saved either way), but the user watching it does lose the progress.
 
 With [encryption at rest](/encryption), add `VAULT_ALLOW_INSECURE_GATE=1`: the
 unlock gate refuses a non-loopback bind address, and inside a container the app

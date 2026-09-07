@@ -9,8 +9,8 @@ import { MarkdownContent } from '../components/MarkdownContent'
 import { useAsync } from '../hooks/useAsync'
 import { useChatSession, type ChatSendResult } from '../hooks/useChatSession'
 import {
-  deepSearch,
-  researchStream,
+  cancelSearchRun,
+  searchStream,
   type ResearchEvent,
   type ResearchStepKind,
   type SearchMode,
@@ -97,11 +97,20 @@ export function SearchPage() {
   const [extras, setExtras] = useState<Record<string, TurnExtras>>({})
   // A research run outlives an unmount unless it is cancelled: the fetch keeps
   // the stream open and the server keeps calling the provider.
-  const runRef = useRef<AbortController | null>(null)
+  // The controller abandons this page's view of the run; the id is what stops
+  // the run itself. Both are needed: since the server keeps working through a
+  // dropped connection, letting go of the stream no longer cancels anything.
+  const runRef = useRef<{ controller: AbortController; id: string } | null>(null)
 
   const sessions = useAsync(() => listChatSessions({ kind: 'search' }), [])
 
-  useEffect(() => () => runRef.current?.abort(), [])
+  // Unmounting stops this page painting the run. It deliberately does not stop
+  // the run: leaving the page, closing the tab and losing the network are the
+  // same event to everything downstream, and cancelling here would restore the
+  // exact behaviour this change removed -- an answer thrown away because
+  // nobody was watching it arrive. Cancelling is `endRun`, which is reached
+  // only by someone actually asking for it.
+  useEffect(() => () => runRef.current?.controller.abort(), [])
 
   /**
    * Ends the run that owns the screen.
@@ -117,10 +126,15 @@ export function SearchPage() {
    * until the next full reload.
    */
   const endRun = useCallback(() => {
-    if (!runRef.current) {
+    const run = runRef.current
+    if (!run) {
       return
     }
-    runRef.current.abort()
+    run.controller.abort()
+    // Said out loud, because hanging up does not stop it any more. Without
+    // this the abandoned run would go on to finish and store a turn for a
+    // conversation the user has already left.
+    void cancelSearchRun(run.id)
     runRef.current = null
     void sessions.reload()
   }, [sessions])
@@ -146,14 +160,19 @@ export function SearchPage() {
   )
 
   /**
-   * Runs a research turn as a stream, resolving with the stored turn so the
-   * conversation hook treats it like any other send. The steps and the streamed
-   * draft are this page's own state — they belong to a run in progress, not to
-   * the transcript.
+   * Runs a turn as a stream, resolving with the stored turn so the conversation
+   * hook treats it like any other send. The steps and the streamed draft are
+   * this page's own state — they belong to a run in progress, not to the
+   * transcript.
+   *
+   * Both modes go through here. Research needs the stream for its steps;
+   * plain search needs it for the heartbeat underneath, having previously been
+   * a POST that stayed silent until the answer was ready and so was liable to
+   * be hung up on by anything with a read timeout in between.
    */
-  const runResearch = useCallback(
-    async (id: string | undefined, content: string): Promise<ChatSendResult> => {
-      const run = new AbortController()
+  const runTurn = useCallback(
+    async (id: string | undefined, content: string, turnMode: SearchMode): Promise<ChatSendResult> => {
+      const run = { controller: new AbortController(), id: crypto.randomUUID() }
       runRef.current = run
 
       // Collected outside React state as well: the finished turn is assembled
@@ -167,8 +186,8 @@ export function SearchPage() {
       const box: { stored: Extract<ResearchEvent, { type: 'saved' }> | null } = { stored: null }
 
       try {
-        await researchStream(
-          { sessionId: id, content },
+        await searchStream(
+          { sessionId: id, content, mode: turnMode, runId: run.id },
           (event) => {
             switch (event.type) {
               case 'step':
@@ -194,15 +213,29 @@ export function SearchPage() {
                 break
             }
           },
-          run.signal,
+          run.controller.signal,
         )
       } catch (err) {
-        // Cancelling is not a provider failure, and the fetch reports it as a
-        // DOMException nobody wants to read.
-        if (run.signal.aborted) {
-          throw new Error('Research cancelled.', { cause: err })
+        // A turn that was already stored is not a failed send, however the
+        // stream ended.
+        //
+        // The `saved` event can be the last thing to arrive before a drop, and
+        // treating that as a failure was expensive: the composer came back
+        // with the question still in it, the answer vanished, and retrying
+        // bought a second run of research that had already been paid for --
+        // plus a second chat, since the session is created before the agent
+        // starts and the page has not learnt its id yet.
+        if (box.stored) {
+          streamError = ''
+        } else if (run.controller.signal.aborted) {
+          // Cancelling is not a provider failure, and the fetch reports it as
+          // a DOMException nobody wants to read.
+          throw new Error(turnMode === 'research' ? 'Research cancelled.' : 'Search cancelled.', {
+            cause: err,
+          })
+        } else {
+          throw err
         }
-        throw err
       } finally {
         if (runRef.current === run) {
           runRef.current = null
@@ -216,7 +249,11 @@ export function SearchPage() {
       }
       const stored = box.stored
       if (!stored) {
-        throw new Error('The research run ended without an answer.')
+        throw new Error(
+          turnMode === 'research'
+            ? 'The research run ended without an answer.'
+            : 'The search ended without an answer.',
+        )
       }
 
       const finished = collected.map((step) => ({ ...step, done: true }))
@@ -253,10 +290,7 @@ export function SearchPage() {
       }
       return detail
     },
-    send: ({ sessionId: id, content }) =>
-      mode === 'research'
-        ? runResearch(id, content)
-        : deepSearch({ sessionId: id, content, mode: 'search' }),
+    send: ({ sessionId: id, content }) => runTurn(id, content, mode),
     onSessionSettled,
   })
 
@@ -450,9 +484,10 @@ export function SearchPage() {
               sending={chat.sending}
               disabled={chat.loading}
               error={chat.error}
-              // A research run can take a while, so there has to be a way out
-              // of one that is taking too long.
-              onCancel={mode === 'research' ? () => runRef.current?.abort() : undefined}
+              // A run can take a while, so there has to be a way out of one
+              // that is taking too long. Research most of all, but a search
+              // waiting on a slow provider is no different to sit through.
+              onCancel={endRun}
               autoFocus
             />
           </ChatPanel>

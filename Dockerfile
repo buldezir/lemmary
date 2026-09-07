@@ -2,12 +2,17 @@
 # glibc-based end to end: blevesearch's FAISS fork, go-faiss and bleve are all
 # built and tested against glibc, and musl's 128 KiB default thread stacks are a
 # poor fit for FAISS's OpenMP worker threads. Debian also gives us multiarch,
-# which is what keeps the arm64 image a native-speed cross build instead of an
-# hour under QEMU.
+# which is what lets one machine build the other architecture's image without
+# emulating it.
+#
+# CI does not need that: it builds each architecture on a runner of that
+# architecture and merges the two into one manifest, so every stage there is
+# native. Multiarch is what keeps a local `--platform linux/amd64,linux/arm64`
+# build honest, and every stage below has to work both ways.
 
-# FAISS is compiled on the build machine and cross-compiled for the target, so
-# this stage never runs under emulation. The pinned commit lives in the script;
-# this layer is rebuilt only when the script changes.
+# Cross-compiled rather than emulated when host and target differ, so this stage
+# never runs under QEMU. The pinned commit lives in the script; this layer is
+# rebuilt only when the script changes.
 FROM --platform=$BUILDPLATFORM golang:1.27-trixie AS faiss-build
 
 ARG TARGETARCH
@@ -28,7 +33,7 @@ RUN /usr/local/bin/faiss-build.sh --prefix /opt/faiss --target-arch "$TARGETARCH
 
 # Just the artifacts, so `docker buildx build --target faiss
 # --output type=local,dest=./.faiss .` gives a developer lib/ and include/
-# rather than a builder's whole root filesystem. See docs/setup.md.
+# rather than a builder's whole root filesystem. See docs/development.md.
 FROM scratch AS faiss
 COPY --from=faiss-build /opt/faiss/ /
 
@@ -66,14 +71,29 @@ COPY backend/ .
 
 # -tags vectors is not optional: without it bleve compiles out SearchRequest.KNN
 # and the backend does not build at all (see internal/fulltext/vectors_required.go).
+#
+# The compiler is chosen by whether this is a cross build, not by the target
+# architecture: the aarch64 toolchain is only installed above when host != target,
+# so on a native arm64 builder -- which is how CI builds the arm64 image -- naming
+# it here would point CC at a binary that is not in the image. The library search
+# path is per-architecture either way, and /usr/lib/aarch64-linux-gnu is where the
+# arm64 OpenBLAS lives both natively and under multiarch. Only arm64-on-amd64 is
+# wired up, so the other cross direction has to fail here rather than fall through
+# to a compiler that would emit an object for the wrong architecture.
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     set -eu; \
     case "$TARGETARCH" in \
-      amd64) CC=gcc; EXTRA_LDFLAGS= ;; \
-      arm64) CC=aarch64-linux-gnu-gcc; EXTRA_LDFLAGS=-L/usr/lib/aarch64-linux-gnu ;; \
+      amd64 | arm64) ;; \
       *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
     esac; \
+    if [ "$TARGETARCH" = "$(dpkg --print-architecture)" ]; then \
+      CC=gcc; EXTRA_LDFLAGS=; \
+    elif [ "$TARGETARCH" = arm64 ]; then \
+      CC=aarch64-linux-gnu-gcc; EXTRA_LDFLAGS=-L/usr/lib/aarch64-linux-gnu; \
+    else \
+      echo "no cross toolchain for $TARGETARCH on $(dpkg --print-architecture)" >&2; exit 1; \
+    fi; \
     CGO_ENABLED=1 \
     CC="$CC" \
     GOOS="$TARGETOS" \
@@ -82,7 +102,11 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_LDFLAGS="-L/opt/faiss/lib -Wl,-rpath-link,/opt/faiss/lib $EXTRA_LDFLAGS" \
     go build -tags vectors -o lemmary .
 
-FROM node:26-alpine AS frontend-builder
+# The bundle is static JavaScript, HTML and CSS: identical whatever it is built
+# for. So this stage builds for the host and both target images copy the same
+# result, which in a local two-platform build is the difference between building
+# the frontend once and building it twice with one of them emulated.
+FROM --platform=$BUILDPLATFORM node:26-alpine AS frontend-builder
 
 RUN npm install -g pnpm
 
@@ -107,8 +131,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 # FAISS is only ever loaded by the binary next to it, so the two libraries go to
 # /usr/local/lib and ldconfig makes them findable without an rpath. faiss.ref
-# rides along so a running image can be asked which FAISS it has, the same way
-# CI asks a runner.
+# rides along so a running image can be asked which FAISS it has -- which is how
+# you tell two same-tag images of different architectures apart.
 COPY --from=faiss /lib/libfaiss.so /lib/libfaiss_c.so /lib/faiss.ref /usr/local/lib/
 RUN ldconfig
 WORKDIR /app

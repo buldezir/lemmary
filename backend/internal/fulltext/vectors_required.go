@@ -14,6 +14,5 @@ package fulltext
 // is set.
 //
 // The tag needs cgo and blevesearch's FAISS fork on the machine. See
-// scripts/faiss-build.sh, the repo .envrc, and the developer setup section in
-// docs/setup.md.
+// scripts/faiss-build.sh, the repo .envrc, and docs/development.md.
 const _ = build_this_module_with_tags_vectors__see_docs_setup_md

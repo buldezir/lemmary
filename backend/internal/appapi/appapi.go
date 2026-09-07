@@ -51,8 +51,9 @@ func Register(
 			g.POST("/documents/reprocess-failed", bindAuth(handlePostReprocessFailed(app)))
 			g.POST("/search", bindAuth(handleDeepSearch(app, rt, idx))).
 				Bind(apis.BodyLimit(chatMaxBodyBytes))
-			g.POST("/search/stream", bindAuth(handleResearchStream(app, rt, idx))).
+			g.POST("/search/stream", bindAuth(handleSearchStream(app, rt, idx))).
 				Bind(apis.BodyLimit(chatMaxBodyBytes))
+			g.POST("/search/cancel", bindAuth(handleSearchCancel(app)))
 			g.POST("/search/reindex", bindAdmin(handleSearchReindex(app, idx)))
 			// Saved conversations behind both AI chat surfaces. The collections
 			// carry no API rules, so this is their only access path.
