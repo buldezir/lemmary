@@ -227,7 +227,7 @@ jobs:
 
       # A pull request gets exactly one tag, the source branch name, so a
       # reviewer can pull the branch and run it. Deliberately not the sha, the
-      # semver or `latest`: those name releases, and a tag that moves with the
+      # version or `latest`: those name releases, and a tag that moves with the
       # branch means "whatever this PR currently is", which is what someone
       # testing a PR actually wants. type=ref,event=pr would tag it `pr-<n>`,
       # naming the review rather than the thing under review.
@@ -236,12 +236,19 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # `latest` names the tip of main and nothing else, so the raw entry
+          # below is its only source. Without this, metadata-action's default
+          # (latest=auto) would also hang `latest` off every release tag --
+          # silently repointing the tag docker-compose.yml and the self-hosting
+          # guide tell people to pull at the last release.
+          flavor: |
+            latest=false
           tags: |
             type=raw,value=${{ steps.branch.outputs.tag }},enable=${{ github.event_name == 'pull_request' }}
             type=ref,event=branch,enable=${{ github.event_name != 'pull_request' }}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=pep440,pattern={{version}}
+            type=pep440,pattern={{major}}.{{minor}}
+            type=pep440,pattern={{major}}
             type=sha,prefix=,enable=${{ github.event_name != 'pull_request' }}
             type=raw,value=latest,enable={{is_default_branch}}
           labels: |
