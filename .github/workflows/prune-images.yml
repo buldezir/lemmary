@@ -1,0 +1,70 @@
+name: Prune images
+
+# Publishing a multi-architecture image leaves untagged manifests behind. Each
+# architecture is built and pushed on its own runner as an image identified only
+# by its digest, and the merge job then assembles a fresh manifest list from the
+# two. That list references the platform manifests and their attestations -- but
+# the two intermediate indexes the build jobs pushed are referenced by nothing
+# from that moment on, and GHCR keeps them forever. Two per build adds up.
+#
+# Deleting them is more delicate than "delete untagged versions". Every tag this
+# repository publishes is a manifest list, and the platform manifests and
+# attestation manifests it points at are themselves untagged package versions --
+# so a tool that treats untagged as unreferenced hollows out `latest` while
+# leaving the tag in place, and nothing looks wrong until someone pulls it. This
+# action walks the manifest lists and keeps what they reference, which is the
+# whole reason it is this one and not actions/delete-package-versions.
+on:
+  schedule:
+    # Weekly. There is no urgency -- untagged manifests cost storage, not
+    # correctness -- and a prune that runs rarely is a prune whose blast radius
+    # stays small.
+    - cron: "17 4 * * 0"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Log what would be deleted without deleting it"
+        type: boolean
+        default: true
+
+# Never two prunes at once, and never a prune racing its own previous run.
+concurrency:
+  group: prune-images
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      # Pinned to a patch rather than the major, unlike every other action in
+      # this repository. The others build things; this one deletes them, and an
+      # unattended weekly job is the wrong place to find out what changed inside
+      # a major version.
+      - uses: dataaxiom/ghcr-cleanup-action@v1.2.2
+        with:
+          # owner, package and token all default to this repository and its
+          # GITHUB_TOKEN, which is what we want: no PAT, and no way for this to
+          # reach a package belonging to something else.
+          delete-untagged: true
+
+          # A build in flight has pushed its per-architecture images but may not
+          # have merged them yet, and between those two moments they are
+          # indistinguishable from the orphans this job exists to remove. An age
+          # floor is what keeps a scheduled prune from deleting the halves of an
+          # image that is still being assembled.
+          older-than: 7 days
+
+          # The layer cache CI builds from. Tagged, so delete-untagged would not
+          # touch it today -- but it is listed because the cost of losing it to
+          # some later rule is a cold FAISS compile on every architecture, and
+          # exclude-tags takes priority over every other rule.
+          exclude-tags: buildcache-amd64,buildcache-arm64
+
+          # Re-reads every multi-architecture image afterwards and fails if one
+          # is missing a platform child. This job's failure mode is silent and
+          # only shows up at `docker pull`, so it checks its own work.
+          validate: true
+
+          dry-run: ${{ inputs.dry-run || false }}
