@@ -338,12 +338,19 @@ jobs:
           # mode=max scopes would only make worse. GHCR has no such cap and needs
           # no credential this job does not already hold.
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-${{ matrix.arch }}
-          # Only main and tags write the cache. A pull request reads it -- which
+          # Only main and tags write the cache. Everything else reads it -- which
           # is where nearly all of the value is, since FAISS, `go mod download`
           # and the frontend install come from main's layers -- but must not
           # replace it, or whichever branch built last would decide what main
           # gets to reuse.
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max', env.REGISTRY, env.IMAGE_NAME, matrix.arch) || '' }}
+          #
+          # Gated on the ref rather than the event: `github.event_name !=
+          # 'pull_request'` reads like it means the same thing and does not, since
+          # a workflow_dispatch on a feature branch satisfies it and overwrites
+          # main's cache. Layers stay content-addressed either way, so the cost is
+          # a cold FAISS compile rather than a wrong image -- but it is the exact
+          # failure this gate exists to prevent.
+          cache-to: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max', env.REGISTRY, env.IMAGE_NAME, matrix.arch) || '' }}
 
       # Named by the digest itself rather than written into a file, so the merge
       # job can glob the filenames straight into an argument list.
