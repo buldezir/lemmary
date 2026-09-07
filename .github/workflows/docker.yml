@@ -39,22 +39,23 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 # Each architecture is built on a runner of that architecture and the two are
-# merged into one manifest, so nothing here runs under emulation. The x64 machine
-# takes the test job, the amd64 build and the merge; the arm64 machine takes the
-# arm64 build.
+# merged into one manifest, so nothing here runs under emulation. The homelab x64
+# machine takes the test job, the amd64 build and the merge; the arm64 build goes
+# to a GitHub-hosted arm64 runner, which is free for a public repository.
+#
+# The arm64 build is hosted rather than homelab on measured grounds. gh-runner-arm-1
+# can take it -- set CI_RUNNER_LABELS_ARM64 to
+# ["self-hosted", "linux", "arm64", "linux-arm64"] and it will -- but that machine
+# compiles FAISS in 699s and the Go backend in 413s where the x64 box
+# cross-compiles them in roughly 44s and 76s (run 34135193438). It even builds the
+# frontend slower natively, 186s, than the x64 box did emulating it at 158s. Native
+# is only faster when the native machine is not the slow one.
 #
 # Two repository variables move the jobs without editing this file, each a JSON
 # array of runner labels: CI_RUNNER_LABELS for the x64 jobs and
-# CI_RUNNER_LABELS_ARM64 for the arm64 build. ["ubuntu-latest"] and
-# ["ubuntu-24.04-arm"] put CI back on GitHub's runners while the homelab is down
-# -- both are free for a public repository -- and unsetting them brings CI home
-# again.
-#
-# Set both or neither. They are separate variables because the two machines carry
-# different labels, but they fail as a pair: with only the x64 one moved, the
-# arm64 build sits unassigned until the job timeout and takes `merge` -- and so
-# the whole publish -- down with it, which reads as a hang rather than as a
-# missing variable.
+# CI_RUNNER_LABELS_ARM64 for the arm64 build. ["ubuntu-latest"] puts the x64 work
+# on GitHub's runners while the homelab is down, and unsetting it brings that work
+# home again.
 #
 # A self-hosted runner needs Docker with buildx usable by the runner user, and
 # nothing else: the test job runs verification inside Docker rather than
@@ -279,11 +280,12 @@ jobs:
           - arch: amd64
             platform: linux/amd64
             runner: ${{ vars.CI_RUNNER_LABELS || '["self-hosted", "linux", "x64", "homelab"]' }}
-          # gh-runner-arm-1 carries neither `homelab` nor `docker`, so the arm64
-          # label set is not the x64 one with the architecture swapped.
+          # Hosted, for the reasons in the comment above this job block. Note that
+          # gh-runner-arm-1 carries neither `homelab` nor `docker`, so its label
+          # set is not the x64 one with the architecture swapped.
           - arch: arm64
             platform: linux/arm64
-            runner: ${{ vars.CI_RUNNER_LABELS_ARM64 || '["self-hosted", "linux", "arm64", "linux-arm64"]' }}
+            runner: ${{ vars.CI_RUNNER_LABELS_ARM64 || '["ubuntu-24.04-arm"]' }}
     runs-on: ${{ fromJSON(matrix.runner) }}
     permissions:
       contents: read
@@ -305,12 +307,10 @@ jobs:
         uses: docker/setup-buildx-action@v4
         with:
           version: v0.37.0
-          # These are persistent machines, so the BuildKit state is worth keeping
-          # between runs: a local cache beats pulling the registry cache, and on
-          # the arm64 box -- where FAISS and the Go build are compiled rather than
-          # cross-compiled -- that is the difference between minutes and seconds.
-          # It also stops the teardown from trying to delete a multi-gigabyte
-          # state volume, which is what timed out on run 34135193438.
+          # Worth keeping on the self-hosted x64 machine, where a local cache
+          # beats pulling the registry cache and the teardown otherwise tries to
+          # delete a multi-gigabyte state volume -- which is what timed out on run
+          # 34135193438. A no-op on a hosted runner, which is discarded either way.
           keep-state: true
 
       - name: Log in to GHCR
