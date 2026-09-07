@@ -56,11 +56,18 @@ jobs:
           # image that is still being assembled.
           older-than: 7 days
 
-          # The layer cache CI builds from. Tagged, so delete-untagged would not
-          # touch it today -- but it is listed because the cost of losing it to
-          # some later rule is a cold FAISS compile on every architecture, and
-          # exclude-tags takes priority over every other rule.
-          exclude-tags: buildcache-amd64,buildcache-arm64
+          # Nothing here is deletable under the single rule above: every one of
+          # these is tagged, and delete-untagged does not consider tagged images
+          # at all. They are named anyway, because that protection is a property
+          # of the rule set rather than of this list, and the day someone adds a
+          # keep-n-tagged or delete-tags rule it evaporates silently. exclude-tags
+          # takes priority over every other rule, so listing them here is what
+          # makes it survive a rule this file does not have yet.
+          #
+          # `latest` and `main` are what docker-compose.yml and the self-hosting
+          # guide tell people to pull; buildcache-* is the layer cache CI builds
+          # from, and losing it costs a cold FAISS compile on both architectures.
+          exclude-tags: latest,main,buildcache-amd64,buildcache-arm64
 
           # Re-reads every multi-architecture image afterwards and fails if one
           # is missing a platform child. This job's failure mode is silent and
