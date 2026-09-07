@@ -24,11 +24,12 @@ on:
       - "docker-compose.yml"
   workflow_dispatch:
 
-# One self-hosted runner takes these jobs one at a time, so a superseded run
-# would sit in the queue ahead of the push that replaced it. Pushes to main and
-# tags are never cancelled -- those publish the images everything else pulls.
-# A superseded pull request build is cancelled with the rest of its run: its
-# image is a preview of a commit nobody is looking at any more.
+# The build fans out over two self-hosted runners, one per architecture, and
+# there is exactly one of each -- so a superseded run still occupies the machines
+# the run that replaced it needs. Pushes to main and tags are never cancelled:
+# those publish the images everything else pulls. A superseded pull request build
+# is cancelled with the rest of its run, since its image is a preview of a commit
+# nobody is looking at any more.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -37,14 +38,28 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
-# Both jobs run on the self-hosted runner by default. Set the CI_RUNNER_LABELS
-# repository variable to a JSON array to move them without editing this file:
-# ["ubuntu-latest"] puts CI back on GitHub's runners while the homelab machine
-# is down, and unsetting it brings CI home again.
+# Each architecture is built on a runner of that architecture and the two are
+# merged into one manifest, so nothing here runs under emulation. The x64 machine
+# takes the test job, the amd64 build and the merge; the arm64 machine takes the
+# arm64 build.
 #
-# A self-hosted runner needs Docker with buildx usable by the runner user
-# (see the runner-smoke workflow). The test job runs verification inside
-# Docker; it does not install Go, Node, Playwright or poppler on the host.
+# Two repository variables move the jobs without editing this file, each a JSON
+# array of runner labels: CI_RUNNER_LABELS for the x64 jobs and
+# CI_RUNNER_LABELS_ARM64 for the arm64 build. ["ubuntu-latest"] and
+# ["ubuntu-24.04-arm"] put CI back on GitHub's runners while the homelab is down
+# -- both are free for a public repository -- and unsetting them brings CI home
+# again.
+#
+# Set both or neither. They are separate variables because the two machines carry
+# different labels, but they fail as a pair: with only the x64 one moved, the
+# arm64 build sits unassigned until the job timeout and takes `merge` -- and so
+# the whole publish -- down with it, which reads as a hang rather than as a
+# missing variable.
+#
+# A self-hosted runner needs Docker with buildx usable by the runner user, and
+# nothing else: the test job runs verification inside Docker rather than
+# installing Go, Node, Playwright or poppler on the host, and no runner needs
+# QEMU now that neither build crosses architectures.
 jobs:
   test:
     if: github.event_name == 'pull_request'
@@ -142,49 +157,22 @@ jobs:
         # is a failure.
         run: ./scripts/test-all.sh
 
-  build:
-    # Never publish an image for a red pull request: the tag moves with the
-    # branch, so pushing one for a failed run would leave whoever pulls it
-    # running code the suite rejected, with nothing in the tag to say so.
-    needs: test
-    # `always()` so this is evaluated at all when `test` did not succeed --
-    # without it a failed dependency skips the job silently instead of on the
-    # terms below. A push or tag skips `test` outright (it is pull-request
-    # only), and a skipped dependency must not block the release build, hence
-    # accepting "skipped" alongside "success".
-    #
-    # A fork's pull request never builds either. The job holds a package-write
-    # token and runs on the self-hosted runner, and a fork's code must have
-    # neither; skipping is the only safe answer, since there is no fork
-    # equivalent of the test job's throwaway-runner fallback once GHCR push is
-    # involved.
-    if: >-
-      always()
-      && (needs.test.result == 'success' || needs.test.result == 'skipped')
-      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    # Otherwise only push, tag and manual dispatch from this repository, so
-    # there is no untrusted code to keep off the runner.
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted", "linux", "x64", "homelab"]') }}
-    permissions:
-      contents: read
-      packages: write
+  # The tags every architecture's image will end up under, resolved once. This
+  # job is the reason a branch named `latest` costs seconds rather than two
+  # builds: it runs alongside `test`, needs no checkout and no runner of ours,
+  # and the branch-name guard below fails it before anything is built.
+  #
+  # A fork's pull request stops here, which is what skips the builds and the
+  # merge: those jobs require this one to have succeeded.
+  meta:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      labels: ${{ steps.meta.outputs.labels }}
+      json: ${{ steps.meta.outputs.json }}
 
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       # A branch name may contain characters a Docker tag may not -- "/" above
       # all, which every feat/… branch has. metadata-action sanitizes the refs
       # it derives itself, but not a type=raw value, so the branch tag is
@@ -205,12 +193,13 @@ jobs:
           fi
 
           # A pull request must not be able to publish over a release tag. The
-          # branch name is the whole tag, this job holds packages:write, and it
-          # runs before any review -- so a branch called `latest` would replace
-          # the image docker-compose.yml and the self-hosting guide tell people
-          # to pull, and one called `1.2` would replace a release line. Refused
-          # rather than silently prefixed: the branch is trivially renamed, and
-          # a tag that did not match its branch would be its own surprise.
+          # branch name is the whole tag, the build jobs hold packages:write, and
+          # they run before any review -- so a branch called `latest` would
+          # replace the image docker-compose.yml and the self-hosting guide tell
+          # people to pull, and one called `1.2` would replace a release line.
+          # Refused rather than silently prefixed: the branch is trivially
+          # renamed, and a tag that did not match its branch would be its own
+          # surprise.
           case "$tag" in
             latest | main | edge)
               echo "::error::Branch '$HEAD_REF' would publish over the release tag '$tag'. Rename the branch."
@@ -255,13 +244,214 @@ jobs:
             org.opencontainers.image.title=Lemmary
             org.opencontainers.image.licenses=PolyForm-Noncommercial-1.0.0
 
-      - name: Build and push
+  # One job per architecture, each on a runner of that architecture, each
+  # pushing an untagged image identified only by its digest. `merge` below turns
+  # the two digests into the tagged manifest lists. Nothing is tagged here: a
+  # tag that pointed at one architecture, even briefly, is a tag someone could
+  # pull.
+  build:
+    # Never publish an image for a red pull request: the tag moves with the
+    # branch, so pushing one for a failed run would leave whoever pulls it
+    # running code the suite rejected, with nothing in the tag to say so.
+    needs: [test, meta]
+    # `always()` so this is evaluated at all when `test` did not succeed --
+    # without it a failed dependency skips the job silently instead of on the
+    # terms below. A push or tag skips `test` outright (it is pull-request
+    # only), and a skipped dependency must not block the release build, hence
+    # accepting "skipped" alongside "success".
+    #
+    # A fork's pull request never builds. These jobs hold a package-write token
+    # and run on the self-hosted runners, and a fork's code must have neither;
+    # skipping is the only safe answer, since there is no fork equivalent of the
+    # test job's throwaway-runner fallback once GHCR push is involved. `meta`
+    # carries that guard, so requiring it here is what enforces it.
+    if: >-
+      always()
+      && (needs.test.result == 'success' || needs.test.result == 'skipped')
+      && needs.meta.result == 'success'
+    strategy:
+      # One architecture failing must not cancel the other: two build logs
+      # localise a break to an architecture, one log leaves you guessing. The
+      # merge requires both to have succeeded either way.
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ${{ vars.CI_RUNNER_LABELS || '["self-hosted", "linux", "x64", "homelab"]' }}
+          # gh-runner-arm-1 carries neither `homelab` nor `docker`, so the arm64
+          # label set is not the x64 one with the architecture swapped.
+          - arch: arm64
+            platform: linux/arm64
+            runner: ${{ vars.CI_RUNNER_LABELS_ARM64 || '["self-hosted", "linux", "arm64", "linux-arm64"]' }}
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # No setup-qemu-action: this job builds only its own architecture. Every
+      # stage of the Dockerfile is native here, including the runtime stage's
+      # apt-get, which used to be emulated.
+      #
+      # The version is pinned because setup-buildx-action has no default for it:
+      # unset, each machine uses whatever buildx it happens to have installed, and
+      # these are two hand-managed hosts. `merge` below depends on buildx keeping
+      # the provenance attestation each of these builds pushes, so the two boxes
+      # agreeing on the buildx version is load-bearing, not hygiene.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          version: v0.37.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          platforms: ${{ matrix.platform }}
+          labels: ${{ needs.meta.outputs.labels }}
+          # push-by-digest publishes the image under no tag at all; the digest
+          # comes back as an output for the merge job. name-canonical records the
+          # repository in the image config so the digest resolves.
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          # The layer cache lives in GHCR rather than the Actions cache. It has
+          # to be per-architecture either way -- two parallel builds sharing one
+          # cache manifest overwrite each other every run -- and this repository's
+          # Actions cache is already over its 10 GB limit and evicting, which two
+          # mode=max scopes would only make worse. GHCR has no such cap and needs
+          # no credential this job does not already hold.
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-${{ matrix.arch }}
+          # Only main and tags write the cache. A pull request reads it -- which
+          # is where nearly all of the value is, since FAISS, `go mod download`
+          # and the frontend install come from main's layers -- but must not
+          # replace it, or whichever branch built last would decide what main
+          # gets to reuse.
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max', env.REGISTRY, env.IMAGE_NAME, matrix.arch) || '' }}
+
+      # Named by the digest itself rather than written into a file, so the merge
+      # job can glob the filenames straight into an argument list.
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${{ runner.temp }}/digests"
+          touch "${{ runner.temp }}/digests/${DIGEST#sha256:}"
+
+      # overwrite because an artifact name has to be unique within a run, and
+      # re-running one failed architecture would otherwise collide with the digest
+      # its first attempt uploaded. The name is per-architecture, so the two legs
+      # never race for it.
+      - name: Upload digest
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 1
+
+  # The two per-architecture images become one manifest list per tag. This is the
+  # step that publishes anything anyone can pull by name.
+  merge:
+    # Deliberately no `if:` at all. The default -- run only when every job in
+    # `needs` succeeded -- is exactly the policy wanted here, and `always()` would
+    # let a cancelled or failed architecture through to publish a tag carrying one
+    # architecture where callers expect two. The `build` job's own guards already
+    # decide whether there is anything to merge.
+    needs: [meta, build]
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted", "linux", "x64", "homelab"]') }}
+    permissions:
+      packages: write
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      # Same pin as the build jobs: it is this buildx that has to carry the
+      # per-architecture provenance attestations through into the merged index.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          version: v0.37.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest list and push
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          METADATA: ${{ needs.meta.outputs.json }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          # Each build job uploaded one file named after its image digest.
+          digests=(*)
+
+          # `build` succeeding should mean two of them, but this job publishes the
+          # tags people pull by name -- so it counts rather than trusting the
+          # artifact download, and refuses to publish one architecture under a tag
+          # that is supposed to carry both.
+          if [ "${#digests[@]}" -ne 2 ]; then
+            echo "::error::Expected 2 per-architecture digests, found ${#digests[@]}"
+            ls -la
+            exit 1
+          fi
+
+          # One -t per tag `meta` resolved, one source ref per digest uploaded.
+          args=()
+          while IFS= read -r tag; do
+            args+=(-t "$tag")
+          done < <(jq -r '.tags[]' <<<"$METADATA")
+
+          for digest in "${digests[@]}"; do
+            args+=("${REGISTRY}/${IMAGE_NAME}@sha256:${digest}")
+          done
+
+          docker buildx imagetools create "${args[@]}"
+
+      # A merge that silently produced a single-architecture manifest would
+      # publish a tag that fails to pull on half the machines that want it, so
+      # the count is checked rather than assumed.
+      - name: Verify the manifest carries both architectures
+        env:
+          METADATA: ${{ needs.meta.outputs.json }}
+        run: |
+          set -euo pipefail
+          tag=$(jq -r '.tags[0]' <<<"$METADATA")
+          echo "::notice::Verifying $tag"
+          raw=$(docker buildx imagetools inspect "$tag" --raw)
+
+          missing=""
+          for want in amd64 arm64; do
+            printf '%s' "$raw" \
+              | jq -e --arg a "$want" \
+                '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == $a)] | length > 0' \
+                >/dev/null || missing="$missing linux/$want"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::$tag is missing:$missing"
+            printf '%s\n' "$raw"
+            exit 1
+          fi
+
+          docker buildx imagetools inspect "$tag"
