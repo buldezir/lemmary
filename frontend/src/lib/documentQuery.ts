@@ -12,6 +12,9 @@
  * unfiltered list.
  */
 
+import { isDocumentStatus } from './documentStatus'
+import { defaultStatusFilter } from './reviewPolicy'
+
 export type DocumentQuery = {
   /** Fulltext search; empty means list everything. */
   q: string
@@ -44,9 +47,18 @@ export const defaultDocumentQuery: DocumentQuery = {
   page: 1,
 }
 
-// The statuses the filter offers, which is what a URL may name. 'all' is the
-// absence of a status filter rather than one of them.
-const statuses = ['pending', 'processing', 'completed', 'needs_review', 'failed']
+/**
+ * The defaults as this instance actually means them.
+ *
+ * Only `status` differs, and only when review is required: the list then
+ * defaults to Completed, so `/` is the archive that has been read and the
+ * Inbox is the pile. Parsing and serializing both go through here, which is
+ * what keeps the pair consistent -- if only one knew, picking "All statuses"
+ * would be stripped from the URL as a default and snap straight back.
+ */
+export function currentDocumentDefaults(): DocumentQuery {
+  return { ...defaultDocumentQuery, status: defaultStatusFilter() }
+}
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/
 
@@ -79,7 +91,11 @@ export function parseDocumentQuery(raw: DocumentQueryInput): DocumentQuery {
   const status = text(raw.status)
   return {
     q: typeof raw.q === 'string' ? raw.q : '',
-    status: statuses.includes(status) ? status : 'all',
+    // 'all' is the absence of a status filter rather than one of them, so it is
+    // not in DOCUMENT_STATUSES -- but it is a value a URL may legitimately
+    // name, which is how "All statuses" survives an instance whose default is
+    // Completed. Anything else unrecognised falls back to the default.
+    status: isDocumentStatus(status) || status === 'all' ? status : currentDocumentDefaults().status,
     from: date(raw.from),
     to: date(raw.to),
     type: id(raw.type),
@@ -96,13 +112,28 @@ export function parseDocumentQuery(raw: DocumentQueryInput): DocumentQuery {
  * "?q=&status=all&page=1" onto every plain link back to the list.
  */
 export function documentQuerySearch(query: DocumentQuery): Partial<DocumentQuery> {
+  const defaults = currentDocumentDefaults()
   const search: Partial<DocumentQuery> = {}
-  for (const key of Object.keys(defaultDocumentQuery) as (keyof DocumentQuery)[]) {
-    if (query[key] !== defaultDocumentQuery[key]) {
+  for (const key of Object.keys(defaults) as (keyof DocumentQuery)[]) {
+    if (query[key] !== defaults[key]) {
       Object.assign(search, { [key]: query[key] })
     }
   }
   return search
+}
+
+/**
+ * The same, for the Inbox route, whose status is its path.
+ *
+ * /inbox is the needs_review list by definition, so a `status` param there
+ * would be either redundant or a contradiction. Dropping it on the way in
+ * means neither can be linked to or typed.
+ */
+export function inboxQuerySearch(raw: DocumentQueryInput): Partial<DocumentQuery> {
+  return documentQuerySearch({
+    ...parseDocumentQuery(raw),
+    status: currentDocumentDefaults().status,
+  })
 }
 
 /** Whether the list is narrowed at all, which decides the empty-state wording. */

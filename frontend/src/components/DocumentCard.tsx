@@ -1,22 +1,19 @@
 import { Link } from '@tanstack/react-router'
 import type { DocumentRecord } from '../lib/api/documents'
+import { DOCUMENT_STATUS_LABELS, reviewReason, type DocumentStatus } from '../lib/documentStatus'
+import { Button } from './ui'
 
 type Props = {
   document: DocumentRecord
   selectable?: boolean
   selected?: boolean
   onToggleSelect?: (id: string) => void
+  /** Offered only for a document that is waiting; omit it to hide the button. */
+  onMarkReviewed?: (id: string) => void
+  markingReviewed?: boolean
 }
 
-const statusLabels: Record<DocumentRecord['processing_status'], string> = {
-  pending: 'Pending',
-  processing: 'Processing',
-  completed: 'Completed',
-  failed: 'Failed',
-  needs_review: 'Needs review',
-}
-
-const statusStyles: Record<DocumentRecord['processing_status'], string> = {
+const statusStyles: Record<DocumentStatus, string> = {
   pending: 'text-amber-800 ring-amber-800/40',
   processing: 'text-sky-900 ring-sky-900/40',
   completed: 'text-forest ring-forest/40',
@@ -32,33 +29,52 @@ function CardDescription({ document }: { document: DocumentRecord }) {
   if (document.processing_status !== 'needs_review') {
     return <p className="line-clamp-3 text-sm text-ink-muted">No summary yet.</p>
   }
-  if (document.duplicate_of) {
-    const originalTitle = document.expand?.duplicate_of?.title?.trim() || 'another document'
-    return (
-      <p className="line-clamp-3 text-sm text-amber-800">
-        Possible duplicate of{' '}
-        <Link
-          to="/document/$documentId"
-          params={{ documentId: document.duplicate_of }}
-          className="relative z-10 pointer-events-auto font-medium underline underline-offset-2 hover:text-amber-950"
-        >
-          {originalTitle}
-        </Link>
-        .
-      </p>
-    )
+
+  // With no summary to show, say why the document is waiting instead. This used
+  // to assume low confidence for anything that was not a duplicate, which the
+  // "always require review" setting turned into a lie about confident
+  // documents -- hence reviewReason rather than a second look at confidence.
+  switch (reviewReason(document)) {
+    case 'duplicate': {
+      const originalTitle = document.expand?.duplicate_of?.title?.trim() || 'another document'
+      return (
+        <p className="line-clamp-3 text-sm text-amber-800">
+          Possible duplicate of{' '}
+          <Link
+            to="/document/$documentId"
+            params={{ documentId: document.duplicate_of! }}
+            className="relative z-10 pointer-events-auto font-medium underline underline-offset-2 hover:text-amber-950"
+          >
+            {originalTitle}
+          </Link>
+          .
+        </p>
+      )
+    }
+    case 'low_confidence': {
+      const pct = Math.round((document.confidence ?? 0) * 100)
+      return (
+        <p className="line-clamp-3 text-sm text-amber-800">Low extraction confidence ({pct}%).</p>
+      )
+    }
+    default:
+      return <p className="line-clamp-3 text-sm text-amber-800">Waiting for review.</p>
   }
-  const pct = Math.round((document.confidence ?? 0) * 100)
-  return (
-    <p className="line-clamp-3 text-sm text-amber-800">Low extraction confidence ({pct}%).</p>
-  )
 }
 
-export function DocumentCard({ document, selectable, selected, onToggleSelect }: Props) {
+export function DocumentCard({
+  document,
+  selectable,
+  selected,
+  onToggleSelect,
+  onMarkReviewed,
+  markingReviewed,
+}: Props) {
   const tags = document.expand?.tags?.map((tag) => tag.name) ?? []
   const correspondent = document.expand?.correspondent?.name
   const documentType = document.expand?.document_type?.name
   const title = document.title || 'Untitled document'
+  const canMarkReviewed = Boolean(onMarkReviewed) && document.processing_status === 'needs_review'
 
   return (
     <article
@@ -89,7 +105,7 @@ export function DocumentCard({ document, selectable, selected, onToggleSelect }:
             <span
               className={`inline-flex px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ring-1 ring-inset ${statusStyles[document.processing_status]}`}
             >
-              {statusLabels[document.processing_status]}
+              {DOCUMENT_STATUS_LABELS[document.processing_status]}
             </span>
           </div>
           {document.document_date && (
@@ -113,6 +129,22 @@ export function DocumentCard({ document, selectable, selected, onToggleSelect }:
                 {tag}
               </span>
             ))}
+          </div>
+        )}
+
+        {canMarkReviewed && (
+          <div className="flex justify-end">
+            {/* Above the full-bleed link, like the checkbox, so clearing a
+                document from the Inbox does not open it first. */}
+            <Button
+              variant="secondary"
+              size="xs"
+              disabled={markingReviewed}
+              onClick={() => onMarkReviewed?.(document.id)}
+              className="relative z-10 pointer-events-auto"
+            >
+              {markingReviewed ? 'Marking...' : 'Mark reviewed'}
+            </Button>
           </div>
         )}
       </div>

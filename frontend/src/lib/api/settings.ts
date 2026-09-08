@@ -1,4 +1,6 @@
 import { apiFetch } from '../apiClient'
+import { setAlwaysRequireReview } from '../reviewPolicy'
+import { invalidateAppMeta } from './meta'
 
 export type AppSettings = {
   ocr_provider_id: string
@@ -40,6 +42,11 @@ export type AppSettings = {
    * EXTRACTION_PROMPT_VERSION or through the API.
    */
   extraction_prompt_version: string
+  /**
+   * Whether every document the pipeline extracted metadata for waits in the
+   * Inbox instead of completing. Tenant-owned, so a managed instance keeps it.
+   */
+  always_require_review: boolean
   near_duplicate_detection_enabled: boolean
   near_duplicate_threshold: number
 }
@@ -73,10 +80,17 @@ export function getAppSettings() {
   })
 }
 
-export function updateAppSettings(patch: AppSettingsPatch) {
-  return apiFetch<AppSettings>('/api/app/settings', {
+export async function updateAppSettings(patch: AppSettingsPatch) {
+  const settings = await apiFetch<AppSettings>('/api/app/settings', {
     method: 'PATCH',
     body: patch,
     fallbackError: 'Failed to save settings',
   })
+  // always_require_review decides what a documents-list URL means, and the SPA
+  // normally learns it once from /api/app/meta at boot. Taking it from the save
+  // response is what stops an admin who just turned it on from having to
+  // reload before their own list obeys it.
+  setAlwaysRequireReview(settings.always_require_review)
+  invalidateAppMeta()
+  return settings
 }

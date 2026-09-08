@@ -21,6 +21,7 @@ func settingsRecordForTest(t *testing.T) *core.Record {
 		&core.TextField{Name: "embedding_provider_id", Max: 15},
 		&core.TextField{Name: "embedding_model", Max: 200},
 		&core.NumberField{Name: "embedding_dims", OnlyInt: true},
+		&core.BoolField{Name: "always_require_review"},
 	)
 	record := core.NewRecord(collection)
 	record.Id = config.SingletonID
@@ -194,6 +195,42 @@ func TestBindingRefusalsNameEverySDKThatCouldServe(t *testing.T) {
 		t.Error("embeddings accepted chatgpt, whose endpoint has none")
 	}
 }
+
+func TestPatchTurnsAlwaysRequireReviewOnAndOff(t *testing.T) {
+	t.Parallel()
+	record := settingsRecordForTest(t)
+
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{
+		AlwaysRequireReview: boolptr(true),
+	}); err != nil {
+		t.Fatalf("applySettingsPatch: %v", err)
+	}
+	if !record.GetBool("always_require_review") {
+		t.Fatal("always_require_review stayed off after a patch turning it on")
+	}
+
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{
+		AlwaysRequireReview: boolptr(false),
+	}); err != nil {
+		t.Fatalf("applySettingsPatch: %v", err)
+	}
+	if record.GetBool("always_require_review") {
+		t.Fatal("always_require_review stayed on after a patch turning it off")
+	}
+}
+
+// Requiring review is a reader's preference about their own archive: it buys no
+// API calls and describes nothing about the instance, so a managed tenant keeps
+// it. Naming a managed field fails the whole PATCH with a 403, which would make
+// the Inbox toggle unusable on every hosted plan.
+func TestAlwaysRequireReviewIsNotAManagedSetting(t *testing.T) {
+	t.Parallel()
+	if (settingsPatchRequest{AlwaysRequireReview: boolptr(true)}).touchesManaged() {
+		t.Fatal("always_require_review counts as managed; a hosted tenant could not set it")
+	}
+}
+
+func boolptr(b bool) *bool { return &b }
 
 func TestOneOfReadsAsASentence(t *testing.T) {
 	t.Parallel()

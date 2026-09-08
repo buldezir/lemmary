@@ -20,6 +20,7 @@ The API has been tested with the [swift-paperless](https://github.com/paulgessin
 - Document list with full-text search and status filters
 - Deep Search chat in two modes, one per path: **Search** (`/rag/search`) finds documents and lists them as cards; **Research** (`/rag/research`) searches, reads the documents it finds, surveys hundreds at once through a helper model, counts and totals, and answers with links to its sources — streaming each step as it works; a run that outgrows the model's context window fails with the provider's error; chats are saved, listed in a sidebar, and resumable by URL
 - Detail page for reviewing OCR text and correcting metadata
+- Review **Inbox** with a count in the header, holding everything that is waiting on you — a low-confidence extraction, a possible duplicate, or every new document if you turn on **Always require review**; clear one by saving corrections, or mark a whole page reviewed at once. With the setting on, uploads land in the Inbox and **Documents** becomes the archive you have already read
 - Passkey sign-in: register a passkey per device and sign in with a fingerprint, face, or device PIN — no password typed, alongside the existing password and OAuth2 options
 - Admin Settings page for runtime OCR/AI/worker config
 - First-launch setup wizard (admin account + required OCR/AI keys)

@@ -1,6 +1,8 @@
 import { pb, pbUrl } from '../pb'
 import { ensureAuth } from '../auth'
 import { apiFetch, errorDetail } from '../apiClient'
+import { notifyDocumentsChanged } from '../documentEvents'
+import type { DocumentStatus } from '../documentStatus'
 import type { ProcessingStep, ReprocessMode } from '../processing'
 import type { TimelineMonth } from '../timeline'
 
@@ -42,7 +44,7 @@ export type DocumentRecord = {
   ocr_text: string
   summary: string
   summary_original: string
-  processing_status: 'pending' | 'processing' | 'completed' | 'failed' | 'needs_review'
+  processing_status: DocumentStatus
   metadata_source: string
   confidence: number
   people_or_organizations: string[]
@@ -157,18 +159,71 @@ export async function reprocessDocument(
   })
 }
 
-// requestKey: null — this is polled alongside the job counts and must not
+// requestKey: null — these are polled alongside the job counts and must not
 // auto-cancel a request already in flight.
 //
 // Counted through the documents collection, so it only covers the caller's own
 // documents (that collection's rules are user = @request.auth.id).
-export async function countFailedDocuments(): Promise<number> {
+export async function countDocumentsWithStatus(status: DocumentStatus): Promise<number> {
   await ensureAuth()
 
-  const result = await pb
-    .collection('documents')
-    .getList(1, 1, { filter: `processing_status = "failed"`, requestKey: null })
+  // Through buildDocumentFilter so the filter string has one author; a real
+  // status always produces a clause, so the fallback is unreachable.
+  const filter =
+    buildDocumentFilter({
+      status,
+      documentType: 'all',
+      correspondent: 'all',
+      dateFrom: '',
+      dateTo: '',
+    }) ?? ''
+
+  const result = await pb.collection('documents').getList(1, 1, { filter, requestKey: null })
   return result.totalItems
+}
+
+export function countFailedDocuments(): Promise<number> {
+  return countDocumentsWithStatus('failed')
+}
+
+/** How many documents are waiting for the user, i.e. the Inbox's size. */
+export function countDocumentsNeedingReview(): Promise<number> {
+  return countDocumentsWithStatus('needs_review')
+}
+
+/**
+ * Clears documents out of the review Inbox.
+ *
+ * A status write and nothing else: reviewing is not an edit, so this leaves
+ * metadata_source alone -- the metadata really did come from the model, the
+ * user just read it. The owner UpdateRule permits it directly and the select
+ * field validates the value, so there is no endpoint to go through.
+ *
+ * allSettled rather than all: eleven of twelve landing is a better outcome
+ * than discarding eleven successes because one document was deleted from
+ * another tab.
+ */
+export async function markDocumentsReviewed(documentIds: string[]): Promise<void> {
+  if (documentIds.length === 0) return
+  await ensureAuth()
+
+  const results = await Promise.allSettled(
+    documentIds.map((id) =>
+      pb
+        .collection('documents')
+        .update(id, { processing_status: 'completed' }, { requestKey: null }),
+    ),
+  )
+  notifyDocumentsChanged()
+
+  const failed = results.filter((result) => result.status === 'rejected').length
+  if (failed > 0) {
+    throw new Error(
+      failed === documentIds.length
+        ? 'Could not mark as reviewed.'
+        : `Marked ${documentIds.length - failed} reviewed; ${failed} failed.`,
+    )
+  }
 }
 
 export type ReprocessResult = {
@@ -343,7 +398,7 @@ export async function saveDocumentMetadata(
       : Promise.resolve(''),
   ])
 
-  return pb.collection('documents').update<DocumentRecord>(documentId, {
+  const saved = await pb.collection('documents').update<DocumentRecord>(documentId, {
     title: input.title,
     purpose: input.purpose,
     summary: input.summary,
@@ -355,6 +410,9 @@ export async function saveDocumentMetadata(
     processing_status:
       input.processingStatus === 'needs_review' ? 'completed' : input.processingStatus,
   })
+  // Saving can empty a slot in the Inbox, so the badge wants to hear about it.
+  notifyDocumentsChanged()
+  return saved
 }
 
 /**

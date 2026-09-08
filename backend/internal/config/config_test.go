@@ -190,6 +190,11 @@ func TestDefaultsUsesCodeDefaults(t *testing.T) {
 	if cfg.NearDuplicateDetectionEnabled {
 		t.Fatal("expected near-duplicate detection off by default")
 	}
+	// Off means the pipeline behaves exactly as it did before the Inbox
+	// existed, so upgrading an instance changes nothing until its owner asks.
+	if cfg.AlwaysRequireReview {
+		t.Fatal("expected always-require-review off by default")
+	}
 	if cfg.WorkerCronExpr != "* * * * *" {
 		t.Fatalf("cron=%q", cfg.WorkerCronExpr)
 	}

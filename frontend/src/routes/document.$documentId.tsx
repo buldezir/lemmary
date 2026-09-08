@@ -4,11 +4,13 @@ import { ClientResponseError } from 'pocketbase'
 import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
 import {
+  markDocumentsReviewed,
   openDocumentFile,
   reprocessDocument,
   saveDocumentMetadata,
   type DocumentRecord,
 } from '../lib/api/documents'
+import { DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
 import {
   defaultReprocessSteps,
   forceStepsForReprocess,
@@ -36,6 +38,7 @@ export function DocumentDetailPage() {
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [markingReviewed, setMarkingReviewed] = useState(false)
   const [reprocessing, setReprocessing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [reprocessSteps, setReprocessSteps] = useState<ProcessingStep[]>([])
@@ -302,6 +305,34 @@ export function DocumentDetailPage() {
     await navigate({ to: '/' })
   }
 
+  /**
+   * Clears the document out of the Inbox without going through the form.
+   *
+   * Hidden while editing rather than disabled-with-an-explanation, because
+   * Save *is* this action in edit mode: saveDocumentMetadata already turns
+   * needs_review into completed. A second path writing the status underneath a
+   * half-typed form would only race it.
+   */
+  async function onMarkReviewed() {
+    if (!document) return
+
+    try {
+      setMarkingReviewed(true)
+      setMessage('')
+      setError('')
+      await markDocumentsReviewed([document.id])
+      const refreshed = await pb.collection('documents').getOne<DocumentRecord>(document.id, {
+        expand: 'tags,document_type,correspondent,duplicate_of',
+      })
+      applyLoadedDocument(refreshed)
+      setMessage('Marked as reviewed.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not mark as reviewed')
+    } finally {
+      setMarkingReviewed(false)
+    }
+  }
+
   async function onSave(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!document || !editing) {
@@ -365,7 +396,12 @@ export function DocumentDetailPage() {
           >
             {document.expand?.duplicate_of?.title?.trim() || document.duplicate_of}
           </Link>
-          . Review both documents and delete the one you do not need.
+          .{' '}
+          {/* The relationship stays true after review, so the banner stays --
+              but it stops asking for something that has been done. */}
+          {document.processing_status === 'needs_review'
+            ? 'Review both documents and delete the one you do not need.'
+            : 'Reviewed; both were kept.'}
         </div>
       )}
       <div className="flex items-start justify-between gap-4">
@@ -376,9 +412,20 @@ export function DocumentDetailPage() {
           <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight text-ink">
             {document.title || 'Untitled document'}
           </h2>
-          <p className="text-sm text-ink-soft">Status: {document.processing_status}</p>
+          <p className="text-sm text-ink-soft">
+            Status: {DOCUMENT_STATUS_LABELS[document.processing_status]}
+          </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {document.processing_status === 'needs_review' && !editing && (
+            <Button
+              variant="secondary"
+              disabled={markingReviewed}
+              onClick={() => void onMarkReviewed()}
+            >
+              {markingReviewed ? 'Marking...' : 'Mark reviewed'}
+            </Button>
+          )}
           <Link
             to="/document/$documentId/ask"
             params={{ documentId }}

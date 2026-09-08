@@ -1,4 +1,5 @@
 import { apiFetch } from '../apiClient'
+import { setAlwaysRequireReview } from '../reviewPolicy'
 
 export const DEFAULT_APP_NAME = 'Lemmary'
 export const DEFAULT_ACCENT = '#6e2620'
@@ -20,29 +21,59 @@ export type AppMeta = {
    * shown here that the server refuses is a dead end an admin cannot diagnose.
    */
   chatgptLogin?: boolean
+  /**
+   * Whether every AI-extracted document waits in the review Inbox. Unknown
+   * reads as off, like chatgptLogin: off is the behaviour before the Inbox
+   * existed, and guessing "on" would narrow a stranger's document list.
+   */
+  alwaysRequireReview?: boolean
 }
 
-export async function getAppMeta(): Promise<AppMeta> {
+// One request per page load, shared by every caller.
+//
+// Meta is per-instance and near-constant, but three components ask for it and
+// so does the auth gate -- and the gate has to have the answer before the first
+// route renders, because always_require_review decides what a documents-list
+// URL means. Caching the promise is what makes that a shared await instead of a
+// fourth request. invalidateAppMeta() drops it when Settings is saved.
+let pending: Promise<AppMeta> | null = null
+
+export function getAppMeta(): Promise<AppMeta> {
+  pending ??= fetchAppMeta()
+  return pending
+}
+
+/** Forgets the cached meta, so the next read sees a just-saved setting. */
+export function invalidateAppMeta(): void {
+  pending = null
+}
+
+async function fetchAppMeta(): Promise<AppMeta> {
   try {
     const data = await apiFetch<{
       app_name?: string
       accent?: string
       ai_managed?: boolean
       chatgpt_login?: boolean
+      always_require_review?: boolean
     }>('/api/app/meta', {
       public: true,
       fallbackError: 'Failed to load app meta',
     })
     const appName = typeof data.app_name === 'string' ? data.app_name.trim() : ''
     const accent = typeof data.accent === 'string' ? data.accent.trim() : ''
+    setAlwaysRequireReview(data.always_require_review === true)
     return {
       appName: appName || DEFAULT_APP_NAME,
       accent: accent || DEFAULT_ACCENT,
       aiManaged: data.ai_managed === true,
       chatgptLogin: data.chatgpt_login === true,
+      alwaysRequireReview: data.always_require_review === true,
     }
   } catch {
     // A name and accent have safe defaults; who owns AI configuration does not.
+    // A failed request is also not cached: the next caller retries.
+    pending = null
     return { appName: DEFAULT_APP_NAME, accent: DEFAULT_ACCENT }
   }
 }

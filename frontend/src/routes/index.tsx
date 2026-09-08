@@ -6,6 +6,7 @@ import { ensureAuth } from '../lib/auth'
 import {
   buildDocumentFilter,
   fetchDocumentTimeline,
+  markDocumentsReviewed,
   reprocessDocuments,
   searchDocuments,
   type CorrespondentRecord,
@@ -19,38 +20,51 @@ import {
   parseDocumentQuery,
   type DocumentQuery,
 } from '../lib/documentQuery'
+import { DOCUMENT_STATUSES, DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
 import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
 import { useAsync } from '../hooks/useAsync'
 import { useStoredFlag } from '../hooks/useStoredFlag'
+import { DocumentBulkBar, type BulkMode } from '../components/DocumentBulkBar'
 import { DocumentCard } from '../components/DocumentCard'
 import { DocumentTimeline } from '../components/DocumentTimeline'
 import { FilterCombobox } from '../components/FilterCombobox'
 import { Pagination } from '../components/Pagination'
-import { Button } from '../components/ui'
+import { selectClassName } from '../components/ui'
 
 const PAGE_SIZE = 12
 
-const selectClassName =
-  'rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm outline-none focus:border-oxblood focus:ring-1 focus:ring-oxblood'
-
-const reprocessModes: ReprocessMode[] = ['auto', 'full', 'extraction']
-
+/** The documents list, showing everything. */
 export function IndexPage() {
+  return <DocumentListPage route="/" />
+}
+
+/**
+ * The review Inbox: the same list, its status fixed by the path rather than
+ * chosen from the dropdown.
+ */
+export function InboxPage() {
+  return <DocumentListPage route="/inbox" />
+}
+
+function DocumentListPage({ route }: { route: '/' | '/inbox' }) {
   // The filters are the URL, not state: reloading, bookmarking or sharing the
   // page reproduces the list, and Back steps through the filters that made it.
   // Validated but sparse: the URL only carries the filters that are set, so the
   // defaults are filled back in here.
-  const query = parseDocumentQuery(useSearch({ from: '/' }))
-  const navigate = useNavigate({ from: '/' })
+  const query = parseDocumentQuery(useSearch({ strict: false }))
+  const navigate = useNavigate({ from: route })
+  const inbox = route === '/inbox'
   const {
     q: debouncedSearch,
-    status: statusFilter,
     from: dateFrom,
     to: dateTo,
     type: documentTypeFilter,
     correspondent: correspondentFilter,
     page,
   } = query
+  // On /inbox the status is the route, so it is neither read from the URL nor
+  // writable -- see inboxQuerySearch, which drops it on the way in.
+  const statusFilter = inbox ? 'needs_review' : query.status
 
   const [documents, setDocuments] = useState<DocumentRecord[]>([])
   // The only filter with a copy outside the URL, because it is typed one letter
@@ -64,6 +78,7 @@ export function IndexPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [reprocessMode, setReprocessMode] = useState<ReprocessMode>('auto')
   const [reprocessing, setReprocessing] = useState(false)
+  const [markingReviewed, setMarkingReviewed] = useState(false)
   const [message, setMessage] = useState('')
   // Bumped whenever the library changes, to re-count the timeline.
   const [timelineVersion, setTimelineVersion] = useState(0)
@@ -106,12 +121,22 @@ export function IndexPage() {
   const updateQuery = useCallback(
     (patch: Partial<DocumentQuery>, replace = false) => {
       void navigate({
-        to: '/',
-        search: (current) => documentQuerySearch({ ...parseDocumentQuery(current), page: 1, ...patch }),
+        to: route,
+        search: (current) => {
+          const next = documentQuerySearch({
+            ...parseDocumentQuery(current),
+            page: 1,
+            ...patch,
+          })
+          // Nothing may write a status into the Inbox's URL, not even a patch
+          // that meant well: the path already says which list this is.
+          if (inbox) delete next.status
+          return next
+        },
         replace,
       })
     },
-    [navigate],
+    [navigate, route, inbox],
   )
 
   // Box -> URL, once the typing settles. Skipped while the two already agree,
@@ -203,9 +228,13 @@ export function IndexPage() {
     }
   }, [page, statusFilter, dateFrom, dateTo, documentTypeFilter, correspondentFilter, debouncedSearch])
 
-  // Bulk reprocess exists to clear a backlog of failures, so selection is only
-  // offered where that backlog is on screen.
-  const selectable = statusFilter === 'failed'
+  // Bulk actions exist to clear a backlog, so selection is only offered on the
+  // two lists that are one: failures to requeue, and an Inbox to empty. Keyed
+  // off the status rather than the route, so /?status=needs_review behaves the
+  // same as /inbox.
+  const bulkMode: BulkMode | null =
+    statusFilter === 'failed' ? 'reprocess' : statusFilter === 'needs_review' ? 'review' : null
+  const selectable = bulkMode !== null
   // Every action goes through selectedOnPage, never selectedIds, so ids left over
   // from another page or an earlier filter can neither be counted nor submitted.
   // That is what makes a stale selection harmless without resetting state on
@@ -253,6 +282,41 @@ export function IndexPage() {
     }
   }
 
+  /**
+   * Clears documents out of the Inbox.
+   *
+   * Filtered to documents still reading needs_review, on top of the
+   * selectedOnPage guard: a realtime refresh can land between the tick and the
+   * click, and marking an already-completed document reviewed would be a
+   * pointless write that re-indexes it for nothing.
+   *
+   * No confirmation, unlike reprocess: this overwrites nothing, and a document
+   * marked reviewed by accident is one status dropdown away from being found
+   * again.
+   */
+  async function onMarkReviewed(documentIds: string[]) {
+    const ids = documents
+      .filter(
+        (document) =>
+          documentIds.includes(document.id) && document.processing_status === 'needs_review',
+      )
+      .map((document) => document.id)
+    if (ids.length === 0) return
+
+    try {
+      setMarkingReviewed(true)
+      setError('')
+      setMessage('')
+      await markDocumentsReviewed(ids)
+      setSelectedIds(new Set())
+      setMessage(ids.length === 1 ? 'Marked reviewed.' : `Marked ${ids.length} reviewed.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not mark as reviewed')
+    } finally {
+      setMarkingReviewed(false)
+    }
+  }
+
   // The timeline has no date filter of its own: picking a period writes the
   // From/To inputs, and the highlight is read back out of them.
   function onSelectPeriod(period: string | null) {
@@ -264,8 +328,14 @@ export function IndexPage() {
     <section className="flex flex-col gap-3">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">Documents</h2>
-          <p className="text-sm text-ink-soft">Upload, search, and review AI-extracted metadata.</p>
+          <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">
+            {inbox ? 'Inbox' : 'Documents'}
+          </h2>
+          <p className="text-sm text-ink-soft">
+            {inbox
+              ? 'Documents waiting for you to check what the AI extracted.'
+              : 'Upload, search, and review AI-extracted metadata.'}
+          </p>
         </div>
         <Link
           to="/upload"
@@ -302,19 +372,23 @@ export function IndexPage() {
                 onChange={(event) => setSearch(event.target.value)}
                 className="w-full rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood"
               />
-              <select
-                value={statusFilter}
-                onChange={(event) => updateQuery({ status: event.target.value })}
-                aria-label="Processing status"
-                className={`${selectClassName} sm:w-48`}
-              >
-                <option value="all">All statuses</option>
-                <option value="pending">Pending</option>
-                <option value="processing">Processing</option>
-                <option value="completed">Completed</option>
-                <option value="needs_review">Needs review</option>
-                <option value="failed">Failed</option>
-              </select>
+              {/* Not on /inbox: the status is the route there, so a dropdown
+                  could only offer to leave. */}
+              {!inbox && (
+                <select
+                  value={statusFilter}
+                  onChange={(event) => updateQuery({ status: event.target.value })}
+                  aria-label="Processing status"
+                  className={`${selectClassName} sm:w-48`}
+                >
+                  <option value="all">All statuses</option>
+                  {DOCUMENT_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {DOCUMENT_STATUS_LABELS[status]}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -365,7 +439,22 @@ export function IndexPage() {
 
           {!loading && documents.length === 0 && (
             <div className="rounded-none border border-dashed border-line-strong bg-surface py-10 text-center">
-              {hasActiveFilters(query) ? (
+              {/* An empty Inbox is the goal, not a dead end -- and
+                  hasActiveFilters is false on a bare /inbox, so without this it
+                  would offer to upload a first document. */}
+              {inbox && !hasActiveFilters(query) ? (
+                <p className="text-sm text-ink-soft">Nothing waiting for review.</p>
+              ) : /* Nor is `/` empty here in the sense of "upload something":
+                     with review required it defaults to Completed, so the
+                     documents are all next door. */
+              !hasActiveFilters(query) && statusFilter === 'completed' ? (
+                <>
+                  <p className="text-sm text-ink-soft">No documents reviewed yet.</p>
+                  <Link to="/inbox" className="mt-1 inline-block text-sm font-medium text-oxblood underline">
+                    Open the Inbox
+                  </Link>
+                </>
+              ) : hasActiveFilters(query) ? (
                 <p className="text-sm text-ink-soft">No documents match your filters.</p>
               ) : (
                 <>
@@ -382,43 +471,22 @@ export function IndexPage() {
 
           {!loading && documents.length > 0 && (
             <>
-              {selectable && (
-                <div className="flex flex-wrap items-center gap-3 rounded-none border border-line bg-surface px-4 py-3">
-                  <span className="text-sm text-ink-muted">
-                    {selectedOnPage.length === 0
-                      ? 'Select failed documents to reprocess.'
-                      : `${selectedOnPage.length} selected`}
-                  </span>
-                  <select
-                    value={reprocessMode}
-                    onChange={(event) => setReprocessMode(event.target.value as ReprocessMode)}
-                    aria-label="Reprocess steps"
-                    className={selectClassName}
-                  >
-                    {reprocessModes.map((mode) => (
-                      <option key={mode} value={mode}>
-                        {REPROCESS_MODE_LABELS[mode]}
-                      </option>
-                    ))}
-                  </select>
-                  <Button
-                    disabled={reprocessing || selectedOnPage.length === 0}
-                    onClick={() => void onReprocessSelected()}
-                  >
-                    {reprocessing ? 'Queueing...' : 'Reprocess'}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => setSelectedIds(new Set(documents.map((document) => document.id)))}
-                  >
-                    Select all on page
-                  </Button>
-                  {selectedOnPage.length > 0 && (
-                    <Button variant="secondary" onClick={() => setSelectedIds(new Set())}>
-                      Clear
-                    </Button>
-                  )}
-                </div>
+              {bulkMode && (
+                <DocumentBulkBar
+                  mode={bulkMode}
+                  selectedCount={selectedOnPage.length}
+                  busy={reprocessing || markingReviewed}
+                  reprocessMode={reprocessMode}
+                  onReprocessModeChange={setReprocessMode}
+                  onReprocess={() => void onReprocessSelected()}
+                  onMarkReviewed={() =>
+                    void onMarkReviewed(selectedOnPage.map((document) => document.id))
+                  }
+                  onSelectAll={() =>
+                    setSelectedIds(new Set(documents.map((document) => document.id)))
+                  }
+                  onClear={() => setSelectedIds(new Set())}
+                />
               )}
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -429,6 +497,8 @@ export function IndexPage() {
                     selectable={selectable}
                     selected={selectedIds.has(document.id)}
                     onToggleSelect={toggleSelected}
+                    onMarkReviewed={(id) => void onMarkReviewed([id])}
+                    markingReviewed={markingReviewed}
                   />
                 ))}
               </div>

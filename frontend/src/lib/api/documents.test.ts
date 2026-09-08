@@ -14,6 +14,14 @@ describe('buildDocumentFilter', () => {
     expect(buildDocumentFilter(noFilters)).toBeUndefined()
   })
 
+  // This is now also the filter behind the Inbox badge's count, which goes
+  // through buildDocumentFilter rather than writing its own string.
+  it('filters on a status alone', () => {
+    expect(buildDocumentFilter({ ...noFilters, status: 'needs_review' })).toBe(
+      "processing_status = 'needs_review'",
+    )
+  })
+
   it('combines active filters with &&', () => {
     expect(
       buildDocumentFilter({

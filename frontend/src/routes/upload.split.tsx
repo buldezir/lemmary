@@ -13,6 +13,7 @@ import {
   type SplitResult,
   type SplitUpload,
 } from '../lib/api/split'
+import { landingAfterUpload } from '../lib/reviewPolicy'
 import { Button } from '../components/ui'
 
 const ACCEPT_ATTR = '.pdf,application/pdf'
@@ -393,8 +394,11 @@ export function UploadSplitPage() {
               ))}
             </ul>
           )}
-          <Link to="/" className="text-sm font-medium text-oxblood underline">
-            Open documents
+          {/* The Inbox when review is required, for the same reason the
+              upload form redirects there: `/` filters to Completed, and the
+              parts just split off are not. */}
+          <Link to={landingAfterUpload()} className="text-sm font-medium text-oxblood underline">
+            {landingAfterUpload() === '/inbox' ? 'Open the Inbox' : 'Open documents'}
           </Link>
         </div>
       )}

@@ -10,10 +10,31 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/logfmt"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/strutil"
 )
+
+// minExtractionConfidence is the score below which the pipeline sends a
+// document for review on its own, whatever the instance's policy is. Mirrored
+// as LOW_CONFIDENCE_THRESHOLD in frontend/src/lib/documentStatus.ts, which
+// reads it only to word the "why is this waiting" line on a card.
+const minExtractionConfidence = 0.5
+
+// finishedDocStatus is the status a pipeline run leaves on a document that
+// neither failed nor turned out to be a duplicate.
+//
+// With AlwaysRequireReview on, nothing here ever returns completed: a person
+// saying so is the only way a document leaves the Inbox. That includes
+// reprocessed documents, which is the point -- a reprocess produces fresh
+// model output that nobody has read.
+func finishedDocStatus(cfg config.Config, lowConfidence bool) string {
+	if lowConfidence || cfg.AlwaysRequireReview {
+		return models.DocStatusNeedsReview
+	}
+	return models.DocStatusCompleted
+}
 
 type ExtractMetadataStep struct {
 	Extractor ai.Extractor
@@ -180,14 +201,20 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 	state.Document.Set("tags", tagIDs)
 	state.Logger.Info("tags applied", "count", len(tagIDs))
 
-	status := models.DocStatusCompleted
+	lowConfidence := metadata.Confidence < minExtractionConfidence
+
+	// The job and the document part ways here, and only for the setting: the
+	// job says whether processing worked, and a confident extraction that
+	// merely awaits a human worked fine. Job status is read as a *processing*
+	// outcome -- by the paperless task list (ngxapi.mapTaskStatus) and by
+	// Management's counts -- so putting every job in needs_review would empty
+	// the word of meaning.
 	jobStatus := models.JobStatusCompleted
-	if metadata.Confidence < 0.5 {
-		status = models.DocStatusNeedsReview
+	if lowConfidence {
 		jobStatus = models.JobStatusNeedsReview
 	}
 
-	state.Document.Set("processing_status", status)
+	state.Document.Set("processing_status", finishedDocStatus(state.Cfg, lowConfidence))
 	if err := state.App.Save(state.Document); err != nil {
 		return fmt.Errorf("save document: %w", err)
 	}

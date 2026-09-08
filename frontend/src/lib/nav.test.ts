@@ -34,8 +34,19 @@ describe('nav items', () => {
     expect(visibleNavItems(primaryNavItems, false)).toHaveLength(primaryNavItems.length)
     expect(primaryNavItems.map((item) => item.label)).toEqual([
       'Documents',
+      'Inbox',
       'Upload',
       'Deep Search',
+    ])
+  })
+
+  // The badge is the only reason nav items carry a key at all, and the Inbox is
+  // the only item that asked for one.
+  test('gives the Inbox a path of its own and the only count badge', () => {
+    const badged = primaryNavItems.filter((item) => item.kind === 'route' && item.badgeKey)
+
+    expect(badged).toEqual([
+      { kind: 'route', label: 'Inbox', to: '/inbox', badgeKey: 'inbox' },
     ])
   })
 

@@ -2,9 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, Outlet, useMatchRoute } from '@tanstack/react-router'
 import { pb, pbAdminUrl } from '../lib/pb'
 import { ensureAuth, getUserDisplayName, isAdmin, logout } from '../lib/auth'
-import { getSetupStatus, type SetupStatus } from '../lib/api/meta'
+import { getAppMeta, getSetupStatus, type SetupStatus } from '../lib/api/meta'
 import { useAppMeta } from '../hooks/useAppMeta'
-import { primaryNavItems, secondaryNavItems, visibleNavItems, type NavItem } from '../lib/nav'
+import { useInboxCount } from '../hooks/useInboxCount'
+import {
+  primaryNavItems,
+  secondaryNavItems,
+  visibleNavItems,
+  type NavBadgeKey,
+  type NavItem,
+} from '../lib/nav'
 import { AppFooter } from './AppFooter'
 import { Button } from './ui'
 import { AppLogo } from './ui'
@@ -133,6 +140,35 @@ function AdminMenuLabel({ children }: { children: string }) {
   )
 }
 
+type NavBadges = Record<NavBadgeKey, number | null>
+
+/** The count an item asked for, or nothing for the items that asked for none. */
+function navBadge(item: NavItem, badges: NavBadges): number | null | undefined {
+  return item.kind === 'route' && item.badgeKey ? badges[item.badgeKey] : undefined
+}
+
+/**
+ * The count beside a nav label. Amber to match the needs_review badge on a
+ * card, so the two read as the same thing counted and named.
+ *
+ * The digits are hidden from assistive tech and replaced with a sentence: "3"
+ * appended to a link called Inbox is not a useful accessible name, and a cap
+ * of 99+ keeps a neglected Inbox from widening the header.
+ */
+function NavBadge({ count }: { count: number }) {
+  return (
+    <>
+      <span
+        aria-hidden="true"
+        className="ml-1.5 inline-flex px-1 py-0.5 align-middle text-[10px] font-semibold tabular-nums text-amber-800 ring-1 ring-inset ring-amber-800/40"
+      >
+        {count > 99 ? '99+' : count}
+      </span>
+      <span className="sr-only">{`, ${count} waiting for review`}</span>
+    </>
+  )
+}
+
 /**
  * One header link, in either shape. The router handles internal paths so a tap
  * does not reload the app; the PocketBase dashboard is a real page elsewhere.
@@ -142,13 +178,20 @@ function NavItemLink({
   className,
   role,
   onNavigate,
+  badge,
 }: {
   item: NavItem
   className: string
   role?: string
   onNavigate?: () => void
+  badge?: number | null
 }) {
-  const label = item.admin ? <AdminMenuLabel>{item.label}</AdminMenuLabel> : item.label
+  const label = (
+    <>
+      {item.admin ? <AdminMenuLabel>{item.label}</AdminMenuLabel> : item.label}
+      {typeof badge === 'number' && badge > 0 && <NavBadge count={badge} />}
+    </>
+  )
 
   if (item.kind === 'external') {
     return (
@@ -264,6 +307,11 @@ function AppHeader({
   const [open, setOpen] = useState(false)
   const secondaryItems = visibleNavItems(secondaryNavItems(pbAdminUrl), admin)
   const panelItems = [...primaryNavItems, ...secondaryItems]
+  // Counted once here, for both layouts: this component renders the wide bar
+  // and the narrow panel from the same item lists, so the badge costs one
+  // request rather than one per link. Mounted only past the auth gate, so
+  // nothing is counted before sign-in.
+  const badges = { inbox: useInboxCount() }
 
   useEffect(() => {
     if (!open) return
@@ -304,7 +352,12 @@ function AppHeader({
         <div className="hidden items-center gap-4 md:flex">
           <nav className="flex items-center gap-5" aria-label="Main">
             {primaryNavItems.map((item) => (
-              <NavItemLink key={item.label} item={item} className={navLinkClass} />
+              <NavItemLink
+                key={item.label}
+                item={item}
+                className={navLinkClass}
+                badge={navBadge(item, badges)}
+              />
             ))}
             <MoreNavMenu items={secondaryItems} />
           </nav>
@@ -345,6 +398,7 @@ function AppHeader({
                 item={item}
                 className={panelItemClass}
                 onNavigate={() => setOpen(false)}
+                badge={navBadge(item, badges)}
               />
             ))}
           </nav>
@@ -374,7 +428,11 @@ type Gate =
   | { kind: 'app'; status: SetupStatus; admin: boolean }
 
 async function resolveGate(): Promise<Gate> {
-  const status = await getSetupStatus()
+  // Meta before the gate opens, because always_require_review decides what a
+  // bare "/" means: without it the list would paint every status for one frame
+  // and then narrow. getAppMeta never throws and caches its promise, so this is
+  // the same request the header and Settings are already awaiting.
+  const [status] = await Promise.all([getSetupStatus(), getAppMeta()])
 
   if (status.needs_admin) {
     return { kind: 'setup', status }

@@ -4,6 +4,7 @@ import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
 import { parseDuplicateOfId } from '../lib/api/documents'
 import { limitFromError, type LimitName } from '../lib/api/limits'
+import { landingAfterUpload } from '../lib/reviewPolicy'
 import { Button } from '../components/ui'
 
 const ACCEPTED_EXTENSIONS = new Set([
@@ -227,7 +228,9 @@ export function UploadFilesPage() {
         if (uploadedIds.length === 1) {
           navigate({ to: '/document/$documentId', params: { documentId: uploadedIds[0] } })
         } else {
-          navigate({ to: '/' })
+          // The Inbox when review is required: `/` then filters to Completed,
+          // so it is the one list that cannot show what was just uploaded.
+          navigate({ to: landingAfterUpload() })
         }
         return
       }

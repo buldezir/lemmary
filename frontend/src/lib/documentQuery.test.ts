@@ -1,8 +1,10 @@
-import { describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test } from 'vitest'
+import { setAlwaysRequireReview } from './reviewPolicy'
 import {
   defaultDocumentQuery,
   documentQuerySearch,
   hasActiveFilters,
+  inboxQuerySearch,
   parseDocumentQuery,
 } from './documentQuery'
 
@@ -83,6 +85,85 @@ describe('documentQuerySearch', () => {
       page: 4,
     }
     expect(parseDocumentQuery(documentQuerySearch(query))).toEqual(query)
+  })
+})
+
+// /inbox holds its status in the path, so the query string must never carry
+// one -- neither a matching one, which would be noise on every link, nor a
+// conflicting one, which would silently show a different list.
+describe('inboxQuerySearch', () => {
+  test('drops the status whatever it says', () => {
+    expect(inboxQuerySearch({ status: 'needs_review' })).toEqual({})
+    expect(inboxQuerySearch({ status: 'failed' })).toEqual({})
+    expect(inboxQuerySearch({ status: 'nonsense' })).toEqual({})
+  })
+
+  test('keeps every other filter', () => {
+    expect(
+      inboxQuerySearch({
+        q: 'rent',
+        status: 'completed',
+        from: '2024-06-01',
+        to: '2024-06-30',
+        type: 'typ1',
+        correspondent: 'cor1',
+        page: 4,
+      }),
+    ).toEqual({
+      q: 'rent',
+      from: '2024-06-01',
+      to: '2024-06-30',
+      type: 'typ1',
+      correspondent: 'cor1',
+      page: 4,
+    })
+  })
+
+  test('leaves a bare Inbox URL bare', () => {
+    expect(inboxQuerySearch({})).toEqual({})
+  })
+})
+
+// With review required, `/` defaults to Completed rather than to everything:
+// the Inbox is the pile, and `/` is the archive that has been read. Parsing and
+// serializing have to agree about that, or the round-trip below breaks and the
+// dropdown snaps back to Completed the moment "All statuses" is picked.
+describe('with review required for every new document', () => {
+  afterEach(() => setAlwaysRequireReview(false))
+
+  test('a bare URL means the reviewed archive', () => {
+    setAlwaysRequireReview(true)
+    expect(parseDocumentQuery({}).status).toBe('completed')
+  })
+
+  test('Completed is the bare URL, and All statuses is the explicit one', () => {
+    setAlwaysRequireReview(true)
+    expect(documentQuerySearch({ ...defaultDocumentQuery, status: 'completed' })).toEqual({})
+    expect(documentQuerySearch({ ...defaultDocumentQuery, status: 'all' })).toEqual({
+      status: 'all',
+    })
+  })
+
+  test('All statuses survives the round-trip that used to strip it', () => {
+    setAlwaysRequireReview(true)
+    const search = documentQuerySearch({ ...defaultDocumentQuery, status: 'all' })
+    expect(parseDocumentQuery(search).status).toBe('all')
+  })
+
+  test('the Inbox still carries no status either way', () => {
+    setAlwaysRequireReview(true)
+    expect(inboxQuerySearch({ status: 'completed' })).toEqual({})
+    expect(inboxQuerySearch({ status: 'all' })).toEqual({})
+    expect(inboxQuerySearch({ status: 'needs_review', page: 3 })).toEqual({ page: 3 })
+  })
+
+  // Off, everything is exactly as it was: 'all' is the default and vanishes.
+  test('changes nothing while it is off', () => {
+    expect(parseDocumentQuery({}).status).toBe('all')
+    expect(documentQuerySearch({ ...defaultDocumentQuery, status: 'all' })).toEqual({})
+    expect(documentQuerySearch({ ...defaultDocumentQuery, status: 'completed' })).toEqual({
+      status: 'completed',
+    })
   })
 })
 
