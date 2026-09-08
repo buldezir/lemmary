@@ -13,6 +13,7 @@ Setup and operation guides for Lemmary.
 - [Local OCR](/local_ocr) — run the OCR engine yourself, so scans never leave the host
 - [Local embeddings](/local_embeddings) — run the embedding model yourself, so Deep Search costs no tokens
 - [Google Vision API key](/google_vision) — obtain a Cloud Vision API key for OCR
+- [ChatGPT sign-in](/chatgpt_login) — run chat, extraction and Deep Search on a ChatGPT subscription instead of a metered key
 - [OAuth2 / SSO sign-in](/oauth) — enable provider sign-in on the app login screen
 - [Passkey sign-in](/passkeys) — sign in with a fingerprint, face, or device PIN instead of a password
 - [Encryption at rest](/encryption) — keep the volume ciphertext-only, and what that costs

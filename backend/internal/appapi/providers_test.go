@@ -125,8 +125,27 @@ func TestSearchHelperBindingGuardsTheSDKSwitch(t *testing.T) {
 // something notices when the list grows again.
 func TestInvalidSDKMessageNamesEverySDK(t *testing.T) {
 	t.Parallel()
-	message := invalidSDKMessage()
+	message := invalidSDKMessage(config.NewRuntime(config.AIEnv{ChatGPTLogin: true}))
 	for _, sdk := range aiprovider.ValidSDKs {
+		if !strings.Contains(message, sdk) {
+			t.Errorf("%q does not name %s", message, sdk)
+		}
+	}
+}
+
+// ...and it must not name the one SDK this instance would refuse. An admin sent
+// looking for a typo in a value that was never going to work is worse served
+// than one who never saw it offered.
+func TestInvalidSDKMessageOmitsChatGPTWhenDisabled(t *testing.T) {
+	t.Parallel()
+	message := invalidSDKMessage(config.NewRuntime(config.AIEnv{}))
+	if strings.Contains(message, aiprovider.SDKChatGPT) {
+		t.Errorf("%q names chatgpt on an instance that refuses it", message)
+	}
+	for _, sdk := range aiprovider.ValidSDKs {
+		if sdk == aiprovider.SDKChatGPT {
+			continue
+		}
 		if !strings.Contains(message, sdk) {
 			t.Errorf("%q does not name %s", message, sdk)
 		}

@@ -343,21 +343,53 @@ func validateProviderID(app core.App, id string, need providerNeed) error {
 	if err != nil || p == nil {
 		return errInvalid("unknown provider")
 	}
+	return providerServes(*p, need)
+}
+
+// providerServes is the SDK half of the check above, split out so it can be
+// tested without a database -- the messages are the part that keeps going
+// stale.
+//
+// The three lists are derived, not written out. Spelled by hand they went stale
+// twice over: the OCR sentence still named four SDKs after docling shipped, and
+// would have gone on omitting chatgpt now that it reads documents -- so an
+// admin who believed either message would not have tried the provider that
+// works. Same reasoning as aiprovider.sdksWhere.
+func providerServes(p aiprovider.Provider, need providerNeed) error {
 	switch need {
 	case needLLM:
 		if !aiprovider.IsLLM(p.SDK) {
-			return errInvalid("extraction, chat, and search require an openai, openrouter, or mistral provider")
+			return errInvalid("extraction, chat, and search require " + oneOf(aiprovider.LLMSDKs()) + " provider")
 		}
 	case needEmbedding:
 		if !aiprovider.CanEmbed(p.SDK) {
-			return errInvalid("embeddings require an openai, openrouter, mistral, or local provider")
+			return errInvalid("embeddings require " + oneOf(aiprovider.EmbeddingSDKs()) + " provider")
 		}
 	case needOCR:
 		if !aiprovider.CanOCR(p.SDK) {
-			return errInvalid("OCR requires an openai, openrouter, mistral, or google_vision provider")
+			return errInvalid("OCR requires " + oneOf(aiprovider.OCRSDKs()) + " provider")
 		}
 	}
 	return nil
+}
+
+// oneOf renders a list of SDK names as "an openai, openrouter, or mistral",
+// which is how these sentences have always read.
+func oneOf(sdks []string) string {
+	article := "a"
+	if len(sdks) > 0 && strings.ContainsRune("aeiou", rune(sdks[0][0])) {
+		article = "an"
+	}
+	switch len(sdks) {
+	case 0:
+		return "a configured"
+	case 1:
+		return article + " " + sdks[0]
+	case 2:
+		return article + " " + sdks[0] + " or " + sdks[1]
+	default:
+		return article + " " + strings.Join(sdks[:len(sdks)-1], ", ") + ", or " + sdks[len(sdks)-1]
+	}
 }
 
 type settingsError string

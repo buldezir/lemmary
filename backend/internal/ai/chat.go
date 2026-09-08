@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/shared"
 
 	"lemmary/backend/internal/aiprovider"
@@ -89,6 +90,6 @@ func (c *OpenAIClient) Chat(ctx context.Context, ocrText string, messages []Chat
 	return strings.TrimSpace(chatResp.Choices[0].Message.Content), nil
 }
 
-func NewChatter(sdk, apiKey, model, baseURL string, timeout time.Duration, logger *slog.Logger) Chatter {
-	return NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", timeout, logger)
+func NewChatter(sdk, apiKey, model, baseURL string, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) Chatter {
+	return NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", timeout, logger, extra...)
 }

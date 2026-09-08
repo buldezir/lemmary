@@ -6,6 +6,7 @@ import { ChatTranscript } from '../components/ChatTranscript'
 import { ChatComposer } from '../components/ChatComposer'
 import { ChatSessionList } from '../components/ChatSessionList'
 import { MarkdownContent } from '../components/MarkdownContent'
+import { runId } from '../lib/runId'
 import { useAsync } from '../hooks/useAsync'
 import { useChatSession, type ChatSendResult } from '../hooks/useChatSession'
 import {
@@ -172,7 +173,7 @@ export function SearchPage() {
    */
   const runTurn = useCallback(
     async (id: string | undefined, content: string, turnMode: SearchMode): Promise<ChatSendResult> => {
-      const run = { controller: new AbortController(), id: crypto.randomUUID() }
+      const run = { controller: new AbortController(), id: runId() }
       runRef.current = run
 
       // Collected outside React state as well: the finished turn is assembled

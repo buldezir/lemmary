@@ -8,12 +8,34 @@ const (
 	SDKGoogleVision = "google_vision"
 	SDKMistral      = "mistral"
 
-	// SDKLocalEmbeddings is an OpenAI-compatible embeddings endpoint the
-	// operator runs themselves -- text-embeddings-inference in the compose
-	// overlay, though anything that serves /v1/embeddings will do. It embeds
-	// and nothing else: it is refused as AI_SDK and OCR_SDK, and like
-	// SDKDocling it needs no credential, because a service on the compose
-	// network has nobody to authenticate to.
+	// SDKChatGPT reaches OpenAI's Codex backend with a ChatGPT subscription
+	// instead of a metered API key: the operator signs in once and the
+	// conversation is billed against the seat they already pay for.
+	//
+	// It is the only SDK whose credential is not a string an admin can paste.
+	// The device-code flow in internal/chatgpt mints an OAuth token pair, which
+	// lives in the row's `oauth` column and is refreshed in place -- hence
+	// RequiresOAuth beside RequiresAPIKey.
+	//
+	// It chats and reads documents; it does not embed. The Codex backend
+	// serves no /embeddings, so CanEmbed refuses it and Deep Search's vectors
+	// keep whatever provider they had. Its models do take file and image input,
+	// so OCR runs on the seat like any other LLM OCR provider -- see
+	// internal/ocr.NewLLMProvider and the input_file/input_image parts in
+	// internal/chatgpt.messageContent.
+	//
+	// Off unless AI_CHATGPT_LOGIN=1: the endpoints behind it are OpenAI's own
+	// first-party ones, undocumented and reserved for OpenAI's clients, so
+	// whether to point an account at them is the operator's call to make
+	// deliberately. See docs/chatgpt_login.md.
+	SDKChatGPT = "chatgpt"
+
+	// SDKLocalEmbeddings is an OpenAI-compatible embeddings endpoint the operator runs
+	// themselves -- text-embeddings-inference in the compose overlay, though
+	// anything that serves /v1/embeddings will do. It embeds and nothing else:
+	// it is refused as AI_SDK and OCR_SDK, and like SDKDocling it needs no
+	// credential, because a service on the compose network has nobody to
+	// authenticate to.
 	SDKLocalEmbeddings = "local"
 
 	// SDKDocling is an OCR engine the operator runs themselves, as a sidecar
@@ -29,11 +51,11 @@ const (
 	CollectionName = "ai_providers"
 )
 
-var ValidSDKs = []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKLocalEmbeddings, SDKDocling}
+var ValidSDKs = []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKChatGPT, SDKLocalEmbeddings, SDKDocling}
 
 func ValidSDK(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
-	case SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKLocalEmbeddings, SDKDocling:
+	case SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKChatGPT, SDKLocalEmbeddings, SDKDocling:
 		return true
 	default:
 		return false
@@ -42,7 +64,7 @@ func ValidSDK(sdk string) bool {
 
 func IsLLM(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
-	case SDKOpenAI, SDKOpenRouter, SDKMistral:
+	case SDKOpenAI, SDKOpenRouter, SDKMistral, SDKChatGPT:
 		return true
 	default:
 		return false
@@ -66,16 +88,32 @@ func CanEmbed(sdk string) bool {
 	}
 }
 
-// CanOCR reports whether an SDK can read a document. Everything but
-// SDKLocalEmbeddings can: google_vision and docling are engines OCR exists for,
-// and the three LLM SDKs send the file to a model. A local embeddings endpoint
-// has no way to do it at all.
+// CanOCR reports whether an SDK can read a document. google_vision and docling
+// are engines OCR exists for, and every LLM SDK sends the file to a model --
+// SDKChatGPT included, since its models take the same file and image input the
+// metered ones do. A local embeddings endpoint has no way to do it at all.
 //
 // Without this, ValidSDK would let OCR_SDK=local through -- it is a valid SDK,
 // just not for this job -- and the failure would only appear on the first
 // document uploaded.
 func CanOCR(sdk string) bool {
-	return strings.TrimSpace(sdk) != SDKLocalEmbeddings
+	switch strings.TrimSpace(sdk) {
+	case SDKLocalEmbeddings:
+		return false
+	default:
+		return true
+	}
+}
+
+// RequiresOAuth reports whether an SDK is reached with a token this app minted
+// rather than one an admin typed.
+//
+// Only SDKChatGPT is. It is asked separately from RequiresAPIKey because the
+// two answers differ everywhere it matters: the create handler must not demand
+// an api_key, the Settings form must show a sign-in button instead of a
+// password field, and Configured has to look at a different column.
+func RequiresOAuth(sdk string) bool {
+	return strings.TrimSpace(sdk) == SDKChatGPT
 }
 
 // RequiresAPIKey reports whether an SDK is reached with a credential.
@@ -93,7 +131,7 @@ func CanOCR(sdk string) bool {
 // key.
 func RequiresAPIKey(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
-	case SDKLocalEmbeddings, SDKDocling:
+	case SDKLocalEmbeddings, SDKDocling, SDKChatGPT:
 		return false
 	default:
 		return true
@@ -162,6 +200,22 @@ func LLMSDKs() []string       { return sdksWhere(IsLLM) }
 func EmbeddingSDKs() []string { return sdksWhere(CanEmbed) }
 func OCRSDKs() []string       { return sdksWhere(CanOCR) }
 
+// EnvLLMSDKs and EnvOCRSDKs name the SDKs AI_SDK and OCR_SDK accept, which is
+// LLMSDKs and OCRSDKs minus the ones whose credential cannot be written down.
+//
+// The environment can carry a key. It cannot carry a sign-in: a chatgpt
+// provider is created and signed in to from Settings, so naming it in either
+// variable would seed a provider row nobody can complete from the file that
+// named it. That is true of OCR_SDK as much as AI_SDK, even though the SDK can
+// now do the job -- the obstacle is the credential, not the capability.
+func EnvLLMSDKs() []string {
+	return sdksWhere(func(sdk string) bool { return IsLLM(sdk) && !RequiresOAuth(sdk) })
+}
+
+func EnvOCRSDKs() []string {
+	return sdksWhere(func(sdk string) bool { return CanOCR(sdk) && !RequiresOAuth(sdk) })
+}
+
 // ModellessOCRSDKs names the SDKs that read a document without a model, for the
 // error messages that have to list them. Derived rather than written out, so it
 // cannot drift from RequiresOCRModel the way the old message naming only
@@ -184,6 +238,10 @@ func DefaultBaseURL(sdk string) string {
 		return "https://openrouter.ai/api/v1"
 	case SDKMistral:
 		return "https://api.mistral.ai/v1"
+	// Not a /v1 root: the Codex backend serves one endpoint, /responses, which
+	// the chatgpt middleware rewrites the SDK's /chat/completions into.
+	case SDKChatGPT:
+		return "https://chatgpt.com/backend-api/codex"
 	case SDKLocalEmbeddings:
 		// The service name in docker-compose.embeddings.yml, so the default is
 		// already right for the overlay and inert for anyone not running it.
@@ -208,6 +266,8 @@ func DefaultAlias(sdk string) string {
 		return "Google Cloud Vision"
 	case SDKMistral:
 		return "Mistral"
+	case SDKChatGPT:
+		return "ChatGPT subscription"
 	case SDKLocalEmbeddings:
 		return "Local embeddings"
 	case SDKDocling:

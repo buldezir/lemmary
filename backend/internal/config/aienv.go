@@ -21,6 +21,17 @@ type AIEnv struct {
 	Managed   bool
 	Providers aiprovider.Bootstrap
 
+	// ChatGPTLogin opens the chatgpt SDK, which bills an operator's ChatGPT
+	// subscription instead of a metered API key by talking to OpenAI's own
+	// Codex backend. Off unless asked for, because those endpoints are
+	// undocumented and reserved for OpenAI's clients: whether to point an
+	// account at them is the operator's decision, not a default.
+	//
+	// Refused together with Managed. The tenant of a managed instance is not
+	// the party whose account would be at risk, and the operator is already
+	// paying the AI bill they chose.
+	ChatGPTLogin bool
+
 	// Operator-owned in managed mode.
 	NearDuplicateEnabled   bool
 	NearDuplicateThreshold float64
@@ -69,6 +80,10 @@ const (
 	// Settings choice. Empty falls back to the search model.
 	EnvAISearchHelperModel = "AI_SEARCH_HELPER_MODEL"
 
+	// EnvChatGPTLogin opens the chatgpt SDK. See AIEnv.ChatGPTLogin and
+	// docs/chatgpt_login.md.
+	EnvChatGPTLogin = "AI_CHATGPT_LOGIN"
+
 	EnvOCRSDK     = "OCR_SDK"
 	EnvOCRAPIKey  = "OCR_API_KEY"
 	EnvOCRBaseURL = "OCR_BASE_URL"
@@ -84,9 +99,20 @@ func AIEnvFromEnv() (AIEnv, error) {
 	if err != nil {
 		return AIEnv{}, err
 	}
+	// Strict for the same reason AI_MANAGED is: a typo read as "off" would
+	// leave an operator staring at a Settings page with no sign-in button and
+	// nothing to explain why.
+	chatgptLogin, err := strictBool(EnvChatGPTLogin)
+	if err != nil {
+		return AIEnv{}, err
+	}
+	if managed && chatgptLogin {
+		return AIEnv{}, fmt.Errorf("%s and %s cannot both be set: a managed instance bills the operator's own provider", EnvManaged, EnvChatGPTLogin)
+	}
 
 	env := AIEnv{
 		Managed:                managed,
+		ChatGPTLogin:           chatgptLogin,
 		NearDuplicateEnabled:   getEnvBool("NEAR_DUPLICATE_DETECTION_ENABLED", false),
 		NearDuplicateThreshold: getEnvFloat("NEAR_DUPLICATE_THRESHOLD", DefaultNearDuplicateThreshold),
 		OCRTimeout:             time.Duration(envIntDefault("OCR_TIMEOUT_SEC", 40, 1)) * time.Second,
@@ -139,10 +165,13 @@ func strictBool(key string) (bool, error) {
 
 func parseLLM() (aiprovider.ProviderSpec, error) {
 	sdk := strings.TrimSpace(getEnv(EnvAISDK, aiprovider.SDKOpenAI))
-	if !aiprovider.IsLLM(sdk) {
+	// EnvLLMSDKs, not LLMSDKs: chatgpt chats, but its credential is minted by
+	// signing in rather than written down, so naming it here would seed a
+	// provider row that the file naming it can never complete.
+	if !aiprovider.IsLLM(sdk) || aiprovider.RequiresOAuth(sdk) {
 		return aiprovider.ProviderSpec{}, fmt.Errorf(
-			"%s=%q is not a language-model SDK (want one of %s, %s, %s)",
-			EnvAISDK, sdk, aiprovider.SDKOpenAI, aiprovider.SDKOpenRouter, aiprovider.SDKMistral)
+			"%s=%q is not a language-model SDK that can be configured from the environment (want one of %s)",
+			EnvAISDK, sdk, strings.Join(aiprovider.EnvLLMSDKs(), ", "))
 	}
 
 	spec := aiprovider.ProviderSpec{
@@ -182,8 +211,17 @@ func parseOCR(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error) {
 		// Valid as an SDK, just not for this job. Caught here rather than on the
 		// first uploaded document.
 		return aiprovider.ProviderSpec{}, fmt.Errorf(
-			"%s=%q cannot read a document; it serves embeddings only",
-			EnvOCRSDK, sdk)
+			"%s=%q cannot read a document (want one of %s)",
+			EnvOCRSDK, sdk, strings.Join(aiprovider.OCRSDKs(), ", "))
+	}
+	// EnvOCRSDKs, not OCRSDKs: chatgpt reads documents perfectly well, but its
+	// credential is minted by signing in rather than written down, so naming it
+	// here would seed a row the file naming it can never complete. Bind OCR to
+	// it from Settings instead, once it is signed in.
+	if aiprovider.RequiresOAuth(sdk) {
+		return aiprovider.ProviderSpec{}, fmt.Errorf(
+			"%s=%q cannot be configured from the environment: it is signed in to from Settings, not given a key (want one of %s)",
+			EnvOCRSDK, sdk, strings.Join(aiprovider.EnvOCRSDKs(), ", "))
 	}
 
 	// The same SDK is the same endpoint: reuse the language model's credential

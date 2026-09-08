@@ -77,6 +77,11 @@ func Register(
 			g.PATCH("/providers/{id}", bindAdmin(handlePatchProvider(app, rt)))
 			g.DELETE("/providers/{id}", bindAdmin(handleDeleteProvider(app, rt)))
 			g.GET("/providers/{id}/models", bindAdmin(handleListProviderModels(app)))
+			// Device-code sign-in for the chatgpt SDK. Two calls rather than
+			// one blocking handler: the browser owns the polling interval.
+			g.POST("/providers/{id}/chatgpt/device", bindAdmin(handleChatGPTDeviceStart(app, rt)))
+			g.POST("/providers/{id}/chatgpt/device/poll", bindAdmin(handleChatGPTDevicePoll(app, rt)))
+			g.DELETE("/providers/{id}/chatgpt", bindAdmin(handleChatGPTSignOut(app, rt)))
 			g.POST("/duplicates/scan", bindAdmin(handlePostDuplicatesScan(app, rt)))
 			g.POST("/taxonomy/prune", bindAdmin(handlePostTaxonomyPrune(app)))
 			g.POST("/import/ngx", bindAuth(handlePostImportNgx(app)))

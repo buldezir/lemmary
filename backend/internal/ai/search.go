@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/shared"
 )
 
@@ -156,9 +157,9 @@ type openAISearchAgent struct {
 	resultLanguage string
 }
 
-func NewSearchAgent(sdk, apiKey, model, baseURL string, timeout time.Duration, languages, resultLanguage string, logger *slog.Logger) SearchAgent {
+func NewSearchAgent(sdk, apiKey, model, baseURL string, timeout time.Duration, languages, resultLanguage string, logger *slog.Logger, extra ...option.RequestOption) SearchAgent {
 	return &openAISearchAgent{
-		client:         NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", timeout, logger),
+		client:         NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", timeout, logger, extra...),
 		languages:      strings.TrimSpace(languages),
 		resultLanguage: strings.TrimSpace(resultLanguage),
 	}

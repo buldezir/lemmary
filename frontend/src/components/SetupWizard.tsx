@@ -7,7 +7,9 @@ import {
   createAIProvider,
   isLLMProvider,
   listAIProviders,
+  providerConfigured,
   requiresAPIKey,
+  requiresSignIn,
   sdkAliasDefault,
   keylessProviderDocs,
   keylessProviderHint,
@@ -17,7 +19,9 @@ import {
   type ProviderSDK,
 } from '../lib/api/providers'
 import { getAppSettings, updateAppSettings } from '../lib/api/settings'
+import { useAppMeta } from '../hooks/useAppMeta'
 import { AppFooter } from './AppFooter'
+import { ChatGPTSignIn } from './ChatGPTSignIn'
 import { ProviderModelFields } from './ProviderModelFields'
 import {
   AppLogo,
@@ -54,6 +58,9 @@ function nextConfigStep(status: SetupStatus): Step {
 }
 
 export function SetupWizard({ appName, accent, initialStatus, onComplete }: SetupWizardProps) {
+  // The meta endpoint is public, which is what lets the wizard read the flag
+  // before there is a session to read it with.
+  const { chatgptLogin } = useAppMeta()
   const [step, setStep] = useState<Step>(() => initialStep(initialStatus))
   const [status, setStatus] = useState(initialStatus)
   const [submitting, setSubmitting] = useState(false)
@@ -74,6 +81,10 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
   const [alias, setAlias] = useState('')
   const [baseURL, setBaseURL] = useState(SDK_DEFAULT_BASE.openai)
   const [apiKey, setApiKey] = useState('')
+  // The row a ChatGPT sign-in is waiting on. Signing in needs a provider id to
+  // store the token against, so the SDK cannot be finished in one step: the row
+  // is created first, then signed in to, and only then does the wizard move on.
+  const [signInProvider, setSignInProvider] = useState<AIProvider | null>(null)
 
   const [ocrProviderId, setOcrProviderId] = useState('')
   const [ocrModel, setOcrModel] = useState('')
@@ -161,7 +172,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       if (requiresAPIKey(sdk) && !apiKey.trim()) {
         throw new Error('Enter an API key.')
       }
-      await createAIProvider({
+      const created = await createAIProvider({
         sdk,
         alias: alias.trim() || sdkAliasDefault(sdk),
         base_url: baseURL.trim(),
@@ -171,6 +182,12 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       setProviders(nextProviders)
       setApiKey('')
       setAlias('')
+      // A row that signs in is not usable yet, and the models step would offer
+      // a provider that answers nothing. Hold here until the token is stored.
+      if (requiresSignIn(sdk)) {
+        setSignInProvider(nextProviders.find((item) => item.id === created.id) ?? created)
+        return
+      }
       const next = await refreshStatus()
       if (!next.needs_config) {
         setStep('done')
@@ -184,6 +201,25 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
     }
   }
 
+  // Called by the sign-in panel whenever it stores or clears a token. It is the
+  // provider list that says whether the sign-in took, not the panel: the token
+  // never reaches the browser, so `signed_in` on the reloaded row is the only
+  // evidence there is.
+  async function onSignedIn() {
+    const nextProviders = await listAIProviders()
+    setProviders(nextProviders)
+    const row = signInProvider && nextProviders.find((item) => item.id === signInProvider.id)
+    if (!row) {
+      setSignInProvider(null)
+      return
+    }
+    setSignInProvider(row)
+    if (!providerConfigured(row)) return
+    setSignInProvider(null)
+    const next = await refreshStatus()
+    setStep(next.needs_config ? 'models' : 'done')
+  }
+
   async function onSaveModels(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     try {
@@ -193,7 +229,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
         throw new Error('Choose an OCR provider.')
       }
       if (!extractProviderId) {
-        throw new Error('Choose an extraction provider (OpenAI, OpenRouter, or Mistral).')
+        throw new Error('Choose an extraction provider.')
       }
       // First-launch setup only asks for one LLM binding: chat and search start
       // out pointing at the extraction provider/model and can be split later in
@@ -213,9 +249,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
         if (!next.has_ocr || !next.has_llm) {
           setStep(next.provider_count ? 'models' : 'providers')
         }
-        setError(
-          'Setup is still incomplete. Add an OCR provider and an LLM provider (OpenAI, OpenRouter, or Mistral).',
-        )
+        setError('Setup is still incomplete. Add an OCR provider and a language-model provider.')
         return
       }
       setStep('done')
@@ -254,7 +288,9 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           <h2 className="mb-4 font-display text-lg font-semibold text-ink">
             {step === 'admin' && 'Create your admin account'}
             {step === 'passkey' && 'Add a passkey'}
-            {step === 'providers' && 'Add a provider'}
+            {/* The sign-in stands on a row that is already added, so the
+                heading follows what the step is actually asking for. */}
+            {step === 'providers' && (signInProvider ? 'Sign in to ChatGPT' : 'Add a provider')}
             {step === 'models' && 'Choose models'}
             {step === 'done' && 'Setup complete'}
           </h2>
@@ -336,7 +372,26 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
             </form>
           )}
 
-          {step === 'providers' && (
+          {step === 'providers' && signInProvider && (
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-ink-muted">
+                <strong className="font-medium text-ink">{signInProvider.alias}</strong> is saved
+                but not signed in yet. Open the link below, enter the code, and setup carries on by
+                itself once the token is stored.
+              </p>
+              <ChatGPTSignIn provider={signInProvider} onChange={onSignedIn} />
+              {error && <p className="text-sm text-madder">{error}</p>}
+              <button
+                type="button"
+                className="text-left text-xs font-medium text-ink-soft hover:text-ink"
+                onClick={() => setSignInProvider(null)}
+              >
+                Add a different provider instead
+              </button>
+            </div>
+          )}
+
+          {step === 'providers' && !signInProvider && (
             <form className="flex flex-col gap-4" onSubmit={onSaveProvider}>
               <p className="text-sm text-ink-muted">
                 Add a provider. OpenAI, OpenRouter, or Mistral can run extraction and chat;
@@ -344,6 +399,13 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 Local OCR runs Docling on your own host and Local Embeddings serves Deep
                 Search's dense half — neither needs an API key, but each needs its compose
                 overlay running first.
+                {chatgptLogin === true && (
+                  <>
+                    {' '}
+                    A ChatGPT subscription covers extraction, chat and OCR on the seat you already
+                    pay for, with no API key at all — you sign in with a code instead.
+                  </>
+                )}
               </p>
               {providers.length > 0 && (
                 <p className="text-xs text-ink-soft">
@@ -361,7 +423,14 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                   }}
                   className={inputClassName}
                 >
-                  {SDK_OPTIONS.map((option) => (
+                  {/* chatgpt only where the instance opted in, the same
+                      condition Settings uses. Signing in needs a saved row to
+                      store the token against, so choosing it here creates the
+                      row and then holds the step open for the sign-in rather
+                      than finishing in one submit. */}
+                  {SDK_OPTIONS.filter(
+                    (option) => option.value !== 'chatgpt' || chatgptLogin === true,
+                  ).map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -423,7 +492,8 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
               </p>
               {llmProviders.length === 0 && (
                 <p className="text-sm text-amber-800">
-                  Add an OpenAI, OpenRouter, or Mistral provider to enable extraction and chat.
+                  Add an OpenAI, OpenRouter{chatgptLogin === true ? ', ChatGPT' : ''} or Mistral
+                  provider to enable extraction and chat.
                 </p>
               )}
               <ProviderModelFields

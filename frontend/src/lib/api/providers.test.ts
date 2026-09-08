@@ -4,9 +4,12 @@ import {
   canEmbedProvider,
   isLLMProvider,
   keylessProviderDocs,
+  keylessProviderHint,
   eligibleProviders,
+  providerConfigured,
   providerServesPurpose,
   requiresAPIKey,
+  requiresSignIn,
   SDK_DEFAULT_BASE,
   SDK_OPTIONS,
 } from './providers'
@@ -90,9 +93,20 @@ describe('the local SDK is offered and addressed', () => {
 describe('keylessProviderDocs', () => {
   it('covers every SDK that shows the keyless hint', () => {
     for (const { value } of SDK_OPTIONS) {
-      if (requiresAPIKey(value)) continue
+      // The hint's own condition, not just `no API key`: chatgpt needs no key
+      // either and still shows no hint, because the sign-in panel stands where
+      // the hint would. Asking the narrower question here would demand a
+      // sidecar guide for an SDK that has no sidecar.
+      if (requiresAPIKey(value) || requiresSignIn(value)) continue
       expect(keylessProviderDocs(value)?.href).toBeTruthy()
     }
+  })
+
+  // ...and the SDK skipped above must genuinely show no hint, or the exemption
+  // would hide a missing link rather than describe one that is not needed.
+  it('is not needed for the SDK that signs in', () => {
+    expect(keylessProviderHint('chatgpt')).toBe('')
+    expect(keylessProviderDocs('chatgpt')).toBeNull()
   })
 
   it('points each sidecar at its own guide', () => {
@@ -136,5 +150,39 @@ describe('eligibleProviders', () => {
 
   it('keeps an already-bound provider whatever its SDK, so it never renders blank', () => {
     expect(eligibleProviders(all, 'llm', 'p3').map((p) => p.id)).toEqual(['p1', 'p3'])
+  })
+})
+
+// chatgpt is what keeps these predicates from collapsing back into one "is it
+// a hosted LLM" question: it chats and reads documents but does not embed,
+// where local embeds and does nothing else.
+describe('the ChatGPT subscription SDK', () => {
+  it('chats and reads documents but does not embed', () => {
+    expect(isLLMProvider('chatgpt')).toBe(true)
+    expect(canEmbedProvider('chatgpt')).toBe(false)
+    expect(providerServesPurpose('chatgpt', 'llm')).toBe(true)
+    expect(providerServesPurpose('chatgpt', 'ocr')).toBe(true)
+    // The Codex backend serves no /embeddings at all, so this is the one
+    // binding it cannot take.
+    expect(providerServesPurpose('chatgpt', 'embedding')).toBe(false)
+  })
+
+  it('signs in instead of taking a key', () => {
+    expect(requiresSignIn('chatgpt')).toBe(true)
+    expect(requiresAPIKey('chatgpt')).toBe(false)
+    for (const sdk of ['openai', 'openrouter', 'mistral', 'google_vision', 'local', 'docling']) {
+      expect(requiresSignIn(sdk)).toBe(false)
+    }
+  })
+
+  it('is configured by its token, not by a key or an address', () => {
+    const row = { sdk: 'chatgpt' as const, api_key_set: true, signed_in: false, base_url: 'x' }
+    expect(providerConfigured(row)).toBe(false)
+    expect(providerConfigured({ ...row, signed_in: true })).toBe(true)
+  })
+
+  it('is offered in the SDK picker with a default base URL', () => {
+    expect(SDK_OPTIONS.some((option) => option.value === 'chatgpt')).toBe(true)
+    expect(SDK_DEFAULT_BASE.chatgpt).toBe('https://chatgpt.com/backend-api/codex')
   })
 })

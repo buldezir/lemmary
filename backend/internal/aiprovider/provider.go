@@ -16,19 +16,29 @@ type Provider struct {
 	Alias   string
 	BaseURL string
 	APIKey  string
+
+	// OAuth is the serialized token pair for the SDKs that sign in rather than
+	// take a pasted key -- today only SDKChatGPT. It is opaque here on purpose:
+	// aiprovider must not import internal/chatgpt, which needs these predicates
+	// itself. The shape is chatgpt.Token.
+	OAuth string
 }
 
 // Configured is whether this row can actually serve a request.
 //
-// What that takes differs by SDK: a credential for the hosted ones, an address
-// for the local sidecars, which have no account behind them. Every caller that
-// used to spell this as `p.APIKey != ""` now asks here instead -- otherwise a
-// working sidecar reads as unconfigured and disappears from the OCR picker,
-// the readiness check and the setup wizard's idea of a finished install.
+// What that takes differs by SDK: a credential for the hosted ones, a completed
+// sign-in for the ones that mint their own, an address for the local sidecars,
+// which have no account behind them. Every caller that used to spell this as
+// `p.APIKey != ""` now asks here instead -- otherwise a working sidecar reads
+// as unconfigured and disappears from the OCR picker, the readiness check and
+// the setup wizard's idea of a finished install.
 //
 // The record-level twin of ProviderSpec.Configured, which answers the same
 // question about the environment before any record exists.
 func (p Provider) Configured() bool {
+	if RequiresOAuth(p.SDK) {
+		return strings.TrimSpace(p.OAuth) != ""
+	}
 	if RequiresAPIKey(p.SDK) {
 		return strings.TrimSpace(p.APIKey) != ""
 	}
@@ -43,6 +53,7 @@ func FromRecord(record *core.Record) Provider {
 		Alias:   strings.TrimSpace(record.GetString("alias")),
 		BaseURL: NormalizeBaseURL(sdk, record.GetString("base_url")),
 		APIKey:  strings.TrimSpace(record.GetString("api_key")),
+		OAuth:   strings.TrimSpace(record.GetString(OAuthField)),
 	}
 }
 

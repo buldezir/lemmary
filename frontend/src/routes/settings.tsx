@@ -5,6 +5,7 @@ import {
   deleteAIProvider,
   listAIProviders,
   requiresAPIKey,
+  requiresSignIn,
   sdkAliasDefault,
   sdkLabel,
   updateAIProvider,
@@ -15,6 +16,7 @@ import {
   type AIProvider,
   type ProviderSDK,
 } from '../lib/api/providers'
+import { ChatGPTSignIn } from '../components/ChatGPTSignIn'
 import {
   getAppSettings,
   getEmbeddingStats,
@@ -123,7 +125,7 @@ function EmbeddingStatsLine({ stats }: { stats: EmbeddingStats | null }) {
 // Admin access is enforced by the route's beforeLoad guard.
 export function SettingsPage() {
   // unknown/failed meta counts as managed; see AppMeta.aiManaged
-  const { aiManaged } = useAppMeta()
+  const { aiManaged, chatgptLogin } = useAppMeta()
   const aiEditable = aiManaged === false
   const [form, setForm] = useState<FormState | null>(null)
   const [embeddingStats, setEmbeddingStats] = useState<EmbeddingStats | null>(null)
@@ -329,12 +331,22 @@ export function SettingsPage() {
                   <p className="text-xs text-ink-soft">
                     {sdkLabel(item.sdk)}
                     {item.base_url ? ` · ${item.base_url}` : ''}
-                    {requiresAPIKey(item.sdk)
-                      ? item.api_key_set
-                        ? ' · key set'
-                        : ' · missing key'
-                      : ' · no key needed'}
+                    {requiresSignIn(item.sdk)
+                      ? item.signed_in
+                        ? ' · signed in'
+                        : ' · not signed in'
+                      : requiresAPIKey(item.sdk)
+                        ? item.api_key_set
+                          ? ' · key set'
+                          : ' · missing key'
+                        : ' · no key needed'}
                   </p>
+                  {/* The sign-in panel stands where the key field would, and on
+                      the saved row rather than in the add form: the flow needs
+                      a provider id to store the token against. */}
+                  {requiresSignIn(item.sdk) && (
+                    <ChatGPTSignIn provider={item} onChange={reloadProviders} />
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -399,7 +411,12 @@ export function SettingsPage() {
                     }))
                   }}
                 >
-                  {SDK_OPTIONS.map((option) => (
+                  {/* Offering an SDK the server will refuse is a dead end an
+                      admin cannot diagnose, so chatgpt appears only where
+                      AI_CHATGPT_LOGIN turned it on. */}
+                  {SDK_OPTIONS.filter(
+                    (option) => option.value !== 'chatgpt' || chatgptLogin === true,
+                  ).map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -443,6 +460,12 @@ export function SettingsPage() {
                     }
                   />
                 </label>
+              ) : requiresSignIn(draft.sdk) ? (
+                <p className={`${fieldHintClassName} sm:col-span-2`}>
+                  Save the provider first, then sign in to it from the list above. Chat,
+                  extraction and Deep Search can run on the subscription; embeddings and OCR
+                  cannot, and keep whichever provider they have.
+                </p>
               ) : (
                 <p className={`${fieldHintClassName} sm:col-span-2`}>
                   {keylessProviderHint(draft.sdk)}{' '}

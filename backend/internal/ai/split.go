@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/shared"
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
@@ -37,8 +38,8 @@ type Splitter interface {
 	DetectSplitPoints(ctx context.Context, pages []PageText) (*models.SplitSuggestion, error)
 }
 
-func NewSplitter(sdk, apiKey, model, baseURL string, timeout time.Duration, logger *slog.Logger) Splitter {
-	return NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", timeout, logger)
+func NewSplitter(sdk, apiKey, model, baseURL string, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) Splitter {
+	return NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", timeout, logger, extra...)
 }
 
 const splitSystemPrompt = `You find document boundaries in a single PDF that holds several separate documents scanned into one file.

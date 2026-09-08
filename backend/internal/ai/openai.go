@@ -82,9 +82,16 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 	if logger == nil {
 		logger = slog.Default()
 	}
+	// The chatgpt SDK already speaks the Responses API, from underneath: its
+	// middleware rewrites /chat/completions into /responses and only it knows
+	// the Codex auth headers. Translating again up here would post to
+	// /responses with the placeholder key and no originator, so every
+	// degradation path below stays on the endpoint the middleware owns.
+	viaResponses := !aiprovider.RequiresOAuth(sdk)
+
 	// A model already known to live on the Responses API never touches
 	// /chat/completions again.
-	if needsResponsesAPI(baseURL, string(params.Model)) {
+	if viaResponses && needsResponsesAPI(baseURL, string(params.Model)) {
 		resp, err := CompleteViaResponses(ctx, client, logger, sdk, baseURL, params, extra...)
 		if err == nil {
 			logUsage(logger, string(params.Model), usageOf(resp), extra...)
@@ -142,7 +149,7 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 	// reasoning, while reasoning_effort=none keeps the tools by turning the
 	// reasoning off. Take the first, and settle for the second only where
 	// there is no Responses endpoint to take it to.
-	if len(params.Tools) > 0 && isReasoningEffortToolConflictError(err) {
+	if viaResponses && len(params.Tools) > 0 && isReasoningEffortToolConflictError(err) {
 		logger.Warn("model rejected reasoning_effort with function tools; retrying on the Responses API",
 			"model", params.Model,
 			slog.Any("error", err),
@@ -201,7 +208,7 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 	// anything at all. Try there once, and keep the original error if that was
 	// not the problem -- a Responses error for a provider that has no such
 	// endpoint would only mislead.
-	if try, remember := shouldTryResponses(err, baseURL, string(params.Model)); try {
+	if try, remember := shouldTryResponses(err, baseURL, string(params.Model)); viaResponses && try {
 		logger.Warn("chat completions refused this model; retrying on the Responses API",
 			"model", params.Model,
 			"remember", remember,
@@ -275,7 +282,11 @@ func (c *OpenAIClient) completeStreaming(
 	onDelta func(string),
 	extra ...any,
 ) (string, Usage, error) {
-	if needsResponsesAPI(c.baseURL, string(params.Model)) {
+	// See CompleteChat: the chatgpt SDK reaches /responses through its own
+	// middleware, which is the only thing holding the Codex headers. Both
+	// reroutes below are off for it -- this one and the one after a refusal.
+	viaResponses := !aiprovider.RequiresOAuth(c.sdk)
+	if viaResponses && needsResponsesAPI(c.baseURL, string(params.Model)) {
 		return c.completeStreamingViaResponses(ctx, params, onDelta, extra...)
 	}
 	params.StreamOptions = openai.ChatCompletionStreamOptionsParam{IncludeUsage: openai.Bool(true)}
@@ -319,7 +330,7 @@ func (c *OpenAIClient) completeStreaming(
 	// Same fallback as CompleteChat, but only while nothing has reached the
 	// reader yet: once deltas are on the wire, a second stream would replay a
 	// different answer over the first.
-	if b.Len() == 0 {
+	if viaResponses && b.Len() == 0 {
 		try, remember := shouldTryResponses(err, c.baseURL, string(params.Model))
 		if !try {
 			return b.String(), usage, err

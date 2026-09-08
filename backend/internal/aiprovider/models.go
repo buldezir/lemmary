@@ -118,7 +118,53 @@ func ModelsURL(p Provider, purpose ModelPurpose) string {
 	return endpoint
 }
 
+// ChatGPTModels is the catalogue for the chatgpt SDK.
+//
+// Written out because the Codex backend publishes none: it serves one endpoint,
+// /responses, and has no /models to ask. Without this the model picker would be
+// empty for every signed-in operator, and the only way to configure the
+// provider would be the "Custom model id" escape hatch -- which still works,
+// and is what covers a model added after this list was written.
+//
+// Names, not capabilities: which of these an account may actually use depends
+// on its plan, and the backend is the only thing that knows. A model refused
+// there surfaces as a provider error on the first request rather than as a
+// missing entry here.
+//
+// Codex's own descriptions rather than a tidied "GPT-5.6 Sol", because these are
+// the only models whose catalogue Lemmary authors, and the picker renders
+// `id (name)`. Which of six near-identically-named models to bind is a real
+// question, and the sentence is the part that answers it.
+//
+// In Codex's order, most capable first.
+func ChatGPTModels() []Model {
+	return []Model{
+		{ID: "gpt-6-astra", Name: "Our most capable model for complex, demanding work"},
+		{ID: "gpt-5.6-sol", Name: "Reliable agentic workhorse for everyday tasks"},
+		{ID: "gpt-5.6-terra", Name: "Balanced agentic coding model for everyday work"},
+		{ID: DefaultExtractModel, Name: "Fast and affordable agentic coding model"},
+		{ID: "gpt-5.5", Name: "Proven previous-generation model for coding and general work"},
+		{ID: "gpt-5.4-mini", Name: "Small, fast, and cost-efficient model for simpler coding tasks"},
+	}
+}
+
 func ListModels(ctx context.Context, p Provider, purpose ModelPurpose, client *http.Client, logger *slog.Logger) ([]Model, error) {
+	// The one SDK whose catalogue is local. Answered before the checks below,
+	// which would otherwise fail it for having no API key -- it has a token
+	// instead -- and turn a working sign-in into an error banner in Settings.
+	if p.SDK == SDKChatGPT {
+		if purpose == PurposeEmbedding {
+			// CanEmbed already refuses that binding; returning nothing keeps
+			// the picker honest if it is ever asked for anyway.
+			return nil, nil
+		}
+		// The same list for OCR as for chat. The Codex catalogue says nothing
+		// about which models take a file, so this is the openai case rather
+		// than the openrouter one: every name, and a warning in Settings to
+		// pick one that can read a document.
+		return ChatGPTModels(), nil
+	}
+
 	// An SDK that neither chats nor embeds has no catalogue to list: Google
 	// Vision annotates without a model, and docling serves one pipeline.
 	// Returning nothing here rather than falling through is what keeps the

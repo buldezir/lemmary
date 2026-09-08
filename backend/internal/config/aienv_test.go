@@ -14,7 +14,7 @@ func clearAIEnv(t *testing.T) {
 	for _, key := range []string{
 		EnvManaged, EnvAISDK, EnvAIAPIKey, EnvAIBaseURL, EnvAIModel, EnvAIEmbeddingModel,
 		EnvAIEmbeddingSDK, EnvAIEmbeddingAPIKey, EnvAIEmbeddingBaseURL,
-		EnvOCRSDK, EnvOCRAPIKey, EnvOCRBaseURL, EnvOCRModel,
+		EnvOCRSDK, EnvOCRAPIKey, EnvOCRBaseURL, EnvOCRModel, EnvChatGPTLogin,
 		"NEAR_DUPLICATE_DETECTION_ENABLED",
 		"NEAR_DUPLICATE_THRESHOLD", "OCR_TIMEOUT_SEC", "AI_TIMEOUT_SEC",
 		"WORKER_TIMEOUT_SEC", "WORKER_MAX_RETRIES", "DEEP_SEARCH_LANGUAGES",
@@ -367,5 +367,50 @@ func TestManagedAcceptsACompleteEnvironment(t *testing.T) {
 	}
 	if !env.Managed {
 		t.Fatal("expected managed mode on")
+	}
+}
+
+// AI_CHATGPT_LOGIN opens an SDK that talks to OpenAI's first-party endpoints
+// with somebody's personal subscription. A typo read as "off" would leave an
+// operator staring at a Settings page with no sign-in button and nothing to
+// explain why, so it is strict like AI_MANAGED.
+func TestChatGPTLoginIsStrictAndOffByDefault(t *testing.T) {
+	clearAIEnv(t)
+	env, err := AIEnvFromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.ChatGPTLogin {
+		t.Fatal("an unset AI_CHATGPT_LOGIN read as on")
+	}
+
+	clearAIEnv(t)
+	t.Setenv(EnvChatGPTLogin, "1")
+	env, err = AIEnvFromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !env.ChatGPTLogin {
+		t.Fatal("AI_CHATGPT_LOGIN=1 read as off")
+	}
+
+	clearAIEnv(t)
+	t.Setenv(EnvChatGPTLogin, "maybe")
+	if _, err := AIEnvFromEnv(); err == nil {
+		t.Fatal("a misspelled AI_CHATGPT_LOGIN was accepted")
+	}
+}
+
+// The tenant of a managed instance is not the party whose ChatGPT account would
+// be at risk, and the operator already chose and pays for a provider. Refusing
+// the combination at parse time beats discovering it from Settings.
+func TestChatGPTLoginIsRefusedOnAManagedInstance(t *testing.T) {
+	clearAIEnv(t)
+	t.Setenv(EnvManaged, "1")
+	t.Setenv(EnvChatGPTLogin, "1")
+	t.Setenv(EnvAIAPIKey, "sk-test")
+	t.Setenv(EnvAIModel, "some-model")
+	if _, err := AIEnvFromEnv(); err == nil {
+		t.Fatal("AI_MANAGED and AI_CHATGPT_LOGIN were accepted together")
 	}
 }
