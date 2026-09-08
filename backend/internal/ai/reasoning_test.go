@@ -273,7 +273,7 @@ func TestReasoningEffortNoneIsNotRememberedWhenItAlsoFails(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	client := NewOpenAIClient("openai", "test-key", model, srv.URL, "v1", "", 5*time.Second, slog.Default())
-	_, err := CompleteChat(context.Background(), client.client, slog.Default(), "openai", srv.URL, openai.ChatCompletionNewParams{
+	_, err := client.Complete(context.Background(), openai.ChatCompletionNewParams{
 		Model:    shared.ChatModel(model),
 		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
 		Tools:    []openai.ChatCompletionToolParam{{Function: shared.FunctionDefinitionParam{Name: "search_documents"}}},

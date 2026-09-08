@@ -7,11 +7,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
 	"github.com/openai/openai-go/shared"
 	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/opencode"
 )
 
 type OpenAIClient struct {
@@ -23,30 +25,40 @@ type OpenAIClient struct {
 	resultLanguage string
 	client         openai.Client
 	logger         *slog.Logger
+
+	// messages is the Anthropic client the opencode SDK needs for the third of
+	// its catalogue served on /messages. The zero value is never used: whether
+	// a model goes there is opencode.Endpoint's answer, and it only ever says
+	// so for SDKOpenCode.
+	messages anthropic.Client
 }
 
 func NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage string, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) *OpenAIClient {
+	if strings.TrimSpace(sdk) == "" {
+		sdk = aiprovider.SDKOpenAI
+	}
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithHTTPClient(&http.Client{Timeout: timeout}),
 		option.WithRequestTimeout(timeout),
 		option.WithMaxRetries(0),
-		option.WithMiddleware(aiprovider.SessionMiddleware()),
 	}
-	// Tests pass RewriteHostMiddleware here so a base URL of opencode.ai still
-	// lands on httptest. Production callers pass none.
+	// Only OpenCode asks for the session header, and now it is the SDK saying
+	// so rather than the middleware sniffing the request host for opencode.ai.
+	if sdk == aiprovider.SDKOpenCode {
+		opts = append(opts, option.WithMiddleware(aiprovider.SessionMiddleware()))
+	}
+	// Production callers pass the chatgpt middleware here, which mints a bearer
+	// token per request; see config.providerCredential.
 	opts = append(opts, extra...)
 	if strings.TrimSpace(baseURL) != "" {
 		opts = append(opts, option.WithBaseURL(strings.TrimRight(baseURL, "/")))
-	}
-	if strings.TrimSpace(sdk) == "" {
-		sdk = "openai"
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
 
-	return &OpenAIClient{
+	c := &OpenAIClient{
 		sdk:            sdk,
 		apiKey:         apiKey,
 		model:          model,
@@ -56,6 +68,10 @@ func NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage stri
 		client:         openai.NewClient(opts...),
 		logger:         logger,
 	}
+	if sdk == aiprovider.SDKOpenCode {
+		c.messages = opencode.NewMessages(apiKey, baseURL, timeout)
+	}
+	return c
 }
 
 func (c *OpenAIClient) Name() string {
@@ -66,33 +82,50 @@ func (c *OpenAIClient) Model() string {
 	return c.model
 }
 
-func (c *OpenAIClient) complete(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
-	return CompleteChat(ctx, c.client, c.logger, c.sdk, c.baseURL, params, extra...)
+// Complete sends a chat completion, and gives a provider that refuses it a
+// second chance rather than treating the model as broken.
+//
+// It first asks opencode.Endpoint whether this model is served somewhere other
+// than /chat/completions at all -- the opencode SDK routes each model to one of
+// three endpoints, and it is the only SDK that does. Everything after that is
+// degradation on the endpoint the model does live on: JSON mode is dropped if
+// response_format is rejected, reasoning_effort is pinned to "none" if the model
+// will not take tools alongside it, and temperature falls back to the API
+// default. The reasoning_effort case prefers the Responses API, which keeps both
+// the tools and the reasoning, and is remembered per model and endpoint so the
+// discovery costs one rejected request per process rather than one per call.
+func (c *OpenAIClient) Complete(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
+	switch opencode.Endpoint(c.sdk, string(params.Model)) {
+	case opencode.EndpointMessages:
+		resp, err := opencode.CompleteViaMessages(ctx, c.messages, c.logger, c.baseURL, params, extra...)
+		if err == nil {
+			logUsage(c.logger, string(params.Model), usageOf(resp), extra...)
+		}
+		return resp, err
+	case opencode.EndpointResponses:
+		resp, err := CompleteViaResponses(ctx, c.client, c.logger, c.sdk, c.baseURL, params, extra...)
+		if err == nil {
+			logUsage(c.logger, string(params.Model), usageOf(resp), extra...)
+		}
+		return resp, err
+	}
+	return c.completeChat(ctx, params, extra...)
 }
 
-// CompleteChat sends a chat completion, and gives a provider that refuses it a
-// second chance rather than treating the model as broken. In order: JSON mode
-// is dropped if response_format is rejected, reasoning_effort is pinned to
-// "none" if the model will not take tools alongside it, temperature falls back
-// to the API default, and finally the whole request is translated to the
-// Responses API if this endpoint turns out not to serve the model at all. Each
-// of the last two is remembered per model and endpoint, so the discovery costs
-// one rejected request per process rather than one per call.
-func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger, sdk, baseURL string, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
-	if logger == nil {
-		logger = slog.Default()
-	}
+func (c *OpenAIClient) completeChat(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
+	logger := c.logger
+	baseURL := c.baseURL
 	// The chatgpt SDK already speaks the Responses API, from underneath: its
 	// middleware rewrites /chat/completions into /responses and only it knows
 	// the Codex auth headers. Translating again up here would post to
-	// /responses with the placeholder key and no originator, so every
-	// degradation path below stays on the endpoint the middleware owns.
-	viaResponses := !aiprovider.RequiresOAuth(sdk)
+	// /responses with the placeholder key and no originator, so the degradation
+	// path below stays on the endpoint the middleware owns.
+	viaResponses := !aiprovider.RequiresOAuth(c.sdk)
 
 	// A model already known to live on the Responses API never touches
 	// /chat/completions again.
 	if viaResponses && needsResponsesAPI(baseURL, string(params.Model)) {
-		resp, err := CompleteViaResponses(ctx, client, logger, sdk, baseURL, params, extra...)
+		resp, err := CompleteViaResponses(ctx, c.client, logger, c.sdk, baseURL, params, extra...)
 		if err == nil {
 			logUsage(logger, string(params.Model), usageOf(resp), extra...)
 		}
@@ -108,15 +141,14 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 	}
 	aiprovider.LogRequest(
 		logger,
-		sdk,
+		c.sdk,
 		http.MethodPost,
 		aiprovider.ChatCompletionsURL(baseURL),
 		string(params.Model),
 		extra...,
 	)
-	resp, err := client.Chat.Completions.New(ctx, params)
+	resp, err := c.client.Chat.Completions.New(ctx, params)
 	if err == nil {
-		rememberChatCompletionsWorked(baseURL, string(params.Model))
 		logUsage(logger, string(params.Model), usageOf(resp), extra...)
 		return resp, nil
 	}
@@ -131,13 +163,13 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 		params.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{}
 		aiprovider.LogRequest(
 			logger,
-			sdk,
+			c.sdk,
 			http.MethodPost,
 			aiprovider.ChatCompletionsURL(baseURL),
 			string(params.Model),
 			append(extra, "retry", "omit_response_format")...,
 		)
-		resp, err = client.Chat.Completions.New(ctx, params)
+		resp, err = c.client.Chat.Completions.New(ctx, params)
 		if err == nil {
 			logUsage(logger, string(params.Model), usageOf(resp), extra...)
 			return resp, nil
@@ -154,7 +186,7 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 			"model", params.Model,
 			slog.Any("error", err),
 		)
-		if viaResponses, respErr := CompleteViaResponses(ctx, client, logger, sdk, baseURL, params, extra...); respErr == nil {
+		if viaResponses, respErr := CompleteViaResponses(ctx, c.client, logger, c.sdk, baseURL, params, extra...); respErr == nil {
 			rememberResponsesAPI(baseURL, string(params.Model))
 			logUsage(logger, string(params.Model), usageOf(viaResponses), extra...)
 			return viaResponses, nil
@@ -167,18 +199,17 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 		params.ReasoningEffort = shared.ReasoningEffort(reasoningEffortNone)
 		aiprovider.LogRequest(
 			logger,
-			sdk,
+			c.sdk,
 			http.MethodPost,
 			aiprovider.ChatCompletionsURL(baseURL),
 			string(params.Model),
 			append(extra, "retry", "reasoning_effort_none")...,
 		)
-		resp, err = client.Chat.Completions.New(ctx, params)
+		resp, err = c.client.Chat.Completions.New(ctx, params)
 		if err == nil {
 			// Remembered only now that the value is known to work: a "none"
 			// the provider also refuses is not worth pinning.
 			rememberNoReasoningEffort(baseURL, string(params.Model))
-			rememberChatCompletionsWorked(baseURL, string(params.Model))
 			logUsage(logger, string(params.Model), usageOf(resp), extra...)
 			return resp, nil
 		}
@@ -191,35 +222,15 @@ func CompleteChat(ctx context.Context, client openai.Client, logger *slog.Logger
 		params.Temperature = param.Opt[float64]{}
 		aiprovider.LogRequest(
 			logger,
-			sdk,
+			c.sdk,
 			http.MethodPost,
 			aiprovider.ChatCompletionsURL(baseURL),
 			string(params.Model),
 			append(extra, "retry", "omit_temperature")...,
 		)
-		resp, err = client.Chat.Completions.New(ctx, params)
+		resp, err = c.client.Chat.Completions.New(ctx, params)
 		if err == nil {
-			rememberChatCompletionsWorked(baseURL, string(params.Model))
 			logUsage(logger, string(params.Model), usageOf(resp), extra...)
-		}
-	}
-	// Last resort: the endpoint may simply not serve this model. OpenCode Zen
-	// routes gpt-5.6-luna and friends to /responses and answers 500 here for
-	// anything at all. Try there once, and keep the original error if that was
-	// not the problem -- a Responses error for a provider that has no such
-	// endpoint would only mislead.
-	if try, remember := shouldTryResponses(err, baseURL, string(params.Model)); viaResponses && try {
-		logger.Warn("chat completions refused this model; retrying on the Responses API",
-			"model", params.Model,
-			"remember", remember,
-			slog.Any("error", err),
-		)
-		if viaResponses, respErr := CompleteViaResponses(ctx, client, logger, sdk, baseURL, params, extra...); respErr == nil {
-			if remember {
-				rememberResponsesAPI(baseURL, string(params.Model))
-			}
-			logUsage(logger, string(params.Model), usageOf(viaResponses), extra...)
-			return viaResponses, nil
 		}
 	}
 	return resp, err
@@ -282,11 +293,20 @@ func (c *OpenAIClient) completeStreaming(
 	onDelta func(string),
 	extra ...any,
 ) (string, Usage, error) {
-	// See CompleteChat: the chatgpt SDK reaches /responses through its own
-	// middleware, which is the only thing holding the Codex headers. Both
-	// reroutes below are off for it -- this one and the one after a refusal.
-	viaResponses := !aiprovider.RequiresOAuth(c.sdk)
-	if viaResponses && needsResponsesAPI(c.baseURL, string(params.Model)) {
+	switch opencode.Endpoint(c.sdk, string(params.Model)) {
+	case opencode.EndpointMessages:
+		text, u, err := opencode.CompleteStreamingViaMessages(ctx, c.messages, c.logger, c.baseURL, params, onDelta, extra...)
+		usage := usageFrom(u)
+		if err == nil {
+			logUsage(c.logger, string(params.Model), usage, append(extra, "stream", true, "api", "messages")...)
+		}
+		return text, usage, err
+	case opencode.EndpointResponses:
+		return c.completeStreamingViaResponses(ctx, params, onDelta, extra...)
+	}
+	// See Complete: the chatgpt SDK reaches /responses through its own
+	// middleware, which is the only thing holding the Codex headers.
+	if !aiprovider.RequiresOAuth(c.sdk) && needsResponsesAPI(c.baseURL, string(params.Model)) {
 		return c.completeStreamingViaResponses(ctx, params, onDelta, extra...)
 	}
 	params.StreamOptions = openai.ChatCompletionStreamOptionsParam{IncludeUsage: openai.Bool(true)}
@@ -323,30 +343,7 @@ func (c *OpenAIClient) completeStreaming(
 	}
 	err := stream.Err()
 	if err == nil {
-		rememberChatCompletionsWorked(c.baseURL, string(params.Model))
 		logUsage(c.logger, string(params.Model), usage, append(extra, "stream", true)...)
-		return b.String(), usage, nil
-	}
-	// Same fallback as CompleteChat, but only while nothing has reached the
-	// reader yet: once deltas are on the wire, a second stream would replay a
-	// different answer over the first.
-	if viaResponses && b.Len() == 0 {
-		try, remember := shouldTryResponses(err, c.baseURL, string(params.Model))
-		if !try {
-			return b.String(), usage, err
-		}
-		c.logger.Warn("chat completions refused this model; retrying the stream on the Responses API",
-			"model", params.Model,
-			"remember", remember,
-			slog.Any("error", err),
-		)
-		text, respUsage, respErr := c.completeStreamingViaResponses(ctx, params, onDelta, extra...)
-		if respErr == nil {
-			if remember {
-				rememberResponsesAPI(c.baseURL, string(params.Model))
-			}
-			return text, respUsage, nil
-		}
 	}
 	return b.String(), usage, err
 }

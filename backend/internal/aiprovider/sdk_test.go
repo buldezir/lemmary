@@ -186,13 +186,13 @@ func TestSDKListsMatchTheirPredicates(t *testing.T) {
 		got  []string
 		want []string
 	}{
-		"llm":       {LLMSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKChatGPT}},
+		"llm":       {LLMSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKOpenCode, SDKChatGPT}},
 		"embedding": {EmbeddingSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKLocalEmbeddings}},
-		"ocr":       {OCRSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKChatGPT, SDKDocling}},
+		"ocr":       {OCRSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKChatGPT, SDKDocling}},
 		// The environment lists are the same minus chatgpt, whose credential
 		// is minted by signing in and so cannot be seeded from a file.
-		"env llm": {EnvLLMSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral}},
-		"env ocr": {EnvOCRSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKDocling}},
+		"env llm": {EnvLLMSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKOpenCode}},
+		"env ocr": {EnvOCRSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKDocling}},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -219,6 +219,17 @@ func TestCanEmbed(t *testing.T) {
 	// Google Vision reads documents; it has no /embeddings endpoint at all.
 	if CanEmbed(SDKGoogleVision) || CanEmbed("unknown") || CanEmbed("") {
 		t.Fatal("google_vision, an unknown SDK and an empty SDK cannot embed")
+	}
+	// The two that chat without embedding, which is what forces CanEmbed apart
+	// from IsLLM in the other direction: neither catalogue has an embedding
+	// model, and neither endpoint serves /embeddings.
+	for _, sdk := range []string{SDKOpenCode, SDKChatGPT} {
+		if !IsLLM(sdk) {
+			t.Errorf("IsLLM(%q) = false; this case is only interesting for an LLM SDK", sdk)
+		}
+		if CanEmbed(sdk) {
+			t.Errorf("CanEmbed(%q) = true; it serves no /embeddings", sdk)
+		}
 	}
 }
 

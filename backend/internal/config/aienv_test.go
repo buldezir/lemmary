@@ -414,3 +414,99 @@ func TestChatGPTLoginIsRefusedOnAManagedInstance(t *testing.T) {
 		t.Fatal("AI_MANAGED and AI_CHATGPT_LOGIN were accepted together")
 	}
 }
+
+// AI_SDK=openai with an opencode.ai base URL was the only way to reach OpenCode
+// before the SDK existed, and it is what .env.example shipped. It has to keep
+// working, and it has to keep working on a *managed* instance in particular:
+// migration 1730000026 moves the provider row, but ApplyManaged re-applies the
+// environment on every boot and would move it straight back, with no Settings
+// page for anyone inside to intervene.
+func TestAnOpenCodeBaseURLIsReadAsTheOpenCodeSDK(t *testing.T) {
+	for _, sdk := range []string{aiprovider.SDKOpenAI, aiprovider.SDKOpenRouter} {
+		t.Run(sdk, func(t *testing.T) {
+			clearAIEnv(t)
+			t.Setenv(EnvAISDK, sdk)
+			t.Setenv(EnvAIAPIKey, "sk-test")
+			t.Setenv(EnvAIBaseURL, "https://opencode.ai/zen/go/v1")
+
+			env, err := AIEnvFromEnv()
+			if err != nil {
+				t.Fatalf("AIEnvFromEnv: %v", err)
+			}
+			if got := env.Providers.LLM.SDK; got != aiprovider.SDKOpenCode {
+				t.Fatalf("LLM SDK = %q, want %q", got, aiprovider.SDKOpenCode)
+			}
+			// The address the operator gave is still the address used.
+			if got := env.Providers.LLM.BaseURL; got != "https://opencode.ai/zen/go/v1" {
+				t.Fatalf("base URL = %q", got)
+			}
+		})
+	}
+}
+
+// The rule is narrow on purpose: a real OpenAI endpoint, and a URL that merely
+// mentions the name in a path, are both left alone.
+func TestOtherBaseURLsAreLeftOnTheirSDK(t *testing.T) {
+	for name, baseURL := range map[string]string{
+		"openai's own":     "https://api.openai.com/v1",
+		"a lookalike path": "https://gateway.example.com/opencode.ai/v1",
+		"unset":            "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			clearAIEnv(t)
+			t.Setenv(EnvAISDK, aiprovider.SDKOpenAI)
+			t.Setenv(EnvAIAPIKey, "sk-test")
+			if baseURL != "" {
+				t.Setenv(EnvAIBaseURL, baseURL)
+			}
+
+			env, err := AIEnvFromEnv()
+			if err != nil {
+				t.Fatalf("AIEnvFromEnv: %v", err)
+			}
+			if got := env.Providers.LLM.SDK; got != aiprovider.SDKOpenAI {
+				t.Fatalf("LLM SDK = %q, want %q", got, aiprovider.SDKOpenAI)
+			}
+		})
+	}
+}
+
+// OCR named as openai on the same OpenCode endpoint is still the same endpoint.
+// Read before the two SDKs are compared, or it would look like a second
+// provider and be refused for having no key of its own.
+func TestOCROnTheSameOpenCodeEndpointSharesTheProvider(t *testing.T) {
+	clearAIEnv(t)
+	t.Setenv(EnvAISDK, aiprovider.SDKOpenAI)
+	t.Setenv(EnvAIAPIKey, "sk-test")
+	t.Setenv(EnvAIBaseURL, "https://opencode.ai/zen/go/v1")
+	t.Setenv(EnvOCRSDK, aiprovider.SDKOpenAI)
+	t.Setenv(EnvOCRModel, "deepseek-v4-flash-vision-exp")
+
+	env, err := AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("AIEnvFromEnv: %v", err)
+	}
+	if !env.Providers.SharesOneProvider() {
+		t.Fatal("OCR was read as a second provider on the same endpoint")
+	}
+	if got := env.Providers.OCRSDK(); got != aiprovider.SDKOpenCode {
+		t.Fatalf("OCR SDK = %q, want %q", got, aiprovider.SDKOpenCode)
+	}
+	if got := env.Providers.OCR.APIKey; got != "sk-test" {
+		t.Fatalf("OCR key = %q, want the language model's", got)
+	}
+}
+
+// And the embedding binding is refused on it, which is the honest answer: that
+// endpoint has no /embeddings whatever the variable calls it.
+func TestEmbeddingsOnAnOpenCodeBaseURLAreRefused(t *testing.T) {
+	clearAIEnv(t)
+	t.Setenv(EnvAISDK, aiprovider.SDKOpenAI)
+	t.Setenv(EnvAIAPIKey, "sk-test")
+	t.Setenv(EnvAIBaseURL, "https://opencode.ai/zen/go/v1")
+	t.Setenv(EnvAIEmbeddingModel, "text-embedding-3-small")
+
+	if _, err := AIEnvFromEnv(); err == nil {
+		t.Fatal("an embedding model on an OpenCode endpoint was accepted")
+	}
+}

@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openai/openai-go/option"
-
 	"lemmary/backend/internal/aiprovider"
 )
 
@@ -37,16 +35,13 @@ func chatCompletionServer(t *testing.T, seen *string) *httptest.Server {
 
 // TestChatSendsSessionHeaderToOpenCode is the production-client case the
 // middleware unit tests cannot cover: NewOpenAIClient itself must install
-// SessionMiddleware. The base URL names opencode.ai so the gate opens;
-// RewriteHostMiddleware (test-only, after ours) sends the bytes to httptest.
+// SessionMiddleware, and only for the opencode SDK.
 func TestChatSendsSessionHeaderToOpenCode(t *testing.T) {
 	var seen string
 	srv := chatCompletionServer(t, &seen)
 
-	client := NewOpenAIClient("openai", "test-key", "test-model",
-		"http://opencode.ai/zen/go/v1", "", "", 5*time.Second, slog.Default(),
-		option.WithMiddleware(aiprovider.RewriteHostMiddleware(srv.Listener.Addr().String())),
-	)
+	client := NewOpenAIClient(aiprovider.SDKOpenCode, "test-key", "test-model",
+		srv.URL+"/zen/go/v1", "", "", 5*time.Second, slog.Default())
 	ctx := aiprovider.WithSession(context.Background(), "conv123")
 	if _, err := client.Chat(ctx, "some ocr text", []ChatMessage{{Role: "user", Content: "hi"}}); err != nil {
 		t.Fatalf("chat: %v", err)
@@ -58,12 +53,14 @@ func TestChatSendsSessionHeaderToOpenCode(t *testing.T) {
 
 // TestChatSendsNoSessionHeaderToOtherProviders pins the gate on the client
 // every completion in the app goes through: a provider that is not OpenCode
-// sees the request it has always seen, session on the context or not.
+// sees the request it has always seen, session on the context or not -- and
+// now the same address as the case above, since the gate is the SDK rather
+// than the hostname.
 func TestChatSendsNoSessionHeaderToOtherProviders(t *testing.T) {
 	var seen string
 	srv := chatCompletionServer(t, &seen)
 
-	client := NewOpenAIClient("openai", "test-key", "test-model", srv.URL, "", "", 5*time.Second, slog.Default())
+	client := NewOpenAIClient(aiprovider.SDKOpenAI, "test-key", "test-model", srv.URL, "", "", 5*time.Second, slog.Default())
 	ctx := aiprovider.WithSession(context.Background(), "conv123")
 	if _, err := client.Chat(ctx, "some ocr text", []ChatMessage{{Role: "user", Content: "hi"}}); err != nil {
 		t.Fatalf("chat: %v", err)

@@ -8,6 +8,29 @@ const (
 	SDKGoogleVision = "google_vision"
 	SDKMistral      = "mistral"
 
+	// SDKOpenCode is OpenCode Go (Zen), a gateway in front of a catalogue of
+	// third-party models. It is its own SDK rather than an `openai` row with a
+	// base URL because it differs from an OpenAI-compatible endpoint in two ways
+	// that no base URL can express.
+	//
+	// It requires the x-opencode-session header -- requests that arrive without
+	// one are liable to be refused outright -- and it serves each model on one of
+	// three endpoints: /chat/completions, /responses or /messages, the last of
+	// which speaks Anthropic's Messages API rather than OpenAI's. Which one is a
+	// property of the model, and /v1/models does not say, so internal/opencode
+	// carries the table and wraps both SDKs behind it.
+	//
+	// Before this SDK existed both facts were guessed at: the header was sent to
+	// any host under opencode.ai, and the endpoint was discovered by reading the
+	// shape of a failed request -- one rejected request per model per process,
+	// and no way to reach the /messages third of the catalogue at all.
+	//
+	// It chats and reads documents; it does not embed. Its catalogue is chat
+	// models only and the gateway serves no /embeddings, so CanEmbed refuses it
+	// -- point AI_EMBEDDING_SDK at a provider that does, or leave Deep Search
+	// on keyword retrieval.
+	SDKOpenCode = "opencode"
+
 	// SDKChatGPT reaches OpenAI's Codex backend with a ChatGPT subscription
 	// instead of a metered API key: the operator signs in once and the
 	// conversation is billed against the seat they already pay for.
@@ -51,11 +74,11 @@ const (
 	CollectionName = "ai_providers"
 )
 
-var ValidSDKs = []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKChatGPT, SDKLocalEmbeddings, SDKDocling}
+var ValidSDKs = []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKChatGPT, SDKLocalEmbeddings, SDKDocling}
 
 func ValidSDK(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
-	case SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKChatGPT, SDKLocalEmbeddings, SDKDocling:
+	case SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKChatGPT, SDKLocalEmbeddings, SDKDocling:
 		return true
 	default:
 		return false
@@ -64,7 +87,7 @@ func ValidSDK(sdk string) bool {
 
 func IsLLM(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
-	case SDKOpenAI, SDKOpenRouter, SDKMistral, SDKChatGPT:
+	case SDKOpenAI, SDKOpenRouter, SDKMistral, SDKOpenCode, SDKChatGPT:
 		return true
 	default:
 		return false
@@ -79,6 +102,12 @@ func IsLLM(sdk string) bool {
 // -- and asking the right question at each binding is what keeps a local
 // provider out of the extraction picker and a Google Vision provider out of the
 // embedding one.
+//
+// SDKOpenCode and SDKChatGPT are the two that chat without embedding: neither
+// catalogue has an embedding model in it, and neither endpoint serves
+// /embeddings. Deep Search's vectors want a second provider on those --
+// AI_EMBEDDING_SDK, or a local sidecar -- and keyword retrieval alone is a
+// working state until there is one.
 func CanEmbed(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
 	case SDKOpenAI, SDKOpenRouter, SDKMistral, SDKLocalEmbeddings:
@@ -238,6 +267,8 @@ func DefaultBaseURL(sdk string) string {
 		return "https://openrouter.ai/api/v1"
 	case SDKMistral:
 		return "https://api.mistral.ai/v1"
+	case SDKOpenCode:
+		return "https://opencode.ai/zen/go/v1"
 	// Not a /v1 root: the Codex backend serves one endpoint, /responses, which
 	// the chatgpt middleware rewrites the SDK's /chat/completions into.
 	case SDKChatGPT:
@@ -266,6 +297,8 @@ func DefaultAlias(sdk string) string {
 		return "Google Cloud Vision"
 	case SDKMistral:
 		return "Mistral"
+	case SDKOpenCode:
+		return "Opencode Go"
 	case SDKChatGPT:
 		return "ChatGPT subscription"
 	case SDKLocalEmbeddings:

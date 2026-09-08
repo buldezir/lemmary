@@ -65,7 +65,7 @@ Admin Settings: providers, models and worker timeouts as runtime configuration:
 - **Backend:** Go, [PocketBase as a framework](https://pocketbase.io/docs/use-as-framework/)
 - **Frontend:** React, TanStack Router, PocketBase JS SDK
 - **OCR:** Mistral Document OCR (`mistral`), Google Cloud Vision (`google_vision`), a file-capable OpenAI/OpenRouter model, or Docling (`docling`) — a keyless sidecar on your own host running PaddleOCR's PP-OCR models, so scans never leave the machine; see [docs/local_ocr.md](docs/local_ocr.md). Configured in Settings
-- **AI:** OpenAI-compatible chat completions (Mistral, OpenAI, or OpenRouter) via the official OpenAI Go SDK — see [docs/ai_providers.md](docs/ai_providers.md)
+- **AI:** Opencode Go (`opencode`), Mistral, OpenAI, OpenRouter, or a ChatGPT subscription (`chatgpt`), via the official OpenAI and Anthropic Go SDKs — Opencode serves a third of its catalogue on Anthropic's Messages API, so the `opencode` SDK wraps both — see [docs/ai_providers.md](docs/ai_providers.md)
 - **Search:** [Bleve](https://github.com/blevesearch/bleve) full-text index (token AND for the search box, relaxed to most-terms for the agent, BM25 ranking) over titles, OCR, tags, and metadata
 - **Deep Search:** natural-language archive search via a tool-calling agent over that index (hybrid keyword and embedding retrieval; keyword expansion across configured languages when no embedding model is set), in two modes — **Search** lists matching documents, **Research** reads them, surveys and counts across the archive with a cheaper helper model, and writes a cited answer
 
@@ -143,4 +143,4 @@ For commercial licensing, contact Alexander Arutyunov <licensing@lemmary.app>.
 
 ## Recommended: Opencode Go
 
-[Opencode Go](https://opencode.ai/go?ref=84VDFS18QN) is a perfect plan to use with this project as AI provider. See the [docs](https://opencode.ai/docs/go/).
+[Opencode Go](https://opencode.ai/go?ref=84VDFS18QN) is a perfect plan to use with this project as AI provider: one subscription covers a catalogue of models, and `AI_SDK=opencode` is the whole configuration — it knows which of Opencode's three endpoints each model is served on, so nothing else needs binding. See the [docs](https://opencode.ai/docs/go/).

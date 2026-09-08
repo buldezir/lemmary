@@ -12,6 +12,7 @@ to use.
 
 | Provider | Language model | OCR | Embeddings |
 | --- | --- | --- | --- |
+| **Opencode Go** — `opencode` | ✅ **a catalogue of models on one subscription** | ✅ models that accept files/images | ❌ |
 | **`mistral`** | ✅ chat completions | ✅ dedicated Document OCR API | ✅ `mistral-embed` |
 | `openai` | ✅ | ✅ models that accept files/images | ✅ |
 | `openrouter` | ✅ many vendors on one key | ✅ models advertising `file` input | ✅ |
@@ -30,8 +31,26 @@ purpose-built document endpoint rather than a general model asked to read a
 scan, and its catalogue advertises per-model capabilities, so the Settings model
 pickers show the right models instead of the whole catalogue.
 
+**Or start with Opencode Go**, if a subscription suits you better than metered
+keys: `AI_SDK=opencode` and a key is the whole configuration, and it covers
+extraction, chat, Deep Search and OCR across a catalogue of models from several
+vendors. It does not embed — see the bullet below — so Deep Search matches
+keywords until you add a second provider for that.
+
 The alternatives are worth naming:
 
+- **Opencode Go** — one subscription across a catalogue of models (GLM, Kimi,
+  DeepSeek, Qwen, MiniMax, Grok and more). Unlike every other SDK here it does
+  not serve one API: each model lives on `/chat/completions`, `/responses` or
+  Anthropic's `/messages`, and which one is a property of the model that the
+  catalogue does not report — so Lemmary carries the table and speaks all three.
+  That is also why it is its own SDK rather than `openai` with a base URL: on
+  any other SDK every model goes to `/chat/completions`, where two thirds of the
+  catalogue is not served, and the `x-opencode-session` header it requires would
+  not be sent. Embeddings are refused, as for a ChatGPT seat: the gateway has no
+  `/embeddings` and the catalogue has no embedding model, so pair it with
+  `AI_EMBEDDING_SDK=local` or a metered key if you want meaning-based retrieval.
+  Its SDK value is `opencode`.
 - **`openai`** — pick this when you already have a key, or to point
   `AI_BASE_URL` at an OpenAI-compatible gateway or a self-hosted endpoint. Its
   `/v1/models` describes nothing, so the model pickers show the full catalogue
@@ -111,15 +130,15 @@ after that.
 | --- | --- | --- |
 | `AI_MANAGED` | `0` | Whether the operator owns AI configuration. See the table above. |
 | `AI_CHATGPT_LOGIN` | `0` | Whether **Settings** offers the ChatGPT subscription SDK (`chatgpt`), which bills a ChatGPT subscription instead of a metered key. Off unless set, and refused together with `AI_MANAGED=1`. It is not an `AI_SDK` value: the provider is added and signed in to from Settings, because its credential is minted rather than typed. See [ChatGPT sign-in](/chatgpt_login). |
-| `AI_SDK` | `openai` | The language model's SDK: `openai`, `openrouter` or `mistral`. `google_vision`, `docling` (Local OCR) and `local` (Local Embeddings) are refused — none of them can serve extraction. `chatgpt` too: it has no key to seed from the environment. |
+| `AI_SDK` | `openai` | The language model's SDK: `opencode`, `openai`, `openrouter` or `mistral`. `google_vision`, `docling` (Local OCR) and `local` (Local Embeddings) are refused — none of them can serve extraction. `chatgpt` too: it has no key to seed from the environment. |
 | `AI_API_KEY` | empty | Its credential. **One key is usually the whole configuration**: with this and nothing else the app creates one provider and routes extraction, chat, Deep Search *and* OCR to it. |
 | `AI_MODEL` | `gpt-5.6-luna` | The model for extraction, chat and Deep Search. Be sure it supports the result language set in **Settings**. |
-| `AI_BASE_URL` | the SDK's own endpoint | An OpenAI-compatible base URL, for a gateway or a self-hosted endpoint. |
-| `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `openai`, `openrouter`, `mistral`, `google_vision` or `docling` (Local OCR). `local` (Local Embeddings) is refused — it serves embeddings only. `chatgpt` reads documents but is refused here too: it is signed in to from Settings rather than given a key, so the environment has nothing to seed it with. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
+| `AI_BASE_URL` | the SDK's own endpoint | An OpenAI-compatible base URL, for a gateway or a self-hosted endpoint. Leave it unset for `opencode`, whose own endpoint is `https://opencode.ai/zen/go/v1`. |
+| `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `opencode`, `openai`, `openrouter`, `mistral`, `google_vision` or `docling` (Local OCR). `local` (Local Embeddings) is refused — it serves embeddings only. `chatgpt` reads documents but is refused here too: it is signed in to from Settings rather than given a key, so the environment has nothing to seed it with. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
 | `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK` — except Local OCR (`docling`), which has no account behind it. Optional there, and only if you started the sidecar with `DOCLING_SERVE_API_KEY`. |
 | `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. For Local OCR (`docling`) the default is the compose service name, `http://docling:5001`, so `OCR_SDK=docling` alone is a complete configuration under the overlay. |
 | `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Not required for `google_vision` or Local OCR (`docling`), which read a document without one; for Local OCR it optionally names the OCR engine instead. See [Choosing an engine](/local_ocr#choosing-an-engine). |
-| `AI_EMBEDDING_MODEL` | unset (Deep Search matches keywords only) | An embedding model — on the `AI_SDK` provider, or on the `AI_EMBEDDING_SDK` one when that is set — so Deep Search can also find documents by meaning. Operator-owned under `AI_MANAGED=1`; removing it there turns the feature off. See [what embeddings cost](#what-embeddings-cost). |
+| `AI_EMBEDDING_MODEL` | unset (Deep Search matches keywords only) | An embedding model — on the `AI_SDK` provider, or on the `AI_EMBEDDING_SDK` one when that is set — so Deep Search can also find documents by meaning. Under `AI_SDK=opencode` it requires `AI_EMBEDDING_SDK`: Opencode serves no `/embeddings`, so there is no provider to fall back to, and naming a model without one is refused at boot. Operator-owned under `AI_MANAGED=1`; removing it there turns the feature off. See [what embeddings cost](#what-embeddings-cost). |
 | `AI_SEARCH_HELPER_MODEL` | unset (the Search model does this work) | A cheaper model on the `AI_SDK` provider for Deep Search's bulk per-document work: distilling long reads into notes and surveying many documents for one question. Operator-owned under `AI_MANAGED=1`. See [How Research covers a topic](/setup#how-research-covers-a-topic). |
 
 ### The embedding provider
@@ -138,7 +157,7 @@ which has always been how a second provider for one job is described.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `AI_EMBEDDING_SDK` | unset (embeddings run on the `AI_SDK` provider) | A separate provider for embeddings: `openai`, `openrouter`, `mistral` or `local` (Local Embeddings). Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. `google_vision` and `docling` (Local OCR) are refused — neither has an `/embeddings` endpoint. |
+| `AI_EMBEDDING_SDK` | unset (embeddings run on the `AI_SDK` provider) | A separate provider for embeddings: `openai`, `openrouter`, `mistral` or `local` (Local Embeddings). Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. `google_vision`, `docling` (Local OCR), `opencode` and `chatgpt` are refused — none of them has an `/embeddings` endpoint. Required rather than optional when `AI_SDK` is one of the last two and `AI_EMBEDDING_MODEL` is set. |
 | `AI_EMBEDDING_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an SDK that differs from `AI_SDK`, **except Local Embeddings (`local`)**, which takes none. |
 | `AI_EMBEDDING_BASE_URL` | the SDK's own endpoint, or `AI_BASE_URL` when the SDKs match | Where that provider lives. For Local Embeddings (`local`) this defaults to `http://embeddings:80/v1`, the compose overlay's service. |
 
@@ -303,20 +322,40 @@ size, memory, GPU variants and the per-page cost — is in
   [Local OCR](/local_ocr#what-it-costs).
 - **AI extraction fails** — check that an extraction model is bound and that it
   is a chat model, not an embedding or OCR model.
-- **A model in the picker answers every request with a 500** — some models are
-  served only by the OpenAI *Responses* API, and their gateway returns a bare
-  500 on `/chat/completions` even for a one-word prompt. OpenCode Zen routes
-  `gpt-5.6-luna`, `grok-4.6` and the `muse-spark` models that way. Lemmary
-  discovers this by itself, and nothing needs configuring: a refused request is
-  translated and sent again to `/responses`, so it still succeeds, and once the
-  model is known to live there every later request goes straight to it. The log
-  line is `chat completions refused this model; retrying on the Responses API`.
-  A 401 or 403 settles it at once; a 500 takes two, because a 500 is also what
-  any provider returns when it is simply having a bad minute, and one hiccup
-  should not reroute a model for the life of the process. An endpoint that has
-  already answered for a model is never rerouted at all. What is learned is
-  remembered per provider, so the same model name behind two providers is
-  discovered separately.
+- **An `opencode` model answers every request with a 500 or a 404** — check that
+  the SDK really is `opencode` and not `openai` with `AI_BASE_URL` pointed at it.
+  Opencode Go serves each model on one of three endpoints, and which one is a
+  property of the model that its catalogue does not report, so the `opencode`
+  SDK carries the table. On any other SDK every model goes to
+  `/chat/completions`, and two thirds of the catalogue is not there.
+
+  An install that predates the SDK needs no edit: `AI_SDK=openai` with a base
+  URL addressing `opencode.ai` is *read* as `AI_SDK=opencode`, and the provider
+  row it seeded is moved onto that SDK by migration `1730000026`. Both halves
+  matter — a managed instance re-applies its environment on every boot, so the
+  row alone would be moved straight back. So this only bites a row created by
+  hand afterwards, or one pointed at Opencode through a URL that hides the
+  host. The same applies to the `x-opencode-session` header, which Opencode
+  requires and which only the `opencode` SDK sends.
+
+  The routing, for reference. A model Lemmary has not heard of goes to
+  `/chat/completions`, which is the endpoint whose refusal names the problem:
+
+  | Endpoint | Models |
+  | --- | --- |
+  | `/chat/completions` | `glm-*`, `kimi-*`, `longcat-*`, `deepseek-*`, `mimo-*`, `hy*`, `omen-*` |
+  | `/responses` | `grok-*`, `gpt-5.6-luna`, `muse-spark-*` |
+  | `/messages` (Anthropic's API) | `minimax-*`, `qwen*` |
+
+- **A `gpt-5`-family model refuses a Deep Search request** — those models set
+  `reasoning_effort` themselves and then reject the request because function
+  tools are present. Lemmary handles it without configuration: the request is
+  translated to the *Responses* API, which keeps both the tools and the
+  reasoning, and falls back to `reasoning_effort=none` only if that endpoint
+  cannot serve it either. The log line is `model rejected reasoning_effort with
+  function tools; retrying on the Responses API`. What is learned is remembered
+  per provider, so the same model name behind two providers is discovered
+  separately.
 - **A managed instance will not start** — the log names the missing or invalid
   variable in the provider block; nothing inside the instance can repair it.
 - **Local Embeddings embeds nothing** — `docker compose logs embeddings`. On a

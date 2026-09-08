@@ -194,7 +194,7 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 	)
 
 	requestStart := time.Now()
-	chatResp, err := c.complete(ctx, openai.ChatCompletionNewParams{
+	chatResp, err := c.Complete(ctx, openai.ChatCompletionNewParams{
 		Model: shared.ChatModel(c.model),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(buildExtractionSystemPrompt(c.resultLanguage, catalog)),
@@ -227,8 +227,16 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 		c.logger.Warn("extraction metadata repaired", "note", note)
 	}
 	if err != nil {
+		// The reply itself, bounded, not only its length. "title is required"
+		// is raised after the JSON parsed cleanly, so the length alone cannot
+		// tell a model that answered `{}` from one that answered at length
+		// about the wrong thing -- and those want opposite fixes. It is the
+		// model's own answer about the operator's own document, and a failure
+		// path only.
 		c.logger.Error("parse failed",
 			"content_chars", len(content),
+			"content", strutil.TruncateRunes(strings.TrimSpace(content), 500),
+			"finish_reason", chatResp.Choices[0].FinishReason,
 			slog.Any("error", err),
 		)
 		return nil, err
