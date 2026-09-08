@@ -13,8 +13,9 @@ import { previewKind } from '../lib/documentPreview'
  * so the tokened URL goes straight into the frame and the file is never pulled
  * through JavaScript.
  *
- * Only rendered for a file `previewKind` can show; the page leaves the column
- * out entirely for the rest rather than reserving one to apologise in.
+ * Only rendered for a file `previewKind` can show, and only on a viewport wide
+ * enough to put it beside the form; the page leaves the column out entirely
+ * otherwise rather than reserving one to apologise in.
  */
 export function DocumentPreview({ record }: { record: DocumentFileRef }) {
   // Primitives, not the record: the detail page hands down a fresh object every
@@ -56,10 +57,10 @@ export function DocumentPreview({ record }: { record: DocumentFileRef }) {
 
   const url = resolved?.key === key ? resolved.url : null
 
-  if (url === null || kind === 'none') {
+  if (error || url === null || kind === 'none') {
     return (
       <div className="flex h-full items-center justify-center border border-line bg-surface p-6">
-        <p className="text-center text-sm text-ink-soft">
+        <p className={`text-center text-sm ${error ? 'text-madder' : 'text-ink-soft'}`}>
           {error || (kind === 'none' ? 'This file type has no preview.' : 'Loading preview...')}
         </p>
       </div>
@@ -71,6 +72,7 @@ export function DocumentPreview({ record }: { record: DocumentFileRef }) {
       <img
         src={url}
         alt="Document preview"
+        onError={() => setError('The image could not be loaded.')}
         className="h-full w-full border border-line bg-surface object-contain"
       />
     )
@@ -79,13 +81,24 @@ export function DocumentPreview({ record }: { record: DocumentFileRef }) {
   // #view=FitH is the viewer's own initial-zoom hint, ignored where it is not
   // understood. Set once: changing the fragment re-navigates the frame.
   //
-  // ponytail: the file token lives three minutes, so a viewer that went back for
-  // more bytes long after the frame loaded would be refused. In practice it has
-  // the whole file by then. Fetch it into a blob URL instead if that ever bites.
+  // The file token is user-scoped rather than per-file, and it rides in the
+  // query string, so referrerPolicy keeps it out of the Referer of anything the
+  // framed document navigates to -- a "view online" link in an invoice is
+  // ordinary content here. Modern browsers would send only the origin
+  // cross-origin anyway; this costs one attribute and does not rely on that.
+  //
+  // No onError: a frame that is refused gets an error *document*, which loads
+  // successfully as far as the element is concerned, so the handler would never
+  // run. PocketBase's message shows in the frame instead.
+  //
+  // ponytail: the token lives three minutes, so a viewer that went back for more
+  // bytes long after the frame loaded would be refused. In practice it has the
+  // whole file by then. Fetch it into a blob URL instead if that ever bites.
   return (
     <iframe
       title="Document preview"
       src={`${url}#view=FitH`}
+      referrerPolicy="no-referrer"
       className="h-full w-full border border-line bg-wash"
     />
   )

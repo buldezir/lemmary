@@ -164,11 +164,32 @@ export function DocumentDetailPage() {
 
   const hasOcrText = Boolean(document?.ocr_text?.trim())
 
+  // The pane's premise is "beside the fields", which only holds from xl up.
+  // Narrower than that it would be a viewport-tall block above the form -- and
+  // a blank one on iOS Safari and Android Chrome, which do not render a framed
+  // PDF. Gated in JS rather than hidden by CSS so a phone does not download the
+  // file to lay out something it will never show.
+  const [wideEnough, setWideEnough] = useState(() => previewViewport().matches)
+  useEffect(() => {
+    const query = previewViewport()
+    const onChange = (event: MediaQueryListEvent) => setWideEnough(event.matches)
+    query.addEventListener('change', onChange)
+    return () => query.removeEventListener('change', onChange)
+  }, [])
+
   // docx, xlsx and the plain-text types have nothing a browser can frame -- and
   // for txt and csv the text is already in the OCR-text field below. Rather
   // than reserve a column to say so, those documents simply have no pane and no
   // toggle, and keep the full width for their fields.
-  const canPreview = Boolean(document?.file) && previewKind(document?.file ?? '') !== 'none'
+  const canPreview =
+    wideEnough && Boolean(document?.file) && previewKind(document?.file ?? '') !== 'none'
+
+  // Latches on the first show, because hiding the pane must not unmount the
+  // viewer: a remount resets a PDF to page one and loses find-in-document,
+  // which is the opposite of what the button is for. Hiding it with CSS keeps
+  // the page it was on. Not mounted before the first show, so a reader who
+  // turned the pane off does not pay for a file they are not looking at.
+  const [previewMounted, setPreviewMounted] = useState(showPreview)
 
   // The job as well as the document, for the reason the poll gate above gives:
   // apply_metadata marks the document completed while embed is still running,
@@ -408,7 +429,10 @@ export function DocumentDetailPage() {
             <button
               type="button"
               aria-pressed={showPreview}
-              onClick={() => setShowPreview((visible) => !visible)}
+              onClick={() => {
+                setPreviewMounted(true)
+                setShowPreview((visible) => !visible)
+              }}
               className={`rounded-xs border px-4 py-2 text-sm font-medium transition-colors ${
                 showPreview
                   ? 'border-ink bg-ink text-paper hover:bg-oxblood'
@@ -464,9 +488,9 @@ export function DocumentDetailPage() {
         </div>
       </div>
 
-      {/* The pane sits beside the form on a wide screen and above it on a
-          narrow one -- but after it in the DOM, so a keyboard reaches the
-          fields without tabbing through a PDF viewer's own controls first. */}
+      {/* The pane sits left of the form, but after it in the DOM, so a keyboard
+          reaches the fields without tabbing through a PDF viewer's own
+          controls first. */}
       <div className="flex flex-col gap-5 xl:flex-row xl:items-start">
         <div className="flex min-w-0 flex-1 flex-col gap-5">
           {showProcessingJob && (
@@ -740,8 +764,12 @@ export function DocumentDetailPage() {
           </form>
         </div>
 
-        {showPreview && canPreview && (
-          <aside className="order-first h-[70vh] xl:sticky xl:top-6 xl:h-[calc(100vh-3rem)] xl:w-2/5 xl:shrink-0">
+        {canPreview && previewMounted && (
+          <aside
+            className={`order-first w-2/5 shrink-0 sticky top-6 h-[calc(100vh-3rem)] ${
+              showPreview ? '' : 'hidden'
+            }`}
+          >
             <DocumentPreview record={document} />
           </aside>
         )}
@@ -762,4 +790,10 @@ function fieldClass(editing: boolean) {
 
 function textareaClass(editing: boolean) {
   return `${fieldClass(editing)} min-h-48 resize-y`
+}
+
+// Tailwind's xl, as a media query: the width at which the pane can sit beside
+// the form rather than on top of it.
+function previewViewport(): MediaQueryList {
+  return window.matchMedia('(min-width: 80rem)')
 }

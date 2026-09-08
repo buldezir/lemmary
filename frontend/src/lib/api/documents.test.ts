@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildDocumentFilter, parseDuplicateOfId } from './documents'
+import { buildDocumentFilter, fileUrlWithToken, parseDuplicateOfId } from './documents'
 
 const noFilters = {
   status: 'all',
@@ -77,5 +77,16 @@ describe('parseDuplicateOfId', () => {
   it('returns null when no id is present', () => {
     expect(parseDuplicateOfId('upload failed')).toBeNull()
     expect(parseDuplicateOfId('duplicate of short')).toBeNull()
+  })
+})
+
+describe('fileUrlWithToken', () => {
+  // getURL answers "" for an empty filename, and fetching "" resolves against
+  // the current page -- index.html, with a 200 that no response check would
+  // catch. Refused before the token is minted, so this needs no server.
+  it('refuses a document with no file', async () => {
+    const record = { id: 'abc123def456ghi', collectionId: 'pbc_1', file: '' }
+    await expect(fileUrlWithToken(record)).rejects.toThrow('This document has no file.')
+    await expect(fileUrlWithToken(record, '')).rejects.toThrow('This document has no file.')
   })
 })
