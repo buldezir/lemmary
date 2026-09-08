@@ -23,19 +23,15 @@ export type AppMeta = {
   chatgptLogin?: boolean
   /**
    * Whether every AI-extracted document waits in the review Inbox. Unknown
-   * reads as off, like chatgptLogin: off is the behaviour before the Inbox
-   * existed, and guessing "on" would narrow a stranger's document list.
+   * reads as off, like chatgptLogin, and for the same reason: off is the
+   * behaviour before the flag existed.
    */
   alwaysRequireReview?: boolean
 }
 
-// One request per page load, shared by every caller.
-//
-// Meta is per-instance and near-constant, but three components ask for it and
-// so does the auth gate -- and the gate has to have the answer before the first
-// route renders, because always_require_review decides what a documents-list
-// URL means. Caching the promise is what makes that a shared await instead of a
-// fourth request. invalidateAppMeta() drops it when Settings is saved.
+// One request per page load, shared by three components and the auth gate --
+// which has to have the answer before the first route renders, because
+// always_require_review decides what a documents-list URL means.
 let pending: Promise<AppMeta> | null = null
 
 export function getAppMeta(): Promise<AppMeta> {
@@ -72,7 +68,7 @@ async function fetchAppMeta(): Promise<AppMeta> {
     }
   } catch {
     // A name and accent have safe defaults; who owns AI configuration does not.
-    // A failed request is also not cached: the next caller retries.
+    // Not cached, so the next caller retries.
     pending = null
     return { appName: DEFAULT_APP_NAME, accent: DEFAULT_ACCENT }
   }

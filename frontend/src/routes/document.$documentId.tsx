@@ -11,6 +11,7 @@ import {
   type DocumentRecord,
 } from '../lib/api/documents'
 import { DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
+import { documentsLanding } from '../lib/reviewPolicy'
 import {
   defaultReprocessSteps,
   forceStepsForReprocess,
@@ -26,6 +27,10 @@ import {
   type ProcessingStep,
 } from '../lib/processing'
 import { Button } from '../components/ui'
+
+function backLabel() {
+  return documentsLanding() === '/inbox' ? 'Back to the Inbox' : 'Back to documents'
+}
 
 export function DocumentDetailPage() {
   const { documentId } = useParams({ from: '/document/$documentId' })
@@ -302,16 +307,13 @@ export function DocumentDetailPage() {
       return
     }
 
-    await navigate({ to: '/' })
+    await navigate({ to: documentsLanding() })
   }
 
   /**
    * Clears the document out of the Inbox without going through the form.
-   *
-   * Hidden while editing rather than disabled-with-an-explanation, because
-   * Save *is* this action in edit mode: saveDocumentMetadata already turns
-   * needs_review into completed. A second path writing the status underneath a
-   * half-typed form would only race it.
+   * Hidden while editing, because Save *is* this action in edit mode:
+   * saveDocumentMetadata already turns needs_review into completed.
    */
   async function onMarkReviewed() {
     if (!document) return
@@ -377,8 +379,8 @@ export function DocumentDetailPage() {
     return (
       <section className="flex flex-col gap-3">
         <p className="text-sm text-madder">{error || 'Document not found.'}</p>
-        <Link to="/" className="text-sm font-medium text-oxblood underline">
-          Back to documents
+        <Link to={documentsLanding()} className="text-sm font-medium text-oxblood underline">
+          {backLabel()}
         </Link>
       </section>
     )
@@ -397,8 +399,8 @@ export function DocumentDetailPage() {
             {document.expand?.duplicate_of?.title?.trim() || document.duplicate_of}
           </Link>
           .{' '}
-          {/* The relationship stays true after review, so the banner stays --
-              but it stops asking for something that has been done. */}
+          {/* The relationship stays true after review, so the banner stays,
+              but stops asking for something already done. */}
           {document.processing_status === 'needs_review'
             ? 'Review both documents and delete the one you do not need.'
             : 'Reviewed; both were kept.'}
@@ -406,8 +408,8 @@ export function DocumentDetailPage() {
       )}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <Link to="/" className="text-sm text-ink-soft hover:text-oxblood">
-            &larr; Back to documents
+          <Link to={documentsLanding()} className="text-sm text-ink-soft hover:text-oxblood">
+            &larr; {backLabel()}
           </Link>
           <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight text-ink">
             {document.title || 'Untitled document'}

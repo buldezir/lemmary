@@ -7,10 +7,8 @@ import (
 
 // Adds the always_require_review setting and an index for the review Inbox.
 //
-// Two changes, one migration, because the setting is what fills the Inbox and
-// the index is what makes reading it cheap. Both halves are split into named
-// functions so the test can run each twice: a managed instance re-runs every
-// migration on every boot, so anything here has to be idempotent.
+// Split into named functions so the test can run each twice: a managed
+// instance re-runs every migration on every boot.
 func init() {
 	m.Register(func(app core.App) error {
 		if err := addAlwaysRequireReviewField(app); err != nil {
@@ -49,15 +47,12 @@ func dropAlwaysRequireReviewField(app core.App) error {
 	return app.Save(settings)
 }
 
-// Covering index for the counts and lists keyed on processing_status.
+// Covering index for the counts and lists keyed on processing_status: the
+// header's Inbox count, Management's failed count, and the ?status= filter.
 //
-// Same reasoning as idx_documents_user_document_date: the documents table
-// stores ocr_text inline, up to models.MaxOCRTextRunes a row, so a query that
-// has to read row bodies to test a status pays for text it never looks at.
-// Until now (user, processing_status) had no index, and three things ask for it
-// on nearly every page load: the header's Inbox count, Management's failed
-// count, and the ?status= filter on the documents list. Equality on user
-// first, then the filtered column, so the count reads the index alone.
+// Same reasoning as idx_documents_user_document_date -- the documents table
+// stores ocr_text inline, so a query that reads row bodies to test a status
+// pays for text it never looks at.
 func addDocumentStatusIndex(app core.App) error {
 	documents, err := app.FindCollectionByNameOrId("documents")
 	if err != nil {

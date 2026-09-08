@@ -167,8 +167,6 @@ export async function reprocessDocument(
 export async function countDocumentsWithStatus(status: DocumentStatus): Promise<number> {
   await ensureAuth()
 
-  // Through buildDocumentFilter so the filter string has one author; a real
-  // status always produces a clause, so the fallback is unreachable.
   const filter =
     buildDocumentFilter({
       status,
@@ -186,7 +184,7 @@ export function countFailedDocuments(): Promise<number> {
   return countDocumentsWithStatus('failed')
 }
 
-/** How many documents are waiting for the user, i.e. the Inbox's size. */
+/** The Inbox's size. */
 export function countDocumentsNeedingReview(): Promise<number> {
   return countDocumentsWithStatus('needs_review')
 }
@@ -194,14 +192,12 @@ export function countDocumentsNeedingReview(): Promise<number> {
 /**
  * Clears documents out of the review Inbox.
  *
- * A status write and nothing else: reviewing is not an edit, so this leaves
- * metadata_source alone -- the metadata really did come from the model, the
- * user just read it. The owner UpdateRule permits it directly and the select
- * field validates the value, so there is no endpoint to go through.
+ * A status write and nothing else: reviewing is not an edit, so metadata_source
+ * still records that the model wrote the metadata. The owner UpdateRule permits
+ * it directly, so there is no endpoint to go through.
  *
- * allSettled rather than all: eleven of twelve landing is a better outcome
- * than discarding eleven successes because one document was deleted from
- * another tab.
+ * allSettled rather than all, so one document deleted in another tab does not
+ * discard eleven successes.
  */
 export async function markDocumentsReviewed(documentIds: string[]): Promise<void> {
   if (documentIds.length === 0) return
@@ -410,7 +406,6 @@ export async function saveDocumentMetadata(
     processing_status:
       input.processingStatus === 'needs_review' ? 'completed' : input.processingStatus,
   })
-  // Saving can empty a slot in the Inbox, so the badge wants to hear about it.
   notifyDocumentsChanged()
   return saved
 }

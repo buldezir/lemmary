@@ -1,11 +1,6 @@
 import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
 import { Button, selectClassName } from './ui'
 
-/**
- * What the selected documents can be done to. Selection is offered only on the
- * two lists where a bulk action makes sense -- a backlog of failures to requeue,
- * and an Inbox to clear -- so the mode is decided by which list is on screen.
- */
 export type BulkMode = 'reprocess' | 'review'
 
 const reprocessModes: ReprocessMode[] = ['auto', 'full', 'extraction']

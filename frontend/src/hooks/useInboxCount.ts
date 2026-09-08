@@ -4,18 +4,15 @@ import { countDocumentsNeedingReview } from '../lib/api/documents'
 import { onDocumentsChanged } from '../lib/documentEvents'
 import { useAsync } from './useAsync'
 
-/** How long to sit on a burst of changes before counting again. */
 const debounceMs = 300
 
 /**
  * How many documents are waiting for review, for the header's Inbox badge.
+ * Null while unknown and on failure, so the badge hides rather than claiming
+ * an empty Inbox.
  *
- * Null while unknown, and null again if the count fails: a badge that hides is
- * honest about not knowing, whereas a zero would claim the Inbox is empty.
- *
- * Call this once per app, in the header -- the count is a request, and the two
- * header layouts render the same nav data from one component precisely so
- * there is one of it.
+ * Call it once, in the header: the two header layouts render from one
+ * component precisely so this is one request rather than one per link.
  */
 export function useInboxCount(): number | null {
   const { data, reload } = useAsync(() => countDocumentsNeedingReview(), [])
@@ -34,9 +31,7 @@ export function useInboxCount(): number | null {
     }
 
     const offLocal = onDocumentsChanged(schedule)
-    // Realtime covers changes made elsewhere -- another tab, another device,
-    // the worker finishing a document. It is optional; the local event is what
-    // keeps the badge right when it is unavailable.
+
     let unsubscribe: (() => void) | undefined
     let cancelled = false
     void pb

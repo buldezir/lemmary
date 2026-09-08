@@ -70,9 +70,7 @@ type settingsPatchRequest struct {
 
 // touchesManaged is true for the same fields ApplyManaged rewrites. Timeouts,
 // retries, languages, the prompt version and always_require_review are
-// tenant-owned; see AIEnv. Requiring review is a reader's preference about
-// their own archive and costs the operator nothing, so a managed tenant keeps
-// it -- there is a test pinning that.
+// tenant-owned; see AIEnv.
 func (r settingsPatchRequest) touchesManaged() bool {
 	return r.OCRProviderID != nil ||
 		r.OCRModel != nil ||

@@ -25,8 +25,6 @@ func TestFinishedDocStatusHonoursConfidenceAndThePolicy(t *testing.T) {
 			want:          models.DocStatusNeedsReview,
 		},
 		{
-			// The whole point of the setting: metadata nobody has read does not
-			// count as done just because the model sounded sure.
 			name:                "the policy sends a confident one to the Inbox too",
 			alwaysRequireReview: true,
 			want:                models.DocStatusNeedsReview,
@@ -50,14 +48,10 @@ func TestFinishedDocStatusHonoursConfidenceAndThePolicy(t *testing.T) {
 	}
 }
 
-// The setting reaches only the apply_metadata step, so a step list without it
-// finishes on completed however the policy is set. That is deliberate: the list
-// without apply is above all a paperless-ngx import, whose metadata was curated
-// in the other system and never touched by a model here -- requiring review of
-// it would empty a migrated archive into the Inbox for extraction that never
-// ran. This is the line that makes the exemption true, so it is the line worth
-// pinning: see finalizeDocumentWithoutApply, and TestImportPreserveStepsEmbed
-// in internal/models for the other half.
+// The setting reaches only apply_metadata, so a step list without it finishes
+// on completed however the policy is set. That exemption exists for the
+// paperless-ngx import, whose metadata no model here ever touched; this is the
+// line that makes it true. See finalizeDocumentWithoutApply.
 func TestThePolicyCannotReachAStepListWithoutApplyMetadata(t *testing.T) {
 	t.Parallel()
 	for _, step := range models.ImportPreserveSteps {
@@ -68,9 +62,8 @@ func TestThePolicyCannotReachAStepListWithoutApplyMetadata(t *testing.T) {
 	}
 }
 
-// Mirrored as LOW_CONFIDENCE_THRESHOLD in frontend/src/lib/documentStatus.ts,
-// which words the "why is this waiting" line on a card. Drift would not change
-// a status, but it would make the card explain the wrong reason.
+// Mirrored as LOW_CONFIDENCE_THRESHOLD in frontend/src/lib/documentStatus.ts.
+// Drift makes a card explain the wrong reason, not show the wrong status.
 func TestTheConfidenceThresholdIsTheOneTheFrontendMirrors(t *testing.T) {
 	t.Parallel()
 	if minExtractionConfidence != 0.5 {

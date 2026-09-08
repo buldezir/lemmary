@@ -8,7 +8,7 @@ type Props = {
   selectable?: boolean
   selected?: boolean
   onToggleSelect?: (id: string) => void
-  /** Offered only for a document that is waiting; omit it to hide the button. */
+  /** Omit to hide the button; it shows only for a document that is waiting. */
   onMarkReviewed?: (id: string) => void
   markingReviewed?: boolean
 }
@@ -30,10 +30,7 @@ function CardDescription({ document }: { document: DocumentRecord }) {
     return <p className="line-clamp-3 text-sm text-ink-muted">No summary yet.</p>
   }
 
-  // With no summary to show, say why the document is waiting instead. This used
-  // to assume low confidence for anything that was not a duplicate, which the
-  // "always require review" setting turned into a lie about confident
-  // documents -- hence reviewReason rather than a second look at confidence.
+  // With no summary to show, say why the document is waiting instead.
   switch (reviewReason(document)) {
     case 'duplicate': {
       const originalTitle = document.expand?.duplicate_of?.title?.trim() || 'another document'
@@ -134,8 +131,8 @@ export function DocumentCard({
 
         {canMarkReviewed && (
           <div className="flex justify-end">
-            {/* Above the full-bleed link, like the checkbox, so clearing a
-                document from the Inbox does not open it first. */}
+            {/* Above the full-bleed link, like the checkbox, so a click clears
+                the document instead of opening it. */}
             <Button
               variant="secondary"
               size="xs"

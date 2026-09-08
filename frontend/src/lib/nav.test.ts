@@ -40,8 +40,6 @@ describe('nav items', () => {
     ])
   })
 
-  // The badge is the only reason nav items carry a key at all, and the Inbox is
-  // the only item that asked for one.
   test('gives the Inbox a path of its own and the only count badge', () => {
     const badged = primaryNavItems.filter((item) => item.kind === 'route' && item.badgeKey)
 

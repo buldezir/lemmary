@@ -263,13 +263,11 @@ func failJob(app core.App, job *core.Record, document *core.Record, err error) e
 
 // finalizeDocumentWithoutApply settles a document the apply step did not.
 //
-// AlwaysRequireReview deliberately does not reach here. A step list without
+// AlwaysRequireReview deliberately does not reach here: a step list without
 // apply_metadata is one where no model wrote the metadata -- above all a
 // paperless-ngx import, whose whole point (models.ImportPreserveSteps) is that
 // the metadata curated over there survives. Requiring review of it would empty
-// a migrated archive of thousands of documents into the Inbox to be cleared
-// twelve at a time, for extraction that never ran. Review is for what the AI
-// wrote; see finishedDocStatus.
+// a migrated archive into the Inbox for extraction that never ran.
 func finalizeDocumentWithoutApply(app core.App, document *core.Record, steps []string) error {
 	if document.GetString("duplicate_of") != "" {
 		document.Set("processing_status", models.DocStatusNeedsReview)

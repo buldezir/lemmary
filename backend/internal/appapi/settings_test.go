@@ -219,10 +219,9 @@ func TestPatchTurnsAlwaysRequireReviewOnAndOff(t *testing.T) {
 	}
 }
 
-// Requiring review is a reader's preference about their own archive: it buys no
-// API calls and describes nothing about the instance, so a managed tenant keeps
-// it. Naming a managed field fails the whole PATCH with a 403, which would make
-// the Inbox toggle unusable on every hosted plan.
+// Requiring review buys no API calls, so a managed tenant keeps it. Naming a
+// managed field fails the whole PATCH with a 403, which would make the toggle
+// unusable on every hosted plan.
 func TestAlwaysRequireReviewIsNotAManagedSetting(t *testing.T) {
 	t.Parallel()
 	if (settingsPatchRequest{AlwaysRequireReview: boolptr(true)}).touchesManaged() {

@@ -142,18 +142,13 @@ function AdminMenuLabel({ children }: { children: string }) {
 
 type NavBadges = Record<NavBadgeKey, number | null>
 
-/** The count an item asked for, or nothing for the items that asked for none. */
 function navBadge(item: NavItem, badges: NavBadges): number | null | undefined {
   return item.kind === 'route' && item.badgeKey ? badges[item.badgeKey] : undefined
 }
 
 /**
- * The count beside a nav label. Amber to match the needs_review badge on a
- * card, so the two read as the same thing counted and named.
- *
- * The digits are hidden from assistive tech and replaced with a sentence: "3"
- * appended to a link called Inbox is not a useful accessible name, and a cap
- * of 99+ keeps a neglected Inbox from widening the header.
+ * The count beside a nav label. The digits are hidden from assistive tech and
+ * replaced with a sentence, because "Inbox 3" is not a useful accessible name.
  */
 function NavBadge({ count }: { count: number }) {
   return (
@@ -307,10 +302,8 @@ function AppHeader({
   const [open, setOpen] = useState(false)
   const secondaryItems = visibleNavItems(secondaryNavItems(pbAdminUrl), admin)
   const panelItems = [...primaryNavItems, ...secondaryItems]
-  // Counted once here, for both layouts: this component renders the wide bar
-  // and the narrow panel from the same item lists, so the badge costs one
-  // request rather than one per link. Mounted only past the auth gate, so
-  // nothing is counted before sign-in.
+  // Once here, for both layouts: this component renders the wide bar and the
+  // narrow panel from the same item lists.
   const badges = { inbox: useInboxCount() }
 
   useEffect(() => {
@@ -429,9 +422,8 @@ type Gate =
 
 async function resolveGate(): Promise<Gate> {
   // Meta before the gate opens, because always_require_review decides what a
-  // bare "/" means: without it the list would paint every status for one frame
-  // and then narrow. getAppMeta never throws and caches its promise, so this is
-  // the same request the header and Settings are already awaiting.
+  // bare "/" means: without it the list paints every status for one frame and
+  // then narrows. getAppMeta never throws and caches its promise.
   const [status] = await Promise.all([getSetupStatus(), getAppMeta()])
 
   if (status.needs_admin) {

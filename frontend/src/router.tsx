@@ -61,19 +61,11 @@ const indexRoute = createRoute({
   component: IndexPage,
 })
 
-// The review Inbox: the same list, with its status fixed by the path.
-//
-// A path rather than a link to /?status=needs_review. The nav's active state is
-// the reason: a search-param link is active when its params are a subset of the
-// location's, and Documents carries no params, so both would light up at once.
-// Having its own path also lets the Inbox say "nothing waiting" where the
-// documents list would say "no documents yet".
+// The review Inbox: the same list, with its status fixed by the path. See
+// lib/nav.ts for why this is a path and not a link to /?status=needs_review.
 const inboxRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/inbox',
-  // inboxQuerySearch, not documentQuerySearch: /inbox is the needs_review list
-  // by definition, so a status param here could only repeat or contradict the
-  // path. It is dropped rather than honoured.
   validateSearch: (search: DocumentQueryInput & SearchSchemaInput) => inboxQuerySearch(search),
   component: InboxPage,
 })

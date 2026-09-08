@@ -3,10 +3,7 @@ import { accentContrastText } from '../lib/accent'
 
 export const inputClassName =
   'w-full rounded-xs border border-line-strong bg-bright px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood'
-/**
- * A native select sized like an input. Here rather than in a route because the
- * documents list and its bulk bar are two files sharing one row of controls.
- */
+/** A native select sized like an input. */
 export const selectClassName =
   'rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm outline-none focus:border-oxblood focus:ring-1 focus:ring-oxblood'
 export const labelClassName = 'flex flex-col gap-1'

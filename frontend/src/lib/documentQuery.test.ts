@@ -124,10 +124,9 @@ describe('inboxQuerySearch', () => {
   })
 })
 
-// With review required, `/` defaults to Completed rather than to everything:
-// the Inbox is the pile, and `/` is the archive that has been read. Parsing and
-// serializing have to agree about that, or the round-trip below breaks and the
-// dropdown snaps back to Completed the moment "All statuses" is picked.
+// Parsing and serializing have to agree about the new default, or the
+// round-trip below breaks and the dropdown snaps back to Completed the moment
+// "All statuses" is picked.
 describe('with review required for every new document', () => {
   afterEach(() => setAlwaysRequireReview(false))
 

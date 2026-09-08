@@ -16,19 +16,14 @@ import (
 	"lemmary/backend/internal/strutil"
 )
 
-// minExtractionConfidence is the score below which the pipeline sends a
-// document for review on its own, whatever the instance's policy is. Mirrored
-// as LOW_CONFIDENCE_THRESHOLD in frontend/src/lib/documentStatus.ts, which
-// reads it only to word the "why is this waiting" line on a card.
+// Mirrored as LOW_CONFIDENCE_THRESHOLD in frontend/src/lib/documentStatus.ts,
+// which reads it only to word the "why is this waiting" line on a card.
 const minExtractionConfidence = 0.5
 
 // finishedDocStatus is the status a pipeline run leaves on a document that
-// neither failed nor turned out to be a duplicate.
-//
-// With AlwaysRequireReview on, nothing here ever returns completed: a person
-// saying so is the only way a document leaves the Inbox. That includes
-// reprocessed documents, which is the point -- a reprocess produces fresh
-// model output that nobody has read.
+// neither failed nor turned out to be a duplicate. With AlwaysRequireReview on
+// it never returns completed, reprocessed documents included: a reprocess
+// produces fresh model output that nobody has read.
 func finishedDocStatus(cfg config.Config, lowConfidence bool) string {
 	if lowConfidence || cfg.AlwaysRequireReview {
 		return models.DocStatusNeedsReview
@@ -203,12 +198,10 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 
 	lowConfidence := metadata.Confidence < minExtractionConfidence
 
-	// The job and the document part ways here, and only for the setting: the
-	// job says whether processing worked, and a confident extraction that
-	// merely awaits a human worked fine. Job status is read as a *processing*
-	// outcome -- by the paperless task list (ngxapi.mapTaskStatus) and by
-	// Management's counts -- so putting every job in needs_review would empty
-	// the word of meaning.
+	// The job and the document part ways for the setting, not for confidence:
+	// job status is read as a *processing* outcome, by the paperless task list
+	// (ngxapi.mapTaskStatus) and by Management's counts, and a confident
+	// extraction that merely awaits a human worked fine.
 	jobStatus := models.JobStatusCompleted
 	if lowConfidence {
 		jobStatus = models.JobStatusNeedsReview

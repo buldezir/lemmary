@@ -67,11 +67,9 @@ type Config struct {
 	ExtractionPromptVer           string
 	NearDuplicateDetectionEnabled bool
 	NearDuplicateThreshold        float64
-	// AlwaysRequireReview makes the pipeline finish every document it extracted
-	// metadata for on needs_review rather than completed, however confident the
-	// model was. It costs nothing to run -- it only decides a status -- but it
-	// means nothing reaches completed except by a person saying so, reprocessed
-	// documents included.
+	// AlwaysRequireReview finishes every document the pipeline extracted
+	// metadata for on needs_review rather than completed, so nothing reaches
+	// completed except by a person saying so.
 	AlwaysRequireReview bool
 }
 

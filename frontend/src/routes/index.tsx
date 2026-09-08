@@ -20,6 +20,7 @@ import {
   parseDocumentQuery,
   type DocumentQuery,
 } from '../lib/documentQuery'
+import { onDocumentsChanged } from '../lib/documentEvents'
 import { DOCUMENT_STATUSES, DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
 import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
 import { useAsync } from '../hooks/useAsync'
@@ -33,15 +34,11 @@ import { selectClassName } from '../components/ui'
 
 const PAGE_SIZE = 12
 
-/** The documents list, showing everything. */
 export function IndexPage() {
   return <DocumentListPage route="/" />
 }
 
-/**
- * The review Inbox: the same list, its status fixed by the path rather than
- * chosen from the dropdown.
- */
+/** The same list, its status fixed by the path rather than by the dropdown. */
 export function InboxPage() {
   return <DocumentListPage route="/inbox" />
 }
@@ -62,8 +59,6 @@ function DocumentListPage({ route }: { route: '/' | '/inbox' }) {
     correspondent: correspondentFilter,
     page,
   } = query
-  // On /inbox the status is the route, so it is neither read from the URL nor
-  // writable -- see inboxQuerySearch, which drops it on the way in.
   const statusFilter = inbox ? 'needs_review' : query.status
 
   const [documents, setDocuments] = useState<DocumentRecord[]>([])
@@ -128,8 +123,6 @@ function DocumentListPage({ route }: { route: '/' | '/inbox' }) {
             page: 1,
             ...patch,
           })
-          // Nothing may write a status into the Inbox's URL, not even a patch
-          // that meant well: the path already says which list this is.
           if (inbox) delete next.status
           return next
         },
@@ -182,12 +175,21 @@ function DocumentListPage({ route }: { route: '/' | '/inbox' }) {
               expand: 'tags,document_type,correspondent,duplicate_of',
               ...(filter ? { filter } : {}),
             })
-        if (active) {
-          setDocuments(result.items)
-          setTotalItems(result.totalItems)
-          setTotalPages(result.totalPages)
-          setError('')
+        if (!active) return
+
+        // Clearing a whole page leaves the URL past the end, where an empty
+        // page reads as an empty *list*: the pager hides itself at one page, so
+        // the Inbox would claim nothing was waiting while the badge counted
+        // twelve. Walk back instead of reporting it.
+        if (result.items.length === 0 && page > result.totalPages && result.totalItems > 0) {
+          updateQuery({ page: result.totalPages }, true)
+          return
         }
+
+        setDocuments(result.items)
+        setTotalItems(result.totalItems)
+        setTotalPages(result.totalPages)
+        setError('')
       } catch (err) {
         // Overlapping refreshes (filter change + realtime) can autocancel each
         // other; the surviving request has the fresh data.
@@ -206,15 +208,22 @@ function DocumentListPage({ route }: { route: '/' | '/inbox' }) {
 
     void load(true)
 
+    function refresh() {
+      void load()
+      // The timeline counts the whole library rather than the current query,
+      // so it only goes stale when the library itself changes.
+      setTimelineVersion((version) => version + 1)
+    }
+
+    // Our own writes, which is the only signal that always arrives: realtime is
+    // optional, and without this a marked-reviewed card would sit on an Inbox
+    // it no longer belongs to while the header's count already said it had gone.
+    const offLocal = onDocumentsChanged(refresh)
+
     let unsubscribe: (() => void) | undefined
     void pb
       .collection('documents')
-      .subscribe('*', () => {
-        void load()
-        // The timeline counts the whole library rather than the current query,
-        // so it only goes stale when the library itself changes.
-        setTimelineVersion((version) => version + 1)
-      })
+      .subscribe('*', refresh)
       .then((fn) => {
         unsubscribe = fn
       })
@@ -224,14 +233,22 @@ function DocumentListPage({ route }: { route: '/' | '/inbox' }) {
 
     return () => {
       active = false
+      offLocal()
       unsubscribe?.()
     }
-  }, [page, statusFilter, dateFrom, dateTo, documentTypeFilter, correspondentFilter, debouncedSearch])
+  }, [
+    page,
+    statusFilter,
+    dateFrom,
+    dateTo,
+    documentTypeFilter,
+    correspondentFilter,
+    debouncedSearch,
+    updateQuery,
+  ])
 
-  // Bulk actions exist to clear a backlog, so selection is only offered on the
-  // two lists that are one: failures to requeue, and an Inbox to empty. Keyed
-  // off the status rather than the route, so /?status=needs_review behaves the
-  // same as /inbox.
+  // Keyed off the status rather than the route, so /?status=needs_review
+  // behaves the same as /inbox.
   const bulkMode: BulkMode | null =
     statusFilter === 'failed' ? 'reprocess' : statusFilter === 'needs_review' ? 'review' : null
   const selectable = bulkMode !== null
@@ -283,16 +300,12 @@ function DocumentListPage({ route }: { route: '/' | '/inbox' }) {
   }
 
   /**
-   * Clears documents out of the Inbox.
+   * Clears documents out of the Inbox. No confirmation, unlike reprocess: this
+   * overwrites nothing.
    *
    * Filtered to documents still reading needs_review, on top of the
-   * selectedOnPage guard: a realtime refresh can land between the tick and the
-   * click, and marking an already-completed document reviewed would be a
-   * pointless write that re-indexes it for nothing.
-   *
-   * No confirmation, unlike reprocess: this overwrites nothing, and a document
-   * marked reviewed by accident is one status dropdown away from being found
-   * again.
+   * selectedOnPage guard, because a refresh can land between the tick and the
+   * click.
    */
   async function onMarkReviewed(documentIds: string[]) {
     const ids = documents
@@ -372,8 +385,6 @@ function DocumentListPage({ route }: { route: '/' | '/inbox' }) {
                 onChange={(event) => setSearch(event.target.value)}
                 className="w-full rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood"
               />
-              {/* Not on /inbox: the status is the route there, so a dropdown
-                  could only offer to leave. */}
               {!inbox && (
                 <select
                   value={statusFilter}
@@ -439,15 +450,12 @@ function DocumentListPage({ route }: { route: '/' | '/inbox' }) {
 
           {!loading && documents.length === 0 && (
             <div className="rounded-none border border-dashed border-line-strong bg-surface py-10 text-center">
-              {/* An empty Inbox is the goal, not a dead end -- and
-                  hasActiveFilters is false on a bare /inbox, so without this it
-                  would offer to upload a first document. */}
+              {/* Neither of these lists is empty in the sense of "upload
+                  something": hasActiveFilters is false on a bare /inbox, and
+                  false on a `/` that defaults to Completed. */}
               {inbox && !hasActiveFilters(query) ? (
                 <p className="text-sm text-ink-soft">Nothing waiting for review.</p>
-              ) : /* Nor is `/` empty here in the sense of "upload something":
-                     with review required it defaults to Completed, so the
-                     documents are all next door. */
-              !hasActiveFilters(query) && statusFilter === 'completed' ? (
+              ) : !hasActiveFilters(query) && statusFilter === 'completed' ? (
                 <>
                   <p className="text-sm text-ink-soft">No documents reviewed yet.</p>
                   <Link to="/inbox" className="mt-1 inline-block text-sm font-medium text-oxblood underline">

@@ -1,16 +1,11 @@
 /**
- * A nudge, in-tab, for "the documents changed and I know because I changed
- * them".
+ * "The documents changed, and I know because I changed them."
  *
- * The list page learns about changes from PocketBase's realtime subscription,
- * but that connection is optional by design -- the page keeps working without
- * it, it just stops refreshing on its own. The header's Inbox count cannot
- * afford that: a badge that stays at 3 after the user clears all three reads as
- * a bug. So a write says so directly, and realtime remains the way to hear
- * about changes made *elsewhere*.
- *
- * Deliberately not an EventTarget: no DOM, nothing to clean up but the
- * unsubscribe, and it is testable without a document.
+ * The list and the header's Inbox count both learn about changes from
+ * PocketBase's realtime subscription, which is optional by design. A badge or a
+ * list that ignores the user's own write until a socket happens to be connected
+ * reads as a bug, so writes say so directly and realtime stays the way to hear
+ * about changes made elsewhere.
  */
 
 type Listener = () => void

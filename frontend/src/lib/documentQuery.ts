@@ -48,12 +48,9 @@ export const defaultDocumentQuery: DocumentQuery = {
 }
 
 /**
- * The defaults as this instance actually means them.
- *
- * Only `status` differs, and only when review is required: the list then
- * defaults to Completed, so `/` is the archive that has been read and the
- * Inbox is the pile. Parsing and serializing both go through here, which is
- * what keeps the pair consistent -- if only one knew, picking "All statuses"
+ * The defaults as this instance means them: only `status` differs, and only
+ * when review is required. Parsing and serializing both go through here, which
+ * is what keeps the pair consistent -- if only one knew, picking "All statuses"
  * would be stripped from the URL as a default and snap straight back.
  */
 export function currentDocumentDefaults(): DocumentQuery {
@@ -92,9 +89,8 @@ export function parseDocumentQuery(raw: DocumentQueryInput): DocumentQuery {
   return {
     q: typeof raw.q === 'string' ? raw.q : '',
     // 'all' is the absence of a status filter rather than one of them, so it is
-    // not in DOCUMENT_STATUSES -- but it is a value a URL may legitimately
-    // name, which is how "All statuses" survives an instance whose default is
-    // Completed. Anything else unrecognised falls back to the default.
+    // not in DOCUMENT_STATUSES -- but a URL may name it, which is how "All
+    // statuses" survives an instance whose default is Completed.
     status: isDocumentStatus(status) || status === 'all' ? status : currentDocumentDefaults().status,
     from: date(raw.from),
     to: date(raw.to),
@@ -123,11 +119,8 @@ export function documentQuerySearch(query: DocumentQuery): Partial<DocumentQuery
 }
 
 /**
- * The same, for the Inbox route, whose status is its path.
- *
- * /inbox is the needs_review list by definition, so a `status` param there
- * would be either redundant or a contradiction. Dropping it on the way in
- * means neither can be linked to or typed.
+ * The same, for the Inbox route, whose status is its path: a `status` param
+ * there could only repeat the path or contradict it, so it is dropped.
  */
 export function inboxQuerySearch(raw: DocumentQueryInput): Partial<DocumentQuery> {
   return documentQuerySearch({

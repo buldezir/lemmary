@@ -7,10 +7,7 @@ import type { LinkProps } from '@tanstack/react-router'
  * shapes, and a link added to only one of them is the failure mode that keeps
  * happening -- so the list lives here once and both walk it.
  */
-/**
- * Names a count the header can hang off a link. The *key*, never the number:
- * this module is static data, and a count is a request.
- */
+/** Names a count the header hangs off a link -- the key, never the number. */
 export type NavBadgeKey = 'inbox'
 
 export type RouteNavItem = {
@@ -39,7 +36,7 @@ export const primaryNavItems: readonly NavItem[] = [
   { kind: 'route', label: 'Documents', to: '/', exact: true },
   // A path rather than /?status=needs_review: a search-param link would be
   // active whenever Documents was, since the empty search of / is a subset of
-  // every search. Its own path also gives it its own heading and empty state.
+  // every search.
   { kind: 'route', label: 'Inbox', to: '/inbox', badgeKey: 'inbox' },
   { kind: 'route', label: 'Upload', to: '/upload' },
   // /rag, not a mode: it is the one path above both, so this marks itself

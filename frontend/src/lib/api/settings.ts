@@ -42,10 +42,7 @@ export type AppSettings = {
    * EXTRACTION_PROMPT_VERSION or through the API.
    */
   extraction_prompt_version: string
-  /**
-   * Whether every document the pipeline extracted metadata for waits in the
-   * Inbox instead of completing. Tenant-owned, so a managed instance keeps it.
-   */
+  /** Tenant-owned, so a managed instance keeps it. */
   always_require_review: boolean
   near_duplicate_detection_enabled: boolean
   near_duplicate_threshold: number
@@ -86,10 +83,8 @@ export async function updateAppSettings(patch: AppSettingsPatch) {
     body: patch,
     fallbackError: 'Failed to save settings',
   })
-  // always_require_review decides what a documents-list URL means, and the SPA
-  // normally learns it once from /api/app/meta at boot. Taking it from the save
-  // response is what stops an admin who just turned it on from having to
-  // reload before their own list obeys it.
+  // Normally learned once from /api/app/meta at boot; taking it from the save
+  // response spares an admin who just turned it on a page reload.
   setAlwaysRequireReview(settings.always_require_review)
   invalidateAppMeta()
   return settings

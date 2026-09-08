@@ -11,8 +11,7 @@ func TestAlwaysRequireReviewCanBeSavedAfterMigrating(t *testing.T) {
 	app := bootMigratedApp(t)
 
 	// The singleton is seeded at boot by config.EnsureDefaults, not by a
-	// migration, so the test writes its own -- what is being checked is that
-	// the column the migration added accepts and returns a value.
+	// migration, so the test writes its own.
 	collection, err := app.FindCollectionByNameOrId("app_settings")
 	if err != nil {
 		t.Fatalf("app_settings collection: %v", err)
@@ -54,9 +53,8 @@ func TestTheDocumentStatusIndexExistsAfterMigrating(t *testing.T) {
 	}
 }
 
-// A managed instance re-runs every migration on every boot, so both halves have
-// to be safe to apply twice. The second run is where a non-idempotent field add
-// or index add would fail.
+// A managed instance re-runs every migration on every boot, so both halves
+// have to be safe to apply twice.
 func TestReviewInboxMigrationIsIdempotent(t *testing.T) {
 	app := bootMigratedApp(t)
 

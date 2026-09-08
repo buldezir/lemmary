@@ -35,8 +35,8 @@ describe('document statuses', () => {
 })
 
 describe('reviewReason', () => {
-  // A duplicate is the reason worth naming even when confidence was also low:
-  // it is the one with another document to go and look at.
+  // The duplicate wins even when confidence was also low: it is the reason
+  // with another document to go and look at.
   test('names the duplicate ahead of the confidence', () => {
     expect(reviewReason({ duplicate_of: 'abc', confidence: 0.1 })).toBe('duplicate')
     expect(reviewReason({ duplicate_of: 'abc', confidence: 0.9 })).toBe('duplicate')
@@ -48,14 +48,12 @@ describe('reviewReason', () => {
     expect(reviewReason({ confidence: 0.9 })).toBe('awaiting')
   })
 
-  // The case this feature creates: a confident document waiting only because
-  // the instance requires review. Calling it low-confidence would be wrong.
+  // The case the setting creates, and the one the old code got wrong.
   test('says a confident document is merely awaiting review', () => {
     expect(reviewReason({ confidence: 0.98 })).toBe('awaiting')
   })
 
-  // No confidence recorded is not the same as a confidence of nearly zero:
-  // extraction may never have run.
+  // No confidence recorded is not a low one: extraction may never have run.
   test('treats a missing confidence as awaiting rather than low', () => {
     expect(reviewReason({})).toBe('awaiting')
     expect(reviewReason({ confidence: 0 })).toBe('awaiting')
