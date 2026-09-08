@@ -3,6 +3,7 @@ package chatgpt
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -179,5 +180,141 @@ func TestSourceForIgnoresAnOlderToken(t *testing.T) {
 	}
 	if tok.Access != "new" {
 		t.Fatalf("access token = %q, want the newer one", tok.Access)
+	}
+}
+
+// A sign-out is two writes: the row's token is cleared, and the source is
+// retired. Only the second reaches a refresh that is already on the wire -- and
+// without it that refresh comes back, stores its rotated pair, and the provider
+// update hook reads the write as a fresh sign-in and rebuilds signed-in
+// clients. The sign-out undoes itself, with no error anywhere to say so.
+func TestARefreshInFlightAcrossForgetStoresNothing(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-release
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  "access-new",
+			"refresh_token": "rotated",
+			"expires_in":    3600,
+		})
+	}))
+	defer srv.Close()
+
+	var stores atomic.Int32
+	persist := func(_, _ string) error {
+		stores.Add(1)
+		return nil
+	}
+
+	const id = "p-signout"
+	Forget(id)
+	t.Cleanup(func() { Forget(id) })
+	// Inside the leeway, so the very next AccessToken refreshes.
+	raw, err := Token{Access: "old", Refresh: "refresh-1", ExpiresAt: time.Now().Add(time.Minute)}.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := SourceFor(id, raw, persist, nil)
+	src.withEndpoints(Endpoints{OAuthToken: srv.URL})
+
+	type result struct {
+		tok Token
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		tok, err := src.AccessToken(context.Background())
+		done <- result{tok, err}
+	}()
+
+	<-started
+	// The sign-out lands while the refresh is still in the air. It must not
+	// block on it either: mu is held across that round trip, which is why the
+	// flag is atomic rather than guarded by the mutex.
+	Forget(id)
+	close(release)
+
+	got := <-done
+	if !errors.Is(got.err, ErrNotSignedIn) {
+		t.Fatalf("err = %v, want ErrNotSignedIn: a retired source must serve nothing", got.err)
+	}
+	if got.tok.Access != "" {
+		t.Errorf("handed out %q after sign-out", got.tok.Access)
+	}
+	if n := stores.Load(); n != 0 {
+		t.Fatalf("persisted %d times after sign-out; the sign-out would be undone", n)
+	}
+}
+
+func TestAForgottenSourceHandsOutNoToken(t *testing.T) {
+	const id = "p-retired"
+	Forget(id)
+	t.Cleanup(func() { Forget(id) })
+	raw, err := Token{Access: "live", Refresh: "r", ExpiresAt: time.Now().Add(time.Hour)}.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := SourceFor(id, raw, nil, nil)
+
+	// Good for an hour, so nothing here needs the network.
+	if _, err := src.AccessToken(context.Background()); err != nil {
+		t.Fatalf("before sign-out: %v", err)
+	}
+	Forget(id)
+	if _, err := src.AccessToken(context.Background()); !errors.Is(err, ErrNotSignedIn) {
+		t.Fatalf("after sign-out: err = %v, want ErrNotSignedIn", err)
+	}
+}
+
+// Set is the sign-in write. A source retired first must refuse it rather than
+// store a token against a row that is being signed out or deleted.
+func TestSetOnAForgottenSourceStoresNothing(t *testing.T) {
+	const id = "p-set"
+	Forget(id)
+	t.Cleanup(func() { Forget(id) })
+
+	var stores atomic.Int32
+	src := SourceFor(id, "", func(_, _ string) error {
+		stores.Add(1)
+		return nil
+	}, nil)
+
+	Forget(id)
+	err := src.Set(Token{Access: "a", Refresh: "r", ExpiresAt: time.Now().Add(time.Hour)})
+	if !errors.Is(err, ErrNotSignedIn) {
+		t.Fatalf("err = %v, want ErrNotSignedIn", err)
+	}
+	if n := stores.Load(); n != 0 {
+		t.Fatalf("persisted %d times", n)
+	}
+}
+
+// Forget drops the registry entry as well as retiring the source, so the next
+// SourceFor builds a working one rather than handing back the retired object.
+func TestSourceForAfterForgetBuildsALiveSource(t *testing.T) {
+	const id = "p-resign"
+	Forget(id)
+	t.Cleanup(func() { Forget(id) })
+
+	first := SourceFor(id, "", nil, nil)
+	Forget(id)
+
+	raw, err := Token{Access: "fresh", Refresh: "r2", ExpiresAt: time.Now().Add(time.Hour)}.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := SourceFor(id, raw, nil, nil)
+	if second == first {
+		t.Fatal("SourceFor handed back the retired source")
+	}
+	tok, err := second.AccessToken(context.Background())
+	if err != nil {
+		t.Fatalf("the new source refuses to serve: %v", err)
+	}
+	if tok.Access != "fresh" {
+		t.Errorf("access = %q", tok.Access)
 	}
 }

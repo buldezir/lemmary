@@ -351,3 +351,329 @@ func TestArrayContentIsFlattened(t *testing.T) {
 		t.Fatalf("messageText = %q", got)
 	}
 }
+
+// searchToolBody is a tool-bearing completion in the shape openai-go marshals
+// one: the function's name and schema nested under "function", and tool_choice
+// as the bare string the search and research loops send.
+func searchToolBody(t *testing.T, choice string, messages []map[string]any) io.ReadCloser {
+	t.Helper()
+	if messages == nil {
+		messages = []map[string]any{
+			{"role": "system", "content": "You search an archive."},
+			{"role": "user", "content": "What did the landlord send in May?"},
+		}
+	}
+	raw, err := json.Marshal(map[string]any{
+		"model":    "gpt-5.6-luna",
+		"messages": messages,
+		"tools": []map[string]any{{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "search_documents",
+				"description": "Search the user's document archive.",
+				"parameters": map[string]any{
+					"type":       "object",
+					"properties": map[string]any{"query": map[string]any{"type": "string"}},
+					"required":   []string{"query"},
+				},
+			},
+		}},
+		"tool_choice": choice,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return io.NopCloser(bytes.NewReader(raw))
+}
+
+func toolRequestFor(t *testing.T, choice string, messages []map[string]any) *http.Request {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		"https://chatgpt.com/backend-api/codex/chat/completions", searchToolBody(t, choice, messages))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return req
+}
+
+// Deep Search and Research declare function tools on every round. A middleware
+// that dropped them would leave the model unable to reach the archive at all,
+// and the search loop reads a round with no tool calls as a finished answer --
+// so the failure is a confident reply with no documents behind it, not an error.
+func TestFunctionToolsReachTheCodexEndpoint(t *testing.T) {
+	t.Parallel()
+	mw := Middleware(signedInSource(t, "t10"), nil)
+
+	var sent responsesRequest
+	_, err := mw(toolRequestFor(t, "auto", nil), func(req *http.Request) (*http.Response, error) {
+		raw, err := io.ReadAll(req.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(raw, &sent); err != nil {
+			t.Fatal(err)
+		}
+		return sseResponse(`{"type":"response.completed","response":{"status":"completed"}}`), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(sent.Tools) != 1 {
+		t.Fatalf("tools = %+v, want the caller's one function", sent.Tools)
+	}
+	tool := sent.Tools[0]
+	// Flattened: the Responses shape puts the name on the tool itself rather
+	// than under a "function" key.
+	if tool.Type != "function" || tool.Name != "search_documents" {
+		t.Errorf("tool = %+v", tool)
+	}
+	if !strings.Contains(tool.Description, "document archive") {
+		t.Errorf("description = %q", tool.Description)
+	}
+	if !strings.Contains(string(tool.Parameters), `"query"`) {
+		t.Errorf("parameters = %s", tool.Parameters)
+	}
+	if tool.Strict {
+		t.Error("strict must stay off: the archive's schemas are guidance, and strict mode rejects several")
+	}
+	if got := strings.TrimSpace(string(sent.ToolChoice)); got != `"auto"` {
+		t.Errorf("tool_choice = %s, want the caller's", got)
+	}
+}
+
+// The final round declares its tools and forbids them, because an endpoint that
+// sees a bare tool_choice with no tools array answers 400.
+func TestToolChoiceNoneIsCarriedWithTheTools(t *testing.T) {
+	t.Parallel()
+	mw := Middleware(signedInSource(t, "t11"), nil)
+
+	var sent responsesRequest
+	_, err := mw(toolRequestFor(t, "none", nil), func(req *http.Request) (*http.Response, error) {
+		raw, _ := io.ReadAll(req.Body)
+		if err := json.Unmarshal(raw, &sent); err != nil {
+			t.Fatal(err)
+		}
+		return sseResponse(`{"type":"response.completed","response":{"status":"completed"}}`), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sent.Tools) != 1 {
+		t.Fatalf("tools = %+v", sent.Tools)
+	}
+	if got := strings.TrimSpace(string(sent.ToolChoice)); got != `"none"` {
+		t.Errorf("tool_choice = %s", got)
+	}
+}
+
+// A plain completion must not grow a tool_choice: the field is meaningless
+// without tools and some endpoints refuse it.
+func TestAToollessCompletionSendsNoToolChoice(t *testing.T) {
+	t.Parallel()
+	mw := Middleware(signedInSource(t, "t12"), nil)
+
+	var sent responsesRequest
+	_, err := mw(chatRequestFor(t, false), func(req *http.Request) (*http.Response, error) {
+		raw, _ := io.ReadAll(req.Body)
+		if err := json.Unmarshal(raw, &sent); err != nil {
+			t.Fatal(err)
+		}
+		return sseResponse(`{"type":"response.completed","response":{"status":"completed"}}`), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sent.Tools) != 0 || len(sent.ToolChoice) != 0 {
+		t.Errorf("tools = %+v, tool_choice = %s", sent.Tools, sent.ToolChoice)
+	}
+}
+
+// The round after a tool call replays the whole conversation, and the two
+// shapes disagree about how: chat carries the calls on the assistant message
+// and answers them with a tool-role message, while Responses makes each one a
+// free-standing item.
+func TestAToolRoundReplaysAsFreeStandingItems(t *testing.T) {
+	t.Parallel()
+	mw := Middleware(signedInSource(t, "t13"), nil)
+
+	messages := []map[string]any{
+		{"role": "system", "content": "You search an archive."},
+		{"role": "user", "content": "What did the landlord send in May?"},
+		{
+			"role":    "assistant",
+			"content": nil,
+			"tool_calls": []map[string]any{{
+				"id":       "call_7",
+				"type":     "function",
+				"function": map[string]any{"name": "search_documents", "arguments": `{"query":"landlord"}`},
+			}},
+		},
+		{"role": "tool", "tool_call_id": "call_7", "content": "1 hit: rent increase notice"},
+	}
+
+	var sent responsesRequest
+	_, err := mw(toolRequestFor(t, "auto", messages), func(req *http.Request) (*http.Response, error) {
+		raw, _ := io.ReadAll(req.Body)
+		if err := json.Unmarshal(raw, &sent); err != nil {
+			t.Fatal(err)
+		}
+		return sseResponse(`{"type":"response.completed","response":{"status":"completed"}}`), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(sent.Input) != 3 {
+		t.Fatalf("input = %+v, want the user turn, the call and its result", sent.Input)
+	}
+	// An assistant message with tool calls and no content must not be dropped
+	// by the empty-content skip -- the call is the whole point of the turn.
+	call := sent.Input[1]
+	if call.Type != "function_call" || call.CallID != "call_7" || call.Name != "search_documents" {
+		t.Fatalf("call item = %+v", call)
+	}
+	if call.Arguments != `{"query":"landlord"}` {
+		t.Errorf("arguments = %q", call.Arguments)
+	}
+	if len(call.Content) != 0 || call.Role != "" {
+		t.Errorf("a function_call must carry no role or content: %+v", call)
+	}
+	result := sent.Input[2]
+	if result.Type != "function_call_output" || result.CallID != "call_7" {
+		t.Fatalf("result item = %+v", result)
+	}
+	if result.Output != "1 hit: rent increase notice" {
+		t.Errorf("output = %q", result.Output)
+	}
+}
+
+// The answer side of the same gap: a function_call the model produced has to
+// come back as message.tool_calls, which is the only thing the search and
+// research loops look at.
+func TestAFunctionCallComesBackAsAToolCall(t *testing.T) {
+	t.Parallel()
+	mw := Middleware(signedInSource(t, "t14"), nil)
+
+	resp, err := mw(toolRequestFor(t, "auto", nil), func(req *http.Request) (*http.Response, error) {
+		return sseResponse(
+			`{"type":"response.output_item.done","item":{"type":"function_call","call_id":"call_7","name":"search_documents","arguments":"{\"query\":\"landlord\"}"}}`,
+			`{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":40,"output_tokens":9}}}`,
+		), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var out chatCompletion
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Choices) != 1 {
+		t.Fatalf("choices = %+v", out.Choices)
+	}
+	calls := out.Choices[0].Message.ToolCalls
+	if len(calls) != 1 {
+		t.Fatalf("tool_calls = %+v", calls)
+	}
+	if calls[0].ID != "call_7" || calls[0].Type != "function" || calls[0].Function.Name != "search_documents" {
+		t.Fatalf("call = %+v", calls[0])
+	}
+	if calls[0].Function.Arguments != `{"query":"landlord"}` {
+		t.Errorf("arguments = %q", calls[0].Function.Arguments)
+	}
+	// A model that asked for a tool has not finished answering.
+	if out.Choices[0].FinishReason != "tool_calls" {
+		t.Errorf("finish_reason = %q", out.Choices[0].FinishReason)
+	}
+}
+
+// Some backends report their output only on the completed response. Read there
+// too -- but only when no per-item event arrived, so neither is counted twice.
+func TestAFunctionCallOnTheCompletedResponseIsRead(t *testing.T) {
+	t.Parallel()
+	mw := Middleware(signedInSource(t, "t15"), nil)
+
+	resp, err := mw(toolRequestFor(t, "auto", nil), func(req *http.Request) (*http.Response, error) {
+		return sseResponse(
+			`{"type":"response.completed","response":{"status":"completed","output":[{"type":"message"},{"type":"function_call","call_id":"call_9","name":"search_documents","arguments":""}]}}`,
+		), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out chatCompletion
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	calls := out.Choices[0].Message.ToolCalls
+	if len(calls) != 1 || calls[0].ID != "call_9" {
+		t.Fatalf("tool_calls = %+v", calls)
+	}
+	// A call with no arguments arrives with the field empty, and every caller
+	// here feeds it straight to json.Unmarshal.
+	if calls[0].Function.Arguments != "{}" {
+		t.Errorf("arguments = %q, want an empty object", calls[0].Function.Arguments)
+	}
+}
+
+func TestAnItemEventAndACompletedResponseDoNotDoubleCount(t *testing.T) {
+	t.Parallel()
+	mw := Middleware(signedInSource(t, "t16"), nil)
+
+	resp, err := mw(toolRequestFor(t, "auto", nil), func(req *http.Request) (*http.Response, error) {
+		return sseResponse(
+			`{"type":"response.output_item.done","item":{"type":"function_call","call_id":"call_7","name":"search_documents","arguments":"{}"}}`,
+			`{"type":"response.completed","response":{"status":"completed","output":[{"type":"function_call","call_id":"call_7","name":"search_documents","arguments":"{}"}]}}`,
+		), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out chatCompletion
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if calls := out.Choices[0].Message.ToolCalls; len(calls) != 1 {
+		t.Fatalf("tool_calls = %+v, want one", calls)
+	}
+}
+
+// No caller streams a tool-bearing request today, but a stream that dropped a
+// tool call would be lossy in exactly the way the buffered path was.
+func TestAStreamedFunctionCallBecomesAToolCallChunk(t *testing.T) {
+	t.Parallel()
+	mw := Middleware(signedInSource(t, "t17"), nil)
+
+	req := toolRequestFor(t, "auto", nil)
+	// Rebuild the body with stream on: the caller's flag is what picks the path.
+	var body map[string]any
+	raw, _ := io.ReadAll(req.Body)
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	body["stream"] = true
+	reraw, _ := json.Marshal(body)
+	req.Body = io.NopCloser(bytes.NewReader(reraw))
+
+	resp, err := mw(req, func(*http.Request) (*http.Response, error) {
+		return sseResponse(
+			`{"type":"response.output_item.done","item":{"type":"function_call","call_id":"call_7","name":"search_documents","arguments":"{\"query\":\"rent\"}"}}`,
+			`{"type":"response.completed","response":{"status":"completed"}}`,
+		), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(out)
+	if !strings.Contains(text, `"tool_calls"`) || !strings.Contains(text, "call_7") {
+		t.Fatalf("stream carried no tool call:\n%s", text)
+	}
+	if !strings.Contains(text, `"finish_reason":"tool_calls"`) {
+		t.Errorf("final chunk did not finish on tool_calls:\n%s", text)
+	}
+}

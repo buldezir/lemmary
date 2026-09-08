@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -37,6 +38,12 @@ type TokenSource struct {
 	// round trip instead of racing to spend the same rotating refresh token.
 	mu  sync.Mutex
 	tok Token
+
+	// forgotten is set by Forget and never cleared: a source is retired, not
+	// paused. Atomic rather than guarded by mu on purpose -- mu is held across
+	// the refresh round trip, and a sign-out that had to wait for that would be
+	// a sign-out an operator watches spin.
+	forgotten atomic.Bool
 }
 
 var (
@@ -86,12 +93,22 @@ func SourceFor(providerID, oauth string, persist Persist, logger *slog.Logger) *
 	return src
 }
 
-// Forget drops a provider's source, for sign-out and deletion. Without it a
-// row that signed out would keep serving from the token still in memory.
+// Forget retires a provider's source, for sign-out and deletion.
+//
+// Dropping the registry entry is not enough on its own. A client built before
+// the sign-out still holds the source, and a refresh already in flight inside
+// AccessToken would come back and write the rotated pair to the row -- which
+// the update hook reads as a sign-in, rebuilding signed-in clients and undoing
+// the sign-out with no error anywhere. So the source is marked as well: from
+// here on it serves no tokens and persists nothing, whatever is mid-flight.
 func Forget(providerID string) {
 	sourcesMu.Lock()
+	src := sources[providerID]
 	delete(sources, providerID)
 	sourcesMu.Unlock()
+	if src != nil {
+		src.forgotten.Store(true)
+	}
 }
 
 // withEndpoints repoints the source's auth client. Tests only.
@@ -110,6 +127,10 @@ func (s *TokenSource) Identity() (accountID, plan, email string, signedIn bool) 
 // AccessToken returns a token good for the next few minutes, refreshing first
 // if the one in hand is not.
 func (s *TokenSource) AccessToken(ctx context.Context) (Token, error) {
+	if s.forgotten.Load() {
+		return Token{}, ErrNotSignedIn
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -141,6 +162,12 @@ func (s *TokenSource) AccessToken(ctx context.Context) (Token, error) {
 		refreshed.Plan = s.tok.Plan
 		refreshed.Email = s.tok.Email
 	}
+	// Checked again on the way out: the sign-out may have landed while this
+	// refresh was on the wire, and the whole point is that its token is
+	// neither served nor stored.
+	if s.forgotten.Load() {
+		return Token{}, ErrNotSignedIn
+	}
 	s.tok = refreshed
 	s.save(refreshed)
 	return refreshed, nil
@@ -148,6 +175,9 @@ func (s *TokenSource) AccessToken(ctx context.Context) (Token, error) {
 
 // Set replaces the token after a completed sign-in and stores it.
 func (s *TokenSource) Set(tok Token) error {
+	if s.forgotten.Load() {
+		return ErrNotSignedIn
+	}
 	s.mu.Lock()
 	s.tok = tok
 	s.mu.Unlock()
@@ -167,7 +197,7 @@ func (s *TokenSource) Set(tok Token) error {
 // failed would turn a recoverable database hiccup into a failed extraction.
 // The cost of the miss is one extra refresh after the next restart.
 func (s *TokenSource) save(tok Token) {
-	if s.persist == nil {
+	if s.persist == nil || s.forgotten.Load() {
 		return
 	}
 	raw, err := tok.Marshal()

@@ -49,7 +49,13 @@ export function ChatGPTSignIn({
     // The server's own interval, not one of our choosing: polling faster than
     // OpenAI asks for is what earns a slow_down.
     const period = Math.max(login.interval_seconds, 1) * 1000
+    // One poll at a time. A round trip slower than the interval would otherwise
+    // have two in the air asking about the same single-use authorization code,
+    // and whichever settled last would decide what the operator sees.
+    let inFlight = false
     const timer = setInterval(() => {
+      if (inFlight) return
+      inFlight = true
       void (async () => {
         try {
           const result = await pollChatGPTLogin(provider.id)
@@ -65,6 +71,8 @@ export function ChatGPTSignIn({
           if (cancelled) return
           setLogin(null)
           setError(err instanceof Error ? err.message : 'ChatGPT sign-in failed')
+        } finally {
+          inFlight = false
         }
       })()
     }, period)

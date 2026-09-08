@@ -133,15 +133,50 @@ type chatRequest struct {
 	MaxTokens           *int64          `json:"max_tokens"`
 	MaxCompletionTokens *int64          `json:"max_completion_tokens"`
 	ResponseFormat      *responseFormat `json:"response_format"`
+	Tools               []chatTool      `json:"tools"`
+	// ToolChoice is carried through as it arrived. Both shapes the SDK can
+	// send -- the "auto"/"none"/"required" strings the archive uses, and the
+	// {"type":"function",...} object it does not -- are also what the
+	// Responses endpoint accepts, so there is nothing to translate.
+	ToolChoice json.RawMessage `json:"tool_choice"`
 }
 
 type responseFormat struct {
 	Type string `json:"type"`
 }
 
+// chatTool is one function tool as Chat Completions declares it: the name and
+// schema nested under a "function" object.
+type chatTool struct {
+	Type     string `json:"type"`
+	Function struct {
+		Name        string          `json:"name"`
+		Description string          `json:"description"`
+		Parameters  json.RawMessage `json:"parameters"`
+		Strict      *bool           `json:"strict"`
+	} `json:"function"`
+}
+
 type chatMessage struct {
 	Role    string          `json:"role"`
 	Content json.RawMessage `json:"content"`
+	// ToolCalls is what an assistant message carries instead of content when
+	// the model asked for a tool. Content is null on those, which is why the
+	// empty-text skip below cannot come first.
+	ToolCalls []chatToolCall `json:"tool_calls"`
+	// ToolCallID ties a tool-role message back to the call it answers.
+	ToolCallID string `json:"tool_call_id"`
+}
+
+type chatToolCall struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function chatToolCallFunc `json:"function"`
+}
+
+type chatToolCallFunc struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 type responsesRequest struct {
@@ -152,12 +187,32 @@ type responsesRequest struct {
 	Store           bool            `json:"store"`
 	MaxOutputTokens *int64          `json:"max_output_tokens,omitempty"`
 	Text            *responsesText  `json:"text,omitempty"`
+	Tools           []responsesTool `json:"tools,omitempty"`
+	ToolChoice      json.RawMessage `json:"tool_choice,omitempty"`
 }
 
+// responsesTool is the same function tool, flattened: the Responses shape puts
+// the name and schema on the tool itself rather than under a "function" key.
+type responsesTool struct {
+	Type        string          `json:"type"`
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
+	Strict      bool            `json:"strict"`
+}
+
+// responsesItem is one input item. Three shapes share it, because the Responses
+// input list is a union: a message carries Role and Content, a function_call
+// carries CallID/Name/Arguments, and a function_call_output carries CallID and
+// Output. Everything not belonging to the shape in hand is omitted.
 type responsesItem struct {
-	Type    string             `json:"type"`
-	Role    string             `json:"role"`
-	Content []responsesContent `json:"content"`
+	Type      string             `json:"type"`
+	Role      string             `json:"role,omitempty"`
+	Content   []responsesContent `json:"content,omitempty"`
+	CallID    string             `json:"call_id,omitempty"`
+	Name      string             `json:"name,omitempty"`
+	Arguments string             `json:"arguments,omitempty"`
+	Output    string             `json:"output,omitempty"`
 }
 
 type responsesContent struct {
@@ -206,11 +261,44 @@ func toResponsesRequest(in chatRequest) responsesRequest {
 
 	instructions := []string{codexInstructions}
 	for _, msg := range in.Messages {
+		role := strings.ToLower(strings.TrimSpace(msg.Role))
 		text := messageText(msg.Content)
+
+		// The two shapes that are not a message have to be handled before the
+		// empty-text skip below: a tool result is an item of its own, and an
+		// assistant message that only asked for a tool has no content at all.
+		if role == "tool" {
+			if id := strings.TrimSpace(msg.ToolCallID); id != "" {
+				out.Input = append(out.Input, responsesItem{
+					Type: "function_call_output", CallID: id, Output: text,
+				})
+			}
+			continue
+		}
+		if role == "assistant" && len(msg.ToolCalls) > 0 {
+			// Some models say something before calling a tool. Keep it: it is
+			// part of the conversation the next round replays.
+			if strings.TrimSpace(text) != "" {
+				out.Input = append(out.Input, responsesItem{
+					Type: "message", Role: "assistant",
+					Content: []responsesContent{{Type: "output_text", Text: text}},
+				})
+			}
+			for _, call := range msg.ToolCalls {
+				out.Input = append(out.Input, responsesItem{
+					Type:      "function_call",
+					CallID:    call.ID,
+					Name:      call.Function.Name,
+					Arguments: call.Function.Arguments,
+				})
+			}
+			continue
+		}
+
 		if strings.TrimSpace(text) == "" {
 			continue
 		}
-		switch strings.ToLower(strings.TrimSpace(msg.Role)) {
+		switch role {
 		case "system", "developer":
 			// The Responses API has no system message: the role's content is
 			// the instructions field, which is also where the backend looks
@@ -229,6 +317,26 @@ func toResponsesRequest(in chatRequest) responsesRequest {
 		}
 	}
 	out.Instructions = strings.Join(instructions, "\n\n")
+
+	for _, tool := range in.Tools {
+		name := strings.TrimSpace(tool.Function.Name)
+		if name == "" {
+			continue
+		}
+		out.Tools = append(out.Tools, responsesTool{
+			Type:        "function",
+			Name:        name,
+			Description: tool.Function.Description,
+			Parameters:  tool.Function.Parameters,
+			// Matching ai.responsesParamsFrom: the archive's schemas are
+			// hand-written guidance rather than contracts, and strict mode
+			// rejects several of them outright.
+			Strict: false,
+		})
+	}
+	if len(out.Tools) > 0 {
+		out.ToolChoice = in.ToolChoice
+	}
 
 	switch {
 	case in.MaxCompletionTokens != nil:
@@ -306,8 +414,9 @@ type chatChoice struct {
 }
 
 type chatOutMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role      string         `json:"role"`
+	Content   string         `json:"content"`
+	ToolCalls []chatToolCall `json:"tool_calls,omitempty"`
 }
 
 type chatChunk struct {
@@ -326,16 +435,32 @@ type chunkChoice struct {
 }
 
 type chunkDelta struct {
-	Role    string `json:"role,omitempty"`
-	Content string `json:"content,omitempty"`
+	Role      string          `json:"role,omitempty"`
+	Content   string          `json:"content,omitempty"`
+	ToolCalls []chunkToolCall `json:"tool_calls,omitempty"`
+}
+
+// chunkToolCall is a tool call inside a stream, where the index is what ties
+// fragments of one call together. Whole calls are emitted here rather than
+// fragments, but the index is still required for a decoder to place them.
+type chunkToolCall struct {
+	Index    int              `json:"index"`
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function chatToolCallFunc `json:"function"`
 }
 
 // responsesEvent is the subset of the Codex SSE stream that carries an answer.
 type responsesEvent struct {
-	Type     string `json:"type"`
-	Delta    string `json:"delta"`
+	Type  string `json:"type"`
+	Delta string `json:"delta"`
+	// Item carries a completed output item on response.output_item.done --
+	// which is where a function call arrives whole, arguments included, so
+	// nothing here has to accumulate argument fragments.
+	Item     *responsesOutputItem `json:"item"`
 	Response *struct {
-		Status string `json:"status"`
+		Status string                `json:"status"`
+		Output []responsesOutputItem `json:"output"`
 		Usage  *struct {
 			InputTokens        int `json:"input_tokens"`
 			OutputTokens       int `json:"output_tokens"`
@@ -351,6 +476,35 @@ type responsesEvent struct {
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+// responsesOutputItem is one item the model produced. Only function calls are
+// read from it: the text arrives as deltas, which are cheaper to append than to
+// pick back out of the completed response.
+type responsesOutputItem struct {
+	Type      string `json:"type"`
+	CallID    string `json:"call_id"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// toolCall turns a function_call output item into the Chat Completions shape,
+// and reports whether the item was one at all.
+func (i responsesOutputItem) toolCall() (chatToolCall, bool) {
+	if i.Type != "function_call" || strings.TrimSpace(i.Name) == "" {
+		return chatToolCall{}, false
+	}
+	args := i.Arguments
+	if strings.TrimSpace(args) == "" {
+		// A call with no arguments comes back with the field empty rather than
+		// as "{}", and every caller here feeds it straight to json.Unmarshal.
+		args = "{}"
+	}
+	return chatToolCall{
+		ID:       i.CallID,
+		Type:     "function",
+		Function: chatToolCallFunc{Name: i.Name, Arguments: args},
+	}, true
 }
 
 func (e responsesEvent) usage() chatUsage {
@@ -388,13 +542,25 @@ func bufferedResponse(resp *http.Response, model string, logger *slog.Logger) (*
 
 	var text strings.Builder
 	var usage chatUsage
+	var toolCalls []chatToolCall
+	var completed []responsesOutputItem
 	var failure error
 	err := scanSSE(resp.Body, func(event responsesEvent) error {
 		switch event.Type {
 		case "response.output_text.delta":
 			text.WriteString(event.Delta)
+		case "response.output_item.done":
+			if event.Item == nil {
+				return nil
+			}
+			if call, ok := event.Item.toolCall(); ok {
+				toolCalls = append(toolCalls, call)
+			}
 		case "response.completed":
 			usage = event.usage()
+			if event.Response != nil {
+				completed = event.Response.Output
+			}
 		case "response.failed", "response.incomplete", "error":
 			failure = event.failure()
 		}
@@ -403,26 +569,46 @@ func bufferedResponse(resp *http.Response, model string, logger *slog.Logger) (*
 	if err != nil {
 		return nil, err
 	}
+	// The per-item events are the primary source; the completed response is
+	// read only when none arrived, so a backend that reports its output one way
+	// or the other is served either way and neither is counted twice.
+	if len(toolCalls) == 0 {
+		for _, item := range completed {
+			if call, ok := item.toolCall(); ok {
+				toolCalls = append(toolCalls, call)
+			}
+		}
+	}
 	if failure != nil {
 		// A partial answer is worth more than none to every caller here -- the
 		// extractor parses leniently and the chatter shows what it got -- but a
 		// stream that produced nothing at all is a failure, not an empty reply.
-		if text.Len() == 0 {
+		if text.Len() == 0 && len(toolCalls) == 0 {
 			return nil, failure
 		}
 		logger.Warn("the ChatGPT response ended early; keeping the partial answer",
 			"model", model, slog.Any("error", failure))
 	}
 
+	// A model that asked for a tool has not finished answering, and the search
+	// and research loops read the reason as well as the calls.
+	finish := "stop"
+	if len(toolCalls) > 0 {
+		finish = "tool_calls"
+	}
 	body, err := json.Marshal(chatCompletion{
 		ID:      completionID(),
 		Object:  "chat.completion",
 		Created: time.Now().Unix(),
 		Model:   model,
 		Choices: []chatChoice{{
-			Index:        0,
-			Message:      chatOutMessage{Role: "assistant", Content: text.String()},
-			FinishReason: "stop",
+			Index: 0,
+			Message: chatOutMessage{
+				Role:      "assistant",
+				Content:   text.String(),
+				ToolCalls: toolCalls,
+			},
+			FinishReason: finish,
 		}},
 		Usage: usage,
 	})
@@ -468,6 +654,12 @@ func streamingResponse(resp *http.Response, model string) *http.Response {
 
 		var usage chatUsage
 		var failure error
+		// Tool calls are emitted whole, one chunk each, as they complete. No
+		// caller streams a tool-bearing request today -- research streams only
+		// its final answer turn, which declares none -- but a middleware that
+		// dropped them here would be lossy in exactly the way the buffered path
+		// was, and silently.
+		toolIndex := 0
 		err := scanSSE(resp.Body, func(event responsesEvent) error {
 			switch event.Type {
 			case "response.output_text.delta":
@@ -477,6 +669,25 @@ func streamingResponse(resp *http.Response, model string) *http.Response {
 				return writeChunk(chatChunk{
 					ID: id, Object: "chat.completion.chunk", Created: created, Model: model,
 					Choices: []chunkChoice{{Delta: chunkDelta{Content: event.Delta}}},
+				})
+			case "response.output_item.done":
+				if event.Item == nil {
+					return nil
+				}
+				call, ok := event.Item.toolCall()
+				if !ok {
+					return nil
+				}
+				index := toolIndex
+				toolIndex++
+				return writeChunk(chatChunk{
+					ID: id, Object: "chat.completion.chunk", Created: created, Model: model,
+					Choices: []chunkChoice{{Delta: chunkDelta{ToolCalls: []chunkToolCall{{
+						Index:    index,
+						ID:       call.ID,
+						Type:     call.Type,
+						Function: call.Function,
+					}}}}},
 				})
 			case "response.completed":
 				usage = event.usage()
@@ -494,6 +705,9 @@ func streamingResponse(resp *http.Response, model string) *http.Response {
 		}
 
 		stop := "stop"
+		if toolIndex > 0 {
+			stop = "tool_calls"
+		}
 		final := chatChunk{
 			ID: id, Object: "chat.completion.chunk", Created: created, Model: model,
 			Choices: []chunkChoice{{Delta: chunkDelta{}, FinishReason: &stop}},

@@ -41,6 +41,25 @@ func refuseWhenChatGPTDisabled(e *core.RequestEvent, rt *config.Runtime) (bool, 
 // good for fifteen minutes and the operator is standing right there.
 var pendingLogins sync.Map // provider id -> *chatgpt.Pending
 
+// loginLocks serializes the poll-exchange-save sequence per provider.
+//
+// The authorization code a poll returns is single-use. Two polls that overlap
+// -- the browser's interval is fixed and a slow round trip is all it takes --
+// would both read the same pending login, and the second exchange would be
+// refused for a login that had in fact just succeeded. One at a time, and the
+// one that arrives second finds the sign-in already stored.
+//
+// Never pruned: an entry is one mutex per chatgpt provider row this process has
+// polled, which is a handful.
+var loginLocks sync.Map // provider id -> *sync.Mutex
+
+func lockLogin(providerID string) func() {
+	value, _ := loginLocks.LoadOrStore(providerID, &sync.Mutex{})
+	mu := value.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
 func chatgptProvider(app core.App, e *core.RequestEvent) (*core.Record, error) {
 	id := strings.TrimSpace(e.Request.PathValue("id"))
 	record, err := app.FindRecordById(aiprovider.CollectionName, id)
@@ -102,8 +121,24 @@ func handleChatGPTDevicePoll(app core.App, rt *config.Runtime) func(*core.Reques
 			return err
 		}
 
+		unlock := lockLogin(record.Id)
+		defer unlock()
+
+		// Read after the lock, not before: a poll that queued behind another
+		// one is asking about a login that may already be finished.
 		value, ok := pendingLogins.Load(record.Id)
 		if !ok {
+			// A poll whose turn came after the login completed. The token is
+			// stored and the row is signed in, so this is that same success --
+			// reporting it as expired, or as the gateway error the consumed
+			// code would produce, would put an error on a row that is fine.
+			if fresh, findErr := app.FindRecordById(aiprovider.CollectionName, record.Id); findErr == nil &&
+				strings.TrimSpace(fresh.GetString(aiprovider.OAuthField)) != "" {
+				return writeJSON(e, http.StatusOK, map[string]any{
+					"status":   "complete",
+					"provider": providerJSON(aiprovider.FromRecord(fresh)),
+				})
+			}
 			return writeJSON(e, http.StatusOK, map[string]any{"status": "expired"})
 		}
 		pending := value.(*chatgpt.Pending)
@@ -125,14 +160,16 @@ func handleChatGPTDevicePoll(app core.App, rt *config.Runtime) func(*core.Reques
 		if err != nil {
 			return writeError(e, http.StatusInternalServerError, "Failed to store the ChatGPT sign-in.")
 		}
+		// Retired before the write, not after. Saving fires the provider hook,
+		// which rebuilds the AI clients and registers a source for the new
+		// token; forgetting afterwards would unregister the very source those
+		// clients hold, and the next reload would build a second one against
+		// the same rotating refresh token.
+		chatgpt.Forget(record.Id)
 		record.Set(aiprovider.OAuthField, raw)
 		if err := app.Save(record); err != nil {
 			return writeError(e, http.StatusInternalServerError, "Failed to store the ChatGPT sign-in.")
 		}
-		// Drop any source built from the previous token, so the next request
-		// picks the new one up rather than refreshing a credential this
-		// sign-in has just replaced.
-		chatgpt.Forget(record.Id)
 
 		return writeJSON(e, http.StatusOK, map[string]any{
 			"status":   "complete",
@@ -157,11 +194,16 @@ func handleChatGPTSignOut(app core.App, rt *config.Runtime) func(*core.RequestEv
 			return err
 		}
 		pendingLogins.Delete(record.Id)
+		// Before the write, so a refresh already on the wire cannot come back
+		// and store its rotated pair -- the update hook would read that as a
+		// sign-in and rebuild signed-in clients, undoing this. If the save then
+		// fails the row keeps its token but this process serves nothing from
+		// it, which is the safe direction for a sign-out.
+		chatgpt.Forget(record.Id)
 		record.Set(aiprovider.OAuthField, "")
 		if err := app.Save(record); err != nil {
 			return writeError(e, http.StatusInternalServerError, "Failed to sign out.")
 		}
-		chatgpt.Forget(record.Id)
 		return writeJSON(e, http.StatusOK, providerJSON(aiprovider.FromRecord(record)))
 	}
 }

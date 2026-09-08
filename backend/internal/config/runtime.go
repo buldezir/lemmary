@@ -365,9 +365,22 @@ func RegisterHooks(app core.App, rt *Runtime) {
 		_ = rt.Reload(e.App)
 		return nil
 	}
+	deleteProviders := func(e *core.RecordEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
+		// A deleted row's token source would otherwise sit in the package
+		// registry until restart, still holding a refresh token for a provider
+		// nobody can reach any more.
+		if e.Record != nil && aiprovider.RequiresOAuth(e.Record.GetString("sdk")) {
+			chatgpt.Forget(e.Record.Id)
+		}
+		_ = rt.Reload(e.App)
+		return nil
+	}
 	app.OnRecordAfterCreateSuccess(aiprovider.CollectionName).BindFunc(reloadProviders)
 	app.OnRecordAfterUpdateSuccess(aiprovider.CollectionName).BindFunc(updateProviders)
-	app.OnRecordAfterDeleteSuccess(aiprovider.CollectionName).BindFunc(reloadProviders)
+	app.OnRecordAfterDeleteSuccess(aiprovider.CollectionName).BindFunc(deleteProviders)
 }
 
 // onlyTokenRotated reports a write that did nothing but replace one live

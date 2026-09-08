@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,6 +17,8 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/responses"
 	"github.com/openai/openai-go/shared"
+
+	"lemmary/backend/internal/aiprovider"
 )
 
 // responsesHarness fakes a provider that serves some models only on
@@ -619,5 +622,77 @@ func TestOrdinaryModelStaysOnChatCompletions(t *testing.T) {
 	}
 	if _, r := h.counts(); r != 0 {
 		t.Fatalf("responses requests = %d, want 0", r)
+	}
+}
+
+// The chatgpt SDK reaches the Responses API from underneath: its middleware
+// rewrites /chat/completions into /responses and is the only thing holding the
+// Codex auth headers. A 403 from that endpoint -- a model the plan does not
+// cover, or a rejected originator -- looks exactly like the endpoint-mismatch
+// this fallback exists for, and taking it would POST /responses directly, past
+// the middleware, with the placeholder key and no originator.
+func TestTheChatGPTSDKNeverTranslatesToResponsesItself(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			model := fmt.Sprintf("chatgpt-%d", status)
+			resetModelNotes()
+			t.Cleanup(resetModelNotes)
+
+			h := &responsesHarness{chatStatus: status, respTurns: []scriptedTurn{{content: "should never be reached"}}}
+			base := newResponsesHarness(t, h)
+			client := NewOpenAIClient(aiprovider.SDKChatGPT, "chatgpt-oauth", model, base, "v1", "", 5*time.Second, slog.Default())
+
+			_, err := CompleteChat(context.Background(), client.client, slog.Default(),
+				aiprovider.SDKChatGPT, base, openai.ChatCompletionNewParams{
+					Model:    shared.ChatModel(model),
+					Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
+				})
+			if err == nil {
+				t.Fatal("the refusal was swallowed by a fallback that cannot carry the Codex headers")
+			}
+			// The backend's own message is what an operator needs to see.
+			var apiErr *openai.Error
+			if !errors.As(err, &apiErr) || apiErr.StatusCode != status {
+				t.Fatalf("err = %v, want the original %d", err, status)
+			}
+
+			h.mu.Lock()
+			posted := len(h.respBodies)
+			h.mu.Unlock()
+			if posted != 0 {
+				t.Fatalf("posted %d requests straight to /responses, bypassing the middleware", posted)
+			}
+			if needsResponsesAPI(base, model) {
+				t.Fatal("the chatgpt SDK was pinned to a /responses route its middleware does not serve")
+			}
+		})
+	}
+}
+
+func TestTheChatGPTSDKDoesNotTranslateStreamsEither(t *testing.T) {
+	model := "chatgpt-stream"
+	resetModelNotes()
+	t.Cleanup(resetModelNotes)
+
+	h := &responsesHarness{chatStatus: http.StatusInternalServerError}
+	base := newResponsesHarness(t, h)
+	// Pinned, as a 500 on any other SDK would pin it: the guard has to hold
+	// even once the note is set, because notes are keyed by endpoint and model
+	// and say nothing about which SDK is reaching them.
+	rememberResponsesAPI(base, model)
+	client := NewOpenAIClient(aiprovider.SDKChatGPT, "chatgpt-oauth", model, base, "v1", "", 5*time.Second, slog.Default())
+
+	if _, _, err := client.completeStreaming(context.Background(), openai.ChatCompletionNewParams{
+		Model:    shared.ChatModel(model),
+		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
+	}, nil); err == nil {
+		t.Fatal("the stream was rerouted to /responses instead of failing on the endpoint the middleware owns")
+	}
+
+	h.mu.Lock()
+	posted := len(h.respBodies)
+	h.mu.Unlock()
+	if posted != 0 {
+		t.Fatalf("posted %d streams straight to /responses", posted)
 	}
 }
