@@ -202,7 +202,7 @@ func ListModels(ctx context.Context, p Provider, purpose ModelPurpose, client *h
 	req.Header.Set("Accept", "application/json")
 	// Hand-rolled request, so the SDK middleware that stamps this everywhere
 	// else does not see it.
-	if SessionHost(req.URL.Host) {
+	if p.SDK == SDKOpenCode {
 		req.Header.Set(SessionHeader, SessionFor("models"))
 	}
 

@@ -222,7 +222,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 		}
 
 		requestStart := time.Now()
-		chatResp, err := a.client.complete(ctx, openai.ChatCompletionNewParams{
+		chatResp, err := a.client.Complete(ctx, openai.ChatCompletionNewParams{
 			Model:       shared.ChatModel(a.client.model),
 			Messages:    apiMessages,
 			Temperature: CompletionTemperature(a.client.model, 0.2),
@@ -362,7 +362,7 @@ func (a *openAISearchAgent) answerResearch(
 		a.client.logger.Warn("research answer stream failed; falling back to a blocking call",
 			slog.Any("error", err),
 		)
-		chatResp, fallbackErr := a.client.complete(ctx, params, "purpose", "research_answer_fallback")
+		chatResp, fallbackErr := a.client.Complete(ctx, params, "purpose", "research_answer_fallback")
 		if fallbackErr != nil {
 			return "", false, usage, fmt.Errorf("openai research answer: %w", fallbackErr)
 		}

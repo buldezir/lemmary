@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
 	"lemmary/backend/internal/aiprovider"
 )
 
@@ -171,12 +170,10 @@ func TestExtractTextSendsSessionHeaderToOpenCode(t *testing.T) {
 	}
 
 	p := NewLLMProvider(aiprovider.Provider{
-		SDK:     aiprovider.SDKOpenAI,
+		SDK:     aiprovider.SDKOpenCode,
 		APIKey:  "test-key",
-		BaseURL: "http://opencode.ai/zen/go/v1",
-	}, "test-model", 5*time.Second, slog.Default(),
-		option.WithMiddleware(aiprovider.RewriteHostMiddleware(srv.Listener.Addr().String())),
-	)
+		BaseURL: srv.URL + "/zen/go/v1",
+	}, "test-model", 5*time.Second, slog.Default())
 	ctx := aiprovider.WithSession(context.Background(), "conv123")
 	text, err := p.ExtractText(ctx, path, "image/png")
 	if err != nil {
@@ -187,5 +184,20 @@ func TestExtractTextSendsSessionHeaderToOpenCode(t *testing.T) {
 	}
 	if seen != "conv123" {
 		t.Errorf("%s = %q, want %q", aiprovider.SessionHeader, seen, "conv123")
+	}
+
+	// The other half of the gate: an openai row installs no middleware, so a
+	// request to the same address carries nothing.
+	seen = "unset"
+	plain := NewLLMProvider(aiprovider.Provider{
+		SDK:     aiprovider.SDKOpenAI,
+		APIKey:  "test-key",
+		BaseURL: srv.URL + "/v1",
+	}, "test-model", 5*time.Second, slog.Default())
+	if _, err := plain.ExtractText(ctx, path, "image/png"); err != nil {
+		t.Fatalf("ExtractText: %v", err)
+	}
+	if seen != "" {
+		t.Errorf("%s = %q, want empty for an openai provider", aiprovider.SessionHeader, seen)
 	}
 }

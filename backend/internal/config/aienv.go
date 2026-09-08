@@ -285,6 +285,17 @@ func parseEmbedding(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error
 				"%s or %s is set without %s; name the embedding provider's SDK, or leave them both unset to embed on the %s provider",
 				EnvAIEmbeddingAPIKey, EnvAIEmbeddingBaseURL, EnvAIEmbeddingSDK, EnvAISDK)
 		}
+		// ...unless the language model's SDK cannot embed. opencode is the case:
+		// it chats but serves no /embeddings, so the default of embedding on
+		// that provider is not available and there is nothing to fall back to.
+		// Caught here rather than at the first document, whose embed step would
+		// fail on every upload with the binding still reading as configured.
+		if model != "" && !aiprovider.CanEmbed(llm.SDK) {
+			return aiprovider.ProviderSpec{}, fmt.Errorf(
+				"%s is set but %s=%q cannot serve embeddings; name a %s (one of %s), or unset %s to search by keywords alone",
+				EnvAIEmbeddingModel, EnvAISDK, llm.SDK, EnvAIEmbeddingSDK,
+				strings.Join(aiprovider.EmbeddingSDKs(), ", "), EnvAIEmbeddingModel)
+		}
 		return aiprovider.ProviderSpec{}, nil
 	}
 	if !aiprovider.CanEmbed(sdk) {

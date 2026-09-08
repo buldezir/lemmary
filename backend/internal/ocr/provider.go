@@ -72,11 +72,12 @@ func NewFromAIProvider(p aiprovider.Provider, model string, timeout time.Duratio
 	case aiprovider.SDKMistral:
 		logger.Info("using provider", "provider", p.Alias, "sdk", p.SDK, "model", model)
 		return NewMistralProvider(p.APIKey, model, p.BaseURL, timeout, logger), nil
-	case aiprovider.SDKOpenAI, aiprovider.SDKOpenRouter, aiprovider.SDKChatGPT:
-		// chatgpt joins the metered LLM SDKs here rather than getting a branch
-		// of its own: the request is the same multimodal chat completion, and
-		// what differs -- a minted bearer token, and the Responses rewrite
-		// underneath -- is entirely inside the options in extra.
+	case aiprovider.SDKOpenAI, aiprovider.SDKOpenRouter, aiprovider.SDKOpenCode, aiprovider.SDKChatGPT:
+		// chatgpt and opencode join the metered LLM SDKs here rather than getting
+		// branches of their own: the request is the same multimodal chat
+		// completion, and what differs -- a minted bearer token for one, a second
+		// wire protocol for the other -- is entirely inside the client that
+		// NewLLMProvider builds.
 		logger.Info("using provider", "provider", p.Alias, "sdk", p.SDK, "model", model)
 		return NewLLMProvider(p, model, timeout, logger, extra...), nil
 	case aiprovider.SDKDocling:

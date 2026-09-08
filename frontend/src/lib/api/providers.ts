@@ -5,6 +5,7 @@ export type ProviderSDK =
   | 'openrouter'
   | 'google_vision'
   | 'mistral'
+  | 'opencode'
   | 'chatgpt'
   | 'local'
   | 'docling'
@@ -47,6 +48,7 @@ export const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
   openai: 'https://api.openai.com/v1',
   openrouter: 'https://openrouter.ai/api/v1',
   mistral: 'https://api.mistral.ai/v1',
+  opencode: 'https://opencode.ai/zen/go/v1',
   google_vision: '',
   // Not a /v1 root: the Codex backend serves one endpoint, and the middleware
   // behind this SDK rewrites the SDK's /chat/completions into it.
@@ -61,6 +63,7 @@ export const SDK_OPTIONS: { value: ProviderSDK; label: string }[] = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'openrouter', label: 'OpenRouter' },
   { value: 'mistral', label: 'Mistral' },
+  { value: 'opencode', label: 'Opencode Go' },
   { value: 'google_vision', label: 'Google Cloud Vision' },
   { value: 'chatgpt', label: 'ChatGPT subscription' },
   { value: 'local', label: 'Local Embeddings (huggingface/text-embeddings-inference)' },
@@ -87,7 +90,13 @@ export function sdkAliasDefault(sdk: ProviderSDK | string) {
 }
 
 export function isLLMProvider(sdk: string) {
-  return sdk === 'openai' || sdk === 'openrouter' || sdk === 'mistral' || sdk === 'chatgpt'
+  return (
+    sdk === 'openai' ||
+    sdk === 'openrouter' ||
+    sdk === 'mistral' ||
+    sdk === 'opencode' ||
+    sdk === 'chatgpt'
+  )
 }
 
 /**
@@ -119,9 +128,9 @@ export function providerConfigured(
  * aiprovider.CanEmbed.
  */
 export function canEmbedProvider(sdk: string) {
-  // chatgpt is the second SDK to force these apart: it chats without embedding,
-  // because the Codex backend serves no /embeddings at all.
-  return (isLLMProvider(sdk) && sdk !== 'chatgpt') || sdk === 'local'
+  // chatgpt and opencode force these apart in the other direction: both chat
+  // without embedding, because neither endpoint serves /embeddings at all.
+  return (isLLMProvider(sdk) && sdk !== 'chatgpt' && sdk !== 'opencode') || sdk === 'local'
 }
 
 /**

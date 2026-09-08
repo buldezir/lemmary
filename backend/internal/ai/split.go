@@ -77,7 +77,7 @@ func (c *OpenAIClient) DetectSplitPoints(ctx context.Context, pages []PageText) 
 	)
 
 	requestStart := time.Now()
-	chatResp, err := c.complete(ctx, openai.ChatCompletionNewParams{
+	chatResp, err := c.Complete(ctx, openai.ChatCompletionNewParams{
 		Model: shared.ChatModel(c.model),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(splitSystemPrompt),

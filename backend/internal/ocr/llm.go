@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,46 +22,31 @@ const llmOCRMaxFileBytes = 10 * 1024 * 1024
 
 const llmOCRPrompt = "Extract all text from this document. Return plain text only, preserving reading order. Do not add commentary."
 
+// LLMProvider reads a document by sending it to a language model.
+//
+// The client is ai.OpenAIClient rather than an openai.Client of its own: which
+// endpoint a model is served on, and which of the two SDKs speaks to it, is
+// that type's business, and building a second client here meant two places had
+// to agree about it. The four fields this struct used to carry -- sdk, base
+// URL, client, and the request options behind them -- all live there.
 type LLMProvider struct {
-	sdk     string
-	model   string
-	baseURL string
-	client  openai.Client
-	logger  *slog.Logger
+	llm    *ai.OpenAIClient
+	model  string
+	logger *slog.Logger
 }
 
 func NewLLMProvider(p aiprovider.Provider, model string, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) *LLMProvider {
 	if timeout <= 0 {
 		timeout = 40 * time.Second
 	}
-	opts := []option.RequestOption{
-		option.WithAPIKey(p.APIKey),
-		option.WithHTTPClient(&http.Client{Timeout: timeout}),
-		option.WithRequestTimeout(timeout),
-		option.WithMaxRetries(0),
-		option.WithMiddleware(aiprovider.SessionMiddleware()),
-	}
-	// Tests pass RewriteHostMiddleware here so a base URL of opencode.ai still
-	// lands on httptest. Production callers pass none.
-	opts = append(opts, extra...)
-	if strings.TrimSpace(p.BaseURL) != "" {
-		opts = append(opts, option.WithBaseURL(strings.TrimRight(p.BaseURL, "/")))
-	}
 	return &LLMProvider{
-		sdk:     p.SDK,
-		model:   model,
-		baseURL: strings.TrimRight(p.BaseURL, "/"),
-		client:  openai.NewClient(opts...),
-		logger:  logger,
+		llm:    ai.NewOpenAIClient(p.SDK, p.APIKey, model, p.BaseURL, "", "", timeout, logger, extra...),
+		model:  model,
+		logger: logger,
 	}
 }
 
-func (p *LLMProvider) Name() string {
-	if p.sdk != "" {
-		return p.sdk
-	}
-	return "llm"
-}
+func (p *LLMProvider) Name() string { return p.llm.Name() }
 
 func (p *LLMProvider) ExtractText(ctx context.Context, filePath string, mimeType string) (string, error) {
 	start := time.Now()
@@ -83,7 +67,7 @@ func (p *LLMProvider) ExtractText(ctx context.Context, filePath string, mimeType
 	}
 
 	p.logger.Info("llm ocr starting",
-		"sdk", p.sdk,
+		"sdk", p.llm.Name(),
 		"model", p.model,
 		"file", filepath.Base(filePath),
 		"mime", effectiveMime,
@@ -98,7 +82,7 @@ func (p *LLMProvider) ExtractText(ctx context.Context, filePath string, mimeType
 		},
 		Temperature: ai.CompletionTemperature(p.model, 0),
 	}
-	chatResp, err := ai.CompleteChat(ctx, p.client, p.logger, p.sdk, p.baseURL, ocrParams, "purpose", "ocr", "messages", 2)
+	chatResp, err := p.llm.Complete(ctx, ocrParams, "purpose", "ocr", "messages", 2)
 	if err != nil {
 		p.logger.Error("llm ocr failed",
 			"file", filepath.Base(filePath),

@@ -1,6 +1,7 @@
 package aiprovider
 
 import (
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -54,6 +55,25 @@ func MigrateLegacySettings(app core.App, settings *core.Record) error {
 	}
 	bindFromIDs(settings, openaiID, mistralID, googleID, models)
 	return nil
+}
+
+// IsOpenCodeURL reports whether a base URL addresses OpenCode.
+//
+// It exists for the migration that moves the rows which reached OpenCode
+// through an `openai` SDK and a base URL -- the only way to do it before
+// SDKOpenCode, and what .env.example shipped -- onto the SDK itself. See
+// migrations/1730000026_opencode_provider.go.
+//
+// Matched on the host rather than by substring, so a path or query mentioning
+// the name does not count, and by suffix so a regional or staging subdomain
+// does.
+func IsOpenCodeURL(baseURL string) bool {
+	u, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return false
+	}
+	h := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	return h == "opencode.ai" || strings.HasSuffix(h, ".opencode.ai")
 }
 
 type taskModels struct {

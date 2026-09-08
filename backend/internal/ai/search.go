@@ -222,7 +222,7 @@ func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, 
 		}
 
 		requestStart := time.Now()
-		chatResp, err := a.client.complete(ctx, params,
+		chatResp, err := a.client.Complete(ctx, params,
 			"purpose", "search",
 			"round", round,
 			"allow_tools", allowTools,
@@ -308,7 +308,7 @@ If nothing relevant was found, say so clearly.`,
 	))
 
 	requestStart := time.Now()
-	chatResp, err := a.client.complete(ctx, openai.ChatCompletionNewParams{
+	chatResp, err := a.client.Complete(ctx, openai.ChatCompletionNewParams{
 		Model:       shared.ChatModel(a.client.model),
 		Messages:    msgs,
 		Temperature: CompletionTemperature(a.client.model, 0.2),

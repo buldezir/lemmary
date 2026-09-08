@@ -81,13 +81,19 @@ type openAIEmbedder struct {
 // endpoint. dims is the length already recorded for this model (0 when
 // unknown); a response that disagrees with a non-zero value is refused.
 func NewEmbedder(sdk, apiKey, model, baseURL string, dims int, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) Embedder {
+	if strings.TrimSpace(sdk) == "" {
+		sdk = aiprovider.SDKOpenAI
+	}
 	opts := []option.RequestOption{
 		option.WithHTTPClient(&http.Client{Timeout: timeout}),
 		option.WithRequestTimeout(timeout),
 		// Retries are ours: only 429/5xx/network are worth repeating, and the
 		// backoff has to be long enough to outlast a rate-limit window.
 		option.WithMaxRetries(0),
-		option.WithMiddleware(aiprovider.SessionMiddleware()),
+	}
+	// Only OpenCode asks for the session header; see NewOpenAIClient.
+	if sdk == aiprovider.SDKOpenCode {
+		opts = append(opts, option.WithMiddleware(aiprovider.SessionMiddleware()))
 	}
 	// A keyless provider sends no Authorization header at all, rather than an
 	// empty "Bearer ". The local SDK is the case: a sidecar on the compose
@@ -96,14 +102,9 @@ func NewEmbedder(sdk, apiKey, model, baseURL string, dims int, timeout time.Dura
 	if strings.TrimSpace(apiKey) != "" {
 		opts = append(opts, option.WithAPIKey(apiKey))
 	}
-	// Tests pass RewriteHostMiddleware here so a base URL of opencode.ai still
-	// lands on httptest. Production callers pass none.
 	opts = append(opts, extra...)
 	if strings.TrimSpace(baseURL) != "" {
 		opts = append(opts, option.WithBaseURL(strings.TrimRight(baseURL, "/")))
-	}
-	if strings.TrimSpace(sdk) == "" {
-		sdk = aiprovider.SDKOpenAI
 	}
 	if logger == nil {
 		logger = slog.Default()

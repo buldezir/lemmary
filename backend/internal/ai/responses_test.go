@@ -3,7 +3,6 @@ package ai
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -195,20 +195,20 @@ func newResponsesHarness(t *testing.T, h *responsesHarness) string {
 	return srv.URL
 }
 
-// A model served only on /responses must be discovered once and then addressed
-// there directly, for tool rounds and the streamed answer alike.
-func TestResearchFallsBackToResponsesAndRemembers(t *testing.T) {
-	model := "responses-only-research"
+// A model the routing table puts on /responses runs there for the tool rounds
+// and the streamed answer alike, and never touches /chat/completions.
+func TestResearchRunsOnTheResponsesAPI(t *testing.T) {
+	const model = "gpt-5.6-luna"
 	resetModelNotes()
 	t.Cleanup(resetModelNotes)
 
-	h := &responsesHarness{chatStatus: http.StatusInternalServerError, respTurns: []scriptedTurn{
+	h := &responsesHarness{respTurns: []scriptedTurn{
 		{toolCalls: []scriptedToolCall{{name: "search_documents", args: `{"query":"car insurance"}`}}},
 		{content: "ready"},
 		{content: "You paid 200 EUR, see [Doc doc1](/document/doc1)."},
 	}}
 	base := newResponsesHarness(t, h)
-	agent := NewSearchAgent("openai", "test-key", model, base, 5*time.Second, "en,de", "en", slog.Default())
+	agent := NewSearchAgent(aiprovider.SDKOpenCode, "test-key", model, base, 5*time.Second, "en,de", "en", slog.Default())
 
 	var searched bool
 	result, err := agent.Research(context.Background(), ResearchRequest{
@@ -232,18 +232,14 @@ func TestResearchFallsBackToResponsesAndRemembers(t *testing.T) {
 	}
 
 	chat, resp := h.counts()
-	// Two, not one. A 500 does not say whether the endpoint refuses this model
-	// or is simply having a bad minute, so the first one is acted on but not
-	// believed; the second makes it a pattern and the model is rerouted for
-	// good. Both requests still succeed, via the fallback.
-	if chat != 2 {
-		t.Fatalf("chat/completions attempts = %d, want 2 before an ambiguous refusal is believed", chat)
+	// None. The table already knew, so there is no rejected request to pay for
+	// -- which is what the error-shape discovery this replaced cost, twice per
+	// model before it would believe an ambiguous refusal.
+	if chat != 0 {
+		t.Fatalf("chat/completions attempts = %d, want none", chat)
 	}
 	if resp < 3 {
 		t.Fatalf("responses requests = %d, want the tool rounds and the answer", resp)
-	}
-	if !needsResponsesAPI(base, model) {
-		t.Fatal("model was not remembered")
 	}
 }
 
@@ -286,8 +282,8 @@ func TestResponsesRequestShape(t *testing.T) {
 			OfJSONObject: &shared.ResponseFormatJSONObjectParam{},
 		},
 	}
-	if _, err := CompleteChat(context.Background(), client.client, slog.Default(), "openai", base, params); err != nil {
-		t.Fatalf("CompleteChat: %v", err)
+	if _, err := client.Complete(context.Background(), params); err != nil {
+		t.Fatalf("Complete: %v", err)
 	}
 	if chat, _ := h.counts(); chat != 0 {
 		t.Fatalf("a remembered model still tried chat/completions %d times", chat)
@@ -387,16 +383,11 @@ func TestChatCompletionFromResponse(t *testing.T) {
 	}
 }
 
-func TestStreamingFallsBackToResponses(t *testing.T) {
-	model := "responses-only-stream"
-	resetModelNotes()
-	t.Cleanup(resetModelNotes)
-
-	h := &responsesHarness{chatStatus: http.StatusInternalServerError, respTurns: []scriptedTurn{
-		{content: "streamed from responses"},
-	}}
+func TestStreamingRunsOnTheResponsesAPI(t *testing.T) {
+	const model = "grok-4.6"
+	h := &responsesHarness{respTurns: []scriptedTurn{{content: "streamed from responses"}}}
 	base := newResponsesHarness(t, h)
-	client := NewOpenAIClient("openai", "test-key", model, base, "v1", "", 5*time.Second, slog.Default())
+	client := NewOpenAIClient(aiprovider.SDKOpenCode, "test-key", model, base, "v1", "", 5*time.Second, slog.Default())
 
 	var deltas []string
 	text, usage, err := client.completeStreaming(context.Background(), openai.ChatCompletionNewParams{
@@ -415,87 +406,8 @@ func TestStreamingFallsBackToResponses(t *testing.T) {
 	if usage.Prompt != 7 || usage.Completion != 2 || usage.Cached != 3 {
 		t.Fatalf("usage = %+v, want the totals from response.completed", usage)
 	}
-	// One ambiguous 500 is acted on but not believed.
-	if needsResponsesAPI(base, model) {
-		t.Fatal("a single 500 rerouted the model for the rest of the process")
-	}
-	h.respTurns = append(h.respTurns, scriptedTurn{content: "again"})
-	h.respNext = 0
-	if _, _, err := client.completeStreaming(context.Background(), openai.ChatCompletionNewParams{
-		Model:    shared.ChatModel(model),
-		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
-	}, nil); err != nil {
-		t.Fatalf("second completeStreaming: %v", err)
-	}
-	if !needsResponsesAPI(base, model) {
-		t.Fatal("a second refusal should have settled it")
-	}
-}
-
-// A 500 from an endpoint that has already served this model is the provider
-// having a bad minute, not a model that lives elsewhere. The SDK is configured
-// with no retries of its own, so without this one hiccup would be enough to
-// reroute a model permanently.
-func TestAProvenModelIsNotReroutedByATransient500(t *testing.T) {
-	model := "dual-api-model"
-	resetModelNotes()
-	t.Cleanup(resetModelNotes)
-
-	h := &responsesHarness{respTurns: []scriptedTurn{{content: "from responses"}}}
-	base := newResponsesHarness(t, h)
-	client := NewOpenAIClient("openai", "test-key", model, base, "v1", "", 5*time.Second, slog.Default())
-	params := openai.ChatCompletionNewParams{
-		Model:    shared.ChatModel(model),
-		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
-	}
-
-	// It works here first.
-	if _, err := CompleteChat(context.Background(), client.client, slog.Default(), "openai", base, params); err != nil {
-		t.Fatalf("first CompleteChat: %v", err)
-	}
-	// Then the provider has a bad minute.
-	h.mu.Lock()
-	h.chatStatus = http.StatusInternalServerError
-	h.mu.Unlock()
-	if _, err := CompleteChat(context.Background(), client.client, slog.Default(), "openai", base, params); err == nil {
-		t.Fatal("expected the 500 to surface rather than being papered over")
-	}
-	if _, resp := h.counts(); resp != 0 {
-		t.Fatalf("a proven model was sent to /responses %d times", resp)
-	}
-	if needsResponsesAPI(base, model) {
-		t.Fatal("a proven model was rerouted by one 500")
-	}
-}
-
-// 401 and 403 are what OpenCode Zen returns for grok-4.6 and the muse-spark
-// models. Unlike a 500 they are not something a working endpoint says about a
-// model it serves, so one is enough.
-func TestCertainMismatchIsBelievedImmediately(t *testing.T) {
-	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound} {
-		t.Run(http.StatusText(status), func(t *testing.T) {
-			model := fmt.Sprintf("certain-%d", status)
-			resetModelNotes()
-			t.Cleanup(resetModelNotes)
-
-			h := &responsesHarness{chatStatus: status, respTurns: []scriptedTurn{{content: "from responses"}}}
-			base := newResponsesHarness(t, h)
-			client := NewOpenAIClient("openai", "test-key", model, base, "v1", "", 5*time.Second, slog.Default())
-
-			resp, err := CompleteChat(context.Background(), client.client, slog.Default(), "openai", base, openai.ChatCompletionNewParams{
-				Model:    shared.ChatModel(model),
-				Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
-			})
-			if err != nil {
-				t.Fatalf("CompleteChat: %v", err)
-			}
-			if resp.Choices[0].Message.Content != "from responses" {
-				t.Fatalf("content = %q", resp.Choices[0].Message.Content)
-			}
-			if !needsResponsesAPI(base, model) {
-				t.Fatal("an unambiguous mismatch should be believed the first time")
-			}
-		})
+	if chat, _ := h.counts(); chat != 0 {
+		t.Fatalf("the stream tried chat/completions %d times", chat)
 	}
 }
 
@@ -511,7 +423,7 @@ func TestFailedResponseIsNotASuccess(t *testing.T) {
 	base := newResponsesHarness(t, h)
 	client := NewOpenAIClient("openai", "test-key", model, base, "v1", "", 5*time.Second, slog.Default())
 
-	_, err := CompleteChat(context.Background(), client.client, slog.Default(), "openai", base, openai.ChatCompletionNewParams{
+	_, err := client.Complete(context.Background(), openai.ChatCompletionNewParams{
 		Model:    shared.ChatModel(model),
 		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
 	})
@@ -559,7 +471,7 @@ func TestTransientErrorDoesNotFallBackToResponses(t *testing.T) {
 	base := newResponsesHarness(t, h)
 	client := NewOpenAIClient("openai", "test-key", model, base, "v1", "", 5*time.Second, slog.Default())
 
-	_, err := CompleteChat(context.Background(), client.client, slog.Default(), "openai", base, openai.ChatCompletionNewParams{
+	_, err := client.Complete(context.Background(), openai.ChatCompletionNewParams{
 		Model:    shared.ChatModel(model),
 		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
 	})
@@ -585,7 +497,7 @@ func TestFallbackKeepsTheOriginalError(t *testing.T) {
 	base := newResponsesHarness(t, h)
 	client := NewOpenAIClient("openai", "test-key", model, base, "v1", "", 5*time.Second, slog.Default())
 
-	_, err := CompleteChat(context.Background(), client.client, slog.Default(), "openai", base, openai.ChatCompletionNewParams{
+	_, err := client.Complete(context.Background(), openai.ChatCompletionNewParams{
 		Model:    shared.ChatModel(model),
 		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
 	})
@@ -610,12 +522,12 @@ func TestOrdinaryModelStaysOnChatCompletions(t *testing.T) {
 	base := newResponsesHarness(t, h)
 	client := NewOpenAIClient("openai", "test-key", model, base, "v1", "", 5*time.Second, slog.Default())
 
-	resp, err := CompleteChat(context.Background(), client.client, slog.Default(), "openai", base, openai.ChatCompletionNewParams{
+	resp, err := client.Complete(context.Background(), openai.ChatCompletionNewParams{
 		Model:    shared.ChatModel(model),
 		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
 	})
 	if err != nil {
-		t.Fatalf("CompleteChat: %v", err)
+		t.Fatalf("Complete: %v", err)
 	}
 	if resp.Choices[0].Message.Content != "served by chat completions" {
 		t.Fatalf("content = %q", resp.Choices[0].Message.Content)
@@ -627,45 +539,76 @@ func TestOrdinaryModelStaysOnChatCompletions(t *testing.T) {
 
 // The chatgpt SDK reaches the Responses API from underneath: its middleware
 // rewrites /chat/completions into /responses and is the only thing holding the
-// Codex auth headers. A 403 from that endpoint -- a model the plan does not
-// cover, or a rejected originator -- looks exactly like the endpoint-mismatch
-// this fallback exists for, and taking it would POST /responses directly, past
-// the middleware, with the placeholder key and no originator.
+// Codex auth headers. So the one remaining route up here -- the
+// reasoning_effort/tools conflict, which every gpt-5-family model can raise --
+// must not be taken for it: doing so would POST /responses directly, past the
+// middleware, with the placeholder key and no originator.
 func TestTheChatGPTSDKNeverTranslatesToResponsesItself(t *testing.T) {
-	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound} {
-		t.Run(http.StatusText(status), func(t *testing.T) {
-			model := fmt.Sprintf("chatgpt-%d", status)
-			resetModelNotes()
-			t.Cleanup(resetModelNotes)
+	const model = "gpt-5.6-luna"
+	resetModelNotes()
+	t.Cleanup(resetModelNotes)
 
-			h := &responsesHarness{chatStatus: status, respTurns: []scriptedTurn{{content: "should never be reached"}}}
-			base := newResponsesHarness(t, h)
-			client := NewOpenAIClient(aiprovider.SDKChatGPT, "chatgpt-oauth", model, base, "v1", "", 5*time.Second, slog.Default())
+	var conflicts atomic.Int64
+	var posted atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/responses") {
+			posted.Add(1)
+			writeResponsesJSON(w, scriptedTurn{content: "should never be reached"}, "")
+			return
+		}
+		conflicts.Add(1)
+		writeReasoningEffortConflict(w)
+	}))
+	t.Cleanup(srv.Close)
 
-			_, err := CompleteChat(context.Background(), client.client, slog.Default(),
-				aiprovider.SDKChatGPT, base, openai.ChatCompletionNewParams{
-					Model:    shared.ChatModel(model),
-					Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
-				})
-			if err == nil {
-				t.Fatal("the refusal was swallowed by a fallback that cannot carry the Codex headers")
-			}
-			// The backend's own message is what an operator needs to see.
-			var apiErr *openai.Error
-			if !errors.As(err, &apiErr) || apiErr.StatusCode != status {
-				t.Fatalf("err = %v, want the original %d", err, status)
-			}
+	client := NewOpenAIClient(aiprovider.SDKChatGPT, "chatgpt-oauth", model, srv.URL, "v1", "", 5*time.Second, slog.Default())
+	_, err := client.Complete(context.Background(), openai.ChatCompletionNewParams{
+		Model:    shared.ChatModel(model),
+		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
+		Tools:    []openai.ChatCompletionToolParam{{Function: shared.FunctionDefinitionParam{Name: "search_documents"}}},
+	})
+	if err == nil {
+		t.Fatal("the refusal was swallowed by a fallback that cannot carry the Codex headers")
+	}
+	if posted.Load() != 0 {
+		t.Fatalf("posted %d requests straight to /responses, bypassing the middleware", posted.Load())
+	}
+	if needsResponsesAPI(srv.URL, model) {
+		t.Fatal("the chatgpt SDK was pinned to a /responses route its middleware does not serve")
+	}
+	// And it did not retry at all: the whole reasoning_effort block is behind
+	// the same guard, because for this SDK the request is already a Responses
+	// one by the time it leaves -- the middleware made it so, and the
+	// parameters chat completions would argue about never reach the backend.
+	if conflicts.Load() != 1 {
+		t.Fatalf("chat/completions requests = %d, want just the one", conflicts.Load())
+	}
+}
 
-			h.mu.Lock()
-			posted := len(h.respBodies)
-			h.mu.Unlock()
-			if posted != 0 {
-				t.Fatalf("posted %d requests straight to /responses, bypassing the middleware", posted)
-			}
-			if needsResponsesAPI(base, model) {
-				t.Fatal("the chatgpt SDK was pinned to a /responses route its middleware does not serve")
-			}
-		})
+// The routing for an opencode model comes from the table, not from a failed
+// request: /chat/completions is never tried for a model the docs put on
+// /responses.
+func TestAnOpenCodeResponsesModelSkipsChatCompletionsEntirely(t *testing.T) {
+	h := &responsesHarness{respTurns: []scriptedTurn{{content: "from responses"}}}
+	base := newResponsesHarness(t, h)
+	client := NewOpenAIClient(aiprovider.SDKOpenCode, "k", "gpt-5.6-luna", base, "v1", "", 5*time.Second, slog.Default())
+
+	resp, err := client.Complete(context.Background(), openai.ChatCompletionNewParams{
+		Model:    shared.ChatModel("gpt-5.6-luna"),
+		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
+	})
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if resp.Choices[0].Message.Content != "from responses" {
+		t.Fatalf("content = %q", resp.Choices[0].Message.Content)
+	}
+	chat, responses := h.counts()
+	if chat != 0 {
+		t.Errorf("chat/completions requests = %d, want none; the table already knew", chat)
+	}
+	if responses != 1 {
+		t.Errorf("/responses requests = %d, want 1", responses)
 	}
 }
 

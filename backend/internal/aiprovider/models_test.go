@@ -103,41 +103,45 @@ func TestListModels(t *testing.T) {
 	}
 }
 
-// rewriteHostTransport delivers a ListModels request to an httptest server
-// after SessionHost has already seen opencode.ai and stamped the header.
-type rewriteHostTransport struct{ host string }
-
-func (t rewriteHostTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	clone := req.Clone(req.Context())
-	clone.URL.Host = t.host
-	clone.Host = t.host
-	return http.DefaultTransport.RoundTrip(clone)
-}
-
 // TestListModelsSendsSessionHeaderToOpenCode is the hand-rolled path: ListModels
 // does not go through the SDK middleware, so dropping the header set there
-// would stay green without this.
+// would stay green without this. And an openai row is checked alongside,
+// because that is the case the old host-sniffing gate could not tell apart.
 func TestListModelsSendsSessionHeaderToOpenCode(t *testing.T) {
 	t.Parallel()
-	var seen string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen = r.Header.Get(SessionHeader)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":"kimi-k3"}]}`))
-	}))
-	t.Cleanup(srv.Close)
+	for _, tc := range []struct {
+		sdk      string
+		wantSent bool
+	}{
+		{SDKOpenCode, true},
+		{SDKOpenAI, false},
+	} {
+		t.Run(tc.sdk, func(t *testing.T) {
+			t.Parallel()
+			var seen string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				seen = r.Header.Get(SessionHeader)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"data":[{"id":"kimi-k3"}]}`))
+			}))
+			t.Cleanup(srv.Close)
 
-	client := &http.Client{Transport: rewriteHostTransport{host: srv.Listener.Addr().String()}}
-	p := Provider{SDK: SDKOpenAI, BaseURL: "http://opencode.ai/zen/go/v1", APIKey: "test-key"}
-	models, err := ListModels(t.Context(), p, PurposeLLM, client, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(models) != 1 || models[0].ID != "kimi-k3" {
-		t.Fatalf("got %+v", models)
-	}
-	if want := SessionFor("models"); seen != want {
-		t.Errorf("%s = %q, want the models purpose id %q", SessionHeader, seen, want)
+			p := Provider{SDK: tc.sdk, BaseURL: srv.URL + "/v1", APIKey: "test-key"}
+			models, err := ListModels(t.Context(), p, PurposeLLM, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(models) != 1 || models[0].ID != "kimi-k3" {
+				t.Fatalf("got %+v", models)
+			}
+			want := ""
+			if tc.wantSent {
+				want = SessionFor("models")
+			}
+			if seen != want {
+				t.Errorf("%s = %q, want %q", SessionHeader, seen, want)
+			}
+		})
 	}
 }
 

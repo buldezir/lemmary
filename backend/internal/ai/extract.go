@@ -194,7 +194,7 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 	)
 
 	requestStart := time.Now()
-	chatResp, err := c.complete(ctx, openai.ChatCompletionNewParams{
+	chatResp, err := c.Complete(ctx, openai.ChatCompletionNewParams{
 		Model: shared.ChatModel(c.model),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(buildExtractionSystemPrompt(c.resultLanguage, catalog)),

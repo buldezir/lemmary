@@ -42,13 +42,12 @@ func TestTheMiddlewareRewritesThePathTheSDKBuilds(t *testing.T) {
 	var path string
 	srv := codexServer(t, &seen, &path)
 
+	// The host is httptest's; the path is the real one, which is the half this
+	// test is about.
 	client := openai.NewClient(
 		option.WithAPIKey(PlaceholderKey),
-		option.WithBaseURL("http://chatgpt.com"+chatgptBasePath),
+		option.WithBaseURL(srv.URL+chatgptBasePath),
 		option.WithMiddleware(Middleware(signedInSource(t, "sdk1"), nil)),
-		// Runs after ours, so the connection lands on httptest rather than the
-		// internet. The same trick the session middleware's SDK test uses.
-		option.WithMiddleware(aiprovider.RewriteHostMiddleware(srv.Listener.Addr().String())),
 	)
 
 	resp, err := client.Chat.Completions.New(context.Background(), openai.ChatCompletionNewParams{

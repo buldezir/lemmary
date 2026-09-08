@@ -45,13 +45,18 @@ func init() {
 	})
 }
 
-// priorSDKs is ValidSDKs without the sidecars: the list as it stood before
-// either of them existed. Derived so it cannot go stale against ValidSDKs the
-// way a written-out literal would.
+// priorSDKs is the SDK list as it stood before either sidecar existed.
+//
+// Written out, unlike the up-migration's aiprovider.ValidSDKs. A
+// down-migration's target is a historical fact, not a view of the current code,
+// and deriving it is what went wrong here before: it was "every SDK that
+// requires an API key", which quietly grew an entry the moment a keyed SDK was
+// added after the sidecars.
 func priorSDKs() []string {
-	return slices.DeleteFunc(slices.Clone(aiprovider.ValidSDKs), func(sdk string) bool {
-		return !aiprovider.RequiresAPIKey(sdk)
-	})
+	return []string{
+		aiprovider.SDKOpenAI, aiprovider.SDKOpenRouter,
+		aiprovider.SDKGoogleVision, aiprovider.SDKMistral,
+	}
 }
 
 func setProviderSDKValues(app core.App, values []string) error {

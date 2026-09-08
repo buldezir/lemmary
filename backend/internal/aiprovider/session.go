@@ -79,39 +79,21 @@ func SessionFor(purpose string) string {
 	return id
 }
 
-// SessionHost reports whether the header means anything to this host. Only
-// OpenCode asks for it; every other provider sees the request it saw before.
-func SessionHost(host string) bool {
-	h := strings.ToLower(strings.TrimSpace(host))
-	if i := strings.LastIndexByte(h, ':'); i >= 0 && !strings.Contains(h[i:], "]") {
-		h = h[:i]
-	}
-	h = strings.TrimSuffix(h, ".")
-	return h == "opencode.ai" || strings.HasSuffix(h, ".opencode.ai")
-}
-
 // SessionMiddleware stamps the session id from the request context onto
 // outbound OpenCode requests. It sits in the SDK's middleware chain, which runs
 // per attempt on a request clone, so retries are stamped too.
+//
+// It stamps unconditionally: the caller installs it only on an SDKOpenCode
+// client. It used to be installed on every client and gate itself by sniffing
+// the request host for opencode.ai, which needed a second middleware
+// (RewriteHostMiddleware) so that a test could reach httptest with the gate
+// open, and left an operator's choice of provider implied by a URL.
 func SessionMiddleware() option.Middleware {
 	return func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
-		if req != nil && req.URL != nil && SessionHost(req.URL.Host) {
+		if req != nil {
 			if id := SessionFrom(req.Context()); id != "" {
 				req.Header.Set(SessionHeader, id)
 			}
-		}
-		return next(req)
-	}
-}
-
-// RewriteHostMiddleware sends the request to host instead of req.URL.Host.
-// Tests register it after SessionMiddleware so a client whose base URL is
-// opencode.ai (the session gate opens) still talks to an httptest server
-// rather than the internet. Production callers never pass it.
-func RewriteHostMiddleware(host string) option.Middleware {
-	return func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
-		if req != nil && req.URL != nil {
-			req.URL.Host = host
 		}
 		return next(req)
 	}
