@@ -16,7 +16,7 @@ to use.
 | `openai` | ✅ | ✅ models that accept files/images | ✅ |
 | `openrouter` | ✅ many vendors on one key | ✅ models advertising `file` input | ✅ |
 | `google_vision` | ❌ | ✅ | ❌ |
-| **ChatGPT subscription** — `chatgpt` | ✅ **on a ChatGPT subscription** | ❌ | ❌ |
+| **ChatGPT subscription** — `chatgpt` | ✅ **on a ChatGPT subscription** | ✅ **on the same seat** | ❌ |
 | **Local OCR (Docling)** — `docling` | ❌ | ✅ **on your own host** | ❌ |
 | **Local Embeddings (huggingface/text-embeddings-inference)** — `local` | ❌ | ❌ | ✅ **on your own hardware** |
 
@@ -42,14 +42,17 @@ The alternatives are worth naming:
 - **`google_vision`** — OCR only; it cannot serve extraction and is refused as
   `AI_SDK`. Worth pairing with an LLM when its free tier (1000 pages a month)
   matters. See [Google Vision API key](/google_vision).
-- **ChatGPT subscription** — chat only, billed against a ChatGPT Plus, Pro or
-  Business subscription instead of per token. There is no key to paste: you add
-  the provider, sign in with a device code, and bind chat, extraction or Deep
-  Search to it. Embeddings and OCR are refused, because the endpoint behind it
-  serves neither. Off unless `AI_CHATGPT_LOGIN=1`, and refused on a managed
-  instance — it reaches OpenAI's own Codex endpoints, so the account you sign in
-  with is the one carrying the risk. Its SDK value is `chatgpt`, though it is
-  not an `AI_SDK` value. See [ChatGPT sign-in](/chatgpt_login).
+- **ChatGPT subscription** — everything but embeddings, billed against a
+  ChatGPT Plus, Pro or Business subscription instead of per token. There is no
+  key to paste: you add the provider, sign in with a device code, and bind chat,
+  extraction, Deep Search or OCR to it. OCR works the way it does on `openai` —
+  the file goes to the model — so an instance whose only AI credential is a
+  ChatGPT seat is a complete install. Embeddings are refused: the endpoint has
+  no `/embeddings` at all. Off unless `AI_CHATGPT_LOGIN=1`, and refused on a
+  managed instance — it reaches OpenAI's own Codex endpoints, so the account you
+  sign in with is the one carrying the risk. Its SDK value is `chatgpt`, though
+  it is not an `AI_SDK` or `OCR_SDK` value: a sign-in cannot be written into
+  `.env`. See [ChatGPT sign-in](/chatgpt_login).
 - **Local OCR (Docling)** — OCR only, and the only provider that reads a
   document without sending it anywhere: a sidecar container beside the app,
   with no port published and **no API key at all** — the base URL is the whole
@@ -112,7 +115,7 @@ after that.
 | `AI_API_KEY` | empty | Its credential. **One key is usually the whole configuration**: with this and nothing else the app creates one provider and routes extraction, chat, Deep Search *and* OCR to it. |
 | `AI_MODEL` | `gpt-5.6-luna` | The model for extraction, chat and Deep Search. Be sure it supports the result language set in **Settings**. |
 | `AI_BASE_URL` | the SDK's own endpoint | An OpenAI-compatible base URL, for a gateway or a self-hosted endpoint. |
-| `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `openai`, `openrouter`, `mistral`, `google_vision` or `docling` (Local OCR). `local` (Local Embeddings) and `chatgpt` are refused — neither can read a document. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
+| `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `openai`, `openrouter`, `mistral`, `google_vision` or `docling` (Local OCR). `local` (Local Embeddings) is refused — it serves embeddings only. `chatgpt` reads documents but is refused here too: it is signed in to from Settings rather than given a key, so the environment has nothing to seed it with. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
 | `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK` — except Local OCR (`docling`), which has no account behind it. Optional there, and only if you started the sidecar with `DOCLING_SERVE_API_KEY`. |
 | `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. For Local OCR (`docling`) the default is the compose service name, `http://docling:5001`, so `OCR_SDK=docling` alone is a complete configuration under the overlay. |
 | `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Not required for `google_vision` or Local OCR (`docling`), which read a document without one; for Local OCR it optionally names the OCR engine instead. See [Choosing an engine](/local_ocr#choosing-an-engine). |

@@ -17,9 +17,12 @@ const (
 	// lives in the row's `oauth` column and is refreshed in place -- hence
 	// RequiresOAuth beside RequiresAPIKey.
 	//
-	// It chats and nothing else. The Codex backend serves no /embeddings and
-	// reads no documents, so CanEmbed and CanOCR both refuse it and Deep
-	// Search's vectors and OCR keep whatever provider they had.
+	// It chats and reads documents; it does not embed. The Codex backend
+	// serves no /embeddings, so CanEmbed refuses it and Deep Search's vectors
+	// keep whatever provider they had. Its models do take file and image input,
+	// so OCR runs on the seat like any other LLM OCR provider -- see
+	// internal/ocr.NewLLMProvider and the input_file/input_image parts in
+	// internal/chatgpt.messageContent.
 	//
 	// Off unless AI_CHATGPT_LOGIN=1: the endpoints behind it are OpenAI's own
 	// first-party ones, undocumented and reserved for OpenAI's clients, so
@@ -86,16 +89,16 @@ func CanEmbed(sdk string) bool {
 }
 
 // CanOCR reports whether an SDK can read a document. google_vision and docling
-// are engines OCR exists for, and the metered LLM SDKs send the file to a
-// model. A local embeddings endpoint has no way to do it at all, and the Codex
-// backend behind SDKChatGPT accepts no attachments.
+// are engines OCR exists for, and every LLM SDK sends the file to a model --
+// SDKChatGPT included, since its models take the same file and image input the
+// metered ones do. A local embeddings endpoint has no way to do it at all.
 //
 // Without this, ValidSDK would let OCR_SDK=local through -- it is a valid SDK,
 // just not for this job -- and the failure would only appear on the first
 // document uploaded.
 func CanOCR(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
-	case SDKLocalEmbeddings, SDKChatGPT:
+	case SDKLocalEmbeddings:
 		return false
 	default:
 		return true
@@ -197,14 +200,20 @@ func LLMSDKs() []string       { return sdksWhere(IsLLM) }
 func EmbeddingSDKs() []string { return sdksWhere(CanEmbed) }
 func OCRSDKs() []string       { return sdksWhere(CanOCR) }
 
-// EnvLLMSDKs names the SDKs AI_SDK accepts, which is LLMSDKs minus the ones
-// whose credential cannot be written down.
+// EnvLLMSDKs and EnvOCRSDKs name the SDKs AI_SDK and OCR_SDK accept, which is
+// LLMSDKs and OCRSDKs minus the ones whose credential cannot be written down.
 //
 // The environment can carry a key. It cannot carry a sign-in: a chatgpt
-// provider is created and signed in to from Settings, so naming it here would
-// seed a provider row nobody can complete from the file that named it.
+// provider is created and signed in to from Settings, so naming it in either
+// variable would seed a provider row nobody can complete from the file that
+// named it. That is true of OCR_SDK as much as AI_SDK, even though the SDK can
+// now do the job -- the obstacle is the credential, not the capability.
 func EnvLLMSDKs() []string {
 	return sdksWhere(func(sdk string) bool { return IsLLM(sdk) && !RequiresOAuth(sdk) })
+}
+
+func EnvOCRSDKs() []string {
+	return sdksWhere(func(sdk string) bool { return CanOCR(sdk) && !RequiresOAuth(sdk) })
 }
 
 // ModellessOCRSDKs names the SDKs that read a document without a model, for the

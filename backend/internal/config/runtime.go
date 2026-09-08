@@ -109,14 +109,15 @@ func usableLLM(p *aiprovider.Provider) bool {
 	return p != nil && p.Configured() && aiprovider.IsLLM(p.SDK)
 }
 
-// llmCredential is what an LLM client is built with: the key to pass, and any
-// extra SDK options the provider needs.
+// providerCredential is what a client on a provider row is built with: the key
+// to pass, and any extra SDK options the provider needs. Both the AI clients
+// and the OCR one go through it.
 //
 // Every SDK but one hands over its API key and asks for nothing else. The
 // chatgpt SDK has no key to hand over -- its credential is a token that expires
 // hourly -- so it contributes a middleware that mints one per request instead,
 // plus a placeholder for the SDK's own insistence on a non-empty key.
-func llmCredential(app core.App, p *aiprovider.Provider, logger *slog.Logger) (string, []option.RequestOption) {
+func providerCredential(app core.App, p *aiprovider.Provider, logger *slog.Logger) (string, []option.RequestOption) {
 	if p == nil {
 		return "", nil
 	}
@@ -152,7 +153,12 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 
 	var ocrProvider ocr.Provider
 	if cfg.OCRProvider != nil {
-		built, err := ocr.NewFromAIProvider(*cfg.OCRProvider, cfg.OCRModel, cfg.OCRTimeout, ocrLogger)
+		// The same credential treatment the AI clients get: a chatgpt row has
+		// a minted token rather than a key, and the row itself carries neither.
+		p := *cfg.OCRProvider
+		key, opts := providerCredential(app, cfg.OCRProvider, ocrLogger)
+		p.APIKey = key
+		built, err := ocr.NewFromAIProvider(p, cfg.OCRModel, cfg.OCRTimeout, ocrLogger, opts...)
 		if err != nil {
 			logger.Warn("OCR provider unavailable after settings reload", slog.Any("error", err))
 		} else {
@@ -163,7 +169,7 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 	// One credential for the extraction provider, shared by the two clients
 	// built on it: asking twice would put two middlewares over one token
 	// source, and the splitter is always the extractor's provider.
-	extractKey, extractOpts := llmCredential(app, cfg.ExtractProvider, aiLogger)
+	extractKey, extractOpts := providerCredential(app, cfg.ExtractProvider, aiLogger)
 
 	var extractor ai.Extractor
 	if usableLLM(cfg.ExtractProvider) {
@@ -182,7 +188,7 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 
 	var chatter ai.Chatter
 	if usableLLM(cfg.ChatProvider) {
-		key, opts := llmCredential(app, cfg.ChatProvider, aiLogger)
+		key, opts := providerCredential(app, cfg.ChatProvider, aiLogger)
 		chatter = ai.NewChatter(
 			cfg.ChatProvider.SDK,
 			key,
@@ -222,7 +228,7 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 
 	var searchAgent ai.SearchAgent
 	if usableLLM(cfg.SearchProvider) {
-		key, opts := llmCredential(app, cfg.SearchProvider, aiLogger)
+		key, opts := providerCredential(app, cfg.SearchProvider, aiLogger)
 		searchAgent = ai.NewSearchAgent(
 			cfg.SearchProvider.SDK,
 			key,
@@ -238,7 +244,7 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 
 	var searchHelper ai.Helper
 	if usableLLM(cfg.SearchHelperProvider) {
-		key, opts := llmCredential(app, cfg.SearchHelperProvider, aiLogger)
+		key, opts := providerCredential(app, cfg.SearchHelperProvider, aiLogger)
 		searchHelper = ai.NewHelper(
 			cfg.SearchHelperProvider.SDK,
 			key,

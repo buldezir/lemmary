@@ -215,9 +215,17 @@ type responsesItem struct {
 	Output    string             `json:"output,omitempty"`
 }
 
+// responsesContent is one part of a message's content. Text uses Text; an image
+// uses ImageURL, which carries a data URI for a file this app read off disk;
+// and a PDF uses Filename with FileData, the same data URI. The Responses shape
+// puts the image's URL directly on the part, where the Chat Completions shape
+// nests it under an "image_url" object.
 type responsesContent struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	ImageURL string `json:"image_url,omitempty"`
+	Filename string `json:"filename,omitempty"`
+	FileData string `json:"file_data,omitempty"`
 }
 
 type responsesText struct {
@@ -262,15 +270,14 @@ func toResponsesRequest(in chatRequest) responsesRequest {
 	instructions := []string{codexInstructions}
 	for _, msg := range in.Messages {
 		role := strings.ToLower(strings.TrimSpace(msg.Role))
-		text := messageText(msg.Content)
 
 		// The two shapes that are not a message have to be handled before the
-		// empty-text skip below: a tool result is an item of its own, and an
+		// empty-content skip below: a tool result is an item of its own, and an
 		// assistant message that only asked for a tool has no content at all.
 		if role == "tool" {
 			if id := strings.TrimSpace(msg.ToolCallID); id != "" {
 				out.Input = append(out.Input, responsesItem{
-					Type: "function_call_output", CallID: id, Output: text,
+					Type: "function_call_output", CallID: id, Output: messageText(msg.Content),
 				})
 			}
 			continue
@@ -278,10 +285,9 @@ func toResponsesRequest(in chatRequest) responsesRequest {
 		if role == "assistant" && len(msg.ToolCalls) > 0 {
 			// Some models say something before calling a tool. Keep it: it is
 			// part of the conversation the next round replays.
-			if strings.TrimSpace(text) != "" {
+			if content := messageContent(msg.Content, "assistant"); len(content) > 0 {
 				out.Input = append(out.Input, responsesItem{
-					Type: "message", Role: "assistant",
-					Content: []responsesContent{{Type: "output_text", Text: text}},
+					Type: "message", Role: "assistant", Content: content,
 				})
 			}
 			for _, call := range msg.ToolCalls {
@@ -295,26 +301,27 @@ func toResponsesRequest(in chatRequest) responsesRequest {
 			continue
 		}
 
-		if strings.TrimSpace(text) == "" {
+		// The Responses API has no system message: the role's content is the
+		// instructions field, which is also where the backend looks for the
+		// preamble above.
+		if role == "system" || role == "developer" {
+			if text := messageText(msg.Content); strings.TrimSpace(text) != "" {
+				instructions = append(instructions, text)
+			}
 			continue
 		}
-		switch role {
-		case "system", "developer":
-			// The Responses API has no system message: the role's content is
-			// the instructions field, which is also where the backend looks
-			// for the preamble above.
-			instructions = append(instructions, text)
-		case "assistant":
-			out.Input = append(out.Input, responsesItem{
-				Type: "message", Role: "assistant",
-				Content: []responsesContent{{Type: "output_text", Text: text}},
-			})
-		default:
-			out.Input = append(out.Input, responsesItem{
-				Type: "message", Role: "user",
-				Content: []responsesContent{{Type: "input_text", Text: text}},
-			})
+
+		itemRole := "user"
+		if role == "assistant" {
+			itemRole = "assistant"
 		}
+		content := messageContent(msg.Content, itemRole)
+		if len(content) == 0 {
+			continue
+		}
+		out.Input = append(out.Input, responsesItem{
+			Type: "message", Role: itemRole, Content: content,
+		})
 	}
 	out.Instructions = strings.Join(instructions, "\n\n")
 
@@ -351,29 +358,84 @@ func toResponsesRequest(in chatRequest) responsesRequest {
 	return out
 }
 
-// messageText flattens a chat message's content.
+// chatContentPart is one part of a multi-part chat message. OCR is the caller
+// that sends these: a text prompt plus the document, as an image_url part for a
+// scan or a file part for a PDF, both carrying a base64 data URI rather than a
+// URL the backend would have to fetch.
+type chatContentPart struct {
+	Type     string `json:"type"`
+	Text     string `json:"text"`
+	ImageURL *struct {
+		URL string `json:"url"`
+	} `json:"image_url"`
+	File *struct {
+		Filename string `json:"filename"`
+		FileData string `json:"file_data"`
+	} `json:"file"`
+}
+
+// messageContent translates a chat message's content into Responses parts.
 //
-// Content is either a plain string or an array of typed parts. Only the text
-// parts are kept: the one caller that sends images is OCR, and CanOCR already
-// refuses this SDK, so an image here means a misconfiguration rather than a
-// case to support.
-func messageText(raw json.RawMessage) string {
+// Content is either a plain string or an array of typed parts. Both shapes
+// reach here: the extractor and the chatter send strings, OCR sends parts.
+// A part of a kind not named below is dropped rather than guessed at -- sending
+// an unknown shape to the backend earns an opaque 400 rather than a clear
+// failure.
+//
+// textOnly is what the instructions field needs, since a system message is not
+// an item and can only be a string.
+func messageContent(raw json.RawMessage, kind string) []responsesContent {
 	if len(raw) == 0 {
-		return ""
+		return nil
 	}
-	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
-		return s
+	textType := "input_text"
+	if kind == "assistant" {
+		textType = "output_text"
 	}
-	var parts []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
+
+	var plain string
+	if err := json.Unmarshal(raw, &plain); err == nil {
+		if strings.TrimSpace(plain) == "" {
+			return nil
+		}
+		return []responsesContent{{Type: textType, Text: plain}}
 	}
+
+	var parts []chatContentPart
 	if err := json.Unmarshal(raw, &parts); err != nil {
-		return ""
+		return nil
 	}
-	var b strings.Builder
+	out := make([]responsesContent, 0, len(parts))
 	for _, part := range parts {
+		switch {
+		case part.Text != "":
+			out = append(out, responsesContent{Type: textType, Text: part.Text})
+		case part.ImageURL != nil && part.ImageURL.URL != "":
+			// input_image carries the URL on the part itself, not nested.
+			out = append(out, responsesContent{Type: "input_image", ImageURL: part.ImageURL.URL})
+		case part.File != nil && part.File.FileData != "":
+			name := part.File.Filename
+			if name == "" {
+				name = "document"
+			}
+			out = append(out, responsesContent{
+				Type: "input_file", Filename: name, FileData: part.File.FileData,
+			})
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// messageText flattens a chat message's content to its text, for the system
+// role -- which the Responses API has no item for, only the instructions
+// string. Any attachment is left behind, which is correct: nobody sends a
+// document as a system message.
+func messageText(raw json.RawMessage) string {
+	var b strings.Builder
+	for _, part := range messageContent(raw, "user") {
 		if part.Text == "" {
 			continue
 		}

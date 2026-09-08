@@ -2,11 +2,11 @@ package aiprovider
 
 import "testing"
 
-// The chatgpt SDK's whole shape in one place: it chats, it cannot embed or read
-// a document, and its credential is a token rather than a pasted key. Each of
+// The chatgpt SDK's whole shape in one place: it chats, it reads documents, it
+// cannot embed, and its credential is a token rather than a pasted key. Each of
 // those answers gates a different binding, and getting one wrong would put a
 // provider somewhere it cannot serve.
-func TestChatGPTSDKChatsAndNothingElse(t *testing.T) {
+func TestChatGPTSDKChatsAndReadsButDoesNotEmbed(t *testing.T) {
 	t.Parallel()
 	if !IsLLM(SDKChatGPT) {
 		t.Error("chatgpt must serve the language-model bindings")
@@ -14,8 +14,14 @@ func TestChatGPTSDKChatsAndNothingElse(t *testing.T) {
 	if CanEmbed(SDKChatGPT) {
 		t.Error("the Codex backend serves no /embeddings")
 	}
-	if CanOCR(SDKChatGPT) {
-		t.Error("the Codex backend reads no documents")
+	// Its models take file and image input like any other LLM's, so OCR runs
+	// on the seat: see internal/chatgpt.messageContent for the parts, and
+	// internal/ocr.NewLLMProvider for the request they go in.
+	if !CanOCR(SDKChatGPT) {
+		t.Error("chatgpt reads documents like the other LLM SDKs")
+	}
+	if RequiresOCRModel(SDKChatGPT) != true {
+		t.Error("an OCR binding on chatgpt names a model, like the other LLM SDKs")
 	}
 	if !RequiresOAuth(SDKChatGPT) {
 		t.Error("chatgpt signs in rather than taking a key")
@@ -54,26 +60,26 @@ func TestChatGPTProviderIsConfiguredByItsToken(t *testing.T) {
 	}
 }
 
-// The Codex backend publishes no catalogue, so the picker is served locally.
-// Asked for anything but a language model it stays empty rather than offering
-// models for a binding CanEmbed and CanOCR already refuse.
+// The Codex backend publishes no catalogue, so the picker is served locally --
+// for chat and for OCR, which bind the same models. Embeddings stay empty
+// rather than offering models for the one binding CanEmbed refuses.
 func TestChatGPTModelsAreServedWithoutTheNetwork(t *testing.T) {
 	t.Parallel()
 	p := Provider{SDK: SDKChatGPT, BaseURL: DefaultBaseURL(SDKChatGPT)}
-	models, err := ListModels(t.Context(), p, PurposeLLM, nil, nil)
-	if err != nil {
-		t.Fatalf("listing models for a signed-in provider failed: %v", err)
-	}
-	if len(models) == 0 {
-		t.Fatal("the model picker would be empty for every ChatGPT provider")
-	}
-	for _, purpose := range []ModelPurpose{PurposeOCR, PurposeEmbedding} {
-		got, err := ListModels(t.Context(), p, purpose, nil, nil)
+	for _, purpose := range []ModelPurpose{PurposeLLM, PurposeOCR} {
+		models, err := ListModels(t.Context(), p, purpose, nil, nil)
 		if err != nil {
-			t.Fatalf("%s: %v", purpose, err)
+			t.Fatalf("%s: listing models for a signed-in provider failed: %v", purpose, err)
 		}
-		if len(got) != 0 {
-			t.Errorf("%s offered %d models for a binding chatgpt cannot serve", purpose, len(got))
+		if len(models) == 0 {
+			t.Fatalf("%s: the model picker would be empty for every ChatGPT provider", purpose)
 		}
+	}
+	got, err := ListModels(t.Context(), p, PurposeEmbedding, nil, nil)
+	if err != nil {
+		t.Fatalf("embedding: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("embedding offered %d models for a binding chatgpt cannot serve", len(got))
 	}
 }

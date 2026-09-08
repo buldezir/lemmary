@@ -138,10 +138,11 @@ export function requiresAPIKey(sdk?: string) {
 export function providerServesPurpose(sdk: string, purpose: ModelPurpose) {
   if (purpose === 'embedding') return canEmbedProvider(sdk)
   if (purpose === 'llm') return isLLMProvider(sdk)
-  // OCR is the binding google_vision and docling exist for, and the one neither
-  // a local embeddings endpoint nor the Codex backend can serve. Mirrors
-  // aiprovider.CanOCR.
-  return sdk !== 'local' && sdk !== 'chatgpt'
+  // OCR is the binding google_vision and docling exist for, and every LLM SDK
+  // can serve it by sending the file to a model — chatgpt included, whose
+  // models take the same file and image input the metered ones do. Only a local
+  // embeddings endpoint cannot. Mirrors aiprovider.CanOCR.
+  return sdk !== 'local'
 }
 
 /**

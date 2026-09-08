@@ -153,11 +153,15 @@ func ListModels(ctx context.Context, p Provider, purpose ModelPurpose, client *h
 	// which would otherwise fail it for having no API key -- it has a token
 	// instead -- and turn a working sign-in into an error banner in Settings.
 	if p.SDK == SDKChatGPT {
-		if purpose != PurposeLLM {
-			// CanEmbed and CanOCR already refuse those bindings; returning
-			// nothing keeps the picker honest if one is ever asked for anyway.
+		if purpose == PurposeEmbedding {
+			// CanEmbed already refuses that binding; returning nothing keeps
+			// the picker honest if it is ever asked for anyway.
 			return nil, nil
 		}
+		// The same list for OCR as for chat. The Codex catalogue says nothing
+		// about which models take a file, so this is the openai case rather
+		// than the openrouter one: every name, and a warning in Settings to
+		// pick one that can read a document.
 		return ChatGPTModels(), nil
 	}
 

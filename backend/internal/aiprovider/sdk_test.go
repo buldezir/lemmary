@@ -188,7 +188,11 @@ func TestSDKListsMatchTheirPredicates(t *testing.T) {
 	}{
 		"llm":       {LLMSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKChatGPT}},
 		"embedding": {EmbeddingSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKLocalEmbeddings}},
-		"ocr":       {OCRSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKDocling}},
+		"ocr":       {OCRSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKChatGPT, SDKDocling}},
+		// The environment lists are the same minus chatgpt, whose credential
+		// is minted by signing in and so cannot be seeded from a file.
+		"env llm": {EnvLLMSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral}},
+		"env ocr": {EnvOCRSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKDocling}},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

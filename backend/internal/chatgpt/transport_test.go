@@ -341,6 +341,8 @@ func TestAnUnsignedProviderNeverReachesTheNetwork(t *testing.T) {
 	}
 }
 
+// messageText is the system role's path: instructions is a string, so an
+// attachment there has nowhere to go and text is all that is kept.
 func TestArrayContentIsFlattened(t *testing.T) {
 	t.Parallel()
 	raw := json.RawMessage(`[{"type":"text","text":"one"},{"type":"text","text":"two"}]`)
@@ -349,6 +351,10 @@ func TestArrayContentIsFlattened(t *testing.T) {
 	}
 	if got := messageText(json.RawMessage(`"plain"`)); got != "plain" {
 		t.Fatalf("messageText = %q", got)
+	}
+	withImage := json.RawMessage(`[{"type":"text","text":"read this"},{"type":"image_url","image_url":{"url":"data:image/png;base64,AA"}}]`)
+	if got := messageText(withImage); got != "read this" {
+		t.Fatalf("messageText = %q, want the text alone", got)
 	}
 }
 
@@ -675,5 +681,162 @@ func TestAStreamedFunctionCallBecomesAToolCallChunk(t *testing.T) {
 	}
 	if !strings.Contains(text, `"finish_reason":"tool_calls"`) {
 		t.Errorf("final chunk did not finish on tool_calls:\n%s", text)
+	}
+}
+
+// ocrRequestFor is the request internal/ocr builds: a system message, then a
+// user message whose content is a prompt plus the document -- an image_url part
+// for a scan or a file part for a PDF, each carrying a base64 data URI rather
+// than a URL the backend would have to fetch. See ocr.LLMUserContentParts.
+func ocrRequestFor(t *testing.T, document map[string]any) *http.Request {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{
+		"model": "gpt-5.6-luna",
+		"messages": []map[string]any{
+			{"role": "system", "content": "You transcribe documents for an archive."},
+			{"role": "user", "content": []map[string]any{
+				{"type": "text", "text": "Extract all text from this document."},
+				document,
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		"https://chatgpt.com/backend-api/codex/chat/completions", io.NopCloser(bytes.NewReader(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return req
+}
+
+func sentInputFor(t *testing.T, mw func(*http.Request, func(*http.Request) (*http.Response, error)) (*http.Response, error), req *http.Request) responsesRequest {
+	t.Helper()
+	var sent responsesRequest
+	if _, err := mw(req, func(r *http.Request) (*http.Response, error) {
+		raw, _ := io.ReadAll(r.Body)
+		if err := json.Unmarshal(raw, &sent); err != nil {
+			t.Fatal(err)
+		}
+		return sseResponse(`{"type":"response.output_text.delta","delta":"text"}`,
+			`{"type":"response.completed","response":{"status":"completed"}}`), nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return sent
+}
+
+// OCR is the caller that sends something other than text. A middleware that
+// kept only the text parts would send the model a transcription prompt with no
+// document behind it -- and the model would answer, so the failure is an
+// invented or empty transcription rather than an error.
+func TestAScanReachesTheModelAsAnImage(t *testing.T) {
+	t.Parallel()
+	const dataURI = "data:image/png;base64,iVBORw0KGgo="
+	sent := sentInputFor(t, Middleware(signedInSource(t, "t20"), nil), ocrRequestFor(t, map[string]any{
+		"type":      "image_url",
+		"image_url": map[string]any{"url": dataURI},
+	}))
+
+	if len(sent.Input) != 1 {
+		t.Fatalf("input = %+v, want the one user message", sent.Input)
+	}
+	parts := sent.Input[0].Content
+	if len(parts) != 2 {
+		t.Fatalf("content = %+v, want the prompt and the image", parts)
+	}
+	if parts[0].Type != "input_text" || !strings.Contains(parts[0].Text, "Extract all text") {
+		t.Errorf("prompt part = %+v", parts[0])
+	}
+	// input_image carries the URL on the part itself; the chat shape nests it
+	// under an "image_url" object, and sending that nested shape earns an
+	// opaque 400.
+	if parts[1].Type != "input_image" || parts[1].ImageURL != dataURI {
+		t.Fatalf("image part = %+v", parts[1])
+	}
+}
+
+func TestAPDFReachesTheModelAsAFile(t *testing.T) {
+	t.Parallel()
+	const dataURI = "data:application/pdf;base64,JVBERi0="
+	sent := sentInputFor(t, Middleware(signedInSource(t, "t21"), nil), ocrRequestFor(t, map[string]any{
+		"type": "file",
+		"file": map[string]any{"filename": "rent.pdf", "file_data": dataURI},
+	}))
+
+	parts := sent.Input[0].Content
+	if len(parts) != 2 {
+		t.Fatalf("content = %+v, want the prompt and the file", parts)
+	}
+	if parts[1].Type != "input_file" || parts[1].FileData != dataURI {
+		t.Fatalf("file part = %+v", parts[1])
+	}
+	// The name is what tells the model it is looking at a PDF rather than an
+	// opaque blob, and openai-go sends one for every OCR call.
+	if parts[1].Filename != "rent.pdf" {
+		t.Errorf("filename = %q", parts[1].Filename)
+	}
+}
+
+// A file with no name still has to go: LLMUserContentParts defaults it, but a
+// caller reaching this middleware directly may not.
+func TestAnUnnamedFileStillGetsAName(t *testing.T) {
+	t.Parallel()
+	sent := sentInputFor(t, Middleware(signedInSource(t, "t22"), nil), ocrRequestFor(t, map[string]any{
+		"type": "file",
+		"file": map[string]any{"file_data": "data:application/pdf;base64,JVBERi0="},
+	}))
+	parts := sent.Input[0].Content
+	if len(parts) != 2 || parts[1].Filename == "" {
+		t.Fatalf("content = %+v, want a named file part", parts)
+	}
+}
+
+// A part of a kind nothing here knows is dropped rather than forwarded as an
+// unknown shape, which the backend answers with an opaque 400.
+func TestAnUnknownContentPartIsDropped(t *testing.T) {
+	t.Parallel()
+	sent := sentInputFor(t, Middleware(signedInSource(t, "t23"), nil), ocrRequestFor(t, map[string]any{
+		"type":        "input_audio",
+		"input_audio": map[string]any{"data": "AAA", "format": "wav"},
+	}))
+	parts := sent.Input[0].Content
+	if len(parts) != 1 || parts[0].Type != "input_text" {
+		t.Fatalf("content = %+v, want only the text part", parts)
+	}
+}
+
+// An assistant turn's text is output_text, not input_text: the Responses shape
+// distinguishes them, and a replayed conversation that got it wrong would be
+// refused.
+func TestAssistantTextIsOutputText(t *testing.T) {
+	t.Parallel()
+	raw, err := json.Marshal(map[string]any{
+		"model": "gpt-5.6-luna",
+		"messages": []map[string]any{
+			{"role": "user", "content": "hello"},
+			{"role": "assistant", "content": "hi"},
+			{"role": "user", "content": "again"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		"https://chatgpt.com/backend-api/codex/chat/completions", io.NopCloser(bytes.NewReader(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent := sentInputFor(t, Middleware(signedInSource(t, "t24"), nil), req)
+
+	if len(sent.Input) != 3 {
+		t.Fatalf("input = %+v", sent.Input)
+	}
+	if sent.Input[0].Content[0].Type != "input_text" {
+		t.Errorf("user part = %+v", sent.Input[0].Content[0])
+	}
+	if sent.Input[1].Role != "assistant" || sent.Input[1].Content[0].Type != "output_text" {
+		t.Errorf("assistant part = %+v", sent.Input[1])
 	}
 }

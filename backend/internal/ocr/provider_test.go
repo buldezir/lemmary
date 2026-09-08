@@ -46,6 +46,26 @@ func TestNewFromAIProviderRequirements(t *testing.T) {
 			wantErr:  "OCR model is required",
 		},
 		{
+			// The credential is a minted token, which config.providerCredential
+			// substitutes for the key. Demanding an api_key here would refuse
+			// a provider that is signed in and working.
+			name: "chatgpt needs no key, only a model",
+			provider: aiprovider.Provider{
+				SDK: aiprovider.SDKChatGPT, Alias: "ChatGPT subscription",
+				BaseURL: aiprovider.DefaultBaseURL(aiprovider.SDKChatGPT),
+			},
+			model:    "gpt-5.6-luna",
+			wantName: aiprovider.SDKChatGPT,
+		},
+		{
+			name: "chatgpt still needs a model",
+			provider: aiprovider.Provider{
+				SDK: aiprovider.SDKChatGPT, Alias: "ChatGPT subscription",
+				BaseURL: aiprovider.DefaultBaseURL(aiprovider.SDKChatGPT),
+			},
+			wantErr: "OCR model is required",
+		},
+		{
 			name:     "an unknown sdk is refused, not treated as keyless",
 			provider: aiprovider.Provider{SDK: "tesseract", Alias: "Tesseract", BaseURL: "http://x"},
 			wantErr:  "API key",

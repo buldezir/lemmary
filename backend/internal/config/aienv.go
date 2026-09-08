@@ -214,6 +214,15 @@ func parseOCR(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error) {
 			"%s=%q cannot read a document (want one of %s)",
 			EnvOCRSDK, sdk, strings.Join(aiprovider.OCRSDKs(), ", "))
 	}
+	// EnvOCRSDKs, not OCRSDKs: chatgpt reads documents perfectly well, but its
+	// credential is minted by signing in rather than written down, so naming it
+	// here would seed a row the file naming it can never complete. Bind OCR to
+	// it from Settings instead, once it is signed in.
+	if aiprovider.RequiresOAuth(sdk) {
+		return aiprovider.ProviderSpec{}, fmt.Errorf(
+			"%s=%q cannot be configured from the environment: it is signed in to from Settings, not given a key (want one of %s)",
+			EnvOCRSDK, sdk, strings.Join(aiprovider.EnvOCRSDKs(), ", "))
+	}
 
 	// The same SDK is the same endpoint: reuse the language model's credential
 	// and address rather than making an operator write them out twice.

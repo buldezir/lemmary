@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openai/openai-go/option"
+
 	"lemmary/backend/internal/aiprovider"
 )
 
@@ -35,7 +37,13 @@ type ProviderInfo struct {
 	SDK  string `json:"sdk"`
 }
 
-func NewFromAIProvider(p aiprovider.Provider, model string, timeout time.Duration, logger *slog.Logger) (Provider, error) {
+// NewFromAIProvider builds the OCR provider a row describes.
+//
+// extra carries request options the caller had to build for it -- today only
+// the chatgpt middleware, which mints a bearer token per request because that
+// SDK's credential expires hourly and cannot be baked into a client. See
+// config.providerCredential.
+func NewFromAIProvider(p aiprovider.Provider, model string, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) (Provider, error) {
 	// Asked first, so an SDK that can never read a document says so instead of
 	// complaining about a missing model or key it would have no use for.
 	if !aiprovider.CanOCR(p.SDK) {
@@ -64,9 +72,13 @@ func NewFromAIProvider(p aiprovider.Provider, model string, timeout time.Duratio
 	case aiprovider.SDKMistral:
 		logger.Info("using provider", "provider", p.Alias, "sdk", p.SDK, "model", model)
 		return NewMistralProvider(p.APIKey, model, p.BaseURL, timeout, logger), nil
-	case aiprovider.SDKOpenAI, aiprovider.SDKOpenRouter:
+	case aiprovider.SDKOpenAI, aiprovider.SDKOpenRouter, aiprovider.SDKChatGPT:
+		// chatgpt joins the metered LLM SDKs here rather than getting a branch
+		// of its own: the request is the same multimodal chat completion, and
+		// what differs -- a minted bearer token, and the Responses rewrite
+		// underneath -- is entirely inside the options in extra.
 		logger.Info("using provider", "provider", p.Alias, "sdk", p.SDK, "model", model)
-		return NewLLMProvider(p, model, timeout, logger), nil
+		return NewLLMProvider(p, model, timeout, logger, extra...), nil
 	case aiprovider.SDKDocling:
 		// model names docling's OCR engine here, not a model; empty leaves the
 		// choice to the server. p.APIKey is optional and usually empty.

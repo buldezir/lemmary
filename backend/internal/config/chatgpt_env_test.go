@@ -31,9 +31,11 @@ func TestChatGPTIsNotAnAISDKValue(t *testing.T) {
 	}
 }
 
-// OCR_SDK=chatgpt is valid as an SDK and useless for this job, the same
-// situation `local` is in. The message used to say "it serves embeddings only",
-// which was true of the only SDK that could reach it at the time.
+// OCR_SDK=chatgpt is refused, but no longer for want of the capability: the SDK
+// reads documents now. The obstacle is the credential -- a sign-in cannot be
+// written into a file -- so the message has to say that rather than repeat the
+// old "cannot read a document", which would now be a lie an operator could
+// disprove from Settings.
 func TestChatGPTIsNotAnOCRSDKValue(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAIAPIKey, "sk-test")
@@ -48,6 +50,17 @@ func TestChatGPTIsNotAnOCRSDKValue(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "embeddings only") {
 		t.Errorf("the error still describes the wrong SDK: %v", err)
+	}
+	if strings.Contains(err.Error(), "cannot read a document") {
+		t.Errorf("the error blames the capability, which chatgpt now has: %v", err)
+	}
+	if !strings.Contains(err.Error(), "Settings") {
+		t.Errorf("the error does not say where the provider can be configured: %v", err)
+	}
+	// Same trap as the AI_SDK message above: the alternatives are derived, so
+	// chatgpt must not appear in its own "want one of" list.
+	if strings.Contains(err.Error(), "want one of") && strings.Count(err.Error(), aiprovider.SDKChatGPT) > 1 {
+		t.Errorf("the error offers chatgpt as an alternative to itself: %v", err)
 	}
 }
 

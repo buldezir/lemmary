@@ -2,8 +2,8 @@
 
 Lemmary can run its language-model work on a **ChatGPT Plus, Pro or Business
 subscription** instead of a metered API key. You sign in once with a device
-code, bind chat, extraction and Deep Search to it, and those calls come out of
-the seat you already pay for rather than out of API credits.
+code, bind chat, extraction, Deep Search and OCR to it, and those calls come out
+of the seat you already pay for rather than out of API credits.
 
 It is off unless you turn it on, and there are good reasons for that. Read the
 whole page before you do.
@@ -15,13 +15,25 @@ whole page before you do.
 | Document chat | ✅ |
 | Metadata extraction | ✅ |
 | Deep Search (and its per-document helper) | ✅ |
-| Embeddings | ❌ — keep a keyed provider bound |
-| OCR | ❌ — keep Mistral, Google Vision or the Docling sidecar |
+| OCR | ✅ — a PDF or an image, up to 10 MB, read by the bound model |
+| Embeddings | ❌ — keep a keyed provider or the sidecar bound |
 
-The endpoint behind this SDK serves one thing: a conversation. It has no
-`/embeddings` and accepts no attachments, so Settings refuses to bind a
-`chatgpt` provider to embeddings or OCR. A mixed install is the normal shape —
-chat on the subscription, embeddings and OCR on something else.
+OCR works the same way it does on OpenAI or OpenRouter: the file goes to the
+model as an attachment and the model transcribes it. So the whole pipeline can
+run on the subscription — which means an instance whose only AI credential is a
+ChatGPT seat is a complete install, with no API key anywhere.
+
+Embeddings are the exception, and not a matter of degree: the endpoint has no
+`/embeddings` at all, so Settings refuses that binding. Deep Search still works
+without them — it falls back to keyword matching — but its dense half needs a
+keyed provider or the [local embeddings sidecar](/local_embeddings).
+
+Two things worth knowing before you put OCR here. A subscription's quota is a
+window rather than a meter, and OCR is the heaviest thing Lemmary does per
+document, so a bulk import can spend a window quickly. And these are general
+models being asked to read a scan, not a document endpoint: Mistral's OCR is
+purpose-built for the job and the Docling sidecar does it without leaving your
+host. Either is the better OCR if you have it.
 
 ## What you are agreeing to
 
@@ -85,14 +97,26 @@ SDK.
 
 ### 4. Bind the models
 
-Under **Settings → Models**, point **Chat**, **Extraction**, **Deep Search** or
-the **Deep Search helper** at the new provider and pick a model. The picker is
-served locally — the endpoint publishes no catalogue — and the **Custom model
-id** box takes anything the list does not name. Which models the account may
-actually use depends on its plan; one it may not use fails on the first request
-with the backend's own message.
+Under **Settings → Models**, point **Chat**, **Extraction**, **Deep Search**,
+the **Deep Search helper** or **OCR** at the new provider and pick a model. The
+picker is served locally — the endpoint publishes no catalogue — and the
+**Custom model id** box takes anything the list does not name. Which models the
+account may actually use depends on its plan; one it may not use fails on the
+first request with the backend's own message.
 
-Leave **Embeddings** and **OCR** where they are.
+The same list is offered for OCR as for chat, because the Codex catalogue says
+nothing about which models read a file. Pick a full model rather than a `mini`
+one if the scans are poor.
+
+Leave **Embeddings** where it is.
+
+### Setting up a fresh instance this way
+
+The setup wizard offers **ChatGPT subscription** too, once `AI_CHATGPT_LOGIN=1`
+is set, so a first-boot instance can be configured with no API key at all.
+Choosing it saves the provider row and then holds the step open for the
+sign-in — the token needs a row to be stored against — and setup carries on to
+the model bindings once you have approved the code.
 
 ## Signing out, and signing in as somebody else
 
@@ -127,6 +151,15 @@ not covering the bound model. Try the default model, or a smaller one.
 **Requests start failing for everyone at once** — most likely the quota window,
 or a change on OpenAI's side. Rebind chat and Deep Search to a keyed provider
 while you work out which.
+
+**OCR returns empty or invented text** — the model was handed the file but
+could not read it, or was a `mini` model on a poor scan. Try a larger model
+first. `OCR_SDK=chatgpt` is refused in `.env`, by the way: the environment can
+carry a key but not a sign-in, so OCR is bound to this provider from Settings.
+
+**"LLM OCR does not support mime type ..."** — the attachment path takes PDFs
+and images only, the same as OpenAI and OpenRouter. Anything else needs Mistral,
+Google Vision or the Docling sidecar.
 
 **Extraction results got worse after switching** — extraction asks for JSON, and
 a backend that will not honour the request is answered in plain text and parsed

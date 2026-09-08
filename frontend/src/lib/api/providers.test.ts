@@ -153,16 +153,18 @@ describe('eligibleProviders', () => {
   })
 })
 
-// chatgpt is the mirror image of local: it chats and does nothing else, where
-// local embeds and does nothing else. Both exist to keep these predicates from
-// collapsing back into one "is it a hosted LLM" question.
+// chatgpt is what keeps these predicates from collapsing back into one "is it
+// a hosted LLM" question: it chats and reads documents but does not embed,
+// where local embeds and does nothing else.
 describe('the ChatGPT subscription SDK', () => {
-  it('chats but neither embeds nor reads a document', () => {
+  it('chats and reads documents but does not embed', () => {
     expect(isLLMProvider('chatgpt')).toBe(true)
     expect(canEmbedProvider('chatgpt')).toBe(false)
     expect(providerServesPurpose('chatgpt', 'llm')).toBe(true)
+    expect(providerServesPurpose('chatgpt', 'ocr')).toBe(true)
+    // The Codex backend serves no /embeddings at all, so this is the one
+    // binding it cannot take.
     expect(providerServesPurpose('chatgpt', 'embedding')).toBe(false)
-    expect(providerServesPurpose('chatgpt', 'ocr')).toBe(false)
   })
 
   it('signs in instead of taking a key', () => {
