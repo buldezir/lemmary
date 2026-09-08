@@ -58,19 +58,38 @@ export type DocumentRecord = {
   }
 }
 
+// The three fields a file URL is built from. Narrower than DocumentRecord so a
+// caller can depend on these primitives instead of the whole record, which the
+// detail page replaces once a second while the pipeline runs.
+export type DocumentFileRef = Pick<DocumentRecord, 'id' | 'collectionId' | 'file'>
+
 // The document file fields are protected, so a bare file URL is refused by the
 // server: access needs a short-lived file token minted for the signed-in user.
 // A plain URL would be a bearer capability — valid for anyone holding the
 // link, surviving logout for as long as the record exists.
-export async function fileUrlWithToken(record: DocumentRecord, filename?: string) {
-  const token = await pb.files.getToken()
-  return pb.files.getURL(record, filename ?? record.file, { token })
+//
+// requestKey: null — the token endpoint is one path, so two concurrent mints
+// would otherwise auto-cancel each other and the loser would reject as an
+// abort. Two at once is ordinary: the preview pane mints on mount while the
+// user clicks Open file.
+export async function fileUrlWithToken(record: DocumentFileRef, filename?: string) {
+  const name = filename ?? record.file
+  // getURL answers "" for an empty filename, and fetching "" resolves against
+  // the current page — index.html, with a 200, which no response check would
+  // catch. A document with no file has no URL, and says so.
+  if (!name) {
+    throw new Error('This document has no file.')
+  }
+
+  await ensureAuth()
+  const token = await pb.files.getToken({ requestKey: null })
+  return pb.files.getURL(record, name, { token })
 }
 
 // Opens a document file in a new tab. The tab is opened synchronously in the
 // click handler — a window.open that happens after an await is eaten by popup
 // blockers — and pointed at the tokened URL once it arrives.
-export async function openDocumentFile(record: DocumentRecord, filename?: string) {
+export async function openDocumentFile(record: DocumentFileRef, filename?: string) {
   const tab = window.open('', '_blank')
   try {
     const url = await fileUrlWithToken(record, filename)

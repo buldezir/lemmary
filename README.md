@@ -35,8 +35,9 @@ that counts the archive by month:
 
 ![Documents](docs/screenshots/documents.png)
 
-Document detail with editable metadata, summary, and OCR text. Fields the model
-wrote in the document's own language keep the original under the translation:
+Document detail: the file itself beside editable metadata, summary, and OCR
+text. Fields the model wrote in the document's own language keep the original
+under the translation:
 
 ![Document detail](docs/screenshots/document-detail.png)
 
