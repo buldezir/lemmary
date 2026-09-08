@@ -27,6 +27,9 @@ import {
   type ProcessingStep,
 } from '../lib/processing'
 import { Button } from '../components/ui'
+import { DocumentPreview } from '../components/DocumentPreview'
+import { useStoredFlag } from '../hooks/useStoredFlag'
+import { previewKind } from '../lib/documentPreview'
 
 function backLabel() {
   return documentsLanding() === '/inbox' ? 'Back to the Inbox' : 'Back to documents'
@@ -48,6 +51,7 @@ export function DocumentDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [reprocessSteps, setReprocessSteps] = useState<ProcessingStep[]>([])
   const [showProcessingJob, setShowProcessingJob] = useState(false)
+  const [showPreview, setShowPreview] = useStoredFlag('lemmary.showPreview', true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
@@ -167,6 +171,33 @@ export function DocumentDetailPage() {
   }, [documentId])
 
   const hasOcrText = Boolean(document?.ocr_text?.trim())
+
+  // The pane's premise is "beside the fields", which only holds from xl up.
+  // Narrower than that it would be a viewport-tall block above the form -- and
+  // a blank one on iOS Safari and Android Chrome, which do not render a framed
+  // PDF. Gated in JS rather than hidden by CSS so a phone does not download the
+  // file to lay out something it will never show.
+  const [wideEnough, setWideEnough] = useState(() => previewViewport().matches)
+  useEffect(() => {
+    const query = previewViewport()
+    const onChange = (event: MediaQueryListEvent) => setWideEnough(event.matches)
+    query.addEventListener('change', onChange)
+    return () => query.removeEventListener('change', onChange)
+  }, [])
+
+  // docx, xlsx and the plain-text types have nothing a browser can frame -- and
+  // for txt and csv the text is already in the OCR-text field below. Rather
+  // than reserve a column to say so, those documents simply have no pane and no
+  // toggle, and keep the full width for their fields.
+  const canPreview =
+    wideEnough && Boolean(document?.file) && previewKind(document?.file ?? '') !== 'none'
+
+  // Latches on the first show, because hiding the pane must not unmount the
+  // viewer: a remount resets a PDF to page one and loses find-in-document,
+  // which is the opposite of what the button is for. Hiding it with CSS keeps
+  // the page it was on. Not mounted before the first show, so a reader who
+  // turned the pane off does not pay for a file they are not looking at.
+  const [previewMounted, setPreviewMounted] = useState(showPreview)
 
   // The job as well as the document, for the reason the poll gate above gives:
   // apply_metadata marks the document completed while embed is still running,
@@ -418,7 +449,7 @@ export function DocumentDetailPage() {
             Status: {DOCUMENT_STATUS_LABELS[document.processing_status]}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           {document.processing_status === 'needs_review' && !editing && (
             <Button
               variant="secondary"
@@ -443,6 +474,23 @@ export function DocumentDetailPage() {
           >
             Ask AI
           </Link>
+          {canPreview && (
+            <button
+              type="button"
+              aria-pressed={showPreview}
+              onClick={() => {
+                setPreviewMounted(true)
+                setShowPreview((visible) => !visible)
+              }}
+              className={`rounded-xs border px-4 py-2 text-sm font-medium transition-colors ${
+                showPreview
+                  ? 'border-ink bg-ink text-paper hover:bg-oxblood'
+                  : 'border-line-strong bg-surface text-ink-muted hover:bg-bright'
+              }`}
+            >
+              Preview
+            </button>
+          )}
           {document.file && (
             <button
               type="button"
@@ -489,275 +537,292 @@ export function DocumentDetailPage() {
         </div>
       </div>
 
-      {showProcessingJob && (
-        <div className="rounded-none border border-line bg-surface p-3">
-          {job ? (
-            <>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <h3 className="text-sm font-semibold text-ink">Processing job</h3>
-                <span className="bg-wash px-1.5 py-0.5 text-xs font-medium text-ink-muted">
-                  {job.status}
-                </span>
-                {job.current_step ? (
-                  <span className="text-xs text-ink-soft">current: {job.current_step}</span>
-                ) : null}
-                <span className="text-xs text-ink-soft">
-                  {(job.steps ?? []).join(' → ') || 'n/a'}
-                </span>
-                {jobTotalMs !== null ? (
-                  <span className="text-xs text-ink-soft">total: {formatDuration(jobTotalMs)}</span>
-                ) : null}
-              </div>
-              {job.step_runs && job.step_runs.length > 0 ? (
-                <ul className="mt-2 flex flex-col gap-1 text-sm text-ink-muted">
-                  {job.step_runs.map((run) => (
-                    <li key={run.name} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                      <span className="font-medium">{run.name}</span>
-                      <span className="bg-wash px-1.5 py-0.5 text-xs">{run.status}</span>
-                      {(() => {
-                        // Absent for a pending step and for a skipped one,
-                        // which finishes without ever having started.
-                        const ms = stepDurationMs(run, tick)
-                        if (ms === null) return null
-                        return (
-                          <span
-                            className="text-xs tabular-nums text-ink-soft"
-                            title={
-                              run.status === 'running'
-                                ? 'Elapsed so far'
-                                : run.attempts > 1
-                                  ? `Duration of attempt ${run.attempts}`
-                                  : 'Duration'
-                            }
-                          >
-                            {formatDuration(ms)}
-                            {run.status === 'running' ? '…' : ''}
+      {/* The pane sits left of the form, but after it in the DOM, so a keyboard
+          reaches the fields without tabbing through a PDF viewer's own
+          controls first. */}
+      <div className="flex flex-col gap-5 xl:flex-row xl:items-start">
+        <div className="flex min-w-0 flex-1 flex-col gap-5">
+          {showProcessingJob && (
+            <div className="rounded-none border border-line bg-surface p-3">
+              {job ? (
+                <>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <h3 className="text-sm font-semibold text-ink">Processing job</h3>
+                    <span className="bg-wash px-1.5 py-0.5 text-xs font-medium text-ink-muted">
+                      {job.status}
+                    </span>
+                    {job.current_step ? (
+                      <span className="text-xs text-ink-soft">current: {job.current_step}</span>
+                    ) : null}
+                    <span className="text-xs text-ink-soft">
+                      {(job.steps ?? []).join(' → ') || 'n/a'}
+                    </span>
+                    {jobTotalMs !== null ? (
+                      <span className="text-xs text-ink-soft">total: {formatDuration(jobTotalMs)}</span>
+                    ) : null}
+                  </div>
+                  {job.step_runs && job.step_runs.length > 0 ? (
+                    <ul className="mt-2 flex flex-col gap-1 text-sm text-ink-muted">
+                      {job.step_runs.map((run) => (
+                        <li key={run.name} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span className="font-medium">{run.name}</span>
+                          <span className="bg-wash px-1.5 py-0.5 text-xs">{run.status}</span>
+                          {(() => {
+                            // Absent for a pending step and for a skipped one,
+                            // which finishes without ever having started.
+                            const ms = stepDurationMs(run, tick)
+                            if (ms === null) return null
+                            return (
+                              <span
+                                className="text-xs tabular-nums text-ink-soft"
+                                title={
+                                  run.status === 'running'
+                                    ? 'Elapsed so far'
+                                    : run.attempts > 1
+                                      ? `Duration of attempt ${run.attempts}`
+                                      : 'Duration'
+                                }
+                              >
+                                {formatDuration(ms)}
+                                {run.status === 'running' ? '…' : ''}
+                              </span>
+                            )
+                          })()}
+                          {run.attempts > 0 ? (
+                            <span className="text-xs text-ink-soft">attempts: {run.attempts}</span>
+                          ) : null}
+                          {run.provider ? (
+                            <span className="text-xs text-ink-soft">provider: {run.provider}</span>
+                          ) : null}
+                          {run.model ? (
+                            <span className="text-xs text-ink-soft">model: {run.model}</span>
+                          ) : null}
+                          {run.prompt_version ? (
+                            <span className="text-xs text-ink-soft">prompt: {run.prompt_version}</span>
+                          ) : null}
+                          {run.error ? <span className="text-xs text-madder">{run.error}</span> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-sm font-semibold text-ink">Processing job</h3>
+                  <p className="text-xs text-ink-soft">
+                    No processing job is recorded for this document. It was imported from an export or
+                    added before the pipeline kept a history. Reprocessing it below creates one and
+                    runs the steps you choose.
+                  </p>
+                </div>
+              )}
+
+              <form
+                className="mt-3 flex flex-col gap-2 border-t border-line pt-3"
+                onSubmit={onReprocessSubmit}
+              >
+                <div>
+                  <h4 className="text-sm font-semibold text-ink">Reprocess</h4>
+                  <p className="mt-0.5 text-xs text-ink-soft">
+                    Choose which pipeline steps to run. Selected steps are forced to re-run even if
+                    output already exists.
+                  </p>
+                </div>
+                <fieldset className="flex flex-col gap-2" disabled={!canReprocess || reprocessing}>
+                  {FULL_PIPELINE_STEPS.map((step) => {
+                    const selectable = canSelectReprocessStep(step)
+                    const checked = reprocessSteps.includes(step)
+                    return (
+                      <label
+                        key={step}
+                        className={`flex items-start gap-2 rounded-xs border px-3 py-1.5 text-sm ${
+                          selectable
+                            ? 'border-line bg-bright text-ink-muted'
+                            : 'border-line/50 bg-wash/50 text-ink-faint'
+                        }`}
+                        title={
+                          step === 'extract_metadata' && !selectable
+                            ? 'OCR text required, or select OCR'
+                            : undefined
+                        }
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={checked}
+                          disabled={!selectable}
+                          onChange={() => toggleReprocessStep(step)}
+                        />
+                        <span>
+                          <span className="font-medium">{PROCESSING_STEP_LABELS[step]}</span>
+                          <span className="mt-0.5 block text-xs font-normal text-ink-soft">
+                            {PROCESSING_STEP_DESCRIPTIONS[step]}
                           </span>
-                        )
-                      })()}
-                      {run.attempts > 0 ? (
-                        <span className="text-xs text-ink-soft">attempts: {run.attempts}</span>
-                      ) : null}
-                      {run.provider ? (
-                        <span className="text-xs text-ink-soft">provider: {run.provider}</span>
-                      ) : null}
-                      {run.model ? (
-                        <span className="text-xs text-ink-soft">model: {run.model}</span>
-                      ) : null}
-                      {run.prompt_version ? (
-                        <span className="text-xs text-ink-soft">prompt: {run.prompt_version}</span>
-                      ) : null}
-                      {run.error ? <span className="text-xs text-madder">{run.error}</span> : null}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </>
-          ) : (
-            <div className="flex flex-col gap-1">
-              <h3 className="text-sm font-semibold text-ink">Processing job</h3>
-              <p className="text-xs text-ink-soft">
-                No processing job is recorded for this document. It was imported from an export or
-                added before the pipeline kept a history. Reprocessing it below creates one and
-                runs the steps you choose.
-              </p>
+                        </span>
+                      </label>
+                    )
+                  })}
+                </fieldset>
+                <Button
+                  type="submit"
+                  variant="danger"
+                  size="sm"
+                  className="self-start"
+                  disabled={!canReprocess || reprocessing || reprocessSteps.length === 0}
+                >
+                  {reprocessing ? 'Reprocessing...' : 'Reprocess selected steps'}
+                </Button>
+              </form>
             </div>
           )}
 
           <form
-            className="mt-3 flex flex-col gap-2 border-t border-line pt-3"
-            onSubmit={onReprocessSubmit}
+            className="grid grid-cols-1 gap-4 rounded-none border border-line bg-surface p-5 sm:grid-cols-2"
+            onSubmit={onSave}
           >
-            <div>
-              <h4 className="text-sm font-semibold text-ink">Reprocess</h4>
-              <p className="mt-0.5 text-xs text-ink-soft">
-                Choose which pipeline steps to run. Selected steps are forced to re-run even if
-                output already exists.
-              </p>
+            <label className={labelClass}>
+              Title
+              <input
+                className={fieldClass(editing)}
+                readOnly={!editing}
+                value={document.title ?? ''}
+                onChange={(event) => setDocument({ ...document, title: event.target.value })}
+              />
+              {document.title_original && document.title_original !== document.title && (
+                <span className="text-xs font-normal text-ink-soft">
+                  Original: {document.title_original}
+                </span>
+              )}
+            </label>
+
+            <label className={labelClass}>
+              Document date
+              <input
+                type="date"
+                className={fieldClass(editing)}
+                readOnly={!editing}
+                value={document.document_date?.slice(0, 10) ?? ''}
+                onChange={(event) => setDocument({ ...document, document_date: event.target.value })}
+              />
+            </label>
+
+            <label className={labelClass}>
+              Document type
+              <input
+                className={fieldClass(editing)}
+                readOnly={!editing}
+                value={documentTypeInput}
+                onChange={(event) => setDocumentTypeInput(event.target.value)}
+              />
+              {document.expand?.document_type?.name_original &&
+                document.expand.document_type.name_original !== document.expand.document_type.name && (
+                  <span className="text-xs font-normal text-ink-soft">
+                    Original: {document.expand.document_type.name_original}
+                  </span>
+                )}
+            </label>
+
+            <label className={labelClass}>
+              Correspondent
+              <input
+                className={fieldClass(editing)}
+                readOnly={!editing}
+                value={correspondentInput}
+                onChange={(event) => setCorrespondentInput(event.target.value)}
+              />
+              {document.expand?.correspondent?.name_original &&
+                document.expand.correspondent.name_original !== document.expand.correspondent.name && (
+                  <span className="text-xs font-normal text-ink-soft">
+                    Original: {document.expand.correspondent.name_original}
+                  </span>
+                )}
+            </label>
+
+            <label className={`${labelClass} sm:col-span-2`}>
+              Purpose
+              <input
+                className={fieldClass(editing)}
+                readOnly={!editing}
+                value={document.purpose ?? ''}
+                onChange={(event) => setDocument({ ...document, purpose: event.target.value })}
+              />
+              {document.purpose_original && document.purpose_original !== document.purpose && (
+                <span className="text-xs font-normal text-ink-soft">
+                  Original: {document.purpose_original}
+                </span>
+              )}
+            </label>
+
+            <label className={`${labelClass} sm:col-span-2`}>
+              Tags (comma separated)
+              <input
+                className={fieldClass(editing)}
+                readOnly={!editing}
+                value={tagInput}
+                onChange={(event) => setTagInput(event.target.value)}
+              />
+            </label>
+
+            <label className={`${labelClass} sm:col-span-2`}>
+              Summary
+              <textarea
+                rows={8}
+                className={textareaClass(editing)}
+                readOnly={!editing}
+                value={document.summary ?? ''}
+                onChange={(event) => setDocument({ ...document, summary: event.target.value })}
+              />
+              {document.summary_original && document.summary_original !== document.summary && (
+                <span className="text-xs font-normal text-ink-soft">
+                  Original: {document.summary_original}
+                </span>
+              )}
+            </label>
+
+            <label className={`${labelClass} sm:col-span-2`}>
+              OCR text
+              <textarea
+                rows={18}
+                readOnly
+                className={`${textareaClass(false)} min-h-96 font-mono text-xs leading-relaxed cursor-not-allowed`}
+                value={document.ocr_text ?? ''}
+              />
+            </label>
+
+            <div className="flex items-center gap-4 sm:col-span-2">
+              {editing ? (
+                <Button type="submit" disabled={saving}>
+                  {saving ? 'Saving...' : 'Save corrections'}
+                </Button>
+              ) : (
+                <Button
+                  onClick={(event) => {
+                    // Without preventDefault, React swaps this node into the
+                    // submit button before the browser applies the click's default
+                    // action, which would submit the form immediately.
+                    event.preventDefault()
+                    setEditing(true)
+                  }}
+                >
+                  Edit
+                </Button>
+              )}
+              {message && <p className="text-sm text-forest">{message}</p>}
+              {error && <p className="text-sm text-madder">{error}</p>}
             </div>
-            <fieldset className="flex flex-col gap-2" disabled={!canReprocess || reprocessing}>
-              {FULL_PIPELINE_STEPS.map((step) => {
-                const selectable = canSelectReprocessStep(step)
-                const checked = reprocessSteps.includes(step)
-                return (
-                  <label
-                    key={step}
-                    className={`flex items-start gap-2 rounded-xs border px-3 py-1.5 text-sm ${
-                      selectable
-                        ? 'border-line bg-bright text-ink-muted'
-                        : 'border-line/50 bg-wash/50 text-ink-faint'
-                    }`}
-                    title={
-                      step === 'extract_metadata' && !selectable
-                        ? 'OCR text required, or select OCR'
-                        : undefined
-                    }
-                  >
-                    <input
-                      type="checkbox"
-                      className="mt-0.5"
-                      checked={checked}
-                      disabled={!selectable}
-                      onChange={() => toggleReprocessStep(step)}
-                    />
-                    <span>
-                      <span className="font-medium">{PROCESSING_STEP_LABELS[step]}</span>
-                      <span className="mt-0.5 block text-xs font-normal text-ink-soft">
-                        {PROCESSING_STEP_DESCRIPTIONS[step]}
-                      </span>
-                    </span>
-                  </label>
-                )
-              })}
-            </fieldset>
-            <Button
-              type="submit"
-              variant="danger"
-              size="sm"
-              className="self-start"
-              disabled={!canReprocess || reprocessing || reprocessSteps.length === 0}
-            >
-              {reprocessing ? 'Reprocessing...' : 'Reprocess selected steps'}
-            </Button>
           </form>
         </div>
-      )}
 
-      <form
-        className="grid grid-cols-1 gap-4 rounded-none border border-line bg-surface p-5 sm:grid-cols-2"
-        onSubmit={onSave}
-      >
-        <label className={labelClass}>
-          Title
-          <input
-            className={fieldClass(editing)}
-            readOnly={!editing}
-            value={document.title ?? ''}
-            onChange={(event) => setDocument({ ...document, title: event.target.value })}
-          />
-          {document.title_original && document.title_original !== document.title && (
-            <span className="text-xs font-normal text-ink-soft">
-              Original: {document.title_original}
-            </span>
-          )}
-        </label>
-
-        <label className={labelClass}>
-          Document date
-          <input
-            type="date"
-            className={fieldClass(editing)}
-            readOnly={!editing}
-            value={document.document_date?.slice(0, 10) ?? ''}
-            onChange={(event) => setDocument({ ...document, document_date: event.target.value })}
-          />
-        </label>
-
-        <label className={labelClass}>
-          Document type
-          <input
-            className={fieldClass(editing)}
-            readOnly={!editing}
-            value={documentTypeInput}
-            onChange={(event) => setDocumentTypeInput(event.target.value)}
-          />
-          {document.expand?.document_type?.name_original &&
-            document.expand.document_type.name_original !== document.expand.document_type.name && (
-              <span className="text-xs font-normal text-ink-soft">
-                Original: {document.expand.document_type.name_original}
-              </span>
-            )}
-        </label>
-
-        <label className={labelClass}>
-          Correspondent
-          <input
-            className={fieldClass(editing)}
-            readOnly={!editing}
-            value={correspondentInput}
-            onChange={(event) => setCorrespondentInput(event.target.value)}
-          />
-          {document.expand?.correspondent?.name_original &&
-            document.expand.correspondent.name_original !== document.expand.correspondent.name && (
-              <span className="text-xs font-normal text-ink-soft">
-                Original: {document.expand.correspondent.name_original}
-              </span>
-            )}
-        </label>
-
-        <label className={`${labelClass} sm:col-span-2`}>
-          Purpose
-          <input
-            className={fieldClass(editing)}
-            readOnly={!editing}
-            value={document.purpose ?? ''}
-            onChange={(event) => setDocument({ ...document, purpose: event.target.value })}
-          />
-          {document.purpose_original && document.purpose_original !== document.purpose && (
-            <span className="text-xs font-normal text-ink-soft">
-              Original: {document.purpose_original}
-            </span>
-          )}
-        </label>
-
-        <label className={`${labelClass} sm:col-span-2`}>
-          Tags (comma separated)
-          <input
-            className={fieldClass(editing)}
-            readOnly={!editing}
-            value={tagInput}
-            onChange={(event) => setTagInput(event.target.value)}
-          />
-        </label>
-
-        <label className={`${labelClass} sm:col-span-2`}>
-          Summary
-          <textarea
-            rows={8}
-            className={textareaClass(editing)}
-            readOnly={!editing}
-            value={document.summary ?? ''}
-            onChange={(event) => setDocument({ ...document, summary: event.target.value })}
-          />
-          {document.summary_original && document.summary_original !== document.summary && (
-            <span className="text-xs font-normal text-ink-soft">
-              Original: {document.summary_original}
-            </span>
-          )}
-        </label>
-
-        <label className={`${labelClass} sm:col-span-2`}>
-          OCR text
-          <textarea
-            rows={18}
-            readOnly
-            className={`${textareaClass(false)} min-h-96 font-mono text-xs leading-relaxed cursor-not-allowed`}
-            value={document.ocr_text ?? ''}
-          />
-        </label>
-
-        <div className="flex items-center gap-4 sm:col-span-2">
-          {editing ? (
-            <Button type="submit" disabled={saving}>
-              {saving ? 'Saving...' : 'Save corrections'}
-            </Button>
-          ) : (
-            <Button
-              onClick={(event) => {
-                // Without preventDefault, React swaps this node into the
-                // submit button before the browser applies the click's default
-                // action, which would submit the form immediately.
-                event.preventDefault()
-                setEditing(true)
-              }}
-            >
-              Edit
-            </Button>
-          )}
-          {message && <p className="text-sm text-forest">{message}</p>}
-          {error && <p className="text-sm text-madder">{error}</p>}
-        </div>
-      </form>
+        {canPreview && previewMounted && (
+          <aside
+            className={`order-first w-2/5 shrink-0 sticky top-6 h-[calc(100vh-3rem)] ${
+              showPreview ? '' : 'hidden'
+            }`}
+          >
+            <DocumentPreview record={document} />
+          </aside>
+        )}
+      </div>
     </section>
   )
 }
@@ -774,4 +839,10 @@ function fieldClass(editing: boolean) {
 
 function textareaClass(editing: boolean) {
   return `${fieldClass(editing)} min-h-48 resize-y`
+}
+
+// Tailwind's xl, as a media query: the width at which the pane can sit beside
+// the form rather than on top of it.
+function previewViewport(): MediaQueryList {
+  return window.matchMedia('(min-width: 80rem)')
 }

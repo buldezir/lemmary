@@ -87,9 +87,12 @@ The less-travelled pages sit behind the header's gear menu.
 
 ## One document
 
-The detail page is where extraction gets reviewed. Fields the model wrote in the
-document's own language keep the original underneath the translation, so a
-German invoice reads in English without losing what it actually said.
+The detail page is where extraction gets reviewed. The file sits beside its
+metadata -- a PDF in the browser's own viewer, so you can read page three while
+correcting the fields it belongs to -- and the **Preview** button hides that
+column when the fields need the width. Fields the model wrote in the document's
+own language keep the original underneath the translation, so a German invoice
+reads in English without losing what it actually said.
 
 ![Document detail](./screenshots/document-detail.png)
 
