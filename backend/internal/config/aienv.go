@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/strutil"
 )
 
 // AIEnv is the AI configuration read from the environment, once, before the app exists.
@@ -164,7 +165,13 @@ func strictBool(key string) (bool, error) {
 }
 
 func parseLLM() (aiprovider.ProviderSpec, error) {
-	sdk := strings.TrimSpace(getEnv(EnvAISDK, aiprovider.SDKOpenAI))
+	baseURL := aiprovider.NormalizeBaseURL(
+		strings.TrimSpace(getEnv(EnvAISDK, aiprovider.SDKOpenAI)), os.Getenv(EnvAIBaseURL))
+	// An OpenAI-compatible SDK aimed at OpenCode is the opencode SDK; see
+	// aiprovider.NormalizeOpenCodeSDK. Read before the checks below, so the
+	// capability questions are asked of the SDK that will actually serve.
+	sdk := aiprovider.NormalizeOpenCodeSDK(
+		strings.TrimSpace(getEnv(EnvAISDK, aiprovider.SDKOpenAI)), baseURL)
 	// EnvLLMSDKs, not LLMSDKs: chatgpt chats, but its credential is minted by
 	// signing in rather than written down, so naming it here would seed a
 	// provider row that the file naming it can never complete.
@@ -177,7 +184,7 @@ func parseLLM() (aiprovider.ProviderSpec, error) {
 	spec := aiprovider.ProviderSpec{
 		SDK:            sdk,
 		APIKey:         strings.TrimSpace(os.Getenv(EnvAIAPIKey)),
-		BaseURL:        aiprovider.NormalizeBaseURL(sdk, os.Getenv(EnvAIBaseURL)),
+		BaseURL:        baseURL,
 		Model:          strings.TrimSpace(getEnv(EnvAIModel, aiprovider.DefaultExtractModel)),
 		EmbeddingModel: strings.TrimSpace(os.Getenv(EnvAIEmbeddingModel)),
 		HelperModel:    strings.TrimSpace(os.Getenv(EnvAISearchHelperModel)),
@@ -191,6 +198,11 @@ func parseOCR(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error) {
 	key := strings.TrimSpace(os.Getenv(EnvOCRAPIKey))
 	baseURL := strings.TrimSpace(os.Getenv(EnvOCRBaseURL))
 	model := strings.TrimSpace(os.Getenv(EnvOCRModel))
+	// Same reading as parseLLM, and before the SDK is compared with the
+	// language model's -- otherwise an OCR_SDK=openai on the same OpenCode
+	// endpoint would look like a second provider and be refused for having no
+	// key of its own.
+	sdk = aiprovider.NormalizeOpenCodeSDK(sdk, strutil.FirstNonEmpty(baseURL, llm.BaseURL))
 
 	if sdk == "" {
 		if key != "" || baseURL != "" || model != "" {
@@ -274,6 +286,10 @@ func parseEmbedding(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error
 	key := strings.TrimSpace(os.Getenv(EnvAIEmbeddingAPIKey))
 	baseURL := strings.TrimSpace(os.Getenv(EnvAIEmbeddingBaseURL))
 	model := strings.TrimSpace(os.Getenv(EnvAIEmbeddingModel))
+	// Same reading as parseLLM. It makes CanEmbed below refuse an
+	// AI_EMBEDDING_SDK=openai pointed at OpenCode, which is the honest answer:
+	// that endpoint has no /embeddings whatever the variable calls it.
+	sdk = aiprovider.NormalizeOpenCodeSDK(sdk, strutil.FirstNonEmpty(baseURL, llm.BaseURL))
 
 	if sdk == "" {
 		if key != "" || baseURL != "" {

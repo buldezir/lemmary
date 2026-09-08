@@ -329,11 +329,14 @@ size, memory, GPU variants and the per-page cost — is in
   SDK carries the table. On any other SDK every model goes to
   `/chat/completions`, and two thirds of the catalogue is not there.
 
-  An install that predates the SDK is moved onto it on the first boot after the
-  upgrade — a provider whose base URL addresses `opencode.ai` has its SDK
-  rewritten — so this only bites a row created by hand afterwards. The same
-  applies to the `x-opencode-session` header, which Opencode requires and which
-  only the `opencode` SDK sends.
+  An install that predates the SDK needs no edit: `AI_SDK=openai` with a base
+  URL addressing `opencode.ai` is *read* as `AI_SDK=opencode`, and the provider
+  row it seeded is moved onto that SDK by migration `1730000026`. Both halves
+  matter — a managed instance re-applies its environment on every boot, so the
+  row alone would be moved straight back. So this only bites a row created by
+  hand afterwards, or one pointed at Opencode through a URL that hides the
+  host. The same applies to the `x-opencode-session` header, which Opencode
+  requires and which only the `opencode` SDK sends.
 
   The routing, for reference. A model Lemmary has not heard of goes to
   `/chat/completions`, which is the endpoint whose refusal names the problem:

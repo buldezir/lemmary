@@ -62,7 +62,10 @@ func moveOpenCodeRows(app core.App, from []string, to string) error {
 			continue
 		}
 		for _, record := range records {
-			if !aiprovider.IsOpenCodeURL(record.GetString("base_url")) {
+			// The same rule the environment reads, so a row and the variable
+			// that seeded it cannot disagree about what an openai SDK on an
+			// opencode.ai base URL means.
+			if aiprovider.NormalizeOpenCodeSDK(sdk, record.GetString("base_url")) != aiprovider.SDKOpenCode {
 				continue
 			}
 			record.Set("sdk", to)

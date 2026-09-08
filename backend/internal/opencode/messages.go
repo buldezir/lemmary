@@ -323,7 +323,7 @@ func messagesFrom(messages []openai.ChatCompletionMessageParamUnion) ([]anthropi
 			if err != nil {
 				return nil, nil, err
 			}
-			out = append(out, anthropic.NewUserMessage(blocks...))
+			out = appendBlocks(out, anthropic.MessageParamRoleUser, blocks...)
 		case msg.OfAssistant != nil:
 			var blocks []anthropic.ContentBlockParamUnion
 			if text := msg.OfAssistant.Content.OfString.Or(""); text != "" {
@@ -340,15 +340,41 @@ func messagesFrom(messages []openai.ChatCompletionMessageParamUnion) ([]anthropi
 			if len(blocks) == 0 {
 				continue
 			}
-			out = append(out, anthropic.NewAssistantMessage(blocks...))
+			out = appendBlocks(out, anthropic.MessageParamRoleAssistant, blocks...)
 		case msg.OfTool != nil:
-			out = append(out, anthropic.NewUserMessage(
-				anthropic.NewToolResultBlock(msg.OfTool.ToolCallID, msg.OfTool.Content.OfString.Or(""), false)))
+			out = appendBlocks(out, anthropic.MessageParamRoleUser,
+				anthropic.NewToolResultBlock(msg.OfTool.ToolCallID, msg.OfTool.Content.OfString.Or(""), false))
 		default:
 			return nil, nil, fmt.Errorf("messages: unsupported message shape")
 		}
 	}
 	return system, out, nil
+}
+
+// appendBlocks adds blocks to the conversation under role, merging them into
+// the previous turn when that turn has the same role.
+//
+// The Messages API alternates user and assistant turns, and a chat completion
+// list does not: a round of parallel tool calls answers with one tool-role
+// message per call, and Deep Search then appends a user instruction after them
+// -- three messages that all become user turns. Anthropic's own API documents
+// that it combines consecutive same-role turns, but OpenCode's /messages
+// models are MiniMax and Qwen behind a translating gateway, and a tool_use left
+// unanswered in the turn that immediately follows it is a 400 wherever the
+// combining does not happen. Merging here costs a few lines and removes the
+// question.
+//
+// Order within the merged turn is preserved, which is what keeps the
+// tool_result blocks ahead of the instruction that follows them.
+func appendBlocks(out []anthropic.MessageParam, role anthropic.MessageParamRole, blocks ...anthropic.ContentBlockParamUnion) []anthropic.MessageParam {
+	if len(blocks) == 0 {
+		return out
+	}
+	if n := len(out); n > 0 && out[n-1].Role == role {
+		out[n-1].Content = append(out[n-1].Content, blocks...)
+		return out
+	}
+	return append(out, anthropic.MessageParam{Role: role, Content: blocks})
 }
 
 // userBlocksFrom carries a user message across, including the image and file

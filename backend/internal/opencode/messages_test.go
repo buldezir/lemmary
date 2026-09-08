@@ -415,3 +415,89 @@ func TestStreamingDeltasAndUsage(t *testing.T) {
 		t.Errorf("usage = %+v, want 9/2/4 from message_delta", usage)
 	}
 }
+
+// A round of parallel tool calls answers with one tool-role message per call,
+// and Deep Search then appends its answer instruction after them. All three are
+// user turns on this API, and the Messages shape alternates roles: a tool_use
+// left unanswered in the turn immediately following it is a 400 wherever the
+// gateway does not combine them for us.
+//
+// This is the shape research.go actually builds -- the tool loop appends a
+// ToolMessage per call, then answerResearch appends a UserMessage.
+func TestParallelToolResultsLandInOneUserTurn(t *testing.T) {
+	t.Parallel()
+	srv := &messagesServer{}
+	base := srv.start(t, textReply("ok"))
+	client := NewMessages("k", base, time.Second)
+
+	_, err := CompleteViaMessages(context.Background(), client, nil, base, openai.ChatCompletionNewParams{
+		Model: shared.ChatModel("minimax-m3"),
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.UserMessage("how much did I pay?"),
+			{OfAssistant: &openai.ChatCompletionAssistantMessageParam{
+				ToolCalls: []openai.ChatCompletionMessageToolCallParam{
+					{ID: "call_1", Function: openai.ChatCompletionMessageToolCallFunctionParam{
+						Name: "search_documents", Arguments: `{"q":"rent"}`}},
+					{ID: "call_2", Function: openai.ChatCompletionMessageToolCallFunctionParam{
+						Name: "read_documents", Arguments: `{"ids":["doc1"]}`}},
+				},
+			}},
+			openai.ToolMessage("two hits", "call_1"),
+			openai.ToolMessage("the text", "call_2"),
+			openai.UserMessage("now write the answer"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("CompleteViaMessages: %v", err)
+	}
+
+	messages, ok := srv.body["messages"].([]any)
+	if !ok {
+		t.Fatalf("messages = %v", srv.body["messages"])
+	}
+	// user / assistant / user, not user / assistant / user / user / user.
+	var roles []string
+	for _, m := range messages {
+		roles = append(roles, m.(map[string]any)["role"].(string))
+	}
+	if strings.Join(roles, ",") != "user,assistant,user" {
+		t.Fatalf("roles = %v, want the turns to alternate", roles)
+	}
+
+	// Both tool_results are in the turn right after the tool_use blocks, and
+	// the instruction that followed them is still after them.
+	last, _ := json.Marshal(messages[2])
+	for _, want := range []string{`"tool_use_id":"call_1"`, `"tool_use_id":"call_2"`, "now write the answer"} {
+		if !strings.Contains(string(last), want) {
+			t.Errorf("final user turn missing %s: %s", want, last)
+		}
+	}
+	if i, j := strings.Index(string(last), "call_2"), strings.Index(string(last), "now write"); i > j {
+		t.Errorf("the instruction was merged ahead of a tool_result: %s", last)
+	}
+}
+
+// The merge must not run two separate exchanges together: an assistant turn
+// between two user turns is what keeps them apart.
+func TestSeparateTurnsAreNotMerged(t *testing.T) {
+	t.Parallel()
+	srv := &messagesServer{}
+	base := srv.start(t, textReply("ok"))
+	client := NewMessages("k", base, time.Second)
+
+	_, err := CompleteViaMessages(context.Background(), client, nil, base, openai.ChatCompletionNewParams{
+		Model: shared.ChatModel("minimax-m3"),
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.UserMessage("first"),
+			openai.AssistantMessage("answer"),
+			openai.UserMessage("second"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("CompleteViaMessages: %v", err)
+	}
+	messages, _ := srv.body["messages"].([]any)
+	if len(messages) != 3 {
+		t.Fatalf("messages = %d, want the three turns kept apart", len(messages))
+	}
+}
