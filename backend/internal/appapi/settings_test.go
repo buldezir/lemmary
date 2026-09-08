@@ -1,10 +1,12 @@
 package appapi
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
 
+	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/config"
 )
 
@@ -130,5 +132,84 @@ func TestSettingsResponseExposesTheEmbeddingBinding(t *testing.T) {
 	}
 	if got.EmbeddingDims != 1536 {
 		t.Fatalf("embedding_dims = %d, want 1536", got.EmbeddingDims)
+	}
+}
+
+// The three binding messages are derived from the capability predicates, so a
+// new SDK cannot leave a sentence naming an old list. The OCR one had already
+// gone stale once -- it named four SDKs after docling shipped -- which is what
+// these pin.
+func TestBindingRefusalsNameEverySDKThatCouldServe(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		need    providerNeed
+		refused string
+		serves  []string
+		mustSay []string
+	}{
+		// refused is a real SDK this binding turns down, which is how the
+		// message is reached. CanOCR answers true for anything it does not know,
+		// so an invented name would not do -- and would not be reachable anyway,
+		// since ValidSDK gates what a row may hold.
+		{"llm", needLLM, aiprovider.SDKGoogleVision, aiprovider.LLMSDKs(),
+			[]string{aiprovider.SDKChatGPT}},
+		{"embedding", needEmbedding, aiprovider.SDKGoogleVision, aiprovider.EmbeddingSDKs(),
+			[]string{aiprovider.SDKLocalEmbeddings}},
+		{"ocr", needOCR, aiprovider.SDKLocalEmbeddings, aiprovider.OCRSDKs(),
+			[]string{aiprovider.SDKDocling, aiprovider.SDKChatGPT}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := providerServes(aiprovider.Provider{SDK: tc.refused}, tc.need)
+			if err == nil {
+				t.Fatalf("%s was accepted for this binding", tc.refused)
+			}
+			for _, sdk := range tc.serves {
+				if !strings.Contains(err.Error(), sdk) {
+					t.Errorf("message omits %s, which can serve this binding: %v", sdk, err)
+				}
+			}
+			// Named explicitly too, so the derivation cannot quietly stop
+			// producing the SDKs these messages used to leave out.
+			for _, sdk := range tc.mustSay {
+				if !strings.Contains(err.Error(), sdk) {
+					t.Errorf("message omits %s: %v", sdk, err)
+				}
+			}
+		})
+	}
+
+	// And every SDK that can serve is actually accepted, so the lists and the
+	// predicates cannot disagree.
+	for _, sdk := range aiprovider.OCRSDKs() {
+		if err := providerServes(aiprovider.Provider{SDK: sdk}, needOCR); err != nil {
+			t.Errorf("OCR refused %s, which OCRSDKs names: %v", sdk, err)
+		}
+	}
+	if err := providerServes(aiprovider.Provider{SDK: aiprovider.SDKLocalEmbeddings}, needOCR); err == nil {
+		t.Error("OCR accepted the embeddings-only SDK")
+	}
+	if err := providerServes(aiprovider.Provider{SDK: aiprovider.SDKChatGPT}, needEmbedding); err == nil {
+		t.Error("embeddings accepted chatgpt, whose endpoint has none")
+	}
+}
+
+func TestOneOfReadsAsASentence(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		sdks []string
+		want string
+	}{
+		{nil, "a configured"},
+		{[]string{"openai"}, "an openai"},
+		{[]string{"openai", "mistral"}, "an openai or mistral"},
+		{[]string{"openai", "mistral", "local"}, "an openai, mistral, or local"},
+		{[]string{"docling"}, "a docling"},
+	}
+	for _, tc := range cases {
+		if got := oneOf(tc.sdks); got != tc.want {
+			t.Errorf("oneOf(%v) = %q, want %q", tc.sdks, got, tc.want)
+		}
 	}
 }

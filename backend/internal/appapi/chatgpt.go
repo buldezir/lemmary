@@ -60,6 +60,13 @@ func lockLogin(providerID string) func() {
 	return mu.Unlock
 }
 
+// chatgptClient is the auth client the sign-in handlers use. It reads the
+// endpoints rather than closing over them, so the end-to-end suite's stub host
+// is picked up by a handler registered before it was installed.
+func chatgptClient() *chatgpt.Client {
+	return chatgpt.NewClient(nil).WithEndpoints(chatgpt.AuthEndpoints())
+}
+
 func chatgptProvider(app core.App, e *core.RequestEvent) (*core.Record, error) {
 	id := strings.TrimSpace(e.Request.PathValue("id"))
 	record, err := app.FindRecordById(aiprovider.CollectionName, id)
@@ -87,7 +94,7 @@ func handleChatGPTDeviceStart(app core.App, rt *config.Runtime) func(*core.Reque
 			return err
 		}
 
-		pending, startErr := chatgpt.NewClient(nil).StartDeviceLogin(e.Request.Context())
+		pending, startErr := chatgptClient().StartDeviceLogin(e.Request.Context())
 		if startErr != nil {
 			return writeChatGPTAuthError(e, app, startErr)
 		}
@@ -143,7 +150,7 @@ func handleChatGPTDevicePoll(app core.App, rt *config.Runtime) func(*core.Reques
 		}
 		pending := value.(*chatgpt.Pending)
 
-		tok, pollErr := chatgpt.NewClient(nil).PollDeviceLogin(e.Request.Context(), pending)
+		tok, pollErr := chatgptClient().PollDeviceLogin(e.Request.Context(), pending)
 		switch {
 		case errors.Is(pollErr, chatgpt.ErrAuthPending):
 			return writeJSON(e, http.StatusOK, map[string]any{"status": "pending"})

@@ -50,6 +50,30 @@ func DefaultEndpoints() Endpoints {
 	}
 }
 
+// authEndpoints is what the sign-in handlers reach. DefaultEndpoints in every
+// deployment; the end-to-end suite points it at a stub auth host, which is the
+// only way to drive the device flow without OpenAI's own and a human in a
+// second browser tab.
+//
+// A package variable, and deliberately not an environment variable or a
+// parameter threaded through Register. An env variable would be a shippable
+// setting that redirects an OAuth flow to an arbitrary host, which is a
+// configuration mistake worth making impossible; a parameter would carry a
+// test seam through appwire and main for the sake of one suite. This is
+// reachable only from Go code linked into the same binary.
+var authEndpoints = DefaultEndpoints()
+
+// AuthEndpoints returns the endpoints the sign-in handlers use.
+func AuthEndpoints() Endpoints { return authEndpoints }
+
+// SetAuthEndpointsForTesting repoints the sign-in flow and returns a function
+// that puts it back. Never called outside a test binary.
+func SetAuthEndpointsForTesting(e Endpoints) func() {
+	previous := authEndpoints
+	authEndpoints = e
+	return func() { authEndpoints = previous }
+}
+
 var (
 	// ErrAuthPending is the operator not having finished in the browser yet.
 	// Expected, and the reason polling exists; never surfaced as a failure.

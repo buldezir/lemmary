@@ -288,7 +288,9 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           <h2 className="mb-4 font-display text-lg font-semibold text-ink">
             {step === 'admin' && 'Create your admin account'}
             {step === 'passkey' && 'Add a passkey'}
-            {step === 'providers' && 'Add a provider'}
+            {/* The sign-in stands on a row that is already added, so the
+                heading follows what the step is actually asking for. */}
+            {step === 'providers' && (signInProvider ? 'Sign in to ChatGPT' : 'Add a provider')}
             {step === 'models' && 'Choose models'}
             {step === 'done' && 'Setup complete'}
           </h2>
