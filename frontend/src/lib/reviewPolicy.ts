@@ -7,8 +7,7 @@
  * cannot await anything. It arrives once with /api/app/meta and changes only
  * when an admin saves Settings.
  *
- * Defaults to off, which is the behaviour from before the Inbox existed:
- * unknown must not narrow anybody's document list.
+ * Defaults to off, which is the behaviour from before the Inbox existed.
  */
 
 let alwaysRequireReview = false
@@ -23,18 +22,9 @@ export function requiresReview(): boolean {
 }
 
 /**
- * The status the documents list shows when its URL names none. With review
- * required, everything the pipeline produces waits in the Inbox, so an
- * unfiltered list would be mostly a second copy of it.
- */
-export function defaultStatusFilter(): 'all' | 'completed' {
-  return alwaysRequireReview ? 'completed' : 'all'
-}
-
-/**
  * The list to return to when leaving a document, or when an upload finishes.
- * With review required, `/` is the reviewed archive -- the one list that cannot
- * show what was just uploaded or is still being worked through.
+ * With review required, that is the Inbox: the one list showing what is still
+ * to be worked through.
  */
 export function documentsLanding(): '/' | '/inbox' {
   return alwaysRequireReview ? '/inbox' : '/'

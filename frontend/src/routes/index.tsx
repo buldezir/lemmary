@@ -450,18 +450,10 @@ function DocumentListPage({ route }: { route: '/' | '/inbox' }) {
 
           {!loading && documents.length === 0 && (
             <div className="rounded-none border border-dashed border-line-strong bg-surface py-10 text-center">
-              {/* Neither of these lists is empty in the sense of "upload
-                  something": hasActiveFilters is false on a bare /inbox, and
-                  false on a `/` that defaults to Completed. */}
+              {/* A bare /inbox is not empty in the sense of "upload
+                  something", so it gets its own wording. */}
               {inbox && !hasActiveFilters(query) ? (
                 <p className="text-sm text-ink-soft">Nothing waiting for review.</p>
-              ) : !hasActiveFilters(query) && statusFilter === 'completed' ? (
-                <>
-                  <p className="text-sm text-ink-soft">No documents reviewed yet.</p>
-                  <Link to="/inbox" className="mt-1 inline-block text-sm font-medium text-oxblood underline">
-                    Open the Inbox
-                  </Link>
-                </>
               ) : hasActiveFilters(query) ? (
                 <p className="text-sm text-ink-soft">No documents match your filters.</p>
               ) : (

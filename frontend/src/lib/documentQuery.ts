@@ -13,7 +13,6 @@
  */
 
 import { isDocumentStatus } from './documentStatus'
-import { defaultStatusFilter } from './reviewPolicy'
 
 export type DocumentQuery = {
   /** Fulltext search; empty means list everything. */
@@ -47,16 +46,6 @@ export const defaultDocumentQuery: DocumentQuery = {
   page: 1,
 }
 
-/**
- * The defaults as this instance means them: only `status` differs, and only
- * when review is required. Parsing and serializing both go through here, which
- * is what keeps the pair consistent -- if only one knew, picking "All statuses"
- * would be stripped from the URL as a default and snap straight back.
- */
-export function currentDocumentDefaults(): DocumentQuery {
-  return { ...defaultDocumentQuery, status: defaultStatusFilter() }
-}
-
 const datePattern = /^\d{4}-\d{2}-\d{2}$/
 
 function text(value: unknown): string {
@@ -88,10 +77,9 @@ export function parseDocumentQuery(raw: DocumentQueryInput): DocumentQuery {
   const status = text(raw.status)
   return {
     q: typeof raw.q === 'string' ? raw.q : '',
-    // 'all' is the absence of a status filter rather than one of them, so it is
-    // not in DOCUMENT_STATUSES -- but a URL may name it, which is how "All
-    // statuses" survives an instance whose default is Completed.
-    status: isDocumentStatus(status) || status === 'all' ? status : currentDocumentDefaults().status,
+    // 'all' is the absence of a status filter rather than one of them, so it
+    // is not in DOCUMENT_STATUSES -- but a URL may name it.
+    status: isDocumentStatus(status) || status === 'all' ? status : defaultDocumentQuery.status,
     from: date(raw.from),
     to: date(raw.to),
     type: id(raw.type),
@@ -108,10 +96,9 @@ export function parseDocumentQuery(raw: DocumentQueryInput): DocumentQuery {
  * "?q=&status=all&page=1" onto every plain link back to the list.
  */
 export function documentQuerySearch(query: DocumentQuery): Partial<DocumentQuery> {
-  const defaults = currentDocumentDefaults()
   const search: Partial<DocumentQuery> = {}
-  for (const key of Object.keys(defaults) as (keyof DocumentQuery)[]) {
-    if (query[key] !== defaults[key]) {
+  for (const key of Object.keys(defaultDocumentQuery) as (keyof DocumentQuery)[]) {
+    if (query[key] !== defaultDocumentQuery[key]) {
       Object.assign(search, { [key]: query[key] })
     }
   }
@@ -125,7 +112,7 @@ export function documentQuerySearch(query: DocumentQuery): Partial<DocumentQuery
 export function inboxQuerySearch(raw: DocumentQueryInput): Partial<DocumentQuery> {
   return documentQuerySearch({
     ...parseDocumentQuery(raw),
-    status: currentDocumentDefaults().status,
+    status: defaultDocumentQuery.status,
   })
 }
 

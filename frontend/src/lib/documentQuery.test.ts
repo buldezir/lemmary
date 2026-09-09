@@ -1,5 +1,4 @@
-import { afterEach, describe, expect, test } from 'vitest'
-import { setAlwaysRequireReview } from './reviewPolicy'
+import { describe, expect, test } from 'vitest'
 import {
   defaultDocumentQuery,
   documentQuerySearch,
@@ -121,48 +120,6 @@ describe('inboxQuerySearch', () => {
 
   test('leaves a bare Inbox URL bare', () => {
     expect(inboxQuerySearch({})).toEqual({})
-  })
-})
-
-// Parsing and serializing have to agree about the new default, or the
-// round-trip below breaks and the dropdown snaps back to Completed the moment
-// "All statuses" is picked.
-describe('with review required for every new document', () => {
-  afterEach(() => setAlwaysRequireReview(false))
-
-  test('a bare URL means the reviewed archive', () => {
-    setAlwaysRequireReview(true)
-    expect(parseDocumentQuery({}).status).toBe('completed')
-  })
-
-  test('Completed is the bare URL, and All statuses is the explicit one', () => {
-    setAlwaysRequireReview(true)
-    expect(documentQuerySearch({ ...defaultDocumentQuery, status: 'completed' })).toEqual({})
-    expect(documentQuerySearch({ ...defaultDocumentQuery, status: 'all' })).toEqual({
-      status: 'all',
-    })
-  })
-
-  test('All statuses survives the round-trip that used to strip it', () => {
-    setAlwaysRequireReview(true)
-    const search = documentQuerySearch({ ...defaultDocumentQuery, status: 'all' })
-    expect(parseDocumentQuery(search).status).toBe('all')
-  })
-
-  test('the Inbox still carries no status either way', () => {
-    setAlwaysRequireReview(true)
-    expect(inboxQuerySearch({ status: 'completed' })).toEqual({})
-    expect(inboxQuerySearch({ status: 'all' })).toEqual({})
-    expect(inboxQuerySearch({ status: 'needs_review', page: 3 })).toEqual({ page: 3 })
-  })
-
-  // Off, everything is exactly as it was: 'all' is the default and vanishes.
-  test('changes nothing while it is off', () => {
-    expect(parseDocumentQuery({}).status).toBe('all')
-    expect(documentQuerySearch({ ...defaultDocumentQuery, status: 'all' })).toEqual({})
-    expect(documentQuerySearch({ ...defaultDocumentQuery, status: 'completed' })).toEqual({
-      status: 'completed',
-    })
   })
 })
 
