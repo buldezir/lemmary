@@ -241,14 +241,20 @@ export function DocumentDetailPage() {
   //
   // Warnings included: a soft-failed embed is the one failure the status badge
   // will never mention, so it is the one most worth opening the panel for.
-  const [autoOpenedFor, setAutoOpenedFor] = useState<string | null>(null)
-  if (
-    (summary?.tone === 'error' || summary?.tone === 'warning') &&
-    autoOpenedFor !== documentId
-  ) {
-    setAutoOpenedFor(documentId)
+  const [autoOpened, setAutoOpened] = useState(false)
+  // Both reset per document: the route param can change without this component
+  // remounting, and a reader who closed the panel on one document must not have
+  // that choice hide the next document's failure.
+  const [panelDocumentId, setPanelDocumentId] = useState(documentId)
+  if (panelDocumentId !== documentId) {
+    setPanelDocumentId(documentId)
+    setShowProcessingJob(null)
+    setAutoOpened(false)
   }
-  const jobPanelOpen = showProcessingJob ?? autoOpenedFor === documentId
+  if (!autoOpened && (summary?.tone === 'error' || summary?.tone === 'warning')) {
+    setAutoOpened(true)
+  }
+  const jobPanelOpen = showProcessingJob ?? autoOpened
 
   function toggleReprocessStep(step: ProcessingStep) {
     setReprocessSteps((current) => {
@@ -402,6 +408,7 @@ export function DocumentDetailPage() {
         title: document.title,
         purpose: document.purpose,
         summary: document.summary,
+        ocrText: document.ocr_text ?? '',
         documentDate: document.document_date,
         documentTypeName: documentTypeInput,
         correspondentName: correspondentInput,
@@ -762,10 +769,19 @@ export function DocumentDetailPage() {
               OCR text
               <textarea
                 rows={18}
-                readOnly
-                className={`${textareaClass(false)} min-h-96 font-mono text-xs leading-relaxed cursor-not-allowed`}
+                readOnly={!editing}
+                className={`${textareaClass(editing)} min-h-96 font-mono text-xs leading-relaxed`}
                 value={document.ocr_text ?? ''}
+                onChange={(event) => setDocument({ ...document, ocr_text: event.target.value })}
               />
+              {editing && (
+                <span className="text-xs font-normal text-ink-soft">
+                  Everything else is derived from this text, so a correction here is worth more
+                  than one to a single field. Saving re-indexes the document for search and queues
+                  its passage vectors to be rebuilt; it does not re-run extraction -- reprocess
+                  below for that, which reads the corrected text rather than re-running OCR.
+                </span>
+              )}
             </label>
 
             <div className="flex items-center gap-4 sm:col-span-2">
@@ -783,7 +799,7 @@ export function DocumentDetailPage() {
                     setEditing(true)
                   }}
                 >
-                  Edit
+                  Unlock editing
                 </Button>
               )}
               {message && <p className="text-sm text-forest">{message}</p>}

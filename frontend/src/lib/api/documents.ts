@@ -407,6 +407,14 @@ export type DocumentMetadataInput = {
   title: string
   purpose: string
   summary: string
+  /**
+   * The extracted text. Editable because OCR is the one field everything else
+   * is derived from -- a misread total or date is worth fixing at the source,
+   * where a re-extraction will read the correction rather than the mistake.
+   * Saving it marks the document's vectors stale (embedstore's staleFields
+   * lists ocr_text), so the backfill re-embeds from the corrected text.
+   */
+  ocrText: string
   documentDate: string
   documentTypeName: string
   correspondentName: string
@@ -451,6 +459,7 @@ export async function saveDocumentMetadata(
     title: input.title,
     purpose: input.purpose,
     summary: input.summary,
+    ocr_text: input.ocrText,
     document_date: input.documentDate || null,
     document_type: documentTypeId || null,
     correspondent: correspondentId || null,

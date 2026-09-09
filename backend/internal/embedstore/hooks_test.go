@@ -255,3 +255,61 @@ func TestTouchesEmbeddedTextSeesATagListChange(t *testing.T) {
 		t.Fatal("a new tag changes the header passage and has to date it")
 	}
 }
+
+// The detail form now sends ocr_text on every save, including a save that only
+// corrected a title. Re-writing the same text must not date the vectors: a
+// re-embed of an unchanged 20-page document costs a provider call and buys
+// nothing.
+func TestTouchesEmbeddedTextIgnoresAnUnchangedOCRSave(t *testing.T) {
+	t.Parallel()
+	collection := core.NewBaseCollection("documents")
+	collection.Fields.Add(
+		&core.TextField{Name: "title"},
+		&core.TextField{Name: "ocr_text"},
+		&core.TextField{Name: "metadata_source"},
+		&core.SelectField{Name: "processing_status", Values: []string{"needs_review", "completed"}},
+		&core.JSONField{Name: "tags"},
+		&core.JSONField{Name: "people_or_organizations"},
+	)
+	record := core.NewRecord(collection)
+	record.Id = "doc1"
+	record.Set("title", "Policy")
+	record.Set("ocr_text", "Acme Plumbing\nTotal 42.00\n")
+	record.Set("metadata_source", "stub-model")
+	record.Set("processing_status", "needs_review")
+	if err := record.PostScan(); err != nil {
+		t.Fatalf("PostScan: %v", err)
+	}
+
+	// What "Save corrections" writes when only the title was touched: the same
+	// ocr_text back, plus the two fields the save always sets.
+	record.Set("title", "Plumbing invoice")
+	record.Set("ocr_text", "Acme Plumbing\nTotal 42.00\n")
+	record.Set("metadata_source", "user")
+	record.Set("processing_status", "completed")
+	if !touchesEmbeddedText(record) {
+		t.Fatal("the new title is in the header passage and has to date it")
+	}
+
+	// And with nothing touched at all, which is the case that must stay free.
+	untouched := core.NewRecord(collection)
+	untouched.Id = "doc2"
+	untouched.Set("title", "Policy")
+	untouched.Set("ocr_text", "Acme Plumbing\nTotal 42.00\n")
+	untouched.Set("processing_status", "needs_review")
+	if err := untouched.PostScan(); err != nil {
+		t.Fatalf("PostScan: %v", err)
+	}
+	untouched.Set("ocr_text", "Acme Plumbing\nTotal 42.00\n")
+	untouched.Set("metadata_source", "user")
+	untouched.Set("processing_status", "completed")
+	if touchesEmbeddedText(untouched) {
+		t.Fatal("re-writing the same ocr_text must not mark the document stale")
+	}
+
+	// A real correction still does.
+	untouched.Set("ocr_text", "Acme Plumbing\nTotal 24.00\n")
+	if !touchesEmbeddedText(untouched) {
+		t.Fatal("a corrected total is different text and has to date the vectors")
+	}
+}
