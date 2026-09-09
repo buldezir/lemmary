@@ -139,7 +139,7 @@ func (h *openAIHelper) Distill(ctx context.Context, req DistillRequest) (Distill
 	}
 
 	requestStart := time.Now()
-	resp, err := h.client.complete(ctx, openai.ChatCompletionNewParams{
+	resp, err := h.client.Complete(ctx, openai.ChatCompletionNewParams{
 		Model: shared.ChatModel(h.client.model),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(buildDistillSystemPrompt(req.Fields)),

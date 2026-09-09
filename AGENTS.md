@@ -2,7 +2,7 @@
 
 ## Commits
 
-Write a detailed, multi-paragraph commit message so later agents can reconstruct the change from `git log`.
+Write a detailed commit message so later agents can understand what was done from `git log`.
 
 ## Overlay
 

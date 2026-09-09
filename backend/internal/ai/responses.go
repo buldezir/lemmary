@@ -2,7 +2,6 @@ package ai
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -16,77 +15,21 @@ import (
 	"lemmary/backend/internal/aiprovider"
 )
 
-// Some models are served only by the Responses API. OpenCode Zen documents a
-// per-model endpoint and routes gpt-5.6-luna, grok-4.6 and the muse-spark
-// models there; /chat/completions answers for those with a bare 500. Rather
-// than carry a list of model names that goes stale, the request shape stays
-// chat-completions-shaped everywhere and is translated here for the models that
-// turn out to need it.
+// Some models are served only by the Responses API: OpenAI's gpt-5 family
+// refuses function tools alongside its server-side reasoning_effort on
+// /chat/completions, and OpenCode routes a quarter of its catalogue there
+// outright. Rather than teach forty call sites a second request shape, the
+// request stays chat-completions-shaped everywhere and is translated here.
 //
 // Everything below converts in one direction and back: ChatCompletionNewParams
 // to ResponseNewParams, and the Response to a *openai.ChatCompletion the
 // existing call sites already know how to read. No caller changes.
-
-// endpointVerdict is what a failed /chat/completions request says about
-// whether this endpoint serves this model at all.
-type endpointVerdict int
-
-const (
-	// notAMismatch: the failure says nothing about the endpoint.
-	notAMismatch endpointVerdict = iota
-	// ambiguousMismatch: could be either. 500 is what OpenCode Zen answers for
-	// a Responses-only model, and also the generic internal error every
-	// provider returns when it is having a bad minute.
-	ambiguousMismatch
-	// certainMismatch: a status a working endpoint does not return for a model
-	// it serves.
-	certainMismatch
-)
-
-// classifyEndpointError reads a failed /chat/completions request for whether
-// the endpoint is refusing to serve this model at all, rather than disliking
-// something we sent. 502/503/504 are deliberately absent: those are ordinary
-// transient failures, and rerouting on them would be guessing.
-func classifyEndpointError(err error) endpointVerdict {
-	if err == nil {
-		return notAMismatch
-	}
-	var apiErr *openai.Error
-	if !errors.As(err, &apiErr) {
-		return notAMismatch
-	}
-	switch apiErr.StatusCode {
-	case http.StatusInternalServerError:
-		return ambiguousMismatch
-	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound,
-		http.StatusMethodNotAllowed, http.StatusNotImplemented:
-		return certainMismatch
-	}
-	return notAMismatch
-}
-
-// shouldTryResponses decides whether to translate a refused request, and
-// whether a success would be worth remembering.
 //
-// An endpoint that has already served this model is not an endpoint that does
-// not serve it, so a later refusal there is transient however it is worded --
-// the SDK is configured with no retries of its own, so a single hiccup would
-// otherwise be enough to reroute a model permanently. An ambiguous refusal on a
-// model never seen to work is worth translating immediately, because the caller
-// is waiting, but only worth remembering once it has happened twice: a
-// provider's bad minute does not repeat, a wrong endpoint does.
-func shouldTryResponses(err error, baseURL, model string) (try bool, remember bool) {
-	switch classifyEndpointError(err) {
-	case certainMismatch:
-		return true, true
-	case ambiguousMismatch:
-		if chatCompletionsHasWorked(baseURL, model) {
-			return false, false
-		}
-		return true, countAmbiguousRefusal(baseURL, model) > 1
-	}
-	return false, false
-}
+// Which models need it used to be inferred from the shape of a failed request
+// -- a 500 read as "possibly the wrong endpoint", believed on the second
+// occurrence. That existed because OpenCode's per-model routing was invisible
+// from an `openai` provider row; internal/opencode now carries the table, so
+// the guessing is gone and only the translation remains.
 
 // CompleteViaResponses runs a chat-completions-shaped request through the
 // Responses API and hands back a chat completion.

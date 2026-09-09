@@ -35,12 +35,16 @@ describe('SDK capabilities', () => {
       expect(isLLMProvider(sdk)).toBe(true)
       expect(canEmbedProvider(sdk)).toBe(true)
     }
+    // opencode chats but serves no /embeddings, so it is an LLM SDK that is
+    // not an embedding one. Mirrors aiprovider.CanEmbed.
+    expect(isLLMProvider('opencode')).toBe(true)
+    expect(canEmbedProvider('opencode')).toBe(false)
   })
 
   it('asks for a key everywhere but the two sidecars', () => {
     expect(requiresAPIKey('local')).toBe(false)
     expect(requiresAPIKey('docling')).toBe(false)
-    for (const sdk of ['openai', 'openrouter', 'mistral', 'google_vision']) {
+    for (const sdk of ['openai', 'openrouter', 'mistral', 'opencode', 'google_vision']) {
       expect(requiresAPIKey(sdk)).toBe(true)
     }
     // Default-true like the Go side, so an unknown SDK still asks.
@@ -170,7 +174,7 @@ describe('the ChatGPT subscription SDK', () => {
   it('signs in instead of taking a key', () => {
     expect(requiresSignIn('chatgpt')).toBe(true)
     expect(requiresAPIKey('chatgpt')).toBe(false)
-    for (const sdk of ['openai', 'openrouter', 'mistral', 'google_vision', 'local', 'docling']) {
+    for (const sdk of ['openai', 'openrouter', 'mistral', 'opencode', 'google_vision', 'local', 'docling']) {
       expect(requiresSignIn(sdk)).toBe(false)
     }
   })

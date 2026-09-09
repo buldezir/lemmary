@@ -1,6 +1,7 @@
 package aiprovider
 
 import (
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -54,6 +55,48 @@ func MigrateLegacySettings(app core.App, settings *core.Record) error {
 	}
 	bindFromIDs(settings, openaiID, mistralID, googleID, models)
 	return nil
+}
+
+// NormalizeOpenCodeSDK answers SDKOpenCode for an OpenAI-compatible SDK aimed
+// at OpenCode, and leaves every other pairing alone.
+//
+// `openai` plus a base URL was the only way to reach OpenCode before this SDK
+// existed, and it is what .env.example shipped. It never meant "use OpenAI's
+// semantics" -- the old code honoured the real intent by sniffing the request
+// host for opencode.ai -- so reading it as SDKOpenCode preserves what the
+// operator asked for rather than overriding it.
+//
+// It has to be the environment's rule as well as the migration's. A managed
+// instance re-applies its environment on every boot and has no Settings page,
+// so an AI_SDK=openai that the migration moved would be moved back every boot,
+// with no way for anyone inside to intervene.
+func NormalizeOpenCodeSDK(sdk, baseURL string) string {
+	switch strings.TrimSpace(sdk) {
+	case SDKOpenAI, SDKOpenRouter:
+		if IsOpenCodeURL(baseURL) {
+			return SDKOpenCode
+		}
+	}
+	return strings.TrimSpace(sdk)
+}
+
+// IsOpenCodeURL reports whether a base URL addresses OpenCode.
+//
+// It exists for the migration that moves the rows which reached OpenCode
+// through an `openai` SDK and a base URL -- the only way to do it before
+// SDKOpenCode, and what .env.example shipped -- onto the SDK itself. See
+// migrations/1730000026_opencode_provider.go.
+//
+// Matched on the host rather than by substring, so a path or query mentioning
+// the name does not count, and by suffix so a regional or staging subdomain
+// does.
+func IsOpenCodeURL(baseURL string) bool {
+	u, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return false
+	}
+	h := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	return h == "opencode.ai" || strings.HasSuffix(h, ".opencode.ai")
 }
 
 type taskModels struct {

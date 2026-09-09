@@ -48,31 +48,9 @@ func completeOnce(t *testing.T, client openai.Client, ctx context.Context) {
 
 // TestSessionMiddlewareStampsThroughTheSDK is the end-to-end case: the SDK must
 // hand the middleware a request carrying the caller's context, or the header
-// never gets a value. The base URL names opencode.ai so the gate opens, and a
-// second middleware -- running after ours -- redirects the connection to the
-// test server rather than the internet.
+// never gets a value -- it is a request clone per attempt, and an earlier
+// version of this read the context off the wrong one.
 func TestSessionMiddlewareStampsThroughTheSDK(t *testing.T) {
-	var seen string
-	srv := completionServer(t, &seen)
-
-	client := openai.NewClient(
-		option.WithAPIKey("test"),
-		option.WithBaseURL("http://opencode.ai/zen/go/v1"),
-		option.WithMaxRetries(0),
-		option.WithMiddleware(SessionMiddleware()),
-		option.WithMiddleware(RewriteHostMiddleware(srv.Listener.Addr().String())),
-	)
-
-	completeOnce(t, client, WithSession(context.Background(), "conv123"))
-
-	if seen != "conv123" {
-		t.Errorf("%s = %q, want %q", SessionHeader, seen, "conv123")
-	}
-}
-
-// TestSessionMiddlewareSkipsOtherProvidersThroughTheSDK is the same wiring
-// against a base URL that is not OpenCode: nothing is added to the request.
-func TestSessionMiddlewareSkipsOtherProvidersThroughTheSDK(t *testing.T) {
 	var seen string
 	srv := completionServer(t, &seen)
 
@@ -85,7 +63,26 @@ func TestSessionMiddlewareSkipsOtherProvidersThroughTheSDK(t *testing.T) {
 
 	completeOnce(t, client, WithSession(context.Background(), "conv123"))
 
+	if seen != "conv123" {
+		t.Errorf("%s = %q, want %q", SessionHeader, seen, "conv123")
+	}
+}
+
+// TestAClientWithoutTheMiddlewareSendsNoHeader is the other half: a provider
+// that is not OpenCode never installs it, and that is the whole of the gate.
+func TestAClientWithoutTheMiddlewareSendsNoHeader(t *testing.T) {
+	var seen string
+	srv := completionServer(t, &seen)
+
+	client := openai.NewClient(
+		option.WithAPIKey("test"),
+		option.WithBaseURL(srv.URL),
+		option.WithMaxRetries(0),
+	)
+
+	completeOnce(t, client, WithSession(context.Background(), "conv123"))
+
 	if seen != "" {
-		t.Errorf("%s = %q, want empty for a non-OpenCode host", SessionHeader, seen)
+		t.Errorf("%s = %q, want empty without the middleware", SessionHeader, seen)
 	}
 }

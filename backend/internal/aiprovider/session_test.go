@@ -7,29 +7,6 @@ import (
 	"testing"
 )
 
-func TestSessionHost(t *testing.T) {
-	cases := map[string]bool{
-		"opencode.ai":      true,
-		"opencode.ai:443":  true,
-		"OpenCode.AI":      true,
-		"opencode.ai.":     true,
-		"api.opencode.ai":  true,
-		"zen.opencode.ai":  true,
-		"api.openai.com":   false,
-		"openrouter.ai":    false,
-		"notopencode.ai":   false,
-		"opencode.ai.evil": false,
-		"localhost:8090":   false,
-		"127.0.0.1:1234":   false,
-		"":                 false,
-	}
-	for host, want := range cases {
-		if got := SessionHost(host); got != want {
-			t.Errorf("SessionHost(%q) = %v, want %v", host, got, want)
-		}
-	}
-}
-
 func TestSessionForIsStablePerPurpose(t *testing.T) {
 	a := SessionFor("extract")
 	if a == "" {
@@ -71,7 +48,7 @@ func TestEnsureSessionKeepsTheConversation(t *testing.T) {
 	}
 }
 
-func TestSessionMiddlewareStampsOpenCodeRequests(t *testing.T) {
+func TestSessionMiddlewareStampsTheRequest(t *testing.T) {
 	mw := SessionMiddleware()
 
 	req := httptest.NewRequest(http.MethodPost, "https://opencode.ai/zen/go/v1/chat/completions", nil)
@@ -90,26 +67,25 @@ func TestSessionMiddlewareStampsOpenCodeRequests(t *testing.T) {
 	}
 }
 
-func TestSessionMiddlewareLeavesOtherProvidersAlone(t *testing.T) {
+// Which providers see the header is now the caller's decision -- only an
+// SDKOpenCode client installs this middleware -- so the middleware itself no
+// longer looks at the URL. That gate used to be a host match on opencode.ai,
+// which meant a test could only exercise it by rewriting the host underneath.
+func TestSessionMiddlewareDoesNotLookAtTheHost(t *testing.T) {
 	mw := SessionMiddleware()
 
-	for _, url := range []string{
-		"https://api.openai.com/v1/chat/completions",
-		"https://openrouter.ai/api/v1/chat/completions",
-	} {
-		req := httptest.NewRequest(http.MethodPost, url, nil)
-		req = req.WithContext(WithSession(req.Context(), "conv123"))
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:9/v1/chat/completions", nil)
+	req = req.WithContext(WithSession(req.Context(), "conv123"))
 
-		var seen string
-		if _, err := mw(req, func(r *http.Request) (*http.Response, error) {
-			seen = r.Header.Get(SessionHeader)
-			return &http.Response{StatusCode: http.StatusOK}, nil
-		}); err != nil {
-			t.Fatalf("middleware: %v", err)
-		}
-		if seen != "" {
-			t.Errorf("%s sent to %s: %q", SessionHeader, url, seen)
-		}
+	var seen string
+	if _, err := mw(req, func(r *http.Request) (*http.Response, error) {
+		seen = r.Header.Get(SessionHeader)
+		return &http.Response{StatusCode: http.StatusOK}, nil
+	}); err != nil {
+		t.Fatalf("middleware: %v", err)
+	}
+	if seen != "conv123" {
+		t.Errorf("%s = %q, want it stamped whatever the host", SessionHeader, seen)
 	}
 }
 

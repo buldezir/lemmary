@@ -66,7 +66,7 @@ func (c *OpenAIClient) Chat(ctx context.Context, ocrText string, messages []Chat
 	}
 
 	requestStart := time.Now()
-	chatResp, err := c.complete(ctx, openai.ChatCompletionNewParams{
+	chatResp, err := c.Complete(ctx, openai.ChatCompletionNewParams{
 		Model:       shared.ChatModel(c.model),
 		Messages:    apiMessages,
 		Temperature: CompletionTemperature(c.model, 0.3),

@@ -14,8 +14,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/openai/openai-go/option"
-
 	"lemmary/backend/internal/aiprovider"
 )
 
@@ -432,9 +430,8 @@ func TestEmbedSendsSessionHeaderToOpenCode(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	e, ok := NewEmbedder("openai", "test-key", "test-embed",
-		"http://opencode.ai/zen/go/v1", 0, 5*time.Second, slog.Default(),
-		option.WithMiddleware(aiprovider.RewriteHostMiddleware(srv.Listener.Addr().String())),
+	e, ok := NewEmbedder(aiprovider.SDKOpenCode, "test-key", "test-embed",
+		srv.URL+"/zen/go/v1", 0, 5*time.Second, slog.Default(),
 	).(*openAIEmbedder)
 	if !ok {
 		t.Fatal("NewEmbedder did not return the OpenAI implementation")
@@ -447,6 +444,19 @@ func TestEmbedSendsSessionHeaderToOpenCode(t *testing.T) {
 	}
 	if seen != "conv123" {
 		t.Errorf("%s = %q, want %q", aiprovider.SessionHeader, seen, "conv123")
+	}
+
+	// The other half of the gate: an openai row installs no middleware.
+	seen = "unset"
+	plain, _ := NewEmbedder(aiprovider.SDKOpenAI, "test-key", "test-embed",
+		srv.URL+"/v1", 0, 5*time.Second, slog.Default(),
+	).(*openAIEmbedder)
+	plain.sleep = func(time.Duration) {}
+	if _, err := plain.Embed(ctx, []string{"hello"}); err != nil {
+		t.Fatalf("embed: %v", err)
+	}
+	if seen != "" {
+		t.Errorf("%s = %q, want empty for an openai provider", aiprovider.SessionHeader, seen)
 	}
 }
 

@@ -279,3 +279,62 @@ func TestEmbeddingSDKMatchingTheLanguageModelReusesItsEndpoint(t *testing.T) {
 		t.Fatal("the same SDK is the same endpoint, so no second provider row")
 	}
 }
+
+// AI_EMBEDDING_MODEL alone means "embed on the AI_SDK provider", which is no
+// longer always available: opencode chats but serves no /embeddings. Refused
+// here rather than at the first upload, where the binding would read as
+// configured and every document's embed step would fail.
+func TestAnEmbeddingModelIsRefusedOnAnSDKThatCannotEmbed(t *testing.T) {
+	clearAIEnv(t)
+	t.Setenv(EnvAISDK, aiprovider.SDKOpenCode)
+	t.Setenv(EnvAIAPIKey, "sk-test")
+	t.Setenv(EnvAIEmbeddingModel, "text-embedding-3-small")
+
+	_, err := AIEnvFromEnv()
+	if err == nil {
+		t.Fatal("an embedding model bound to opencode was accepted")
+	}
+	// The message has to name the way out, not just the problem.
+	for _, want := range []string{EnvAIEmbeddingSDK, aiprovider.SDKLocalEmbeddings} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %v, want it to mention %q", err, want)
+		}
+	}
+}
+
+// And the way out works: a second provider for embeddings, which is what the
+// AI_EMBEDDING_SDK block exists for.
+func TestOpenCodeEmbedsThroughASecondProvider(t *testing.T) {
+	clearAIEnv(t)
+	t.Setenv(EnvAISDK, aiprovider.SDKOpenCode)
+	t.Setenv(EnvAIAPIKey, "sk-test")
+	t.Setenv(EnvAIEmbeddingSDK, aiprovider.SDKLocalEmbeddings)
+	t.Setenv(EnvAIEmbeddingModel, "BAAI/bge-m3")
+
+	env, err := AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("AIEnvFromEnv: %v", err)
+	}
+	if env.Providers.SharesEmbeddingProvider() {
+		t.Fatal("embeddings were folded onto the opencode provider")
+	}
+	if got := env.Providers.Embedding.SDK; got != aiprovider.SDKLocalEmbeddings {
+		t.Fatalf("embedding SDK = %q", got)
+	}
+}
+
+// Without an embedding model, opencode is a complete configuration on its own:
+// keyword retrieval is the pre-feature behaviour and still a working state.
+func TestOpenCodeWithoutAnEmbeddingModelIsFine(t *testing.T) {
+	clearAIEnv(t)
+	t.Setenv(EnvAISDK, aiprovider.SDKOpenCode)
+	t.Setenv(EnvAIAPIKey, "sk-test")
+
+	env, err := AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("AIEnvFromEnv: %v", err)
+	}
+	if env.Providers.LLM.EmbeddingModel != "" {
+		t.Fatalf("embedding model = %q, want empty", env.Providers.LLM.EmbeddingModel)
+	}
+}

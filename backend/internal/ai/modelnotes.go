@@ -33,14 +33,9 @@ var (
 	// Models that would not take function tools alongside their default
 	// reasoning_effort, and had to be pinned to "none".
 	noReasoningEffortNotes sync.Map
-	// Models this endpoint does not serve on /chat/completions at all.
+	// Models this endpoint would not serve on /chat/completions with tools
+	// present, and that the Responses API served instead.
 	responsesAPINotes sync.Map
-	// Models /chat/completions has answered at least once, which makes a later
-	// refusal a transient failure rather than a wrong endpoint.
-	chatCompletionsWorked sync.Map
-	// How many times /chat/completions has refused a model with a status that
-	// could mean either.
-	ambiguousRefusals sync.Map
 )
 
 func rememberNoReasoningEffort(baseURL, model string) { store(&noReasoningEffortNotes, baseURL, model) }
@@ -51,30 +46,6 @@ func needsNoReasoningEffort(baseURL, model string) bool {
 func rememberResponsesAPI(baseURL, model string) { store(&responsesAPINotes, baseURL, model) }
 func needsResponsesAPI(baseURL, model string) bool {
 	return loaded(&responsesAPINotes, baseURL, model)
-}
-
-// rememberChatCompletionsWorked records a completion this endpoint served, so a
-// later failure is read as the provider having a bad minute rather than as a
-// model that lives somewhere else.
-func rememberChatCompletionsWorked(baseURL, model string) {
-	store(&chatCompletionsWorked, baseURL, model)
-}
-func chatCompletionsHasWorked(baseURL, model string) bool {
-	return loaded(&chatCompletionsWorked, baseURL, model)
-}
-
-// countAmbiguousRefusal returns how many times this endpoint has now refused
-// the model with a status that does not say which of the two it means.
-func countAmbiguousRefusal(baseURL, model string) int {
-	note := noteFor(baseURL, model)
-	if note.empty() {
-		return 0
-	}
-	count, _ := ambiguousRefusals.Load(note)
-	n, _ := count.(int)
-	n++
-	ambiguousRefusals.Store(note, n)
-	return n
 }
 
 func store(m *sync.Map, baseURL, model string) {
@@ -94,9 +65,7 @@ func loaded(m *sync.Map, baseURL, model string) bool {
 
 // resetModelNotes clears everything this process has learned. Tests only.
 func resetModelNotes() {
-	for _, m := range []*sync.Map{
-		&noReasoningEffortNotes, &responsesAPINotes, &chatCompletionsWorked, &ambiguousRefusals,
-	} {
+	for _, m := range []*sync.Map{&noReasoningEffortNotes, &responsesAPINotes} {
 		m.Range(func(k, _ any) bool {
 			m.Delete(k)
 			return true

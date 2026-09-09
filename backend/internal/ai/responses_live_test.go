@@ -7,30 +7,41 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"lemmary/backend/internal/aiprovider"
 )
 
-// TestLiveResponsesOnlyModel exercises the whole Responses path against a real
-// provider. It is skipped unless the three variables below are set, because it
-// spends somebody's tokens:
+// TestLiveTranslatedModel exercises a whole translated path -- Responses or
+// Messages, whichever the model routes to -- against a real provider. It is
+// skipped unless the variables below are set, because it spends somebody's
+// tokens:
 //
-//	LIVE_AI_KEY=... LIVE_AI_BASE_URL=https://opencode.ai/zen/go/v1 \
-//	LIVE_AI_MODEL=gpt-5.6-luna go test ./internal/ai/ -run Live -v
+//	LIVE_AI_KEY=... LIVE_AI_SDK=opencode LIVE_AI_MODEL=gpt-5.6-luna \
+//	  go test ./internal/ai/ -run Live -v
+//
+// LIVE_AI_MODEL is what picks the endpoint: gpt-5.6-luna for /responses,
+// minimax-m3 for Anthropic's /messages, deepseek-v4-flash for the untranslated
+// /chat/completions. LIVE_AI_BASE_URL is optional; it defaults to the SDK's own.
 //
 // It is the only way to check the parts a fake server cannot: that the
 // translated request is one the provider actually accepts.
-func TestLiveResponsesOnlyModel(t *testing.T) {
+func TestLiveTranslatedModel(t *testing.T) {
 	key := strings.TrimSpace(os.Getenv("LIVE_AI_KEY"))
-	base := strings.TrimSpace(os.Getenv("LIVE_AI_BASE_URL"))
+	sdk := strings.TrimSpace(os.Getenv("LIVE_AI_SDK"))
 	model := strings.TrimSpace(os.Getenv("LIVE_AI_MODEL"))
-	if key == "" || base == "" || model == "" {
-		t.Skip("set LIVE_AI_KEY, LIVE_AI_BASE_URL and LIVE_AI_MODEL to run the live check")
+	if key == "" || model == "" {
+		t.Skip("set LIVE_AI_KEY and LIVE_AI_MODEL to run the live check")
 	}
+	if sdk == "" {
+		sdk = aiprovider.SDKOpenCode
+	}
+	base := aiprovider.NormalizeBaseURL(sdk, os.Getenv("LIVE_AI_BASE_URL"))
 	resetModelNotes()
 	t.Cleanup(resetModelNotes)
 	ctx := context.Background()
 
 	t.Run("research", func(t *testing.T) {
-		agent := NewSearchAgent("openai", key, model, base, 120*time.Second, "en,de", "en", slog.Default())
+		agent := NewSearchAgent(sdk, key, model, base, 120*time.Second, "en,de", "en", slog.Default())
 		var read bool
 		result, err := agent.Research(ctx, ResearchRequest{
 			Messages: []ChatMessage{{Role: "user", Content: "How much did I pay for car insurance?"}},
@@ -55,7 +66,7 @@ func TestLiveResponsesOnlyModel(t *testing.T) {
 	})
 
 	t.Run("extract in json mode", func(t *testing.T) {
-		client := NewOpenAIClient("openai", key, model, base, "v1", "", 120*time.Second, slog.Default())
+		client := NewOpenAIClient(sdk, key, model, base, "v1", "", 120*time.Second, slog.Default())
 		metadata, err := client.ExtractMetadata(ctx,
 			"Rechnung Nr. 4711\nAllianz SE\nDatum: 2026-03-14\nBetrag: 412,90 EUR", ExtractionCatalog{})
 		if err != nil {
