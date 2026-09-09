@@ -19,9 +19,9 @@ type timelineMonth struct {
 // in each month, newest month first.
 type documentsTimeline struct {
 	Months []timelineMonth `json:"months"`
-	// Undated counts the documents with no document_date. They cannot be
-	// reached by any date range, so the sidebar shows them as a separate,
-	// unclickable total rather than silently dropping them.
+	// Undated counts the documents with no document_date. No date range can
+	// reach them, so the sidebar shows them as a row of their own -- one that
+	// filters the list by ?undated=true rather than by a From/To.
 	Undated int `json:"undated"`
 }
 

@@ -15,6 +15,12 @@ describe('buildDocumentFilter', () => {
     expect(buildDocumentFilter(noFilters)).toBeUndefined()
   })
 
+  // The timeline's "No date" row. PocketBase compares an empty literal
+  // null-safely, so this reaches a null date too.
+  it('filters on the absence of a date', () => {
+    expect(buildDocumentFilter({ ...noFilters, undated: true })).toBe("document_date = ''")
+  })
+
   it('filters on a status alone', () => {
     expect(buildDocumentFilter({ ...noFilters, status: 'needs_review' })).toBe(
       "processing_status = 'needs_review'",

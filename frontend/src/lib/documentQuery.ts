@@ -22,6 +22,8 @@ export type DocumentQuery = {
   /** Inclusive "YYYY-MM-DD" bounds; empty means unbounded. */
   from: string
   to: string
+  /** Only the documents with no document_date, which no From/To can reach. */
+  undated: boolean
   /** A document_types id, or 'all'. */
   type: string
   /** A correspondents id, or 'all'. */
@@ -41,6 +43,7 @@ export const defaultDocumentQuery: DocumentQuery = {
   status: 'all',
   from: '',
   to: '',
+  undated: false,
   type: 'all',
   correspondent: 'all',
   page: 1,
@@ -82,6 +85,8 @@ export function parseDocumentQuery(raw: DocumentQueryInput): DocumentQuery {
     status: isDocumentStatus(status) || status === 'all' ? status : defaultDocumentQuery.status,
     from: date(raw.from),
     to: date(raw.to),
+    // A URL carries it as the string; the router hands it back as the boolean.
+    undated: raw.undated === true || raw.undated === 'true',
     type: id(raw.type),
     correspondent: id(raw.correspondent),
     page: pageNumber(raw.page),

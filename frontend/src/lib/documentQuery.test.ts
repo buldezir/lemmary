@@ -21,6 +21,7 @@ describe('parseDocumentQuery', () => {
         to: '2025-03-31',
         type: 'abc123',
         correspondent: 'def456',
+        undated: 'true',
         page: '3',
       }),
     ).toEqual({
@@ -30,6 +31,7 @@ describe('parseDocumentQuery', () => {
       to: '2025-03-31',
       type: 'abc123',
       correspondent: 'def456',
+      undated: true,
       page: 3,
     })
   })
@@ -81,6 +83,7 @@ describe('documentQuerySearch', () => {
       to: '2024-06-30',
       type: 'typ1',
       correspondent: 'cor1',
+      undated: false,
       page: 4,
     }
     expect(parseDocumentQuery(documentQuerySearch(query))).toEqual(query)
@@ -115,6 +118,24 @@ describe('inboxQuerySearch', () => {
 
   test('leaves a bare Inbox URL bare', () => {
     expect(inboxQuerySearch({})).toEqual({})
+  })
+})
+
+describe('the undated filter', () => {
+  test('survives the URL as a string', () => {
+    expect(parseDocumentQuery({ undated: 'true' }).undated).toBe(true)
+  })
+
+  test('is off unless it says true', () => {
+    expect(parseDocumentQuery({ undated: 'yes' }).undated).toBe(false)
+    expect(parseDocumentQuery({}).undated).toBe(false)
+  })
+
+  test('stays out of the URL when off', () => {
+    expect(documentQuerySearch({ ...defaultDocumentQuery, undated: false })).toEqual({})
+    expect(documentQuerySearch({ ...defaultDocumentQuery, undated: true })).toEqual({
+      undated: true,
+    })
   })
 })
 

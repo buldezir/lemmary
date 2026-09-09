@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { fetchDocumentTimeline } from '../lib/api/documents'
-import { activePeriod, periodRange } from '../lib/timeline'
+import { UNDATED_PERIOD, activePeriod, periodRange } from '../lib/timeline'
 import { hasActiveFilters } from '../lib/documentQuery'
 import { useAsync } from '../hooks/useAsync'
 import { useDocumentFilterOptions, useDocumentList } from '../hooks/useDocumentList'
@@ -30,10 +30,12 @@ export function IndexPage() {
     statusFilter === 'failed' ? 'reprocess' : statusFilter === 'needs_review' ? 'review' : null
 
   // The timeline has no date filter of its own: picking a period writes the
-  // From/To inputs, and the highlight is read back out of them.
+  // From/To inputs, and the highlight is read back out of them. "No date" is
+  // the exception -- no range can express it -- so it writes its own flag, and
+  // the two clear each other because a document cannot be both.
   function onSelectPeriod(period: string | null) {
     const range = periodRange(period)
-    updateQuery({ from: range.from, to: range.to })
+    updateQuery({ from: range.from, to: range.to, undated: period === UNDATED_PERIOD })
   }
 
   return (
@@ -54,7 +56,7 @@ export function IndexPage() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
         <DocumentTimeline
           timeline={timeline.data}
-          active={activePeriod(query.from, query.to)}
+          active={query.undated ? UNDATED_PERIOD : activePeriod(query.from, query.to)}
           onSelect={onSelectPeriod}
           expanded={showTimeline}
           onToggleExpanded={() => setShowTimeline((shown) => !shown)}

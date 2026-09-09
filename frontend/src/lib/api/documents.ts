@@ -119,6 +119,8 @@ export type DocumentListFilters = {
   correspondent: string
   dateFrom: string
   dateTo: string
+  /** Only the documents with no document_date. */
+  undated?: boolean
 }
 
 /**
@@ -159,6 +161,11 @@ export function buildDocumentFilter(filters: DocumentListFilters): string | unde
     // bounds the same filter this way (fulltext.parseDayBoundary), so the two
     // paths now agree about which documents a From/To range holds.
     parts.push(pb.filter('document_date < {:date}', { date: dayAfter(filters.dateTo) }))
+  }
+  if (filters.undated) {
+    // PocketBase compares an empty literal null-safely, so this one clause
+    // covers both the empty string and a null date.
+    parts.push("document_date = ''")
   }
 
   return parts.length > 0 ? parts.join(' && ') : undefined
@@ -422,6 +429,7 @@ export async function searchDocuments(opts: {
   correspondent?: string
   dateFrom?: string
   dateTo?: string
+  undated?: boolean
 }): Promise<DocumentSearchList> {
   const params = new URLSearchParams()
   params.set('q', opts.q)
@@ -442,6 +450,9 @@ export async function searchDocuments(opts: {
   if (opts.dateTo) {
     params.set('date_to', opts.dateTo)
   }
+  if (opts.undated) {
+    params.set('undated', 'true')
+  }
 
   const data = await apiFetch<Partial<DocumentSearchList>>(
     `/api/app/documents/search?${params}`,
@@ -458,7 +469,7 @@ export async function searchDocuments(opts: {
 
 export type DocumentTimeline = {
   months: TimelineMonth[]
-  /** Documents with no document_date; no date range can reach them. */
+  /** Documents with no document_date; only the undated filter reaches them. */
   undated: number
 }
 

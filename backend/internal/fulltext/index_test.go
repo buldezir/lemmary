@@ -863,3 +863,30 @@ func TestMinShouldMatch(t *testing.T) {
 		}
 	}
 }
+
+// The timeline's "No date" row: a document indexes no document_date at all
+// when it has none, so the filter has to answer on the absence of the field.
+func TestSearchUndatedFilter(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "dated", map[string]any{
+		FieldUser:         "u1",
+		FieldDocumentDate: time.Date(2024, 7, 15, 0, 0, 0, 0, time.UTC),
+		FieldTitle:        "Dated invoice",
+		FieldAll:          "Dated invoice",
+	})
+	mustPut(t, idx, "undated", map[string]any{
+		FieldUser:  "u1",
+		FieldTitle: "Undated invoice",
+		FieldAll:   "Undated invoice",
+	})
+
+	ids := searchIDs(t, idx, Query{Text: "invoice", UserID: "u1", Undated: true})
+	if !containsID(ids, "undated") || containsID(ids, "dated") {
+		t.Fatalf("undated filter: %v", ids)
+	}
+
+	both := searchIDs(t, idx, Query{Text: "invoice", UserID: "u1"})
+	if !containsID(both, "undated") || !containsID(both, "dated") {
+		t.Fatalf("unfiltered: %v", both)
+	}
+}

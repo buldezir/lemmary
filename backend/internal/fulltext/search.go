@@ -42,6 +42,11 @@ type Query struct {
 	TagIDs           []string
 	DateFrom         string
 	DateTo           string
+	// Undated keeps only the documents that carry no document_date at all --
+	// the timeline's "No date" row. Mutually exclusive with a date range in
+	// practice, and left that way here: asking for both is asking for nothing,
+	// which is what the conjunction answers.
+	Undated bool
 	// Fields narrows the text match to a subset of the searchable fields, by
 	// their index field name. Empty means every field, which is what the
 	// archive-wide search box and the agent both want; the paperless-ngx
@@ -445,6 +450,9 @@ func filterConjuncts(q Query) []query.Query {
 	if dateQuery := dateRangeQuery(q.DateFrom, q.DateTo); dateQuery != nil {
 		conjuncts = append(conjuncts, dateQuery)
 	}
+	if q.Undated {
+		conjuncts = append(conjuncts, undatedQuery())
+	}
 	return conjuncts
 }
 
@@ -706,6 +714,18 @@ func dateRangeQuery(dateFrom, dateTo string) query.Query {
 	dq := bleve.NewDateRangeInclusiveQuery(start, end, startP, endP)
 	dq.SetField(FieldDocumentDate)
 	return dq
+}
+
+// undatedQuery matches the documents with no document_date. A document without
+// one indexes no date field at all, so "no date" is the negation of every date
+// there is -- bleve has no field-exists query, and refuses a range open at both
+// ends, hence its own RFC3339 bounds as the widest range it can express.
+func undatedQuery() query.Query {
+	dq := bleve.NewDateRangeQuery(query.MinRFC3339CompatibleTime, query.MaxRFC3339CompatibleTime)
+	dq.SetField(FieldDocumentDate)
+	bq := bleve.NewBooleanQuery()
+	bq.AddMustNot(dq)
+	return bq
 }
 
 func parseDayBoundary(s string, endExclusive bool) (time.Time, bool) {

@@ -41,6 +41,13 @@ const monthNames = [
   'December',
 ]
 
+/**
+ * The timeline's one row that is not a date range: the documents carrying no
+ * date at all. It travels the same onSelect path as a year or a month, and the
+ * page turns it into the `undated` filter instead of a From/To.
+ */
+export const UNDATED_PERIOD = 'undated'
+
 const yearPattern = /^\d{4}$/
 const monthPattern = /^\d{4}-(0[1-9]|1[0-2])$/
 

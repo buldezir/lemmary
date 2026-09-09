@@ -63,8 +63,9 @@ export function DocumentFilters({
             type="date"
             value={query.from}
             // replace: a date field fires a change per digit typed into the
-            // year, and none of those belong in history.
-            onChange={(event) => updateQuery({ from: event.target.value }, true)}
+            // year, and none of those belong in history. undated goes with it:
+            // a range and "no date" together match nothing.
+            onChange={(event) => updateQuery({ from: event.target.value, undated: false }, true)}
             className={selectClassName}
           />
         </label>
@@ -73,7 +74,7 @@ export function DocumentFilters({
           <input
             type="date"
             value={query.to}
-            onChange={(event) => updateQuery({ to: event.target.value }, true)}
+            onChange={(event) => updateQuery({ to: event.target.value, undated: false }, true)}
             className={selectClassName}
           />
         </label>

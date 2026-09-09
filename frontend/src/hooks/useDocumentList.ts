@@ -73,6 +73,7 @@ export function useDocumentList({
     q: debouncedSearch,
     from: dateFrom,
     to: dateTo,
+    undated,
     type: documentTypeFilter,
     correspondent: correspondentFilter,
     page,
@@ -160,6 +161,7 @@ export function useDocumentList({
           status: statusFilter,
           dateFrom,
           dateTo,
+          undated,
           documentType: documentTypeFilter,
           correspondent: correspondentFilter,
         })
@@ -173,6 +175,7 @@ export function useDocumentList({
               correspondent: correspondentFilter,
               dateFrom,
               dateTo,
+              undated,
             })
           : await pb.collection('documents').getList<DocumentRecord>(page, DOCUMENT_PAGE_SIZE, {
               sort: '-created',
@@ -249,6 +252,7 @@ export function useDocumentList({
     statusFilter,
     dateFrom,
     dateTo,
+    undated,
     documentTypeFilter,
     correspondentFilter,
     debouncedSearch,

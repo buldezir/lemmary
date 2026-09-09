@@ -1,9 +1,9 @@
 import type { DocumentTimeline as DocumentTimelineData } from '../lib/api/documents'
-import { groupByYear, monthLabel } from '../lib/timeline'
+import { UNDATED_PERIOD, groupByYear, monthLabel } from '../lib/timeline'
 
 type DocumentTimelineProps = {
   timeline: DocumentTimelineData | null
-  /** The selected period ("2025" or "2025-03"), derived from the date filters. */
+  /** The selected period ("2025", "2025-03" or "undated"), from the filters. */
   active: string | null
   /** Called with the clicked period, or null when the active one is clicked again. */
   onSelect: (period: string | null) => void
@@ -47,7 +47,9 @@ function rowStateClassName(isActive: boolean) {
  * Selecting a row writes the page's From/To date filters rather than keeping a
  * date filter of its own, so there is only one date filter to reason about and
  * the date inputs show what was picked. `active` is derived back out of those
- * inputs, which is why a hand-typed whole month lights its row up too.
+ * inputs, which is why a hand-typed whole month lights its row up too. The one
+ * row that is not a range, "No date", rides the same onSelect and becomes the
+ * page's `undated` filter instead.
  */
 export function DocumentTimeline({
   timeline,
@@ -135,14 +137,22 @@ export function DocumentTimeline({
           </div>
         ))}
 
-        {/* Not a button: a document with no date sits outside every date range,
-            so there is nothing for a click to select. Shown anyway so the
-            counts add up to the library. */}
+        {/* Set apart by the rule above it: a document with no date sits
+            outside every date range, so this row filters by the absence of one
+            rather than by a period. */}
         {timeline.undated > 0 && (
-          <p className="flex items-baseline justify-between gap-2 border-t border-line pl-2 pr-2 pt-2 text-xs text-ink-faint">
-            <span>No date</span>
-            <span className="tabular-nums">{timeline.undated}</span>
-          </p>
+          <div className="border-t border-line pt-2">
+            <button
+              type="button"
+              aria-pressed={active === UNDATED_PERIOD}
+              data-timeline-period={UNDATED_PERIOD}
+              onClick={() => select(UNDATED_PERIOD)}
+              className={`${rowClassName} pl-2 ${rowStateClassName(active === UNDATED_PERIOD)}`}
+            >
+              <span>No date</span>
+              <span className="text-xs tabular-nums text-ink-faint">{timeline.undated}</span>
+            </button>
+          </div>
         )}
       </div>
     </aside>
