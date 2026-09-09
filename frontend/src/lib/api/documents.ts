@@ -1,6 +1,8 @@
 import { pb, pbUrl } from '../pb'
 import { ensureAuth } from '../auth'
 import { apiFetch, errorDetail } from '../apiClient'
+import { notifyDocumentsChanged } from '../documentEvents'
+import { UNFINISHED_STATUS, type DocumentStatus } from '../documentStatus'
 import type { ProcessingStep, ReprocessMode } from '../processing'
 import type { TimelineMonth } from '../timeline'
 
@@ -42,7 +44,7 @@ export type DocumentRecord = {
   ocr_text: string
   summary: string
   summary_original: string
-  processing_status: 'pending' | 'processing' | 'completed' | 'failed' | 'needs_review'
+  processing_status: DocumentStatus
   metadata_source: string
   confidence: number
   people_or_organizations: string[]
@@ -134,7 +136,9 @@ function dayAfter(date: string): string {
 export function buildDocumentFilter(filters: DocumentListFilters): string | undefined {
   const parts: string[] = []
 
-  if (filters.status !== 'all') {
+  if (filters.status === UNFINISHED_STATUS) {
+    parts.push(pb.filter('processing_status != {:status}', { status: 'completed' }))
+  } else if (filters.status !== 'all') {
     parts.push(pb.filter('processing_status = {:status}', { status: filters.status }))
   }
   if (filters.documentType !== 'all') {
@@ -176,18 +180,99 @@ export async function reprocessDocument(
   })
 }
 
-// requestKey: null — this is polled alongside the job counts and must not
+// requestKey: null — these are polled alongside the job counts and must not
 // auto-cancel a request already in flight.
 //
 // Counted through the documents collection, so it only covers the caller's own
 // documents (that collection's rules are user = @request.auth.id).
-export async function countFailedDocuments(): Promise<number> {
+export async function countDocumentsWithStatus(
+  status: DocumentStatus | typeof UNFINISHED_STATUS,
+): Promise<number> {
   await ensureAuth()
 
-  const result = await pb
-    .collection('documents')
-    .getList(1, 1, { filter: `processing_status = "failed"`, requestKey: null })
+  const filter =
+    buildDocumentFilter({
+      status,
+      documentType: 'all',
+      correspondent: 'all',
+      dateFrom: '',
+      dateTo: '',
+    }) ?? ''
+
+  const result = await pb.collection('documents').getList(1, 1, { filter, requestKey: null })
   return result.totalItems
+}
+
+export function countFailedDocuments(): Promise<number> {
+  return countDocumentsWithStatus('failed')
+}
+
+/**
+ * The Inbox's size, counted over the same set the Inbox lists -- everything the
+ * pipeline has not finished with. Counting only needs_review would leave the
+ * badge saying three while the list showed seven.
+ */
+export function countInboxDocuments(): Promise<number> {
+  return countDocumentsWithStatus(UNFINISHED_STATUS)
+}
+
+/**
+ * Deletes documents outright, files and all.
+ *
+ * allSettled for the same reason as markDocumentsReviewed: one document already
+ * gone in another tab must not discard eleven successes. The owner DeleteRule
+ * permits it directly, so there is no endpoint to go through.
+ */
+export async function deleteDocuments(documentIds: string[]): Promise<void> {
+  if (documentIds.length === 0) return
+  await ensureAuth()
+
+  const results = await Promise.allSettled(
+    documentIds.map((id) => pb.collection('documents').delete(id, { requestKey: null })),
+  )
+  notifyDocumentsChanged()
+
+  const failed = results.filter((result) => result.status === 'rejected').length
+  if (failed > 0) {
+    throw new Error(
+      failed === documentIds.length
+        ? 'Could not delete.'
+        : `Deleted ${documentIds.length - failed}; ${failed} failed.`,
+    )
+  }
+}
+
+/**
+ * Clears documents out of the review Inbox.
+ *
+ * A status write and nothing else: reviewing is not an edit, so metadata_source
+ * still records that the model wrote the metadata. The owner UpdateRule permits
+ * it directly, so there is no endpoint to go through.
+ *
+ * allSettled rather than all, so one document deleted in another tab does not
+ * discard eleven successes.
+ */
+export async function markDocumentsReviewed(documentIds: string[]): Promise<void> {
+  if (documentIds.length === 0) return
+  await ensureAuth()
+
+  const results = await Promise.allSettled(
+    documentIds.map((id) =>
+      pb
+        .collection('documents')
+        .update(id, { processing_status: 'completed' }, { requestKey: null }),
+    ),
+  )
+  notifyDocumentsChanged()
+
+  const failed = results.filter((result) => result.status === 'rejected').length
+  if (failed > 0) {
+    throw new Error(
+      failed === documentIds.length
+        ? 'Could not mark as reviewed.'
+        : `Marked ${documentIds.length - failed} reviewed; ${failed} failed.`,
+    )
+  }
 }
 
 export type ReprocessResult = {
@@ -322,6 +407,14 @@ export type DocumentMetadataInput = {
   title: string
   purpose: string
   summary: string
+  /**
+   * The extracted text. Editable because OCR is the one field everything else
+   * is derived from -- a misread total or date is worth fixing at the source,
+   * where a re-extraction will read the correction rather than the mistake.
+   * Saving it marks the document's vectors stale (embedstore's staleFields
+   * lists ocr_text), so the backfill re-embeds from the corrected text.
+   */
+  ocrText: string
   documentDate: string
   documentTypeName: string
   correspondentName: string
@@ -362,10 +455,11 @@ export async function saveDocumentMetadata(
       : Promise.resolve(''),
   ])
 
-  return pb.collection('documents').update<DocumentRecord>(documentId, {
+  const saved = await pb.collection('documents').update<DocumentRecord>(documentId, {
     title: input.title,
     purpose: input.purpose,
     summary: input.summary,
+    ocr_text: input.ocrText,
     document_date: input.documentDate || null,
     document_type: documentTypeId || null,
     correspondent: correspondentId || null,
@@ -374,6 +468,8 @@ export async function saveDocumentMetadata(
     processing_status:
       input.processingStatus === 'needs_review' ? 'completed' : input.processingStatus,
   })
+  notifyDocumentsChanged()
+  return saved
 }
 
 /**

@@ -5,7 +5,9 @@ import {
   jobDurationMs,
   jobStillRunning,
   parseStepTimestamp,
+  stalledAfterMs,
   stepDurationMs,
+  summarizeJob,
   type ProcessingJobRecord,
   type StepRunRecord,
   EXTRACTION_PIPELINE_STEPS,
@@ -189,5 +191,139 @@ describe('jobStillRunning', () => {
     expect(jobStillRunning(job({}))).toBe(false)
     expect(jobStillRunning(null)).toBe(false)
     expect(jobStillRunning(undefined)).toBe(false)
+  })
+})
+
+describe('summarizeJob', () => {
+  const now = Date.UTC(2026, 8, 4, 14, 17, 0, 0)
+  const at = (offsetMs: number) => new Date(now + offsetMs).toISOString().replace('T', ' ')
+
+  const job = (over: Partial<ProcessingJobRecord>): ProcessingJobRecord => ({
+    id: 'j1', document: 'd1', status: 'running', steps: [],
+    started_at: at(-30_000), finished_at: '', created: at(-30_000), updated: '', ...over,
+  })
+
+  it('names the running step and how long it has been going', () => {
+    const summary = summarizeJob(
+      job({ step_runs: [run({ status: 'running', started_at: at(-12_000) })] }),
+      now,
+    )
+    expect(summary).toEqual({ tone: 'running', label: 'OCR — 12.0s' })
+  })
+
+  // The window handleStepFailure opens: the run is already marked failed, but
+  // the job has been re-pended for another go. Reading that as "failed" would
+  // show an error for work that is still being attempted.
+  it('reads a failed step on a re-pended job as a retry, not a failure', () => {
+    expect(
+      summarizeJob(
+        job({
+          status: 'pending',
+          step_runs: [run({ status: 'failed', attempts: 1, error: 'mistral: 429' })],
+        }),
+        now,
+      ),
+    ).toEqual({ tone: 'running', label: 'Retrying OCR (attempt 2)', detail: 'mistral: 429' })
+  })
+
+  it('reports a failed step with the provider message', () => {
+    expect(
+      summarizeJob(
+        job({
+          status: 'failed',
+          finished_at: at(-1000),
+          step_runs: [run({ name: 'extract_metadata', status: 'failed', error: 'context length exceeded' })],
+        }),
+        now,
+      ),
+    ).toEqual({
+      tone: 'error',
+      label: 'Extract metadata failed',
+      detail: 'context length exceeded',
+    })
+  })
+
+  // failJob used to write job.error for a step failure too, and the summary
+  // preferred it -- so every real failure read "Processing failed" instead of
+  // naming the step. Old rows still carry both; the step wins.
+  it('names the step even when the job also carries an error', () => {
+    expect(
+      summarizeJob(
+        job({
+          status: 'failed',
+          finished_at: at(-1000),
+          error: 'ocr: mistral: 429',
+          step_runs: [run({ status: 'failed', error: 'mistral: 429' })],
+        }),
+        now,
+      ),
+    ).toEqual({ tone: 'error', label: 'OCR failed', detail: 'mistral: 429' })
+  })
+
+  it('borrows the job error as the detail when the step recorded none', () => {
+    expect(
+      summarizeJob(
+        job({
+          status: 'failed',
+          finished_at: at(-1000),
+          error: 'worker timed out',
+          step_runs: [run({ status: 'failed' })],
+        }),
+        now,
+      ),
+    ).toEqual({ tone: 'error', label: 'OCR failed', detail: 'worker timed out' })
+  })
+
+  // The class of failure that leaves step_runs empty: an unparseable step list,
+  // a document that would not load. Without job.error there is nothing to say.
+  it('falls back to the job-level error when no step recorded one', () => {
+    expect(
+      summarizeJob(job({ status: 'failed', finished_at: at(-1000), error: 'job has no steps' }), now),
+    ).toEqual({ tone: 'error', label: 'Processing failed', detail: 'job has no steps' })
+  })
+
+  it('says nothing about a job queued a moment ago', () => {
+    expect(summarizeJob(job({ status: 'pending', started_at: '', created: at(-5_000) }), now)).toBeNull()
+  })
+
+  it('suggests a cause once a pending job has waited past the threshold', () => {
+    const summary = summarizeJob(
+      job({ status: 'pending', started_at: '', created: at(-stalledAfterMs - 1000) }),
+      now,
+    )
+    expect(summary?.tone).toBe('warning')
+    expect(summary?.label).toBe('Not started yet')
+  })
+
+  // The silent one: apply_metadata already wrote "completed" onto the document,
+  // and only the soft-failed run says the search vectors are missing.
+  it('warns about a soft failure on a job that otherwise completed', () => {
+    expect(
+      summarizeJob(
+        job({
+          status: 'completed',
+          finished_at: at(-1000),
+          step_runs: [
+            run({ name: 'ocr', status: 'completed' }),
+            run({ name: 'embed', status: 'failed', soft: true, error: 'embeddings: 503' }),
+          ],
+        }),
+        now,
+      ),
+    ).toEqual({ tone: 'warning', label: 'Build search vectors failed', detail: 'embeddings: 503' })
+  })
+
+  it('covers a claimed job that is between steps', () => {
+    expect(summarizeJob(job({ step_runs: [run({ status: 'completed' })] }), now)).toEqual({
+      tone: 'running',
+      label: 'Processing — 30.0s',
+    })
+  })
+
+  it('says nothing for a clean finished job, or no job at all', () => {
+    expect(
+      summarizeJob(job({ status: 'completed', finished_at: at(-1000), step_runs: [run()] }), now),
+    ).toBeNull()
+    expect(summarizeJob(null, now)).toBeNull()
   })
 })

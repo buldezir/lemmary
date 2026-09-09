@@ -4,6 +4,7 @@ import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
 import { parseDuplicateOfId } from '../lib/api/documents'
 import { limitFromError, type LimitName } from '../lib/api/limits'
+import { documentsLanding } from '../lib/reviewPolicy'
 import { Button } from '../components/ui'
 
 const ACCEPTED_EXTENSIONS = new Set([
@@ -227,7 +228,7 @@ export function UploadFilesPage() {
         if (uploadedIds.length === 1) {
           navigate({ to: '/document/$documentId', params: { documentId: uploadedIds[0] } })
         } else {
-          navigate({ to: '/' })
+          navigate({ to: documentsLanding() })
         }
         return
       }

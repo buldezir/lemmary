@@ -1,4 +1,6 @@
 import { apiFetch } from '../apiClient'
+import { setAlwaysRequireReview } from '../reviewPolicy'
+import { invalidateAppMeta } from './meta'
 
 export type AppSettings = {
   ocr_provider_id: string
@@ -40,6 +42,8 @@ export type AppSettings = {
    * EXTRACTION_PROMPT_VERSION or through the API.
    */
   extraction_prompt_version: string
+  /** Tenant-owned, so a managed instance keeps it. */
+  always_require_review: boolean
   near_duplicate_detection_enabled: boolean
   near_duplicate_threshold: number
 }
@@ -73,10 +77,15 @@ export function getAppSettings() {
   })
 }
 
-export function updateAppSettings(patch: AppSettingsPatch) {
-  return apiFetch<AppSettings>('/api/app/settings', {
+export async function updateAppSettings(patch: AppSettingsPatch) {
+  const settings = await apiFetch<AppSettings>('/api/app/settings', {
     method: 'PATCH',
     body: patch,
     fallbackError: 'Failed to save settings',
   })
+  // Normally learned once from /api/app/meta at boot; taking it from the save
+  // response spares an admin who just turned it on a page reload.
+  setAlwaysRequireReview(settings.always_require_review)
+  invalidateAppMeta()
+  return settings
 }

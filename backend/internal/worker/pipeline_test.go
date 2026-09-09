@@ -232,3 +232,36 @@ func TestCheckOCRTextFitsCountsRunesNotBytes(t *testing.T) {
 		t.Fatalf("runes fit the column, bytes are not the unit: %v", err)
 	}
 }
+
+// failJob writes job.error only when no step carries the failure. It used to
+// write it always, which duplicated a step's message and left the UI saying
+// "Processing failed" where it could have named the step.
+func TestHasRecordedStepFailure(t *testing.T) {
+	t.Parallel()
+
+	job := core.NewRecord(coreTestJobsCollection())
+	if hasRecordedStepFailure(job) {
+		t.Fatal("a job with no step_runs records no step failure")
+	}
+
+	saveStepRuns(job, []models.StepRun{{Name: models.StepOCR, Status: models.StepStatusCompleted}})
+	if hasRecordedStepFailure(job) {
+		t.Fatal("a completed step is not a failure")
+	}
+
+	// Soft failures do not count: the pipeline walked past one, so whatever is
+	// failing the job now is something else and needs its own message.
+	saveStepRuns(job, []models.StepRun{
+		{Name: models.StepEmbed, Status: models.StepStatusFailed, Soft: true, Error: "embeddings: 503"},
+	})
+	if hasRecordedStepFailure(job) {
+		t.Fatal("a soft failure must not suppress the job-level error")
+	}
+
+	saveStepRuns(job, []models.StepRun{
+		{Name: models.StepOCR, Status: models.StepStatusFailed, Error: "mistral: 429"},
+	})
+	if !hasRecordedStepFailure(job) {
+		t.Fatal("a hard step failure already carries the message")
+	}
+}

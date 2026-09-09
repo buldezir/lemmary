@@ -13,6 +13,7 @@ import {
   type SplitResult,
   type SplitUpload,
 } from '../lib/api/split'
+import { documentsLanding } from '../lib/reviewPolicy'
 import { Button } from '../components/ui'
 
 const ACCEPT_ATTR = '.pdf,application/pdf'
@@ -393,8 +394,8 @@ export function UploadSplitPage() {
               ))}
             </ul>
           )}
-          <Link to="/" className="text-sm font-medium text-oxblood underline">
-            Open documents
+          <Link to={documentsLanding()} className="text-sm font-medium text-oxblood underline">
+            {documentsLanding() === '/inbox' ? 'Open the Inbox' : 'Open documents'}
           </Link>
         </div>
       )}

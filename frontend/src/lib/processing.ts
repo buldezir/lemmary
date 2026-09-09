@@ -30,10 +30,19 @@ export type ProcessingJobRecord = {
   steps: ProcessingStep[]
   step_runs?: StepRunRecord[]
   current_step?: string
+  /**
+   * Why the job failed, when it failed outside a step and so left nothing in
+   * step_runs -- an unparseable step list, a document that would not load.
+   * Mirrors the field failJob writes in backend/internal/worker/pipeline.go.
+   */
+  error?: string
   started_at: string
   finished_at: string
+  /** When the next attempt of a backed-off job becomes due. */
+  next_attempt_at?: string
   created: string
   updated: string
+  expand?: { document?: { id: string; title?: string; file?: string } }
 }
 
 export const FULL_PIPELINE_STEPS: ProcessingStep[] = [
@@ -170,4 +179,109 @@ export function formatDuration(ms: number): string {
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `${minutes}m ${String(Math.floor(seconds % 60)).padStart(2, '0')}s`
   return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`
+}
+
+/** The label for a step, falling back to the raw name for one we don't know. */
+export function stepLabel(name: string): string {
+  return PROCESSING_STEP_LABELS[name as ProcessingStep] ?? name
+}
+
+/**
+ * How long a job may sit pending, never having started, before the UI stops
+ * calling it "queued" and starts suggesting a cause.
+ *
+ * The worker leaves every job pending and returns when OCR or the AI extractor
+ * is unconfigured (providersReady, backend/internal/worker/processor.go), and
+ * records nothing about having done so -- the document simply reads "Pending"
+ * for ever. Two minutes is long enough that a queue merely working through a
+ * bulk upload is not accused of being broken.
+ */
+export const stalledAfterMs = 2 * 60_000
+
+export type ProcessingSummary = {
+  tone: 'running' | 'warning' | 'error'
+  /** One line, safe to show on a card. */
+  label: string
+  /** The provider's own message, or a hint. Longer, and may be absent. */
+  detail?: string
+}
+
+/**
+ * What to tell the reader about a job, in one line.
+ *
+ * The document's own processing_status cannot answer this: it is one word, it
+ * says "completed" for a document whose embeddings failed softly, and it says
+ * "pending" both for a job queued a second ago and for one no worker will ever
+ * pick up. Everything here comes off the job record the caller already holds.
+ *
+ * Returns null when there is nothing to add beyond the status badge.
+ */
+export function summarizeJob(
+  job: ProcessingJobRecord | null | undefined,
+  now: number = Date.now(),
+): ProcessingSummary | null {
+  if (!job) return null
+  const runs = job.step_runs ?? []
+
+  const running = runs.find((run) => run.status === 'running')
+  if (running) {
+    const ms = stepDurationMs(running, now)
+    return {
+      tone: 'running',
+      label: ms === null ? stepLabel(running.name) : `${stepLabel(running.name)} — ${formatDuration(ms)}`,
+    }
+  }
+
+  // A hard failure is recorded before the job is re-pended for its next
+  // attempt, so during the backoff window a failed run and a pending job mean
+  // "retrying", not "failed". Checked before the failure branches for exactly
+  // that reason.
+  const failed = runs.find((run) => run.status === 'failed' && !run.soft)
+  if (failed && !job.finished_at && job.status === 'pending') {
+    return {
+      tone: 'running',
+      label: `Retrying ${stepLabel(failed.name)} (attempt ${failed.attempts + 1})`,
+      detail: failed.error,
+    }
+  }
+
+  // The step first: it names what broke. job.error is the fallback for a
+  // failure that happened outside any step and so left step_runs untouched --
+  // and for rows written before failJob stopped duplicating a step's message.
+  if (failed) {
+    return {
+      tone: 'error',
+      label: `${stepLabel(failed.name)} failed`,
+      detail: failed.error || job.error,
+    }
+  }
+  if (job.error) {
+    return { tone: 'error', label: 'Processing failed', detail: job.error }
+  }
+
+  if (job.status === 'pending' && !job.started_at) {
+    const created = parseStepTimestamp(job.created)
+    if (created !== null && now - created > stalledAfterMs) {
+      return {
+        tone: 'warning',
+        label: 'Not started yet',
+        detail: 'Check that the OCR and AI providers are configured in Settings.',
+      }
+    }
+    return null
+  }
+
+  // Soft failures are the quiet ones: the job completed, the document reads
+  // "completed", and only this says the work is missing.
+  const soft = runs.find((run) => run.status === 'failed' && run.soft)
+  if (soft) {
+    return { tone: 'warning', label: `${stepLabel(soft.name)} failed`, detail: soft.error }
+  }
+
+  if (jobStillRunning(job)) {
+    const ms = jobDurationMs(job, now)
+    return { tone: 'running', label: ms === null ? 'Processing' : `Processing — ${formatDuration(ms)}` }
+  }
+
+  return null
 }

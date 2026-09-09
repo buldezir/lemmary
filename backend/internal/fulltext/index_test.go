@@ -12,6 +12,8 @@ import (
 
 	"github.com/blevesearch/bleve/v2"
 	"github.com/pocketbase/pocketbase/core"
+
+	"lemmary/backend/internal/models"
 )
 
 func testIndex(t *testing.T) *Index {
@@ -320,6 +322,40 @@ func TestSearchStatusFilter(t *testing.T) {
 	hits := searchIDs(t, idx, Query{Text: "invoice", UserID: "u1", ProcessingStatus: "completed"})
 	if !containsID(hits, "done") || containsID(hits, "pending") {
 		t.Fatalf("status filter: %v", hits)
+	}
+}
+
+// Searching from the Inbox has to narrow to the same set the Inbox lists, or a
+// query there would turn up documents the list itself does not hold.
+func TestSearchUnfinishedStatusFilter(t *testing.T) {
+	idx := testIndex(t)
+	for id, status := range map[string]string{
+		"done":     models.DocStatusCompleted,
+		"queued":   models.DocStatusPending,
+		"working":  models.DocStatusProcessing,
+		"broken":   models.DocStatusFailed,
+		"doubtful": models.DocStatusNeedsReview,
+	} {
+		mustPut(t, idx, id, map[string]any{
+			FieldUser:             "u1",
+			FieldProcessingStatus: status,
+			FieldTitle:            "Invoice",
+			FieldAll:              "Invoice",
+		})
+	}
+
+	hits := searchIDs(t, idx, Query{
+		Text:             "invoice",
+		UserID:           "u1",
+		ProcessingStatus: models.StatusFilterUnfinished,
+	})
+	if containsID(hits, "done") {
+		t.Fatalf("the Inbox must not hold a completed document: %v", hits)
+	}
+	for _, id := range []string{"queued", "working", "broken", "doubtful"} {
+		if !containsID(hits, id) {
+			t.Fatalf("missing %q from the unfinished set: %v", id, hits)
+		}
 	}
 }
 

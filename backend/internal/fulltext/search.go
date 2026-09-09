@@ -12,6 +12,8 @@ import (
 
 	"github.com/blevesearch/bleve/v2"
 	"github.com/blevesearch/bleve/v2/search/query"
+
+	"lemmary/backend/internal/models"
 )
 
 const (
@@ -425,7 +427,11 @@ func filterConjuncts(q Query) []query.Query {
 		conjuncts = append(conjuncts, termQuery(FieldUser, userID))
 	}
 	if status := strings.TrimSpace(q.ProcessingStatus); status != "" && status != "all" {
-		conjuncts = append(conjuncts, termQuery(FieldProcessingStatus, status))
+		if status == models.StatusFilterUnfinished {
+			conjuncts = append(conjuncts, anyTermQuery(FieldProcessingStatus, models.UnfinishedDocStatuses))
+		} else {
+			conjuncts = append(conjuncts, termQuery(FieldProcessingStatus, status))
+		}
 	}
 	if idQuery := anyTermQuery(FieldDocumentType, q.DocumentTypeIDs); idQuery != nil {
 		conjuncts = append(conjuncts, idQuery)

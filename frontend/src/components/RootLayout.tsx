@@ -2,9 +2,18 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, Outlet, useMatchRoute } from '@tanstack/react-router'
 import { pb, pbAdminUrl } from '../lib/pb'
 import { ensureAuth, getUserDisplayName, isAdmin, logout } from '../lib/auth'
-import { getSetupStatus, type SetupStatus } from '../lib/api/meta'
+import { getAppMeta, getSetupStatus, type SetupStatus } from '../lib/api/meta'
 import { useAppMeta } from '../hooks/useAppMeta'
-import { primaryNavItems, secondaryNavItems, visibleNavItems, type NavItem } from '../lib/nav'
+import { useInboxCount } from '../hooks/useInboxCount'
+import { useActiveJobCount } from '../hooks/useActiveJobCount'
+import {
+  primaryNavItems,
+  secondaryNavItems,
+  visibleNavItems,
+  NAV_BADGE_DESCRIPTIONS,
+  type NavBadgeKey,
+  type NavItem,
+} from '../lib/nav'
 import { AppFooter } from './AppFooter'
 import { Button } from './ui'
 import { AppLogo } from './ui'
@@ -133,6 +142,30 @@ function AdminMenuLabel({ children }: { children: string }) {
   )
 }
 
+type NavBadges = Record<NavBadgeKey, number | null>
+
+function navBadge(item: NavItem, badges: NavBadges): number | null | undefined {
+  return item.kind === 'route' && item.badgeKey ? badges[item.badgeKey] : undefined
+}
+
+/**
+ * The count beside a nav label. The digits are hidden from assistive tech and
+ * replaced with a sentence, because "Inbox 3" is not a useful accessible name.
+ */
+function NavBadge({ count, description }: { count: number; description: string }) {
+  return (
+    <>
+      <span
+        aria-hidden="true"
+        className="ml-1.5 inline-flex px-1 py-0.5 align-middle text-[10px] font-semibold tabular-nums text-amber-800 ring-1 ring-inset ring-amber-800/40"
+      >
+        {count > 99 ? '99+' : count}
+      </span>
+      <span className="sr-only">{`, ${count} ${description}`}</span>
+    </>
+  )
+}
+
 /**
  * One header link, in either shape. The router handles internal paths so a tap
  * does not reload the app; the PocketBase dashboard is a real page elsewhere.
@@ -142,13 +175,22 @@ function NavItemLink({
   className,
   role,
   onNavigate,
+  badge,
 }: {
   item: NavItem
   className: string
   role?: string
   onNavigate?: () => void
+  badge?: number | null
 }) {
-  const label = item.admin ? <AdminMenuLabel>{item.label}</AdminMenuLabel> : item.label
+  const label = (
+    <>
+      {item.admin ? <AdminMenuLabel>{item.label}</AdminMenuLabel> : item.label}
+      {typeof badge === 'number' && badge > 0 && item.kind === 'route' && item.badgeKey && (
+        <NavBadge count={badge} description={NAV_BADGE_DESCRIPTIONS[item.badgeKey]} />
+      )}
+    </>
+  )
 
   if (item.kind === 'external') {
     return (
@@ -254,16 +296,22 @@ function AppHeader({
   appName,
   accent,
   admin,
+  reviewRequired,
   userDisplayName,
 }: {
   appName: string
   accent: string
   admin: boolean
+  reviewRequired: boolean
   userDisplayName: string
 }) {
   const [open, setOpen] = useState(false)
+  const primaryItems = primaryNavItems(reviewRequired)
   const secondaryItems = visibleNavItems(secondaryNavItems(pbAdminUrl), admin)
-  const panelItems = [...primaryNavItems, ...secondaryItems]
+  const panelItems = [...primaryItems, ...secondaryItems]
+  // Once here, for both layouts: this component renders the wide bar and the
+  // narrow panel from the same item lists.
+  const badges = { inbox: useInboxCount(), activity: useActiveJobCount() }
 
   useEffect(() => {
     if (!open) return
@@ -303,8 +351,13 @@ function AppHeader({
         </Link>
         <div className="hidden items-center gap-4 md:flex">
           <nav className="flex items-center gap-5" aria-label="Main">
-            {primaryNavItems.map((item) => (
-              <NavItemLink key={item.label} item={item} className={navLinkClass} />
+            {primaryItems.map((item) => (
+              <NavItemLink
+                key={item.label}
+                item={item}
+                className={navLinkClass}
+                badge={navBadge(item, badges)}
+              />
             ))}
             <MoreNavMenu items={secondaryItems} />
           </nav>
@@ -345,6 +398,7 @@ function AppHeader({
                 item={item}
                 className={panelItemClass}
                 onNavigate={() => setOpen(false)}
+                badge={navBadge(item, badges)}
               />
             ))}
           </nav>
@@ -374,7 +428,10 @@ type Gate =
   | { kind: 'app'; status: SetupStatus; admin: boolean }
 
 async function resolveGate(): Promise<Gate> {
-  const status = await getSetupStatus()
+  // Meta before the gate opens, because always_require_review decides what a
+  // bare "/" means: without it the list paints every status for one frame and
+  // then narrows. getAppMeta never throws and caches its promise.
+  const [status] = await Promise.all([getSetupStatus(), getAppMeta()])
 
   if (status.needs_admin) {
     return { kind: 'setup', status }
@@ -404,7 +461,7 @@ async function resolveGate(): Promise<Gate> {
 
 export function RootLayout() {
   const [gate, setGate] = useState<Gate>({ kind: 'loading' })
-  const { appName, accent } = useAppMeta()
+  const { appName, accent, alwaysRequireReview } = useAppMeta()
   const userDisplayName = gate.kind === 'app' ? getUserDisplayName() : ''
   const admin = gate.kind === 'app' ? gate.admin : false
 
@@ -503,6 +560,7 @@ export function RootLayout() {
         appName={appName}
         accent={accent}
         admin={admin}
+        reviewRequired={Boolean(alwaysRequireReview)}
         userDisplayName={userDisplayName}
       />
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6 sm:py-6">

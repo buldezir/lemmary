@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'vitest'
-import { primaryNavItems, secondaryNavItems, visibleNavItems } from './nav'
+import {
+  NAV_BADGE_DESCRIPTIONS,
+  primaryNavItems,
+  secondaryNavItems,
+  visibleNavItems,
+} from './nav'
 
 describe('nav items', () => {
   test('hides admin-only entries from a regular user', () => {
@@ -31,18 +36,51 @@ describe('nav items', () => {
   })
 
   test('keeps the primary links open to everyone', () => {
-    expect(visibleNavItems(primaryNavItems, false)).toHaveLength(primaryNavItems.length)
-    expect(primaryNavItems.map((item) => item.label)).toEqual([
+    const items = primaryNavItems(true)
+    expect(visibleNavItems(items, false)).toHaveLength(items.length)
+    expect(items.map((item) => item.label)).toEqual([
       'Documents',
+      'Inbox',
       'Upload',
+      'Activity',
       'Deep Search',
     ])
+  })
+
+  // Without the setting, needs_review is only ever reached by a doubtful
+  // extraction, so a permanent Inbox link would point at an empty list.
+  test('offers the Inbox only where review is required', () => {
+    expect(primaryNavItems(false).map((item) => item.label)).toEqual([
+      'Documents',
+      'Upload',
+      'Activity',
+      'Deep Search',
+    ])
+  })
+
+  test('gives the Inbox and Activity paths of their own, and the count badges', () => {
+    const badged = primaryNavItems(true).filter((item) => item.kind === 'route' && item.badgeKey)
+
+    expect(badged).toEqual([
+      { kind: 'route', label: 'Inbox', to: '/inbox', badgeKey: 'inbox' },
+      { kind: 'route', label: 'Activity', to: '/activity', badgeKey: 'activity' },
+    ])
+  })
+
+  // The header reads the digits out as "3 waiting for review", so a badge key
+  // added without its sentence would render an undefined one.
+  test('describes every badge key for assistive tech', () => {
+    for (const item of primaryNavItems(true)) {
+      if (item.kind === 'route' && item.badgeKey) {
+        expect(NAV_BADGE_DESCRIPTIONS[item.badgeKey]).toBeTruthy()
+      }
+    }
   })
 
   // Only the document list is exact: every other link has children it should
   // stay lit for (/upload/split, /rag/research, /import/ngx).
   test('marks only the document list as an exact match', () => {
-    const exact = [...primaryNavItems, ...secondaryNavItems('/_/')].filter(
+    const exact = [...primaryNavItems(true), ...secondaryNavItems('/_/')].filter(
       (item) => item.kind === 'route' && item.exact,
     )
 
