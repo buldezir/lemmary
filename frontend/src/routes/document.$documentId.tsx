@@ -22,10 +22,12 @@ import {
   formatDuration,
   jobDurationMs,
   jobStillRunning,
-  stepDurationMs,
   type ProcessingJobRecord,
   type ProcessingStep,
+  summarizeJob,
 } from '../lib/processing'
+import { ProcessingStatus } from '../components/ProcessingStatus'
+import { ProcessingSteps } from '../components/ProcessingSteps'
 import { Button } from '../components/ui'
 import { DocumentPreview } from '../components/DocumentPreview'
 import { useStoredFlag } from '../hooks/useStoredFlag'
@@ -50,7 +52,10 @@ export function DocumentDetailPage() {
   const [reprocessing, setReprocessing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [reprocessSteps, setReprocessSteps] = useState<ProcessingStep[]>([])
-  const [showProcessingJob, setShowProcessingJob] = useState(false)
+  // null means "the reader has not said": the panel then opens itself for a job
+  // that failed, because a failure should not need a click to be read. Once
+  // they toggle it, their choice is a boolean and sticks.
+  const [showProcessingJob, setShowProcessingJob] = useState<boolean | null>(null)
   const [showPreview, setShowPreview] = useStoredFlag('lemmary.showPreview', true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -228,6 +233,22 @@ export function DocumentDetailPage() {
   }, [needsClock])
 
   const jobTotalMs = job ? jobDurationMs(job, tick) : null
+  const summary = summarizeJob(job, tick)
+  // Latched, not derived: a panel that opened itself to show a failure must not
+  // close again the moment Reprocess turns the tone back to 'running' -- that
+  // is exactly when the reader is watching it. Reset per document, since the
+  // route param can change without this component remounting.
+  //
+  // Warnings included: a soft-failed embed is the one failure the status badge
+  // will never mention, so it is the one most worth opening the panel for.
+  const [autoOpenedFor, setAutoOpenedFor] = useState<string | null>(null)
+  if (
+    (summary?.tone === 'error' || summary?.tone === 'warning') &&
+    autoOpenedFor !== documentId
+  ) {
+    setAutoOpenedFor(documentId)
+  }
+  const jobPanelOpen = showProcessingJob ?? autoOpenedFor === documentId
 
   function toggleReprocessStep(step: ProcessingStep) {
     setReprocessSteps((current) => {
@@ -448,6 +469,8 @@ export function DocumentDetailPage() {
           <p className="text-sm text-ink-soft">
             Status: {DOCUMENT_STATUS_LABELS[document.processing_status]}
           </p>
+          {/* The reason, without opening anything. */}
+          <ProcessingStatus summary={summary} />
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           {document.processing_status === 'needs_review' && !editing && (
@@ -508,14 +531,14 @@ export function DocumentDetailPage() {
               hiding the panel was what left it with no way to be reprocessed. */}
           <button
             type="button"
-            onClick={() => setShowProcessingJob((visible) => !visible)}
+            onClick={() => setShowProcessingJob(!jobPanelOpen)}
             aria-label={
-              showProcessingJob ? 'Hide processing job details' : 'Show processing job details'
+              jobPanelOpen ? 'Hide processing job details' : 'Show processing job details'
             }
-            aria-pressed={showProcessingJob}
-            title={showProcessingJob ? 'Hide processing job' : 'Show processing job'}
+            aria-pressed={jobPanelOpen}
+            title={jobPanelOpen ? 'Hide processing job' : 'Show processing job'}
             className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xs border transition-colors ${
-              showProcessingJob
+              jobPanelOpen
                 ? 'border-ink bg-ink text-paper hover:bg-oxblood'
                 : 'border-line-strong bg-surface text-ink-soft hover:bg-bright hover:text-ink-muted'
             }`}
@@ -542,7 +565,7 @@ export function DocumentDetailPage() {
           controls first. */}
       <div className="flex flex-col gap-5 xl:flex-row xl:items-start">
         <div className="flex min-w-0 flex-1 flex-col gap-5">
-          {showProcessingJob && (
+          {jobPanelOpen && (
             <div className="rounded-none border border-line bg-surface p-3">
               {job ? (
                 <>
@@ -551,60 +574,16 @@ export function DocumentDetailPage() {
                     <span className="bg-wash px-1.5 py-0.5 text-xs font-medium text-ink-muted">
                       {job.status}
                     </span>
-                    {job.current_step ? (
-                      <span className="text-xs text-ink-soft">current: {job.current_step}</span>
-                    ) : null}
-                    <span className="text-xs text-ink-soft">
-                      {(job.steps ?? []).join(' → ') || 'n/a'}
-                    </span>
+                    {/* current_step and the step list both dropped: the run
+                        list below shows which step is running and every step
+                        there is, in the same place. */}
                     {jobTotalMs !== null ? (
                       <span className="text-xs text-ink-soft">total: {formatDuration(jobTotalMs)}</span>
                     ) : null}
                   </div>
-                  {job.step_runs && job.step_runs.length > 0 ? (
-                    <ul className="mt-2 flex flex-col gap-1 text-sm text-ink-muted">
-                      {job.step_runs.map((run) => (
-                        <li key={run.name} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                          <span className="font-medium">{run.name}</span>
-                          <span className="bg-wash px-1.5 py-0.5 text-xs">{run.status}</span>
-                          {(() => {
-                            // Absent for a pending step and for a skipped one,
-                            // which finishes without ever having started.
-                            const ms = stepDurationMs(run, tick)
-                            if (ms === null) return null
-                            return (
-                              <span
-                                className="text-xs tabular-nums text-ink-soft"
-                                title={
-                                  run.status === 'running'
-                                    ? 'Elapsed so far'
-                                    : run.attempts > 1
-                                      ? `Duration of attempt ${run.attempts}`
-                                      : 'Duration'
-                                }
-                              >
-                                {formatDuration(ms)}
-                                {run.status === 'running' ? '…' : ''}
-                              </span>
-                            )
-                          })()}
-                          {run.attempts > 0 ? (
-                            <span className="text-xs text-ink-soft">attempts: {run.attempts}</span>
-                          ) : null}
-                          {run.provider ? (
-                            <span className="text-xs text-ink-soft">provider: {run.provider}</span>
-                          ) : null}
-                          {run.model ? (
-                            <span className="text-xs text-ink-soft">model: {run.model}</span>
-                          ) : null}
-                          {run.prompt_version ? (
-                            <span className="text-xs text-ink-soft">prompt: {run.prompt_version}</span>
-                          ) : null}
-                          {run.error ? <span className="text-xs text-madder">{run.error}</span> : null}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
+                  <div className="mt-2">
+                    <ProcessingSteps job={job} now={tick} />
+                  </div>
                 </>
               ) : (
                 <div className="flex flex-col gap-1">

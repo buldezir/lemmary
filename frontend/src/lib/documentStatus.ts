@@ -21,6 +21,15 @@ export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
   needs_review: 'Needs review',
 }
 
+/**
+ * The Inbox's status filter, which is not a document status: it means every
+ * status except completed -- what the pipeline has not finished with, plus what
+ * it finished with badly. Mirrors models.StatusFilterUnfinished in
+ * backend/internal/models/status.go, which the search endpoint understands too,
+ * so the two paths agree about what the Inbox holds.
+ */
+export const UNFINISHED_STATUS = 'unfinished'
+
 export function isDocumentStatus(value: unknown): value is DocumentStatus {
   return typeof value === 'string' && (DOCUMENT_STATUSES as readonly string[]).includes(value)
 }

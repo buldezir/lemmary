@@ -79,21 +79,32 @@ export type ActiveJobCounts = {
 
 // requestKey: null — the two counts run concurrently and must not auto-cancel
 // each other, nor a poll that is already in flight.
-function countJobsByStatus(status: string) {
+function countJobs(filter: string) {
   return pb
     .collection('processing_jobs')
-    .getList(1, 1, { filter: pb.filter('status = {:status}', { status }), requestKey: null })
+    .getList(1, 1, { filter, requestKey: null })
     .then((result) => result.totalItems)
 }
 
-// Counted through the processing_jobs collection, so it only covers jobs on the
-// caller's own documents (that collection's list rule is document.user = auth.id).
+/**
+ * How much work is outstanding, split into queued and in flight.
+ *
+ * Both halves are bounded by finished_at = '' rather than by status alone, for
+ * the reason createProcessingJob gives: apply_metadata writes "completed" onto
+ * the job before embed has run, so for the whole of that window a job that is
+ * very much still working reads status=completed. Counting by status left the
+ * header badge saying zero while the Activity page listed the work, and let a
+ * stale-data sweep start on top of a running pipeline.
+ *
+ * Counted through the processing_jobs collection, so it only covers jobs on the
+ * caller's own documents (that collection's list rule is document.user = auth.id).
+ */
 export async function getActiveJobCounts(): Promise<ActiveJobCounts> {
   await ensureAuth()
 
   const [pending, running] = await Promise.all([
-    countJobsByStatus('pending'),
-    countJobsByStatus('running'),
+    countJobs(pb.filter("finished_at = '' && status = {:status}", { status: 'pending' })),
+    countJobs(pb.filter("finished_at = '' && status != {:status}", { status: 'pending' })),
   ])
 
   return { pending, running }

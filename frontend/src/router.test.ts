@@ -12,6 +12,7 @@ describe('route tree', () => {
     for (const path of [
       '/',
       '/inbox',
+      '/activity',
       '/upload',
       '/upload/amazon',
       '/upload/split',
@@ -56,10 +57,11 @@ describe('document list search params', () => {
     })
   })
 
-  // /inbox is the needs_review list by definition, so a status in its URL could
-  // only repeat the path or contradict it. Dropping it at the validator is what
-  // makes it unlinkable and untypeable.
-  test('drop a status on the Inbox route while keeping the other filters', async () => {
+  // The Inbox is the whole tray by definition and has no filter controls, so
+  // its URL carries a page and nothing else. Dropping the rest at the validator
+  // is what makes a filter there unlinkable and untypeable -- otherwise a
+  // hand-typed ?from= would shorten the list with nothing on screen to say so.
+  test('strip every filter on the Inbox route, keeping the page', async () => {
     const { router } = await import('./router')
     const validate = router.routesById['/inbox'].options.validateSearch as
       | ((search: Record<string, unknown>) => unknown)
@@ -68,9 +70,6 @@ describe('document list search params', () => {
     expect(validate?.({})).toEqual({})
     expect(validate?.({ status: 'failed', page: 2 })).toEqual({ page: 2 })
     expect(validate?.({ status: 'needs_review' })).toEqual({})
-    expect(validate?.({ q: 'invoice', from: '2026-01-01' })).toEqual({
-      q: 'invoice',
-      from: '2026-01-01',
-    })
+    expect(validate?.({ q: 'invoice', from: '2026-01-01' })).toEqual({})
   })
 })

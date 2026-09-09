@@ -39,9 +39,33 @@ export function getAppMeta(): Promise<AppMeta> {
   return pending
 }
 
+type Listener = () => void
+
+const listeners = new Set<Listener>()
+
+/**
+ * Subscribes to meta going stale; returns the unsubscribe.
+ *
+ * Forgetting the cache is not enough on its own: nothing re-reads it, so an
+ * admin saving Settings saw the nav still offering yesterday's answer until
+ * they reloaded the page. Same shape as lib/documentEvents.ts, and for the same
+ * reason -- a write has to be able to tell the rest of the app about itself.
+ */
+export function onAppMetaChanged(listener: Listener): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
 /** Forgets the cached meta, so the next read sees a just-saved setting. */
 export function invalidateAppMeta(): void {
   pending = null
+  // Copied first: a listener that unsubscribes itself while we notify must not
+  // shorten the set we are walking.
+  for (const listener of [...listeners]) {
+    listener()
+  }
 }
 
 async function fetchAppMeta(): Promise<AppMeta> {

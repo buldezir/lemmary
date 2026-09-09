@@ -106,13 +106,19 @@ export function documentQuerySearch(query: DocumentQuery): Partial<DocumentQuery
 }
 
 /**
- * The same, for the Inbox route, whose status is its path: a `status` param
- * there could only repeat the path or contradict it, so it is dropped.
+ * The same, for the Inbox route, which carries a page and nothing else.
+ *
+ * The Inbox has no filter controls: it is a tray worked through until it is
+ * empty, and narrowing it would only hide work still to do. Enforced here
+ * rather than in the page, because the alternative is a hand-typed
+ * `?from=2026-01-01` quietly shortening a list with nothing on screen to blame
+ * it on. Its status is its path, so a `status` param could only repeat that or
+ * contradict it.
  */
 export function inboxQuerySearch(raw: DocumentQueryInput): Partial<DocumentQuery> {
   return documentQuerySearch({
-    ...parseDocumentQuery(raw),
-    status: defaultDocumentQuery.status,
+    ...defaultDocumentQuery,
+    page: parseDocumentQuery(raw).page,
   })
 }
 

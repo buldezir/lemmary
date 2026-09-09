@@ -1,21 +1,21 @@
 import { useEffect, useRef } from 'react'
 import { pb } from '../lib/pb'
-import { countDocumentsNeedingReview } from '../lib/api/documents'
+import { countInboxDocuments } from '../lib/api/documents'
 import { onDocumentsChanged } from '../lib/documentEvents'
 import { useAsync } from './useAsync'
 
 const debounceMs = 300
 
 /**
- * How many documents are waiting for review, for the header's Inbox badge.
- * Null while unknown and on failure, so the badge hides rather than claiming
- * an empty Inbox.
+ * How many documents the pipeline has not finished with, for the header's Inbox
+ * badge. Null while unknown and on failure, so the badge hides rather than
+ * claiming an empty Inbox.
  *
  * Call it once, in the header: the two header layouts render from one
  * component precisely so this is one request rather than one per link.
  */
 export function useInboxCount(): number | null {
-  const { data, reload } = useAsync(() => countDocumentsNeedingReview(), [])
+  const { data, reload } = useAsync(() => countInboxDocuments(), [])
   const reloadRef = useRef(reload)
   useEffect(() => {
     reloadRef.current = reload

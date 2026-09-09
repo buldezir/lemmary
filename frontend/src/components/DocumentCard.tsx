@@ -1,6 +1,8 @@
 import { Link } from '@tanstack/react-router'
 import type { DocumentRecord } from '../lib/api/documents'
 import { DOCUMENT_STATUS_LABELS, reviewReason, type DocumentStatus } from '../lib/documentStatus'
+import { summarizeJob, type ProcessingJobRecord } from '../lib/processing'
+import { ProcessingStatus } from './ProcessingStatus'
 import { Button } from './ui'
 
 type Props = {
@@ -11,6 +13,12 @@ type Props = {
   /** Omit to hide the button; it shows only for a document that is waiting. */
   onMarkReviewed?: (id: string) => void
   markingReviewed?: boolean
+  /**
+   * The document's newest processing job, when the list fetched one. It says
+   * what the status badge cannot: which step is running, why one failed, and
+   * that a "completed" document is missing its search vectors.
+   */
+  job?: ProcessingJobRecord
 }
 
 const statusStyles: Record<DocumentStatus, string> = {
@@ -66,6 +74,7 @@ export function DocumentCard({
   onToggleSelect,
   onMarkReviewed,
   markingReviewed,
+  job,
 }: Props) {
   const tags = document.expand?.tags?.map((tag) => tag.name) ?? []
   const correspondent = document.expand?.correspondent?.name
@@ -118,6 +127,8 @@ export function DocumentCard({
         </div>
 
         <CardDescription document={document} />
+
+        <ProcessingStatus summary={summarizeJob(job)} />
 
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">

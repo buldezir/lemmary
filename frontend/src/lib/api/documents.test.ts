@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildDocumentFilter, fileUrlWithToken, parseDuplicateOfId } from './documents'
+import { UNFINISHED_STATUS } from '../documentStatus'
 
 const noFilters = {
   status: 'all',
@@ -14,10 +15,17 @@ describe('buildDocumentFilter', () => {
     expect(buildDocumentFilter(noFilters)).toBeUndefined()
   })
 
-  // Also the filter behind the Inbox badge's count.
   it('filters on a status alone', () => {
     expect(buildDocumentFilter({ ...noFilters, status: 'needs_review' })).toBe(
       "processing_status = 'needs_review'",
+    )
+  })
+
+  // The Inbox, and the count its badge shows: not one status but the absence of
+  // one, so a document that failed or is still queued is in there too.
+  it('turns the Inbox filter into everything except completed', () => {
+    expect(buildDocumentFilter({ ...noFilters, status: UNFINISHED_STATUS })).toBe(
+      "processing_status != 'completed'",
     )
   })
 

@@ -13,7 +13,9 @@ import {
   type DocumentQueryInput,
 } from './lib/documentQuery'
 import { RootLayout } from './components/RootLayout'
-import { IndexPage, InboxPage } from './routes/index'
+import { IndexPage } from './routes/index'
+import { InboxPage } from './routes/inbox'
+import { ActivityPage } from './routes/activity'
 import { UploadPage } from './routes/upload'
 import { UploadFilesPage } from './routes/upload.index'
 import { UploadAmazonPage } from './routes/upload.amazon'
@@ -68,6 +70,15 @@ const inboxRoute = createRoute({
   path: '/inbox',
   validateSearch: (search: DocumentQueryInput & SearchSchemaInput) => inboxQuerySearch(search),
   component: InboxPage,
+})
+
+// The processing queue across every document. Beside the Inbox rather than
+// behind Management: it is scoped to the caller's own documents by the
+// collection's list rule, so it is not an admin view.
+const activityRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/activity',
+  component: ActivityPage,
 })
 
 const uploadRoute = createRoute({
@@ -235,6 +246,7 @@ const documentAskSessionRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   inboxRoute,
+  activityRoute,
   uploadRoute.addChildren([uploadFilesRoute, uploadAmazonRoute, uploadSplitRoute]),
   ragRoute.addChildren([
     ragIndexRoute,

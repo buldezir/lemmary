@@ -2,7 +2,7 @@ import { pb, pbUrl } from '../pb'
 import { ensureAuth } from '../auth'
 import { apiFetch, errorDetail } from '../apiClient'
 import { notifyDocumentsChanged } from '../documentEvents'
-import type { DocumentStatus } from '../documentStatus'
+import { UNFINISHED_STATUS, type DocumentStatus } from '../documentStatus'
 import type { ProcessingStep, ReprocessMode } from '../processing'
 import type { TimelineMonth } from '../timeline'
 
@@ -136,7 +136,9 @@ function dayAfter(date: string): string {
 export function buildDocumentFilter(filters: DocumentListFilters): string | undefined {
   const parts: string[] = []
 
-  if (filters.status !== 'all') {
+  if (filters.status === UNFINISHED_STATUS) {
+    parts.push(pb.filter('processing_status != {:status}', { status: 'completed' }))
+  } else if (filters.status !== 'all') {
     parts.push(pb.filter('processing_status = {:status}', { status: filters.status }))
   }
   if (filters.documentType !== 'all') {
@@ -183,7 +185,9 @@ export async function reprocessDocument(
 //
 // Counted through the documents collection, so it only covers the caller's own
 // documents (that collection's rules are user = @request.auth.id).
-export async function countDocumentsWithStatus(status: DocumentStatus): Promise<number> {
+export async function countDocumentsWithStatus(
+  status: DocumentStatus | typeof UNFINISHED_STATUS,
+): Promise<number> {
   await ensureAuth()
 
   const filter =
@@ -203,9 +207,39 @@ export function countFailedDocuments(): Promise<number> {
   return countDocumentsWithStatus('failed')
 }
 
-/** The Inbox's size. */
-export function countDocumentsNeedingReview(): Promise<number> {
-  return countDocumentsWithStatus('needs_review')
+/**
+ * The Inbox's size, counted over the same set the Inbox lists -- everything the
+ * pipeline has not finished with. Counting only needs_review would leave the
+ * badge saying three while the list showed seven.
+ */
+export function countInboxDocuments(): Promise<number> {
+  return countDocumentsWithStatus(UNFINISHED_STATUS)
+}
+
+/**
+ * Deletes documents outright, files and all.
+ *
+ * allSettled for the same reason as markDocumentsReviewed: one document already
+ * gone in another tab must not discard eleven successes. The owner DeleteRule
+ * permits it directly, so there is no endpoint to go through.
+ */
+export async function deleteDocuments(documentIds: string[]): Promise<void> {
+  if (documentIds.length === 0) return
+  await ensureAuth()
+
+  const results = await Promise.allSettled(
+    documentIds.map((id) => pb.collection('documents').delete(id, { requestKey: null })),
+  )
+  notifyDocumentsChanged()
+
+  const failed = results.filter((result) => result.status === 'rejected').length
+  if (failed > 0) {
+    throw new Error(
+      failed === documentIds.length
+        ? 'Could not delete.'
+        : `Deleted ${documentIds.length - failed}; ${failed} failed.`,
+    )
+  }
 }
 
 /**

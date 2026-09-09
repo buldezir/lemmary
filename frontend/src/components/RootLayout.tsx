@@ -5,10 +5,12 @@ import { ensureAuth, getUserDisplayName, isAdmin, logout } from '../lib/auth'
 import { getAppMeta, getSetupStatus, type SetupStatus } from '../lib/api/meta'
 import { useAppMeta } from '../hooks/useAppMeta'
 import { useInboxCount } from '../hooks/useInboxCount'
+import { useActiveJobCount } from '../hooks/useActiveJobCount'
 import {
   primaryNavItems,
   secondaryNavItems,
   visibleNavItems,
+  NAV_BADGE_DESCRIPTIONS,
   type NavBadgeKey,
   type NavItem,
 } from '../lib/nav'
@@ -150,7 +152,7 @@ function navBadge(item: NavItem, badges: NavBadges): number | null | undefined {
  * The count beside a nav label. The digits are hidden from assistive tech and
  * replaced with a sentence, because "Inbox 3" is not a useful accessible name.
  */
-function NavBadge({ count }: { count: number }) {
+function NavBadge({ count, description }: { count: number; description: string }) {
   return (
     <>
       <span
@@ -159,7 +161,7 @@ function NavBadge({ count }: { count: number }) {
       >
         {count > 99 ? '99+' : count}
       </span>
-      <span className="sr-only">{`, ${count} waiting for review`}</span>
+      <span className="sr-only">{`, ${count} ${description}`}</span>
     </>
   )
 }
@@ -184,7 +186,9 @@ function NavItemLink({
   const label = (
     <>
       {item.admin ? <AdminMenuLabel>{item.label}</AdminMenuLabel> : item.label}
-      {typeof badge === 'number' && badge > 0 && <NavBadge count={badge} />}
+      {typeof badge === 'number' && badge > 0 && item.kind === 'route' && item.badgeKey && (
+        <NavBadge count={badge} description={NAV_BADGE_DESCRIPTIONS[item.badgeKey]} />
+      )}
     </>
   )
 
@@ -292,19 +296,22 @@ function AppHeader({
   appName,
   accent,
   admin,
+  reviewRequired,
   userDisplayName,
 }: {
   appName: string
   accent: string
   admin: boolean
+  reviewRequired: boolean
   userDisplayName: string
 }) {
   const [open, setOpen] = useState(false)
+  const primaryItems = primaryNavItems(reviewRequired)
   const secondaryItems = visibleNavItems(secondaryNavItems(pbAdminUrl), admin)
-  const panelItems = [...primaryNavItems, ...secondaryItems]
+  const panelItems = [...primaryItems, ...secondaryItems]
   // Once here, for both layouts: this component renders the wide bar and the
   // narrow panel from the same item lists.
-  const badges = { inbox: useInboxCount() }
+  const badges = { inbox: useInboxCount(), activity: useActiveJobCount() }
 
   useEffect(() => {
     if (!open) return
@@ -344,7 +351,7 @@ function AppHeader({
         </Link>
         <div className="hidden items-center gap-4 md:flex">
           <nav className="flex items-center gap-5" aria-label="Main">
-            {primaryNavItems.map((item) => (
+            {primaryItems.map((item) => (
               <NavItemLink
                 key={item.label}
                 item={item}
@@ -454,7 +461,7 @@ async function resolveGate(): Promise<Gate> {
 
 export function RootLayout() {
   const [gate, setGate] = useState<Gate>({ kind: 'loading' })
-  const { appName, accent } = useAppMeta()
+  const { appName, accent, alwaysRequireReview } = useAppMeta()
   const userDisplayName = gate.kind === 'app' ? getUserDisplayName() : ''
   const admin = gate.kind === 'app' ? gate.admin : false
 
@@ -553,6 +560,7 @@ export function RootLayout() {
         appName={appName}
         accent={accent}
         admin={admin}
+        reviewRequired={Boolean(alwaysRequireReview)}
         userDisplayName={userDisplayName}
       />
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6 sm:py-6">

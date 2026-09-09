@@ -97,7 +97,9 @@ describe('inboxQuerySearch', () => {
     expect(inboxQuerySearch({ status: 'nonsense' })).toEqual({})
   })
 
-  test('keeps every other filter', () => {
+  // The Inbox has no filter controls, so a filter in its URL would narrow the
+  // tray with nothing on screen to explain why. Only the page survives.
+  test('drops every filter, keeping only the page', () => {
     expect(
       inboxQuerySearch({
         q: 'rent',
@@ -108,14 +110,7 @@ describe('inboxQuerySearch', () => {
         correspondent: 'cor1',
         page: 4,
       }),
-    ).toEqual({
-      q: 'rent',
-      from: '2024-06-01',
-      to: '2024-06-30',
-      type: 'typ1',
-      correspondent: 'cor1',
-      page: 4,
-    })
+    ).toEqual({ page: 4 })
   })
 
   test('leaves a bare Inbox URL bare', () => {

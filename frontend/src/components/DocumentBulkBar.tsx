@@ -20,6 +20,12 @@ type Props = {
   onMarkReviewed: () => void
   onSelectAll: () => void
   onClear: () => void
+  /**
+   * Offered alongside the mode's own action, not instead of it: the Inbox holds
+   * documents worth throwing away as well as ones worth reviewing. Omit to hide
+   * the button.
+   */
+  onDelete?: () => void
 }
 
 export function DocumentBulkBar({
@@ -32,11 +38,16 @@ export function DocumentBulkBar({
   onMarkReviewed,
   onSelectAll,
   onClear,
+  onDelete,
 }: Props) {
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-none border border-line bg-surface px-4 py-3">
       <span className="text-sm text-ink-muted">
-        {selectedCount === 0 ? hints[mode] : `${selectedCount} selected`}
+        {selectedCount > 0
+          ? `${selectedCount} selected`
+          : onDelete && mode === 'review'
+            ? 'Select documents to mark reviewed or delete.'
+            : hints[mode]}
       </span>
 
       {mode === 'reprocess' ? (
@@ -60,6 +71,12 @@ export function DocumentBulkBar({
       ) : (
         <Button disabled={busy || selectedCount === 0} onClick={onMarkReviewed}>
           {busy ? 'Marking...' : 'Mark reviewed'}
+        </Button>
+      )}
+
+      {onDelete && (
+        <Button variant="danger" disabled={busy || selectedCount === 0} onClick={onDelete}>
+          Delete selected
         </Button>
       )}
 
