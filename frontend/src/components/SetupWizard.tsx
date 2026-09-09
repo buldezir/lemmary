@@ -407,6 +407,16 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                   </>
                 )}
               </p>
+              {/* The step asks for a key from an account the operator may not
+                  have opened yet, which is the one thing no hint here can
+                  supply. The guide is the walk-through for that. */}
+              <p className={fieldHintClassName}>
+                No provider account yet?{' '}
+                <DocsLink href="/docs/guided_ai_setup.html">
+                  Follow the guided AI provider setup
+                </DocsLink>{' '}
+                — a free Mistral key for OCR, Opencode Go for the language model.
+              </p>
               {providers.length > 0 && (
                 <p className="text-xs text-ink-soft">
                   Already added: {providers.map((item) => item.alias).join(', ')}
