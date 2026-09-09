@@ -14,6 +14,7 @@ import (
 	"lemmary/backend/internal/logfmt"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/ocr"
+	"lemmary/backend/internal/strutil"
 )
 
 // ErrStepSoft marks a step failure the pipeline may walk past.
@@ -229,6 +230,19 @@ func (r *PipelineRunner) handleStepFailure(job, document *core.Record, runs []mo
 	return failJob(r.App, job, document, err)
 }
 
+// hasRecordedStepFailure reports whether a step already carries this job's
+// failure message. A soft failure does not count: the pipeline walked past it,
+// so whatever is failing the job now is something else.
+func hasRecordedStepFailure(job *core.Record) bool {
+	runs, err := parseStepRuns(job)
+	if err != nil {
+		return false
+	}
+	return slices.ContainsFunc(runs, func(run models.StepRun) bool {
+		return run.Status == models.StepStatusFailed && !run.Soft
+	})
+}
+
 func failJob(app core.App, job *core.Record, document *core.Record, err error) error {
 	if document == nil {
 		// Callers that fail before loading the document pass nil, but the claim
@@ -247,6 +261,14 @@ func failJob(app core.App, job *core.Record, document *core.Record, err error) e
 
 	job.Set("status", models.JobStatusFailed)
 	job.Set("finished_at", nowTimestamp())
+	// Only when no step recorded the failure. This field exists for failures
+	// that happen outside a step and so write nothing into step_runs -- an
+	// unparseable step list, a document that will not load. Writing it for a
+	// step failure too would duplicate a message step_runs already has, and
+	// leave the UI saying "Processing failed" where it could name the step.
+	if !hasRecordedStepFailure(job) {
+		job.Set("error", strutil.Truncate(err.Error(), 1900))
+	}
 	if saveErr := app.Save(job); saveErr != nil {
 		return errors.Join(err, saveErr)
 	}
@@ -261,6 +283,13 @@ func failJob(app core.App, job *core.Record, document *core.Record, err error) e
 	return err
 }
 
+// finalizeDocumentWithoutApply settles a document the apply step did not.
+//
+// AlwaysRequireReview deliberately does not reach here: a step list without
+// apply_metadata is one where no model wrote the metadata -- above all a
+// paperless-ngx import, whose whole point (models.ImportPreserveSteps) is that
+// the metadata curated over there survives. Requiring review of it would empty
+// a migrated archive into the Inbox for extraction that never ran.
 func finalizeDocumentWithoutApply(app core.App, document *core.Record, steps []string) error {
 	if document.GetString("duplicate_of") != "" {
 		document.Set("processing_status", models.DocStatusNeedsReview)

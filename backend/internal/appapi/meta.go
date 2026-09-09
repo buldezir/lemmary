@@ -77,6 +77,10 @@ func handleGetMeta(app core.App, rt *config.Runtime) func(*core.RequestEvent) er
 			// the same reason ai_managed is: the SPA reads meta before it can
 			// know whether the session is an admin's.
 			"chatgpt_login": rt.ChatGPTLogin(),
+			// Public because it shapes what a *regular* user sees -- which
+			// status the document list defaults to, and where an upload lands
+			// -- while only an admin can change it.
+			"always_require_review": rt.AlwaysRequireReview(),
 		})
 	}
 }

@@ -5,6 +5,7 @@ import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
 import {
   describeJobOverrides,
+  markDocumentsReviewed,
   openDocumentFile,
   overridesForSteps,
   reprocessDocument,
@@ -13,6 +14,8 @@ import {
   type JobOverrides,
 } from '../lib/api/documents'
 import { StepBindingOverride } from '../components/BindingOverride'
+import { DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
+import { documentsLanding } from '../lib/reviewPolicy'
 import {
   defaultReprocessSteps,
   forceStepsForReprocess,
@@ -23,14 +26,20 @@ import {
   formatDuration,
   jobDurationMs,
   jobStillRunning,
-  stepDurationMs,
   type ProcessingJobRecord,
   type ProcessingStep,
+  summarizeJob,
 } from '../lib/processing'
+import { ProcessingStatus } from '../components/ProcessingStatus'
+import { ProcessingSteps } from '../components/ProcessingSteps'
 import { Button } from '../components/ui'
 import { DocumentPreview } from '../components/DocumentPreview'
 import { useStoredFlag } from '../hooks/useStoredFlag'
 import { previewKind } from '../lib/documentPreview'
+
+function backLabel() {
+  return documentsLanding() === '/inbox' ? 'Back to the Inbox' : 'Back to documents'
+}
 
 export function DocumentDetailPage() {
   const { documentId } = useParams({ from: '/document/$documentId' })
@@ -43,11 +52,15 @@ export function DocumentDetailPage() {
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [markingReviewed, setMarkingReviewed] = useState(false)
   const [reprocessing, setReprocessing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [reprocessSteps, setReprocessSteps] = useState<ProcessingStep[]>([])
   const [reprocessOverrides, setReprocessOverrides] = useState<JobOverrides>({})
-  const [showProcessingJob, setShowProcessingJob] = useState(false)
+  // null means "the reader has not said": the panel then opens itself for a job
+  // that failed, because a failure should not need a click to be read. Once
+  // they toggle it, their choice is a boolean and sticks.
+  const [showProcessingJob, setShowProcessingJob] = useState<boolean | null>(null)
   const [showPreview, setShowPreview] = useStoredFlag('lemmary.showPreview', true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -225,6 +238,28 @@ export function DocumentDetailPage() {
   }, [needsClock])
 
   const jobTotalMs = job ? jobDurationMs(job, tick) : null
+  const summary = summarizeJob(job, tick)
+  // Latched, not derived: a panel that opened itself to show a failure must not
+  // close again the moment Reprocess turns the tone back to 'running' -- that
+  // is exactly when the reader is watching it. Reset per document, since the
+  // route param can change without this component remounting.
+  //
+  // Warnings included: a soft-failed embed is the one failure the status badge
+  // will never mention, so it is the one most worth opening the panel for.
+  const [autoOpened, setAutoOpened] = useState(false)
+  // Both reset per document: the route param can change without this component
+  // remounting, and a reader who closed the panel on one document must not have
+  // that choice hide the next document's failure.
+  const [panelDocumentId, setPanelDocumentId] = useState(documentId)
+  if (panelDocumentId !== documentId) {
+    setPanelDocumentId(documentId)
+    setShowProcessingJob(null)
+    setAutoOpened(false)
+  }
+  if (!autoOpened && (summary?.tone === 'error' || summary?.tone === 'warning')) {
+    setAutoOpened(true)
+  }
+  const jobPanelOpen = showProcessingJob ?? autoOpened
 
   function toggleReprocessStep(step: ProcessingStep) {
     setReprocessSteps((current) => {
@@ -345,7 +380,32 @@ export function DocumentDetailPage() {
       return
     }
 
-    await navigate({ to: '/' })
+    await navigate({ to: documentsLanding() })
+  }
+
+  /**
+   * Clears the document out of the Inbox without going through the form.
+   * Hidden while editing, because Save *is* this action in edit mode:
+   * saveDocumentMetadata already turns needs_review into completed.
+   */
+  async function onMarkReviewed() {
+    if (!document) return
+
+    try {
+      setMarkingReviewed(true)
+      setMessage('')
+      setError('')
+      await markDocumentsReviewed([document.id])
+      const refreshed = await pb.collection('documents').getOne<DocumentRecord>(document.id, {
+        expand: 'tags,document_type,correspondent,duplicate_of',
+      })
+      applyLoadedDocument(refreshed)
+      setMessage('Marked as reviewed.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not mark as reviewed')
+    } finally {
+      setMarkingReviewed(false)
+    }
   }
 
   async function onSave(event: SubmitEvent<HTMLFormElement>) {
@@ -363,6 +423,7 @@ export function DocumentDetailPage() {
         title: document.title,
         purpose: document.purpose,
         summary: document.summary,
+        ocrText: document.ocr_text ?? '',
         documentDate: document.document_date,
         documentTypeName: documentTypeInput,
         correspondentName: correspondentInput,
@@ -392,8 +453,8 @@ export function DocumentDetailPage() {
     return (
       <section className="flex flex-col gap-3">
         <p className="text-sm text-madder">{error || 'Document not found.'}</p>
-        <Link to="/" className="text-sm font-medium text-oxblood underline">
-          Back to documents
+        <Link to={documentsLanding()} className="text-sm font-medium text-oxblood underline">
+          {backLabel()}
         </Link>
       </section>
     )
@@ -411,20 +472,38 @@ export function DocumentDetailPage() {
           >
             {document.expand?.duplicate_of?.title?.trim() || document.duplicate_of}
           </Link>
-          . Review both documents and delete the one you do not need.
+          .{' '}
+          {/* The relationship stays true after review, so the banner stays,
+              but stops asking for something already done. */}
+          {document.processing_status === 'needs_review'
+            ? 'Review both documents and delete the one you do not need.'
+            : 'Reviewed; both were kept.'}
         </div>
       )}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <Link to="/" className="text-sm text-ink-soft hover:text-oxblood">
-            &larr; Back to documents
+          <Link to={documentsLanding()} className="text-sm text-ink-soft hover:text-oxblood">
+            &larr; {backLabel()}
           </Link>
           <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight text-ink">
             {document.title || 'Untitled document'}
           </h2>
-          <p className="text-sm text-ink-soft">Status: {document.processing_status}</p>
+          <p className="text-sm text-ink-soft">
+            Status: {DOCUMENT_STATUS_LABELS[document.processing_status]}
+          </p>
+          {/* The reason, without opening anything. */}
+          <ProcessingStatus summary={summary} />
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {document.processing_status === 'needs_review' && !editing && (
+            <Button
+              variant="secondary"
+              disabled={markingReviewed}
+              onClick={() => void onMarkReviewed()}
+            >
+              {markingReviewed ? 'Marking...' : 'Mark reviewed'}
+            </Button>
+          )}
           <Link
             to="/document/$documentId/ask"
             params={{ documentId }}
@@ -474,14 +553,14 @@ export function DocumentDetailPage() {
               hiding the panel was what left it with no way to be reprocessed. */}
           <button
             type="button"
-            onClick={() => setShowProcessingJob((visible) => !visible)}
+            onClick={() => setShowProcessingJob(!jobPanelOpen)}
             aria-label={
-              showProcessingJob ? 'Hide processing job details' : 'Show processing job details'
+              jobPanelOpen ? 'Hide processing job details' : 'Show processing job details'
             }
-            aria-pressed={showProcessingJob}
-            title={showProcessingJob ? 'Hide processing job' : 'Show processing job'}
+            aria-pressed={jobPanelOpen}
+            title={jobPanelOpen ? 'Hide processing job' : 'Show processing job'}
             className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xs border transition-colors ${
-              showProcessingJob
+              jobPanelOpen
                 ? 'border-ink bg-ink text-paper hover:bg-oxblood'
                 : 'border-line-strong bg-surface text-ink-soft hover:bg-bright hover:text-ink-muted'
             }`}
@@ -508,7 +587,7 @@ export function DocumentDetailPage() {
           controls first. */}
       <div className="flex flex-col gap-5 xl:flex-row xl:items-start">
         <div className="flex min-w-0 flex-1 flex-col gap-5">
-          {showProcessingJob && (
+          {jobPanelOpen && (
             <div className="rounded-none border border-line bg-surface p-3">
               {job ? (
                 <>
@@ -517,60 +596,16 @@ export function DocumentDetailPage() {
                     <span className="bg-wash px-1.5 py-0.5 text-xs font-medium text-ink-muted">
                       {job.status}
                     </span>
-                    {job.current_step ? (
-                      <span className="text-xs text-ink-soft">current: {job.current_step}</span>
-                    ) : null}
-                    <span className="text-xs text-ink-soft">
-                      {(job.steps ?? []).join(' → ') || 'n/a'}
-                    </span>
+                    {/* current_step and the step list both dropped: the run
+                        list below shows which step is running and every step
+                        there is, in the same place. */}
                     {jobTotalMs !== null ? (
                       <span className="text-xs text-ink-soft">total: {formatDuration(jobTotalMs)}</span>
                     ) : null}
                   </div>
-                  {job.step_runs && job.step_runs.length > 0 ? (
-                    <ul className="mt-2 flex flex-col gap-1 text-sm text-ink-muted">
-                      {job.step_runs.map((run) => (
-                        <li key={run.name} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                          <span className="font-medium">{run.name}</span>
-                          <span className="bg-wash px-1.5 py-0.5 text-xs">{run.status}</span>
-                          {(() => {
-                            // Absent for a pending step and for a skipped one,
-                            // which finishes without ever having started.
-                            const ms = stepDurationMs(run, tick)
-                            if (ms === null) return null
-                            return (
-                              <span
-                                className="text-xs tabular-nums text-ink-soft"
-                                title={
-                                  run.status === 'running'
-                                    ? 'Elapsed so far'
-                                    : run.attempts > 1
-                                      ? `Duration of attempt ${run.attempts}`
-                                      : 'Duration'
-                                }
-                              >
-                                {formatDuration(ms)}
-                                {run.status === 'running' ? '…' : ''}
-                              </span>
-                            )
-                          })()}
-                          {run.attempts > 0 ? (
-                            <span className="text-xs text-ink-soft">attempts: {run.attempts}</span>
-                          ) : null}
-                          {run.provider ? (
-                            <span className="text-xs text-ink-soft">provider: {run.provider}</span>
-                          ) : null}
-                          {run.model ? (
-                            <span className="text-xs text-ink-soft">model: {run.model}</span>
-                          ) : null}
-                          {run.prompt_version ? (
-                            <span className="text-xs text-ink-soft">prompt: {run.prompt_version}</span>
-                          ) : null}
-                          {run.error ? <span className="text-xs text-madder">{run.error}</span> : null}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
+                  <div className="mt-2">
+                    <ProcessingSteps job={job} now={tick} />
+                  </div>
                 </>
               ) : (
                 <div className="flex flex-col gap-1">
@@ -774,10 +809,19 @@ export function DocumentDetailPage() {
               OCR text
               <textarea
                 rows={18}
-                readOnly
-                className={`${textareaClass(false)} min-h-96 font-mono text-xs leading-relaxed cursor-not-allowed`}
+                readOnly={!editing}
+                className={`${textareaClass(editing)} min-h-96 font-mono text-xs leading-relaxed`}
                 value={document.ocr_text ?? ''}
+                onChange={(event) => setDocument({ ...document, ocr_text: event.target.value })}
               />
+              {editing && (
+                <span className="text-xs font-normal text-ink-soft">
+                  Everything else is derived from this text, so a correction here is worth more
+                  than one to a single field. Saving re-indexes the document for search and queues
+                  its passage vectors to be rebuilt; it does not re-run extraction -- reprocess
+                  below for that, which reads the corrected text rather than re-running OCR.
+                </span>
+              )}
             </label>
 
             <div className="flex items-center gap-4 sm:col-span-2">
@@ -795,7 +839,7 @@ export function DocumentDetailPage() {
                     setEditing(true)
                   }}
                 >
-                  Edit
+                  Unlock editing
                 </Button>
               )}
               {message && <p className="text-sm text-forest">{message}</p>}

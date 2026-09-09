@@ -395,6 +395,9 @@ func (p *Processor) runJob(jobID string, snap config.Snapshot) error {
 		)
 
 		job.Set("status", models.JobStatusRunning)
+		// A retry re-pends this same job, so last attempt's message must not
+		// outlive it; failJob writes a fresh one if this attempt fails too.
+		job.Set("error", "")
 		if job.GetString("started_at") == "" {
 			job.Set("started_at", nowTimestamp())
 		}

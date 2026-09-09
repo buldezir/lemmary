@@ -67,6 +67,10 @@ type Config struct {
 	ExtractionPromptVer           string
 	NearDuplicateDetectionEnabled bool
 	NearDuplicateThreshold        float64
+	// AlwaysRequireReview finishes every document the pipeline extracted
+	// metadata for on needs_review rather than completed, so nothing reaches
+	// completed except by a person saying so.
+	AlwaysRequireReview bool
 }
 
 const DefaultNearDuplicateThreshold = 0.92
@@ -226,6 +230,7 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 		ExtractionPromptVer:           strutil.FirstNonEmpty(record.GetString("extraction_prompt_version"), "v1"),
 		NearDuplicateDetectionEnabled: record.GetBool("near_duplicate_detection_enabled"),
 		NearDuplicateThreshold:        threshold,
+		AlwaysRequireReview:           record.GetBool("always_require_review"),
 	}
 
 	if err := resolveProviders(app, &cfg); err != nil {
@@ -324,6 +329,7 @@ func applyConfigToRecord(record *core.Record, cfg Config) {
 		threshold = DefaultNearDuplicateThreshold
 	}
 	record.Set("near_duplicate_threshold", threshold)
+	record.Set("always_require_review", cfg.AlwaysRequireReview)
 }
 
 func getEnv(key, fallback string) string {

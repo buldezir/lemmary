@@ -66,6 +66,7 @@ type FormState = {
   openai_timeout_sec: string
   worker_timeout_sec: string
   worker_max_retries: string
+  always_require_review: boolean
   near_duplicate_detection_enabled: boolean
   near_duplicate_threshold: string
 }
@@ -90,6 +91,7 @@ function formFromSettings(settings: AppSettings): FormState {
     openai_timeout_sec: String(settings.openai_timeout_sec),
     worker_timeout_sec: String(settings.worker_timeout_sec),
     worker_max_retries: String(settings.worker_max_retries),
+    always_require_review: settings.always_require_review,
     near_duplicate_detection_enabled: settings.near_duplicate_detection_enabled,
     near_duplicate_threshold: String(settings.near_duplicate_threshold ?? 0.92),
   }
@@ -265,6 +267,7 @@ export function SettingsPage() {
         openai_timeout_sec: openAITimeout,
         worker_timeout_sec: workerTimeout,
         worker_max_retries: maxRetries,
+        always_require_review: form.always_require_review,
         // Omit on a managed instance: naming these fails the whole patch.
         ...(aiEditable
           ? {
@@ -638,6 +641,22 @@ export function SettingsPage() {
                 {form.embedding_model.trim() !== ''
                   ? 'With an embedding model configured, one search already reaches documents in every language; this list is only used when Deep Search falls back to keyword search.'
                   : 'Languages deep search translates keywords into, so a German invoice is found by an English question. Leave empty to search only in the language of the question.'}
+              </p>
+            </div>
+            <div className={`${labelClassName} sm:col-span-2`}>
+              <label className="flex items-center gap-2 text-sm text-ink-muted">
+                <input
+                  type="checkbox"
+                  checked={form.always_require_review}
+                  onChange={(e) => updateField('always_require_review', e.target.checked)}
+                />
+                Always require review for new documents
+              </label>
+              <p className={fieldHintClassName}>
+                Every document the AI extracts metadata for waits in the Inbox, however
+                confident the extraction was &mdash; reprocessed documents included. Nothing
+                completes but by your saying so. Off, only low-confidence extractions and
+                possible duplicates land there.
               </p>
             </div>
           </div>

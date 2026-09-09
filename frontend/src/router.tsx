@@ -6,9 +6,16 @@ import {
   type SearchSchemaInput,
 } from '@tanstack/react-router'
 import { ensureAuth, isAdmin } from './lib/auth'
-import { documentQuerySearch, parseDocumentQuery, type DocumentQueryInput } from './lib/documentQuery'
+import {
+  documentQuerySearch,
+  inboxQuerySearch,
+  parseDocumentQuery,
+  type DocumentQueryInput,
+} from './lib/documentQuery'
 import { RootLayout } from './components/RootLayout'
 import { IndexPage } from './routes/index'
+import { InboxPage } from './routes/inbox'
+import { ActivityPage } from './routes/activity'
 import { UploadPage } from './routes/upload'
 import { UploadFilesPage } from './routes/upload.index'
 import { UploadAmazonPage } from './routes/upload.amazon'
@@ -54,6 +61,24 @@ const indexRoute = createRoute({
   validateSearch: (search: DocumentQueryInput & SearchSchemaInput) =>
     documentQuerySearch(parseDocumentQuery(search)),
   component: IndexPage,
+})
+
+// The review Inbox: the same list, with its status fixed by the path. See
+// lib/nav.ts for why this is a path and not a link to /?status=needs_review.
+const inboxRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/inbox',
+  validateSearch: (search: DocumentQueryInput & SearchSchemaInput) => inboxQuerySearch(search),
+  component: InboxPage,
+})
+
+// The processing queue across every document. Beside the Inbox rather than
+// behind Management: it is scoped to the caller's own documents by the
+// collection's list rule, so it is not an admin view.
+const activityRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/activity',
+  component: ActivityPage,
 })
 
 const uploadRoute = createRoute({
@@ -220,6 +245,8 @@ const documentAskSessionRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  inboxRoute,
+  activityRoute,
   uploadRoute.addChildren([uploadFilesRoute, uploadAmazonRoute, uploadSplitRoute]),
   ragRoute.addChildren([
     ragIndexRoute,

@@ -80,6 +80,12 @@ func (r *Runtime) Managed() bool { return r.env.Managed }
 // SPA knows whether to offer the sign-in button.
 func (r *Runtime) ChatGPTLogin() bool { return r.env.ChatGPTLogin }
 
+// AlwaysRequireReview reports whether every AI-extracted document waits in the
+// review Inbox. Off the snapshot rather than the env, unlike Managed and
+// ChatGPTLogin: it is a tenant's own setting, so it changes when Settings is
+// saved and the runtime reloads.
+func (r *Runtime) AlwaysRequireReview() bool { return r.Snapshot().Cfg.AlwaysRequireReview }
+
 func (r *Runtime) Snapshot() Snapshot {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

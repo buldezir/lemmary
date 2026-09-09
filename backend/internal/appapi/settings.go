@@ -40,6 +40,7 @@ type settingsResponse struct {
 	ExtractionPromptVersion       string  `json:"extraction_prompt_version"`
 	NearDuplicateDetectionEnabled bool    `json:"near_duplicate_detection_enabled"`
 	NearDuplicateThreshold        float64 `json:"near_duplicate_threshold"`
+	AlwaysRequireReview           bool    `json:"always_require_review"`
 }
 
 type settingsPatchRequest struct {
@@ -64,10 +65,12 @@ type settingsPatchRequest struct {
 	ExtractionPromptVersion       *string  `json:"extraction_prompt_version"`
 	NearDuplicateDetectionEnabled *bool    `json:"near_duplicate_detection_enabled"`
 	NearDuplicateThreshold        *float64 `json:"near_duplicate_threshold"`
+	AlwaysRequireReview           *bool    `json:"always_require_review"`
 }
 
 // touchesManaged is true for the same fields ApplyManaged rewrites. Timeouts,
-// retries, languages and the prompt version are tenant-owned; see AIEnv.
+// retries, languages, the prompt version and always_require_review are
+// tenant-owned; see AIEnv.
 func (r settingsPatchRequest) touchesManaged() bool {
 	return r.OCRProviderID != nil ||
 		r.OCRModel != nil ||
@@ -178,6 +181,7 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 		ExtractionPromptVersion:       cfg.ExtractionPromptVer,
 		NearDuplicateDetectionEnabled: cfg.NearDuplicateDetectionEnabled,
 		NearDuplicateThreshold:        threshold,
+		AlwaysRequireReview:           cfg.AlwaysRequireReview,
 	}
 }
 
@@ -282,6 +286,9 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	}
 	if req.NearDuplicateDetectionEnabled != nil {
 		record.Set("near_duplicate_detection_enabled", *req.NearDuplicateDetectionEnabled)
+	}
+	if req.AlwaysRequireReview != nil {
+		record.Set("always_require_review", *req.AlwaysRequireReview)
 	}
 	if req.NearDuplicateThreshold != nil {
 		if *req.NearDuplicateThreshold <= 0 || *req.NearDuplicateThreshold > 1 {

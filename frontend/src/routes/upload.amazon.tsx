@@ -8,6 +8,7 @@ import {
   type AmazonImportProgress,
   type AmazonImportResult,
 } from '../lib/api/imports'
+import { documentsLanding } from '../lib/reviewPolicy'
 import { Button } from '../components/ui'
 
 const ACCEPT_ATTR = '.zip,application/zip,application/x-zip-compressed'
@@ -206,8 +207,8 @@ export function UploadAmazonPage() {
               ))}
             </ul>
           )}
-          <Link to="/" className="text-sm font-medium text-oxblood underline">
-            Open documents
+          <Link to={documentsLanding()} className="text-sm font-medium text-oxblood underline">
+            {documentsLanding() === '/inbox' ? 'Open the Inbox' : 'Open documents'}
           </Link>
         </div>
       )}

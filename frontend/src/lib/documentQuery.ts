@@ -12,6 +12,8 @@
  * unfiltered list.
  */
 
+import { isDocumentStatus } from './documentStatus'
+
 export type DocumentQuery = {
   /** Fulltext search; empty means list everything. */
   q: string
@@ -44,10 +46,6 @@ export const defaultDocumentQuery: DocumentQuery = {
   page: 1,
 }
 
-// The statuses the filter offers, which is what a URL may name. 'all' is the
-// absence of a status filter rather than one of them.
-const statuses = ['pending', 'processing', 'completed', 'needs_review', 'failed']
-
 const datePattern = /^\d{4}-\d{2}-\d{2}$/
 
 function text(value: unknown): string {
@@ -79,7 +77,9 @@ export function parseDocumentQuery(raw: DocumentQueryInput): DocumentQuery {
   const status = text(raw.status)
   return {
     q: typeof raw.q === 'string' ? raw.q : '',
-    status: statuses.includes(status) ? status : 'all',
+    // 'all' is the absence of a status filter rather than one of them, so it
+    // is not in DOCUMENT_STATUSES -- but a URL may name it.
+    status: isDocumentStatus(status) || status === 'all' ? status : defaultDocumentQuery.status,
     from: date(raw.from),
     to: date(raw.to),
     type: id(raw.type),
@@ -103,6 +103,23 @@ export function documentQuerySearch(query: DocumentQuery): Partial<DocumentQuery
     }
   }
   return search
+}
+
+/**
+ * The same, for the Inbox route, which carries a page and nothing else.
+ *
+ * The Inbox has no filter controls: it is a tray worked through until it is
+ * empty, and narrowing it would only hide work still to do. Enforced here
+ * rather than in the page, because the alternative is a hand-typed
+ * `?from=2026-01-01` quietly shortening a list with nothing on screen to blame
+ * it on. Its status is its path, so a `status` param could only repeat that or
+ * contradict it.
+ */
+export function inboxQuerySearch(raw: DocumentQueryInput): Partial<DocumentQuery> {
+  return documentQuerySearch({
+    ...defaultDocumentQuery,
+    page: parseDocumentQuery(raw).page,
+  })
 }
 
 /** Whether the list is narrowed at all, which decides the empty-state wording. */

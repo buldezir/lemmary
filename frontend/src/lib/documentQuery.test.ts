@@ -3,6 +3,7 @@ import {
   defaultDocumentQuery,
   documentQuerySearch,
   hasActiveFilters,
+  inboxQuerySearch,
   parseDocumentQuery,
 } from './documentQuery'
 
@@ -83,6 +84,37 @@ describe('documentQuerySearch', () => {
       page: 4,
     }
     expect(parseDocumentQuery(documentQuerySearch(query))).toEqual(query)
+  })
+})
+
+// /inbox holds its status in the path, so the query string must never carry
+// one -- neither a matching one, which would be noise on every link, nor a
+// conflicting one, which would silently show a different list.
+describe('inboxQuerySearch', () => {
+  test('drops the status whatever it says', () => {
+    expect(inboxQuerySearch({ status: 'needs_review' })).toEqual({})
+    expect(inboxQuerySearch({ status: 'failed' })).toEqual({})
+    expect(inboxQuerySearch({ status: 'nonsense' })).toEqual({})
+  })
+
+  // The Inbox has no filter controls, so a filter in its URL would narrow the
+  // tray with nothing on screen to explain why. Only the page survives.
+  test('drops every filter, keeping only the page', () => {
+    expect(
+      inboxQuerySearch({
+        q: 'rent',
+        status: 'completed',
+        from: '2024-06-01',
+        to: '2024-06-30',
+        type: 'typ1',
+        correspondent: 'cor1',
+        page: 4,
+      }),
+    ).toEqual({ page: 4 })
+  })
+
+  test('leaves a bare Inbox URL bare', () => {
+    expect(inboxQuerySearch({})).toEqual({})
   })
 })
 

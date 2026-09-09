@@ -283,14 +283,40 @@ An archive with no documents but a non-empty taxonomy is valid and restorable �
 3. An `OnRecordAfterCreateSuccess` hook dispatches the job immediately; a cron job (`process_pending_jobs`) sweeps any stuck pending jobs
 4. Worker generates a PNG preview from the first PDF page (via `pdftoppm`), then extracts text, optionally checks for near-duplicates, and runs AI metadata extraction
 5. Extracted metadata is saved on the document
-6. UI shows status on list and detail pages
+6. UI shows status on list and detail pages, and anything awaiting a human appears in the [review Inbox](#review-inbox)
 
 Metadata extraction sends the current document's OCR text **and** up to 500 of that owner's existing correspondent names and document-type names to the configured LLM provider, so the model can reuse existing labels instead of creating near-duplicates. Names are sent as a JSON array marked as untrusted data. Apply still matches exact names, then a punctuation/accent-insensitive form (`Amazon EU S.à r.l.` vs `Amazon EU S.a.r.l.`). Existing `name` / `name_original` values are not overwritten on reuse.
+
+### Review inbox
+
+**Inbox** in the header is the list of documents whose status is `needs_review` — everything waiting on you rather than on the worker. It carries a count, so a glance at the header says whether there is anything to do.
+
+A document lands there for one of three reasons:
+
+- **Low extraction confidence** — the model scored its own answer below 0.5.
+- **A possible duplicate** — see [duplicate detection](#duplicate-detection) below; the card and the detail page link to the document it may duplicate.
+- **Because you asked for all of them** — Settings → **Always require review for new documents** (off by default). With it on, every document the AI extracted metadata for waits in the Inbox however confident the extraction was, reprocessed documents included: nothing reaches `completed` except by your saying so. This is the setting for the workflow of uploading as things arrive and correcting a month's worth in one sitting.
+
+  It does not apply to paperless-ngx imports in preserve mode. Those run no AI extraction — the metadata is the one curated in paperless — so there is nothing for a review to check, and a migrated archive is not emptied into the Inbox.
+
+  Turning it on also rearranges the two lists around it, because otherwise **Documents** would be mostly a second copy of the Inbox:
+
+  - **Documents** defaults to **Completed** — the archive you have actually read. The status dropdown still offers *All statuses*, and picking it puts `?status=all` in the URL.
+  - An upload of several files, an Amazon import and a split all finish in the **Inbox** rather than on **Documents**, which would filter out exactly what was just added. A single-file upload still opens that document.
+
+  The instance announces the setting on `GET /api/app/meta` so the SPA can do both for every user, not only for admins; only an admin can change it.
+
+Two ways out, both of which set the status to `completed`:
+
+- **Save corrections** on the detail page — fixing a misread `document_date` and saving counts as reviewing it.
+- **Mark reviewed**, when the metadata is already right — on the detail page, on a card in the list, or on a selection of cards at once from the Inbox. It writes nothing but the status, so `metadata_source` still records that the model wrote the metadata.
+
+A document marked reviewed while `duplicate_of` is set keeps that link: the relationship is still true, and marking it reviewed says you looked and kept both.
 
 ### Duplicate detection
 
 - **Exact duplicates** — on create, the uploaded file is hashed (SHA-256) into `documents.checksum`. A second upload with the same checksum for the same user is **rejected**, with an error pointing at the existing document id. Uniqueness is enforced with a per-user unique index on non-empty checksums so concurrent uploads cannot both succeed.
-- **Near-duplicates (optional)** — after OCR, a `detect_duplicates` step can compare normalized OCR text (SimHash + Jaccard). This is controlled by Settings → **Enable near-duplicate detection after OCR** (off by default). Matches are marked `needs_review` with `duplicate_of` set to the earlier document (never a newer one); AI extract/apply steps are skipped.
+- **Near-duplicates (optional)** — after OCR, a `detect_duplicates` step can compare normalized OCR text (SimHash + Jaccard). This is controlled by Settings → **Enable near-duplicate detection after OCR** (off by default). Matches are marked `needs_review` with `duplicate_of` set to the earlier document (never a newer one), so they show up in the [Inbox](#review-inbox); AI extract/apply steps are skipped.
 - **Bulk scan** — Management → **Scan for duplicates** (admin) backfills missing checksums/fingerprints and marks exact (and, if enabled, near) duplicates among existing documents.
 
 Text extraction:
