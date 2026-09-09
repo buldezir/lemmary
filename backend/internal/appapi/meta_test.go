@@ -86,3 +86,29 @@ func TestResolvedAppName(t *testing.T) {
 		t.Fatalf("nil app = %q, want %q", got, defaultAppName)
 	}
 }
+
+// The accent is seeded like the name: PocketBase installs its own blue, which
+// would otherwise be what a fresh Lemmary shows in its logo mark.
+func TestRegisterAppNameSeedsTheAccent(t *testing.T) {
+	app := bootNamedApp(t, "", true)
+	if got := app.Settings().Meta.AccentColor; got != defaultAccent {
+		t.Fatalf("stored AccentColor = %q, want %q", got, defaultAccent)
+	}
+}
+
+func TestRegisterAppNameLeavesAChosenAccentAlone(t *testing.T) {
+	dir := t.TempDir()
+	first := bootNamedApp(t, dir, false)
+	first.Settings().Meta.AccentColor = "#123456"
+	if err := first.Save(first.Settings()); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.ResetBootstrapState(); err != nil {
+		t.Fatal(err)
+	}
+
+	second := bootNamedApp(t, dir, true)
+	if got := second.Settings().Meta.AccentColor; got != "#123456" {
+		t.Fatalf("stored AccentColor = %q, want #123456", got)
+	}
+}

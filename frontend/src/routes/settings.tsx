@@ -1,4 +1,4 @@
-import { type SubmitEvent, useEffect, useState } from 'react'
+import { type SubmitEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
   createAIProvider,
@@ -25,6 +25,7 @@ import {
   type EmbeddingStats,
 } from '../lib/api/settings'
 import { ProviderModelFields } from '../components/ProviderModelFields'
+import { DEFAULT_ACCENT } from '../lib/api/meta'
 import { useAppMeta } from '../hooks/useAppMeta'
 import {
   Button,
@@ -37,13 +38,66 @@ import {
   sectionTitleClassName,
 } from '../components/ui'
 
+/**
+ * Appearance stands above Providers, which owns a form of its own, so its
+ * fields sit outside the settings form and reach it by id instead: forms
+ * cannot nest, and `form=` is how HTML attaches an input to one elsewhere on
+ * the page.
+ */
+const FORM_ID = 'app-settings'
+
 function SaveSettingsButton({ saving }: { saving: boolean }) {
   return (
     <div>
-      <Button type="submit" disabled={saving}>
+      <Button type="submit" form={FORM_ID} disabled={saving}>
         {saving ? 'Saving...' : 'Save settings'}
       </Button>
     </div>
+  )
+}
+
+/**
+ * Save feedback as a modal: the inline lines at the foot of a page this long
+ * were read by nobody. Success clears itself, an error waits to be dismissed.
+ */
+function ResultDialog({
+  error,
+  success,
+  onClose,
+}: {
+  error: string
+  success: string
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDialogElement>(null)
+  const open = Boolean(error || success)
+
+  useEffect(() => {
+    const dialog = ref.current
+    if (!dialog) return
+    if (!open) {
+      dialog.close()
+      return
+    }
+    dialog.showModal()
+    if (error) return
+    const timer = setTimeout(onClose, 1500)
+    return () => clearTimeout(timer)
+  }, [open, error, onClose])
+
+  return (
+    <dialog
+      ref={ref}
+      onClose={onClose}
+      className="m-auto max-w-sm border border-line bg-surface p-5 text-ink backdrop:bg-ink/40"
+    >
+      <p className={`text-sm ${error ? 'text-madder' : 'text-forest'}`}>{error || success}</p>
+      {error && (
+        <div className="mt-4 flex justify-end">
+          <Button onClick={onClose}>Close</Button>
+        </div>
+      )}
+    </dialog>
   )
 }
 
@@ -69,6 +123,8 @@ type FormState = {
   always_require_review: boolean
   near_duplicate_detection_enabled: boolean
   near_duplicate_threshold: string
+  app_name: string
+  accent: string
 }
 
 function formFromSettings(settings: AppSettings): FormState {
@@ -94,7 +150,25 @@ function formFromSettings(settings: AppSettings): FormState {
     always_require_review: settings.always_require_review,
     near_duplicate_detection_enabled: settings.near_duplicate_detection_enabled,
     near_duplicate_threshold: String(settings.near_duplicate_threshold ?? 0.92),
+    app_name: settings.app_name,
+    // The color input has no empty state, so it shows the accent actually in
+    // force. Saving an untouched form therefore writes the default down, which
+    // is what it was already resolving to.
+    accent: settings.accent || DEFAULT_ACCENT,
   }
+}
+
+// The four LLM bindings the simple view collapses into one "general" model.
+// An empty Deep Search helper still fits: it means the search model does that
+// work itself, which is the same model either way.
+function fitsOneGeneralModel(form: FormState): boolean {
+  const general = `${form.extract_provider_id}|${form.extract_model}`
+  const helper = `${form.search_helper_provider_id}|${form.search_helper_model}`
+  return (
+    `${form.chat_provider_id}|${form.chat_model}` === general &&
+    `${form.search_provider_id}|${form.search_model}` === general &&
+    (helper === general || helper === '|')
+  )
 }
 
 type ProviderDraft = {
@@ -136,9 +210,15 @@ export function SettingsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [advancedModels, setAdvancedModels] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  const closeResult = useCallback(() => {
+    setError('')
+    setSuccess('')
+  }, [])
 
   async function reloadProviders() {
     const next = await listAIProviders()
@@ -178,9 +258,35 @@ export function SettingsPage() {
     }
   }, [])
 
-  function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((current) => (current ? { ...current, [key]: value } : current))
+  // Takes a function as well as an object because the provider picker fires
+  // onProviderChange and onModelChange back to back: a patch built from the
+  // render's `form` would undo the first of the two.
+  function updateFields(patch: Partial<FormState> | ((current: FormState) => Partial<FormState>)) {
+    setForm((current) => {
+      if (!current) return current
+      return { ...current, ...(typeof patch === 'function' ? patch(current) : patch) }
+    })
     setSuccess('')
+  }
+
+  function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
+    updateFields({ [key]: value } as Partial<FormState>)
+  }
+
+  /** The simple view has one LLM binding; the other three follow it. */
+  function setGeneralModel(providerId: string, model: string): Partial<FormState> {
+    return {
+      extract_provider_id: providerId,
+      extract_model: model,
+      chat_provider_id: providerId,
+      chat_model: model,
+      search_provider_id: providerId,
+      search_model: model,
+      // Named rather than left empty: empty means the same thing here, but a
+      // model spelled out is what Advanced setup then shows.
+      search_helper_provider_id: providerId,
+      search_helper_model: model,
+    }
   }
 
   async function onSaveProvider(event: SubmitEvent<HTMLFormElement>) {
@@ -254,6 +360,14 @@ export function SettingsPage() {
       setError('Near-duplicate threshold must be between 0 and 1')
       return
     }
+    if (form.app_name.trim() === '') {
+      setError('Application name is required')
+      return
+    }
+    if (!/^#[0-9a-fA-F]{6}$/.test(form.accent)) {
+      setError('Accent color must be a hex value like #6e2620')
+      return
+    }
 
     try {
       setSaving(true)
@@ -261,6 +375,8 @@ export function SettingsPage() {
       setSuccess('')
 
       const settings = await updateAppSettings({
+        app_name: form.app_name.trim(),
+        accent: form.accent,
         ocr_timeout_sec: ocrTimeout,
         processing_result_language: form.processing_result_language,
         deep_search_languages: form.deep_search_languages,
@@ -318,6 +434,62 @@ export function SettingsPage() {
           </p>
         )}
       </div>
+
+      <section className={`${sectionClassName} mb-5`}>
+        <h2 className={sectionTitleClassName}>Appearance</h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className={labelClassName}>
+            <label className={labelClassName}>
+              <span className={labelTextClassName}>Application name</span>
+              <input
+                form={FORM_ID}
+                className={inputClassName}
+                value={form.app_name}
+                onChange={(e) => updateField('app_name', e.target.value)}
+              />
+            </label>
+            <p className={fieldHintClassName}>
+              Shown in the header and on the sign-in page, and used as the sender name on mail
+              and in passkey prompts.
+            </p>
+          </div>
+          <div className={labelClassName}>
+            <span className={labelTextClassName}>Accent color</span>
+            <div className="flex items-center gap-2">
+              <input
+                form={FORM_ID}
+                type="color"
+                aria-label="Accent color"
+                className="h-9 w-12 cursor-pointer border border-line bg-surface p-1"
+                value={form.accent}
+                onChange={(e) => updateField('accent', e.target.value)}
+              />
+              <input
+                form={FORM_ID}
+                className={`${inputClassName} font-mono`}
+                aria-label="Accent color hex"
+                spellCheck={false}
+                value={form.accent}
+                onChange={(e) => updateField('accent', e.target.value.trim())}
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => updateField('accent', DEFAULT_ACCENT)}
+              >
+                Reset
+              </Button>
+            </div>
+            <p className={fieldHintClassName}>
+              Colors the logo mark and the accents around it. Pick a swatch or paste a hex value
+              such as {DEFAULT_ACCENT}.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4">
+          <SaveSettingsButton saving={saving} />
+        </div>
+      </section>
 
       {aiEditable && (
         <section className={`${sectionClassName} mb-5`}>
@@ -497,10 +669,35 @@ export function SettingsPage() {
         </section>
       )}
 
-      <form className="flex flex-col gap-5" onSubmit={onSubmit}>
+      <form id={FORM_ID} className="flex flex-col gap-5" onSubmit={onSubmit}>
         {aiEditable && (
           <section className={sectionClassName}>
             <h2 className={sectionTitleClassName}>Models</h2>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <p className={fieldHintClassName}>
+                {advancedModels
+                  ? 'Every job has its own model.'
+                  : fitsOneGeneralModel(form)
+                    ? 'One model does extraction, chat and search.'
+                    : 'Extraction, chat and search are on different models: open Advanced setup to see them. Picking a model here puts all three on it.'}
+              </p>
+              <Button
+                variant="secondary"
+                size="xs"
+                onClick={() => {
+                  // Collapsing on the way in, not on save: the simple view
+                  // shows one model, so the three it hides must already agree.
+                  if (advancedModels) {
+                    updateFields((current) =>
+                      setGeneralModel(current.extract_provider_id, current.extract_model),
+                    )
+                  }
+                  setAdvancedModels(!advancedModels)
+                }}
+              >
+                {advancedModels ? 'Simple setup' : 'Advanced setup'}
+              </Button>
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <ProviderModelFields
                 label="OCR"
@@ -512,49 +709,71 @@ export function SettingsPage() {
                 onProviderChange={(id) => updateField('ocr_provider_id', id)}
                 onModelChange={(value) => updateField('ocr_model', value)}
               />
-              <ProviderModelFields
-                label="Extraction"
-                help="Turns a document's text into its title, date, type, correspondent, tags and summary. Also proposes the cuts for Detect automatically when splitting a PDF."
-                providers={providers}
-                providerId={form.extract_provider_id}
-                model={form.extract_model}
-                purpose="llm"
-                onProviderChange={(id) => updateField('extract_provider_id', id)}
-                onModelChange={(value) => updateField('extract_model', value)}
-              />
-              <ProviderModelFields
-                label="Chat"
-                help="Answers questions about a single document on its Ask AI page. Leave the provider empty to turn the feature off."
-                providers={providers}
-                providerId={form.chat_provider_id}
-                model={form.chat_model}
-                purpose="llm"
-                allowEmpty
-                onProviderChange={(id) => updateField('chat_provider_id', id)}
-                onModelChange={(value) => updateField('chat_model', value)}
-              />
-              <ProviderModelFields
-                label="Search"
-                help="Answers natural-language queries on the Deep Search page, in both Search and Research mode. Leave the provider empty to turn the feature off."
-                providers={providers}
-                providerId={form.search_provider_id}
-                model={form.search_model}
-                purpose="llm"
-                allowEmpty
-                onProviderChange={(id) => updateField('search_provider_id', id)}
-                onModelChange={(value) => updateField('search_model', value)}
-              />
-              <ProviderModelFields
-                label="Deep Search helper"
-                help="Cheaper model Deep Search uses to read and extract from many documents at once: it turns long reads into notes and surveys whole topics one document at a time. Leave empty to have the Search model do this work itself."
-                providers={providers}
-                providerId={form.search_helper_provider_id}
-                model={form.search_helper_model}
-                purpose="llm"
-                allowEmpty
-                onProviderChange={(id) => updateField('search_helper_provider_id', id)}
-                onModelChange={(value) => updateField('search_helper_model', value)}
-              />
+              {!advancedModels && (
+                <ProviderModelFields
+                  label="General AI"
+                  help="Reads documents into metadata, answers questions on Ask AI, and runs Deep Search. Advanced setup splits this into one model per job."
+                  providers={providers}
+                  providerId={form.extract_provider_id}
+                  model={form.extract_model}
+                  purpose="llm"
+                  onProviderChange={(id) =>
+                    updateFields((current) => setGeneralModel(id, current.extract_model))
+                  }
+                  onModelChange={(value) =>
+                    updateFields((current) => setGeneralModel(current.extract_provider_id, value))
+                  }
+                />
+              )}
+
+              {advancedModels && (
+                <>
+                  <ProviderModelFields
+                    label="Extraction"
+                    help="Turns a document's text into its title, date, type, correspondent, tags and summary. Also proposes the cuts for Detect automatically when splitting a PDF."
+                    providers={providers}
+                    providerId={form.extract_provider_id}
+                    model={form.extract_model}
+                    purpose="llm"
+                    onProviderChange={(id) => updateField('extract_provider_id', id)}
+                    onModelChange={(value) => updateField('extract_model', value)}
+                  />
+                  <ProviderModelFields
+                    label="Chat"
+                    help="Answers questions about a single document on its Ask AI page. Leave the provider empty to turn the feature off."
+                    providers={providers}
+                    providerId={form.chat_provider_id}
+                    model={form.chat_model}
+                    purpose="llm"
+                    allowEmpty
+                    onProviderChange={(id) => updateField('chat_provider_id', id)}
+                    onModelChange={(value) => updateField('chat_model', value)}
+                  />
+                  <ProviderModelFields
+                    label="Search"
+                    help="Answers natural-language queries on the Deep Search page, in both Search and Research mode. Leave the provider empty to turn the feature off."
+                    providers={providers}
+                    providerId={form.search_provider_id}
+                    model={form.search_model}
+                    purpose="llm"
+                    allowEmpty
+                    onProviderChange={(id) => updateField('search_provider_id', id)}
+                    onModelChange={(value) => updateField('search_model', value)}
+                  />
+                  <ProviderModelFields
+                    label="Deep Search helper"
+                    help="Cheaper model Deep Search uses to read and extract from many documents at once: it turns long reads into notes and surveys whole topics one document at a time. Leave empty to have the Search model do this work itself."
+                    providers={providers}
+                    providerId={form.search_helper_provider_id}
+                    model={form.search_helper_model}
+                    purpose="llm"
+                    allowEmpty
+                    onProviderChange={(id) => updateField('search_helper_provider_id', id)}
+                    onModelChange={(value) => updateField('search_helper_model', value)}
+                  />
+                </>
+              )}
+
               <ProviderModelFields
                 label="Embeddings"
                 help="Lets Deep Search find documents by meaning as well as by keyword, which is what makes a question phrased in one language reach a document written in another. Leave the provider empty to search by keyword only."
@@ -570,6 +789,9 @@ export function SettingsPage() {
                 <EmbeddingStatsLine stats={embeddingStats} />
               </div>
             </div>
+          <div className="mt-4">
+            <SaveSettingsButton saving={saving} />
+          </div>
           </section>
         )}
 
@@ -660,9 +882,10 @@ export function SettingsPage() {
               </p>
             </div>
           </div>
+          <div className="mt-4">
+            <SaveSettingsButton saving={saving} />
+          </div>
         </section>
-
-        <SaveSettingsButton saving={saving} />
 
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>Worker</h2>
@@ -692,6 +915,9 @@ export function SettingsPage() {
             Worker cron schedule stays in <code className="font-mono">WORKER_CRON_EXPR</code> in{' '}
             <code className="font-mono">.env</code>.
           </p>
+          <div className="mt-4">
+            <SaveSettingsButton saving={saving} />
+          </div>
         </section>
 
         {aiEditable && (
@@ -727,14 +953,14 @@ export function SettingsPage() {
               </Link>
               .
             </p>
+            <div className="mt-4">
+              <SaveSettingsButton saving={saving} />
+            </div>
           </section>
         )}
-
-        {error && <p className="text-sm text-madder">{error}</p>}
-        {success && <p className="text-sm text-forest">{success}</p>}
-
-        <SaveSettingsButton saving={saving} />
       </form>
+
+      <ResultDialog error={error} success={success} onClose={closeResult} />
     </div>
   )
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -41,6 +42,11 @@ type settingsResponse struct {
 	NearDuplicateDetectionEnabled bool    `json:"near_duplicate_detection_enabled"`
 	NearDuplicateThreshold        float64 `json:"near_duplicate_threshold"`
 	AlwaysRequireReview           bool    `json:"always_require_review"`
+	// Branding lives in PocketBase's own settings, not in the app_settings
+	// record: the name is what passkeys, emails and backups are stamped with,
+	// and both are what /api/app/meta serves to the SPA before anyone signs in.
+	AppName string `json:"app_name"`
+	Accent  string `json:"accent"`
 }
 
 type settingsPatchRequest struct {
@@ -66,6 +72,8 @@ type settingsPatchRequest struct {
 	NearDuplicateDetectionEnabled *bool    `json:"near_duplicate_detection_enabled"`
 	NearDuplicateThreshold        *float64 `json:"near_duplicate_threshold"`
 	AlwaysRequireReview           *bool    `json:"always_require_review"`
+	AppName                       *string  `json:"app_name"`
+	Accent                        *string  `json:"accent"`
 }
 
 // touchesManaged is true for the same fields ApplyManaged rewrites. Timeouts,
@@ -95,7 +103,7 @@ func handleGetSettings(app core.App, rt *config.Runtime) func(*core.RequestEvent
 		}
 		// No reload here: the runtime is rebuilt by the app_settings/ai_providers
 		// record hooks, so reads stay cheap and quiet.
-		return writeJSON(e, http.StatusOK, settingsResponseFromConfig(rt.Snapshot().Cfg))
+		return writeJSON(e, http.StatusOK, settingsResponseFor(app, rt.Snapshot().Cfg))
 	}
 }
 
@@ -108,12 +116,19 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 		if rt.Managed() && req.touchesManaged() {
 			return writeError(e, http.StatusForbidden, managedMessage)
 		}
+		// Checked before the record is touched: branding is saved separately
+		// from it, so a name PocketBase would reject must not leave half the
+		// patch applied.
+		appName, accent, err := brandingPatch(req)
+		if err != nil {
+			return writeError(e, http.StatusBadRequest, err.Error())
+		}
 
 		// Load + patch + save in one transaction: settings is a singleton record
 		// saved whole, so two concurrent PATCHes would otherwise silently revert
 		// each other's fields.
 		var patchErr error
-		err := app.RunInTransaction(func(txApp core.App) error {
+		err = app.RunInTransaction(func(txApp core.App) error {
 			record, err := config.FindSettingsRecord(txApp, rt.Env())
 			if err != nil {
 				return err
@@ -132,8 +147,22 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 			return writeError(e, http.StatusInternalServerError, "Failed to save settings.")
 		}
 
+		if appName != nil || accent != nil {
+			settings := app.Settings()
+			if appName != nil {
+				settings.Meta.AppName = *appName
+			}
+			if accent != nil {
+				settings.Meta.AccentColor = *accent
+			}
+			if err := app.Save(settings); err != nil {
+				app.Logger().Error("save branding failed", slog.Any("error", err))
+				return writeError(e, http.StatusBadRequest, "Failed to save the application name or accent color.")
+			}
+		}
+
 		// app.Save above fires OnRecordAfterUpdateSuccess, which reloads the runtime.
-		return writeJSON(e, http.StatusOK, settingsResponseFromConfig(rt.Snapshot().Cfg))
+		return writeJSON(e, http.StatusOK, settingsResponseFor(app, rt.Snapshot().Cfg))
 	}
 }
 
@@ -151,6 +180,41 @@ func handleGetEmbeddingStats(app core.App, rt *config.Runtime) func(*core.Reques
 		}
 		return writeJSON(e, http.StatusOK, stats)
 	}
+}
+
+// brandingPatch validates the branding half of a patch. A nil pointer back
+// means "not in this request", so the stored value is kept.
+func brandingPatch(req settingsPatchRequest) (appName *string, accent *string, err error) {
+	if req.AppName != nil {
+		name := strings.TrimSpace(*req.AppName)
+		// PocketBase requires a name, so an empty one would fail the whole
+		// save with a validation error nobody can read.
+		if name == "" || len([]rune(name)) > 255 {
+			return nil, nil, errInvalid("app_name must be 1-255 characters")
+		}
+		appName = &name
+	}
+	if req.Accent != nil {
+		// Empty clears it and falls back to the built-in accent; anything else
+		// is #rrggbb, which is all PocketBase stores.
+		value := strings.TrimSpace(*req.Accent)
+		if value != "" && !hexColor.MatchString(value) {
+			return nil, nil, errInvalid("accent must be a hex color like #6e2620")
+		}
+		accent = &value
+	}
+	return appName, accent, nil
+}
+
+var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+// settingsResponseFor is settingsResponseFromConfig plus the branding, which
+// comes from PocketBase's settings rather than from the config record.
+func settingsResponseFor(app core.App, cfg config.Config) settingsResponse {
+	res := settingsResponseFromConfig(cfg)
+	res.AppName = resolvedAppName(app)
+	res.Accent = resolvedAccent(app)
+	return res
 }
 
 func settingsResponseFromConfig(cfg config.Config) settingsResponse {

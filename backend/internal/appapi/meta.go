@@ -11,40 +11,54 @@ import (
 
 const (
 	defaultAppName = "Lemmary"
-	defaultAccent  = "#111827" // gray-900, matches previous logo background
+	// The oxblood the logo mark is drawn in. Same value as DEFAULT_ACCENT in
+	// the SPA: one built-in accent, whichever side has to fall back to it.
+	defaultAccent = "#6e2620"
 
-	// pocketBaseDefaultAppName is what PocketBase seeds Meta.AppName with on a
-	// fresh install (core.newDefaultSettings). Treated as "not set yet": the
-	// string is baked into passkeys, emails, backup names and the admin UI, so
-	// leaving it would brand a Lemmary instance as Acme until someone renamed it.
+	// What PocketBase seeds Meta with on a fresh install
+	// (core.newDefaultSettings). Both are treated as "not set yet": the name is
+	// baked into passkeys, emails, backup names and the admin UI, so leaving it
+	// would brand a Lemmary instance as Acme until someone renamed it, and the
+	// accent is PocketBase's own blue, which is nobody's brand but theirs.
 	pocketBaseDefaultAppName = "Acme"
+	pocketBaseDefaultAccent  = "#1055c9"
 )
 
-// RegisterAppName replaces PocketBase's "Acme" placeholder with Lemmary.
+// brandedDefaults replaces PocketBase's placeholder name and accent with
+// Lemmary's own, and reports whether it changed anything. A name or accent
+// someone chose is left alone.
+func brandedDefaults(s *core.Settings) bool {
+	if s == nil {
+		return false
+	}
+	changed := false
+	if name := strings.TrimSpace(s.Meta.AppName); name == "" || name == pocketBaseDefaultAppName {
+		s.Meta.AppName = defaultAppName
+		changed = true
+	}
+	if accent := strings.TrimSpace(s.Meta.AccentColor); accent == "" || accent == pocketBaseDefaultAccent {
+		s.Meta.AccentColor = defaultAccent
+		changed = true
+	}
+	return changed
+}
+
+// RegisterAppName seeds the branding PocketBase ships its own placeholders for.
 //
 // Before e.Next so a first-install ReloadSettings persists Lemmary instead of
-// Acme. After e.Next so an existing install that still has the placeholder is
-// rewritten on the next boot. A custom name is left alone.
+// Acme. After e.Next so an existing install that still has a placeholder is
+// rewritten on the next boot.
 func RegisterAppName(app core.App) {
 	app.OnBootstrap().BindFunc(func(e *core.BootstrapEvent) error {
-		if s := e.App.Settings(); s != nil {
-			if name := strings.TrimSpace(s.Meta.AppName); name == "" || name == pocketBaseDefaultAppName {
-				s.Meta.AppName = defaultAppName
-			}
-		}
+		brandedDefaults(e.App.Settings())
 		if err := e.Next(); err != nil {
 			return err
 		}
-		s := e.App.Settings()
-		if s == nil {
+		if !brandedDefaults(e.App.Settings()) {
 			return nil
 		}
-		if name := strings.TrimSpace(s.Meta.AppName); name != "" && name != pocketBaseDefaultAppName {
-			return nil
-		}
-		s.Meta.AppName = defaultAppName
-		if err := e.App.Save(s); err != nil {
-			e.App.Logger().Warn("persist default app name failed; continuing", "error", err)
+		if err := e.App.Save(e.App.Settings()); err != nil {
+			e.App.Logger().Warn("persist default branding failed; continuing", "error", err)
 		}
 		return nil
 	})
@@ -61,15 +75,21 @@ func resolvedAppName(app core.App) string {
 	return name
 }
 
+func resolvedAccent(app core.App) string {
+	if app == nil || app.Settings() == nil {
+		return defaultAccent
+	}
+	if accent := strings.TrimSpace(app.Settings().Meta.AccentColor); accent != "" {
+		return accent
+	}
+	return defaultAccent
+}
+
 func handleGetMeta(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		accent := strings.TrimSpace(app.Settings().Meta.AccentColor)
-		if accent == "" {
-			accent = defaultAccent
-		}
 		return writeJSON(e, http.StatusOK, map[string]any{
 			"app_name": resolvedAppName(app),
-			"accent":   accent,
+			"accent":   resolvedAccent(app),
 			// Public: the SPA needs both before anyone has signed in.
 			"passkeys":   passkeyLoginAvailable(app, e),
 			"ai_managed": rt.Managed(),

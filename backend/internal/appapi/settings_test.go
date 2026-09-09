@@ -249,3 +249,50 @@ func TestOneOfReadsAsASentence(t *testing.T) {
 		}
 	}
 }
+
+// The branding half of a patch is validated before the record is touched, so a
+// value PocketBase would reject cannot leave the rest of the patch applied.
+func TestBrandingPatchValidatesNameAndAccent(t *testing.T) {
+	t.Parallel()
+
+	name, accent, err := brandingPatch(settingsPatchRequest{
+		AppName: strptr("  Archive  "),
+		Accent:  strptr("#6E2620"),
+	})
+	if err != nil {
+		t.Fatalf("valid branding rejected: %v", err)
+	}
+	if name == nil || *name != "Archive" {
+		t.Fatalf("app_name = %v, want trimmed Archive", name)
+	}
+	if accent == nil || *accent != "#6E2620" {
+		t.Fatalf("accent = %v, want #6E2620", accent)
+	}
+
+	// Absent stays absent: the stored value is kept.
+	if name, accent, err = brandingPatch(settingsPatchRequest{}); err != nil || name != nil || accent != nil {
+		t.Fatalf("empty patch touched branding: %v %v %v", name, accent, err)
+	}
+
+	// Empty clears the accent back to the built-in one.
+	if _, accent, err = brandingPatch(settingsPatchRequest{Accent: strptr(" ")}); err != nil || accent == nil || *accent != "" {
+		t.Fatalf("blank accent = %v (%v), want cleared", accent, err)
+	}
+
+	if _, _, err = brandingPatch(settingsPatchRequest{AppName: strptr("   ")}); err == nil {
+		t.Fatal("empty app_name must be refused: PocketBase requires one")
+	}
+	for _, bad := range []string{"6e2620", "#6e262", "#ggmmbb", "rebeccapurple"} {
+		if _, _, err = brandingPatch(settingsPatchRequest{Accent: strptr(bad)}); err == nil {
+			t.Fatalf("accent %q must be refused", bad)
+		}
+	}
+}
+
+// Branding is tenant-owned: a managed instance sets the models, not the name.
+func TestBrandingIsNotAManagedSetting(t *testing.T) {
+	t.Parallel()
+	if (settingsPatchRequest{AppName: strptr("Archive"), Accent: strptr("#000000")}).touchesManaged() {
+		t.Fatal("app_name and accent are tenant-owned")
+	}
+}

@@ -46,6 +46,10 @@ export type AppSettings = {
   always_require_review: boolean
   near_duplicate_detection_enabled: boolean
   near_duplicate_threshold: number
+  /** Instance name, shown in the header and stamped on emails and passkeys. */
+  app_name: string
+  /** Accent color as #rrggbb. Empty means the built-in accent. */
+  accent: string
 }
 
 export type AppSettingsPatch = Partial<Omit<AppSettings, 'embedding_dims'>>
