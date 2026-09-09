@@ -26,6 +26,89 @@ const tooManySessionsMessage = "You have reached the maximum number of saved cha
 type chatRequest struct {
 	SessionID string `json:"session_id"`
 	Content   string `json:"content"`
+	// The provider and model to open the conversation on, instead of the chat
+	// binding in Settings. Read only when SessionID is empty: see
+	// conversationBinding.
+	ProviderID string `json:"provider_id"`
+	Model      string `json:"model"`
+}
+
+// conversationBinding decides which provider and model a turn runs on.
+//
+// An existing conversation runs on the one stored with it, and what the request
+// carries is ignored. The transcript replayed below was produced by that model,
+// and answering the next question with another one reads that work back as if
+// it were its own -- the same argument the search mode conflict makes a few
+// lines further down in search.go.
+//
+// Ignored rather than refused, unlike a mode mismatch. There the client is
+// choosing, and a disagreement means the two have drifted; here it is echoing
+// the binding it loaded with the session, and a stale echo is not a mistake
+// worth failing a question over.
+func conversationBinding(session *core.Record, requested aiprovider.Binding) aiprovider.Binding {
+	if session != nil {
+		return chat.BindingOf(session)
+	}
+	return requested.Normalized()
+}
+
+// recordedBinding is the binding a conversation is opened with: the override
+// when one was chosen, and otherwise the configured pair spelled out.
+//
+// Spelling it out is the point. A conversation that stored nothing followed
+// Settings for the rest of its life, so changing the chat model moved every
+// old conversation onto the new one -- mid-transcript, with the answers above
+// produced by a model that was no longer answering. That is the same
+// inconsistency the pinning rule exists to prevent; it was simply invisible
+// because the binding was never written down.
+//
+// Both halves or neither: a provider with no model is refused by
+// aiprovider.Resolve, so stamping half a pair on a part-configured instance
+// would turn a chat that used to work into a 400. Nothing stored means "follow
+// Settings", which is what those instances did before.
+func recordedBinding(requested aiprovider.Binding, providerID, model string) aiprovider.Binding {
+	// Against the zero value, not Binding.Empty, for the same reason
+	// config.Overrides.Empty is: Empty is keyed on the provider id, so a model
+	// with no provider would read as no override and quietly run the configured
+	// one. Resolve refuses that pair, and can only do so if it sees it.
+	if requested.Normalized() != (aiprovider.Binding{}) {
+		return requested.Normalized()
+	}
+	configured := aiprovider.Binding{ProviderID: providerID, Model: model}.Normalized()
+	if configured.Empty() || configured.Model == "" {
+		return aiprovider.Binding{}
+	}
+	return configured
+}
+
+// conversationSnapshot turns the binding a turn runs on into the clients that
+// run it.
+//
+// An unusable binding this request picked is a bad request: answering on a
+// different model is the substitution the picker exists to prevent. One the
+// conversation carries falls back to Settings instead -- the provider row can
+// be deleted long after the transcript, which is why chat_sessions.provider is
+// text and not a relation, and refusing it would leave every pinned chat unable
+// to take another turn once its provider is rotated out. The stale pair stays
+// on the record, so the picker still names the gone provider: a chat naming the
+// wrong model beats one that cannot be continued.
+func conversationSnapshot(
+	app core.App,
+	rt *config.Runtime,
+	o config.Overrides,
+	session *core.Record,
+	requested aiprovider.Binding,
+) (config.Snapshot, error) {
+	snap, err := rt.WithOverrides(app, o)
+	if err == nil {
+		return snap, nil
+	}
+	if session == nil && requested.Normalized() != (aiprovider.Binding{}) {
+		return snap, err
+	}
+	app.Logger().Warn("conversation binding no longer resolves; continuing on the configured model",
+		slog.Any("error", err))
+	return rt.Snapshot(), nil
 }
 
 type chatResponse struct {
@@ -167,11 +250,6 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 			return writeError(e, http.StatusBadRequest, err.Error())
 		}
 
-		chatter := rt.Snapshot().Chatter
-		if chatter == nil {
-			return writeError(e, http.StatusServiceUnavailable, "AI chat is not configured; update Settings.")
-		}
-
 		ownerID, err := resolveOwnerUserID(app, e)
 		if err != nil {
 			return writeOwnerError(e, err)
@@ -182,6 +260,20 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 			return writeChatSessionError(e, app, err)
 		}
 		messages := append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content})
+
+		// Resolved after the session is loaded, because a continued
+		// conversation's stored binding is what decides, not the request's.
+		cfg := rt.Snapshot().Cfg
+		requested := aiprovider.Binding{ProviderID: req.ProviderID, Model: req.Model}
+		binding := conversationBinding(session, recordedBinding(requested, cfg.ChatProviderID, cfg.ChatModel))
+		snap, err := conversationSnapshot(app, rt, config.Overrides{Chat: binding}, session, requested)
+		if err != nil {
+			return writeError(e, http.StatusBadRequest, err.Error())
+		}
+		chatter := snap.Chatter
+		if chatter == nil {
+			return writeError(e, http.StatusServiceUnavailable, "AI chat is not configured; update Settings.")
+		}
 
 		// The conversation exists before the question is asked, so the id the
 		// provider is given as a cache key is the id the chat keeps. opened
@@ -194,6 +286,7 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 				UserID:       ownerID,
 				Kind:         chat.KindDocument,
 				DocumentID:   documentID,
+				Binding:      binding,
 				FirstMessage: content,
 			})
 			if err != nil {

@@ -1,4 +1,5 @@
 import { apiFetch, apiStream } from '../apiClient'
+import { bindingBody, type ProviderBinding } from './providers'
 import type { ChatMessageRecord, ChatSession, SearchDocumentHit } from './chats'
 
 export type { SearchDocumentHit } from './chats'
@@ -42,12 +43,22 @@ export async function chatWithDocument(input: {
   documentId: string
   sessionId?: string
   content: string
+  /**
+   * The provider and model to open the conversation on. Read by the server
+   * only when there is no session id yet: a conversation keeps the binding its
+   * transcript was produced with.
+   */
+  binding?: ProviderBinding
 }): Promise<ChatTurnResult> {
   const data = await apiFetch<RawTurnResponse>(
     `/api/app/documents/${encodeURIComponent(input.documentId)}/chat`,
     {
       method: 'POST',
-      body: { session_id: input.sessionId ?? '', content: input.content },
+      body: {
+        session_id: input.sessionId ?? '',
+        content: input.content,
+        ...bindingBody(input.binding),
+      },
       fallbackError: 'Failed to get AI response',
     },
   )
@@ -113,7 +124,14 @@ export type ResearchEvent =
  * `cancelSearchRun`.
  */
 export async function searchStream(
-  input: { sessionId?: string; content: string; mode: SearchMode; runId: string },
+  input: {
+    sessionId?: string
+    content: string
+    mode: SearchMode
+    runId: string
+    /** Read only when there is no session id yet; see `chatWithDocument`. */
+    binding?: ProviderBinding
+  },
   onEvent: (event: ResearchEvent) => void,
   signal?: AbortSignal,
 ) {
@@ -123,6 +141,7 @@ export async function searchStream(
       content: input.content,
       mode: input.mode,
       run_id: input.runId,
+      ...bindingBody(input.binding),
     },
     onEvent,
     signal,

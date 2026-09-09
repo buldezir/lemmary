@@ -18,8 +18,36 @@ import (
 
 const ocrTestMaxFileBytes = 10 * 1024 * 1024
 
-type ocrProvidersResponse struct {
-	Providers []ocr.ProviderInfo `json:"providers"`
+// pickableProvider is a configured provider as a picker sees it: enough to name
+// a row in a dropdown, and nothing else.
+//
+// Deliberately not providerResponse, which carries api_key_set, the signed-in
+// ChatGPT account address and its plan. This list is readable by any signed-in
+// user, because any of them may override the model on their own chat or
+// reprocess job; what the operator pays with is not part of that.
+type pickableProvider struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	SDK  string `json:"sdk"`
+}
+
+// configuredBinding is what Settings would use for a purpose, so a picker can
+// name the model that answers when nobody overrides anything.
+//
+// The provider's alias rides along because the id alone is not something to put
+// in front of a user, and a caller showing the default has no list to look it
+// up in -- an unconfigured binding sends nothing at all.
+type configuredBinding struct {
+	ProviderID   string `json:"provider_id,omitempty"`
+	ProviderName string `json:"provider_name,omitempty"`
+	Model        string `json:"model,omitempty"`
+}
+
+type pickableProvidersResponse struct {
+	Providers []pickableProvider `json:"providers"`
+	// Configured is the binding in Settings for the requested purpose. Empty
+	// when nothing is bound, which is what an instance mid-setup looks like.
+	Configured configuredBinding `json:"configured"`
 }
 
 type ocrTestResponse struct {
@@ -29,27 +57,51 @@ type ocrTestResponse struct {
 	Duration  string `json:"duration"`
 }
 
-func handleOCRProviders(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
+// handlePickableProviders lists the configured providers that can serve a
+// purpose, for a model picker outside Settings.
+//
+// It grew out of the OCR-test page's own list, which is why it is here rather
+// than in providers.go: that page needed a non-admin answer to "which providers
+// could do this", and so does every provider/model override -- on a chat, on a
+// reprocess job.
+//
+// fallback is what an unqualified request means, per route: ParseModelPurpose
+// reads anything it does not recognise as the language model, which is wrong
+// for the /ocr/providers path the OCR test page still calls with no purpose.
+//
+// The configured binding for the purpose is sorted first, so the picker opens
+// on what Settings would have used anyway.
+func handlePickableProviders(app core.App, rt *config.Runtime, fallback aiprovider.ModelPurpose) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
+		purpose := fallback
+		if raw := strings.TrimSpace(e.Request.URL.Query().Get("for")); raw != "" {
+			purpose = aiprovider.ParseModelPurpose(raw)
+		}
+		// Which configured pair to report, when the capability alone does not
+		// say. Defaults to the one the purpose implies.
+		bindingName := e.Request.URL.Query().Get("binding")
 		providers, err := aiprovider.List(app)
 		if err != nil {
-			return writeError(e, 500, "Failed to list OCR providers.")
+			return writeError(e, 500, "Failed to list providers.")
 		}
-		preferred := rt.Snapshot().Cfg.OCRProviderID
-		out := make([]ocr.ProviderInfo, 0, len(providers))
-		var first *ocr.ProviderInfo
-		rest := make([]ocr.ProviderInfo, 0, len(providers))
+		cfg := rt.Snapshot().Cfg
+		preferredID, preferredModel := preferredBinding(cfg, purpose, bindingName)
+		configured := configuredBinding{ProviderID: preferredID, Model: preferredModel}
+		out := make([]pickableProvider, 0, len(providers))
+		var first *pickableProvider
+		rest := make([]pickableProvider, 0, len(providers))
 		for _, p := range providers {
 			// A local sidecar has an address instead of a key; skipping on the
 			// key alone would hide it from the very page an operator opens
-			// first to check the container is working. CanOCR is the other
-			// half: the local embeddings sidecar is configured and keyless too,
-			// and cannot read a document at all.
-			if !p.Configured() || !aiprovider.CanOCR(p.SDK) {
+			// first to check the container is working. ServesPurpose is the
+			// other half: the local embeddings sidecar is configured and
+			// keyless too, and cannot read a document at all.
+			if !p.Configured() || !aiprovider.ServesPurpose(p.SDK, purpose) {
 				continue
 			}
-			info := ocr.ProviderInfo{ID: p.ID, Name: p.Alias, SDK: p.SDK}
-			if p.ID == preferred {
+			info := pickableProvider{ID: p.ID, Name: p.Alias, SDK: p.SDK}
+			if p.ID == preferredID {
+				configured.ProviderName = p.Alias
 				copy := info
 				first = &copy
 				continue
@@ -60,7 +112,34 @@ func handleOCRProviders(app core.App, rt *config.Runtime) func(*core.RequestEven
 			out = append(out, *first)
 		}
 		out = append(out, rest...)
-		return writeJSON(e, 200, ocrProvidersResponse{Providers: out})
+		return writeJSON(e, 200, pickableProvidersResponse{Providers: out, Configured: configured})
+	}
+}
+
+// preferredBinding is the configured provider and model a picker opens on, and
+// what it reports as answering when nobody overrides anything.
+//
+// name breaks the tie the capability cannot. Chat, search and extraction are
+// all language models, so the purpose alone cannot tell them apart -- and
+// telling Deep Search that the chat model answers it would be wrong on any
+// instance that bound the two separately. Unnamed, the LLM purpose answers with
+// chat: it is the only LLM picker a non-admin reaches without naming one.
+func preferredBinding(cfg config.Config, purpose aiprovider.ModelPurpose, name string) (providerID, model string) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "search":
+		return cfg.SearchProviderID, cfg.SearchModel
+	case "extract":
+		return cfg.ExtractProviderID, cfg.ExtractModel
+	case "chat":
+		return cfg.ChatProviderID, cfg.ChatModel
+	}
+	switch purpose {
+	case aiprovider.PurposeOCR:
+		return cfg.OCRProviderID, cfg.OCRModel
+	case aiprovider.PurposeEmbedding:
+		return cfg.EmbeddingProviderID, cfg.EmbeddingModel
+	default:
+		return cfg.ChatProviderID, cfg.ChatModel
 	}
 }
 

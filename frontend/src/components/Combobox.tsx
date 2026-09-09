@@ -25,6 +25,10 @@ type Props = {
   bgClassName?: string
 }
 
+// max-h-56 on the listbox, in pixels. Read to decide which way the list opens,
+// so the two have to move together.
+const listMaxHeightPx = 224
+
 const comboboxInputClassName =
   'w-full rounded-xs border border-line-strong py-2 pr-8 pl-3 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood disabled:cursor-not-allowed disabled:opacity-50'
 
@@ -55,6 +59,12 @@ export function Combobox({
   // null means "showing the selection", a string means the user is typing.
   const [query, setQuery] = useState<string | null>(null)
   const [highlightedIndex, setHighlightedIndex] = useState(0)
+  // Which way the list opens. Downward is what every list does when there is
+  // room; near the foot of the viewport there is not, and a list that opens
+  // past the fold has to be scrolled to before it can be read. The chat pages
+  // put a picker directly under the composer, at the bottom of a tall panel,
+  // which is exactly where that happens.
+  const [dropUp, setDropUp] = useState(false)
 
   const selectedLabel = options.find((option) => option.value === value)?.label ?? ''
 
@@ -80,6 +90,15 @@ export function Combobox({
 
   function openList() {
     if (disabled || loading) return
+    // Measured on open rather than in a layout effect: the list has no box
+    // until it is open, and the input's does not move while it is. Upward only
+    // when there is genuinely less room below than above, so a list that fits
+    // still opens the ordinary way.
+    const rect = rootRef.current?.getBoundingClientRect()
+    if (rect) {
+      const below = window.innerHeight - rect.bottom
+      setDropUp(below < listMaxHeightPx && rect.top > below)
+    }
     setOpen(true)
     // Start on the current selection so Enter is a no-op rather than a surprise.
     const selectedIndex = options.findIndex((option) => option.value === value)
@@ -198,7 +217,9 @@ export function Combobox({
       {open && (
         <ul
           role="listbox"
-          className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xs border border-line bg-surface py-1 shadow-sm"
+          className={`absolute z-20 max-h-56 w-full overflow-auto rounded-xs border border-line bg-surface py-1 shadow-sm ${
+            dropUp ? 'bottom-full mb-1' : 'mt-1'
+          }`}
         >
           {filteredOptions.length === 0 ? (
             <li className="px-3 py-1.5 text-sm text-ink-faint">No matches</li>

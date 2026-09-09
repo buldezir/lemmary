@@ -28,6 +28,8 @@ export function DocumentGrid({
     clearSelection,
     reprocessMode,
     setReprocessMode,
+    reprocessOverrides,
+    setReprocessOverrides,
     reprocessing,
     markingReviewed,
     deleting,
@@ -49,6 +51,8 @@ export function DocumentGrid({
           busy={reprocessing || markingReviewed || deleting}
           reprocessMode={reprocessMode}
           onReprocessModeChange={setReprocessMode}
+          reprocessOverrides={reprocessOverrides}
+          onReprocessOverridesChange={setReprocessOverrides}
           onReprocess={() => void onReprocessSelected()}
           onMarkReviewed={() => void onMarkReviewed(selectedOnPage.map((document) => document.id))}
           onSelectAll={selectAll}

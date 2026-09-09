@@ -168,7 +168,12 @@ export function ProviderModelFields({
           }}
         />
       </div>
-      {!hideModel && (
+      {/* No provider, no model field. The catalogue is fetched per provider, so
+          with none chosen there is nothing to list -- and ModelSelect reads an
+          empty list as "this provider has no catalogue" and falls back to a
+          free-text box, which is how an unbound binding came to show a text
+          input where every bound one shows a dropdown. */}
+      {!hideModel && providerId && (
         <ModelSelect
           key={providerId || 'none'}
           label={label}

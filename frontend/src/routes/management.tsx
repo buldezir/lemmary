@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { countFailedDocuments, reprocessFailedDocuments } from '../lib/api/documents'
+import {
+  countFailedDocuments,
+  describeJobOverrides,
+  reprocessFailedDocuments,
+  type JobOverrides,
+} from '../lib/api/documents'
+import { JobOverrideFields } from '../components/BindingOverride'
 import {
   getActiveJobCounts,
   getEmbeddingBackfillState,
@@ -71,6 +77,7 @@ export function ManagementPage() {
   const [reprocessing, setReprocessing] = useState(false)
   const [reprocessMode, setReprocessMode] = useState<ReprocessMode>('auto')
   const [reprocessBatch, setReprocessBatch] = useState<number>(100)
+  const [reprocessOverrides, setReprocessOverrides] = useState<JobOverrides>({})
   const [embedding, setEmbedding] = useState<EmbeddingBackfillState | null>(null)
   const [embeddingLoaded, setEmbeddingLoaded] = useState(false)
   const [embeddingStarting, setEmbeddingStarting] = useState(false)
@@ -143,10 +150,12 @@ export function ManagementPage() {
     if (!failedCount) return
 
     const batch = Math.min(reprocessBatch, failedCount)
+    const overrides = describeJobOverrides(reprocessOverrides)
     const confirmed = window.confirm(
       `Reprocess ${countLabel(batch, 'failed document', 'failed documents')}?\n\n` +
-        `Steps: ${REPROCESS_MODE_LABELS[reprocessMode]}\n\n` +
-        'Existing metadata may be overwritten.',
+        `Steps: ${REPROCESS_MODE_LABELS[reprocessMode]}\n` +
+        (overrides ? `Models: ${overrides}\n` : '') +
+        '\nExisting metadata may be overwritten.',
     )
     if (!confirmed) return
 
@@ -157,6 +166,7 @@ export function ManagementPage() {
       const result = await reprocessFailedDocuments({
         limit: reprocessBatch,
         mode: reprocessMode,
+        overrides: reprocessOverrides,
       })
       setFailedCount(result.remaining)
       const queued = countLabel(result.queued, 'document', 'documents')
@@ -348,6 +358,9 @@ export function ManagementPage() {
                 ? 'Queueing...'
                 : `Reprocess ${Math.min(reprocessBatch, failedCount ?? 0)} failed`}
             </Button>
+          </div>
+          <div className="mt-4">
+            <JobOverrideFields value={reprocessOverrides} onChange={setReprocessOverrides} />
           </div>
           <p className="mt-3 text-xs text-ink-soft">
             {!failedCountLoaded

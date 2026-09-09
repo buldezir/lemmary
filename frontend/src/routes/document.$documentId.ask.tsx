@@ -5,6 +5,7 @@ import { ChatPanel } from '../components/ChatPanel'
 import { ChatTranscript } from '../components/ChatTranscript'
 import { ChatComposer } from '../components/ChatComposer'
 import { ChatSessionList } from '../components/ChatSessionList'
+import { BindingOverride } from '../components/BindingOverride'
 import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
 import { chatWithDocument } from '../lib/api/ai'
@@ -14,8 +15,10 @@ import {
   listChatSessions,
   mergeChatSession,
   renameChatSession,
+  chatSessionBinding,
   type ChatSession,
 } from '../lib/api/chats'
+import type { ProviderBinding } from '../lib/api/providers'
 import type { DocumentRecord } from '../lib/api/documents'
 import { useAsync } from '../hooks/useAsync'
 import { useChatSession } from '../hooks/useChatSession'
@@ -33,6 +36,10 @@ export function DocumentAskPage() {
   const [justSettled, setJustSettled] = useState<ChatSession | null>(null)
   const [railBusy, setRailBusy] = useState(false)
   const [railError, setRailError] = useState('')
+  // The model this page will open its next conversation on. Not reset by
+  // startNewChat: having picked a model once, the likely next thing is another
+  // question for the same one.
+  const [binding, setBinding] = useState<ProviderBinding | undefined>()
 
   const {
     data: document,
@@ -74,11 +81,29 @@ export function DocumentAskPage() {
       }
       return detail
     },
-    send: ({ sessionId: id, content }) => chatWithDocument({ documentId, sessionId: id, content }),
+    send: ({ sessionId: id, content }) =>
+      chatWithDocument({ documentId, sessionId: id, content, binding }),
     onSessionSettled,
   })
 
   const hasOcrText = Boolean(document?.ocr_text?.trim())
+  // A conversation keeps the binding its transcript was produced with -- the
+  // server ignores anything else a request carries -- so once one exists the
+  // picker reports it instead of offering to change it.
+  //
+  // Keyed on whether the URL names a conversation, not on whether one is
+  // loaded. Those differ in the two cases that matter, in opposite directions:
+  //
+  //   - Opening someone's existing chat, the session is briefly null while it
+  //     loads. Falling back to the local pick there is what showed the model
+  //     from the *previous* chat on a conversation that never used it, until
+  //     the page was reloaded.
+  //   - During the send that creates a conversation there is no id and no
+  //     session yet, and the local pick is genuinely what is answering, so
+  //     showing nothing would blank the row mid-answer.
+  const inConversation = Boolean(sessionId) || Boolean(chat.session)
+  const shownBinding = inConversation ? chatSessionBinding(chat.session) : binding
+  const bindingLocked = inConversation || chat.turns.length > 0
   const rows = mergeChatSession(sessions.data ?? [], justSettled)
 
   function openSession(session: ChatSession) {
@@ -228,6 +253,24 @@ export function DocumentAskPage() {
                   autoFocus
                 />
               </ChatPanel>
+            {/* Directly below the panel rather than inside it: ChatPanel is
+                overflow-hidden -- which is what makes the transcript scroll
+                instead of stretching the box -- and the model dropdown is
+                absolutely positioned, so inside the panel its list was clipped
+                at the panel's edge. border-t-0 butts this strip against the
+                panel's bottom border, so it still reads as part of it. */}
+              <div className="border border-t-0 border-line bg-surface px-4 py-3">
+                <BindingOverride
+                  label="Chat"
+                  purpose="llm"
+                  value={shownBinding}
+                  onChange={setBinding}
+                  locked={bindingLocked}
+                  lockedHint="Fixed for this conversation. Start a new chat to ask a different model."
+                  help="Answers questions about this document."
+                  showConfigured
+                />
+              </div>
             </div>
           </div>
         </>

@@ -95,6 +95,19 @@ func ensureSessions(app core.App) (*core.Collection, error) {
 			MaxSelect: 1,
 			Values:    []string{ModeSearch, ModeResearch},
 		},
+		// The provider and model this conversation runs on, when it was opened
+		// on something other than the configured binding. Empty means the
+		// Settings binding, which is every session created before overrides
+		// existed.
+		//
+		// A text field rather than a relation to ai_providers, deliberately.
+		// An optional relation would either cascade-delete transcripts with the
+		// provider row or silently unset the id -- and a transcript is worth
+		// keeping after its provider is gone, readable and continuable on the
+		// configured model. A stale id resolves to nothing and falls back the
+		// same way an empty one does.
+		&core.TextField{Name: "provider", Max: 15},
+		&core.TextField{Name: "model", Max: 200},
 		// Not Required: a NumberField's Required means non-zero, and a session
 		// legitimately holds 0 between its creation and its first turn inside
 		// AppendTurn's transaction.

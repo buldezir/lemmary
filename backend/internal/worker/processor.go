@@ -126,7 +126,7 @@ func (p *Processor) registerHooks() {
 		}
 
 		steps := createStepsFor(record)
-		_, err := createProcessingJob(e.App, record.Id, steps, nil)
+		_, err := createProcessingJob(e.App, record.Id, steps, nil, config.Overrides{})
 		return err
 	})
 
@@ -141,6 +141,14 @@ func (p *Processor) registerHooks() {
 		}
 		if len(steps) == 0 {
 			record.Set("steps", models.FullPipelineSteps)
+		}
+		// The trust boundary for the provider/model choices: this collection is
+		// writable by the document's owner, so `overrides` arrives from a
+		// browser on the single-document reprocess path as well as through the
+		// custom endpoint. Refused as a bad request, which is what the direct
+		// collection write surfaces to the form that made it.
+		if err := validateJobOverrides(e.App, p.rt.Snapshot().Cfg, record); err != nil {
+			return router.NewBadRequestError(err.Error(), nil)
 		}
 		return e.Next()
 	})
@@ -162,12 +170,13 @@ func (p *Processor) registerHooks() {
 
 // Enqueue creates a pending job for documentID so the worker picks it up on the
 // next drain. It is the entry point for callers outside this package (bulk
-// reprocess); forceSteps may be nil.
-func Enqueue(app core.App, documentID string, steps []string, forceSteps []string) (*core.Record, error) {
-	return createProcessingJob(app, documentID, steps, forceSteps)
+// reprocess); forceSteps may be nil and overrides may be zero, which means the
+// job runs on the bindings in Settings.
+func Enqueue(app core.App, documentID string, steps []string, forceSteps []string, overrides config.Overrides) (*core.Record, error) {
+	return createProcessingJob(app, documentID, steps, forceSteps, overrides)
 }
 
-func createProcessingJob(app core.App, documentID string, steps []string, forceSteps []string) (*core.Record, error) {
+func createProcessingJob(app core.App, documentID string, steps []string, forceSteps []string, overrides config.Overrides) (*core.Record, error) {
 	// Ensure-queued semantics: a document with an active job must not get a
 	// second one — concurrent reprocess requests would otherwise run OCR and
 	// AI extraction twice for the same document.
@@ -213,6 +222,7 @@ func createProcessingJob(app core.App, documentID string, steps []string, forceS
 	if len(forceSteps) > 0 {
 		job.Set("force_steps", forceSteps)
 	}
+	setJobOverrides(job, overrides)
 
 	if err := app.Save(job); err != nil {
 		return nil, err
@@ -244,7 +254,39 @@ func (p *Processor) drainPending() {
 			return
 		}
 
-		snap := p.rt.Snapshot()
+		// Checked before anything else touches the job, so every path below
+		// that leaves it runnable is caught here rather than spinning. It used
+		// to sit lower, which was safe only because both paths above it
+		// returned; the override paths do not.
+		if job.Id == lastJobID {
+			// The previous iteration returned without moving the job out of the
+			// runnable set, so picking it up again would spin. Hand it back to
+			// the cron instead.
+			p.app.Logger().Error("job made no progress; deferring to next cron tick", "job", job.Id)
+			return
+		}
+		lastJobID = job.Id
+
+		// The job's own bindings are applied before readiness is judged, not
+		// after. A job queued with an OCR or extraction override may be the one
+		// job that *can* run on an instance whose configured provider is gone,
+		// and asking providersReady about the configured snapshot would defer it
+		// forever over a binding it does not use.
+		snap, err := p.effectiveSnapshot(job)
+		if err != nil {
+			// Stored overrides that no longer resolve -- a provider deleted
+			// between queueing and draining. Failed rather than deferred: the
+			// job asked for a provider that no longer exists, and no amount of
+			// waiting brings it back. The document lands on "failed", where a
+			// plain reprocess can pick it up again without the override.
+			//
+			// Return value dropped deliberately: failJob hands back the error it
+			// was given whether or not the write succeeded, so testing it would
+			// log the same error twice under a message about the write. failJob
+			// logs "job failed" with the cause itself.
+			_ = failJob(p.app, job, nil, err)
+			continue
+		}
 		if err := providersReady(snap); err != nil {
 			// Leave the job pending so it runs once Settings are complete. Returning
 			// (rather than retrying inline) is what keeps this from becoming a hot
@@ -256,14 +298,6 @@ func (p *Processor) drainPending() {
 			)
 			return
 		}
-
-		if job.Id == lastJobID {
-			// runJob returned without moving the job out of the runnable set, so
-			// picking it up again would spin. Hand it back to the cron instead.
-			p.app.Logger().Error("job made no progress; deferring to next cron tick", "job", job.Id)
-			return
-		}
-		lastJobID = job.Id
 
 		if err := p.runJob(job.Id, snap); err != nil {
 			p.app.Logger().Error("job error", "job", job.Id, slog.Any("error", err))

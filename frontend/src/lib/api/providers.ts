@@ -32,6 +32,40 @@ export type AIProviderWrite = {
 
 export type ModelPurpose = 'ocr' | 'llm' | 'embedding'
 
+/**
+ * A provider and model chosen for one chat or one reprocess job, instead of the
+ * binding in Settings. Mirrors aiprovider.Binding.
+ *
+ * Both halves, in practice. The server refuses a model with no provider rather
+ * than running the configured one in its place, so `bindingBody` drops that
+ * half-filled pair instead of sending it; and it refuses a provider with no
+ * model, because an empty model reaches the provider as an empty model and the
+ * configured one belongs to a different provider. The single exception is the
+ * OCR binding on google_vision and docling, which read a document without being
+ * told a model -- see `usesOCRModel`.
+ */
+export type ProviderBinding = {
+  provider_id: string
+  model: string
+}
+
+export const EMPTY_BINDING: ProviderBinding = { provider_id: '', model: '' }
+
+export function bindingIsEmpty(binding: ProviderBinding | undefined) {
+  return !binding?.provider_id.trim()
+}
+
+/**
+ * The request fields for a binding, or nothing when none was chosen.
+ *
+ * Absent rather than empty strings, so a request from a page with the picker
+ * untouched is byte-identical to one sent before overrides existed.
+ */
+export function bindingBody(binding: ProviderBinding | undefined) {
+  if (bindingIsEmpty(binding)) return {}
+  return { provider_id: binding!.provider_id.trim(), model: binding!.model.trim() }
+}
+
 export type CatalogModel = {
   id: string
   name: string
@@ -338,6 +372,64 @@ export async function listOCRProviders() {
     fallbackError: 'Failed to load OCR providers',
   })
   return data.providers ?? []
+}
+
+/**
+ * The binding Settings uses for a purpose: what answers when nobody overrides
+ * anything. Empty on an instance where nothing is bound yet.
+ */
+export type ConfiguredBinding = {
+  provider_id?: string
+  provider_name?: string
+  model?: string
+}
+
+/**
+ * The configured providers that can serve a purpose, and the binding Settings
+ * would use, for a picker outside Settings.
+ *
+ * Readable by any signed-in user, unlike `listAIProviders`, which is admin-only
+ * because it carries the credential state. This answer is provider names, model
+ * ids and SDKs -- no key, no account, no base URL.
+ */
+export async function listPickableProviders(purpose: ModelPurpose, binding?: string) {
+  const query = new URLSearchParams({ for: purpose })
+  // Names which configured pair to report back. The capability cannot say:
+  // chat, search and extraction are all language models, and Deep Search must
+  // not be told the chat model is what answers it.
+  if (binding) query.set('binding', binding)
+  const data = await apiFetch<{ providers?: OCRProviderInfo[]; configured?: ConfiguredBinding }>(
+    `/api/app/ai/providers?${query.toString()}`,
+    { fallbackError: 'Failed to load providers' },
+  )
+  return { providers: data.providers ?? [], configured: data.configured ?? {} }
+}
+
+/** How a model is named in the UI when there is nothing bound to name. */
+export const UNBOUND_MODEL_LABEL = 'not configured'
+
+/** The model a binding runs on, for the one-line "which model" summaries. */
+export function bindingModelLabel(model: string | undefined) {
+  return model?.trim() || UNBOUND_MODEL_LABEL
+}
+
+/**
+ * Adapts a pickable row to what ProviderModelFields wants.
+ *
+ * That component was written for Settings, where a provider is the full record;
+ * it reads only `id`, `sdk` and `alias`. The credential flags are set true
+ * because this list is already filtered to configured providers -- the server
+ * would not have returned an unconfigured one.
+ */
+export function asPickerProvider(item: OCRProviderInfo): AIProvider {
+  return {
+    id: item.id,
+    sdk: item.sdk as ProviderSDK,
+    alias: item.name,
+    base_url: '',
+    api_key_set: true,
+    signed_in: true,
+  }
 }
 
 export type OCRTestResult = {

@@ -1,4 +1,6 @@
+import type { JobOverrides } from '../lib/api/documents'
 import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
+import { JobOverrideFields } from './BindingOverride'
 import { Button, selectClassName } from './ui'
 
 export type BulkMode = 'reprocess' | 'review'
@@ -16,6 +18,8 @@ type Props = {
   busy: boolean
   reprocessMode: ReprocessMode
   onReprocessModeChange: (mode: ReprocessMode) => void
+  reprocessOverrides: JobOverrides
+  onReprocessOverridesChange: (overrides: JobOverrides) => void
   onReprocess: () => void
   onMarkReviewed: () => void
   onSelectAll: () => void
@@ -34,6 +38,8 @@ export function DocumentBulkBar({
   busy,
   reprocessMode,
   onReprocessModeChange,
+  reprocessOverrides,
+  onReprocessOverridesChange,
   onReprocess,
   onMarkReviewed,
   onSelectAll,
@@ -87,6 +93,11 @@ export function DocumentBulkBar({
         <Button variant="secondary" onClick={onClear}>
           Clear
         </Button>
+      )}
+      {mode === 'reprocess' && selectedCount > 0 && (
+        <div className="w-full">
+          <JobOverrideFields value={reprocessOverrides} onChange={onReprocessOverridesChange} />
+        </div>
       )}
     </div>
   )

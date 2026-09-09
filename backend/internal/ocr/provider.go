@@ -31,12 +31,6 @@ type LimitedConcurrency interface {
 	MaxConcurrency() int
 }
 
-type ProviderInfo struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	SDK  string `json:"sdk"`
-}
-
 // NewFromAIProvider builds the OCR provider a row describes.
 //
 // extra carries request options the caller had to build for it -- today only

@@ -9,6 +9,8 @@ import { MarkdownContent } from '../components/MarkdownContent'
 import { runId } from '../lib/runId'
 import { useAsync } from '../hooks/useAsync'
 import { useChatSession, type ChatSendResult } from '../hooks/useChatSession'
+import { BindingOverride } from '../components/BindingOverride'
+import type { ProviderBinding } from '../lib/api/providers'
 import {
   cancelSearchRun,
   searchStream,
@@ -22,6 +24,7 @@ import {
   listChatSessions,
   mergeChatSession,
   renameChatSession,
+  chatSessionBinding,
   type ChatSession,
   type ChatTurn,
   type SearchDocumentHit,
@@ -92,6 +95,9 @@ export function SearchPage() {
   const [justSettled, setJustSettled] = useState<ChatSession | null>(null)
   const [railBusy, setRailBusy] = useState(false)
   const [railError, setRailError] = useState('')
+  // The model the next conversation opens on. Kept across a new chat: having
+  // picked one, the likely next thing is another question for the same model.
+  const [binding, setBinding] = useState<ProviderBinding | undefined>()
   // Live progress of a research run, cleared when it ends.
   const [steps, setSteps] = useState<ResearchStep[]>([])
   const [draft, setDraft] = useState('')
@@ -172,7 +178,12 @@ export function SearchPage() {
    * be hung up on by anything with a read timeout in between.
    */
   const runTurn = useCallback(
-    async (id: string | undefined, content: string, turnMode: SearchMode): Promise<ChatSendResult> => {
+    async (
+      id: string | undefined,
+      content: string,
+      turnMode: SearchMode,
+      turnBinding: ProviderBinding | undefined,
+    ): Promise<ChatSendResult> => {
       const run = { controller: new AbortController(), id: runId() }
       runRef.current = run
 
@@ -188,7 +199,7 @@ export function SearchPage() {
 
       try {
         await searchStream(
-          { sessionId: id, content, mode: turnMode, runId: run.id },
+          { sessionId: id, content, mode: turnMode, runId: run.id, binding: turnBinding },
           (event) => {
             switch (event.type) {
               case 'step':
@@ -291,7 +302,7 @@ export function SearchPage() {
       }
       return detail
     },
-    send: ({ sessionId: id, content }) => runTurn(id, content, mode),
+    send: ({ sessionId: id, content }) => runTurn(id, content, mode, binding),
     onSessionSettled,
   })
 
@@ -317,6 +328,25 @@ export function SearchPage() {
   // the turn still in flight, whose request already carries the mode it was
   // sent under.
   const locked = Boolean(sessionId) || chat.sending
+  // The binding is fixed for a conversation for the same reason mode is: the
+  // transcript replayed to the model was produced by one model, and answering
+  // the next question with another reads that work back as its own. Locked as
+  // soon as a turn exists, not only once the session id lands, so it cannot
+  // change during the send that creates the conversation.
+  //
+  // Keyed on whether the URL names a conversation, not on whether one is
+  // loaded. Those differ in the two cases that matter, in opposite directions:
+  //
+  //   - Opening an existing chat, the session is briefly null while it loads.
+  //     Falling back to the local pick there is what showed the model from the
+  //     *previous* chat on a conversation that never used it, until the page
+  //     was reloaded.
+  //   - During the send that creates a conversation there is no id and no
+  //     session yet, and the local pick is genuinely what is answering, so
+  //     showing nothing would blank the row mid-answer.
+  const inConversation = Boolean(sessionId) || Boolean(chat.session)
+  const shownBinding = inConversation ? chatSessionBinding(chat.session) : binding
+  const bindingLocked = inConversation || chat.sending || chat.turns.length > 0
 
   // A chat opens in the mode its last turn ran in, which is also the path it
   // lives on: continuing a research conversation as a plain search would answer
@@ -492,6 +522,24 @@ export function SearchPage() {
               autoFocus
             />
           </ChatPanel>
+          {/* Directly below the panel rather than inside it: ChatPanel is
+              overflow-hidden -- which is what makes the transcript scroll
+              instead of stretching the box -- and the model dropdown is
+              absolutely positioned, so inside the panel its list was clipped at
+              the panel's edge. border-t-0 butts this strip against the panel's
+              bottom border, so it still reads as part of it. */}
+          <div className="border border-t-0 border-line bg-surface px-4 py-3">
+            <BindingOverride
+              label="Search"
+              purpose="llm"
+              value={shownBinding}
+              onChange={setBinding}
+              locked={bindingLocked}
+              lockedHint="Fixed for this chat. Start a new one to search with a different model."
+              help="Drives the search or research loop. The helper model that reads documents in bulk keeps its own binding in Settings."
+              showConfigured
+            />
+          </div>
         </div>
       </div>
     </section>

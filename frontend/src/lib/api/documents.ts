@@ -1,6 +1,7 @@
 import { pb, pbUrl } from '../pb'
 import { ensureAuth } from '../auth'
 import { apiFetch, errorDetail } from '../apiClient'
+import { bindingBody, type ProviderBinding } from './providers'
 import { notifyDocumentsChanged } from '../documentEvents'
 import { UNFINISHED_STATUS, type DocumentStatus } from '../documentStatus'
 import type { ProcessingStep, ReprocessMode } from '../processing'
@@ -167,6 +168,7 @@ export async function reprocessDocument(
   documentId: string,
   steps: ProcessingStep[],
   forceSteps?: ProcessingStep[],
+  overrides?: JobOverrides,
 ) {
   await ensureAuth()
   await pb.collection('documents').update(documentId, {
@@ -177,6 +179,15 @@ export async function reprocessDocument(
     status: 'pending',
     steps,
     ...(forceSteps?.length ? { force_steps: forceSteps } : {}),
+    // Written straight onto the record, like the rest of this call. The
+    // provider ids are checked by the processing_jobs create hook, not here --
+    // this collection is writable by the document's owner, so the server has
+    // to be the one that refuses a binding it cannot serve.
+    //
+    // Narrowed to the steps being queued, here rather than at the caller: the
+    // hook validates every binding on the job, so an override left behind by a
+    // step that was ticked and then unticked would refuse the whole job.
+    ...jobOverridesBody(overridesForSteps(overrides, steps)),
   })
 }
 
@@ -281,6 +292,86 @@ export type ReprocessResult = {
   remaining: number
 }
 
+/**
+ * The provider and model a reprocess job runs on, instead of the bindings in
+ * Settings. Mirrors config.Overrides, minus the two bindings a job never uses
+ * (chat and search), which the endpoint refuses outright.
+ *
+ * An embedding override must name the model already bound in Settings: a chunk
+ * row records the model it was produced with, and the retrieval index only
+ * reads rows matching the configured one. The server refuses anything else,
+ * because vectors nothing will ever read look exactly like success.
+ */
+export type JobOverrides = {
+  ocr?: ProviderBinding
+  extract?: ProviderBinding
+  embedding?: ProviderBinding
+}
+
+/**
+ * The request field for a set of job overrides, or nothing when none were
+ * chosen -- so a reprocess with every picker untouched sends exactly what it
+ * sent before overrides existed.
+ *
+ * Half-filled bindings are dropped rather than sent: `bindingBody` returns
+ * nothing for a binding with no provider, and a key whose value is `{}` would
+ * be a binding the server has to refuse.
+ */
+/**
+ * The pipeline steps that call a provider, and the job binding each one uses.
+ * The other three reach no provider. One table, so the pickers and the request
+ * cannot disagree about which binding a step reads.
+ */
+export const STEP_BINDINGS = {
+  ocr: 'ocr',
+  extract_metadata: 'extract',
+  embed: 'embedding',
+} as const satisfies Partial<Record<ProcessingStep, keyof JobOverrides>>
+
+/** The overrides among `overrides` that the given steps will actually read. */
+export function overridesForSteps(
+  overrides: JobOverrides | undefined,
+  steps: ProcessingStep[],
+): JobOverrides {
+  const out: JobOverrides = {}
+  for (const step of steps) {
+    const key = STEP_BINDINGS[step as keyof typeof STEP_BINDINGS]
+    const binding = key && overrides?.[key]
+    if (key && binding) {
+      out[key] = binding
+    }
+  }
+  return out
+}
+
+export function jobOverridesBody(overrides: JobOverrides | undefined) {
+  if (!overrides) return {}
+  const body: Record<string, ProviderBinding> = {}
+  for (const [name, binding] of Object.entries(overrides)) {
+    const fields = bindingBody(binding)
+    if ('provider_id' in fields) {
+      body[name] = fields as ProviderBinding
+    }
+  }
+  return Object.keys(body).length > 0 ? { overrides: body } : {}
+}
+
+/**
+ * One line naming the overridden bindings, for the confirm dialogs, or "" when
+ * there are none.
+ *
+ * Worth saying out loud: a batch reprocess commits provider spend, and which
+ * model it is about to be spent on is the thing the picker just changed.
+ */
+export function describeJobOverrides(overrides: JobOverrides | undefined): string {
+  // Read off the input rather than jobOverridesBody's output, whose shape is
+  // deliberately "the field or nothing" and so needs unwrapping to read back.
+  return Object.entries(overrides ?? {})
+    .filter(([, binding]) => binding?.provider_id.trim())
+    .map(([name, binding]) => `${name}: ${binding!.model.trim() || 'provider default'}`)
+    .join(', ')
+}
+
 function postReprocess(body: Record<string, unknown>) {
   return apiFetch<ReprocessResult>('/api/app/documents/reprocess-failed', {
     method: 'POST',
@@ -290,10 +381,15 @@ function postReprocess(body: Record<string, unknown>) {
 }
 
 /** Requeues up to `limit` of the caller's failed documents, oldest first. */
-export function reprocessFailedDocuments(opts: { limit?: number; mode?: ReprocessMode }) {
+export function reprocessFailedDocuments(opts: {
+  limit?: number
+  mode?: ReprocessMode
+  overrides?: JobOverrides
+}) {
   return postReprocess({
     ...(opts.limit ? { limit: opts.limit } : {}),
     mode: opts.mode ?? 'auto',
+    ...jobOverridesBody(opts.overrides),
   })
 }
 
@@ -301,8 +397,12 @@ export function reprocessFailedDocuments(opts: { limit?: number; mode?: Reproces
  * Requeues an explicit selection. Documents already queued are skipped, so a
  * stale selection cannot double-queue.
  */
-export function reprocessDocuments(documentIds: string[], mode: ReprocessMode = 'auto') {
-  return postReprocess({ document_ids: documentIds, mode })
+export function reprocessDocuments(
+  documentIds: string[],
+  mode: ReprocessMode = 'auto',
+  overrides?: JobOverrides,
+) {
+  return postReprocess({ document_ids: documentIds, mode, ...jobOverridesBody(overrides) })
 }
 
 export type DocumentSearchList = {

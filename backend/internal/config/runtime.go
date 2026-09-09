@@ -157,110 +157,21 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 	ocrLogger := logger.With("component", "ocr")
 	aiLogger := logger.With("component", "ai")
 
-	var ocrProvider ocr.Provider
-	if cfg.OCRProvider != nil {
-		// The same credential treatment the AI clients get: a chatgpt row has
-		// a minted token rather than a key, and the row itself carries neither.
-		p := *cfg.OCRProvider
-		key, opts := providerCredential(app, cfg.OCRProvider, ocrLogger)
-		p.APIKey = key
-		built, err := ocr.NewFromAIProvider(p, cfg.OCRModel, cfg.OCRTimeout, ocrLogger, opts...)
-		if err != nil {
-			logger.Warn("OCR provider unavailable after settings reload", slog.Any("error", err))
-		} else {
-			ocrProvider = built
-		}
+	// Every client is built by the same function an override goes through, in
+	// override.go. That is what keeps a per-request or per-job client identical
+	// in every respect but its model to the one Settings produces -- the
+	// credential handling, the middleware and the timeouts are not restated
+	// here to be forgotten there.
+	ocrProvider, err := buildOCR(app, cfg, cfg.OCRProvider, cfg.OCRModel, ocrLogger)
+	if err != nil {
+		logger.Warn("OCR provider unavailable after settings reload", slog.Any("error", err))
+		ocrProvider = nil
 	}
-
-	// One credential for the extraction provider, shared by the two clients
-	// built on it: asking twice would put two middlewares over one token
-	// source, and the splitter is always the extractor's provider.
-	extractKey, extractOpts := providerCredential(app, cfg.ExtractProvider, aiLogger)
-
-	var extractor ai.Extractor
-	if usableLLM(cfg.ExtractProvider) {
-		extractor = ai.NewExtractor(
-			cfg.ExtractProvider.SDK,
-			extractKey,
-			cfg.ExtractModel,
-			cfg.ExtractProvider.BaseURL,
-			cfg.ExtractionPromptVer,
-			cfg.ProcessingResultLanguage,
-			cfg.OpenAITimeout,
-			aiLogger,
-			extractOpts...,
-		)
-	}
-
-	var chatter ai.Chatter
-	if usableLLM(cfg.ChatProvider) {
-		key, opts := providerCredential(app, cfg.ChatProvider, aiLogger)
-		chatter = ai.NewChatter(
-			cfg.ChatProvider.SDK,
-			key,
-			cfg.ChatModel,
-			cfg.ChatProvider.BaseURL,
-			cfg.OpenAITimeout,
-			aiLogger,
-			opts...,
-		)
-	}
-
-	var splitter ai.Splitter
-	if usableLLM(cfg.ExtractProvider) {
-		splitter = ai.NewSplitter(
-			cfg.ExtractProvider.SDK,
-			extractKey,
-			cfg.ExtractModel,
-			cfg.ExtractProvider.BaseURL,
-			cfg.OpenAITimeout,
-			aiLogger,
-			extractOpts...,
-		)
-	}
-
-	var embedder ai.Embedder
-	if HasEmbedding(cfg) {
-		embedder = ai.NewEmbedder(
-			cfg.EmbeddingProvider.SDK,
-			cfg.EmbeddingProvider.APIKey,
-			cfg.EmbeddingModel,
-			cfg.EmbeddingProvider.BaseURL,
-			cfg.EmbeddingDims,
-			cfg.OpenAITimeout,
-			aiLogger,
-		)
-	}
-
-	var searchAgent ai.SearchAgent
-	if usableLLM(cfg.SearchProvider) {
-		key, opts := providerCredential(app, cfg.SearchProvider, aiLogger)
-		searchAgent = ai.NewSearchAgent(
-			cfg.SearchProvider.SDK,
-			key,
-			cfg.SearchModel,
-			cfg.SearchProvider.BaseURL,
-			cfg.OpenAITimeout,
-			cfg.DeepSearchLanguages,
-			cfg.ProcessingResultLanguage,
-			aiLogger,
-			opts...,
-		)
-	}
-
-	var searchHelper ai.Helper
-	if usableLLM(cfg.SearchHelperProvider) {
-		key, opts := providerCredential(app, cfg.SearchHelperProvider, aiLogger)
-		searchHelper = ai.NewHelper(
-			cfg.SearchHelperProvider.SDK,
-			key,
-			cfg.SearchHelperModel,
-			cfg.SearchHelperProvider.BaseURL,
-			cfg.OpenAITimeout,
-			aiLogger,
-			opts...,
-		)
-	}
+	extractor, splitter := buildExtractPair(app, cfg, cfg.ExtractProvider, cfg.ExtractModel, aiLogger)
+	chatter := buildChatter(app, cfg, cfg.ChatProvider, cfg.ChatModel, aiLogger)
+	embedder := buildEmbedder(app, cfg, cfg.EmbeddingProvider, cfg.EmbeddingModel, aiLogger)
+	searchAgent := buildSearchAgent(app, cfg, cfg.SearchProvider, cfg.SearchModel, aiLogger)
+	searchHelper := buildHelper(app, cfg, cfg.SearchHelperProvider, cfg.SearchHelperModel, aiLogger)
 
 	snap := Snapshot{
 		Cfg:          cfg,
