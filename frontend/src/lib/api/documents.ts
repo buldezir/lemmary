@@ -179,7 +179,11 @@ export async function reprocessDocument(
     // provider ids are checked by the processing_jobs create hook, not here --
     // this collection is writable by the document's owner, so the server has
     // to be the one that refuses a binding it cannot serve.
-    ...jobOverridesBody(overrides),
+    //
+    // Narrowed to the steps being queued, here rather than at the caller: the
+    // hook validates every binding on the job, so an override left behind by a
+    // step that was ticked and then unticked would refuse the whole job.
+    ...jobOverridesBody(overridesForSteps(overrides, steps)),
   })
 }
 
@@ -228,6 +232,33 @@ export type JobOverrides = {
  * nothing for a binding with no provider, and a key whose value is `{}` would
  * be a binding the server has to refuse.
  */
+/**
+ * The pipeline steps that call a provider, and the job binding each one uses.
+ * The other three reach no provider. One table, so the pickers and the request
+ * cannot disagree about which binding a step reads.
+ */
+export const STEP_BINDINGS = {
+  ocr: 'ocr',
+  extract_metadata: 'extract',
+  embed: 'embedding',
+} as const satisfies Partial<Record<ProcessingStep, keyof JobOverrides>>
+
+/** The overrides among `overrides` that the given steps will actually read. */
+export function overridesForSteps(
+  overrides: JobOverrides | undefined,
+  steps: ProcessingStep[],
+): JobOverrides {
+  const out: JobOverrides = {}
+  for (const step of steps) {
+    const key = STEP_BINDINGS[step as keyof typeof STEP_BINDINGS]
+    const binding = key && overrides?.[key]
+    if (key && binding) {
+      out[key] = binding
+    }
+  }
+  return out
+}
+
 export function jobOverridesBody(overrides: JobOverrides | undefined) {
   if (!overrides) return {}
   const body: Record<string, ProviderBinding> = {}

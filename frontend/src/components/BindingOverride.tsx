@@ -7,7 +7,7 @@ import {
   type ModelPurpose,
   type ProviderBinding,
 } from '../lib/api/providers'
-import type { JobOverrides } from '../lib/api/documents'
+import { STEP_BINDINGS, type JobOverrides } from '../lib/api/documents'
 import type { ProcessingStep } from '../lib/processing'
 import { useAsync } from '../hooks/useAsync'
 import { ProviderModelFields } from './ProviderModelFields'
@@ -178,13 +178,9 @@ export function BindingOverride({
 }
 
 /**
- * The three pipeline steps that run on a model, and the job binding each one
- * uses. The other three steps -- preview, duplicate detection, applying the
- * metadata -- call no provider at all, so they have no model to override.
- *
- * One table, read by both shapes of the picker: grouped, for the pages that
- * queue a batch by mode, and per step, for the form that ticks steps
- * individually. Two copies would mean two versions of the embedding warning.
+ * How each overridable step is presented; STEP_BINDINGS says which binding it
+ * reads. One table, read by both shapes of the picker -- grouped, for the pages
+ * that queue by mode, and per step -- so there is one embedding warning.
  *
  * Not exported: nothing outside needs it, and exporting a constant from a file
  * that also exports components costs Fast Refresh.
@@ -192,28 +188,26 @@ export function BindingOverride({
 const JOB_BINDINGS = [
   {
     step: 'ocr',
-    key: 'ocr',
     purpose: 'ocr',
     label: 'OCR',
     help: 'Reads the text out of the document.',
   },
   {
     step: 'extract_metadata',
-    key: 'extract',
     purpose: 'llm',
     label: 'Extraction',
     help: "Turns the document's text into its title, date, type and tags.",
   },
   {
     step: 'embed',
-    key: 'embedding',
     purpose: 'embedding',
     label: 'Embedding',
     help: 'Builds the retrieval vectors. Must name the model already bound in Settings — vectors from any other model are written and never read, because the search index only reads the configured one.',
   },
 ] as const satisfies readonly {
-  step: ProcessingStep
-  key: keyof JobOverrides
+  // Narrower than ProcessingStep on purpose: a step with no binding cannot be
+  // listed here.
+  step: keyof typeof STEP_BINDINGS
   purpose: ModelPurpose
   label: string
   help: string
@@ -238,12 +232,13 @@ export function StepBindingOverride({
 }) {
   const binding = JOB_BINDINGS.find((item) => item.step === step)
   if (!binding) return null
+  const key = STEP_BINDINGS[binding.step]
   return (
     <BindingOverride
       label={binding.label}
       purpose={binding.purpose}
-      value={value[binding.key]}
-      onChange={(next) => onChange({ ...value, [binding.key]: next })}
+      value={value[key]}
+      onChange={(next) => onChange({ ...value, [key]: next })}
       help={binding.help}
     />
   )
@@ -270,11 +265,11 @@ export function JobOverrideFields({
     <div className="flex flex-col gap-3 border-t border-line pt-3">
       {JOB_BINDINGS.map((binding) => (
         <BindingOverride
-          key={binding.key}
+          key={binding.step}
           label={binding.label}
           purpose={binding.purpose}
-          value={value[binding.key]}
-          onChange={(next) => onChange({ ...value, [binding.key]: next })}
+          value={value[STEP_BINDINGS[binding.step]]}
+          onChange={(next) => onChange({ ...value, [STEP_BINDINGS[binding.step]]: next })}
           help={binding.help}
         />
       ))}

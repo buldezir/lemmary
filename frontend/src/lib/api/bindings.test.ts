@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { asPickerProvider, bindingBody, bindingIsEmpty } from './providers'
-import { describeJobOverrides, jobOverridesBody } from './documents'
+import { describeJobOverrides, jobOverridesBody, overridesForSteps } from './documents'
 import { chatSessionBinding, type ChatSession } from './chats'
 
 describe('bindingBody', () => {
@@ -69,6 +69,29 @@ describe('describeJobOverrides', () => {
         ocr: { provider_id: 'p2', model: '' },
       }),
     ).toBe('extract: gpt-6-astra, ocr: provider default')
+  })
+})
+
+describe('overridesForSteps', () => {
+  const overrides = {
+    ocr: { provider_id: 'p1', model: 'mistral-ocr-latest' },
+    embedding: { provider_id: 'p2', model: 'text-embedding-3-small' },
+  }
+
+  // The bug this exists for: tick Embed, choose a model, untick Embed, submit.
+  // The picker unmounts but its state does not, and the create hook validates
+  // every binding on the job.
+  it('drops the bindings whose steps are not being queued', () => {
+    expect(overridesForSteps(overrides, ['ocr'])).toEqual({ ocr: overrides.ocr })
+  })
+
+  it('keeps the bindings whose steps are', () => {
+    expect(overridesForSteps(overrides, ['ocr', 'embed'])).toEqual(overrides)
+  })
+
+  it('is empty for steps that call no provider, and for no overrides', () => {
+    expect(overridesForSteps(overrides, ['preview', 'detect_duplicates'])).toEqual({})
+    expect(overridesForSteps(undefined, ['ocr'])).toEqual({})
   })
 })
 

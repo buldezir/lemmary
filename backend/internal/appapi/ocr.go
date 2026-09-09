@@ -63,14 +63,20 @@ type ocrTestResponse struct {
 // It grew out of the OCR-test page's own list, which is why it is here rather
 // than in providers.go: that page needed a non-admin answer to "which providers
 // could do this", and so does every provider/model override -- on a chat, on a
-// reprocess job. The same handler serves the old /ocr/providers path, where the
-// purpose defaults to ocr.
+// reprocess job.
+//
+// fallback is what an unqualified request means, per route: ParseModelPurpose
+// reads anything it does not recognise as the language model, which is wrong
+// for the /ocr/providers path the OCR test page still calls with no purpose.
 //
 // The configured binding for the purpose is sorted first, so the picker opens
 // on what Settings would have used anyway.
-func handlePickableProviders(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
+func handlePickableProviders(app core.App, rt *config.Runtime, fallback aiprovider.ModelPurpose) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		purpose := aiprovider.ParseModelPurpose(e.Request.URL.Query().Get("for"))
+		purpose := fallback
+		if raw := strings.TrimSpace(e.Request.URL.Query().Get("for")); raw != "" {
+			purpose = aiprovider.ParseModelPurpose(raw)
+		}
 		// Which configured pair to report, when the capability alone does not
 		// say. Defaults to the one the purpose implies.
 		bindingName := e.Request.URL.Query().Get("binding")

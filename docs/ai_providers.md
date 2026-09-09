@@ -238,7 +238,10 @@ credentials but never add a new one.
   it.** So changing the chat or search binding in Settings applies to new chats
   and leaves existing ones where they are, rather than moving every open
   transcript onto a model that did not write it. Conversations from before this
-  shipped have nothing recorded and do still follow Settings.
+  shipped have nothing recorded and do still follow Settings. If the provider a
+  conversation is pinned to is later deleted, the chat keeps working: the next
+  turn falls back to the binding in Settings, so rotating a provider does not
+  leave open chats stuck.
 - **Reprocess** — on a document's own page, on the document list's bulk bar, and
   in **Management → Failed processing** — offers OCR, extraction and embedding.
   The choice is stored on each queued job, so a batch queued to try a different

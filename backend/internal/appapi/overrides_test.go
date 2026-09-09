@@ -153,6 +153,15 @@ func TestRecordedBinding(t *testing.T) {
 		"nothing configured records nothing": {
 			want: aiprovider.Binding{},
 		},
+		// Passed through rather than read as "no override", which Binding.Empty
+		// would: substituting the configured model here would run one the
+		// request did not ask for. Resolve refuses this pair.
+		"a model with no provider is not an absent override": {
+			requested: aiprovider.Binding{Model: "gpt-6-astra"},
+			provider:  "configured",
+			model:     "configured-model",
+			want:      aiprovider.Binding{Model: "gpt-6-astra"},
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -6,6 +6,7 @@ import { ensureAuth } from '../lib/auth'
 import {
   describeJobOverrides,
   openDocumentFile,
+  overridesForSteps,
   reprocessDocument,
   saveDocumentMetadata,
   type DocumentRecord,
@@ -259,7 +260,9 @@ export function DocumentDetailPage() {
     }
 
     const stepLabels = reprocessSteps.map((step) => PROCESSING_STEP_LABELS[step]).join(', ')
-    const overrides = describeJobOverrides(reprocessOverrides)
+    // The same narrowing reprocessDocument does: a picker that was opened and
+    // then unticked must not name a model in the confirmation.
+    const overrides = describeJobOverrides(overridesForSteps(reprocessOverrides, reprocessSteps))
     const confirmed = window.confirm(
       `Re-run these steps?\n\n${stepLabels}\n` +
         (overrides ? `\nModels: ${overrides}\n` : '') +

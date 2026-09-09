@@ -4,6 +4,7 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
+	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/fulltext"
 	"lemmary/backend/internal/limits"
@@ -61,12 +62,13 @@ func Register(
 			g.GET("/chats/{id}", bindAuth(handleGetChat(app)))
 			g.PATCH("/chats/{id}", bindAuth(handlePatchChat(app)))
 			g.DELETE("/chats/{id}", bindAuth(handleDeleteChat(app)))
-			g.GET("/ocr/providers", bindAuth(handlePickableProviders(app, rt)))
+			// The OCR test page sends no purpose and means OCR.
+			g.GET("/ocr/providers", bindAuth(handlePickableProviders(app, rt, aiprovider.PurposeOCR)))
 			// The same list for any purpose, for the model pickers on a chat and
 			// on a reprocess job. Auth rather than admin: an override is a
 			// per-user choice among providers an admin already configured, and
 			// this answer carries no credential -- see pickableProvider.
-			g.GET("/ai/providers", bindAuth(handlePickableProviders(app, rt)))
+			g.GET("/ai/providers", bindAuth(handlePickableProviders(app, rt, aiprovider.PurposeLLM)))
 			// Without a route-level limit the multipart parse consumes the whole
 			// request under PocketBase's 32MB default before the handler's own
 			// 10MB check can reject it.

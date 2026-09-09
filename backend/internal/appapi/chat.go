@@ -67,7 +67,11 @@ func conversationBinding(session *core.Record, requested aiprovider.Binding) aip
 // would turn a chat that used to work into a 400. Nothing stored means "follow
 // Settings", which is what those instances did before.
 func recordedBinding(requested aiprovider.Binding, providerID, model string) aiprovider.Binding {
-	if !requested.Empty() {
+	// Against the zero value, not Binding.Empty, for the same reason
+	// config.Overrides.Empty is: Empty is keyed on the provider id, so a model
+	// with no provider would read as no override and quietly run the configured
+	// one. Resolve refuses that pair, and can only do so if it sees it.
+	if requested.Normalized() != (aiprovider.Binding{}) {
 		return requested.Normalized()
 	}
 	configured := aiprovider.Binding{ProviderID: providerID, Model: model}.Normalized()
@@ -75,6 +79,36 @@ func recordedBinding(requested aiprovider.Binding, providerID, model string) aip
 		return aiprovider.Binding{}
 	}
 	return configured
+}
+
+// conversationSnapshot turns the binding a turn runs on into the clients that
+// run it.
+//
+// An unusable binding this request picked is a bad request: answering on a
+// different model is the substitution the picker exists to prevent. One the
+// conversation carries falls back to Settings instead -- the provider row can
+// be deleted long after the transcript, which is why chat_sessions.provider is
+// text and not a relation, and refusing it would leave every pinned chat unable
+// to take another turn once its provider is rotated out. The stale pair stays
+// on the record, so the picker still names the gone provider: a chat naming the
+// wrong model beats one that cannot be continued.
+func conversationSnapshot(
+	app core.App,
+	rt *config.Runtime,
+	o config.Overrides,
+	session *core.Record,
+	requested aiprovider.Binding,
+) (config.Snapshot, error) {
+	snap, err := rt.WithOverrides(app, o)
+	if err == nil {
+		return snap, nil
+	}
+	if session == nil && requested.Normalized() != (aiprovider.Binding{}) {
+		return snap, err
+	}
+	app.Logger().Warn("conversation binding no longer resolves; continuing on the configured model",
+		slog.Any("error", err))
+	return rt.Snapshot(), nil
 }
 
 type chatResponse struct {
@@ -230,11 +264,9 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 		// Resolved after the session is loaded, because a continued
 		// conversation's stored binding is what decides, not the request's.
 		cfg := rt.Snapshot().Cfg
-		binding := conversationBinding(session, recordedBinding(
-			aiprovider.Binding{ProviderID: req.ProviderID, Model: req.Model},
-			cfg.ChatProviderID, cfg.ChatModel,
-		))
-		snap, err := rt.WithOverrides(app, config.Overrides{Chat: binding})
+		requested := aiprovider.Binding{ProviderID: req.ProviderID, Model: req.Model}
+		binding := conversationBinding(session, recordedBinding(requested, cfg.ChatProviderID, cfg.ChatModel))
+		snap, err := conversationSnapshot(app, rt, config.Overrides{Chat: binding}, session, requested)
 		if err != nil {
 			return writeError(e, http.StatusBadRequest, err.Error())
 		}

@@ -207,11 +207,9 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 	// coincide on most instances, but an instance that bound them separately did
 	// so deliberately.
 	cfg := rt.Snapshot().Cfg
-	binding := conversationBinding(session, recordedBinding(
-		aiprovider.Binding{ProviderID: req.ProviderID, Model: req.Model},
-		cfg.SearchProviderID, cfg.SearchModel,
-	))
-	snap, err := rt.WithOverrides(app, config.Overrides{Search: binding})
+	requested := aiprovider.Binding{ProviderID: req.ProviderID, Model: req.Model}
+	binding := conversationBinding(session, recordedBinding(requested, cfg.SearchProviderID, cfg.SearchModel))
+	snap, err := conversationSnapshot(app, rt, config.Overrides{Search: binding}, session, requested)
 	if err != nil {
 		return searchTurn{}, true, writeError(e, http.StatusBadRequest, err.Error())
 	}
