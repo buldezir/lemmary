@@ -48,7 +48,7 @@ func Register(
 			g.GET("/documents/export", bindAuth(handleExportDocuments(app)))
 			g.GET("/documents/search", bindAuth(handleDocumentSearch(app, idx)))
 			g.GET("/documents/timeline", bindAuth(handleDocumentsTimeline(app)))
-			g.POST("/documents/reprocess-failed", bindAuth(handlePostReprocessFailed(app)))
+			g.POST("/documents/reprocess-failed", bindAuth(handlePostReprocessFailed(app, rt)))
 			g.POST("/search", bindAuth(handleDeepSearch(app, rt, idx))).
 				Bind(apis.BodyLimit(chatMaxBodyBytes))
 			g.POST("/search/stream", bindAuth(handleSearchStream(app, rt, idx))).
@@ -61,7 +61,12 @@ func Register(
 			g.GET("/chats/{id}", bindAuth(handleGetChat(app)))
 			g.PATCH("/chats/{id}", bindAuth(handlePatchChat(app)))
 			g.DELETE("/chats/{id}", bindAuth(handleDeleteChat(app)))
-			g.GET("/ocr/providers", bindAuth(handleOCRProviders(app, rt)))
+			g.GET("/ocr/providers", bindAuth(handlePickableProviders(app, rt)))
+			// The same list for any purpose, for the model pickers on a chat and
+			// on a reprocess job. Auth rather than admin: an override is a
+			// per-user choice among providers an admin already configured, and
+			// this answer carries no credential -- see pickableProvider.
+			g.GET("/ai/providers", bindAuth(handlePickableProviders(app, rt)))
 			// Without a route-level limit the multipart parse consumes the whole
 			// request under PocketBase's 32MB default before the handler's own
 			// 10MB check can reject it.
@@ -76,7 +81,10 @@ func Register(
 			g.POST("/providers", bindAdmin(handleCreateProvider(app, rt)))
 			g.PATCH("/providers/{id}", bindAdmin(handlePatchProvider(app, rt)))
 			g.DELETE("/providers/{id}", bindAdmin(handleDeleteProvider(app, rt)))
-			g.GET("/providers/{id}/models", bindAdmin(handleListProviderModels(app)))
+			// Auth rather than admin, unlike the rest of /providers: a model picker
+			// is useless without the catalogue, and the answer is model ids and an
+			// SDK name -- no key, no account, no base URL.
+			g.GET("/providers/{id}/models", bindAuth(handleListProviderModels(app)))
 			// Device-code sign-in for the chatgpt SDK. Two calls rather than
 			// one blocking handler: the browser owns the polling interval.
 			g.POST("/providers/{id}/chatgpt/device", bindAdmin(handleChatGPTDeviceStart(app, rt)))

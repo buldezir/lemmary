@@ -9,6 +9,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/types"
 
 	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/aiprovider"
 )
 
 // SessionQuery selects a slice of one account's sessions. An empty Kind or
@@ -29,6 +30,9 @@ type NewSession struct {
 	// Mode is the search mode the conversation runs in, and is fixed for its
 	// lifetime. Empty for document chats.
 	Mode string
+	// Binding is the provider and model the conversation runs on, fixed for its
+	// lifetime for the same reason Mode is. Empty means the Settings binding.
+	Binding aiprovider.Binding
 	// FirstMessage is the question that started the conversation; the title is
 	// derived from it.
 	FirstMessage string
@@ -252,6 +256,10 @@ func CreateSession(app core.App, spec NewSession) (*core.Record, error) {
 		}
 		if spec.Mode != "" {
 			session.Set("mode", spec.Mode)
+		}
+		if binding := spec.Binding.Normalized(); !binding.Empty() {
+			session.Set("provider", binding.ProviderID)
+			session.Set("model", binding.Model)
 		}
 		session.Set("title", DeriveTitle(spec.FirstMessage))
 		session.Set("message_count", 0)

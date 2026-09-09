@@ -4,11 +4,14 @@ import { ClientResponseError } from 'pocketbase'
 import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
 import {
+  describeJobOverrides,
   openDocumentFile,
   reprocessDocument,
   saveDocumentMetadata,
   type DocumentRecord,
+  type JobOverrides,
 } from '../lib/api/documents'
+import { StepBindingOverride } from '../components/BindingOverride'
 import {
   defaultReprocessSteps,
   forceStepsForReprocess,
@@ -42,6 +45,7 @@ export function DocumentDetailPage() {
   const [reprocessing, setReprocessing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [reprocessSteps, setReprocessSteps] = useState<ProcessingStep[]>([])
+  const [reprocessOverrides, setReprocessOverrides] = useState<JobOverrides>({})
   const [showProcessingJob, setShowProcessingJob] = useState(false)
   const [showPreview, setShowPreview] = useStoredFlag('lemmary.showPreview', true)
   const [error, setError] = useState('')
@@ -255,8 +259,11 @@ export function DocumentDetailPage() {
     }
 
     const stepLabels = reprocessSteps.map((step) => PROCESSING_STEP_LABELS[step]).join(', ')
+    const overrides = describeJobOverrides(reprocessOverrides)
     const confirmed = window.confirm(
-      `Re-run these steps?\n\n${stepLabels}\n\nExisting metadata may be overwritten.`,
+      `Re-run these steps?\n\n${stepLabels}\n` +
+        (overrides ? `\nModels: ${overrides}\n` : '') +
+        '\nExisting metadata may be overwritten.',
     )
     if (confirmed) {
       void onReprocess()
@@ -274,7 +281,12 @@ export function DocumentDetailPage() {
       setError('')
 
       const steps = orderedProcessingSteps(reprocessSteps)
-      await reprocessDocument(document.id, steps, forceStepsForReprocess(steps))
+      await reprocessDocument(
+        document.id,
+        steps,
+        forceStepsForReprocess(steps),
+        reprocessOverrides,
+      )
 
       // Confirmed as soon as the job exists, before the refresh below. Queueing
       // flips the document to pending, which wakes the realtime subscription,
@@ -584,33 +596,58 @@ export function DocumentDetailPage() {
                     const selectable = canSelectReprocessStep(step)
                     const checked = reprocessSteps.includes(step)
                     return (
-                      <label
+                      // A div wrapping a label, not one label around
+                      // everything: the model picker below is itself a
+                      // checkbox and a combobox, and nesting those inside the
+                      // step's label would make a click on either of them
+                      // toggle the step.
+                      <div
                         key={step}
-                        className={`flex items-start gap-2 rounded-xs border px-3 py-1.5 text-sm ${
+                        // A stable hook for the browser suite, which has to
+                        // assert that the model picker sits inside the block of
+                        // the step it belongs to. Same purpose as
+                        // data-timeline-period on the timeline rail.
+                        data-reprocess-step={step}
+                        className={`flex flex-col gap-2 rounded-xs border px-3 py-1.5 text-sm ${
                           selectable
                             ? 'border-line bg-bright text-ink-muted'
                             : 'border-line/50 bg-wash/50 text-ink-faint'
                         }`}
-                        title={
-                          step === 'extract_metadata' && !selectable
-                            ? 'OCR text required, or select OCR'
-                            : undefined
-                        }
                       >
-                        <input
-                          type="checkbox"
-                          className="mt-0.5"
-                          checked={checked}
-                          disabled={!selectable}
-                          onChange={() => toggleReprocessStep(step)}
-                        />
-                        <span>
-                          <span className="font-medium">{PROCESSING_STEP_LABELS[step]}</span>
-                          <span className="mt-0.5 block text-xs font-normal text-ink-soft">
-                            {PROCESSING_STEP_DESCRIPTIONS[step]}
+                        <label
+                          className="flex items-start gap-2"
+                          title={
+                            step === 'extract_metadata' && !selectable
+                              ? 'OCR text required, or select OCR'
+                              : undefined
+                          }
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={checked}
+                            disabled={!selectable}
+                            onChange={() => toggleReprocessStep(step)}
+                          />
+                          <span>
+                            <span className="font-medium">{PROCESSING_STEP_LABELS[step]}</span>
+                            <span className="mt-0.5 block text-xs font-normal text-ink-soft">
+                              {PROCESSING_STEP_DESCRIPTIONS[step]}
+                            </span>
                           </span>
-                        </span>
-                      </label>
+                        </label>
+                        {/* Only for a step that is actually going to run:
+                            which model to use is not a question until you
+                            have said you are re-running the step that uses
+                            one. */}
+                        {checked && (
+                          <StepBindingOverride
+                            step={step}
+                            value={reprocessOverrides}
+                            onChange={setReprocessOverrides}
+                          />
+                        )}
+                      </div>
                     )
                   })}
                 </fieldset>

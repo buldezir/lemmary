@@ -5,13 +5,16 @@ import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
 import {
   buildDocumentFilter,
+  describeJobOverrides,
   fetchDocumentTimeline,
   reprocessDocuments,
   searchDocuments,
   type CorrespondentRecord,
   type DocumentRecord,
   type DocumentTypeRecord,
+  type JobOverrides,
 } from '../lib/api/documents'
+import { JobOverrideFields } from '../components/BindingOverride'
 import { activePeriod, periodRange } from '../lib/timeline'
 import {
   documentQuerySearch,
@@ -63,6 +66,7 @@ export function IndexPage() {
   const [error, setError] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [reprocessMode, setReprocessMode] = useState<ReprocessMode>('auto')
+  const [reprocessOverrides, setReprocessOverrides] = useState<JobOverrides>({})
   const [reprocessing, setReprocessing] = useState(false)
   const [message, setMessage] = useState('')
   // Bumped whenever the library changes, to re-count the timeline.
@@ -228,10 +232,12 @@ export function IndexPage() {
     const ids = selectedOnPage.map((document) => document.id)
     if (ids.length === 0) return
 
+    const overrides = describeJobOverrides(reprocessOverrides)
     const confirmed = window.confirm(
       `Reprocess ${ids.length === 1 ? 'this document' : `these ${ids.length} documents`}?\n\n` +
-        `Steps: ${REPROCESS_MODE_LABELS[reprocessMode]}\n\n` +
-        'Existing metadata may be overwritten.',
+        `Steps: ${REPROCESS_MODE_LABELS[reprocessMode]}\n` +
+        (overrides ? `Models: ${overrides}\n` : '') +
+        '\nExisting metadata may be overwritten.',
     )
     if (!confirmed) return
 
@@ -239,7 +245,7 @@ export function IndexPage() {
       setReprocessing(true)
       setError('')
       setMessage('')
-      const result = await reprocessDocuments(ids, reprocessMode)
+      const result = await reprocessDocuments(ids, reprocessMode, reprocessOverrides)
       setSelectedIds(new Set())
       setMessage(
         result.skipped > 0
@@ -417,6 +423,14 @@ export function IndexPage() {
                     <Button variant="secondary" onClick={() => setSelectedIds(new Set())}>
                       Clear
                     </Button>
+                  )}
+                  {selectedOnPage.length > 0 && (
+                    <div className="w-full">
+                      <JobOverrideFields
+                        value={reprocessOverrides}
+                        onChange={setReprocessOverrides}
+                      />
+                    </div>
                   )}
                 </div>
               )}

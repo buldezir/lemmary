@@ -216,6 +216,49 @@ only file-capable models where the provider says which those are (OpenRouter's
 `file` input, Mistral's `ocr` capability); other SDKs show the full catalogue
 with a warning. Any list can be typed past with the **Custom model id** field.
 
+## Overriding a model for one chat or one job
+
+The bindings above are the defaults. A single chat or a single reprocess job can
+run on a different provider and model without touching them — useful for
+retrying one stubborn document on a stronger extractor, or asking a cheap
+question of a cheap model. Any signed-in user can do this; the choice is among
+the providers an admin has already configured, so it can spend the operator's
+credentials but never add a new one.
+
+- **Ask AI** and **Deep Search** offer *Use a different chat/search model*
+  under the composer, which also names the model in use when nothing is
+  overridden. The choice is fixed for the conversation, like the Search/Research
+  mode beside it: the transcript replayed on each turn was produced by one
+  model, and answering the next question with another reads that work back as if
+  it were its own. Start a new chat to switch. Deep Search's **helper** model is
+  not moved by this — it is a separate binding because it does many cheap
+  per-document calls where the search model does a few expensive ones.
+
+  **A conversation records the model it opened on, whether or not anyone picked
+  it.** So changing the chat or search binding in Settings applies to new chats
+  and leaves existing ones where they are, rather than moving every open
+  transcript onto a model that did not write it. Conversations from before this
+  shipped have nothing recorded and do still follow Settings.
+- **Reprocess** — on a document's own page, on the document list's bulk bar, and
+  in **Management → Failed processing** — offers OCR, extraction and embedding.
+  The choice is stored on each queued job, so a batch queued to try a different
+  extractor runs on it however long the queue takes, rather than on whatever
+  Settings holds by the time the worker gets there. The step history
+  (**Processing job → step runs**) records the provider and model that actually
+  ran.
+- Left untouched, every picker sends nothing and the job or chat runs exactly as
+  it did before — the same request, byte for byte.
+
+**The embedding override must name the model already bound in Settings.** A
+chunk row records the model and dimension count it was produced with, and the
+retrieval index only reads the rows matching the configured one, so vectors from
+any other model would be paid for, written, and never read — a document silently
+dropping out of dense search. The server refuses that rather than letting it
+look like success. Re-embedding on the *configured* model is the case worth
+having: a fix-up for a document whose vectors are missing or stale. To change
+the model itself, change it in Settings, which re-embeds everything (see [What
+embeddings cost](#what-embeddings-cost)).
+
 ## What embeddings cost
 
 Turning `AI_EMBEDDING_MODEL` on is a commitment to embed the whole archive, not

@@ -32,6 +32,11 @@ type searchRequest struct {
 	// stopped generates an id here and POSTs it to /search/cancel. Optional:
 	// omitting it costs the ability to cancel, nothing else.
 	RunID string `json:"run_id"`
+	// The provider and model to open the conversation on, instead of the search
+	// binding in Settings. Read only when SessionID is empty, like Mode is
+	// fixed once a conversation exists -- see conversationBinding.
+	ProviderID string `json:"provider_id"`
+	Model      string `json:"model"`
 }
 
 type searchResponse struct {
@@ -158,11 +163,6 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		return searchTurn{}, true, writeError(e, http.StatusBadRequest, err.Error())
 	}
 
-	agent := rt.Snapshot().SearchAgent
-	if agent == nil {
-		return searchTurn{}, true, writeError(e, http.StatusServiceUnavailable, "AI search is not configured; update Settings.")
-	}
-
 	// Two different questions, deliberately answered differently.
 	//
 	// ownerID is whose sidebar this conversation belongs in, so a superuser
@@ -201,6 +201,25 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		}
 	}
 
+	// After the session, so a continued conversation runs on the binding stored
+	// with it rather than on whatever the request echoed back.
+	// The search binding, not the chat one: applyBindingFallbacks makes them
+	// coincide on most instances, but an instance that bound them separately did
+	// so deliberately.
+	cfg := rt.Snapshot().Cfg
+	binding := conversationBinding(session, recordedBinding(
+		aiprovider.Binding{ProviderID: req.ProviderID, Model: req.Model},
+		cfg.SearchProviderID, cfg.SearchModel,
+	))
+	snap, err := rt.WithOverrides(app, config.Overrides{Search: binding})
+	if err != nil {
+		return searchTurn{}, true, writeError(e, http.StatusBadRequest, err.Error())
+	}
+	agent := snap.SearchAgent
+	if agent == nil {
+		return searchTurn{}, true, writeError(e, http.StatusServiceUnavailable, "AI search is not configured; update Settings.")
+	}
+
 	tools, err := buildAgentTools(app, rt, idx, searchUserID)
 	if err != nil {
 		app.Logger().Error("search list tags failed", slog.Any("error", err))
@@ -229,6 +248,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 			UserID:       ownerID,
 			Kind:         chat.KindSearch,
 			Mode:         mode,
+			Binding:      binding,
 			FirstMessage: content,
 		})
 		if err != nil {

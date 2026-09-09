@@ -14,6 +14,7 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
+	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/worker"
 )
@@ -60,6 +61,12 @@ type Request struct {
 	DocumentIDs []string
 	Limit       int
 	Mode        Mode
+	// Overrides are the provider and model this batch runs on, instead of the
+	// bindings in Settings. Stored on each job rather than resolved here: the
+	// worker may not reach a queued job for minutes, and a batch queued to try
+	// a different extractor must not quietly run on whatever Settings holds by
+	// then. Zero means the configured bindings.
+	Overrides config.Overrides
 }
 
 // Result reports what a batch did. Remaining counts documents still failed
@@ -115,7 +122,7 @@ func RunBatch(app core.App, req Request) (Result, error) {
 	result := Result{Skipped: skipped}
 	for _, document := range documents {
 		steps, forceSteps := StepsFor(document, mode)
-		if err := queueOne(app, document, steps, forceSteps); err != nil {
+		if err := queueOne(app, document, steps, forceSteps, req.Overrides); err != nil {
 			return result, fmt.Errorf("queue document %s: %w", document.Id, err)
 		}
 		result.Queued++
@@ -142,13 +149,13 @@ func RunBatch(app core.App, req Request) (Result, error) {
 // which would set the document to processing, so the job must not become visible
 // before the pending write lands. A rollback also means a failed create cannot
 // leave the document stranded at pending with no job to move it.
-func queueOne(app core.App, document *core.Record, steps, forceSteps []string) error {
+func queueOne(app core.App, document *core.Record, steps, forceSteps []string, overrides config.Overrides) error {
 	return app.RunInTransaction(func(txApp core.App) error {
 		document.Set("processing_status", models.DocStatusPending)
 		if err := txApp.Save(document); err != nil {
 			return err
 		}
-		_, err := worker.Enqueue(txApp, document.Id, steps, forceSteps)
+		_, err := worker.Enqueue(txApp, document.Id, steps, forceSteps, overrides)
 		return err
 	})
 }

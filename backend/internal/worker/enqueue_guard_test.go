@@ -7,6 +7,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 
+	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/models"
 	// Registers the migrations that create processing_jobs; without them
 	// RunAppMigrations builds an empty schema.
@@ -90,7 +91,7 @@ func TestEnqueueRefusesASecondJobWhileEmbedIsStillRunning(t *testing.T) {
 
 	live := makeJob(t, app, documentID, models.JobStatusCompleted, "")
 
-	got, err := createProcessingJob(app, documentID, []string{models.StepEmbed}, nil)
+	got, err := createProcessingJob(app, documentID, []string{models.StepEmbed}, nil, config.Overrides{})
 	if err != nil {
 		t.Fatalf("createProcessingJob: %v", err)
 	}
@@ -118,7 +119,7 @@ func TestEnqueueGuardBoundaries(t *testing.T) {
 			documentID := makeDocumentForEnqueue(t, app)
 			existing := makeJob(t, app, documentID, tc.status, tc.finishedAt)
 
-			got, err := createProcessingJob(app, documentID, []string{models.StepEmbed}, nil)
+			got, err := createProcessingJob(app, documentID, []string{models.StepEmbed}, nil, config.Overrides{})
 			if err != nil {
 				t.Fatalf("createProcessingJob: %v", err)
 			}

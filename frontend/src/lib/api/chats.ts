@@ -1,4 +1,5 @@
 import { apiFetch } from '../apiClient'
+import type { ProviderBinding } from './providers'
 
 export type ChatSessionKind = 'search' | 'document'
 export type ChatRole = 'user' | 'assistant'
@@ -28,6 +29,14 @@ export type ChatSession = {
   title: string
   /** The mode the last search turn ran in; absent for document chats. Mirrors SearchMode. */
   mode?: 'search' | 'research'
+  /**
+   * The provider row and model this conversation is pinned to, absent when it
+   * runs on the binding in Settings. Fixed for the conversation's lifetime, so
+   * reopening a chat restores the picker on what its transcript was produced
+   * with.
+   */
+  provider?: string
+  model?: string
   /** Set only for kind === 'document'. */
   document?: string
   document_title?: string
@@ -115,6 +124,20 @@ export function deleteChatSession(id: string) {
 /** What the sidebar shows for a session whose title never resolved. */
 export function chatSessionTitle(session: ChatSession): string {
   return session.title.trim() || 'New chat'
+}
+
+/**
+ * The binding a conversation is pinned to, as the picker wants it, or undefined
+ * when it runs on the configured model.
+ *
+ * Undefined for a session with no provider even if it somehow carries a model:
+ * the server refuses that pair, so offering it back as a choice would only
+ * produce a request it will not accept.
+ */
+export function chatSessionBinding(session: ChatSession | null): ProviderBinding | undefined {
+  const providerId = session?.provider?.trim()
+  if (!providerId) return undefined
+  return { provider_id: providerId, model: session?.model?.trim() ?? '' }
 }
 
 /** Trims a PocketBase timestamp to its date for the sidebar. */

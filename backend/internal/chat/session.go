@@ -10,6 +10,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/types"
 
 	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/strutil"
 )
 
@@ -276,6 +277,12 @@ type SessionInfo struct {
 	Title string `json:"title"`
 	// Mode is the search mode the last turn ran in ("" for document chats).
 	Mode string `json:"mode,omitempty"`
+	// Provider and Model are the binding the conversation runs on, empty when
+	// it runs on the one in Settings. Sent so reopening a chat restores the
+	// picker on the choice its transcript was produced with -- the same reason
+	// Mode is here.
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
 	// Document is set for KindDocument sessions; DocumentTitle is filled by the
 	// handler, which is the layer that may read the documents collection.
 	Document      string `json:"document,omitempty"`
@@ -307,12 +314,30 @@ func ToSessionInfo(record *core.Record) SessionInfo {
 		Kind:          record.GetString("kind"),
 		Title:         record.GetString("title"),
 		Mode:          record.GetString("mode"),
+		Provider:      record.GetString("provider"),
+		Model:         record.GetString("model"),
 		Document:      record.GetString("document"),
 		MessageCount:  record.GetInt("message_count"),
 		LastMessageAt: lastMessageAt,
 		Created:       record.GetDateTime("created").String(),
 		Updated:       record.GetDateTime("updated").String(),
 	}
+}
+
+// BindingOf reads the provider and model a conversation is pinned to.
+//
+// The only reader of those two fields, so that "a session with no override runs
+// on Settings" is one line rather than a nil check at each of the two chat
+// handlers. A nil record answers the same as an unpinned one, which is what a
+// conversation that does not exist yet needs.
+func BindingOf(record *core.Record) aiprovider.Binding {
+	if record == nil {
+		return aiprovider.Binding{}
+	}
+	return aiprovider.Binding{
+		ProviderID: record.GetString("provider"),
+		Model:      record.GetString("model"),
+	}.Normalized()
 }
 
 // ToMessageInfo projects a message record for the API.
