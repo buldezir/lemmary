@@ -46,6 +46,12 @@ export function UploadPage() {
           Files
         </Link>
         <Link
+          to="/upload/scan"
+          className={tabClassName}
+        >
+          Scan
+        </Link>
+        <Link
           to="/upload/amazon"
           className={tabClassName}
         >

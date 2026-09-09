@@ -117,6 +117,15 @@ func Register(
 			g.GET("/split/detect/status", bindAuth(handleGetSplitDetectStatus(app)))
 			g.POST("/split", bindAuth(handlePostSplit(app, lim)))
 			g.GET("/split/status", bindAuth(handleGetSplitStatus(app)))
+			// Scanning from an eSCL device on the LAN. The scan itself is a job
+			// rather than a synchronous call: a feeder run is minutes long, and
+			// a reverse proxy's read timeout would cut it in half.
+			g.GET("/scan/discover", bindAuth(handleGetScanDiscover(app)))
+			g.POST("/scan", bindAuth(handlePostScan(app, lim)))
+			g.GET("/scan/status", bindAuth(handleGetScanStatus(app)))
+			g.GET("/scan/pdf", bindAuth(handleGetScanPDF(app)))
+			g.DELETE("/scan", bindAuth(handleDeleteScan(app)))
+			g.POST("/scan/document", bindAuth(handlePostScanDocument(app)))
 			return e.Next()
 		},
 	})

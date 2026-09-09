@@ -179,6 +179,7 @@ Browse them in PocketBase Admin as a superuser. Enable SMTP when you want real d
 | Section | Route | State |
 | --- | --- | --- |
 | Files | `/upload` (default) | Implemented — drag-and-drop / file-picker upload, see the processing flow below |
+| Scan | `/upload/scan` | Implemented — scans from an eSCL (AirScan) scanner on the local network, see [Network scanning](/scanning) |
 | Amazon orders | `/upload/amazon` | Implemented — imports the invoice PDFs out of an order archive requested from Amazon, see [Amazon order import](#amazon-order-import) |
 | Split documents | `/upload/split` | Implemented — splits a PDF holding several joined documents into one document per part, see [Document splitting](#document-splitting) |
 
@@ -196,6 +197,19 @@ Uploading and importing are two steps, so nothing is created before the user has
 `DELETE /api/app/import/amazon/upload?upload_id=...` discards a staged archive the user chose not to import. Staged archives expire after 30 minutes and are swept on the next upload, including files left behind by an earlier process — the staging registry and the job state are in memory, so both are lost on restart. Uploading a second archive also discards the account's previous one, so an account holds at most one at a time. Confirming consumes the upload id: the same archive cannot be imported twice, and one import may run at a time per user (a second start returns `409`).
 
 Rejections come back as `400` at preview time rather than mid-import: not a readable zip, no PDFs, more than 5000 PDFs, an upload over `IMPORT_STAGING_MAX_BYTES` (1 GiB by default), or an archive that decompresses beyond 8 GiB (a zip bomb). A single PDF over the 20 MB `documents.file` limit is not fatal — it is flagged `oversized` in the preview and skipped on import. A PDF over [the page ceiling](#the-page-ceiling) is refused per entry as the run proceeds rather than at preview time, since an archive's real page counts are only discoverable by opening every PDF in it.
+
+### Network scanning
+
+**Scan** (`/upload/scan`) scans from an eSCL ("AirScan") device on the local network and adds the pages as one document. Setting it up, the two ways scanners are found, and why mDNS needs `network_mode: host` under Docker are covered in [Network scanning](/scanning); the API is:
+
+1. `GET /api/app/scan/discover?cidr=...` returns `{ scanners, cidr }`. Discovery is an mDNS browse of `_uscan._tcp`/`_uscans._tcp` and a sweep of `cidr` probing `GET http://<ip>/eSCL/ScannerCapabilities`, run concurrently and merged by address; the two run under one 5-second budget. An omitted `cidr` is derived as the /24 of the request's client address, which is the only hint a containerised app has about the LAN, and comes back in the response so the UI can say what was searched. A range that is not private, or larger than a /22, is refused with `400`.
+2. `POST /api/app/scan` with `{ "scanner", "source", "upload_id" }` returns `202 Accepted` and `{ "job_id" }`. `source` is `platen` (one page) or `feeder` (every sheet in one job). An empty `upload_id` starts a new document; otherwise the pages are appended to that one. Poll `GET /api/app/scan/status?job_id=...` until `completed`, whose `result` is the staged document: `upload_id`, `page_count`, `size_bytes`, `expires_at`. One scan runs at a time per user (a second start returns `409`), which is also what keeps two runs from merging onto the same file.
+3. `GET /api/app/scan/pdf?upload_id=...` streams the document so far, for the preview. `DELETE /api/app/scan?upload_id=...` discards it.
+4. `POST /api/app/scan/document` with `{ "upload_id" }` saves it as a `pending` document and returns `{ "document_id" }`, so it goes through the normal OCR + AI [processing flow](#processing-flow). A re-scan of something already in the library comes back as `400` with `duplicate_of`.
+
+The scan itself is three requests to the device: `POST {base}/ScanJobs` with a PWG ScanSettings document (A4, 300 dpi, RGB24, `application/pdf`), then `GET {job}/NextDocument` until it answers `404`, then `DELETE {job}` — the delete always runs, including after a failure, because a device left holding an open job refuses the next one. Pages are merged with `pdfunite` into `<data dir>/temp/scan/<upload id>.pdf`, which expires after 30 minutes like any other staged upload.
+
+Because the address comes from whoever is signed in, every request goes through a dial-time guard that allows only RFC1918 and IPv6 ULA addresses: public addresses, `localhost` and link-local `169.254.x` (the cloud metadata service) are refused, redirects are not followed, and a `Location` header pointing at another host is rejected. The staged document is capped at the `documents.file` field's own 20 MB, checked before each scan so a full document is reported while there is still something to do about it.
 
 ### Document splitting
 
