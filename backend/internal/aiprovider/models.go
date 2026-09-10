@@ -200,6 +200,8 @@ func ListModels(ctx context.Context, p Provider, purpose ModelPurpose, client *h
 		req.Header.Set("Authorization", "Bearer "+p.APIKey)
 	}
 	req.Header.Set("Accept", "application/json")
+	// Past the SDKChatGPT early return above, so this never reaches Codex.
+	req.Header.Set("User-Agent", UserAgent)
 	// Hand-rolled request, so the SDK middleware that stamps this everywhere
 	// else does not see it.
 	if p.SDK == SDKOpenCode {
