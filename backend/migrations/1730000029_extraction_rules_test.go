@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"lemmary/backend/internal/config"
 )
 
 func TestExtractionRulesCanBeSavedAfterMigrating(t *testing.T) {
@@ -29,6 +31,17 @@ func TestExtractionRulesCanBeSavedAfterMigrating(t *testing.T) {
 	}
 	if got := reloaded.GetString("extraction_rules"); got != "Treat Rechnung as the document type Invoice." {
 		t.Fatalf("extraction_rules did not round-trip through the record, got %q", got)
+	}
+
+	// Through config too, and not only into the record: the field is only worth
+	// anything if the settings the extractor is built from carry it, and that is
+	// one line in configFromRecord away from silently reading empty.
+	cfg, err := config.Load(app)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.ExtractionRules != "Treat Rechnung as the document type Invoice." {
+		t.Fatalf("Config.ExtractionRules = %q", cfg.ExtractionRules)
 	}
 }
 

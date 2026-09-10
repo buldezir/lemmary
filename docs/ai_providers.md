@@ -179,7 +179,7 @@ afterwards, in both modes.
 | `WORKER_TIMEOUT_SEC` | `300` | Per-job processing timeout |
 | `WORKER_MAX_RETRIES` | `0` | Max step retry attempts before a job fails |
 | `DEEP_SEARCH_LANGUAGES` | empty | Comma-separated ISO 639-1 codes (e.g. `de,en,uk`) for Deep Search keyword expansion. Only drives per-language searches when no embedding model is set; with one, a single search already crosses languages |
-| `EXTRACTION_PROMPT_VERSION` | `v1` | Stored on each processing job step run; bookkeeping only, not offered in the Settings UI |
+| `EXTRACTION_PROMPT_VERSION` | `v1` | Stored on each processing job step run, with a digest of the Settings extraction rules appended where any are set; bookkeeping only, not offered in the Settings UI |
 
 Two more are seeded the same way but are **operator-owned under
 `AI_MANAGED=1`**, because each is a cost rather than a preference — so a hosted

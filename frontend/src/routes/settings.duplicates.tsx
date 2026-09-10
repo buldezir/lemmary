@@ -19,7 +19,7 @@ import {
 
 export function SettingsDuplicatesPage() {
   // unknown/failed meta counts as managed; see AppMeta.aiManaged
-  const { aiManaged } = useAppMeta()
+  const { aiManaged, metaLoaded } = useAppMeta()
   const { form, loading, error, success, saving, updateField, save, setError, closeResult } =
     useSettingsForm((settings) => ({
       near_duplicate_detection_enabled: settings.near_duplicate_detection_enabled,
@@ -42,6 +42,8 @@ export function SettingsDuplicatesPage() {
     })
   }
 
+  // See the AI tab: in-flight meta is not a licence to name an owner.
+  if (!metaLoaded) return <SettingsLoading error="" />
   if (aiManaged !== false) return <ManagedByHostNotice />
   if (loading || !form) return <SettingsLoading error={error} />
 

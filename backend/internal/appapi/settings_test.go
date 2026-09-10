@@ -251,6 +251,18 @@ func TestPatchStoresTrimmedExtractionRules(t *testing.T) {
 	}
 }
 
+// The read side of the same field. Without this, a patch could store rules the
+// Settings page would never show back.
+func TestSettingsResponseCarriesExtractionRules(t *testing.T) {
+	t.Parallel()
+	res := settingsResponseFromConfig(config.Config{
+		ExtractionRules: "Always tag invoices with the vendor's city.",
+	})
+	if res.ExtractionRules != "Always tag invoices with the vendor's city." {
+		t.Fatalf("ExtractionRules = %q", res.ExtractionRules)
+	}
+}
+
 // The rules cost nothing but the prompt they ride in, so a managed tenant keeps
 // them: naming a managed field fails the whole PATCH with a 403.
 func TestExtractionRulesAreNotAManagedSetting(t *testing.T) {

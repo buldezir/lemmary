@@ -82,7 +82,7 @@ function EmbeddingStatsLine({ stats }: { stats: EmbeddingStats | null }) {
 
 export function SettingsAIPage() {
   // unknown/failed meta counts as managed; see AppMeta.aiManaged
-  const { aiManaged, chatgptLogin } = useAppMeta()
+  const { aiManaged, chatgptLogin, metaLoaded } = useAppMeta()
   const [advancedModels, setAdvancedModels] = useState(false)
   const { data: providers, reload: reloadProviders } = useAsync(listAIProviders, [])
   // Allowed to fail, and loaded apart from the settings: it scans two tables,
@@ -127,6 +127,10 @@ export function SettingsAIPage() {
     await save(form)
   }
 
+  // Waiting on meta before saying who owns these settings: undefined means the
+  // request is still out, and claiming a hosting provider owns them is a
+  // statement, not a safe default.
+  if (!metaLoaded) return <SettingsLoading error="" />
   if (aiManaged !== false) return <ManagedByHostNotice />
   if (loading || !form) return <SettingsLoading error={error} />
 

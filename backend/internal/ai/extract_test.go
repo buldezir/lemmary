@@ -281,6 +281,28 @@ func TestBuildExtractionSystemPromptAppendsAdminRules(t *testing.T) {
 	}
 }
 
+func TestExtractionPromptFingerprintTracksTheRules(t *testing.T) {
+	t.Parallel()
+
+	// No rules is the bare version, so every run recorded before this reads the
+	// same and nothing in the UI changes for an instance that sets none.
+	if got := ExtractionPromptFingerprint("v1", "  "); got != "v1" {
+		t.Fatalf("blank rules changed the fingerprint: %q", got)
+	}
+
+	first := ExtractionPromptFingerprint("v1", "Prefer the issuer over the payer.")
+	second := ExtractionPromptFingerprint("v1", "Prefer the payer over the issuer.")
+	if first == second {
+		t.Fatalf("two rule sets share one fingerprint: %q", first)
+	}
+	if first != ExtractionPromptFingerprint("v1", " Prefer the issuer over the payer. ") {
+		t.Fatal("surrounding whitespace changed the fingerprint")
+	}
+	if !strings.HasPrefix(first, "v1+rules.") {
+		t.Fatalf("expected the version to stay readable in %q", first)
+	}
+}
+
 func TestExtractMetadataSendsAdminRules(t *testing.T) {
 	t.Parallel()
 	var body string

@@ -3,6 +3,7 @@ package ai
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -80,6 +81,25 @@ document_date must be a complete calendar date in YYYY-MM-DD form. Never return 
 
 Do not include markdown or explanation.`
 	return prompt
+}
+
+// ExtractionPromptFingerprint identifies the prompt a document was extracted
+// with, for the step run that records it.
+//
+// The version alone stopped being enough the moment an admin could add rules:
+// the prompt changes while extraction_prompt_version stays "v1", so a run
+// recorded under it would claim a prompt that no longer exists. A short digest
+// of the rules rides along -- enough to tell one rule set from another in the
+// step's tooltip, which is all this is for; it is not a checksum anyone
+// verifies. No rules means the bare version, so runs from before this, and from
+// every instance that never sets any, read exactly as they did.
+func ExtractionPromptFingerprint(promptVer, rules string) string {
+	rules = strings.TrimSpace(rules)
+	if rules == "" {
+		return promptVer
+	}
+	sum := sha256.Sum256([]byte(rules))
+	return fmt.Sprintf("%s+rules.%x", promptVer, sum[:3])
 }
 
 // formatExtractionRulesPrompt carries the admin's own instructions into the

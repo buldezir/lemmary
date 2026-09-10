@@ -6,6 +6,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
+	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/strutil"
 )
@@ -93,7 +94,7 @@ func setStepRunExecutionDetails(run *models.StepRun, state *StepState) {
 			run.Provider = state.AI.Name()
 			run.Model = state.AI.Model()
 		}
-		run.PromptVersion = state.Cfg.ExtractionPromptVer
+		run.PromptVersion = ai.ExtractionPromptFingerprint(state.Cfg.ExtractionPromptVer, state.Cfg.ExtractionRules)
 	case models.StepEmbed:
 		if state.Embedder != nil {
 			run.Provider = state.Embedder.Name()
