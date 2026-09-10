@@ -25,6 +25,11 @@ import { DocumentAskPage } from './routes/document.$documentId.ask'
 import { OCRTestPage } from './routes/ocr-test'
 import { SearchPage } from './routes/search'
 import { SettingsPage } from './routes/settings'
+import { SettingsAppearancePage } from './routes/settings.index'
+import { SettingsAIPage } from './routes/settings.ai'
+import { SettingsProcessingPage } from './routes/settings.processing'
+import { SettingsWorkerPage } from './routes/settings.worker'
+import { SettingsDuplicatesPage } from './routes/settings.duplicates'
 import { ManagementPage } from './routes/management'
 import { ImportPage } from './routes/import'
 import { ImportNgxPage } from './routes/import.ngx'
@@ -167,11 +172,45 @@ const ocrTestRoute = createRoute({
   component: OCRTestPage,
 })
 
+// Settings is a shell with one tab per section, like /upload and /import: the
+// page had grown past what anyone could scan, and each section saves only its
+// own fields anyway. The guard sits on the parent, which the tabs inherit.
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
   beforeLoad: requireAdmin,
   component: SettingsPage,
+})
+
+// Appearance is the first tab, so it sits on /settings itself.
+const settingsAppearanceRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: '/',
+  component: SettingsAppearancePage,
+})
+
+const settingsAIRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'ai',
+  component: SettingsAIPage,
+})
+
+const settingsProcessingRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'processing',
+  component: SettingsProcessingPage,
+})
+
+const settingsWorkerRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'worker',
+  component: SettingsWorkerPage,
+})
+
+const settingsDuplicatesRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'duplicates',
+  component: SettingsDuplicatesPage,
 })
 
 const managementRoute = createRoute({
@@ -254,7 +293,13 @@ const routeTree = rootRoute.addChildren([
     researchRoute.addChildren([researchSessionRoute]),
   ]),
   ocrTestRoute,
-  settingsRoute,
+  settingsRoute.addChildren([
+    settingsAppearanceRoute,
+    settingsAIRoute,
+    settingsProcessingRoute,
+    settingsWorkerRoute,
+    settingsDuplicatesRoute,
+  ]),
   managementRoute,
   importRoute.addChildren([importArchiveRoute, importNgxRoute, importArchiveAliasRoute]),
   exportRoute,

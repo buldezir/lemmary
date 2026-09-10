@@ -65,6 +65,10 @@ type Config struct {
 	WorkerTimeout                 time.Duration
 	WorkerMaxRetries              int
 	ExtractionPromptVer           string
+	// ExtractionRules is appended to the built-in extraction prompt, for the
+	// house conventions a fixed prompt cannot know. Empty means the prompt is
+	// what it always was.
+	ExtractionRules               string
 	NearDuplicateDetectionEnabled bool
 	NearDuplicateThreshold        float64
 	// AlwaysRequireReview finishes every document the pipeline extracted
@@ -228,6 +232,7 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 		WorkerTimeout:                 time.Duration(workerTimeoutSec) * time.Second,
 		WorkerMaxRetries:              max(int(record.GetFloat("worker_max_retries")), 0),
 		ExtractionPromptVer:           strutil.FirstNonEmpty(record.GetString("extraction_prompt_version"), "v1"),
+		ExtractionRules:               strings.TrimSpace(record.GetString("extraction_rules")),
 		NearDuplicateDetectionEnabled: record.GetBool("near_duplicate_detection_enabled"),
 		NearDuplicateThreshold:        threshold,
 		AlwaysRequireReview:           record.GetBool("always_require_review"),
@@ -323,6 +328,7 @@ func applyConfigToRecord(record *core.Record, cfg Config) {
 	record.Set("worker_timeout_sec", int(cfg.WorkerTimeout.Seconds()))
 	record.Set("worker_max_retries", cfg.WorkerMaxRetries)
 	record.Set("extraction_prompt_version", cfg.ExtractionPromptVer)
+	record.Set("extraction_rules", cfg.ExtractionRules)
 	record.Set("near_duplicate_detection_enabled", cfg.NearDuplicateDetectionEnabled)
 	threshold := cfg.NearDuplicateThreshold
 	if threshold <= 0 || threshold > 1 {

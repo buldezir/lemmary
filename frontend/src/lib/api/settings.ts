@@ -42,6 +42,14 @@ export type AppSettings = {
    * EXTRACTION_PROMPT_VERSION or through the API.
    */
   extraction_prompt_version: string
+  /**
+   * The admin's own additions to the extraction prompt: house conventions for
+   * titles, types, correspondents and tags. Appended to the built-in prompt,
+   * which stays in force — these cannot change which fields are stored. Empty
+   * means the prompt is what it always was. Tenant-owned, so a managed
+   * instance keeps it.
+   */
+  extraction_rules: string
   /** Tenant-owned, so a managed instance keeps it. */
   always_require_review: boolean
   near_duplicate_detection_enabled: boolean
