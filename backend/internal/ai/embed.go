@@ -95,6 +95,7 @@ func NewEmbedder(sdk, apiKey, model, baseURL string, dims int, timeout time.Dura
 	if sdk == aiprovider.SDKOpenCode {
 		opts = append(opts, option.WithMiddleware(aiprovider.SessionMiddleware()))
 	}
+	opts = append(opts, aiprovider.UserAgentOptions(sdk)...)
 	// A keyless provider sends no Authorization header at all, rather than an
 	// empty "Bearer ". The local SDK is the case: a sidecar on the compose
 	// network has nobody to authenticate to, and an endpoint that does read the

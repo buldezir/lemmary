@@ -245,6 +245,7 @@ func (p *DoclingProvider) convert(ctx context.Context, fileName, mimeType string
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", aiprovider.UserAgent)
 	if p.apiKey != "" {
 		req.Header.Set("X-Api-Key", p.apiKey)
 	}

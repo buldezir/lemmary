@@ -423,9 +423,10 @@ func TestEmbedderReportsNameAndModel(t *testing.T) {
 // SessionMiddleware from NewEmbedder must fail this, not only the hand-built
 // SDK wiring test.
 func TestEmbedSendsSessionHeaderToOpenCode(t *testing.T) {
-	var seen string
+	var seen, agent string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen = r.Header.Get(aiprovider.SessionHeader)
+		agent = r.Header.Get("User-Agent")
 		writeEmbeddings(w, 1, 3, false)
 	}))
 	t.Cleanup(srv.Close)
@@ -444,6 +445,9 @@ func TestEmbedSendsSessionHeaderToOpenCode(t *testing.T) {
 	}
 	if seen != "conv123" {
 		t.Errorf("%s = %q, want %q", aiprovider.SessionHeader, seen, "conv123")
+	}
+	if agent != aiprovider.UserAgent {
+		t.Errorf("User-Agent = %q, want %q", agent, aiprovider.UserAgent)
 	}
 
 	// The other half of the gate: an openai row installs no middleware.
