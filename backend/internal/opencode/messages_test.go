@@ -341,6 +341,11 @@ func TestTheSessionHeaderIsSentOnMessagesToo(t *testing.T) {
 	if got := srv.header.Get("Authorization"); got != "Bearer k" {
 		t.Errorf("Authorization = %q, want a bearer token", got)
 	}
+	// This client is the second HTTP stack behind an OpenCode provider, and
+	// the openai-go option that names us elsewhere does not reach it.
+	if got := srv.header.Get("User-Agent"); got != aiprovider.UserAgent {
+		t.Errorf("User-Agent = %q, want %q", got, aiprovider.UserAgent)
+	}
 }
 
 // Usage is what a Deep Search run is budgeted against, and the two APIs name

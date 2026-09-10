@@ -118,9 +118,10 @@ func TestListModelsSendsSessionHeaderToOpenCode(t *testing.T) {
 	} {
 		t.Run(tc.sdk, func(t *testing.T) {
 			t.Parallel()
-			var seen string
+			var seen, seenAgent string
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				seen = r.Header.Get(SessionHeader)
+				seenAgent = r.Header.Get("User-Agent")
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(`{"data":[{"id":"kimi-k3"}]}`))
 			}))
@@ -140,6 +141,9 @@ func TestListModelsSendsSessionHeaderToOpenCode(t *testing.T) {
 			}
 			if seen != want {
 				t.Errorf("%s = %q, want %q", SessionHeader, seen, want)
+			}
+			if seenAgent != UserAgent {
+				t.Errorf("User-Agent = %q, want %q", seenAgent, UserAgent)
 			}
 		})
 	}
