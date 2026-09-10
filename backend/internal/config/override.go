@@ -211,6 +211,7 @@ func buildExtractPair(app core.App, cfg Config, p *aiprovider.Provider, model st
 		p.BaseURL,
 		cfg.ExtractionPromptVer,
 		cfg.ProcessingResultLanguage,
+		cfg.ExtractionRules,
 		cfg.OpenAITimeout,
 		logger,
 		opts...,

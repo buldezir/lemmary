@@ -231,6 +231,36 @@ func TestAlwaysRequireReviewIsNotAManagedSetting(t *testing.T) {
 
 func boolptr(b bool) *bool { return &b }
 
+func TestPatchStoresTrimmedExtractionRules(t *testing.T) {
+	t.Parallel()
+	record := settingsRecordForTest(t)
+
+	rules := "  Treat Rechnung as the document type Invoice.  "
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{ExtractionRules: &rules}); err != nil {
+		t.Fatalf("applySettingsPatch: %v", err)
+	}
+	if got := record.GetString("extraction_rules"); got != "Treat Rechnung as the document type Invoice." {
+		t.Fatalf("extraction_rules = %q", got)
+	}
+
+	// The field's own Max would refuse this too, but only with a validation
+	// error nobody can read.
+	tooLong := strings.Repeat("x", maxExtractionRules+1)
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{ExtractionRules: &tooLong}); err == nil {
+		t.Fatal("expected rules longer than the cap to be refused")
+	}
+}
+
+// The rules cost nothing but the prompt they ride in, so a managed tenant keeps
+// them: naming a managed field fails the whole PATCH with a 403.
+func TestExtractionRulesAreNotAManagedSetting(t *testing.T) {
+	t.Parallel()
+	rules := "Always tag invoices with the vendor's city."
+	if (settingsPatchRequest{ExtractionRules: &rules}).touchesManaged() {
+		t.Fatal("extraction_rules counts as managed; a hosted tenant could not set it")
+	}
+}
+
 func TestOneOfReadsAsASentence(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

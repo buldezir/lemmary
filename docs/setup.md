@@ -148,9 +148,11 @@ configuration.
 ## Settings (admin UI)
 
 1. Sign in with the **admin** email/password (login prefers the `users` account; legacy `_superusers`-only installs are linked automatically via `/api/app/ensure-user`, which sets a hidden `is_app_admin` flag on the paired `users` record).
-2. Open **Settings** in the nav (shown when `/api/app/me` reports `is_admin`). Add providers, then bind OCR / extraction / chat / search to a provider and model — see [Binding models in Settings](/ai_providers#binding-models-in-settings). Changes hot-reload the in-process clients (no restart).
+2. Open **Settings** in the nav (shown when `/api/app/me` reports `is_admin`). It has one tab per section, each on its own path and each saving only its own fields: **Appearance** (`/settings`), **AI** (`/settings/ai`), **Processing** (`/settings/processing`), **Worker** (`/settings/worker`) and **Duplicates** (`/settings/duplicates`). On the AI tab, add providers, then bind OCR / extraction / chat / search to a provider and model — see [Binding models in Settings](/ai_providers#binding-models-in-settings). Changes hot-reload the in-process clients (no restart).
 
 `WORKER_CRON_EXPR` is not editable there; change `.env` and restart, or use PocketBase Admin → Settings → Crons.
+
+**Extra extraction rules** (Processing tab) is the one part of the extraction prompt an admin writes. Whatever is in it is appended to the built-in prompt, after the list of existing correspondents and document types and before the format rules, so it can state house conventions the fixed prompt cannot know — “treat *Rechnung* as the document type Invoice”, “tag insurance documents with the policy number”. It cannot change which fields are stored: the pipeline parses the answer into a fixed set, and the prompt says so after the rules. Up to 4000 characters, empty by default, and applied to documents processed or reprocessed from then on. It is tenant-owned, so a managed instance keeps it, and the extraction log line reports its length as `rule_chars`.
 
 `EXTRACTION_PROMPT_VERSION` is not offered there either. It is pure bookkeeping — it is copied onto each document's `extract_metadata` step run so metadata can be traced back to a prompt, and never reaches the prompt itself — so there is nothing for an admin to tune. `PATCH /api/app/settings` still accepts `extraction_prompt_version`, and it can be edited in PocketBase Admin → `app_settings`.
 
