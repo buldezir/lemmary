@@ -61,12 +61,8 @@ func Register(app core.App, rt *config.Runtime, backfill *Backfiller) {
 	// ponytail: one COUNT per scrape. If a scrape interval ever makes that
 	// matter, keep the number in the Processor and update it where jobs are
 	// created and claimed.
-	metrics.QueueDepth(func() int64 {
-		n, err := app.CountRecords("processing_jobs", dbx.HashExp{"status": models.JobStatusPending})
-		if err != nil {
-			return 0
-		}
-		return n
+	metrics.QueueDepth(func() (int64, error) {
+		return app.CountRecords("processing_jobs", dbx.HashExp{"status": models.JobStatusPending})
 	})
 
 	app.Logger().Info("worker registered", "cron", cronExpr)

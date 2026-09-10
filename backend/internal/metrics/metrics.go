@@ -9,9 +9,12 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -89,52 +92,67 @@ func addrFromEnv() string {
 	return addr
 }
 
+// running is the one endpoint this process has, guarded because a second one
+// cannot work: OpenTelemetry takes a single global MeterProvider, so every
+// instrument in the binary feeds whichever provider was installed first, and a
+// second endpoint would serve a page with nothing of ours on it. Rather than
+// leave that as a silent puzzle, a repeat call returns what is already
+// running.
+//
+// It matters outside tests too. The e2e harness boots a whole app repeatedly
+// inside one test binary, and Register runs once per boot.
+var running struct {
+	sync.Mutex
+	url  string
+	stop func(context.Context)
+}
+
 // start installs the global MeterProvider and serves /metrics on addr. It
 // returns the URL actually bound, which is what lets a test ask for port 0.
 func start(addr string, logger *slog.Logger) (url string, stop func(context.Context), err error) {
+	running.Lock()
+	defer running.Unlock()
+	if running.stop != nil {
+		logger.Info("metrics endpoint already serving", "addr", running.url)
+		return running.url, running.stop, nil
+	}
+
+	// First, and before anything is built: a port that will not bind must
+	// leave nothing behind -- no registered collector, no global provider
+	// accumulating measurements that nothing will ever read.
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return "", nil, err
+	}
+
+	// A registry of our own rather than prometheus.DefaultRegisterer. The
+	// default one is process-global and never unregistered from, so anything
+	// that failed halfway would leave a collector wedged in it for the life of
+	// the binary; this one is reachable only from here and from the handler
+	// below. The two collectors are what the default registry would have given
+	// for free: goroutines, heap, GC, open file descriptors.
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
+
 	// WithoutScopeInfo drops the otel_scope_name/version/schema_url labels the
 	// exporter would otherwise hang on every single series. There is one
 	// instrumentation scope in this process, so they say nothing and make
 	// every query and every label matcher longer.
-	exporter, err := otelprom.New(otelprom.WithoutScopeInfo())
+	exporter, err := otelprom.New(
+		otelprom.WithoutScopeInfo(),
+		otelprom.WithRegisterer(registry),
+	)
 	if err != nil {
-		return "", nil, err
-	}
-	// Before the provider is installed: a failure to bind should leave the
-	// global meter no-op rather than accumulating measurements nothing reads.
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
+		_ = listener.Close()
 		return "", nil, err
 	}
 
 	provider := sdkmetric.NewMeterProvider(
 		sdkmetric.WithReader(exporter),
 		sdkmetric.WithResource(resource.NewSchemaless(attribute.String("service.name", serviceName))),
-		// otelhttp's defaults are sized for a fleet behind a load balancer.
-		// Untrimmed they are three 19-bucket histograms per route, each
-		// carrying five labels that are the same on every series a single
-		// instance will ever emit -- tens of thousands of series to say what a
-		// few hundred say here.
-		sdkmetric.WithView(
-			// Request and response body sizes. Nobody asked what a JSON
-			// response weighed, and the file uploads that would be worth
-			// weighing are capped by the limits in .env instead.
-			sdkmetric.NewView(
-				sdkmetric.Instrument{Name: "http.server.*.body.size"},
-				sdkmetric.Stream{Aggregation: sdkmetric.AggregationDrop{}},
-			),
-			// network.protocol.*, server.address, server.port and url.scheme
-			// describe the listener, which is one listener, and they are
-			// already in the address being scraped.
-			sdkmetric.NewView(
-				sdkmetric.Instrument{Name: "http.server.request.duration"},
-				sdkmetric.Stream{AttributeFilter: attribute.NewAllowKeysFilter(
-					"http.request.method",
-					"http.response.status_code",
-					"http.route",
-				)},
-			),
-		),
 	)
 	// Global, not passed down: this is also what switches on the
 	// instrumentation already inside our dependencies -- the Google Vision
@@ -142,11 +160,7 @@ func start(addr string, logger *slog.Logger) (url string, stop func(context.Cont
 	otel.SetMeterProvider(provider)
 
 	mux := http.NewServeMux()
-	// promhttp serves prometheus.DefaultRegisterer, which is where
-	// otelprom.New registers and which client_golang has already stocked with
-	// the Go and process collectors -- so goroutines, heap, GC and open file
-	// descriptors come along with no instrumentation package of their own.
-	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 
 	server := &http.Server{Handler: mux, ReadHeaderTimeout: readHeaderTimeout}
 	go func() {
@@ -156,8 +170,10 @@ func start(addr string, logger *slog.Logger) (url string, stop func(context.Cont
 	}()
 	logger.Info("metrics endpoint serving", "addr", listener.Addr().String(), "path", "/metrics")
 
-	return "http://" + listener.Addr().String() + "/metrics", func(ctx context.Context) {
+	running.url = "http://" + listener.Addr().String() + "/metrics"
+	running.stop = func(ctx context.Context) {
 		_ = server.Shutdown(ctx)
 		_ = provider.Shutdown(ctx)
-	}, nil
+	}
+	return running.url, running.stop, nil
 }

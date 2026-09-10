@@ -33,20 +33,20 @@ func TestAddrFromEnv(t *testing.T) {
 // through the same package-level instruments every call site uses, then reads
 // the endpoint the way a scraper would.
 func TestScrape(t *testing.T) {
-	url, stop, err := start("127.0.0.1:0", slog.New(slog.DiscardHandler))
+	// Not stopped afterwards, deliberately: there is one endpoint per process
+	// (see start), so tearing it down here would leave a re-run of this test
+	// under -count=2 holding a dead URL. The process exits with it, and the
+	// shutdown path is what the OnTerminate hook covers.
+	url, _, err := start("127.0.0.1:0", slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		stop(ctx)
-	})
 
+	HTTPRequest(http.MethodGet, "/api/collections/{collection}/records", 401, 12*time.Millisecond)
 	Job("completed", 2*time.Second)
 	TimeAICall(context.Background(), "ocr", "mistral", "mistral-ocr-latest")(nil)
 	AITokens("gpt-5", 100, 10, 20)
-	QueueDepth(func() int64 { return 7 })
+	QueueDepth(func() (int64, error) { return 7, nil })
 	RegisterUsage(func() (Usage, error) {
 		return Usage{
 			Counts:      map[string]int64{"documents": 42, "additional_users": 3},
@@ -72,6 +72,12 @@ func TestScrape(t *testing.T) {
 
 	for _, want := range []string{
 		// Ours. The _seconds suffix is the exporter reading metric.WithUnit("s").
+		// The status is an attribute we compute, not one otelhttp watched the
+		// writer for; see appwire.recordRequest for why that distinction is
+		// the whole point.
+		`http_server_request_duration_seconds_count{`,
+		`http_response_status_code="401"`,
+		`http_route="/api/collections/{collection}/records"`,
 		`lemmary_job_duration_seconds_count{`,
 		`outcome="completed"`,
 		`lemmary_ai_call_duration_seconds_count{`,

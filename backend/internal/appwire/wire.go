@@ -21,7 +21,6 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // Register wires all application hooks, APIs, and the SPA static handler onto app.
@@ -100,20 +99,7 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 		},
 	})
 
-	// Request count, duration and status for every route, from the middleware
-	// otelhttp already ships. One priority inside vault's inflight wrapper,
-	// which has to stay the outermost thing on the chain.
-	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
-		Priority: -9999,
-		Func: func(e *core.ServeEvent) error {
-			e.Router.Bind(&hook.Handler[*core.RequestEvent]{
-				Id:       "lemmaryMetrics",
-				Priority: -99998,
-				Func:     apis.WrapStdMiddleware(otelhttp.NewMiddleware("lemmary")),
-			})
-			return e.Next()
-		},
-	})
+	registerRequestMetrics(app)
 
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Func: func(e *core.ServeEvent) error {

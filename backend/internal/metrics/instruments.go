@@ -51,6 +51,19 @@ var (
 		metric.WithDescription("Processing jobs waiting to be claimed."),
 	)
 
+	// The semantic-convention name and attribute keys, so a dashboard written
+	// against any OpenTelemetry HTTP server reads this one. The boundaries are
+	// spelled out because the SDK's default set is meant for milliseconds, and
+	// these are seconds.
+	httpDuration, _ = meter.Float64Histogram(
+		"http.server.request.duration",
+		metric.WithUnit("s"),
+		metric.WithDescription("Wall time of one HTTP request, by route and status."),
+		metric.WithExplicitBucketBoundaries(
+			0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10,
+		),
+	)
+
 	// Two families rather than one, split by unit: a gauge carries a single
 	// unit, and a series a dashboard cannot tell a document from a byte in is
 	// worse than one extra metric name. Within a family, usage and limit share
@@ -74,6 +87,20 @@ var (
 		metric.WithDescription("What the instance is allowed to store, by resource. Absent means unbounded."),
 	)
 )
+
+// HTTPRequest records one served request. status is what the client actually
+// received, which the caller has to work out rather than observe: see
+// appwire.recordRequest.
+//
+// route must be the matched pattern and never the raw path, or every document
+// id in the archive becomes a series of its own.
+func HTTPRequest(method, route string, status int, d time.Duration) {
+	httpDuration.Record(context.Background(), d.Seconds(), metric.WithAttributes(
+		attribute.String("http.request.method", method),
+		attribute.String("http.route", route),
+		attribute.Int("http.response.status_code", status),
+	))
+}
 
 // Job records one finished pipeline job. outcome is the job's status after the
 // run -- completed, needs_review, failed -- or retry, which is a run that
@@ -134,9 +161,17 @@ func AITokens(model string, prompt, cached, completion int64) {
 
 // QueueDepth registers a gauge that is read on every scrape rather than
 // pushed, so nothing has to be kept in step with the queue as it moves.
-func QueueDepth(fn func() int64) {
+// A failed reading is returned, not turned into a zero: an unreadable database
+// is not an empty queue, and reporting one as the other would hide a backlog
+// at exactly the moment it mattered. OpenTelemetry's error handler logs it and
+// the series goes absent for that scrape, so the gap is the signal.
+func QueueDepth(fn func() (int64, error)) {
 	_, _ = meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
-		o.ObserveInt64(jobsPending, fn())
+		n, err := fn()
+		if err != nil {
+			return err
+		}
+		o.ObserveInt64(jobsPending, n)
 		return nil
 	}, jobsPending)
 }
