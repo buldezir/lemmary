@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
-	"lemmary/backend/internal/amazonimport"
+	"lemmary/backend/internal/zipimport"
 	"lemmary/backend/internal/limits"
 )
 
@@ -37,7 +37,7 @@ func handlePostImportAmazonUpload(app core.App, lim limits.Limits) func(*core.Re
 		}
 		defer part.Close()
 
-		preview, err := amazonimport.Inspect(app, ownerID, fileName, part)
+		preview, err := zipimport.Inspect(app, ownerID, fileName, part)
 		if err != nil {
 			if detail := archiveErrorDetail(err); detail != "" {
 				return writeError(e, http.StatusBadRequest, detail)
@@ -57,7 +57,7 @@ func handlePostImportAmazonUpload(app core.App, lim limits.Limits) func(*core.Re
 			bytes += entry.Size
 		}
 		if exceeded := preflightImport(app, lim, int64(preview.ImportableCount), 0, bytes); exceeded != nil {
-			amazonimport.Discard(preview.UploadID, ownerID)
+			zipimport.Discard(preview.UploadID, ownerID)
 			return writeError(e, http.StatusBadRequest, exceeded.Message)
 		}
 
@@ -76,7 +76,7 @@ func handleDeleteImportAmazonUpload(app core.App) func(*core.RequestEvent) error
 		if uploadID == "" {
 			return writeError(e, http.StatusBadRequest, "upload_id is required.")
 		}
-		if !amazonimport.Discard(uploadID, ownerID) {
+		if !zipimport.Discard(uploadID, ownerID) {
 			return writeError(e, http.StatusNotFound, "Upload not found or expired.")
 		}
 		return writeJSON(e, http.StatusOK, map[string]string{"status": "discarded"})
@@ -99,18 +99,18 @@ func handlePostImportAmazon(app core.App) func(*core.RequestEvent) error {
 			return writeOwnerError(e, err)
 		}
 
-		jobID, err := amazonimport.Start(app, ownerID, req.UploadID)
+		jobID, err := zipimport.Start(app, ownerID, req.UploadID)
 		switch {
-		case errors.Is(err, amazonimport.ErrUploadNotFound):
+		case errors.Is(err, zipimport.ErrUploadNotFound):
 			return writeError(e, http.StatusNotFound, "Upload not found or expired. Upload the archive again.")
-		case errors.Is(err, amazonimport.ErrImportInProgress):
+		case errors.Is(err, zipimport.ErrImportInProgress):
 			return writeError(e, http.StatusConflict, "An import is already in progress.")
 		case err != nil:
 			return writeError(e, http.StatusBadRequest, "Import failed to start: "+err.Error())
 		}
 		return writeJSON(e, http.StatusAccepted, map[string]any{
 			"job_id": jobID,
-			"status": amazonimport.JobStatusRunning,
+			"status": zipimport.JobStatusRunning,
 		})
 	}
 }
@@ -125,7 +125,7 @@ func handleGetImportAmazonStatus(app core.App) func(*core.RequestEvent) error {
 		if err != nil {
 			return writeOwnerError(e, err)
 		}
-		job, ok := amazonimport.GetJob(jobID)
+		job, ok := zipimport.GetJob(jobID)
 		if !ok || job.OwnerUserID != ownerID {
 			return writeError(e, http.StatusNotFound, "Import job not found.")
 		}
@@ -148,13 +148,13 @@ func handleGetImportAmazonStatus(app core.App) func(*core.RequestEvent) error {
 // or "" when the failure is not the caller's fault.
 func archiveErrorDetail(err error) string {
 	switch {
-	case errors.Is(err, amazonimport.ErrNotArchive):
+	case errors.Is(err, zipimport.ErrNotArchive):
 		return "The upload is not a readable zip archive."
-	case errors.Is(err, amazonimport.ErrNoPDFs):
+	case errors.Is(err, zipimport.ErrNoPDFs):
 		return "No PDF files found in the archive."
-	case errors.Is(err, amazonimport.ErrTooManyPDFs):
+	case errors.Is(err, zipimport.ErrTooManyPDFs):
 		return "The archive holds too many PDF files to import at once."
-	case errors.Is(err, amazonimport.ErrArchiveTooLarge):
+	case errors.Is(err, zipimport.ErrArchiveTooLarge):
 		return "The archive is too large."
 	default:
 		return ""

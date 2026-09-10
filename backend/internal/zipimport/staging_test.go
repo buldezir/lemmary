@@ -1,4 +1,4 @@
-package amazonimport
+package zipimport
 
 import (
 	"bytes"

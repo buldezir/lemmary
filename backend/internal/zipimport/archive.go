@@ -5,7 +5,7 @@
 // Additional Data/Retail.TransactionalInvoicing.* — the invoice PDFs. Only PDFs
 // are imported; every other entry is ignored. The archive is staged on disk
 // first so the user can confirm the file count before any document is created.
-package amazonimport
+package zipimport
 
 import (
 	"archive/zip"
