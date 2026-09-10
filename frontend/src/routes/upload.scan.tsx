@@ -213,11 +213,11 @@ export function UploadScanPage() {
               {found.length === 0 && ' Try another range, or type the address above.'}
             </p>
             <label className="flex flex-col gap-1">
-              <span className={labelTextClassName}>Range</span>
+              <span className={labelTextClassName}>Ranges</span>
               <input
-                className={`${inputClassName} w-44`}
+                className={`${inputClassName} w-72`}
                 value={cidr}
-                placeholder="192.168.1.0/24"
+                placeholder="192.168.1.0/24, 10.0.0.0/24"
                 disabled={busy}
                 onChange={(event) => setCidr(event.target.value)}
               />

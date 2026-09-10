@@ -72,19 +72,47 @@ func TestModelFromFallsBackWhenTheNameIsMissing(t *testing.T) {
 	}
 }
 
-func TestDefaultCIDRUsesTheBrowsersOwnNetwork(t *testing.T) {
+func TestDefaultCIDRUsesTheBrowsersOwnNetworkAndTheUsualOnes(t *testing.T) {
 	t.Parallel()
 
-	if got := DefaultCIDR("192.168.1.44"); got != "192.168.1.0/24" {
+	if got := DefaultCIDR("10.1.2.44"); got != "10.1.2.0/24, 192.168.1.0/24, 192.168.0.0/24" {
 		t.Fatalf("DefaultCIDR=%q", got)
 	}
-	// Behind a reverse proxy, or from anywhere else that is not a private
-	// IPv4, there is nothing honest to suggest -- so suggest nothing and let
-	// mDNS answer instead.
+	// The browser is already on one of the defaults: offer it once, not twice.
+	if got := DefaultCIDR("192.168.1.44"); got != "192.168.1.0/24, 192.168.0.0/24" {
+		t.Fatalf("DefaultCIDR=%q", got)
+	}
+	// Behind a reverse proxy the address is the proxy's, and in a container it
+	// is the bridge gateway -- neither says which LAN the user is on, so all
+	// that is left is where a home network usually is.
 	for _, address := range []string{"", "8.8.8.8", "::1", "not an address"} {
-		if got := DefaultCIDR(address); got != "" {
-			t.Fatalf("DefaultCIDR(%q)=%q want empty", address, got)
+		if got := DefaultCIDR(address); got != "192.168.1.0/24, 192.168.0.0/24" {
+			t.Fatalf("DefaultCIDR(%q)=%q want the defaults", address, got)
 		}
+	}
+	// Whatever it offers has to be something it will accept back.
+	if _, err := parseSweepPrefixes(DefaultCIDR("10.1.2.44")); err != nil {
+		t.Fatalf("the default ranges were refused: %v", err)
+	}
+}
+
+func TestParseSweepPrefixesBoundsTheWholeSweep(t *testing.T) {
+	t.Parallel()
+
+	got, err := parseSweepPrefixes(" 192.168.1.0/24, 192.168.1.0/24 10.0.0.0/24 ")
+	if err != nil {
+		t.Fatalf("parseSweepPrefixes() error: %v", err)
+	}
+	// The repeat is dropped rather than swept twice.
+	if len(got) != 2 || got[0].String() != "192.168.1.0/24" || got[1].String() != "10.0.0.0/24" {
+		t.Fatalf("prefixes=%v", got)
+	}
+	if got, err := parseSweepPrefixes("  "); err != nil || got != nil {
+		t.Fatalf("an empty list should sweep nothing: %v %v", got, err)
+	}
+	// Each range is allowed on its own; together they are one probe too many.
+	if _, err := parseSweepPrefixes("10.0.0.0/22, 192.168.1.0/24"); err == nil {
+		t.Fatal("a list over the address budget should have been refused")
 	}
 }
 

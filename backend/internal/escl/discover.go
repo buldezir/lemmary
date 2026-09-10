@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/netip"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -40,10 +41,22 @@ const (
 	// browseTimeout is how long the mDNS query listens. Devices answer in well
 	// under a second; the rest is for a slow or lossy wireless link.
 	browseTimeout = 2 * time.Second
-	// minPrefixBits bounds a sweep at 1024 addresses, so a mistyped CIDR costs
-	// a couple of seconds rather than scanning a corporate network.
+	// minPrefixBits bounds one range at 1024 addresses, so a mistyped CIDR
+	// costs a couple of seconds rather than scanning a corporate network.
 	minPrefixBits = 22
+	// maxSweepAddresses bounds the whole sweep, however many ranges it is
+	// spread over: sixteen rounds of probes, about ten seconds.
+	maxSweepAddresses = 1024
 )
+
+// defaultSweep is where a home network almost always is.
+//
+// The app normally runs in a container, and the address the browser reached it
+// from is then the bridge gateway (172.17.0.1) rather than the user's own --
+// a range holding nothing but other containers. Sweeping these two as well
+// means the button finds the scanner on an ordinary home LAN without anybody
+// having to know what a CIDR is.
+var defaultSweep = []string{"192.168.1.0/24", "192.168.0.0/24"}
 
 // Scanner is one device that answered.
 type Scanner struct {
@@ -61,20 +74,17 @@ type Scanner struct {
 var makeAndModel = regexp.MustCompile(`<pwg:MakeAndModel>([^<]+)</pwg:MakeAndModel>`)
 
 // Discover looks for scanners, by mDNS and by sweeping cidr, and returns what
-// either method found. An empty cidr skips the sweep.
+// either method found. cidr may name several ranges, separated by commas; an
+// empty one skips the sweep.
 //
-// A CIDR that is not private, or is bigger than a /22, is refused: this makes
-// the server issue requests on the caller's behalf, and a typo must not turn it
-// into a port scanner.
+// A CIDR that is not private, or is bigger than a /22, is refused, as is a list
+// adding up to more than maxSweepAddresses: this makes the server issue
+// requests on the caller's behalf, and a typo must not turn it into a port
+// scanner.
 func Discover(ctx context.Context, cidr string) ([]Scanner, error) {
-	var prefix netip.Prefix
-	sweeping := strings.TrimSpace(cidr) != ""
-	if sweeping {
-		var err error
-		prefix, err = parseSweepPrefix(cidr)
-		if err != nil {
-			return nil, err
-		}
+	prefixes, err := parseSweepPrefixes(cidr)
+	if err != nil {
+		return nil, err
 	}
 
 	var wg sync.WaitGroup
@@ -105,11 +115,11 @@ func Discover(ctx context.Context, cidr string) ([]Scanner, error) {
 		defer wg.Done()
 		collect(browse(ctx))
 	}()
-	if sweeping {
+	if len(prefixes) > 0 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			collect(sweep(ctx, prefix))
+			collect(sweep(ctx, prefixes))
 		}()
 	}
 	wg.Wait()
@@ -122,19 +132,45 @@ func Discover(ctx context.Context, cidr string) ([]Scanner, error) {
 	return scanners, nil
 }
 
-// DefaultCIDR is the /24 to offer as the sweep range, taken from the address
-// the browser reached us from: the app runs on a container network of its own
-// and has no other way to know which LAN the user is on.
+// DefaultCIDR is the ranges to offer when the user has not named one: the /24
+// the browser reached us from, which is right for a direct install or host
+// networking, followed by the two a home LAN almost always uses.
 //
-// Empty when that address is not a private IPv4 -- behind a reverse proxy it is
-// the proxy's, and PocketBase's TrustedProxy is not configured here. The user
-// then fills the field in, and mDNS may answer on its own regardless.
+// The browser's own /24 is dropped when its address is not a private IPv4 --
+// behind a reverse proxy it is the proxy's, and PocketBase's TrustedProxy is
+// not configured here -- leaving the two defaults, which is still a better
+// guess than nothing. The field stays editable either way.
 func DefaultCIDR(clientIP string) string {
-	addr, err := netip.ParseAddr(strings.TrimSpace(clientIP))
-	if err != nil || !addr.Is4() || !addr.IsPrivate() {
-		return ""
+	ranges := defaultSweep
+	if addr, err := netip.ParseAddr(strings.TrimSpace(clientIP)); err == nil && addr.Is4() && addr.IsPrivate() {
+		own := netip.PrefixFrom(addr, 24).Masked().String()
+		if !slices.Contains(ranges, own) {
+			ranges = append([]string{own}, ranges...)
+		}
 	}
-	return netip.PrefixFrom(addr, 24).Masked().String()
+	return strings.Join(ranges, ", ")
+}
+
+// parseSweepPrefixes reads the comma-separated list the discovery endpoint
+// takes, refusing anything that adds up to more than one range's worth.
+func parseSweepPrefixes(list string) ([]netip.Prefix, error) {
+	var prefixes []netip.Prefix
+	total := 0
+	for _, field := range strings.FieldsFunc(list, func(r rune) bool { return r == ',' || r == ' ' }) {
+		prefix, err := parseSweepPrefix(field)
+		if err != nil {
+			return nil, err
+		}
+		if slices.Contains(prefixes, prefix) {
+			continue
+		}
+		total += 1 << (32 - prefix.Bits())
+		if total > maxSweepAddresses {
+			return nil, fmt.Errorf("that is more than %d addresses to sweep at once", maxSweepAddresses)
+		}
+		prefixes = append(prefixes, prefix)
+	}
+	return prefixes, nil
 }
 
 func parseSweepPrefix(cidr string) (netip.Prefix, error) {
@@ -155,23 +191,27 @@ func parseSweepPrefix(cidr string) (netip.Prefix, error) {
 	return prefix, nil
 }
 
-// sweep probes every usable address in prefix for an eSCL endpoint.
-func sweep(ctx context.Context, prefix netip.Prefix) []Scanner {
+// sweep probes every usable address of every prefix for an eSCL endpoint. One
+// worker pool covers the lot, so two ranges take twice as long rather than
+// twice as many sockets.
+func sweep(ctx context.Context, prefixes []netip.Prefix) []Scanner {
 	client := newClient()
 
 	addresses := make(chan netip.Addr)
 	go func() {
 		defer close(addresses)
-		last := lastAddr(prefix)
-		for addr := prefix.Addr(); prefix.Contains(addr); addr = addr.Next() {
-			// The network and broadcast addresses of the range are not hosts.
-			if prefix.Bits() < 31 && (addr == prefix.Addr() || addr == last) {
-				continue
-			}
-			select {
-			case addresses <- addr:
-			case <-ctx.Done():
-				return
+		for _, prefix := range prefixes {
+			last := lastAddr(prefix)
+			for addr := prefix.Addr(); prefix.Contains(addr); addr = addr.Next() {
+				// The network and broadcast addresses are not hosts.
+				if prefix.Bits() < 31 && (addr == prefix.Addr() || addr == last) {
+					continue
+				}
+				select {
+				case addresses <- addr:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}()

@@ -20,8 +20,9 @@ import (
 // discoverTimeout bounds a discovery request. The sweep and the mDNS browse run
 // concurrently inside it and it returns as soon as both are done, so the usual
 // /24 still answers in about four seconds; this only has to be large enough
-// that the largest range escl accepts -- a /22, sixteen rounds of probes --
-// finishes rather than being cut off and reported as "found nothing".
+// that the most addresses escl will sweep -- 1024, sixteen rounds of probes,
+// however many ranges they are spread over -- finish rather than being cut off
+// and reported as "found nothing".
 const discoverTimeout = 15 * time.Second
 
 type scanRequest struct {

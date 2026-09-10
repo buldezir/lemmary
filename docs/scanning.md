@@ -58,12 +58,17 @@ network range whether it has an eSCL endpoint, which is an ordinary HTTP
 request and routes out of a bridge network like any other. A /24 takes about
 two seconds.
 
-The range is guessed from the address your browser connected from, since the
-container only knows its own network. Behind a reverse proxy that guess is the
-proxy's address rather than yours, so if the range shown looks wrong, type the
-right one into **Range** and search again. Ranges larger than a /22 are
-refused: sweeping 65,000 addresses from a button press is not something to do
-by accident.
+Three ranges are swept by default: the one your browser connected from, and
+`192.168.1.0/24` and `192.168.0.0/24`, where a home network almost always is.
+The first is only a guess — a container sees the bridge gateway rather than
+your address, and behind a reverse proxy it sees the proxy — which is why the
+usual two are swept regardless.
+
+If your network is somewhere else, type its range into **Ranges** and search
+again. Several ranges, separated by commas, are swept together. A range larger
+than a /22, or a list adding up to more than 1024 addresses, is refused:
+sweeping 65,000 addresses from a button press is not something to do by
+accident.
 
 A scanner on a different subnet from the app is invisible to mDNS but findable
 by sweeping its range.
