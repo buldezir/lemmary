@@ -23,15 +23,22 @@ type Preview struct {
 	UploadID  string    `json:"upload_id"`
 	FileName  string    `json:"file_name"`
 	ExpiresAt time.Time `json:"expires_at"`
-	// PDFCount is every PDF in the archive, duplicates included.
-	PDFCount int `json:"pdf_count"`
+	// FileCount is every importable file in the archive, duplicates included.
+	FileCount int `json:"file_count"`
 	// ImportableCount is how many of those would become new documents.
 	ImportableCount int `json:"importable_count"`
 	DuplicateCount  int `json:"duplicate_count"`
 	OversizedCount  int `json:"oversized_count"`
-	// IgnoredCount is the non-PDF entries (CSV reports, delivery photos) skipped.
+	// IgnoredCount is the entries this source does not import: a type the
+	// documents collection cannot store, or -- for an Amazon export -- its CSV
+	// reports and delivery photos.
 	IgnoredCount int     `json:"ignored_count"`
 	Files        []Entry `json:"files"`
+
+	// Source is carried for the import run, not for the client: runImport must
+	// filter the archive with the same source the preview was built with, or the
+	// by-position match it does lines entries up against the wrong bytes.
+	Source Source `json:"-"`
 }
 
 // stagedArchive is one upload waiting to be imported.
@@ -48,9 +55,10 @@ func newStagingRegistry() *staging.Registry[Preview] {
 	})
 }
 
-// Inspect stages the uploaded archive on disk and describes the PDFs it holds.
-// Nothing is imported until Start is called with the returned upload id.
-func Inspect(app core.App, ownerUserID, fileName string, src io.Reader) (Preview, error) {
+// Inspect stages the uploaded archive on disk and describes the files it holds
+// for this source. Nothing is imported until Start is called with the returned
+// upload id.
+func Inspect(app core.App, src Source, ownerUserID, fileName string, r io.Reader) (Preview, error) {
 	if strings.TrimSpace(ownerUserID) == "" {
 		return Preview{}, fmt.Errorf("owner user id is required")
 	}
@@ -72,7 +80,7 @@ func Inspect(app core.App, ownerUserID, fileName string, src io.Reader) (Preview
 	}
 	archivePath := filepath.Join(dir, id+".zip")
 
-	size, err := saveArchive(archivePath, src, config.StagingMaxBytesFromEnv())
+	size, err := saveArchive(archivePath, r, config.StagingMaxBytesFromEnv())
 	if err != nil {
 		os.Remove(archivePath)
 		return Preview{}, err
@@ -83,7 +91,7 @@ func Inspect(app core.App, ownerUserID, fileName string, src io.Reader) (Preview
 		os.Remove(archivePath)
 		return Preview{}, ErrNotArchive
 	}
-	entries, ignored, err := scanPDFs(documentLookup(app, ownerUserID), &zr.Reader)
+	entries, ignored, err := scan(src, documentLookup(app, ownerUserID), &zr.Reader)
 	zr.Close()
 	if err != nil {
 		os.Remove(archivePath)
@@ -95,28 +103,30 @@ func Inspect(app core.App, ownerUserID, fileName string, src io.Reader) (Preview
 		OwnerUserID: ownerUserID,
 		Path:        archivePath,
 		ExpiresAt:   time.Now().UTC().Add(stagingTTL),
-		Payload:     buildPreview(id, fileName, entries, ignored),
+		Payload:     buildPreview(src, id, fileName, entries, ignored),
 	}
 	item.Payload.ExpiresAt = item.ExpiresAt
 	stagingRegistry.Add(item)
 
-	app.Logger().Info("amazon archive staged",
-		"component", "amazon_import",
+	app.Logger().Info("archive staged",
+		"component", "zip_import",
+		"source", src,
 		"upload_id", id,
 		"bytes", size,
-		"pdfs", item.Payload.PDFCount,
+		"files", item.Payload.FileCount,
 		"importable", item.Payload.ImportableCount,
 	)
 	return item.Payload, nil
 }
 
-func buildPreview(uploadID, fileName string, entries []Entry, ignored int) Preview {
+func buildPreview(src Source, uploadID, fileName string, entries []Entry, ignored int) Preview {
 	preview := Preview{
 		UploadID:     uploadID,
 		FileName:     strings.TrimSpace(fileName),
-		PDFCount:     len(entries),
+		FileCount:    len(entries),
 		IgnoredCount: ignored,
 		Files:        entries,
+		Source:       src,
 	}
 	for _, entry := range entries {
 		switch {
@@ -164,5 +174,5 @@ func Discard(uploadID, ownerUserID string) bool {
 }
 
 func stagingDir(app core.App) string {
-	return filepath.Join(app.DataDir(), "temp", "amazon_import")
+	return filepath.Join(app.DataDir(), "temp", "zip_import")
 }

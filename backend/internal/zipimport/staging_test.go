@@ -2,6 +2,7 @@ package zipimport
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -31,15 +32,15 @@ func stageFile(t *testing.T, dir, id, owner string, expiresAt time.Time) *staged
 }
 
 func TestBuildPreviewCounts(t *testing.T) {
-	preview := buildPreview("upload-1", "Your Orders.zip", []Entry{
+	preview := buildPreview(SourceAmazon, "upload-1", "Your Orders.zip", []Entry{
 		{Path: "a.pdf"},
 		{Path: "b.pdf", Duplicate: true, DuplicateOf: "doc_1"},
 		{Path: "c.pdf", Oversized: true},
 		{Path: "d.pdf"},
 	}, 7)
 
-	if preview.PDFCount != 4 {
-		t.Fatalf("pdf_count=%d want 4", preview.PDFCount)
+	if preview.FileCount != 4 {
+		t.Fatalf("file_count=%d want 4", preview.FileCount)
 	}
 	if preview.ImportableCount != 2 {
 		t.Fatalf("importable=%d want 2", preview.ImportableCount)
@@ -205,5 +206,24 @@ func TestStartRejectsUnknownUpload(t *testing.T) {
 	resetStaging(t)
 	if _, err := Start(nil, "owner-a", "nope"); !errors.Is(err, ErrUploadNotFound) {
 		t.Fatalf("err=%v want ErrUploadNotFound", err)
+	}
+}
+
+// The import re-walks the staged zip and filters it again, matching the preview
+// by position; it reads the source off the payload so it cannot use a different
+// one than the scan did. The client never sees it.
+func TestPreviewCarriesItsSourceButDoesNotPublishIt(t *testing.T) {
+	preview := buildPreview(SourceFiles, "upload-1", "scans.zip", []Entry{
+		{Path: "docs/a.pdf", Name: "docs-a.pdf"},
+	}, 0)
+	if preview.Source != SourceFiles {
+		t.Fatalf("source=%q want %q", preview.Source, SourceFiles)
+	}
+	body, err := json.Marshal(preview)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(body), "source") {
+		t.Fatalf("preview json leaks the source: %s", body)
 	}
 }

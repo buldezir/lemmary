@@ -96,11 +96,13 @@ func runImport(app core.App, ownerUserID string, item *stagedArchive, report fun
 	// Match preview entries to zip entries by position, not by name: duplicate
 	// entry names are legal in a zip, and a name-keyed map would import the
 	// last file's bytes for every same-named entry. The preview was built by
-	// walking the same staged file with the same filter, so order aligns.
-	pdfFiles := make([]*zip.File, 0, len(zr.File))
+	// walking the same staged file with the same filter, so order aligns -- which
+	// is why the source comes off the staged payload rather than being passed in
+	// again. The two filters cannot drift apart if there is only one of them.
+	files := make([]*zip.File, 0, len(zr.File))
 	for _, f := range zr.File {
-		if isPDFEntry(f) {
-			pdfFiles = append(pdfFiles, f)
+		if item.Payload.Source.accepts(f) {
+			files = append(files, f)
 		}
 	}
 
@@ -115,8 +117,8 @@ func runImport(app core.App, ownerUserID string, item *stagedArchive, report fun
 
 	for i, entry := range entries {
 		var file *zip.File
-		if i < len(pdfFiles) && pdfFiles[i].Name == entry.Path {
-			file = pdfFiles[i]
+		if i < len(files) && files[i].Name == entry.Path {
+			file = files[i]
 		}
 		applyEntry(app, collection, ownerUserID, entry, file, &result)
 		report(i+1, total)
@@ -141,7 +143,7 @@ func applyEntry(app core.App, collection *core.Collection, ownerUserID string, e
 		result.Errors = importjob.AppendError(result.Errors, fmt.Sprintf("%s: missing from archive", entry.Path))
 		return
 	}
-	if err := importOnePDF(app, collection, ownerUserID, entry, file); err != nil {
+	if err := importOneEntry(app, collection, ownerUserID, entry, file); err != nil {
 		var dup *duplicates.ErrDuplicate
 		if errors.As(err, &dup) {
 			result.SkippedDuplicates++
@@ -154,7 +156,7 @@ func applyEntry(app core.App, collection *core.Collection, ownerUserID string, e
 	result.Imported++
 }
 
-func importOnePDF(app core.App, collection *core.Collection, ownerUserID string, entry Entry, file *zip.File) error {
+func importOneEntry(app core.App, collection *core.Collection, ownerUserID string, entry Entry, file *zip.File) error {
 	data, err := readEntry(file)
 	if err != nil {
 		return fmt.Errorf("read from archive: %w", err)

@@ -52,8 +52,8 @@ func amazonArchive(t *testing.T) *zip.Reader {
 	)
 }
 
-func TestScanPDFsPicksOnlyPDFs(t *testing.T) {
-	entries, ignored, err := scanPDFs(noDuplicates, amazonArchive(t))
+func TestScanAmazonPicksOnlyPDFs(t *testing.T) {
+	entries, ignored, err := scan(SourceAmazon, noDuplicates, amazonArchive(t))
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestScanPDFsPicksOnlyPDFs(t *testing.T) {
 	}
 }
 
-func TestScanPDFsMarksKnownAndRepeatedFiles(t *testing.T) {
+func TestScanAmazonMarksKnownAndRepeatedFiles(t *testing.T) {
 	zr := buildZip(t,
 		zipEntry{"orders/1.pdf", "%PDF-one"},
 		zipEntry{"orders/2.pdf", "%PDF-two"},
@@ -97,7 +97,7 @@ func TestScanPDFsMarksKnownAndRepeatedFiles(t *testing.T) {
 		return "", nil
 	}
 
-	entries, _, err := scanPDFs(lookup, zr)
+	entries, _, err := scan(SourceAmazon, lookup, zr)
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
@@ -115,14 +115,14 @@ func TestScanPDFsMarksKnownAndRepeatedFiles(t *testing.T) {
 	}
 }
 
-func TestScanPDFsSkipsArchiverJunk(t *testing.T) {
+func TestScanAmazonSkipsArchiverJunk(t *testing.T) {
 	zr := buildZip(t,
 		zipEntry{"__MACOSX/orders/._1.pdf", "junk"},
 		zipEntry{"orders/._2.pdf", "junk"},
 		zipEntry{"orders/empty.pdf", ""},
 		zipEntry{"orders/real.PDF", "%PDF-real"},
 	)
-	entries, ignored, err := scanPDFs(noDuplicates, zr)
+	entries, ignored, err := scan(SourceAmazon, noDuplicates, zr)
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestScanPDFsSkipsArchiverJunk(t *testing.T) {
 	}
 }
 
-func TestScanPDFsFlagsOversizedEntries(t *testing.T) {
+func TestScanAmazonFlagsOversizedEntries(t *testing.T) {
 	original := maxEntryBytes
 	maxEntryBytes = 8
 	t.Cleanup(func() { maxEntryBytes = original })
@@ -143,7 +143,7 @@ func TestScanPDFsFlagsOversizedEntries(t *testing.T) {
 		zipEntry{"orders/small.pdf", "%PDF-s"},
 		zipEntry{"orders/big.pdf", "%PDF-way-too-long"},
 	)
-	entries, _, err := scanPDFs(noDuplicates, zr)
+	entries, _, err := scan(SourceAmazon, noDuplicates, zr)
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
@@ -158,17 +158,17 @@ func TestScanPDFsFlagsOversizedEntries(t *testing.T) {
 	}
 }
 
-func TestScanPDFsWithoutPDFs(t *testing.T) {
+func TestScanAmazonWithoutPDFs(t *testing.T) {
 	zr := buildZip(t, zipEntry{"Your Orders/Order History.csv", "a,b"})
-	if _, _, err := scanPDFs(noDuplicates, zr); !errors.Is(err, ErrNoPDFs) {
-		t.Fatalf("err=%v want ErrNoPDFs", err)
+	if _, _, err := scan(SourceAmazon, noDuplicates, zr); !errors.Is(err, ErrNoFiles) {
+		t.Fatalf("err=%v want ErrNoFiles", err)
 	}
 }
 
-func TestScanPDFsPropagatesLookupError(t *testing.T) {
+func TestScanAmazonPropagatesLookupError(t *testing.T) {
 	zr := buildZip(t, zipEntry{"orders/1.pdf", "%PDF-one"})
 	want := errors.New("db down")
-	if _, _, err := scanPDFs(func(string) (string, error) { return "", want }, zr); !errors.Is(err, want) {
+	if _, _, err := scan(SourceAmazon, func(string) (string, error) { return "", want }, zr); !errors.Is(err, want) {
 		t.Fatalf("err=%v want %v", err, want)
 	}
 }
@@ -195,4 +195,87 @@ func sha(t *testing.T, body string) string {
 		t.Fatalf("hash: %v", err)
 	}
 	return checksum
+}
+
+// A zip somebody packed themselves: one of every type the documents collection
+// can store, plus three it cannot.
+func mixedArchive(t *testing.T) *zip.Reader {
+	t.Helper()
+	return buildZip(t,
+		zipEntry{"docs/invoice.pdf", "%PDF-invoice"},
+		zipEntry{"docs/scan.jpg", "jpegdata"},
+		zipEntry{"docs/scan2.jpeg", "jpegdata"},
+		zipEntry{"docs/receipt.png", "pngdata"},
+		zipEntry{"docs/photo.webp", "webpdata"},
+		zipEntry{"docs/notes.txt", "notes"},
+		zipEntry{"docs/ledger.csv", "a,b\n1,2"},
+		zipEntry{"docs/letter.docx", "docxdata"},
+		zipEntry{"docs/budget.xlsx", "xlsxdata"},
+		zipEntry{"docs/manifest.json", "{}"},
+		zipEntry{"docs/setup.exe", "MZbinary"},
+		zipEntry{"docs/nested.zip", "PKzip"},
+	)
+}
+
+// The whole feature in one test: the same archive, read two ways.
+func TestSourceDecidesWhatCountsAsADocument(t *testing.T) {
+	entries, ignored, err := scan(SourceFiles, noDuplicates, mixedArchive(t))
+	if err != nil {
+		t.Fatalf("scan files: %v", err)
+	}
+	if len(entries) != 9 {
+		t.Fatalf("files entries=%d want 9", len(entries))
+	}
+	if ignored != 3 {
+		t.Fatalf("files ignored=%d want 3 (json, exe, zip)", ignored)
+	}
+
+	entries, ignored, err = scan(SourceAmazon, noDuplicates, mixedArchive(t))
+	if err != nil {
+		t.Fatalf("scan amazon: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name != "docs-invoice.pdf" {
+		t.Fatalf("amazon entries=%v want just the pdf", entries)
+	}
+	if ignored != 11 {
+		t.Fatalf("amazon ignored=%d want 11", ignored)
+	}
+}
+
+func TestSourceAcceptsIsCaseInsensitive(t *testing.T) {
+	zr := buildZip(t,
+		zipEntry{"SCAN.PDF", "%PDF"},
+		zipEntry{"Photo.JPEG", "jpegdata"},
+		zipEntry{"Letter.DocX", "docxdata"},
+	)
+	entries, ignored, err := scan(SourceFiles, noDuplicates, zr)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if len(entries) != 3 || ignored != 0 {
+		t.Fatalf("entries=%d ignored=%d want 3/0", len(entries), ignored)
+	}
+}
+
+// An empty entry would pass the extension filter and then fail mid-import,
+// because filesystem.NewFileFromBytes refuses zero bytes. It is dropped in the
+// scan instead, and does not even count as ignored -- it is not a file anyone
+// meant to send.
+func TestSourceFilesSkipsJunkAndEmptyEntries(t *testing.T) {
+	zr := buildZip(t,
+		zipEntry{"docs/real.pdf", "%PDF"},
+		zipEntry{"__MACOSX/docs/._real.pdf", "resourcefork"},
+		zipEntry{"docs/._sidecar.png", "appledouble"},
+		zipEntry{"docs/empty.png", ""},
+	)
+	entries, ignored, err := scan(SourceFiles, noDuplicates, zr)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Path != "docs/real.pdf" {
+		t.Fatalf("entries=%v want only docs/real.pdf", entries)
+	}
+	if ignored != 1 {
+		t.Fatalf("ignored=%d want 1 (the empty png; the two junk entries do not count)", ignored)
+	}
 }

@@ -9,17 +9,21 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
-	"lemmary/backend/internal/zipimport"
 	"lemmary/backend/internal/limits"
+	"lemmary/backend/internal/zipimport"
 )
 
-type importAmazonRequest struct {
+type importZipRequest struct {
 	UploadID string `json:"upload_id"`
 }
 
-// handlePostImportAmazonUpload stages an Amazon order export so the user can
-// confirm the file count before any document is created.
-func handlePostImportAmazonUpload(app core.App, lim limits.Limits) func(*core.RequestEvent) error {
+// handlePostImportUpload stages an uploaded zip so the user can confirm what it
+// holds before any document is created.
+//
+// The source is the only thing the two flows disagree about, and only here: the
+// staged upload remembers it, so discard, confirm and status below are shared
+// verbatim and their upload and job ids are unique across both.
+func handlePostImportUpload(app core.App, lim limits.Limits, src zipimport.Source) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		ownerID, err := resolveOwnerUserID(app, e)
 		if err != nil {
@@ -37,17 +41,17 @@ func handlePostImportAmazonUpload(app core.App, lim limits.Limits) func(*core.Re
 		}
 		defer part.Close()
 
-		preview, err := zipimport.Inspect(app, ownerID, fileName, part)
+		preview, err := zipimport.Inspect(app, src, ownerID, fileName, part)
 		if err != nil {
-			if detail := archiveErrorDetail(err); detail != "" {
+			if detail := archiveErrorDetail(src, err); detail != "" {
 				return writeError(e, http.StatusBadRequest, detail)
 			}
-			app.Logger().Error("amazon archive inspect failed", "error", err)
+			app.Logger().Error("archive inspect failed", "source", src, "error", err)
 			return writeError(e, http.StatusInternalServerError, "Failed to read the archive.")
 		}
 
 		// Checked while the user is still deciding whether to confirm, rather
-		// than leaving the create hook to refuse the overflow one PDF at a time
+		// than leaving the create hook to refuse the overflow one file at a time
 		// partway through the import.
 		var bytes int64
 		for _, entry := range preview.Files {
@@ -65,8 +69,8 @@ func handlePostImportAmazonUpload(app core.App, lim limits.Limits) func(*core.Re
 	}
 }
 
-// handleDeleteImportAmazonUpload drops a staged archive the user did not confirm.
-func handleDeleteImportAmazonUpload(app core.App) func(*core.RequestEvent) error {
+// handleDeleteImportUpload drops a staged archive the user did not confirm.
+func handleDeleteImportUpload(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		ownerID, err := resolveOwnerUserID(app, e)
 		if err != nil {
@@ -83,10 +87,10 @@ func handleDeleteImportAmazonUpload(app core.App) func(*core.RequestEvent) error
 	}
 }
 
-// handlePostImportAmazon starts the confirmed import of a staged archive.
-func handlePostImportAmazon(app core.App) func(*core.RequestEvent) error {
+// handlePostImport starts the confirmed import of a staged archive.
+func handlePostImport(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		var req importAmazonRequest
+		var req importZipRequest
 		if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
 			return writeError(e, http.StatusBadRequest, "Invalid request body.")
 		}
@@ -115,7 +119,7 @@ func handlePostImportAmazon(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-func handleGetImportAmazonStatus(app core.App) func(*core.RequestEvent) error {
+func handleGetImportStatus(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		jobID := strings.TrimSpace(e.Request.URL.Query().Get("job_id"))
 		if jobID == "" {
@@ -146,14 +150,22 @@ func handleGetImportAmazonStatus(app core.App) func(*core.RequestEvent) error {
 
 // archiveErrorDetail maps a rejected archive to a client-facing message,
 // or "" when the failure is not the caller's fault.
-func archiveErrorDetail(err error) string {
+//
+// Only the empty-archive case needs the source: "no PDF files" is the useful
+// thing to tell someone who uploaded the wrong Amazon export, and misleading to
+// someone who uploaded a zip of photos.
+func archiveErrorDetail(src zipimport.Source, err error) string {
+	noun := "importable files"
+	if src == zipimport.SourceAmazon {
+		noun = "PDF files"
+	}
 	switch {
 	case errors.Is(err, zipimport.ErrNotArchive):
 		return "The upload is not a readable zip archive."
-	case errors.Is(err, zipimport.ErrNoPDFs):
-		return "No PDF files found in the archive."
-	case errors.Is(err, zipimport.ErrTooManyPDFs):
-		return "The archive holds too many PDF files to import at once."
+	case errors.Is(err, zipimport.ErrNoFiles):
+		return "No " + noun + " found in the archive."
+	case errors.Is(err, zipimport.ErrTooManyFiles):
+		return "The archive holds too many " + noun + " to import at once."
 	case errors.Is(err, zipimport.ErrArchiveTooLarge):
 		return "The archive is too large."
 	default:
