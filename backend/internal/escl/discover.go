@@ -84,12 +84,19 @@ func Discover(ctx context.Context, cidr string) ([]Scanner, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		for _, scanner := range scanners {
+			// Keyed on the address alone: mDNS spells a non-standard port into
+			// Host and the sweep never does, so one device would otherwise be
+			// offered twice, once at a port that does not answer.
+			key := scanner.Host
+			if host, _, err := net.SplitHostPort(key); err == nil {
+				key = host
+			}
 			// mDNS wins a tie: it carries the model and the resource path from
 			// the device itself, where the sweep only guesses at port 80.
-			if existing, ok := found[scanner.Host]; ok && existing.Source == "mdns" {
+			if existing, ok := found[key]; ok && existing.Source == "mdns" {
 				continue
 			}
-			found[scanner.Host] = scanner
+			found[key] = scanner
 		}
 	}
 

@@ -84,7 +84,7 @@ at 300 dpi colour it works out at somewhere between ten and twenty pages of
 ordinary paper. When the scan reaches it, add what you have to your library and
 start a second document.
 
-A half-finished scan is kept for 30 minutes. After that it is discarded and the
+A half-finished scan is kept for 30 minutes after the last page you scanned. After that it is discarded and the
 pages have to be scanned again — the file lives in the same place as any other
 staged upload, so it is covered by [encryption at rest](/encryption) when that
 is turned on.

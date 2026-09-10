@@ -68,12 +68,15 @@ export function UploadScanPage() {
   const [cidr, setCidr] = useState('')
   const [searching, setSearching] = useState(false)
   const [scanning, setScanning] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [scan, setScan] = useState<StagedScan | null>(null)
   const [savedId, setSavedId] = useState('')
   const [error, setError] = useState('')
 
   const previewUrl = useScanPreview(scan?.upload_id, scan?.page_count ?? 0)
-  const busy = searching || scanning
+  // Saving claims the staged scan, so scanning or saving again while it is in
+  // flight loses the race and reports it as an expiry.
+  const busy = searching || scanning || saving
 
   async function onFind(range?: string) {
     try {
@@ -121,12 +124,15 @@ export function UploadScanPage() {
   async function onSave() {
     if (!scan) return
     try {
+      setSaving(true)
       setError('')
       const { document_id } = await saveScan(scan.upload_id)
       setScan(null)
       setSavedId(document_id)
     } catch (err) {
       setError(errorMessage(err, 'Failed to save the scan'))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -282,7 +288,7 @@ export function UploadScanPage() {
           )}
           <div className="flex flex-wrap gap-2">
             <Button disabled={busy} onClick={() => void onSave()}>
-              Add to your library
+              {saving ? 'Adding…' : 'Add to your library'}
             </Button>
             <Button variant="secondary" disabled={busy} onClick={() => void onDiscard()}>
               Discard

@@ -18,8 +18,11 @@ import (
 )
 
 // discoverTimeout bounds a discovery request. The sweep and the mDNS browse run
-// concurrently inside it, so this is roughly how long the button spins.
-const discoverTimeout = 5 * time.Second
+// concurrently inside it and it returns as soon as both are done, so the usual
+// /24 still answers in about four seconds; this only has to be large enough
+// that the largest range escl accepts -- a /22, sixteen rounds of probes --
+// finishes rather than being cut off and reported as "found nothing".
+const discoverTimeout = 15 * time.Second
 
 type scanRequest struct {
 	Scanner  string `json:"scanner"`

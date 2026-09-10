@@ -2,11 +2,14 @@ package escl
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // fakeScanner is an eSCL device: it accepts one job, hands back the pages it
@@ -20,6 +23,7 @@ type fakeScanner struct {
 	deleted  bool
 	settings string
 	failPage bool
+	notReady int
 }
 
 func newFakeScanner(t *testing.T, pages ...string) *fakeScanner {
@@ -50,6 +54,11 @@ func newFakeScanner(t *testing.T, pages ...string) *fakeScanner {
 		defer scanner.mu.Unlock()
 		if scanner.failPage {
 			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if scanner.notReady > 0 {
+			scanner.notReady--
+			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
 		if scanner.served >= len(scanner.pages) {
@@ -198,20 +207,85 @@ func TestNormalizeBaseFillsInTheUsualParts(t *testing.T) {
 }
 
 // The job address comes from the device, so it is the one part of the exchange
-// that could point somewhere else.
-func TestResolveJobURLRefusesAnotherHost(t *testing.T) {
+// that could point somewhere else -- and the one devices spell in every
+// possible way. Whatever they send, the request goes to the scanner we dialed.
+func TestResolveJobURLKeepsTheScannerWeDialed(t *testing.T) {
 	t.Parallel()
 
-	base := "http://192.168.1.9/eSCL"
-	if _, err := resolveJobURL(base, "http://example.com/eSCL/ScanJobs/1"); err == nil {
-		t.Fatal("a job address on another host should have been refused")
+	const base = "http://192.168.1.9/eSCL"
+	const want = "http://192.168.1.9/eSCL/ScanJobs/1"
+	for _, location := range []string{
+		"/eSCL/ScanJobs/1",                       // root-relative
+		"ScanJobs/1",                             // bare, against the ScanJobs URL
+		"http://192.168.1.9/eSCL/ScanJobs/1",     // absolute
+		"http://192.168.1.9:80/eSCL/ScanJobs/1",  // the same host, spelled out
+		"http://BRW123456.local/eSCL/ScanJobs/1", // its own mDNS name
+		"http://localhost/eSCL/ScanJobs/1",       // the HP quirk
+		"https://example.com/eSCL/ScanJobs/1",    // and somewhere else entirely
+	} {
+		got, err := resolveJobURL(base, location)
+		if err != nil {
+			t.Fatalf("resolveJobURL(%q) error: %v", location, err)
+		}
+		if got != want {
+			t.Fatalf("resolveJobURL(%q)=%q want %q", location, got, want)
+		}
 	}
-	got, err := resolveJobURL(base, "/eSCL/ScanJobs/1")
+}
+
+// 503 from NextDocument is "not yet", not "no": the head is still moving or the
+// feeder is picking up the next sheet.
+func TestScanWaitsOutAScannerThatIsNotReady(t *testing.T) {
+	scanner := newFakeScanner(t, "page one")
+	scanner.notReady = 3
+	notReadyDelay = time.Millisecond
+	t.Cleanup(func() { notReadyDelay = 2 * time.Second })
+
+	pages, err := Scan(context.Background(), scanner.server.URL, Platen, maxScanBytes)
 	if err != nil {
-		t.Fatalf("resolveJobURL() error: %v", err)
+		t.Fatalf("Scan() error: %v", err)
 	}
-	if got != "http://192.168.1.9/eSCL/ScanJobs/1" {
-		t.Fatalf("job url=%q", got)
+	if len(pages) != 1 || string(pages[0]) != "page one" {
+		t.Fatalf("pages=%q want the one page", pages)
+	}
+}
+
+// The budget has to bound the read itself, not just the total afterwards: a
+// device answering with something enormous must not land on the heap first.
+func TestScanDoesNotReadPastTheBudget(t *testing.T) {
+	SetAllowLoopback(true)
+	t.Cleanup(func() { SetAllowLoopback(false) })
+
+	var served int64
+	mux := http.NewServeMux()
+	mux.HandleFunc("/eSCL/ScanJobs", func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		w.Header().Set("Location", "/eSCL/ScanJobs/job-1")
+		w.WriteHeader(http.StatusCreated)
+	})
+	mux.HandleFunc("/eSCL/ScanJobs/job-1/NextDocument", func(w http.ResponseWriter, r *http.Request) {
+		// No Content-Length: the client cannot know what it is in for. 64 MB of
+		// it, which is what the client would hold without a bounded read.
+		page := make([]byte, 64<<10)
+		for range 1024 {
+			n, err := w.Write(page)
+			atomic.AddInt64(&served, int64(n))
+			if err != nil {
+				return
+			}
+		}
+	})
+	mux.HandleFunc("/eSCL/ScanJobs/job-1", func(w http.ResponseWriter, r *http.Request) {})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	if _, err := Scan(context.Background(), server.URL, Platen, 8<<10); err == nil {
+		t.Fatal("expected the scan to be refused for going over the budget")
+	}
+	// The client stops reading a page past the budget, so the device gets no
+	// further than a socket buffer or two of the 64 MB it wanted to send.
+	if got := atomic.LoadInt64(&served); got > 4<<20 {
+		t.Fatalf("the scanner got to send %d bytes against an 8 KB budget", got)
 	}
 }
 

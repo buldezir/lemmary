@@ -100,6 +100,12 @@ func Start(app core.App, ownerUserID, scanner string, source Source, uploadID st
 	if uploadID != "" {
 		claimed, ok := stagingRegistry.Claim(uploadID, ownerUserID)
 		if !ok {
+			// A scan already running for this owner has the upload claimed, so
+			// the lookup fails for a reason the user can act on: the pages are
+			// fine, the previous scan is simply still going.
+			if registry.Busy(ownerUserID) {
+				return "", ErrScanInProgress
+			}
 			return "", ErrUploadNotFound
 		}
 		if claimed.Payload.preview.SizeBytes >= maxScanBytes {
@@ -155,21 +161,35 @@ func runScan(app core.App, ownerUserID, scanner string, source Source, item *sta
 		paths = append(paths, path)
 	}
 
-	if item == nil {
+	fresh := item == nil
+	if fresh {
 		item, err = stage(app, ownerUserID, paths)
 		if err != nil {
 			return Preview{}, err
 		}
-		stagingRegistry.Add(item)
 	} else if err := merge(item.Path, paths); err != nil {
 		return Preview{}, err
 	}
 
 	preview, err := describe(item)
 	if err != nil {
+		if fresh {
+			// Never registered, so nothing else will ever clean it up.
+			os.Remove(item.Path)
+		}
 		return Preview{}, err
 	}
 	item.Payload.preview = preview
+	// The wait starts again from the page just scanned: feeding a long document
+	// by hand takes longer than one TTL, and expiring mid-document would throw
+	// away every page already through the glass. Safe to write here because a
+	// claimed item is out of the registry, and a fresh one is not in it yet.
+	item.ExpiresAt = time.Now().UTC().Add(stagingTTL)
+	if fresh {
+		// Published only once the payload is filled in, so nothing can resolve
+		// a scan whose preview is still zero.
+		stagingRegistry.Add(item)
+	}
 
 	app.Logger().Info("scan added pages",
 		"component", "scan",

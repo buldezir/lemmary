@@ -92,6 +92,15 @@ func (r *Registry[T]) Acquire(ownerUserID string) error {
 	return nil
 }
 
+// Busy reports whether the owner already has a run in flight, for a caller that
+// needs to tell "busy" apart from "gone" before Start would say so.
+func (r *Registry[T]) Busy(ownerUserID string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, busy := r.busy[ownerUserID]
+	return busy
+}
+
 // Release clears the owner's busy marker.
 func (r *Registry[T]) Release(ownerUserID string) {
 	r.mu.Lock()

@@ -44,10 +44,18 @@ const (
 	// deleteTimeout bounds the job DELETE, which is best-effort anyway.
 	deleteTimeout = 10 * time.Second
 
+	// A device that is warming up, repositioning the head or picking up the
+	// next sheet answers NextDocument with 503. It means "not yet", not "no",
+	// and every other eSCL client retries it.
+	notReadyRetries = 10
+
 	// maxPages stops a feeder that keeps handing back pages -- a misfeed loop,
 	// or a device that never reports the end -- from filling the disk.
 	maxPages = 200
 )
+
+// notReadyDelay is how long to wait out a 503. A var so the tests do not.
+var notReadyDelay = 2 * time.Second
 
 // Source is where the scanner takes paper from.
 type Source string
@@ -126,7 +134,7 @@ func Scan(ctx context.Context, scanner string, source Source, maxBytes int64) ([
 	var pages [][]byte
 	var total int64
 	for len(pages) < maxPages {
-		page, done, err := nextDocument(ctx, client, jobURL)
+		page, done, err := nextDocument(ctx, client, jobURL, maxBytes-total)
 		if err != nil {
 			return nil, err
 		}
@@ -135,7 +143,10 @@ func Scan(ctx context.Context, scanner string, source Source, maxBytes int64) ([
 		}
 		total += int64(len(page))
 		if total > maxBytes {
-			return nil, fmt.Errorf("the scan is larger than %d MB", maxBytes>>20)
+			// maxBytes is what is left of the document's allowance, which is
+			// not a number worth reporting -- "larger than 0 MB" is what the
+			// last page of a full document would say.
+			return nil, ErrTooLarge
 		}
 		pages = append(pages, page)
 		if source == Platen {
@@ -184,10 +195,19 @@ func createJob(ctx context.Context, client *http.Client, base string, source Sou
 	return resolveJobURL(base, location)
 }
 
-// resolveJobURL turns the Location header into an absolute URL. Devices send
-// all three shapes: absolute, root-relative and bare.
+// resolveJobURL turns the Location header into an absolute URL on the scanner.
+// Devices send all three shapes: absolute, root-relative and bare.
+//
+// The host in an absolute one is not trusted, and not compared either: devices
+// put their mDNS name, "localhost" or an explicit :80 in there, none of which
+// match the address we dialed, and rejecting those rejects working scanners.
+// Only the path is taken and the scheme and host we already reached are kept --
+// which is what sane-airscan does, and is the stronger boundary besides: a
+// Location naming another host cannot pull us off the scanner at all.
 func resolveJobURL(base, location string) (string, error) {
-	baseURL, err := url.Parse(base)
+	// Against the ScanJobs URL rather than the resource root, so a bare
+	// "ScanJobs/id" resolves to {resource}/ScanJobs/id and not /ScanJobs/id.
+	baseURL, err := url.Parse(base + "/ScanJobs")
 	if err != nil {
 		return "", err
 	}
@@ -196,46 +216,64 @@ func resolveJobURL(base, location string) (string, error) {
 		return "", fmt.Errorf("the scanner returned an unusable job address")
 	}
 	job := baseURL.ResolveReference(ref)
-	// The job lives on the scanner. A Location pointing anywhere else is either
-	// a broken device or an attempt to make us fetch something.
-	if job.Host != baseURL.Host || job.Scheme != baseURL.Scheme {
-		return "", fmt.Errorf("the scanner returned a job address on another host")
-	}
+	job.Scheme, job.Host, job.User = baseURL.Scheme, baseURL.Host, nil
 	return strings.TrimRight(job.String(), "/"), nil
 }
 
 // nextDocument fetches one page. done is true once the scanner has no more.
-func nextDocument(ctx context.Context, client *http.Client, jobURL string) (page []byte, done bool, err error) {
+//
+// remaining is what is left of the caller's byte budget: the body is read
+// through a limit rather than whole, so a device answering with something
+// enormous cannot put it all on the heap before the caller notices.
+func nextDocument(ctx context.Context, client *http.Client, jobURL string, remaining int64) ([]byte, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, pageTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, jobURL+"/NextDocument", nil)
-	if err != nil {
-		return nil, false, err
+	if remaining < 0 {
+		remaining = 0
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, false, fmt.Errorf("the scan failed: %w", err)
-	}
-	defer resp.Body.Close()
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, jobURL+"/NextDocument", nil)
+		if err != nil {
+			return nil, false, err
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, false, fmt.Errorf("the scan failed: %w", err)
+		}
 
-	switch resp.StatusCode {
-	case http.StatusOK:
-	case http.StatusNotFound, http.StatusGone, http.StatusNoContent:
-		// The documented end of a job: the feeder is empty.
-		return nil, true, nil
-	default:
-		return nil, false, fmt.Errorf("the scan failed (HTTP %d)", resp.StatusCode)
-	}
+		switch resp.StatusCode {
+		case http.StatusOK:
+		case http.StatusNotFound, http.StatusGone, http.StatusNoContent:
+			// The documented end of a job: the feeder is empty.
+			resp.Body.Close()
+			return nil, true, nil
+		case http.StatusServiceUnavailable:
+			resp.Body.Close()
+			if attempt == notReadyRetries {
+				return nil, false, fmt.Errorf("the scanner was not ready in time")
+			}
+			select {
+			case <-time.After(notReadyDelay):
+				continue
+			case <-ctx.Done():
+				return nil, false, fmt.Errorf("the scan failed: %w", ctx.Err())
+			}
+		default:
+			resp.Body.Close()
+			return nil, false, fmt.Errorf("the scan failed (HTTP %d)", resp.StatusCode)
+		}
 
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, false, fmt.Errorf("the scan failed: %w", err)
+		data, err := io.ReadAll(io.LimitReader(resp.Body, remaining+1))
+		resp.Body.Close()
+		if err != nil {
+			return nil, false, fmt.Errorf("the scan failed: %w", err)
+		}
+		if len(data) == 0 {
+			return nil, true, nil
+		}
+		return data, false, nil
 	}
-	if len(data) == 0 {
-		return nil, true, nil
-	}
-	return data, false, nil
 }
 
 func deleteJob(client *http.Client, jobURL string) {
