@@ -1,7 +1,6 @@
 import { Link, Outlet } from '@tanstack/react-router'
 
-const tabClassName =
-  '-mb-px border-b-2 border-transparent px-1 pb-2 pt-1 text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-oxblood data-[status=active]:border-oxblood data-[status=active]:text-oxblood'
+import { tabClassName } from '../components/ui'
 
 export function ImportPage() {
   return (

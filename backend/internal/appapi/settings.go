@@ -2,6 +2,7 @@ package appapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -39,6 +40,7 @@ type settingsResponse struct {
 	WorkerTimeoutSec              int     `json:"worker_timeout_sec"`
 	WorkerMaxRetries              int     `json:"worker_max_retries"`
 	ExtractionPromptVersion       string  `json:"extraction_prompt_version"`
+	ExtractionRules               string  `json:"extraction_rules"`
 	NearDuplicateDetectionEnabled bool    `json:"near_duplicate_detection_enabled"`
 	NearDuplicateThreshold        float64 `json:"near_duplicate_threshold"`
 	AlwaysRequireReview           bool    `json:"always_require_review"`
@@ -69,6 +71,7 @@ type settingsPatchRequest struct {
 	WorkerTimeoutSec              *int     `json:"worker_timeout_sec"`
 	WorkerMaxRetries              *int     `json:"worker_max_retries"`
 	ExtractionPromptVersion       *string  `json:"extraction_prompt_version"`
+	ExtractionRules               *string  `json:"extraction_rules"`
 	NearDuplicateDetectionEnabled *bool    `json:"near_duplicate_detection_enabled"`
 	NearDuplicateThreshold        *float64 `json:"near_duplicate_threshold"`
 	AlwaysRequireReview           *bool    `json:"always_require_review"`
@@ -208,6 +211,9 @@ func brandingPatch(req settingsPatchRequest) (appName *string, accent *string, e
 
 var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
+// maxExtractionRules matches the field's Max in the migration that added it.
+const maxExtractionRules = 4000
+
 // settingsResponseFor is settingsResponseFromConfig plus the branding, which
 // comes from PocketBase's settings rather than from the config record.
 func settingsResponseFor(app core.App, cfg config.Config) settingsResponse {
@@ -243,6 +249,7 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 		WorkerTimeoutSec:              int(cfg.WorkerTimeout.Seconds()),
 		WorkerMaxRetries:              cfg.WorkerMaxRetries,
 		ExtractionPromptVersion:       cfg.ExtractionPromptVer,
+		ExtractionRules:               cfg.ExtractionRules,
 		NearDuplicateDetectionEnabled: cfg.NearDuplicateDetectionEnabled,
 		NearDuplicateThreshold:        threshold,
 		AlwaysRequireReview:           cfg.AlwaysRequireReview,
@@ -347,6 +354,15 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	}
 	if req.ExtractionPromptVersion != nil {
 		record.Set("extraction_prompt_version", strings.TrimSpace(*req.ExtractionPromptVersion))
+	}
+	if req.ExtractionRules != nil {
+		rules := strings.TrimSpace(*req.ExtractionRules)
+		// Checked here rather than left to the field's Max so the 400 carries a
+		// message an admin can read.
+		if len([]rune(rules)) > maxExtractionRules {
+			return errInvalid(fmt.Sprintf("extraction_rules must be at most %d characters", maxExtractionRules))
+		}
+		record.Set("extraction_rules", rules)
 	}
 	if req.NearDuplicateDetectionEnabled != nil {
 		record.Set("near_duplicate_detection_enabled", *req.NearDuplicateDetectionEnabled)

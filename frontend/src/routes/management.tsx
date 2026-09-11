@@ -473,7 +473,7 @@ export function ManagementPage() {
           ) : !embeddingStats.enabled ? (
             <p className="mt-4 text-xs text-amber-700">
               No embedding model is bound, so there is nothing to embed with. Choose one in{' '}
-              <Link to="/settings" className="font-medium underline">
+              <Link to="/settings/ai" className="font-medium underline">
                 Settings
               </Link>
               .
