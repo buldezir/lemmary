@@ -10,10 +10,10 @@ The API has been tested with the [swift-paperless](https://github.com/paulgessin
 
 ## Features
 
-- Upload PDF, image, plain text, CSV, Word (.docx), or Excel (.xlsx) documents
+- Upload PDF, image, plain text, CSV, Word (.docx), or Excel (.xlsx) documents — one at a time, or a whole folder dropped or picked at once
 - Full backup and restore: download your whole library — files, OCR text, metadata, thumbnails and taxonomy — as one zip, and restore it into this or another instance
 - Optional encryption at rest: the volume holds only ciphertext, the instance boots locked until someone signs in, and nobody but your own accounts can unlock it — see [docs/encryption.md](docs/encryption.md)
-- Import the invoice PDFs from an Amazon "Your Orders" data export (**Upload → Amazon orders**); the archive is previewed and only imported after you confirm the file count, duplicates are skipped
+- Import a zip of documents (**Upload → Zip archive**) or the invoice PDFs from an Amazon "Your Orders" data export (**Upload → Amazon orders**); either way the archive is previewed and only imported after you confirm the file count, duplicates are skipped
 - Async processing jobs with status tracking
 - OCR text extraction (native text extraction for TXT/CSV/DOCX/XLSX)
 - AI metadata extraction: title, purpose, date, type, tags, summary
