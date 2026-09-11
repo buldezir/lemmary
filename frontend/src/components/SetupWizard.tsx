@@ -13,6 +13,7 @@ import {
   requiresAPIKey,
   requiresSignIn,
   sdkAliasDefault,
+  usesOCRModel,
   keylessProviderDocs,
   keylessProviderHint,
   SDK_DEFAULT_BASE,
@@ -217,11 +218,14 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       if (wanted.length === 0) {
         throw new Error('Enter at least one API key.')
       }
+      // Read from the server rather than from state: this submit creates two
+      // rows, and a failure on the second leaves the first saved but unknown to
+      // the component -- the retry would then ask for an alias that now exists
+      // and be refused, with no way forward but the manual form.
+      const already = await listAIProviders()
       for (const item of wanted) {
-        // An SDK already added is left alone rather than added twice: this
-        // submit creates two rows, so a failure on the second one would
-        // otherwise duplicate the first on the retry.
-        if (providers.some((existing) => existing.sdk === item.sdk)) continue
+        // An SDK already added is left alone rather than added twice.
+        if (already.some((existing) => existing.sdk === item.sdk)) continue
         await createAIProvider({
           sdk: item.sdk,
           alias: sdkAliasDefault(item.sdk),
@@ -308,8 +312,19 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       if (!extractProviderId) {
         throw new Error('Choose an extraction provider.')
       }
-      // The same rule the settings endpoint enforces, asked here so the answer
-      // is a field to fill rather than a 400.
+      // The rules the settings endpoint enforces, asked here so the answer is a
+      // field to fill rather than a 400 quoting a request field. Only the two
+      // modelless OCR SDKs are exempt, the same pair the picker hides the model
+      // box for. Nothing prefills an extraction model on most SDKs -- a
+      // one-key Mistral install reaches this step with that field empty -- so
+      // this is the common miss, not an edge case.
+      const ocrSdk = providers.find((item) => item.id === ocrProviderId)?.sdk
+      if (usesOCRModel(ocrSdk) && !ocrModel.trim()) {
+        throw new Error('Choose an OCR model.')
+      }
+      if (!extractModel.trim()) {
+        throw new Error('Choose an extraction model.')
+      }
       if (embeddingProviderId && !embeddingModel.trim()) {
         throw new Error('Choose an embedding model, or set the embedding provider to None.')
       }
