@@ -3,6 +3,7 @@ import {
   listProviderModels,
   modelOptionLabel,
   providerOptionLabel,
+  recommendedModel,
   eligibleProviders,
   showsOCRModelWarning,
   localOCRModelHint,
@@ -164,7 +165,11 @@ export function ProviderModelFields({
           placeholder={allowEmpty ? 'None' : 'Select a provider'}
           onChange={(next) => {
             onProviderChange(next)
-            onModelChange('')
+            // The model the guide names for the new provider, not an empty box:
+            // switching OCR to Mistral knows it wants mistral-ocr-latest, the
+            // same answer the wizard's prefill gives. Empty for every other SDK,
+            // which is the clear this line used to be.
+            onModelChange(recommendedModel(providers.find((item) => item.id === next)?.sdk, purpose))
           }}
         />
       </div>

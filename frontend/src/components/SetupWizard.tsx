@@ -124,9 +124,19 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
         // embeddings, and the other key is left to do the thinking.
         const named = (purpose: ModelPurpose) =>
           nextProviders.find((item) => recommendedModel(item.sdk, purpose))
+        // A saved model belongs to the provider it was saved against. Where
+        // that row is gone -- a half-finished earlier run, providers deleted
+        // and re-added -- the fallback provider gets the model the guide names
+        // for its SDK, never the orphaned string, which the picker could only
+        // show as a custom model id its catalogue has never heard of.
+        const saved = (id: string, model: string, provider?: AIProvider) =>
+          provider && provider.id === id ? model : ''
         const ocr = byId(settings.ocr_provider_id) ?? named('ocr') ?? nextProviders[0]
         setOcrProviderId(ocr?.id ?? '')
-        setOcrModel(settings.ocr_model || recommendedModel(ocr?.sdk, 'ocr'))
+        setOcrModel(
+          saved(settings.ocr_provider_id, settings.ocr_model, ocr) ||
+            recommendedModel(ocr?.sdk, 'ocr'),
+        )
         const llmProviders = nextProviders.filter((item) => isLLMProvider(item.sdk))
         const llm =
           byId(settings.extract_provider_id) ??
@@ -136,13 +146,19 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           llmProviders.find((item) => item.id !== ocr?.id) ??
           llmProviders[0]
         setExtractProviderId(llm?.id ?? '')
-        setExtractModel(settings.extract_model || recommendedModel(llm?.sdk, 'llm'))
+        setExtractModel(
+          saved(settings.extract_provider_id, settings.extract_model, llm) ||
+            recommendedModel(llm?.sdk, 'llm'),
+        )
         const embed =
           byId(settings.embedding_provider_id) ??
           named('embedding') ??
           nextProviders.find((item) => canEmbedProvider(item.sdk))
         setEmbeddingProviderId(embed?.id ?? '')
-        setEmbeddingModel(settings.embedding_model || recommendedModel(embed?.sdk, 'embedding'))
+        setEmbeddingModel(
+          saved(settings.embedding_provider_id, settings.embedding_model, embed) ||
+            recommendedModel(embed?.sdk, 'embedding'),
+        )
       } catch {
         // Prefill is best-effort.
       }
