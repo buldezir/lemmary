@@ -305,6 +305,7 @@ export function UploadFilesPage() {
             accept={ACCEPT_ATTR}
             onChange={(event) => selectFiles(event.target.files)}
             className="hidden"
+            id="file-upload"
           />
           <span className="text-sm font-medium text-ink">{dropLabel}</span>
           <span className="text-xs text-ink-faint">or drop files and folders here</span>
