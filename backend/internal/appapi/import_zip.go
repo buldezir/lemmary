@@ -168,6 +168,8 @@ func archiveErrorDetail(src zipimport.Source, err error) string {
 		return "The archive holds too many " + noun + " to import at once."
 	case errors.Is(err, zipimport.ErrArchiveTooLarge):
 		return "The archive is too large."
+	case errors.Is(err, zipimport.ErrArchiveTooDense):
+		return "The archive decompresses beyond the allowed size."
 	default:
 		return ""
 	}

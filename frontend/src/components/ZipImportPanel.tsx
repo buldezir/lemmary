@@ -207,7 +207,11 @@ export function ZipImportPanel({ source }: { source: ZipImportSource }) {
           </p>
 
           {preview.importable_count === 0 && (
-            <p className="text-sm text-ink-soft">{copy.allDuplicates}</p>
+            <p className="text-sm text-ink-soft">
+              {preview.duplicate_count === preview.file_count
+                ? copy.allDuplicates
+                : 'Nothing in this archive can be imported.'}
+            </p>
           )}
 
           <div className="flex flex-wrap gap-2">

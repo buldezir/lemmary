@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { filesFromEntries, folderPrefixedName, withFolderName, type DropEntry } from './fileDrop'
+import {
+  appendNew,
+  classifySelection,
+  filesFromEntries,
+  folderPrefixedName,
+  isJunkPath,
+  withFolderName,
+  type DropEntry,
+} from './fileDrop'
 
 function fileEntry(fullPath: string, body = 'x'): DropEntry {
   const name = fullPath.split('/').pop() ?? fullPath
@@ -93,5 +101,69 @@ describe('filesFromEntries', () => {
     }
     const files = await filesFromEntries([broken, fileEntry('/good.pdf')])
     expect(files.map((f) => f.name)).toEqual(['good.pdf'])
+  })
+})
+
+describe('isJunkPath', () => {
+  it('drops what an archiver or Finder left behind', () => {
+    expect(isJunkPath('__MACOSX/scans/._1.pdf')).toBe(true)
+    expect(isJunkPath('/scans/__MACOSX/1.pdf')).toBe(true)
+    expect(isJunkPath('/scans/._1.pdf')).toBe(true)
+    expect(isJunkPath('/scans/.DS_Store')).toBe(true)
+  })
+
+  it('keeps real files, including ones with dots in the name', () => {
+    expect(isJunkPath('/scans/1.pdf')).toBe(false)
+    expect(isJunkPath('/scans/invoice.2024.pdf')).toBe(false)
+    expect(isJunkPath('report.pdf')).toBe(false)
+  })
+})
+
+describe('classifySelection', () => {
+  const accepts = (file: File) => file.name.toLowerCase().endsWith('.pdf')
+  const named = (name: string) => new File(['x'], name)
+
+  it('drops junk silently rather than calling it the wrong type', () => {
+    // An AppleDouble carries the extension of the file it shadows, so without
+    // the junk check ._1.pdf is queued as a document -- and .DS_Store is
+    // reported as a mistake the user did not make.
+    const result = classifySelection(
+      [named('1.pdf'), named('._1.pdf'), named('.DS_Store')],
+      accepts,
+      (file) => `scans/${file.name}`,
+    )
+    expect(result.accepted.map((f) => f.name)).toEqual(['1.pdf'])
+    expect(result.rejected).toEqual([])
+  })
+
+  it('separates the wrong type from the wrong page', () => {
+    const result = classifySelection([named('notes.odt'), named('scans.zip')], accepts)
+    expect(result.rejected).toEqual(['notes.odt'])
+    expect(result.zipped).toBe(true)
+  })
+})
+
+describe('appendNew', () => {
+  const staged = (name: string) => new File(['abc'], name, { lastModified: 1 })
+
+  it('adds what is new and keeps what was there', () => {
+    const current = [staged('a.pdf')]
+    expect(appendNew(current, [staged('b.pdf')]).map((f) => f.name)).toEqual(['a.pdf', 'b.pdf'])
+  })
+
+  it('drops a file already staged, and within one selection', () => {
+    const current = [staged('a.pdf')]
+    expect(appendNew(current, [staged('a.pdf'), staged('b.pdf'), staged('b.pdf')])).toHaveLength(2)
+  })
+
+  it('dedupes against the list it is given, not a captured one', () => {
+    // Two folder drops of the same tree can land before either has re-rendered.
+    // Applied one after the other the way React applies updaters, the second
+    // must see the first's result.
+    const tree = [staged('1.pdf'), staged('2.pdf')]
+    const afterFirst = appendNew([], tree)
+    const afterSecond = appendNew(afterFirst, tree)
+    expect(afterSecond).toHaveLength(2)
+    expect(afterSecond).toBe(afterFirst)
   })
 })

@@ -5,7 +5,14 @@ import { ensureAuth } from '../lib/auth'
 import { parseDuplicateOfId } from '../lib/api/documents'
 import { limitFromError, type LimitName } from '../lib/api/limits'
 import { documentsLanding } from '../lib/reviewPolicy'
-import { filesFromDataTransfer, withFolderName } from '../lib/fileDrop'
+import {
+  appendNew,
+  classifySelection,
+  extensionOf,
+  fileKey,
+  filesFromDataTransfer,
+  withFolderName,
+} from '../lib/fileDrop'
 import { Button } from '../components/ui'
 
 // The documents.file allowlist (see the migrations), as the one thing the three
@@ -35,17 +42,9 @@ type FileUploadError = {
   duplicateOfId: string | null
 }
 
-function extensionOf(file: File) {
-  return file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')).toLowerCase() : ''
-}
-
 function isAcceptedFile(file: File) {
-  if (ACCEPTED[extensionOf(file)]) return true
+  if (ACCEPTED[extensionOf(file.name)]) return true
   return ACCEPTED_MIME_TYPES.has(file.type)
-}
-
-function fileKey(file: File) {
-  return `${file.name}:${file.size}:${file.lastModified}`
 }
 
 function uploadErrorMessage(err: unknown): string {
@@ -98,6 +97,9 @@ export function UploadFilesPage() {
   const [uploading, setUploading] = useState(false)
   const [uploadIndex, setUploadIndex] = useState(0)
   const [dragging, setDragging] = useState(false)
+  // A dropped folder of a few thousand files takes a moment to walk, and a drop
+  // that shows nothing looks like a drop that did nothing.
+  const [scanning, setScanning] = useState(false)
   const [error, setError] = useState('')
   const [fileErrors, setFileErrors] = useState<FileUploadError[]>([])
 
@@ -112,46 +114,33 @@ export function UploadFilesPage() {
       return
     }
 
+    // Classified before renaming, while the folder path is still on the file:
+    // once `scans/._1.pdf` becomes `scans-._1.pdf` there is no telling it from
+    // a document somebody meant to send.
+    const { accepted, rejected, zipped } = classifySelection(Array.from(next), isAcceptedFile)
+
     // A file picked inside a folder keeps that folder as a name prefix, on the
     // same rule the zip import uses, so a tree of scanner output does not land
     // as a page of identical 1.pdfs.
-    const incoming = Array.from(next).map((file) =>
+    const named = accepted.map((file) =>
       file.webkitRelativePath ? withFolderName(file, file.webkitRelativePath) : file,
     )
-    const accepted: File[] = []
-    const rejected: string[] = []
-    let zipped = false
-
-    const seen = new Set(files.map(fileKey))
-    for (const file of incoming) {
-      if (!isAcceptedFile(file)) {
-        if (extensionOf(file) === '.zip') zipped = true
-        else rejected.push(file.name)
-        continue
-      }
-      const key = fileKey(file)
-      if (seen.has(key)) continue
-      seen.add(key)
-      accepted.push(file)
-    }
 
     // Appending, not replacing: a folder and then a stray file is one upload as
-    // far as the person doing it is concerned.
-    setFiles((current) => [...current, ...accepted])
+    // far as the person doing it is concerned. The dedupe happens inside the
+    // updater rather than against a captured list, because walking a folder is
+    // asynchronous and two drops can land before either has re-rendered.
+    setFiles((current) => appendNew(current, named))
 
     setFileErrors([])
-    if (zipped) {
-      setZipRejected(true)
-      setError('')
-    } else if (rejected.length > 0) {
-      setZipRejected(false)
+    setZipRejected(zipped)
+    if (!zipped && rejected.length > 0) {
       setError(
         rejected.length === 1
           ? `Unsupported file type (${rejected[0]}). Use ${SUPPORTED_FORMATS_LABEL}.`
           : `Unsupported file types (${rejected.join(', ')}). Use ${SUPPORTED_FORMATS_LABEL}.`,
       )
     } else {
-      setZipRejected(false)
       setError('')
     }
   }
@@ -159,6 +148,14 @@ export function UploadFilesPage() {
   function removeFile(index: number) {
     setFiles((current) => current.filter((_, i) => i !== index))
     setFileErrors((current) => current.filter((_, i) => i !== index))
+    resetInput()
+  }
+
+  function clearFiles() {
+    setFiles([])
+    setFileErrors([])
+    setError('')
+    setZipRejected(false)
     resetInput()
   }
 
@@ -182,7 +179,10 @@ export function UploadFilesPage() {
     setDragging(false)
     // Folders only exist through the entry API, and it has to be read before
     // this handler returns -- filesFromDataTransfer does that part first.
-    void filesFromDataTransfer(event.dataTransfer).then(selectFiles)
+    setScanning(true)
+    void filesFromDataTransfer(event.dataTransfer)
+      .then(selectFiles)
+      .finally(() => setScanning(false))
   }
 
   async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
@@ -303,11 +303,14 @@ export function UploadFilesPage() {
             type="file"
             multiple
             accept={ACCEPT_ATTR}
+            disabled={uploading || scanning}
             onChange={(event) => selectFiles(event.target.files)}
             className="hidden"
             id="file-upload"
           />
-          <span className="text-sm font-medium text-ink">{dropLabel}</span>
+          <span className="text-sm font-medium text-ink">
+            {scanning ? 'Reading folder…' : dropLabel}
+          </span>
           <span className="text-xs text-ink-faint">or drop files and folders here</span>
         </label>
 
@@ -319,6 +322,7 @@ export function UploadFilesPage() {
             type="file"
             multiple
             {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
+            disabled={uploading || scanning}
             onChange={(event) => selectFiles(event.target.files)}
             className="hidden"
             id="folder-upload"
@@ -329,6 +333,16 @@ export function UploadFilesPage() {
           >
             Choose a folder instead
           </label>
+          {files.length > 0 && (
+            <button
+              type="button"
+              onClick={clearFiles}
+              disabled={uploading}
+              className="ml-4 text-xs font-medium text-ink-soft underline hover:text-ink disabled:opacity-50"
+            >
+              Clear {files.length === 1 ? 'the file' : `all ${files.length}`}
+            </button>
+          )}
         </div>
 
         {files.length > 0 && (

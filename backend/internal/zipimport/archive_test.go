@@ -279,3 +279,59 @@ func TestSourceFilesSkipsJunkAndEmptyEntries(t *testing.T) {
 		t.Fatalf("ignored=%d want 1 (the empty png; the two junk entries do not count)", ignored)
 	}
 }
+
+// The preview and the import must read the archive through the same source, or
+// the by-position match lines entries up against the wrong bytes. The source
+// lives on the staged payload so they cannot disagree -- this pins both halves:
+// the right source matches every entry, and a wrong one matches none rather
+// than importing whatever happened to line up.
+func TestMatchEntriesPairsByPositionUnderTheScannedSource(t *testing.T) {
+	zr := mixedArchive(t)
+	entries, _, err := scan(SourceFiles, noDuplicates, zr)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	matched := matchEntries(SourceFiles, zr, entries)
+	if len(matched) != len(entries) {
+		t.Fatalf("matched=%d want %d", len(matched), len(entries))
+	}
+	for i, file := range matched {
+		if file == nil {
+			t.Fatalf("entry %d (%s) matched nothing", i, entries[i].Path)
+		}
+		if file.Name != entries[i].Path {
+			t.Fatalf("entry %d matched %q want %q", i, file.Name, entries[i].Path)
+		}
+	}
+
+	// SourceAmazon keeps only the PDF, so every entry after the first lines up
+	// against a different file -- and the name check refuses all of them.
+	wrong := matchEntries(SourceAmazon, zr, entries)
+	for i, file := range wrong {
+		if file != nil && file.Name != entries[i].Path {
+			t.Fatalf("entry %d matched %q under the wrong source", i, file.Name)
+		}
+	}
+}
+
+// Duplicate entry names are legal in a zip, and the reason the match is by
+// position rather than by name.
+func TestMatchEntriesKeepsRepeatedNamesApart(t *testing.T) {
+	zr := buildZip(t,
+		zipEntry{"a/1.pdf", "%PDF-first"},
+		zipEntry{"b/1.pdf", "%PDF-second"},
+	)
+	entries, _, err := scan(SourceFiles, noDuplicates, zr)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	matched := matchEntries(SourceFiles, zr, entries)
+	if matched[0] == nil || matched[1] == nil {
+		t.Fatalf("matched=%v want both", matched)
+	}
+	if matched[0].Name == matched[1].Name {
+		t.Fatalf("both entries matched %q", matched[0].Name)
+	}
+}
