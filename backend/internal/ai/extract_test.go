@@ -245,7 +245,7 @@ func writeChatJSON(w http.ResponseWriter, content string) {
 
 func TestBuildExtractionSystemPromptForbidsPartialDates(t *testing.T) {
 	t.Parallel()
-	prompt := buildExtractionSystemPrompt("", ExtractionCatalog{})
+	prompt := buildExtractionSystemPrompt("", "", ExtractionCatalog{})
 
 	for _, want := range []string{
 		"complete calendar date in YYYY-MM-DD form",
@@ -255,6 +255,71 @@ func TestBuildExtractionSystemPromptForbidsPartialDates(t *testing.T) {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("expected system prompt to contain %q, got:\n%s", want, prompt)
 		}
+	}
+}
+
+func TestBuildExtractionSystemPromptAppendsAdminRules(t *testing.T) {
+	t.Parallel()
+	const rules = "Treat Rechnung as the document type Invoice."
+
+	plain := buildExtractionSystemPrompt("", "  ", ExtractionCatalog{})
+	if plain != buildExtractionSystemPrompt("", "", ExtractionCatalog{}) {
+		t.Fatal("blank rules changed the prompt")
+	}
+
+	prompt := buildExtractionSystemPrompt("", rules, ExtractionCatalog{})
+	if !strings.Contains(prompt, rules) {
+		t.Fatalf("expected the admin's rules in the prompt, got:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "never add, rename or drop fields") {
+		t.Fatalf("expected the rules to be fenced off from the JSON contract, got:\n%s", prompt)
+	}
+	// The format instructions have to come after the rules: they are what the
+	// parser depends on, and a rule must not be the last word on the shape.
+	if strings.Index(prompt, rules) > strings.Index(prompt, "Do not include markdown") {
+		t.Fatalf("expected the format rules after the admin's rules, got:\n%s", prompt)
+	}
+}
+
+func TestExtractionPromptFingerprintTracksTheRules(t *testing.T) {
+	t.Parallel()
+
+	// No rules is the bare version, so every run recorded before this reads the
+	// same and nothing in the UI changes for an instance that sets none.
+	if got := ExtractionPromptFingerprint("v1", "  "); got != "v1" {
+		t.Fatalf("blank rules changed the fingerprint: %q", got)
+	}
+
+	first := ExtractionPromptFingerprint("v1", "Prefer the issuer over the payer.")
+	second := ExtractionPromptFingerprint("v1", "Prefer the payer over the issuer.")
+	if first == second {
+		t.Fatalf("two rule sets share one fingerprint: %q", first)
+	}
+	if first != ExtractionPromptFingerprint("v1", " Prefer the issuer over the payer. ") {
+		t.Fatal("surrounding whitespace changed the fingerprint")
+	}
+	if !strings.HasPrefix(first, "v1+rules.") {
+		t.Fatalf("expected the version to stay readable in %q", first)
+	}
+}
+
+func TestExtractMetadataSendsAdminRules(t *testing.T) {
+	t.Parallel()
+	var body string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		body = string(raw)
+		writeChatJSON(w, extractTestJSON)
+	}))
+	t.Cleanup(srv.Close)
+
+	client := NewExtractor("openai", "test-key", "mistral-small-latest", srv.URL, "v1", "",
+		"Always tag invoices with the vendor's city.", 5*time.Second, slog.Default())
+	if _, err := client.ExtractMetadata(context.Background(), "Invoice from Amazon", ExtractionCatalog{}); err != nil {
+		t.Fatalf("ExtractMetadata: %v", err)
+	}
+	if !strings.Contains(body, "vendor's city") {
+		t.Fatalf("expected the configured rules in the request, got %s", body)
 	}
 }
 

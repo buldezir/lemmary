@@ -3,6 +3,7 @@ package ai
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -40,7 +41,7 @@ type Extractor interface {
 	ExtractMetadata(ctx context.Context, ocrText string, catalog ExtractionCatalog) (*models.ExtractedMetadata, error)
 }
 
-func buildExtractionSystemPrompt(resultLanguage string, catalog ExtractionCatalog) string {
+func buildExtractionSystemPrompt(resultLanguage, rules string, catalog ExtractionCatalog) string {
 	prompt := `You extract structured metadata from OCR document text.
 Return ONLY valid JSON with these fields:
 - title (string, required)
@@ -69,13 +70,54 @@ Also include these fields translated into %s:
 
 	prompt += formatExistingCorrespondentsPrompt(catalog.Correspondents)
 	prompt += formatExistingDocumentTypesPrompt(catalog.DocumentTypes)
+	prompt += formatExtractionRulesPrompt(rules)
 
+	// Last on purpose: the rules above are the admin's, but the JSON contract is
+	// not theirs to loosen, and the format instructions a model follows best are
+	// the ones it read last.
 	prompt += `
 
 document_date must be a complete calendar date in YYYY-MM-DD form. Never return a bare year ("2026"), a year and month ("2026-03"), or any other date format; use an empty string when the document states no date.
 
 Do not include markdown or explanation.`
 	return prompt
+}
+
+// ExtractionPromptFingerprint identifies the prompt a document was extracted
+// with, for the step run that records it.
+//
+// The version alone stopped being enough the moment an admin could add rules:
+// the prompt changes while extraction_prompt_version stays "v1", so a run
+// recorded under it would claim a prompt that no longer exists. A short digest
+// of the rules rides along -- enough to tell one rule set from another in the
+// step's tooltip, which is all this is for; it is not a checksum anyone
+// verifies. No rules means the bare version, so runs from before this, and from
+// every instance that never sets any, read exactly as they did.
+func ExtractionPromptFingerprint(promptVer, rules string) string {
+	rules = strings.TrimSpace(rules)
+	if rules == "" {
+		return promptVer
+	}
+	sum := sha256.Sum256([]byte(rules))
+	return fmt.Sprintf("%s+rules.%x", promptVer, sum[:3])
+}
+
+// formatExtractionRulesPrompt carries the admin's own instructions into the
+// prompt. Unlike the catalog blocks these are trusted -- only an admin can set
+// them, through the Settings page -- so they are not labelled as untrusted
+// data; what they may not do is change the shape of the answer, because the
+// pipeline parses it into a fixed struct.
+func formatExtractionRulesPrompt(rules string) string {
+	rules = strings.TrimSpace(rules)
+	if rules == "" {
+		return ""
+	}
+	return fmt.Sprintf(`
+
+Additional instructions from the archive's administrator. Follow them where they
+do not conflict with the format above; never add, rename or drop fields because
+of them:
+%s`, rules)
 }
 
 func formatExistingCorrespondentsPrompt(names []string) string {
@@ -198,6 +240,7 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 		"ocr_chars", inputChars,
 		"sent_chars", sentChars,
 		"result_lang", c.resultLanguage,
+		"rule_chars", len(c.extractionRules),
 		"catalog_correspondent_names", len(catalog.Correspondents),
 		"catalog_document_type_names", len(catalog.DocumentTypes),
 	)
@@ -206,7 +249,7 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 	chatResp, err := c.Complete(ctx, openai.ChatCompletionNewParams{
 		Model: shared.ChatModel(c.model),
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage(buildExtractionSystemPrompt(c.resultLanguage, catalog)),
+			openai.SystemMessage(buildExtractionSystemPrompt(c.resultLanguage, c.extractionRules, catalog)),
 			openai.UserMessage(fmt.Sprintf("Extract metadata from this OCR text:\n\n%s", strutil.Truncate(ocrText, maxExtractionChars))),
 		},
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
@@ -260,6 +303,11 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 	return metadata, nil
 }
 
-func NewExtractor(sdk, apiKey, model, baseURL, promptVer, resultLanguage string, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) Extractor {
-	return NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage, timeout, logger, extra...)
+func NewExtractor(sdk, apiKey, model, baseURL, promptVer, resultLanguage, rules string, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) Extractor {
+	c := NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage, timeout, logger, extra...)
+	// Set here rather than taken by NewOpenAIClient: the rules are extraction's
+	// alone, and that constructor is shared with chat, search, the splitter and
+	// LLM OCR, which would all have to pass one more empty string.
+	c.extractionRules = rules
+	return c
 }
