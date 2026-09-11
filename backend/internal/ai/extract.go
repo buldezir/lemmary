@@ -216,6 +216,19 @@ func sanitizeCatalogName(name string) string {
 	return strings.TrimSpace(b.String())
 }
 
+// maxExtractionBytes bounds the OCR text one extraction sends. Long documents
+// carry their metadata near the front, so the tail is mostly cost -- but 12000
+// cut the middle out of ordinary multi-page scans, which is where a date or a
+// total often sits.
+//
+// Bytes, not runes: strutil.Truncate cuts on a rune boundary but counts bytes,
+// so a Cyrillic or CJK document gets roughly half or a third as much text as a
+// Latin one. Raising this is what buys those documents the same reach.
+//
+// Named because the log line below reports what was actually sent: two literals
+// could drift apart and the log would quietly start lying.
+const maxExtractionBytes = 24000
+
 func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, catalog ExtractionCatalog) (*models.ExtractedMetadata, error) {
 	if c.apiKey == "" {
 		return nil, fmt.Errorf("AI API key is not configured")
@@ -223,7 +236,7 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 	ctx = aiprovider.EnsureSession(ctx, "extract")
 
 	inputChars := len(ocrText)
-	sentChars := len(strutil.Truncate(ocrText, 12000))
+	sentChars := len(strutil.Truncate(ocrText, maxExtractionBytes))
 	c.logger.Info("extraction starting",
 		"provider", c.Name(),
 		"model", c.model,
@@ -241,7 +254,7 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 		Model: shared.ChatModel(c.model),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(buildExtractionSystemPrompt(c.resultLanguage, c.extractionRules, catalog)),
-			openai.UserMessage(fmt.Sprintf("Extract metadata from this OCR text:\n\n%s", strutil.Truncate(ocrText, 12000))),
+			openai.UserMessage(fmt.Sprintf("Extract metadata from this OCR text:\n\n%s", strutil.Truncate(ocrText, maxExtractionBytes))),
 		},
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONObject: &shared.ResponseFormatJSONObjectParam{},

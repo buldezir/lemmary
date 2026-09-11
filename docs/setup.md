@@ -180,11 +180,14 @@ Browse them in PocketBase Admin as a superuser. Enable SMTP when you want real d
 
 | Section | Route | State |
 | --- | --- | --- |
-| Files | `/upload` (default) | Implemented — drag-and-drop / file-picker upload, see the processing flow below |
+| Files | `/upload` (default) | Implemented — drag-and-drop / file-picker upload of files or whole folders, see the processing flow below |
 | Amazon orders | `/upload/amazon` | Implemented — imports the invoice PDFs out of an order archive requested from Amazon, see [Amazon order import](#amazon-order-import) |
+| Zip archive | `/upload/zip` | Implemented — imports the documents out of a zip the user packed themselves, see [Zip archive import](#zip-archive-import) |
 | Split documents | `/upload/split` | Implemented — splits a PDF holding several joined documents into one document per part, see [Document splitting](#document-splitting) |
 
 Plain file upload stays on `/upload` itself (an index route), so existing links and the **Upload** nav entry keep landing on it.
+
+A folder can be dropped on the Files tab or picked with **Choose a folder instead**, and is walked to the bottom in the browser: each file inside it is posted as its own document, exactly as if it had been picked by hand. A file that came out of a folder is named `<parent folder>-<file>`, the same rule the zip imports use, because a scanner that writes `1.pdf` into a folder per batch would otherwise fill the library with documents called `1.pdf`. Finder and archiver leftovers are dropped silently rather than reported as the wrong type — `__MACOSX/`, AppleDouble `._` shadows (which carry the extension of the file they belong to) and any other dot-file, the same rule the zip import applies. A `.zip` dropped here is not uploaded; it points at the Zip archive tab, which can show what the archive holds first.
 
 ### Amazon order import
 
@@ -192,12 +195,22 @@ Request the archive from Amazon under Account → Request your data → Your Ord
 
 Uploading and importing are two steps, so nothing is created before the user has seen what the archive holds:
 
-1. `POST /api/app/import/amazon/upload` (multipart, field `file`) streams the zip to `<data dir>/temp/amazon_import/` — it is never buffered in memory, since real exports run to hundreds of MB. The archive is scanned and every PDF is hashed, then returned as a preview: total PDF count, how many are importable, how many are duplicates or oversized, the ignored-entry count, and the per-file list. Duplicates are PDFs whose checksum already exists among the owner's documents (`duplicate_of` names the existing id) or that repeat earlier in the same archive. Imported documents are named `<parent folder>-<file>`, because Amazon numbers the invoices per folder (`1.pdf`, `2.pdf`, …).
+1. `POST /api/app/import/amazon/upload` (multipart, field `file`) streams the zip to `<data dir>/temp/zip_import/` — it is never buffered in memory, since real exports run to hundreds of MB. The archive is scanned and every PDF is hashed, then returned as a preview: total file count, how many are importable, how many are duplicates or oversized, the ignored-entry count, and the per-file list. Duplicates are PDFs whose checksum already exists among the owner's documents (`duplicate_of` names the existing id) or that repeat earlier in the same archive. Imported documents are named `<parent folder>-<file>`, because Amazon numbers the invoices per folder (`1.pdf`, `2.pdf`, …).
 2. `POST /api/app/import/amazon` with `{ "upload_id": "..." }` starts the import and returns `202 Accepted` with `{ "job_id", "status": "running" }`. Poll `GET /api/app/import/amazon/status?job_id=...` for `progress` (`{ done, total }`) until `status` is `completed` (with `result`) or `failed` (with `error`). The `result` counts `imported`, `skipped_duplicates`, `skipped_oversized` and `failed`, plus up to 25 per-file error messages. Each imported document is saved as `pending`, so it goes through the normal OCR + AI [processing flow](#processing-flow).
 
 `DELETE /api/app/import/amazon/upload?upload_id=...` discards a staged archive the user chose not to import. Staged archives expire after 30 minutes and are swept on the next upload, including files left behind by an earlier process — the staging registry and the job state are in memory, so both are lost on restart. Uploading a second archive also discards the account's previous one, so an account holds at most one at a time. Confirming consumes the upload id: the same archive cannot be imported twice, and one import may run at a time per user (a second start returns `409`).
 
 Rejections come back as `400` at preview time rather than mid-import: not a readable zip, no PDFs, more than 5000 PDFs, an upload over `IMPORT_STAGING_MAX_BYTES` (1 GiB by default), or an archive that decompresses beyond 8 GiB (a zip bomb). A single PDF over the 20 MB `documents.file` limit is not fatal — it is flagged `oversized` in the preview and skipped on import. A PDF over [the page ceiling](#the-page-ceiling) is refused per entry as the run proceeds rather than at preview time, since an archive's real page counts are only discoverable by opening every PDF in it.
+
+### Zip archive import
+
+The same two steps as the Amazon import above, against `/api/app/import/zip/upload`, `/api/app/import/zip` and `/api/app/import/zip/status`, with identical payloads, limits and rejections. It is the same implementation: the only difference between the two flows is which entries in the archive count as documents, which the upload route says and the staged upload then remembers.
+
+Here that means every type `documents.file` can store — PDF, JPEG, PNG, WebP, plain text, CSV, `.docx` and `.xlsx` — rather than PDFs alone. Anything else in the archive is counted as ignored and left alone, as are directory entries, empty entries and archiver bookkeeping (`__MACOSX/`, AppleDouble `._` files). Imported documents are named `<parent folder>-<file>`, so a zip of a scanner's output stays legible.
+
+The extension list is a pre-filter, not the last word: PocketBase decides what the `file` field accepts by sniffing the content on save, so an entry whose extension lies about its contents is refused there and reported per file in the run's errors rather than at preview time.
+
+A staged archive and a running import are one per account across both zip flows, so uploading an Amazon export discards a zip staged a moment earlier and a second import while one runs returns `409`. Restoring a Lemmary backup is a different thing entirely and lives on [`/import/archive`](#restoring); it keeps its own staging and can run alongside.
 
 ### Document splitting
 

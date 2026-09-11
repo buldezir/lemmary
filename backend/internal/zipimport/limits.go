@@ -1,4 +1,4 @@
-package amazonimport
+package zipimport
 
 // DefaultMaxEntryBytes is the per-entry cap with no instance limit configured.
 // It mirrors the documents.file field limit, which is what actually stores the
