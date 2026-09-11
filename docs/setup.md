@@ -133,8 +133,8 @@ On a fresh install the SPA hard-gates until setup is complete:
 
 1. **Create admin** — email + password. Creates a PocketBase `_superusers` account **and** a matching `users` account (same credentials) so the admin can own documents. Replaces PocketBase’s browser installer UI.
 2. **Passkey** *(optional)* — offer to add a [passkey](/passkeys) for the account just created. Skipping it changes nothing and the offer does not come back; a passkey can be added later from **More → Account**. The step is hidden on an address where a passkey cannot be created (an IP address, or plain HTTP outside `localhost`).
-3. **Provider** — add at least one provider (`mistral`, `openai`, `openrouter`, `google_vision`, or `docling`, the keyless local OCR sidecar).
-4. **Models** — pick provider → model for OCR and metadata extraction (chat/search inherit extraction).
+3. **Providers** — the guided form of [Guided AI provider setup](/guided_ai_setup): a Mistral key (OCR and embeddings) and one other language-model provider, both created in a single submit. Either half may be left blank; **Add a provider manually instead** falls back to the one-at-a-time form, which is the way to a ChatGPT sign-in, a `google_vision` key, or `docling`/`local`, the keyless sidecars.
+4. **Models** — pick provider → model for OCR and metadata extraction (chat/search inherit extraction), and optionally for embeddings. All three arrive prefilled when the providers came from the guided form; embeddings can be set to **None**, and setup is complete without them.
 
 Steps 3 and 4 are skipped when `.env` already carries the keys — see
 [AI providers and models](/ai_providers). The admin can likewise come from the
