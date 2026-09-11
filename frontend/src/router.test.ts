@@ -15,6 +15,7 @@ describe('route tree', () => {
       '/activity',
       '/upload',
       '/upload/amazon',
+      '/upload/zip',
       '/upload/split',
       '/rag/search',
       '/rag/search/$sessionId',

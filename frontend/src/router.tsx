@@ -19,6 +19,7 @@ import { ActivityPage } from './routes/activity'
 import { UploadPage } from './routes/upload'
 import { UploadFilesPage } from './routes/upload.index'
 import { UploadAmazonPage } from './routes/upload.amazon'
+import { UploadZipPage } from './routes/upload.zip'
 import { UploadSplitPage } from './routes/upload.split'
 import { DocumentDetailPage } from './routes/document.$documentId'
 import { DocumentAskPage } from './routes/document.$documentId.ask'
@@ -98,6 +99,12 @@ const uploadAmazonRoute = createRoute({
   getParentRoute: () => uploadRoute,
   path: 'amazon',
   component: UploadAmazonPage,
+})
+
+const uploadZipRoute = createRoute({
+  getParentRoute: () => uploadRoute,
+  path: 'zip',
+  component: UploadZipPage,
 })
 
 const uploadSplitRoute = createRoute({
@@ -247,7 +254,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   inboxRoute,
   activityRoute,
-  uploadRoute.addChildren([uploadFilesRoute, uploadAmazonRoute, uploadSplitRoute]),
+  uploadRoute.addChildren([uploadFilesRoute, uploadAmazonRoute, uploadZipRoute, uploadSplitRoute]),
   ragRoute.addChildren([
     ragIndexRoute,
     searchRoute.addChildren([searchSessionRoute]),

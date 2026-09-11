@@ -9,9 +9,9 @@ const tabClassName =
 
 export function UploadPage() {
   // Loaded on the shell rather than per tab, so the same figures show above
-  // Files, Amazon orders and Split documents without three fetches. A failure is
-  // swallowed: the allowance is context for an upload, not a precondition, and
-  // the server refuses an over-limit upload whatever this shows.
+  // every source without a fetch each. A failure is swallowed: the allowance is
+  // context for an upload, not a precondition, and the server refuses an
+  // over-limit upload whatever this shows.
   const [limits, setLimits] = useState<InstanceLimits | null>(null)
 
   useEffect(() => {
@@ -50,6 +50,12 @@ export function UploadPage() {
           className={tabClassName}
         >
           Amazon orders
+        </Link>
+        <Link
+          to="/upload/zip"
+          className={tabClassName}
+        >
+          Zip archive
         </Link>
         <Link
           to="/upload/split"
