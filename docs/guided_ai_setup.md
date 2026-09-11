@@ -88,40 +88,42 @@ an instance that is already running has the same fields under **Settings**
 
 ### Add the providers
 
-In the wizard's **Add a provider** step, or **Settings → Providers**:
+The wizard opens on **Connect your AI providers**, which asks for exactly these
+two keys and creates both rows in one submit:
 
-| SDK | API key | Base URL |
-| --- | --- | --- |
-| **Opencode Go** | the key from step 2 | leave the prefilled value |
-| **Mistral** | the key from step 1 | leave the prefilled value |
+| Field | Value |
+| --- | --- |
+| **Mistral API key** | the key from step 1 |
+| **General AI provider** | Opencode Go, and the key from step 2 |
 
-The alias can be left blank — it defaults to the provider's name. The wizard
-adds one provider per submit: after the first, use **Add another provider** on
-the models step to add the second.
+Leave the second key blank to run everything on Mistral. Anything the pair does
+not cover — a ChatGPT sign-in, a local sidecar, a second key later — is behind
+**Add a provider manually instead**, which is also what **Settings → Providers**
+offers on an instance that is already running. Aliases and base URLs are filled
+in for you.
 
 ### Bind the models
 
-In the wizard's **Choose models** step, or **Settings → Models**:
+The wizard's **Choose models** step arrives with all three bindings already
+filled from the keys above; **Settings → Models** has the same fields.
 
 | Binding | Provider | Model |
 | --- | --- | --- |
 | OCR | Mistral | `mistral-ocr-latest` |
 | Extraction | Opencode Go | `gpt-5.6-luna` |
-| Embeddings *(Settings only, optional)* | Mistral | `mistral-embed` |
+| Embeddings *(optional)* | Mistral | `mistral-embed` |
 
 Chat and Deep Search follow the extraction binding unless you set them
-separately, so the wizard's two fields are the whole of a working install.
-**Finish setup** and the first upload will be OCR'd, tagged and searchable.
-
-Embeddings are not part of the wizard — they add meaning-based retrieval to Deep
-Search rather than being required for it, so bind them afterwards in
-**Settings → Models**. If a model you want is not in a picker, type it into
-**Custom model id**.
+separately, so those three fields are the whole of a working install. Set the
+embeddings provider to **None** to leave Deep Search on keywords alone — it is
+the one binding nothing else depends on. If a model you want is not in a picker,
+type it into **Custom model id**. **Finish setup** and the first upload will be
+OCR'd, tagged and searchable.
 
 Everything here hot-reloads: changing a provider or a binding in Settings takes
 effect on the next request, with no restart.
 
-Two things worth knowing before you turn embeddings on: it commits to embedding
+Two things worth knowing before you leave embeddings bound: it commits to embedding
 the whole archive, not just the next upload — see [what embeddings
 cost](/ai_providers#what-embeddings-cost) — and a model change re-embeds
 everything, because vectors from two models cannot be compared.

@@ -8,6 +8,7 @@ import {
   eligibleProviders,
   providerConfigured,
   providerServesPurpose,
+  recommendedModel,
   requiresAPIKey,
   requiresSignIn,
   SDK_DEFAULT_BASE,
@@ -188,5 +189,29 @@ describe('the ChatGPT subscription SDK', () => {
   it('is offered in the SDK picker with a default base URL', () => {
     expect(SDK_OPTIONS.some((option) => option.value === 'chatgpt')).toBe(true)
     expect(SDK_DEFAULT_BASE.chatgpt).toBe('https://chatgpt.com/backend-api/codex')
+  })
+})
+
+// The wizard prefills these so the guided path reaches the models step already
+// bound. They are the ids docs/guided_ai_setup.md tells an operator to type, so
+// a rename there is a rename here.
+describe('recommendedModel', () => {
+  it("names Mistral's OCR and embedding models", () => {
+    expect(recommendedModel('mistral', 'ocr')).toBe('mistral-ocr-latest')
+    expect(recommendedModel('mistral', 'embedding')).toBe('mistral-embed')
+  })
+
+  it('names the default extraction model on Opencode', () => {
+    expect(recommendedModel('opencode', 'llm')).toBe('gpt-5.6-luna')
+  })
+
+  // A guess in the wrong box is worse than an empty box: it would be saved as a
+  // binding to a model the provider does not serve.
+  it('suggests nothing for a job an SDK has no known id for', () => {
+    expect(recommendedModel('mistral', 'llm')).toBe('')
+    expect(recommendedModel('opencode', 'ocr')).toBe('')
+    expect(recommendedModel('opencode', 'embedding')).toBe('')
+    expect(recommendedModel('openai', 'llm')).toBe('')
+    expect(recommendedModel(undefined, 'ocr')).toBe('')
   })
 })

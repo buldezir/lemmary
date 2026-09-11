@@ -4,10 +4,12 @@ import { registerPasskey } from '../lib/api/passkeys'
 import { defaultPasskeyName, passkeysSupported } from '../lib/webauthn'
 import { createSetupAdmin, getSetupStatus, type SetupStatus } from '../lib/api/meta'
 import {
+  canEmbedProvider,
   createAIProvider,
   isLLMProvider,
   listAIProviders,
   providerConfigured,
+  recommendedModel,
   requiresAPIKey,
   requiresSignIn,
   sdkAliasDefault,
@@ -16,6 +18,7 @@ import {
   SDK_DEFAULT_BASE,
   SDK_OPTIONS,
   type AIProvider,
+  type ModelPurpose,
   type ProviderSDK,
 } from '../lib/api/providers'
 import { getAppSettings, updateAppSettings } from '../lib/api/settings'
@@ -77,6 +80,13 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
   const [passkeyName, setPasskeyName] = useState('')
 
   const [providers, setProviders] = useState<AIProvider[]>([])
+  // The guided form is the way in; the generic one below is the escape hatch
+  // for anything it does not cover -- a ChatGPT sign-in, a local sidecar, a
+  // second key on an instance that already has one.
+  const [guided, setGuided] = useState(!initialStatus.provider_count)
+  const [mistralKey, setMistralKey] = useState('')
+  const [generalSdk, setGeneralSdk] = useState<ProviderSDK>('opencode')
+  const [generalKey, setGeneralKey] = useState('')
   const [sdk, setSdk] = useState<ProviderSDK>('openai')
   const [alias, setAlias] = useState('')
   const [baseURL, setBaseURL] = useState(SDK_DEFAULT_BASE.openai)
@@ -90,6 +100,8 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
   const [ocrModel, setOcrModel] = useState('')
   const [extractProviderId, setExtractProviderId] = useState('')
   const [extractModel, setExtractModel] = useState('')
+  const [embeddingProviderId, setEmbeddingProviderId] = useState('')
+  const [embeddingModel, setEmbeddingModel] = useState('')
 
   useEffect(() => {
     if (step === 'admin') return
@@ -100,11 +112,36 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
         const [nextProviders, settings] = await Promise.all([listAIProviders(), getAppSettings()])
         if (!active) return
         setProviders(nextProviders)
-        setOcrProviderId(settings.ocr_provider_id || nextProviders[0]?.id || '')
-        setOcrModel(settings.ocr_model || '')
-        const llm = nextProviders.find((item) => isLLMProvider(item.sdk))
-        setExtractProviderId(settings.extract_provider_id || llm?.id || '')
-        setExtractModel(settings.extract_model || '')
+        // Each binding falls back to a provider that can serve it and then to
+        // the model the guide names for that provider's SDK, so the guided path
+        // reaches this step with nothing left to choose. `recommendedModel`
+        // answers for two SDKs and empty for the rest, which leaves the picker
+        // to ask as it always did.
+        const byId = (id: string) => nextProviders.find((item) => item.id === id)
+        // A provider we can name a model for wins the job it has one for --
+        // which is how the guided pair sorts itself out: Mistral takes OCR and
+        // embeddings, and the other key is left to do the thinking.
+        const named = (purpose: ModelPurpose) =>
+          nextProviders.find((item) => recommendedModel(item.sdk, purpose))
+        const ocr = byId(settings.ocr_provider_id) ?? named('ocr') ?? nextProviders[0]
+        setOcrProviderId(ocr?.id ?? '')
+        setOcrModel(settings.ocr_model || recommendedModel(ocr?.sdk, 'ocr'))
+        const llmProviders = nextProviders.filter((item) => isLLMProvider(item.sdk))
+        const llm =
+          byId(settings.extract_provider_id) ??
+          // Not the row OCR just took, where there is another: Mistral serves
+          // both, so the first LLM row is the OCR one, and the language model
+          // the operator added a second key for would never be offered.
+          llmProviders.find((item) => item.id !== ocr?.id) ??
+          llmProviders[0]
+        setExtractProviderId(llm?.id ?? '')
+        setExtractModel(settings.extract_model || recommendedModel(llm?.sdk, 'llm'))
+        const embed =
+          byId(settings.embedding_provider_id) ??
+          named('embedding') ??
+          nextProviders.find((item) => canEmbedProvider(item.sdk))
+        setEmbeddingProviderId(embed?.id ?? '')
+        setEmbeddingModel(settings.embedding_model || recommendedModel(embed?.sdk, 'embedding'))
       } catch {
         // Prefill is best-effort.
       }
@@ -159,6 +196,46 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       setStep(afterPasskey)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add the passkey')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // The two keys of docs/guided_ai_setup.html in one submit: Mistral for OCR
+  // and embeddings, one other provider for the language model. Either half may
+  // be left out -- a Mistral key alone is a complete install, and an instance
+  // that already has one only needs the other.
+  async function onSaveGuided(event: SubmitEvent<HTMLFormElement>) {
+    event.preventDefault()
+    try {
+      setSubmitting(true)
+      setError('')
+      const wanted = [
+        { sdk: 'mistral' as ProviderSDK, key: mistralKey.trim() },
+        { sdk: generalSdk, key: generalKey.trim() },
+      ].filter((item) => item.key)
+      if (wanted.length === 0) {
+        throw new Error('Enter at least one API key.')
+      }
+      for (const item of wanted) {
+        // An SDK already added is left alone rather than added twice: this
+        // submit creates two rows, so a failure on the second one would
+        // otherwise duplicate the first on the retry.
+        if (providers.some((existing) => existing.sdk === item.sdk)) continue
+        await createAIProvider({
+          sdk: item.sdk,
+          alias: sdkAliasDefault(item.sdk),
+          base_url: SDK_DEFAULT_BASE[item.sdk],
+          api_key: item.key,
+        })
+      }
+      setProviders(await listAIProviders())
+      setMistralKey('')
+      setGeneralKey('')
+      const next = await refreshStatus()
+      setStep(next.needs_config ? 'models' : 'done')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save providers')
     } finally {
       setSubmitting(false)
     }
@@ -231,6 +308,11 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       if (!extractProviderId) {
         throw new Error('Choose an extraction provider.')
       }
+      // The same rule the settings endpoint enforces, asked here so the answer
+      // is a field to fill rather than a 400.
+      if (embeddingProviderId && !embeddingModel.trim()) {
+        throw new Error('Choose an embedding model, or set the embedding provider to None.')
+      }
       // First-launch setup only asks for one LLM binding: chat and search start
       // out pointing at the extraction provider/model and can be split later in
       // Settings.
@@ -243,6 +325,11 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
         chat_model: extractModel,
         search_provider_id: extractProviderId,
         search_model: extractModel,
+        // Optional, unlike the two above: empty clears the binding and Deep
+        // Search runs on keywords alone, which is what every install did before
+        // embeddings existed.
+        embedding_provider_id: embeddingProviderId,
+        embedding_model: embeddingProviderId ? embeddingModel : '',
       })
       const next = await refreshStatus()
       if (next.needs_config) {
@@ -266,7 +353,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       : step === 'passkey'
         ? 'Optional · Passkey'
         : step === 'providers'
-          ? '2 · Provider'
+          ? '2 · Providers'
           : step === 'models'
             ? '3 · Models'
             : 'Ready'
@@ -290,7 +377,12 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
             {step === 'passkey' && 'Add a passkey'}
             {/* The sign-in stands on a row that is already added, so the
                 heading follows what the step is actually asking for. */}
-            {step === 'providers' && (signInProvider ? 'Sign in to ChatGPT' : 'Add a provider')}
+            {step === 'providers' &&
+              (signInProvider
+                ? 'Sign in to ChatGPT'
+                : guided
+                  ? 'Connect your AI providers'
+                  : 'Add a provider')}
             {step === 'models' && 'Choose models'}
             {step === 'done' && 'Setup complete'}
           </h2>
@@ -391,7 +483,93 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
             </div>
           )}
 
-          {step === 'providers' && !signInProvider && (
+          {step === 'providers' && !signInProvider && guided && (
+            <form className="flex flex-col gap-4" onSubmit={onSaveGuided}>
+              <p className="text-sm text-ink-muted">
+                Two keys cover everything: <strong className="font-medium text-ink">Mistral</strong>{' '}
+                reads your documents and powers meaning-based search, and one other provider does
+                the thinking — extraction, chat and Deep Search.
+              </p>
+              <p className={fieldHintClassName}>
+                No provider account yet?{' '}
+                <DocsLink href="/docs/guided_ai_setup.html">
+                  Follow the guided AI provider setup
+                </DocsLink>{' '}
+                — it walks through both, and the Mistral key is free.
+              </p>
+              {providers.length > 0 && (
+                <p className="text-xs text-ink-soft">
+                  Already added: {providers.map((item) => item.alias).join(', ')}
+                </p>
+              )}
+              <label className={labelClassName}>
+                <span className={labelTextClassName}>Mistral API key — reading and retrieval</span>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={mistralKey}
+                  onChange={(e) => setMistralKey(e.target.value)}
+                  className={inputClassName}
+                />
+              </label>
+              <p className={fieldHintClassName}>
+                OCR and embeddings, both on the free tier. Mistral can run the language model too,
+                so this key alone is a complete install.
+              </p>
+              <label className={labelClassName}>
+                <span className={labelTextClassName}>General AI provider</span>
+                <select
+                  value={generalSdk}
+                  onChange={(e) => setGeneralSdk(e.target.value as ProviderSDK)}
+                  className={inputClassName}
+                >
+                  {/* Every SDK that can run the language model, except the two
+                      this form cannot ask for in one submit: mistral is the
+                      field above, and chatgpt is signed in to rather than
+                      given a key -- both reachable through the manual form. */}
+                  {SDK_OPTIONS.filter(
+                    (option) =>
+                      isLLMProvider(option.value) &&
+                      option.value !== 'mistral' &&
+                      option.value !== 'chatgpt',
+                  ).map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={labelClassName}>
+                <span className={labelTextClassName}>{sdkAliasDefault(generalSdk)} API key</span>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={generalKey}
+                  onChange={(e) => setGeneralKey(e.target.value)}
+                  className={inputClassName}
+                />
+              </label>
+              <p className={fieldHintClassName}>Leave blank to run everything on Mistral.</p>
+              {error && <p className="text-sm text-madder">{error}</p>}
+              <div className="flex flex-col gap-2">
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? 'Saving...' : 'Continue'}
+                </Button>
+                <button
+                  type="button"
+                  className="text-left text-xs font-medium text-ink-soft hover:text-ink"
+                  onClick={() => {
+                    setError('')
+                    setGuided(false)
+                  }}
+                >
+                  Add a provider manually instead
+                </button>
+              </div>
+            </form>
+          )}
+
+          {step === 'providers' && !signInProvider && !guided && (
             <form className="flex flex-col gap-4" onSubmit={onSaveProvider}>
               <p className="text-sm text-ink-muted">
                 Add a provider. OpenAI, OpenRouter, or Mistral can run extraction and chat;
@@ -488,9 +666,21 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 </p>
               )}
               {error && <p className="text-sm text-madder">{error}</p>}
-              <Button type="submit" disabled={submitting}>
-                {submitting ? 'Saving...' : 'Continue'}
-              </Button>
+              <div className="flex flex-col gap-2">
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? 'Saving...' : 'Continue'}
+                </Button>
+                <button
+                  type="button"
+                  className="text-left text-xs font-medium text-ink-soft hover:text-ink"
+                  onClick={() => {
+                    setError('')
+                    setGuided(true)
+                  }}
+                >
+                  Back to the guided setup
+                </button>
+              </div>
             </form>
           )}
 
@@ -498,7 +688,8 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
             <form className="flex flex-col gap-4" onSubmit={onSaveModels}>
               <p className="text-sm text-ink-muted">
                 Pick a provider and model for OCR and metadata extraction. Chat and search are set
-                to the extraction model too; you can change them later in Settings.
+                to the extraction model too, and embeddings are optional; you can change them
+                later in Settings.
               </p>
               {llmProviders.length === 0 && (
                 <p className="text-sm text-amber-800">
@@ -524,6 +715,17 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 onProviderChange={setExtractProviderId}
                 onModelChange={setExtractModel}
               />
+              <ProviderModelFields
+                label="Embeddings"
+                help="Lets Deep Search find documents by meaning as well as by keyword, so a question in one language reaches a document written in another. Set the provider to None to search by keyword only; turning it on embeds the whole archive, not only new uploads."
+                providers={providers}
+                providerId={embeddingProviderId}
+                model={embeddingModel}
+                purpose="embedding"
+                allowEmpty
+                onProviderChange={setEmbeddingProviderId}
+                onModelChange={setEmbeddingModel}
+              />
               {error && <p className="text-sm text-madder">{error}</p>}
               <div className="flex flex-col gap-2">
                 <Button type="submit" disabled={submitting}>
@@ -532,7 +734,14 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 <button
                   type="button"
                   className="text-left text-xs font-medium text-ink-soft hover:text-ink"
-                  onClick={() => setStep('providers')}
+                  onClick={() => {
+                    // Straight to the manual form: the guided pair is what got
+                    // us here, so whatever is still missing is one of the
+                    // things it does not cover.
+                    setGuided(false)
+                    setError('')
+                    setStep('providers')
+                  }}
                 >
                   Add another provider
                 </button>
