@@ -3,8 +3,10 @@ import { Link } from '@tanstack/react-router'
 import { useAsync } from '../hooks/useAsync'
 import { pb } from '../lib/pb'
 import { listActiveJobs } from '../lib/api/jobs'
-import { reprocessDocuments } from '../lib/api/documents'
+import { countDocumentsWithStatus, reprocessDocuments } from '../lib/api/documents'
+import { discardUnprocessedDocuments, stopQueue } from '../lib/api/maintenance'
 import {
+  countLabel,
   formatDuration,
   jobDurationMs,
   jobStillRunning,
@@ -84,14 +86,100 @@ export function ActivityPage() {
   const active = jobs.filter((job) => !job.finished_at)
   const failed = jobs.filter((job) => job.finished_at)
 
+  // The way out of a mistaken import: stop what is queued, then throw away what
+  // it was queued for. Both live here rather than on Management, which is admin
+  // only -- the person who has just dropped four hundred documents in by
+  // accident is watching this page.
+  const [busy, setBusy] = useState('')
+  const [notice, setNotice] = useState('')
+  const [actionError, setActionError] = useState('')
+
+  async function onStopAll() {
+    setBusy('stop')
+    setNotice('')
+    setActionError('')
+    try {
+      const result = await stopQueue()
+      setNotice(
+        result.stopped === 0
+          ? 'Nothing was queued to stop.'
+          : `Stopped ${countLabel(result.stopped, 'queued job', 'queued jobs')}.` +
+              (result.running > 0 ? ' The document already being processed finishes.' : '') +
+              ' They are listed as failed, and Reprocess queues them again.',
+      )
+      await reload()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not stop the queue')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  // Counted on the click rather than polled: the number only matters at the
+  // moment it goes into the confirmation, and this page already polls enough.
+  async function onDiscard() {
+    setBusy('discard')
+    setNotice('')
+    setActionError('')
+    try {
+      const [queued, failedCount] = await Promise.all([
+        countDocumentsWithStatus('pending'),
+        countDocumentsWithStatus('failed'),
+      ])
+      const total = queued + failedCount
+      if (total === 0) {
+        setNotice('Nothing unprocessed to delete.')
+        return
+      }
+      const confirmed = window.confirm(
+        `Delete ${countLabel(total, 'unprocessed document', 'unprocessed documents')} ` +
+          `(${queued} queued, ${failedCount} failed)?\n\n` +
+          'The original files go too. Documents that processed are not touched. This cannot be undone.',
+      )
+      if (!confirmed) return
+      const result = await discardUnprocessedDocuments()
+      setNotice(
+        `Deleted ${countLabel(result.deleted, 'document', 'documents')}.` +
+          (result.remaining > 0 ? ` ${result.remaining} could not be deleted.` : ''),
+      )
+      await reload()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not delete the unprocessed documents')
+    } finally {
+      setBusy('')
+    }
+  }
+
   return (
     <section className={sectionClassName}>
-      <h2 className={sectionTitleClassName}>Activity</h2>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <h2 className={sectionTitleClassName}>Activity</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            size="xs"
+            disabled={busy !== '' || active.length === 0}
+            onClick={() => void onStopAll()}
+          >
+            {busy === 'stop' ? 'Stopping...' : 'Stop all'}
+          </Button>
+          <Button
+            variant="secondary"
+            size="xs"
+            disabled={busy !== ''}
+            onClick={() => void onDiscard()}
+          >
+            {busy === 'discard' ? 'Deleting...' : 'Delete unprocessed'}
+          </Button>
+        </div>
+      </div>
       <p className="mb-4 text-sm text-ink-soft">
         What the pipeline is doing to your documents, and what went wrong. Failures from the last
         day stay listed so a job that broke while nobody was watching is still here to be found.
       </p>
 
+      {notice ? <p className="mb-3 text-sm text-ink-soft">{notice}</p> : null}
+      {actionError ? <p className="mb-3 text-sm text-madder">{actionError}</p> : null}
       {error ? <p className="mb-3 text-sm text-madder">{error}</p> : null}
 
       {loading && jobs.length === 0 ? (

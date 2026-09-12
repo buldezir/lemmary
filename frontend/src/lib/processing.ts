@@ -181,6 +181,11 @@ export function formatDuration(ms: number): string {
   return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`
 }
 
+/** "1 document" / "4 documents", for the counts these pages keep reporting. */
+export function countLabel(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
 /** The label for a step, falling back to the raw name for one we don't know. */
 export function stepLabel(name: string): string {
   return PROCESSING_STEP_LABELS[name as ProcessingStep] ?? name

@@ -109,3 +109,41 @@ export async function getActiveJobCounts(): Promise<ActiveJobCounts> {
 
   return { pending, running }
 }
+
+export type StopQueueResult = {
+  stopped: number
+  /** What was already inside the pipeline and so ran to the end. */
+  running: number
+}
+
+/**
+ * Cancels every queued job, for an import that turned out to be a mistake.
+ *
+ * The document already being worked on finishes -- the worker has no
+ * cancellation channel -- so this empties the queue behind it rather than
+ * interrupting it. Stopped documents land on "failed", where Reprocess can pick
+ * them up again.
+ */
+export function stopQueue() {
+  return apiFetch<StopQueueResult>('/api/app/jobs/stop', {
+    method: 'POST',
+    fallbackError: 'Could not stop the queue',
+  })
+}
+
+export type DiscardResult = {
+  deleted: number
+  /** Left behind by a delete that failed, so a partial sweep can say so. */
+  remaining: number
+}
+
+/**
+ * Deletes every document that has never been processed -- queued and failed
+ * both, files and all. Documents that processed are untouched.
+ */
+export function discardUnprocessedDocuments() {
+  return apiFetch<DiscardResult>('/api/app/documents/discard-unprocessed', {
+    method: 'POST',
+    fallbackError: 'Could not delete the unprocessed documents',
+  })
+}
