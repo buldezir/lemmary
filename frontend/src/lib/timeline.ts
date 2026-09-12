@@ -141,3 +141,18 @@ export function groupByYear(months: TimelineMonth[]): TimelineYear[] {
   }
   return grouped
 }
+
+/**
+ * Which year the timeline shows months for: the active period's year, else the
+ * newest. Derived rather than stored, like activePeriod -- typing a date by hand
+ * opens that year too.
+ */
+export function openYear(active: string | null, years: TimelineYear[]): string | null {
+  // "undated" is not a period in time, so it opens nothing of its own.
+  if (active && active !== UNDATED_PERIOD) {
+    const year = active.slice(0, 4)
+    if (years.some((entry) => entry.year === year)) return year
+  }
+  // groupByYear already sorted newest first.
+  return years[0]?.year ?? null
+}

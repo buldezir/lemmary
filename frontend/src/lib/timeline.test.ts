@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  UNDATED_PERIOD,
   activePeriod,
   groupByYear,
   monthLabel,
   monthRange,
+  openYear,
   periodRange,
   yearRange,
 } from './timeline'
@@ -111,5 +113,37 @@ describe('groupByYear', () => {
 
   it('has nothing to group for an empty library', () => {
     expect(groupByYear([])).toEqual([])
+  })
+})
+
+describe('openYear', () => {
+  const years = groupByYear([
+    { month: '2025-03', count: 1 },
+    { month: '2024-07', count: 2 },
+    { month: '2023-01', count: 3 },
+  ])
+
+  it('opens the newest year when nothing is filtered', () => {
+    expect(openYear(null, years)).toBe('2025')
+  })
+
+  it('opens the year holding the selected month', () => {
+    expect(openYear('2024-07', years)).toBe('2024')
+  })
+
+  it('opens a selected year', () => {
+    expect(openYear('2023', years)).toBe('2023')
+  })
+
+  it('falls back to the newest year for the undated row', () => {
+    expect(openYear(UNDATED_PERIOD, years)).toBe('2025')
+  })
+
+  it('falls back to the newest year when the period names a year with no documents', () => {
+    expect(openYear('2019-05', years)).toBe('2025')
+  })
+
+  it('opens nothing when there are no years', () => {
+    expect(openYear('2025-03', [])).toBeNull()
   })
 })
