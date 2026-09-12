@@ -80,11 +80,20 @@ const INSTANCE_WIDE_LIMITS = new Set<LimitName>([
   'storage_bytes',
 ])
 
-// Files staged but not yet uploaded, kept outside the component: switching to
+// Files chosen but not yet sent, kept outside the component: switching to
 // another upload tab unmounts this page (#47) and a File cannot be serialised
 // into the router or into storage, so the only place it survives is a module
-// variable. Cleared when the upload succeeds or the list is cleared by hand.
+// variable. It holds what has not been submitted -- an upload empties it on the
+// way in -- so a session never inherits a list somebody else already sent.
 let stagedFiles: File[] = []
+
+// Same reason meCache is dropped in lib/auth: a module outlives the app tree,
+// and the next person to sign in on this browser must not find the last one's
+// files staged. Only on the way out -- this also fires when a live token is
+// refreshed, which must not empty the list under someone mid-selection.
+pb.authStore.onChange(() => {
+  if (!pb.authStore.isValid) stagedFiles = []
+})
 
 function formatBytes(size: number) {
   if (size < 1024) return `${size} B`
@@ -109,11 +118,14 @@ export function UploadFilesPage() {
   const [error, setError] = useState('')
   const [fileErrors, setFileErrors] = useState<FileUploadError[]>([])
 
+  // The module is the source of truth and is written first: React discards a
+  // state update aimed at an unmounted component, and a folder walk can finish
+  // after the tab it was dropped on has gone. Functional updates still see the
+  // latest list rather than a stale render, which is what two overlapping drops
+  // need.
   const setFiles = useCallback((next: File[] | ((current: File[]) => File[])) => {
-    setStagedFiles((current) => {
-      stagedFiles = typeof next === 'function' ? next(current) : next
-      return stagedFiles
-    })
+    stagedFiles = typeof next === 'function' ? next(stagedFiles) : next
+    setStagedFiles(stagedFiles)
   }, [])
 
   function resetInput() {
@@ -204,6 +216,10 @@ export function UploadFilesPage() {
       setError('Choose at least one file to upload.')
       return
     }
+
+    // Unstaged on the way in, so a tab switch mid-upload cannot come back to a
+    // second Upload button over the same files. Failures are put back below.
+    stagedFiles = []
 
     try {
       setUploading(true)
