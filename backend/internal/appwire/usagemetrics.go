@@ -20,20 +20,7 @@ import (
 func registerUsageMetrics(app core.App, lim limits.Limits) {
 	// The allowances are read once at startup and never move, so they are
 	// shaped once here rather than on every scrape.
-	countLimits := setLimits(map[string]limits.Limit{
-		limits.NameDocuments:       lim.Documents,
-		limits.NameDocumentPages:   lim.DocumentPages,
-		limits.NameAdditionalUsers: lim.AdditionalUsers,
-		limits.NameFilePages:       lim.FilePages,
-	})
-	// The one cap no install is without: it is what this can extract text
-	// from, not an allowance a plan sells, so it binds everywhere and its
-	// series is always present. See limits.CheckOCRPages.
-	countLimits[limits.NameOCRPages] = limits.MaxOCRPages
-	byteLimits := setLimits(map[string]limits.Limit{
-		limits.NameStorageBytes: lim.StorageBytes,
-		limits.NameFileBytes:    lim.FileBytes,
-	})
+	countLimits, byteLimits := instanceLimits(lim)
 
 	reg := metrics.RegisterUsage(func() (metrics.Usage, error) {
 		used, err := limits.Measure(app)
@@ -57,6 +44,23 @@ func registerUsageMetrics(app core.App, lim limits.Limits) {
 		_ = reg.Unregister()
 		return e.Next()
 	})
+}
+
+// instanceLimits is the allowance series for how full the instance is.
+// Per-file ceilings (LIMIT_FILE_PAGES, LIMIT_FILE_BYTES, MaxOCRPages) stay
+// off this instrument: they are not a stock the instance holds, and putting
+// them on lemmary.limit next to documents would make lemmary_usage /
+// lemmary_limit a lie for those labels.
+func instanceLimits(lim limits.Limits) (counts, bytes map[string]int64) {
+	counts = setLimits(map[string]limits.Limit{
+		limits.NameDocuments:       lim.Documents,
+		limits.NameDocumentPages:   lim.DocumentPages,
+		limits.NameAdditionalUsers: lim.AdditionalUsers,
+	})
+	bytes = setLimits(map[string]limits.Limit{
+		limits.NameStorageBytes: lim.StorageBytes,
+	})
+	return counts, bytes
 }
 
 // setLimits drops the unset allowances, because an absent series is how

@@ -31,15 +31,23 @@ const serviceName = "lemmary"
 var (
 	meter = otel.Meter(serviceName)
 
+	// Second-scale bounds: the SDK default set is milliseconds, and these
+	// instruments record seconds. Jobs and AI calls live between a tenth of a
+	// second and WORKER_TIMEOUT_SEC (300). Without this, almost every sample
+	// lands in a single le="5" bucket.
+	durationBounds = []float64{0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 300}
+
 	jobDuration, _ = meter.Float64Histogram(
 		"lemmary.job.duration",
 		metric.WithUnit("s"),
 		metric.WithDescription("Wall time of one processing job run, by how it ended."),
+		metric.WithExplicitBucketBoundaries(durationBounds...),
 	)
 	aiCallDuration, _ = meter.Float64Histogram(
 		"lemmary.ai.call.duration",
 		metric.WithUnit("s"),
 		metric.WithDescription("Wall time of one outbound AI or OCR call, retries included."),
+		metric.WithExplicitBucketBoundaries(durationBounds...),
 	)
 	aiTokens, _ = meter.Int64Counter(
 		"lemmary.ai.tokens",

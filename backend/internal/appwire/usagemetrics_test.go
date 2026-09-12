@@ -33,3 +33,35 @@ func TestSetLimits(t *testing.T) {
 		}
 	}
 }
+
+// Per-file ceilings are a property of one upload, not a stock the instance
+// holds. Publishing them on lemmary.limit next to documents would make a
+// dashboard dividing usage by limit treat "200 pages per file" as a library
+// cap of 200 pages.
+func TestInstanceLimitsOmitPerFileCaps(t *testing.T) {
+	t.Parallel()
+
+	counts, bytes := instanceLimits(limits.Limits{
+		Documents:       limits.Of(1000),
+		DocumentPages:   limits.Of(10000),
+		AdditionalUsers: limits.Of(0),
+		StorageBytes:    limits.Of(5368709120),
+		FilePages:       limits.Of(200),
+		FileBytes:       limits.Of(10485760),
+	})
+
+	for _, leaked := range []string{limits.NameFilePages, limits.NameOCRPages} {
+		if _, ok := counts[leaked]; ok {
+			t.Errorf("%s leaked onto the instance count-limit series: %v", leaked, counts)
+		}
+	}
+	if _, ok := bytes[limits.NameFileBytes]; ok {
+		t.Errorf("file_bytes leaked onto the instance byte-limit series: %v", bytes)
+	}
+	if counts[limits.NameDocuments] != 1000 || counts[limits.NameAdditionalUsers] != 0 {
+		t.Errorf("instance count limits = %v, want documents=1000 additional_users=0", counts)
+	}
+	if bytes[limits.NameStorageBytes] != 5368709120 {
+		t.Errorf("instance byte limits = %v, want storage_bytes=5368709120", bytes)
+	}
+}
