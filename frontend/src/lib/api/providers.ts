@@ -260,6 +260,26 @@ export function keylessProviderDocs(sdk?: string) {
   return null
 }
 
+/**
+ * The model the guided setup binds for a job, for the two SDKs whose ids can be
+ * named up front — the ones docs/guided_ai_setup.md walks an operator through.
+ * Empty for every other SDK, where the provider's catalogue is the only source
+ * of a model id.
+ *
+ * A suggestion, not a constraint: the picker still lists whatever the provider
+ * advertises, and this only ever fills a field nothing else has filled.
+ */
+export function recommendedModel(sdk: string | undefined, purpose: ModelPurpose) {
+  if (sdk === 'mistral') {
+    if (purpose === 'ocr') return 'mistral-ocr-latest'
+    if (purpose === 'embedding') return 'mistral-embed'
+    return ''
+  }
+  // Mirrors aiprovider.DefaultExtractModel.
+  if (sdk === 'opencode' && purpose === 'llm') return 'gpt-5.6-luna'
+  return ''
+}
+
 export function providerOptionLabel(item: Pick<AIProvider, 'alias' | 'sdk'>) {
   const sdk = sdkLabel(item.sdk)
   return item.alias === sdk ? item.alias : `${item.alias} (${sdk})`

@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"lemmary/backend/internal/aiprovider"
 )
 
 // writeTempFile puts bytes on disk under name, because ExtractText takes a path.
@@ -33,6 +35,7 @@ type doclingCapture struct {
 	fileName string
 	fileMIME string
 	fileData string
+	agent    string
 }
 
 // newDoclingServer answers every convert with body, recording what it was sent.
@@ -44,6 +47,7 @@ func newDoclingServer(t *testing.T, status int, body string) (*httptest.Server, 
 		capture.path = r.URL.Path
 		capture.method = r.Method
 		capture.apiKey = r.Header.Get("X-Api-Key")
+		capture.agent = r.Header.Get("User-Agent")
 
 		if err := r.ParseMultipartForm(8 << 20); err != nil {
 			t.Errorf("parse multipart: %v", err)
@@ -158,6 +162,11 @@ func TestDoclingSendsTheAPIKeyOnlyWhenThereIsOne(t *testing.T) {
 			}
 			if capture.apiKey != tc.want {
 				t.Errorf("X-Api-Key = %q, want %q", capture.apiKey, tc.want)
+			}
+			// Hand-rolled request: no SDK middleware would notice the agent
+			// going missing.
+			if capture.agent != aiprovider.UserAgent {
+				t.Errorf("User-Agent = %q, want %q", capture.agent, aiprovider.UserAgent)
 			}
 		})
 	}

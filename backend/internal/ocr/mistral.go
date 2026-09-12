@@ -160,6 +160,7 @@ func (p *MistralProvider) requestOCR(ctx context.Context, docType, dataURL strin
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	req.Header.Set("User-Agent", aiprovider.UserAgent)
 
 	aiprovider.LogRequest(p.logger, aiprovider.SDKMistral, http.MethodPost, req.URL.String(), p.model, "purpose", "ocr", "doc_type", docType)
 	resp, err := p.client.Do(req)

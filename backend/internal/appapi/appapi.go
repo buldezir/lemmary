@@ -9,6 +9,7 @@ import (
 	"lemmary/backend/internal/fulltext"
 	"lemmary/backend/internal/limits"
 	"lemmary/backend/internal/pdfsplit"
+	"lemmary/backend/internal/zipimport"
 )
 
 // sweeper is the embedding backfill the Management page starts by hand. It is
@@ -96,11 +97,20 @@ func Register(
 			g.POST("/taxonomy/prune", bindAdmin(handlePostTaxonomyPrune(app)))
 			g.POST("/import/ngx", bindAuth(handlePostImportNgx(app)))
 			g.GET("/import/ngx/status", bindAuth(handleGetImportNgxStatus(app)))
-			g.POST("/import/amazon/upload", bindAuth(handlePostImportAmazonUpload(app, lim))).
+			// Two path families over one implementation. Only the upload route
+			// says which source it is; the staged upload remembers, so the other
+			// three are the same handler twice, registered so each flow's URLs
+			// stay coherent rather than because they behave differently.
+			g.POST("/import/amazon/upload", bindAuth(handlePostImportUpload(app, lim, zipimport.SourceAmazon))).
 				Bind(apis.BodyLimit(config.StagingMaxBytesFromEnv()))
-			g.DELETE("/import/amazon/upload", bindAuth(handleDeleteImportAmazonUpload(app)))
-			g.POST("/import/amazon", bindAuth(handlePostImportAmazon(app)))
-			g.GET("/import/amazon/status", bindAuth(handleGetImportAmazonStatus(app)))
+			g.DELETE("/import/amazon/upload", bindAuth(handleDeleteImportUpload(app)))
+			g.POST("/import/amazon", bindAuth(handlePostImport(app)))
+			g.GET("/import/amazon/status", bindAuth(handleGetImportStatus(app)))
+			g.POST("/import/zip/upload", bindAuth(handlePostImportUpload(app, lim, zipimport.SourceFiles))).
+				Bind(apis.BodyLimit(config.StagingMaxBytesFromEnv()))
+			g.DELETE("/import/zip/upload", bindAuth(handleDeleteImportUpload(app)))
+			g.POST("/import/zip", bindAuth(handlePostImport(app)))
+			g.GET("/import/zip/status", bindAuth(handleGetImportStatus(app)))
 			g.POST("/import/archive/upload", bindAuth(handlePostImportArchiveUpload(app, lim))).
 				Bind(apis.BodyLimit(config.StagingMaxBytesFromEnv()))
 			g.DELETE("/import/archive/upload", bindAuth(handleDeleteImportArchiveUpload(app)))

@@ -33,7 +33,18 @@ export async function importFromNgx(
   return { ...result, errors: result.errors ?? [] }
 }
 
-export type AmazonArchiveEntry = {
+/**
+ * Which zip entries the server counts as documents. An Amazon export is mostly
+ * CSV reports and delivery photos, so that flow takes the invoice PDFs only; a
+ * zip the user packed themselves takes every type the library can store. It is
+ * the only difference between the two, and the staged upload remembers it, so
+ * confirm and status are the same call either way.
+ */
+export type ZipImportSource = 'amazon' | 'zip'
+
+const base = (source: ZipImportSource) => `/api/app/import/${source}`
+
+export type ZipArchiveEntry = {
   path: string
   name: string
   size: number
@@ -42,22 +53,22 @@ export type AmazonArchiveEntry = {
   oversized: boolean
 }
 
-export type AmazonArchivePreview = {
+export type ZipArchivePreview = {
   upload_id: string
   file_name: string
   expires_at: string
-  /** Every PDF in the archive, duplicates included. */
-  pdf_count: number
+  /** Every importable file in the archive, duplicates included. */
+  file_count: number
   /** How many of those would become new documents. */
   importable_count: number
   duplicate_count: number
   oversized_count: number
-  /** Non-PDF entries (CSV reports, delivery photos) that are skipped. */
+  /** Entries this source does not import, skipped. */
   ignored_count: number
-  files: AmazonArchiveEntry[]
+  files: ZipArchiveEntry[]
 }
 
-export type AmazonImportResult = {
+export type ZipImportResult = {
   imported: number
   skipped_duplicates: number
   skipped_oversized: number
@@ -65,14 +76,14 @@ export type AmazonImportResult = {
   errors: string[]
 }
 
-export type AmazonImportProgress = JobProgress
+export type ZipImportProgress = JobProgress
 
-/** Stages an Amazon order export and reports what it holds. Imports nothing. */
-export function uploadAmazonArchive(file: File) {
+/** Stages an archive and reports what it holds. Imports nothing. */
+export function uploadZipArchive(source: ZipImportSource, file: File) {
   const formData = new FormData()
   formData.append('file', file)
 
-  return apiFetch<AmazonArchivePreview>('/api/app/import/amazon/upload', {
+  return apiFetch<ZipArchivePreview>(`${base(source)}/upload`, {
     method: 'POST',
     formData,
     fallbackError: 'Failed to read the archive',
@@ -80,9 +91,9 @@ export function uploadAmazonArchive(file: File) {
 }
 
 /** Drops a staged archive the user chose not to import. */
-export async function discardAmazonArchive(uploadId: string) {
+export async function discardZipArchive(source: ZipImportSource, uploadId: string) {
   await apiFetch<unknown>(
-    `/api/app/import/amazon/upload?upload_id=${encodeURIComponent(uploadId)}`,
+    `${base(source)}/upload?upload_id=${encodeURIComponent(uploadId)}`,
     {
       method: 'DELETE',
       fallbackError: 'Failed to discard the archive',
@@ -91,11 +102,12 @@ export async function discardAmazonArchive(uploadId: string) {
 }
 
 /** Imports the confirmed archive, reporting progress until the job finishes. */
-export async function importAmazonArchive(
+export async function importZipArchive(
+  source: ZipImportSource,
   uploadId: string,
-  onProgress?: (progress: AmazonImportProgress) => void,
-): Promise<AmazonImportResult> {
-  const start = await apiFetch<{ job_id?: string }>('/api/app/import/amazon', {
+  onProgress?: (progress: ZipImportProgress) => void,
+): Promise<ZipImportResult> {
+  const start = await apiFetch<{ job_id?: string }>(base(source), {
     method: 'POST',
     body: { upload_id: uploadId },
     fallbackError: 'Import failed to start',
@@ -104,8 +116,8 @@ export async function importAmazonArchive(
     throw new Error('Import job id missing from server response')
   }
 
-  const result = await pollJob<AmazonImportResult>(
-    `/api/app/import/amazon/status?job_id=${encodeURIComponent(start.job_id)}`,
+  const result = await pollJob<ZipImportResult>(
+    `${base(source)}/status?job_id=${encodeURIComponent(start.job_id)}`,
     { onProgress, label: 'import' },
   )
   return { ...result, errors: result.errors ?? [] }

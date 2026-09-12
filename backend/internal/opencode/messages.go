@@ -65,6 +65,7 @@ func NewMessages(apiKey, baseURL string, timeout time.Duration) anthropic.Client
 		anthropicoption.WithHTTPClient(&http.Client{Timeout: timeout}),
 		anthropicoption.WithRequestTimeout(timeout),
 		anthropicoption.WithMaxRetries(0),
+		anthropicoption.WithHeader("User-Agent", aiprovider.UserAgent),
 		anthropicoption.WithMiddleware(sessionMiddleware()),
 	)
 }

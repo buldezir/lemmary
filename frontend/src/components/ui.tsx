@@ -30,6 +30,14 @@ export function DocsLink({ href, children }: { href: string; children: ReactNode
   )
 }
 
+/**
+ * A tab in a page's sub-navigation, for the shells whose tabs are routes:
+ * Upload, Import and Settings. `data-[status=active]` is what a router Link
+ * sets on itself.
+ */
+export const tabClassName =
+  '-mb-px border-b-2 border-transparent px-1 pb-2 pt-1 text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-oxblood data-[status=active]:border-oxblood data-[status=active]:text-oxblood'
+
 export const sectionClassName = 'border border-line bg-surface p-5'
 export const sectionTitleClassName =
   'mb-3 border-b border-line pb-2 font-display text-lg font-semibold text-ink'

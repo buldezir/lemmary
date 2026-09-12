@@ -133,8 +133,8 @@ On a fresh install the SPA hard-gates until setup is complete:
 
 1. **Create admin** — email + password. Creates a PocketBase `_superusers` account **and** a matching `users` account (same credentials) so the admin can own documents. Replaces PocketBase’s browser installer UI.
 2. **Passkey** *(optional)* — offer to add a [passkey](/passkeys) for the account just created. Skipping it changes nothing and the offer does not come back; a passkey can be added later from **More → Account**. The step is hidden on an address where a passkey cannot be created (an IP address, or plain HTTP outside `localhost`).
-3. **Provider** — add at least one provider (`mistral`, `openai`, `openrouter`, `google_vision`, or `docling`, the keyless local OCR sidecar).
-4. **Models** — pick provider → model for OCR and metadata extraction (chat/search inherit extraction).
+3. **Providers** — the guided form of [Guided AI provider setup](/guided_ai_setup): a Mistral key (OCR and embeddings) and one other language-model provider, both created in a single submit. Either half may be left blank; **Add a provider manually instead** falls back to the one-at-a-time form, which is the way to a ChatGPT sign-in, a `google_vision` key, or `docling`/`local`, the keyless sidecars.
+4. **Models** — pick provider → model for OCR and metadata extraction (chat/search inherit extraction), and optionally for embeddings. All three arrive prefilled when the providers came from the guided form; embeddings can be set to **None**, and setup is complete without them.
 
 Steps 3 and 4 are skipped when `.env` already carries the keys — see
 [AI providers and models](/ai_providers). The admin can likewise come from the
@@ -148,11 +148,13 @@ configuration.
 ## Settings (admin UI)
 
 1. Sign in with the **admin** email/password (login prefers the `users` account; legacy `_superusers`-only installs are linked automatically via `/api/app/ensure-user`, which sets a hidden `is_app_admin` flag on the paired `users` record).
-2. Open **Settings** in the nav (shown when `/api/app/me` reports `is_admin`). Add providers, then bind OCR / extraction / chat / search to a provider and model — see [Binding models in Settings](/ai_providers#binding-models-in-settings). Changes hot-reload the in-process clients (no restart).
+2. Open **Settings** in the nav (shown when `/api/app/me` reports `is_admin`). It has one tab per section, each on its own path and each saving only its own fields: **Appearance** (`/settings`), **AI** (`/settings/ai`), **Processing** (`/settings/processing`), **Worker** (`/settings/worker`) and **Duplicates** (`/settings/duplicates`). On the AI tab, add providers, then bind OCR / extraction / chat / search to a provider and model — see [Binding models in Settings](/ai_providers#binding-models-in-settings). Changes hot-reload the in-process clients (no restart).
 
 `WORKER_CRON_EXPR` is not editable there; change `.env` and restart, or use PocketBase Admin → Settings → Crons.
 
-`EXTRACTION_PROMPT_VERSION` is not offered there either. It is pure bookkeeping — it is copied onto each document's `extract_metadata` step run so metadata can be traced back to a prompt, and never reaches the prompt itself — so there is nothing for an admin to tune. `PATCH /api/app/settings` still accepts `extraction_prompt_version`, and it can be edited in PocketBase Admin → `app_settings`.
+**Extra extraction rules** (Processing tab) is the one part of the extraction prompt an admin writes. Whatever is in it is appended to the built-in prompt, after the list of existing correspondents and document types and before the format rules, so it can state house conventions the fixed prompt cannot know — “treat *Rechnung* as the document type Invoice”, “tag insurance documents with the policy number”. It cannot change which fields are stored: the pipeline parses the answer into a fixed set, and the prompt says so after the rules. Up to 4000 characters, empty by default, and applied to documents processed or reprocessed from then on. It is tenant-owned, so a managed instance keeps it. The extraction log line reports its length as `rule_chars`, and each document's `extract_metadata` step run records the prompt it actually ran under (see below).
+
+`EXTRACTION_PROMPT_VERSION` is not offered there either. It is pure bookkeeping — it is recorded on each document's `extract_metadata` step run so metadata can be traced back to a prompt, and never reaches the prompt itself — so there is nothing for an admin to tune. Where extraction rules are set, that step run records `v1+rules.<digest>` instead of the bare version: the rules change the prompt while the version does not, and a run recorded under `v1` alone would name a prompt that no longer exists. Documents extracted with no rules keep the bare version, so nothing changes for an instance that sets none. `PATCH /api/app/settings` still accepts `extraction_prompt_version`, and it can be edited in PocketBase Admin → `app_settings`.
 
 ## Management (admin UI)
 
@@ -178,12 +180,15 @@ Browse them in PocketBase Admin as a superuser. Enable SMTP when you want real d
 
 | Section | Route | State |
 | --- | --- | --- |
-| Files | `/upload` (default) | Implemented — drag-and-drop / file-picker upload, see the processing flow below |
+| Files | `/upload` (default) | Implemented — drag-and-drop / file-picker upload of files or whole folders, see the processing flow below |
 | Scan | `/upload/scan` | Implemented — scans from an eSCL (AirScan) scanner on the local network, see [Network scanning](/scanning) |
 | Amazon orders | `/upload/amazon` | Implemented — imports the invoice PDFs out of an order archive requested from Amazon, see [Amazon order import](#amazon-order-import) |
+| Zip archive | `/upload/zip` | Implemented — imports the documents out of a zip the user packed themselves, see [Zip archive import](#zip-archive-import) |
 | Split documents | `/upload/split` | Implemented — splits a PDF holding several joined documents into one document per part, see [Document splitting](#document-splitting) |
 
 Plain file upload stays on `/upload` itself (an index route), so existing links and the **Upload** nav entry keep landing on it.
+
+A folder can be dropped on the Files tab or picked with **Choose a folder instead**, and is walked to the bottom in the browser: each file inside it is posted as its own document, exactly as if it had been picked by hand. A file that came out of a folder is named `<parent folder>-<file>`, the same rule the zip imports use, because a scanner that writes `1.pdf` into a folder per batch would otherwise fill the library with documents called `1.pdf`. Finder and archiver leftovers are dropped silently rather than reported as the wrong type — `__MACOSX/`, AppleDouble `._` shadows (which carry the extension of the file they belong to) and any other dot-file, the same rule the zip import applies. A `.zip` dropped here is not uploaded; it points at the Zip archive tab, which can show what the archive holds first.
 
 ### Amazon order import
 
@@ -191,12 +196,22 @@ Request the archive from Amazon under Account → Request your data → Your Ord
 
 Uploading and importing are two steps, so nothing is created before the user has seen what the archive holds:
 
-1. `POST /api/app/import/amazon/upload` (multipart, field `file`) streams the zip to `<data dir>/temp/amazon_import/` — it is never buffered in memory, since real exports run to hundreds of MB. The archive is scanned and every PDF is hashed, then returned as a preview: total PDF count, how many are importable, how many are duplicates or oversized, the ignored-entry count, and the per-file list. Duplicates are PDFs whose checksum already exists among the owner's documents (`duplicate_of` names the existing id) or that repeat earlier in the same archive. Imported documents are named `<parent folder>-<file>`, because Amazon numbers the invoices per folder (`1.pdf`, `2.pdf`, …).
+1. `POST /api/app/import/amazon/upload` (multipart, field `file`) streams the zip to `<data dir>/temp/zip_import/` — it is never buffered in memory, since real exports run to hundreds of MB. The archive is scanned and every PDF is hashed, then returned as a preview: total file count, how many are importable, how many are duplicates or oversized, the ignored-entry count, and the per-file list. Duplicates are PDFs whose checksum already exists among the owner's documents (`duplicate_of` names the existing id) or that repeat earlier in the same archive. Imported documents are named `<parent folder>-<file>`, because Amazon numbers the invoices per folder (`1.pdf`, `2.pdf`, …).
 2. `POST /api/app/import/amazon` with `{ "upload_id": "..." }` starts the import and returns `202 Accepted` with `{ "job_id", "status": "running" }`. Poll `GET /api/app/import/amazon/status?job_id=...` for `progress` (`{ done, total }`) until `status` is `completed` (with `result`) or `failed` (with `error`). The `result` counts `imported`, `skipped_duplicates`, `skipped_oversized` and `failed`, plus up to 25 per-file error messages. Each imported document is saved as `pending`, so it goes through the normal OCR + AI [processing flow](#processing-flow).
 
 `DELETE /api/app/import/amazon/upload?upload_id=...` discards a staged archive the user chose not to import. Staged archives expire after 30 minutes and are swept on the next upload, including files left behind by an earlier process — the staging registry and the job state are in memory, so both are lost on restart. Uploading a second archive also discards the account's previous one, so an account holds at most one at a time. Confirming consumes the upload id: the same archive cannot be imported twice, and one import may run at a time per user (a second start returns `409`).
 
 Rejections come back as `400` at preview time rather than mid-import: not a readable zip, no PDFs, more than 5000 PDFs, an upload over `IMPORT_STAGING_MAX_BYTES` (1 GiB by default), or an archive that decompresses beyond 8 GiB (a zip bomb). A single PDF over the 20 MB `documents.file` limit is not fatal — it is flagged `oversized` in the preview and skipped on import. A PDF over [the page ceiling](#the-page-ceiling) is refused per entry as the run proceeds rather than at preview time, since an archive's real page counts are only discoverable by opening every PDF in it.
+
+### Zip archive import
+
+The same two steps as the Amazon import above, against `/api/app/import/zip/upload`, `/api/app/import/zip` and `/api/app/import/zip/status`, with identical payloads, limits and rejections. It is the same implementation: the only difference between the two flows is which entries in the archive count as documents, which the upload route says and the staged upload then remembers.
+
+Here that means every type `documents.file` can store — PDF, JPEG, PNG, WebP, plain text, CSV, `.docx` and `.xlsx` — rather than PDFs alone. Anything else in the archive is counted as ignored and left alone, as are directory entries, empty entries and archiver bookkeeping (`__MACOSX/`, AppleDouble `._` files). Imported documents are named `<parent folder>-<file>`, so a zip of a scanner's output stays legible.
+
+The extension list is a pre-filter, not the last word: PocketBase decides what the `file` field accepts by sniffing the content on save, so an entry whose extension lies about its contents is refused there and reported per file in the run's errors rather than at preview time.
+
+A staged archive and a running import are one per account across both zip flows, so uploading an Amazon export discards a zip staged a moment earlier and a second import while one runs returns `409`. Restoring a Lemmary backup is a different thing entirely and lives on [`/import/archive`](#restoring); it keeps its own staging and can run alongside.
 
 ### Network scanning
 

@@ -23,6 +23,9 @@ type OpenAIClient struct {
 	baseURL        string
 	promptVer      string
 	resultLanguage string
+	// extractionRules is the admin's own additions to the extraction prompt.
+	// Only NewExtractor sets it; every other client built here leaves it empty.
+	extractionRules string
 	client         openai.Client
 	logger         *slog.Logger
 
@@ -48,6 +51,7 @@ func NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage stri
 	if sdk == aiprovider.SDKOpenCode {
 		opts = append(opts, option.WithMiddleware(aiprovider.SessionMiddleware()))
 	}
+	opts = append(opts, aiprovider.UserAgentOptions(sdk)...)
 	// Production callers pass the chatgpt middleware here, which mints a bearer
 	// token per request; see config.providerCredential.
 	opts = append(opts, extra...)
