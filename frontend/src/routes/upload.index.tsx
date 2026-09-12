@@ -1,4 +1,4 @@
-import { type DragEvent, type SubmitEvent, useRef, useState } from 'react'
+import { type DragEvent, type SubmitEvent, useCallback, useRef, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
@@ -80,6 +80,12 @@ const INSTANCE_WIDE_LIMITS = new Set<LimitName>([
   'storage_bytes',
 ])
 
+// Files staged but not yet uploaded, kept outside the component: switching to
+// another upload tab unmounts this page (#47) and a File cannot be serialised
+// into the router or into storage, so the only place it survives is a module
+// variable. Cleared when the upload succeeds or the list is cleared by hand.
+let stagedFiles: File[] = []
+
 function formatBytes(size: number) {
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
@@ -90,7 +96,7 @@ export function UploadFilesPage() {
   const navigate = useNavigate()
   const inputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
-  const [files, setFiles] = useState<File[]>([])
+  const [files, setStagedFiles] = useState<File[]>(stagedFiles)
   // A zip is not an unsupported file, it is the wrong page -- so it gets a link
   // rather than the "use PDF, JPEG, ..." message.
   const [zipRejected, setZipRejected] = useState(false)
@@ -102,6 +108,13 @@ export function UploadFilesPage() {
   const [scanning, setScanning] = useState(false)
   const [error, setError] = useState('')
   const [fileErrors, setFileErrors] = useState<FileUploadError[]>([])
+
+  const setFiles = useCallback((next: File[] | ((current: File[]) => File[])) => {
+    setStagedFiles((current) => {
+      stagedFiles = typeof next === 'function' ? next(current) : next
+      return stagedFiles
+    })
+  }, [])
 
   function resetInput() {
     if (inputRef.current) inputRef.current.value = ''
@@ -242,6 +255,7 @@ export function UploadFilesPage() {
       }
 
       if (failures.length === 0) {
+        setFiles([])
         if (uploadedIds.length === 1) {
           navigate({ to: '/document/$documentId', params: { documentId: uploadedIds[0] } })
         } else {
