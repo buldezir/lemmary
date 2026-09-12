@@ -14,7 +14,13 @@ const fallbackMeta: AppMeta = {
   accent: DEFAULT_ACCENT,
 }
 
-export function useAppMeta(): AppMeta {
+/**
+ * metaLoaded separates "not answered yet" from the two answers that both read
+ * as managed. Without it a reader cannot tell an in-flight request from a known
+ * `aiManaged: true`, and anything that *states* which of the two it is -- rather
+ * than just offering less -- says the wrong thing on the first render.
+ */
+export function useAppMeta(): AppMeta & { metaLoaded: boolean } {
   // getAppMeta never throws; it falls back to defaults internally.
   const { data, reload } = useAsync(getAppMeta, [])
   const reloadRef = useRef(reload)
@@ -27,5 +33,7 @@ export function useAppMeta(): AppMeta {
   // does not remount when an admin flips that.
   useEffect(() => onAppMetaChanged(() => void reloadRef.current()), [])
 
-  return data ?? fallbackMeta
+  // getAppMeta resolves with the fallback rather than rejecting, so data being
+  // set covers a failed request too: it answered, and the answer is "unknown".
+  return { ...(data ?? fallbackMeta), metaLoaded: data !== null }
 }

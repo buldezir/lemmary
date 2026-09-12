@@ -89,7 +89,7 @@ export function IndexPage() {
           )}
 
           {!loading && documents.length === 0 && (
-            <div className="rounded-none border border-dashed border-line-strong bg-surface py-10 text-center">
+            <div className="rounded-none border border-line bg-surface py-10 text-center">
               {hasActiveFilters(query) ? (
                 <p className="text-sm text-ink-soft">No documents match your filters.</p>
               ) : (

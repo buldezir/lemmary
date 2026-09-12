@@ -3,6 +3,7 @@ package ai
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -40,7 +41,7 @@ type Extractor interface {
 	ExtractMetadata(ctx context.Context, ocrText string, catalog ExtractionCatalog) (*models.ExtractedMetadata, error)
 }
 
-func buildExtractionSystemPrompt(resultLanguage string, catalog ExtractionCatalog) string {
+func buildExtractionSystemPrompt(resultLanguage, rules string, catalog ExtractionCatalog) string {
 	prompt := `You extract structured metadata from OCR document text.
 Return ONLY valid JSON with these fields:
 - title (string, required)
@@ -69,13 +70,54 @@ Also include these fields translated into %s:
 
 	prompt += formatExistingCorrespondentsPrompt(catalog.Correspondents)
 	prompt += formatExistingDocumentTypesPrompt(catalog.DocumentTypes)
+	prompt += formatExtractionRulesPrompt(rules)
 
+	// Last on purpose: the rules above are the admin's, but the JSON contract is
+	// not theirs to loosen, and the format instructions a model follows best are
+	// the ones it read last.
 	prompt += `
 
 document_date must be a complete calendar date in YYYY-MM-DD form. Never return a bare year ("2026"), a year and month ("2026-03"), or any other date format; use an empty string when the document states no date.
 
 Do not include markdown or explanation.`
 	return prompt
+}
+
+// ExtractionPromptFingerprint identifies the prompt a document was extracted
+// with, for the step run that records it.
+//
+// The version alone stopped being enough the moment an admin could add rules:
+// the prompt changes while extraction_prompt_version stays "v1", so a run
+// recorded under it would claim a prompt that no longer exists. A short digest
+// of the rules rides along -- enough to tell one rule set from another in the
+// step's tooltip, which is all this is for; it is not a checksum anyone
+// verifies. No rules means the bare version, so runs from before this, and from
+// every instance that never sets any, read exactly as they did.
+func ExtractionPromptFingerprint(promptVer, rules string) string {
+	rules = strings.TrimSpace(rules)
+	if rules == "" {
+		return promptVer
+	}
+	sum := sha256.Sum256([]byte(rules))
+	return fmt.Sprintf("%s+rules.%x", promptVer, sum[:3])
+}
+
+// formatExtractionRulesPrompt carries the admin's own instructions into the
+// prompt. Unlike the catalog blocks these are trusted -- only an admin can set
+// them, through the Settings page -- so they are not labelled as untrusted
+// data; what they may not do is change the shape of the answer, because the
+// pipeline parses it into a fixed struct.
+func formatExtractionRulesPrompt(rules string) string {
+	rules = strings.TrimSpace(rules)
+	if rules == "" {
+		return ""
+	}
+	return fmt.Sprintf(`
+
+Additional instructions from the archive's administrator. Follow them where they
+do not conflict with the format above; never add, rename or drop fields because
+of them:
+%s`, rules)
 }
 
 func formatExistingCorrespondentsPrompt(names []string) string {
@@ -174,6 +216,19 @@ func sanitizeCatalogName(name string) string {
 	return strings.TrimSpace(b.String())
 }
 
+// maxExtractionBytes bounds the OCR text one extraction sends. Long documents
+// carry their metadata near the front, so the tail is mostly cost -- but 12000
+// cut the middle out of ordinary multi-page scans, which is where a date or a
+// total often sits.
+//
+// Bytes, not runes: strutil.Truncate cuts on a rune boundary but counts bytes,
+// so a Cyrillic or CJK document gets roughly half or a third as much text as a
+// Latin one. Raising this is what buys those documents the same reach.
+//
+// Named because the log line below reports what was actually sent: two literals
+// could drift apart and the log would quietly start lying.
+const maxExtractionBytes = 24000
+
 func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, catalog ExtractionCatalog) (*models.ExtractedMetadata, error) {
 	if c.apiKey == "" {
 		return nil, fmt.Errorf("AI API key is not configured")
@@ -181,7 +236,7 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 	ctx = aiprovider.EnsureSession(ctx, "extract")
 
 	inputChars := len(ocrText)
-	sentChars := len(strutil.Truncate(ocrText, 12000))
+	sentChars := len(strutil.Truncate(ocrText, maxExtractionBytes))
 	c.logger.Info("extraction starting",
 		"provider", c.Name(),
 		"model", c.model,
@@ -189,6 +244,7 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 		"ocr_chars", inputChars,
 		"sent_chars", sentChars,
 		"result_lang", c.resultLanguage,
+		"rule_chars", len(c.extractionRules),
 		"catalog_correspondent_names", len(catalog.Correspondents),
 		"catalog_document_type_names", len(catalog.DocumentTypes),
 	)
@@ -197,8 +253,8 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 	chatResp, err := c.Complete(ctx, openai.ChatCompletionNewParams{
 		Model: shared.ChatModel(c.model),
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage(buildExtractionSystemPrompt(c.resultLanguage, catalog)),
-			openai.UserMessage(fmt.Sprintf("Extract metadata from this OCR text:\n\n%s", strutil.Truncate(ocrText, 12000))),
+			openai.SystemMessage(buildExtractionSystemPrompt(c.resultLanguage, c.extractionRules, catalog)),
+			openai.UserMessage(fmt.Sprintf("Extract metadata from this OCR text:\n\n%s", strutil.Truncate(ocrText, maxExtractionBytes))),
 		},
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONObject: &shared.ResponseFormatJSONObjectParam{},
@@ -251,6 +307,11 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 	return metadata, nil
 }
 
-func NewExtractor(sdk, apiKey, model, baseURL, promptVer, resultLanguage string, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) Extractor {
-	return NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage, timeout, logger, extra...)
+func NewExtractor(sdk, apiKey, model, baseURL, promptVer, resultLanguage, rules string, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) Extractor {
+	c := NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage, timeout, logger, extra...)
+	// Set here rather than taken by NewOpenAIClient: the rules are extraction's
+	// alone, and that constructor is shared with chat, search, the splitter and
+	// LLM OCR, which would all have to pass one more empty string.
+	c.extractionRules = rules
+	return c
 }

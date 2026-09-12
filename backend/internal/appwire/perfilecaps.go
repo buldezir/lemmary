@@ -1,10 +1,10 @@
 package appwire
 
 import (
-	"lemmary/backend/internal/amazonimport"
 	"lemmary/backend/internal/archiveimport"
 	"lemmary/backend/internal/limits"
 	"lemmary/backend/internal/pdfsplit"
+	"lemmary/backend/internal/zipimport"
 )
 
 // applyPerFileCaps points the bulk paths' per-entry size caps at the effective
@@ -22,7 +22,7 @@ import (
 // the e2e harness, which boots a whole app repeatedly inside one test binary.
 //
 // It lives here rather than in the limits package so that package stays a leaf:
-// archiveimport and amazonimport are free to import limits, and this direction
+// archiveimport and zipimport are free to import limits, and this direction
 // would close the cycle.
 func applyPerFileCaps(lim limits.Limits) {
 	// Unlimited resolves to -1, which every setter reads as "use your default".
@@ -33,7 +33,7 @@ func applyPerFileCaps(lim limits.Limits) {
 	if !lim.FileBytes.IsUnlimited() {
 		effective = lim.FileBytes.Value()
 	}
-	amazonimport.SetMaxEntryBytes(effective)
+	zipimport.SetMaxEntryBytes(effective)
 	archiveimport.SetMaxEntryBytes(effective)
 	pdfsplit.SetMaxPartBytes(effective)
 }

@@ -24,6 +24,9 @@ type OpenAIClient struct {
 	baseURL        string
 	promptVer      string
 	resultLanguage string
+	// extractionRules is the admin's own additions to the extraction prompt.
+	// Only NewExtractor sets it; every other client built here leaves it empty.
+	extractionRules string
 	client         openai.Client
 	logger         *slog.Logger
 
