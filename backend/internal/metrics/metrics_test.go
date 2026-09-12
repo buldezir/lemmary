@@ -33,14 +33,33 @@ func TestAddrFromEnv(t *testing.T) {
 // through the same package-level instruments every call site uses, then reads
 // the endpoint the way a scraper would.
 func TestScrape(t *testing.T) {
-	// Not stopped afterwards, deliberately: there is one endpoint per process
-	// (see start), so tearing it down here would leave a re-run of this test
-	// under -count=2 holding a dead URL. The process exits with it, and the
-	// shutdown path is what the OnTerminate hook covers.
-	url, _, err := start("127.0.0.1:0", slog.New(slog.DiscardHandler))
+	url, stop, err := start("127.0.0.1:0", slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
+	// Stopped, then started again: the second boot in one process must get a
+	// live endpoint that still carries everything recorded so far, because the
+	// global meter delegates to the first provider and only to it.
+	t.Cleanup(func() {
+		stop(context.Background())
+		again, stopAgain, err := start("127.0.0.1:0", slog.New(slog.DiscardHandler))
+		if err != nil {
+			t.Fatalf("start after stop: %v", err)
+		}
+		defer stopAgain(context.Background())
+		if again == url {
+			t.Fatalf("start after stop returned the stopped URL %s", url)
+		}
+		resp, err := http.Get(again)
+		if err != nil {
+			t.Fatalf("scrape after restart: %v", err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		if !strings.Contains(string(body), "lemmary_job") {
+			t.Errorf("scrape after restart lost the recorded series; body was:\n%s", body)
+		}
+	})
 
 	HTTPRequest(http.MethodGet, "/api/collections/{collection}/records", 401, 12*time.Millisecond)
 	Job("completed", 2*time.Second)
@@ -92,11 +111,8 @@ func TestScrape(t *testing.T) {
 		`lemmary_limit{resource="documents"} 1000`,
 		`lemmary_usage_bytes{resource="storage_bytes"} 12345`,
 		`lemmary_limit_bytes{resource="storage_bytes"} 5.36870912e+09`,
-		// Not ours, and the point: the otel Prometheus exporter registers into
-		// client_golang's default registry, which already carries the Go and
-		// process collectors. This is what says we still get runtime metrics
-		// without an instrumentation package for them -- if the exporter ever
-		// stops defaulting to that registry, this line is the warning.
+		// Not ours: the Go and process collectors are registered by hand in
+		// start(). This is what notices if those two lines go.
 		"go_goroutines",
 		"process_open_fds",
 	} {

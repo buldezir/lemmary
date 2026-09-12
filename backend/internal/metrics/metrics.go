@@ -49,24 +49,24 @@ func Register(app core.App) {
 		return
 	}
 
-	var stop func(context.Context)
-
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
-		_, s, err := start(addr, e.App.Logger())
-		if err != nil {
+		if _, _, err := start(addr, e.App.Logger()); err != nil {
 			// A metrics port that will not bind is not a reason to refuse to
 			// serve the archive.
 			e.App.Logger().Error("metrics endpoint disabled", "addr", addr, "error", err)
-			return e.Next()
 		}
-		stop = s
 		return e.Next()
 	})
 
 	// Default priority, so this runs after PocketBase's own graceful shutdown
 	// (pbGracefulShutdown, priority -9999) and before its terminate finalizer
-	// closes the databases the queue gauge reads.
+	// closes the databases the queue gauge reads. The stop is read through
+	// running rather than a captured local: OnServe and OnTerminate run on
+	// different goroutines with nothing ordering them.
 	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
+		running.Lock()
+		stop := running.stop
+		running.Unlock()
 		if stop != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 			defer cancel()
@@ -97,18 +97,67 @@ func addrFromEnv() string {
 // instrument in the binary feeds whichever provider was installed first, and a
 // second endpoint would serve a page with nothing of ours on it. Rather than
 // leave that as a silent puzzle, a repeat call returns what is already
-// running.
-//
-// It matters outside tests too. The e2e harness boots a whole app repeatedly
-// inside one test binary, and Register runs once per boot.
+// running. A stopped endpoint clears it, so the next boot in the same process
+// -- a test binary that starts the app more than once -- gets a live one.
 var running struct {
 	sync.Mutex
 	url  string
 	stop func(context.Context)
 }
 
-// start installs the global MeterProvider and serves /metrics on addr. It
-// returns the URL actually bound, which is what lets a test ask for port 0.
+// registry is built once for the life of the process and never shut down.
+//
+// otel.SetMeterProvider delegates the package-level meter exactly once, so a
+// second provider would be installed but never fed; and the exporter is
+// pull-based, so there is nothing to flush on the way out. What comes and goes
+// per boot is only the HTTP server in front of it.
+var registry struct {
+	sync.Once
+	reg *prometheus.Registry
+	err error
+}
+
+func buildRegistry() (*prometheus.Registry, error) {
+	registry.Do(func() {
+		// The two collectors are what prometheus.DefaultRegisterer would have
+		// given for free: goroutines, heap, GC, open file descriptors. A
+		// registry of our own keeps them reachable only from the handler
+		// below.
+		reg := prometheus.NewRegistry()
+		reg.MustRegister(
+			collectors.NewGoCollector(),
+			collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		)
+
+		// WithoutScopeInfo drops the otel_scope_name/version/schema_url labels
+		// the exporter would otherwise hang on every single series. There is
+		// one instrumentation scope in this process, so they say nothing and
+		// make every query and every label matcher longer.
+		exporter, err := otelprom.New(
+			otelprom.WithoutScopeInfo(),
+			otelprom.WithRegisterer(reg),
+		)
+		if err != nil {
+			registry.err = err
+			return
+		}
+
+		provider := sdkmetric.NewMeterProvider(
+			sdkmetric.WithReader(exporter),
+			sdkmetric.WithResource(resource.NewSchemaless(attribute.String("service.name", serviceName))),
+		)
+		// Global, not passed down: this is also what switches on the
+		// instrumentation already inside our dependencies -- the Google Vision
+		// client's otelgrpc, which no code of ours could reach.
+		otel.SetMeterProvider(provider)
+		registry.reg = reg
+	})
+	return registry.reg, registry.err
+}
+
+// start serves /metrics on addr, installing the global MeterProvider the first
+// time. It returns the URL actually bound, which is what lets a test ask for
+// port 0.
 func start(addr string, logger *slog.Logger) (url string, stop func(context.Context), err error) {
 	running.Lock()
 	defer running.Unlock()
@@ -124,43 +173,14 @@ func start(addr string, logger *slog.Logger) (url string, stop func(context.Cont
 	if err != nil {
 		return "", nil, err
 	}
-
-	// A registry of our own rather than prometheus.DefaultRegisterer. The
-	// default one is process-global and never unregistered from, so anything
-	// that failed halfway would leave a collector wedged in it for the life of
-	// the binary; this one is reachable only from here and from the handler
-	// below. The two collectors are what the default registry would have given
-	// for free: goroutines, heap, GC, open file descriptors.
-	registry := prometheus.NewRegistry()
-	registry.MustRegister(
-		collectors.NewGoCollector(),
-		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-	)
-
-	// WithoutScopeInfo drops the otel_scope_name/version/schema_url labels the
-	// exporter would otherwise hang on every single series. There is one
-	// instrumentation scope in this process, so they say nothing and make
-	// every query and every label matcher longer.
-	exporter, err := otelprom.New(
-		otelprom.WithoutScopeInfo(),
-		otelprom.WithRegisterer(registry),
-	)
+	reg, err := buildRegistry()
 	if err != nil {
 		_ = listener.Close()
 		return "", nil, err
 	}
 
-	provider := sdkmetric.NewMeterProvider(
-		sdkmetric.WithReader(exporter),
-		sdkmetric.WithResource(resource.NewSchemaless(attribute.String("service.name", serviceName))),
-	)
-	// Global, not passed down: this is also what switches on the
-	// instrumentation already inside our dependencies -- the Google Vision
-	// client's otelgrpc, which no code of ours could reach.
-	otel.SetMeterProvider(provider)
-
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 
 	server := &http.Server{Handler: mux, ReadHeaderTimeout: readHeaderTimeout}
 	go func() {
@@ -173,7 +193,9 @@ func start(addr string, logger *slog.Logger) (url string, stop func(context.Cont
 	running.url = "http://" + listener.Addr().String() + "/metrics"
 	running.stop = func(ctx context.Context) {
 		_ = server.Shutdown(ctx)
-		_ = provider.Shutdown(ctx)
+		running.Lock()
+		running.url, running.stop = "", nil
+		running.Unlock()
 	}
 	return running.url, running.stop, nil
 }

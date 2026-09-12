@@ -17,8 +17,8 @@ func TestJobOutcome(t *testing.T) {
 		models.JobStatusFailed:      "failed",
 		models.JobStatusNeedsReview: "needs_review",
 		models.JobStatusPending:     "retry",
-		models.JobStatusRunning:     "running",
-		"":                          "unknown",
+		models.JobStatusRunning:     "error",
+		"":                          "error",
 	}
 	for status, want := range cases {
 		if got := jobOutcome(status); got != want {

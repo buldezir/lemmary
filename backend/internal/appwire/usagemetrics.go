@@ -35,7 +35,7 @@ func registerUsageMetrics(app core.App, lim limits.Limits) {
 		limits.NameFileBytes:    lim.FileBytes,
 	})
 
-	metrics.RegisterUsage(func() (metrics.Usage, error) {
+	reg := metrics.RegisterUsage(func() (metrics.Usage, error) {
 		used, err := limits.Measure(app)
 		if err != nil {
 			return metrics.Usage{}, err
@@ -52,6 +52,10 @@ func registerUsageMetrics(app core.App, lim limits.Limits) {
 			},
 			ByteLimits: byteLimits,
 		}, nil
+	})
+	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
+		_ = reg.Unregister()
+		return e.Next()
 	})
 }
 

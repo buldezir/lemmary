@@ -104,7 +104,8 @@ func HTTPRequest(method, route string, status int, d time.Duration) {
 
 // Job records one finished pipeline job. outcome is the job's status after the
 // run -- completed, needs_review, failed -- or retry, which is a run that
-// failed a step and put itself back on the queue.
+// failed a step and put itself back on the queue, or error, a run that could
+// not even record how it ended.
 func Job(outcome string, d time.Duration) {
 	jobDuration.Record(context.Background(), d.Seconds(), metric.WithAttributes(
 		attribute.String("outcome", outcome),
@@ -165,8 +166,12 @@ func AITokens(model string, prompt, cached, completion int64) {
 // is not an empty queue, and reporting one as the other would hide a backlog
 // at exactly the moment it mattered. OpenTelemetry's error handler logs it and
 // the series goes absent for that scrape, so the gap is the signal.
-func QueueDepth(fn func() (int64, error)) {
-	_, _ = meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+//
+// The callback holds fn for as long as it is registered, and the meter is
+// process-global; the caller unregisters it when its app terminates so a later
+// boot in the same process does not scrape a closed database.
+func QueueDepth(fn func() (int64, error)) metric.Registration {
+	reg, _ := meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
 		n, err := fn()
 		if err != nil {
 			return err
@@ -174,6 +179,7 @@ func QueueDepth(fn func() (int64, error)) {
 		o.ObserveInt64(jobsPending, n)
 		return nil
 	}, jobsPending)
+	return reg
 }
 
 // Usage is one reading of how full the instance is: what it holds, and what it
@@ -194,9 +200,10 @@ type Usage struct {
 
 // RegisterUsage registers the gauges for how full the instance is. read runs on
 // every scrape, in one callback, because the numbers come from one measurement
-// and a scrape should not pay for it four times.
-func RegisterUsage(read func() (Usage, error)) {
-	_, _ = meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+// and a scrape should not pay for it four times. Unregister it when the app
+// terminates; see QueueDepth.
+func RegisterUsage(read func() (Usage, error)) metric.Registration {
+	reg, _ := meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
 		u, err := read()
 		if err != nil {
 			// Returned, not swallowed: OpenTelemetry's error handler logs it,
@@ -211,6 +218,7 @@ func RegisterUsage(read func() (Usage, error)) {
 		observeByResource(o, limitBytes, u.ByteLimits)
 		return nil
 	}, usageCount, limitCount, usageBytes, limitBytes)
+	return reg
 }
 
 func observeByResource(o metric.Observer, gauge metric.Int64ObservableGauge, values map[string]int64) {

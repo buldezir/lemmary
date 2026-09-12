@@ -48,10 +48,10 @@ func TestResponseStatus(t *testing.T) {
 			want:    http.StatusCreated,
 		},
 		{
-			name:    "an error outranks whatever was written, since ErrorHandler is what answers",
+			name:    "a written status outranks a late error, since ErrorHandler does not write over it",
 			written: http.StatusOK,
 			err:     router.NewUnauthorizedError("", nil),
-			want:    http.StatusUnauthorized,
+			want:    http.StatusOK,
 		},
 		{
 			name: "nothing written and no error is net/http's own default",

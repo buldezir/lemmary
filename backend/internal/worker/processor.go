@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/pocketbase/dbx"
@@ -61,8 +60,12 @@ func Register(app core.App, rt *config.Runtime, backfill *Backfiller) {
 	// ponytail: one COUNT per scrape. If a scrape interval ever makes that
 	// matter, keep the number in the Processor and update it where jobs are
 	// created and claimed.
-	metrics.QueueDepth(func() (int64, error) {
+	reg := metrics.QueueDepth(func() (int64, error) {
 		return app.CountRecords("processing_jobs", dbx.HashExp{"status": models.JobStatusPending})
+	})
+	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
+		_ = reg.Unregister()
+		return e.Next()
 	})
 
 	app.Logger().Info("worker registered", "cron", cronExpr)
@@ -435,34 +438,19 @@ func (p *Processor) runJob(jobID string, snap config.Snapshot) error {
 	}
 
 	runner := NewPipelineRunner(p.app, snap.Cfg, snap.OCR, snap.AI, snap.Embedder)
-	start := time.Now()
-	runErr := runner.Run(context.Background(), jobID)
-	metrics.Job(p.jobOutcome(jobID), time.Since(start))
-	return runErr
-}
-
-// jobOutcome reads back how the run it just finished ended.
-//
-// The status is the only thing that knows: handleStepFailure returns nil when
-// it re-pends the job for another attempt, so a nil error from Run covers both
-// "done" and "will try again", and the two are not the same measurement.
-func (p *Processor) jobOutcome(jobID string) string {
-	job, err := p.app.FindRecordById("processing_jobs", jobID)
-	if err != nil {
-		return "unknown"
-	}
-	return jobOutcome(job.GetString("status"))
+	return runner.Run(context.Background(), jobID)
 }
 
 // jobOutcome names the status a finished run left behind, for the metric's
 // outcome label. Pending is the retry: the run failed a step and put itself
-// back on the queue rather than giving up.
+// back on the queue. Running is a run that bailed before it could record how
+// it ended -- a save that failed -- which is an error, not a state.
 func jobOutcome(status string) string {
-	if status == models.JobStatusPending {
+	switch status {
+	case models.JobStatusPending:
 		return "retry"
-	}
-	if status == "" {
-		return "unknown"
+	case models.JobStatusRunning, "":
+		return "error"
 	}
 	return status
 }
