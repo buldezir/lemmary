@@ -14,6 +14,7 @@ describe('route tree', () => {
       '/inbox',
       '/activity',
       '/upload',
+      '/upload/scan',
       '/upload/amazon',
       '/upload/zip',
       '/upload/split',

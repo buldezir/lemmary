@@ -33,6 +33,9 @@ const (
 	AllTextTimeout = 2 * time.Minute
 	// ExtractTimeout bounds the pdfseparate + pdfunite pair for one page range.
 	ExtractTimeout = 60 * time.Second
+	// MergeTimeout bounds one pdfunite run. Concatenation only rewrites the
+	// object tables, so it stays fast even over a long document.
+	MergeTimeout = 60 * time.Second
 )
 
 // pageSeparator is the form feed pdftotext writes after every page, which is how
@@ -312,6 +315,50 @@ func ExtractRange(ctx context.Context, pdfPath string, from, to int, outPath str
 	if _, err := run(ctx, "pdfunite", args...); err != nil {
 		return err
 	}
+	return canonicalizeFileID(outPath)
+}
+
+// Merge concatenates inputs into a single PDF at outPath.
+//
+// pdfunite is what ExtractRange already stitches a range back together with;
+// this is the same call without the pdfseparate half, for callers that hold
+// whole PDFs already -- a scan that grows a page at a time, say.
+//
+// outPath may name one of the inputs. pdfunite refuses to write over a file it
+// is reading, so the result goes to a temp file and is moved into place, which
+// also means a failed run leaves the old outPath untouched.
+func Merge(ctx context.Context, outPath string, inputs ...string) error {
+	if len(inputs) < 2 {
+		return fmt.Errorf("pdftool: merge needs at least two inputs, got %d", len(inputs))
+	}
+	for _, input := range inputs {
+		if err := RequirePDF(input); err != nil {
+			return err
+		}
+	}
+	if err := RequirePDF(outPath); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, MergeTimeout)
+	defer cancel()
+
+	tmpDir, err := os.MkdirTemp("", "lemmary-pdfmerge-*")
+	if err != nil {
+		return fmt.Errorf("pdftool: temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	merged := filepath.Join(tmpDir, "merged.pdf")
+	if _, err := run(ctx, "pdfunite", append(append([]string{}, inputs...), merged)...); err != nil {
+		return err
+	}
+	if err := movePDF(merged, outPath); err != nil {
+		return err
+	}
+	// Same reason ExtractRange does it: pdfunite stamps a fresh random trailer
+	// /ID, which would give the same pages a different checksum every run and
+	// stop duplicate detection ever firing.
 	return canonicalizeFileID(outPath)
 }
 

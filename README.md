@@ -13,6 +13,7 @@ The API has been tested with the [swift-paperless](https://github.com/paulgessin
 - Upload PDF, image, plain text, CSV, Word (.docx), or Excel (.xlsx) documents — one at a time, or a whole folder dropped or picked at once
 - Full backup and restore: download your whole library — files, OCR text, metadata, thumbnails and taxonomy — as one zip, and restore it into this or another instance
 - Optional encryption at rest: the volume holds only ciphertext, the instance boots locked until someone signs in, and nobody but your own accounts can unlock it — see [docs/encryption.md](docs/encryption.md)
+- Scan straight from a network scanner (**Upload → Scan**): eSCL/AirScan over the LAN, no driver, found by mDNS or by sweeping the subnet, several pages merged into one document — see [docs/scanning.md](docs/scanning.md)
 - Import a zip of documents (**Upload → Zip archive**) or the invoice PDFs from an Amazon "Your Orders" data export (**Upload → Amazon orders**); either way the archive is previewed and only imported after you confirm the file count, duplicates are skipped
 - Async processing jobs with status tracking
 - OCR text extraction (native text extraction for TXT/CSV/DOCX/XLSX)

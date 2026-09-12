@@ -181,6 +181,7 @@ Browse them in PocketBase Admin as a superuser. Enable SMTP when you want real d
 | Section | Route | State |
 | --- | --- | --- |
 | Files | `/upload` (default) | Implemented — drag-and-drop / file-picker upload of files or whole folders, see the processing flow below |
+| Scan | `/upload/scan` | Implemented — scans from an eSCL (AirScan) scanner on the local network, see [Network scanning](/scanning) |
 | Amazon orders | `/upload/amazon` | Implemented — imports the invoice PDFs out of an order archive requested from Amazon, see [Amazon order import](#amazon-order-import) |
 | Zip archive | `/upload/zip` | Implemented — imports the documents out of a zip the user packed themselves, see [Zip archive import](#zip-archive-import) |
 | Split documents | `/upload/split` | Implemented — splits a PDF holding several joined documents into one document per part, see [Document splitting](#document-splitting) |
@@ -211,6 +212,19 @@ Here that means every type `documents.file` can store — PDF, JPEG, PNG, WebP, 
 The extension list is a pre-filter, not the last word: PocketBase decides what the `file` field accepts by sniffing the content on save, so an entry whose extension lies about its contents is refused there and reported per file in the run's errors rather than at preview time.
 
 A staged archive and a running import are one per account across both zip flows, so uploading an Amazon export discards a zip staged a moment earlier and a second import while one runs returns `409`. Restoring a Lemmary backup is a different thing entirely and lives on [`/import/archive`](#restoring); it keeps its own staging and can run alongside.
+
+### Network scanning
+
+**Scan** (`/upload/scan`) scans from an eSCL ("AirScan") device on the local network and adds the pages as one document. Setting it up, the two ways scanners are found, and why mDNS needs `network_mode: host` under Docker are covered in [Network scanning](/scanning); the API is:
+
+1. `GET /api/app/scan/discover?cidr=...` returns `{ scanners, cidr }`. Discovery is an mDNS browse of `_uscan._tcp`/`_uscans._tcp` and a sweep of `cidr` probing `GET http://<ip>/eSCL/ScannerCapabilities`, run concurrently and merged by address; the two run under one 5-second budget. An omitted `cidr` is derived as the /24 of the request's client address, which is the only hint a containerised app has about the LAN, and comes back in the response so the UI can say what was searched. A range that is not private, or larger than a /22, is refused with `400`.
+2. `POST /api/app/scan` with `{ "scanner", "source", "upload_id" }` returns `202 Accepted` and `{ "job_id" }`. `source` is `platen` (one page) or `feeder` (every sheet in one job). An empty `upload_id` starts a new document; otherwise the pages are appended to that one. Poll `GET /api/app/scan/status?job_id=...` until `completed`, whose `result` is the staged document: `upload_id`, `page_count`, `size_bytes`, `expires_at`. One scan runs at a time per user (a second start returns `409`), which is also what keeps two runs from merging onto the same file.
+3. `GET /api/app/scan/pdf?upload_id=...` streams the document so far, for the preview. `DELETE /api/app/scan?upload_id=...` discards it.
+4. `POST /api/app/scan/document` with `{ "upload_id" }` saves it as a `pending` document and returns `{ "document_id" }`, so it goes through the normal OCR + AI [processing flow](#processing-flow). A re-scan of something already in the library comes back as `400` with `duplicate_of`.
+
+The scan itself is three requests to the device: `POST {base}/ScanJobs` with a PWG ScanSettings document (A4, 300 dpi, RGB24, `application/pdf`), then `GET {job}/NextDocument` until it answers `404`, then `DELETE {job}` — the delete always runs, including after a failure, because a device left holding an open job refuses the next one. Pages are merged with `pdfunite` into `<data dir>/temp/scan/<upload id>.pdf`, which expires after 30 minutes like any other staged upload.
+
+Because the address comes from whoever is signed in, every request goes through a dial-time guard that allows only RFC1918 and IPv6 ULA addresses: public addresses, `localhost` and link-local `169.254.x` (the cloud metadata service) are refused, redirects are not followed, and a `Location` header pointing at another host is rejected. The staged document is capped at the `documents.file` field's own 20 MB, checked before each scan so a full document is reported while there is still something to do about it.
 
 ### Document splitting
 

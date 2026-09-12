@@ -18,6 +18,7 @@ import { InboxPage } from './routes/inbox'
 import { ActivityPage } from './routes/activity'
 import { UploadPage } from './routes/upload'
 import { UploadFilesPage } from './routes/upload.index'
+import { UploadScanPage } from './routes/upload.scan'
 import { UploadAmazonPage } from './routes/upload.amazon'
 import { UploadZipPage } from './routes/upload.zip'
 import { UploadSplitPage } from './routes/upload.split'
@@ -98,6 +99,12 @@ const uploadFilesRoute = createRoute({
   getParentRoute: () => uploadRoute,
   path: '/',
   component: UploadFilesPage,
+})
+
+const uploadScanRoute = createRoute({
+  getParentRoute: () => uploadRoute,
+  path: 'scan',
+  component: UploadScanPage,
 })
 
 const uploadAmazonRoute = createRoute({
@@ -293,7 +300,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   inboxRoute,
   activityRoute,
-  uploadRoute.addChildren([uploadFilesRoute, uploadAmazonRoute, uploadZipRoute, uploadSplitRoute]),
+  uploadRoute.addChildren([uploadFilesRoute, uploadScanRoute, uploadAmazonRoute, uploadZipRoute, uploadSplitRoute]),
   ragRoute.addChildren([
     ragIndexRoute,
     searchRoute.addChildren([searchSessionRoute]),
