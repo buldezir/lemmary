@@ -12,6 +12,7 @@ import (
 	"lemmary/backend/internal/fulltext"
 	"lemmary/backend/internal/limits"
 	"lemmary/backend/internal/mailsink"
+	"lemmary/backend/internal/metrics"
 	"lemmary/backend/internal/ngxapi"
 	"lemmary/backend/internal/ngxid"
 	"lemmary/backend/internal/worker"
@@ -30,6 +31,10 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	// endpoint the UI reads.
 	lim, badLimitKeys := limits.FromEnv(app.Logger())
 	applyPerFileCaps(lim)
+	// Bound to the same numbers, so what a dashboard reports and what the app
+	// enforces cannot drift apart. Registered on every install, limits or none:
+	// how many documents and pages there are is worth knowing either way.
+	registerUsageMetrics(app, lim)
 
 	ft := fulltext.New()
 	// The chunk index is derived from the embedding store, so it is given its
@@ -77,6 +82,12 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	ngxapi.Register(app, ft)
 	worker.Register(app, rt, backfill)
 
+	// After worker.Register, which declares the queue gauge. Order is not
+	// actually load-bearing -- OpenTelemetry's global meter hands every
+	// instrument declared before this point to the provider once it exists --
+	// but reading it in wiring order is worth more than saving a line.
+	metrics.Register(app)
+
 	registerCOOPHeader(app)
 
 	// Prefer the in-app setup wizard over PocketBase's browser installer UI.
@@ -87,6 +98,8 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 			return e.Next()
 		},
 	})
+
+	registerRequestMetrics(app)
 
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Func: func(e *core.ServeEvent) error {

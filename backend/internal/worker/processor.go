@@ -9,11 +9,13 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/duplicates"
 	"lemmary/backend/internal/inflight"
+	"lemmary/backend/internal/metrics"
 	"lemmary/backend/internal/models"
 )
 
@@ -52,6 +54,19 @@ func Register(app core.App, rt *config.Runtime, backfill *Backfiller) {
 	// embedding never get one. The instance is passed in because the API binds
 	// its manual sweep to the same one.
 	registerEmbeddingBackfill(app, backfill)
+
+	// Read on scrape rather than tracked, so nothing has to stay in step with
+	// a queue three hooks and a cron all push into.
+	// ponytail: one COUNT per scrape. If a scrape interval ever makes that
+	// matter, keep the number in the Processor and update it where jobs are
+	// created and claimed.
+	reg := metrics.QueueDepth(func() (int64, error) {
+		return app.CountRecords("processing_jobs", dbx.HashExp{"status": models.JobStatusPending})
+	})
+	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
+		_ = reg.Unregister()
+		return e.Next()
+	})
 
 	app.Logger().Info("worker registered", "cron", cronExpr)
 }
@@ -424,6 +439,20 @@ func (p *Processor) runJob(jobID string, snap config.Snapshot) error {
 
 	runner := NewPipelineRunner(p.app, snap.Cfg, snap.OCR, snap.AI, snap.Embedder)
 	return runner.Run(context.Background(), jobID)
+}
+
+// jobOutcome names the status a finished run left behind, for the metric's
+// outcome label. Pending is the retry: the run failed a step and put itself
+// back on the queue. Running is a run that bailed before it could record how
+// it ended -- a save that failed -- which is an error, not a state.
+func jobOutcome(status string) string {
+	switch status {
+	case models.JobStatusPending:
+		return "retry"
+	case models.JobStatusRunning, "":
+		return "error"
+	}
+	return status
 }
 
 func parseSteps(job *core.Record) ([]string, error) {

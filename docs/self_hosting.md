@@ -64,6 +64,15 @@ it on `8090`. The image's healthcheck polls `/api/health` with a generous
 120-second start period, because the first boot runs migrations and may rebuild
 the search index over an archive that is already large.
 
+Optional observability is a second port. Set
+[`METRICS_ADDR`](/setup#always-env-backed) to serve a Prometheus scrape
+endpoint; unset leaves it off. A bare port (`9464`) listens on every interface
+inside the container, which is what a published port or a scrape from the
+compose network needs. The mapping is deliberately not in `docker-compose.yml`:
+the endpoint has no authentication, and should not become internet-reachable
+because a variable was set. Name a host (`127.0.0.1:9464`) to keep it on
+loopback when running the binary on the host.
+
 The SPA calls whatever origin it was served from, so **no URL has to be
 configured for the container** — `VITE_POCKETBASE_URL` in `.env` only affects a
 frontend built from source. Put a TLS-terminating proxy in front and two things

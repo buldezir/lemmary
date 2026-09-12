@@ -12,6 +12,7 @@ import (
 	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/logfmt"
+	"lemmary/backend/internal/metrics"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/ocr"
 	"lemmary/backend/internal/strutil"
@@ -59,6 +60,14 @@ func (r *PipelineRunner) Run(ctx context.Context, jobID string) error {
 	if job.GetString("status") != models.JobStatusRunning {
 		return nil
 	}
+	// The status is the only thing that knows how a run ended:
+	// handleStepFailure returns nil when it re-pends the job, so a nil error
+	// covers both "done" and "will try again". Every exit below sets it on
+	// this record before saving, so it is read from here rather than back
+	// from the database.
+	defer func() {
+		metrics.Job(jobOutcome(job.GetString("status")), time.Since(jobStart))
+	}()
 
 	documentID := job.GetString("document")
 	steps, err := parseSteps(job)

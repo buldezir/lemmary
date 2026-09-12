@@ -13,6 +13,7 @@ import (
 	"github.com/openai/openai-go/packages/param"
 	"github.com/openai/openai-go/shared"
 	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/metrics"
 	"lemmary/backend/internal/opencode"
 )
 
@@ -98,7 +99,11 @@ func (c *OpenAIClient) Model() string {
 // default. The reasoning_effort case prefers the Responses API, which keeps both
 // the tools and the reasoning, and is remembered per model and endpoint so the
 // discovery costs one rejected request per process rather than one per call.
-func (c *OpenAIClient) Complete(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
+func (c *OpenAIClient) Complete(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (resp *openai.ChatCompletion, err error) {
+	// One measurement per call the caller made, not per HTTP request: the
+	// endpoint discovery and the four degradation retries below are all time
+	// it waited.
+	defer metrics.TimeAICall(ctx, "chat", c.sdk, string(params.Model))(&err)
 	switch opencode.Endpoint(c.sdk, string(params.Model)) {
 	case opencode.EndpointMessages:
 		resp, err := opencode.CompleteViaMessages(ctx, c.messages, c.logger, c.baseURL, params, extra...)
@@ -282,6 +287,7 @@ func logUsage(logger *slog.Logger, model string, u Usage, extra ...any) {
 		"completion_tokens", u.Completion,
 	}
 	logger.Info("ai completion usage", append(args, extra...)...)
+	metrics.AITokens(model, int64(u.Prompt), int64(u.Cached), int64(u.Completion))
 }
 
 // completeStreaming streams a chat completion, handing each content delta to
@@ -291,12 +297,16 @@ func logUsage(logger *slog.Logger, model string, u Usage, extra ...any) {
 //
 // Usage arrives in a final chunk with no choices, and only when asked for;
 // providers that do not implement stream_options simply never send it.
+//
+// Only the error return is named, and only so the deferred timer can read it;
+// the body already has a `usage` of its own.
 func (c *OpenAIClient) completeStreaming(
 	ctx context.Context,
 	params openai.ChatCompletionNewParams,
 	onDelta func(string),
 	extra ...any,
-) (string, Usage, error) {
+) (_ string, _ Usage, err error) {
+	defer metrics.TimeAICall(ctx, "chat", c.sdk, string(params.Model))(&err)
 	switch opencode.Endpoint(c.sdk, string(params.Model)) {
 	case opencode.EndpointMessages:
 		text, u, err := opencode.CompleteStreamingViaMessages(ctx, c.messages, c.logger, c.baseURL, params, onDelta, extra...)
@@ -345,7 +355,7 @@ func (c *OpenAIClient) completeStreaming(
 			onDelta(delta)
 		}
 	}
-	err := stream.Err()
+	err = stream.Err()
 	if err == nil {
 		logUsage(c.logger, string(params.Model), usage, append(extra, "stream", true)...)
 	}

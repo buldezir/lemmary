@@ -16,6 +16,7 @@ import (
 
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
+	"lemmary/backend/internal/metrics"
 )
 
 // Embedding request shaping. Every provider enforces some version of these
@@ -191,7 +192,12 @@ func batches(inputs []string) []batchRange {
 	return out
 }
 
-func (e *openAIEmbedder) embedBatch(ctx context.Context, inputs []string) ([][]float32, int, error) {
+// Only the error is named, and only so the deferred timer can read it: one
+// measurement covers the whole batch including its retry sleeps, which is what
+// a caller waiting on it experienced.
+func (e *openAIEmbedder) embedBatch(ctx context.Context, inputs []string) (_ [][]float32, _ int, err error) {
+	defer metrics.TimeAICall(ctx, "embed", e.sdk, e.model)(&err)
+
 	params := openai.EmbeddingNewParams{
 		Input: openai.EmbeddingNewParamsInputUnion{OfArrayOfStrings: inputs},
 		Model: e.model,
