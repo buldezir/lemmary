@@ -36,7 +36,7 @@ export function InboxPage() {
         {error && <p className="text-sm text-madder">{error}</p>}
 
         {!loading && documents.length === 0 && (
-          <div className="rounded-none border border-dashed border-line-strong bg-surface py-10 text-center">
+          <div className="rounded-none border border-line bg-surface py-10 text-center">
             {/* A cleared Inbox is not empty in the sense of "upload something",
                 so it says the opposite of what the documents list would. There
                 is no filter to blame it on here. */}
