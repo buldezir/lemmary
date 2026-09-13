@@ -3,14 +3,12 @@ package ocr
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -246,72 +244,5 @@ func TestDoclingSerializesRequests(t *testing.T) {
 	// host's CPUs, so it says one at a time and pdfsplit honours that.
 	if got := NewDoclingProvider("http://docling:5001", "", "", 0, nil).MaxConcurrency(); got != 1 {
 		t.Errorf("MaxConcurrency = %d, want 1", got)
-	}
-}
-
-// MaxConcurrency was enforced by accident for as long as the worker ran one
-// pipeline at a time. Now that it runs several, the provider has to hold the
-// line itself: a second request in flight takes cores away from the first
-// rather than adding any.
-func TestDoclingSerializesConcurrentExtracts(t *testing.T) {
-	var now, peak atomic.Int64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if n := now.Add(1); n > peak.Load() {
-			peak.Store(n)
-		}
-		time.Sleep(30 * time.Millisecond)
-		now.Add(-1)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, doclingBody("page"))
-	}))
-	t.Cleanup(server.Close)
-
-	provider := NewDoclingProvider(server.URL, "", "", 5*time.Second, nil)
-	path := writeTempFile(t, "page.png", []byte("not really a png"))
-
-	var wg sync.WaitGroup
-	for i := 0; i < 4; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if _, err := provider.ExtractText(context.Background(), path, "image/png"); err != nil {
-				t.Errorf("extract: %v", err)
-			}
-		}()
-	}
-	wg.Wait()
-
-	if got := peak.Load(); got > int64(provider.MaxConcurrency()) {
-		t.Fatalf("%d requests overlapped at the sidecar, MaxConcurrency is %d", got, provider.MaxConcurrency())
-	}
-}
-
-// A caller that gave up must not be left queued behind the ones ahead of it.
-func TestDoclingExtractHonoursCancelledContextWhileQueued(t *testing.T) {
-	release := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		<-release
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, doclingBody("page"))
-	}))
-	t.Cleanup(server.Close)
-	t.Cleanup(func() { close(release) })
-
-	provider := NewDoclingProvider(server.URL, "", "", 5*time.Second, nil)
-	path := writeTempFile(t, "page.png", []byte("not really a png"))
-
-	held := make(chan struct{})
-	go func() {
-		close(held)
-		_, _ = provider.ExtractText(context.Background(), path, "image/png")
-	}()
-	<-held
-	// Give the first call time to take the slot before the second queues behind it.
-	time.Sleep(50 * time.Millisecond)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	if _, err := provider.ExtractText(ctx, path, "image/png"); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("queued caller should give up with its context, got %v", err)
 	}
 }

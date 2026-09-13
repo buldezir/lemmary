@@ -39,12 +39,6 @@ type DoclingProvider struct {
 	apiKey  string
 	client  *http.Client
 	logger  *slog.Logger
-	// sem enforces MaxConcurrency on the instance. Until the worker ran more
-	// than one pipeline at a time, its process-wide mutex enforced this by
-	// accident; now nothing else does. On the instance rather than at the call
-	// sites so the pipeline and pdfsplit share one budget -- which is what the
-	// sidecar actually has.
-	sem chan struct{}
 }
 
 // NewDoclingProvider builds a client for docling-serve at baseURL.
@@ -65,15 +59,13 @@ func NewDoclingProvider(baseURL, engine, apiKey string, timeout time.Duration, l
 	if logger == nil {
 		logger = slog.Default()
 	}
-	p := &DoclingProvider{
+	return &DoclingProvider{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		engine:  strings.TrimSpace(engine),
 		apiKey:  strings.TrimSpace(apiKey),
 		client:  &http.Client{Timeout: timeout},
 		logger:  logger,
 	}
-	p.sem = make(chan struct{}, p.MaxConcurrency())
-	return p
 }
 
 func (p *DoclingProvider) Name() string {
@@ -83,21 +75,16 @@ func (p *DoclingProvider) Name() string {
 // MaxConcurrency is 1: the shipped overlay runs one uvicorn worker, and docling
 // already threads inside a single conversion, so a second request in flight
 // takes cores away from the first rather than adding any.
+//
+// Callers honour this by not fanning out past it (pdfsplit.providerConcurrency),
+// never by queueing behind a semaphore. ExtractText is called with OCRTimeout
+// already running, so a queue would spend a waiter's whole deadline before it
+// reached the sidecar and fail it outright rather than make it wait. The worker
+// obeys it the same way, by WORKER_CONCURRENCY staying at 1 for local OCR.
 func (p *DoclingProvider) MaxConcurrency() int { return 1 }
 
 func (p *DoclingProvider) ExtractText(ctx context.Context, filePath string, mimeType string) (string, error) {
 	start := time.Now()
-
-	// Queue rather than pile on: four callers hitting a one-worker sidecar each
-	// burn their own OCRTimeout waiting for cores the others hold.
-	if p.sem != nil {
-		select {
-		case p.sem <- struct{}{}:
-			defer func() { <-p.sem }()
-		case <-ctx.Done():
-			return "", ctx.Err()
-		}
-	}
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {

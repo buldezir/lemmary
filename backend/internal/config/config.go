@@ -86,22 +86,23 @@ func WorkerCronFromEnv() string {
 
 // DefaultWorkerConcurrency is how many document pipelines run at once.
 //
-// It is 4 rather than 1, which means an absent flag is *not* the pre-flag
-// behaviour -- the one place in this codebase where that rule is broken, and
-// deliberately. A pipeline is roughly a minute of waiting on somebody else's
-// HTTP server (an OCR round trip, then an extraction round trip), so one at a
-// time turned a 500-file import into nine hours of a single goroutine blocked
-// on I/O. Nobody would have opted in to the fix, and everybody wanted it.
+// One, so an absent flag is the behaviour this codebase has always had. There
+// is no idle time to win back by raising it -- drainPending already picks the
+// next job the instant the current one ends, and has never waited for a cron
+// tick between two jobs. What raising it buys is overlap, and overlap is only
+// free when the work is somebody else's HTTP server waiting: a local OCR
+// sidecar spends this host's CPUs, and N documents in flight there queue
+// rather than overlap.
 //
-// The cost of that choice is that an upgrade quadruples the load on whatever
-// OCR and AI endpoints an install already has, which is why DoclingProvider
-// enforces its own MaxConcurrency instead of relying on the worker running one
-// job at a time.
-const DefaultWorkerConcurrency = 4
+// Two things still behave differently above 1, both documented in .env.example:
+// near-duplicate detection assumes documents are fingerprinted in creation
+// order (see DetectDuplicatesStep.Run), and the OCR deadline is per call, so a
+// provider that serialises internally spends it queueing.
+const DefaultWorkerConcurrency = 1
 
 // WorkerConcurrencyFromEnv is how many jobs the worker drains in parallel.
 // Below 1 is meaningless and falls back to the default rather than stopping the
-// worker; WORKER_CONCURRENCY=1 is the way back to serial processing.
+// worker.
 func WorkerConcurrencyFromEnv() int {
 	return envIntDefault("WORKER_CONCURRENCY", DefaultWorkerConcurrency, 1)
 }
