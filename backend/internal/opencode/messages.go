@@ -52,7 +52,7 @@ func NewMessages(apiKey, baseURL string, timeout time.Duration) anthropic.Client
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
-	return anthropic.NewClient(
+	opts := []anthropicoption.RequestOption{
 		// This is an OpenCode endpoint reached with an OpenCode key. Without
 		// this marker the SDK also walks its own credential chain --
 		// ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, a config profile -- and a
@@ -67,7 +67,19 @@ func NewMessages(apiKey, baseURL string, timeout time.Duration) anthropic.Client
 		anthropicoption.WithMaxRetries(0),
 		anthropicoption.WithHeader("User-Agent", aiprovider.UserAgent),
 		anthropicoption.WithMiddleware(sessionMiddleware()),
-	)
+	}
+	if aiprovider.Managed() {
+		opts = append(opts, anthropicoption.WithMiddleware(documentMiddleware))
+	}
+	return anthropic.NewClient(opts...)
+}
+
+// documentMiddleware is the Anthropic SDK's copy of the document-header
+// middleware aiprovider.DocumentOptions installs on the OpenAI one. Same
+// header, same context value; the two SDKs simply cannot share a middleware.
+func documentMiddleware(req *http.Request, next anthropicoption.MiddlewareNext) (*http.Response, error) {
+	aiprovider.StampDocument(req)
+	return next(req)
 }
 
 // sessionMiddleware is aiprovider.SessionMiddleware for the Anthropic SDK,

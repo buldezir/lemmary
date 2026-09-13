@@ -104,6 +104,8 @@ func NewEmbedder(sdk, apiKey, model, baseURL string, dims int, timeout time.Dura
 		opts = append(opts, option.WithAPIKey(apiKey))
 	}
 	opts = append(opts, extra...)
+	// See NewOpenAIClient: last, and nothing at all when not managed.
+	opts = append(opts, aiprovider.DocumentOptions()...)
 	if strings.TrimSpace(baseURL) != "" {
 		opts = append(opts, option.WithBaseURL(strings.TrimRight(baseURL, "/")))
 	}

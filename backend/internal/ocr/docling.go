@@ -249,6 +249,7 @@ func (p *DoclingProvider) convert(ctx context.Context, fileName, mimeType string
 	if p.apiKey != "" {
 		req.Header.Set("X-Api-Key", p.apiKey)
 	}
+	aiprovider.StampDocument(req)
 
 	aiprovider.LogRequest(p.logger, aiprovider.SDKDocling, http.MethodPost, endpoint, p.engine, "purpose", "ocr", "mime", mimeType)
 	resp, err := p.client.Do(req)

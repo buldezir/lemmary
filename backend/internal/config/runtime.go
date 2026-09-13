@@ -65,6 +65,9 @@ func (r *Runtime) OnReload(fn func(core.App, Snapshot)) {
 }
 
 func NewRuntime(env AIEnv) *Runtime {
+	// AI_MANAGED read once, here, and handed to the package that owns the
+	// document header: see aiprovider.SetManaged.
+	aiprovider.SetManaged(env.Managed)
 	return &Runtime{
 		snap: Snapshot{Cfg: env.Defaults()},
 		env:  env,
