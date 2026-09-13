@@ -56,7 +56,7 @@ func setJobOverrides(job *core.Record, overrides config.Overrides) {
 func (p *Processor) effectiveSnapshot(job *core.Record) (config.Snapshot, error) {
 	overrides := parseJobOverrides(job)
 	if overrides.Empty() {
-		return p.rt.Snapshot(), nil
+		return p.snapshot(), nil
 	}
 	return p.rt.WithOverrides(p.app, overrides)
 }

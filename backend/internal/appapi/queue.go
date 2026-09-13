@@ -19,9 +19,9 @@ const stopReason = "Stopped from the Activity page before it ran."
 
 type stopQueueResult struct {
 	Stopped int `json:"stopped"`
-	// Running is what could not be stopped: the job already inside the
-	// pipeline, which runs to the end. Zero or one in practice -- the worker
-	// drains serially -- but counted rather than assumed.
+	// Running is what could not be stopped: the jobs already inside the
+	// pipeline, which run to the end. At most WORKER_CONCURRENCY of them, one
+	// by default -- but counted rather than assumed.
 	Running int `json:"running"`
 	// Remaining is pending work a save error prevented us from cancelling.
 	Remaining int `json:"remaining"`
@@ -40,12 +40,12 @@ type discardResult struct {
 
 // handlePostStopQueue cancels every job of the caller's that has not started.
 //
-// It stops the queue, not the pipeline: the worker drains serially inside
-// runner.Run with no cancellation channel to pull, so the job in flight runs to
-// the end and drainPending then finds nothing left to pick up. That is the
-// whole of "stop" here, and it is enough for the case it exists for -- an
-// archive dropped in by mistake, where the cost is the four hundred documents
-// behind the current one, not the current one.
+// It stops the queue, not the pipeline: runner.Run has no cancellation channel
+// to pull, so whatever is in flight runs to the end and drainPending then finds
+// nothing left to pick up. That is the whole of "stop" here, and it is enough
+// for the case it exists for -- an archive dropped in by mistake, where the
+// cost is the four hundred documents behind the current one, not the current
+// one. Raising WORKER_CONCURRENCY raises that cost from one document to N.
 //
 // Stopped jobs and documents are marked cancelled. This keeps deliberate user
 // action out of failure counts and gives the discard sweep an exact category
