@@ -27,7 +27,11 @@ export function IndexPage() {
   // What the current filter makes possible: a list of failures can be requeued,
   // a list of doubtful documents can be cleared.
   const bulkMode: BulkMode | null =
-    statusFilter === 'failed' ? 'reprocess' : statusFilter === 'needs_review' ? 'review' : null
+    statusFilter === 'failed' || statusFilter === 'cancelled'
+      ? 'reprocess'
+      : statusFilter === 'needs_review'
+        ? 'review'
+        : null
 
   // The timeline has no date filter of its own: picking a period writes the
   // From/To inputs, and the highlight is read back out of them. "No date" is
@@ -57,6 +61,7 @@ export function IndexPage() {
         <DocumentTimeline
           timeline={timeline.data}
           active={query.undated ? UNDATED_PERIOD : activePeriod(query.from, query.to)}
+          dateFrom={query.from}
           onSelect={onSelectPeriod}
           expanded={showTimeline}
           onToggleExpanded={() => setShowTimeline((shown) => !shown)}

@@ -243,6 +243,15 @@ describe('summarizeJob', () => {
     })
   })
 
+  it('distinguishes a deliberately cancelled job from a failure', () => {
+    expect(
+      summarizeJob(
+        job({ status: 'cancelled', finished_at: at(-1000), error: 'Stopped from Activity.' }),
+        now,
+      ),
+    ).toEqual({ tone: 'warning', label: 'Processing cancelled', detail: 'Stopped from Activity.' })
+  })
+
   // failJob used to write job.error for a step failure too, and the summary
   // preferred it -- so every real failure read "Processing failed" instead of
   // naming the step. Old rows still carry both; the step wins.

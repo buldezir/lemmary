@@ -330,11 +330,12 @@ func TestSearchStatusFilter(t *testing.T) {
 func TestSearchUnfinishedStatusFilter(t *testing.T) {
 	idx := testIndex(t)
 	for id, status := range map[string]string{
-		"done":     models.DocStatusCompleted,
-		"queued":   models.DocStatusPending,
-		"working":  models.DocStatusProcessing,
-		"broken":   models.DocStatusFailed,
-		"doubtful": models.DocStatusNeedsReview,
+		"done":      models.DocStatusCompleted,
+		"queued":    models.DocStatusPending,
+		"working":   models.DocStatusProcessing,
+		"broken":    models.DocStatusFailed,
+		"cancelled": models.DocStatusCancelled,
+		"doubtful":  models.DocStatusNeedsReview,
 	} {
 		mustPut(t, idx, id, map[string]any{
 			FieldUser:             "u1",
@@ -352,7 +353,7 @@ func TestSearchUnfinishedStatusFilter(t *testing.T) {
 	if containsID(hits, "done") {
 		t.Fatalf("the Inbox must not hold a completed document: %v", hits)
 	}
-	for _, id := range []string{"queued", "working", "broken", "doubtful"} {
+	for _, id := range []string{"queued", "working", "broken", "cancelled", "doubtful"} {
 		if !containsID(hits, id) {
 			t.Fatalf("missing %q from the unfinished set: %v", id, hits)
 		}

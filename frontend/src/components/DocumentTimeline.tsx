@@ -1,10 +1,15 @@
 import type { DocumentTimeline as DocumentTimelineData } from '../lib/api/documents'
-import { UNDATED_PERIOD, groupByYear, monthLabel } from '../lib/timeline'
+import { UNDATED_PERIOD, groupByYear, monthLabel, openYear } from '../lib/timeline'
 
 type DocumentTimelineProps = {
   timeline: DocumentTimelineData | null
   /** The selected period ("2025", "2025-03" or "undated"), from the filters. */
   active: string | null
+  /**
+   * The From filter, whatever shape it is in. Only used to pick the open year
+   * when the range is not a whole year or month, which `active` cannot express.
+   */
+  dateFrom: string
   /** Called with the clicked period, or null when the active one is clicked again. */
   onSelect: (period: string | null) => void
   /** Shown in full, or collapsed to the hairline that expands it again. */
@@ -54,6 +59,7 @@ function rowStateClassName(isActive: boolean) {
 export function DocumentTimeline({
   timeline,
   active,
+  dateFrom,
   onSelect,
   expanded,
   onToggleExpanded,
@@ -63,6 +69,11 @@ export function DocumentTimeline({
 
   const years = groupByYear(timeline.months)
   if (years.length === 0 && timeline.undated === 0) return null
+
+  // Only one year shows its months, or a long archive buries the grid under
+  // ninety rows. Which one is derived from the filter rather than stored, so
+  // clicking a year opens it as a side effect of filtering by it.
+  const open = openYear(active, years, dateFrom)
 
   function select(period: string) {
     onSelect(active === period ? null : period)
@@ -110,6 +121,7 @@ export function DocumentTimeline({
             <button
               type="button"
               aria-pressed={active === year.year}
+              aria-expanded={year.year === open}
               data-timeline-period={year.year}
               onClick={() => select(year.year)}
               className={`${rowClassName} pl-2 font-display font-semibold ${rowStateClassName(
@@ -119,21 +131,23 @@ export function DocumentTimeline({
               <span>{year.year}</span>
               <span className="text-xs tabular-nums text-ink-faint">{year.count}</span>
             </button>
-            <div className="flex flex-col">
-              {year.months.map((month) => (
-                <button
-                  key={month.month}
-                  type="button"
-                  aria-pressed={active === month.month}
-                  data-timeline-period={month.month}
-                  onClick={() => select(month.month)}
-                  className={`${rowClassName} pl-4 ${rowStateClassName(active === month.month)}`}
-                >
-                  <span>{monthLabel(month.month)}</span>
-                  <span className="text-xs tabular-nums text-ink-faint">{month.count}</span>
-                </button>
-              ))}
-            </div>
+            {year.year === open && (
+              <div className="flex flex-col">
+                {year.months.map((month) => (
+                  <button
+                    key={month.month}
+                    type="button"
+                    aria-pressed={active === month.month}
+                    data-timeline-period={month.month}
+                    onClick={() => select(month.month)}
+                    className={`${rowClassName} pl-4 ${rowStateClassName(active === month.month)}`}
+                  >
+                    <span>{monthLabel(month.month)}</span>
+                    <span className="text-xs tabular-nums text-ink-faint">{month.count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ))}
 

@@ -48,6 +48,7 @@ var restorableStatuses = map[string]struct{}{
 	models.DocStatusPending:     {},
 	models.DocStatusCompleted:   {},
 	models.DocStatusFailed:      {},
+	models.DocStatusCancelled:   {},
 	models.DocStatusNeedsReview: {},
 }
 

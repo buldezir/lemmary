@@ -21,7 +21,7 @@ import {
 } from '../lib/api/maintenance'
 import { getLimits, type InstanceLimits } from '../lib/api/limits'
 import { LimitsUsage } from '../components/LimitsUsage'
-import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
+import { REPROCESS_MODE_LABELS, countLabel, type ReprocessMode } from '../lib/processing'
 import { Button, labelTextClassName, sectionClassName, sectionTitleClassName } from '../components/ui'
 
 const selectClassName =
@@ -39,10 +39,6 @@ const embeddingPollMs = 3_000
 // bigger batch does not finish sooner — it only commits more AI spend up front.
 const reprocessBatchSizes = [50, 100, 500] as const
 const reprocessModes: ReprocessMode[] = ['auto', 'full', 'extraction']
-
-function countLabel(count: number, singular: string, plural: string) {
-  return `${count} ${count === 1 ? singular : plural}`
-}
 
 function activeJobsTotal(counts: ActiveJobCounts | null) {
   return counts ? counts.pending + counts.running : 0

@@ -26,6 +26,7 @@ const statusStyles: Record<DocumentStatus, string> = {
   processing: 'text-sky-900 ring-sky-900/40',
   completed: 'text-forest ring-forest/40',
   failed: 'text-madder ring-madder/50',
+  cancelled: 'text-ink-muted ring-ink-muted/40',
   needs_review: 'text-amber-800 ring-amber-800/40',
 }
 

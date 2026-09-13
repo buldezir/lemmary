@@ -51,6 +51,10 @@ func Register(
 			g.GET("/documents/search", bindAuth(handleDocumentSearch(app, idx)))
 			g.GET("/documents/timeline", bindAuth(handleDocumentsTimeline(app)))
 			g.POST("/documents/reprocess-failed", bindAuth(handlePostReprocessFailed(app, rt)))
+			// The way back out of a mistaken import: stop what is queued, then
+			// throw away what it was queued for.
+			g.POST("/documents/discard-unprocessed", bindAuth(handlePostDiscardUnprocessed(app)))
+			g.POST("/jobs/stop", bindAuth(handlePostStopQueue(app)))
 			g.POST("/search", bindAuth(handleDeepSearch(app, rt, idx))).
 				Bind(apis.BodyLimit(chatMaxBodyBytes))
 			g.POST("/search/stream", bindAuth(handleSearchStream(app, rt, idx))).

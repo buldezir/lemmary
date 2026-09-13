@@ -96,6 +96,18 @@ func TestApplyMetadataDropsUnusableValues(t *testing.T) {
 	}
 }
 
+func TestApplyMetadataRestoresCancelledStatus(t *testing.T) {
+	record := core.NewRecord(testDocumentsCollection())
+	meta := map[string]any{"processing_status": models.DocStatusCancelled}
+
+	if err := applyMetadata(record, meta, newTaxonomyResolver(nil, "owner", &Result{})); err != nil {
+		t.Fatalf("applyMetadata: %v", err)
+	}
+	if got := record.GetString("processing_status"); got != models.DocStatusCancelled {
+		t.Fatalf("processing_status = %q, want %q", got, models.DocStatusCancelled)
+	}
+}
+
 func TestParseTimestamp(t *testing.T) {
 	stored := types.NowDateTime().String()
 	got, ok := parseTimestamp(stored)

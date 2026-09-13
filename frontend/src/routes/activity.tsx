@@ -3,8 +3,10 @@ import { Link } from '@tanstack/react-router'
 import { useAsync } from '../hooks/useAsync'
 import { pb } from '../lib/pb'
 import { listActiveJobs } from '../lib/api/jobs'
-import { reprocessDocuments } from '../lib/api/documents'
+import { countDocumentsWithStatus, reprocessDocuments } from '../lib/api/documents'
+import { discardUnprocessedDocuments, stopQueue } from '../lib/api/maintenance'
 import {
+  countLabel,
   formatDuration,
   jobDurationMs,
   jobStillRunning,
@@ -82,27 +84,125 @@ export function ActivityPage() {
   }, [anyRunning])
 
   const active = jobs.filter((job) => !job.finished_at)
-  const failed = jobs.filter((job) => job.finished_at)
+  const cancelled = jobs.filter((job) => job.finished_at && job.status === 'cancelled')
+  const failed = jobs.filter((job) => job.finished_at && job.status !== 'cancelled')
+
+  // The way out of a mistaken import: stop what is queued, then throw away what
+  // it was queued for. Both live here rather than on Management, which is admin
+  // only -- the person who has just dropped four hundred documents in by
+  // accident is watching this page.
+  const [busy, setBusy] = useState('')
+  const [notice, setNotice] = useState('')
+  const [actionError, setActionError] = useState('')
+
+  async function onStopAll() {
+    setBusy('stop')
+    setNotice('')
+    setActionError('')
+    try {
+      const result = await stopQueue()
+      setNotice(
+        result.stopped === 0
+          ? result.remaining > 0
+            ? `${countLabel(result.remaining, 'queued job', 'queued jobs')} could not be stopped.`
+            : 'Nothing was queued to stop.'
+          : `Stopped ${countLabel(result.stopped, 'queued job', 'queued jobs')}.` +
+              (result.running > 0 ? ' The document already being processed finishes.' : '') +
+              (result.remaining > 0
+                ? ` ${countLabel(result.remaining, 'queued job', 'queued jobs')} could not be stopped.`
+                : '') +
+              ' They are listed as cancelled, and Reprocess queues them again.' +
+              ' An import still unpacking keeps adding to the queue -- stop again once it has finished.',
+      )
+      await reload()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not stop the queue')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  // Counted on the click rather than polled: the number only matters at the
+  // moment it goes into the confirmation, and this page already polls enough.
+  async function onDiscard() {
+    setBusy('discard')
+    setNotice('')
+    setActionError('')
+    try {
+      const [queued, cancelledCount] = await Promise.all([
+        countDocumentsWithStatus('pending'),
+        countDocumentsWithStatus('cancelled'),
+      ])
+      const total = queued + cancelledCount
+      if (total === 0) {
+        setNotice('Nothing unprocessed to delete.')
+        return
+      }
+      const confirmed = window.confirm(
+        `Delete up to ${countLabel(total, 'unprocessed document', 'unprocessed documents')} ` +
+          `(${queued} queued, ${cancelledCount} cancelled)?\n\n` +
+          'The original files go too. Failed documents are not touched, and neither is a ' +
+          'document that has already been processed once and is only queued again. This cannot be undone.',
+      )
+      if (!confirmed) return
+      const result = await discardUnprocessedDocuments()
+      setNotice(
+        `Deleted ${countLabel(result.deleted, 'document', 'documents')}.` +
+          (result.kept > 0
+            ? ` ${countLabel(result.kept, 'document was', 'documents were')} kept: already processed, only queued again.`
+            : '') +
+          (result.remaining > 0 ? ` ${result.remaining} could not be deleted.` : ''),
+      )
+      await reload()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not delete the unprocessed documents')
+    } finally {
+      setBusy('')
+    }
+  }
 
   return (
     <section className={sectionClassName}>
-      <h2 className={sectionTitleClassName}>Activity</h2>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <h2 className={sectionTitleClassName}>Activity</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            size="xs"
+            disabled={busy !== ''}
+            onClick={() => void onStopAll()}
+          >
+            {busy === 'stop' ? 'Stopping...' : 'Stop all'}
+          </Button>
+          <Button
+            variant="secondary"
+            size="xs"
+            disabled={busy !== ''}
+            onClick={() => void onDiscard()}
+          >
+            {busy === 'discard' ? 'Deleting...' : 'Delete unprocessed'}
+          </Button>
+        </div>
+      </div>
       <p className="mb-4 text-sm text-ink-soft">
-        What the pipeline is doing to your documents, and what went wrong. Failures from the last
-        day stay listed so a job that broke while nobody was watching is still here to be found.
+        What the pipeline is doing to your documents, and what stopped or went wrong. Recent
+        cancellations and failures stay listed so terminal work is still here to be found.
       </p>
 
+      {notice ? <p className="mb-3 text-sm text-ink-soft">{notice}</p> : null}
+      {actionError ? <p className="mb-3 text-sm text-madder">{actionError}</p> : null}
       {error ? <p className="mb-3 text-sm text-madder">{error}</p> : null}
 
       {loading && jobs.length === 0 ? (
         <p className="text-sm text-ink-soft">Loading the queue...</p>
       ) : jobs.length === 0 ? (
         <p className="text-sm text-ink-soft">
-          Nothing in the queue, and nothing has failed in the last day.
+          Nothing in the queue, and nothing was cancelled or failed in the last day.
         </p>
       ) : (
         <div className="flex flex-col gap-6">
           <JobGroup title="In progress" jobs={active} tick={tick} onReprocessed={reload} />
+          <JobGroup title="Recently cancelled" jobs={cancelled} tick={tick} onReprocessed={reload} />
           <JobGroup title="Recently failed" jobs={failed} tick={tick} onReprocessed={reload} />
           {total > jobs.length ? (
             <p className="text-xs text-ink-soft">
