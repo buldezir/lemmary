@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/pocketbase/pocketbase/core"
 )
 
 // managedForTest turns managed mode on for the length of one test. Not
@@ -73,5 +75,29 @@ func TestStampDocument(t *testing.T) {
 				t.Errorf("%s = %q, want %q", DocumentHeader, got, tc.want)
 			}
 		})
+	}
+}
+
+// The header's value is the checksum: the record id is what the last mistake
+// put there, and it is the field sitting right next to it.
+func TestWithDocumentRecordCarriesChecksumNotID(t *testing.T) {
+	documents := core.NewBaseCollection("documents")
+	documents.Fields.Add(&core.TextField{Name: "checksum"})
+	record := core.NewRecord(documents)
+	record.Id = "doc123"
+	record.Set("checksum", "a1b2c3")
+
+	if got := DocumentFrom(WithDocumentRecord(context.Background(), record)); got != "a1b2c3" {
+		t.Errorf("DocumentFrom = %q, want the checksum", got)
+	}
+
+	// A duplicate gives its checksum up to the original, and a file that has
+	// not been hashed yet has none: both go out unnamed, not under the id.
+	record.Set("checksum", "")
+	if got := DocumentFrom(WithDocumentRecord(context.Background(), record)); got != "" {
+		t.Errorf("DocumentFrom with no checksum = %q, want empty", got)
+	}
+	if got := DocumentFrom(WithDocumentRecord(context.Background(), nil)); got != "" {
+		t.Errorf("DocumentFrom with no record = %q, want empty", got)
 	}
 }
