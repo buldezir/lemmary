@@ -300,7 +300,7 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 		}
 
 		// Request context: closing the tab cancels the upstream LLM call.
-		chatCtx := aiprovider.WithDocument(e.Request.Context(), documentID)
+		chatCtx := aiprovider.WithDocumentRecord(e.Request.Context(), document)
 		reply, err := chatter.Chat(aiprovider.WithSession(chatCtx, session.Id), ocrText, messages)
 		if err != nil {
 			app.Logger().Error("document chat failed", "document", documentID, slog.Any("error", err))

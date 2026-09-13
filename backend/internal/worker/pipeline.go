@@ -113,14 +113,15 @@ func (r *PipelineRunner) Run(ctx context.Context, jobID string) error {
 	defer jobCancel()
 	// Every provider call this job makes -- OCR, extraction, embedding -- is
 	// about this one document, so it is stamped once here rather than at each
-	// step.
+	// step. The checksum is assigned by the create hook, before this job is
+	// ever picked up, so it is already on the record.
 	//
 	// Split detection is deliberately not among them. It runs in internal/
 	// pdfsplit, against a staged upload on its own context, and there is no
 	// documents row yet to name: the upload id would fit the header's shape
 	// without being the thing it means. Those OCR and LLM calls go out
 	// unnamed until a split produces documents.
-	jobCtx = aiprovider.WithDocument(jobCtx, documentID)
+	jobCtx = aiprovider.WithDocumentRecord(jobCtx, document)
 
 	for {
 		idx := nextRunnableIndex(runs)

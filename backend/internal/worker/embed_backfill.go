@@ -313,7 +313,8 @@ func (b *Backfiller) embedBatch(
 			// The orphan sweep will clean up after it; nothing to do here.
 			continue
 		}
-		result, err := embed.EmbedDocument(aiprovider.WithDocument(ctx, id), b.app, snap.Embedder, document, false, logger)
+		docCtx := aiprovider.WithDocumentRecord(ctx, document)
+		result, err := embed.EmbedDocument(docCtx, b.app, snap.Embedder, document, false, logger)
 		if err != nil {
 			res.Failed++
 			logger.Warn("backfill embedding failed", "document", id, slog.Any("error", err))
