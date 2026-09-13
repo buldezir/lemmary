@@ -12,6 +12,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
+	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/chunk"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/embed"
@@ -312,7 +313,7 @@ func (b *Backfiller) embedBatch(
 			// The orphan sweep will clean up after it; nothing to do here.
 			continue
 		}
-		result, err := embed.EmbedDocument(ctx, b.app, snap.Embedder, document, false, logger)
+		result, err := embed.EmbedDocument(aiprovider.WithDocument(ctx, id), b.app, snap.Embedder, document, false, logger)
 		if err != nil {
 			res.Failed++
 			logger.Warn("backfill embedding failed", "document", id, slog.Any("error", err))

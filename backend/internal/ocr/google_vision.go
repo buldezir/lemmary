@@ -13,6 +13,7 @@ import (
 	vision "cloud.google.com/go/vision/v2/apiv1"
 	"cloud.google.com/go/vision/v2/apiv1/visionpb"
 	"google.golang.org/api/option"
+	"google.golang.org/grpc/metadata"
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
 )
@@ -39,6 +40,21 @@ func visionClientForKey(apiKey string) (*vision.ImageAnnotatorClient, error) {
 	}
 	visionClients[apiKey] = client
 	return client, nil
+}
+
+// withDocumentMetadata carries aiprovider.DocumentHeader to Vision, which is
+// reached over gRPC rather than HTTP: the same name, as outgoing metadata,
+// which is what gRPC turns into a header on the wire. A no-op when this is not
+// the managed deployment or the context names no document.
+func withDocumentMetadata(ctx context.Context) context.Context {
+	if !aiprovider.Managed() {
+		return ctx
+	}
+	id := aiprovider.DocumentFrom(ctx)
+	if id == "" {
+		return ctx
+	}
+	return metadata.AppendToOutgoingContext(ctx, aiprovider.DocumentHeader, id)
 }
 
 const visionMaxFilePagesPerRequest = 5
@@ -77,6 +93,7 @@ func (p *GoogleVisionProvider) Name() string {
 
 func (p *GoogleVisionProvider) ExtractText(ctx context.Context, filePath string, mimeType string) (string, error) {
 	start := time.Now()
+	ctx = withDocumentMetadata(ctx)
 	if p.initErr != nil {
 		return "", fmt.Errorf("google vision client: %w", p.initErr)
 	}

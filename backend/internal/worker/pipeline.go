@@ -10,6 +10,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/logfmt"
 	"lemmary/backend/internal/models"
@@ -110,6 +111,10 @@ func (r *PipelineRunner) Run(ctx context.Context, jobID string) error {
 
 	jobCtx, jobCancel := context.WithTimeout(ctx, r.Cfg.WorkerTimeout)
 	defer jobCancel()
+	// Every provider call this job makes -- OCR, extraction, splitting,
+	// embedding -- is about this one document, so it is stamped once here
+	// rather than at each step.
+	jobCtx = aiprovider.WithDocument(jobCtx, documentID)
 
 	for {
 		idx := nextRunnableIndex(runs)
