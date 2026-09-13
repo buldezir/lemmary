@@ -132,9 +132,21 @@ func loadExtractionCatalog(app core.App, userID string, logger *slog.Logger) ai.
 		}
 		documentTypes = nil
 	}
+	// An unreadable tag list is worse here than for the other two: without it
+	// the prompt says no tags are defined and the extraction returns none. That
+	// is still the right failure -- inventing tags is what this change removed --
+	// so it warns and carries on rather than failing the document.
+	tags, err := listTagNames(app, userID)
+	if err != nil {
+		if logger != nil {
+			logger.Warn("extraction catalog tags unavailable; the document will be extracted without tags", slog.Any("error", err))
+		}
+		tags = nil
+	}
 	return ai.ExtractionCatalog{
 		Correspondents: correspondents,
 		DocumentTypes:  documentTypes,
+		Tags:           tags,
 	}
 }
 
@@ -189,12 +201,15 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 		state.Document.Set("document_date", metadata.DocumentDate)
 	}
 
-	tagIDs, err := ensureTags(state.App, state.Document.GetString("user"), mergeTagNames(metadata.Tags, metadata.TagsTranslated))
+	tagIDs, droppedTags, err := matchTags(state.App, state.Document.GetString("user"), metadata.Tags)
 	if err != nil {
 		return fmt.Errorf("tags: %w", err)
 	}
 	state.Document.Set("tags", tagIDs)
-	state.Logger.Info("tags applied", "count", len(tagIDs))
+	// dropped is the model ignoring its catalog. Logged rather than swallowed:
+	// a document that keeps proposing the same absent name is the archive
+	// telling its owner which tag to go and create.
+	state.Logger.Info("tags applied", "count", len(tagIDs), "dropped", droppedTags)
 
 	lowConfidence := metadata.Confidence < minExtractionConfidence
 

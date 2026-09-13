@@ -87,7 +87,6 @@ func TestParseExtractedMetadataTranslatedFields(t *testing.T) {
 		"summary": "Eine Rechnung.",
 		"summary_translated": "An invoice.",
 		"tags": ["Rechnung"],
-		"tags_translated": ["Invoice"],
 		"confidence": 0.9
 	}`
 
@@ -98,8 +97,8 @@ func TestParseExtractedMetadataTranslatedFields(t *testing.T) {
 	if metadata.TitleTranslated != "Invoice 001" {
 		t.Fatalf("expected translated title, got %q", metadata.TitleTranslated)
 	}
-	if len(metadata.TagsTranslated) != 1 || metadata.TagsTranslated[0] != "Invoice" {
-		t.Fatalf("expected translated tags, got %v", metadata.TagsTranslated)
+	if metadata.SummaryTranslated != "An invoice." {
+		t.Fatalf("expected translated summary, got %q", metadata.SummaryTranslated)
 	}
 }
 

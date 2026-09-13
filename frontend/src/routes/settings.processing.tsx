@@ -127,9 +127,9 @@ export function SettingsProcessingPage() {
               />
             </label>
             <p className={fieldHintClassName}>
-              Also stores the title, purpose, summary, type, correspondent and tags
-              translated into this language. Leave empty to keep only the document&rsquo;s own
-              language.
+              Also stores the title, purpose, summary, type and correspondent translated into
+              this language. Tags are exempt: they come from your own list, in whatever language
+              you wrote it. Leave empty to keep only the document&rsquo;s own language.
             </p>
           </div>
           <div className={labelClassName}>

@@ -107,6 +107,10 @@ func listDocumentTypeNames(app core.App, userID string) ([]string, error) {
 	return listNamedEntityNames(app, "document_types", userID)
 }
 
+func listTagNames(app core.App, userID string) ([]string, error) {
+	return listNamedEntityNames(app, "tags", userID)
+}
+
 func listNamedEntityNames(app core.App, collection, userID string) ([]string, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
@@ -277,18 +281,82 @@ func updateNamedEntity(app core.App, collection, id, displayName, originalName s
 	return record.Id, nil
 }
 
-func ensureTags(app core.App, userID string, names []string) ([]string, error) {
-	tagIDs := make([]string, 0, len(names))
-	for _, name := range names {
-		id, _, err := EnsureTag(app, userID, name)
-		if err != nil {
-			return nil, err
-		}
-		if id != "" {
-			tagIDs = append(tagIDs, id)
-		}
+// matchTags resolves extracted tag names against the user's existing tags and
+// returns the ids it matched plus the names it could not.
+//
+// It never creates. Tags are a vocabulary the user curates by hand, so a name
+// the archive does not have is a name the model invented and the answer is to
+// drop it -- that is the whole point of the catalog in the extraction prompt.
+// Matching is punctuation/accent/case-insensitive (normalizeNamedEntityKey), so
+// a model that answers "invoices" for a tag named "Invoices" still lands rather
+// than silently losing a tag over a capital letter.
+//
+// The user's tags are read once, not once per name: an archive with 500 tags
+// and a document with 6 of them would otherwise be 6 full scans.
+func matchTags(app core.App, userID string, names []string) (matched []string, dropped []string, err error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" || len(names) == 0 {
+		return []string{}, nil, nil
 	}
-	return tagIDs, nil
+
+	index, err := tagIndexByKey(app, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	matched = make([]string, 0, len(names))
+	seen := make(map[string]struct{}, len(names))
+	for _, raw := range names {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			continue
+		}
+		id, ok := index[normalizeNamedEntityKey(name)]
+		if !ok {
+			dropped = append(dropped, name)
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		matched = append(matched, id)
+	}
+	return matched, dropped, nil
+}
+
+// tagIndexByKey maps every tag the user owns by its normalized name. First
+// writer wins, so two tags that normalize alike resolve to the older one
+// instead of flipping with page order.
+func tagIndexByKey(app core.App, userID string) (map[string]string, error) {
+	index := map[string]string{}
+	offset := 0
+	for {
+		records, err := app.FindRecordsByFilter(
+			"tags",
+			"user = {:userId}",
+			"name,id",
+			namedEntityListPageSize,
+			offset,
+			map[string]any{"userId": userID},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("list tags: %w", err)
+		}
+		for _, rec := range records {
+			key := normalizeNamedEntityKey(rec.GetString("name"))
+			if key == "" {
+				continue
+			}
+			if _, ok := index[key]; !ok {
+				index[key] = rec.Id
+			}
+		}
+		if len(records) < namedEntityListPageSize {
+			return index, nil
+		}
+		offset += namedEntityListPageSize
+	}
 }
 
 func validateDocumentNamedEntityOwnership(app core.App, record *core.Record) error {
@@ -324,6 +392,11 @@ func requireOwnedRelation(app core.App, collection, label, id, userID string) er
 
 // EnsureTag finds or creates a tag owned by userID, matched by exact name.
 // created is true only when a new record is inserted.
+//
+// Import paths only -- archive restore, paperless-ngx import, and the ngx REST
+// API. Those move data the user already owns, so creating a tag there is the
+// user acting. The extraction pipeline deliberately does not use this; see
+// matchTags.
 func EnsureTag(app core.App, userID, name string) (id string, created bool, err error) {
 	userID = strings.TrimSpace(userID)
 	name = strings.TrimSpace(name)

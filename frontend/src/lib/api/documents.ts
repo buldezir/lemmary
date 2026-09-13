@@ -7,11 +7,11 @@ import { UNFINISHED_STATUS, type DocumentStatus } from '../documentStatus'
 import type { ProcessingStep, ReprocessMode } from '../processing'
 import type { TimelineMonth } from '../timeline'
 
-export type TagRecord = {
-  id: string
-  name: string
-  user?: string
-}
+// Tags are owned by ./tags, which is where they are created and renamed.
+// Re-exported because a document's expand carries them and every caller that
+// reads one already imports from here.
+export type { TagRecord } from './tags'
+import type { TagRecord } from './tags'
 
 export type DocumentTypeRecord = {
   id: string
@@ -490,11 +490,15 @@ export async function fetchDocumentTimeline(): Promise<DocumentTimeline> {
   }
 }
 
-type TaxonomyCollection = 'tags' | 'document_types' | 'correspondents'
+type TaxonomyCollection = 'document_types' | 'correspondents'
 
 // Reuses an existing record by exact name or creates one owned by the caller.
 // requestKey: null — several upserts run concurrently and must not auto-cancel
 // each other.
+//
+// Tags are deliberately not a TaxonomyCollection: they are a vocabulary the
+// user curates on the Tags page, so the document editor picks ids from it and
+// nothing here may conjure a new one.
 async function upsertTaxonomyByName(
   collection: TaxonomyCollection,
   name: string,
@@ -529,14 +533,16 @@ export type DocumentMetadataInput = {
   documentDate: string
   documentTypeName: string
   correspondentName: string
-  tagNames: string[]
+  /** Ids from the user's existing tags; saving never creates one. */
+  tagIds: string[]
   processingStatus: DocumentRecord['processing_status']
 }
 
 /**
- * Persists user corrections: upserts the named taxonomy records, then writes
- * the metadata onto the document. Saving counts as reviewing, so needs_review
- * flips to completed.
+ * Persists user corrections: upserts the document type and correspondent by
+ * name, then writes the metadata onto the document. Tags arrive as ids the user
+ * picked from their vocabulary and are written straight through. Saving counts
+ * as reviewing, so needs_review flips to completed.
  */
 export async function saveDocumentMetadata(
   documentId: string,
@@ -548,12 +554,11 @@ export async function saveDocumentMetadata(
     throw new Error('You must be signed in to save metadata.')
   }
 
-  const tagNames = [...new Set(input.tagNames.map((name) => name.trim()).filter(Boolean))]
+  const tagIds = [...new Set(input.tagIds.filter(Boolean))]
   const documentTypeName = input.documentTypeName.trim()
   const correspondentName = input.correspondentName.trim()
 
-  const [tagIds, documentTypeId, correspondentId] = await Promise.all([
-    Promise.all(tagNames.map((name) => upsertTaxonomyByName('tags', name, userId))),
+  const [documentTypeId, correspondentId] = await Promise.all([
     documentTypeName
       ? upsertTaxonomyByName('document_types', documentTypeName, userId, {
           name_original: documentTypeName,

@@ -21,7 +21,6 @@ type ExtractedMetadata struct {
 	Correspondent           string   `json:"correspondent"`
 	CorrespondentTranslated string   `json:"correspondent_translated"`
 	Tags                    []string `json:"tags"`
-	TagsTranslated          []string `json:"tags_translated"`
 	PeopleOrOrganizations   []string `json:"people_or_organizations"`
 	Summary                 string   `json:"summary"`
 	SummaryTranslated       string   `json:"summary_translated"`
