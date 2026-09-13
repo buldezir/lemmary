@@ -37,7 +37,7 @@ func TestSpecFromNeedsAModelAndADimensionCount(t *testing.T) {
 	}
 }
 
-func TestChunkFromResolvesBodyTextAndLeavesTheHeaderAlone(t *testing.T) {
+func TestChunkFromResolvesTextFromTheStoredOffsets(t *testing.T) {
 	ocr := "Die monatliche Kaltmiete beträgt 1234 EUR. Die Kaution beträgt 3702 EUR."
 	start := strings.Index(ocr, "Die Kaution")
 
@@ -45,7 +45,6 @@ func TestChunkFromResolvesBodyTextAndLeavesTheHeaderAlone(t *testing.T) {
 		DocumentID: "doc1",
 		UserID:     "u1",
 		Ordinal:    2,
-		Kind:       embedstore.KindBody,
 		StartByte:  start,
 		EndByte:    len(ocr),
 		Vector:     []float32{1, 0},
@@ -57,28 +56,10 @@ func TestChunkFromResolvesBodyTextAndLeavesTheHeaderAlone(t *testing.T) {
 		t.Fatalf("offsets were not carried: %+v", body)
 	}
 
-	// The header chunk is rendered metadata: it stores its own text and points
-	// at nothing in the document, so it must never be quoted with offsets.
-	header := chunkFrom(embedstore.Chunk{
-		DocumentID: "doc1",
-		Kind:       embedstore.KindHeader,
-		StartByte:  0,
-		EndByte:    40,
-		Text:       "Title: Lease\nCorrespondent: Landlord",
-		Vector:     []float32{1, 0},
-	}, ocr)
-	if header.Text != "Title: Lease\nCorrespondent: Landlord" {
-		t.Fatalf("header text = %q", header.Text)
-	}
-	if header.StartByte != 0 || header.EndByte != 0 {
-		t.Fatalf("a header chunk must not claim document offsets: %+v", header)
-	}
-
 	// Offsets from a chunking of an older revision: the vector is still valid,
 	// so the chunk is still indexed, but nothing is quoted from it.
 	stale := chunkFrom(embedstore.Chunk{
 		DocumentID: "doc1",
-		Kind:       embedstore.KindBody,
 		StartByte:  9000,
 		EndByte:    9500,
 		Vector:     []float32{1, 0},

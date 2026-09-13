@@ -75,16 +75,15 @@ func sampleState(id string) State {
 		Dims:           4,
 		ChunkerVersion: 1,
 		TextHash:       TextHash("body"),
-		HeaderHash:     TextHash("header"),
 		Status:         StatusOK,
 	}
 }
 
 func sampleChunks(id string) []Chunk {
 	return []Chunk{
-		{DocumentID: id, Ordinal: 0, Kind: KindHeader, Text: "Title: Invoice", Vector: vector(4, 1)},
-		{DocumentID: id, Ordinal: 1, Kind: KindBody, StartByte: 0, EndByte: 12, Vector: vector(4, 2)},
-		{DocumentID: id, Ordinal: 2, Kind: KindBody, StartByte: 10, EndByte: 22, Vector: vector(4, 3)},
+		{DocumentID: id, Ordinal: 0, StartByte: 0, EndByte: 12, Vector: vector(4, 1)},
+		{DocumentID: id, Ordinal: 1, StartByte: 10, EndByte: 22, Vector: vector(4, 2)},
+		{DocumentID: id, Ordinal: 2, StartByte: 20, EndByte: 32, Vector: vector(4, 3)},
 	}
 }
 
@@ -109,7 +108,7 @@ func TestVectorRoundTripsThroughSQLite(t *testing.T) {
 		t.Fatalf("got %d chunks, want %d", len(got), len(want))
 	}
 	for i := range got {
-		if got[i].Ordinal != want[i].Ordinal || got[i].Kind != want[i].Kind {
+		if got[i].Ordinal != want[i].Ordinal || got[i].StartByte != want[i].StartByte {
 			t.Fatalf("chunk %d = %+v", i, got[i])
 		}
 		if len(got[i].Vector) != len(want[i].Vector) {
@@ -121,11 +120,12 @@ func TestVectorRoundTripsThroughSQLite(t *testing.T) {
 			}
 		}
 	}
-	if got[0].Text != "Title: Invoice" {
-		t.Fatalf("header text = %q", got[0].Text)
-	}
-	if got[1].Text != "" {
-		t.Fatalf("body chunks store offsets, not text: %q", got[1].Text)
+	// A chunk is offsets into the live ocr_text column, never a copy of it, so
+	// the offsets are the whole of what has to survive the round trip.
+	for i := range got {
+		if got[i].EndByte != want[i].EndByte {
+			t.Fatalf("chunk %d lost its end offset: %+v", i, got[i])
+		}
 	}
 }
 
@@ -149,7 +149,7 @@ func TestReplaceDropsThePreviousChunks(t *testing.T) {
 	if err := Replace(db, sampleState("doc1"), sampleChunks("doc1")); err != nil {
 		t.Fatalf("Replace: %v", err)
 	}
-	shorter := []Chunk{{DocumentID: "doc1", Ordinal: 0, Kind: KindHeader, Text: "h", Vector: vector(4, 9)}}
+	shorter := []Chunk{{DocumentID: "doc1", Ordinal: 0, StartByte: 0, EndByte: 12, Vector: vector(4, 9)}}
 	if err := Replace(db, sampleState("doc1"), shorter); err != nil {
 		t.Fatalf("Replace again: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestReplaceRefusesMixedDimensions(t *testing.T) {
 	db := openTestDB(t)
 	insertDocument(t, db, "doc1", "some text")
 
-	chunks := []Chunk{{DocumentID: "doc1", Ordinal: 0, Kind: KindHeader, Text: "h", Vector: vector(8, 1)}}
+	chunks := []Chunk{{DocumentID: "doc1", Ordinal: 0, StartByte: 0, EndByte: 12, Vector: vector(8, 1)}}
 	if err := Replace(db, sampleState("doc1"), chunks); err == nil {
 		t.Fatal("Replace accepted an 8-dimension vector for a 4-dimension state")
 	}
@@ -295,7 +295,7 @@ func TestCandidatesCoversEveryReasonToReEmbed(t *testing.T) {
 		if mutate != nil {
 			mutate(&state)
 		}
-		if err := Replace(db, state, []Chunk{{DocumentID: id, Ordinal: 0, Kind: KindHeader, Text: "h", Vector: vector(4, 1)}}); err != nil {
+		if err := Replace(db, state, []Chunk{{DocumentID: id, Ordinal: 0, StartByte: 0, EndByte: 12, Vector: vector(4, 1)}}); err != nil {
 			t.Fatalf("Replace %s: %v", id, err)
 		}
 	}
@@ -345,7 +345,7 @@ func TestCandidatesIgnoresDimsBeforeTheFirstResponse(t *testing.T) {
 	db := openTestDB(t)
 	insertDocument(t, db, "doc1", "text")
 	state := sampleState("doc1")
-	if err := Replace(db, state, []Chunk{{DocumentID: "doc1", Ordinal: 0, Kind: KindHeader, Text: "h", Vector: vector(4, 1)}}); err != nil {
+	if err := Replace(db, state, []Chunk{{DocumentID: "doc1", Ordinal: 0, StartByte: 0, EndByte: 12, Vector: vector(4, 1)}}); err != nil {
 		t.Fatalf("Replace: %v", err)
 	}
 
@@ -424,7 +424,6 @@ func TestATerminalRowEndsTheCandidateLoop(t *testing.T) {
 		Dims:           4,
 		ChunkerVersion: 1,
 		TextHash:       TextHash(" "),
-		HeaderHash:     TextHash(""),
 		Status:         StatusOK,
 	}
 	if err := Replace(db, terminal, nil); err != nil {
@@ -641,7 +640,7 @@ func TestForEachChunkPagesThroughEverything(t *testing.T) {
 		insertDocument(t, db, id, "text")
 		chunks := make([]Chunk, 0, 400)
 		for i := 0; i < 400; i++ {
-			chunks = append(chunks, Chunk{DocumentID: id, Ordinal: i, Kind: KindBody, Vector: vector(4, float32(i))})
+			chunks = append(chunks, Chunk{DocumentID: id, Ordinal: i, Vector: vector(4, float32(i))})
 		}
 		if err := Replace(db, sampleState(id), chunks); err != nil {
 			t.Fatalf("Replace: %v", err)

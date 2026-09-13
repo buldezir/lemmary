@@ -24,12 +24,7 @@ const ChunkMappingVersion = "2"
 // Chunk index fields. They are deliberately few: the chunk index answers
 // "which passage, of whose document" and nothing else. Everything a result
 // needs beyond that -- the title, the tags, the correspondent -- is read from
-// SQLite by document id, so a rename never has to touch a body chunk.
-//
-// The header chunk is the exception, and it is not one this mapping can help
-// with: it embeds the resolved names, so renaming a tag dates its *vector* and
-// the document has to be re-embedded (embedstore's entity hooks mark it stale).
-// What the mapping buys is that every other passage is left alone.
+// SQLite by document id, so a rename never has to touch a chunk.
 const (
 	FieldChunkDocumentID = "document_id"
 	FieldChunkUser       = "user"
@@ -43,12 +38,11 @@ const (
 
 // maxChunkTextRunes caps the copy of a passage the index stores.
 //
-// Derived from the chunker's own ceilings rather than guessed at: the stored
+// Derived from the chunker's own ceiling rather than guessed at: the stored
 // copy is what retrieval quotes (it is preferred over re-slicing the column),
-// so a cap below either ceiling would silently truncate real passages -- the
-// tail of every full-size body chunk, and most of a header that rendered a
-// summary. It is a ceiling, not a target: an average chunk is well under it.
-var maxChunkTextRunes = max(chunk.DefaultOptions().MaxRunes, chunk.HeaderMaxRunes)
+// so a lower cap would silently truncate the tail of every full-size chunk. It
+// is a ceiling, not a target: an average chunk is well under it.
+var maxChunkTextRunes = chunk.DefaultOptions().MaxRunes
 
 // VectorSpec is the embedding binding the chunk index is built for: vectors of
 // one length, produced by one model. Both halves matter — two models with the

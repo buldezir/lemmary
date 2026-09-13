@@ -26,7 +26,6 @@ type stateRow struct {
 	Dims           int    `db:"dims"`
 	ChunkerVersion int    `db:"chunker_version"`
 	TextHash       string `db:"text_hash"`
-	HeaderHash     string `db:"header_hash"`
 	ChunkCount     int    `db:"chunk_count"`
 	Truncated      int    `db:"truncated"`
 	Status         string `db:"status"`
@@ -45,7 +44,6 @@ func (r stateRow) toState() State {
 		Dims:           r.Dims,
 		ChunkerVersion: r.ChunkerVersion,
 		TextHash:       r.TextHash,
-		HeaderHash:     r.HeaderHash,
 		ChunkCount:     r.ChunkCount,
 		Truncated:      r.Truncated != 0,
 		Status:         r.Status,
@@ -61,10 +59,8 @@ type chunkRow struct {
 	DocumentID string `db:"document_id"`
 	Ordinal    int    `db:"ordinal"`
 	UserID     string `db:"user"`
-	Kind       string `db:"kind"`
 	StartByte  int    `db:"start_byte"`
 	EndByte    int    `db:"end_byte"`
-	Text       string `db:"text"`
 	Model      string `db:"model"`
 	Dims       int    `db:"dims"`
 	Vector     []byte `db:"vector"`
@@ -75,10 +71,8 @@ func (r chunkRow) toChunk() Chunk {
 		DocumentID: r.DocumentID,
 		Ordinal:    r.Ordinal,
 		UserID:     r.UserID,
-		Kind:       r.Kind,
 		StartByte:  r.StartByte,
 		EndByte:    r.EndByte,
-		Text:       r.Text,
 		Model:      r.Model,
 		Dims:       r.Dims,
 		Vector:     DecodeVector(r.Vector),
@@ -116,10 +110,8 @@ func Replace(db dbx.Builder, state State, chunks []Chunk) error {
 			"document_id": state.DocumentID,
 			"ordinal":     c.Ordinal,
 			"user":        state.UserID,
-			"kind":        c.Kind,
 			"start_byte":  c.StartByte,
 			"end_byte":    c.EndByte,
-			"text":        c.Text,
 			"model":       state.Model,
 			"dims":        len(c.Vector),
 			"vector":      EncodeVector(c.Vector),
@@ -145,7 +137,6 @@ func upsertState(db dbx.Builder, state State) error {
 		"dims":            state.Dims,
 		"chunker_version": state.ChunkerVersion,
 		"text_hash":       state.TextHash,
-		"header_hash":     state.HeaderHash,
 		"chunk_count":     state.ChunkCount,
 		"truncated":       boolToInt(state.Truncated),
 		"status":          state.Status,
@@ -179,7 +170,7 @@ func upsertState(db dbx.Builder, state State) error {
 // list cannot drift apart.
 var stateColumns = []string{
 	"document_id", "user", "model", "dims", "chunker_version", "text_hash",
-	"header_hash", "chunk_count", "truncated", "status", "stale", "attempts",
+	"chunk_count", "truncated", "status", "stale", "attempts",
 	"next_attempt_at", "last_error", "embedded_at",
 }
 
@@ -218,9 +209,9 @@ func MarkFailed(db dbx.Builder, documentID, userID string, cause error, nextAtte
 	return nil
 }
 
-// MarkStale flags a document whose text or metadata changed. The chunks stay
-// readable until the backfill replaces them: a slightly out-of-date passage is
-// a better answer than no passage.
+// MarkStale flags a document whose OCR text changed. The chunks stay readable
+// until the backfill replaces them: a slightly out-of-date passage is a better
+// answer than no passage.
 func MarkStale(db dbx.Builder, documentID string) error {
 	_, err := db.NewQuery(`UPDATE ` + tableEmbeddings + ` SET stale = 1 WHERE document_id = {:id}`).
 		Bind(dbx.Params{"id": documentID}).Execute()
