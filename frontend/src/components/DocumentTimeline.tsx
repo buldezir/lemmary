@@ -5,6 +5,11 @@ type DocumentTimelineProps = {
   timeline: DocumentTimelineData | null
   /** The selected period ("2025", "2025-03" or "undated"), from the filters. */
   active: string | null
+  /**
+   * The From filter, whatever shape it is in. Only used to pick the open year
+   * when the range is not a whole year or month, which `active` cannot express.
+   */
+  dateFrom: string
   /** Called with the clicked period, or null when the active one is clicked again. */
   onSelect: (period: string | null) => void
   /** Shown in full, or collapsed to the hairline that expands it again. */
@@ -54,6 +59,7 @@ function rowStateClassName(isActive: boolean) {
 export function DocumentTimeline({
   timeline,
   active,
+  dateFrom,
   onSelect,
   expanded,
   onToggleExpanded,
@@ -67,7 +73,7 @@ export function DocumentTimeline({
   // Only one year shows its months, or a long archive buries the grid under
   // ninety rows. Which one is derived from the filter rather than stored, so
   // clicking a year opens it as a side effect of filtering by it.
-  const open = openYear(active, years)
+  const open = openYear(active, years, dateFrom)
 
   function select(period: string) {
     onSelect(active === period ? null : period)

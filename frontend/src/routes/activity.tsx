@@ -111,7 +111,8 @@ export function ActivityPage() {
               (result.remaining > 0
                 ? ` ${countLabel(result.remaining, 'queued job', 'queued jobs')} could not be stopped.`
                 : '') +
-              ' They are listed as cancelled, and Reprocess queues them again.',
+              ' They are listed as cancelled, and Reprocess queues them again.' +
+              ' An import still unpacking keeps adding to the queue -- stop again once it has finished.',
       )
       await reload()
     } catch (err) {
@@ -138,14 +139,18 @@ export function ActivityPage() {
         return
       }
       const confirmed = window.confirm(
-        `Delete ${countLabel(total, 'unprocessed document', 'unprocessed documents')} ` +
+        `Delete up to ${countLabel(total, 'unprocessed document', 'unprocessed documents')} ` +
           `(${queued} queued, ${cancelledCount} cancelled)?\n\n` +
-          'The original files go too. Failed and processed documents are not touched. This cannot be undone.',
+          'The original files go too. Failed documents are not touched, and neither is a ' +
+          'document that has already been processed once and is only queued again. This cannot be undone.',
       )
       if (!confirmed) return
       const result = await discardUnprocessedDocuments()
       setNotice(
         `Deleted ${countLabel(result.deleted, 'document', 'documents')}.` +
+          (result.kept > 0
+            ? ` ${countLabel(result.kept, 'document was', 'documents were')} kept: already processed, only queued again.`
+            : '') +
           (result.remaining > 0 ? ` ${result.remaining} could not be deleted.` : ''),
       )
       await reload()
@@ -164,7 +169,7 @@ export function ActivityPage() {
           <Button
             variant="secondary"
             size="xs"
-            disabled={busy !== '' || active.length === 0}
+            disabled={busy !== ''}
             onClick={() => void onStopAll()}
           >
             {busy === 'stop' ? 'Stopping...' : 'Stop all'}

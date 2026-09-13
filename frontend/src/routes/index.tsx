@@ -61,6 +61,7 @@ export function IndexPage() {
         <DocumentTimeline
           timeline={timeline.data}
           active={query.undated ? UNDATED_PERIOD : activePeriod(query.from, query.to)}
+          dateFrom={query.from}
           onSelect={onSelectPeriod}
           expanded={showTimeline}
           onToggleExpanded={() => setShowTimeline((shown) => !shown)}

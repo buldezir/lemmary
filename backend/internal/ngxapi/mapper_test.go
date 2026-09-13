@@ -36,4 +36,7 @@ func TestMapJobStatus(t *testing.T) {
 	if mapJobStatus("pending") != "PENDING" {
 		t.Fatal("expected PENDING for pending")
 	}
+	if mapJobStatus("cancelled") != "REVOKED" {
+		t.Fatal("expected REVOKED for cancelled")
+	}
 }

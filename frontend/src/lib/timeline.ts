@@ -144,13 +144,23 @@ export function groupByYear(months: TimelineMonth[]): TimelineYear[] {
 
 /**
  * Which year the timeline shows months for: the active period's year, else the
- * newest. Derived rather than stored, like activePeriod -- typing a date by hand
- * opens that year too.
+ * year the From filter falls in, else the newest. Derived rather than stored,
+ * like activePeriod -- typing a date by hand opens that year too.
+ *
+ * dateFrom is what covers a range activePeriod cannot name. A hand-typed
+ * 2019-01-01..2019-06-30 is neither a whole year nor a whole month, so `active`
+ * is null, and without the From date the newest year would open instead --
+ * collapsing the very months the filter was typed to see.
  */
-export function openYear(active: string | null, years: TimelineYear[]): string | null {
+export function openYear(
+  active: string | null,
+  years: TimelineYear[],
+  dateFrom = '',
+): string | null {
   // "undated" is not a period in time, so it opens nothing of its own.
-  if (active && active !== UNDATED_PERIOD) {
-    const year = active.slice(0, 4)
+  const named = active && active !== UNDATED_PERIOD ? active : dateFrom
+  if (named) {
+    const year = named.slice(0, 4)
     if (years.some((entry) => entry.year === year)) return year
   }
   // groupByYear already sorted newest first.

@@ -146,4 +146,23 @@ describe('openYear', () => {
   it('opens nothing when there are no years', () => {
     expect(openYear('2025-03', [])).toBeNull()
   })
+
+  // A hand-typed part-year range is no period at all, so the From date is what
+  // names the year -- otherwise the newest year opens and the months of the
+  // range just typed stay hidden.
+  it('opens the year a part-year range starts in', () => {
+    expect(openYear(null, years, '2024-02-10')).toBe('2024')
+  })
+
+  it('prefers the selected period over the From date', () => {
+    expect(openYear('2023', years, '2024-02-10')).toBe('2023')
+  })
+
+  it('ignores a From date in a year with no documents', () => {
+    expect(openYear(null, years, '2019-06-30')).toBe('2025')
+  })
+
+  it('opens the newest year for the undated row whatever the From date says', () => {
+    expect(openYear(UNDATED_PERIOD, years, '')).toBe('2025')
+  })
 })

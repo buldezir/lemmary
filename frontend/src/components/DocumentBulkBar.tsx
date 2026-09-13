@@ -8,7 +8,7 @@ export type BulkMode = 'reprocess' | 'review'
 const reprocessModes: ReprocessMode[] = ['auto', 'full', 'extraction']
 
 const hints: Record<BulkMode, string> = {
-  reprocess: 'Select failed documents to reprocess.',
+  reprocess: 'Select failed or cancelled documents to reprocess.',
   review: 'Select documents to mark reviewed.',
 }
 

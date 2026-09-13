@@ -125,6 +125,11 @@ export type StopQueueResult = {
  * cancellation channel -- so this empties the queue behind it rather than
  * interrupting it. Stopped documents land on "cancelled", where Reprocess can
  * pick them up again.
+ *
+ * It also only empties the queue as it stands. An archive still unpacking keeps
+ * creating documents, and each one enqueues a job of its own, so stopping
+ * mid-import needs a second click once the unpack has finished. The page says so
+ * rather than the importer growing a cancel path.
  */
 export function stopQueue() {
   return apiFetch<StopQueueResult>('/api/app/jobs/stop', {
@@ -135,14 +140,21 @@ export function stopQueue() {
 
 export type DiscardResult = {
   deleted: number
+  /** Spared on purpose: queued, but already through the pipeline once. */
+  kept: number
   /** Left behind by a delete that failed, so a partial sweep can say so. */
   remaining: number
 }
 
 /**
- * Deletes queued and deliberately cancelled documents, files and all. Failed
- * documents are untouched because a failed reprocess may belong to a document
- * that was previously processed successfully.
+ * Deletes queued and deliberately cancelled documents, files and all, as long as
+ * they have never been through the pipeline.
+ *
+ * Status is not enough to decide that in either direction. Failed is untouched
+ * because a failed reprocess may belong to a document that processed fine
+ * before; queued is not automatically deleted either, because reprocess puts
+ * library documents back on "pending" to run them again. Those come back as
+ * `kept`.
  */
 export function discardUnprocessedDocuments() {
   return apiFetch<DiscardResult>('/api/app/documents/discard-unprocessed', {

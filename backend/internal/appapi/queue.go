@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/types"
 
@@ -28,6 +29,10 @@ type stopQueueResult struct {
 
 type discardResult struct {
 	Deleted int `json:"deleted"`
+	// Kept is documents the sweep deliberately spared: queued, but already
+	// through the pipeline once. Separate from Remaining so the page can say
+	// "kept" rather than report protection as a failure.
+	Kept int `json:"kept"`
 	// Remaining is what a delete error left behind, so the page can say the
 	// sweep was partial rather than report a clean number it did not achieve.
 	Remaining int `json:"remaining"`
@@ -124,15 +129,28 @@ func stopJob(app core.App, job *core.Record) (bool, error) {
 		}
 
 		document, err := txApp.FindRecordById("documents", fresh.GetString("document"))
-		if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
 			// The document went away under us -- a parallel discard. The job is
 			// already settled, and the cascade will take it.
 			stopped = true
 			return nil
 		}
-		document.Set("processing_status", models.DocStatusCancelled)
-		if err := txApp.Save(document); err != nil {
+		if err != nil {
+			// Anything other than a gone document rolls the job write back. A
+			// lock or a timeout here must not leave a cancelled job sitting over
+			// a document the page still shows as queued.
 			return err
+		}
+		// Only a document that is itself still waiting becomes cancelled. A
+		// crash during embed re-pends a job whose document apply_metadata has
+		// already written "completed" (recoverStaleRunningJobs), and stamping
+		// cancelled over that would hand a processed document to the discard
+		// sweep below.
+		if document.GetString("processing_status") == models.DocStatusPending {
+			document.Set("processing_status", models.DocStatusCancelled)
+			if err := txApp.Save(document); err != nil {
+				return err
+			}
 		}
 		stopped = true
 		return nil
@@ -141,11 +159,14 @@ func stopJob(app core.App, job *core.Record) (bool, error) {
 }
 
 // handlePostDiscardUnprocessed deletes the caller's documents that are still
-// queued or were deliberately cancelled.
+// queued or were deliberately cancelled, and have never been through the
+// pipeline.
 //
-// Failed documents are deliberately excluded: a document can have processed
-// successfully before a later reprocess fails, so failed does not mean it is
-// safe to throw the original away.
+// Status alone cannot decide that. Failed is excluded because a document can
+// have processed successfully before a later reprocess fails, and "pending" has
+// the same problem from the other side: reprocess.queueOne flips a completed
+// document back to pending before enqueueing it, so the queue holds library
+// documents as well as fresh uploads. wasProcessed is what tells them apart.
 //
 // Deleting the document is also what stops its job: processing_jobs.document
 // cascades, so a pending job disappears with the document rather than being
@@ -189,13 +210,14 @@ func handlePostDiscardUnprocessed(app core.App) func(*core.RequestEvent) error {
 			if deleted {
 				result.Deleted++
 			} else {
-				result.Remaining++
+				result.Kept++
 			}
 		}
 
 		app.Logger().Info("unprocessed documents discarded",
 			slog.String("owner", ownerID),
 			slog.Int("deleted", result.Deleted),
+			slog.Int("kept", result.Kept),
 			slog.Int("remaining", result.Remaining),
 		)
 		return writeJSON(e, http.StatusOK, result)
@@ -221,6 +243,13 @@ func discardDocument(app core.App, documentID, ownerID string) (bool, error) {
 		}
 		switch document.GetString("processing_status") {
 		case models.DocStatusPending, models.DocStatusCancelled:
+			processed, err := wasProcessed(txApp, document)
+			if err != nil {
+				return err
+			}
+			if processed {
+				return nil
+			}
 			if err := txApp.Delete(document); err != nil {
 				return err
 			}
@@ -229,4 +258,33 @@ func discardDocument(app core.App, documentID, ownerID string) (bool, error) {
 		return nil
 	})
 	return deleted, err
+}
+
+// wasProcessed reports whether the document has ever come out of the pipeline
+// with something to lose, and so must survive the discard sweep whatever its
+// current status says.
+//
+// Two signals, because neither covers the other. OCR text is the cheap one and
+// catches the common case -- a completed document requeued by reprocess, or one
+// whose extraction is retrying after OCR already succeeded, both of which sit at
+// "pending" with their text intact. A finished job is the backstop for the
+// document OCR legitimately found no words in: empty text, still processed,
+// still not ours to delete. Cancelled jobs do not count towards it -- stopping a
+// fresh import leaves exactly that, and those are what this sweep is for.
+func wasProcessed(app core.App, document *core.Record) (bool, error) {
+	if document.GetString("ocr_text") != "" {
+		return true, nil
+	}
+	// processing_jobs is never pruned, so an old job is proof that stays proof.
+	finished, err := app.CountRecords(
+		"processing_jobs",
+		dbx.NewExp(
+			"document = {:document} AND finished_at != '' AND status != {:cancelled}",
+			dbx.Params{"document": document.Id, "cancelled": models.JobStatusCancelled},
+		),
+	)
+	if err != nil {
+		return false, err
+	}
+	return finished > 0, nil
 }
