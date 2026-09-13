@@ -3,6 +3,7 @@ package worker
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -13,11 +14,23 @@ import (
 
 const namedEntityListPageSize = 500
 
+var ensureNamedEntityMu sync.Mutex
+
 // EnsureNamedEntity finds or creates a named entity (correspondent / document type)
 // owned by userID. Lookup prefers exact name_original, then exact name, then a
 // punctuation/accent-insensitive match. created is true only when a new record
 // is inserted. Existing name and name_original values are left unchanged.
 func EnsureNamedEntity(app core.App, collection, userID, displayName, originalName string) (id string, created bool, err error) {
+	// ponytail: one process-wide lock over lookup-then-insert. Only (user, name)
+	// is unique in the schema, so the name_original and normalized tiers below
+	// are unbacked: two pipelines extracting "Müller GmbH" and "Muller G.m.b.H."
+	// both miss, both insert, and no conflict fires for
+	// reuseNamedEntityAfterConflict to clean up. A partial unique index on the
+	// normalized key would be the real fix; this is a handful of indexed
+	// queries on a path that just spent a minute in OCR and extraction.
+	ensureNamedEntityMu.Lock()
+	defer ensureNamedEntityMu.Unlock()
+
 	userID = strings.TrimSpace(userID)
 	displayName = strings.TrimSpace(displayName)
 	originalName = strings.TrimSpace(originalName)

@@ -39,6 +39,12 @@ type DoclingProvider struct {
 	apiKey  string
 	client  *http.Client
 	logger  *slog.Logger
+	// sem enforces MaxConcurrency on the instance. Until the worker ran more
+	// than one pipeline at a time, its process-wide mutex enforced this by
+	// accident; now nothing else does. On the instance rather than at the call
+	// sites so the pipeline and pdfsplit share one budget -- which is what the
+	// sidecar actually has.
+	sem chan struct{}
 }
 
 // NewDoclingProvider builds a client for docling-serve at baseURL.
@@ -59,13 +65,15 @@ func NewDoclingProvider(baseURL, engine, apiKey string, timeout time.Duration, l
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &DoclingProvider{
+	p := &DoclingProvider{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		engine:  strings.TrimSpace(engine),
 		apiKey:  strings.TrimSpace(apiKey),
 		client:  &http.Client{Timeout: timeout},
 		logger:  logger,
 	}
+	p.sem = make(chan struct{}, p.MaxConcurrency())
+	return p
 }
 
 func (p *DoclingProvider) Name() string {
@@ -79,6 +87,17 @@ func (p *DoclingProvider) MaxConcurrency() int { return 1 }
 
 func (p *DoclingProvider) ExtractText(ctx context.Context, filePath string, mimeType string) (string, error) {
 	start := time.Now()
+
+	// Queue rather than pile on: four callers hitting a one-worker sidecar each
+	// burn their own OCRTimeout waiting for cores the others hold.
+	if p.sem != nil {
+		select {
+		case p.sem <- struct{}{}:
+			defer func() { <-p.sem }()
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {

@@ -75,7 +75,7 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	// somebody a login should have somewhere for them to land.
 	appapi.RegisterAdminBootstrap(app)
 	ngxapi.Register(app, ft)
-	worker.Register(app, rt, backfill)
+	worker.Register(app, rt, backfill, config.WorkerConcurrencyFromEnv())
 
 	registerCOOPHeader(app)
 
