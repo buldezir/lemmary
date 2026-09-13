@@ -44,8 +44,8 @@ export async function getLatestJobsFor(
 const failedWindowMs = 24 * 60 * 60_000
 
 /**
- * What the queue is doing: everything unfinished, plus the failures of the last
- * day so a job that broke while nobody was looking is still there to be found.
+ * What the queue is doing: everything unfinished, plus failures and
+ * cancellations from the last day so recent terminal work remains visible.
  *
  * finished_at = '' rather than a status test, for the reason createProcessingJob
  * gives: apply_metadata writes "completed" onto the job before embed has run.
@@ -58,7 +58,7 @@ export async function listActiveJobs(
   // finished_at, not created: a job that ran for two days and then failed is a
   // failure from a minute ago, and keying the window on when it was queued
   // dropped exactly those off the page.
-  const filter = `finished_at = '' || ${pb.filter('(status = "failed" && finished_at >= {:since})', { since })}`
+  const filter = `finished_at = '' || ${pb.filter('((status = "failed" || status = "cancelled") && finished_at >= {:since})', { since })}`
 
   const jobs = await pb.collection(collection).getList<ProcessingJobRecord>(1, limit, {
     filter,

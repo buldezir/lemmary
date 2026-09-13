@@ -228,6 +228,10 @@ export function summarizeJob(
   if (!job) return null
   const runs = job.step_runs ?? []
 
+  if (job.status === 'cancelled') {
+    return { tone: 'warning', label: 'Processing cancelled', detail: job.error }
+  }
+
   const running = runs.find((run) => run.status === 'running')
   if (running) {
     const ms = stepDurationMs(running, now)

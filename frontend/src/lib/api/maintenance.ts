@@ -114,6 +114,8 @@ export type StopQueueResult = {
   stopped: number
   /** What was already inside the pipeline and so ran to the end. */
   running: number
+  /** Queued jobs the server could not update. */
+  remaining: number
 }
 
 /**
@@ -121,8 +123,8 @@ export type StopQueueResult = {
  *
  * The document already being worked on finishes -- the worker has no
  * cancellation channel -- so this empties the queue behind it rather than
- * interrupting it. Stopped documents land on "failed", where Reprocess can pick
- * them up again.
+ * interrupting it. Stopped documents land on "cancelled", where Reprocess can
+ * pick them up again.
  */
 export function stopQueue() {
   return apiFetch<StopQueueResult>('/api/app/jobs/stop', {
@@ -138,8 +140,9 @@ export type DiscardResult = {
 }
 
 /**
- * Deletes every document that has never been processed -- queued and failed
- * both, files and all. Documents that processed are untouched.
+ * Deletes queued and deliberately cancelled documents, files and all. Failed
+ * documents are untouched because a failed reprocess may belong to a document
+ * that was previously processed successfully.
  */
 export function discardUnprocessedDocuments() {
   return apiFetch<DiscardResult>('/api/app/documents/discard-unprocessed', {

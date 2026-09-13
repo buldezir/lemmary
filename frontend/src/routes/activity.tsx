@@ -84,7 +84,8 @@ export function ActivityPage() {
   }, [anyRunning])
 
   const active = jobs.filter((job) => !job.finished_at)
-  const failed = jobs.filter((job) => job.finished_at)
+  const cancelled = jobs.filter((job) => job.finished_at && job.status === 'cancelled')
+  const failed = jobs.filter((job) => job.finished_at && job.status !== 'cancelled')
 
   // The way out of a mistaken import: stop what is queued, then throw away what
   // it was queued for. Both live here rather than on Management, which is admin
@@ -102,10 +103,15 @@ export function ActivityPage() {
       const result = await stopQueue()
       setNotice(
         result.stopped === 0
-          ? 'Nothing was queued to stop.'
+          ? result.remaining > 0
+            ? `${countLabel(result.remaining, 'queued job', 'queued jobs')} could not be stopped.`
+            : 'Nothing was queued to stop.'
           : `Stopped ${countLabel(result.stopped, 'queued job', 'queued jobs')}.` +
               (result.running > 0 ? ' The document already being processed finishes.' : '') +
-              ' They are listed as failed, and Reprocess queues them again.',
+              (result.remaining > 0
+                ? ` ${countLabel(result.remaining, 'queued job', 'queued jobs')} could not be stopped.`
+                : '') +
+              ' They are listed as cancelled, and Reprocess queues them again.',
       )
       await reload()
     } catch (err) {
@@ -122,19 +128,19 @@ export function ActivityPage() {
     setNotice('')
     setActionError('')
     try {
-      const [queued, failedCount] = await Promise.all([
+      const [queued, cancelledCount] = await Promise.all([
         countDocumentsWithStatus('pending'),
-        countDocumentsWithStatus('failed'),
+        countDocumentsWithStatus('cancelled'),
       ])
-      const total = queued + failedCount
+      const total = queued + cancelledCount
       if (total === 0) {
         setNotice('Nothing unprocessed to delete.')
         return
       }
       const confirmed = window.confirm(
         `Delete ${countLabel(total, 'unprocessed document', 'unprocessed documents')} ` +
-          `(${queued} queued, ${failedCount} failed)?\n\n` +
-          'The original files go too. Documents that processed are not touched. This cannot be undone.',
+          `(${queued} queued, ${cancelledCount} cancelled)?\n\n` +
+          'The original files go too. Failed and processed documents are not touched. This cannot be undone.',
       )
       if (!confirmed) return
       const result = await discardUnprocessedDocuments()
@@ -174,8 +180,8 @@ export function ActivityPage() {
         </div>
       </div>
       <p className="mb-4 text-sm text-ink-soft">
-        What the pipeline is doing to your documents, and what went wrong. Failures from the last
-        day stay listed so a job that broke while nobody was watching is still here to be found.
+        What the pipeline is doing to your documents, and what stopped or went wrong. Recent
+        cancellations and failures stay listed so terminal work is still here to be found.
       </p>
 
       {notice ? <p className="mb-3 text-sm text-ink-soft">{notice}</p> : null}
@@ -186,11 +192,12 @@ export function ActivityPage() {
         <p className="text-sm text-ink-soft">Loading the queue...</p>
       ) : jobs.length === 0 ? (
         <p className="text-sm text-ink-soft">
-          Nothing in the queue, and nothing has failed in the last day.
+          Nothing in the queue, and nothing was cancelled or failed in the last day.
         </p>
       ) : (
         <div className="flex flex-col gap-6">
           <JobGroup title="In progress" jobs={active} tick={tick} onReprocessed={reload} />
+          <JobGroup title="Recently cancelled" jobs={cancelled} tick={tick} onReprocessed={reload} />
           <JobGroup title="Recently failed" jobs={failed} tick={tick} onReprocessed={reload} />
           {total > jobs.length ? (
             <p className="text-xs text-ink-soft">
