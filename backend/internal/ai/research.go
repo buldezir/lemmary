@@ -48,8 +48,7 @@ type DocumentContent struct {
 	// Distilled marks a document the helper model read on the agent's
 	// behalf: Notes, Quotes and Values stand in for Text, which is absent.
 	// The agent never sees the document itself, only what it says about the
-	// question -- that is what keeps a read of twenty documents from being
-	// twenty documents' worth of conversation.
+	// question.
 	Distilled bool `json:"distilled,omitempty"`
 	// Relevant is the helper's judgement of whether the document bears on
 	// the question at all. Meaningful only when Distilled.
@@ -59,12 +58,9 @@ type DocumentContent struct {
 	Values   map[string]string `json:"values,omitempty"`
 }
 
-// ReadRequest is one read_documents call after validation.
-//
-// Focus is retrieval, not rationing: a document read whole answers with its
-// first pages, and on a fifty-page statement the paragraph that matters is
-// rarely there. Naming what the read is for returns the passages about it
-// instead, with the head for context and the gaps marked.
+// ReadRequest is one read_documents call after validation. Focus is retrieval,
+// not rationing: a document read whole answers with its first pages, and on a
+// fifty-page statement the paragraph that matters is rarely there.
 type ReadRequest struct {
 	IDs   []string
 	Focus string
@@ -83,10 +79,8 @@ type ResearchRequest struct {
 	Search        DocumentSearcher
 	Read          DocumentReader
 	// PriorDocuments are the hits earlier turns of this conversation already
-	// found. They are readable by id without searching again -- a follow-up
-	// question about a document the last answer cited should not have to
-	// rediscover it -- but they are not results of this turn, so they only
-	// join the answer's document list if the answer cites them.
+	// found. Readable by id without searching again, but not results of this
+	// turn, so they join the answer's document list only if the answer cites them.
 	PriorDocuments []DocumentHit
 	// DenseRetrieval says searches match by meaning as well as by keyword;
 	// see SearchOptions.
@@ -207,11 +201,10 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	round := 0
 	var usage Usage
 
-	// No round cap: the loop ends when the model is ready, when it stops
-	// making progress, or when a completion is rejected — typically because
-	// the conversation outgrew the model's context window. Every iteration
-	// appends at least an assistant message and a tool result, so a run that
-	// keeps gathering is finite: the provider will refuse the next request.
+	// No round cap: the loop ends when the model is ready, when it stops making
+	// progress, or when a completion is rejected. Every iteration appends at
+	// least an assistant message and a tool result, so a run that keeps
+	// gathering is finite: the provider will refuse the next request.
 	for {
 		if err := ctx.Err(); err != nil {
 			return ResearchResult{}, err
@@ -317,12 +310,10 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 }
 
 // answerResearch is the second phase: one completion with no tools declared, so
-// the model cannot emit tool markup and every chunk is safe to stream.
-// It returns the answer and whether it was cut short: the request timeout
-// covers the whole generation rather than the gap between chunks, so a long
-// answer can fail with most of it already delivered. Keeping that text is right
-// — it is better than nothing and the user has already watched it arrive — but
-// returning it as an ordinary success is not, because every caller then
+// the model cannot emit tool markup and every chunk is safe to stream. It
+// returns the answer and whether it was cut short: the request timeout covers
+// the whole generation, so a long answer can fail with most of it delivered.
+// That text is worth keeping, but not as an ordinary success, or every caller
 // presents a half-finished answer as the finished one.
 func (a *openAISearchAgent) answerResearch(
 	ctx context.Context,
@@ -498,9 +489,9 @@ func toolSearchHits(hits []DocumentHit) []toolSearchHit {
 }
 
 // encodeSearchResults renders the whole hit list. Nothing is dropped and
-// nothing is sliced: the only limit on how much a run may gather is the one
-// the provider enforces, and a payload trimmed to a guessed window cost the
-// model documents it could then never ask about.
+// nothing is sliced: the only limit on how much a run may gather is the one the
+// provider enforces, and a payload trimmed to a guessed window cost the model
+// documents it could then never ask about.
 func encodeSearchResults(hits []DocumentHit) (string, error) {
 	encoded, err := json.Marshal(map[string]any{
 		"count":     len(hits),
@@ -599,12 +590,8 @@ type readClaim struct {
 
 // seedPrior makes the documents of earlier turns readable without searching
 // again. They go into seenIDs and titles but not into hits: this turn has not
-// found them, and listing them as its results would attach documents to an
-// answer that never mentions them.
-//
-// Passages are dropped on the way in. They were selected for the question that
-// turn asked, and quoting them under a different one is misleading; if the
-// document matters here, the model reads it.
+// found them. Passages are dropped on the way in, having been selected for the
+// question that turn asked.
 func (state *researchState) seedPrior(docs []DocumentHit) {
 	for _, doc := range docs {
 		if doc.ID == "" {
@@ -624,8 +611,7 @@ func (state *researchState) seedPrior(docs []DocumentHit) {
 
 // adoptCitedPrior promotes an earlier turn's document into this turn's results
 // once the answer has cited it, so the citation resolves to a card the user can
-// click. Called after validateCitations, which has already removed links to ids
-// the run never saw.
+// click. Called after validateCitations.
 func (state *researchState) adoptCitedPrior(reply string) {
 	if len(state.prior) == 0 {
 		return

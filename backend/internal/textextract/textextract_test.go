@@ -147,13 +147,10 @@ func TestDocxBudgetIsSharedAcrossEntries(t *testing.T) {
 	}
 }
 
-// TestXlsxBudgetCountsResolvedSharedStrings is the case the budget exists for.
-//
 // A shared string is stored once and referenced by every cell that uses it, so
-// the text an XLSX extracts to is not bounded by the bytes it arrived in. Here
-// one 40-character string is referenced ten times: the sheet XML is a few
-// hundred bytes and the extracted text is 400 characters. No check on the
-// upload's size, compressed or not, can see that coming.
+// the text an XLSX extracts to is not bounded by the bytes it arrived in: here
+// one 40-character string referenced ten times is a few hundred bytes of sheet
+// XML and 400 characters of text. No check on the upload's size can see that.
 func TestXlsxBudgetCountsResolvedSharedStrings(t *testing.T) {
 	shrinkBudget(t, 200)
 

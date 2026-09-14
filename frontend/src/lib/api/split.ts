@@ -38,12 +38,9 @@ export type SplitResult = {
 export type SplitProgress = JobProgress
 
 /**
- * Poll budgets sized to what the backend may legitimately spend, so the UI does
- * not report a failure while the server is still working.
- *
- * Detection reads up to 40 pages of a scan through the OCR provider before it
- * even calls the model; a split extracts up to 100 parts, each with a minute of
- * poppler budget, and then saves them.
+ * Sized to what the backend may legitimately spend: detection reads up to 40
+ * pages through the OCR provider before calling the model, and a split extracts
+ * up to 100 parts with a minute of poppler budget each.
  */
 const detectTimeoutMs = 30 * 60 * 1000
 const splitTimeoutMs = 2 * 60 * 60 * 1000
@@ -69,9 +66,8 @@ export async function discardSplitUpload(uploadId: string) {
 }
 
 /**
- * Loads the thumbnail of one page as an object URL. The endpoint needs the
- * session token, which an `<img src>` cannot carry, so the PNG is fetched and
- * wrapped in a blob URL instead. Callers must revoke it when done.
+ * The endpoint needs the session token, which an `<img src>` cannot carry, so
+ * the PNG is wrapped in a blob URL. Callers must revoke it when done.
  */
 export async function fetchPageThumb(uploadId: string, page: number): Promise<string> {
   await ensureAuth()
@@ -128,9 +124,7 @@ export async function runSplit(
   return { ...result, errors: result.errors ?? [], document_ids: result.document_ids ?? [] }
 }
 
-/**
- * Turns "cut after page n" markers into the exact page cover the API requires.
- */
+/** Turns "cut after page n" markers into the page cover the API requires. */
 export function partsFromCuts(pageCount: number, cuts: Iterable<number>): SplitPart[] {
   const boundaries = [...new Set(cuts)]
     .filter((cut) => cut >= 1 && cut < pageCount)

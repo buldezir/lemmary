@@ -87,7 +87,6 @@ var storable = map[string]bool{
 	".xlsx": true,
 }
 
-// accepts reports whether this entry is a document for this source.
 func (s Source) accepts(f *zip.File) bool {
 	if f.FileInfo().IsDir() || isJunkEntry(f.Name) {
 		return false
@@ -218,7 +217,6 @@ func hashEntry(f *zip.File) (string, int64, error) {
 	return checksum, counter.n, nil
 }
 
-// readEntry returns the bytes of one archive entry, bounded by maxEntryBytes.
 func readEntry(f *zip.File) ([]byte, error) {
 	rc, err := f.Open()
 	if err != nil {
@@ -235,7 +233,6 @@ func readEntry(f *zip.File) ([]byte, error) {
 	return data, nil
 }
 
-// countingReader counts the bytes read through it.
 type countingReader struct {
 	r io.Reader
 	n int64

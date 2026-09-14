@@ -7,9 +7,7 @@ import (
 )
 
 // Every model id OpenCode Go's docs list, against the endpoint they list it
-// under. The prefixes are the implementation; this is the contract they were
-// derived from, so a prefix edited into overlapping with another family fails
-// here rather than at the first request.
+// under: the contract the prefixes were derived from.
 func TestEveryDocumentedModelRoutesToItsEndpoint(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
@@ -52,9 +50,6 @@ func TestEveryDocumentedModelRoutesToItsEndpoint(t *testing.T) {
 	}
 }
 
-// The default matters as much as the table: OpenCode adds models, and one this
-// build has never heard of has to go somewhere. /chat/completions is the
-// endpoint whose refusal is legible.
 func TestAnUnknownModelGoesToChatCompletions(t *testing.T) {
 	t.Parallel()
 	for _, model := range []string{"something-new-1", "", "  "} {
@@ -79,9 +74,6 @@ func TestOnlyTheOpenCodeSDKIsRouted(t *testing.T) {
 	}
 }
 
-// anthropic-sdk-go appends "v1/messages" to the base URL itself, so the /v1
-// that every provider row carries has to come off -- left on, the request goes
-// to /zen/go/v1/v1/messages and the endpoint 404s.
 func TestMessagesBaseURLDropsTheVersionSegment(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
@@ -89,8 +81,7 @@ func TestMessagesBaseURLDropsTheVersionSegment(t *testing.T) {
 		"https://opencode.ai/zen/go/v1/": "https://opencode.ai/zen/go/v1/messages",
 		// A test server's base URL has no /v1 to strip.
 		"http://127.0.0.1:8080": "http://127.0.0.1:8080/v1/messages",
-		// Empty falls back to the SDK's documented endpoint rather than
-		// building a relative path.
+		// Empty falls back to the SDK's documented endpoint.
 		"": "https://opencode.ai/zen/go/v1/messages",
 	}
 	for base, want := range cases {

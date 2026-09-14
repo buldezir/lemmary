@@ -23,8 +23,7 @@ import (
 // enforced here rather than discovered at the endpoint.
 const (
 	// maxBatchInputs is well under OpenAI's 2048-element array limit; the
-	// binding constraint in practice is the per-request token total, not the
-	// count.
+	// binding constraint in practice is the per-request token total.
 	maxBatchInputs = 64
 	// maxBatchRunes keeps one request under the 300k-token-per-request ceiling
 	// with room to spare for scripts that tokenize badly.
@@ -38,9 +37,8 @@ const (
 	embedRetryBase   = time.Second
 )
 
-// EmbedResult is one Embed call's vectors plus what it cost. The counters are
-// summed across the batches a single call had to make, so a caller logging them
-// sees the real spend rather than the last request's.
+// EmbedResult is one Embed call's vectors plus what it cost, summed across the
+// batches a single call had to make.
 type EmbedResult struct {
 	Vectors      [][]float32
 	PromptTokens int
@@ -97,9 +95,8 @@ func NewEmbedder(sdk, apiKey, model, baseURL string, dims int, timeout time.Dura
 	}
 	opts = append(opts, aiprovider.UserAgentOptions(sdk)...)
 	// A keyless provider sends no Authorization header at all, rather than an
-	// empty "Bearer ". The local SDK is the case: a sidecar on the compose
-	// network has nobody to authenticate to, and an endpoint that does read the
-	// header would rather see none than see a blank credential.
+	// empty "Bearer ": an endpoint that does read the header would rather see
+	// none than a blank credential.
 	if strings.TrimSpace(apiKey) != "" {
 		opts = append(opts, option.WithAPIKey(apiKey))
 	}
@@ -136,11 +133,9 @@ func (e *openAIEmbedder) Dims() int {
 	return e.dims
 }
 
-// Embed returns one vector per input, in input order.
-//
-// A blank input is refused rather than skipped: the caller's chunk ordinals are
-// positional, and quietly returning a short slice would misalign every vector
-// after the gap.
+// Embed returns one vector per input, in input order. A blank input is refused
+// rather than skipped: the caller's chunk ordinals are positional, and a short
+// slice would misalign every vector after the gap.
 func (e *openAIEmbedder) Embed(ctx context.Context, inputs []string) (EmbedResult, error) {
 	if len(inputs) == 0 {
 		return EmbedResult{}, nil
@@ -274,8 +269,6 @@ func (e *openAIEmbedder) decode(resp *openai.CreateEmbeddingResponse, want int) 
 	return vectors, tokens, nil
 }
 
-// checkDims records the vector length on the first response and refuses any
-// later disagreement.
 func (e *openAIEmbedder) checkDims(n int) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -290,8 +283,7 @@ func (e *openAIEmbedder) checkDims(n int) error {
 }
 
 // retryableEmbedError is true only for failures a second attempt could survive.
-// A 400 (input too long, unknown model) and a 401 are answers, not outages, and
-// repeating them just spends the backoff before failing anyway.
+// A 400 (input too long, unknown model) and a 401 are answers, not outages.
 func retryableEmbedError(err error) bool {
 	var apiErr *openai.Error
 	if errors.As(err, &apiErr) {

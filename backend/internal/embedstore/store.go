@@ -15,8 +15,8 @@ import (
 // maxLastError keeps one provider's HTML error page from becoming most of a row.
 const maxLastError = 1000
 
-// forEachChunkPage is the keyset page size for a full scan. Small enough that
-// a rebuild of a large archive never holds the whole corpus in memory.
+// Keyset page size for a full scan: small enough that a rebuild of a large
+// archive never holds the whole corpus in memory.
 const forEachChunkPage = 500
 
 type stateRow struct {
@@ -79,14 +79,10 @@ func (r chunkRow) toChunk() Chunk {
 	}
 }
 
-// Replace writes a document's chunks and state as one set, dropping whatever was
-// there before.
-//
-// Replace rather than merge, because a re-embed after an edit produces a
-// different number of chunks at different offsets: merging would leave the tail
-// of the previous run behind as passages that no longer exist in the text. The
-// caller runs this inside a transaction so a half-replaced document is never
-// visible.
+// Replace rather than merge: a re-embed after an edit produces a different
+// number of chunks at different offsets, so merging would leave the previous
+// run's tail behind as passages that no longer exist. The caller runs this in a
+// transaction so a half-replaced document is never visible.
 func Replace(db dbx.Builder, state State, chunks []Chunk) error {
 	if strings.TrimSpace(state.DocumentID) == "" {
 		return errors.New("embedstore: replace needs a document id")
@@ -100,9 +96,8 @@ func Replace(db dbx.Builder, state State, chunks []Chunk) error {
 			return fmt.Errorf("embedstore: chunk %d of %s has no vector", c.Ordinal, state.DocumentID)
 		}
 		if state.Dims > 0 && len(c.Vector) != state.Dims {
-			// A wrong-length vector is dropped silently by the vector index, so
-			// letting one reach the table would produce a document that looks
-			// embedded and can never be found.
+			// The vector index drops a wrong-length vector silently, so one
+			// reaching the table looks embedded and can never be found.
 			return fmt.Errorf("embedstore: chunk %d of %s is %d dimensions, state says %d",
 				c.Ordinal, state.DocumentID, len(c.Vector), state.Dims)
 		}
@@ -166,21 +161,16 @@ func upsertState(db dbx.Builder, state State) error {
 	return nil
 }
 
-// stateColumns fixes the column order so the insert and the upsert assignment
-// list cannot drift apart.
+// Fixed order so the insert and the upsert assignment list cannot drift apart.
 var stateColumns = []string{
 	"document_id", "user", "model", "dims", "chunker_version", "text_hash",
 	"chunk_count", "truncated", "status", "stale", "attempts",
 	"next_attempt_at", "last_error", "embedded_at",
 }
 
-// MarkFailed records a failed attempt and when to try again. The attempt
-// counter is incremented in SQL so two concurrent failures cannot both write
-// back the same count they read.
-//
-// The chunks a previous successful run left behind are kept on purpose: a
-// provider outage should degrade retrieval to what it was, not delete a
-// document out of the dense index.
+// The attempt counter is incremented in SQL so two concurrent failures cannot
+// write back the same count they read. Chunks from a previous successful run
+// are kept: a provider outage should degrade retrieval, not empty the index.
 func MarkFailed(db dbx.Builder, documentID, userID string, cause error, nextAttempt time.Time) error {
 	message := ""
 	if cause != nil {
@@ -209,9 +199,8 @@ func MarkFailed(db dbx.Builder, documentID, userID string, cause error, nextAtte
 	return nil
 }
 
-// MarkStale flags a document whose OCR text changed. The chunks stay readable
-// until the backfill replaces them: a slightly out-of-date passage is a better
-// answer than no passage.
+// The chunks stay readable until the backfill replaces them: a slightly
+// out-of-date passage is a better answer than no passage.
 func MarkStale(db dbx.Builder, documentID string) error {
 	_, err := db.NewQuery(`UPDATE ` + tableEmbeddings + ` SET stale = 1 WHERE document_id = {:id}`).
 		Bind(dbx.Params{"id": documentID}).Execute()
@@ -221,7 +210,6 @@ func MarkStale(db dbx.Builder, documentID string) error {
 	return nil
 }
 
-// Delete removes a document's chunks and state.
 func Delete(db dbx.Builder, documentID string) error {
 	if _, err := db.Delete(tableChunks, dbx.HashExp{"document_id": documentID}).Execute(); err != nil {
 		return fmt.Errorf("embedstore: delete chunks: %w", err)
@@ -232,8 +220,8 @@ func Delete(db dbx.Builder, documentID string) error {
 	return nil
 }
 
-// Get returns a document's state. The bool is false when there is no row, which
-// is not an error: it is what an unembedded document looks like.
+// The bool is false when there is no row, which is not an error: it is what an
+// unembedded document looks like.
 func Get(db dbx.Builder, documentID string) (State, bool, error) {
 	var row stateRow
 	err := db.Select().From(tableEmbeddings).
@@ -247,7 +235,6 @@ func Get(db dbx.Builder, documentID string) (State, bool, error) {
 	return row.toState(), true, nil
 }
 
-// Chunks returns one document's chunks in ordinal order.
 func Chunks(db dbx.Builder, documentID string) ([]Chunk, error) {
 	var rows []chunkRow
 	err := db.Select().From(tableChunks).
@@ -263,12 +250,9 @@ func Chunks(db dbx.Builder, documentID string) ([]Chunk, error) {
 	return out, nil
 }
 
-// ForEachChunk walks every chunk written by model at dims, in a stable order,
-// one page at a time.
-//
-// The model/dims filter is not an optimisation: a vector of the wrong length is
-// dropped silently at index time, so an index rebuilt after a model switch
-// would come back quietly incomplete without it.
+// ForEachChunk walks every chunk written by model at dims, a page at a time.
+// The filter is not an optimisation: a wrong-length vector is dropped silently
+// at index time, so a rebuild after a model switch would come back incomplete.
 func ForEachChunk(db dbx.Builder, model string, dims int, fn func(Chunk) error) error {
 	lastDoc := ""
 	lastOrd := -1
@@ -297,11 +281,8 @@ func ForEachChunk(db dbx.Builder, model string, dims int, fn func(Chunk) error) 
 	}
 }
 
-// CountChunks is how many chunks were written by model at dims.
-//
-// It is what the vector index compares itself against to decide whether it has
-// drifted, so it counts exactly what ForEachChunk would walk: same filter, same
-// reason for it.
+// What the vector index compares itself against to detect drift, so it counts
+// exactly what ForEachChunk would walk.
 func CountChunks(db dbx.Builder, model string, dims int) (int, error) {
 	if strings.TrimSpace(model) == "" || dims <= 0 {
 		return 0, nil
@@ -316,27 +297,19 @@ func CountChunks(db dbx.Builder, model string, dims int) (int, error) {
 	return n, nil
 }
 
-// hasOCRText is "this document has something to embed".
-//
-// Whitespace-only OCR has to read as empty here, not merely as short: the
-// embedder skips such a document without writing a row, so a bare comparison
-// against the empty string made it a candidate again on every tick, forever.
-// The character class is spelled out because SQLite string literals have no
-// escape sequences: a backslash-t written there is a backslash and a letter t,
-// and would trim words rather than whitespace.
+// Whitespace-only OCR has to read as empty: the embedder skips such a document
+// without writing a row, so a bare empty-string comparison made it a candidate
+// again on every tick, forever. The character class is spelled out because
+// SQLite string literals have no escape sequences.
 const hasOCRText = "trim(d.ocr_text, '" + " \t\r\n\v\f" + "') <> ''"
 
-// candidateWhere is the definition of "this document needs embedding", shared
-// by Candidates and Stats so the queue length and the queue cannot disagree.
+// Shared by Candidates and Stats so the queue length and the queue cannot
+// disagree. Pending and processing documents are excluded because their OCR
+// text is about to be rewritten, duplicates because they are never results.
 //
-// Pending and processing documents are excluded because their OCR text is about
-// to be rewritten; duplicates because they are never shown as results; empty
-// text because there is nothing to embed.
-//
-// A failed row is governed by its backoff alone. Folding the freshness tests
-// into it would make a document that failed against a model the admin has since
-// changed retry immediately and keep failing, defeating the backoff at the one
-// moment it matters.
+// A failed row is governed by its backoff alone: folding the freshness tests in
+// would make a document that failed against a since-changed model retry
+// immediately and keep failing.
 const candidateWhere = `
 	d.duplicate_of = '' AND ` + hasOCRText + `
 	AND d.processing_status NOT IN ('pending', 'processing')
@@ -351,7 +324,6 @@ const candidateWhere = `
 		))
 	)`
 
-// Candidates lists the documents the backfill should embed next, oldest first.
 func Candidates(db dbx.Builder, model string, dims, chunkerVersion, limit int, now time.Time) ([]string, error) {
 	if strings.TrimSpace(model) == "" || limit <= 0 {
 		return nil, nil
@@ -381,19 +353,13 @@ func candidateParams(model string, dims, chunkerVersion int, now time.Time, limi
 	}
 }
 
-// DeleteOrphans removes rows whose document is gone and returns the ids it
-// swept.
+// The repair path for everything that bypasses the delete hook: a document
+// deleted while the feature was off, a restored backup, a cascade lost to a
+// crash between the two writes.
 //
-// The record hook already deletes on the way out, so this is the repair path
-// for everything that bypasses it: a document deleted while the feature was
-// off, a restored backup, a cascade the hook missed because the process died
-// between the two writes.
-//
-// The ids are collected before the delete rather than counted after it, because
-// the listener has to be told: a plain `DELETE ... NOT IN` empties the tables
-// but leaves the vectors sitting in the derived Bleve index, where they keep
-// answering searches for a document that no longer exists until the next boot
-// heals it.
+// The ids are collected before the delete because the listener has to be told:
+// a plain DELETE ... NOT IN empties the tables but leaves the vectors answering
+// searches from the derived Bleve index until the next boot heals it.
 func DeleteOrphans(db dbx.Builder) ([]string, error) {
 	var ids []string
 	query := `SELECT document_id FROM ` + tableEmbeddings + `
@@ -415,17 +381,16 @@ func DeleteOrphans(db dbx.Builder) ([]string, error) {
 		}
 	}
 
-	// After the delete, like every other notification here: a listener that
-	// reads the rows back must never see them half gone.
+	// After the delete: a listener reading the rows back must not see them
+	// half gone.
 	for _, id := range ids {
 		NotifyDeleted(id)
 	}
 	return ids, nil
 }
 
-// LoadStats counts the backlog for the Settings page. Total is the documents that
-// are embeddable at all, so "embedded of total" reads as a real progress bar
-// rather than counting drafts and duplicates nobody will ever search.
+// Total counts only embeddable documents, so "embedded of total" reads as a
+// real progress bar rather than counting drafts and duplicates.
 func LoadStats(db dbx.Builder, model string, dims, chunkerVersion int, now time.Time) (Stats, error) {
 	out := Stats{Model: model, Dims: dims, Enabled: strings.TrimSpace(model) != ""}
 	if !out.Enabled {

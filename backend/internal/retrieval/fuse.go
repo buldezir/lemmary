@@ -2,28 +2,22 @@ package retrieval
 
 import "sort"
 
-// RRFConstant is the k of reciprocal rank fusion. 60 is the value the original
-// paper settled on and every later comparison has kept: large enough that the
-// top of a list is not allowed to dominate, small enough that rank 1 still
-// clearly beats rank 10.
+// The k of reciprocal rank fusion. 60 is the original paper's value: large
+// enough that the top of a list cannot dominate, small enough that rank 1
+// still clearly beats rank 10.
 const RRFConstant = 60.0
 
-// Ranked is one entry of a ranked list: an id and the score that ordered it.
 type Ranked struct {
 	ID    string
 	Score float64
 }
 
 // RRF fuses ranked lists by reciprocal rank: an id scores Σ 1/(60+rank) over
-// the lists it appears in, ranks being 1-based and taken in the order given.
+// the lists it appears in, ranks 1-based.
 //
-// Scores are deliberately not read. The lists come from different retrievers —
-// BM25 and cosine similarity are not on the same scale and normalising them
-// against each other is guesswork — so only the positions are comparable.
-//
-// Ties are broken by how many lists found the id, then by its rank in the
-// earliest list that did, then by id, so the output is a total order and two
-// runs over the same input agree.
+// Input scores are deliberately not read: BM25 and cosine are not on the same
+// scale, so only positions are comparable. Ties break by how many lists found
+// the id, then its rank in the earliest, then id, so the order is total.
 func RRF(lists ...[]Ranked) []Ranked {
 	type entry struct {
 		id        string
@@ -85,12 +79,9 @@ func RRF(lists ...[]Ranked) []Ranked {
 	return out
 }
 
-// GroupChunks collapses chunk hits to documents: the returned list orders
-// documents by their best chunk, and the map holds up to perDoc chunks per
-// document, best first.
-//
-// Chunk-level scores are comparable here because they all come from the same
-// retriever, which is why this ranks by best score rather than by rank.
+// GroupChunks orders documents by their best chunk, with up to perDoc chunks
+// each. Ranks by score rather than rank: chunk scores are comparable here
+// because they all come from the same retriever.
 func GroupChunks(hits []ChunkHit, perDoc int) ([]Ranked, map[string][]ChunkHit) {
 	if perDoc <= 0 {
 		perDoc = 1
@@ -125,8 +116,7 @@ func GroupChunks(hits []ChunkHit, perDoc int) ([]Ranked, map[string][]ChunkHit) 
 		byDoc[id] = docHits
 	}
 
-	// Stable on the input order so two documents whose best chunk scored the
-	// same keep the retriever's own ordering.
+	// Stable, so documents whose best chunk tied keep the retriever's order.
 	sort.SliceStable(order, func(i, j int) bool { return best[order[i]] > best[order[j]] })
 
 	docs := make([]Ranked, 0, len(order))
@@ -136,7 +126,6 @@ func GroupChunks(hits []ChunkHit, perDoc int) ([]Ranked, map[string][]ChunkHit) 
 	return docs, byDoc
 }
 
-// Rank builds a ranked list from ids already in order.
 func Rank(ids []string) []Ranked {
 	out := make([]Ranked, 0, len(ids))
 	for i, id := range ids {
@@ -145,7 +134,6 @@ func Rank(ids []string) []Ranked {
 	return out
 }
 
-// IDs projects a ranked list back to bare ids.
 func IDs(ranked []Ranked) []string {
 	out := make([]string, 0, len(ranked))
 	for _, r := range ranked {

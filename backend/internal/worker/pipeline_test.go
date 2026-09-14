@@ -211,19 +211,17 @@ func TestCheckOCRTextFits(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a refusal one character over the ceiling")
 	}
-	// The provider and the count are the whole reason this exists rather than
-	// letting app.Save raise validation_max_text_constraint.
+	// Naming the provider and the count is why this exists rather than letting
+	// app.Save raise validation_max_text_constraint.
 	if !strings.Contains(err.Error(), "google_vision") {
 		t.Fatalf("error should name the provider: %v", err)
 	}
 }
 
-// TestCheckOCRTextFitsCountsRunesNotBytes pins the unit. PocketBase measures a
-// text field's Max as len([]rune(value)), so a document of multi-byte
-// characters that fits the column must not be refused for its byte count.
+// PocketBase measures a text field's Max as len([]rune(value)), so a multi-byte
+// document that fits the column must not be refused for its byte count.
 func TestCheckOCRTextFitsCountsRunesNotBytes(t *testing.T) {
-	// Three bytes per rune, so this is well over the ceiling in bytes and
-	// exactly at it in characters.
+	// Three bytes per rune: over the ceiling in bytes, exactly at it in runes.
 	text := strings.Repeat("あ", models.MaxOCRTextRunes)
 	if len(text) <= models.MaxOCRTextRunes {
 		t.Fatalf("fixture is not multi-byte: %d bytes", len(text))
@@ -233,9 +231,8 @@ func TestCheckOCRTextFitsCountsRunesNotBytes(t *testing.T) {
 	}
 }
 
-// failJob writes job.error only when no step carries the failure. It used to
-// write it always, which duplicated a step's message and left the UI saying
-// "Processing failed" where it could have named the step.
+// failJob writes job.error only when no step carries the failure; otherwise the
+// UI says "Processing failed" where it could have named the step.
 func TestHasRecordedStepFailure(t *testing.T) {
 	t.Parallel()
 
@@ -249,8 +246,8 @@ func TestHasRecordedStepFailure(t *testing.T) {
 		t.Fatal("a completed step is not a failure")
 	}
 
-	// Soft failures do not count: the pipeline walked past one, so whatever is
-	// failing the job now is something else and needs its own message.
+	// Soft failures do not count: whatever is failing the job now is something
+	// else and needs its own message.
 	saveStepRuns(job, []models.StepRun{
 		{Name: models.StepEmbed, Status: models.StepStatusFailed, Soft: true, Error: "embeddings: 503"},
 	})

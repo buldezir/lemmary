@@ -49,9 +49,8 @@ func TestFinishedDocStatusHonoursConfidenceAndThePolicy(t *testing.T) {
 }
 
 // The setting reaches only apply_metadata, so a step list without it finishes
-// on completed however the policy is set. That exemption exists for the
-// paperless-ngx import, whose metadata no model here ever touched; this is the
-// line that makes it true. See finalizeDocumentWithoutApply.
+// on completed however the policy is set: the paperless-ngx import exemption.
+// See finalizeDocumentWithoutApply.
 func TestThePolicyCannotReachAStepListWithoutApplyMetadata(t *testing.T) {
 	t.Parallel()
 	for _, step := range models.ImportPreserveSteps {

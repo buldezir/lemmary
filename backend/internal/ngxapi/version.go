@@ -18,11 +18,9 @@ const (
 
 var supportedAPIVersions = []int{9, 10}
 
-// errUnsupportedAPIVersion means checkAPIVersion already wrote the 406
-// response. It must be non-nil so callers actually stop: returning the
-// encoder's nil error here used to let the handler keep executing — a DELETE
-// would still delete the document after the client saw a 406. PocketBase's
-// ErrorHandler sees the committed response and writes nothing more.
+// errUnsupportedAPIVersion means checkAPIVersion already wrote the 406. It must
+// be non-nil so callers actually stop: a nil error let the handler keep going,
+// and a DELETE still deleted the document after the client saw the 406.
 var errUnsupportedAPIVersion = errors.New("unsupported paperless-ngx API version")
 
 func checkAPIVersion(e *core.RequestEvent) error {

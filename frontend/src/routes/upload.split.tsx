@@ -33,13 +33,10 @@ function errorMessage(err: unknown, fallback: string) {
   return err instanceof Error && err.message ? err.message : fallback
 }
 
-/**
- * Loads every page thumbnail as an object URL, a few at a time, and keeps them
- * revoked on unmount so a long scan does not leak blobs.
- */
+/** Revoked on unmount, so a long scan does not leak blobs. */
 function usePageThumbs(uploadId: string | undefined, pageCount: number) {
-  // Keyed by upload so a stale map is simply ignored when the upload changes,
-  // rather than needing a synchronous reset inside the effect.
+  // Keyed by upload so a stale map is ignored when the upload changes, rather
+  // than needing a synchronous reset inside the effect.
   const [loaded, setLoaded] = useState<{ uploadId: string; pages: Record<number, string> }>({
     uploadId: '',
     pages: {},

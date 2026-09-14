@@ -35,8 +35,8 @@ func TestBuildTimeline(t *testing.T) {
 			},
 		},
 		{
-			// substr('', 1, 7) is '', so documents with no document_date arrive
-			// as the empty bucket -- last, since '' sorts below every month.
+			// A document with no date arrives as the empty bucket, last, since it
+			// sorts below every month.
 			name: "empty bucket becomes the undated count",
 			rows: []timelineRow{
 				{Month: "2025-03", Count: 2},
@@ -65,8 +65,7 @@ func TestBuildTimeline(t *testing.T) {
 	}
 }
 
-// An empty library must serialise to [] rather than null: the client maps over
-// months without a guard.
+// [] rather than null: the client maps over months without a guard.
 func TestBuildTimelineEncodesEmptyMonthsAsArray(t *testing.T) {
 	t.Parallel()
 

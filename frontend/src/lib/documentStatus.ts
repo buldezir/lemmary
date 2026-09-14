@@ -24,11 +24,9 @@ export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
 }
 
 /**
- * The Inbox's status filter, which is not a document status: it means every
- * status except completed -- what the pipeline has not finished with, plus what
- * it finished with badly. Mirrors models.StatusFilterUnfinished in
- * backend/internal/models/status.go, which the search endpoint understands too,
- * so the two paths agree about what the Inbox holds.
+ * Not a document status: every status except completed. Mirrors
+ * models.StatusFilterUnfinished, which the search endpoint understands too, so
+ * both paths agree about what the Inbox holds.
  */
 export const UNFINISHED_STATUS = 'unfinished'
 
@@ -42,9 +40,8 @@ export const LOW_CONFIDENCE_THRESHOLD = 0.5
 export type ReviewReason = 'duplicate' | 'low_confidence' | 'awaiting'
 
 /**
- * Why a document is waiting for review. Until the "always require review"
- * setting existed, needs_review implied low confidence or a duplicate, so the
- * card could assume the former whenever there was no duplicate to point at.
+ * Why a document is waiting for review. With "always require review" on,
+ * needs_review no longer implies low confidence or a duplicate.
  */
 export function reviewReason(document: {
   duplicate_of?: string

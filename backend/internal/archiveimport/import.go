@@ -18,14 +18,12 @@ import (
 	"lemmary/backend/internal/worker"
 )
 
-// Job statuses for in-memory async restores.
 const (
 	JobStatusRunning   = importjob.StatusRunning
 	JobStatusCompleted = importjob.StatusCompleted
 	JobStatusFailed    = importjob.StatusFailed
 )
 
-// Restore modes accepted by the API.
 const (
 	// ModeRestore puts the library back as it was: metadata, OCR text,
 	// thumbnails and taxonomy all come from the archive, and no OCR or LLM
@@ -55,7 +53,6 @@ func ParseMode(raw string) (string, error) {
 	}
 }
 
-// Result summarizes a completed restore run.
 type Result struct {
 	Imported               int      `json:"imported"`
 	SkippedDuplicates      int      `json:"skipped_duplicates"`

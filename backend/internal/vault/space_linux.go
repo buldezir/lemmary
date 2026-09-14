@@ -19,7 +19,6 @@ const (
 	ramfsMagic = 0x858458f6
 )
 
-// isMemoryBacked reports whether path lives on tmpfs or ramfs.
 func isMemoryBacked(path string) (bool, error) {
 	var st syscall.Statfs_t
 	if err := syscall.Statfs(path, &st); err != nil {

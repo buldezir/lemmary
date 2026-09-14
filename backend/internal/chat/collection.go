@@ -1,10 +1,8 @@
 // Package chat stores the AI conversations behind Deep Search and the
 // per-document Ask AI page.
 //
-// Both surfaces used to be stateless: the browser held the transcript in React
-// state and replayed the whole message array on every request, so a reload lost
-// the conversation. Here the server owns it -- a request carries a session id
-// and one new message, and the history comes out of the database.
+// The server owns the transcript: a request carries a session id and one new
+// message, and the history comes out of the database.
 package chat
 
 import (
@@ -15,29 +13,23 @@ import (
 )
 
 const (
-	// SessionsCollection holds one conversation per record.
 	SessionsCollection = "chat_sessions"
 	// MessagesCollection holds one turn per record, ordered by seq.
 	MessagesCollection = "chat_messages"
 
-	// UsersCollectionName owns a session; DocumentsCollectionName is the
-	// document a KindDocument session is about.
 	UsersCollectionName     = "users"
 	DocumentsCollectionName = "documents"
 )
 
 // EnsureCollections creates both collections if they are missing, so the
-// migration and a fresh boot share one definition -- the same delegation
-// internal/passkey and internal/aiprovider use.
+// migration and a fresh boot share one definition.
 //
 // Neither collection gets API rules, which leaves them nil: PocketBase then
 // serves them to superusers only, and /api/app/chats is the sole access path.
-// That is the load-bearing choice here. A transcript is not user-editable data:
-// with a create rule, a session could POST a chat_messages record with
-// role="assistant" and arbitrary content, and the server would replay it to the
-// model on the next turn as a genuine prior answer -- a self-service prompt
-// injection channel into history the server treats as trusted. seq and
-// message_count are server invariants for the same reason.
+// That is load-bearing. With a create rule a session could POST a chat_messages
+// record with role="assistant" and arbitrary content, and the server would
+// replay it to the model as a genuine prior answer. seq and message_count are
+// server invariants for the same reason.
 func EnsureCollections(app core.App) error {
 	sessions, err := ensureSessions(app)
 	if err != nil {
@@ -75,10 +67,9 @@ func ensureSessions(app core.App) (*core.Collection, error) {
 			MaxSelect: 1,
 			Values:    []string{string(KindSearch), string(KindDocument)},
 		},
-		// Set only for KindDocument. CascadeDelete because the alternative is
-		// worse than it looks: for an optional relation PocketBase unsets the
-		// id instead of blocking the delete, which would leave a document
-		// session with no document -- listed in the sidebar, impossible to
+		// Set only for KindDocument. CascadeDelete because for an optional
+		// relation PocketBase unsets the id instead, leaving a session with no
+		// document: listed in the sidebar and impossible to continue.
 		// continue (the handler needs a document to read OCR text from), and
 		// citing text that no longer exists.
 		&core.RelationField{
@@ -97,15 +88,9 @@ func ensureSessions(app core.App) (*core.Collection, error) {
 		},
 		// The provider and model this conversation runs on, when it was opened
 		// on something other than the configured binding. Empty means the
-		// Settings binding, which is every session created before overrides
-		// existed.
-		//
-		// A text field rather than a relation to ai_providers, deliberately.
-		// An optional relation would either cascade-delete transcripts with the
-		// provider row or silently unset the id -- and a transcript is worth
-		// keeping after its provider is gone, readable and continuable on the
-		// configured model. A stale id resolves to nothing and falls back the
-		// same way an empty one does.
+		// Settings binding. A text field rather than a relation: a transcript is
+		// worth keeping after its provider row is gone, and a stale id falls back
+		// the same way an empty one does.
 		&core.TextField{Name: "provider", Max: 15},
 		&core.TextField{Name: "model", Max: 200},
 		// Not Required: a NumberField's Required means non-zero, and a session
@@ -120,10 +105,9 @@ func ensureSessions(app core.App) (*core.Collection, error) {
 	)
 	collection.AddIndex("idx_chat_sessions_user_last", false, "user, last_message_at", "")
 	collection.AddIndex("idx_chat_sessions_user_kind_last", false, "user, kind, last_message_at", "")
-	// Not optional. Relating to documents means every document delete now looks
-	// for referring sessions, and without this that is a full scan of a table
-	// holding whole transcripts -- the same reasoning 1730000012 gives for
-	// idx_processing_jobs_document.
+	// Not optional: relating to documents means every document delete looks for
+	// referring sessions, which without this is a full scan of a table holding
+	// whole transcripts.
 	collection.AddIndex("idx_chat_sessions_document", false, "document", "")
 
 	if err := app.Save(collection); err != nil {
@@ -158,9 +142,9 @@ func ensureMessages(app core.App, sessions *core.Collection) error {
 		// Max is explicit on purpose: a TextField left at zero defaults to 5000
 		// runes, which would reject most assistant replies.
 		&core.TextField{Name: "content", Required: true, Max: MaxMessageRunes},
-		// The client-generated id of the request that produced this pair. Both
-		// halves carry it so a dropped connection can recover its exact answer,
-		// even when another tab asks the same question concurrently.
+		// The client-generated id of the request that produced this pair, so a
+		// dropped connection can recover its exact answer even when another tab
+		// asks the same question concurrently.
 		&core.TextField{Name: "run_id", Max: MaxRunIDRunes},
 		// The search hits the assistant turn was grounded in, so a replayed
 		// transcript still renders its result cards. Not Required -- a JSON

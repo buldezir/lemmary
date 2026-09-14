@@ -16,10 +16,8 @@ const namedEntityListPageSize = 500
 
 var ensureNamedEntityMu sync.Mutex
 
-// EnsureNamedEntity finds or creates a named entity (correspondent / document type)
-// owned by userID. Lookup prefers exact name_original, then exact name, then a
-// punctuation/accent-insensitive match. created is true only when a new record
-// is inserted. Existing name and name_original values are left unchanged.
+// Lookup prefers exact name_original, then exact name, then a
+// punctuation/accent-insensitive match. Existing names are left unchanged.
 func EnsureNamedEntity(app core.App, collection, userID, displayName, originalName string) (id string, created bool, err error) {
 	// ponytail: one process-wide lock over lookup-then-insert. Only (user, name)
 	// is unique in the schema, so the name_original and normalized tiers below
@@ -274,8 +272,8 @@ func updateNamedEntity(app core.App, collection, id, displayName, originalName s
 		return "", err
 	}
 
-	// Keep an existing display name and original so later extractions cannot
-	// overwrite a user rename or swap translated/source values.
+	// Later extractions must not overwrite a user rename or swap
+	// translated/source values.
 	changed := false
 	if strings.TrimSpace(record.GetString("name")) == "" && displayName != "" {
 		record.Set("name", displayName)
@@ -287,30 +285,22 @@ func updateNamedEntity(app core.App, collection, id, displayName, originalName s
 	}
 	if changed {
 		if err := app.Save(record); err != nil {
-			// Unique (user, name) collisions must not fail apply; the matched record is kept as-is.
+			// A unique (user, name) collision must not fail apply.
 			return record.Id, nil
 		}
 	}
 	return record.Id, nil
 }
 
-// matchTags resolves extracted tag names against the user's existing tags and
-// returns the ids it matched plus the names it could not.
+// Resolves extracted tag names against the user's tags, returning matched ids
+// and the names it could not match.
 //
-// It never creates. Tags are a vocabulary the user curates by hand, so a name
-// the archive does not have is a name the model invented and the answer is to
-// drop it -- that is the whole point of the catalog in the extraction prompt.
-// Matching is punctuation/accent/case-insensitive (normalizeNamedEntityKey), so
-// a model that answers "invoices" for a tag named "Invoices" still lands rather
-// than silently losing a tag over a capital letter.
+// It never creates: tags are a vocabulary the user curates, so a name the
+// archive does not have is one the model invented. Matching is
+// punctuation/accent/case-insensitive, so "invoices" still finds "Invoices".
 //
-// The user's tags are read once, not once per name: an archive with 500 tags
-// and a document with 6 of them would otherwise be 6 full scans.
-//
-// A missing user id is an error rather than an empty answer, as it was for
-// EnsureTag: the caller writes the result over the document's tags, so
-// answering "no tags" for a document whose owner could not be read would clear
-// them instead of failing the step.
+// A missing user id is an error rather than an empty answer: the caller writes
+// the result over the document's tags, so "no tags" would clear them.
 func matchTags(app core.App, userID string, names []string) (matched []string, dropped []string, err error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
@@ -346,8 +336,7 @@ func matchTags(app core.App, userID string, names []string) (matched []string, d
 	return matched, dropped, nil
 }
 
-// tagIndexByKey maps every tag the user owns by its normalized name. First
-// writer wins, so two tags that normalize alike resolve to the older one
+// First writer wins, so two tags that normalize alike resolve to the older one
 // instead of flipping with page order.
 func tagIndexByKey(app core.App, userID string) (map[string]string, error) {
 	index := map[string]string{}
@@ -411,13 +400,9 @@ func requireOwnedRelation(app core.App, collection, label, id, userID string) er
 	return nil
 }
 
-// EnsureTag finds or creates a tag owned by userID, matched by exact name.
-// created is true only when a new record is inserted.
-//
-// Import paths only -- archive restore, paperless-ngx import, and the ngx REST
-// API. Those move data the user already owns, so creating a tag there is the
-// user acting. The extraction pipeline deliberately does not use this; see
-// matchTags.
+// Import paths only (archive restore, paperless-ngx import, the ngx REST API):
+// those move data the user already owns, so creating a tag there is the user
+// acting. The extraction pipeline deliberately uses matchTags instead.
 func EnsureTag(app core.App, userID, name string) (id string, created bool, err error) {
 	userID = strings.TrimSpace(userID)
 	name = strings.TrimSpace(name)
@@ -442,7 +427,6 @@ func EnsureTag(app core.App, userID, name string) (id string, created bool, err 
 	tag.Set("user", userID)
 	tag.Set("name", name)
 	if err := app.Save(tag); err != nil {
-		// Race: a concurrent create may have won the unique (user, name) index.
 		if existingID, findErr := findTagByName(app, userID, name); findErr == nil && existingID != "" {
 			return existingID, false, nil
 		}

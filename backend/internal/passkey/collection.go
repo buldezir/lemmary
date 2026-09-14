@@ -27,10 +27,8 @@ const UsersCollectionName = "users"
 //
 // No API rules are set, which leaves them nil: PocketBase then serves the
 // collection to superusers only, and /api/app/passkeys is the sole access path.
-// That is deliberate. A credential record is not user-editable data — letting a
-// session PATCH its own sign counter or swap a public key through
-// /api/collections would hand an attacker the two fields the whole scheme rests
-// on.
+// Letting a session PATCH its own sign counter or swap a public key through
+// /api/collections would hand an attacker the two fields the scheme rests on.
 func EnsureCollection(app core.App) (*core.Collection, error) {
 	if collection, err := app.FindCollectionByNameOrId(CollectionName); err == nil {
 		return collection, nil

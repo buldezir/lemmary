@@ -12,25 +12,17 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// Stream framing.
-//
 // A sealed stream is a 6-byte header followed by one or more chunks:
 //
 //	header: "LMVB" | version(1) | chunkSizeLog2(1)
 //	chunk:  nonce(24) | AEAD(plaintext chunk)+tag(16)
 //
-// Chunking keeps memory flat — a 47 MB upload is never fully resident — and
-// bounds the blast radius of a corrupt region to one chunk rather than the whole
-// archive.
-//
-// Every chunk authenticates additional data covering the stream version, its
-// kind, the stream identity, the chunk index, and whether it is the final chunk.
-// That closes the three attacks a naive per-chunk AEAD leaves open:
-//
-//   - truncation, because the new last chunk was sealed with isFinal=0 and will
-//     not authenticate as isFinal=1;
-//   - reordering, because the index is bound;
-//   - splicing a chunk out of a different blob, because the stream id is bound.
+// Chunking keeps memory flat and bounds a corrupt region to one chunk. Every
+// chunk authenticates additional data covering the stream version, kind,
+// identity, chunk index and whether it is the final chunk, which closes the
+// three attacks a naive per-chunk AEAD leaves open: truncation (the new last
+// chunk was sealed with isFinal=0), reordering (the index is bound) and
+// splicing from another blob (the stream id is bound).
 //
 // A stream always carries at least one chunk, so an empty payload is
 // distinguishable from a stream truncated down to its header.
@@ -49,16 +41,14 @@ const (
 	kindManifest byte = 2
 )
 
-// StreamID identifies a sealed stream. For blobs it is the keyed content
-// address; for manifests it is derived from the generation number.
+// StreamID is the keyed content address for a blob, and derived from the
+// generation number for a manifest.
 type StreamID [32]byte
 
-// ErrCorrupt reports a sealed stream that failed authentication or whose
-// framing is inconsistent. As in the crypt package it deliberately does not
-// distinguish wrong-key from tampered-with.
+// ErrCorrupt, as in the crypt package, deliberately does not distinguish
+// wrong-key from tampered-with.
 var ErrCorrupt = errors.New("vault: sealed stream failed authentication")
 
-// chunkAAD builds the additional data for one chunk.
 func chunkAAD(kind byte, id StreamID, index uint32, final bool) []byte {
 	aad := make([]byte, 0, 1+1+len(id)+4+1)
 	aad = append(aad, streamVersion, kind)
@@ -72,9 +62,8 @@ func chunkAAD(kind byte, id StreamID, index uint32, final bool) []byte {
 	return aad
 }
 
-// SealStream encrypts everything readable from src into dst.
-//
-// It returns the number of plaintext bytes consumed.
+// SealStream encrypts everything readable from src into dst, returning the
+// number of plaintext bytes consumed.
 func SealStream(dst io.Writer, src io.Reader, key crypt.Key, kind byte, id StreamID) (int64, error) {
 	aead, err := chacha20poly1305.NewX(key[:])
 	if err != nil {
@@ -144,9 +133,8 @@ func SealStream(dst io.Writer, src io.Reader, key crypt.Key, kind byte, id Strea
 	return total, nil
 }
 
-// OpenStream decrypts a stream produced by SealStream into dst.
-//
-// It returns the number of plaintext bytes written.
+// OpenStream decrypts a stream produced by SealStream, returning the number of
+// plaintext bytes written.
 func OpenStream(dst io.Writer, src io.Reader, key crypt.Key, kind byte, id StreamID) (int64, error) {
 	aead, err := chacha20poly1305.NewX(key[:])
 	if err != nil {
@@ -182,8 +170,8 @@ func OpenStream(dst io.Writer, src io.Reader, key crypt.Key, kind byte, id Strea
 		n, readErr := io.ReadFull(br, buf)
 		if readErr != nil && readErr != io.ErrUnexpectedEOF {
 			if readErr == io.EOF {
-				// A well-formed stream always ends on a final chunk, which is
-				// consumed below; reaching EOF here means it was truncated.
+				// A well-formed stream always ends on a final chunk, consumed below, so EOF
+				// here means it was truncated.
 				return total, fmt.Errorf("%w: stream ended without a final chunk", ErrCorrupt)
 			}
 			return total, readErr

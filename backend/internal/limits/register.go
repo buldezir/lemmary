@@ -6,34 +6,25 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// Register binds the limit checks.
-//
-// Two hooks are all the enforcement there is, because every way a document or an
-// account comes into being ends in app.Save on one of these two collections:
-// the SPA's collection-API upload, the paperless-ngx post_document endpoint, a
-// PDF split, an Amazon-orders import, a backup restore, a paperless-ngx remote
-// pull, the setup wizard, the superuser CLI, and the PocketBase admin UI.
+// Register binds the limit checks. Two hooks are all the enforcement there is,
+// because every way a document or an account comes into being ends in app.Save
+// on one of these two collections.
 //
 // Bind this before worker.Register in appwire so an over-limit upload is refused
-// before duplicates.AssignChecksumFromUpload reads the whole file to hash it.
-// PocketBase sorts equal-priority handlers stably, so registration order is what
-// decides that.
+// before duplicates.AssignChecksumFromUpload reads the whole file to hash it;
+// PocketBase sorts equal-priority handlers stably.
 //
-// Both documents hooks bind on every install, limits or none, because
-// MaxOCRPages is not an allowance a plan sells -- it is what this can extract,
-// and an install cannot be without it. That costs an unlimited install a
-// five-byte header read per upload, plus one pdfinfo and a temp spool for the
-// uploads that turn out to be PDFs. What an unlimited install still does not do
-// is query: no usage aggregate per upload, and no users hook at all.
+// Both documents hooks bind on every install because MaxOCRPages is not an
+// allowance a plan sells. That costs an unlimited install a five-byte header
+// read per upload, plus a pdfinfo and a temp spool for the actual PDFs, but no
+// query: no usage aggregate per upload, and no users hook at all.
 func Register(app core.App, lim Limits) {
 	if lim.Any() {
 		app.Logger().Info("instance limits active", limitAttrs(lim)...)
 	}
 
-	// A side effect of binding unconditionally, worth knowing about: size_bytes
-	// and page_count are now stamped on every install rather than only where a
-	// limit is set, so the usage an unlimited instance reports is real rather
-	// than zero.
+	// Binding unconditionally stamps size_bytes and page_count on every install, so
+	// the usage an unlimited instance reports is real rather than zero.
 	app.OnRecordCreate("documents").BindFunc(func(e *core.RecordEvent) error {
 		if err := applyDocumentLimits(e.App, lim, e.Record, 1); err != nil {
 			if exceeded := AsExceeded(err); exceeded != nil {
@@ -44,31 +35,22 @@ func Register(app core.App, lim Limits) {
 		return e.Next()
 	})
 
-	// An update can replace the file. documents.UpdateRule lets an owner patch
-	// their own row, so without this an account creates a one-page document and
-	// then patches a 500-page file onto it: the stored bytes change and the
-	// measurements this instance charges against do not. The same move would
-	// walk a file past MaxOCRPages, which is the other reason this binds even
-	// where no plan limit is set.
-	//
-	// Nothing in this codebase replaces a document's file -- every
-	// record.Set("file", ...) is on a freshly built record -- so in practice
-	// this fires only for a client doing it deliberately, and costs the many
-	// metadata updates the pipeline makes nothing but an empty GetUnsavedFiles.
+	// An update can replace the file, and documents.UpdateRule lets an owner patch
+	// their own row: without this an account creates a one-page document and then
+	// patches a 500-page file onto it, leaving the measurements this instance
+	// charges against unchanged. The same move would walk a file past MaxOCRPages,
+	// which is why this binds even where no plan limit is set.
 	app.OnRecordUpdate("documents").BindFunc(func(e *core.RecordEvent) error {
-		// An update that brings no file must not be able to restate what this
-		// document costs. Marking the two columns Hidden stops a regular
-		// account writing them, but only a regular account: PocketBase's
-		// GrantSuperuserAccess is documented as allowing "changing all system
-		// record fields, including those marked as Hidden", so a superuser
-		// could otherwise PATCH size_bytes to 0 and mint headroom -- which is
-		// precisely the thing these limits exist to take out of an admin's
-		// hands.
+		// An update that brings no file must not restate what this document costs.
+		// Hidden stops a regular account writing the two columns, but PocketBase's
+		// GrantSuperuserAccess allows "changing all system record fields, including
+		// those marked as Hidden", so a superuser could otherwise PATCH size_bytes
+		// to 0 and mint the headroom these limits exist to take out of an
+		// admin's hands.
 		restoreMeasurements(e.Record)
 
-		// A replacement adds no new document, so the count limit is not in
-		// play: 0 documents, and pages and bytes are charged net of what this
-		// record already contributed.
+		// A replacement adds no new document, so pages and bytes are charged net
+		// of what this record already contributed.
 		if err := applyDocumentLimits(e.App, lim, e.Record, 0); err != nil {
 			if exceeded := AsExceeded(err); exceeded != nil {
 				return exceeded.APIError()
@@ -91,18 +73,14 @@ func Register(app core.App, lim Limits) {
 	}
 }
 
-// applyDocumentLimits measures the upload, records the measurements on the
-// record, and refuses it if it does not fit.
-//
-// The measurements are set even when nothing is exceeded, and that is the reason
-// this runs for every create rather than only when a count limit is set: without
-// them the sums in Measure would not include the document about to be stored.
+// applyDocumentLimits sets the measurements even when nothing is exceeded, which
+// is why it runs for every create and not only where a count limit is set:
+// without them Measure would not include the document about to be stored.
 func applyDocumentLimits(app core.App, lim Limits, record *core.Record, addsDocuments int64) error {
 	files := record.GetUnsavedFiles("file")
 	if len(files) == 0 {
-		// No new file: a create that attaches its file elsewhere, or -- far more
-		// often -- one of the many metadata updates the pipeline makes. Nothing
-		// to measure and nothing to re-charge.
+		// No new file: a create that attaches it elsewhere, or one of the many metadata
+		// updates the pipeline makes. Nothing to measure and nothing to re-charge.
 		return nil
 	}
 	file := files[0]
@@ -110,8 +88,8 @@ func applyDocumentLimits(app core.App, lim Limits, record *core.Record, addsDocu
 	sizeBytes := file.Size
 	pageCount := PageCountOfUpload(app.Logger(), file)
 
-	// What this record already contributes to the totals, so a replacement is
-	// charged for the difference rather than counted twice. Zero on a create.
+	// What this record already contributes, so a replacement is charged for the
+	// difference rather than counted twice. Zero on a create.
 	priorBytes := int64(record.GetFloat("size_bytes"))
 	priorPages := int64(record.GetFloat("page_count"))
 
@@ -122,23 +100,18 @@ func applyDocumentLimits(app core.App, lim Limits, record *core.Record, addsDocu
 		return err
 	}
 
-	// After the plan limits, so an instance that sells fewer pages than this can
-	// extract explains the refusal in the terms it sold. Both refuse the same
-	// file; only the message differs, and the more specific one is the one the
-	// account can act on.
+	// After the plan limits, so an instance selling fewer pages than this can
+	// extract explains the refusal in the terms it sold.
 	//
-	// Skipped only for a new record that arrives carrying its own text. A backup
-	// restore and a paperless-ngx preserve-mode pull both set ocr_text and ask
-	// for no processing job, so no provider will be called and there is nothing
-	// to spend -- and refusing them would make a long document that was archived
-	// before this ceiling existed impossible to restore. Their text is bounded
-	// where it is read instead: archiveimport caps the OCR sidecar, and the
-	// column's own Max catches anything past that.
+	// Skipped only for a new record carrying its own text: a backup restore and a
+	// paperless-ngx preserve-mode pull set ocr_text and ask for no processing job,
+	// so nothing will be spent, and refusing them would make a document archived
+	// before this ceiling impossible to restore. Their text is bounded where it is
+	// read, by archiveimport and the column's own Max.
 	//
-	// The IsNew check is what keeps that from becoming a bypass. An update
-	// replacing the file reads the text the document already had, which says
-	// nothing about the file now being attached -- and a later reprocess clears
-	// ocr_text and sends that file to the provider after all.
+	// IsNew keeps that from becoming a bypass: an update replacing the file reads
+	// the text the document already had, and a later reprocess clears ocr_text and
+	// sends the file to the provider after all.
 	if !record.IsNew() || strings.TrimSpace(record.GetString("ocr_text")) == "" {
 		if err := CheckOCRPages(pageCount); err != nil {
 			return err
@@ -152,26 +125,20 @@ func applyDocumentLimits(app core.App, lim Limits, record *core.Record, addsDocu
 	if err != nil {
 		return err
 	}
-	// Two uploads racing can both read the same totals and both pass a check
-	// only one should. Left alone deliberately: the overshoot is bounded by how
-	// many uploads are in flight, the next upload sees the true total and
-	// refuses, and the alternatives -- serializing every upload, or a
-	// transactional counter row -- cost more than the problem.
+	// Two uploads racing can both read the same totals and both pass a check only
+	// one should. Left alone: the overshoot is bounded by the uploads in flight
+	// and the next one refuses, and serializing every upload or keeping a
+	// transactional counter row costs more than the problem.
 	return lim.CheckRoom(usage, addsDocuments, pageCount-priorPages, sizeBytes-priorBytes)
 }
 
 // restoreMeasurements puts the stored size_bytes and page_count back, discarding
-// whatever the request carried.
+// whatever the request carried. It runs before applyDocumentLimits, which
+// overwrites both when an update brings a file. Restoring rather than rejecting
+// matches what PocketBase does for a hidden field on a non-superuser write.
 //
-// applyDocumentLimits overwrites both from the file whenever an update brings
-// one, so this only has to cover the file-less case -- and it runs before that,
-// so an update that does bring a file still ends up with the measured values.
-// Restoring rather than rejecting matches what PocketBase already does for a
-// hidden field on a non-superuser write, and leaves every other edit on the
-// record working.
-//
-// The cost is that nobody can hand-correct a measurement, superuser included.
-// That is the intended trade: a plan an admin can edit is not a plan.
+// The cost is that nobody can hand-correct a measurement, superuser included:
+// a plan an admin can edit is not a plan.
 func restoreMeasurements(record *core.Record) {
 	original := record.Original()
 	record.Set("size_bytes", original.GetFloat("size_bytes"))
@@ -184,19 +151,15 @@ func needsRoomCheck(lim Limits) bool {
 		!lim.StorageBytes.IsUnlimited()
 }
 
-// applyUserLimit refuses an account beyond the allowance.
-//
-// One account is free, structurally, so the setup wizard's first admin always
-// passes -- with nothing in the users table the projected seat count is zero,
-// whatever the limit -- and no exemption for is_app_admin is needed or wanted
-// here. See CountAdditionalUsers for why exempting the flag would be a bypass.
+// applyUserLimit needs no is_app_admin exemption: one account is free
+// structurally, so the setup wizard's first admin always passes. See
+// CountAdditionalUsers for why exempting the flag would be a bypass.
 func applyUserLimit(app core.App, lim Limits, _ *core.Record) error {
 	total, err := app.CountRecords("users")
 	if err != nil {
 		return err
 	}
-	// +1 for the record about to be inserted: this hook runs before the INSERT,
-	// so the table does not hold it yet.
+	// +1 for the record about to be inserted: this hook runs before the INSERT.
 	return lim.CheckAdditionalUsers(additionalOf(total + 1))
 }
 

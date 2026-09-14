@@ -25,7 +25,6 @@ const splitPromptTotalChars = 30000
 // document boundary is usually visible in the first lines of a page.
 const splitPromptMinPageChars = 200
 
-// PageText is the text found on one page of a document being split.
 type PageText struct {
 	Page int
 	Text string
@@ -117,8 +116,6 @@ func (c *OpenAIClient) DetectSplitPoints(ctx context.Context, pages []PageText) 
 	return suggestion, nil
 }
 
-// buildSplitUserMessage lays the pages out as labelled blocks so the model can
-// answer in page numbers.
 func buildSplitUserMessage(pages []PageText) string {
 	budget := splitPromptTotalChars / len(pages)
 	if budget < splitPromptMinPageChars {

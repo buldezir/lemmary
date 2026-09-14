@@ -19,20 +19,17 @@ import (
 	"lemmary/backend/internal/logfmt"
 )
 
-// doclingMaxFileBytes bounds what is sent to the sidecar.
-//
-// Binary megabytes, unlike the Mistral cap: this limit is ours rather than
-// somebody else's documented number, and it exists only so an oversized file
-// fails here instead of after minutes of upload into a container that will
-// refuse it. 64 MiB comfortably clears the 47 MB documents.file cap.
+// doclingMaxFileBytes bounds what is sent to the sidecar. Binary megabytes,
+// unlike the Mistral cap: this limit is ours rather than somebody else's
+// documented number, and it exists only so an oversized file fails here instead
+// of after minutes of upload. 64 MiB comfortably clears the 47 MB
+// documents.file cap.
 const doclingMaxFileBytes = 64 << 20
 
 // DoclingProvider reads documents through a docling-serve container the
-// operator runs themselves.
-//
-// The whole exchange is one multipart POST that returns markdown, which is the
-// same shape MistralProvider already produces, so nothing downstream can tell
-// the difference between a page read locally and a page read in Paris.
+// operator runs themselves. The whole exchange is one multipart POST returning
+// markdown, the same shape MistralProvider produces, so nothing downstream can
+// tell the difference.
 type DoclingProvider struct {
 	baseURL string
 	engine  string
@@ -45,13 +42,10 @@ type DoclingProvider struct {
 //
 // engine is the bound OCR model, which for this SDK names docling's OCR engine
 // (rapidocr, easyocr, tesserocr, tesseract) rather than a model. Empty leaves
-// the choice to the server's own default, which is the right answer for almost
-// everyone and the reason the binding is optional.
+// the choice to the server's own default.
 //
-// apiKey is likewise optional. docling-serve enforces a key only when it was
-// started with DOCLING_SERVE_API_KEY, which the shipped overlay does not do --
-// the sidecar publishes no port and is reachable only from the app container.
-// An operator who exposed it further sets both, and OCR_API_KEY carries it.
+// apiKey is likewise optional: docling-serve enforces a key only when it was
+// started with DOCLING_SERVE_API_KEY, which the shipped overlay does not do.
 func NewDoclingProvider(baseURL, engine, apiKey string, timeout time.Duration, logger *slog.Logger) *DoclingProvider {
 	if timeout <= 0 {
 		timeout = 40 * time.Second
@@ -77,10 +71,9 @@ func (p *DoclingProvider) Name() string {
 // takes cores away from the first rather than adding any.
 //
 // Callers honour this by not fanning out past it (pdfsplit.providerConcurrency),
-// never by queueing behind a semaphore. ExtractText is called with OCRTimeout
+// never by queueing behind a semaphore: ExtractText is called with OCRTimeout
 // already running, so a queue would spend a waiter's whole deadline before it
-// reached the sidecar and fail it outright rather than make it wait. The worker
-// obeys it the same way, by WORKER_CONCURRENCY staying at 1 for local OCR.
+// reached the sidecar.
 func (p *DoclingProvider) MaxConcurrency() int { return 1 }
 
 func (p *DoclingProvider) ExtractText(ctx context.Context, filePath string, mimeType string) (string, error) {
@@ -124,11 +117,10 @@ func (p *DoclingProvider) ExtractText(ctx context.Context, filePath string, mime
 	return text, nil
 }
 
-// doclingSupports is everything docling's converter reads that can reach the
-// OCR step. Broader than Mistral's list because docling parses office formats
-// natively; narrower than docling's full catalogue because the rest cannot get
-// here -- textextract claims txt, csv, docx and xlsx before OCR is consulted,
-// so those appear only on the /ocr-test page, where answering is still correct.
+// doclingSupports is everything docling's converter reads that can reach the OCR
+// step. Narrower than docling's full catalogue because textextract claims txt,
+// csv, docx and xlsx before OCR is consulted, so those appear only on the
+// /ocr-test page.
 func doclingSupports(mimeType string) bool {
 	switch mimeType {
 	case "application/pdf",
@@ -139,9 +131,8 @@ func doclingSupports(mimeType string) bool {
 		"text/plain",
 		"text/html",
 		// No image/avif: docling decodes through Pillow, where AVIF needs a
-		// plugin that is not in the image. The documents.file allowlist has no
-		// avif either, so it can only arrive from the OCR test page -- where a
-		// named refusal beats an opaque 500 from the sidecar.
+		// plugin that is not in the image. It can only arrive from the OCR test
+		// page, where a named refusal beats an opaque 500 from the sidecar.
 		"image/jpeg", "image/png", "image/webp", "image/tiff", "image/gif", "image/bmp":
 		return true
 	default:
@@ -211,11 +202,11 @@ func (p *DoclingProvider) convert(ctx context.Context, fileName, mimeType string
 		// costs a handful of bytes.
 		{"image_export_mode", "placeholder"},
 	}
-	// Everything else -- ocr_engine, ocr_lang, pdf_backend, table_mode -- is
-	// left to the server's own defaults on purpose. Each is an enum whose
-	// accepted spellings have moved between docling releases, and each one sent
-	// is another way for an image bump to become a 422 on every document. The
-	// engine is sent only when an admin bound one deliberately.
+	// ocr_engine, ocr_lang, pdf_backend and table_mode are left to the server's
+	// own defaults: each is an enum whose accepted spellings have moved between
+	// docling releases, and each one sent is another way for an image bump to
+	// become a 422 on every document. The engine is sent only when an admin bound
+	// one deliberately.
 	if p.engine != "" {
 		fields = append(fields, [2]string{"ocr_engine", p.engine})
 	}
@@ -266,8 +257,7 @@ func (p *DoclingProvider) convert(ctx context.Context, fileName, mimeType string
 
 	// Bounded for the same reason as the Mistral read: base_url is
 	// admin-configurable, so the response size is not fully trusted. Sized
-	// against a thousand pages of markdown, which is the page ceiling in
-	// internal/limits.
+	// against a thousand pages of markdown, the page ceiling in internal/limits.
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if err != nil {
 		return "", fmt.Errorf("read docling OCR response: %w", err)

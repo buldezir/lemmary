@@ -24,13 +24,11 @@ func SetAllowLoopback(allow bool) { allowLoopback.Store(allow) }
 // The address comes from whoever is signed in, so this is a request-forgery
 // boundary: without the dial guard, "scan from 169.254.169.254" would make the
 // server fetch cloud metadata, and a sweep of 0.0.0.0/0 would make it a port
-// scanner. internal/ngximport has the same shape for the Paperless import, but
-// the opposite polarity -- that one blocks private addresses, and a scanner
-// lives nowhere else. So this is an allowlist of exactly the private space:
-// RFC1918 and IPv6 ULA, and nothing else, link-local included.
+// scanner. So this is an allowlist of exactly the private space: RFC1918 and
+// IPv6 ULA, and nothing else, link-local included.
 //
-// No client-wide Timeout: one scan is a POST, one GET per page and a DELETE,
-// each with its own deadline, and a feeder run is minutes of legitimate work.
+// No client-wide Timeout: each call has its own deadline, and a feeder run is
+// minutes of legitimate work.
 func newClient() *http.Client {
 	dialer := &net.Dialer{
 		Timeout:   10 * time.Second,
@@ -64,8 +62,6 @@ func denyPublicDial(_, address string, _ syscall.RawConn) error {
 	return nil
 }
 
-// allowedScanIP reports whether an address may be scanned from.
-//
 // Link-local is refused along with everything public: 169.254.169.254 is the
 // cloud metadata service on every major host, and a scanner that fell back to
 // an APIPA address has no working network anyway.

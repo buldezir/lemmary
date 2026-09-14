@@ -45,18 +45,12 @@ const LIMIT_NAMES = new Set<string>([
 ])
 
 /**
- * The limit named by a rejected write, or null when the failure was something
- * else.
- *
  * A limit rejection is a 400 whose data reads
  * `{"limit": {"code": "limit_<name>", "params": {limit, allowed, used}}}`.
  *
- * The nesting is not a choice — PocketBase replaces any error-data value that
+ * The nesting is not a choice: PocketBase replaces any error-data value that
  * does not implement its `SafeErrorItem` interface with a generic
  * `{"code": "validation_invalid_value"}`, so a plain string would never arrive.
- * (That is exactly why `duplicateIdFromError` next door has to fall back to
- * parsing the message text.) The backend implements the interface, which is what
- * puts a real code and real numbers on the wire.
  */
 export function limitFromError(err: unknown): LimitName | null {
   const limit = (
@@ -81,10 +75,8 @@ const UNIT = 1024
 const SUFFIXES = ['KB', 'MB', 'GB', 'TB']
 
 /**
- * Renders a byte count the way a person reads a file size.
- *
  * Binary units, matching the backend's own formatting, so a quota bar and the
- * rejection message that follows it never disagree about what "20 MB" means.
+ * rejection that follows it never disagree about what "20 MB" means.
  */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '0 B'

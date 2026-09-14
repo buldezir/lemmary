@@ -17,12 +17,9 @@ import (
 	"lemmary/backend/internal/limits"
 )
 
-// discoverTimeout bounds a discovery request. The sweep and the mDNS browse run
-// concurrently inside it and it returns as soon as both are done, so the usual
-// /24 still answers in about four seconds; this only has to be large enough
-// that the most addresses escl will sweep -- 1024, sixteen rounds of probes,
-// however many ranges they are spread over -- finish rather than being cut off
-// and reported as "found nothing".
+// discoverTimeout only has to be large enough for the most addresses escl will
+// sweep to finish rather than be cut off and reported as "found nothing". The
+// usual /24 returns in about four seconds.
 const discoverTimeout = 15 * time.Second
 
 type scanRequest struct {
@@ -35,7 +32,6 @@ type scanSaveRequest struct {
 	UploadID string `json:"upload_id"`
 }
 
-// handleGetScanDiscover looks for eSCL scanners on the network.
 func handleGetScanDiscover(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		cidr := strings.TrimSpace(e.Request.URL.Query().Get("cidr"))
@@ -52,9 +48,8 @@ func handleGetScanDiscover(app core.App) func(*core.RequestEvent) error {
 		if err != nil {
 			return writeError(e, http.StatusBadRequest, err.Error())
 		}
-		// "It found nothing" is the report that needs debugging, and the two
-		// things worth knowing are which range was swept and whether mDNS is
-		// reaching this container at all.
+		// "It found nothing" is the report that needs debugging: which range
+		// was swept, and whether mDNS reaches this container at all.
 		app.Logger().Debug("scanner discovery finished",
 			"component", "scan", "cidr", cidr, "found", len(scanners))
 		return writeJSON(e, http.StatusOK, map[string]any{
@@ -64,8 +59,8 @@ func handleGetScanDiscover(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// handlePostScan starts a scan, appending to a document already being scanned
-// when the request names one.
+// handlePostScan appends to a document already being scanned when the request
+// names one.
 func handlePostScan(app core.App, lim limits.Limits) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var req scanRequest
@@ -80,9 +75,8 @@ func handlePostScan(app core.App, lim limits.Limits) func(*core.RequestEvent) er
 		if err != nil {
 			return writeError(e, http.StatusBadRequest, err.Error())
 		}
-		// Checked before the scanner is asked to do anything: hearing that the
-		// instance is full is worth having before a stack of paper goes through
-		// the feeder, not after.
+		// Checked before the scanner is asked to do anything: better to hear
+		// the instance is full before the paper goes through the feeder.
 		if exceeded := preflightImport(app, lim, 1, 0, 0); exceeded != nil {
 			return writeError(e, http.StatusBadRequest, exceeded.Message)
 		}
@@ -103,7 +97,6 @@ func handlePostScan(app core.App, lim limits.Limits) func(*core.RequestEvent) er
 	}
 }
 
-// handleGetScanStatus reports on a running scan.
 func handleGetScanStatus(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		jobID := strings.TrimSpace(e.Request.URL.Query().Get("job_id"))
@@ -154,7 +147,6 @@ func handleGetScanPDF(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// handleDeleteScan throws away a scan the user did not keep.
 func handleDeleteScan(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		ownerID, err := resolveOwnerUserID(app, e)
@@ -196,8 +188,8 @@ func handlePostScanDocument(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// writeScanSaveError says the same things the Files tab says, so a duplicate or
-// an exhausted allowance reads the same however the document arrived.
+// writeScanSaveError says what the Files tab says, so a duplicate or an
+// exhausted allowance reads the same however the document arrived.
 func writeScanSaveError(app core.App, e *core.RequestEvent, err error) error {
 	var dup *duplicates.ErrDuplicate
 	switch {

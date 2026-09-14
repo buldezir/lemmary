@@ -17,46 +17,37 @@ import (
 )
 
 const (
-	// codexOriginator names us to the Codex backend, which serves only its own
-	// clients: the header is checked against a whitelist and anything else is
-	// refused with a 403. It is also sent to the auth host, which is equally
-	// particular.
+	// codexOriginator names us to the Codex backend, which checks the header
+	// against a whitelist and refuses anything else with a 403. The auth host is
+	// equally particular.
 	codexOriginator = "codex_cli_rs"
 
 	// codexBeta is the opt-in the Responses endpoint requires.
 	codexBeta = "responses=experimental"
 
 	// codexInstructions is the preamble the backend expects to lead the
-	// instructions field.
-	//
-	// It is short on purpose. The backend wants to see a Codex-shaped system
-	// prompt, and the real caller's system message follows immediately after,
-	// so this only has to satisfy the shape without steering the model away
-	// from the job it was actually given. If a future backend change starts
-	// rejecting requests, this is the first knob to turn.
+	// instructions field. Short on purpose: the backend wants a Codex-shaped
+	// system prompt, and the real caller's system message follows immediately
+	// after. First knob to turn if the backend starts rejecting requests.
 	codexInstructions = "You are a coding agent running in a terminal."
 )
 
-// PlaceholderKey stands in for the API key openai-go insists on having.
-//
-// A chatgpt client has no such key: Middleware sets a live bearer token on
-// every request instead. The value still has to be non-empty, both for the SDK
-// and for the `apiKey == ""` guards the chatter, splitter, helper and search
-// agent open with -- and it is never sent, because applyCodexHeaders overwrites
-// the Authorization header the SDK built from it.
+// PlaceholderKey stands in for the API key openai-go insists on having. A
+// chatgpt client has no such key: Middleware sets a live bearer token on every
+// request instead. It still has to be non-empty for the SDK and for the
+// `apiKey == ""` guards the call sites open with, and it is never sent.
 const PlaceholderKey = "chatgpt-oauth"
 
-// chatCompletionsSuffix is the path openai-go builds from any base URL. Matching
+// chatCompletionsSuffix is the path openai-go builds from any base URL.
+// Matching on it rather than the whole URL lets the middleware sit under a
+// client whose base URL a test has repointed at httptest.
 // on it rather than on the whole URL is what lets the middleware sit under a
 // client whose base URL a test has repointed at httptest.
 const chatCompletionsSuffix = "/chat/completions"
 
-// Middleware makes the Codex backend answer Chat Completions requests.
-//
-// It is installed in place of an API key: the SDK is built with a placeholder
-// credential and this overwrites the Authorization header with a live token on
-// every attempt. Requests to any other path pass through untouched, which is
-// what keeps a misbound provider from silently rewriting somebody else's call.
+// Middleware makes the Codex backend answer Chat Completions requests, in
+// place of an API key. Requests to any other path pass through untouched, which
+// keeps a misbound provider from rewriting somebody else's call.
 func Middleware(src *TokenSource, logger *slog.Logger) option.Middleware {
 	if logger == nil {
 		logger = slog.Default()
@@ -92,9 +83,8 @@ func Middleware(src *TokenSource, logger *slog.Logger) option.Middleware {
 			return resp, err
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			// Left exactly as it arrived: the SDK's own error decoding turns it
-			// into an APIError, and ai.CompleteChat's degradation paths read
-			// that body to decide whether to retry without JSON mode.
+			// Left exactly as it arrived: ai.CompleteChat's degradation paths read
+			// the error body to decide whether to retry without JSON mode.
 			return resp, nil
 		}
 		if in.Stream {
@@ -113,18 +103,15 @@ func applyCodexHeaders(req *http.Request, tok Token) {
 	if tok.AccountID != "" {
 		req.Header.Set("chatgpt-account-id", tok.AccountID)
 	}
-	// The same per-purpose id the OpenCode header carries elsewhere: stable for
-	// the life of the process, so requests sharing a system prompt stay
-	// grouped. Falls back rather than sending nothing, which the backend
-	// dislikes.
+	// The same per-purpose id the OpenCode header carries elsewhere, so requests
+	// sharing a system prompt stay grouped. Falls back rather than sending
+	// nothing, which the backend dislikes.
 	session := aiprovider.SessionFrom(req.Context())
 	if session == "" {
 		session = aiprovider.SessionFor("chatgpt")
 	}
 	req.Header.Set("session_id", session)
 }
-
-// --- request translation ---
 
 type chatRequest struct {
 	Model               string          `json:"model"`
@@ -134,10 +121,8 @@ type chatRequest struct {
 	MaxCompletionTokens *int64          `json:"max_completion_tokens"`
 	ResponseFormat      *responseFormat `json:"response_format"`
 	Tools               []chatTool      `json:"tools"`
-	// ToolChoice is carried through as it arrived. Both shapes the SDK can
-	// send -- the "auto"/"none"/"required" strings the archive uses, and the
-	// {"type":"function",...} object it does not -- are also what the
-	// Responses endpoint accepts, so there is nothing to translate.
+	// ToolChoice is carried through as it arrived: both shapes the SDK can send
+	// are also what the Responses endpoint accepts.
 	ToolChoice json.RawMessage `json:"tool_choice"`
 }
 
@@ -145,8 +130,8 @@ type responseFormat struct {
 	Type string `json:"type"`
 }
 
-// chatTool is one function tool as Chat Completions declares it: the name and
-// schema nested under a "function" object.
+// chatTool is one function tool as Chat Completions declares it, nested under
+// a "function" object.
 type chatTool struct {
 	Type     string `json:"type"`
 	Function struct {
@@ -201,10 +186,9 @@ type responsesTool struct {
 	Strict      bool            `json:"strict"`
 }
 
-// responsesItem is one input item. Three shapes share it, because the Responses
-// input list is a union: a message carries Role and Content, a function_call
-// carries CallID/Name/Arguments, and a function_call_output carries CallID and
-// Output. Everything not belonging to the shape in hand is omitted.
+// responsesItem is one input item, and the Responses input list is a union: a
+// message carries Role and Content, a function_call carries CallID/Name/
+// Arguments, a function_call_output carries CallID and Output.
 type responsesItem struct {
 	Type      string             `json:"type"`
 	Role      string             `json:"role,omitempty"`
@@ -215,11 +199,9 @@ type responsesItem struct {
 	Output    string             `json:"output,omitempty"`
 }
 
-// responsesContent is one part of a message's content. Text uses Text; an image
-// uses ImageURL, which carries a data URI for a file this app read off disk;
-// and a PDF uses Filename with FileData, the same data URI. The Responses shape
-// puts the image's URL directly on the part, where the Chat Completions shape
-// nests it under an "image_url" object.
+// responsesContent is one part of a message's content. The Responses shape
+// puts an image's URL directly on the part, where Chat Completions nests it
+// under an "image_url" object; a PDF uses Filename with FileData.
 type responsesContent struct {
 	Type     string `json:"type"`
 	Text     string `json:"text,omitempty"`
@@ -248,17 +230,11 @@ func readChatRequest(req *http.Request) (chatRequest, error) {
 	return in, nil
 }
 
-// toResponsesRequest maps a chat completion onto the Responses shape.
-//
-// Two things are forced rather than carried over. stream is always true because
-// the Codex endpoint answers no other way -- a non-streaming caller gets the
-// stream reassembled below. store is always false: this is somebody's document
-// archive, and leaving copies of it in a ChatGPT history is not something an
-// operator asked for by signing in.
-//
-// temperature is dropped by having nowhere to go: the Responses shape here
-// carries no such field, so whatever ai.CompletionTemperature decided upstream
-// never reaches the backend. The Codex models refuse a custom value anyway.
+// toResponsesRequest maps a chat completion onto the Responses shape. stream
+// is always true because the Codex endpoint answers no other way, and store
+// always false: leaving copies of somebody's archive in a ChatGPT history is
+// not what signing in asked for. temperature has nowhere to go here, and the
+// Codex models refuse a custom value anyway.
 func toResponsesRequest(in chatRequest) responsesRequest {
 	out := responsesRequest{
 		Model:  in.Model,
@@ -271,9 +247,9 @@ func toResponsesRequest(in chatRequest) responsesRequest {
 	for _, msg := range in.Messages {
 		role := strings.ToLower(strings.TrimSpace(msg.Role))
 
-		// The two shapes that are not a message have to be handled before the
-		// empty-content skip below: a tool result is an item of its own, and an
-		// assistant message that only asked for a tool has no content at all.
+		// The two shapes that are not a message come first: a tool result is an
+		// item of its own, and an assistant message that only asked for a tool
+		// has no content at all.
 		if role == "tool" {
 			if id := strings.TrimSpace(msg.ToolCallID); id != "" {
 				out.Input = append(out.Input, responsesItem{
@@ -302,8 +278,7 @@ func toResponsesRequest(in chatRequest) responsesRequest {
 		}
 
 		// The Responses API has no system message: the role's content is the
-		// instructions field, which is also where the backend looks for the
-		// preamble above.
+		// instructions field, where the backend also looks for the preamble.
 		if role == "system" || role == "developer" {
 			if text := messageText(msg.Content); strings.TrimSpace(text) != "" {
 				instructions = append(instructions, text)
@@ -335,9 +310,8 @@ func toResponsesRequest(in chatRequest) responsesRequest {
 			Name:        name,
 			Description: tool.Function.Description,
 			Parameters:  tool.Function.Parameters,
-			// Matching ai.responsesParamsFrom: the archive's schemas are
-			// hand-written guidance rather than contracts, and strict mode
-			// rejects several of them outright.
+			// Matching ai.responsesParamsFrom: the archive's schemas are guidance
+			// rather than contracts, and strict mode rejects several outright.
 			Strict: false,
 		})
 	}
@@ -377,10 +351,9 @@ func inputMentionsJSON(items []responsesItem) bool {
 	return false
 }
 
-// chatContentPart is one part of a multi-part chat message. OCR is the caller
-// that sends these: a text prompt plus the document, as an image_url part for a
-// scan or a file part for a PDF, both carrying a base64 data URI rather than a
-// URL the backend would have to fetch.
+// chatContentPart is one part of a multi-part chat message, which is how OCR
+// sends the document: an image_url part for a scan or a file part for a PDF,
+// both carrying a base64 data URI rather than a URL the backend would fetch.
 type chatContentPart struct {
 	Type     string `json:"type"`
 	Text     string `json:"text"`
@@ -393,16 +366,10 @@ type chatContentPart struct {
 	} `json:"file"`
 }
 
-// messageContent translates a chat message's content into Responses parts.
-//
-// Content is either a plain string or an array of typed parts. Both shapes
-// reach here: the extractor and the chatter send strings, OCR sends parts.
-// A part of a kind not named below is dropped rather than guessed at -- sending
-// an unknown shape to the backend earns an opaque 400 rather than a clear
-// failure.
-//
-// textOnly is what the instructions field needs, since a system message is not
-// an item and can only be a string.
+// messageContent translates a chat message's content, either a plain string or
+// an array of typed parts, into Responses parts. A part of a kind not named
+// below is dropped rather than guessed at: an unknown shape earns an opaque 400
+// from the backend.
 func messageContent(raw json.RawMessage, kind string) []responsesContent {
 	if len(raw) == 0 {
 		return nil
@@ -449,9 +416,7 @@ func messageContent(raw json.RawMessage, kind string) []responsesContent {
 }
 
 // messageText flattens a chat message's content to its text, for the system
-// role -- which the Responses API has no item for, only the instructions
-// string. Any attachment is left behind, which is correct: nobody sends a
-// document as a system message.
+// role, which the Responses API has only an instructions string for.
 func messageText(raw json.RawMessage) string {
 	var b strings.Builder
 	for _, part := range messageContent(raw, "user") {
@@ -465,8 +430,6 @@ func messageText(raw json.RawMessage) string {
 	}
 	return b.String()
 }
-
-// --- response translation ---
 
 type chatUsage struct {
 	PromptTokens        int            `json:"prompt_tokens"`
@@ -521,9 +484,8 @@ type chunkDelta struct {
 	ToolCalls []chunkToolCall `json:"tool_calls,omitempty"`
 }
 
-// chunkToolCall is a tool call inside a stream, where the index is what ties
-// fragments of one call together. Whole calls are emitted here rather than
-// fragments, but the index is still required for a decoder to place them.
+// chunkToolCall is a tool call inside a stream. Whole calls are emitted here
+// rather than fragments, but the index is still required to place them.
 type chunkToolCall struct {
 	Index    int              `json:"index"`
 	ID       string           `json:"id"`
@@ -535,9 +497,8 @@ type chunkToolCall struct {
 type responsesEvent struct {
 	Type  string `json:"type"`
 	Delta string `json:"delta"`
-	// Item carries a completed output item on response.output_item.done --
-	// which is where a function call arrives whole, arguments included, so
-	// nothing here has to accumulate argument fragments.
+	// Item carries a completed output item on response.output_item.done, where
+	// a function call arrives whole, arguments included.
 	Item     *responsesOutputItem `json:"item"`
 	Response *struct {
 		Status string                `json:"status"`
@@ -560,8 +521,7 @@ type responsesEvent struct {
 }
 
 // responsesOutputItem is one item the model produced. Only function calls are
-// read from it: the text arrives as deltas, which are cheaper to append than to
-// pick back out of the completed response.
+// read from it: the text arrives as deltas.
 type responsesOutputItem struct {
 	Type      string `json:"type"`
 	CallID    string `json:"call_id"`
@@ -569,8 +529,6 @@ type responsesOutputItem struct {
 	Arguments string `json:"arguments"`
 }
 
-// toolCall turns a function_call output item into the Chat Completions shape,
-// and reports whether the item was one at all.
 func (i responsesOutputItem) toolCall() (chatToolCall, bool) {
 	if i.Type != "function_call" || strings.TrimSpace(i.Name) == "" {
 		return chatToolCall{}, false
@@ -650,9 +608,8 @@ func bufferedResponse(resp *http.Response, model string, logger *slog.Logger) (*
 	if err != nil {
 		return nil, err
 	}
-	// The per-item events are the primary source; the completed response is
-	// read only when none arrived, so a backend that reports its output one way
-	// or the other is served either way and neither is counted twice.
+	// The per-item events are the primary source; the completed response is read
+	// only when none arrived, so neither reporting style is counted twice.
 	if len(toolCalls) == 0 {
 		for _, item := range completed {
 			if call, ok := item.toolCall(); ok {
@@ -661,9 +618,8 @@ func bufferedResponse(resp *http.Response, model string, logger *slog.Logger) (*
 		}
 	}
 	if failure != nil {
-		// A partial answer is worth more than none to every caller here -- the
-		// extractor parses leniently and the chatter shows what it got -- but a
-		// stream that produced nothing at all is a failure, not an empty reply.
+		// A partial answer is worth more than none to every caller here, but a
+		// stream that produced nothing is a failure, not an empty reply.
 		if text.Len() == 0 && len(toolCalls) == 0 {
 			return nil, failure
 		}
@@ -672,7 +628,6 @@ func bufferedResponse(resp *http.Response, model string, logger *slog.Logger) (*
 	}
 
 	// A model that asked for a tool has not finished answering, and the search
-	// and research loops read the reason as well as the calls.
 	finish := "stop"
 	if len(toolCalls) > 0 {
 		finish = "tool_calls"
@@ -705,14 +660,12 @@ func bufferedResponse(resp *http.Response, model string, logger *slog.Logger) (*
 	return out, nil
 }
 
-// streamingResponse re-emits the Codex stream as chat completion chunks, so the
-// SDK's own stream decoder -- and ai.completeStreaming above it -- see the
-// shape they expect.
+// streamingResponse re-emits the Codex stream as chat completion chunks, so
+// the SDK's own stream decoder sees the shape it expects.
 func streamingResponse(resp *http.Response, model string) *http.Response {
 	pr, pw := io.Pipe()
 
 	// Cloned before the goroutine starts, so nothing reads the upstream
-	// response's fields while the goroutine is draining its body.
 	out := cloneResponseHead(resp)
 	out.Header.Set("Content-Type", "text/event-stream")
 	out.Header.Del("Content-Length")
@@ -735,11 +688,9 @@ func streamingResponse(resp *http.Response, model string) *http.Response {
 
 		var usage chatUsage
 		var failure error
-		// Tool calls are emitted whole, one chunk each, as they complete. No
-		// caller streams a tool-bearing request today -- research streams only
-		// its final answer turn, which declares none -- but a middleware that
-		// dropped them here would be lossy in exactly the way the buffered path
-		// was, and silently.
+		// Tool calls are emitted whole, one chunk each. No caller streams a
+		// tool-bearing request today, but a middleware that dropped them here
+		// would be lossy, and silently.
 		toolIndex := 0
 		err := scanSSE(resp.Body, func(event responsesEvent) error {
 			switch event.Type {
@@ -794,7 +745,6 @@ func streamingResponse(resp *http.Response, model string) *http.Response {
 			Choices: []chunkChoice{{Delta: chunkDelta{}, FinishReason: &stop}},
 		}
 		// Usage rides the final chunk, which is where stream_options puts it and
-		// where ai.completeStreaming looks.
 		if usage.PromptTokens > 0 || usage.CompletionTokens > 0 {
 			final.Usage = &usage
 		}
@@ -813,7 +763,6 @@ func streamingResponse(resp *http.Response, model string) *http.Response {
 }
 
 // cloneResponseHead copies everything but the body, so the SDK still sees the
-// upstream status and request id.
 func cloneResponseHead(resp *http.Response) *http.Response {
 	out := *resp
 	out.Header = resp.Header.Clone()
@@ -823,22 +772,18 @@ func cloneResponseHead(resp *http.Response) *http.Response {
 	return &out
 }
 
-// scanSSE reads an event stream.
-//
-// Content-Type is never consulted: the Codex backend sends the stream without
-// one, and a reader that branched on it would decide the body was JSON and fail
-// on the first `data:`.
+// scanSSE reads an event stream. Content-Type is never consulted: the Codex
+// backend sends the stream without one, and a reader that branched on it would
+// decide the body was JSON and fail on the first `data:`.
 func scanSSE(r io.Reader, onEvent func(responsesEvent) error) error {
 	scanner := bufio.NewScanner(r)
 	// Deltas are small, but a single completed event carries the whole response
-	// object. 1 MiB is well past anything observed and still bounded.
 	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
 
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data:") {
-			// event: lines and blank separators. The type is inside the JSON
-			// too, so nothing is lost by ignoring the event: field.
+			// event: lines and blank separators. The type is inside the JSON too.
 			continue
 		}
 		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))

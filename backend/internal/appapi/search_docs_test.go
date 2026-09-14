@@ -88,9 +88,8 @@ func TestReadUserDocumentsRefusesAnotherOwnersDocument(t *testing.T) {
 	}
 }
 
-// TestReadUserDocumentsReturnsFullTextUnderTheCap: the excerpt size is the
-// only thing that shortens a read. Under it the text comes back whole, and
-// the cap is the caller's -- the helper's generous one here -- not a guess.
+// The excerpt size is the only thing that shortens a read, and the cap is the
+// caller's -- the helper's generous one here -- not a guess.
 func TestReadUserDocumentsReturnsFullTextUnderTheCap(t *testing.T) {
 	long := strings.Repeat("x", 50000)
 	app := stubDocuments{recs: map[string]*core.Record{
@@ -115,10 +114,8 @@ func TestReadUserDocumentsReturnsFullTextUnderTheCap(t *testing.T) {
 	}
 }
 
-// TestReadUserDocumentsNeverReturnsAWholeLongDocument: over the cap, a read
-// with neither focus nor question still comes back as an excerpt -- the head,
-// gap marked -- rather than the whole text. The whole of a long document is
-// the one thing the research model is never handed.
+// The whole of a long document is the one thing the research model is never
+// handed, even for a read that names neither focus nor question.
 func TestReadUserDocumentsNeverReturnsAWholeLongDocument(t *testing.T) {
 	long := strings.Repeat("x", 50000)
 	app := stubDocuments{recs: map[string]*core.Record{
@@ -137,8 +134,7 @@ func TestReadUserDocumentsNeverReturnsAWholeLongDocument(t *testing.T) {
 	}
 }
 
-// TestReadUserDocumentsReturnsMultibyteTextIntact: neither the whole-text
-// path nor the excerpt path may cut a rune in half.
+// Neither the whole-text path nor the excerpt path may cut a rune in half.
 func TestReadUserDocumentsReturnsMultibyteTextIntact(t *testing.T) {
 	// Two bytes per rune.
 	long := strings.Repeat("а", 50000)
@@ -169,9 +165,8 @@ func TestReadUserDocumentsNoIDsIsANoOp(t *testing.T) {
 	}
 }
 
-// TestReadUserDocumentsFocusReturnsRelevantExcerpts: the figure a question is
-// about is usually in the middle of a long document, which a head-truncated
-// read never reaches.
+// The figure a question is about is usually in the middle of a long document,
+// which a head-truncated read never reaches.
 func TestReadUserDocumentsFocusReturnsRelevantExcerpts(t *testing.T) {
 	filler := strings.Repeat("Allgemeine Vertragsbedingungen ohne Zahlen. ", 200)
 	full := "Mietvertrag Kopf.\n\n" + filler +
@@ -187,8 +182,7 @@ func TestReadUserDocumentsFocusReturnsRelevantExcerpts(t *testing.T) {
 		t.Fatalf("fixture of %d bytes fits one excerpt of %d", len(full), focusExcerptBytes)
 	}
 	// No focus, but the user's question: the excerpt is chosen by it, and
-	// the document says which question chose it. The whole text is never
-	// returned for a document this long.
+	// the document says which question chose it.
 	plain, err := readUserDocuments(app, "me", ai.ReadRequest{IDs: []string{"a"}, Question: "Wie hoch ist die Kaltmiete monatlich?"}, nil, focusExcerptBytes)
 	if err != nil {
 		t.Fatalf("readUserDocuments: %v", err)
@@ -269,9 +263,8 @@ func TestReadUserDocumentsFocusKeepsOwnershipCheck(t *testing.T) {
 	}
 }
 
-// TestDocumentPassagesQuotesTheMatch: a search hit used to carry one Bleve
-// highlight fragment, which for a ten-page document is a hint about where the
-// answer might be rather than the answer.
+// One Bleve highlight fragment, for a ten-page document, is a hint about where
+// the answer might be rather than the answer.
 func TestDocumentPassagesQuotesTheMatch(t *testing.T) {
 	ocr := strings.Repeat("Vorspann ohne Bedeutung. ", 60) +
 		"Die monatliche Kaltmiete beträgt 1234 EUR. " +
@@ -326,12 +319,10 @@ func TestFragmentChunksRankAndNeverCollideWithRealChunks(t *testing.T) {
 	}
 }
 
-// TestReadUserDocumentsFocusHonoursRawOffsets pins the one coordinate system
-// every offset in the feature is measured in: byte 0 of documents.ocr_text as
-// it is stored. Stored chunk boundaries come from chunk.Split over the raw
-// column, so a reader that trimmed the text before slicing would quote a
-// passage shifted by the length of the leading whitespace -- a few characters
-// off the passage whose vector actually matched.
+// Pins the one coordinate system every offset is measured in: byte 0 of
+// documents.ocr_text as stored. A reader that trimmed the text before slicing
+// would quote a passage shifted by the leading whitespace, off the one whose
+// vector matched.
 func TestReadUserDocumentsFocusHonoursRawOffsets(t *testing.T) {
 	const needle = "Die monatliche Kaltmiete beträgt 1234 EUR."
 	filler := strings.Repeat("Allgemeine Vertragsbedingungen ohne Zahlen. ", 200)
@@ -341,8 +332,8 @@ func TestReadUserDocumentsFocusHonoursRawOffsets(t *testing.T) {
 		"a": readableDocument("a", "me", "Mietvertrag", full),
 	}}
 
-	// The windows the ranker points at are real stored chunks: cut by the same
-	// chunker the embedder runs, over the same raw text it stores offsets into.
+	// The windows the ranker points at are real stored chunks, cut by the same
+	// chunker the embedder runs over the same raw text.
 	pieces, _ := chunk.Split(full, chunk.DefaultOptions())
 	at := strings.Index(full, needle)
 	want := ""
@@ -350,8 +341,7 @@ func TestReadUserDocumentsFocusHonoursRawOffsets(t *testing.T) {
 	var ranked []retrieval.Ranked
 	for i, piece := range pieces {
 		windows = append(windows, retrieval.Window{Ord: i, StartByte: piece.Start, EndByte: piece.End})
-		// Best first, the way a chunk search returns its hits: the passage the
-		// focus is about, then whatever else the chunker cut.
+		// Best first, the way a chunk search returns its hits.
 		if want == "" && piece.Start <= at && at+len(needle) <= piece.End {
 			want = full[piece.Start:piece.End]
 			ranked = append([]retrieval.Ranked{{ID: strconv.Itoa(i), Score: 1}}, ranked...)

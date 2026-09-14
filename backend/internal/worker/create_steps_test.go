@@ -103,8 +103,7 @@ func TestSkipCreateJobIsNotPersisted(t *testing.T) {
 	}
 }
 
-// Skipping the job is not the same as asking for no steps: an empty step list
-// means "use the full pipeline", which is why the two need separate keys.
+// An empty step list means "use the full pipeline", so the two need separate keys.
 func TestSkipCreateJobIsIndependentOfSteps(t *testing.T) {
 	t.Parallel()
 

@@ -1,11 +1,8 @@
 // Package embed turns one document into stored chunk vectors.
 //
 // It sits between the chunker, the embedding client and the store so that the
-// pipeline step and the backfill cron run exactly the same code: the two enter
-// from opposite ends (a document that has just been processed, and a document
-// the archive has been carrying since before the feature existed) and any
-// difference between them would show up as an archive that is only half
-// searchable.
+// pipeline step and the backfill cron run exactly the same code: any difference
+// between them would show up as an archive that is only half searchable.
 package embed
 
 import (
@@ -23,39 +20,32 @@ import (
 	"lemmary/backend/internal/embedstore"
 )
 
-// Retry backoff for a document whose embedding failed. It starts where the
-// worker's own step backoff ends and grows to six hours, because the failures
-// this sees are provider-shaped -- a spent quota, a dead endpoint, a model
-// removed from a catalogue -- and none of those are repaired in seconds.
+// Retry backoff for a failed embedding. It starts where the worker's own step
+// backoff ends and grows to six hours: the failures here are provider-shaped
+// (a spent quota, a dead endpoint), and none of those repair in seconds.
 const (
 	retryBase = 5 * time.Minute
 	retryMax  = 6 * time.Hour
 )
 
-// Result reports what one document cost and what it produced.
 type Result struct {
-	// Skipped is true when nothing had to be sent: the stored chunks already
-	// describe this exact text with this exact model.
+	// Nothing had to be sent: the stored chunks already describe this exact
+	// text with this exact model.
 	Skipped bool
 	Chunks  int
-	// Truncated is true when the document was longer than the chunker's cap, so
-	// its tail is not searchable. Recorded rather than logged and forgotten,
-	// because the gap is otherwise invisible.
+	// The document was longer than the chunker's cap, so its tail is not
+	// searchable. Recorded rather than logged, because the gap is invisible.
 	Truncated    bool
 	Dims         int
 	PromptTokens int
 	Requests     int
 }
 
-// IsFresh reports whether stored chunks still describe the document as it is
-// now, embedded with the model in use.
-//
 // Only the OCR text is compared, because only the OCR text is embedded: a
-// document renamed, retagged or re-summarised carries the same vectors it did
-// before, and asking a provider to confirm that costs money to learn nothing.
+// rename or a retag carries the same vectors it did before.
 //
-// dims of 0 means the provider has not answered yet, in which case the stored
-// length cannot be wrong -- only unverified -- and the document is left alone.
+// dims of 0 means the provider has not answered yet, so the stored length is
+// unverified rather than wrong, and the document is left alone.
 func IsFresh(state embedstore.State, model string, dims int, textHash string) bool {
 	return state.Status == embedstore.StatusOK &&
 		!state.Stale &&
@@ -65,12 +55,10 @@ func IsFresh(state embedstore.State, model string, dims int, textHash string) bo
 		(dims == 0 || state.Dims == dims)
 }
 
-// EmbedDocument chunks, embeds and stores one document.
-//
 // force re-embeds even when the stored chunks look current, which is what a
 // reprocess run asks for. On a provider error the document is marked failed
-// with a backoff and the error is returned; the previously stored chunks are
-// left in place, because degraded retrieval beats no retrieval.
+// with a backoff and the previously stored chunks are left in place, because
+// degraded retrieval beats no retrieval.
 func EmbedDocument(
 	ctx context.Context,
 	app core.App,
@@ -146,8 +134,8 @@ func EmbedDocument(
 		return Result{}, err
 	}
 
-	// After the commit, never inside it: a listener that reads the rows back
-	// must not be able to look before they are durable.
+	// After the commit, never inside it: a listener reading the rows back must
+	// not look before they are durable.
 	embedstore.NotifyReplaced(app, doc.Id)
 
 	if truncated {
@@ -163,14 +151,9 @@ func EmbedDocument(
 	}, nil
 }
 
-// markNothingToEmbed records that this exact text produced no passages at all --
-// a scan that OCRed to whitespace, or a document whose every chunk was blank.
-//
-// The row is the point. Without it the document has no state, so the backfill's
-// candidate query selects it again on the next tick and every tick after that,
-// paying for a record read and a chunker pass forever. Written with the current
-// model, dimensions and text hash, it reads as fresh until one of them changes
-// -- which is exactly when the question is worth asking again.
+// Records that this exact text produced no passages at all. The row is the
+// point: without it the backfill selects the document again on every tick
+// forever. It reads as fresh until the model, dimensions or text change.
 func markNothingToEmbed(
 	app core.App,
 	doc *core.Record,
@@ -187,15 +170,13 @@ func markNothingToEmbed(
 			"document", doc.Id, slog.Any("error", err))
 		return Result{Skipped: true}, nil
 	}
-	// Replace dropped whatever a previous run stored, so the derived index has
-	// to drop it too.
+	// Replace dropped what a previous run stored; the derived index must too.
 	embedstore.NotifyReplaced(app, doc.Id)
 	return Result{Skipped: true, Dims: state.Dims}, nil
 }
 
-// emptyState is the terminal row markNothingToEmbed writes. Separate because it
-// is the half worth testing: IsFresh has to accept it, or the loop it exists to
-// break comes straight back.
+// The terminal row markNothingToEmbed writes. Separate because IsFresh has to
+// accept it, or the loop it exists to break comes straight back.
 func emptyState(doc *core.Record, embedder ai.Embedder, textHash string) embedstore.State {
 	return embedstore.State{
 		DocumentID:     doc.Id,
@@ -208,8 +189,8 @@ func emptyState(doc *core.Record, embedder ai.Embedder, textHash string) embedst
 	}
 }
 
-// plan builds the inputs to embed and the rows to store, in one pass so their
-// order cannot diverge: the vector at position i is the chunk at position i.
+// One pass so the orders cannot diverge: the vector at position i is the chunk
+// at position i.
 func plan(doc *core.Record, ocrText string, pieces []chunk.Chunk) ([]string, []embedstore.Chunk) {
 	inputs := make([]string, 0, len(pieces))
 	chunks := make([]embedstore.Chunk, 0, len(pieces))
@@ -217,8 +198,7 @@ func plan(doc *core.Record, ocrText string, pieces []chunk.Chunk) ([]string, []e
 	for _, piece := range pieces {
 		text := ocrText[piece.Start:piece.End]
 		if strings.TrimSpace(text) == "" {
-			// A whitespace-only chunk would be refused by the provider and
-			// embeds to nothing useful anyway.
+			// The provider would refuse a whitespace-only chunk anyway.
 			continue
 		}
 		chunks = append(chunks, embedstore.Chunk{
@@ -232,7 +212,6 @@ func plan(doc *core.Record, ocrText string, pieces []chunk.Chunk) ([]string, []e
 	return inputs, chunks
 }
 
-// retryDelay doubles per recorded failure and stops at retryMax.
 func retryDelay(attempts int) time.Duration {
 	if attempts < 0 {
 		attempts = 0

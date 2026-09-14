@@ -17,16 +17,13 @@ import (
 
 const maxReportedErrors = 25
 
-// Import mode values accepted by the API.
 const (
 	ModePreserve  = "preserve"
 	ModeReprocess = "reprocess"
 )
 
-// ErrImportInProgress is returned when another import is already running.
 var ErrImportInProgress = importjob.ErrBusy
 
-// Result summarizes a completed import run.
 type Result struct {
 	Imported               int      `json:"imported"`
 	SkippedDuplicates      int      `json:"skipped_duplicates"`
@@ -49,8 +46,7 @@ func ParseMode(raw string) (string, error) {
 	}
 }
 
-// Run imports taxonomy and documents from a remote Paperless-ngx instance.
-// Only one import may run at a time per owner.
+// Run allows only one import at a time per owner.
 func Run(app core.App, ownerUserID, baseURL, apiKey, mode string) (Result, error) {
 	return RunWithClient(app, ownerUserID, baseURL, apiKey, mode, nil)
 }

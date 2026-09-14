@@ -12,11 +12,7 @@ export function SaveSettingsButton({ saving }: { saving: boolean }) {
   )
 }
 
-/**
- * Save feedback as a modal: the inline lines at the foot of the page these
- * fields used to share were read by nobody. Success clears itself, an error
- * waits to be dismissed.
- */
+/** Success clears itself, an error waits to be dismissed. */
 export function ResultDialog({
   error,
   success,
@@ -64,9 +60,8 @@ export function SettingsLoading({ error }: { error: string }) {
 }
 
 /**
- * What the operator-owned tabs show on a managed instance. They are left out of
- * the tab bar there, so this is for a link or a bookmark: the page says why it
- * is empty rather than bouncing somewhere else.
+ * What the operator-owned tabs show on a managed instance, where they are left
+ * out of the tab bar: this is for a link or a bookmark.
  */
 export function ManagedByHostNotice() {
   return (

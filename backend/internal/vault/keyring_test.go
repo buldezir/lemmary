@@ -388,9 +388,8 @@ func TestSubkeysAreDistinctAndSaltBound(t *testing.T) {
 	}
 }
 
-// The defect this closes: a vault created before any account exists keeps the
-// provisioning password as a valid key to the archive forever, so a user who
-// changes their password has revoked nothing.
+// A vault created before any account exists otherwise keeps the provisioning
+// password as a valid key forever, so a password change revokes nothing.
 func TestBootstrapWrapIsRevokedOnceAUserIsEnrolled(t *testing.T) {
 	kr, mk, code := newTestKeyring(t, "", "provisioning-password")
 	cheapen(t, kr, mk, "", "provisioning-password")
@@ -481,15 +480,9 @@ func TestPasskeyEnrolmentAlsoAllowsRevokingTheBootstrapWrap(t *testing.T) {
 	}
 }
 
-// One wrap nobody can even attempt must not blind the loop to everyone else's.
-//
-// keyring.json sits on the untrusted volume with no whole-document MAC: the
-// per-wrap AAD is checked at UnwrapKey, which a wrap with unsupported KDF
-// parameters never reaches, because deriving the KEK validates them first. So a
-// single entry written by a newer build, hand-edited, or bit-flipped in a cost
-// field used to abort the whole loop — every user's perfectly good password wrap
-// went untried and password sign-in died instance-wide, leaving only a recovery
-// code.
+// One wrap nobody can even attempt must not blind the loop to everyone else's:
+// a single entry with unsupported KDF parameters used to abort it, killing
+// password sign-in instance-wide and leaving only a recovery code.
 func TestUnlockSkipsAWrapItCannotAttempt(t *testing.T) {
 	kr, mk := cheapKeyring(t)
 	good := kr.Wraps[0]

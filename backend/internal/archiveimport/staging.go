@@ -47,7 +47,6 @@ type Preview struct {
 	Taxonomy backup.Taxonomy `json:"-"`
 }
 
-// stagedArchive is one upload waiting to be restored.
 type stagedArchive = staging.Item[Preview]
 
 var stagingRegistry = newStagingRegistry()
@@ -181,7 +180,6 @@ func saveArchive(path string, src io.Reader, limit int64) (int64, error) {
 	return size, nil
 }
 
-// Discard drops a staged archive that the user chose not to restore.
 func Discard(uploadID, ownerUserID string) bool {
 	item, ok := stagingRegistry.Claim(uploadID, ownerUserID)
 	if !ok {

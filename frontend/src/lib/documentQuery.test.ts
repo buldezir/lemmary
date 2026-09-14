@@ -91,9 +91,8 @@ describe('documentQuerySearch', () => {
   })
 })
 
-// /inbox holds its status in the path, so the query string must never carry
-// one -- neither a matching one, which would be noise on every link, nor a
-// conflicting one, which would silently show a different list.
+// /inbox holds its status in the path, so a query-string status could only be
+// noise or a contradiction.
 describe('inboxQuerySearch', () => {
   test('drops the status whatever it says', () => {
     expect(inboxQuerySearch({ status: 'needs_review' })).toEqual({})
@@ -101,8 +100,6 @@ describe('inboxQuerySearch', () => {
     expect(inboxQuerySearch({ status: 'nonsense' })).toEqual({})
   })
 
-  // The Inbox has no filter controls, so a filter in its URL would narrow the
-  // tray with nothing on screen to explain why. Only the page survives.
   test('drops every filter, keeping only the page', () => {
     expect(
       inboxQuerySearch({

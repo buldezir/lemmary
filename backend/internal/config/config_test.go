@@ -26,8 +26,6 @@ func TestApplyBindingFallbacksChainsExtractToChatToSearch(t *testing.T) {
 	}
 }
 
-// The helper inherits the resolved search binding, not chat or extract, and an
-// explicit helper binding is kept.
 func TestApplyBindingFallbacksHelperFollowsSearch(t *testing.T) {
 	cfg := Config{
 		ExtractProviderID: "provider-extract",
@@ -72,7 +70,6 @@ func TestApplyBindingFallbacksKeepsExplicitValues(t *testing.T) {
 	}
 }
 
-// Search inherits from chat, not straight from extract, when only chat is set.
 func TestApplyBindingFallbacksSearchPrefersChat(t *testing.T) {
 	cfg := Config{
 		ExtractProviderID: "provider-extract",
@@ -120,7 +117,6 @@ func TestHasLLM(t *testing.T) {
 	if !HasLLM(Config{ExtractProvider: openAI}) {
 		t.Fatal("expected an OpenAI extract provider to count")
 	}
-	// Falls back to the chat binding when extraction has none.
 	if !HasLLM(Config{ChatProvider: openAI}) {
 		t.Fatal("expected the chat provider to be used as a fallback")
 	}
@@ -147,8 +143,8 @@ func TestHasOCR(t *testing.T) {
 	}
 
 	// A local sidecar carries an address where a hosted provider carries a
-	// credential. Asking for the key here is what would report a working
-	// container as unconfigured and leave the setup wizard in front of it.
+	// credential; asking for the key here reports a working container as
+	// unconfigured with the setup wizard in front of it.
 	docling := &aiprovider.Provider{SDK: aiprovider.SDKDocling, BaseURL: "http://docling:5001"}
 	if !HasOCR(Config{OCRProvider: docling}) {
 		t.Fatal("expected docling to need neither a key nor a model")
@@ -190,8 +186,7 @@ func TestDefaultsUsesCodeDefaults(t *testing.T) {
 	if cfg.NearDuplicateDetectionEnabled {
 		t.Fatal("expected near-duplicate detection off by default")
 	}
-	// Off means the pipeline behaves exactly as it did before the Inbox
-	// existed, so upgrading an instance changes nothing until its owner asks.
+	// Off is the pre-Inbox behaviour, so upgrading changes nothing until asked.
 	if cfg.AlwaysRequireReview {
 		t.Fatal("expected always-require-review off by default")
 	}
@@ -203,7 +198,6 @@ func TestDefaultsUsesCodeDefaults(t *testing.T) {
 	}
 }
 
-// One model serves extraction, chat and Deep Search.
 func TestDefaultsShareOneModel(t *testing.T) {
 	t.Setenv("AI_API_KEY", "key")
 	t.Setenv("AI_MODEL", "base-model")
@@ -220,7 +214,6 @@ func TestDefaultsShareOneModel(t *testing.T) {
 	if cfg.ExtractModel != "base-model" || cfg.ChatModel != "base-model" || cfg.SearchModel != "base-model" {
 		t.Fatalf("models=%q/%q/%q", cfg.ExtractModel, cfg.ChatModel, cfg.SearchModel)
 	}
-	// OCR with no provider of its own runs on the language model.
 	if cfg.OCRModel != "base-model" {
 		t.Fatalf("ocr model=%q", cfg.OCRModel)
 	}
@@ -241,7 +234,6 @@ func TestGetEnvBool(t *testing.T) {
 	}
 }
 
-// Out-of-range thresholds fall back rather than disabling detection silently.
 func TestGetEnvFloatRejectsOutOfRange(t *testing.T) {
 	cases := []string{"0", "-1", "1.5", "abc", ""}
 	for _, raw := range cases {

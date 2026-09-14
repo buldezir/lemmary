@@ -12,12 +12,9 @@ import (
 	"lemmary/backend/internal/inflight"
 )
 
-// Regression: the shutdown flush must actually run.
-//
-// The debounce timer is cancelled on the way out, and an earlier version gated
-// every flush on that same "stopped" flag — which turned the single most
-// important flush in the system into a silent no-op. A clean shutdown then left
-// the volume holding nothing but a keyring, losing the whole session.
+// The shutdown flush must actually run. The debounce timer is cancelled on the
+// way out, and an earlier version gated every flush on that same "stopped"
+// flag, leaving the volume holding nothing but a keyring after a clean stop.
 func TestFinalizeFlushesEvenAfterTheDebounceIsStopped(t *testing.T) {
 	h := newHarness(t)
 	f := &flusher{v: h.v}
@@ -85,11 +82,10 @@ func TestFinalizeFailureKeepsTheWorkingDirectory(t *testing.T) {
 	}
 }
 
-// Enrollment hooks run on PocketBase's concurrent request goroutines, so
-// keyring mutation has to be serialised. Before UpdateKeyring existed each
-// hook did an unsynchronised read-modify-write of the wrap list and the last
-// save won — a user whose wrap lost that race simply could not unlock after
-// the next restart. Run with -race this also catches the data race itself.
+// Enrollment hooks run on concurrent request goroutines, and before
+// UpdateKeyring each did an unsynchronised read-modify-write of the wrap list:
+// a user whose wrap lost that race could not unlock after the next restart.
+// Run with -race this also catches the data race itself.
 func TestConcurrentEnrollmentKeepsEveryWrap(t *testing.T) {
 	h := newHarness(t)
 
@@ -130,14 +126,10 @@ func TestConcurrentEnrollmentKeepsEveryWrap(t *testing.T) {
 	}
 }
 
-// The shutdown flush must wait for work that is still running.
-//
-// PocketBase's graceful shutdown gives the HTTP server one second and then
-// returns whether or not handlers are still going, and cron jobs are fired and
-// forgotten and never waited for at all. Without the drain, an upload finishing
-// a moment later is answered 200, written into the working directory, and then
-// wiped along with it — data acknowledged to a client and lost on a clean
-// SIGTERM, which is exactly what docs/encryption.md promises cannot happen.
+// The shutdown flush must wait for work still running: PocketBase gives the
+// HTTP server one second and never waits for cron jobs, so without the drain an
+// upload finishing a moment later is answered 200, written into the working
+// directory and wiped with it.
 func TestFinalizeWaitsForInFlightWorkAndCapturesIt(t *testing.T) {
 	h := newHarness(t)
 	h.write("storage/early.pdf", "%PDF written before shutdown")

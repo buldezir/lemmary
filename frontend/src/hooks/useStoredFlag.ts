@@ -1,14 +1,9 @@
 import { useCallback, useState } from 'react'
 
 /**
- * A boolean view preference, remembered in localStorage.
- *
- * Every access is guarded: localStorage throws outright when site data is
- * blocked, so a preference must never be able to take the page down with it.
- * An unreadable or unwritable store degrades to the default, in memory.
- *
- * Read lazily in the initializer rather than in an effect, so the first paint
- * is already the remembered state and nothing flips a frame later.
+ * A boolean view preference in localStorage. Every access is guarded, because
+ * localStorage throws outright when site data is blocked. Read in the
+ * initializer rather than an effect, so the first paint is already remembered.
  */
 export function useStoredFlag(
   key: string,

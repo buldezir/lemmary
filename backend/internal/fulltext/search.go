@@ -21,24 +21,18 @@ const (
 	// MaxSearchLimit is the largest page size Search will return. Callers must
 	// use this cap when computing offsets so pages do not skip hits.
 	MaxSearchLimit = 500
-	// relaxedFallbackLimit caps the last rung of the relaxation ladder. Those
-	// hits carry one keyword out of several, so a long list of them is noise the
-	// caller pays for; the disjunction's coord factor has already put the best
-	// coverage first.
+	// The last rung's hits carry one keyword out of several, so a long list of
+	// them is noise; the coord factor has already put the best coverage first.
 	relaxedFallbackLimit = 10
-	// minPrefixLen is the shortest word that also matches as a prefix. Under it
-	// a prefix reaches most of the vocabulary. See prefixTerm.
+	// Under this length a prefix reaches most of the vocabulary. See prefixTerm.
 	minPrefixLen = 3
-	// prefixBoost scales a prefix match down far enough that the widest one
-	// (title, boost 4) still scores under the narrowest whole-word match
-	// (ocr_text, boost 1). Exact beats approximate across fields, not only
-	// within one.
+	// Low enough that the widest prefix match (title, boost 4) still scores
+	// under the narrowest whole-word match (ocr_text, boost 1).
 	prefixBoost = 0.2
 )
 
-// ErrNoSearchableTerms is text that is not empty but tokenises to nothing: a
-// lone quote, punctuation on its own. A sentinel so a caller can answer it with
-// an empty page rather than a 500.
+// Text that is not empty but tokenises to nothing (a lone quote, punctuation).
+// A sentinel so a caller can answer with an empty page rather than a 500.
 var ErrNoSearchableTerms = errors.New("query has no searchable terms")
 
 type Query struct {
@@ -50,28 +44,17 @@ type Query struct {
 	TagIDs           []string
 	DateFrom         string
 	DateTo           string
-	// Undated keeps only the documents that carry no document_date at all --
-	// the timeline's "No date" row. Mutually exclusive with a date range in
-	// practice, and left that way here: asking for both is asking for nothing,
-	// which is what the conjunction answers.
+	// Undated keeps only documents with no document_date. Asking for both this
+	// and a date range is asking for nothing, which the conjunction answers.
 	Undated bool
-	// Fields narrows the text match to a subset of the searchable fields, by
-	// their index field name. Empty means every field, which is what the
-	// archive-wide search box and the agent both want; the paperless-ngx
-	// compatibility layer uses it to honour title-only and content-only
-	// filters, which name a field where a general query names none.
+	// Fields narrows the text match to named index fields; empty means every
+	// field. The paperless-ngx layer uses it for title-only/content-only.
 	Fields []string
 	Offset int
 	Limit  int
-	// Relaxed trades precision for recall: unquoted terms no longer all have to
-	// match.
-	//
-	// Off by default, and the Documents page leaves it off deliberately. There
-	// the query box is a filter — the user types words they know are in the
-	// document and expects the list to shrink to exactly those — so a result
-	// that matched two words out of three would read as a bug. The agent's
-	// tools turn it on: there the query is a guess the model made from a
-	// question, and a near miss is worth far more than an empty list.
+	// Relaxed drops the requirement that every unquoted term match. Off for the
+	// Documents page, where the box is a filter and a two-of-three match reads
+	// as a bug; on for the agent's tools, where the query is a guess.
 	Relaxed bool
 }
 
@@ -79,20 +62,17 @@ type Hit struct {
 	ID         string
 	Score      float64
 	OCRSnippet string
-	// OCRFragments is every highlight fragment Bleve produced for the OCR
-	// text, best first. OCRSnippet is the first of them; the agent path quotes
-	// several, because one fragment out of a ten-page document is a hint about
-	// where the answer is rather than the answer.
+	// Every OCR highlight fragment, best first; OCRSnippet is the first. The
+	// agent quotes several: one fragment of ten pages is a hint, not an answer.
 	OCRFragments []string
 }
 
 type Result struct {
 	Hits  []Hit
 	Total uint64
-	// Terms is how many unquoted terms the query text had; Required is how many
-	// of them a hit had to carry. Required < Terms means every hit is a partial
-	// match, and Total is then "documents matching at least Required terms" —
-	// not comparable with the strict path's Total. Both zero when Relaxed is off.
+	// Required < Terms means every hit is a partial match, and Total is then
+	// "documents matching at least Required terms", not comparable with the
+	// strict path's Total. Both zero when Relaxed is off.
 	Terms    int
 	Required int
 }
@@ -100,13 +80,11 @@ type Result struct {
 type queryPart struct {
 	text   string
 	phrase bool
-	// closed is false for a phrase that never got its closing quote. The strict
-	// path still honours it; a relaxed query demotes it to a loose term, because
-	// an unterminated quote is a typo, not an instruction.
+	// closed is false for a phrase that never got its closing quote; a relaxed
+	// query demotes it to a loose term, since that is a typo not an instruction.
 	closed bool
 }
 
-// relaxMode is how hard a query insists on its own terms.
 type relaxMode int
 
 const (
@@ -115,20 +93,17 @@ const (
 	relaxAny                   // 1 of n terms, plus a fuzzy leg per long term
 )
 
-// searchPlan is the relaxation ladder for one query: the rung to try, and the
-// wider rung to fall back on when the first matches nothing at all.
+// searchPlan is the relaxation ladder for one query.
 type searchPlan struct {
 	primary  query.Query
 	fallback query.Query // nil unless widening further would change the query
 	terms    int
 	required int
-	// fallbackRequired is what Required becomes once the wider rung answers.
-	// Unchanged for a strict query: that rung widens each term into a prefix,
-	// it does not drop any.
+	// What Required becomes once the wider rung answers. Unchanged for a strict
+	// query: that rung widens terms into prefixes, it does not drop any.
 	fallbackRequired int
 }
 
-// boostedField is one searchable field and how much a match in it counts.
 type boostedField struct {
 	field string
 	boost float64
@@ -261,13 +236,9 @@ func (i *Index) IDsByKeyword(field, value string) ([]string, error) {
 	return ids, err
 }
 
-// EligibleIDs lists the documents that satisfy everything in q except its text,
-// up to limit. complete is false when there were more, which is the caller's
-// signal that the list cannot be used as a pre-filter.
-//
-// This is how a filtered agent search reaches the chunk index: the filters are
-// document properties the chunk index deliberately does not carry, so they are
-// resolved here and passed down as ids.
+// EligibleIDs lists the documents satisfying everything in q except its text.
+// complete is false when there were more than limit, the caller's signal that
+// the list cannot be used as a pre-filter for the chunk index.
 func (i *Index) EligibleIDs(q Query, limit int) ([]string, bool, error) {
 	filter := filterQuery(q)
 	if filter == nil || limit <= 0 {
@@ -279,8 +250,8 @@ func (i *Index) EligibleIDs(q Query, limit int) ([]string, bool, error) {
 		complete bool
 	)
 	err := i.withIndex(func(b bleve.Index) error {
-		// One over the limit, so a full page is distinguishable from a page
-		// that happened to end exactly there.
+		// One over the limit, so a full page is distinguishable from one that
+		// happened to end exactly there.
 		req := bleve.NewSearchRequestOptions(filter, limit+1, 0, false)
 		res, err := b.Search(req)
 		if err != nil {
@@ -298,13 +269,9 @@ func (i *Index) EligibleIDs(q Query, limit int) ([]string, bool, error) {
 	return ids, complete, err
 }
 
-// MatchingIDs enumerates the documents matching q -- text and filters, strict
-// matching -- up to limit, without highlighting. total is the full match
-// count whatever the limit; complete is whether ids holds all of it.
-//
-// This is what a grouped count runs on: the query says which documents, the
-// database says how they break down. Search itself is the wrong tool for it
-// because it highlights every hit, and a count wants none of that.
+// MatchingIDs enumerates documents matching q strictly, up to limit, without
+// highlighting. total is the full match count whatever the limit; complete is
+// whether ids holds all of it. Search is the wrong tool here: it highlights.
 func (i *Index) MatchingIDs(q Query, limit int) (ids []string, total uint64, complete bool, err error) {
 	i.WaitIdle()
 	text := strings.TrimSpace(q.Text)
@@ -349,9 +316,7 @@ func (i *Index) MatchingIDs(q Query, limit int) (ids []string, total uint64, com
 	return ids, total, uint64(len(ids)) >= total, nil
 }
 
-// CountMatching is the strict match count for q -- text and filters -- with
-// nothing fetched. The text is required; a filters-only count is the
-// database's job.
+// The text is required; a filters-only count is the database's job.
 func (i *Index) CountMatching(q Query) (uint64, error) {
 	i.WaitIdle()
 	text := strings.TrimSpace(q.Text)
@@ -381,10 +346,8 @@ func (i *Index) CountMatching(q Query) (uint64, error) {
 	return total, err
 }
 
-// chosenRung is the rung a non-highlighting caller should run: the wider one
-// only when the first matches nothing, which is how Search escalates. Counting
-// and listing have to agree with the list the user is looking at, so the ladder
-// belongs to the query rather than to Search.
+// Counting and listing have to agree with the list the user is looking at, so
+// the escalation ladder belongs to the query rather than to Search.
 func chosenRung(b bleve.Index, plan searchPlan) (query.Query, error) {
 	if plan.fallback == nil {
 		return plan.primary, nil
@@ -407,10 +370,8 @@ func countRung(b bleve.Index, bq query.Query) (*bleve.SearchResult, error) {
 	return res, nil
 }
 
-// KeepEligible returns the subset of ids that satisfies q's filters. The
-// post-filter for the case EligibleIDs could not pre-filter: the dense list is
-// short, so it is cheaper to ask about its documents than to enumerate every
-// document the filters allow.
+// The post-filter for the case EligibleIDs could not pre-filter: the dense list
+// is short, so asking about its documents beats enumerating every allowed one.
 func (i *Index) KeepEligible(q Query, ids []string) ([]string, error) {
 	filter := filterQuery(q)
 	if filter == nil || len(ids) == 0 {
@@ -467,17 +428,15 @@ func buildSearchPlan(q Query, text string) (searchPlan, error) {
 		return plan, nil
 	}
 	plan.required = minShouldMatch(len(loose))
-	// Only build the wider rung when it would actually differ. A single short
-	// term is already its own floor; a single long one still earns a rung,
-	// because there the fallback degenerates into a spelling-correction retry.
+	// Only build the wider rung when it would actually differ: a single short
+	// term is already its own floor.
 	if plan.required > 1 || anyFuzzyWorthy(loose) || anyPrefixWorthy(loose) {
 		plan.fallback = withFilters(textQuery(parts, relaxAny, true, fields), filters)
 	}
 	return plan, nil
 }
 
-// filterConjuncts is everything in a Query except its text: ownership, status,
-// the named-entity ids and the date range. Mandatory in every relax mode.
+// Everything in a Query except its text. Mandatory in every relax mode.
 func filterConjuncts(q Query) []query.Query {
 	conjuncts := make([]query.Query, 0, 6)
 	if userID := strings.TrimSpace(q.UserID); userID != "" {
@@ -518,8 +477,6 @@ func withFilters(text query.Query, filters []query.Query) query.Query {
 	return bleve.NewConjunctionQuery(conjuncts...)
 }
 
-// filterQuery is filterConjuncts as one query, or nil when a query filters
-// nothing.
 func filterQuery(q Query) query.Query {
 	conjuncts := filterConjuncts(q)
 	switch len(conjuncts) {
@@ -532,16 +489,15 @@ func filterQuery(q Query) query.Query {
 	}
 }
 
-// HasDocumentFilters reports whether q restricts the result set by anything
-// other than its owner — the filters the chunk index cannot apply itself.
+// Whether q restricts by anything but its owner, i.e. by filters the chunk
+// index cannot apply itself.
 func HasDocumentFilters(q Query) bool {
 	bare := q
 	bare.UserID = ""
 	return len(filterConjuncts(bare)) > 0
 }
 
-// looseParts is the parts a relaxed query is allowed to drop: everything but a
-// properly closed phrase.
+// What a relaxed query is allowed to drop: everything but a closed phrase.
 func looseParts(parts []queryPart) []queryPart {
 	loose := make([]queryPart, 0, len(parts))
 	for _, part := range parts {
@@ -554,10 +510,8 @@ func looseParts(parts []queryPart) []queryPart {
 	return loose
 }
 
-// mandatoryPhrase reports whether a part is a phrase the caller really asked
-// for. A quoted phrase is an instruction, not a guess, so it stays a mandatory
-// conjunct however many loose terms surround it — but only once it was actually
-// closed, since an unterminated quote is a typo.
+// A closed quoted phrase is an instruction, not a guess, so it stays mandatory
+// however many loose terms surround it.
 func mandatoryPhrase(part queryPart) bool {
 	return part.phrase && part.closed
 }
@@ -599,15 +553,9 @@ func textQuery(parts []queryPart, mode relaxMode, prefix bool, fields []boostedF
 	return bleve.NewConjunctionQuery(must...)
 }
 
-// searchFields resolves a Query's field restriction to the boost table rows it
-// names, keeping the table's own order and boosts. An empty restriction is the
-// whole table.
-//
-// A name the table does not carry is dropped rather than ignored, so a caller
-// that asks only for unknown fields gets a query that matches nothing. That is
-// the honest answer: the alternative -- quietly widening back to every field --
-// would turn a title-only filter into an archive-wide search and report the
-// result as if the filter had been applied.
+// An unknown field name is dropped, so asking only for unknown fields matches
+// nothing: widening back to every field would turn a title-only filter into an
+// archive-wide search and report it as if the filter had applied.
 func searchFields(names []string) []boostedField {
 	if len(names) == 0 {
 		return boostedTextFields
@@ -625,15 +573,13 @@ func searchFields(names []string) []boostedField {
 	return fields
 }
 
-// fieldQuery matches one query part across every searchable field, at that
-// field's boost. With fuzzy on, a long word also matches with one edit of slack
-// at half the boost, so an exact match always outranks an approximate one
-// rather than merely appearing beside it.
+// With fuzzy on, a long word also matches with one edit of slack at half the
+// boost, so an exact match outranks an approximate one.
 //
-// Known limitation: a part that analyzes to no tokens at all (a lone "—" or
-// "#") becomes a match-none clause that still counts toward the disjunction's
-// numerator, tightening a relaxSome floor it can never satisfy. The relaxAny
-// rung absorbs it, and detecting it properly needs the index's analyzer.
+// Known limitation: a part analyzing to no tokens (a lone "—") becomes a
+// match-none clause that still counts toward the disjunction's numerator,
+// tightening a relaxSome floor it can never satisfy. relaxAny absorbs it;
+// detecting it properly needs the index's analyzer.
 func fieldQuery(part queryPart, fuzzy, prefix bool, fields []boostedField) query.Query {
 	prefixText := ""
 	if prefix {
@@ -679,27 +625,22 @@ func fieldQuery(part queryPart, fuzzy, prefix bool, fields []boostedField) query
 	return bleve.NewDisjunctionQuery(disjuncts...)
 }
 
-// prefixTerm is the term-dictionary prefix a word should also match, or "" for
-// a word that must not be used as one. A match query compares whole terms, so
-// a half-typed "amaz" would otherwise miss "Amazon".
+// prefixTerm is the dictionary prefix a word should also match, or "" for a
+// word that must not be used as one. A match query compares whole terms, so a
+// half-typed "amaz" would otherwise miss "Amazon".
 //
-// Prefix legs only ever appear on a widening rung, never on the rung that runs
-// first. A prefix query is not a range check: it walks the field dictionary
-// and scores every term it finds, which measured 415ms for one three-letter
-// term against an OCR-sized vocabulary. Paying that only when the strict query
-// matched nothing keeps it off every query that already works, and makes
-// "exact beats prefix" structural -- a prefix hit cannot appear beside an
-// exact one, because the rung that produces it only runs when there are none.
+// Prefix legs only ever appear on a widening rung: a prefix query walks the
+// field dictionary and scores every term it finds, measured at 415ms for one
+// three-letter term over an OCR-sized vocabulary. Running it only after the
+// strict query found nothing also makes "exact beats prefix" structural.
 //
 // ponytail: an empty-result query still pays one wide expansion. Bound it with
 // a dictionary-size check (FieldDictPrefix) if a large archive makes typing
 // through a dense prefix slow.
 //
 // A prefix query is not analyzed, so the analyzer is approximated here: lower
-// case, and the leading token only, or a trailing comma would be searched for
-// literally and match nothing. Digits are out for the reason fuzzyWorthy gives
-// -- "202" prefixes every year in the archive, and a near miss on a number is
-// a different document.
+// case, leading token only, or a trailing comma would be searched for
+// literally. Digits are out for the reason fuzzyWorthy gives.
 //
 // ponytail: prefix, not substring -- "mazon" still misses "Amazon". Needs an
 // ngram field and a mapping version bump to reindex behind it.
@@ -724,20 +665,15 @@ func anyPrefixWorthy(parts []queryPart) bool {
 	return false
 }
 
-// isSeparator is what the unicode tokenizer splits on, near enough: a prefix
-// is only ever the leading run of letters.
+// What the unicode tokenizer splits on, near enough.
 func isSeparator(r rune) bool {
 	return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 }
 
-// fuzzyWorthy decides which terms get an edit of slack. Short words are out
-// because one edit reaches most of the dictionary from them, and anything with
-// a digit is out because it is an id, an amount or a date — the values where a
-// near miss is a different document, not the same one spelled badly.
-//
-// Fuzziness is confined to the relaxAny rung on cost grounds: it adds a
-// dictionary automaton scan per field per term, over an OCR vocabulary full of
-// garbage tokens, so only a query that already found nothing pays for it.
+// Short words are out because one edit reaches most of the dictionary from
+// them; anything with a digit is out because a near miss on an id, amount or
+// date is a different document. Confined to the relaxAny rung on cost grounds:
+// one dictionary automaton scan per field per term over an OCR vocabulary.
 func fuzzyWorthy(term string) bool {
 	return utf8.RuneCountInString(term) >= 5 && !hasDigit(term)
 }
@@ -755,13 +691,9 @@ func anyFuzzyWorthy(parts []queryPart) bool {
 	return false
 }
 
-// minShouldMatch is how many of n loose terms a document must carry.
-//
-// Two terms both have to match: dropping one of two leaves a single word, and
-// a single word matches the archive. From three up one term may be missing —
-// the model's keyword guesses are wrong often enough that insisting on all of
-// them is what produces empty result lists — and past five the fraction takes
-// over so a long query is not held to an all-or-nothing standard either.
+// How many of n loose terms a document must carry. Two terms both have to
+// match, since dropping one leaves a single word that matches the archive.
+// From three up one may be missing; past five a fraction takes over.
 func minShouldMatch(n int) int {
 	switch {
 	case n <= 2:
@@ -826,10 +758,9 @@ func dateRangeQuery(dateFrom, dateTo string) query.Query {
 	return dq
 }
 
-// undatedQuery matches the documents with no document_date. A document without
-// one indexes no date field at all, so "no date" is the negation of every date
-// there is -- bleve has no field-exists query, and refuses a range open at both
-// ends, hence its own RFC3339 bounds as the widest range it can express.
+// bleve has no field-exists query and refuses a range open at both ends, so
+// "no date" is the negation of its own RFC3339 bounds, the widest range it can
+// express.
 func undatedQuery() query.Query {
 	dq := bleve.NewDateRangeQuery(query.MinRFC3339CompatibleTime, query.MaxRFC3339CompatibleTime)
 	dq.SetField(FieldDocumentDate)

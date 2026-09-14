@@ -11,8 +11,8 @@ import (
 )
 
 // ngxAcknowledgedField records that a paperless client has dismissed a task.
-// Nothing outside this API reads or writes it -- Lemmary shows a document's
-// processing state on the document itself and has no notion of dismissing it.
+// Nothing outside this API reads or writes it: Lemmary shows processing state
+// on the document and has no notion of dismissing it.
 const ngxAcknowledgedField = "ngx_acknowledged"
 
 func handleListTasks(e *core.RequestEvent) error {
@@ -62,21 +62,16 @@ func handleListTasks(e *core.RequestEvent) error {
 	return writeJSON(e, http.StatusOK, results)
 }
 
-// taskDocument is the slice of a document a task response needs: the file name
-// it reports and the id a client can address the document by.
 type taskDocument struct {
 	ID    string `db:"id"`
 	File  string `db:"file"`
 	NgxID int    `db:"ngx_id"`
 }
 
-// taskDocuments reads them for a whole page of jobs in one query.
-//
-// Two reasons it is not a FindRecordById per job. It was one, and swift-
-// paperless polls this endpoint while an upload is in flight, so a hundred jobs
-// meant a hundred round trips per poll. And documents store their OCR text
-// inline, so hydrating whole records would pull the text of a hundred documents
-// to print two fields.
+// taskDocuments reads them for a whole page of jobs in one query. swift-
+// paperless polls this endpoint while an upload is in flight, and documents
+// store their OCR text inline, so a FindRecordById per job pulled the text of a
+// hundred documents to print two fields.
 func taskDocuments(app core.App, jobs []*core.Record) (map[string]*taskDocument, error) {
 	ids := make([]any, 0, len(jobs))
 	seen := map[string]struct{}{}
@@ -132,12 +127,10 @@ func handleAcknowledgeTasks(e *core.RequestEvent) error {
 		return writeJSON(e, http.StatusOK, map[string]any{"result": 0})
 	}
 
-	// One statement, with ownership as a subquery rather than a prior lookup: a
-	// job belongs to an account only through its document, and resolving the
-	// records first would hydrate their step JSON to write one boolean.
-	//
-	// Raw SQL rather than a record save because this column belongs to this API
-	// alone -- a save would fire the job hooks and move `updated`, which the
+	// One statement, with ownership as a subquery: a job belongs to an account
+	// only through its document, and resolving the records first would hydrate
+	// their step JSON to write one boolean. Raw SQL rather than a record save
+	// because a save would fire the job hooks and move `updated`, which the
 	// pipeline reads.
 	result, err := e.App.DB().Update(
 		"processing_jobs",

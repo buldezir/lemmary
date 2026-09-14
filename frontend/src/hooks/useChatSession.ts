@@ -43,7 +43,6 @@ export type UseChatSessionResult = {
   loadError: string
   /** True when a turn was answered but could not be stored. */
   unsaved: boolean
-  /** Why, when `unsaved` is true. */
   unsavedDetail: string
   submit: () => Promise<void>
   /** Abandons an unsaved chat and starts a fresh one in place. */
@@ -51,15 +50,10 @@ export type UseChatSessionResult = {
 }
 
 /**
- * Owns one conversation: its transcript, its composer, and the send.
- *
- * Not `useAsync`, for two reasons specific to a chat. It re-runs whenever its
- * deps change, and the whole trick below is that the id changing from undefined
- * to a freshly created one must *not* refetch — the turns are already here, and
- * refetching would throw away the optimistic bubble mid-send. And its stale
- * guard only orders responses; it never clears `data`, so switching from chat A
- * to chat B would keep A's transcript on screen while B loads, which reads as
- * though the message went to the wrong conversation.
+ * Not `useAsync`: the id changing from undefined to a freshly created one must
+ * *not* refetch, or the optimistic bubble is thrown away mid-send; and
+ * useAsync never clears `data`, so chat A's transcript would stay on screen
+ * while chat B loads.
  */
 export function useChatSession(options: UseChatSessionOptions): UseChatSessionResult {
   const { sessionId } = options
@@ -85,9 +79,8 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
   const epochRef = useRef(0)
   const pendingIdRef = useRef(0)
 
-  // Held in refs and refreshed each render, like useAsync's loadRef, so a
-  // caller can pass inline closures (which read live state such as the
-  // Search/Research toggle) without them becoming effect dependencies.
+  // Refreshed each render, like useAsync's loadRef, so a caller can pass
+  // inline closures without them becoming effect dependencies.
   const loadRef = useRef(options.load)
   const sendRef = useRef(options.send)
   const settledRef = useRef(options.onSessionSettled)
@@ -98,14 +91,9 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
   })
 
   /**
-   * Sits out a run this page did not start, then shows what it produced.
-   *
-   * Reloading during a long research run is the case that matters: the run
-   * outlives the connection by design, but the chat that comes back is empty
-   * and says nothing about an answer being on its way -- the turn is stored
-   * whole when the run ends, so until then there is nothing in the transcript
-   * to show. `sending` is what puts the page back into its waiting state, the
-   * same one it would be in had the tab never been reloaded.
+   * Sits out a run this page did not start, then shows what it produced. A run
+   * outlives the connection by design, and its turn is only stored when it
+   * ends, so `sending` is what puts a reloaded tab back into its waiting state.
    */
   const resume = useCallback(
     (id: string, known: number, epoch: number, signal: AbortSignal) => {
@@ -143,9 +131,8 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
 
   useEffect(() => {
     const next = sessionId ?? null
-    // The promotion no-op. After a send created the session, ownedRef already
-    // holds its id, so this effect firing on the new URL must do nothing at
-    // all — no refetch, no flicker, no race with the turn just appended.
+    // The promotion no-op: after a send created the session ownedRef already
+    // holds its id, so firing on the new URL must not refetch.
     if (ownedRef.current === next) {
       return
     }
@@ -155,8 +142,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     const epoch = ++epochRef.current
 
     // The microtask keeps these setState calls out of the effect's synchronous
-    // body, so switching conversations cannot cascade renders — the same shape
-    // useAsync uses. A cancelled switch is caught by the epoch either way.
+    // body, so switching conversations cannot cascade renders, as in useAsync.
     let started = false
     let cancelled = false
     let resumeController: AbortController | null = null
@@ -173,9 +159,8 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
       setLoadError('')
       setUnsaved(false)
       setUnsavedDetail('')
-      // A resumed run has no live submit promise whose finally can release the
-      // flag. Sending belongs to the conversation being left, so a genuine
-      // switch must make the next chat usable immediately.
+      // A resumed run has no live submit promise whose finally releases the
+      // flag, and sending belongs to the conversation being left.
       setSending(false)
       setResuming(false)
 
@@ -214,22 +199,16 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     return () => {
       cancelled = true
       resumeController?.abort()
-      // Hand the claim back when the load never got as far as starting.
-      //
-      // React invokes an effect twice on mount in development, and the teardown
-      // in between cancels the queued load. Without this the second run would
-      // find the id already claimed, take the promotion no-op above, and a
-      // conversation opened directly by its URL would never load at all --
-      // visible only in a development build, since a production one mounts
-      // once. Gated on `started` because the promotion itself relies on a claim
-      // outliving its effect: the send sets ownedRef before navigating, and the
-      // teardown that follows must not undo it.
+      // Hand the claim back when the load never got as far as starting: the
+      // development double-mount cancels the queued load, and the second run
+      // would otherwise take the promotion no-op and never load at all. Gated
+      // on `started` because the send's claim must outlive its own teardown.
       if (!started && ownedRef.current === next) {
         ownedRef.current = previous
       }
     }
-    // resume is stable (no deps of its own), so it never re-runs this effect;
-    // it is listed only because the linter cannot see that from here.
+    // resume has no deps of its own, so it never re-runs this effect; listed
+    // only for the linter.
   }, [sessionId, resume])
 
   const submit = useCallback(async () => {
@@ -257,9 +236,8 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     try {
       const result = await sendRef.current({ sessionId: owner ?? undefined, content: text })
       if (epochRef.current !== epoch) {
-        // The user moved to another conversation while this was in flight. The
-        // turn is stored server-side; dropping it here just avoids pasting it
-        // into a chat it does not belong to.
+        // Moved to another conversation mid-flight. The turn is stored
+        // server-side; dropping it avoids pasting it into the wrong chat.
         return
       }
 
@@ -282,18 +260,15 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
       }
       setError(err instanceof Error ? err.message : 'Failed to get AI response')
       setTurns((current) => current.filter((turn) => turn.id !== pending.id))
-      // The question goes back in the composer so it is not lost -- except
-      // when it is already being answered. A stream that broke after the run
-      // started leaves the server working on this exact question, and handing
-      // it back invites the user to submit it a second time and pay for the
-      // same run twice. The error text tells them where the answer will be.
+      // The question goes back in the composer unless it is already being
+      // answered: a broken stream leaves the server working on it, and
+      // resubmitting would pay for the same run twice.
       if (!(err instanceof RunInFlightError)) {
         setInput(text)
       }
     } finally {
-      // Unconditional: the request is over whichever conversation is on screen.
-      // Gating this on the epoch strands the spinner forever when the user
-      // switches chats mid-send.
+      // Unconditional: gating on the epoch strands the spinner forever when
+      // the user switches chats mid-send.
       setSending(false)
     }
   }, [input, sending])

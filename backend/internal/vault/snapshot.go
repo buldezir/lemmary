@@ -9,19 +9,15 @@ import (
 	"github.com/pocketbase/dbx"
 )
 
-// pbSnapshotter captures the application databases with VACUUM INTO.
-//
-// VACUUM INTO produces a consistent single-file snapshot from a read
-// transaction without blocking writers, which is what lets a flush run every few
-// seconds on a live system. It is strictly better here than PocketBase's own
-// backup approach of copying data.db plus its WAL inside a write transaction:
-// that blocks every writer for the duration, and copying a -wal/-shm pair while
-// anything is writing is how you get a torn database.
+// pbSnapshotter uses VACUUM INTO, which produces a consistent single-file
+// snapshot from a read transaction without blocking writers, so a flush can run
+// every few seconds on a live system. PocketBase's own backup copies data.db
+// plus its WAL inside a write transaction, which blocks every writer and can
+// tear the database.
 type pbSnapshotter struct {
 	databases map[string]dbx.Builder
 }
 
-// NewPocketBaseSnapshotter returns a Snapshotter over the app's two databases.
 func NewPocketBaseSnapshotter(data, aux dbx.Builder) Snapshotter {
 	return &pbSnapshotter{databases: map[string]dbx.Builder{
 		"data.db":      data,
@@ -35,23 +31,21 @@ func (p *pbSnapshotter) SnapshotDatabases(stageDir string) error {
 			continue
 		}
 		dst := filepath.Join(stageDir, name)
-		// VACUUM INTO refuses to overwrite, and a leftover file from an aborted
-		// flush would otherwise fail every subsequent one.
+		// VACUUM INTO refuses to overwrite, and a leftover file from an aborted flush
+		// would fail every subsequent one.
 		if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 
-		// The destination has to be embedded in the SQL text; it is a path this
-		// process constructed under its own staging directory, but quote it
-		// properly and refuse anything unexpected rather than trusting that.
+		// The destination has to be embedded in the SQL text, so refuse anything
+		// unexpected rather than trusting that this process built the path.
 		if strings.ContainsAny(dst, "'\x00\n") {
 			return fmt.Errorf("vault: refusing to snapshot into %q", dst)
 		}
 
-		// Checkpointing first keeps the WAL from growing without bound; it is
-		// best-effort because a busy database simply defers it to the next flush.
+		// Checkpointing keeps the WAL bounded; best-effort because a busy database
+		// defers it to the next flush and VACUUM INTO still reads a consistent view.
 		if _, err := db.NewQuery("PRAGMA wal_checkpoint(TRUNCATE)").Execute(); err != nil {
-			// Not fatal: VACUUM INTO still reads a consistent view.
 			_ = err
 		}
 		if _, err := db.NewQuery("VACUUM INTO '" + dst + "'").Execute(); err != nil {

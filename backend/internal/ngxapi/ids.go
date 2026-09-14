@@ -14,14 +14,13 @@ import (
 
 // toNgxID derives a client-facing id from a PocketBase id.
 //
-// Only for the collections that carry no ngxid.Field column -- users and
-// processing jobs -- whose ids a client reads and never sends back. Everything
-// a client can address is read from its stored column: see ngxIDOf.
+// Only for the collections that carry no ngxid.Field column, users and
+// processing jobs, whose ids a client reads and never sends back. Everything a
+// client can address is read from its stored column: see ngxIDOf.
 func toNgxID(pbID string) int {
 	return ngxid.Hash(pbID)
 }
 
-// ngxIDOf reads the client-facing id a record was stamped with on create.
 func ngxIDOf(record *core.Record) int {
 	return record.GetInt(ngxid.Field)
 }
@@ -30,13 +29,8 @@ func parseNgxID(raw string) (int, error) {
 	return strconv.Atoi(strings.TrimSpace(raw))
 }
 
-// findRecordByNgxID resolves one client-facing id inside an owner's scope.
-//
-// One index seek, on the unique (user, ngx_id) index. It used to be a scan of
-// the owner's whole table per call, because the id was an FNV hash of the
-// PocketBase id and inverting it meant hashing every candidate -- and the
-// caller that matters most is a thumbnail, which swift-paperless requests once
-// per tile for a whole page of documents at a time.
+// findRecordByNgxID resolves one client-facing id inside an owner's scope, in
+// one seek on the unique (user, ngx_id) index.
 func findRecordByNgxID(app core.App, collection string, ngxID int, ownerUserID string) (*core.Record, error) {
 	// 0 is not an id this server ever issues, and it is what the column holds
 	// for a row no create hook stamped. Matching it would hand a client a
@@ -47,9 +41,7 @@ func findRecordByNgxID(app core.App, collection string, ngxID int, ownerUserID s
 
 	// The literal "ngx_id > 0" is not redundant with the guard above: the
 	// unique index is partial on exactly that predicate, and SQLite will only
-	// use a partial index when the query restates its WHERE clause. Without it
-	// the planner falls back to whichever index covers user alone and scans
-	// that owner's rows -- which is the cost this column exists to remove.
+	// use a partial index when the query restates its WHERE clause.
 	filter := "ngx_id > 0 && ngx_id = {:ngxID}"
 	params := dbx.Params{"ngxID": ngxID}
 	if ownerUserID != "" {
@@ -60,13 +52,8 @@ func findRecordByNgxID(app core.App, collection string, ngxID int, ownerUserID s
 }
 
 // ngxIDsByPBID reads the client-facing ids of a known set of records in one
-// query.
-//
-// The reason it is batched: a document names its tags, type and correspondent
-// by PocketBase id, and rendering those as client ids now means reading the
-// related rows. Per field that is five hundred point lookups for a page of two
-// hundred and fifty documents -- the same shape of traffic this whole change
-// exists to remove.
+// query: unbatched, rendering one field of a page of 250 documents is 500
+// point lookups.
 func ngxIDsByPBID(app core.App, collection string, pbIDs []string) (map[string]int, error) {
 	if len(pbIDs) == 0 {
 		return map[string]int{}, nil

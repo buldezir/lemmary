@@ -14,31 +14,25 @@ const (
 	collectionDocumentTypes  = "document_types"
 )
 
-// prunePageSize bounds how many rows a prune pass holds in memory at once.
 const prunePageSize = 500
 
-// PruneResult counts the records a prune removed, per collection.
-//
-// Tags is always 0 and stays in the shape because the API response and the
-// Management page have read it since before tags became a hand-curated
-// vocabulary; dropping the field would break both for a number that is now
-// simply always zero.
+// PruneResult counts the records a prune removed, per collection. Tags is
+// always 0 and stays in the shape because the API response and the Management
+// page have read it since before tags became a hand-curated vocabulary.
 type PruneResult struct {
 	Tags           int `json:"tags"`
 	Correspondents int `json:"correspondents"`
 	DocumentTypes  int `json:"document_types"`
 }
 
-// Total is how many records the prune removed in all.
 func (r PruneResult) Total() int {
 	return r.Tags + r.Correspondents + r.DocumentTypes
 }
 
-// PruneOrphans deletes every correspondent and document type that no
-// document references. Collecting the references and deleting share one
-// transaction, so a document saved concurrently either shows up here as a
-// reference or fails its own relation check — it cannot end up pointing at an
-// id this prune just removed.
+// PruneOrphans deletes every correspondent and document type that no document
+// references. Collecting the references and deleting share one transaction, so
+// a document saved concurrently cannot end up pointing at an id this prune
+// just removed.
 func PruneOrphans(app core.App) (PruneResult, error) {
 	var result PruneResult
 
@@ -69,15 +63,13 @@ func PruneOrphans(app core.App) (PruneResult, error) {
 	return result, nil
 }
 
-// documentRefs is the projection a prune reads from documents: the two relation
-// columns it prunes and nothing else. Documents also carry OCR text, which must
-// not be loaded just to look at relations, and tags, which are never pruned.
+// documentRefs is the projection a prune reads from documents: the relation
+// columns only, so OCR text is not loaded just to look at relations.
 type documentRefs struct {
 	Correspondent string `db:"correspondent"`
 	DocumentType  string `db:"document_type"`
 }
 
-// referencedIDs collects the taxonomy ids currently in use, keyed by collection.
 func referencedIDs(app core.App) (map[string]map[string]struct{}, error) {
 	collection, err := app.FindCollectionByNameOrId(collectionDocuments)
 	if err != nil {
@@ -121,7 +113,6 @@ func addRef(ids map[string]struct{}, id string) {
 	ids[id] = struct{}{}
 }
 
-// deleteOrphans removes every record of collection missing from referenced.
 func deleteOrphans(app core.App, collection string, referenced map[string]struct{}) (int, error) {
 	orphans, err := orphanRecords(app, collection, referenced)
 	if err != nil {

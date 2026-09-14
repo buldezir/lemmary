@@ -57,22 +57,20 @@ const rootRoute = createRootRoute({
   component: RootLayout,
 })
 
-// The document list's filters live in the query string so a reload, a bookmark
-// and a shared link all reproduce the same list. validateSearch is what makes
-// them typed on the way in, and what defaults away anything hand-edited.
+// validateSearch types the query-string filters on the way in and defaults
+// away anything hand-edited.
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  // The SearchSchemaInput brand is what tells the router that the filters are
-  // optional going in even though every one of them is set coming out — without
-  // it, every `to: '/'` in the app would have to spell out a full filter set.
+  // The SearchSchemaInput brand tells the router the filters are optional going
+  // in though all are set coming out; without it every `to: '/'` would have to
+  // spell out a full filter set.
   validateSearch: (search: DocumentQueryInput & SearchSchemaInput) =>
     documentQuerySearch(parseDocumentQuery(search)),
   component: IndexPage,
 })
 
-// The review Inbox: the same list, with its status fixed by the path. See
-// lib/nav.ts for why this is a path and not a link to /?status=needs_review.
+// See lib/nav.ts for why this is a path and not /?status=needs_review.
 const inboxRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/inbox',
@@ -80,9 +78,8 @@ const inboxRoute = createRoute({
   component: InboxPage,
 })
 
-// The processing queue across every document. Beside the Inbox rather than
-// behind Management: it is scoped to the caller's own documents by the
-// collection's list rule, so it is not an admin view.
+// Not behind Management: the collection's list rule scopes it to the caller's
+// own documents, so it is not an admin view.
 const activityRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/activity',
@@ -126,22 +123,16 @@ const uploadSplitRoute = createRoute({
   component: UploadSplitPage,
 })
 
-// Deep Search's two modes are two paths, not a flag on one: the mode decides
-// what a question does -- list documents, or read them and answer -- so it
-// belongs in the URL, where a reload, a bookmark and a shared link all keep it.
-// Both render SearchPage, which reads the mode back off the route.
-//
-// They share the /rag parent so one nav entry covers both: a Link marks itself
-// active for its own path and everything under it, and /rag is the only path
-// that is above both modes. It has no component of its own, so it renders an
-// Outlet and contributes nothing but the segment.
+// Deep Search's two modes are two paths, not a flag: the mode decides what a
+// question does, so it belongs in the URL. Both render SearchPage, which reads
+// the mode back off the route. They share the /rag parent so one nav entry
+// marks itself active for both; /rag has no component of its own.
 const ragRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/rag',
 })
 
-// /rag alone is not a page. Search is the cheaper of the two modes and the one
-// to land on.
+// /rag alone is not a page; Search is the cheaper mode to land on.
 const ragIndexRoute = createRoute({
   getParentRoute: () => ragRoute,
   path: '/',
@@ -156,13 +147,10 @@ const searchRoute = createRoute({
   component: SearchPage,
 })
 
-// The open chat's id is a child route that renders nothing, and SearchPage
-// stays on the parent match on purpose. Sending the first message of a new
-// chat promotes /rag/search to /rag/search/<id> while the request is still in
-// flight; with the page on a child (or on a sibling route) that promotion swaps
-// the match and React unmounts the transcript mid-send. Here only a child match
-// is added, and the page — which reads the id with useMatchRoute — keeps
-// running. Neither this route nor its document twin renders an <Outlet/>.
+// The chat id is a child route that renders nothing, so SearchPage stays on
+// the parent match: promoting /rag/search to /rag/search/<id> mid-send would
+// otherwise swap the match and unmount the transcript. The page reads the id
+// with useMatchRoute, and no <Outlet/> is rendered.
 const searchSessionRoute = createRoute({
   getParentRoute: () => searchRoute,
   path: '$sessionId',
@@ -187,9 +175,8 @@ const ocrTestRoute = createRoute({
   component: OCRTestPage,
 })
 
-// Settings is a shell with one tab per section, like /upload and /import: the
-// page had grown past what anyone could scan, and each section saves only its
-// own fields anyway. The guard sits on the parent, which the tabs inherit.
+// A shell with one tab per section; the guard sits on the parent, which the
+// tabs inherit.
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',

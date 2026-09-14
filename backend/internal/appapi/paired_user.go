@@ -11,10 +11,9 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// UpsertPairedUser creates or updates the paired admin users-collection record
-// for a superuser email so the SPA can own documents via a users session.
-//
-// Existing non-admin users with the same email are not overwritten.
+// UpsertPairedUser gives a superuser email a users record, so the SPA can own
+// documents through a users session. An existing non-admin user with that
+// email is not overwritten.
 func UpsertPairedUser(app core.App, email, password string) (*core.Record, error) {
 	email = strings.TrimSpace(email)
 	if email == "" {
@@ -51,9 +50,8 @@ func UpsertPairedUser(app core.App, email, password string) (*core.Record, error
 	return record, nil
 }
 
-// RevokePairedAdmin clears the paired-admin flag for the users account with the
-// given email (used when deleting a superuser). The users record is kept so
-// owned documents remain accessible.
+// RevokePairedAdmin keeps the users record so owned documents remain
+// accessible.
 func RevokePairedAdmin(app core.App, email string) error {
 	email = strings.TrimSpace(email)
 	if email == "" {
@@ -77,8 +75,7 @@ type ensureUserRequest struct {
 	Password string `json:"password"`
 }
 
-// handlePostEnsureUser lets a true superuser session create/update the paired
-// users account (legacy installs that only have _superusers).
+// handlePostEnsureUser is for installs that only have _superusers.
 func handlePostEnsureUser(app core.App) func(*core.RequestEvent) error {
 	return bindSuperuser(func(e *core.RequestEvent) error {
 		var req ensureUserRequest

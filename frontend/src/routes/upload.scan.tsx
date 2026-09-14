@@ -21,14 +21,9 @@ function errorMessage(err: unknown, fallback: string) {
   return err instanceof Error && err.message ? err.message : fallback
 }
 
-/**
- * Loads the scanned document as a blob URL for the preview, and revokes it when
- * the scan changes or the page goes away.
- */
 function useScanPreview(uploadId: string | undefined, pageCount: number) {
-  // Keyed by the scan *and* its page count: the upload id does not change when
-  // a page is appended, but the document behind it does. Keying it also means a
-  // stale URL is simply not returned, rather than needing a reset in the effect.
+  // Keyed by the scan *and* its page count: the upload id does not change when a
+  // page is appended, but the document behind it does.
   const key = uploadId ? `${uploadId}:${pageCount}` : ''
   const [loaded, setLoaded] = useState({ key: '', url: '' })
 

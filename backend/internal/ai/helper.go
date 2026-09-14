@@ -19,13 +19,10 @@ import (
 	"lemmary/backend/internal/models"
 )
 
-// Helper is the model Deep Search hands bulk per-document work to.
-//
-// The research loop is a few completions over a conversation that keeps
-// growing; the helper is many completions over one document each, and none of
-// what it reads enters that conversation. It is what turns a read of twenty
-// documents into twenty short notes instead of twenty documents' worth of
-// text, and a question over three hundred documents into three hundred rows.
+// Helper is the model Deep Search hands bulk per-document work to. The research
+// loop is a few completions over a growing conversation; the helper is many
+// completions over one document each, and none of what it reads enters that
+// conversation.
 type Helper interface {
 	Name() string
 	Model() string
@@ -60,8 +57,7 @@ type DistillDoc struct {
 
 type DistillRequest struct {
 	// Question is what the notes and quotes are about. Required: a distil
-	// without a question is a summary, and a summary of a fifty-page
-	// statement is not what a research run needs from it.
+	// without a question is a summary.
 	Question string
 	Fields   []SurveyField
 	Docs     []DistillDoc
@@ -90,16 +86,10 @@ type DistillResult struct {
 }
 
 // maxHelperTimeout caps how long one distill call may take, however generous
-// the shared AI timeout is.
-//
-// The helper is the fast leg of a research run: many short calls whose failure
-// is survivable, since a batch that does not come back is passed through as
-// raw text instead. So a slow helper endpoint is not worth waiting on. Left
-// uncapped it inherited the general AI timeout, and a helper that simply never
-// answered burned that in full, per batch, several batches to a run --
-// observed as three consecutive two-minute waits that produced no rows at all,
-// turning a one-minute run into a five-minute one for no gain. Failing fast
-// reaches the same fallback sooner.
+// the shared AI timeout is. The helper is the fast leg of a research run and a
+// batch that does not come back is passed through as raw text, so failing fast
+// reaches that fallback sooner. Left uncapped, a helper that never answered
+// burned the full AI timeout per batch, several batches to a run.
 const maxHelperTimeout = 45 * time.Second
 
 // helperTimeout clamps the shared AI timeout down to what a helper call is
@@ -247,10 +237,9 @@ func buildDistillUserMessage(question string, fields []SurveyField, docs []Disti
 	return b.String()
 }
 
-// parseDistillRows reads the helper's JSON leniently -- fenced, prefixed with
-// reasoning, scalar kinds wrong -- and keeps only rows for documents that were
-// asked about. A document the helper skipped is simply absent; the caller
-// decides what to do with it.
+// parseDistillRows reads the helper's JSON leniently (fenced, prefixed with
+// reasoning, scalar kinds wrong) and keeps only rows for documents that were
+// asked about. A document the helper skipped is simply absent.
 func parseDistillRows(content string, req DistillRequest) ([]DistillRow, error) {
 	raw := models.NormalizeJSONObject(content)
 	var payload struct {

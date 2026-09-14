@@ -7,10 +7,8 @@ import (
 	"lemmary/backend/internal/zipimport"
 )
 
-// A rejected archive is the caller's problem and must come back as a 400 with
-// something to act on. Anything this switch does not name falls through to a
-// 500, which is what a zip bomb used to get -- the sibling backup importer
-// mapped it and this one did not.
+// Anything this switch does not name falls through to a 500, which is what a
+// zip bomb got while the sibling backup importer mapped it.
 func TestArchiveErrorDetailNamesEveryRejection(t *testing.T) {
 	rejections := []error{
 		zipimport.ErrNotArchive,
@@ -29,8 +27,7 @@ func TestArchiveErrorDetailNamesEveryRejection(t *testing.T) {
 }
 
 // The noun is the only thing the source changes: "no PDF files" helps someone
-// who uploaded the wrong Amazon export and misleads someone who uploaded a zip
-// of photos.
+// who uploaded the wrong Amazon export and misleads someone with photos.
 func TestArchiveErrorDetailWordsTheEmptyArchivePerSource(t *testing.T) {
 	amazon := archiveErrorDetail(zipimport.SourceAmazon, zipimport.ErrNoFiles)
 	files := archiveErrorDetail(zipimport.SourceFiles, zipimport.ErrNoFiles)

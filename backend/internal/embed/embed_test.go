@@ -61,8 +61,7 @@ func TestIsFreshRejectsEveryReasonToReEmbed(t *testing.T) {
 	}
 }
 
-// Before the provider has answered once there is no recorded length to compare
-// against, and treating "unknown" as "wrong" would re-embed the whole archive
+// Treating an unknown dimension count as wrong would re-embed the whole archive
 // on every tick.
 func TestIsFreshIgnoresUnknownDimensions(t *testing.T) {
 	t.Parallel()
@@ -83,8 +82,6 @@ func planTestDocument(t *testing.T, ocrText string) *core.Record {
 	return record
 }
 
-// The vector at position i is stored on the chunk at position i, so the two
-// slices have to be built together and stay the same length.
 func TestPlanPairsInputsWithChunks(t *testing.T) {
 	t.Parallel()
 	ocrText := strings.Repeat("Die Rechnung wurde bezahlt. ", 300)
@@ -100,16 +97,14 @@ func TestPlanPairsInputsWithChunks(t *testing.T) {
 		t.Fatalf("got %d chunks for %d pieces", len(chunks), len(pieces))
 	}
 	for i, c := range chunks {
-		// Ordinals start at 0 and have no holes: they are what the Bleve index
-		// and the passage layer address a passage by.
+		// Ordinals are what the index and the passage layer address a passage by.
 		if c.Ordinal != i {
 			t.Fatalf("chunk %d has ordinal %d", i, c.Ordinal)
 		}
 		if c.DocumentID != "doc1" {
 			t.Fatalf("chunk %d has document %q", i, c.DocumentID)
 		}
-		// A chunk is offsets, not a copy: the passage is sliced out of the live
-		// column when it is read, so the offsets have to address the very text
+		// A chunk is offsets, not a copy, so they must address the very text
 		// that was sent to the provider.
 		if inputs[i] != ocrText[c.StartByte:c.EndByte] {
 			t.Fatalf("input %d does not match its stored range", i)
@@ -117,9 +112,8 @@ func TestPlanPairsInputsWithChunks(t *testing.T) {
 	}
 }
 
-// Nothing but the OCR text is embedded, so a document rich in metadata and
-// short on text produces exactly the chunks its text was cut into -- no
-// metadata passage, and no hole at ordinal 0 where one used to sit.
+// Nothing but the OCR text is embedded: no metadata passage, and no hole at
+// ordinal 0 where one used to sit.
 func TestPlanEmbedsOnlyTheOCRText(t *testing.T) {
 	t.Parallel()
 	ocrText := "A short note about the boiler service."
@@ -140,8 +134,8 @@ func TestPlanEmbedsOnlyTheOCRText(t *testing.T) {
 	}
 }
 
-// stubEmbedder is a binding, not a client: the tests that use it never embed
-// anything, they only ask what model and length a row should record.
+// A binding, not a client: the tests only ask what model and length a row
+// should record.
 type stubEmbedder struct {
 	model string
 	dims  int
@@ -154,11 +148,9 @@ func (s stubEmbedder) Embed(context.Context, []string) (ai.EmbedResult, error) {
 	return ai.EmbedResult{}, errors.New("stubEmbedder does not embed")
 }
 
-// A document that yields no passages -- a scan that OCRed to whitespace, or one
-// whose every chunk was blank -- used to return Skipped without writing
-// anything, so the backfill selected it again on the next tick and on every tick
-// after that. The row it writes now has to read as fresh, or the loop simply
-// comes back.
+// A document that yields no passages used to return Skipped without writing
+// anything, so the backfill selected it again on every tick. The row it writes
+// now has to read as fresh, or the loop comes back.
 func TestEmptyStateStopsTheDocumentComingBack(t *testing.T) {
 	t.Parallel()
 	embedder := stubEmbedder{model: "text-embedding-3-small", dims: 1536}
@@ -173,8 +165,7 @@ func TestEmptyStateStopsTheDocumentComingBack(t *testing.T) {
 	if !IsFresh(state, embedder.Model(), embedder.Dims(), textHash) {
 		t.Fatalf("the terminal row does not read as fresh: %+v", state)
 	}
-	// It is terminal for this text only: re-OCR the document and it is a
-	// candidate again, which is the one moment asking again is worth anything.
+	// Terminal for this text only: re-OCR and it is a candidate again.
 	if IsFresh(state, embedder.Model(), embedder.Dims(), embedstore.TextHash("real text now")) {
 		t.Fatal("re-OCRed text should not be covered by the previous terminal row")
 	}
@@ -201,8 +192,8 @@ func TestRetryDelayGrowsAndStops(t *testing.T) {
 	if got := retryDelay(-1); got != retryBase {
 		t.Fatalf("retryDelay(-1) = %v, want %v", got, retryBase)
 	}
-	// The cap has to be reachable in a working day, or a document that failed
-	// once during an outage would effectively never come back.
+	// Reachable in a working day, or a document that failed once during an
+	// outage would never come back.
 	if retryMax > 24*time.Hour {
 		t.Fatalf("retryMax = %v", retryMax)
 	}

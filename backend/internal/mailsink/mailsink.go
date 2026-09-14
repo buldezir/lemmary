@@ -11,8 +11,8 @@ import (
 
 const CollectionName = "outbound_emails"
 
-// Register replaces the sendmail fallback: when SMTP is disabled, outbound
-// messages are stored in the outbound_emails collection instead of being sent.
+// Register stores outbound messages in outbound_emails instead of sending
+// them whenever SMTP is disabled.
 func Register(app core.App) {
 	app.OnMailerSend().BindFunc(func(e *core.MailerEvent) error {
 		if e.App.Settings().SMTP.Enabled {
@@ -21,12 +21,11 @@ func Register(app core.App) {
 		if err := Persist(e.App, e.Message); err != nil {
 			return err
 		}
-		// Skip sendmail (do not call e.Next()).
+		// Not calling e.Next() is what skips sendmail.
 		return nil
 	})
 }
 
-// Persist writes a mailer message to the outbound_emails collection.
 func Persist(app core.App, message *mailer.Message) error {
 	if message == nil {
 		return fmt.Errorf("mailsink: nil message")

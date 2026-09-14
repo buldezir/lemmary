@@ -7,16 +7,10 @@ import (
 	"testing"
 )
 
-// Booting without VAULT_ENABLED against an encrypted volume must refuse.
-//
-// checkNoPlaintextInstall guards the other direction — switching encryption on
-// over existing plaintext. This is the same mistake mirrored and much the easier
-// of the two to make, because it is made by omitting something: bringing the
-// instance up without the compose overlay, or dropping one line from an
-// environment file. Nothing else would notice. PocketBase would open the volume,
-// find no data.db, create one, and serve a setup wizard — a fresh empty install
-// with the ciphertext beside it, and a plaintext database now written into the
-// volume documented to hold only ciphertext.
+// Booting without VAULT_ENABLED against an encrypted volume must refuse. It is
+// the easier mistake, made by omitting something, and nothing else would
+// notice: PocketBase would find no data.db, create one, and serve a setup
+// wizard, writing plaintext into the volume documented to hold ciphertext.
 func TestOpenRefusesAPlaintextBootOnAnEncryptedVolume(t *testing.T) {
 	dir := t.TempDir()
 	writeVaultMarkers(t, dir)

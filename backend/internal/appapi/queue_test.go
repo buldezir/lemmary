@@ -45,8 +45,8 @@ func makeQueueUser(t *testing.T, app core.App, email string) string {
 	return user.Id
 }
 
-// documents.file is required, so a document cannot be made without one -- which
-// is also the point of the discard rules: the file is what gets thrown away.
+// documents.file is required, which is also the point of the discard rules:
+// the file is what gets thrown away.
 func makeQueueDocument(t *testing.T, app core.App, ownerID, status, ocrText string) *core.Record {
 	t.Helper()
 	documents, err := app.FindCollectionByNameOrId("documents")
@@ -96,8 +96,6 @@ func documentStatus(t *testing.T, app core.App, documentID string) string {
 	return document.GetString("processing_status")
 }
 
-// The straightforward case the feature exists for: a fresh upload waiting its
-// turn is cancelled along with its job.
 func TestStopJobCancelsAPendingDocument(t *testing.T) {
 	app := bootQueueApp(t)
 	owner := makeQueueUser(t, app, "stop-pending@example.test")
@@ -127,9 +125,9 @@ func TestStopJobCancelsAPendingDocument(t *testing.T) {
 	}
 }
 
-// recoverStaleRunningJobs re-pends a job whose document apply_metadata already
-// wrote "completed" -- a crash during embed. Stop all must not stamp cancelled
-// over that, or the discard sweep would be handed a processed document.
+// recoverStaleRunningJobs re-pends a job whose document is already "completed",
+// and stamping cancelled over that would hand the discard sweep a processed
+// document.
 func TestStopJobLeavesAProcessedDocumentAlone(t *testing.T) {
 	app := bootQueueApp(t)
 	owner := makeQueueUser(t, app, "stop-completed@example.test")
@@ -156,8 +154,7 @@ func TestStopJobLeavesAProcessedDocumentAlone(t *testing.T) {
 	}
 }
 
-// The worker claims a job by flipping it to running in its own transaction. A
-// stop that lands after that must leave both records alone.
+// The worker claims a job by flipping it to running in its own transaction.
 func TestStopJobDoesNotTouchAClaimedJob(t *testing.T) {
 	app := bootQueueApp(t)
 	owner := makeQueueUser(t, app, "stop-claimed@example.test")
@@ -191,8 +188,8 @@ func TestDiscardDocumentDeletesACancelledImport(t *testing.T) {
 	app := bootQueueApp(t)
 	owner := makeQueueUser(t, app, "discard-cancelled@example.test")
 	document := makeQueueDocument(t, app, owner, models.DocStatusCancelled, "")
-	// Stopping the job is what leaves a finished job behind on an otherwise
-	// untouched document, so a cancelled job must not read as "processed".
+	// Stopping leaves a finished job on an untouched document, so a cancelled
+	// job must not read as "processed".
 	makeQueueJob(t, app, document.Id, models.JobStatusCancelled, true)
 
 	deleted, err := discardDocument(app, document.Id, owner)
@@ -207,9 +204,8 @@ func TestDiscardDocumentDeletesACancelledImport(t *testing.T) {
 	}
 }
 
-// reprocess.queueOne flips a completed document back to pending before creating
-// its job, so "pending" alone is not "never processed". Its OCR text is the
-// cheap proof.
+// queueOne flips a completed document back to pending, so "pending" alone is
+// not "never processed"; its OCR text is the cheap proof.
 func TestDiscardDocumentKeepsARequeuedDocumentWithText(t *testing.T) {
 	app := bootQueueApp(t)
 	owner := makeQueueUser(t, app, "discard-requeued@example.test")
@@ -228,8 +224,8 @@ func TestDiscardDocumentKeepsARequeuedDocumentWithText(t *testing.T) {
 	}
 }
 
-// The backstop, for a scan OCR legitimately found no words in: no text, but a
-// finished job that says it went through the pipeline anyway.
+// The backstop for a scan OCR found no words in: no text, but a finished job
+// that says it went through the pipeline.
 func TestDiscardDocumentKeepsARequeuedDocumentWithoutText(t *testing.T) {
 	app := bootQueueApp(t)
 	owner := makeQueueUser(t, app, "discard-requeued-empty@example.test")
@@ -261,8 +257,7 @@ func TestDiscardDocumentLeavesAnotherOwnersDocument(t *testing.T) {
 	}
 }
 
-// A document deleted between the listing and the sweep is not an error: the
-// whole sweep must not fail over one row that is already gone.
+// The whole sweep must not fail over one row that is already gone.
 func TestDiscardDocumentTreatsAGoneDocumentAsDone(t *testing.T) {
 	app := bootQueueApp(t)
 	owner := makeQueueUser(t, app, "discard-gone@example.test")

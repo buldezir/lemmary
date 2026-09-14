@@ -18,15 +18,10 @@ import (
 	"lemmary/backend/internal/strutil"
 )
 
-// ErrStepSoft marks a step failure the pipeline may walk past.
-//
-// A step wrapping it is still recorded as failed, so the failure is visible in
-// step_runs and countable, but the job keeps going and the document's status is
-// untouched. It exists for work that enriches a document rather than producing
-// it: losing the retrieval vectors for one document costs some recall, while
-// failing the job over them would strand a document whose text, metadata and
-// preview are all perfectly good -- and would hand it to the retry machinery
-// that re-runs OCR and extraction to fix an embedding.
+// ErrStepSoft marks a step failure the pipeline may walk past: still recorded
+// as failed in step_runs, but the job keeps going and the document's status is
+// untouched. For work that enriches a document rather than producing it, where
+// failing the job would re-run OCR and extraction to fix an embedding.
 var ErrStepSoft = errors.New("step failed softly")
 
 type PipelineRunner struct {
@@ -111,16 +106,11 @@ func (r *PipelineRunner) Run(ctx context.Context, jobID string) error {
 
 	jobCtx, jobCancel := context.WithTimeout(ctx, r.Cfg.WorkerTimeout)
 	defer jobCancel()
-	// Every provider call this job makes -- OCR, extraction, embedding -- is
-	// about this one document, so it is stamped once here rather than at each
-	// step. The checksum is assigned by the create hook, before this job is
-	// ever picked up, so it is already on the record.
+	// Every provider call this job makes is about this one document, so it is
+	// stamped once here rather than at each step.
 	//
-	// Split detection is deliberately not among them. It runs in internal/
-	// pdfsplit, against a staged upload on its own context, and there is no
-	// documents row yet to name: the upload id would fit the header's shape
-	// without being the thing it means. Those OCR and LLM calls go out
-	// unnamed until a split produces documents.
+	// Split detection is deliberately not among them: it runs against a staged
+	// upload with no documents row yet to name, so its calls go out unnamed.
 	jobCtx = aiprovider.WithDocumentRecord(jobCtx, document)
 
 	for {
@@ -135,8 +125,8 @@ func (r *PipelineRunner) Run(ctx context.Context, jobID string) error {
 			return r.failStep(job, document, runs, idx, fmt.Errorf("unknown step %q", stepName))
 		}
 
-		// Decide skip before booking an attempt: a skipped step must not show
-		// up in step_runs as attempted, and it needs only one job save.
+		// Before booking an attempt: a skipped step must not show up in
+		// step_runs as attempted.
 		skipped, err := step.ShouldSkip(state)
 		if err != nil {
 			return r.failStep(job, document, runs, idx, err)
@@ -242,9 +232,8 @@ func (r *PipelineRunner) handleStepFailure(job, document *core.Record, runs []mo
 	return failJob(r.App, job, document, err)
 }
 
-// hasRecordedStepFailure reports whether a step already carries this job's
-// failure message. A soft failure does not count: the pipeline walked past it,
-// so whatever is failing the job now is something else.
+// A soft failure does not count: the pipeline walked past it, so whatever is
+// failing the job now is something else.
 func hasRecordedStepFailure(job *core.Record) bool {
 	runs, err := parseStepRuns(job)
 	if err != nil {
@@ -257,9 +246,8 @@ func hasRecordedStepFailure(job *core.Record) bool {
 
 func failJob(app core.App, job *core.Record, document *core.Record, err error) error {
 	if document == nil {
-		// Callers that fail before loading the document pass nil, but the claim
-		// already flipped the document to "processing"; load it by the job's
-		// relation so it lands on "failed" instead of hanging there forever.
+		// The claim already flipped the document to "processing", so load it by
+		// the job's relation or it hangs there forever.
 		if doc, loadErr := app.FindRecordById("documents", job.GetString("document")); loadErr == nil {
 			document = doc
 		}
@@ -273,11 +261,9 @@ func failJob(app core.App, job *core.Record, document *core.Record, err error) e
 
 	job.Set("status", models.JobStatusFailed)
 	job.Set("finished_at", nowTimestamp())
-	// Only when no step recorded the failure. This field exists for failures
-	// that happen outside a step and so write nothing into step_runs -- an
-	// unparseable step list, a document that will not load. Writing it for a
-	// step failure too would duplicate a message step_runs already has, and
-	// leave the UI saying "Processing failed" where it could name the step.
+	// Only for failures outside a step, which write nothing into step_runs.
+	// Writing it for a step failure too would leave the UI saying "Processing
+	// failed" where it could name the step.
 	if !hasRecordedStepFailure(job) {
 		job.Set("error", strutil.Truncate(err.Error(), 1900))
 	}
@@ -295,21 +281,18 @@ func failJob(app core.App, job *core.Record, document *core.Record, err error) e
 	return err
 }
 
-// finalizeDocumentWithoutApply settles a document the apply step did not.
-//
-// AlwaysRequireReview deliberately does not reach here: a step list without
-// apply_metadata is one where no model wrote the metadata -- above all a
-// paperless-ngx import, whose whole point (models.ImportPreserveSteps) is that
-// the metadata curated over there survives. Requiring review of it would empty
-// a migrated archive into the Inbox for extraction that never ran.
+// Settles a document the apply step did not. AlwaysRequireReview deliberately
+// does not reach here: without apply_metadata no model wrote the metadata (a
+// paperless-ngx import above all), so requiring review would empty a migrated
+// archive into the Inbox for an extraction that never ran.
 func finalizeDocumentWithoutApply(app core.App, document *core.Record, steps []string) error {
 	if document.GetString("duplicate_of") != "" {
 		document.Set("processing_status", models.DocStatusNeedsReview)
 		return app.Save(document)
 	}
 	if slices.Contains(steps, models.StepApplyMetadata) {
-		// Apply step sets status when it runs; if it was skipped (e.g. duplicate),
-		// leave whatever status was already set above / by earlier steps.
+		// Apply sets the status when it runs; if it was skipped, leave what
+		// earlier steps set.
 		if document.GetString("processing_status") == models.DocStatusProcessing {
 			document.Set("processing_status", models.DocStatusCompleted)
 			return app.Save(document)

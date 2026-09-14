@@ -18,11 +18,9 @@ func TestBindingEmpty(t *testing.T) {
 		"whitespace only":    {Binding{ProviderID: "  "}, true},
 		"provider":           {Binding{ProviderID: "p1"}, false},
 		"provider and model": {Binding{ProviderID: "p1", Model: "gpt-6-astra"}, false},
-		// Empty asks only whether a provider was named, which is what its
-		// callers -- the per-binding build guards in config.WithOverrides --
-		// need. A model with no provider reads as empty here and is refused by
-		// Resolve; config.Overrides.Empty is the one that must not use this
-		// answer, because it short-circuits before Resolve runs.
+		// Empty asks only whether a provider was named, which is what the
+		// per-binding build guards in config.WithOverrides need. A model with no
+		// provider reads as empty here and is refused by Resolve.
 		"model only": {Binding{Model: "gpt-6-astra"}, true},
 	}
 	for name, tc := range cases {
@@ -122,8 +120,7 @@ func saveProvider(t *testing.T, app core.App, sdk, alias, apiKey, baseURL string
 }
 
 // Resolve is the trust boundary: the provider id arrives from a browser, on
-// endpoints any signed-in user may call, and it decides which of the operator's
-// credentials a request spends.
+// endpoints any signed-in user may call.
 func TestResolve(t *testing.T) {
 	app := bootAppForBinding(t)
 
@@ -146,9 +143,8 @@ func TestResolve(t *testing.T) {
 			binding: Binding{ProviderID: openAI, Model: "gpt-6-astra"},
 			purpose: PurposeLLM,
 		},
-		// The model is not checked against the catalogue: Settings has always
-		// had a "Custom model id" field for the model a provider added last
-		// week, and a wrong name surfaces as a provider error on first use.
+		// The model is not checked against the catalogue: a wrong name surfaces
+		// as a provider error on first use.
 		"a model absent from any catalogue": {
 			binding: Binding{ProviderID: openAI, Model: "gpt-nonesuch-9"},
 			purpose: PurposeLLM,
@@ -164,8 +160,7 @@ func TestResolve(t *testing.T) {
 			wantErr: true,
 		},
 		// Configured, keyless, and still wrong for this binding: the SDK that
-		// embeds without chatting is the one a capability check has to catch,
-		// because a key check never would.
+		// embeds without chatting is the one a key check would never catch.
 		"a configured sidecar bound to chat": {
 			binding: Binding{ProviderID: sidecar, Model: "bge-m3"},
 			purpose: PurposeLLM,
@@ -176,9 +171,7 @@ func TestResolve(t *testing.T) {
 			purpose: PurposeEmbedding,
 		},
 		// A sidecar row saved with a blank address is still configured:
-		// FromRecord normalizes it to DefaultBaseURL, which is the compose
-		// service name. So there is no "unreachable sidecar" to refuse here --
-		// an address that answers nothing is a request error, not a binding one.
+		// FromRecord normalizes it to the compose service name.
 		"a sidecar left on its default address": {
 			binding: Binding{ProviderID: defaulted, Model: "rapidocr"},
 			purpose: PurposeOCR,
@@ -188,9 +181,8 @@ func TestResolve(t *testing.T) {
 			purpose: PurposeLLM,
 			wantErr: true,
 		},
-		// The other half-filled pair. An empty model reaches the provider as an
-		// empty model, and the configured one is no fallback: it belongs to a
-		// different provider, which need not serve it at all.
+		// An empty model reaches the provider as an empty model, and the
+		// configured one belongs to a different provider.
 		"a provider with no model": {
 			binding: Binding{ProviderID: openAI},
 			purpose: PurposeLLM,

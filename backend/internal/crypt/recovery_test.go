@@ -20,7 +20,6 @@ func TestNewRecoveryCodeShape(t *testing.T) {
 			t.Fatalf("group %q is %d chars, want %d", g, len(g), recoveryGroup)
 		}
 	}
-	// The excluded letters are the whole point of Crockford: none may appear.
 	for _, bad := range []string{"I", "L", "O", "U"} {
 		if strings.Contains(code, bad) {
 			t.Fatalf("code %q contains ambiguous character %s", code, bad)
@@ -52,7 +51,6 @@ func TestRecoveryKEKIsStableAcrossTranscriptionVariants(t *testing.T) {
 		t.Fatalf("RecoveryKEK: %v", err)
 	}
 
-	// Everything a person might plausibly type off a printed code.
 	variants := []string{
 		code,
 		strings.ToLower(code),
@@ -71,14 +69,12 @@ func TestRecoveryKEKIsStableAcrossTranscriptionVariants(t *testing.T) {
 	}
 }
 
-// A code read off paper with O for 0 or l for 1 must still unlock the account.
 func TestRecoveryKEKFoldsConfusableCharacters(t *testing.T) {
 	base := "0123-4567-89AB-CDEF-GHJK-MNPQ-RSTV-WXYZ"
 	want, err := RecoveryKEK(base)
 	if err != nil {
 		t.Fatalf("RecoveryKEK: %v", err)
 	}
-	// Leading "0123" retyped as "O123", and "1" as "l"/"I".
 	for _, v := range []string{
 		"O123-4567-89AB-CDEF-GHJK-MNPQ-RSTV-WXYZ",
 		"0l23-4567-89AB-CDEF-GHJK-MNPQ-RSTV-WXYZ",
@@ -132,9 +128,6 @@ func TestRecoveryKEKIsCodeSpecific(t *testing.T) {
 	}
 }
 
-// The end-to-end shape of the reset path: the DEK is wrapped under both a
-// password and a recovery code, and the recovery slot still opens it after the
-// password wrap has become undecryptable.
 func aadFor(slot, id string) string { return "wrap|" + slot + "|" + id }
 
 func TestRecoverySlotOpensTheSameDEK(t *testing.T) {
@@ -163,7 +156,7 @@ func TestRecoverySlotOpensTheSameDEK(t *testing.T) {
 		t.Fatalf("WrapKey: %v", err)
 	}
 
-	// After a reset the old password is gone, so its wrap can no longer be opened.
+	// After a reset the old password is gone, so its wrap cannot be opened.
 	newKEK, err := DeriveKEK("brand new", testKDF(t))
 	if err != nil {
 		t.Fatalf("DeriveKEK: %v", err)
@@ -172,8 +165,7 @@ func TestRecoverySlotOpensTheSameDEK(t *testing.T) {
 		t.Fatalf("post-reset password wrap opened: %v", err)
 	}
 
-	// The recovery slot is the way back, and it must yield the identical key so
-	// existing documents still decrypt.
+	// The recovery slot must yield the identical key or documents stop decrypting.
 	recovered, err := UnwrapKey(rcKEK, rcWrap, aadFor("rc", userID))
 	if err != nil {
 		t.Fatalf("recovery unwrap failed: %v", err)

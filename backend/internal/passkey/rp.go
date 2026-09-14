@@ -82,18 +82,15 @@ type Caller struct {
 // ResolveRelyingParty works out the relying-party ID and the acceptable origins.
 //
 // The env overrides win outright when set. Otherwise both are derived from the
-// request, which is what lets a self-hosted install work with no configuration at
-// all: the RP ID is the request host with any port stripped, and the origin list
-// carries both the http and https forms of host:port.
+// request, which is what lets a self-hosted install work with no configuration
+// at all: the RP ID is the request host with any port stripped, and the origin
+// list carries both the http and https forms of host:port.
 //
 // Listing both schemes is deliberate. Behind a TLS-terminating reverse proxy the
-// server sees plain HTTP and cannot tell what the browser used, and
-// X-Forwarded-Proto is client-controlled so trusting it would only move the
-// guess. Accepting either scheme costs nothing: the browser reports its true
-// origin in clientDataJSON, so the only entry that can ever match is the origin
-// the user actually loaded. The RP ID — which is what a credential is
-// permanently bound to, and what makes it unusable on any other domain — carries
-// no scheme at all, so it is unaffected either way.
+// server sees plain HTTP and X-Forwarded-Proto is client-controlled, so trusting
+// it would only move the guess. Accepting either costs nothing: the browser
+// reports its true origin in clientDataJSON, and the RP ID, which is what a
+// credential is permanently bound to, carries no scheme at all.
 func ResolveRelyingParty(caller Caller, displayName string) (RelyingParty, error) {
 	rp := RelyingParty{DisplayName: strings.TrimSpace(displayName)}
 	if rp.DisplayName == "" {
@@ -141,16 +138,14 @@ func ResolveRelyingParty(caller Caller, displayName string) (RelyingParty, error
 	rp.Origins = []string{"https://" + hostPort, "http://" + hostPort}
 
 	// The page and the API are not always the same origin. In development the SPA
-	// is served by Vite on :5173 while the API answers on :8090, so the origin
+	// is served by Vite on :5173 while the API answers on :8090, so an origin
 	// derived from this request's own Host would never match what the browser
 	// reports and every ceremony would fail verification.
 	//
-	// Accepting the Origin header closes that gap, but only when its host belongs
-	// to the relying party already resolved above. That constraint is what keeps
-	// it safe: the credential is bound to the RP ID, and the browser refuses to
-	// run a ceremony whose RP ID is not a registrable suffix of the page's own
-	// origin. So this can only ever admit an origin the browser would already
-	// have been willing to use with this RP ID.
+	// Accepting the Origin header is safe only because its host must belong to the
+	// relying party resolved above: the browser refuses to run a ceremony whose RP
+	// ID is not a registrable suffix of the page's own origin, so this can only
+	// admit an origin the browser would already have used with this RP ID.
 	if origin := sameRelyingPartyOrigin(caller.Origin, rp.ID); origin != "" {
 		rp.Origins = append(rp.Origins, origin)
 	}
@@ -202,13 +197,10 @@ func rpIDFromHost(host string) (string, error) {
 	// An IP address can never be a relying-party ID: the spec requires a
 	// registrable domain, and "localhost" is the only non-domain browsers exempt.
 	//
-	// A loopback literal gets its own error rather than being quietly rewritten
-	// to "localhost". Rewriting looks tempting — this app's default URL is
-	// http://127.0.0.1:8090, which *is* a secure context — but the RP ID has to
-	// be a registrable domain suffix of the origin the browser reports, and
-	// "localhost" is not a suffix of "127.0.0.1". The ceremony would fail in the
-	// browser with a bare SecurityError instead of telling anyone why. Naming the
-	// fix is more useful than guessing at it.
+	// A loopback literal gets its own error rather than being quietly rewritten to
+	// "localhost". The RP ID has to be a registrable domain suffix of the origin
+	// the browser reports, and "localhost" is not a suffix of "127.0.0.1", so the
+	// ceremony would fail with a bare SecurityError instead of telling anyone why.
 	if ip := net.ParseIP(host); ip != nil {
 		if ip.IsLoopback() {
 			return "", ErrLoopbackHost
@@ -232,19 +224,14 @@ func New(caller Caller, displayName string) (*webauthn.WebAuthn, error) {
 			ResidentKey:        protocol.ResidentKeyRequirementRequired,
 			RequireResidentKey: protocol.ResidentKeyRequired(),
 			// Required, not preferred, and this is a security property rather than
-			// a preference.
-			//
-			// go-webauthn only checks the assertion's user-verified flag when the
-			// session requirement is exactly "required"
-			// (shouldVerifyUser in webauthn/login.go). Under "preferred" a
-			// credential that verified nobody is accepted, so a PIN-less roaming
-			// key would mint a full session on possession and a touch alone. A
-			// passkey here replaces the password outright — it is the only factor —
-			// and both the UI and docs promise a fingerprint, face or device PIN.
+			// a preference. go-webauthn only checks the assertion's user-verified
+			// flag when the session requirement is exactly "required"
+			// (shouldVerifyUser in webauthn/login.go). Under "preferred" a PIN-less
+			// roaming key would mint a full session on possession and a touch
+			// alone, and a passkey here replaces the password outright.
 			//
 			// The cost is that an authenticator with no PIN or biometric set cannot
-			// be enrolled. That is the right trade for a sole factor, and the
-			// remedy is in the owner's hands: set a PIN on the key.
+			// be enrolled. The remedy is in the owner's hands: set a PIN on the key.
 			UserVerification: protocol.VerificationRequired,
 		},
 	})
@@ -256,14 +243,11 @@ func New(caller Caller, displayName string) (*webauthn.WebAuthn, error) {
 
 // RequestScheme reports the scheme the browser used.
 //
-// The same shape as ngxapi.requestBaseURL (backend/internal/ngxapi/response.go),
-// including its two guards: only the first hop's value, and only when it is a
-// real scheme. The header is client-controlled, which is survivable here — the
-// browser reports its true origin in clientDataJSON, so the worst a forged value
-// can do is get a request past the secure-context gate and then fail origin
-// verification. It is not reused from there because it is unexported in a
-// different package, and promoting it for one more caller is more churn than the
-// five lines are worth.
+// The same shape as ngxapi.requestBaseURL, including its two guards: only the
+// first hop's value, and only when it is a real scheme. The header is
+// client-controlled, which is survivable here, because the browser reports its
+// true origin in clientDataJSON and the worst a forged value can do is get a
+// request past the secure-context gate and then fail origin verification.
 func RequestScheme(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil {
@@ -277,7 +261,6 @@ func RequestScheme(r *http.Request) string {
 	return scheme
 }
 
-// CallerOf reads the relevant parts of an incoming request.
 func CallerOf(r *http.Request) Caller {
 	return Caller{
 		Scheme: RequestScheme(r),
@@ -286,7 +269,6 @@ func CallerOf(r *http.Request) Caller {
 	}
 }
 
-// NewForRequest is the convenience form used by the handlers.
 func NewForRequest(r *http.Request, displayName string) (*webauthn.WebAuthn, error) {
 	return New(CallerOf(r), displayName)
 }

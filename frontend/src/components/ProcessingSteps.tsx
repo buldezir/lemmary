@@ -22,11 +22,8 @@ function markerClass(run: StepRunRecord): string {
 }
 
 /**
- * The pipeline as the job actually ran it, one line per step.
- *
  * `now` is threaded in rather than read here so a running step's elapsed time
- * ticks with the caller's clock -- the page owning the one-second interval
- * decides when this re-renders.
+ * ticks with the caller's clock.
  */
 export function ProcessingSteps({
   job,
@@ -83,8 +80,8 @@ export function ProcessingSteps({
   )
 
   // Only when no step is carrying it: a failure outside any step leaves
-  // step_runs untouched and this is the only place its message can appear, but
-  // a row written before failJob stopped duplicating one would print it twice.
+  // step_runs untouched and this is the only place its message can appear,
+  // but an older row can carry the same message twice.
   const unattributedError = runs.some((run) => run.status === 'failed' && run.error)
     ? ''
     : job.error

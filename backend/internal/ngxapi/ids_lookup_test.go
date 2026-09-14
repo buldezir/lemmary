@@ -15,8 +15,7 @@ import (
 	"lemmary/backend/internal/ngxid"
 )
 
-// countDocumentQueries records every SELECT against the documents table so a
-// test can assert how many the lookup actually costs.
+// countDocumentQueries records every SELECT against the documents table.
 func countDocumentQueries(t *testing.T, app *pocketbase.PocketBase) func() int {
 	t.Helper()
 	return countTableQueries(t, app, "documents")
@@ -58,9 +57,8 @@ func countTableQueries(t *testing.T, app *pocketbase.PocketBase, table string) f
 	}
 }
 
-// TestThumbnailGridCostsOneQueryPerTile is the traffic that forced the stored
-// id: a page of thumbnails is one request per tile, each naming a *different*
-// id, and each one used to scan the whole archive to invert an FNV hash.
+// A page of thumbnails is one request per tile, each naming a different id, and
+// each one used to scan the whole archive to invert an FNV hash.
 func TestThumbnailGridCostsOneQueryPerTile(t *testing.T) {
 	f := newListFixture(t)
 
@@ -80,11 +78,7 @@ func TestThumbnailGridCostsOneQueryPerTile(t *testing.T) {
 	}
 }
 
-// TestReverseLookupUsesTheIndex is what the query count above cannot prove: a
-// count of one is a seek or a full scan, and only the plan says which. Losing
-// the index -- or writing a filter SQLite cannot match against a partial one --
-// would put the thumbnail grid straight back to scanning per tile.
-//
+// A query count of one is a seek or a full scan, and only the plan says which.
 // It explains the SQL the lookup actually issued rather than a hand-written
 // equivalent, because the filter goes through PocketBase's compiler and it is
 // that output the planner sees.
@@ -113,8 +107,7 @@ func TestReverseLookupUsesTheIndex(t *testing.T) {
 	}
 }
 
-// captureDocumentSelect returns the SELECT against documents that run issued,
-// with its bound parameters already inlined by the driver logger.
+// captureDocumentSelect returns the SELECT against documents that run issued.
 func captureDocumentSelect(t *testing.T, app *pocketbase.PocketBase, run func()) string {
 	t.Helper()
 	db, ok := app.ConcurrentDB().(*dbx.DB)
@@ -150,10 +143,8 @@ func captureDocumentSelect(t *testing.T, app *pocketbase.PocketBase, run func())
 	return ""
 }
 
-// TestDerivedIDStillResolves is the upgrade promise. The stored id is seeded
-// from the hash that used to be computed on the fly, so a paperless client
-// holding ids from before the column -- or a thumbnail cached under a URL
-// containing one -- keeps pointing at the same document.
+// The stored id is seeded from the hash that used to be computed on the fly, so
+// ids a client already holds keep pointing at the same document.
 func TestDerivedIDStillResolves(t *testing.T) {
 	f := newListFixture(t)
 
@@ -166,8 +157,7 @@ func TestDerivedIDStillResolves(t *testing.T) {
 	}
 }
 
-// TestDeletedDocumentStopsResolving: a deleted document must stop resolving, or
-// it would keep serving its file.
+// A deleted document must stop resolving, or it would keep serving its file.
 func TestDeletedDocumentStopsResolving(t *testing.T) {
 	f := newListFixture(t)
 	ngxID := toNgxID(f.docOne)
@@ -201,9 +191,8 @@ func TestFindRecordByNgxIDStaysWithinTheOwner(t *testing.T) {
 	}
 }
 
-// TestZeroIsNotAnID pins the one value the column can hold without a hook ever
-// having stamped it. Resolving it would hand a client a record for asking about
-// nothing.
+// 0 is what the column holds when no hook stamped it; resolving it would hand a
+// client a record for asking about nothing.
 func TestZeroIsNotAnID(t *testing.T) {
 	f := newListFixture(t)
 	if _, err := findRecordByNgxID(f.app, "documents", 0, f.userID); err == nil {
@@ -211,8 +200,7 @@ func TestZeroIsNotAnID(t *testing.T) {
 	}
 }
 
-// TestEveryAddressableCollectionIsStamped: a record with no client id is
-// invisible to every paperless client, so the hook has to cover all four.
+// A record with no client id is invisible to every paperless client.
 func TestEveryAddressableCollectionIsStamped(t *testing.T) {
 	app := bootSchemaTestApp(t)
 	userID := createUser(t, app, "stamped@example.com")
@@ -239,10 +227,9 @@ func TestEveryAddressableCollectionIsStamped(t *testing.T) {
 	}
 }
 
-// TestCollidingHashTakesTheNextFreeID is the bug the column fixes rather than
-// inherits. Two of an owner's records hashing alike used to leave the second
-// one permanently unreachable through the paperless API -- and at 31 bits an
-// owner with 50k documents has roughly even odds of holding such a pair.
+// Two of an owner's records hashing alike used to leave the second permanently
+// unreachable, and at 31 bits an owner with 50k documents has roughly even odds
+// of holding such a pair.
 func TestCollidingHashTakesTheNextFreeID(t *testing.T) {
 	app := bootSchemaTestApp(t)
 	userID := createUser(t, app, "collide@example.com")
@@ -283,9 +270,8 @@ func TestCollidingHashTakesTheNextFreeID(t *testing.T) {
 	}
 }
 
-// TestOwnersDoNotCollideWithEachOther: uniqueness is per owner, matching how
-// every lookup is scoped. Two owners sharing an id was always reachable and
-// must stay so, or an upgrade would renumber records for no reason.
+// Uniqueness is per owner, matching how every lookup is scoped: two owners
+// sharing an id was always reachable and must stay so.
 func TestOwnersDoNotCollideWithEachOther(t *testing.T) {
 	app := bootSchemaTestApp(t)
 	mine := createUser(t, app, "mine@example.com")
@@ -320,9 +306,8 @@ func mustFind(t *testing.T, app core.App, collection, pbID string) *core.Record 
 	return record
 }
 
-// TestIDSurvivesAnUpdate: the id is permanent once issued -- swift-paperless
-// keys its thumbnail cache on a URL containing it -- so an update carrying a
-// different value, or none, must not move it.
+// The id is permanent once issued, since swift-paperless keys its thumbnail
+// cache on a URL containing it.
 func TestIDSurvivesAnUpdate(t *testing.T) {
 	f := newListFixture(t)
 

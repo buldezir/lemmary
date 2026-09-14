@@ -63,8 +63,6 @@ describe('defaultReprocessSteps', () => {
 })
 
 
-// The worker writes `2006-01-02 15:04:05.000Z` -- a space where ISO 8601 wants
-// a T, which Date parses at the engine's discretion.
 describe('parseStepTimestamp', () => {
   it('reads the space-separated spelling the worker writes', () => {
     expect(parseStepTimestamp('2026-09-04 14:16:45.351Z')).toBe(Date.UTC(2026, 8, 4, 14, 16, 45, 351))
@@ -89,9 +87,8 @@ describe('stepDurationMs', () => {
     expect(ms).toBe(4200)
   })
 
-  // The trap this guards: the pipeline decides to skip before it books an
-  // attempt, so a skipped run has finished_at and no started_at. Subtracting
-  // would print 56 years.
+  // A skipped run has finished_at and no started_at, and subtracting would
+  // print 56 years.
   it('reports nothing for a skipped step, which finishes without starting', () => {
     expect(stepDurationMs(run({ status: 'skipped', finished_at: '2026-09-04 14:16:49.200Z' }))).toBeNull()
   })
@@ -105,14 +102,11 @@ describe('stepDurationMs', () => {
     expect(stepDurationMs(run({ status: 'running', started_at: '2026-09-04 14:16:45.000Z' }), started + 3000)).toBe(3000)
   })
 
-  // started_at is the server's clock and `now` is the viewer's; a viewer a few
-  // seconds behind should read 0s, never a negative duration.
   it('clamps at zero when the viewer clock is behind the server', () => {
     const started = Date.UTC(2026, 8, 4, 14, 16, 45, 0)
     expect(stepDurationMs(run({ status: 'running', started_at: '2026-09-04 14:16:45.000Z' }), started - 9000)).toBe(0)
   })
 
-  // A step that died without writing finished_at must not read as still running.
   it('reports nothing for a non-running step with no finish', () => {
     expect(stepDurationMs(run({ status: 'failed', started_at: '2026-09-04 14:16:45.000Z' }))).toBeNull()
   })
@@ -163,10 +157,9 @@ describe('formatDuration', () => {
 })
 
 
-// The bug: the document page stopped polling on the document's own status, and
-// apply_metadata marks the document completed *before* embed runs. The panel
-// froze mid-pipeline with embed reading 'running', and its duration counted up
-// for ever because nothing was left to fetch the finish.
+// The bug: polling on the document's own status stopped at apply_metadata,
+// which completes the document before embed runs, freezing the panel with
+// embed reading 'running' for ever.
 describe('jobStillRunning', () => {
   const job = (over: Partial<ProcessingJobRecord>): ProcessingJobRecord => ({
     id: 'j1', document: 'd1', status: 'completed', steps: [],
@@ -211,9 +204,8 @@ describe('summarizeJob', () => {
     expect(summary).toEqual({ tone: 'running', label: 'OCR — 12.0s' })
   })
 
-  // The window handleStepFailure opens: the run is already marked failed, but
-  // the job has been re-pended for another go. Reading that as "failed" would
-  // show an error for work that is still being attempted.
+  // The window handleStepFailure opens: the run is marked failed but the job
+  // has been re-pended, and work still being attempted is not a failure.
   it('reads a failed step on a re-pended job as a retry, not a failure', () => {
     expect(
       summarizeJob(
@@ -252,9 +244,8 @@ describe('summarizeJob', () => {
     ).toEqual({ tone: 'warning', label: 'Processing cancelled', detail: 'Stopped from Activity.' })
   })
 
-  // failJob used to write job.error for a step failure too, and the summary
-  // preferred it -- so every real failure read "Processing failed" instead of
-  // naming the step. Old rows still carry both; the step wins.
+  // Rows can carry both; the step wins, or the summary says "Processing
+  // failed" instead of naming what broke.
   it('names the step even when the job also carries an error', () => {
     expect(
       summarizeJob(
@@ -283,8 +274,8 @@ describe('summarizeJob', () => {
     ).toEqual({ tone: 'error', label: 'OCR failed', detail: 'worker timed out' })
   })
 
-  // The class of failure that leaves step_runs empty: an unparseable step list,
-  // a document that would not load. Without job.error there is nothing to say.
+  // An unparseable step list or a document that would not load leaves
+  // step_runs empty, and job.error is all there is to say.
   it('falls back to the job-level error when no step recorded one', () => {
     expect(
       summarizeJob(job({ status: 'failed', finished_at: at(-1000), error: 'job has no steps' }), now),
@@ -304,8 +295,8 @@ describe('summarizeJob', () => {
     expect(summary?.label).toBe('Not started yet')
   })
 
-  // The silent one: apply_metadata already wrote "completed" onto the document,
-  // and only the soft-failed run says the search vectors are missing.
+  // The document already reads "completed"; only the soft-failed run says the
+  // search vectors are missing.
   it('warns about a soft failure on a job that otherwise completed', () => {
     expect(
       summarizeJob(

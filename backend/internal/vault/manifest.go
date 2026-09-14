@@ -23,18 +23,14 @@ const (
 	currentName     = "CURRENT"
 	manifestPrefix  = "manifest."
 	manifestSuffix  = ".enc"
-	// keepGenerations bounds how far back a rollback can reach. Three is enough
-	// to survive "the newest manifest is unreadable" twice over without letting
-	// dead blobs accumulate indefinitely.
+	// keepGenerations bounds how far back a rollback can reach. Three survives "the
+	// newest manifest is unreadable" twice over without letting dead blobs pile up.
 	keepGenerations = 3
 )
 
-// Entry is one file in the working directory.
-//
-// Size and MTime are not integrity metadata — the blob's AEAD tag is that. They
-// exist so a flush can skip re-hashing a file that has not changed, which is
-// what keeps a steady-state flush proportional to new data rather than to the
-// whole archive.
+// Entry.Size and MTime are not integrity metadata, the AEAD tag is. They let a
+// flush skip re-hashing an unchanged file, which keeps a steady-state flush
+// proportional to new data rather than to the whole archive.
 type Entry struct {
 	Path  string `json:"p"`
 	Size  int64  `json:"s"`
@@ -51,7 +47,6 @@ type Manifest struct {
 	Entries []Entry `json:"e"`
 }
 
-// blobID parses an entry's blob address.
 func (e Entry) blobID() (StreamID, error) {
 	raw, err := hex.DecodeString(e.Blob)
 	if err != nil || len(raw) != len(StreamID{}) {
@@ -62,7 +57,6 @@ func (e Entry) blobID() (StreamID, error) {
 	return id, nil
 }
 
-// TotalSize sums the plaintext size of every entry.
 func (m *Manifest) TotalSize() int64 {
 	var n int64
 	for _, e := range m.Entries {
@@ -83,9 +77,8 @@ func (m *Manifest) index() map[string]Entry {
 	return idx
 }
 
-// hasDatabases reports whether a generation carries the application databases.
-//
-// A nil manifest is the never-flushed vault, which correctly has none.
+// hasDatabases is false for a nil manifest, the never-flushed vault, which
+// correctly carries no databases.
 func (m *Manifest) hasDatabases() bool {
 	if m == nil {
 		return false
@@ -115,7 +108,6 @@ func manifestPath(dir string, gen uint64) string {
 	return filepath.Join(dir, fmt.Sprintf("%s%06d%s", manifestPrefix, gen, manifestSuffix))
 }
 
-// writeManifest seals a manifest and renames it into place.
 func writeManifest(dir string, m *Manifest, key crypt.Key) error {
 	body, err := json.Marshal(m)
 	if err != nil {
@@ -127,7 +119,6 @@ func writeManifest(dir string, m *Manifest, key crypt.Key) error {
 	})
 }
 
-// readManifest opens the manifest for a generation.
 func readManifest(dir string, gen uint64, key crypt.Key) (*Manifest, error) {
 	f, err := os.Open(manifestPath(dir, gen))
 	if err != nil {
@@ -147,9 +138,8 @@ func readManifest(dir string, gen uint64, key crypt.Key) (*Manifest, error) {
 		return nil, fmt.Errorf("vault: manifest version %d is not supported", m.Version)
 	}
 	if m.Gen != gen {
-		// The sealed generation and the filename disagree, which means someone
-		// renamed a manifest. The AAD makes this unreachable in practice; the
-		// check is here so a future format change cannot make it reachable.
+		// A renamed manifest. The AAD makes this unreachable in practice; the check is
+		// here so a future format change cannot make it reachable.
 		return nil, fmt.Errorf("%w: manifest %d claims generation %d", ErrCorrupt, gen, m.Gen)
 	}
 	return &m, nil
@@ -178,12 +168,10 @@ func listGenerations(dir string) ([]uint64, error) {
 	return gens, nil
 }
 
-// currentMAC authenticates the CURRENT pointer.
-//
-// CURRENT is only a pointer — the manifest it names is itself authenticated and
-// carries its own generation — so this guards against accidental corruption
-// rather than against an attacker, who could simply delete newer manifests. True
-// rollback protection is not achievable against someone who controls the volume.
+// currentMAC guards CURRENT against accidental corruption rather than an
+// attacker, who could simply delete newer manifests: the manifest it names is
+// itself authenticated and carries its own generation. True rollback protection
+// is not achievable against someone who controls the volume.
 func currentMAC(key crypt.Key, gen uint64) string {
 	mac := hmac.New(sha256.New, key[:])
 	fmt.Fprintf(mac, "lemmary/vault/current/v1|%d", gen)
@@ -195,8 +183,7 @@ func writeCurrent(dir string, gen uint64, key crypt.Key) error {
 	return writeFileAtomic(filepath.Join(dir, currentName), []byte(body), 0o600)
 }
 
-// readCurrent returns the generation CURRENT names, or false when it is absent
-// or unauthentic.
+// readCurrent returns false when CURRENT is absent or unauthentic.
 func readCurrent(dir string, key crypt.Key) (uint64, bool) {
 	b, err := os.ReadFile(filepath.Join(dir, currentName))
 	if err != nil {
@@ -226,12 +213,9 @@ func readCurrent(dir string, key crypt.Key) (uint64, bool) {
 	return gen, true
 }
 
-// loadLatest returns the newest manifest that actually opens.
-//
-// It starts from CURRENT and walks backwards through retained generations, so a
-// single unreadable manifest costs one flush interval rather than the archive.
-// Each fallback is loud: silently serving stale data is the worst possible
-// outcome here.
+// loadLatest starts from CURRENT and walks back through retained generations, so
+// one unreadable manifest costs a flush interval rather than the archive. Each
+// fallback is loud: silently serving stale data is the worst outcome here.
 func loadLatest(dir string, key crypt.Key, warn func(string, ...any)) (*Manifest, error) {
 	gens, err := listGenerations(dir)
 	if err != nil {
@@ -271,14 +255,13 @@ func loadLatest(dir string, key crypt.Key, warn func(string, ...any)) (*Manifest
 	return nil, fmt.Errorf("vault: no readable manifest: %w", firstErr)
 }
 
-// liveBlobs collects the blob ids referenced by every retained generation.
 func liveBlobs(dir string, key crypt.Key, keep []uint64) (map[StreamID]bool, error) {
 	live := map[StreamID]bool{}
 	for _, gen := range keep {
 		m, err := readManifest(dir, gen, key)
 		if err != nil {
-			// An unreadable retained generation must not cause its blobs to be
-			// collected: they may be the only copy the fallback path can use.
+			// An unreadable retained generation must not have its blobs collected: they may
+			// be the only copy the fallback path can use.
 			return nil, fmt.Errorf("vault: cannot compute the live set, generation %d is unreadable: %w", gen, err)
 		}
 		for _, e := range m.Entries {

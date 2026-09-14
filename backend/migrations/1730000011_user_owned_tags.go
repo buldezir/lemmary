@@ -9,8 +9,7 @@ import (
 
 // Tags were the last globally shared taxonomy: every user saw every tag, and two
 // users could not both own a tag with the same name. This brings them in line
-// with document_types/correspondents (see 1730000008) so the whole taxonomy is
-// per-user.
+// with document_types/correspondents (see 1730000008).
 //
 // Existing tags are assigned to the user whose documents reference them. A tag
 // referenced by several users is cloned per extra owner and those users'

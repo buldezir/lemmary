@@ -15,18 +15,13 @@ import (
 )
 
 // ClientID is the Codex client OpenAI's own CLI and IDE extensions present.
-//
-// There is no second option. The device-code endpoints below only issue tokens
-// for OpenAI's registered clients, and the Codex backend only answers requests
-// whose originator header names one -- see codexOriginator in transport.go.
-// Using them means presenting ourselves as that client, which is the whole
-// reason this SDK ships behind a flag and never runs on a managed instance.
+// There is no second option: the device-code endpoints only issue tokens for
+// OpenAI's registered clients, and the Codex backend only answers requests
+// whose originator header names one (see codexOriginator in transport.go).
 const ClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
 
-// Endpoints are OpenAI's device-code and token URLs.
-//
-// A struct rather than constants so tests can point the whole flow at an
-// httptest server. Production callers take DefaultEndpoints and never touch it.
+// Endpoints are OpenAI's device-code and token URLs. A struct rather than
+// constants so tests can point the whole flow at an httptest server.
 type Endpoints struct {
 	UserCode        string
 	DeviceToken     string
@@ -50,24 +45,15 @@ func DefaultEndpoints() Endpoints {
 	}
 }
 
-// authEndpoints is what the sign-in handlers reach. DefaultEndpoints in every
-// deployment; the end-to-end suite points it at a stub auth host, which is the
-// only way to drive the device flow without OpenAI's own and a human in a
-// second browser tab.
-//
-// A package variable, and deliberately not an environment variable or a
-// parameter threaded through Register. An env variable would be a shippable
-// setting that redirects an OAuth flow to an arbitrary host, which is a
-// configuration mistake worth making impossible; a parameter would carry a
-// test seam through appwire and main for the sake of one suite. This is
-// reachable only from Go code linked into the same binary.
+// authEndpoints is what the sign-in handlers reach, repointed only from Go
+// code linked into the same binary: an environment variable here would be a
+// shippable setting that redirects an OAuth flow to an arbitrary host.
 var authEndpoints = DefaultEndpoints()
 
-// AuthEndpoints returns the endpoints the sign-in handlers use.
 func AuthEndpoints() Endpoints { return authEndpoints }
 
 // SetAuthEndpointsForTesting repoints the sign-in flow and returns a function
-// that puts it back. Never called outside a test binary.
+// that puts it back.
 func SetAuthEndpointsForTesting(e Endpoints) func() {
 	previous := authEndpoints
 	authEndpoints = e
@@ -84,8 +70,7 @@ var (
 	ErrAuthExpired = errors.New("chatgpt: device code expired")
 
 	// ErrDeviceAuthDisabled is the account not permitting device-code sign-in.
-	// It is off by default for everyone, so this is the first thing most
-	// operators will hit; the message names the setting.
+	// Off by default for everyone, so most operators hit this first.
 	ErrDeviceAuthDisabled = errors.New("chatgpt: device code sign-in is not enabled for this account -- turn it on under ChatGPT Settings -> Security, or ask a workspace admin to grant it")
 
 	// ErrNotSignedIn is a provider row with no token in it.
@@ -116,12 +101,10 @@ func (c *Client) WithEndpoints(e Endpoints) *Client {
 	return &Client{http: c.http, endpoints: e}
 }
 
-// Pending is a device-code login waiting on the operator's browser.
-//
-// It never leaves the server: DeviceAuthID is the half that would let anyone
-// holding it complete the sign-in, so the API hands the browser only the user
-// code and the URL and keeps this in memory. See the pending registry in
-// appapi.
+// Pending is a device-code login waiting on the operator's browser. It never
+// leaves the server: DeviceAuthID is the half that would let anyone holding it
+// complete the sign-in, so the API hands the browser only the user code and the
+// URL.
 type Pending struct {
 	DeviceAuthID    string
 	UserCode        string
@@ -132,11 +115,9 @@ type Pending struct {
 
 func (p *Pending) Expired() bool { return time.Now().After(p.ExpiresAt) }
 
-// flexInt is a whole number that the issuer sometimes quotes as a string.
-//
-// Both spellings show up in the device-code responses -- "interval": 5 and
-// "interval": "5" -- and a plain int rejects the second, which failed the
-// whole sign-in over a field we only use as a hint.
+// flexInt is a whole number the issuer sometimes quotes as a string. Both
+// spellings show up in the device-code responses, and a plain int rejects the
+// second, failing a sign-in over a field we only use as a hint.
 type flexInt int
 
 func (f *flexInt) UnmarshalJSON(b []byte) error {
@@ -158,7 +139,6 @@ func (f *flexInt) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// StartDeviceLogin asks for a user code.
 func (c *Client) StartDeviceLogin(ctx context.Context) (*Pending, error) {
 	var out struct {
 		DeviceAuthID string `json:"device_auth_id"`
@@ -171,7 +151,7 @@ func (c *Client) StartDeviceLogin(ctx context.Context) (*Pending, error) {
 	body := map[string]string{"client_id": ClientID}
 	if err := c.postJSON(ctx, c.endpoints.UserCode, body, &out); err != nil {
 		// Asking for a code at all is what the account setting gates, so a
-		// refusal here is that setting rather than anything about this request.
+		// refusal here is that setting, not this request.
 		if status := statusOf(err); status == http.StatusForbidden || status == http.StatusNotFound {
 			return nil, ErrDeviceAuthDisabled
 		}
@@ -200,11 +180,9 @@ func (c *Client) StartDeviceLogin(ctx context.Context) (*Pending, error) {
 }
 
 // PollDeviceLogin checks once whether the operator has approved the code, and
-// exchanges the authorization code for a token pair if they have.
-//
-// One attempt per call, with ErrAuthPending for "not yet": the caller owns the
-// interval, which lets the browser drive it through the API instead of tying up
-// a request for the full fifteen minutes.
+// exchanges the authorization code for a token pair if they have. One attempt
+// per call, with ErrAuthPending for "not yet", so the caller owns the interval
+// instead of a request being tied up for the full fifteen minutes.
 func (c *Client) PollDeviceLogin(ctx context.Context, p *Pending) (Token, error) {
 	if p == nil {
 		return Token{}, ErrAuthExpired
@@ -307,11 +285,10 @@ func newToken(out tokenResponse, keepRefresh string) (Token, error) {
 	return tok, nil
 }
 
-// expiryOf reads the access token's own exp claim, and falls back to expires_in
-// for issuers that send one. The refresh grant returns neither an expires_in
-// nor anything else about lifetime, so the claim is the only honest answer
-// there; an hour is the last resort, because a zero ExpiresAt reads as "never
-// refresh" and would strand the account on a dead token.
+// expiryOf reads the access token's own exp claim, and falls back to
+// expires_in for issuers that send one. An hour is the last resort: a zero
+// ExpiresAt reads as "never refresh" and would strand the account on a dead
+// token.
 func expiryOf(accessToken string, expiresIn time.Duration) time.Time {
 	if exp, ok := jwtExpiry(accessToken); ok {
 		return exp
@@ -368,12 +345,9 @@ func (c *Client) post(ctx context.Context, endpoint, contentType string, payload
 	return nil
 }
 
-// authError turns an auth-host failure into something an admin can act on.
-//
-// The two that matter are told apart by the body rather than the status: OpenAI
-// returns 400 for both "still waiting" and "your account may not do this", and
-// showing the second as a generic 400 would leave the operator staring at a
-// code that will never work.
+// authError turns an auth-host failure into something an admin can act on. The
+// two that matter are told apart by the body rather than the status: OpenAI
+// returns 400 for both "still waiting" and "your account may not do this".
 func authError(status int, body []byte) error {
 	return &httpError{status: status, err: authReason(status, body)}
 }
@@ -389,7 +363,6 @@ type httpError struct {
 func (e *httpError) Error() string { return e.err.Error() }
 func (e *httpError) Unwrap() error { return e.err }
 
-// statusOf is the HTTP status behind err, or 0 if it did not come from one.
 func statusOf(err error) int {
 	var he *httpError
 	if errors.As(err, &he) {

@@ -1,19 +1,12 @@
 // Package ngxid owns the integer ids Lemmary shows paperless-ngx clients.
 //
-// PocketBase ids are 15-character strings; the paperless-ngx REST API is
+// PocketBase ids are 15-character strings and the paperless-ngx REST API is
 // specified in terms of integers, so every document, tag, correspondent and
-// document type needs a second, numeric identity. It used to be derived on the
-// spot -- an FNV-32a hash of the PocketBase id -- which made the forward
-// direction free and the reverse direction impossible: inverting the hash meant
-// hashing every candidate row. A thumbnail grid is one request per tile, each
-// naming a different id, so a screen of twenty-five previews cost twenty-five
-// scans of the archive.
-//
-// The id is stored instead. It is still seeded from the hash, so the ids clients
-// already hold keep pointing at the same records across the upgrade, but it is a
-// column now: reverse lookup is an index seek, and a hash collision no longer
-// makes a record permanently unreachable -- the second record through takes the
-// next free value.
+// document type carries a second, numeric identity in a column. It is seeded
+// from an FNV-32a hash of the PocketBase id, so ids clients already hold keep
+// pointing at the same records, but storing it makes the reverse lookup an
+// index seek rather than a scan per thumbnail, and lets a colliding record take
+// the next free value instead of becoming permanently unreachable.
 package ngxid
 
 import (
@@ -25,21 +18,17 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// Field is the column every collection in Collections carries.
 const Field = "ngx_id"
 
 // Max is the largest id handed out. paperless-ngx ids are Django AutoFields,
 // which clients decode as signed 32-bit, so the top bit stays clear.
 const Max = 0x7fffffff
 
-// Collection is one collection whose records a paperless-ngx client addresses
-// by integer id.
 type Collection struct {
 	Name string
 	// Owner is the field the id is unique within, empty when the collection has
-	// no owner column of its own. Scoping uniqueness the same way the API
-	// scopes lookups is what let the upgrade renumber nothing: a collision
-	// between two owners' hashes was never reachable in the first place.
+	// no owner column of its own. Scoping uniqueness the way the API scopes
+	// lookups is what let the upgrade renumber nothing.
 	Owner string
 }
 
@@ -66,8 +55,7 @@ func Names() []string {
 	return names
 }
 
-// ownerFieldOf is the Owner of the named collection, and false when the
-// collection carries no client-facing id at all.
+// ownerFieldOf is false when the collection carries no client-facing id at all.
 func ownerFieldOf(name string) (string, bool) {
 	for _, c := range Collections {
 		if c.Name == name {
@@ -77,17 +65,14 @@ func ownerFieldOf(name string) (string, bool) {
 	return "", false
 }
 
-// maxProbes bounds the walk for a free id. Reaching it means an owner holds a
-// run of that many consecutive taken ids, which cannot happen by hashing -- so
-// it is a bug or a corrupted table, and failing the write says so instead of
-// spinning.
+// maxProbes bounds the walk for a free id. Reaching it means a run of that many
+// consecutive taken ids, which cannot happen by hashing, so it is a bug or a
+// corrupted table and the write fails instead of spinning.
 const maxProbes = 1000
 
-// Hash is the id a record would have had before the column existed.
-//
-// It stays the seed rather than a bare sequence so that a client which cached
-// ids -- swift-paperless keys its thumbnail cache on the URL, which carries the
-// document id -- keeps its cache warm across the upgrade.
+// Hash is the id a record would have had before the column existed. It stays
+// the seed so a client that cached ids (swift-paperless keys its thumbnail cache
+// on a URL carrying one) keeps its cache warm across the upgrade.
 func Hash(pbID string) int {
 	if pbID == "" {
 		return 0
@@ -124,15 +109,10 @@ func Free(start int, taken func(int) bool) int {
 
 // Register stamps Field on every new record in Collections.
 //
-// One hook is all of it, for the same reason limits.Register needs only two:
-// every way a document or a tag comes into being ends in app.Save -- the SPA's
-// collection API, the paperless-ngx post_document endpoint, a PDF split, an
-// Amazon-orders import, a remote paperless pull, the superuser CLI and the
-// PocketBase admin UI all pass through here.
-//
-// PocketBase's own OnRecordCreate handler binds at priority -99 and generates
-// the record id inside it, so by the time this runs record.Id is set and there
-// is something to hash.
+// One hook covers every way a record comes into being, because they all end in
+// app.Save. PocketBase's own OnRecordCreate handler binds at priority -99 and
+// generates the record id inside it, so by the time this runs record.Id is set
+// and there is something to hash.
 func Register(app core.App) {
 	app.OnRecordCreate(Names()...).BindFunc(func(e *core.RecordEvent) error {
 		if err := Assign(e.App, e.Record); err != nil {
@@ -141,13 +121,11 @@ func Register(app core.App) {
 		return e.Next()
 	})
 
-	// An id is permanent once issued: clients cache it, and swift-paperless
-	// keys its thumbnail cache on a URL containing it. Marking the field Hidden
-	// stops a regular account writing it, but only a regular account --
-	// PocketBase's GrantSuperuserAccess is documented as allowing "changing all
-	// system record fields, including those marked as Hidden", so without this
-	// an admin PATCH could repoint a client's cached id at a different record,
-	// or clear it and make the record invisible to every paperless client.
+	// An id is permanent once issued: clients cache it, and swift-paperless keys
+	// its thumbnail cache on a URL containing it. Hidden stops a regular account
+	// writing the field, but GrantSuperuserAccess is documented as allowing
+	// writes to Hidden fields, so without this an admin PATCH could repoint a
+	// cached id at a different record or clear it.
 	//
 	// An update is also the second chance at an id: a row still holding 0 is
 	// unreachable through the paperless API, so it is stamped here.
@@ -276,7 +254,6 @@ func Assign(app core.App, record *core.Record) error {
 	return nil
 }
 
-// freeIDFor walks from seed to the first id no record of this owner holds.
 func freeIDFor(app core.App, c Collection, ownerID string, seed int) (int, error) {
 	scope := dbx.HashExp{Field: nil}
 	if c.Owner != "" {

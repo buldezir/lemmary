@@ -67,8 +67,8 @@ func TestStepsForExplicitModesIgnoreOCRText(t *testing.T) {
 	}
 }
 
-// A reprocess is exactly when a document's vectors have to be rebuilt: its OCR
-// text or its metadata is about to change under them.
+// A reprocess is when vectors have to be rebuilt: the text or the metadata is
+// about to change under them.
 func TestStepsForRunsAndForcesEmbed(t *testing.T) {
 	t.Parallel()
 
@@ -98,7 +98,7 @@ func TestStepsForNeverForcesApplyMetadata(t *testing.T) {
 			if slices.Contains(forceSteps, models.StepApplyMetadata) {
 				t.Fatalf("mode=%s: apply_metadata must not be forced, got %v", mode, forceSteps)
 			}
-			// Everything else that runs is forced, or a skip check would let the
+			// Everything else is forced, or a skip check lets an
 			// already-completed step through untouched.
 			for _, step := range steps {
 				if step == models.StepApplyMetadata {
@@ -112,8 +112,8 @@ func TestStepsForNeverForcesApplyMetadata(t *testing.T) {
 	}
 }
 
-// StepsFor must not hand back the package-level step slices, or a caller
-// mutating its result would corrupt every later job.
+// Not the package-level slices: a caller mutating the result would corrupt
+// every later job.
 func TestStepsForCopiesPipelineConstants(t *testing.T) {
 	t.Parallel()
 

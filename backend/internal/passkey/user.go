@@ -52,7 +52,6 @@ func (a *Account) WebAuthnDisplayName() string {
 	return a.WebAuthnName()
 }
 
-// WebAuthnCredentials returns the credentials already enrolled for the account.
 func (a *Account) WebAuthnCredentials() []webauthn.Credential {
 	return a.credentials
 }

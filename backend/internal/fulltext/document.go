@@ -9,15 +9,12 @@ import (
 	"lemmary/backend/internal/models"
 )
 
-// Build converts a document record into the Bleve document to index.
 func Build(app core.App, rec *core.Record) map[string]any {
 	return buildWith(newNameCache(app), rec)
 }
 
-// nameCache memoizes named-entity lookups. A single document costs one query per
-// tag plus one each for its type and correspondent; over a full rebuild the same
-// handful of entities is looked up thousands of times, so the cache turns that
-// fan-out into one query per distinct entity.
+// nameCache memoizes named-entity lookups: a full rebuild otherwise looks the
+// same handful of entities up thousands of times.
 type nameCache struct {
 	app   core.App
 	names map[string]string

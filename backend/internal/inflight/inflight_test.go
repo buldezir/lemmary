@@ -16,8 +16,6 @@ func TestWaitReturnsImmediatelyWhenIdle(t *testing.T) {
 	}
 }
 
-// The point of the package: a caller about to seal an archive and delete the
-// plaintext must not proceed until the writers have finished.
 func TestWaitBlocksUntilWorkFinishes(t *testing.T) {
 	var tr Tracker
 	done := tr.Begin()
@@ -47,8 +45,6 @@ func TestWaitBlocksUntilWorkFinishes(t *testing.T) {
 	}
 }
 
-// A timeout has to be reported, not swallowed: the caller needs to know that
-// something may still be writing.
 func TestWaitReportsATimeout(t *testing.T) {
 	var tr Tracker
 	defer tr.Begin()()
@@ -60,8 +56,6 @@ func TestWaitReportsATimeout(t *testing.T) {
 	}
 }
 
-// done is deferred at call sites that also return errors, so calling it twice
-// must not corrupt the count.
 func TestDoneIsIdempotent(t *testing.T) {
 	var tr Tracker
 	done := tr.Begin()
@@ -72,8 +66,6 @@ func TestDoneIsIdempotent(t *testing.T) {
 	}
 }
 
-// Several waiters and many concurrent units, since every producer here is a
-// separate goroutine.
 func TestConcurrentWorkAndWaiters(t *testing.T) {
 	var tr Tracker
 	const n = 50

@@ -14,16 +14,12 @@ import (
 )
 
 // paperlessAPITokenTTL is how long POST /api/token/ JWTs last. Paperless-ngx
-// API tokens do not expire, and clients such as swift-paperless store the
-// returned string and never refresh it. PocketBase session tokens default to
-// five days and the web UI refreshes them; this endpoint must not use that
-// lifetime or those clients die until the server is re-added.
-//
-// JWTs always carry exp (PocketBase's parser validates it), so this is long
-// enough to set up a phone and leave it rather than forever. Changing the
-// account password still rotates tokenKey and invalidates these tokens. Do not
-// raise users.AuthToken.Duration to match: that would also stretch browser
-// sessions.
+// API tokens do not expire and clients such as swift-paperless store the
+// returned string and never refresh it, so this endpoint must not use
+// PocketBase's five-day session lifetime or those clients die until the server
+// is re-added. JWTs always carry exp, so this is long rather than forever.
+// Do not raise users.AuthToken.Duration to match: that would also stretch
+// browser sessions.
 const paperlessAPITokenTTL = 10 * 365 * 24 * time.Hour
 
 // dummyPasswordHash is compared when no user matches the identity, so response
@@ -108,10 +104,8 @@ func requireAuth(e *core.RequestEvent) error {
 				return nil
 			}
 			// Paperless-ngx TokenAuthentication says "Invalid token." when a
-			// token was sent and rejected. The previous catch-all ("credentials
-			// were not provided") made expired JWTs look like a missing header,
-			// which is what swift-paperless showed after the five-day session
-			// token ran out.
+			// token was sent and rejected; a catch-all makes an expired JWT look
+			// like a missing header.
 			return unauthorized(e, "Invalid token.")
 		}
 	}
@@ -135,12 +129,9 @@ func authenticateWithPassword(app core.App, identity, password string) (*core.Re
 	// The collection's auth policy, honoured here as well as on PocketBase's
 	// own auth routes.
 	//
-	// This flow is hand-rolled because the Paperless-compatible API predates
-	// PocketBase's and has to answer in its own shape, which means every policy
-	// PocketBase enforces has to be enforced again here or it is not enforced at
-	// all -- the records keep their hashes, and POST /api/token and Basic auth
-	// go on accepting them. Each check below is a door an operator believes they
-	// closed.
+	// This flow is hand-rolled because the Paperless-compatible API answers in
+	// its own shape, so every policy PocketBase enforces has to be enforced
+	// again here or it is not enforced at all.
 	if err := checkCollectionAuthPolicy(collection); err != nil {
 		return nil, err
 	}
@@ -172,21 +163,11 @@ func authenticateWithPassword(app core.App, identity, password string) (*core.Re
 // checkCollectionAuthPolicy refuses a password-only sign-in the collection's
 // settings say is not enough on its own.
 //
-// Password auth disabled is the plain case: it is how an operator moves an
-// install to OAuth or passkeys only.
-//
-// MFA is the one that matters more, because it fails in the more dangerous
-// direction. With it on, PocketBase's own routes answer a correct password with
-// an mfaId and demand a second factor from a different method; this endpoint
-// would hand out a full auth token for the password alone, so enabling MFA would
-// secure the web UI and leave every Paperless-compatible client -- and anything
-// that can reach /api/token -- as an unguarded way in. Under encryption at rest
-// the stakes are higher still: a password accepted here is also, through
-// enrollment, a key that unwraps the archive.
-//
-// Refusing is the honest answer rather than a silent downgrade. There is no
-// second factor to collect over this API, and it is better for a client to stop
-// working visibly than for the operator to believe MFA covers the instance.
+// MFA is the case that matters: PocketBase's own routes answer a correct
+// password with an mfaId and demand a second factor, so handing out a full auth
+// token for the password alone would leave /api/token as an unguarded way in.
+// There is no second factor to collect over this API, so refusing is the honest
+// answer rather than a silent downgrade.
 func checkCollectionAuthPolicy(collection *core.Collection) error {
 	if !collection.PasswordAuth.Enabled {
 		return errors.New("password authentication is disabled")

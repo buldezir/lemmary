@@ -1,17 +1,14 @@
 // Package staging keeps an in-memory registry of uploads that wait on disk for
 // the user to confirm what should happen to them.
 //
-// Both ingest flows that stage an upload (the Amazon archive import and the PDF
-// split) need the same lifecycle: hand out an id, let the confirmation step look
-// the upload up any number of times, hold it while a background job reads it,
-// then either consume it or put it back for another attempt — and sweep whatever
-// the user never came back for. The registry lives for the process lifetime
-// only, so a restart also has to clean up the paths an earlier process left
-// behind.
+// The lifecycle both ingest flows need: hand out an id, let the confirmation
+// step look the upload up any number of times, hold it while a background job
+// reads it, then consume it or offer it again, and sweep what the user never
+// came back for. The registry does not survive a restart, so a sweep also has
+// to clean up paths an earlier process left behind.
 //
-// Entries carry a caller-defined payload (the preview the confirmation step
-// renders) and a path that is either a file or a directory, which is why
-// removal and orphan detection are supplied by the caller.
+// A staged path is either a file or a directory, which is why removal and
+// orphan detection are supplied by the caller.
 package staging
 
 import (
@@ -26,55 +23,45 @@ import (
 	"time"
 )
 
-// Config describes how one staging area lives on disk.
 type Config struct {
-	// TTL is how long an upload waits for confirmation before it is swept.
+	// How long an upload waits for confirmation before it is swept.
 	TTL time.Duration
-	// Remove deletes one staged path: os.Remove for a staged file, os.RemoveAll
-	// for a staged directory.
+	// os.Remove for a staged file, os.RemoveAll for a staged directory.
 	Remove func(path string) error
-	// Manages reports whether an entry of the staging root belongs to this
-	// registry, so a sweep never deletes anything else that lives there.
+	// Whether an entry of the staging root belongs to this registry, so a
+	// sweep never deletes anything else that lives there.
 	Manages func(entry fs.DirEntry) bool
 }
 
-// Files is a Config.Manages for a registry that stages one file per upload.
 func Files(entry fs.DirEntry) bool { return !entry.IsDir() }
 
-// Directories is a Config.Manages for a registry that stages a directory per
-// upload.
 func Directories(entry fs.DirEntry) bool { return entry.IsDir() }
 
-// Item is one staged upload. Everything but the guarded fields is written once,
-// before the item is added, and read-only afterwards.
+// Everything but the guarded fields is written once, before the item is added.
 type Item[T any] struct {
 	ID          string
 	OwnerUserID string
-	// Path is the staged file or directory this upload owns.
-	Path      string
-	ExpiresAt time.Time
-	// Payload is what the confirmation step needs about this upload.
-	Payload T
+	Path        string
+	ExpiresAt   time.Time
+	Payload     T
 
-	// holds counts the background jobs currently reading Path, and consumed
-	// records that the upload is spent, so the last job to finish is the one
-	// that deletes it. Both are guarded by the registry mutex.
+	// holds counts the jobs currently reading Path and consumed records that
+	// the upload is spent, so the last job to finish deletes it. Both are
+	// guarded by the registry mutex.
 	holds    int
 	consumed bool
 }
 
-// Registry tracks staged uploads carrying payload type T.
 type Registry[T any] struct {
 	cfg Config
 
 	mu    sync.Mutex
 	items map[string]*Item[T]
-	// busy holds the base names of the paths a job is reading, so a long run is
-	// never swept out from under itself even after Claim took its entry out.
+	// Base names of the paths a job is reading, so a long run is never swept
+	// out from under itself even after Claim took its entry out.
 	busy map[string]struct{}
 }
 
-// New returns an empty registry.
 func New[T any](cfg Config) *Registry[T] {
 	return &Registry[T]{
 		cfg:   cfg,
@@ -83,21 +70,16 @@ func New[T any](cfg Config) *Registry[T] {
 	}
 }
 
-// Add registers a freshly staged upload.
 func (r *Registry[T]) Add(item *Item[T]) {
 	r.mu.Lock()
 	r.items[item.ID] = item
 	r.mu.Unlock()
 }
 
-// DiscardOwned spends every upload this owner still has waiting, and reports
-// how many. It is what keeps a staging area from growing without bound: the
-// confirmation step only ever works on the newest upload, so staging a fresh
-// one makes any earlier one dead weight, and without this an account could
-// keep uploading and fill the data volume before confirming anything.
-//
-// Paths go the moment they are idle, exactly as a discard would; an upload a
-// job is still reading is spent but survives until that job lets go.
+// DiscardOwned spends every upload this owner still has waiting. It keeps the
+// staging area bounded: the confirmation step only works on the newest upload,
+// so without this an account could fill the data volume before confirming
+// anything. An upload a job is reading is spent but survives until it lets go.
 func (r *Registry[T]) DiscardOwned(ownerUserID string) int {
 	r.mu.Lock()
 	ids := make([]string, 0, len(r.items))
@@ -118,17 +100,16 @@ func (r *Registry[T]) DiscardOwned(ownerUserID string) int {
 	return discarded
 }
 
-// Lookup returns a live upload without touching its lifecycle, so the preview
-// and thumbnail endpoints can be called repeatedly.
+// Does not touch the lifecycle, so the preview and thumbnail endpoints can be
+// called repeatedly.
 func (r *Registry[T]) Lookup(uploadID, ownerUserID string) (*Item[T], bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.liveLocked(uploadID, ownerUserID)
 }
 
-// Claim takes the upload out of the registry and marks it busy, so the same
-// upload cannot be consumed (or discarded) twice. The caller must finish with
-// Release, when the upload is spent, or Restore, to offer it again.
+// Takes the upload out of the registry and marks it busy, so it cannot be
+// consumed twice. The caller must finish with Release or Restore.
 func (r *Registry[T]) Claim(uploadID, ownerUserID string) (*Item[T], bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -141,13 +122,9 @@ func (r *Registry[T]) Claim(uploadID, ownerUserID string) (*Item[T], bool) {
 	return item, true
 }
 
-// Hold marks the upload busy while leaving it in the registry, for a job that
-// reads the staged path without consuming it — a split detection run proposes
-// boundaries and the user still has to confirm the split afterwards.
-//
-// It is what keeps a concurrent discard, a confirmed run or the TTL sweep from
-// deleting the path mid-read: those only take effect once the last holder is
-// done. The caller must finish with Unhold.
+// Marks the upload busy while leaving it in the registry, for a job that reads
+// the staged path without consuming it. It keeps a concurrent discard or the
+// TTL sweep from deleting the path mid-read. Finish with Unhold.
 func (r *Registry[T]) Hold(uploadID, ownerUserID string) (*Item[T], bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -163,31 +140,27 @@ func (r *Registry[T]) Hold(uploadID, ownerUserID string) (*Item[T], bool) {
 type settlement int
 
 const (
-	// settleConsume spends the upload: the path goes as soon as it is idle.
+	// The path goes as soon as it is idle.
 	settleConsume settlement = iota
-	// settleOffer puts a claimed upload back for another attempt.
+	// Puts a claimed upload back for another attempt.
 	settleOffer
-	// settleLeave ends a hold without deciding anything, because a hold never
-	// took the upload out of the registry to begin with.
+	// Decides nothing: a hold never took the upload out of the registry.
 	settleLeave
 )
 
-// Release ends a claim and consumes the upload: the staged path is deleted as
-// soon as no other job is still reading it.
+// Consumes the upload: the path is deleted once no other job is reading it.
 func (r *Registry[T]) Release(item *Item[T]) {
 	r.settle(item, settleConsume)
 }
 
-// Restore ends a claim and offers the upload again, so a run that changed
-// nothing can be retried without a re-upload. An upload something else already
-// consumed stays consumed.
+// Offers the upload again, so a run that changed nothing can be retried
+// without a re-upload. One something else consumed stays consumed.
 func (r *Registry[T]) Restore(item *Item[T]) {
 	r.settle(item, settleOffer)
 }
 
-// Unhold ends a hold taken with Hold. It never re-registers the upload: a
-// discard, a confirmed run or the sweep may have consumed it while the holder
-// was reading, and that decision stands.
+// Never re-registers the upload: something may have consumed it while the
+// holder was reading, and that decision stands.
 func (r *Registry[T]) Unhold(item *Item[T]) {
 	r.settle(item, settleLeave)
 }
@@ -216,7 +189,7 @@ func (r *Registry[T]) settle(item *Item[T], how settlement) {
 	}
 }
 
-// liveLocked resolves an unexpired upload of this owner. Callers must hold r.mu.
+// Callers must hold r.mu.
 func (r *Registry[T]) liveLocked(uploadID, ownerUserID string) (*Item[T], bool) {
 	item, ok := r.items[strings.TrimSpace(uploadID)]
 	if !ok || item.OwnerUserID != ownerUserID || time.Now().UTC().After(item.ExpiresAt) {
@@ -230,8 +203,7 @@ func (r *Registry[T]) holdLocked(item *Item[T]) {
 	r.busy[filepath.Base(item.Path)] = struct{}{}
 }
 
-// Sweep drops expired registry entries and any staged path left behind by an
-// earlier process (the registry does not survive a restart).
+// Drops expired entries and any staged path an earlier process left behind.
 func (r *Registry[T]) Sweep(root string, now time.Time) {
 	r.mu.Lock()
 	live := make(map[string]struct{}, len(r.items)+len(r.busy))
@@ -278,7 +250,6 @@ func (r *Registry[T]) Sweep(root string, now time.Time) {
 	}
 }
 
-// NewID returns an unguessable upload id.
 func NewID() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {

@@ -148,9 +148,8 @@ describe('openYear', () => {
     expect(openYear('2025-03', [])).toBeNull()
   })
 
-  // A hand-typed part-year range is no period at all, so the From date is what
-  // names the year -- otherwise the newest year opens and the months of the
-  // range just typed stay hidden.
+  // A part-year range is no period at all, so the From date names the year;
+  // otherwise the newest year opens and hides the months just typed.
   it('opens the year a part-year range starts in', () => {
     expect(openYear(null, years, '2024-02-10')).toBe('2024')
   })

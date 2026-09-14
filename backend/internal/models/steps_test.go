@@ -2,10 +2,6 @@ package models
 
 import "testing"
 
-// The header chunk embeds the document's title, type, correspondent, tags and
-// summary, and apply_metadata is what writes them. Embedding before that would
-// index the metadata the document arrived with rather than the metadata it
-// ended up with.
 func TestEmbedRunsAfterApplyMetadata(t *testing.T) {
 	t.Parallel()
 
@@ -36,8 +32,6 @@ func TestEmbedRunsAfterApplyMetadata(t *testing.T) {
 	}
 }
 
-// A preserving import writes no AI metadata, but the document still has text
-// and a title from the source system, so it is worth embedding.
 func TestImportPreserveStepsEmbed(t *testing.T) {
 	t.Parallel()
 

@@ -47,8 +47,8 @@ func TestCheckFilePages(t *testing.T) {
 	}
 }
 
-// The byte limit is checked before the page limit, so the message names the
-// reason a person can act on first.
+// The byte limit is checked first, so the message names the reason a person can
+// act on.
 func TestCheckFileReportsBytesBeforePages(t *testing.T) {
 	lim := Limits{FileBytes: Of(10), FilePages: Of(1)}
 	exceeded := AsExceeded(lim.CheckFile(100, 100))
@@ -77,8 +77,8 @@ func TestCheckRoomDocuments(t *testing.T) {
 	}
 }
 
-// A bulk path asks about many documents at once, and the message should say so
-// rather than claiming there is no room for "another".
+// A bulk path asks about many documents at once, so the message must not claim
+// there is no room for "another".
 func TestCheckRoomBatchMessage(t *testing.T) {
 	lim := Limits{Documents: Of(10)}
 	exceeded := AsExceeded(lim.CheckRoom(Usage{Documents: 5}, 20, 0, 0))
@@ -127,8 +127,8 @@ func TestCheckAdditionalUsers(t *testing.T) {
 	}
 }
 
-// Zero additional users is a real plan, and it needs a message that does not
-// read as a bug ("allows 0 accounts and already has that many").
+// Zero additional users is a real plan and needs a message that does not read
+// as a bug ("allows 0 accounts and already has that many").
 func TestCheckAdditionalUsersZeroAllowance(t *testing.T) {
 	lim := Limits{AdditionalUsers: Of(0)}
 	exceeded := AsExceeded(lim.CheckAdditionalUsers(1))
@@ -140,10 +140,9 @@ func TestCheckAdditionalUsersZeroAllowance(t *testing.T) {
 	}
 }
 
-// One account is free, and exactly one. The wizard's first admin must always
-// get in, and the second account must not -- including the flagged users record
-// a second superuser drags along, which is how an admin would otherwise mint
-// seats without bound.
+// Exactly one account is free. The second must not get in, including the
+// flagged users record a second superuser drags along, which is how an admin
+// would otherwise mint seats without bound.
 func TestAdditionalOfExemptsExactlyOneAccount(t *testing.T) {
 	for _, tc := range []struct{ total, want int64 }{
 		{0, 0}, {1, 0}, {2, 1}, {3, 2}, {10, 9},
@@ -177,10 +176,9 @@ func TestSeatLimitTraceOfEveryAccountCreate(t *testing.T) {
 	}
 }
 
-// The serialized form is what a client actually sees, and PocketBase rewrites
-// any data value that does not implement router.SafeErrorItem into a generic
-// "Invalid value." So assert on the JSON, not on RawData -- RawData passing
-// proves nothing about what reaches the browser.
+// PocketBase rewrites any data value that does not implement
+// router.SafeErrorItem into a generic "Invalid value.", so assert on the JSON:
+// RawData passing proves nothing about what reaches the browser.
 func TestExceededAPIErrorSurvivesSerialization(t *testing.T) {
 	exceeded := &ErrExceeded{Name: NameDocuments, Allowed: 3, Used: 3, Message: "This instance holds 2 of 2 documents, so there is no room for another."}
 	apiErr := exceeded.APIError()
@@ -274,9 +272,8 @@ func TestCheckOCRPages(t *testing.T) {
 	}
 }
 
-// TestCheckOCRPagesIsNotAPlanLimit pins the property the ceiling exists for:
-// it refuses on the zero Limits, which is what an install that sets no LIMIT_*
-// variable runs with.
+// The ceiling refuses on the zero Limits, which is what an install that sets no
+// LIMIT_* variable runs with.
 func TestCheckOCRPagesIsNotAPlanLimit(t *testing.T) {
 	var unlimited Limits
 	if err := unlimited.CheckFile(1<<40, MaxOCRPages+1); err != nil {
@@ -287,9 +284,8 @@ func TestCheckOCRPagesIsNotAPlanLimit(t *testing.T) {
 	}
 }
 
-// TestOCRPagesCeilingFitsTheColumn is the arithmetic the two constants are
-// chosen together for: even an implausibly dense page, over the whole ceiling,
-// stays inside what ocr_text can hold.
+// The arithmetic the two constants are chosen together for: even an implausibly
+// dense page, over the whole ceiling, stays inside what ocr_text can hold.
 func TestOCRPagesCeilingFitsTheColumn(t *testing.T) {
 	const generousCharsPerPage = 20000 // a full A4 of 6pt text is nearer 15000
 	if got := MaxOCRPages * generousCharsPerPage; got > int64(models.MaxOCRTextRunes) {

@@ -59,8 +59,7 @@ func createNamed(t *testing.T, app core.App, collection, name, userID string) st
 	return record.Id
 }
 
-// An unused tag is the normal state of a tag its owner just created on the Tags
-// page. Pruning it would delete the vocabulary out from under them.
+// An unused tag is the normal state of a tag its owner just created.
 func TestPruneOrphansKeepsUnusedTags(t *testing.T) {
 	app := bootTestApp(t)
 	user := createUser(t, app, "owner@example.com")
@@ -81,7 +80,6 @@ func TestPruneOrphansKeepsUnusedTags(t *testing.T) {
 		t.Fatalf("unused tag was deleted: %v", err)
 	}
 
-	// The other two are extraction debris when unreferenced, and still go.
 	if result.Correspondents != 1 || result.DocumentTypes != 1 {
 		t.Fatalf("expected 1 correspondent and 1 document type removed, got %+v", result)
 	}

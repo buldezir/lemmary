@@ -15,10 +15,8 @@ import {
   SDK_OPTIONS,
 } from './providers'
 
-// These four mirror Go predicates in internal/aiprovider/sdk.go. They are
-// duplicated rather than fetched because the pickers have to decide before any
-// request is made -- so the risk is the two drifting apart, and that is what
-// these assert.
+// These four mirror Go predicates in internal/aiprovider/sdk.go, duplicated
+// because the pickers decide before any request is made. Drift is the risk.
 describe('SDK capabilities', () => {
   it('treats local as an embedding-only SDK', () => {
     expect(canEmbedProvider('local')).toBe(true)
@@ -26,7 +24,6 @@ describe('SDK capabilities', () => {
   })
 
   it('keeps google_vision out of the embedding pickers', () => {
-    // It reads documents; it has no /embeddings endpoint at all.
     expect(canEmbedProvider('google_vision')).toBe(false)
     expect(isLLMProvider('google_vision')).toBe(false)
   })
@@ -36,8 +33,6 @@ describe('SDK capabilities', () => {
       expect(isLLMProvider(sdk)).toBe(true)
       expect(canEmbedProvider(sdk)).toBe(true)
     }
-    // opencode chats but serves no /embeddings, so it is an LLM SDK that is
-    // not an embedding one. Mirrors aiprovider.CanEmbed.
     expect(isLLMProvider('opencode')).toBe(true)
     expect(canEmbedProvider('opencode')).toBe(false)
   })
@@ -48,7 +43,6 @@ describe('SDK capabilities', () => {
     for (const sdk of ['openai', 'openrouter', 'mistral', 'opencode', 'google_vision']) {
       expect(requiresAPIKey(sdk)).toBe(true)
     }
-    // Default-true like the Go side, so an unknown SDK still asks.
     expect(requiresAPIKey(undefined)).toBe(true)
   })
 })
@@ -85,30 +79,26 @@ describe('the local SDK is offered and addressed', () => {
   })
 
   it('defaults to the compose service name', () => {
-    // Keep in step with aiprovider.DefaultBaseURL(SDKLocalEmbeddings) and the service
-    // name in docker-compose.embeddings.yml, or the overlay comes up
-    // unconfigured.
+    // Keep in step with aiprovider.DefaultBaseURL and the service name in
+    // docker-compose.embeddings.yml, or the overlay comes up unconfigured.
     expect(SDK_DEFAULT_BASE.local).toBe('http://embeddings:80/v1')
   })
 })
 
-// The hint under a keyless provider's Base URL is the only place the setup
-// instructions are reachable from the form, so every SDK that shows that hint
-// has to have somewhere to send the operator.
+// The hint is the only place the setup instructions are reachable from the
+// form, so every SDK that shows one needs somewhere to send the operator.
 describe('keylessProviderDocs', () => {
   it('covers every SDK that shows the keyless hint', () => {
     for (const { value } of SDK_OPTIONS) {
       // The hint's own condition, not just `no API key`: chatgpt needs no key
-      // either and still shows no hint, because the sign-in panel stands where
-      // the hint would. Asking the narrower question here would demand a
-      // sidecar guide for an SDK that has no sidecar.
+      // and shows no hint, and has no sidecar to document.
       if (requiresAPIKey(value) || requiresSignIn(value)) continue
       expect(keylessProviderDocs(value)?.href).toBeTruthy()
     }
   })
 
-  // ...and the SDK skipped above must genuinely show no hint, or the exemption
-  // would hide a missing link rather than describe one that is not needed.
+  // The SDK skipped above must genuinely show no hint, or the exemption would
+  // hide a missing link.
   it('is not needed for the SDK that signs in', () => {
     expect(keylessProviderHint('chatgpt')).toBe('')
     expect(keylessProviderDocs('chatgpt')).toBeNull()
@@ -119,8 +109,6 @@ describe('keylessProviderDocs', () => {
     expect(keylessProviderDocs('docling')?.href).toBe('/docs/local_ocr.html')
   })
 
-  // The .html matters: VitePress has no cleanUrls and the static handler in
-  // appwire/wire.go never tries the suffix, so a bare path lands on the SPA.
   it('has nothing to say about the hosted SDKs', () => {
     expect(keylessProviderDocs('openai')).toBeNull()
     expect(keylessProviderDocs(undefined)).toBeNull()
@@ -128,11 +116,8 @@ describe('keylessProviderDocs', () => {
 })
 
 
-// The bug this guards: Settings built its own `providers.filter(isLLMProvider)`
-// list and handed it to every picker including Embeddings, so a `local`
-// provider was gone before providerServesPurpose ever ran. Adding one in
-// Settings appeared to work and it was simply absent from the Embeddings
-// dropdown, with nothing to say why.
+// The bug this guards: a call site pre-filtering with isLLMProvider stripped
+// every `local` provider before providerServesPurpose ever ran.
 describe('eligibleProviders', () => {
   const all = [
     { id: 'p1', sdk: 'openai' },
@@ -158,17 +143,14 @@ describe('eligibleProviders', () => {
   })
 })
 
-// chatgpt is what keeps these predicates from collapsing back into one "is it
-// a hosted LLM" question: it chats and reads documents but does not embed,
-// where local embeds and does nothing else.
+// chatgpt keeps these predicates from collapsing into one "is it a hosted LLM"
+// question, as local does from the other side.
 describe('the ChatGPT subscription SDK', () => {
   it('chats and reads documents but does not embed', () => {
     expect(isLLMProvider('chatgpt')).toBe(true)
     expect(canEmbedProvider('chatgpt')).toBe(false)
     expect(providerServesPurpose('chatgpt', 'llm')).toBe(true)
     expect(providerServesPurpose('chatgpt', 'ocr')).toBe(true)
-    // The Codex backend serves no /embeddings at all, so this is the one
-    // binding it cannot take.
     expect(providerServesPurpose('chatgpt', 'embedding')).toBe(false)
   })
 
@@ -192,9 +174,8 @@ describe('the ChatGPT subscription SDK', () => {
   })
 })
 
-// The wizard prefills these so the guided path reaches the models step already
-// bound. They are the ids docs/guided_ai_setup.md tells an operator to type, so
-// a rename there is a rename here.
+// These are the ids docs/guided_ai_setup.md tells an operator to type, so a
+// rename there is a rename here.
 describe('recommendedModel', () => {
   it("names Mistral's OCR and embedding models", () => {
     expect(recommendedModel('mistral', 'ocr')).toBe('mistral-ocr-latest')
@@ -205,8 +186,8 @@ describe('recommendedModel', () => {
     expect(recommendedModel('opencode', 'llm')).toBe('gpt-5.6-luna')
   })
 
-  // A guess in the wrong box is worse than an empty box: it would be saved as a
-  // binding to a model the provider does not serve.
+  // A guess in the wrong box would be saved as a binding to a model the
+  // provider does not serve.
   it('suggests nothing for a job an SDK has no known id for', () => {
     expect(recommendedModel('mistral', 'llm')).toBe('')
     expect(recommendedModel('opencode', 'ocr')).toBe('')

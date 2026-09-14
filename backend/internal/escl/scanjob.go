@@ -18,25 +18,23 @@ import (
 	"lemmary/backend/internal/staging"
 )
 
-// A scan is staged rather than saved a page at a time, because the thing the
-// user is making is one document out of several sheets of glass. The staged
-// file is the document so far; each scan merges onto the end of it, and saving
-// hands the whole thing to the normal upload path.
+// A scan is staged rather than saved a page at a time, because the user is
+// making one document out of several sheets of glass. Each scan merges onto the
+// end of the staged file, and saving hands the whole thing to the normal upload
+// path.
 const (
 	// stagingTTL is how long a half-scanned document waits. Feeding sheets by
 	// hand takes a while, so this matches the PDF split's allowance.
 	stagingTTL = 30 * time.Minute
 
 	// maxScanBytes is the documents.file field's own MaxSize (see
-	// migrations/1730000034_documents_file_max.go). Enforcing it here means a scan that
-	// cannot be stored is refused while there is still something to do about it
-	// -- save what you have and start a second document -- rather than at the
-	// end, after the pages are gone.
+	// migrations/1730000034_documents_file_max.go). Enforced here so a scan that
+	// cannot be stored is refused while there is still something to do about it,
+	// rather than at the end, after the pages are gone.
 	maxScanBytes = models.MaxFileBytes
 )
 
 var (
-	// ErrScanInProgress is returned when the owner already has a scan running.
 	ErrScanInProgress = importjob.ErrBusy
 	// ErrUploadNotFound is returned for an unknown, expired or foreign scan.
 	ErrUploadNotFound = errors.New("scan not found")
@@ -44,7 +42,6 @@ var (
 	ErrTooLarge = fmt.Errorf("the scanned document is at the %d MB limit; save it and start another", maxScanBytes>>20)
 )
 
-// Job statuses for the in-memory scan job.
 const (
 	JobStatusRunning   = importjob.StatusRunning
 	JobStatusCompleted = importjob.StatusCompleted
@@ -89,8 +86,8 @@ func stagingRoot(app core.App) string {
 // Start scans in the background and returns the job id.
 //
 // An empty uploadID begins a new document; otherwise the pages are appended to
-// that one. Only one scan runs at a time per owner, which is also what keeps
-// two runs from merging onto the same staged file.
+// that one. Only one scan runs at a time per owner, which is also what keeps two
+// runs from merging onto the same staged file.
 func Start(app core.App, ownerUserID, scanner string, source Source, uploadID string) (string, error) {
 	if _, err := normalizeBase(scanner); err != nil {
 		return "", err
@@ -100,9 +97,9 @@ func Start(app core.App, ownerUserID, scanner string, source Source, uploadID st
 	if uploadID != "" {
 		claimed, ok := stagingRegistry.Claim(uploadID, ownerUserID)
 		if !ok {
-			// A scan already running for this owner has the upload claimed, so
-			// the lookup fails for a reason the user can act on: the pages are
-			// fine, the previous scan is simply still going.
+			// A scan already running for this owner has the upload claimed, so the
+			// lookup fails for a reason the user can act on: the previous scan is
+			// simply still going.
 			if registry.Busy(ownerUserID) {
 				return "", ErrScanInProgress
 			}
@@ -133,8 +130,8 @@ func Start(app core.App, ownerUserID, scanner string, source Source, uploadID st
 	return jobID, nil
 }
 
-// runScan performs one scan and folds its pages into the staged document,
-// creating that document when this is the first scan.
+// runScan folds one scan's pages into the staged document, creating that
+// document when this is the first scan.
 func runScan(app core.App, ownerUserID, scanner string, source Source, item *stagedScan) (Preview, error) {
 	budget := maxScanBytes
 	if item != nil {
@@ -201,7 +198,6 @@ func runScan(app core.App, ownerUserID, scanner string, source Source, item *sta
 	return preview, nil
 }
 
-// stage creates the staged document from the first scan's pages.
 func stage(app core.App, ownerUserID string, paths []string) (*stagedScan, error) {
 	root := stagingRoot(app)
 	if err := os.MkdirAll(root, 0o700); err != nil {
@@ -284,7 +280,6 @@ func Path(uploadID, ownerUserID string) (path string, done func(), ok bool) {
 	return item.Path, func() { stagingRegistry.Unhold(item) }, true
 }
 
-// Discard throws away a scan the user did not keep.
 func Discard(uploadID, ownerUserID string) bool {
 	item, ok := stagingRegistry.Claim(uploadID, ownerUserID)
 	if !ok {

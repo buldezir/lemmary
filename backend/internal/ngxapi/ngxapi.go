@@ -10,7 +10,6 @@ import (
 	"lemmary/backend/internal/fulltext"
 )
 
-// Register mounts paperless-ngx compatible REST endpoints on the PocketBase router.
 func Register(app core.App, idx *fulltext.Index) {
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: 40,
@@ -96,8 +95,6 @@ func registerDocumentRoutes(g *router.RouterGroup[*core.RequestEvent], idx *full
 	}
 }
 
-// namedEntityRoutes is the CRUD handler set for one paperless-ngx taxonomy
-// collection. All three collections expose the same five endpoints.
 type namedEntityRoutes struct {
 	base                          string
 	list, create, get, patch, del func(*core.RequestEvent) error

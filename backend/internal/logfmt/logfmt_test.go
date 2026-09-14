@@ -8,15 +8,8 @@ import (
 	"github.com/pocketbase/pocketbase/tools/types"
 )
 
-// TestDurationSurvivesPocketBaseLogWriter pins the reason this helper exists.
-//
-// PocketBase stores a log record's attributes in a types.JSONMap[any] and
-// persists it by marshalling that map. Under encoding/json/v2, which PocketBase
-// moved to in v0.40, a time.Duration in there fails to marshal and the whole
-// record is dropped rather than degraded. The second half of this test asserts
-// that failure directly, so if a future Go or PocketBase release gives
-// time.Duration a default representation the helper can go away on evidence
-// rather than on a guess.
+// The second half asserts the raw time.Duration failure directly, so the helper
+// can be retired on evidence if Go or PocketBase ever marshals one.
 func TestDurationSurvivesPocketBaseLogWriter(t *testing.T) {
 	t.Parallel()
 
@@ -40,8 +33,6 @@ func TestDurationSurvivesPocketBaseLogWriter(t *testing.T) {
 	}
 }
 
-// TestDurationRoundsToMillisecond keeps the logs readable: these attributes are
-// read by people, and a raw nanosecond count is not what they replaced.
 func TestDurationRoundsToMillisecond(t *testing.T) {
 	t.Parallel()
 

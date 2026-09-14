@@ -3,15 +3,9 @@ import { useDocumentList } from '../hooks/useDocumentList'
 import { DocumentGrid } from '../components/DocumentGrid'
 
 /**
- * The working tray: everything the pipeline has not finished with -- waiting
- * for review, but also still queued and failed. A document that never came out
- * of the pipeline needs you as much as one that came out doubtful.
- *
- * Its own page rather than the documents list under a flag. The two share their
- * data (useDocumentList) and their rows (DocumentGrid), and nothing else: no
- * search, no filters, no timeline. A tray is worked through until it is empty,
- * not queried -- and narrowing it only hides work still to do. Searching and
- * filtering are what the documents list is for.
+ * The working tray: everything the pipeline has not finished with -- waiting for
+ * review, but also still queued and failed. Deliberately has no search, filters
+ * or timeline: narrowing a tray only hides work still to do.
  */
 export function InboxPage() {
   const list = useDocumentList({
@@ -37,9 +31,6 @@ export function InboxPage() {
 
         {!loading && documents.length === 0 && (
           <div className="rounded-none border border-line bg-surface py-10 text-center">
-            {/* A cleared Inbox is not empty in the sense of "upload something",
-                so it says the opposite of what the documents list would. There
-                is no filter to blame it on here. */}
             <p className="text-sm text-ink-soft">Nothing waiting.</p>
           </div>
         )}

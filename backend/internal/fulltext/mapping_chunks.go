@@ -15,16 +15,13 @@ import (
 	"lemmary/backend/internal/strutil"
 )
 
-// ChunkMappingVersion is bumped when the chunk mapping changes, exactly like
-// MappingVersion. It is only the first field of the version file: the model and
-// its dimensions are part of the same string, because a vector field's length
-// is fixed at mapping time and vectors of another length are dropped silently.
+// Only the first field of the version file: the model and its dimensions are
+// part of the same string, because a vector field's length is fixed at mapping
+// time and vectors of another length are dropped silently.
 const ChunkMappingVersion = "2"
 
-// Chunk index fields. They are deliberately few: the chunk index answers
-// "which passage, of whose document" and nothing else. Everything a result
-// needs beyond that -- the title, the tags, the correspondent -- is read from
-// SQLite by document id, so a rename never has to touch a chunk.
+// Deliberately few: everything beyond "which passage, of whose document" is
+// read from SQLite by document id, so a rename never has to touch a chunk.
 const (
 	FieldChunkDocumentID = "document_id"
 	FieldChunkUser       = "user"
@@ -36,27 +33,21 @@ const (
 	FieldChunkVector     = "vector"
 )
 
-// maxChunkTextRunes caps the copy of a passage the index stores.
-//
 // Derived from the chunker's own ceiling rather than guessed at: the stored
-// copy is what retrieval quotes (it is preferred over re-slicing the column),
-// so a lower cap would silently truncate the tail of every full-size chunk. It
-// is a ceiling, not a target: an average chunk is well under it.
+// copy is what retrieval quotes, so a lower cap would silently truncate the
+// tail of every full-size chunk.
 var maxChunkTextRunes = chunk.DefaultOptions().MaxRunes
 
-// VectorSpec is the embedding binding the chunk index is built for: vectors of
-// one length, produced by one model. Both halves matter — two models with the
-// same dimension count produce vectors that mean nothing to each other — so
-// both are written into the version file and a change to either wipes the
-// index.
+// VectorSpec is the embedding binding the chunk index is built for. Both halves
+// matter: two models with the same dimension count produce vectors that mean
+// nothing to each other, so a change to either wipes the index.
 type VectorSpec struct {
 	Model string
 	Dims  int
 }
 
-// Valid reports whether the spec can back an index. Dims is 0 until the first
-// embedding response comes back, which is the normal state of a fresh install
-// with a model configured and nothing embedded yet.
+// Dims is 0 until the first embedding response comes back, the normal state of
+// a fresh install with a model configured and nothing embedded yet.
 func (s VectorSpec) Valid() bool {
 	return strings.TrimSpace(s.Model) != "" &&
 		s.Dims >= mapping.MinVectorDims && s.Dims <= mapping.MaxVectorDims
@@ -66,17 +57,12 @@ func (s VectorSpec) normalized() VectorSpec {
 	return VectorSpec{Model: strings.TrimSpace(s.Model), Dims: s.Dims}
 }
 
-// version is the content of bleve/chunks.version.
 func (s VectorSpec) version() string {
 	return fmt.Sprintf("%s;model=%s;dims=%d", ChunkMappingVersion, s.Model, s.Dims)
 }
 
-// newChunkMapping builds the mapping for one VectorSpec.
-//
-// The analyzer is the same one the documents index uses, for the same reason
-// (see newMapping): a chunk is a slice of the very text that index tokenizes,
-// and two different analyzers over the same words would make the lexical half
-// of a hybrid search disagree with itself.
+// Uses the documents index analyzer (see newMapping): two analyzers over the
+// same words would make the lexical half of a hybrid search disagree with itself.
 func newChunkMapping(spec VectorSpec) (mapping.IndexMapping, error) {
 	if !spec.Valid() {
 		return nil, fmt.Errorf("chunk mapping needs a model and 1..%d dimensions, got %q/%d",
@@ -102,8 +88,8 @@ func newChunkMapping(spec VectorSpec) (mapping.IndexMapping, error) {
 	doc := bleve.NewDocumentMapping()
 	doc.Dynamic = false
 
-	// Stored: a kNN hit carries no highlight fragments, so everything a
-	// passage is made of has to come back from storage.
+	// A kNN hit carries no highlight fragments, so a passage must come back
+	// from storage.
 	doc.AddFieldMappingsAt(FieldChunkDocumentID, storedKeywordField())
 	doc.AddFieldMappingsAt(FieldChunkUser, keywordField())
 	doc.AddFieldMappingsAt(FieldChunkOrd, storedNumberField())
@@ -125,9 +111,7 @@ func storedKeywordField() *mapping.FieldMapping {
 	return fm
 }
 
-// storedNumberField carries a number back with a hit without paying for a
-// numeric range index nothing queries: ordinals and offsets are read, never
-// searched.
+// No numeric range index: ordinals and offsets are read, never searched.
 func storedNumberField() *mapping.FieldMapping {
 	fm := bleve.NewNumericFieldMapping()
 	fm.IncludeInAll = false
@@ -137,15 +121,14 @@ func storedNumberField() *mapping.FieldMapping {
 	return fm
 }
 
-// chunkTextField is both halves of the hybrid at chunk level: indexed so BM25
-// can rank passages, stored so a kNN hit can quote one.
+// Indexed so BM25 can rank passages, stored so a kNN hit can quote one.
 func chunkTextField() *mapping.FieldMapping {
 	fm := bleve.NewTextFieldMapping()
 	fm.Analyzer = AnalyzerName
 	fm.IncludeInAll = false
 	fm.Store = true
-	// The stored copy is returned whole, so there is nothing to highlight and
-	// term vectors would only double the posting storage of the largest field.
+	// Returned whole, so nothing to highlight and term vectors would only
+	// double the posting storage of the largest field.
 	fm.IncludeTermVectors = false
 	return fm
 }
@@ -153,17 +136,14 @@ func chunkTextField() *mapping.FieldMapping {
 func vectorField(dims int) *mapping.FieldMapping {
 	fm := bleve.NewVectorBase64FieldMapping()
 	fm.Dims = dims
-	// Cosine, because every embedding provider we support returns vectors
-	// meant to be compared by angle; bleve normalises both sides for us.
+	// Every provider we support returns vectors meant to be compared by angle.
 	fm.Similarity = index.CosineSimilarity
 	// Recall over latency: an archive is small enough that the extra scan
-	// costs milliseconds, and a passage that is never retrieved is the one
-	// failure the whole feature exists to avoid.
+	// costs milliseconds.
 	fm.VectorIndexOptimizedFor = index.IndexOptimizedForRecall
 	return fm
 }
 
-// chunkText is the stored copy of a passage, capped.
 func chunkText(text string) string {
 	return strutil.TruncateRunes(strings.TrimSpace(text), maxChunkTextRunes)
 }

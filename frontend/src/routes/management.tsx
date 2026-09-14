@@ -27,16 +27,14 @@ import { Button, labelTextClassName, sectionClassName, sectionTitleClassName } f
 const selectClassName =
   'rounded-xs border border-line-strong bg-bright px-3 py-2 text-sm outline-none focus:border-oxblood focus:ring-1 focus:ring-oxblood'
 
-// How often the in-flight job count is refreshed while the page is open.
 const activeJobsPollMs = 5_000
 
-// How often the embedding backlog is re-read while a sweep is running. Only
-// while: the counts move in batches of a few dozen, so polling a finished
-// backlog would be a scan of two tables for no news.
+// Only while a sweep runs: the backlog is a scan of two tables, and the counts
+// move in batches of a few dozen.
 const embeddingPollMs = 3_000
 
-// Batch sizes offered for a reprocess sweep. The worker drains serially, so a
-// bigger batch does not finish sooner — it only commits more AI spend up front.
+// The worker drains serially, so a bigger batch does not finish sooner, it only
+// commits more AI spend up front.
 const reprocessBatchSizes = [50, 100, 500] as const
 const reprocessModes: ReprocessMode[] = ['auto', 'full', 'extraction']
 
@@ -50,7 +48,7 @@ function activeJobsLabel(counts: ActiveJobCounts) {
   return `${pending} pending, ${running} running`
 }
 
-// result.tags is not read: tags are a hand-curated vocabulary now, so the prune
+// result.tags is not read: tags are a hand-curated vocabulary, so the prune
 // leaves them alone and the count is always zero.
 function pruneSummary(result: TaxonomyPruneResult) {
   const parts = [
@@ -60,8 +58,7 @@ function pruneSummary(result: TaxonomyPruneResult) {
   return `Removed ${parts.join(' and ')}.`
 }
 
-// Admin access is enforced by the route's beforeLoad guard, so this page can
-// assume the caller is an admin.
+// Admin access is enforced by the route's beforeLoad guard.
 export function ManagementPage() {
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState<DuplicateScanResult | null>(null)
@@ -120,9 +117,8 @@ export function ManagementPage() {
     }
   }, [])
 
-  // The failed count is what the sweep acts on, so it is refreshed on load and
-  // after every batch rather than polled — batches are the only thing that moves
-  // it downward from this page.
+  // Refreshed on load and after every batch rather than polled: batches are the
+  // only thing that moves it downward from this page.
   useEffect(() => {
     let active = true
     countFailedDocuments()
@@ -181,8 +177,7 @@ export function ManagementPage() {
     }
   }
 
-  // Read once on load, then polled only while a sweep is running: the backlog
-  // is a scan of two tables, and nothing but a sweep moves it from this page.
+  // Polled only while a sweep is running, for the reason above.
   useEffect(() => {
     let active = true
 

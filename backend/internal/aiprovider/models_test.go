@@ -103,10 +103,8 @@ func TestListModels(t *testing.T) {
 	}
 }
 
-// TestListModelsSendsSessionHeaderToOpenCode is the hand-rolled path: ListModels
-// does not go through the SDK middleware, so dropping the header set there
-// would stay green without this. And an openai row is checked alongside,
-// because that is the case the old host-sniffing gate could not tell apart.
+// The hand-rolled path: ListModels does not go through the SDK middleware, so
+// dropping the header set there would stay green without this.
 func TestListModelsSendsSessionHeaderToOpenCode(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -281,9 +279,7 @@ func TestFilterModelsKeepsEmbeddingModelsOutOfLLMAndOCR(t *testing.T) {
 	}
 }
 
-// OpenRouter states the modality outright, which beats the name heuristic: it
-// keeps a chat model whose name happens to contain "embed" out of the
-// embeddings list.
+// OpenRouter states the modality outright, which beats the name heuristic.
 func TestFilterModelsUsesOpenRouterOutputModalities(t *testing.T) {
 	t.Parallel()
 	in := []Model{
@@ -319,8 +315,7 @@ func TestParseModelPurposeDefaultsToLLM(t *testing.T) {
 }
 
 // OpenRouter's plain catalogue omits embedding models entirely; only the
-// output_modalities filter brings them back. Other SDKs have no such filter
-// and stay on the bare endpoint.
+// output_modalities filter brings them back.
 func TestModelsURLEmbeddingFiltersOpenRouterByOutputModality(t *testing.T) {
 	t.Parallel()
 	p := Provider{SDK: SDKOpenRouter, BaseURL: "https://openrouter.ai/api/v1"}
@@ -338,12 +333,9 @@ func TestModelsURLEmbeddingFiltersOpenRouterByOutputModality(t *testing.T) {
 }
 
 // An SDK that is not a language model has no catalogue, and must say so by
-// answering nothing rather than by failing.
-//
-// The keyless row is the one that regressed: it carries a base URL and no key,
-// which is exactly the combination the checks below the early return turn into
-// "provider API key is not set" -- a 502 from the models endpoint and a red
-// banner over a picker that was working.
+// answering nothing rather than by failing. The keyless row carries a base URL
+// and no key, the combination the checks below the early return would turn into
+// "provider API key is not set".
 func TestListModelsHasNoCatalogueForNonLLMSDKs(t *testing.T) {
 	t.Parallel()
 	calls := 0
@@ -392,11 +384,9 @@ func TestParseModelsResponseReadsContextWindow(t *testing.T) {
 	want := map[string]int{
 		"openrouter":        200000,
 		"openrouter-detail": 131072,
-		// Both keys on one model is the normal OpenRouter listing shape, and
-		// the smaller number wins whichever field carries it: top_provider is
-		// the window of the provider a request is actually routed to, and
-		// research spends this number until it is gone. Advertising the model
-		// maximum here means the completion is rejected mid-run.
+		// Both keys on one model is the normal OpenRouter listing shape, and the
+		// smaller number wins: top_provider is the window of the provider a
+		// request is actually routed to, and overshooting it fails mid-run.
 		"openrouter-both":          131072,
 		"openrouter-both-reversed": 131072,
 		"mistral":                  32768,
@@ -517,10 +507,9 @@ func TestParseInfoResponse(t *testing.T) {
 	}
 }
 
-// TEI serves rerankers and classifiers from the same image and the same
-// endpoint shape. Either one bound as an embedding model would fail on every
-// document with nothing in the UI to explain why, so an unrecognised type
-// yields no models rather than a guess.
+// TEI serves rerankers and classifiers from the same endpoint shape. Either
+// bound as an embedding model would fail on every document, so an unrecognised
+// type yields no models rather than a guess.
 func TestParseInfoResponseRefusesANonEmbeddingModel(t *testing.T) {
 	t.Parallel()
 	for _, body := range []string{
@@ -539,9 +528,8 @@ func TestParseInfoResponseRefusesANonEmbeddingModel(t *testing.T) {
 }
 
 // The local picker must not go through the name heuristic: "BAAI/bge-m3"
-// carries no "embed" for it to find, so asking it would empty the one picker
-// this SDK exists for. And a keyless provider must send no Authorization header
-// at all rather than a blank Bearer.
+// carries no "embed" for it to find. And a keyless provider must send no
+// Authorization header at all rather than a blank Bearer.
 func TestListModelsLocalReadsInfoWithoutAKey(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

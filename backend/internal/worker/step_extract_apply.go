@@ -20,10 +20,8 @@ import (
 // which reads it only to word the "why is this waiting" line on a card.
 const minExtractionConfidence = 0.5
 
-// finishedDocStatus is the status a pipeline run leaves on a document that
-// neither failed nor turned out to be a duplicate. With AlwaysRequireReview on
-// it never returns completed, reprocessed documents included: a reprocess
-// produces fresh model output that nobody has read.
+// With AlwaysRequireReview on it never returns completed, reprocessed documents
+// included: a reprocess produces fresh model output that nobody has read.
 func finishedDocStatus(cfg config.Config, lowConfidence bool) string {
 	if lowConfidence || cfg.AlwaysRequireReview {
 		return models.DocStatusNeedsReview
@@ -114,22 +112,19 @@ func (s *ExtractMetadataStep) Run(ctx context.Context, state *StepState) error {
 	return nil
 }
 
-// loadExtractionCatalog reads the names the extraction prompt offers the model.
+// The names the extraction prompt offers the model.
 //
-// The correspondent and document-type lists are advisory -- they exist so the
-// model reuses a name rather than coining a variant of it, and a model that
-// never sees them still answers something usable. A failure there is logged and
-// the document is extracted without them.
+// The correspondent and document-type lists are advisory: they exist so the
+// model reuses a name rather than coining a variant, and a failure is logged
+// and the document extracted without them.
 //
-// The tag list is not advisory. It is the complete set of answers the model is
-// allowed to give, and apply writes whatever comes back over the document's
-// tags. An empty list therefore reads as "this archive has no tags" and clears
-// the tags a reprocess was meant to leave alone -- so a tag list that cannot be
-// read fails the step instead, and the document keeps what it had.
+// The tag list is not advisory. It is the complete set of legal answers, and
+// apply writes whatever comes back over the document's tags, so an empty list
+// reads as "this archive has no tags" and clears what a reprocess was meant to
+// leave alone. A tag list that cannot be read fails the step instead.
 func loadExtractionCatalog(app core.App, userID string, logger *slog.Logger) (ai.ExtractionCatalog, error) {
 	if strings.TrimSpace(userID) == "" {
-		// Not a warning to carry on from, for the same reason: apply cannot
-		// resolve tags without an owner either, so this document is broken.
+		// Apply cannot resolve tags without an owner either.
 		return ai.ExtractionCatalog{}, fmt.Errorf("extraction catalog: document has no owner")
 	}
 
@@ -152,9 +147,8 @@ func loadExtractionCatalog(app core.App, userID string, logger *slog.Logger) (ai
 		return ai.ExtractionCatalog{}, fmt.Errorf("extraction catalog tags: %w", err)
 	}
 	// The prompt calls the array the complete set of legal tags, so a vocabulary
-	// past the cap makes that a lie: the names beyond it are alphabetically last
-	// and simply never offered. Worth a line in the log, because the symptom --
-	// some tags are never assigned -- looks like nothing at all otherwise.
+	// past the cap makes that a lie: the names beyond it are never offered. The
+	// symptom, some tags never assigned, looks like nothing otherwise.
 	if logger != nil && len(tags) >= ai.MaxExtractionCatalogNames {
 		logger.Warn("tag vocabulary is larger than the extraction catalog holds; tags past the cap are never offered to the model",
 			"cap", ai.MaxExtractionCatalogNames,
@@ -223,17 +217,15 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 		return fmt.Errorf("tags: %w", err)
 	}
 	state.Document.Set("tags", tagIDs)
-	// dropped is the model ignoring its catalog. Logged rather than swallowed:
-	// a document that keeps proposing the same absent name is the archive
-	// telling its owner which tag to go and create.
+	// The model ignoring its catalog: a document that keeps proposing the same
+	// absent name is the archive telling its owner which tag to create.
 	state.Logger.Info("tags applied", "count", len(tagIDs), "dropped", droppedTags)
 
 	lowConfidence := metadata.Confidence < minExtractionConfidence
 
 	// The job and the document part ways for the setting, not for confidence:
-	// job status is read as a *processing* outcome, by the paperless task list
-	// (ngxapi.mapTaskStatus) and by Management's counts, and a confident
-	// extraction that merely awaits a human worked fine.
+	// job status is read as a processing outcome (ngxapi.mapTaskStatus,
+	// Management's counts), and an extraction awaiting a human worked fine.
 	jobStatus := models.JobStatusCompleted
 	if lowConfidence {
 		jobStatus = models.JobStatusNeedsReview

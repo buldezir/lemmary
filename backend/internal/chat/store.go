@@ -22,7 +22,6 @@ type SessionQuery struct {
 	Limit      int
 }
 
-// NewSession describes a conversation to open.
 type NewSession struct {
 	UserID     string
 	Kind       Kind
@@ -38,7 +37,6 @@ type NewSession struct {
 	FirstMessage string
 }
 
-// Turn is one exchange: what the user asked and what the model answered.
 type Turn struct {
 	UserContent      string
 	AssistantContent string
@@ -56,11 +54,9 @@ type Turn struct {
 	Mode string
 }
 
-// FindOwnedSession resolves one of the account's own sessions.
-//
-// Scoping the query by user rather than checking ownership after the fact is
-// what keeps an authenticated session from reading another account's
-// transcript by guessing a record id.
+// FindOwnedSession resolves one of the account's own sessions. Scoping the
+// query by user rather than checking ownership afterwards is what keeps a
+// session from reading another account's transcript by guessing a record id.
 func FindOwnedSession(app core.App, userID, sessionID string) (*core.Record, error) {
 	if userID == "" || sessionID == "" {
 		return nil, ErrNotFound
@@ -80,11 +76,9 @@ func FindOwnedSession(app core.App, userID, sessionID string) (*core.Record, err
 }
 
 // ListSessions returns one page of the account's sessions, newest activity
-// first, along with the unpaginated total.
-//
-// Ordered by last_message_at rather than updated so renaming a chat leaves it
-// where the user expects to find it. The id tiebreak keeps the order stable
-// across pages when several sessions share a timestamp.
+// first, along with the unpaginated total. Ordered by last_message_at rather
+// than updated so renaming a chat leaves it where the user expects it; the id
+// tiebreak keeps the order stable across pages.
 func ListSessions(app core.App, q SessionQuery) ([]*core.Record, int, error) {
 	if q.UserID == "" {
 		return nil, 0, fmt.Errorf("list chat sessions: user id is required")
@@ -130,7 +124,6 @@ func sessionFilter(q SessionQuery) dbx.Expression {
 	return exp
 }
 
-// ListMessages returns a session's turns in the order they happened.
 func ListMessages(app core.App, sessionID string, limit int) ([]*core.Record, error) {
 	records := []*core.Record{}
 	query := app.RecordQuery(MessagesCollection).AndWhere(dbx.HashExp{"session": sessionID})
@@ -143,11 +136,8 @@ func ListMessages(app core.App, sessionID string, limit int) ([]*core.Record, er
 	}
 
 	// The newest `limit` turns, not the oldest, which is why the read is
-	// ordered backwards and reversed rather than simply limited. A cap has to
-	// drop the head of a transcript: the tail is the part the user is looking
-	// at, and the part the next question follows from. Limiting an ascending
-	// read returns the far end of a long session -- a stale window replayed to
-	// the model, under a question that answers something else.
+	// ordered backwards and reversed. The tail is what the user is looking at
+	// and what the next question follows from.
 	if err := query.OrderBy("seq DESC").Limit(int64(limit)).All(&records); err != nil {
 		return nil, err
 	}
@@ -178,13 +168,9 @@ func History(app core.App, sessionID string) ([]ai.ChatMessage, error) {
 const MaxPriorHits = 100
 
 // PriorHits returns the documents a session's earlier answers found, so a
-// follow-up question can read one by id instead of guessing a query that would
-// rediscover it.
-//
-// Latest wins on a repeat: a document found again in a later turn is carried
-// with that turn's metadata, at that turn's position. Passages are dropped —
-// they were selected for the question that turn asked, and quoting them under a
-// different one is misleading.
+// follow-up can read one by id instead of guessing a query that would
+// rediscover it. Latest wins on a repeat. Passages are dropped: they were
+// selected for the question that turn asked.
 func PriorHits(app core.App, sessionID string) ([]ai.DocumentHit, error) {
 	if sessionID == "" {
 		return nil, nil
@@ -199,8 +185,7 @@ func PriorHits(app core.App, sessionID string) ([]ai.DocumentHit, error) {
 // PriorHitsFrom is PriorHits over an already-loaded transcript, in the order
 // the turns happened.
 func PriorHitsFrom(records []*core.Record) []ai.DocumentHit {
-	// Newest first, so the first version of a document seen while walking
-	// backwards is the newest one and the cap keeps the most recent evidence.
+	// Newest first, so the cap keeps the most recent evidence.
 	records = slices.Clone(records)
 	slices.Reverse(records)
 
@@ -228,19 +213,11 @@ func PriorHitsFrom(records []*core.Record) []ai.DocumentHit {
 	return hits
 }
 
-// CreateSession opens an empty conversation.
-//
-// Called before the provider is, not after it answers. The record is what the
-// turn, the sidebar row and the provider's cache key all name, and a first
-// question that had none of those until the answer came back left the two ends
-// of one conversation disagreeing about which conversation it was. Opening it
-// up front also means the session cap is refused before a provider call is
-// spent rather than after -- and on the research stream, where the status line
-// has long gone out by the time an answer exists, it is the only point a cap
-// breach can still be an honest HTTP error.
-//
-// An empty session is a real one, so a first turn that never completes has to
-// be cleaned up: see DiscardEmptySession.
+// CreateSession opens an empty conversation, before the provider is called
+// rather than after it answers: the record is what the turn, the sidebar row
+// and the provider's cache key all name, and the session cap is then refused
+// before a provider call is spent. An empty session is a real one, so a first
+// turn that never completes has to be cleaned up: see DiscardEmptySession.
 func CreateSession(app core.App, spec NewSession) (*core.Record, error) {
 	var session *core.Record
 
@@ -283,13 +260,9 @@ func CreateSession(app core.App, spec NewSession) (*core.Record, error) {
 	return session, nil
 }
 
-// DiscardEmptySession removes a conversation that never got a turn -- a first
-// question the provider failed, or one the user abandoned by closing the tab.
-//
-// Guarded on the transcript rather than on message_count, which the caller
-// holding a stale record could read as 0 after a turn had landed. A session
-// with any message in it is left alone, so the guard can only ever err towards
-// keeping a conversation.
+// DiscardEmptySession removes a conversation that never got a turn. Guarded on
+// the transcript rather than on message_count, which a caller holding a stale
+// record could read as 0 after a turn had landed.
 func DiscardEmptySession(app core.App, session *core.Record) error {
 	if session == nil {
 		return nil
@@ -306,17 +279,11 @@ func DiscardEmptySession(app core.App, session *core.Record) error {
 
 // AppendTurn writes both halves of one exchange into an existing session,
 // re-reading it under the owner so a request cannot append to someone else's
-// conversation. It returns the updated session record.
-//
-// Called only after the model has answered. Writing the user message up front
-// would look more natural but leaves a dangling half-turn behind every failure
-// -- and Deep Search makes up to five sequential provider calls per request, so
-// abandoned tabs and provider timeouts are the ordinary case, not the edge. A
-// transcript ending in an unanswered user message also feeds the next request a
-// duplicated question. The session record is older than the answer; its
-// messages are not. Nothing here consults the request context, so a client that
-// disconnects while the response is being written still finds the turn on
-// reload.
+// conversation. Called only after the model has answered: writing the user
+// message up front would leave a dangling half-turn behind every failure, and
+// feed the next request a duplicated question. Nothing here consults the
+// request context, so a client that disconnects mid-response still finds the
+// turn on reload.
 func AppendTurn(app core.App, userID, sessionID string, turn Turn) (*core.Record, error) {
 	var session *core.Record
 
@@ -352,12 +319,9 @@ func AppendTurn(app core.App, userID, sessionID string, turn Turn) (*core.Record
 	return session, nil
 }
 
-// nextSeq allocates the next turn number for a session.
-//
-// Read-modify-write is safe here because PocketBase serializes writes onto one
-// connection and this runs inside the transaction; the unique (session, seq)
-// index is the belt to that braces, turning a concurrent second writer into a
-// failed transaction rather than a scrambled transcript.
+// nextSeq allocates the next turn number. Read-modify-write is safe because
+// PocketBase serializes writes onto one connection and this runs inside the
+// transaction; the unique (session, seq) index is the belt to that braces.
 func nextSeq(app core.App, sessionID string) (int, error) {
 	var highest struct {
 		Value int `db:"value"`
@@ -400,10 +364,8 @@ func saveMessage(app core.App, sessionID string, seq int, role, content, runID s
 	return app.Save(record)
 }
 
-// RenameSession applies a user-supplied title.
-//
-// last_message_at is deliberately untouched, so renaming does not reorder the
-// sidebar out from under the person doing the renaming.
+// RenameSession applies a user-supplied title. last_message_at is deliberately
+// untouched, so renaming does not reorder the sidebar under the person doing it.
 func RenameSession(app core.App, record *core.Record, title string) error {
 	record.Set("title", NormalizeTitle(title))
 	return app.Save(record)

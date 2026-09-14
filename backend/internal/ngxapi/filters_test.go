@@ -11,9 +11,8 @@ import (
 	"lemmary/backend/internal/fulltext"
 )
 
-// seededIDs is an ngxIDs backed by a fixed table rather than a database, so
-// the parser can be tested without an app: everything in it except id
-// translation is pure, and this is the seam that keeps it that way.
+// seededIDs is an ngxIDs backed by a fixed table, the seam that lets the parser
+// be tested without an app.
 func seededIDs(byCollection map[string]map[int]string) *ngxIDs {
 	return &ngxIDs{
 		memo: map[string]map[int]string{},
@@ -54,10 +53,8 @@ func mustParse(t *testing.T, query string) documentFilters {
 	return f
 }
 
-// TestUnsupportedParamIsRefused is the whole point of the allowlist. Ignoring a
-// filter the server cannot honour returns a 200 the client renders as though it
-// had been applied, so "documents in this storage path" silently becomes "every
-// document".
+// Ignoring a filter the server cannot honour returns a 200 the client renders as
+// though it had been applied.
 func TestUnsupportedParamIsRefused(t *testing.T) {
 	t.Parallel()
 	_, err := parseDocumentFiltersWith(tagIDs(), testOwnerID, url.Values{"storage_path__id": {"3"}})
@@ -81,8 +78,7 @@ func TestPagingParamsAreNotFilters(t *testing.T) {
 	}
 }
 
-// TestUnresolvableIDInPositiveFilterIsImpossible pins the dangerous direction:
-// asking for a tag nobody has must return nothing, never everything.
+// Asking for a tag nobody has must return nothing, never everything.
 func TestUnresolvableIDInPositiveFilterIsImpossible(t *testing.T) {
 	t.Parallel()
 	for _, query := range []string{
@@ -98,8 +94,8 @@ func TestUnresolvableIDInPositiveFilterIsImpossible(t *testing.T) {
 	}
 }
 
-// TestUnresolvableIDInNoneFilterIsDropped is the mirror case: excluding a tag
-// that does not exist excludes nothing, so the query stays answerable.
+// Excluding a tag that does not exist excludes nothing, so the query stays
+// answerable.
 func TestUnresolvableIDInNoneFilterIsDropped(t *testing.T) {
 	t.Parallel()
 	f := mustParse(t, "tags__id__none=11,999")
@@ -204,8 +200,7 @@ func TestAddedComparatorsKeepTheirTime(t *testing.T) {
 	}
 }
 
-// TestAddedYearIsAccepted is the parameter the allowlist and the parser had
-// already drifted on: it parsed correctly and was refused with a 400.
+// The allowlist and the parser had drifted: this parsed correctly and was refused.
 func TestAddedYearIsAccepted(t *testing.T) {
 	t.Parallel()
 	want := []dateBound{
@@ -217,8 +212,7 @@ func TestAddedYearIsAccepted(t *testing.T) {
 	}
 }
 
-// TestOwnerFiltersAreAnsweredNotRefused: refusing the owner pill turned "My
-// documents" into an error.
+// Refusing the owner pill turned "My documents" into an error.
 func TestOwnerFiltersAreAnsweredNotRefused(t *testing.T) {
 	t.Parallel()
 	mine := fmt.Sprint(testOwnerID)
@@ -284,8 +278,7 @@ func TestInvalidValuesAreRefused(t *testing.T) {
 	}
 }
 
-// TestStoragePathIsNullFalseMatchesNothing: Lemmary has no storage paths, so
-// every document is without one. Asking for the documents that have one is
+// Lemmary has no storage paths, so asking for the documents that have one is
 // answerable, and the answer is none.
 func TestStoragePathIsNullFalseMatchesNothing(t *testing.T) {
 	t.Parallel()
@@ -374,10 +367,8 @@ func TestTagsAnyMatchesAnyTag(t *testing.T) {
 	assertIDs(t, matchingIDs(t, db, documentFilters{tagsAny: []string{"t1", "t2"}}), "both", "one", "other")
 }
 
-// TestTagsNoneKeepsUntaggedRows pins the NULL handling: json_valid(NULL) is
-// NULL, so a negation written as NOT (json_valid(tags) AND ...) evaluates to
-// NULL and silently drops the row that has no tags column value at all --
-// exactly the row an exclusion filter is most obviously right about.
+// json_valid(NULL) is NULL, so a negation written as NOT (json_valid(tags) AND
+// ...) drops the row with no tags value at all.
 func TestTagsNoneKeepsUntaggedRows(t *testing.T) {
 	t.Parallel()
 	db := filterDB(t)
@@ -393,9 +384,8 @@ func TestIsTaggedSplitsTheArchive(t *testing.T) {
 	assertIDs(t, matchingIDs(t, db, documentFilters{isTagged: &no}), "empty", "legacy", "null")
 }
 
-// TestRelationNoneKeepsRowsWithNoRelation pins the COALESCE: a bare NOT IN
-// drops NULL under SQL three-valued logic, but a document with no document type
-// at all is plainly not of the excluded type.
+// A bare NOT IN drops NULL under SQL three-valued logic, but a document with no
+// document type at all is plainly not of the excluded type.
 func TestRelationNoneKeepsRowsWithNoRelation(t *testing.T) {
 	t.Parallel()
 	db := filterDB(t)
@@ -413,10 +403,8 @@ func TestRelationFiltersAndUnsetChecks(t *testing.T) {
 	assertIDs(t, matchingIDs(t, db, documentFilters{docTypeUnset: &no}), "both", "one", "other")
 }
 
-// TestCreatedRangeUsesTheDateTheClientSees: an undated document is rendered
-// with its upload date, so the filter has to read the same fallback. Comparing
-// document_date alone dropped it from every range, including one covering the
-// date on its own card.
+// An undated document is rendered with its upload date, so the filter has to
+// read the same fallback.
 func TestCreatedRangeUsesTheDateTheClientSees(t *testing.T) {
 	t.Parallel()
 	db := filterDB(t)
@@ -440,9 +428,8 @@ func TestDateRangeMatchesBothStoredFormats(t *testing.T) {
 	assertIDs(t, matchingIDs(t, db, documentFilters{added: dayBounds("2025-03-01", "")}), "one", "other")
 }
 
-// TestAddedTimestampBoundsCompareTheWholeInstant: these rows were uploaded at
-// 09:00, so bounds either side of that morning must split them -- where a
-// day-truncated bound would have moved by a whole day.
+// These rows were uploaded at 09:00, so bounds either side of that morning must
+// split them, where a day-truncated bound would move by a whole day.
 func TestAddedTimestampBoundsCompareTheWholeInstant(t *testing.T) {
 	t.Parallel()
 	db := filterDB(t)
@@ -454,9 +441,8 @@ func TestAddedTimestampBoundsCompareTheWholeInstant(t *testing.T) {
 	}), "other")
 }
 
-// TestSeveralFiltersGetDistinctPlaceholders guards the shared parameter map:
-// dbx merges every expression's params into one, so two filters reusing a name
-// would overwrite each other and one of them would silently stop applying.
+// dbx merges every expression's params into one map, so two filters reusing a
+// name would overwrite each other.
 func TestSeveralFiltersGetDistinctPlaceholders(t *testing.T) {
 	t.Parallel()
 	db := filterDB(t)

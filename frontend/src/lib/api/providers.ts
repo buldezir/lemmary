@@ -33,16 +33,10 @@ export type AIProviderWrite = {
 export type ModelPurpose = 'ocr' | 'llm' | 'embedding'
 
 /**
- * A provider and model chosen for one chat or one reprocess job, instead of the
- * binding in Settings. Mirrors aiprovider.Binding.
- *
- * Both halves, in practice. The server refuses a model with no provider rather
- * than running the configured one in its place, so `bindingBody` drops that
- * half-filled pair instead of sending it; and it refuses a provider with no
- * model, because an empty model reaches the provider as an empty model and the
- * configured one belongs to a different provider. The single exception is the
- * OCR binding on google_vision and docling, which read a document without being
- * told a model -- see `usesOCRModel`.
+ * Mirrors aiprovider.Binding. Both halves in practice: the server refuses a
+ * half-filled pair rather than filling it from Settings, whose model belongs to
+ * a different provider. The exception is OCR on google_vision and docling,
+ * which read a document without a model -- see `usesOCRModel`.
  */
 export type ProviderBinding = {
   provider_id: string
@@ -56,10 +50,8 @@ export function bindingIsEmpty(binding: ProviderBinding | undefined) {
 }
 
 /**
- * The request fields for a binding, or nothing when none was chosen.
- *
- * Absent rather than empty strings, so a request from a page with the picker
- * untouched is byte-identical to one sent before overrides existed.
+ * The request fields for a binding, absent rather than empty strings so an
+ * untouched picker sends what it sent before overrides existed.
  */
 export function bindingBody(binding: ProviderBinding | undefined) {
   if (bindingIsEmpty(binding)) return {}
@@ -73,11 +65,7 @@ export type CatalogModel = {
   context_window?: number
 }
 
-/**
- * Must stay identical to aiprovider.DefaultBaseURL in backend/internal/aiprovider/sdk.go.
- * The two sidecar entries are the service names from the compose overlays, so a
- * provider added from the wizard needs nothing typed.
- */
+/** Must stay identical to aiprovider.DefaultBaseURL in backend/internal/aiprovider/sdk.go. */
 export const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
   openai: 'https://api.openai.com/v1',
   openrouter: 'https://openrouter.ai/api/v1',
@@ -87,8 +75,7 @@ export const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
   // Not a /v1 root: the Codex backend serves one endpoint, and the middleware
   // behind this SDK rewrites the SDK's /chat/completions into it.
   chatgpt: 'https://chatgpt.com/backend-api/codex',
-  // The service names in docker-compose.embeddings.yml and
-  // docker-compose.local-ocr.yml.
+  // The sidecar service names from the compose overlays.
   local: 'http://embeddings:80/v1',
   docling: 'http://docling:5001',
 }
@@ -109,12 +96,8 @@ export function sdkLabel(sdk: ProviderSDK | string) {
 }
 
 /**
- * The alias a provider gets when the field is left blank, and what the field
- * suggests. Mirrors aiprovider.DefaultAlias.
- *
- * Deliberately not sdkLabel, whose job is to tell two dropdown rows apart and
- * which names the upstream project to do it. Stored as an alias that reads back
- * through providerOptionLabel as `alias (sdk label)`, it nests its own
+ * Mirrors aiprovider.DefaultAlias. Not sdkLabel: stored as an alias, that reads
+ * back through providerOptionLabel as `alias (sdk label)`, nesting its own
  * parentheses inside the label's.
  */
 export function sdkAliasDefault(sdk: ProviderSDK | string) {
@@ -134,18 +117,16 @@ export function isLLMProvider(sdk: string) {
 }
 
 /**
- * Mirrors aiprovider.RequiresOAuth. The one SDK whose credential is minted by
- * signing in rather than typed, so the provider form shows a sign-in panel
- * where every other SDK shows an API key field.
+ * Mirrors aiprovider.RequiresOAuth: the one SDK whose credential is minted by
+ * signing in, so the form shows a sign-in panel instead of a key field.
  */
 export function requiresSignIn(sdk?: string) {
   return sdk === 'chatgpt'
 }
 
 /**
- * Whether a provider row can actually serve a request. Mirrors
- * aiprovider.Provider.Configured, including the order it asks in: a signed-in
- * SDK is judged by its token, a hosted one by its key, a sidecar by its address.
+ * Mirrors aiprovider.Provider.Configured, including the order it asks in: a
+ * signed-in SDK by its token, a hosted one by its key, a sidecar by its address.
  */
 export function providerConfigured(
   item: Pick<AIProvider, 'sdk' | 'api_key_set' | 'signed_in' | 'base_url'>,
@@ -156,22 +137,17 @@ export function providerConfigured(
 }
 
 /**
- * Whether an SDK can serve the embedding binding. Deliberately not
- * isLLMProvider, which it used to coincide with: `local` embeds without
- * chatting, and google_vision and docling do neither. Mirrors
- * aiprovider.CanEmbed.
+ * Mirrors aiprovider.CanEmbed. Deliberately not isLLMProvider: `local` embeds
+ * without chatting, and chatgpt and opencode chat without embedding because
+ * neither endpoint serves /embeddings.
  */
 export function canEmbedProvider(sdk: string) {
-  // chatgpt and opencode force these apart in the other direction: both chat
-  // without embedding, because neither endpoint serves /embeddings at all.
   return (isLLMProvider(sdk) && sdk !== 'chatgpt' && sdk !== 'opencode') || sdk === 'local'
 }
 
 /**
- * Mirrors aiprovider.RequiresAPIKey. The two sidecars are exempt because they
- * run on the operator's own host and are reached by address alone; chatgpt is
- * exempt because it signs in instead. Default-true like the Go side, so an
- * unknown SDK still asks.
+ * Mirrors aiprovider.RequiresAPIKey. The sidecars are reached by address alone
+ * and chatgpt signs in instead. Default-true, so an unknown SDK still asks.
  */
 export function requiresAPIKey(sdk?: string) {
   return sdk !== 'local' && sdk !== 'docling' && sdk !== 'chatgpt'
@@ -181,22 +157,15 @@ export function requiresAPIKey(sdk?: string) {
 export function providerServesPurpose(sdk: string, purpose: ModelPurpose) {
   if (purpose === 'embedding') return canEmbedProvider(sdk)
   if (purpose === 'llm') return isLLMProvider(sdk)
-  // OCR is the binding google_vision and docling exist for, and every LLM SDK
-  // can serve it by sending the file to a model — chatgpt included, whose
-  // models take the same file and image input the metered ones do. Only a local
-  // embeddings endpoint cannot. Mirrors aiprovider.CanOCR.
+  // Mirrors aiprovider.CanOCR: every SDK but a local embeddings endpoint can
+  // serve OCR by sending the file to a model.
   return sdk !== 'local'
 }
 
 /**
- * The providers a binding may be offered, which is `providerServesPurpose` plus
- * the one already bound -- kept whatever its SDK, so an existing binding never
- * renders as blank.
- *
- * It exists so no call site pre-filters its own list. Settings passed the
- * embedding picker a list already narrowed to `isLLMProvider`, which stripped
- * every `local` provider before the purpose filter could see it: the SDK that
- * embeds without chatting was the one binding it could not reach.
+ * `providerServesPurpose` plus the one already bound, kept whatever its SDK so
+ * an existing binding never renders as blank. Exists so no call site
+ * pre-filters its own list and strips the providers it was about to offer.
  */
 export function eligibleProviders<T extends { id: string; sdk: string }>(
   providers: T[],
@@ -209,18 +178,16 @@ export function eligibleProviders<T extends { id: string; sdk: string }>(
 }
 
 /**
- * Mirrors aiprovider.RequiresOCRModel: the SDKs that read a document without
- * being told a model. Google Vision has none to give; for the sidecar, what
- * looks like a model is an optional OCR engine name.
+ * Mirrors aiprovider.RequiresOCRModel. Google Vision has no model to give; for
+ * the sidecar, what looks like one is an optional OCR engine name.
  */
 export function usesOCRModel(sdk?: string) {
   return sdk !== 'google_vision' && sdk !== 'docling'
 }
 
 /**
- * What the OCR "model" means for the local sidecar, shown under the free-text
- * box the picker falls back to when the provider has no catalogue. Empty for
- * every other SDK, where the field really does name a model.
+ * What the OCR "model" means for the local sidecar. Empty for every other SDK,
+ * where the field really does name a model.
  */
 export function localOCRModelHint(sdk?: string) {
   if (sdk !== 'docling') return ''
@@ -232,23 +199,20 @@ export function localOCRModelHint(sdk?: string) {
  * Empty for the hosted SDKs, which show the key field instead.
  */
 export function keylessProviderHint(sdk?: string) {
-  // requiresSignIn is checked too: chatgpt needs no key either, but it is not
-  // keyless — it has a credential, obtained by signing in, and the panel that
-  // does that stands where this hint would.
+  // chatgpt needs no key either, but it is not keyless: the sign-in panel
+  // stands where this hint would.
   if (requiresAPIKey(sdk) || requiresSignIn(sdk)) return ''
   const overlay = sdk === 'local' ? 'docker-compose.embeddings.yml' : 'docker-compose.local-ocr.yml'
   return `Runs on your own host, so no API key is needed \u2014 the address is the whole configuration. The default is the service name from ${overlay}.`
 }
 
 /**
- * The guide behind a keyless provider's hint. Neither sidecar answers until its
- * compose overlay is up, and that is the one thing the hint cannot fit; the
- * link is how an operator gets from the dropdown to the instructions. Null for
- * the hosted SDKs, which have a key field there instead.
+ * The guide behind a keyless provider's hint; neither sidecar answers until its
+ * compose overlay is up. Null for the hosted SDKs.
  *
- * The `.html` is load-bearing. VitePress has no cleanUrls, so the built pages
- * are files, and the static handler in appwire/wire.go never tries an .html
- * suffix -- a bare /docs/local_ocr falls through to the SPA.
+ * The `.html` is load-bearing: VitePress has no cleanUrls and the static
+ * handler in appwire/wire.go never tries an .html suffix, so a bare
+ * /docs/local_ocr falls through to the SPA.
  */
 export function keylessProviderDocs(sdk?: string) {
   if (sdk === 'local') {
@@ -261,13 +225,9 @@ export function keylessProviderDocs(sdk?: string) {
 }
 
 /**
- * The model the guided setup binds for a job, for the two SDKs whose ids can be
- * named up front — the ones docs/guided_ai_setup.md walks an operator through.
- * Empty for every other SDK, where the provider's catalogue is the only source
- * of a model id.
- *
- * A suggestion, not a constraint: the picker still lists whatever the provider
- * advertises, and this only ever fills a field nothing else has filled.
+ * The model the guided setup binds, for the two SDKs whose ids can be named up
+ * front (docs/guided_ai_setup.md). A suggestion, not a constraint: it only ever
+ * fills a field nothing else has filled.
  */
 export function recommendedModel(sdk: string | undefined, purpose: ModelPurpose) {
   if (sdk === 'mistral') {
@@ -350,9 +310,8 @@ export type ChatGPTLoginStatus = {
 }
 
 /**
- * Starts the device-code sign-in and returns the code to read out and the page
- * to type it into. The device auth id stays on the server: it is the half that
- * would let anyone holding it finish somebody else's login.
+ * The device auth id stays on the server: it is the half that would let anyone
+ * holding it finish somebody else's login.
  */
 export function startChatGPTLogin(id: string) {
   return apiFetch<ChatGPTDeviceLogin>(`/api/app/providers/${id}/chatgpt/device`, {
@@ -363,8 +322,7 @@ export function startChatGPTLogin(id: string) {
 
 /**
  * Checks once whether the code has been approved. The caller drives the
- * interval, so a sign-in nobody completes costs one small request every few
- * seconds rather than a connection held open for fifteen minutes.
+ * interval, so an abandoned sign-in holds no connection open.
  */
 export function pollChatGPTLogin(id: string) {
   return apiFetch<ChatGPTLoginStatus>(`/api/app/providers/${id}/chatgpt/device/poll`, {
@@ -394,10 +352,7 @@ export async function listOCRProviders() {
   return data.providers ?? []
 }
 
-/**
- * The binding Settings uses for a purpose: what answers when nobody overrides
- * anything. Empty on an instance where nothing is bound yet.
- */
+/** What answers when nobody overrides. Empty when nothing is bound yet. */
 export type ConfiguredBinding = {
   provider_id?: string
   provider_name?: string
@@ -405,18 +360,14 @@ export type ConfiguredBinding = {
 }
 
 /**
- * The configured providers that can serve a purpose, and the binding Settings
- * would use, for a picker outside Settings.
- *
- * Readable by any signed-in user, unlike `listAIProviders`, which is admin-only
- * because it carries the credential state. This answer is provider names, model
- * ids and SDKs -- no key, no account, no base URL.
+ * For a picker outside Settings. Readable by any signed-in user, unlike the
+ * admin-only `listAIProviders`: this answer carries no credential state, only
+ * provider names, model ids and SDKs.
  */
 export async function listPickableProviders(purpose: ModelPurpose, binding?: string) {
   const query = new URLSearchParams({ for: purpose })
-  // Names which configured pair to report back. The capability cannot say:
-  // chat, search and extraction are all language models, and Deep Search must
-  // not be told the chat model is what answers it.
+  // Names which configured pair to report back: chat, search and extraction
+  // are all language models, so the purpose alone cannot say.
   if (binding) query.set('binding', binding)
   const data = await apiFetch<{ providers?: OCRProviderInfo[]; configured?: ConfiguredBinding }>(
     `/api/app/ai/providers?${query.toString()}`,
@@ -434,12 +385,9 @@ export function bindingModelLabel(model: string | undefined) {
 }
 
 /**
- * Adapts a pickable row to what ProviderModelFields wants.
- *
- * That component was written for Settings, where a provider is the full record;
- * it reads only `id`, `sdk` and `alias`. The credential flags are set true
- * because this list is already filtered to configured providers -- the server
- * would not have returned an unconfigured one.
+ * Adapts a pickable row to what ProviderModelFields wants, which reads only
+ * `id`, `sdk` and `alias`. The credential flags are true because the server
+ * only returns configured providers here.
  */
 export function asPickerProvider(item: OCRProviderInfo): AIProvider {
   return {

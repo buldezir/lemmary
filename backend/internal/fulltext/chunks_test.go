@@ -19,9 +19,8 @@ import (
 	"lemmary/backend/internal/retrieval"
 )
 
-// fakeChunkSource is the embedding store as the index sees it, without a
-// database. The app handle is passed through untouched, which is what lets
-// every test here run with none.
+// The app handle is passed through untouched, which lets every test here run
+// without a database.
 type fakeChunkSource struct {
 	spec   VectorSpec
 	off    bool
@@ -50,8 +49,8 @@ func (f *fakeChunkSource) ForEach(_ core.App, spec VectorSpec, fn func(Chunk) er
 	if f.err != nil {
 		return f.err
 	}
-	// The real source scans in (document, ordinal) order and the index relies
-	// on nothing else, but sorting here keeps the fake honest about it.
+	// The index relies on nothing beyond (document, ordinal) order, but sorting
+	// keeps the fake honest about it.
 	ordered := make([]Chunk, 0, len(f.chunks))
 	for _, c := range f.chunks {
 		if len(c.Vector) == spec.Dims {
@@ -85,8 +84,8 @@ func (f *fakeChunkSource) Count(_ core.App, spec VectorSpec) (int, error) {
 	return n, nil
 }
 
-// unit returns a normalised vector pointing mostly along axis, so two chunks on
-// the same axis are close and two on different axes are not.
+// A normalised vector pointing mostly along axis, so two chunks on the same
+// axis are close and two on different axes are not.
 func unit(dims, axis int) []float32 {
 	vec := make([]float32, dims)
 	vec[axis%dims] = 1
@@ -191,8 +190,8 @@ func TestRebuildLoadsEveryStoredChunk(t *testing.T) {
 		t.Fatalf("chunk count = %d, %v", count, err)
 	}
 
-	// A vector of the wrong length is dropped silently by Bleve, so the loader
-	// must never hand one over: this is the source's filter doing its job.
+	// Bleve drops a wrong-length vector silently, so the loader must never
+	// hand one over.
 	src.chunks = append(src.chunks, Chunk{DocumentID: "doc3", UserID: "u1", Vector: []float32{1, 0}})
 	if n := mustRebuildChunks(t, idx); n != 3 {
 		t.Fatalf("a wrong-length vector reached the index: indexed %d", n)
@@ -212,7 +211,6 @@ func TestChunkSearchIsolatesUsers(t *testing.T) {
 		t.Fatalf("kNN crossed an owner boundary: %#v", hits)
 	}
 
-	// The same must hold for the keyword half and for the fused query.
 	textHits := searchChunks(t, idx, retrieval.ChunkQuery{Text: "rent", UserID: "u1", K: 10})
 	if len(textHits) != 1 || textHits[0].DocumentID != "mine" {
 		t.Fatalf("chunk BM25 crossed an owner boundary: %#v", textHits)
@@ -243,17 +241,15 @@ func TestChunkSearchReturnsStoredFields(t *testing.T) {
 	if got.Text != chunk.Text {
 		t.Fatalf("text did not survive storage: %q", got.Text)
 	}
-	// A kNN hit carries no fragments, so a score outside the cosine range
-	// would mean the passage layer is ranking on something else entirely.
+	// A score outside the cosine range would mean the passage layer is
+	// ranking on something else entirely.
 	if got.Score < 0 || got.Score > 1.0001 {
 		t.Fatalf("cosine score out of range: %v", got.Score)
 	}
 }
 
-// The stored copy is what retrieval quotes -- it is preferred over re-slicing
-// the OCR column -- so the cap has to clear the chunker's ceiling. A cap below
-// it silently ate the tail of every full-size chunk, and nothing anywhere said
-// so.
+// The stored copy is what retrieval quotes, so the cap has to clear the
+// chunker's ceiling: a lower one silently ate the tail of every full chunk.
 func TestChunkTextSurvivesAFullSizeChunk(t *testing.T) {
 	body := strings.Repeat("ä", chunk.DefaultOptions().MaxRunes)
 	src := &fakeChunkSource{spec: testChunkSpec(), chunks: []Chunk{
@@ -377,8 +373,7 @@ func TestVectorSpecChangeWipesOnlyTheChunkIndex(t *testing.T) {
 		t.Fatalf("chunk count = %d", count)
 	}
 
-	// A different model at the same dimensions is still a different index: the
-	// two models' vectors mean nothing to each other.
+	// A different model at the same dimensions is still a different index.
 	next := VectorSpec{Model: "other-embed", Dims: 4}
 	src.spec = next
 	if err := idx.SetVectorSpec(next, true); err != nil {
@@ -418,8 +413,7 @@ func TestVectorSpecOffRemovesTheChunkDirectory(t *testing.T) {
 	if _, err := os.Stat(idx.chunkPath); !os.IsNotExist(err) {
 		t.Fatalf("the chunk directory should be gone, stat says %v", err)
 	}
-	// Dims of 0 is the same state by another route: a model is configured but
-	// no provider has answered yet.
+	// Dims of 0: a model is configured but no provider has answered yet.
 	if err := idx.SetVectorSpec(VectorSpec{Model: "test-embed"}, true); err != nil {
 		t.Fatalf("disable by dims: %v", err)
 	}
@@ -440,8 +434,8 @@ func TestChunkUpsertDropsStaleOrdinals(t *testing.T) {
 		t.Fatalf("chunk count = %d", count)
 	}
 
-	// Re-embedded after an edit: shorter text, so the tail ordinals describe
-	// passages that no longer exist.
+	// Re-embedded after an edit: the tail ordinals describe passages that no
+	// longer exist.
 	src.chunks = []Chunk{chunkOf("doc1", "u1", 0, 0, "the whole thing, rewritten")}
 	if err := idx.upsertChunksUnlocked(nil, "doc1"); err != nil {
 		t.Fatalf("upsert: %v", err)
@@ -484,9 +478,7 @@ func TestChunksReplacedReindexesThroughTheQueue(t *testing.T) {
 	mustRebuildChunks(t, idx)
 
 	src.chunks = []Chunk{chunkOf("doc1", "u1", 0, 0, "a brand new passage")}
-	// The listener call the embedding store makes after its transaction
-	// commits. The app handle is only passed through to the source, which in
-	// this test does not need one.
+	// The listener call the embedding store makes after its transaction commits.
 	idx.ChunksReplaced(nil, "doc1")
 	idx.WaitIdle()
 

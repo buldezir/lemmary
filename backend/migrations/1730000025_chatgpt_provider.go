@@ -12,10 +12,9 @@ import (
 //
 // Two changes, one migration, because neither is usable without the other: the
 // SDK cannot be selected until it is in the select field's values, and a row
-// with that SDK holds no credential until the column exists.
-//
-// EnsureCollection already builds both from the current code, but it returns an
-// existing collection untouched -- which is every install past its first boot.
+// with that SDK holds no credential until the column exists. EnsureCollection
+// builds both from the current code but returns an existing collection
+// untouched, which is every install past its first boot (see 1730000024).
 // Same reasoning as 1730000024, which widened the field for the sidecar SDKs.
 func init() {
 	m.Register(func(app core.App) error {

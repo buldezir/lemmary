@@ -26,8 +26,7 @@ func TestValidateChatContentRejectsBlank(t *testing.T) {
 	}
 }
 
-// Rejected rather than truncated, and the message says the number so the user
-// knows how much to cut.
+// The message says the number so the user knows how much to cut.
 func TestValidateChatContentRejectsOversized(t *testing.T) {
 	_, err := validateChatContent(strings.Repeat("x", chat.MaxUserContentRunes+1))
 	if err == nil {

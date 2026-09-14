@@ -10,9 +10,7 @@
 //     ai_providers row.
 //   - transport.go rewrites POST /chat/completions into POST /responses on the
 //     way out and the SSE answer back into a chat completion on the way in, as
-//     an openai-go middleware. Nothing above it -- not ai.CompleteChat, not the
-//     extractor, chatter, splitter, helper or search agent -- knows any of this
-//     happened.
+//     an openai-go middleware. Nothing above it knows any of this happened.
 //
 // Every endpoint here is OpenAI's own, undocumented, and meant for OpenAI's
 // clients. That is why the feature is off unless AI_CHATGPT_LOGIN=1 and refused
@@ -29,10 +27,8 @@ import (
 )
 
 // Token is one signed-in ChatGPT account, as stored in ai_providers.oauth.
-//
-// Refresh is the durable half: access tokens last about an hour, and the
-// refresh token is what survives a restart. It rotates on every use, so a
-// refresh that succeeds must be persisted or the next one fails.
+// The refresh token rotates on every use, so a refresh that succeeds must be
+// persisted or the next one fails.
 type Token struct {
 	Access    string    `json:"access_token"`
 	Refresh   string    `json:"refresh_token"`
@@ -40,8 +36,7 @@ type Token struct {
 	ExpiresAt time.Time `json:"expires_at"`
 
 	// Identity read out of IDToken at sign-in, so Settings can name the account
-	// without decoding a JWT on every render and without the token itself ever
-	// reaching the browser.
+	// without the token itself ever reaching the browser.
 	AccountID string `json:"account_id,omitempty"`
 	Plan      string `json:"plan,omitempty"`
 	Email     string `json:"email,omitempty"`
@@ -49,9 +44,8 @@ type Token struct {
 
 func (t Token) Valid() bool { return strings.TrimSpace(t.Access) != "" }
 
-// Expired reports whether the access token is spent, counting leeway as spent.
-// The leeway is what keeps a request that starts just under the wire from
-// arriving just over it.
+// Expired counts leeway as spent, which keeps a request that starts just under
+// the wire from arriving just over it.
 func (t Token) Expired(leeway time.Duration) bool {
 	if t.ExpiresAt.IsZero() {
 		return false
@@ -59,8 +53,6 @@ func (t Token) Expired(leeway time.Duration) bool {
 	return time.Now().Add(leeway).After(t.ExpiresAt)
 }
 
-// Marshal serializes for the oauth column. Encoding here rather than at the
-// call sites keeps the column's shape the token's own business.
 func (t Token) Marshal() (string, error) {
 	b, err := json.Marshal(t)
 	if err != nil {
@@ -70,6 +62,7 @@ func (t Token) Marshal() (string, error) {
 }
 
 // ParseToken reads the oauth column. An empty column is not an error: it is a
+// provider row nobody has signed in to yet.
 // provider row nobody has signed in to yet.
 func ParseToken(raw string) (Token, error) {
 	raw = strings.TrimSpace(raw)
@@ -84,11 +77,9 @@ func ParseToken(raw string) (Token, error) {
 }
 
 // identityFromIDToken pulls the account id, plan and email out of the id_token.
-//
-// The signature is not checked, deliberately: we just received this token over
-// TLS from the issuer in answer to our own request, so there is no second party
-// whose claims we would be trusting. Verifying it would mean fetching and
-// pinning a JWKS to learn something we already know.
+// The signature is not checked, deliberately: this token just arrived over TLS
+// from the issuer in answer to our own request, so there is no second party
+// whose claims we would be trusting.
 func identityFromIDToken(idToken string) (accountID, plan, email string) {
 	parts := strings.Split(strings.TrimSpace(idToken), ".")
 	if len(parts) < 2 {
@@ -111,13 +102,10 @@ func identityFromIDToken(idToken string) (accountID, plan, email string) {
 	return claims.Auth.ChatGPTAccountID, claims.Auth.ChatGPTPlanType, claims.Email
 }
 
-// jwtExpiry reads the exp claim out of a token. Unsigned and unverified, for
-// the same reason identityFromIDToken does not verify: this is our own token,
-// and the claim only decides when we refresh it.
-//
+// jwtExpiry reads the exp claim, unsigned and unverified for the same reason.
 // The refresh grant answers with no expires_in at all, so without this every
-// refreshed token would carry a guessed hour -- fine when the real lifetime is
-// an hour, a stack of 401s when it is shorter.
+// refreshed token would carry a guessed hour: a stack of 401s when the real
+// lifetime is shorter.
 func jwtExpiry(token string) (time.Time, bool) {
 	parts := strings.Split(strings.TrimSpace(token), ".")
 	if len(parts) < 2 {

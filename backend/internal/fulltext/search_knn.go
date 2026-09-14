@@ -14,31 +14,22 @@ import (
 	"lemmary/backend/internal/retrieval"
 )
 
-// ErrVectorDims is returned when a query vector is not the length the index was
-// built for. It is a configuration error, not a ranking one: bleve drops a
-// wrong-length vector without a word, so a caller that ignored this would get
-// an empty result list and no reason for it.
+// bleve drops a wrong-length vector without a word, so a caller that ignored
+// this would get an empty result list and no reason for it.
 var ErrVectorDims = errors.New("query vector does not match the indexed dimensions")
 
-// errChunksNotReady is what every chunk operation returns when no chunk index
-// is open. Callers degrade to keyword search on it rather than failing.
+// Callers degrade to keyword search on this rather than failing.
 var errChunksNotReady = errors.New("chunk index is not ready")
 
-// defaultChunkK is the number of passages a chunk search returns when the
-// caller does not say.
 const defaultChunkK = 20
 
 // SearchChunks answers a chunk-level query by vector, by text, or by both.
+// With both, fusion is Bleve's own: one index over one set of ids is the one
+// case where the engine can fuse better than the Go-side RRF in retrieval.
 //
-// With both, the fusion is Bleve's own: the lexical and the kNN list are
-// produced by one index over one set of ids, which is the one case where the
-// engine can fuse them itself and the Go-side RRF in the retrieval package
-// would only be re-doing its work with less information.
-//
-// Filtering is by user only. Every other filter the agent may have applied is a
-// property of the document, not of the passage, and denormalising those into
-// three million chunk rows would mean a tag rename rewriting vectors; the
-// caller resolves them against the documents index and passes DocumentIDs.
+// Filtering is by user only. Every other filter is a property of the document,
+// not of the passage, and denormalising those into chunk rows would mean a tag
+// rename rewriting vectors; the caller passes resolved DocumentIDs instead.
 func (i *Index) SearchChunks(ctx context.Context, q retrieval.ChunkQuery) ([]retrieval.ChunkHit, error) {
 	if !i.ChunksReady() {
 		return nil, nil
@@ -74,7 +65,7 @@ func (i *Index) SearchChunks(ctx context.Context, q retrieval.ChunkQuery) ([]ret
 			}
 			req = bleve.NewSearchRequestOptions(bq, k, 0, false)
 		default:
-			// kNN alone still needs a query; match-none is the idiom, the
+			// kNN alone still needs a query; match-none is the idiom, and the
 			// filter rides on the kNN clause itself.
 			req = bleve.NewSearchRequestOptions(bleve.NewMatchNoneQuery(), k, 0, false)
 		}
@@ -109,10 +100,9 @@ func (i *Index) SearchChunks(ctx context.Context, q retrieval.ChunkQuery) ([]ret
 	return hits, nil
 }
 
-// chunkTextQuery is the lexical half at passage level. Relaxed in the same
-// sense the document query is (see fulltext.Query.Relaxed): the text is a
-// question the model turned into keywords, and a passage that carries most of
-// them is the answer far more often than one that carries all of them.
+// Relaxed in the same sense the document query is (see fulltext.Query.Relaxed):
+// a passage carrying most of the query's words answers it far more often than
+// one carrying all of them.
 func chunkTextQuery(text string) query.Query {
 	parts := parseQueryParts(text)
 	if len(parts) == 0 {
@@ -149,10 +139,8 @@ func chunkTextQuery(text string) query.Query {
 	}
 	if len(should) > 0 {
 		dq := bleve.NewDisjunctionQuery(should...)
-		// One passage is a fraction of a document, so a chunk carrying most of
-		// the query's words is already a strong signal; the document-level
-		// minimum would rule out the short passage that answers the question
-		// in five words.
+		// The document-level minimum would rule out the short passage that
+		// answers the question in five words.
 		dq.SetMin(1)
 		must = append(must, dq)
 	}
@@ -162,9 +150,7 @@ func chunkTextQuery(text string) query.Query {
 	return bleve.NewConjunctionQuery(must...)
 }
 
-// chunkFilter is the pre-filter both halves of the query run under: the caller's
-// own passages, and — when the agent's search had filters the chunk index does
-// not carry — the documents those filters resolved to.
+// The pre-filter both halves of the query run under.
 func chunkFilter(q retrieval.ChunkQuery) query.Query {
 	conjuncts := make([]query.Query, 0, 2)
 	if user := strings.TrimSpace(q.UserID); user != "" {
@@ -183,9 +169,8 @@ func chunkFilter(q retrieval.ChunkQuery) query.Query {
 	}
 }
 
-// chunkHitFrom rebuilds a hit from the stored fields. A kNN hit has no
-// fragments and no source document, so everything here comes from storage; the
-// id is the fallback for the two fields that identify the passage.
+// A kNN hit has no fragments and no source document, so everything comes from
+// storage, with the id as fallback for the two fields identifying the passage.
 func chunkHitFrom(id string, score float64, fields map[string]any) retrieval.ChunkHit {
 	hit := retrieval.ChunkHit{Score: score}
 	if s, ok := fields[FieldChunkDocumentID].(string); ok {
@@ -214,7 +199,6 @@ func intField(fields map[string]any, name string) int {
 	return 0
 }
 
-// idsByKeyword pages every id whose keyword field equals value.
 func idsByKeyword(b bleve.Index, field, value string) ([]string, error) {
 	page := lookupPageSize
 	if page <= 0 {
@@ -241,10 +225,8 @@ func idsByKeyword(b bleve.Index, field, value string) ([]string, error) {
 	}
 }
 
-// logChunkTaskError reports an async chunk failure. The app handle is absent on
-// the delete path (a delete needs no database), so the error is dropped rather
-// than logged there: it is one document's passages in an index that the boot
-// heal rebuilds anyway.
+// The app handle is absent on the delete path, so the error is dropped there:
+// one document's passages in an index the boot heal rebuilds anyway.
 func logChunkTaskError(app core.App, message, documentID string, err error) {
 	if app == nil {
 		return

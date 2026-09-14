@@ -14,9 +14,8 @@ func TestHashIsStableAndInRange(t *testing.T) {
 	}
 }
 
-// TestHashNeverReturnsZero: 0 is what the column holds for a row no hook
-// stamped, and findRecordByNgxID refuses it. Seeding a real record with 0 would
-// make that record unreachable.
+// 0 is what the column holds for a row no hook stamped, and findRecordByNgxID
+// refuses it, so seeding a real record with 0 would make it unreachable.
 func TestHashNeverReturnsZero(t *testing.T) {
 	t.Parallel()
 	if got := Hash(""); got != 0 {
@@ -37,9 +36,8 @@ func TestFreeWalksPastTakenIDs(t *testing.T) {
 	}
 }
 
-// TestFreeWrapsAtMax: ids are handed out inside a signed 32-bit range because
-// that is what a paperless client decodes them as, so the walk cannot simply
-// run off the end.
+// Ids are handed out inside a signed 32-bit range because that is what a
+// paperless client decodes them as, so the walk cannot run off the end.
 func TestFreeWrapsAtMax(t *testing.T) {
 	t.Parallel()
 	taken := map[int]bool{Max: true}
@@ -48,9 +46,8 @@ func TestFreeWrapsAtMax(t *testing.T) {
 	}
 }
 
-// TestFreeGivesUp rather than spinning: a run of maxProbes consecutive taken ids
-// cannot arise from hashing, so it means the table is wrong and the write
-// should fail saying so.
+// A run of maxProbes consecutive taken ids cannot arise from hashing, so it
+// means the table is wrong and the write should fail saying so.
 func TestFreeGivesUp(t *testing.T) {
 	t.Parallel()
 	if got := Free(1, func(int) bool { return true }); got != 0 {

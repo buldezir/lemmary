@@ -31,24 +31,21 @@ type Config struct {
 	SearchProviderID  string
 	SearchModel       string
 
-	// SearchHelperProviderID/SearchHelperModel bind the model Deep Search
-	// sends bulk per-document work to: distilling long reads into notes and
-	// surveying many documents for one question. Many cheap calls rather
-	// than a few expensive ones, so a smaller model than the search agent's
-	// is usually right. Unset falls back to the search binding.
+	// SearchHelperProviderID/SearchHelperModel bind the model Deep Search sends
+	// bulk per-document work to. Many cheap calls rather than a few expensive ones,
+	// so a smaller model than the search agent's is usually right. Unset falls
+	// back to the search binding.
 	SearchHelperProviderID string
 	SearchHelperModel      string
 
-	// EmbeddingProviderID/EmbeddingModel bind the retrieval embedding model.
-	// Unset means dense retrieval is off and the archive is searched by
-	// keywords alone, which is the behaviour every install had before this
-	// existed -- so absent is a working state, not a broken one.
+	// EmbeddingProviderID/EmbeddingModel bind the retrieval embedding model. Unset
+	// means dense retrieval is off and the archive is searched by keywords alone,
+	// which is a working state, not a broken one.
 	EmbeddingProviderID string
 	EmbeddingModel      string
-	// EmbeddingDims is the vector length the provider actually answered with,
-	// learned from its first response rather than configured. It is what lets
-	// the vector index be sized before a single embedding call, and what makes
-	// a model switch detectable.
+	// EmbeddingDims is learned from the provider's first response rather than
+	// configured. It is what sizes the vector index before a single embedding call,
+	// and what makes a model switch detectable.
 	EmbeddingDims int
 
 	OCRProvider          *aiprovider.Provider
@@ -58,23 +55,21 @@ type Config struct {
 	SearchHelperProvider *aiprovider.Provider
 	EmbeddingProvider    *aiprovider.Provider
 
-	OCRTimeout                    time.Duration
-	ProcessingResultLanguage      string
-	DeepSearchLanguages           string
-	OpenAITimeout                 time.Duration
-	WorkerCronExpr                string
-	WorkerTimeout                 time.Duration
-	WorkerMaxRetries              int
-	ExtractionPromptVer           string
-	// ExtractionRules is appended to the built-in extraction prompt, for the
-	// house conventions a fixed prompt cannot know. Empty means the prompt is
-	// what it always was.
+	OCRTimeout               time.Duration
+	ProcessingResultLanguage string
+	DeepSearchLanguages      string
+	OpenAITimeout            time.Duration
+	WorkerCronExpr           string
+	WorkerTimeout            time.Duration
+	WorkerMaxRetries         int
+	ExtractionPromptVer      string
+	// ExtractionRules is appended to the built-in extraction prompt, for the house
+	// conventions a fixed prompt cannot know.
 	ExtractionRules               string
 	NearDuplicateDetectionEnabled bool
 	NearDuplicateThreshold        float64
-	// AlwaysRequireReview finishes every document the pipeline extracted
-	// metadata for on needs_review rather than completed, so nothing reaches
-	// completed except by a person saying so.
+	// AlwaysRequireReview finishes every extracted document on needs_review, so
+	// nothing reaches completed except by a person saying so.
 	AlwaysRequireReview bool
 }
 
@@ -84,32 +79,26 @@ func WorkerCronFromEnv() string {
 	return getEnv("WORKER_CRON_EXPR", "* * * * *")
 }
 
-// DefaultWorkerConcurrency is how many document pipelines run at once.
+// DefaultWorkerConcurrency is one, so an absent flag keeps the behaviour this
+// codebase has always had. There is no idle time to win back by raising it:
+// drainPending already picks the next job the instant the current one ends.
+// What it buys is overlap, and overlap is only free when the work is somebody
+// else's HTTP server waiting, not a local OCR sidecar spending these CPUs.
 //
-// One, so an absent flag is the behaviour this codebase has always had. There
-// is no idle time to win back by raising it -- drainPending already picks the
-// next job the instant the current one ends, and has never waited for a cron
-// tick between two jobs. What raising it buys is overlap, and overlap is only
-// free when the work is somebody else's HTTP server waiting: a local OCR
-// sidecar spends this host's CPUs, and N documents in flight there queue
-// rather than overlap.
-//
-// Two things still behave differently above 1, both documented in .env.example:
-// near-duplicate detection assumes documents are fingerprinted in creation
-// order (see DetectDuplicatesStep.Run), and the OCR deadline is per call, so a
-// provider that serialises internally spends it queueing.
+// Two things behave differently above 1, both in .env.example: near-duplicate
+// detection assumes documents are fingerprinted in creation order, and the OCR
+// deadline is per call.
 const DefaultWorkerConcurrency = 1
 
-// WorkerConcurrencyFromEnv is how many jobs the worker drains in parallel.
-// Below 1 is meaningless and falls back to the default rather than stopping the
-// worker.
+// WorkerConcurrencyFromEnv falls back to the default below 1, rather than
+// stopping the worker.
 func WorkerConcurrencyFromEnv() int {
 	return envIntDefault("WORKER_CONCURRENCY", DefaultWorkerConcurrency, 1)
 }
 
 const DefaultStagingMaxBytes int64 = 1 << 30 // 1 GiB
 
-// minStagingMaxBytes keeps a typo from setting a limit no real upload can meet.
+// minStagingMaxBytes keeps a typo from setting a limit no upload can meet.
 const minStagingMaxBytes int64 = 1 << 20 // 1 MiB
 
 // StagingMaxBytesFromEnv is the largest archive an import may stage on disk.
@@ -119,7 +108,8 @@ func StagingMaxBytesFromEnv() int64 {
 	return envInt64Default("IMPORT_STAGING_MAX_BYTES", DefaultStagingMaxBytes, minStagingMaxBytes)
 }
 
-// The schema is owned by migrations/; this only errors clearly when they have not run.
+// The schema is owned by migrations/; this only errors clearly if they have
+// not run.
 func findSettingsCollection(app core.App) (*core.Collection, error) {
 	collection, err := app.FindCollectionByNameOrId(CollectionName)
 	if err != nil {
@@ -153,8 +143,8 @@ func EnsureDefaults(app core.App, env AIEnv) error {
 		return err
 	}
 	if err := app.Save(record); err != nil {
-		// A concurrent caller can seed the singleton between our find and save;
-		// the fixed ID then collides. Treat "someone else seeded it" as success.
+		// A concurrent caller can seed the singleton between the find and the save, and
+		// the fixed ID then collides. Treat that as success.
 		if existing, findErr := app.FindRecordById(CollectionName, SingletonID); findErr == nil {
 			return bindProviders(app, existing)
 		}
@@ -180,8 +170,7 @@ func ApplyManaged(app core.App, env AIEnv) error {
 	if err := app.Save(settings); err != nil {
 		return fmt.Errorf("save %s: %w", CollectionName, err)
 	}
-	// The variable names are safe to log; the values are not, and one is an
-	// API key.
+	// The variable names are safe to log; the values are not.
 	app.Logger().Info("applied managed AI configuration from the environment",
 		"llm_sdk", env.Providers.LLM.SDK, "ocr_sdk", env.Providers.OCRSDK())
 	return nil
@@ -199,7 +188,8 @@ func bindProviders(app core.App, record *core.Record) error {
 	return app.Save(record)
 }
 
-// Load reads runtime settings from the DB singleton. WorkerCronExpr is always from env.
+// Load reads runtime settings from the DB singleton. WorkerCronExpr is always
+// from env.
 func Load(app core.App) (Config, error) {
 	record, err := app.FindRecordById(CollectionName, SingletonID)
 	if err != nil {
@@ -269,13 +259,10 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 }
 
 // chat falls back to extract, search to the resolved chat binding, and the
-// search helper to the resolved search binding. Separate from the DB lookups
-// so the chain is easy to test.
-//
-// Embeddings are deliberately not in the chain. Every other binding falls back
-// to a language model that can serve it; an embedding endpoint cannot be
-// guessed from one, and a wrong guess would spend money on every document in
-// the archive before failing. Unset means off.
+// search helper to the resolved search binding. Embeddings are deliberately
+// not in the chain: an embedding endpoint cannot be guessed from a language
+// model, and a wrong guess would spend money on the whole archive before
+// failing. Unset means off.
 func applyBindingFallbacks(cfg *Config) {
 	if cfg.ChatProviderID == "" {
 		cfg.ChatProviderID = cfg.ExtractProviderID
@@ -369,7 +356,7 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-// envIntDefault falls back when unset, malformed, or below min — a typo like
+// envIntDefault falls back when unset, malformed, or below min: a typo like
 // "6O" must not become a zero-second HTTP timeout.
 func envIntDefault(key string, fallback, min int) int {
 	v := strings.TrimSpace(os.Getenv(key))
@@ -438,14 +425,10 @@ func NormalizeLanguageList(raw string) string {
 	return strings.Join(out, ",")
 }
 
-// HasLLM reports whether anything can reason over a document yet. It is what
-// the setup wizard and the readiness check ask before declaring an install
-// finished.
-//
-// Configured rather than APIKey != "", for the same reason HasOCR and
-// HasEmbedding ask it: the chatgpt SDK holds a token instead of a key, and the
-// bare key test would have left a signed-in instance stuck on the setup wizard
-// with a working provider in front of it.
+// HasLLM is what the setup wizard and the readiness check ask before declaring
+// an install finished. Configured rather than APIKey != "": the chatgpt SDK
+// holds a token instead of a key, so the bare test would leave a signed-in
+// instance stuck on the wizard with a working provider in front of it.
 func HasLLM(cfg Config) bool {
 	p := cfg.ExtractProvider
 	if p == nil {
@@ -454,15 +437,10 @@ func HasLLM(cfg Config) bool {
 	return p != nil && p.Configured() && aiprovider.IsLLM(p.SDK)
 }
 
-// HasEmbedding reports whether dense retrieval can run. A provider missing the
-// credential its SDK needs, or missing a model, is half a configuration, and
-// treating it as on would make every document fail its embed step instead of
-// skipping it.
-//
-// CanEmbed rather than IsLLM, and Configured rather than a bare key test: the
-// local SDK embeds without chatting and authenticates to nobody, so both of the
-// old shorthands would read a working configuration as absent. Configured is
-// the same question HasOCR asks of its own provider.
+// HasEmbedding is false for half a configuration (no credential, or no model),
+// because treating it as on makes every document fail its embed step instead
+// of skipping it. CanEmbed rather than IsLLM and Configured rather than a bare
+// key test: the local SDK embeds without chatting and authenticates to nobody.
 func HasEmbedding(cfg Config) bool {
 	p := cfg.EmbeddingProvider
 	return p != nil && aiprovider.CanEmbed(p.SDK) && p.Configured() &&
@@ -471,13 +449,10 @@ func HasEmbedding(cfg Config) bool {
 
 var recordEmbeddingDimsMu sync.Mutex
 
-// RecordEmbeddingDims stores the vector length the provider answered with, once.
-//
-// It is called from the pipeline rather than from Settings because nobody can
-// know the number before the first request: an admin types a model name, and
-// the provider decides how long its vectors are. Writing it back saves the
-// settings record, which reloads the runtime, which is how the rest of the
-// process learns the number.
+// RecordEmbeddingDims is called from the pipeline, not from Settings, because
+// nobody can know the number before the first request: an admin types a model
+// name and the provider decides how long its vectors are. Writing it back
+// saves the settings record, which reloads the runtime.
 func RecordEmbeddingDims(app core.App, dims int) error {
 	if dims <= 0 {
 		return nil
@@ -509,10 +484,9 @@ func RecordEmbeddingDims(app core.App, dims int) error {
 
 func HasOCR(cfg Config) bool {
 	p := cfg.OCRProvider
-	// Configured, not APIKey != "": a hosted provider needs a credential, a
-	// local sidecar needs an address, and asking for the key unconditionally is
-	// what would leave a working docling container reported as unconfigured
-	// with the setup wizard standing in front of it.
+	// Configured, not APIKey != "": a hosted provider needs a credential and a
+	// local sidecar needs an address, so asking for a key unconditionally reports
+	// a working docling container as unconfigured.
 	if p == nil || !p.Configured() {
 		return false
 	}

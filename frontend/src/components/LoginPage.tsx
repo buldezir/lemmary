@@ -48,15 +48,10 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
   // passkeysSupported() is synchronous and stable for the life of the page; the
   // server's half arrives with `methods`, which is why this is not state either.
   const passkeyVisible = passkeyOffered && passkeysSupported()
-  // The *promise* of an armed request, not the request itself. Arming has to
-  // await capability detection and a network round trip, and during that window a
-  // ref holding only the settled handle would still read null — so a submit or a
-  // button click would find nothing to cancel and start a second
-  // credentials.get() (which rejects while one is outstanding), while the late
-  // .then() would overwrite the ref and leave the first request uncancellable.
-  // Storing the promise closes that window: it is non-null the instant arming
-  // starts, so cancellation covers pending setup as well as an active request,
-  // and the same non-null check prevents arming twice.
+  // The *promise* of an armed request, not the request itself: a ref holding
+  // only the settled handle reads null while arming awaits detection and a round
+  // trip, so a submit in that window starts a second credentials.get() (which
+  // rejects while one is outstanding) and leaves the first uncancellable.
   const conditional = useRef<Promise<ConditionalPasskeyLogin | null> | null>(null)
   const onSuccessRef = useRef(onSuccess)
   useEffect(() => {
@@ -79,9 +74,8 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
       onError: setError,
     })
     conditional.current = pending
-    // A null result means nothing was armed (no conditional mediation, or the
-    // server would not issue a challenge). Release the slot so a later attempt
-    // can try again rather than being blocked by a resolved-null promise.
+    // A null result means nothing was armed. Release the slot so a later attempt
+    // is not blocked by a resolved-null promise.
     void pending.then((request) => {
       if (request === null && conditional.current === pending) {
         conditional.current = null
@@ -99,8 +93,8 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
     armConditional()
     return () => {
       // Not optional: RootLayout unmounts this component the moment the gate
-      // flips, and an outstanding conditional request would otherwise stay live
-      // against a dead page — and could still adopt a session after the fact.
+      // flips, and an outstanding conditional request would stay live against a
+      // dead page and could still adopt a session after the fact.
       void cancelConditional()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- armConditional and cancelConditional read refs, not render state
@@ -181,8 +175,8 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
                 <input
                   type="email"
                   // The webauthn token is what lets a passkey appear in this
-                  // field's autofill suggestions. It has to sit on a field that
-                  // exists when the conditional get() is made.
+                  // field's autofill suggestions, and it has to sit on a field
+                  // that exists when the conditional get() is made.
                   autoComplete={passkeyVisible ? 'email webauthn' : 'email'}
                   required
                   value={email}

@@ -103,7 +103,6 @@ func TestParseExtractedMetadataTranslatedFields(t *testing.T) {
 }
 
 func TestParseExtractedMetadataCoercesPartialDate(t *testing.T) {
-	// Issue #28: a model that answers a bare year must not fail the extraction.
 	raw := `{"title":"Invoice 001","document_date":"2026","confidence":0.9}`
 
 	metadata, notes, err := models.ParseExtractedMetadataWithNotes(raw)

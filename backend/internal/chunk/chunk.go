@@ -1,12 +1,10 @@
 // Package chunk cuts a document's OCR text into overlapping passages.
 //
-// The cuts have to be reproducible from the text alone: a chunk is stored as a
-// byte range into documents.ocr_text, and the passage a reader is shown is that
-// range sliced out of the live column. Re-running the chunker on unchanged text
-// must therefore produce byte-identical ranges, or a stored vector would start
-// describing a different passage than the one it was built from. That is what
-// Version guards -- bump it whenever the cut rules change, and every document
-// re-chunks and re-embeds.
+// The cuts must be reproducible from the text alone: a chunk is stored as a
+// byte range into documents.ocr_text, so re-running the chunker on unchanged
+// text has to produce byte-identical ranges or a stored vector starts
+// describing a different passage. Version guards that: bump it whenever the cut
+// rules change, and every document re-chunks and re-embeds.
 package chunk
 
 import (
@@ -15,41 +13,34 @@ import (
 	"unicode/utf8"
 )
 
-// Version identifies the cut rules. Stored per document; a mismatch makes the
-// document a backfill candidate.
+// Stored per document; a mismatch makes the document a backfill candidate.
 const Version = 1
 
-// Chunk is a half-open byte range [Start, End) into the text it was cut from.
+// A half-open byte range [Start, End) into the text it was cut from.
 type Chunk struct {
 	Start int
 	End   int
 }
 
-// Options are the chunk sizes, in runes. Runes rather than bytes because the
-// budget being spent is the embedding model's token window, which tracks
-// characters far better than it tracks UTF-8 bytes -- a Cyrillic or CJK
-// document is twice the bytes of an English one for the same amount of text.
+// Sizes are in runes, not bytes: the budget being spent is the model's token
+// window, which tracks characters far better than UTF-8 bytes.
 type Options struct {
-	// TargetRunes is the size a cut aims for.
 	TargetRunes int
-	// MaxRunes is the hard ceiling; a chunk never exceeds it, even with no
-	// whitespace to cut at.
+	// A hard ceiling, even with no whitespace to cut at.
 	MaxRunes int
-	// MinRunes is how far into a chunk cut candidates start being considered,
-	// so one early newline cannot produce a two-word chunk.
+	// How far in cut candidates start being considered, so one early newline
+	// cannot produce a two-word chunk.
 	MinRunes int
-	// OverlapRunes is how far the next chunk backs up, so a sentence spanning a
-	// cut is still whole in one of the two.
+	// How far the next chunk backs up, so a sentence spanning a cut is still
+	// whole in one of the two.
 	OverlapRunes int
-	// MaxChunks bounds one document. A 20 MB OCR column would otherwise be tens
-	// of thousands of embedding calls; past this the tail is dropped and the
-	// caller is told.
+	// Past this the tail is dropped and the caller is told: a 20 MB OCR column
+	// would otherwise be tens of thousands of embedding calls.
 	MaxChunks int
 }
 
-// DefaultOptions is what the pipeline uses. ~1100 runes is roughly 250-350
-// tokens for Latin text, comfortably inside every embedding model's window and
-// small enough that a hit points at a paragraph rather than a page.
+// ~1100 runes is roughly 250-350 tokens of Latin text: inside every embedding
+// model's window, small enough that a hit points at a paragraph not a page.
 func DefaultOptions() Options {
 	return Options{
 		TargetRunes:  1100,
@@ -60,8 +51,8 @@ func DefaultOptions() Options {
 	}
 }
 
-// normalize repairs an Options a caller built by hand, so a zero value is
-// usable and an inconsistent one cannot loop forever.
+// Repairs an Options built by hand, so a zero value is usable and an
+// inconsistent one cannot loop forever.
 func (o Options) normalize() Options {
 	d := DefaultOptions()
 	if o.TargetRunes <= 0 {
@@ -82,8 +73,7 @@ func (o Options) normalize() Options {
 	if o.OverlapRunes < 0 {
 		o.OverlapRunes = 0
 	}
-	// An overlap at or past the minimum chunk size would let the cursor stand
-	// still: the next chunk would begin at or before the previous one did.
+	// An overlap at or past MinRunes would let the cursor stand still.
 	if o.OverlapRunes >= o.MinRunes {
 		o.OverlapRunes = o.MinRunes - 1
 	}
@@ -93,12 +83,9 @@ func (o Options) normalize() Options {
 	return o
 }
 
-// Split cuts text into chunks. truncated is true when MaxChunks stopped it
-// before the end of the text, which the caller records so the gap is visible
-// rather than looking like a complete document.
-//
-// Text that is entirely whitespace yields no chunks: there is nothing to embed,
-// and a vector of nothing pollutes every kNN result.
+// truncated is true when MaxChunks stopped before the end of the text, which
+// the caller records so the gap does not look like a complete document.
+// Whitespace-only text yields no chunks: a vector of nothing pollutes kNN.
 func Split(text string, opts Options) (chunks []Chunk, truncated bool) {
 	opts = opts.normalize()
 	if strings.TrimSpace(text) == "" {
@@ -125,8 +112,7 @@ func Split(text string, opts Options) (chunks []Chunk, truncated bool) {
 
 		next := backUp(text, start, end, opts.OverlapRunes)
 		if next <= start {
-			// The cursor must advance or the loop cannot terminate; giving up
-			// the overlap is the cheaper of the two failures.
+			// The cursor must advance or the loop cannot terminate.
 			next = end
 		}
 		start = next
@@ -134,8 +120,8 @@ func Split(text string, opts Options) (chunks []Chunk, truncated bool) {
 	return chunks, truncated
 }
 
-// advance walks n runes forward from the byte offset from, returning the byte
-// offset reached and how many runes it actually covered (fewer at end of text).
+// Returns the byte offset reached and how many runes it covered (fewer at end
+// of text).
 func advance(text string, from, n int) (int, int) {
 	i := from
 	count := 0
@@ -147,9 +133,8 @@ func advance(text string, from, n int) (int, int) {
 	return i, count
 }
 
-// Cut priorities, best first. A paragraph break is the strongest signal that
-// two passages are about different things; a bare rune boundary is the last
-// resort for text with no whitespace at all (a base64 blob, a CJK run).
+// Cut priorities, best first. A bare rune boundary is the last resort, for
+// text with no whitespace at all (a base64 blob, a CJK run).
 const (
 	cutParagraph = iota
 	cutNewline
@@ -158,10 +143,8 @@ const (
 	cutTiers
 )
 
-// findCut picks the chunk end inside [minEnd, maxEnd]. Within the best
-// available tier it takes the candidate closest to targetEnd, ties going to the
-// later one, so chunks stay near the target size instead of always stretching
-// to the maximum.
+// Within the best available tier it takes the candidate closest to targetEnd,
+// ties to the later one, so chunks stay near the target rather than the maximum.
 func findCut(text string, minEnd, targetEnd, maxEnd int) int {
 	best := [cutTiers]int{-1, -1, -1, -1}
 
@@ -229,9 +212,8 @@ func followedBySpace(text string, at int) bool {
 	return unicode.IsSpace(r)
 }
 
-// backUp returns the start of the next chunk: overlap runes before end, moved
-// forward to the next whitespace boundary so the overlap begins at a word.
-// Never returns an offset at or before floor.
+// The start of the next chunk: overlap runes before end, moved forward to a
+// whitespace boundary. Never returns an offset at or before floor.
 func backUp(text string, floor, end, overlap int) int {
 	if overlap <= 0 {
 		return end
@@ -248,8 +230,7 @@ func backUp(text string, floor, end, overlap int) int {
 		return end
 	}
 
-	// Slide forward to the first boundary after a space, so the overlap does
-	// not start mid-word. Bounded by end, so this can only shorten the overlap.
+	// Bounded by end, so this can only shorten the overlap.
 	for j := i; j < end; {
 		r, size := utf8.DecodeRuneInString(text[j:])
 		if unicode.IsSpace(r) {

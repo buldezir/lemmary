@@ -7,7 +7,6 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// bootTagTestApp is a bootstrapped PocketBase with the Lemmary schema applied.
 // Bootstrap alone runs only PocketBase's system migrations, so tags and users
 // do not exist until the app migrations run too.
 func bootTagTestApp(t *testing.T) *pocketbase.PocketBase {
@@ -97,7 +96,6 @@ func TestMatchTagsResolvesAndDrops(t *testing.T) {
 	}
 }
 
-// matchTags never creates: an unknown name leaves the tag table as it found it.
 func TestMatchTagsCreatesNothing(t *testing.T) {
 	app := bootTagTestApp(t)
 	owner := createTagUser(t, app, "owner@example.com")
@@ -134,9 +132,8 @@ func TestMatchTagsNoNamesIsANoOp(t *testing.T) {
 	}
 }
 
-// Apply writes the result over the document's tags, so a document whose owner
-// cannot be read has to fail the step rather than be answered "no tags" and
-// silently stripped.
+// Apply writes the result over the document's tags, so an unreadable owner has
+// to fail the step rather than silently strip them.
 func TestMatchTagsRequiresAUser(t *testing.T) {
 	if _, _, err := matchTags(nil, "  ", []string{"Invoices"}); err == nil {
 		t.Fatal("expected an error when the user id is empty")

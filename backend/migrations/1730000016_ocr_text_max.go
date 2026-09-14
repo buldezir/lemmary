@@ -12,19 +12,14 @@ import (
 // The column was declared at 500000 characters and nothing in the extraction
 // pipeline knew that number: the OCR step sets the field and saves, so an
 // extraction past the cap failed PocketBase's field validator inside app.Save
-// rather than being shortened. With WORKER_MAX_RETRIES defaulting to 0 that
-// failed the document for good -- the file stored, its text lost, and the
-// reason buried in a validation error. A 20 MB .txt is roughly 21 million
-// characters, so this was reachable by uploading a large text file, not only by
-// trying to.
+// rather than being shortened, and with WORKER_MAX_RETRIES defaulting to 0 that
+// failed the document for good. A 20 MB .txt is roughly 21 million characters.
 //
-// See models.MaxOCRTextRunes for why the file cap is also a character cap, and
-// for the two producers that needed a gate of their own instead.
+// See models.MaxOCRTextRunes for why the file cap is also a character cap.
 //
-// The value is set unconditionally rather than only when it is lower. Installs
-// have already drifted from what the repo declares -- a dashboard edit writes a
-// migration into the database that never reaches this directory -- so the point
-// here is to state the length, not to negotiate with whatever is there.
+// The value is set unconditionally rather than only when it is lower: installs
+// have already drifted from what the repo declares, because a dashboard edit
+// writes a migration into the database that never reaches this directory.
 func init() {
 	m.Register(func(app core.App) error {
 		return setOCRTextMax(app, models.MaxOCRTextRunes)

@@ -39,9 +39,8 @@ function emptyDraft(sdk: ProviderSDK = 'openai'): ProviderDraft {
 }
 
 /**
- * The endpoints the models are bound to. Its add/edit drawer is a form of its
- * own, saved against the providers API rather than the settings record, so it
- * reports success and failure back to the tab's dialog.
+ * The add/edit drawer is a form of its own, saved against the providers API
+ * rather than the settings record, so it reports back to the tab's dialog.
  */
 export function ProvidersBlock({
   providers,
@@ -129,9 +128,8 @@ export function ProvidersBlock({
                       : ' · missing key'
                     : ' · no key needed'}
               </p>
-              {/* The sign-in panel stands where the key field would, and on
-                  the saved row rather than in the add form: the flow needs
-                  a provider id to store the token against. */}
+              {/* On the saved row rather than in the add form: the flow needs a
+                  provider id to store the token against. */}
               {requiresSignIn(item.sdk) && <ChatGPTSignIn provider={item} onChange={onChanged} />}
             </div>
             <div className="flex gap-2">
@@ -191,14 +189,14 @@ export function ProvidersBlock({
                     current.base_url === SDK_DEFAULT_BASE[current.sdk]
                       ? SDK_DEFAULT_BASE[sdk]
                       : current.base_url,
-                  // The key field is about to disappear; a value typed
-                  // before the switch would otherwise be posted invisibly.
+                  // The key field is about to disappear; a value typed before
+                  // the switch would otherwise be posted invisibly.
                   api_key: requiresAPIKey(sdk) ? current.api_key : '',
                 }))
               }}
             >
-              {/* Offering an SDK the server will refuse is a dead end an
-                  admin cannot diagnose, so chatgpt appears only where
+              {/* Offering an SDK the server will refuse is a dead end an admin
+                  cannot diagnose, so chatgpt appears only where
                   AI_CHATGPT_LOGIN turned it on. */}
               {SDK_OPTIONS.filter(
                 (option) => option.value !== 'chatgpt' || chatgptLogin === true,

@@ -15,9 +15,8 @@ import (
 	"lemmary/backend/internal/retrieval"
 )
 
-// stubRetrieverApp is stubDocuments plus the two things the search path needs
-// beyond a record lookup: somewhere to log, and a filter query that finds
-// nothing (these tests pass no named-entity filters).
+// stubRetrieverApp adds the two things the search path needs beyond a record
+// lookup: somewhere to log, and a filter query that finds nothing.
 type stubRetrieverApp struct {
 	stubDocuments
 }
@@ -32,9 +31,8 @@ func (s stubRetrieverApp) FindRecordsByFilter(
 	return nil, nil
 }
 
-// The two documents of the hybrid fixture. The lexical one repeats the query's
-// words; the dense one says the same thing as a compound the keyword index
-// cannot reach from the query, which is the case the whole feature exists for.
+// The lexical document repeats the query's words; the dense one says the same
+// thing as a compound the keyword index cannot reach from the query.
 const (
 	lexicalText = "Preface. The home insurance premium is 240 EUR per year. Signed."
 	denseText   = "Vorwort. Die Versicherungsprämie beträgt 240 EUR pro Jahr. Unterschrift."
@@ -101,10 +99,8 @@ func hybridRetriever(t *testing.T, embeds *int) *agentRetriever {
 	}
 }
 
-// TestSearchFusesTheDenseListIntoTheLexicalOne uses a query no keyword search
-// can answer -- a compound in the wrong spelling, two edits from anything in
-// the archive -- and proves the point with the control: the same search with
-// the chunk index unplugged finds nothing at all.
+// The query is one no keyword search can answer, and the control is the same
+// search with the chunk index unplugged, which finds nothing at all.
 func TestSearchFusesTheDenseListIntoTheLexicalOne(t *testing.T) {
 	const query = "Versicherungspraemien"
 
@@ -162,9 +158,9 @@ func TestSearchEmbedsOneQueryOnce(t *testing.T) {
 	}
 }
 
-// TestSearchDegradesToLexicalWhenEmbeddingFails is the promise the whole dense
-// path is written around: a retrieval tool that fails because the vector store
-// is unhappy is worse than one that answers from keywords.
+// The promise the whole dense path is written around: a retrieval tool that
+// fails because the vector store is unhappy is worse than one that answers
+// from keywords.
 func TestSearchDegradesToLexicalWhenEmbeddingFails(t *testing.T) {
 	r := hybridRetriever(t, nil)
 	r.embedQuery = func(context.Context, string) ([]float32, error) {
@@ -197,12 +193,11 @@ func TestSearchWithoutADenseIndexIsUnchanged(t *testing.T) {
 	}
 }
 
-// TestReadFocusRanksWithTheChunkIndex checks the other half of the wiring: a
-// focused read of a long document uses the stored chunks to decide what to
-// show, so the answer in the middle survives the excerpt.
+// The other half of the wiring: a focused read uses the stored chunks to decide
+// what to show, so an answer in the middle survives the excerpt.
 func TestReadFocusRanksWithTheChunkIndex(t *testing.T) {
 	// Long enough that one excerpt cannot hold it, and with the answer far
-	// enough in that the head-and-first-windows excerpt cannot reach it.
+	// enough in that a head excerpt cannot reach it.
 	head := strings.Repeat("Vorspann ohne Bedeutung. ", 800)
 	middle := "Die Selbstbeteiligung beträgt 150 EUR je Schadensfall. "
 	tail := strings.Repeat("Nachspann ohne Bedeutung. ", 800)
@@ -238,9 +233,8 @@ func TestReadFocusRanksWithTheChunkIndex(t *testing.T) {
 		},
 	}
 
-	// A focus whose words appear nowhere in the document: term overlap over
-	// windows cut from the text finds nothing, so the excerpt would be the head
-	// and the tail, and the sentence in the middle would be unreachable.
+	// A focus whose words appear nowhere in the document: term overlap finds
+	// nothing, so without the chunk index the middle would be unreachable.
 	req := ai.ReadRequest{IDs: []string{"doc1"}, Focus: "Selbstbehalt"}
 
 	control, err := readUserDocuments(app, "u1", req, nil, focusExcerptBytes)

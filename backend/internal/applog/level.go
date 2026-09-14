@@ -8,8 +8,7 @@ import (
 
 const EnvLogLevel = "LOG_LEVEL"
 
-// ParseLevel maps a LOG_LEVEL string to a slog level.
-// Empty and unknown values return false (no stdout tee).
+// ParseLevel reports false for empty and unknown values, meaning no stdout tee.
 func ParseLevel(raw string) (slog.Level, bool) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "debug":

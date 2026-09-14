@@ -12,8 +12,6 @@ import (
 	"time"
 )
 
-// refreshingSource builds a source wired to a stub /oauth/token, and reports
-// how many times that endpoint was called.
 func refreshingSource(t *testing.T, tok Token, persist Persist) (*TokenSource, *atomic.Int32) {
 	t.Helper()
 	var calls atomic.Int32
@@ -52,8 +50,7 @@ func TestAccessTokenRefreshesBeforeExpiryAndPersistsTheRotation(t *testing.T) {
 		return nil
 	}
 
-	// Inside the leeway: still technically valid, but too close to spend on a
-	// request that may sit in a queue first.
+	// Inside the leeway: too close to spend on a request that may queue.
 	src, calls := refreshingSource(t, Token{
 		Access: "old", Refresh: "refresh-1", ExpiresAt: time.Now().Add(time.Minute),
 	}, persist)
@@ -79,8 +76,7 @@ func TestAccessTokenRefreshesBeforeExpiryAndPersistsTheRotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The refresh token rotates on use: storing the old one would mean the next
-	// refresh spends a credential the issuer has already retired.
+	// The refresh token rotates on use: the old one is already retired.
 	if parsed.Refresh != "rotated" {
 		t.Fatalf("stored refresh token = %q, want the rotated one", parsed.Refresh)
 	}
@@ -118,7 +114,7 @@ func TestConcurrentCallersRefreshOnce(t *testing.T) {
 }
 
 // A network blip is not a sign-out: the access token may still have minutes
-// left inside the leeway, and clearing it would break a working install.
+// left inside the leeway.
 func TestAFailedRefreshKeepsAStillValidToken(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -153,8 +149,7 @@ func TestAnUnsignedProviderSaysSo(t *testing.T) {
 }
 
 // The registry is what survives a runtime rebuild. A row re-read from the
-// database mid-refresh must not roll the source back to the token it held
-// before -- that credential has already been spent.
+// database mid-refresh must not roll the source back to a spent credential.
 func TestSourceForIgnoresAnOlderToken(t *testing.T) {
 	Forget("p4")
 	defer Forget("p4")
@@ -184,10 +179,9 @@ func TestSourceForIgnoresAnOlderToken(t *testing.T) {
 }
 
 // A sign-out is two writes: the row's token is cleared, and the source is
-// retired. Only the second reaches a refresh that is already on the wire -- and
-// without it that refresh comes back, stores its rotated pair, and the provider
-// update hook reads the write as a fresh sign-in and rebuilds signed-in
-// clients. The sign-out undoes itself, with no error anywhere to say so.
+// retired. Only the second reaches a refresh already on the wire, and without
+// it that refresh stores its rotated pair and the update hook reads the write
+// as a fresh sign-in.
 func TestARefreshInFlightAcrossForgetStoresNothing(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -231,9 +225,8 @@ func TestARefreshInFlightAcrossForgetStoresNothing(t *testing.T) {
 	}()
 
 	<-started
-	// The sign-out lands while the refresh is still in the air. It must not
-	// block on it either: mu is held across that round trip, which is why the
-	// flag is atomic rather than guarded by the mutex.
+	// The sign-out lands while the refresh is still in the air, and must not
+	// block on it: mu is held across that round trip.
 	Forget(id)
 	close(release)
 
@@ -270,7 +263,7 @@ func TestAForgottenSourceHandsOutNoToken(t *testing.T) {
 }
 
 // Set is the sign-in write. A source retired first must refuse it rather than
-// store a token against a row that is being signed out or deleted.
+// store a token against a row that is being signed out.
 func TestSetOnAForgottenSourceStoresNothing(t *testing.T) {
 	const id = "p-set"
 	Forget(id)
@@ -292,8 +285,8 @@ func TestSetOnAForgottenSourceStoresNothing(t *testing.T) {
 	}
 }
 
-// Forget drops the registry entry as well as retiring the source, so the next
-// SourceFor builds a working one rather than handing back the retired object.
+// Forget drops the registry entry as well, so the next SourceFor builds a
+// working source rather than handing back the retired one.
 func TestSourceForAfterForgetBuildsALiveSource(t *testing.T) {
 	const id = "p-resign"
 	Forget(id)

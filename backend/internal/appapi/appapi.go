@@ -12,9 +12,8 @@ import (
 	"lemmary/backend/internal/zipimport"
 )
 
-// sweeper is the embedding backfill the Management page starts by hand. It is
-// the same instance the worker's cron uses, which is what stops a click and a
-// tick from embedding the same documents twice.
+// sweeper must be the same instance the worker's cron uses, which is what stops
+// a click and a tick from embedding the same documents twice.
 func Register(
 	app core.App,
 	rt *config.Runtime,
@@ -34,8 +33,8 @@ func Register(
 			g.GET("/setup/status", handleGetSetupStatus(app, rt))
 			g.POST("/setup/admin", handlePostSetupAdmin(app))
 			g.POST("/ensure-user", handlePostEnsureUser(app))
-			// Passkey sign-in. The two login routes are public by necessity: the
-			// caller has no session yet, which is the whole point.
+			// The two login routes are public by necessity: the caller has no
+			// session yet.
 			g.POST("/passkeys/login/begin", handlePostPasskeyLoginBegin(app))
 			g.POST("/passkeys/login/finish", handlePostPasskeyLoginFinish(app)).
 				Bind(apis.BodyLimit(passkeyMaxBodyBytes))
@@ -61,22 +60,21 @@ func Register(
 				Bind(apis.BodyLimit(chatMaxBodyBytes))
 			g.POST("/search/cancel", bindAuth(handleSearchCancel(app)))
 			g.POST("/search/reindex", bindAdmin(handleSearchReindex(app, idx)))
-			// Saved conversations behind both AI chat surfaces. The collections
-			// carry no API rules, so this is their only access path.
+			// The chat collections carry no API rules, so this is their only
+			// access path.
 			g.GET("/chats", bindAuth(handleListChats(app)))
 			g.GET("/chats/{id}", bindAuth(handleGetChat(app)))
 			g.PATCH("/chats/{id}", bindAuth(handlePatchChat(app)))
 			g.DELETE("/chats/{id}", bindAuth(handleDeleteChat(app)))
 			// The OCR test page sends no purpose and means OCR.
 			g.GET("/ocr/providers", bindAuth(handlePickableProviders(app, rt, aiprovider.PurposeOCR)))
-			// The same list for any purpose, for the model pickers on a chat and
-			// on a reprocess job. Auth rather than admin: an override is a
-			// per-user choice among providers an admin already configured, and
-			// this answer carries no credential -- see pickableProvider.
+			// Auth rather than admin: an override is a per-user choice among
+			// providers an admin configured, and this answer carries no
+			// credential.
 			g.GET("/ai/providers", bindAuth(handlePickableProviders(app, rt, aiprovider.PurposeLLM)))
 			// Without a route-level limit the multipart parse consumes the whole
 			// request under PocketBase's 32MB default before the handler's own
-			// 10MB check can reject it.
+			// check can reject it.
 			g.POST("/ocr/test", bindAuth(handleOCRTest(app, rt))).
 				Bind(apis.BodyLimit(ocrTestMaxFileBytes + (1 << 20)))
 			g.GET("/settings", bindAdmin(handleGetSettings(app, rt)))
@@ -88,12 +86,11 @@ func Register(
 			g.POST("/providers", bindAdmin(handleCreateProvider(app, rt)))
 			g.PATCH("/providers/{id}", bindAdmin(handlePatchProvider(app, rt)))
 			g.DELETE("/providers/{id}", bindAdmin(handleDeleteProvider(app, rt)))
-			// Auth rather than admin, unlike the rest of /providers: a model picker
-			// is useless without the catalogue, and the answer is model ids and an
-			// SDK name -- no key, no account, no base URL.
+			// Auth rather than admin, unlike the rest of /providers: the answer is
+			// model ids and an SDK name, no key, account or base URL.
 			g.GET("/providers/{id}/models", bindAuth(handleListProviderModels(app)))
-			// Device-code sign-in for the chatgpt SDK. Two calls rather than
-			// one blocking handler: the browser owns the polling interval.
+			// Two calls rather than one blocking handler: the browser owns the
+			// polling interval.
 			g.POST("/providers/{id}/chatgpt/device", bindAdmin(handleChatGPTDeviceStart(app, rt)))
 			g.POST("/providers/{id}/chatgpt/device/poll", bindAdmin(handleChatGPTDevicePoll(app, rt)))
 			g.DELETE("/providers/{id}/chatgpt", bindAdmin(handleChatGPTSignOut(app, rt)))
@@ -101,10 +98,8 @@ func Register(
 			g.POST("/taxonomy/prune", bindAdmin(handlePostTaxonomyPrune(app)))
 			g.POST("/import/ngx", bindAuth(handlePostImportNgx(app)))
 			g.GET("/import/ngx/status", bindAuth(handleGetImportNgxStatus(app)))
-			// Two path families over one implementation. Only the upload route
-			// says which source it is; the staged upload remembers, so the other
-			// three are the same handler twice, registered so each flow's URLs
-			// stay coherent rather than because they behave differently.
+			// Two path families over one implementation: only the upload route
+			// says which source it is, and the staged upload remembers.
 			g.POST("/import/amazon/upload", bindAuth(handlePostImportUpload(app, lim, zipimport.SourceAmazon))).
 				Bind(apis.BodyLimit(config.StagingMaxBytesFromEnv()))
 			g.DELETE("/import/amazon/upload", bindAuth(handleDeleteImportUpload(app)))
@@ -121,8 +116,8 @@ func Register(
 			g.POST("/import/archive", bindAuth(handlePostImportArchive(app)))
 			g.GET("/import/archive/status", bindAuth(handleGetImportArchiveStatus(app)))
 			// The extra megabyte is headroom for the multipart framing, so a PDF
-			// at the cap still reaches the handler and is rejected with the
-			// message that explains the limit instead of a bare 413.
+			// at the cap reaches the handler and gets the message that explains
+			// the limit instead of a bare 413.
 			g.POST("/split/upload", bindAuth(handlePostSplitUpload(app))).
 				Bind(apis.BodyLimit(pdfsplit.MaxPDFBytes + (1 << 20)))
 			g.DELETE("/split/upload", bindAuth(handleDeleteSplitUpload(app)))
@@ -131,9 +126,8 @@ func Register(
 			g.GET("/split/detect/status", bindAuth(handleGetSplitDetectStatus(app)))
 			g.POST("/split", bindAuth(handlePostSplit(app, lim)))
 			g.GET("/split/status", bindAuth(handleGetSplitStatus(app)))
-			// Scanning from an eSCL device on the LAN. The scan itself is a job
-			// rather than a synchronous call: a feeder run is minutes long, and
-			// a reverse proxy's read timeout would cut it in half.
+			// A scan is a job rather than a synchronous call: a feeder run is
+			// minutes long, and a proxy's read timeout would cut it in half.
 			g.GET("/scan/discover", bindAuth(handleGetScanDiscover(app)))
 			g.POST("/scan", bindAuth(handlePostScan(app, lim)))
 			g.GET("/scan/status", bindAuth(handleGetScanStatus(app)))

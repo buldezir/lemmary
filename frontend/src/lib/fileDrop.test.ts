@@ -85,8 +85,8 @@ describe('filesFromEntries', () => {
   })
 
   it('keeps reading a directory past the first batch', async () => {
-    // readEntries returns a capped batch and an empty one to finish. Calling it
-    // once would silently drop everything after the cap -- this is the trap.
+    // readEntries returns a capped batch, so calling it once silently drops
+    // everything after the cap.
     const children = Array.from({ length: 250 }, (_, i) => fileEntry(`/big/${i}.pdf`))
     const files = await filesFromEntries([dirEntry('/big', children, 100)])
     expect(files).toHaveLength(250)
@@ -124,9 +124,8 @@ describe('classifySelection', () => {
   const named = (name: string) => new File(['x'], name)
 
   it('drops junk silently rather than calling it the wrong type', () => {
-    // An AppleDouble carries the extension of the file it shadows, so without
-    // the junk check ._1.pdf is queued as a document -- and .DS_Store is
-    // reported as a mistake the user did not make.
+    // An AppleDouble carries the extension of the file it shadows, so ._1.pdf
+    // would be queued as a document.
     const result = classifySelection(
       [named('1.pdf'), named('._1.pdf'), named('.DS_Store')],
       accepts,
@@ -157,9 +156,8 @@ describe('appendNew', () => {
   })
 
   it('dedupes against the list it is given, not a captured one', () => {
-    // Two folder drops of the same tree can land before either has re-rendered.
-    // Applied one after the other the way React applies updaters, the second
-    // must see the first's result.
+    // Two drops of the same tree can land before either re-renders, so the
+    // second updater must see the first's result.
     const tree = [staged('1.pdf'), staged('2.pdf')]
     const afterFirst = appendNew([], tree)
     const afterSecond = appendNew(afterFirst, tree)

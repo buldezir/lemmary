@@ -11,11 +11,10 @@ import (
 
 const collectionRecordsAuthGuardId = "lemmaryCollectionRecordsAuthGuard"
 
-// Register forces PocketBase collection record API requests to have valid auth.
-//
-// PocketBase intentionally treats missing or invalid Authorization headers as
-// anonymous access, which can return 200 with an empty list when rules filter
-// everything out. For this app, collection record APIs are always private.
+// Register forces valid auth on collection record API requests. PocketBase
+// treats a missing or invalid Authorization header as anonymous access, which
+// can return 200 with an empty list once rules filter everything out; in this
+// app the collection record APIs are always private.
 func Register(app core.App) {
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Func: func(e *core.ServeEvent) error {

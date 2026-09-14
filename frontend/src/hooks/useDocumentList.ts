@@ -32,13 +32,8 @@ export const DOCUMENT_PAGE_SIZE = 12
 export type DocumentListRoute = '/' | '/inbox'
 
 /**
- * Everything a page of documents needs that is not layout: the filters as URL
- * state, the load, the live refresh, the jobs behind the rows, the selection
- * and the two bulk actions.
- *
- * Extracted so the documents list and the Inbox can be two pages rather than
- * one page with an `inbox` flag threaded through its markup. They ask the same
- * questions of the server and answer them differently on screen.
+ * Shared so the documents list and the Inbox can be two pages rather than one
+ * page with an `inbox` flag threaded through its markup.
  */
 export function useDocumentList({
   route,
@@ -54,18 +49,14 @@ export function useDocumentList({
   status?: string
   /**
    * Whether this list offers filter controls. False pins every filter to its
-   * default, so a list without controls cannot be narrowed at all.
-   *
-   * Enforced here rather than left to the route's validateSearch, which is not
-   * enough on its own: `useSearch({ strict: false })` hands back the raw search
-   * params, so a hand-typed ?q= reached the query and quietly emptied a list
-   * with no search box to explain it.
+   * default. Enforced here, not in the route's validateSearch: `useSearch({
+   * strict: false })` hands back raw params, so a hand-typed ?q= reached the
+   * query and quietly emptied a list with no search box to explain it.
    */
   filters?: boolean
 }) {
-  // The filters are the URL, not state: reloading, bookmarking or sharing the
-  // page reproduces the list, and Back steps through the filters that made it.
-  // Validated but sparse: the URL only carries the filters that are set, so the
+  // The filters are the URL, not state, so the page is reproducible and Back
+  // steps through it. The URL only carries the filters that are set, so the
   // defaults are filled back in here.
   const parsed = parseDocumentQuery(useSearch({ strict: false }))
   const query = filters ? parsed : { ...defaultDocumentQuery, page: parsed.page }
@@ -83,8 +74,8 @@ export function useDocumentList({
 
   const [documents, setDocuments] = useState<DocumentRecord[]>([])
   const [jobs, setJobs] = useState<Map<string, ProcessingJobRecord>>(new Map())
-  // The only filter with a copy outside the URL, because it is typed one letter
-  // at a time and the URL only gets the settled value.
+  // The only filter with a copy outside the URL: typed one letter at a time,
+  // and the URL only gets the settled value.
   const [search, setSearch] = useState(debouncedSearch)
   const [syncedSearch, setSyncedSearch] = useState(debouncedSearch)
   const [totalItems, setTotalItems] = useState(0)
@@ -98,26 +89,20 @@ export function useDocumentList({
   const [reprocessing, setReprocessing] = useState(false)
   const [markingReviewed, setMarkingReviewed] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  // Bumped whenever the library changes, for a caller counting it.
   const [libraryVersion, setLibraryVersion] = useState(0)
 
-  // URL -> box, for Back/Forward and for a link opened with a term already in
-  // it. Adjusted during render rather than in an effect, so the box never paints
-  // one frame of the old term. syncedSearch is what makes this fire on a URL
-  // change only: a keystroke leaves it alone, so the typing is not overwritten
-  // before the debounce has had a chance to publish it.
+  // URL -> box. Adjusted during render rather than in an effect, so the box
+  // never paints one frame of the old term. syncedSearch makes this fire on a
+  // URL change only, so typing is not overwritten before the debounce publishes.
   if (syncedSearch !== debouncedSearch) {
     setSyncedSearch(debouncedSearch)
     setSearch(debouncedSearch)
   }
 
   /**
-   * Writes filters to the URL, which is what re-renders the list.
-   *
-   * A different filter is a different list, so it starts at page one unless the
-   * patch says otherwise. Discrete controls push a history entry — Back undoes
-   * the filter — while the search box replaces, so Back skips the whole phrase
-   * rather than walking back one keystroke at a time.
+   * A different filter is a different list, so this starts at page one unless
+   * the patch says otherwise. Discrete controls push a history entry; the
+   * search box replaces, so Back skips the phrase rather than one keystroke.
    */
   const updateQuery = useCallback(
     (patch: Partial<DocumentQuery>, replace = false) => {
@@ -187,9 +172,9 @@ export function useDocumentList({
         if (!active) return
 
         // Clearing a whole page leaves the URL past the end, where an empty
-        // page reads as an empty *list*: the pager hides itself at one page, so
+        // page reads as an empty list: the pager hides itself at one page, so
         // the Inbox would claim nothing was waiting while the badge counted
-        // twelve. Walk back instead of reporting it.
+        // twelve.
         if (result.items.length === 0 && page > result.totalPages && result.totalItems > 0) {
           updateQuery({ page: result.totalPages }, true)
           return
@@ -200,8 +185,8 @@ export function useDocumentList({
         setTotalPages(result.totalPages)
         setError('')
       } catch (err) {
-        // Overlapping refreshes (filter change + realtime) can autocancel each
-        // other; the surviving request has the fresh data.
+        // Overlapping refreshes can autocancel each other; the surviving
+        // request has the fresh data.
         if (err instanceof ClientResponseError && err.isAbort) {
           return
         }
@@ -222,9 +207,9 @@ export function useDocumentList({
       setLibraryVersion((version) => version + 1)
     }
 
-    // Our own writes, which is the only signal that always arrives: realtime is
+    // Our own writes are the only signal that always arrives: realtime is
     // optional, and without this a marked-reviewed card would sit on an Inbox
-    // it no longer belongs to while the header's count already said it had gone.
+    // whose count already said it had gone.
     const offLocal = onDocumentsChanged(refresh)
 
     let unsubscribe: (() => void) | undefined
@@ -232,8 +217,8 @@ export function useDocumentList({
       .collection('documents')
       .subscribe('*', refresh)
       .then((fn) => {
-        // Unmount can win the race with the subscribe; without this the
-        // subscription outlives the page that asked for it.
+        // Unmount can win the race with the subscribe, leaving a subscription
+        // that outlives the page.
         if (!active) {
           void fn()
           return
@@ -261,11 +246,10 @@ export function useDocumentList({
     updateQuery,
   ])
 
-  // Bumped when a job changes, which the documents subscription cannot see: a
-  // pipeline walks through six steps while the document sits at "processing",
-  // so without this a card's line froze at "OCR — 12.0s" and stayed there long
-  // after the badge had flipped to Failed. Debounced because a bulk upload
-  // turns one answer into a burst of events.
+  // Job changes are invisible to the documents subscription: a pipeline walks
+  // six steps while the document sits at "processing", so a card's line froze
+  // at "OCR" long after the badge had flipped to Failed. Debounced because a
+  // bulk upload turns one answer into a burst of events.
   const [jobsVersion, setJobsVersion] = useState(0)
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -297,16 +281,14 @@ export function useDocumentList({
     }
   }, [])
 
-  // The jobs behind the page's documents, in one request, so a card can say
-  // which step is running or why one failed. Separate from the load above
-  // because it depends only on which documents ended up on the page -- and
-  // because a job that cannot be read must not fail the list itself.
+  // The jobs behind the page's documents, in one request. Separate from the
+  // load above because a job that cannot be read must not fail the list.
   const documentIds = documents.map((document) => document.id).join(',')
   useEffect(() => {
     let active = true
     // Called even for an empty page: getLatestJobsFor short-circuits without a
-    // request, and going through it keeps the state write out of the effect
-    // body, where a synchronous one would cascade a render.
+    // request, and this keeps the state write out of the effect body, where a
+    // synchronous one would cascade a render.
     void getLatestJobsFor(documentIds ? documentIds.split(',') : [])
       .then((byDocument) => {
         if (active) setJobs(byDocument)
@@ -319,10 +301,8 @@ export function useDocumentList({
     }
   }, [documentIds, jobsVersion])
 
-  // Every action goes through selectedOnPage, never selectedIds, so ids left over
-  // from another page or an earlier filter can neither be counted nor submitted.
-  // That is what makes a stale selection harmless without resetting state on
-  // every filter change.
+  // Every action goes through selectedOnPage, never selectedIds, so ids left
+  // over from another page or filter can neither be counted nor submitted.
   const selectedOnPage = documents.filter((document) => selectedIds.has(document.id))
 
   function toggleSelected(id: string) {
@@ -369,13 +349,9 @@ export function useDocumentList({
   }
 
   /**
-   * Clears documents out of the Inbox. No confirmation, unlike reprocess: this
-   * overwrites nothing.
-   *
-   * Filtered to documents still reading needs_review, on top of the
-   * selectedOnPage guard, because a refresh can land between the tick and the
-   * click -- and because the Inbox holds failed and queued documents too, which
-   * there is nothing to review about.
+   * No confirmation, unlike reprocess: this overwrites nothing. Filtered to
+   * documents still reading needs_review because a refresh can land between the
+   * tick and the click, and the Inbox holds failed and queued documents too.
    */
   async function onMarkReviewed(ids: string[]) {
     const waiting = documents
@@ -401,11 +377,7 @@ export function useDocumentList({
     }
   }
 
-  /**
-   * Deletes what is selected. Confirmed, unlike marking reviewed: this is the
-   * one bulk action that destroys the document and its file, and there is no
-   * undo behind it.
-   */
+  /** Confirmed: the one bulk action that destroys the file, with no undo. */
   async function onDeleteSelected() {
     const ids = selectedOnPage.map((document) => document.id)
     if (ids.length === 0) return
@@ -464,9 +436,8 @@ export function useDocumentList({
 }
 
 /**
- * The document types and correspondents a filter dropdown offers. Its own hook
- * rather than part of useDocumentList: a list without filter controls has no
- * use for two requests' worth of options.
+ * Its own hook rather than part of useDocumentList: a list without filter
+ * controls has no use for two requests' worth of options.
  */
 export function useDocumentFilterOptions() {
   const { data, error } = useAsync(async () => {

@@ -9,20 +9,17 @@ import (
 )
 
 const (
-	// MaxPassagesPerDocument is what a search hit is allowed to quote. Three
-	// short verbatim passages is the point where a hit stops being a filename
-	// and starts being evidence, without the result list turning into a read.
+	// Three short verbatim passages is where a hit stops being a filename and
+	// starts being evidence, without the result list turning into a read.
 	MaxPassagesPerDocument = 3
 
-	// The per-document passage budget is clamped into this range whatever the
-	// caller's arithmetic says: below the floor a passage cannot carry a figure
-	// and its label, above the ceiling one document crowds out the rest.
+	// Below the floor a passage cannot carry a figure and its label; above the
+	// ceiling one document crowds out the rest.
 	minPassageBudget = 240
 	maxPassageBudget = 1500
 )
 
-// Passage is a verbatim slice of a document, quoted back to the model or shown
-// on a result card. Page is 0 while no OCR provider preserves page boundaries.
+// Page is 0 while no OCR provider preserves page boundaries.
 type Passage struct {
 	Page      int
 	StartByte int
@@ -30,17 +27,12 @@ type Passage struct {
 	Text      string
 }
 
-// SelectPassages picks the passages that represent one document, fusing the
-// dense and lexical chunk lists for it and keeping the best few.
+// SelectPassages fuses the dense and lexical chunk lists for one document and
+// keeps the best few. Either list may be empty.
 //
-// Either list may be empty: with only lexical hits this is "the best highlight
-// fragments", which is exactly what the pre-embedding path needs, and the dense
-// path plugs into the same fusion later.
-//
-// ocrText is the document's text, used to resolve chunks that carry offsets
-// rather than their own text. Offsets that no longer fit it are dropped rather
-// than clamped: they come from a chunking of an older revision of the text, and
-// a clamped slice of the current one is a quote from nowhere.
+// Offsets that no longer fit ocrText are dropped rather than clamped: they
+// chunk an older revision of the text, and a clamped slice of the current one
+// is a quote from nowhere.
 func SelectPassages(ocrText string, dense, lexical []ChunkHit, budgetBytes int) []Passage {
 	if budgetBytes <= 0 {
 		return nil
@@ -51,9 +43,8 @@ func SelectPassages(ocrText string, dense, lexical []ChunkHit, budgetBytes int) 
 		out := make([]Ranked, 0, len(hits))
 		for _, hit := range hits {
 			key := hit.DocumentID + "\x00" + strconv.Itoa(hit.Ord)
-			// First list to mention a chunk owns its text: the dense list is
-			// passed first and carries stored chunk text, where a lexical hit
-			// may only carry a highlight fragment.
+			// First list to mention a chunk owns its text: dense is passed
+			// first with stored chunk text, lexical may carry only a fragment.
 			if _, ok := byKey[key]; !ok {
 				byKey[key] = hit
 			}
@@ -67,8 +58,7 @@ func SelectPassages(ocrText string, dense, lexical []ChunkHit, budgetBytes int) 
 		return nil
 	}
 
-	// Resolve first, then spend: a chunk whose offsets went stale must not eat
-	// one of the three slots.
+	// Resolve first, then spend: a chunk with stale offsets must not eat a slot.
 	texts := make([]ChunkHit, 0, MaxPassagesPerDocument)
 	for _, item := range fused {
 		if len(texts) == MaxPassagesPerDocument {
@@ -104,9 +94,7 @@ func SelectPassages(ocrText string, dense, lexical []ChunkHit, budgetBytes int) 
 		}
 		text := hit.Text
 		if len(text) > limit {
-			// The ellipsis is part of what is spent, so the cut leaves room
-			// for it rather than overshooting the budget by three bytes a
-			// passage.
+			// The ellipsis is part of what is spent.
 			text = strings.TrimSpace(strutil.Truncate(text, limit-len(strutil.Ellipsis))) + strutil.Ellipsis
 		}
 		if strings.TrimSpace(text) == "" {
@@ -123,8 +111,7 @@ func SelectPassages(ocrText string, dense, lexical []ChunkHit, budgetBytes int) 
 	return passages
 }
 
-// passageText is the chunk's own text when it has one, otherwise the slice of
-// ocrText its offsets point at. Empty when neither is usable.
+// The chunk's own text when it has one, else the slice its offsets point at.
 func passageText(ocrText string, hit ChunkHit) string {
 	if text := strings.TrimSpace(hit.Text); text != "" {
 		return text
@@ -142,20 +129,13 @@ func passageText(ocrText string, hit ChunkHit) string {
 	return strings.TrimSpace(ocrText[start:end])
 }
 
-// snippetContextBytes is how much text is kept either side of a matched term
-// when a window is narrowed to a passage. Enough for the sentence around a
-// figure, on both sides, in either byte width.
+// Kept either side of a matched term: enough for the sentence around a figure.
 const snippetContextBytes = 200
 
-// LexicalChunks turns a document's OCR text into passage-sized candidates
-// centred on where the query's terms actually occur.
-//
-// This is the passage source until chunks are stored: the offsets are real, so
-// a passage can be pointed back at its place in the document, and the caller
-// gets several of them rather than the single fragment a Bleve highlight gives.
-// Terms that do not literally occur — a fuzzy match, a different inflection the
-// substring search missed — produce nothing here, and the caller falls back to
-// the index's own highlight.
+// LexicalChunks centres passage-sized candidates on where the query's terms
+// actually occur, so each carries real offsets back into the document. Terms
+// that do not literally occur produce nothing, and the caller falls back to the
+// index's own highlight.
 func LexicalChunks(documentID, ocrText, query string, max int) []ChunkHit {
 	if max <= 0 || ocrText == "" {
 		return nil
@@ -198,14 +178,10 @@ func LexicalChunks(documentID, ocrText, query string, max int) []ChunkHit {
 	return hits
 }
 
-// Narrow shrinks each chunk hit to the text around the query's terms.
-//
-// A stored chunk is a passage-sized block chosen for embedding, not for
-// quoting: the sentence that answers the question can be anywhere in it, and a
-// budget that only pays for a third of the chunk would otherwise quote its
-// opening. A hit whose terms cannot be located — stale offsets, or a chunk that
-// matched by fuzziness rather than literally — is passed through as it came,
-// because a coarse quote is still evidence.
+// Narrow shrinks each chunk hit to the text around the query's terms: a chunk
+// is sized for embedding, not quoting, so a budget paying for a third of one
+// would otherwise quote its opening. A hit whose terms cannot be located is
+// passed through as it came, because a coarse quote is still evidence.
 func Narrow(ocrText, query string, hits []ChunkHit) []ChunkHit {
 	if len(hits) == 0 {
 		return nil
@@ -227,8 +203,8 @@ func Narrow(ocrText, query string, hits []ChunkHit) []ChunkHit {
 	return out
 }
 
-// narrowToMatch shrinks a window to the text around its first matched term, so
-// a passage quotes the match rather than whatever happened to start the window.
+// Shrinks a window around its first matched term, so a passage quotes the match
+// rather than whatever happened to start the window.
 func narrowToMatch(ocrText string, w Window, terms []string) (int, int) {
 	if w.StartByte < 0 || w.EndByte <= w.StartByte || w.EndByte > len(ocrText) {
 		return 0, 0
@@ -255,9 +231,7 @@ func narrowToMatch(ocrText string, w Window, terms []string) (int, int) {
 	return start, end
 }
 
-// PassageBudgetPerDoc divides a per-call passage cap across the documents a
-// search returned, clamped so neither a long result list nor a single hit can
-// make the quotes useless.
+// Clamped so neither a long result list nor a single hit makes quotes useless.
 func PassageBudgetPerDoc(capBytes, docs int) int {
 	if docs <= 0 || capBytes <= 0 {
 		return 0

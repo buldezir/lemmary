@@ -16,8 +16,6 @@ import (
 	"lemmary/backend/internal/aiprovider"
 )
 
-// messagesServer stands in for the /messages endpoint. It records the request
-// it was reached with and answers whatever the test supplies.
 type messagesServer struct {
 	body   map[string]any
 	header http.Header
@@ -37,7 +35,6 @@ func (m *messagesServer) start(t *testing.T, reply any) string {
 	return srv.URL
 }
 
-// textReply is the smallest well-formed Message.
 func textReply(text string) map[string]any {
 	return map[string]any{
 		"id": "msg_1", "type": "message", "role": "assistant",
@@ -56,10 +53,8 @@ func fieldOf(t *testing.T, body map[string]any, key string) any {
 	return value
 }
 
-// The shape the two APIs disagree about most: a system message is a parameter
-// there, not a role, so left in the message list it would either be rejected or
-// silently read as a user turn -- and every prompt in this codebase is a system
-// message.
+// A system message is a parameter there, not a role, so left in the message
+// list it would be rejected or silently read as a user turn.
 func TestSystemPromptIsHoistedOutOfTheMessageList(t *testing.T) {
 	t.Parallel()
 	srv := &messagesServer{}
@@ -96,9 +91,6 @@ func TestSystemPromptIsHoistedOutOfTheMessageList(t *testing.T) {
 	}
 }
 
-// max_tokens is required by the Messages API and set by nobody in this
-// codebase, so the translation has to invent one. Without it every request is
-// rejected before a model sees it.
 func TestMaxTokensIsAlwaysSent(t *testing.T) {
 	t.Parallel()
 	srv := &messagesServer{}
@@ -126,11 +118,6 @@ func TestMaxTokensIsAlwaysSent(t *testing.T) {
 	}
 }
 
-// The Messages API has no bare json_object mode -- its structured output wants
-// a full schema, which none of these callers has. Sent anyway it would be an
-// unknown parameter; dropped, the prompts' own "Return one JSON object" and the
-// lenient parsers carry it, exactly as they do when /chat/completions rejects
-// the parameter.
 func TestJSONModeIsDroppedRatherThanSentUntranslated(t *testing.T) {
 	t.Parallel()
 	srv := &messagesServer{}
@@ -154,11 +141,9 @@ func TestJSONModeIsDroppedRatherThanSentUntranslated(t *testing.T) {
 	}
 }
 
-// A research turn replays its whole thread every round, tool calls included. On
-// this API a call is a content block on the assistant turn and its answer is a
-// tool_result block on a user turn -- not an assistant field and a tool-role
-// message. Getting this wrong loses the tool results, so the model re-runs the
-// same searches forever.
+// On this API a tool call is a content block on the assistant turn and its
+// answer a tool_result block on a user turn. Getting this wrong loses the tool
+// results, so the model re-runs the same searches forever.
 func TestToolCallsRoundTripThroughContentBlocks(t *testing.T) {
 	t.Parallel()
 	srv := &messagesServer{}
@@ -203,15 +188,12 @@ func TestToolCallsRoundTripThroughContentBlocks(t *testing.T) {
 		t.Fatalf("CompleteViaMessages: %v", err)
 	}
 
-	// Outbound: the call became a tool_use block, its answer a user turn with a
-	// tool_result block.
 	sent, _ := json.Marshal(srv.body["messages"])
 	for _, want := range []string{`"type":"tool_use"`, `"type":"tool_result"`, `"tool_use_id":"call_1"`} {
 		if !strings.Contains(string(sent), want) {
 			t.Errorf("messages missing %s: %s", want, sent)
 		}
 	}
-	// The schema arrived whole, not just its named fields.
 	tools, _ := json.Marshal(srv.body["tools"])
 	for _, want := range []string{`"name":"search"`, `"input_schema"`, `"required":["q"]`} {
 		if !strings.Contains(string(tools), want) {
@@ -219,7 +201,6 @@ func TestToolCallsRoundTripThroughContentBlocks(t *testing.T) {
 		}
 	}
 
-	// Inbound: the tool_use block became a chat tool call the callers read.
 	calls := resp.Choices[0].Message.ToolCalls
 	if len(calls) != 1 || calls[0].ID != "call_9" || calls[0].Function.Name != "search" {
 		t.Fatalf("tool calls = %+v, want the one from the reply", calls)
@@ -232,9 +213,8 @@ func TestToolCallsRoundTripThroughContentBlocks(t *testing.T) {
 	}
 }
 
-// LLM OCR is the reason this translation handles content parts at all: it sends
-// the document as a data URI in an image_url or file part, and the Messages API
-// wants the media type and the base64 payload as separate fields.
+// LLM OCR sends the document as a data URI in an image_url or file part, and
+// the Messages API wants the media type and the base64 payload separately.
 func TestOCRPartsBecomeImageAndDocumentBlocks(t *testing.T) {
 	t.Parallel()
 	png := base64.StdEncoding.EncodeToString([]byte("not really a png"))
@@ -287,9 +267,6 @@ func TestOCRPartsBecomeImageAndDocumentBlocks(t *testing.T) {
 	}
 }
 
-// A docx reaches the Messages API as neither an image nor a PDF, and the only
-// base64 document source it has is a PDF one. Refused here it names the
-// problem; sent, it comes back as an opaque upstream error.
 func TestANonPDFDocumentIsRefusedWithAUsefulError(t *testing.T) {
 	t.Parallel()
 	srv := &messagesServer{}
@@ -314,10 +291,8 @@ func TestANonPDFDocumentIsRefusedWithAUsefulError(t *testing.T) {
 	}
 }
 
-// The header OpenCode requires. It is the whole reason this SDK exists
-// separately, and the Anthropic client needs its own middleware for it because
-// the two SDKs' option types are unrelated -- so an untested one is an easy
-// thing to leave off.
+// The header OpenCode requires. The Anthropic client needs its own middleware
+// for it, because the two SDKs' option types are unrelated.
 func TestTheSessionHeaderIsSentOnMessagesToo(t *testing.T) {
 	t.Parallel()
 	srv := &messagesServer{}
@@ -341,16 +316,12 @@ func TestTheSessionHeaderIsSentOnMessagesToo(t *testing.T) {
 	if got := srv.header.Get("Authorization"); got != "Bearer k" {
 		t.Errorf("Authorization = %q, want a bearer token", got)
 	}
-	// This client is the second HTTP stack behind an OpenCode provider, and
-	// the openai-go option that names us elsewhere does not reach it.
+	// The openai-go option that names us elsewhere does not reach this client.
 	if got := srv.header.Get("User-Agent"); got != aiprovider.UserAgent {
 		t.Errorf("User-Agent = %q, want %q", got, aiprovider.UserAgent)
 	}
 }
 
-// Usage is what a Deep Search run is budgeted against, and the two APIs name
-// the numbers differently -- cache_read_input_tokens is the cached part of the
-// input, included in it rather than additional to it.
 func TestUsageIsFoldedIntoTheChatCompletionShape(t *testing.T) {
 	t.Parallel()
 	srv := &messagesServer{}
@@ -375,8 +346,6 @@ func TestUsageIsFoldedIntoTheChatCompletionShape(t *testing.T) {
 	}
 }
 
-// Chat streams the answer a token at a time, and the deltas arrive under
-// different event names on this API.
 func TestStreamingDeltasAndUsage(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -421,14 +390,10 @@ func TestStreamingDeltasAndUsage(t *testing.T) {
 	}
 }
 
-// A round of parallel tool calls answers with one tool-role message per call,
-// and Deep Search then appends its answer instruction after them. All three are
-// user turns on this API, and the Messages shape alternates roles: a tool_use
-// left unanswered in the turn immediately following it is a 400 wherever the
-// gateway does not combine them for us.
-//
-// This is the shape research.go actually builds -- the tool loop appends a
-// ToolMessage per call, then answerResearch appends a UserMessage.
+// This is the shape research.go builds: a ToolMessage per parallel call, then
+// a UserMessage. All three are user turns here, and a tool_use left unanswered
+// in the turn immediately after it is a 400 where the gateway does not combine
+// them for us.
 func TestParallelToolResultsLandInOneUserTurn(t *testing.T) {
 	t.Parallel()
 	srv := &messagesServer{}
@@ -469,8 +434,6 @@ func TestParallelToolResultsLandInOneUserTurn(t *testing.T) {
 		t.Fatalf("roles = %v, want the turns to alternate", roles)
 	}
 
-	// Both tool_results are in the turn right after the tool_use blocks, and
-	// the instruction that followed them is still after them.
 	last, _ := json.Marshal(messages[2])
 	for _, want := range []string{`"tool_use_id":"call_1"`, `"tool_use_id":"call_2"`, "now write the answer"} {
 		if !strings.Contains(string(last), want) {
@@ -482,8 +445,6 @@ func TestParallelToolResultsLandInOneUserTurn(t *testing.T) {
 	}
 }
 
-// The merge must not run two separate exchanges together: an assistant turn
-// between two user turns is what keeps them apart.
 func TestSeparateTurnsAreNotMerged(t *testing.T) {
 	t.Parallel()
 	srv := &messagesServer{}

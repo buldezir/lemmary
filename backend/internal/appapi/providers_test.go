@@ -26,13 +26,10 @@ func providerBindingsForTest(t *testing.T) *core.Record {
 	return record
 }
 
-// The embedding client speaks the OpenAI-shaped /embeddings API, which
-// google_vision has no equivalent of. A provider bound only as the embedding
-// provider used to slip through the SDK guard, and the failure that followed
-// was invisible: Deep Search's dense half simply stopped returning anything.
-//
-// The guard is CanEmbed rather than IsLLM, which is what lets the local SDK --
-// an endpoint that embeds without chatting -- stay bound.
+// A provider bound only as the embedding provider could slip through the SDK
+// guard, and the failure was invisible: the dense half simply stopped returning
+// anything. The guard is CanEmbed rather than IsLLM, so the local SDK, which
+// embeds without chatting, stays bound.
 func TestProviderBoundToEmbeddingsMustKeepAnEmbeddingSDK(t *testing.T) {
 	t.Parallel()
 	record := providerBindingsForTest(t)
@@ -45,8 +42,8 @@ func TestProviderBoundToEmbeddingsMustKeepAnEmbeddingSDK(t *testing.T) {
 		t.Fatal("an unbound provider was reported as in use")
 	}
 
-	// The binding is not an LLM binding: switching it to the local SDK is
-	// exactly the move the SDK exists for, and must not be refused.
+	// Not an LLM binding: switching it to the local SDK is the move that
+	// SDK exists for.
 	if boundTo(record, "provider1", llmBindingFields...) {
 		t.Fatal("the embedding binding must not force an LLM SDK")
 	}
@@ -68,7 +65,7 @@ func TestBoundToCoversEveryLLMBinding(t *testing.T) {
 		}
 	}
 
-	// OCR is the one binding google_vision exists for, so it must not block a
+	// OCR is the binding google_vision exists for, so it must not block a
 	// switch away from an LLM SDK.
 	ocrOnly := providerBindingsForTest(t)
 	ocrOnly.Set("ocr_provider_id", "provider1")
@@ -86,9 +83,7 @@ func TestBoundToCoversEveryLLMBinding(t *testing.T) {
 	}
 }
 
-// The OCR binding needed no SDK guard while every SDK but google_vision could
-// read a document and google_vision was the one it existed for. The local SDK
-// is the first that can be bound here and do nothing at all.
+// The local SDK is the first that can be bound to OCR and do nothing at all.
 func TestProviderBoundToOCRMustKeepAnOCRSDK(t *testing.T) {
 	t.Parallel()
 	record := providerBindingsForTest(t)
@@ -106,10 +101,8 @@ func TestProviderBoundToOCRMustKeepAnOCRSDK(t *testing.T) {
 	}
 }
 
-// The Deep Search helper does bulk per-document reading on a chat endpoint.
-// applySettingsPatch has always refused a non-LLM provider for it on write, but
-// the provider patch handler did not, so the same binding could be broken from
-// the other side.
+// applySettingsPatch refuses a non-LLM helper provider on write; without the
+// same guard here the binding could be broken from the other side.
 func TestSearchHelperBindingGuardsTheSDKSwitch(t *testing.T) {
 	t.Parallel()
 	record := providerBindingsForTest(t)
@@ -119,10 +112,8 @@ func TestSearchHelperBindingGuardsTheSDKSwitch(t *testing.T) {
 	}
 }
 
-// The sentence naming the accepted SDKs was a literal in two handlers, and both
-// still said "openai, openrouter, google_vision, or mistral" while a fifth and
-// sixth SDK were being added. Building it from the list is only a fix if
-// something notices when the list grows again.
+// Building the sentence from the list is only a fix if something notices when
+// the list grows again.
 func TestInvalidSDKMessageNamesEverySDK(t *testing.T) {
 	t.Parallel()
 	message := invalidSDKMessage(config.NewRuntime(config.AIEnv{ChatGPTLogin: true}))
@@ -133,9 +124,8 @@ func TestInvalidSDKMessageNamesEverySDK(t *testing.T) {
 	}
 }
 
-// ...and it must not name the one SDK this instance would refuse. An admin sent
-// looking for a typo in a value that was never going to work is worse served
-// than one who never saw it offered.
+// It must not name the one SDK this instance would refuse: an admin hunting a
+// typo in a value that could never work is worse served than one never offered it.
 func TestInvalidSDKMessageOmitsChatGPTWhenDisabled(t *testing.T) {
 	t.Parallel()
 	message := invalidSDKMessage(config.NewRuntime(config.AIEnv{}))
@@ -152,8 +142,8 @@ func TestInvalidSDKMessageOmitsChatGPTWhenDisabled(t *testing.T) {
 	}
 }
 
-// A local OCR provider is not an LLM SDK, so binding it to OCR must not make
-// the LLM guard fire -- but deleting it while OCR points at it still must.
+// A local OCR provider is not an LLM SDK, so binding it to OCR must not fire
+// the LLM guard, but deleting it while OCR points at it still must.
 func TestLocalOCRProviderIsBoundButNotToAnLLMFeature(t *testing.T) {
 	t.Parallel()
 	settings := providerBindingsForTest(t)

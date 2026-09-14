@@ -67,10 +67,8 @@ func TestSessionMiddlewareStampsTheRequest(t *testing.T) {
 	}
 }
 
-// Which providers see the header is now the caller's decision -- only an
-// SDKOpenCode client installs this middleware -- so the middleware itself no
-// longer looks at the URL. That gate used to be a host match on opencode.ai,
-// which meant a test could only exercise it by rewriting the host underneath.
+// Only an SDKOpenCode client installs this middleware, so the middleware itself
+// does not look at the URL.
 func TestSessionMiddlewareDoesNotLookAtTheHost(t *testing.T) {
 	mw := SessionMiddleware()
 

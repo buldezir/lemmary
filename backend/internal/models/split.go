@@ -15,7 +15,6 @@ type SuggestedPart struct {
 	Title string `json:"title,omitempty"`
 }
 
-// SplitSuggestion is the raw boundary proposal returned by the model.
 type SplitSuggestion struct {
 	Parts []SuggestedPart `json:"parts"`
 }
@@ -33,14 +32,12 @@ func ParseSplitSuggestion(raw string) (*SplitSuggestion, error) {
 	return &suggestion, nil
 }
 
-// Normalize turns a proposal into a contiguous cover of pages 1..pageCount.
-//
-// A model answer cannot be trusted to be sorted, in range, gap-free or
-// overlap-free, and the split API only accepts an exact cover. Rather than
-// repairing ranges pairwise, only the cut positions the proposal implies are
-// kept and the parts are rebuilt from them — any set of cuts describes a valid
-// cover, so the result is always acceptable. An unusable proposal degrades to a
-// single part spanning the whole file.
+// Normalize turns a proposal into a contiguous cover of pages 1..pageCount,
+// which is all the split API accepts. Only the cut positions the proposal
+// implies are kept and the parts are rebuilt from them: any set of cuts
+// describes a valid cover, so an unsorted, gapped or overlapping answer still
+// normalizes. An unusable proposal degrades to a single part spanning the
+// whole file.
 func (s *SplitSuggestion) Normalize(pageCount int) []SuggestedPart {
 	if pageCount < 1 {
 		return nil

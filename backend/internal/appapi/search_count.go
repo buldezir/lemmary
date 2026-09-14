@@ -11,31 +11,25 @@ import (
 	"lemmary/backend/internal/ai"
 )
 
-// maxCountIDs is the most matching documents a grouped count over a text
-// query enumerates before the breakdown is declared approximate. The plain
-// count is exact whatever the size: the index reports it without fetching.
+// maxCountIDs is the most documents a grouped count over a text query
+// enumerates before the breakdown is approximate. The plain count is exact
+// whatever the size: the index reports it without fetching.
 const maxCountIDs = 5000
 
-// maxCountGroups is how many groups a breakdown lists; the rest are summed
-// into Other.
+// maxCountGroups is how many groups a breakdown lists; the rest sum into Other.
 const maxCountGroups = 50
 
-// dbProvider is the one extra thing counting needs from the app: a query
-// builder over the documents table. Optional on the retriever's app so the
-// stubs that test search and read need not grow a database.
+// dbProvider is optional on the retriever's app, so the stubs that test search
+// and read need not grow a database.
 type dbProvider interface {
 	DB() dbx.Builder
 }
 
-// count backs the agent's count_documents tool.
-//
-// Two sources, by what the call asks. Filters alone are a database question:
-// COUNT(*) with the same owner, type, correspondent, tag and date predicates,
-// GROUP BY when asked. Query text is the index's: it knows which documents
-// contain the words, and reports the exact total without fetching a hit. A
-// grouped count over text takes the index's ids to the database, which is the
-// one place the two can disagree -- a document indexed but since deleted -- and
-// the one place a very large match set is cut, marked approximate.
+// count backs the agent's count_documents tool. Filters alone are a database
+// question; query text is the index's. A grouped count over text takes the
+// index's ids to the database, which is the one place the two can disagree (a
+// document indexed but since deleted) and the one place a large match set is
+// cut and marked approximate.
 func (r *agentRetriever) count(ctx context.Context, args ai.CountArgs) (ai.CountResult, error) {
 	db, ok := r.app.(dbProvider)
 	if !ok {
@@ -85,8 +79,8 @@ func (r *agentRetriever) count(ctx context.Context, args ai.CountArgs) (ai.Count
 		}
 		spec.ids = ids
 		// The predicates are already satisfied by every id the index
-		// returned; only the owner check is kept, as the boundary that has
-		// to hold whatever the index says.
+		// returned; only the owner check is kept, as the boundary that
+		// holds whatever the index says.
 		spec.documentTypeIDs, spec.correspondentIDs, spec.tagIDs = nil, nil, nil
 		spec.dateFrom, spec.dateTo = "", ""
 	}
@@ -104,8 +98,6 @@ func (r *agentRetriever) count(ctx context.Context, args ai.CountArgs) (ai.Count
 	return result, nil
 }
 
-// countSpec is a count as SQL sees it: predicates, an optional id set, and
-// what to group by.
 type countSpec struct {
 	userID           string
 	documentTypeIDs  []string
@@ -122,16 +114,14 @@ type countRow struct {
 	Count int    `db:"count"`
 }
 
-// countDocuments runs the count. It takes the builder rather than the app so
-// it can be tested against a bare SQLite file with a hand-made documents
-// table. Returns the grouped rows (one row with an empty key when not
+// countDocuments returns the grouped rows (one row with an empty key when not
 // grouping) and the total.
 //
-// Dates are compared on their first ten characters: a DateField column is
-// TEXT and holds both "YYYY-MM-DD" and "YYYY-MM-DD HH:MM:SS.sssZ", and an
-// empty date is excluded from any range rather than sorting below every
-// bound. Tags are a JSON array of ids in a text column; json_valid guards the
-// legacy empty string, which json_each would abort the whole query on.
+// Dates are compared on their first ten characters: a DateField column is TEXT
+// and holds both "YYYY-MM-DD" and "YYYY-MM-DD HH:MM:SS.sssZ", and an empty date
+// is excluded from any range rather than sorting below every bound. Tags are a
+// JSON array in a text column; json_valid guards the legacy empty string, which
+// json_each would abort the whole query on.
 func countDocuments(ctx context.Context, db dbx.Builder, spec countSpec) ([]countRow, int, error) {
 	if db == nil {
 		return nil, 0, fmt.Errorf("no database")
@@ -200,8 +190,7 @@ func countDocuments(ctx context.Context, db dbx.Builder, spec countSpec) ([]coun
 			sql += ` WHERE ` + strings.Join(conds, " AND ")
 		}
 		// By position, not by name: json_each has a column called key of its
-		// own, and GROUP BY key would take that -- the array index -- over the
-		// alias.
+		// own, and GROUP BY key would take that array index over the alias.
 		sql += ` GROUP BY 1`
 		var got []countRow
 		if err := db.NewQuery(sql).Bind(p).WithContext(ctx).All(&got); err != nil {
@@ -247,8 +236,7 @@ func countDocuments(ctx context.Context, db dbx.Builder, spec countSpec) ([]coun
 	return rows, total, nil
 }
 
-// inClause renders a bound IN list for ids, registering the parameters under
-// prefix. Empty for no ids.
+// inClause registers the parameters under prefix. Empty for no ids.
 func inClause(prefix string, ids []string, params dbx.Params) string {
 	if len(ids) == 0 {
 		return ""
@@ -274,8 +262,8 @@ func mergeCountRows(rows []countRow) []countRow {
 	return out
 }
 
-// nameGroups turns id keys into names, sorts by count, and folds the tail
-// into Other. An empty key is the documents without the property.
+// nameGroups folds the tail into Other. An empty key is the documents without
+// the property.
 func (r *agentRetriever) nameGroups(groupBy string, rows []countRow) ([]ai.CountGroup, int) {
 	groups := make([]ai.CountGroup, 0, len(rows))
 	for _, row := range rows {

@@ -10,9 +10,8 @@ import (
 	"lemmary/backend/internal/ai"
 )
 
-// countDB is a bare documents table with the columns counting reads, in the
-// shapes PocketBase writes them: dates as text in two formats, tags as a JSON
-// array in a text column, and one legacy empty-string tags value.
+// countDB writes the columns in the shapes PocketBase does: dates as text in
+// two formats, tags as a JSON array, and one legacy empty-string tags value.
 func countDB(t *testing.T) dbx.Builder {
 	t.Helper()
 	db, err := dbx.Open("sqlite", "file::memory:?cache=shared&_pragma=foreign_keys(0)")
@@ -69,8 +68,8 @@ func TestCountDocumentsScopesToTheOwner(t *testing.T) {
 
 func TestCountDocumentsDateRangeExcludesUndated(t *testing.T) {
 	db := countDB(t)
-	// An upper bound alone used to admit every undated document, because ''
-	// sorts below any date.
+	// An upper bound alone would admit every undated document, which sorts
+	// below any date.
 	_, total, err := countDocuments(context.Background(), db, countSpec{userID: "me", dateTo: "2025-12-31"})
 	if err != nil {
 		t.Fatalf("count: %v", err)
@@ -169,8 +168,8 @@ func TestCountDocumentsOverAnIDSetChunks(t *testing.T) {
 	}
 }
 
-// countApp gives the retriever's stub app a database, which is the one thing
-// counting needs beyond what search and read use.
+// countApp gives the retriever's stub app a database, the one thing counting
+// needs beyond what search and read use.
 type countApp struct {
 	stubRetrieverApp
 	db dbx.Builder
@@ -181,9 +180,9 @@ func (a countApp) DB() dbx.Builder { return a.db }
 func TestCountToolResolvesFiltersAndCountsFromTheIndexWithText(t *testing.T) {
 	r := hybridRetriever(t, nil)
 	db := countDB(t)
-	// The hybrid index holds two documents for u1; the database rows above
-	// are for a different owner, so a filters-only count here is zero and a
-	// text count goes to the index.
+	// The hybrid index holds two documents for u1; the rows above are for a
+	// different owner, so a filters-only count is zero and a text count goes
+	// to the index.
 	r.app = countApp{stubRetrieverApp: r.app.(stubRetrieverApp), db: db}
 
 	result, err := r.count(context.Background(), ai.CountArgs{Query: "insurance premium"})

@@ -53,7 +53,6 @@ type Suggestion struct {
 	TextSource string `json:"text_source"`
 }
 
-// DetectJob is an in-memory detection run snapshot.
 type DetectJob = importjob.Job[Suggestion]
 
 // DetectDeps are the providers a detection run uses. OCR may be nil when the
@@ -74,7 +73,7 @@ var detectRegistry = importjob.NewRegistry[Suggestion](importjob.DefaultRetentio
 // returns the job id. The upload is not consumed: detection can be repeated and
 // the user still confirms the split afterwards.
 //
-// It is held for the length of the run, though. A detection reads the staged PDF
+// It is held for the length of the run, though: a detection reads the staged PDF
 // for as long as it takes to OCR every page, and without the hold a discard, a
 // confirmed split or the TTL sweep would delete the file out from under it.
 func Detect(app core.App, ownerUserID, uploadID string, deps DetectDeps) (string, error) {
@@ -189,11 +188,9 @@ func readPageText(
 	return pages, "ocr", nil
 }
 
-// ocrPages fills in the text of every page from the OCR provider, a few pages
-// at a time.
-//
-// The calls are network bound and independent, so running them one after another
-// made the wall time the sum of up to maxDetectOCRPages round trips. Order is
+// ocrPages fills in the text of every page from the OCR provider, a few pages at
+// a time: the calls are network bound and independent, so one after another the
+// wall time was the sum of up to maxDetectOCRPages round trips. Order is
 // preserved because each worker writes only its own slot; the first failure
 // cancels the rest.
 func ocrPages(
@@ -252,12 +249,11 @@ func ocrPages(
 
 // providerConcurrency is how many pages this provider wants in flight at once.
 //
-// detectOCRWorkers is tuned for the hosted providers, where the time is spent
-// on the network and four requests cost about what one does. A local sidecar
-// spends this host's CPUs instead: four at a time does not overlap, it queues,
-// and each page's OCRTimeout is already counting down while it waits its turn.
-// Providers that know this say so by implementing ocr.LimitedConcurrency; the
-// rest keep the fan-out they have always had.
+// detectOCRWorkers is tuned for the hosted providers, where four requests cost
+// about what one does. A local sidecar spends this host's CPUs instead: four at
+// a time queues rather than overlapping, and each page's OCRTimeout is already
+// counting down while it waits its turn. Providers that know this say so by
+// implementing ocr.LimitedConcurrency.
 func providerConcurrency(provider ocr.Provider) int {
 	limited, ok := provider.(ocr.LimitedConcurrency)
 	if !ok {

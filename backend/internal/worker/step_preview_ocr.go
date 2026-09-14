@@ -92,28 +92,20 @@ func (s *OCRStep) Run(ctx context.Context, state *StepState) error {
 	state.Logger.Info("OCR complete",
 		"provider", providerName,
 		"mime", state.MimeType,
-		// Runes, matching the unit the field is bounded in.
 		"chars", utf8.RuneCountInString(ocrText),
 	)
 	return nil
 }
 
-// checkOCRTextFits refuses a result the ocr_text column could not hold.
+// The last thing between a provider's answer and the ocr_text column. The page
+// ceiling in internal/limits normally keeps a document under it, but that falls
+// back to one page whenever pdfinfo cannot read the file, so on a host without
+// poppler nothing upstream bounds this at all.
 //
-// The last thing between a provider's answer and the column. The page ceiling
-// in internal/limits is what normally keeps a document under this, but it
-// counts pages with pdfinfo and falls back to one page whenever that cannot
-// read the file -- so on a host without poppler, or for a PDF poppler dislikes,
-// nothing upstream bounded this at all.
+// Refused rather than shortened: half a document's text reads as the whole of
+// it in search, duplicate detection and the extraction prompt alike.
 //
-// Refused rather than shortened. Half a document's text reads as the whole of
-// it everywhere it is used afterwards -- search, duplicate detection, the
-// extraction prompt -- and none of those can tell that it was cut. A failed
-// step says so.
-//
-// Runes, because that is the unit PocketBase measures the field in. Without
-// this the same document still failed, as a validation_max_text_constraint
-// raised from inside app.Save that named neither the provider nor a number.
+// Runes, because that is the unit PocketBase measures the field in.
 func checkOCRTextFits(providerName, text string) error {
 	runes := utf8.RuneCountInString(text)
 	if runes <= models.MaxOCRTextRunes {
@@ -123,8 +115,6 @@ func checkOCRTextFits(providerName, text string) error {
 		providerName, runes, models.MaxOCRTextRunes)
 }
 
-// resolveOCRText extracts text via native parsers for born-digital formats,
-// otherwise calls the configured OCR provider.
 func resolveOCRText(ctx context.Context, state *StepState, provider ocr.Provider) (text, providerName string, err error) {
 	if textextract.Supports(state.MimeType) {
 		text, err = textextract.Extract(state.TmpPath, state.MimeType)

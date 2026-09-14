@@ -87,9 +87,8 @@ func parseDSMLParameters(body string) string {
 			params[name] = value
 			continue
 		}
-		// No string= attribute, or string=false: try JSON first so numbers,
-		// booleans, arrays, and objects all decode (an array value left as a
-		// raw string would fail the tool-args unmarshal and drop the call).
+		// No string= attribute, or string=false: try JSON first, or an array
+		// value left as a raw string would drop the call.
 		var decoded any
 		if err := json.Unmarshal([]byte(value), &decoded); err == nil {
 			params[name] = decoded

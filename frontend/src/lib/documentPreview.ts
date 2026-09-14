@@ -1,13 +1,9 @@
 /**
- * Which viewer, if any, can show a stored document file.
+ * The document record carries no mime type, only the filename, and PocketBase
+ * appends a content-sniffed extension to an upload that arrives without one.
  *
- * The document record carries no mime type, only the stored filename -- and
- * PocketBase appends a content-sniffed extension when an upload arrives
- * without one, so the extension is a fair proxy for the bytes.
- *
- * `none` covers the two families the browser will not render (docx, xlsx) and
- * the two whose text is already on the page in the OCR-text field (txt, csv).
- * Those get a download link rather than a frame.
+ * `none` covers what the browser will not render (docx, xlsx) and what is
+ * already on the page as OCR text (txt, csv); those get a download link.
  */
 export type PreviewKind = 'pdf' | 'image' | 'none'
 

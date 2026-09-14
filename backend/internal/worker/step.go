@@ -40,11 +40,8 @@ func (s *StepState) forced(stepName string) bool {
 	return s.ForceSteps != nil && s.ForceSteps[stepName]
 }
 
-// buildRegistry maps every stage name a job can name to the step that runs it.
-//
 // Built per reload rather than once at wiring time: the OCR provider and the
-// extractor are rebuilt whenever an admin changes the settings, and a registry
-// constructed at boot would keep dispatching to the clients that existed then.
+// extractor are rebuilt whenever an admin changes the settings.
 func buildRegistry(ocrProvider ocr.Provider, aiExtractor ai.Extractor, embedder ai.Embedder) map[string]Step {
 	steps := []Step{
 		&PreviewStep{},

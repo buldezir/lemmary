@@ -39,8 +39,7 @@ func (c *OpenAIClient) Chat(ctx context.Context, ocrText string, messages []Chat
 	if c.apiKey == "" {
 		return "", fmt.Errorf("AI API key is not configured")
 	}
-	// The handler puts the conversation on the context; this only fills in for
-	// a caller that has no session to name.
+	// Fills in only for a caller with no session of its own to name.
 	ctx = aiprovider.EnsureSession(ctx, "chat")
 
 	apiMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages)+1)

@@ -60,9 +60,6 @@ func TestParseNumberReadsWhatModelsWrite(t *testing.T) {
 	}
 }
 
-// TestSurveyReadsEveryCandidateAndReturnsRows runs a survey over the hybrid
-// fixture: both documents are candidates for the query, the helper reads
-// both, the rows carry the helper's values and the totals add them up.
 func TestSurveyReadsEveryCandidateAndReturnsRows(t *testing.T) {
 	r := hybridRetriever(t, nil)
 	helper := &fakeHelper{values: map[string]map[string]string{
