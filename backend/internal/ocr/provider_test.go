@@ -98,3 +98,27 @@ func TestNewFromAIProviderRequirements(t *testing.T) {
 		})
 	}
 }
+
+// TestWithMetricsKeepsConcurrencyLimit guards the one thing the timing wrapper
+// could quietly break: pdfsplit chooses its fan-out width by asserting the
+// provider to LimitedConcurrency, so a wrapper that hid docling's answer would
+// aim a page per core at a sidecar running one worker -- and a wrapper that
+// invented an answer for everybody else would serialise the hosted providers,
+// which are the ones that want to be called in parallel.
+func TestWithMetricsKeepsConcurrencyLimit(t *testing.T) {
+	t.Parallel()
+
+	limited := withMetrics(NewDoclingProvider("http://docling:5001", "", "", time.Second, nil), aiprovider.SDKDocling, "")
+	got, ok := limited.(LimitedConcurrency)
+	if !ok {
+		t.Fatal("wrapped docling provider no longer implements LimitedConcurrency")
+	}
+	if n := got.MaxConcurrency(); n != 1 {
+		t.Errorf("wrapped docling MaxConcurrency() = %d, want 1", n)
+	}
+
+	unlimited := withMetrics(NewMistralProvider("sk-test", "mistral-ocr-latest", "", time.Second, nil), aiprovider.SDKMistral, "mistral-ocr-latest")
+	if _, ok := unlimited.(LimitedConcurrency); ok {
+		t.Error("wrapped mistral provider now claims a concurrency limit it does not have")
+	}
+}

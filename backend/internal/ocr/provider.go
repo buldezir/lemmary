@@ -10,6 +10,7 @@ import (
 	"github.com/openai/openai-go/option"
 
 	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/metrics"
 )
 
 type Provider interface {
@@ -38,6 +39,16 @@ type LimitedConcurrency interface {
 // SDK's credential expires hourly and cannot be baked into a client. See
 // config.providerCredential.
 func NewFromAIProvider(p aiprovider.Provider, model string, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) (Provider, error) {
+	provider, err := newProvider(p, model, timeout, logger, extra...)
+	if err != nil {
+		return nil, err
+	}
+	// One wrap for all four backends, Google Vision included -- that one talks
+	// gRPC, where no HTTP instrumentation of ours could ever have seen it.
+	return withMetrics(provider, p.SDK, model), nil
+}
+
+func newProvider(p aiprovider.Provider, model string, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) (Provider, error) {
 	// Asked first, so an SDK that can never read a document says so instead of
 	// complaining about a missing model or key it would have no use for.
 	if !aiprovider.CanOCR(p.SDK) {
@@ -82,4 +93,39 @@ func NewFromAIProvider(p aiprovider.Provider, model string, timeout time.Duratio
 	default:
 		return nil, fmt.Errorf("unsupported OCR sdk %q", p.SDK)
 	}
+}
+
+// timed reports how long one text extraction took, and whether it failed.
+// Provider is embedded, so Name passes through untouched.
+//
+// The LLM backend reads a document by sending a chat completion, so it records
+// twice -- once here as ocr, once inside ai.Complete as chat. That is one
+// extraction and one completion, not one thing counted twice; do not sum the
+// two kinds.
+type timed struct {
+	Provider
+	sdk   string
+	model string
+}
+
+func (t timed) ExtractText(ctx context.Context, filePath string, mimeType string) (_ string, err error) {
+	defer metrics.TimeAICall(ctx, "ocr", t.sdk, t.model)(&err)
+	return t.Provider.ExtractText(ctx, filePath, mimeType)
+}
+
+// timedLimited is timed for a provider that also caps its own concurrency.
+// Embedding Provider alone would hide MaxConcurrency from the type assertion
+// in pdfsplit and quietly widen the fan-out onto a sidecar that asked for one
+// request at a time; a second type is smaller than that bug.
+type timedLimited struct {
+	timed
+	LimitedConcurrency
+}
+
+func withMetrics(p Provider, sdk, model string) Provider {
+	t := timed{Provider: p, sdk: sdk, model: model}
+	if limited, ok := p.(LimitedConcurrency); ok {
+		return timedLimited{timed: t, LimitedConcurrency: limited}
+	}
+	return t
 }
