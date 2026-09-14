@@ -43,6 +43,7 @@ export async function chatWithDocument(input: {
   documentId: string
   sessionId?: string
   content: string
+  runId: string
   /**
    * The provider and model to open the conversation on. Read by the server
    * only when there is no session id yet: a conversation keeps the binding its
@@ -57,6 +58,7 @@ export async function chatWithDocument(input: {
       body: {
         session_id: input.sessionId ?? '',
         content: input.content,
+        run_id: input.runId,
         ...bindingBody(input.binding),
       },
       fallbackError: 'Failed to get AI response',
@@ -76,6 +78,12 @@ export async function chatWithDocument(input: {
 export type ResearchStepKind = 'search' | 'read' | 'survey' | 'count' | 'answer'
 
 export type ResearchEvent =
+  // First event of every run: the conversation it writes into, which exists
+  // before the run does. It is what makes a turn whose stream died
+  // recoverable — see `waitForStoredTurn` — and it arrives even for the first
+  // question of a new chat, which is the only way the page can learn the id of
+  // a session it did not know existed.
+  | { type: 'session'; session: ChatSession }
   | {
       type: 'step'
       kind: ResearchStepKind

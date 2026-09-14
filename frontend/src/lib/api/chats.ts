@@ -1,4 +1,5 @@
-import { apiFetch } from '../apiClient'
+import { apiFetch, ConnectionLostError, sleep } from '../apiClient'
+import { foldSteps, type ResearchStep, type StoredResearchStep } from '../researchSteps'
 import type { ProviderBinding } from './providers'
 
 export type ChatSessionKind = 'search' | 'document'
@@ -51,7 +52,12 @@ export type ChatMessageRecord = {
   seq?: number
   role: ChatRole
   content: string
+  /** Client-generated id of the request that produced this stored pair. */
+  run_id?: string
   documents?: SearchDocumentHit[]
+  /** Research trail as the stream emitted it. Empty on user turns and Search. */
+  steps?: StoredResearchStep[]
+  incomplete?: boolean
   created?: string
 }
 
@@ -59,6 +65,13 @@ export type ChatSessionDetail = {
   session: ChatSession
   messages: ChatMessageRecord[]
   truncated?: boolean
+  /**
+   * A run is writing into this conversation right now. Nothing in the
+   * transcript can say so -- a turn is stored whole when the run ends -- so a
+   * chat opened mid-run reads as empty and finished unless the server says
+   * otherwise.
+   */
+  running?: boolean
 }
 
 /** One rendered row of a transcript. */
@@ -68,6 +81,8 @@ export type ChatTurn = {
   role: ChatRole
   content: string
   documents?: SearchDocumentHit[]
+  steps?: ResearchStep[]
+  incomplete?: boolean
 }
 
 type ChatSessionListResponse = { items?: ChatSession[]; totalItems?: number }
@@ -99,10 +114,142 @@ export async function listChatSessions(params?: {
   return data.items ?? []
 }
 
-export function getChatSession(id: string): Promise<ChatSessionDetail> {
+export function getChatSession(id: string, signal?: AbortSignal): Promise<ChatSessionDetail> {
   return apiFetch<ChatSessionDetail>(`/api/app/chats/${encodeURIComponent(id)}`, {
     fallbackError: 'Failed to load the chat',
+    signal,
   })
+}
+
+/** How often an interrupted run's conversation is re-read while waiting. */
+const storedTurnPollMs = 3000
+
+/**
+ * How long to keep waiting. The server gives a detached run 20 minutes and
+ * stops it there, so anything past that has no turn coming.
+ */
+const storedTurnWaitMs = 21 * 60 * 1000
+
+/**
+ * The answer produced by `runId` in a transcript, or null if it is not there.
+ *
+ * Text is deliberately not the identity. Two tabs can ask the same question
+ * concurrently, and whichever finishes last would otherwise be presented as
+ * both tabs' answer. The correlation id is stored with the pair atomically.
+ */
+export function storedAnswerForRun(
+  messages: ChatMessageRecord[],
+  runId: string,
+): ChatMessageRecord | null {
+  return (
+    messages.findLast((message) => message.role === 'assistant' && message.run_id === runId) ?? null
+  )
+}
+
+type PollAttempt<T> = { done: false } | { done: true; value: T | null }
+
+/**
+ * Asks repeatedly until `attempt` produces something, or the deadline passes.
+ *
+ * Transport failures are retried because whatever broke the original
+ * connection is usually still broken. HTTP errors are terminal: a deleted
+ * empty session, for example, means the failed run has no answer coming.
+ */
+async function pollUntil<T>(
+  attempt: () => Promise<PollAttempt<T>>,
+  options: { signal?: AbortSignal; timeoutMs?: number; intervalMs?: number },
+): Promise<T | null> {
+  const interval = options.intervalMs ?? storedTurnPollMs
+  const deadline = Date.now() + (options.timeoutMs ?? storedTurnWaitMs)
+  for (;;) {
+    if (options.signal?.aborted) {
+      return null
+    }
+    try {
+      const result = await attempt()
+      if (result.done) {
+        return result.value
+      }
+    } catch (err) {
+      if (options.signal?.aborted) {
+        return null
+      }
+      if (!(err instanceof ConnectionLostError)) {
+        throw err
+      }
+      // A transport failure is usually the same interruption that brought us
+      // here. HTTP failures such as a deleted session are terminal and must not
+      // hold the composer for the whole run budget.
+    }
+    if (Date.now() >= deadline) {
+      return null
+    }
+    await sleep(interval, options.signal)
+  }
+}
+
+/** Options shared by the two waits; `load` is swapped out in tests. */
+export type WaitOptions = {
+  signal?: AbortSignal
+  timeoutMs?: number
+  intervalMs?: number
+  load?: (id: string) => Promise<ChatSessionDetail>
+}
+
+/**
+ * Waits for the turn a lost connection stopped this client from receiving.
+ *
+ * The run does not stop when the connection does -- the server finishes it and
+ * stores the turn whether or not anyone is still listening. Until now nobody
+ * went back for it: the page reported a lost connection and the answer sat in
+ * the transcript, invisible until a manual reload, which on a follow-up
+ * question looks exactly like the work having been thrown away.
+ *
+ * Every read first looks for the request's correlation id, so this returns as
+ * soon as this exact turn lands even if another tab is still writing into the
+ * conversation. If neither the turn nor any run exists, there is nothing to
+ * wait for and the recovery ends immediately.
+ *
+ * Resolves null when nothing landed: a run that failed, was cancelled, outlived
+ * its budget, or never started.
+ */
+export async function waitForStoredTurn(
+  sessionId: string,
+  runId: string,
+  options: WaitOptions = {},
+): Promise<{ session: ChatSession; message: ChatMessageRecord } | null> {
+  const load = options.load ?? ((id: string) => getChatSession(id, options.signal))
+  return pollUntil<{ session: ChatSession; message: ChatMessageRecord }>(async () => {
+    const detail = await load(sessionId)
+    const message = storedAnswerForRun(detail.messages, runId)
+    if (message) {
+      return { done: true, value: { session: detail.session, message } }
+    }
+    return detail.running ? { done: false } : { done: true, value: null }
+  }, options)
+}
+
+/**
+ * Follows a conversation somebody else's run is writing into, until it ends.
+ *
+ * That somebody is usually the same user a moment ago: reloading the page
+ * during a research run abandons the stream but not the run, and the chat that
+ * comes back is empty, with nothing to say an answer is on its way. The
+ * transcript cannot show it -- the turn is stored whole at the end -- so the
+ * server reports it and this waits it out.
+ *
+ * Resolves with the transcript as it stands once the run is over, which is the
+ * answer unless the run failed and stored nothing.
+ */
+export function waitWhileRunning(
+  sessionId: string,
+  options: WaitOptions = {},
+): Promise<ChatSessionDetail | null> {
+  const load = options.load ?? ((id: string) => getChatSession(id, options.signal))
+  return pollUntil<ChatSessionDetail>(async () => {
+    const detail = await load(sessionId)
+    return detail.running ? { done: false } : { done: true, value: detail }
+  }, options)
 }
 
 export async function renameChatSession(id: string, title: string): Promise<ChatSession> {
@@ -184,10 +331,14 @@ export function toChatTurn(
   fallbackDocuments?: SearchDocumentHit[],
 ): ChatTurn {
   const documents = message.documents ?? fallbackDocuments
-  return {
+  const turn: ChatTurn = {
     id: message.id,
     role: message.role,
     content: message.content,
     documents: documents && documents.length > 0 ? documents : undefined,
   }
+  const steps = foldSteps(message.steps)
+  if (steps) turn.steps = steps
+  if (message.incomplete) turn.incomplete = true
+  return turn
 }

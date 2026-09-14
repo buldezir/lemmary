@@ -45,6 +45,16 @@ func TestValidateChatContentCountsRunes(t *testing.T) {
 	}
 }
 
+func TestValidateRunIDTrimsAndBounds(t *testing.T) {
+	got, err := validateRunID("  run-123  ")
+	if err != nil || got != "run-123" {
+		t.Fatalf("validateRunID = %q, %v", got, err)
+	}
+	if _, err := validateRunID(strings.Repeat("r", chat.MaxRunIDRunes+1)); err == nil {
+		t.Fatal("expected an error for an oversized run id")
+	}
+}
+
 func TestParseSearchMode(t *testing.T) {
 	for _, tc := range []struct {
 		raw  string

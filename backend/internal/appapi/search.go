@@ -46,8 +46,8 @@ type searchResponse struct {
 	Documents []ai.DocumentHit  `json:"documents"`
 	Saved     bool              `json:"saved"`
 	// Set when a research answer was cut off mid-generation; see
-	// ai.ResearchResult.Incomplete. Not stored with the turn: it describes this
-	// generation, not the text, and a reopened chat has no way to redo it.
+	// ai.ResearchResult.Incomplete. Stored on the assistant row so a reopened
+	// chat can still say so.
 	Incomplete bool `json:"incomplete,omitempty"`
 	// Why the turn could not be saved, when Saved is false.
 	Detail string `json:"detail,omitempty"`
@@ -162,6 +162,10 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 	if err != nil {
 		return searchTurn{}, true, writeError(e, http.StatusBadRequest, err.Error())
 	}
+	runID, err := validateRunID(req.RunID)
+	if err != nil {
+		return searchTurn{}, true, writeError(e, http.StatusBadRequest, err.Error())
+	}
 
 	// Two different questions, deliberately answered differently.
 	//
@@ -264,7 +268,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		session:        session,
 		opened:         opened,
 		ownerID:        ownerID,
-		runID:          strings.TrimSpace(req.RunID),
+		runID:          runID,
 		content:        content,
 		mode:           mode,
 		messages:       append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content}),
@@ -280,11 +284,14 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 // conversation simply does not become resumable -- which is why a session this
 // request opened is dropped again on that path. The session cap cannot surface
 // here at all any more: prepareSearchTurn answers it before the run starts.
-func persistSearchTurn(app core.App, t searchTurn, reply string, hits []ai.DocumentHit) searchResponse {
+func persistSearchTurn(app core.App, t searchTurn, reply string, hits []ai.DocumentHit, steps []chat.StoredStep, incomplete bool) searchResponse {
 	session, err := chat.AppendTurn(app, t.ownerID, t.session.Id, chat.Turn{
 		UserContent:      t.content,
 		AssistantContent: reply,
+		RunID:            t.runID,
 		Documents:        hits,
+		Steps:            steps,
+		Incomplete:       incomplete,
 		Mode:             t.mode,
 	})
 	if err != nil {
@@ -301,7 +308,7 @@ func persistSearchTurn(app core.App, t searchTurn, reply string, hits []ai.Docum
 	info := chat.ToSessionInfo(session)
 	return searchResponse{
 		Session:   &info,
-		Message:   latestAssistantMessage(app, session.Id, reply, hits),
+		Message:   latestAssistantMessage(app, session.Id, t.runID, reply, hits),
 		Documents: hits,
 		Saved:     true,
 	}
@@ -321,12 +328,13 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 		// and discarded an answer the provider had already been paid for. Now
 		// the run finishes and the turn is stored either way; only the delivery
 		// of this response depends on the caller still being there.
-		ctx, stopRun := startSearchRun(e.Request.Context(), turn.ownerID, turn.runID)
+		ctx, stopRun := startDetachedRun(e.Request.Context(), turn.ownerID, turn.runID, turn.session.Id)
 		defer stopRun()
 
 		var reply string
 		var hits []ai.DocumentHit
 		incomplete := false
+		var steps []chat.StoredStep
 		if turn.research() {
 			// Non-streaming fallback for clients that cannot read SSE.
 			result, researchErr := turn.agent.Research(turn.agentContext(ctx), ai.ResearchRequest{
@@ -338,7 +346,11 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 				DenseRetrieval: turn.tools.dense,
 				Survey:         turn.tools.survey,
 				Count:          turn.tools.count,
-			}, nil)
+			}, func(event ai.ResearchEvent) {
+				if event.Type == "step" {
+					steps = append(steps, chat.StepFromEvent(event))
+				}
+			})
 			reply, hits, incomplete, err = result.Reply, result.Documents, result.Incomplete, researchErr
 		} else {
 			reply, hits, err = turn.agent.Search(turn.agentContext(ctx), turn.messages, turn.tools.tags, turn.tools.search, ai.SearchOptions{DenseRetrieval: turn.tools.dense})
@@ -348,7 +360,7 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 			// Running out of budget is not the provider failing, and saying so
 			// sends the caller to check an AI configuration that is fine.
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				app.Logger().Warn("deep search ran out of budget", "mode", turn.mode, "budget", searchRunBudget.String())
+				app.Logger().Warn("deep search ran out of budget", "mode", turn.mode, "budget", detachedRunBudget.String())
 				return writeError(e, http.StatusGatewayTimeout, runTooLongMessage)
 			}
 			app.Logger().Error("deep search failed", "mode", turn.mode, slog.Any("error", err))
@@ -358,10 +370,19 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 			hits = []ai.DocumentHit{}
 		}
 
-		response := persistSearchTurn(app, turn, reply, hits)
+		response := persistSearchTurn(app, turn, reply, hits, steps, incomplete)
 		response.Incomplete = incomplete
 		return writeJSON(e, http.StatusOK, response)
 	}
+}
+
+// searchStartedEvent opens a search stream with the conversation the run
+// belongs to, which exists before the run does. It is sent for one reason: a
+// client that loses the connection can only go looking for the stored turn if
+// it knows which conversation to look in.
+type searchStartedEvent struct {
+	Type    string           `json:"type"`
+	Session chat.SessionInfo `json:"session"`
 }
 
 // searchSavedEvent closes a research stream with the stored turn: the session
@@ -396,9 +417,25 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 			return err
 		}
 
+		// Register before sending the session frame. Recovery treats that frame
+		// as proof the run started; sending it first left a window where an
+		// immediate poll saw running=false and gave up on work the next line was
+		// about to detach.
+		ctx, stopRun := startDetachedRun(e.Request.Context(), turn.ownerID, turn.runID, turn.session.Id)
+		defer stopRun()
+		ctx = turn.agentContext(ctx)
+
 		// Everything below is streamed, so errors are reported as events —
 		// the status line has already been written by this point.
 		stream := newSSEWriter(e)
+		// First frame, before a single provider call: it names the conversation
+		// this run is writing into. That is what a client whose connection dies
+		// mid-run needs to go and collect the answer afterwards -- the turn is
+		// stored either way, but a page that never learnt the session id has
+		// nowhere to look, which is exactly the case on the first question of a
+		// new chat.
+		started := chat.ToSessionInfo(turn.session)
+		stream.Send(searchStartedEvent{Type: "session", Session: started})
 		// Every model completion is a silent gap on this connection, and the
 		// first one comes before any step event. Stopped before returning.
 		//
@@ -413,11 +450,8 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 		// not anyone is still reading this stream, which is the difference
 		// between a network blip losing a paragraph of progress and losing a
 		// finished, already-paid-for answer. Deliberate cancellation comes
-		// through /search/cancel instead -- see startSearchRun.
-		ctx, stopRun := startSearchRun(e.Request.Context(), turn.ownerID, turn.runID)
-		defer stopRun()
-		ctx = turn.agentContext(ctx)
-
+		// through /search/cancel instead -- see startDetachedRun.
+		var steps []chat.StoredStep
 		var result ai.ResearchResult
 		if turn.research() {
 			result, err = turn.agent.Research(ctx, ai.ResearchRequest{
@@ -429,7 +463,12 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 				DenseRetrieval: turn.tools.dense,
 				Survey:         turn.tools.survey,
 				Count:          turn.tools.count,
-			}, func(event ai.ResearchEvent) { stream.Send(event) })
+			}, func(event ai.ResearchEvent) {
+				if event.Type == "step" {
+					steps = append(steps, chat.StepFromEvent(event))
+				}
+				stream.Send(event)
+			})
 		} else {
 			reply, hits, searchErr := turn.agent.Search(ctx, turn.messages, turn.tools.tags, turn.tools.search, ai.SearchOptions{DenseRetrieval: turn.tools.dense})
 			result, err = ai.ResearchResult{Reply: reply, Documents: hits}, searchErr
@@ -472,7 +511,7 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 		// exists to end. Unconditional for the same reason: a client that hung
 		// up mid-run is exactly the case that must still find its answer
 		// waiting in the sidebar.
-		saved := persistSearchTurn(app, turn, result.Reply, documents)
+		saved := persistSearchTurn(app, turn, result.Reply, documents, steps, result.Incomplete)
 
 		stream.Send(ai.ResearchEvent{Type: "documents", Documents: documents})
 		// The whole answer follows the deltas: the deltas are a live preview,
