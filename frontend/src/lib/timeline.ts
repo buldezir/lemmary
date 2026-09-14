@@ -166,3 +166,15 @@ export function openYear(
   // groupByYear already sorted newest first.
   return years[0]?.year ?? null
 }
+
+/**
+ * Month rows a timeline may show all at once before folding earns its keep.
+ * Two years' worth still fits a sidebar without burying the grid, and an
+ * archive that short reads better whole than one year at a time.
+ */
+const MAX_UNFOLDED_MONTHS = 24
+
+/** Whether the timeline is long enough that only one year should show months. */
+export function shouldFold(years: TimelineYear[]): boolean {
+  return years.reduce((rows, year) => rows + year.months.length, 0) > MAX_UNFOLDED_MONTHS
+}
