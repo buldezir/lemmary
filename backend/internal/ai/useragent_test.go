@@ -41,7 +41,7 @@ func TestChatUserAgent(t *testing.T) {
 			defer srv.Close()
 
 			client := NewOpenAIClient(tc.sdk, "test-key", "test-model", srv.URL, "", "", 5*time.Second, slog.Default())
-			if _, err := client.Chat(context.Background(), "text", []ChatMessage{{Role: "user", Content: "hi"}}); err != nil {
+			if _, err := client.Chat(context.Background(), "text", []ChatMessage{{Role: "user", Content: "hi"}}, nil); err != nil {
 				t.Fatalf("chat: %v", err)
 			}
 			if !strings.HasPrefix(seen, tc.want) {

@@ -71,6 +71,13 @@ const (
 	// docs/chatgpt_login.md.
 	EnvChatGPTLogin = "AI_CHATGPT_LOGIN"
 
+	// The web-search block seeds the provider backing web_search and web_fetch.
+	// Unset means the tools are never offered. Its own SDK always: no SDK that
+	// chats or reads a document also searches the web.
+	EnvWebSearchSDK     = "WEB_SEARCH_SDK"
+	EnvWebSearchAPIKey  = "WEB_SEARCH_API_KEY"
+	EnvWebSearchBaseURL = "WEB_SEARCH_BASE_URL"
+
 	EnvOCRSDK     = "OCR_SDK"
 	EnvOCRAPIKey  = "OCR_API_KEY"
 	EnvOCRBaseURL = "OCR_BASE_URL"
@@ -120,7 +127,11 @@ func AIEnvFromEnv() (AIEnv, error) {
 	if err != nil {
 		return AIEnv{}, err
 	}
-	env.Providers = aiprovider.Bootstrap{LLM: llm, OCR: ocr, Embedding: embedding}
+	webSearch, err := parseWebSearch()
+	if err != nil {
+		return AIEnv{}, err
+	}
+	env.Providers = aiprovider.Bootstrap{LLM: llm, OCR: ocr, Embedding: embedding, WebSearch: webSearch}
 
 	if env.Managed {
 		if err := env.validateManaged(); err != nil {
@@ -311,6 +322,42 @@ func parseEmbedding(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error
 		APIKey:  key,
 		BaseURL: aiprovider.NormalizeBaseURL(sdk, baseURL),
 		Model:   model,
+	}, nil
+}
+
+// parseWebSearch reads the optional web-search provider. Unset means the
+// web_search and web_fetch tools are never offered, which is the pre-flag
+// behaviour and a working state.
+func parseWebSearch() (aiprovider.ProviderSpec, error) {
+	sdk := strings.TrimSpace(os.Getenv(EnvWebSearchSDK))
+	key := strings.TrimSpace(os.Getenv(EnvWebSearchAPIKey))
+	baseURL := strings.TrimSpace(os.Getenv(EnvWebSearchBaseURL))
+
+	if sdk == "" {
+		if key != "" || baseURL != "" {
+			// The same half-written intention parseOCR refuses. There is nothing
+			// to fold this into: no other provider can search the web.
+			return aiprovider.ProviderSpec{}, fmt.Errorf(
+				"%s or %s is set without %s; name the web-search provider's SDK (one of %s), or leave them both unset to run without web search",
+				EnvWebSearchAPIKey, EnvWebSearchBaseURL, EnvWebSearchSDK,
+				strings.Join(aiprovider.WebSearchSDKs(), ", "))
+		}
+		return aiprovider.ProviderSpec{}, nil
+	}
+	if !aiprovider.CanWebSearch(sdk) {
+		return aiprovider.ProviderSpec{}, fmt.Errorf(
+			"%s=%q cannot search the web (want one of %s)",
+			EnvWebSearchSDK, sdk, strings.Join(aiprovider.WebSearchSDKs(), ", "))
+	}
+	if key == "" {
+		return aiprovider.ProviderSpec{}, fmt.Errorf(
+			"%s=%q needs %s", EnvWebSearchSDK, sdk, EnvWebSearchAPIKey)
+	}
+
+	return aiprovider.ProviderSpec{
+		SDK:     sdk,
+		APIKey:  key,
+		BaseURL: aiprovider.NormalizeBaseURL(sdk, baseURL),
 	}, nil
 }
 

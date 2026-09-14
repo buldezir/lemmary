@@ -8,6 +8,7 @@ import (
 
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
+	"lemmary/backend/internal/websearch"
 	"regexp"
 	"sort"
 	"strings"
@@ -89,6 +90,10 @@ type ResearchRequest struct {
 	// be nil, and the tool is then not offered.
 	Survey DocumentSurveyor
 	Count  DocumentCounter
+	// Web backs web_search and web_fetch. Nil unless an operator configured a
+	// web-search provider and the user asked for it on this turn, and the tools
+	// are then not offered at all.
+	Web *websearch.Tavily
 }
 
 type ResearchResult struct {
@@ -142,6 +147,8 @@ type researchState struct {
 	// question is the user's latest message, handed to every read so a
 	// document read without a focus is still read for something.
 	question string
+	// web is this run's remaining web-call allowance; see maxWebCalls.
+	web webBudget
 }
 
 func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, emit func(ResearchEvent)) (ResearchResult, error) {
@@ -168,7 +175,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	state.seedPrior(req.PriorDocuments)
 	state.question = latestUserMessage(req.Messages)
 
-	system := buildResearchSystemPrompt(a.languages, a.resultLanguage, req.AvailableTags, req.DenseRetrieval)
+	system := buildResearchSystemPrompt(a.languages, a.resultLanguage, req.AvailableTags, req.DenseRetrieval, req.Web != nil)
 
 	apiMessages := []openai.ChatCompletionMessageParamUnion{openai.SystemMessage(system)}
 	for _, msg := range req.Messages {
@@ -196,6 +203,9 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 	if req.Count != nil {
 		tools = append(tools, countDocumentsTool())
+	}
+	if req.Web != nil {
+		tools = append(tools, webSearchTool(), webFetchTool())
 	}
 	stalled := 0
 	round := 0
@@ -282,7 +292,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 
 	emit(ResearchEvent{Type: "step", Kind: "answer", Status: "start"})
-	reply, incomplete, answerUsage, err := a.answerResearch(ctx, apiMessages, emit)
+	reply, incomplete, answerUsage, err := a.answerResearch(ctx, apiMessages, req.Web != nil, emit)
 	if err != nil {
 		return ResearchResult{}, err
 	}
@@ -318,10 +328,11 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 func (a *openAISearchAgent) answerResearch(
 	ctx context.Context,
 	apiMessages []openai.ChatCompletionMessageParamUnion,
+	web bool,
 	emit func(ResearchEvent),
 ) (reply string, incomplete bool, usage Usage, err error) {
 	msgs := append([]openai.ChatCompletionMessageParamUnion{}, apiMessages...)
-	msgs = append(msgs, openai.UserMessage(researchAnswerInstruction))
+	msgs = append(msgs, openai.UserMessage(researchAnswerInstruction(web)))
 
 	params := openai.ChatCompletionNewParams{
 		Model:       shared.ChatModel(a.client.model),
@@ -390,6 +401,8 @@ func (a *openAISearchAgent) runResearchTool(
 		return a.runSurveyTool(ctx, req, state, callID, name, argumentsJSON, emit)
 	case "count_documents":
 		return a.runCountTool(ctx, req, state, callID, name, argumentsJSON, emit)
+	case "web_search", "web_fetch":
+		return runWebTool(ctx, req.Web, &state.web, callID, name, argumentsJSON, emit)
 	default:
 		return toolExecResult{
 			ID:      callID,
@@ -745,14 +758,21 @@ func validateCitations(reply string, seenIDs map[string]struct{}) string {
 	})
 }
 
-const researchAnswerInstruction = `Stop searching and reading. Do not call any tools and do not output tool markup.
+func researchAnswerInstruction(web bool) string {
+	instruction := `Stop searching and reading. Do not call any tools and do not output tool markup.
 Write the final answer for the user now, in markdown, using only what the tool results above actually contain.
 Cite each claim with a markdown link to the document it came from: [Document title](/document/<id>), using ids from the tool results.
 If you were asked for a total or a comparison, list the per-document figures you extracted before giving the result; when a survey reported totals, use those figures rather than adding rows yourself.
 If the evidence is incomplete, say what is missing instead of filling the gap.
 Answer in the same language as the user's latest message.`
+	if web {
+		instruction += `
+Cite a claim taken from the web as [Page title](https://...), with the URL the tool returned. Say which claims came from the web rather than from the archive.`
+	}
+	return instruction
+}
 
-func buildResearchSystemPrompt(languages, resultLanguage string, availableTags []string, dense bool) string {
+func buildResearchSystemPrompt(languages, resultLanguage string, availableTags []string, dense, web bool) string {
 	var b strings.Builder
 	b.WriteString(`You are researching the user's personal document archive to answer their question.
 Work in steps. First find candidate documents with search_documents, then read the promising ones with read_documents.
@@ -770,6 +790,15 @@ There is no limit on how many searches or reads you may make. Stop gathering and
 Cite real document ids from tool results only. Never invent a document or an id.
 If the archive does not contain the answer, say so plainly and say what is missing.
 `)
+
+	if web {
+		b.WriteString(`
+You can also reach the public web with web_search and web_fetch, for what the archive cannot hold: current prices, rates and rules, a company's present details, anything that changed after the documents were written.
+The archive is still the primary source. Search it first, and use the web to check or complete what you found there rather than instead of looking.
+A search result's snippet is a reason to fetch the page, not the whole of what it says: web_fetch before claiming what a page contains, exactly as you would read a document.
+Web calls are limited and billed; make them count.
+`)
+	}
 
 	b.WriteString(formatAvailableTagsPrompt(availableTags))
 	b.WriteString(formatLanguagePrompt(languages, resultLanguage, dense))

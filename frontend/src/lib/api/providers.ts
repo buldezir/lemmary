@@ -9,6 +9,7 @@ export type ProviderSDK =
   | 'chatgpt'
   | 'local'
   | 'docling'
+  | 'tavily'
 
 export type AIProvider = {
   id: string
@@ -30,7 +31,7 @@ export type AIProviderWrite = {
   api_key?: string
 }
 
-export type ModelPurpose = 'ocr' | 'llm' | 'embedding'
+export type ModelPurpose = 'ocr' | 'llm' | 'embedding' | 'websearch'
 
 /**
  * Mirrors aiprovider.Binding. Both halves in practice: the server refuses a
@@ -78,6 +79,7 @@ export const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
   // The sidecar service names from the compose overlays.
   local: 'http://embeddings:80/v1',
   docling: 'http://docling:5001',
+  tavily: 'https://api.tavily.com',
 }
 
 export const SDK_OPTIONS: { value: ProviderSDK; label: string }[] = [
@@ -89,6 +91,7 @@ export const SDK_OPTIONS: { value: ProviderSDK; label: string }[] = [
   { value: 'chatgpt', label: 'ChatGPT subscription' },
   { value: 'local', label: 'Local Embeddings (huggingface/text-embeddings-inference)' },
   { value: 'docling', label: 'Local OCR (Docling)' },
+  { value: 'tavily', label: 'Tavily' },
 ]
 
 export function sdkLabel(sdk: ProviderSDK | string) {
@@ -153,13 +156,24 @@ export function requiresAPIKey(sdk?: string) {
   return sdk !== 'local' && sdk !== 'docling' && sdk !== 'chatgpt'
 }
 
+/**
+ * Mirrors aiprovider.CanWebSearch. An allow-list, like canEmbedProvider: no SDK
+ * that chats, embeds or reads a document also searches the web.
+ */
+export function canWebSearchProvider(sdk?: string) {
+  return sdk === 'tavily'
+}
+
 /** Which SDKs may be bound to a given task, for the provider pickers. */
 export function providerServesPurpose(sdk: string, purpose: ModelPurpose) {
   if (purpose === 'embedding') return canEmbedProvider(sdk)
   if (purpose === 'llm') return isLLMProvider(sdk)
-  // Mirrors aiprovider.CanOCR: every SDK but a local embeddings endpoint can
-  // serve OCR by sending the file to a model.
-  return sdk !== 'local'
+  if (purpose === 'websearch') return canWebSearchProvider(sdk)
+  // Mirrors aiprovider.CanOCR: every SDK but a local embeddings endpoint and a
+  // web-search API can serve OCR by sending the file to a model. Default-true,
+  // so a new SDK that cannot read a document has to be named here -- otherwise
+  // it binds happily and fails on the first upload.
+  return sdk !== 'local' && sdk !== 'tavily'
 }
 
 /**

@@ -184,6 +184,10 @@ const embeddingBindingField = "embedding_provider_id"
 // local SDK, the first one that can be bound here and do nothing.
 const ocrBindingField = "ocr_provider_id"
 
+// webSearchBindingField is checked against CanWebSearch, an allow-list: no SDK
+// that chats or reads a document also searches the web.
+const webSearchBindingField = "websearch_provider_id"
+
 func boundTo(settings *core.Record, providerID string, fields ...string) bool {
 	if settings == nil || strings.TrimSpace(providerID) == "" {
 		return false
@@ -221,7 +225,7 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 					return err
 				}
 			}
-			if !aiprovider.IsLLM(sdk) || !aiprovider.CanEmbed(sdk) || !aiprovider.CanOCR(sdk) {
+			if !aiprovider.IsLLM(sdk) || !aiprovider.CanEmbed(sdk) || !aiprovider.CanOCR(sdk) || !aiprovider.CanWebSearch(sdk) {
 				// A failed settings lookup must not skip these guards: a bound
 				// provider could become an SDK that cannot serve the binding.
 				settings, err := config.FindSettingsRecord(app, rt.Env())
@@ -237,6 +241,9 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 				}
 				if !aiprovider.CanOCR(sdk) && boundTo(settings, record.Id, ocrBindingField) {
 					return writeError(e, http.StatusConflict, "Provider is bound to OCR and must stay an SDK that can read a document ("+strings.Join(aiprovider.OCRSDKs(), ", ")+").")
+				}
+				if !aiprovider.CanWebSearch(sdk) && boundTo(settings, record.Id, webSearchBindingField) {
+					return writeError(e, http.StatusConflict, "Provider is bound to web search and must stay an SDK that can search the web ("+strings.Join(aiprovider.WebSearchSDKs(), ", ")+").")
 				}
 			}
 			record.Set("sdk", sdk)

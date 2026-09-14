@@ -54,10 +54,13 @@ type Bootstrap struct {
 	LLM       ProviderSpec
 	OCR       ProviderSpec
 	Embedding ProviderSpec
+	// WebSearch is always its own endpoint: no SDK that chats or reads a
+	// document also searches the web, so there is no SharesOneProvider twin.
+	WebSearch ProviderSpec
 }
 
 func (b Bootstrap) Configured() bool {
-	return b.LLM.Configured() || b.OCR.Configured() || b.Embedding.Configured()
+	return b.LLM.Configured() || b.OCR.Configured() || b.Embedding.Configured() || b.WebSearch.Configured()
 }
 
 // SharesEmbeddingProvider is true when embeddings run on the LLM's endpoint,
@@ -140,6 +143,15 @@ func Apply(app core.App, settings *core.Record, b Bootstrap) error {
 		embeddingID = id
 	}
 
+	webSearchID := ""
+	if b.WebSearch.Configured() {
+		id, err := upsertProvider(app, b.WebSearch)
+		if err != nil {
+			return err
+		}
+		webSearchID = id
+	}
+
 	if llmID != "" {
 		model := strings.TrimSpace(b.LLM.Model)
 		if model == "" {
@@ -153,6 +165,9 @@ func Apply(app core.App, settings *core.Record, b Bootstrap) error {
 	// to be filled in from the wizard should not lose it.
 	if embeddingID != "" {
 		bindEmbedding(settings, embeddingID, b.LLM.EmbeddingModel)
+	}
+	if webSearchID != "" {
+		settings.Set("websearch_provider_id", webSearchID)
 	}
 	return nil
 }

@@ -58,6 +58,7 @@ func TestSDKCapabilities(t *testing.T) {
 		{SDKMistral, true, false, true, false, "https://api.mistral.ai/v1", "Mistral"},
 		{SDKGoogleVision, true, false, false, false, "", "Google Cloud Vision"},
 		{SDKDocling, false, true, false, true, "http://docling:5001", "Docling"},
+		{SDKTavily, true, false, true, false, "https://api.tavily.com", "Tavily"},
 		// An unrecognised or empty SDK must fall on the side that still demands
 		// a key, because every call site reads RequiresAPIKey rather than the key.
 		{"tesseract", true, false, true, false, "", "tesseract"},
@@ -166,8 +167,30 @@ func TestCanOCR(t *testing.T) {
 			t.Fatalf("CanOCR(%q) = false", sdk)
 		}
 	}
+	// Both deny-arms, because CanOCR defaults to true: an SDK missing from the
+	// switch is offered for OCR and fails on the first uploaded document.
 	if CanOCR(SDKLocalEmbeddings) {
 		t.Fatal("a local embeddings endpoint cannot read a document")
+	}
+	if CanOCR(SDKTavily) {
+		t.Fatal("a web-search API cannot read a document")
+	}
+}
+
+// CanWebSearch is an allow-list, so the interesting half is everything it
+// refuses: no SDK that chats, embeds or reads a document searches the web.
+func TestCanWebSearch(t *testing.T) {
+	t.Parallel()
+	if !CanWebSearch(SDKTavily) {
+		t.Fatal("CanWebSearch(tavily) = false")
+	}
+	for _, sdk := range []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKOpenCode, SDKChatGPT, SDKGoogleVision, SDKDocling, SDKLocalEmbeddings, "unknown", ""} {
+		if CanWebSearch(sdk) {
+			t.Errorf("CanWebSearch(%q) = true", sdk)
+		}
+	}
+	if IsLLM(SDKTavily) || CanEmbed(SDKTavily) {
+		t.Fatal("tavily serves neither a model nor embeddings")
 	}
 }
 
@@ -184,8 +207,9 @@ func TestSDKListsMatchTheirPredicates(t *testing.T) {
 		"ocr":       {OCRSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKChatGPT, SDKDocling}},
 		// The environment lists are the same minus chatgpt, whose credential
 		// is minted by signing in and so cannot be seeded from a file.
-		"env llm": {EnvLLMSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKOpenCode}},
-		"env ocr": {EnvOCRSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKDocling}},
+		"env llm":    {EnvLLMSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKOpenCode}},
+		"env ocr":    {EnvOCRSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKDocling}},
+		"web search": {WebSearchSDKs(), []string{SDKTavily}},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -196,7 +220,7 @@ func TestSDKListsMatchTheirPredicates(t *testing.T) {
 	}
 	// Every valid SDK serves at least one binding, or it is unreachable.
 	for _, sdk := range ValidSDKs {
-		if !IsLLM(sdk) && !CanEmbed(sdk) && !CanOCR(sdk) {
+		if !IsLLM(sdk) && !CanEmbed(sdk) && !CanOCR(sdk) && !CanWebSearch(sdk) {
 			t.Errorf("%s is a valid SDK that no binding accepts", sdk)
 		}
 	}
@@ -235,7 +259,7 @@ func TestRequiresAPIKey(t *testing.T) {
 			t.Fatalf("RequiresAPIKey(%q) = true; a sidecar has no account behind it", sdk)
 		}
 	}
-	for _, sdk := range []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKGoogleVision} {
+	for _, sdk := range []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKGoogleVision, SDKTavily} {
 		if !RequiresAPIKey(sdk) {
 			t.Fatalf("RequiresAPIKey(%q) = false", sdk)
 		}

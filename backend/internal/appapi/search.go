@@ -17,6 +17,7 @@ import (
 	"lemmary/backend/internal/chat"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/websearch"
 )
 
 const maxAvailableTagNames = 500
@@ -34,6 +35,10 @@ type searchRequest struct {
 	// binding in Settings. Read only when SessionID is empty, as Mode is.
 	ProviderID string `json:"provider_id"`
 	Model      string `json:"model"`
+	// Web lets this turn reach the public web. Per turn rather than stored with
+	// the conversation: unlike Mode, nothing in the transcript depends on it,
+	// and a metered tool is better defaulted off on every reload.
+	Web bool `json:"web"`
 }
 
 type searchResponse struct {
@@ -85,6 +90,9 @@ type agentTools struct {
 	// dense is set when the retriever has an embedding leg; the prompt is
 	// worded differently for a search that crosses languages by itself.
 	dense bool
+	// web backs web_search and web_fetch. Nil unless a provider is bound and
+	// the request asked for it, and the tools are then not offered.
+	web *websearch.Tavily
 }
 
 // buildAgentTools binds one retriever per request, shared by both closures so
@@ -194,6 +202,11 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 	if err != nil {
 		app.Logger().Error("search list tags failed", slog.Any("error", err))
 		return searchTurn{}, true, writeError(e, http.StatusInternalServerError, "Search is unavailable.")
+	}
+	// Research only: search mode is one round against the archive, and paying a
+	// metered provider for a turn that renders a card list serves nobody.
+	if req.Web && mode == chat.ModeResearch {
+		tools.web = snap.WebSearch
 	}
 
 	// A follow-up is usually about what the last answer cited, so carrying the
@@ -306,6 +319,7 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 				DenseRetrieval: turn.tools.dense,
 				Survey:         turn.tools.survey,
 				Count:          turn.tools.count,
+				Web:            turn.tools.web,
 			}, func(event ai.ResearchEvent) {
 				if event.Type == "step" {
 					steps = append(steps, chat.StepFromEvent(event))
@@ -402,6 +416,7 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 				DenseRetrieval: turn.tools.dense,
 				Survey:         turn.tools.survey,
 				Count:          turn.tools.count,
+				Web:            turn.tools.web,
 			}, func(event ai.ResearchEvent) {
 				if event.Type == "step" {
 					steps = append(steps, chat.StepFromEvent(event))

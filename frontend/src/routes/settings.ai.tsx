@@ -33,6 +33,8 @@ type Bindings = {
   search_helper_model: string
   embedding_provider_id: string
   embedding_model: string
+  // No model beside it: a web-search API takes none.
+  websearch_provider_id: string
 }
 
 // The four LLM bindings the simple view collapses into one "general" model. An
@@ -113,6 +115,7 @@ export function SettingsAIPage() {
     search_helper_model: settings.search_helper_model,
     embedding_provider_id: settings.embedding_provider_id,
     embedding_model: settings.embedding_model,
+    websearch_provider_id: settings.websearch_provider_id,
   }))
 
   async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
@@ -257,6 +260,18 @@ export function SettingsAIPage() {
             <div className="sm:col-span-2">
               <EmbeddingStatsLine stats={embeddingStats} />
             </div>
+
+            <ProviderModelFields
+              label="Web search"
+              help="Lets Deep Research and Ask AI look things up online when the archive cannot answer -- a rate that changed, a company's present details. Off unless a provider is bound here, and then still off in a chat until the reader turns it on. Every lookup is billed by the provider."
+              providers={providers ?? []}
+              providerId={form.websearch_provider_id}
+              model=""
+              purpose="websearch"
+              allowEmpty
+              onProviderChange={(id) => updateField('websearch_provider_id', id)}
+              onModelChange={() => {}}
+            />
           </div>
           <div className="mt-4">
             <SaveSettingsButton saving={saving} />

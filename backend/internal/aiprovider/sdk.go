@@ -42,14 +42,21 @@ const (
 	// would be a second multi-gigabyte container doing the same recognition.
 	SDKDocling = "docling"
 
+	// SDKTavily is a web-search API, the only SDK here that serves neither a
+	// model nor a document: it answers a query with ranked results and extracts
+	// a page's text. It backs the web_search and web_fetch tools, so CanOCR has
+	// to refuse it explicitly -- that predicate defaults to true, and a Tavily
+	// row bound to OCR would only fail on the first uploaded document.
+	SDKTavily = "tavily"
+
 	CollectionName = "ai_providers"
 )
 
-var ValidSDKs = []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKChatGPT, SDKLocalEmbeddings, SDKDocling}
+var ValidSDKs = []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKChatGPT, SDKLocalEmbeddings, SDKDocling, SDKTavily}
 
 func ValidSDK(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
-	case SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKChatGPT, SDKLocalEmbeddings, SDKDocling:
+	case SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKChatGPT, SDKLocalEmbeddings, SDKDocling, SDKTavily:
 		return true
 	default:
 		return false
@@ -85,10 +92,22 @@ func CanEmbed(sdk string) bool {
 // only appear on the first document uploaded.
 func CanOCR(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
-	case SDKLocalEmbeddings:
+	case SDKLocalEmbeddings, SDKTavily:
 		return false
 	default:
 		return true
+	}
+}
+
+// CanWebSearch reports whether an SDK can serve the web-search binding, which
+// backs the web_search and web_fetch tools. An allow-list, like CanEmbed: an
+// SDK that has not been taught to search the web cannot do it by accident.
+func CanWebSearch(sdk string) bool {
+	switch strings.TrimSpace(sdk) {
+	case SDKTavily:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -165,6 +184,7 @@ func sdksWhere(pred func(string) bool) []string {
 func LLMSDKs() []string       { return sdksWhere(IsLLM) }
 func EmbeddingSDKs() []string { return sdksWhere(CanEmbed) }
 func OCRSDKs() []string       { return sdksWhere(CanOCR) }
+func WebSearchSDKs() []string { return sdksWhere(CanWebSearch) }
 
 // EnvLLMSDKs and EnvOCRSDKs name the SDKs AI_SDK and OCR_SDK accept, which is
 // LLMSDKs and OCRSDKs minus the ones whose credential cannot be written down.
@@ -213,6 +233,8 @@ func DefaultBaseURL(sdk string) string {
 	// OCR_SDK=docling alone is a complete configuration for that overlay.
 	case SDKDocling:
 		return "http://docling:5001"
+	case SDKTavily:
+		return "https://api.tavily.com"
 	default:
 		return ""
 	}
@@ -236,6 +258,8 @@ func DefaultAlias(sdk string) string {
 		return "Local embeddings"
 	case SDKDocling:
 		return "Docling"
+	case SDKTavily:
+		return "Tavily"
 	default:
 		return sdk
 	}

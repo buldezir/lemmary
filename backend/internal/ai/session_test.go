@@ -42,7 +42,7 @@ func TestChatSendsSessionHeaderToOpenCode(t *testing.T) {
 	client := NewOpenAIClient(aiprovider.SDKOpenCode, "test-key", "test-model",
 		srv.URL+"/zen/go/v1", "", "", 5*time.Second, slog.Default())
 	ctx := aiprovider.WithSession(context.Background(), "conv123")
-	if _, err := client.Chat(ctx, "some ocr text", []ChatMessage{{Role: "user", Content: "hi"}}); err != nil {
+	if _, err := client.Chat(ctx, "some ocr text", []ChatMessage{{Role: "user", Content: "hi"}}, nil); err != nil {
 		t.Fatalf("chat: %v", err)
 	}
 	if seen != "conv123" {
@@ -58,7 +58,7 @@ func TestChatSendsNoSessionHeaderToOtherProviders(t *testing.T) {
 
 	client := NewOpenAIClient(aiprovider.SDKOpenAI, "test-key", "test-model", srv.URL, "", "", 5*time.Second, slog.Default())
 	ctx := aiprovider.WithSession(context.Background(), "conv123")
-	if _, err := client.Chat(ctx, "some ocr text", []ChatMessage{{Role: "user", Content: "hi"}}); err != nil {
+	if _, err := client.Chat(ctx, "some ocr text", []ChatMessage{{Role: "user", Content: "hi"}}, nil); err != nil {
 		t.Fatalf("chat: %v", err)
 	}
 	if seen != "" {
