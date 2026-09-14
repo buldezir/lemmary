@@ -131,7 +131,10 @@ export function ProviderModelFields({
   // Narrowed here, not by the caller, which must pass every provider it has:
   // narrowing earlier is what hid the local SDK from the embedding picker.
   const eligible = eligibleProviders(providers, purpose, providerId)
-  const hideModel = purpose === 'ocr' && selected?.sdk === 'google_vision'
+  // Web search never shows a model field: the SDKs behind it take none at all,
+  // unlike OCR, where only some do.
+  const hideModel =
+    purpose === 'websearch' || (purpose === 'ocr' && selected?.sdk === 'google_vision')
   const showWarning = purpose === 'ocr' && showsOCRModelWarning(selected?.sdk)
   // A local sidecar has no catalogue, so the picker falls back to a free-text
   // box; bare, that box reads as a required model id.

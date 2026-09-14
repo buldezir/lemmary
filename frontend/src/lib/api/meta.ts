@@ -24,6 +24,12 @@ export type AppMeta = {
    * reads as off, which is the behaviour before the flag existed.
    */
   alwaysRequireReview?: boolean
+  /**
+   * Whether a web-search provider is bound, which is what lets a chat offer the
+   * web toggle at all. Unknown reads as off, like chatgptLogin: a toggle that
+   * cannot work is a dead end, and the tools are metered.
+   */
+  webSearch?: boolean
 }
 
 // One request per page load, shared by three components and the auth gate --
@@ -70,6 +76,7 @@ async function fetchAppMeta(): Promise<AppMeta> {
       ai_managed?: boolean
       chatgpt_login?: boolean
       always_require_review?: boolean
+      web_search?: boolean
     }>('/api/app/meta', {
       public: true,
       fallbackError: 'Failed to load app meta',
@@ -83,6 +90,7 @@ async function fetchAppMeta(): Promise<AppMeta> {
       aiManaged: data.ai_managed === true,
       chatgptLogin: data.chatgpt_login === true,
       alwaysRequireReview: data.always_require_review === true,
+      webSearch: data.web_search === true,
     }
   } catch {
     // A name and accent have safe defaults; who owns AI configuration does not.

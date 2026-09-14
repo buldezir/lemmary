@@ -9,6 +9,7 @@ import (
 	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/ocr"
+	"lemmary/backend/internal/websearch"
 )
 
 // Overrides names the bindings that replace the configured ones for the length
@@ -231,6 +232,16 @@ func buildHelper(app core.App, cfg Config, p *aiprovider.Provider, model string,
 	}
 	key, opts := providerCredential(app, p, logger)
 	return ai.NewHelper(p.SDK, key, model, p.BaseURL, cfg.OpenAITimeout, logger, opts...)
+}
+
+// buildWebSearch has no model term and no override: a web-search API takes no
+// model, and the tools are turned on per turn rather than bound per request.
+func buildWebSearch(app core.App, cfg Config, p *aiprovider.Provider, logger *slog.Logger) *websearch.Tavily {
+	if p == nil || !p.Configured() || !aiprovider.CanWebSearch(p.SDK) {
+		return nil
+	}
+	key, _ := providerCredential(app, p, logger)
+	return websearch.NewTavily(key, p.BaseURL, cfg.OpenAITimeout, logger)
 }
 
 // buildEmbedder takes EmbeddingDims from the configuration rather than the

@@ -54,10 +54,13 @@ type Bootstrap struct {
 	LLM       ProviderSpec
 	OCR       ProviderSpec
 	Embedding ProviderSpec
+	// WebSearch is always its own endpoint: no SDK that chats or reads a
+	// document also searches the web, so there is no SharesOneProvider twin.
+	WebSearch ProviderSpec
 }
 
 func (b Bootstrap) Configured() bool {
-	return b.LLM.Configured() || b.OCR.Configured() || b.Embedding.Configured()
+	return b.LLM.Configured() || b.OCR.Configured() || b.Embedding.Configured() || b.WebSearch.Configured()
 }
 
 // SharesEmbeddingProvider is true when embeddings run on the LLM's endpoint,
@@ -140,6 +143,15 @@ func Apply(app core.App, settings *core.Record, b Bootstrap) error {
 		embeddingID = id
 	}
 
+	webSearchID := ""
+	if b.WebSearch.Configured() {
+		id, err := upsertProvider(app, b.WebSearch)
+		if err != nil {
+			return err
+		}
+		webSearchID = id
+	}
+
 	if llmID != "" {
 		model := strings.TrimSpace(b.LLM.Model)
 		if model == "" {
@@ -154,7 +166,16 @@ func Apply(app core.App, settings *core.Record, b Bootstrap) error {
 	if embeddingID != "" {
 		bindEmbedding(settings, embeddingID, b.LLM.EmbeddingModel)
 	}
+	bindWebSearch(settings, webSearchID)
 	return nil
+}
+
+// bindWebSearch points the web-search binding at the seeded provider. An empty
+// id clears it, so removing WEB_SEARCH_SDK actually turns the tools off again --
+// the same contract bindEmbedding has, and the only way back to the off
+// behaviour on a managed instance, whose Settings page refuses this field.
+func bindWebSearch(settings *core.Record, providerID string) {
+	settings.Set("websearch_provider_id", strings.TrimSpace(providerID))
 }
 
 // bindHelper points the Deep Search helper binding at the language model's

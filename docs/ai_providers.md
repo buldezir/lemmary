@@ -10,19 +10,20 @@ to use.
 
 ## Choosing a provider
 
-| Provider | Language model | OCR | Embeddings |
-| --- | --- | --- | --- |
-| **Opencode Go** — `opencode` | ✅ **a catalogue of models on one subscription** | ✅ models that accept files/images | ❌ |
-| **`mistral`** | ✅ chat completions | ✅ dedicated Document OCR API | ✅ `mistral-embed` |
-| `openai` | ✅ | ✅ models that accept files/images | ✅ |
-| `openrouter` | ✅ many vendors on one key | ✅ models advertising `file` input | ✅ |
-| `google_vision` | ❌ | ✅ | ❌ |
-| **ChatGPT subscription** — `chatgpt` | ✅ **on a ChatGPT subscription** | ✅ **on the same seat** | ❌ |
-| **Local OCR (Docling)** — `docling` | ❌ | ✅ **on your own host** | ❌ |
-| **Local Embeddings (huggingface/text-embeddings-inference)** — `local` | ❌ | ❌ | ✅ **on your own hardware** |
+| Provider | Language model | OCR | Embeddings | Web search |
+| --- | --- | --- | --- | --- |
+| **Opencode Go** — `opencode` | ✅ **a catalogue of models on one subscription** | ✅ models that accept files/images | ❌ | ❌ |
+| **`mistral`** | ✅ chat completions | ✅ dedicated Document OCR API | ✅ `mistral-embed` | ❌ |
+| `openai` | ✅ | ✅ models that accept files/images | ✅ | ❌ |
+| `openrouter` | ✅ many vendors on one key | ✅ models advertising `file` input | ✅ | ❌ |
+| `google_vision` | ❌ | ✅ | ❌ | ❌ |
+| **ChatGPT subscription** — `chatgpt` | ✅ **on a ChatGPT subscription** | ✅ **on the same seat** | ❌ | ❌ |
+| **Local OCR (Docling)** — `docling` | ❌ | ✅ **on your own host** | ❌ | ❌ |
+| **Local Embeddings (huggingface/text-embeddings-inference)** — `local` | ❌ | ❌ | ✅ **on your own hardware** | ❌ |
+| **Tavily** — `tavily` | ❌ | ❌ | ❌ | ✅ **the only SDK that does** |
 
 The names in bold are what Settings shows. The shorter code values remain the
-values used by `OCR_SDK` and `AI_EMBEDDING_SDK`.
+values used by `OCR_SDK`, `AI_EMBEDDING_SDK` and `WEB_SEARCH_SDK`.
 
 **Start with Mistral.** It is the only SDK that covers every job Lemmary has, so
 one key and one provider row configure the whole instance — OCR, extraction,
@@ -166,6 +167,50 @@ exactly as they did before the block existed. Setting `AI_EMBEDDING_SDK` without
 `AI_EMBEDDING_MODEL` is refused rather than ignored — it would create a provider
 with nothing bound to it, which reads as a configured feature that never embeds
 anything.
+
+### The web-search provider
+
+Deep Research and Ask AI can only reason over documents the archive holds. A
+question whose answer moved on — a rate that changed, a company's present
+address, a number that was never filed — comes back as *the archive does not
+contain this*, or worse, out of the model's memory.
+
+Bind a web-search provider and both gain two tools, `web_search` and
+`web_fetch`. There is one SDK, **Tavily** (`tavily`): search returns ranked
+results with a snippet each, and fetch returns a page as markdown. The fetching
+happens on Tavily's side, so nothing here dials a URL a model invented.
+
+**It stays off until two separate people ask for it.** An operator binds the
+provider, in **Settings → AI → Web search** or from the environment below; a
+reader then turns *Search the web* on for a conversation. Without the binding
+the toggle is not rendered at all, and the toggle starts off on every page load
+— every call is billed by the provider, so off is the direction worth
+forgetting in. One answer makes at most ten calls, on either surface.
+
+The archive stays the primary source. The prompt says to search it first and use
+the web to check or complete what it found, and an answer cites a web claim as an
+ordinary link, so you can see which sentences came from outside.
+
+**What leaves your instance is a query the model wrote**, not the question the
+reader typed — and the model has your document text in front of it when it
+writes one. Assume a search can carry a phrase out of a document (a name, an
+address, an invoice number) rather than only the subject of the question.
+Fetching runs on the provider's side as well, so the pages you read see their
+address rather than yours.
+
+Plain **Search** mode is untouched: it is one round against the archive that
+renders a list of cards, and there is nowhere in that to put a web result.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `WEB_SEARCH_SDK` | unset (the tools are never offered) | The web-search provider's SDK. `tavily` is the only value; every other SDK is refused, none of them searches the web. |
+| `WEB_SEARCH_API_KEY` | empty | Its credential, required whenever the SDK is named. There is nothing to borrow it from: a web-search provider is always its own endpoint. |
+| `WEB_SEARCH_BASE_URL` | the SDK's own endpoint | Where that provider lives, for a gateway in front of it. Defaults to `https://api.tavily.com`. |
+
+Unset, all three change nothing: no tool is declared to any model, and both
+surfaces behave exactly as they did before the block existed. Setting a key or a
+base URL without `WEB_SEARCH_SDK` is refused rather than ignored, the same way
+the `OCR_*` block is — there is no other provider to fold it into.
 
 ### Seeded settings
 

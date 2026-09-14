@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   canEmbedProvider,
+  canWebSearchProvider,
   isLLMProvider,
   keylessProviderDocs,
   keylessProviderHint,
@@ -157,7 +158,7 @@ describe('the ChatGPT subscription SDK', () => {
   it('signs in instead of taking a key', () => {
     expect(requiresSignIn('chatgpt')).toBe(true)
     expect(requiresAPIKey('chatgpt')).toBe(false)
-    for (const sdk of ['openai', 'openrouter', 'mistral', 'opencode', 'google_vision', 'local', 'docling']) {
+    for (const sdk of ['openai', 'openrouter', 'mistral', 'opencode', 'google_vision', 'local', 'docling', 'tavily']) {
       expect(requiresSignIn(sdk)).toBe(false)
     }
   })
@@ -194,5 +195,46 @@ describe('recommendedModel', () => {
     expect(recommendedModel('opencode', 'embedding')).toBe('')
     expect(recommendedModel('openai', 'llm')).toBe('')
     expect(recommendedModel(undefined, 'ocr')).toBe('')
+  })
+})
+
+// Tavily is the first SDK that serves neither a model nor a document, which
+// makes providerServesPurpose's OCR arm the thing to watch: it defaults to
+// true, so an SDK missing from it is offered for OCR and fails on the first
+// upload.
+describe('tavily', () => {
+  it('searches the web and does nothing else', () => {
+    expect(canWebSearchProvider('tavily')).toBe(true)
+    expect(providerServesPurpose('tavily', 'websearch')).toBe(true)
+    expect(isLLMProvider('tavily')).toBe(false)
+    expect(canEmbedProvider('tavily')).toBe(false)
+    expect(providerServesPurpose('tavily', 'llm')).toBe(false)
+    expect(providerServesPurpose('tavily', 'embedding')).toBe(false)
+    expect(providerServesPurpose('tavily', 'ocr')).toBe(false)
+  })
+
+  it('is the only SDK the web-search picker offers', () => {
+    for (const sdk of ['openai', 'openrouter', 'mistral', 'opencode', 'chatgpt', 'google_vision', 'local', 'docling']) {
+      expect(canWebSearchProvider(sdk)).toBe(false)
+      expect(providerServesPurpose(sdk, 'websearch')).toBe(false)
+    }
+    expect(canWebSearchProvider(undefined)).toBe(false)
+  })
+
+  // A binding already made is kept whatever its SDK, so an existing row never
+  // renders as blank -- the same rule every other picker follows.
+  it('keeps a bound provider in the list even when it no longer serves', () => {
+    const providers = [
+      { id: 'p1', sdk: 'tavily' },
+      { id: 'p2', sdk: 'openai' },
+    ]
+    expect(eligibleProviders(providers, 'websearch').map((p) => p.id)).toEqual(['p1'])
+    expect(eligibleProviders(providers, 'websearch', 'p2').map((p) => p.id)).toEqual(['p1', 'p2'])
+  })
+
+  it('is offered in the SDK picker with a default base URL', () => {
+    expect(SDK_OPTIONS.some((option) => option.value === 'tavily')).toBe(true)
+    expect(SDK_DEFAULT_BASE.tavily).toBe('https://api.tavily.com')
+    expect(requiresAPIKey('tavily')).toBe(true)
   })
 })

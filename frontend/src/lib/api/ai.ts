@@ -41,6 +41,13 @@ export async function chatWithDocument(input: {
   content: string
   runId: string
   /**
+   * Lets this turn reach the public web. Per turn rather than stored with the
+   * conversation: nothing in the transcript depends on it, and a metered tool
+   * is better defaulted off on every reload. Ignored unless a provider is
+   * bound -- see `AppMeta.webSearch`.
+   */
+  web?: boolean
+  /**
    * The provider and model to open the conversation on. Read by the server
    * only when there is no session id yet: a conversation keeps the binding its
    * transcript was produced with.
@@ -55,6 +62,7 @@ export async function chatWithDocument(input: {
         session_id: input.sessionId ?? '',
         content: input.content,
         run_id: input.runId,
+        web: input.web === true,
         ...bindingBody(input.binding),
       },
       fallbackError: 'Failed to get AI response',
@@ -71,7 +79,14 @@ export async function chatWithDocument(input: {
   }
 }
 
-export type ResearchStepKind = 'search' | 'read' | 'survey' | 'count' | 'answer'
+export type ResearchStepKind =
+  | 'search'
+  | 'read'
+  | 'survey'
+  | 'count'
+  | 'web_search'
+  | 'web_fetch'
+  | 'answer'
 
 export type ResearchEvent =
   // First event of every run: the conversation it writes into, which exists
@@ -125,6 +140,8 @@ export async function searchStream(
     content: string
     mode: SearchMode
     runId: string
+    /** See `chatWithDocument`. Research mode only; search mode ignores it. */
+    web?: boolean
     /** Read only when there is no session id yet; see `chatWithDocument`. */
     binding?: ProviderBinding
   },
@@ -137,6 +154,7 @@ export async function searchStream(
       content: input.content,
       mode: input.mode,
       run_id: input.runId,
+      web: input.web === true,
       ...bindingBody(input.binding),
     },
     onEvent,

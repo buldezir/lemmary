@@ -27,6 +27,9 @@ type settingsResponse struct {
 	SearchHelperModel      string `json:"search_helper_model"`
 	EmbeddingProviderID    string `json:"embedding_provider_id"`
 	EmbeddingModel         string `json:"embedding_model"`
+	// Empty means the web_search and web_fetch tools are never offered. No
+	// model: a web-search API takes none.
+	WebSearchProviderID string `json:"websearch_provider_id"`
 	// EmbeddingDims is read-only, recorded from the first real response: a
 	// number that disagreed with the model would build an index that silently
 	// drops every vector.
@@ -61,6 +64,7 @@ type settingsPatchRequest struct {
 	SearchHelperModel             *string  `json:"search_helper_model"`
 	EmbeddingProviderID           *string  `json:"embedding_provider_id"`
 	EmbeddingModel                *string  `json:"embedding_model"`
+	WebSearchProviderID           *string  `json:"websearch_provider_id"`
 	OCRTimeoutSec                 *int     `json:"ocr_timeout_sec"`
 	ProcessingResultLanguage      *string  `json:"processing_result_language"`
 	DeepSearchLanguages           *string  `json:"deep_search_languages"`
@@ -92,6 +96,7 @@ func (r settingsPatchRequest) touchesManaged() bool {
 		r.SearchHelperModel != nil ||
 		r.EmbeddingProviderID != nil ||
 		r.EmbeddingModel != nil ||
+		r.WebSearchProviderID != nil ||
 		r.NearDuplicateDetectionEnabled != nil ||
 		r.NearDuplicateThreshold != nil
 }
@@ -231,6 +236,7 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 		EmbeddingProviderID:           cfg.EmbeddingProviderID,
 		EmbeddingModel:                cfg.EmbeddingModel,
 		EmbeddingDims:                 cfg.EmbeddingDims,
+		WebSearchProviderID:           cfg.WebSearchProviderID,
 		OCRTimeoutSec:                 int(cfg.OCRTimeout.Seconds()),
 		ProcessingResultLanguage:      cfg.ProcessingResultLanguage,
 		DeepSearchLanguages:           cfg.DeepSearchLanguages,
@@ -309,6 +315,13 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	}
 	if req.EmbeddingModel != nil {
 		record.Set("embedding_model", strings.TrimSpace(*req.EmbeddingModel))
+	}
+	if req.WebSearchProviderID != nil {
+		id := strings.TrimSpace(*req.WebSearchProviderID)
+		if err := validateProviderID(app, id, needWebSearch); err != nil {
+			return err
+		}
+		record.Set("websearch_provider_id", id)
 	}
 	if req.OCRTimeoutSec != nil {
 		if *req.OCRTimeoutSec <= 0 {
@@ -403,6 +416,7 @@ const (
 	needOCR providerNeed = iota
 	needLLM
 	needEmbedding
+	needWebSearch
 )
 
 func validateProviderID(app core.App, id string, need providerNeed) error {
@@ -432,6 +446,10 @@ func providerServes(p aiprovider.Provider, need providerNeed) error {
 	case needOCR:
 		if !aiprovider.CanOCR(p.SDK) {
 			return errInvalid("OCR requires " + oneOf(aiprovider.OCRSDKs()) + " provider")
+		}
+	case needWebSearch:
+		if !aiprovider.CanWebSearch(p.SDK) {
+			return errInvalid("web search requires " + oneOf(aiprovider.WebSearchSDKs()) + " provider")
 		}
 	}
 	return nil

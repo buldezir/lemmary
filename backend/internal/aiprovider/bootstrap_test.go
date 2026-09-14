@@ -130,6 +130,7 @@ func settingsRecordForTest() *core.Record {
 		&core.TextField{Name: "embedding_provider_id", Max: 15},
 		&core.TextField{Name: "embedding_model", Max: 200},
 		&core.NumberField{Name: "embedding_dims", OnlyInt: true},
+		&core.TextField{Name: "websearch_provider_id", Max: 15},
 	)
 	return core.NewRecord(collection)
 }
@@ -184,5 +185,39 @@ func TestReferencedBySettingsCoversTheEmbeddingBinding(t *testing.T) {
 
 	if !ReferencedBySettings(record, "provider1") {
 		t.Fatal("a provider bound to embeddings should count as referenced")
+	}
+}
+
+// Removing WEB_SEARCH_SDK from a managed instance has to actually turn the
+// tools off again. Leaving the binding standing would be a one-way door: the
+// Settings page refuses this field under AI_MANAGED=1, so an operator who
+// unset the environment would have no way back to the off behaviour.
+func TestBindWebSearchClearsWhenTheProviderIsRemoved(t *testing.T) {
+	t.Parallel()
+	record := settingsRecordForTest()
+
+	bindWebSearch(record, "provider1")
+	if got := record.GetString("websearch_provider_id"); got != "provider1" {
+		t.Fatalf("binding not written: %q", got)
+	}
+
+	bindWebSearch(record, "")
+	if got := record.GetString("websearch_provider_id"); got != "" {
+		t.Fatalf("binding survived removal: %q", got)
+	}
+}
+
+// Deleting a provider out from under the binding would leave a dangling id in
+// settings, which is what the delete handler's 409 exists to prevent.
+func TestReferencedBySettingsCoversTheWebSearchBinding(t *testing.T) {
+	t.Parallel()
+	record := settingsRecordForTest()
+	record.Set("websearch_provider_id", "provider1")
+
+	if !ReferencedBySettings(record, "provider1") {
+		t.Fatal("a provider bound to web search should count as referenced")
+	}
+	if ReferencedBySettings(record, "provider2") {
+		t.Fatal("an unbound provider is not referenced")
 	}
 }

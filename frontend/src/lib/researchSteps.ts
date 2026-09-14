@@ -71,6 +71,10 @@ function startLabel(event: StoredResearchStep) {
       return event.query ? `Surveying documents for “${event.query}”` : 'Surveying documents'
     case 'count':
       return event.query ? `Counting documents matching “${event.query}”` : 'Counting documents'
+    case 'web_search':
+      return event.query ? `Searching the web for “${event.query}”` : 'Searching the web'
+    case 'web_fetch':
+      return `Reading ${plural(event.count ?? 0, 'page')}`
     default:
       return 'Writing answer'
   }
@@ -102,6 +106,18 @@ function doneLabel(event: StoredResearchStep, fallback?: string) {
     case 'count': {
       const counted = `Counted ${plural(event.count ?? 0, 'document')}`
       return event.query ? `${counted} matching “${event.query}”` : counted
+    }
+    case 'web_search': {
+      const found = plural(event.count ?? 0, 'result')
+      return event.query ? `“${event.query}” — ${found}` : `Searched the web — ${found}`
+    }
+    case 'web_fetch': {
+      // Titles are hostnames here: a URL is too long for a step line, and the
+      // page's own title is not known until it has been read.
+      const hosts = event.titles ?? []
+      const shown = hosts.slice(0, 3).join(', ')
+      const rest = hosts.length > 3 ? `, and ${hosts.length - 3} more` : ''
+      return hosts.length > 0 ? `Read ${shown}${rest}` : (fallback ?? 'Read web pages')
     }
     default:
       return 'Answer written'

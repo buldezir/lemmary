@@ -430,7 +430,7 @@ func TestDecodeReadArgsAcceptsLooseShapes(t *testing.T) {
 
 func TestBuildResearchSystemPromptDemandsReadingBeforeClaiming(t *testing.T) {
 	t.Parallel()
-	prompt := buildResearchSystemPrompt("en,de", "en", []string{"invoice"}, false)
+	prompt := buildResearchSystemPrompt("en,de", "en", []string{"invoice"}, false, false)
 	for _, want := range []string{
 		"read_documents",
 		"Never state what a document contains without reading it",
@@ -724,7 +724,7 @@ func TestResearchRereadsWithANewFocus(t *testing.T) {
 
 func TestResearchPromptExplainsFocus(t *testing.T) {
 	t.Parallel()
-	prompt := buildResearchSystemPrompt("en,de", "en", []string{"invoice"}, false)
+	prompt := buildResearchSystemPrompt("en,de", "en", []string{"invoice"}, false, false)
 	for _, want := range []string{
 		"Pass focus to steer the excerpt",
 		"survey_documents once",

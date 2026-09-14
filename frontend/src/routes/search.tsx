@@ -11,6 +11,7 @@ import { RunInFlightError } from '../lib/apiClient'
 import { useAsync } from '../hooks/useAsync'
 import { useChatSession, type ChatSendResult } from '../hooks/useChatSession'
 import { BindingOverride } from '../components/BindingOverride'
+import { WebSearchToggle } from '../components/WebSearchToggle'
 import type { ProviderBinding } from '../lib/api/providers'
 import {
   cancelSearchRun,
@@ -77,6 +78,9 @@ export function SearchPage() {
   const [railError, setRailError] = useState('')
   // The model the next conversation opens on, deliberately kept across a new chat.
   const [binding, setBinding] = useState<ProviderBinding | undefined>()
+  // Per turn, not per conversation: the server stores nothing about it, so a
+  // reload starts from off. Off is the safe direction for a metered tool.
+  const [web, setWeb] = useState(false)
   const [steps, setSteps] = useState<ResearchStep[]>([])
   const [draft, setDraft] = useState('')
   // The controller only abandons this page's view of the run; the id is what
@@ -141,6 +145,7 @@ export function SearchPage() {
       content: string,
       turnMode: SearchMode,
       turnBinding: ProviderBinding | undefined,
+      turnWeb: boolean,
     ): Promise<ChatSendResult> => {
       const run = { controller: new AbortController(), id: runId() }
       runRef.current = run
@@ -160,7 +165,16 @@ export function SearchPage() {
 
       try {
         await searchStream(
-          { sessionId: id, content, mode: turnMode, runId: run.id, binding: turnBinding },
+          {
+            sessionId: id,
+            content,
+            mode: turnMode,
+            runId: run.id,
+            // Research only: the server ignores it in search mode, and the
+            // toggle is not rendered there either.
+            web: turnMode === 'research' && turnWeb,
+            binding: turnBinding,
+          },
           (event) => {
             switch (event.type) {
               case 'session':
@@ -263,7 +277,7 @@ export function SearchPage() {
       }
       return detail
     },
-    send: ({ sessionId: id, content }) => runTurn(id, content, mode, binding),
+    send: ({ sessionId: id, content }) => runTurn(id, content, mode, binding, web),
     onSessionSettled,
   })
 
@@ -471,6 +485,11 @@ export function SearchPage() {
               so the transcript scrolls, which clips the absolutely positioned
               model dropdown. border-t-0 keeps it reading as part of the panel. */}
           <div className="border border-t-0 border-line bg-surface px-4 py-3">
+            {mode === 'research' && (
+              <div className="mb-3">
+                <WebSearchToggle checked={web} onChange={setWeb} disabled={chat.sending} />
+              </div>
+            )}
             <BindingOverride
               label="Search"
               purpose="llm"

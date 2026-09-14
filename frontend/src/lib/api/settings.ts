@@ -30,6 +30,11 @@ export type AppSettings = {
    * index that silently drops every vector.
    */
   embedding_dims: number
+  /**
+   * The web-search binding, backing the web_search and web_fetch tools. Empty
+   * means they are never offered. No model beside it: the SDKs take none.
+   */
+  websearch_provider_id: string
   ocr_timeout_sec: number
   processing_result_language: string
   deep_search_languages: string

@@ -63,7 +63,7 @@ func TestChatSendsDocumentHeaderOnlyWhenManaged(t *testing.T) {
 
 			client := NewOpenAIClient(aiprovider.SDKOpenAI, "k", "test-model", srv.URL, "", "", 5*time.Second, slog.Default())
 			ctx := aiprovider.WithDocument(context.Background(), tc.doc)
-			if _, err := client.Chat(ctx, "ocr text", []ChatMessage{{Role: "user", Content: "hi"}}); err != nil {
+			if _, err := client.Chat(ctx, "ocr text", []ChatMessage{{Role: "user", Content: "hi"}}, nil); err != nil {
 				t.Fatalf("chat: %v", err)
 			}
 			if seen != tc.want {

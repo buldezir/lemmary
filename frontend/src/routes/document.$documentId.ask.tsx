@@ -6,6 +6,7 @@ import { ChatTranscript } from '../components/ChatTranscript'
 import { ChatComposer } from '../components/ChatComposer'
 import { ChatSessionList } from '../components/ChatSessionList'
 import { BindingOverride } from '../components/BindingOverride'
+import { WebSearchToggle } from '../components/WebSearchToggle'
 import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
 import { chatWithDocument } from '../lib/api/ai'
@@ -42,6 +43,9 @@ export function DocumentAskPage() {
   const [railError, setRailError] = useState('')
   // The model the next conversation opens on, deliberately kept across a new chat.
   const [binding, setBinding] = useState<ProviderBinding | undefined>()
+  // Per turn, not per conversation: the server stores nothing about it, so a
+  // reload starts from off. Off is the safe direction for a metered tool.
+  const [web, setWeb] = useState(false)
 
   const {
     data: document,
@@ -86,6 +90,7 @@ export function DocumentAskPage() {
           sessionId: id,
           content,
           runId: requestId,
+          web,
           binding,
         })
       } catch (err) {
@@ -110,7 +115,7 @@ export function DocumentAskPage() {
         throw err
       }
     },
-    [binding, documentId, sessions],
+    [binding, documentId, sessions, web],
   )
 
   const chat = useChatSession({
@@ -293,6 +298,9 @@ export function DocumentAskPage() {
                 absolutely positioned model dropdown. border-t-0 keeps it
                 reading as part of the panel. */}
               <div className="border border-t-0 border-line bg-surface px-4 py-3">
+                <div className="mb-3">
+                  <WebSearchToggle checked={web} onChange={setWeb} disabled={chat.sending} />
+                </div>
                 <BindingOverride
                   label="Chat"
                   purpose="llm"

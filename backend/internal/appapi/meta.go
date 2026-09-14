@@ -93,6 +93,10 @@ func handleGetMeta(app core.App, rt *config.Runtime) func(*core.RequestEvent) er
 			// Public because it shapes what a regular user sees, while only an
 			// admin can change it.
 			"always_require_review": rt.AlwaysRequireReview(),
+			// Whether a chat may offer the web toggle at all. Having the option
+			// is not having the answer: the tools still run only when a user
+			// asks for them on the turn.
+			"web_search": rt.WebSearchAvailable(),
 		})
 	}
 }

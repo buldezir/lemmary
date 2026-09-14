@@ -13,6 +13,7 @@ import (
 	"lemmary/backend/internal/applog"
 	"lemmary/backend/internal/chatgpt"
 	"lemmary/backend/internal/ocr"
+	"lemmary/backend/internal/websearch"
 )
 
 type Snapshot struct {
@@ -30,6 +31,10 @@ type Snapshot struct {
 	// Embedder is nil unless an embedding model is bound, which is what turns dense
 	// retrieval on. Consumers check for nil and degrade to keyword search.
 	Embedder ai.Embedder
+	// WebSearch is nil unless a web-search provider is bound. It is what makes
+	// the web_search and web_fetch tools offerable at all; a user still has to
+	// ask for them on the turn.
+	WebSearch *websearch.Tavily
 }
 
 type Runtime struct {
@@ -82,6 +87,11 @@ func (r *Runtime) ChatGPTLogin() bool { return r.env.ChatGPTLogin }
 // and ChatGPTLogin: it is a tenant's own setting, so it changes when Settings is
 // saved and the runtime reloads.
 func (r *Runtime) AlwaysRequireReview() bool { return r.Snapshot().Cfg.AlwaysRequireReview }
+
+// WebSearchAvailable is read by /meta, which is how the SPA knows whether to
+// offer the web toggle in a chat. Off the snapshot for the same reason
+// AlwaysRequireReview is: binding a provider changes it without a restart.
+func (r *Runtime) WebSearchAvailable() bool { return r.Snapshot().WebSearch != nil }
 
 func (r *Runtime) Snapshot() Snapshot {
 	r.mu.RLock()
@@ -159,6 +169,7 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 	embedder := buildEmbedder(app, cfg, cfg.EmbeddingProvider, cfg.EmbeddingModel, aiLogger)
 	searchAgent := buildSearchAgent(app, cfg, cfg.SearchProvider, cfg.SearchModel, aiLogger)
 	searchHelper := buildHelper(app, cfg, cfg.SearchHelperProvider, cfg.SearchHelperModel, aiLogger)
+	webSearch := buildWebSearch(app, cfg, cfg.WebSearchProvider, aiLogger)
 
 	snap := Snapshot{
 		Cfg:          cfg,
@@ -169,6 +180,7 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		SearchHelper: searchHelper,
 		Splitter:     splitter,
 		Embedder:     embedder,
+		WebSearch:    webSearch,
 	}
 
 	r.mu.Lock()

@@ -14,6 +14,7 @@ import (
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/chat"
 	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/websearch"
 )
 
 // chatMaxBodyBytes caps a chat request: the body is one message plus a session
@@ -33,6 +34,10 @@ type chatRequest struct {
 	// binding in Settings. Read only when SessionID is empty.
 	ProviderID string `json:"provider_id"`
 	Model      string `json:"model"`
+	// Web lets this turn reach the public web. Per turn rather than stored with
+	// the conversation: unlike the binding, nothing in the transcript depends on
+	// it, and a metered tool is better defaulted off on every reload.
+	Web bool `json:"web"`
 }
 
 // conversationBinding pins an existing conversation to the binding stored with
@@ -282,7 +287,13 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 		defer stopRun()
 
 		chatCtx := aiprovider.WithDocumentRecord(runCtx, document)
-		reply, err := chatter.Chat(aiprovider.WithSession(chatCtx, session.Id), ocrText, messages)
+		// Nil unless both sides agreed: an operator bound a provider, and the
+		// user asked for the web on this turn.
+		var web *websearch.Tavily
+		if req.Web {
+			web = snap.WebSearch
+		}
+		reply, err := chatter.Chat(aiprovider.WithSession(chatCtx, session.Id), ocrText, messages, web)
 		if err != nil {
 			app.Logger().Error("document chat failed", "document", documentID, slog.Any("error", err))
 			discardEmptySession(app, opened)

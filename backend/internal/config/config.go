@@ -48,12 +48,18 @@ type Config struct {
 	// and what makes a model switch detectable.
 	EmbeddingDims int
 
+	// WebSearchProviderID binds the provider backing the web_search and
+	// web_fetch tools. Unset means the tools are never offered, which is the
+	// pre-flag behaviour. No model: a web-search API has none.
+	WebSearchProviderID string
+
 	OCRProvider          *aiprovider.Provider
 	ExtractProvider      *aiprovider.Provider
 	ChatProvider         *aiprovider.Provider
 	SearchProvider       *aiprovider.Provider
 	SearchHelperProvider *aiprovider.Provider
 	EmbeddingProvider    *aiprovider.Provider
+	WebSearchProvider    *aiprovider.Provider
 
 	OCRTimeout               time.Duration
 	ProcessingResultLanguage string
@@ -238,6 +244,7 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 		EmbeddingProviderID:           strings.TrimSpace(record.GetString("embedding_provider_id")),
 		EmbeddingModel:                strings.TrimSpace(record.GetString("embedding_model")),
 		EmbeddingDims:                 max(int(record.GetFloat("embedding_dims")), 0),
+		WebSearchProviderID:           strings.TrimSpace(record.GetString("websearch_provider_id")),
 		OCRTimeout:                    time.Duration(ocrTimeoutSec) * time.Second,
 		ProcessingResultLanguage:      strings.ToLower(strings.TrimSpace(record.GetString("processing_result_language"))),
 		DeepSearchLanguages:           NormalizeLanguageList(record.GetString("deep_search_languages")),
@@ -297,6 +304,7 @@ func resolveProviders(app core.App, cfg *Config) error {
 		{cfg.SearchProviderID, &cfg.SearchProvider},
 		{cfg.SearchHelperProviderID, &cfg.SearchHelperProvider},
 		{cfg.EmbeddingProviderID, &cfg.EmbeddingProvider},
+		{cfg.WebSearchProviderID, &cfg.WebSearchProvider},
 	} {
 		provider, err := lookupProvider(app, binding.id)
 		if err != nil {
@@ -332,6 +340,7 @@ func applyConfigToRecord(record *core.Record, cfg Config) {
 	record.Set("embedding_provider_id", cfg.EmbeddingProviderID)
 	record.Set("embedding_model", cfg.EmbeddingModel)
 	record.Set("embedding_dims", max(cfg.EmbeddingDims, 0))
+	record.Set("websearch_provider_id", cfg.WebSearchProviderID)
 	record.Set("ocr_timeout_sec", int(cfg.OCRTimeout.Seconds()))
 	record.Set("processing_result_language", cfg.ProcessingResultLanguage)
 	record.Set("deep_search_languages", cfg.DeepSearchLanguages)
@@ -445,6 +454,14 @@ func HasEmbedding(cfg Config) bool {
 	p := cfg.EmbeddingProvider
 	return p != nil && aiprovider.CanEmbed(p.SDK) && p.Configured() &&
 		strings.TrimSpace(cfg.EmbeddingModel) != ""
+}
+
+// HasWebSearch reports whether the web_search and web_fetch tools can be
+// offered at all. No model term, unlike HasEmbedding: a web-search API takes
+// none.
+func HasWebSearch(cfg Config) bool {
+	p := cfg.WebSearchProvider
+	return p != nil && p.Configured() && aiprovider.CanWebSearch(p.SDK)
 }
 
 var recordEmbeddingDimsMu sync.Mutex
