@@ -12,6 +12,8 @@ type Props = {
   onToggleSelect?: (id: string) => void
   /** Omit to hide the button; it shows only for a document that is waiting. */
   onMarkReviewed?: (id: string) => void
+  /** Omit to leave the tag chips as plain text, on a list with no tags filter. */
+  onFilterTag?: (tagId: string) => void
   markingReviewed?: boolean
   /**
    * The document's newest processing job, when the list fetched one. It says
@@ -75,9 +77,10 @@ export function DocumentCard({
   onToggleSelect,
   onMarkReviewed,
   markingReviewed,
+  onFilterTag,
   job,
 }: Props) {
-  const tags = document.expand?.tags?.map((tag) => tag.name) ?? []
+  const tags = document.expand?.tags ?? []
   const correspondent = document.expand?.correspondent?.name
   const documentType = document.expand?.document_type?.name
   const title = document.title || 'Untitled document'
@@ -133,11 +136,28 @@ export function DocumentCard({
 
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
-            {tags.map((tag) => (
-              <span key={tag} className="border border-line px-1.5 py-0.5 text-[11px] text-ink-muted">
-                {tag}
-              </span>
-            ))}
+            {tags.map((tag) =>
+              onFilterTag ? (
+                // Above the full-bleed link, like the checkbox, so a click
+                // filters the list instead of opening the document.
+                <button
+                  key={tag.id}
+                  type="button"
+                  aria-label={`Filter by ${tag.name}`}
+                  className="relative z-10 pointer-events-auto border border-line px-1.5 py-0.5 text-[11px] text-ink-muted transition-colors hover:border-ink hover:text-ink"
+                  onClick={() => onFilterTag(tag.id)}
+                >
+                  {tag.name}
+                </button>
+              ) : (
+                <span
+                  key={tag.id}
+                  className="border border-line px-1.5 py-0.5 text-[11px] text-ink-muted"
+                >
+                  {tag.name}
+                </span>
+              ),
+            )}
           </div>
         )}
 

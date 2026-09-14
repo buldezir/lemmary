@@ -156,6 +156,8 @@ export type DocumentListFilters = {
   dateFrom: string
   dateTo: string
   undated?: boolean
+  /** tags ids a document must carry all of. */
+  tags?: string[]
 }
 
 /**
@@ -197,6 +199,14 @@ export function buildDocumentFilter(filters: DocumentListFilters): string | unde
     // PocketBase compares an empty literal null-safely, so this covers both
     // the empty string and a null date.
     parts.push("document_date = ''")
+  }
+  // ponytail: substring match on the stored id array, because PocketBase
+  // cannot express "has all of these" -- two `tags.id ?=` clauses reuse one
+  // join alias and match nothing. The needle carries the JSON quotes around
+  // the id so it cannot match inside a longer one. Move the unsearched list
+  // onto a Go endpoint (ngxapi's tagsExpr) if this stops paying.
+  for (const tag of filters.tags ?? []) {
+    parts.push(pb.filter('tags ~ {:id}', { id: `"${tag}"` }))
   }
 
   return parts.length > 0 ? parts.join(' && ') : undefined
@@ -419,6 +429,7 @@ export async function searchDocuments(opts: {
   dateFrom?: string
   dateTo?: string
   undated?: boolean
+  tags?: string[]
 }): Promise<DocumentSearchList> {
   const params = new URLSearchParams()
   params.set('q', opts.q)
@@ -441,6 +452,9 @@ export async function searchDocuments(opts: {
   }
   if (opts.undated) {
     params.set('undated', 'true')
+  }
+  if (opts.tags?.length) {
+    params.set('tags', opts.tags.join(','))
   }
 
   const data = await apiFetch<Partial<DocumentSearchList>>(

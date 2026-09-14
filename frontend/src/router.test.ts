@@ -72,5 +72,6 @@ describe('document list search params', () => {
     expect(validate?.({ status: 'failed', page: 2 })).toEqual({ page: 2 })
     expect(validate?.({ status: 'needs_review' })).toEqual({})
     expect(validate?.({ q: 'invoice', from: '2026-01-01' })).toEqual({})
+    expect(validate?.({ tags: 'tag1,tag2' })).toEqual({})
   })
 })

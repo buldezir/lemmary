@@ -31,6 +31,8 @@ export type DocumentQuery = {
   type: string
   /** A correspondents id, or 'all'. */
   correspondent: string
+  /** Comma-joined tags ids a document must carry all of; empty means any. */
+  tags: string
   /** 1-based. */
   page: number
 }
@@ -49,6 +51,7 @@ export const defaultDocumentQuery: DocumentQuery = {
   undated: false,
   type: 'all',
   correspondent: 'all',
+  tags: '',
   page: 1,
 }
 
@@ -72,6 +75,11 @@ function id(value: unknown): string {
   return raw && /^[a-zA-Z0-9]+$/.test(raw) ? raw : 'all'
 }
 
+/** The ids in a `?tags=` value, dropping anything malformed or repeated. */
+export function tagIds(value: unknown): string[] {
+  return [...new Set(text(value).split(',').filter((part) => /^[a-zA-Z0-9]+$/.test(part)))]
+}
+
 function pageNumber(value: unknown): number {
   const raw = typeof value === 'number' ? value : Number(text(value))
   return Number.isInteger(raw) && raw >= 1 ? raw : 1
@@ -91,6 +99,7 @@ export function parseDocumentQuery(raw: DocumentQueryInput): DocumentQuery {
     undated: raw.undated === true || raw.undated === 'true',
     type: id(raw.type),
     correspondent: id(raw.correspondent),
+    tags: tagIds(raw.tags).join(','),
     page: pageNumber(raw.page),
   }
 }

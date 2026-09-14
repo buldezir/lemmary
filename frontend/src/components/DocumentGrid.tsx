@@ -35,6 +35,7 @@ export function DocumentGrid({
     onReprocessSelected,
     onMarkReviewed,
     onDeleteSelected,
+    filterByTag,
     page,
     totalPages,
     totalItems,
@@ -71,6 +72,7 @@ export function DocumentGrid({
             onToggleSelect={toggleSelected}
             onMarkReviewed={(id) => void onMarkReviewed([id])}
             markingReviewed={markingReviewed}
+            onFilterTag={filterByTag}
           />
         ))}
       </div>

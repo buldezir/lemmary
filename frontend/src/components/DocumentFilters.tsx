@@ -1,7 +1,9 @@
 import { DOCUMENT_STATUSES, DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
 import type { CorrespondentRecord, DocumentTypeRecord } from '../lib/api/documents'
-import { MIN_SEARCH_LENGTH, type DocumentQuery } from '../lib/documentQuery'
+import { MIN_SEARCH_LENGTH, tagIds, type DocumentQuery } from '../lib/documentQuery'
+import type { TagRecord } from '../lib/api/tags'
 import { FilterCombobox } from './FilterCombobox'
+import { TagFilter } from './TagFilter'
 import { selectClassName } from './ui'
 
 /**
@@ -15,6 +17,7 @@ export function DocumentFilters({
   updateQuery,
   documentTypes,
   correspondents,
+  tags,
   status,
 }: {
   query: DocumentQuery
@@ -23,15 +26,21 @@ export function DocumentFilters({
   updateQuery: (patch: Partial<DocumentQuery>, replace?: boolean) => void
   documentTypes: DocumentTypeRecord[]
   correspondents: CorrespondentRecord[]
+  tags: TagRecord[]
   /** Omit to hide the status dropdown. */
   status?: string
 }) {
   const tooShort = search.trim().length > 0 && search.trim().length < MIN_SEARCH_LENGTH
+  const chosenTags = tagIds(query.tags)
+  // Nothing to offer and nothing chosen is no filter at all. Decided here
+  // rather than inside TagFilter because the search box shares the row and
+  // has to know whether it is sharing it.
+  const showTags = tags.length > 0 || chosenTags.length > 0
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <div className="flex w-full flex-col gap-1">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+        <div className="flex w-full min-w-0 flex-col gap-1 sm:flex-1">
           <input
             type="search"
             placeholder="Search title, tags, purpose, summary..."
@@ -46,12 +55,19 @@ export function DocumentFilters({
             </p>
           )}
         </div>
+        {showTags && (
+          <TagFilter
+            value={chosenTags}
+            options={tags}
+            onChange={(next) => updateQuery({ tags: next.join(',') })}
+          />
+        )}
         {status !== undefined && (
           <select
             value={status}
             onChange={(event) => updateQuery({ status: event.target.value })}
             aria-label="Processing status"
-            className={`${selectClassName} sm:w-48`}
+            className={`${selectClassName} shrink-0 sm:w-48`}
           >
             <option value="all">All statuses</option>
             {DOCUMENT_STATUSES.map((value) => (
