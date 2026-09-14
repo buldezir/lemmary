@@ -18,18 +18,25 @@ const detachedRunBudget = 20 * time.Minute
 // people to re-check an AI configuration that was never the problem.
 const runTooLongMessage = "This run took too long and was stopped."
 
-// searchRuns holds the cancel func of every run currently in flight, so an
-// explicit cancel request can stop one.
+// searchRuns is what is in flight right now: the cancel func of every run, so
+// an explicit cancel can stop one, and a count per conversation, so a page can
+// be told its chat is still being worked on.
 //
-// This exists because a dropped connection and a pressed Cancel button are the
+// It exists because a dropped connection and a pressed Cancel button are the
 // same closed socket to an HTTP server, and they mean opposite things. Runs
 // used to hang off the request context, which read every drop as a cancel and
 // threw away work the provider had already been paid for. Now the socket says
-// nothing and cancelling is a request of its own.
+// nothing, cancelling is a request of its own, and a client that went away can
+// come back and ask whether its answer is still coming.
+//
+// A count rather than a flag per session: two tabs can be asking the same
+// conversation at once, and the first to finish must not report the other's
+// run as over.
 var searchRuns = struct {
-	mu sync.Mutex
-	m  map[string]context.CancelFunc
-}{m: map[string]context.CancelFunc{}}
+	mu       sync.Mutex
+	cancels  map[string]context.CancelFunc
+	sessions map[string]int
+}{cancels: map[string]context.CancelFunc{}, sessions: map[string]int{}}
 
 // runKey scopes a run id to its owner, so one account cannot cancel another's
 // run by guessing an id.
@@ -39,30 +46,63 @@ func runKey(ownerID, runID string) string { return ownerID + "\x00" + runID }
 // (the provider cache key rides on the context) without its cancellation, plus
 // its own budget.
 //
+// runID may be empty, which costs the run nothing but the ability to be
+// cancelled. sessionID is the conversation the run is writing into, and is what
+// sessionRunning answers about.
+//
 // The returned stop must be called when the run finishes; it releases the
-// registry entry and the context.
-func startDetachedRun(parent context.Context, ownerID, runID string) (context.Context, func()) {
+// registry entries and the context.
+func startDetachedRun(parent context.Context, ownerID, runID, sessionID string) (context.Context, func()) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), detachedRunBudget)
-	if runID == "" {
-		// Nothing to cancel it by. Still detached -- an un-cancellable run is
-		// better than one a flaky network can destroy.
-		return ctx, cancel
+	key := ""
+	if runID != "" {
+		key = runKey(ownerID, runID)
 	}
 
-	key := runKey(ownerID, runID)
 	searchRuns.mu.Lock()
-	// A repeated id from the same owner replaces the old entry, and the run it
-	// belonged to loses its cancel. Only reachable if a client reuses an id it
-	// is supposed to generate fresh per run.
-	searchRuns.m[key] = cancel
+	if key != "" {
+		// A repeated id from the same owner replaces the old entry, and the run
+		// it belonged to loses its cancel. Only reachable if a client reuses an
+		// id it is supposed to generate fresh per run.
+		searchRuns.cancels[key] = cancel
+	}
+	if sessionID != "" {
+		searchRuns.sessions[sessionID]++
+	}
 	searchRuns.mu.Unlock()
 
 	return ctx, func() {
 		searchRuns.mu.Lock()
-		delete(searchRuns.m, key)
+		if key != "" {
+			delete(searchRuns.cancels, key)
+		}
+		if sessionID != "" {
+			if searchRuns.sessions[sessionID] <= 1 {
+				delete(searchRuns.sessions, sessionID)
+			} else {
+				searchRuns.sessions[sessionID]--
+			}
+		}
 		searchRuns.mu.Unlock()
 		cancel()
 	}
+}
+
+// sessionRunning reports whether a run is currently writing into a
+// conversation.
+//
+// This is the only thing that says so: a turn is stored as one user+assistant
+// pair when the run finishes, so while it is working the transcript looks
+// exactly like a conversation where nothing was ever asked. A page reopened
+// mid-run would otherwise show an empty chat and no sign that an answer is on
+// its way.
+func sessionRunning(sessionID string) bool {
+	if sessionID == "" {
+		return false
+	}
+	searchRuns.mu.Lock()
+	defer searchRuns.mu.Unlock()
+	return searchRuns.sessions[sessionID] > 0
 }
 
 // cancelSearchRun stops a run by id. Reports whether there was one: an id that
@@ -73,7 +113,7 @@ func cancelSearchRun(ownerID, runID string) bool {
 		return false
 	}
 	searchRuns.mu.Lock()
-	cancel, ok := searchRuns.m[runKey(ownerID, runID)]
+	cancel, ok := searchRuns.cancels[runKey(ownerID, runID)]
 	searchRuns.mu.Unlock()
 	if ok {
 		cancel()

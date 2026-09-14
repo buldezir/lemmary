@@ -308,7 +308,7 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 		//
 		// No run id: this surface has no Cancel button, so there is nothing to
 		// cancel by. The budget is what ends a run nobody is waiting for.
-		runCtx, stopRun := startDetachedRun(e.Request.Context(), ownerID, "")
+		runCtx, stopRun := startDetachedRun(e.Request.Context(), ownerID, "", session.Id)
 		defer stopRun()
 
 		chatCtx := aiprovider.WithDocumentRecord(runCtx, document)

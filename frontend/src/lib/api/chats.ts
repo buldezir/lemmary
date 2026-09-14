@@ -59,6 +59,13 @@ export type ChatSessionDetail = {
   session: ChatSession
   messages: ChatMessageRecord[]
   truncated?: boolean
+  /**
+   * A run is writing into this conversation right now. Nothing in the
+   * transcript can say so -- a turn is stored whole when the run ends -- so a
+   * chat opened mid-run reads as empty and finished unless the server says
+   * otherwise.
+   */
+  running?: boolean
 }
 
 /** One rendered row of a transcript. */
@@ -122,7 +129,9 @@ const storedTurnWaitMs = 21 * 60 * 1000
  * *previous* answer as the reply to this one. A turn is stored as one
  * user+assistant pair, so the newest user message carrying this question has
  * our answer directly after it -- and asking the same thing twice resolves to
- * the newer answer, which is the one that was waited for.
+ * the newer answer, which is the one that was waited for. Only ever read once
+ * the run is over, or a repeat would match the older pair while the answer to
+ * this one was still being written; waitForStoredTurn is what enforces that.
  *
  * The question is compared verbatim: the server only trims it, and the composer
  * has already done that.
@@ -145,42 +154,26 @@ export function storedAnswerTo(
 }
 
 /**
- * Waits for the turn a lost connection stopped this client from receiving.
+ * Asks repeatedly until `attempt` produces something, or the deadline passes.
  *
- * The run does not stop when the connection does -- the server finishes it and
- * stores the turn whether or not anyone is still listening. Until now nobody
- * went back for it: the page reported a lost connection and the answer sat in
- * the transcript, invisible until a manual reload, which on a follow-up
- * question looks exactly like the work having been thrown away.
- *
- * Resolves null when nothing landed in time -- a run that failed, was
- * cancelled, or outlived its budget. Errors are swallowed and retried on
- * purpose: the connection that broke is usually still broken.
+ * Failures are swallowed and retried on purpose: whatever broke the connection
+ * in the first place is usually still broken, and giving up on the first bad
+ * poll loses exactly the answer this came back for.
  */
-export async function waitForStoredTurn(
-  sessionId: string,
-  question: string,
-  options: {
-    signal?: AbortSignal
-    timeoutMs?: number
-    intervalMs?: number
-    /** Swapped out in tests; production always reads the real session. */
-    load?: (id: string) => Promise<ChatSessionDetail>
-  } = {},
-): Promise<{ session: ChatSession; message: ChatMessageRecord } | null> {
-  const load = options.load ?? getChatSession
+async function pollUntil<T>(
+  attempt: () => Promise<T | null>,
+  options: { signal?: AbortSignal; timeoutMs?: number; intervalMs?: number },
+): Promise<T | null> {
   const interval = options.intervalMs ?? storedTurnPollMs
   const deadline = Date.now() + (options.timeoutMs ?? storedTurnWaitMs)
-
   for (;;) {
     if (options.signal?.aborted) {
       return null
     }
     try {
-      const detail = await load(sessionId)
-      const message = storedAnswerTo(detail.messages, question)
-      if (message) {
-        return { session: detail.session, message }
+      const found = await attempt()
+      if (found) {
+        return found
       }
     } catch {
       // Still unreachable, or not finished. Either way, ask again.
@@ -190,6 +183,69 @@ export async function waitForStoredTurn(
     }
     await sleep(interval)
   }
+}
+
+/** Options shared by the two waits; `load` is swapped out in tests. */
+export type WaitOptions = {
+  signal?: AbortSignal
+  timeoutMs?: number
+  intervalMs?: number
+  load?: (id: string) => Promise<ChatSessionDetail>
+}
+
+/**
+ * Waits for the turn a lost connection stopped this client from receiving.
+ *
+ * The run does not stop when the connection does -- the server finishes it and
+ * stores the turn whether or not anyone is still listening. Until now nobody
+ * went back for it: the page reported a lost connection and the answer sat in
+ * the transcript, invisible until a manual reload, which on a follow-up
+ * question looks exactly like the work having been thrown away.
+ *
+ * The run is waited out *first*, and only then is the transcript read. That
+ * ordering is what makes a repeated question safe: asking the same thing twice
+ * would otherwise match the earlier pair on the first poll and paint last
+ * week's answer as this one's, while the real run was still working. It is
+ * also what ends the wait quickly when the request never reached the server at
+ * all -- nothing is running, so there is nothing to wait for.
+ *
+ * Resolves null when nothing landed: a run that failed, was cancelled, outlived
+ * its budget, or never started.
+ */
+export async function waitForStoredTurn(
+  sessionId: string,
+  question: string,
+  options: WaitOptions = {},
+): Promise<{ session: ChatSession; message: ChatMessageRecord } | null> {
+  const detail = await waitWhileRunning(sessionId, options)
+  if (!detail) {
+    return null
+  }
+  const message = storedAnswerTo(detail.messages, question)
+  return message ? { session: detail.session, message } : null
+}
+
+/**
+ * Follows a conversation somebody else's run is writing into, until it ends.
+ *
+ * That somebody is usually the same user a moment ago: reloading the page
+ * during a research run abandons the stream but not the run, and the chat that
+ * comes back is empty, with nothing to say an answer is on its way. The
+ * transcript cannot show it -- the turn is stored whole at the end -- so the
+ * server reports it and this waits it out.
+ *
+ * Resolves with the transcript as it stands once the run is over, which is the
+ * answer unless the run failed and stored nothing.
+ */
+export function waitWhileRunning(
+  sessionId: string,
+  options: WaitOptions = {},
+): Promise<ChatSessionDetail | null> {
+  const load = options.load ?? getChatSession
+  return pollUntil(async () => {
+    const detail = await load(sessionId)
+    return detail.running ? null : detail
+  }, options)
 }
 
 export async function renameChatSession(id: string, title: string): Promise<ChatSession> {

@@ -11,7 +11,7 @@ import (
 // hangup cancelled the agent loop, and the turn was never stored.
 func TestSearchRunSurvivesTheRequestContext(t *testing.T) {
 	request, disconnect := context.WithCancel(context.Background())
-	ctx, stop := startDetachedRun(request, "owner", "run-1")
+	ctx, stop := startDetachedRun(request, "owner", "run-1", "session-1")
 	defer stop()
 
 	disconnect()
@@ -29,7 +29,7 @@ func TestSearchRunKeepsContextValues(t *testing.T) {
 	type key struct{}
 	request := context.WithValue(context.Background(), key{}, "session-7")
 
-	ctx, stop := startDetachedRun(request, "owner", "run-1")
+	ctx, stop := startDetachedRun(request, "owner", "run-1", "session-1")
 	defer stop()
 
 	if got := ctx.Value(key{}); got != "session-7" {
@@ -38,7 +38,7 @@ func TestSearchRunKeepsContextValues(t *testing.T) {
 }
 
 func TestCancelSearchRunStopsIt(t *testing.T) {
-	ctx, stop := startDetachedRun(context.Background(), "owner", "run-1")
+	ctx, stop := startDetachedRun(context.Background(), "owner", "run-1", "session-1")
 	defer stop()
 
 	if !cancelSearchRun("owner", "run-1") {
@@ -54,7 +54,7 @@ func TestCancelSearchRunStopsIt(t *testing.T) {
 // A run id is only meaningful within its owner. Without the scoping, one
 // account could stop another's research by guessing an id.
 func TestCancelSearchRunIsScopedToTheOwner(t *testing.T) {
-	ctx, stop := startDetachedRun(context.Background(), "owner", "run-1")
+	ctx, stop := startDetachedRun(context.Background(), "owner", "run-1", "session-1")
 	defer stop()
 
 	if cancelSearchRun("someone-else", "run-1") {
@@ -70,7 +70,7 @@ func TestCancelSearchRunIsScopedToTheOwner(t *testing.T) {
 // A cancel that arrives after the run finished is not an error: the client
 // pressed the button while the last event was already on the wire.
 func TestCancelSearchRunAfterItFinished(t *testing.T) {
-	_, stop := startDetachedRun(context.Background(), "owner", "run-1")
+	_, stop := startDetachedRun(context.Background(), "owner", "run-1", "session-1")
 	stop()
 
 	if cancelSearchRun("owner", "run-1") {
@@ -82,7 +82,7 @@ func TestCancelSearchRunAfterItFinished(t *testing.T) {
 // cannot be cancelled, which is the lesser loss.
 func TestSearchRunWithoutAnIDStillDetaches(t *testing.T) {
 	request, disconnect := context.WithCancel(context.Background())
-	ctx, stop := startDetachedRun(request, "owner", "")
+	ctx, stop := startDetachedRun(request, "owner", "", "session-1")
 	defer stop()
 
 	disconnect()
@@ -93,5 +93,42 @@ func TestSearchRunWithoutAnIDStillDetaches(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("run was cancelled by the client going away")
 	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// Nothing in the transcript says a run is in flight -- the turn is stored whole
+// when it ends -- so a chat reopened mid-run looks empty and finished. This is
+// what tells the page otherwise.
+func TestSessionRunningWhileARunIsInFlight(t *testing.T) {
+	if sessionRunning("session-9") {
+		t.Fatal("nothing is running yet")
+	}
+
+	_, stop := startDetachedRun(context.Background(), "owner", "run-9", "session-9")
+	if !sessionRunning("session-9") {
+		t.Fatal("a run is in flight but the session does not say so")
+	}
+
+	stop()
+	if sessionRunning("session-9") {
+		t.Fatal("the run finished and the session still says it is working")
+	}
+}
+
+// Two tabs can ask the same conversation at once. The first to finish must not
+// report the other's run as over, or the second page stops waiting for an
+// answer that is still coming.
+func TestSessionRunningCountsConcurrentRuns(t *testing.T) {
+	_, stopFirst := startDetachedRun(context.Background(), "owner", "run-a", "session-8")
+	_, stopSecond := startDetachedRun(context.Background(), "owner", "run-b", "session-8")
+
+	stopFirst()
+	if !sessionRunning("session-8") {
+		t.Fatal("one run of two ended and the session already reads as idle")
+	}
+
+	stopSecond()
+	if sessionRunning("session-8") {
+		t.Fatal("both runs ended and the session still reads as busy")
 	}
 }

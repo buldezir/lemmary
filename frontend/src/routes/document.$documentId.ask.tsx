@@ -9,7 +9,7 @@ import { BindingOverride } from '../components/BindingOverride'
 import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
 import { chatWithDocument } from '../lib/api/ai'
-import { ConnectionLostError } from '../lib/apiClient'
+import { ConnectionLostError, RunInFlightError } from '../lib/apiClient'
 import {
   deleteChatSession,
   getChatSession,
@@ -24,6 +24,12 @@ import type { ProviderBinding } from '../lib/api/providers'
 import type { DocumentRecord } from '../lib/api/documents'
 import { useAsync } from '../hooks/useAsync'
 import { useChatSession, type ChatSendResult } from '../hooks/useChatSession'
+
+/**
+ * How long a lost Ask AI send waits for its answer. One completion, so the
+ * provider timeout bounds it -- nothing like a research run's budget.
+ */
+const askWaitMs = 3 * 60 * 1000
 
 export function DocumentAskPage() {
   const { documentId } = useParams({ from: '/document/$documentId/ask' })
@@ -89,15 +95,26 @@ export function DocumentAskPage() {
         if (!(err instanceof ConnectionLostError)) {
           throw err
         }
-        const stored = id ? await waitForStoredTurn(id, content) : null
-        if (!stored) {
-          // Either nothing landed, or this send is what opened the chat and
-          // only the server knows its id. Refreshing the rail is what makes
-          // that second one a click away instead of invisible until a reload.
-          void sessions.reload()
-          throw err
+        // A shorter budget than a search run's: this is one completion, bounded
+        // by the provider timeout, and a wait long enough for topic-scale
+        // research would leave the composer disabled for twenty minutes when
+        // the request never left the browser at all. The wait ends as soon as
+        // the server says nothing is running on this chat, so this ceiling is
+        // only reached while still offline.
+        const stored = id ? await waitForStoredTurn(id, content, { timeoutMs: askWaitMs }) : null
+        if (stored) {
+          return { session: stored.session, message: stored.message, saved: true }
         }
-        return { session: stored.session, message: stored.message, saved: true }
+        // A chat this send opened has an id only the server knows, so there is
+        // nothing to wait on -- refreshing the rail is what makes it a click
+        // away instead of invisible until a reload. Reported as a run in
+        // flight, not as a failed send: the completion may well be running, and
+        // handing the question back would invite paying for it twice.
+        if (!id) {
+          void sessions.reload()
+          throw new RunInFlightError(err)
+        }
+        throw err
       }
     },
     [binding, documentId, sessions],

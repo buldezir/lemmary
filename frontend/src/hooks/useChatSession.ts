@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { StreamInterruptedError } from '../lib/apiClient'
+import { RunInFlightError } from '../lib/apiClient'
 import {
   toChatTurn,
+  waitWhileRunning,
   type ChatMessageRecord,
   type ChatSession,
   type ChatSessionDetail,
@@ -93,6 +94,40 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     settledRef.current = options.onSessionSettled
   })
 
+  /**
+   * Sits out a run this page did not start, then shows what it produced.
+   *
+   * Reloading during a long research run is the case that matters: the run
+   * outlives the connection by design, but the chat that comes back is empty
+   * and says nothing about an answer being on its way -- the turn is stored
+   * whole when the run ends, so until then there is nothing in the transcript
+   * to show. `sending` is what puts the page back into its waiting state, the
+   * same one it would be in had the tab never been reloaded.
+   */
+  const resume = useCallback((id: string, known: number, epoch: number) => {
+    setSending(true)
+    void waitWhileRunning(id)
+      .then((settled) => {
+        if (epochRef.current !== epoch) {
+          return
+        }
+        if (!settled || settled.messages.length <= known) {
+          // The run ended and stored nothing: it failed, or someone cancelled
+          // it from the tab that started it.
+          setError('That run ended without an answer.')
+          return
+        }
+        setSession(settled.session)
+        setTurns(settled.messages.map((message) => toChatTurn(message)))
+        settledRef.current?.(settled.session, false)
+      })
+      .finally(() => {
+        if (epochRef.current === epoch) {
+          setSending(false)
+        }
+      })
+  }, [])
+
   useEffect(() => {
     const next = sessionId ?? null
     // The promotion no-op. After a send created the session, ownedRef already
@@ -139,6 +174,9 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
           }
           setSession(detail.session)
           setTurns(detail.messages.map((message) => toChatTurn(message)))
+          if (detail.running) {
+            resume(next, detail.messages.length, epoch)
+          }
         })
         .catch((err: unknown) => {
           if (epochRef.current !== epoch) {
@@ -169,7 +207,9 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
         ownedRef.current = previous
       }
     }
-  }, [sessionId])
+    // resume is stable (no deps of its own), so it never re-runs this effect;
+    // it is listed only because the linter cannot see that from here.
+  }, [sessionId, resume])
 
   const submit = useCallback(async () => {
     const text = input.trim()
@@ -225,7 +265,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
       // started leaves the server working on this exact question, and handing
       // it back invites the user to submit it a second time and pay for the
       // same run twice. The error text tells them where the answer will be.
-      if (!(err instanceof StreamInterruptedError)) {
+      if (!(err instanceof RunInFlightError)) {
         setInput(text)
       }
     } finally {

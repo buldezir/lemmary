@@ -7,7 +7,7 @@ import { ChatComposer } from '../components/ChatComposer'
 import { ChatSessionList } from '../components/ChatSessionList'
 import { MarkdownContent } from '../components/MarkdownContent'
 import { runId } from '../lib/runId'
-import { StreamInterruptedError } from '../lib/apiClient'
+import { RunInFlightError } from '../lib/apiClient'
 import { useAsync } from '../hooks/useAsync'
 import { useChatSession, type ChatSendResult } from '../hooks/useChatSession'
 import { BindingOverride } from '../components/BindingOverride'
@@ -252,14 +252,22 @@ export function SearchPage() {
           streamError = ''
         } else if (run.controller.signal.aborted) {
           throw cancelled(turnMode, err)
-        } else if (err instanceof StreamInterruptedError && box.session) {
+        } else if (err instanceof RunInFlightError && (box.session ?? id)) {
           // The connection died, the run did not. The server finishes it and
           // stores the turn regardless, so the answer is not gone -- only the
           // delivery is. Waiting for it in the transcript is what turns a lost
           // connection back into a normal turn: the alternative, which this
           // replaces, was telling the user the answer would be "in your chat
           // history" and leaving them to find it by reloading the page.
-          box.stored = await recoverTurn(box.session, content, run.controller.signal)
+          // The announced session when there is one, and otherwise the id this
+          // turn was sent to: a follow-up already knows its conversation, and
+          // making it depend on winning the race with the first SSE frame
+          // would drop it back to "look in your chat history" for no reason.
+          box.stored = await recoverTurn(
+            box.session?.id ?? (id as string),
+            content,
+            run.controller.signal,
+          )
           if (!box.stored) {
             // Nothing landed inside the run's budget: it failed, or a cancel
             // arrived while we were waiting. A plain Error on purpose -- this
@@ -594,11 +602,11 @@ function cancelled(mode: SearchMode, cause: unknown) {
  * nothing in the transcript to show.
  */
 async function recoverTurn(
-  session: ChatSession,
+  sessionId: string,
   question: string,
   signal: AbortSignal,
 ): Promise<Extract<ResearchEvent, { type: 'saved' }> | null> {
-  const stored = await waitForStoredTurn(session.id, question, { signal })
+  const stored = await waitForStoredTurn(sessionId, question, { signal })
   if (!stored) {
     return null
   }

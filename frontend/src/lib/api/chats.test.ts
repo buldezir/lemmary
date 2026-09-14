@@ -6,6 +6,7 @@ import {
   storedAnswerTo,
   toChatTurn,
   waitForStoredTurn,
+  waitWhileRunning,
   type ChatMessageRecord,
   type ChatSession,
   type ChatSessionDetail,
@@ -137,31 +138,48 @@ describe('storedAnswerTo', () => {
 
 describe('waitForStoredTurn', () => {
   const question = 'How much for the car?'
-  const pending: ChatSessionDetail = {
-    session: session(),
-    messages: [{ id: 'm0', role: 'assistant', content: 'Earlier answer.' }],
-  }
-  const landed: ChatSessionDetail = {
-    session: session(),
-    messages: [
-      { id: 'm1', role: 'user', content: question },
-      { id: 'm2', role: 'assistant', content: '€412.' },
-    ],
-  }
+  const older = [
+    { id: 'm1', role: 'user', content: question },
+    { id: 'm2', role: 'assistant', content: '€412.' },
+  ] as ChatMessageRecord[]
+  const newer = [
+    ...older,
+    { id: 'm3', role: 'user', content: question },
+    { id: 'm4', role: 'assistant', content: '€480.' },
+  ] as ChatMessageRecord[]
 
-  // The whole point: the run kept going after the connection died, so the
-  // answer turns up in the transcript a while later and has to be collected.
-  it('resolves once the turn lands', async () => {
+  // The run kept going after the connection died, so the answer turns up in the
+  // transcript a while later and has to be collected.
+  it('resolves once the run ends and the turn is there', async () => {
     let calls = 0
     const result = await waitForStoredTurn('s1', question, {
       intervalMs: 0,
       load: async () => {
         calls += 1
-        return calls < 3 ? pending : landed
+        return calls < 3
+          ? { session: session(), messages: [], running: true }
+          : { session: session(), messages: older }
       },
     })
     expect(calls).toBe(3)
     expect(result?.message.content).toBe('€412.')
+  })
+
+  // The failure that makes question-matching alone unsafe: the same question is
+  // already in the transcript, answered. Until the run in flight ends, its
+  // older answer must not be handed back as this one's.
+  it('never hands back an earlier answer while the run is still going', async () => {
+    let calls = 0
+    const result = await waitForStoredTurn('s1', question, {
+      intervalMs: 0,
+      load: async () => {
+        calls += 1
+        return calls < 3
+          ? { session: session(), messages: older, running: true }
+          : { session: session(), messages: newer }
+      },
+    })
+    expect(result?.message.content).toBe('€480.')
   })
 
   // The connection that broke is usually still broken; giving up on the first
@@ -173,17 +191,32 @@ describe('waitForStoredTurn', () => {
       load: async () => {
         calls += 1
         if (calls === 1) throw new Error('Could not reach the server.')
-        return landed
+        return { session: session(), messages: older }
       },
     })
     expect(result?.message.content).toBe('€412.')
+  })
+
+  // A request that never reached the server leaves nothing running, so there is
+  // nothing to wait for: say so at once instead of sitting out the budget.
+  it('gives up as soon as nothing is running and nothing landed', async () => {
+    let calls = 0
+    const result = await waitForStoredTurn('s1', question, {
+      intervalMs: 0,
+      load: async () => {
+        calls += 1
+        return { session: session(), messages: [] }
+      },
+    })
+    expect(calls).toBe(1)
+    expect(result).toBeNull()
   })
 
   it('gives up at the deadline', async () => {
     const result = await waitForStoredTurn('s1', question, {
       intervalMs: 0,
       timeoutMs: 0,
-      load: async () => pending,
+      load: async () => ({ session: session(), messages: [], running: true }),
     })
     expect(result).toBeNull()
   })
@@ -196,7 +229,47 @@ describe('waitForStoredTurn', () => {
     const result = await waitForStoredTurn('s1', question, {
       intervalMs: 0,
       signal: controller.signal,
-      load: async () => landed,
+      load: async () => ({ session: session(), messages: older }),
+    })
+    expect(result).toBeNull()
+  })
+})
+
+describe('waitWhileRunning', () => {
+  const answered: ChatSessionDetail = {
+    session: session(),
+    messages: [
+      { id: 'm1', role: 'user', content: 'How much for the car?' },
+      { id: 'm2', role: 'assistant', content: '€412.' },
+    ],
+  }
+
+  // Reloading during a research run leaves a chat that looks empty and
+  // finished. Only the server knows better, and this is what waits it out.
+  it('waits for the run to end, then hands back the transcript', async () => {
+    let calls = 0
+    const result = await waitWhileRunning('s1', {
+      intervalMs: 0,
+      load: async () => {
+        calls += 1
+        return calls < 3 ? { session: session(), messages: [], running: true } : answered
+      },
+    })
+    expect(calls).toBe(3)
+    expect(result?.messages).toHaveLength(2)
+  })
+
+  it('returns straight away when nothing is running', async () => {
+    expect(await waitWhileRunning('s1', { intervalMs: 0, load: async () => answered })).toBe(
+      answered,
+    )
+  })
+
+  it('gives up at the deadline', async () => {
+    const result = await waitWhileRunning('s1', {
+      intervalMs: 0,
+      timeoutMs: 0,
+      load: async () => ({ session: session(), messages: [], running: true }),
     })
     expect(result).toBeNull()
   })

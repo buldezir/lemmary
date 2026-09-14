@@ -63,17 +63,18 @@ export class ConnectionLostError extends Error {
 }
 
 /**
- * A stream that broke after the run had already started.
+ * A request that broke once a run was already under way -- a stream frame that
+ * arrived and then stopped, or a send the server may well have accepted.
  *
  * Typed rather than a plain Error because callers must treat it differently
  * from a send that failed: the question reached the server and is being
  * answered, so putting it back in the composer invites the user to pay for the
  * same run twice.
  */
-export class StreamInterruptedError extends Error {
+export class RunInFlightError extends Error {
   constructor(cause: unknown) {
     super(streamConnectionLostMessage, { cause })
-    this.name = 'StreamInterruptedError'
+    this.name = 'RunInFlightError'
   }
 }
 
@@ -221,7 +222,7 @@ export async function apiStream<TEvent>(path: string, options: ApiStreamOptions<
       // `TypeError: Error in input stream`, which is not something to show
       // anyone; the run itself may well be finishing on the server.
       if (isConnectionError(err)) {
-        throw new StreamInterruptedError(err)
+        throw new RunInFlightError(err)
       }
       throw err
     }

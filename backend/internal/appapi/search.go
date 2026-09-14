@@ -321,7 +321,7 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 		// and discarded an answer the provider had already been paid for. Now
 		// the run finishes and the turn is stored either way; only the delivery
 		// of this response depends on the caller still being there.
-		ctx, stopRun := startDetachedRun(e.Request.Context(), turn.ownerID, turn.runID)
+		ctx, stopRun := startDetachedRun(e.Request.Context(), turn.ownerID, turn.runID, turn.session.Id)
 		defer stopRun()
 
 		var reply string
@@ -431,7 +431,7 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 		// between a network blip losing a paragraph of progress and losing a
 		// finished, already-paid-for answer. Deliberate cancellation comes
 		// through /search/cancel instead -- see startDetachedRun.
-		ctx, stopRun := startDetachedRun(e.Request.Context(), turn.ownerID, turn.runID)
+		ctx, stopRun := startDetachedRun(e.Request.Context(), turn.ownerID, turn.runID, turn.session.Id)
 		defer stopRun()
 		ctx = turn.agentContext(ctx)
 

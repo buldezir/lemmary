@@ -3,7 +3,7 @@ import {
   connectionLostMessage,
   createSSEParser,
   isConnectionError,
-  StreamInterruptedError,
+  RunInFlightError,
   streamConnectionLostMessage,
 } from './apiClient'
 
@@ -94,8 +94,8 @@ describe('connection-lost copy', () => {
   it('marks an interrupted stream as its own kind of failure', () => {
     // The composer restore keys off this: a question already being answered
     // must not be handed back as if it had never been sent.
-    const err = new StreamInterruptedError(new TypeError('Error in input stream'))
-    expect(err).toBeInstanceOf(StreamInterruptedError)
+    const err = new RunInFlightError(new TypeError('Error in input stream'))
+    expect(err).toBeInstanceOf(RunInFlightError)
     expect(err.message).toBe(streamConnectionLostMessage)
   })
 })
