@@ -122,6 +122,7 @@ describe('inboxQuerySearch', () => {
         to: '2024-06-30',
         type: 'typ1',
         correspondent: 'cor1',
+        tags: 'tag1,tag2',
         page: 4,
       }),
     ).toEqual({ page: 4 })
@@ -161,6 +162,12 @@ describe('hasActiveFilters', () => {
 
   test('so is a date bound on its own', () => {
     expect(hasActiveFilters({ ...defaultDocumentQuery, from: '2025-01-01' })).toBe(true)
+  })
+
+  // It decides the empty-state wording, which must not say "no documents yet"
+  // to someone who has only narrowed the list to a tag.
+  test('so is a tag', () => {
+    expect(hasActiveFilters({ ...defaultDocumentQuery, tags: 'tag1' })).toBe(true)
   })
 })
 

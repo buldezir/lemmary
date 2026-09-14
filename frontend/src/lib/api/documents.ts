@@ -202,12 +202,11 @@ export function buildDocumentFilter(filters: DocumentListFilters): string | unde
   }
   // ponytail: substring match on the stored id array, because PocketBase
   // cannot express "has all of these" -- two `tags.id ?=` clauses reuse one
-  // join alias and match nothing. Safe only because record ids are all the
-  // same length, so one can never be a substring of another. Move the
-  // unsearched list onto a Go endpoint (ngxapi's tagsExpr) if that stops
-  // holding.
+  // join alias and match nothing. The needle carries the JSON quotes around
+  // the id so it cannot match inside a longer one. Move the unsearched list
+  // onto a Go endpoint (ngxapi's tagsExpr) if this stops paying.
   for (const tag of filters.tags ?? []) {
-    parts.push(pb.filter('tags ~ {:id}', { id: tag }))
+    parts.push(pb.filter('tags ~ {:id}', { id: `"${tag}"` }))
   }
 
   return parts.length > 0 ? parts.join(' && ') : undefined

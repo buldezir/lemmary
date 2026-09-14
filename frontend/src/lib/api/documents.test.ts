@@ -42,12 +42,18 @@ describe('buildDocumentFilter', () => {
   // ALL, not any: a document has to carry every tag the reader picked.
   it('requires every chosen tag', () => {
     expect(buildDocumentFilter({ ...noFilters, tags: ['tag1', 'tag2'] })).toBe(
-      "tags ~ 'tag1' && tags ~ 'tag2'",
+      'tags ~ \'"tag1"\' && tags ~ \'"tag2"\'',
     )
   })
 
   it('builds no tag clause for an empty selection', () => {
     expect(buildDocumentFilter({ ...noFilters, tags: [] })).toBeUndefined()
+  })
+
+  // Without the quotes this is a bare LIKE '%a%', which keeps every document
+  // whose tag ids merely contain the letter.
+  it('quotes the id so a short one cannot match inside a longer one', () => {
+    expect(buildDocumentFilter({ ...noFilters, tags: ['a'] })).toBe('tags ~ \'"a"\'')
   })
 
   it('combines active filters with &&', () => {

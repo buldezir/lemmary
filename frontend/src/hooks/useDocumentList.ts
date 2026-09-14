@@ -412,6 +412,12 @@ export function useDocumentList({
     query,
     statusFilter,
     updateQuery,
+    // Undefined where the list offers no filters: on the Inbox a tag would be
+    // stripped straight back out by inboxQuerySearch, so the chip stays text.
+    filterByTag: filters
+      ? (tagId: string) =>
+          updateQuery({ tags: [...new Set([...tagIds(tagFilter), tagId])].join(',') })
+      : undefined,
     search,
     setSearch,
     documents,

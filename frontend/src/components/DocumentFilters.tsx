@@ -40,7 +40,7 @@ export function DocumentFilters({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-        <div className="flex w-full flex-col gap-1">
+        <div className="flex w-full min-w-0 flex-col gap-1 sm:flex-1">
           <input
             type="search"
             placeholder="Search title, tags, purpose, summary..."
@@ -67,7 +67,7 @@ export function DocumentFilters({
             value={status}
             onChange={(event) => updateQuery({ status: event.target.value })}
             aria-label="Processing status"
-            className={`${selectClassName} sm:w-48`}
+            className={`${selectClassName} shrink-0 sm:w-48`}
           >
             <option value="all">All statuses</option>
             {DOCUMENT_STATUSES.map((value) => (
