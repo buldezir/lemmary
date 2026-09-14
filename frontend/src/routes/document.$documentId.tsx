@@ -52,7 +52,7 @@ export function DocumentDetailPage() {
   const [tagIds, setTagIds] = useState<string[]>([])
   // The whole vocabulary, loaded once: the picker needs every tag, not only the
   // ones this document carries, and it is a short list by design.
-  const { data: vocabulary } = useAsync(listTags, [])
+  const { data: vocabulary, error: vocabularyError } = useAsync(listTags, [])
   const [documentTypeInput, setDocumentTypeInput] = useState('')
   const [correspondentInput, setCorrespondentInput] = useState('')
   const [loading, setLoading] = useState(true)
@@ -790,6 +790,8 @@ export function DocumentDetailPage() {
               <TagField
                 editing={editing}
                 vocabulary={vocabulary}
+                vocabularyError={vocabularyError}
+                known={document.expand?.tags ?? []}
                 selected={tagIds}
                 onChange={setTagIds}
               />
@@ -876,31 +878,37 @@ export function DocumentDetailPage() {
  * created only on /tags, so this offers what exists and nothing more -- which
  * is also why an empty vocabulary sends the reader there rather than showing a
  * picker with no options.
+ *
+ * The chips do not wait for the vocabulary. The document's own expand already
+ * carries the names it has, and the list cards show them; blanking this row
+ * while a separate request is in flight -- or has failed -- would be the one
+ * place in the app that pretends a tagged document has no tags. The vocabulary
+ * is only needed to offer the rest.
  */
 function TagField({
   editing,
   vocabulary,
+  vocabularyError,
+  known,
   selected,
   onChange,
 }: {
   editing: boolean
-  /** null while the vocabulary is still loading. */
+  /** null until the vocabulary loads, and if it fails. */
   vocabulary: TagRecord[] | null
+  vocabularyError: string
+  /** The document's own expanded tags, so chips render without the vocabulary. */
+  known: TagRecord[]
   selected: string[]
   onChange: (next: string[]) => void
 }) {
-  // Nothing at all until the names are in: chips render from the vocabulary, so
-  // a document that has tags would otherwise flash "No tags." on every load.
-  if (!vocabulary) {
-    return null
-  }
-
-  const byId = new Map(vocabulary.map((tag) => [tag.id, tag]))
-  // An id with no tag behind it is one deleted from /tags while this page was
-  // open. Dropped from the display rather than rendered blank; saving writes
-  // the list as shown, which is also how it gets cleaned up.
-  const chosen = selected.flatMap((id) => byId.get(id) ?? [])
-  const available = vocabulary.filter((tag) => !selected.includes(tag.id))
+  const byId = new Map([...known, ...(vocabulary ?? [])].map((tag) => [tag.id, tag]))
+  // An id with no name behind it is a tag deleted from /tags since the document
+  // was loaded. Shown as a placeholder rather than dropped: saving writes
+  // `selected`, not what is on screen, so a chip silently missing from the row
+  // would still be written back -- and this one can be removed on purpose.
+  const chosen = selected.map((id) => byId.get(id) ?? { id, name: 'Deleted tag' })
+  const available = (vocabulary ?? []).filter((tag) => !selected.includes(tag.id))
 
   return (
     <div className="flex flex-col gap-2">
@@ -929,11 +937,20 @@ function TagField({
         </ul>
       )}
 
+      {editing && vocabularyError && (
+        <p className="text-sm font-normal text-madder">
+          {vocabularyError}. Tags already on this document can still be removed.
+        </p>
+      )}
+
       {editing &&
+        vocabulary !== null &&
         (vocabulary.length === 0 ? (
           <p className="text-sm font-normal text-ink-soft">
             You have no tags yet.{' '}
-            <Link to="/tags" className="text-oxblood underline">
+            {/* A new tab on purpose: this renders mid-edit, and navigating away
+                from a half-corrected document throws the corrections away. */}
+            <Link to="/tags" target="_blank" rel="noopener noreferrer" className="text-oxblood underline">
               Create some
             </Link>{' '}
             and they will be offered here.

@@ -52,8 +52,11 @@ export async function deleteTag(id: string): Promise<void> {
  * Turns the unique (user, name) index violation into something a person can
  * act on. PocketBase reports it as a 400 with a per-field validation code, and
  * the raw message ("Value must be unique.") never says which value.
+ *
+ * Exported for its test: the rest of this module is SDK calls, and this is the
+ * only part with a decision in it.
  */
-function duplicateNameError(err: unknown, name: string): Error {
+export function duplicateNameError(err: unknown, name: string): Error {
   if (err instanceof ClientResponseError) {
     const field = (err.response?.data as Record<string, { code?: string }> | undefined)?.name
     if (field?.code === 'validation_not_unique') {

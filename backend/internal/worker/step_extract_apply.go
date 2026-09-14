@@ -71,7 +71,10 @@ func (s *ExtractMetadataStep) Run(ctx context.Context, state *StepState) error {
 	state.OCRText = ocrText
 
 	userID := strings.TrimSpace(state.Document.GetString("user"))
-	catalog := loadExtractionCatalog(state.App, userID, state.Logger)
+	catalog, err := loadExtractionCatalog(state.App, userID, state.Logger)
+	if err != nil {
+		return err
+	}
 
 	state.Logger.Info("starting AI extraction",
 		"provider", s.Extractor.Name(),
@@ -79,6 +82,7 @@ func (s *ExtractMetadataStep) Run(ctx context.Context, state *StepState) error {
 		"ocr_chars", len(ocrText),
 		"catalog_correspondent_names", len(catalog.Correspondents),
 		"catalog_document_type_names", len(catalog.DocumentTypes),
+		"catalog_tag_names", len(catalog.Tags),
 	)
 
 	aiStart := time.Now()
@@ -110,12 +114,23 @@ func (s *ExtractMetadataStep) Run(ctx context.Context, state *StepState) error {
 	return nil
 }
 
-func loadExtractionCatalog(app core.App, userID string, logger *slog.Logger) ai.ExtractionCatalog {
+// loadExtractionCatalog reads the names the extraction prompt offers the model.
+//
+// The correspondent and document-type lists are advisory -- they exist so the
+// model reuses a name rather than coining a variant of it, and a model that
+// never sees them still answers something usable. A failure there is logged and
+// the document is extracted without them.
+//
+// The tag list is not advisory. It is the complete set of answers the model is
+// allowed to give, and apply writes whatever comes back over the document's
+// tags. An empty list therefore reads as "this archive has no tags" and clears
+// the tags a reprocess was meant to leave alone -- so a tag list that cannot be
+// read fails the step instead, and the document keeps what it had.
+func loadExtractionCatalog(app core.App, userID string, logger *slog.Logger) (ai.ExtractionCatalog, error) {
 	if strings.TrimSpace(userID) == "" {
-		if logger != nil {
-			logger.Warn("extraction catalog skipped: document has no owner")
-		}
-		return ai.ExtractionCatalog{}
+		// Not a warning to carry on from, for the same reason: apply cannot
+		// resolve tags without an owner either, so this document is broken.
+		return ai.ExtractionCatalog{}, fmt.Errorf("extraction catalog: document has no owner")
 	}
 
 	correspondents, err := listCorrespondentNames(app, userID)
@@ -132,22 +147,24 @@ func loadExtractionCatalog(app core.App, userID string, logger *slog.Logger) ai.
 		}
 		documentTypes = nil
 	}
-	// An unreadable tag list is worse here than for the other two: without it
-	// the prompt says no tags are defined and the extraction returns none. That
-	// is still the right failure -- inventing tags is what this change removed --
-	// so it warns and carries on rather than failing the document.
 	tags, err := listTagNames(app, userID)
 	if err != nil {
-		if logger != nil {
-			logger.Warn("extraction catalog tags unavailable; the document will be extracted without tags", slog.Any("error", err))
-		}
-		tags = nil
+		return ai.ExtractionCatalog{}, fmt.Errorf("extraction catalog tags: %w", err)
+	}
+	// The prompt calls the array the complete set of legal tags, so a vocabulary
+	// past the cap makes that a lie: the names beyond it are alphabetically last
+	// and simply never offered. Worth a line in the log, because the symptom --
+	// some tags are never assigned -- looks like nothing at all otherwise.
+	if logger != nil && len(tags) >= ai.MaxExtractionCatalogNames {
+		logger.Warn("tag vocabulary is larger than the extraction catalog holds; tags past the cap are never offered to the model",
+			"cap", ai.MaxExtractionCatalogNames,
+		)
 	}
 	return ai.ExtractionCatalog{
 		Correspondents: correspondents,
 		DocumentTypes:  documentTypes,
 		Tags:           tags,
-	}
+	}, nil
 }
 
 type ApplyMetadataStep struct{}

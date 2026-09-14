@@ -293,9 +293,17 @@ func updateNamedEntity(app core.App, collection, id, displayName, originalName s
 //
 // The user's tags are read once, not once per name: an archive with 500 tags
 // and a document with 6 of them would otherwise be 6 full scans.
+//
+// A missing user id is an error rather than an empty answer, as it was for
+// EnsureTag: the caller writes the result over the document's tags, so
+// answering "no tags" for a document whose owner could not be read would clear
+// them instead of failing the step.
 func matchTags(app core.App, userID string, names []string) (matched []string, dropped []string, err error) {
 	userID = strings.TrimSpace(userID)
-	if userID == "" || len(names) == 0 {
+	if userID == "" {
+		return nil, nil, fmt.Errorf("user id is required")
+	}
+	if len(names) == 0 {
 		return []string{}, nil, nil
 	}
 

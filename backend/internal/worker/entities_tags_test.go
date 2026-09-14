@@ -123,25 +123,23 @@ func TestMatchTagsCreatesNothing(t *testing.T) {
 	}
 }
 
-func TestMatchTagsEmptyInputs(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		userID string
-		names  []string
-	}{
-		{"no user", "  ", []string{"Invoices"}},
-		{"no names", "user1", nil},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			// nil app on purpose: neither case may reach the database.
-			matched, dropped, err := matchTags(nil, tc.userID, tc.names)
-			if err != nil {
-				t.Fatalf("expected a no-op, got %v", err)
-			}
-			if len(matched) != 0 || len(dropped) != 0 {
-				t.Fatalf("expected empty result, got %v / %v", matched, dropped)
-			}
-		})
+func TestMatchTagsNoNamesIsANoOp(t *testing.T) {
+	// nil app on purpose: an empty answer may not reach the database.
+	matched, dropped, err := matchTags(nil, "user1", nil)
+	if err != nil {
+		t.Fatalf("expected a no-op, got %v", err)
+	}
+	if len(matched) != 0 || len(dropped) != 0 {
+		t.Fatalf("expected empty result, got %v / %v", matched, dropped)
+	}
+}
+
+// Apply writes the result over the document's tags, so a document whose owner
+// cannot be read has to fail the step rather than be answered "no tags" and
+// silently stripped.
+func TestMatchTagsRequiresAUser(t *testing.T) {
+	if _, _, err := matchTags(nil, "  ", []string{"Invoices"}); err == nil {
+		t.Fatal("expected an error when the user id is empty")
 	}
 }
 
