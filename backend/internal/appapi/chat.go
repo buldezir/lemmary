@@ -299,8 +299,19 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 			opened = session
 		}
 
-		// Request context: closing the tab cancels the upstream LLM call.
-		chatCtx := aiprovider.WithDocumentRecord(e.Request.Context(), document)
+		// Detached from the connection, exactly like a search run and for the
+		// same reason: a dropped socket used to cancel the completion, take the
+		// conversation back and leave the user with nothing, even though the
+		// provider had already been paid for the answer. Now the turn is stored
+		// whether or not this response can still be delivered, and a client that
+		// lost its connection comes back for it -- see waitForStoredTurn.
+		//
+		// No run id: this surface has no Cancel button, so there is nothing to
+		// cancel by. The budget is what ends a run nobody is waiting for.
+		runCtx, stopRun := startDetachedRun(e.Request.Context(), ownerID, "")
+		defer stopRun()
+
+		chatCtx := aiprovider.WithDocumentRecord(runCtx, document)
 		reply, err := chatter.Chat(aiprovider.WithSession(chatCtx, session.Id), ocrText, messages)
 		if err != nil {
 			app.Logger().Error("document chat failed", "document", documentID, slog.Any("error", err))

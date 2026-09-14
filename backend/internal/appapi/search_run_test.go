@@ -11,7 +11,7 @@ import (
 // hangup cancelled the agent loop, and the turn was never stored.
 func TestSearchRunSurvivesTheRequestContext(t *testing.T) {
 	request, disconnect := context.WithCancel(context.Background())
-	ctx, stop := startSearchRun(request, "owner", "run-1")
+	ctx, stop := startDetachedRun(request, "owner", "run-1")
 	defer stop()
 
 	disconnect()
@@ -29,7 +29,7 @@ func TestSearchRunKeepsContextValues(t *testing.T) {
 	type key struct{}
 	request := context.WithValue(context.Background(), key{}, "session-7")
 
-	ctx, stop := startSearchRun(request, "owner", "run-1")
+	ctx, stop := startDetachedRun(request, "owner", "run-1")
 	defer stop()
 
 	if got := ctx.Value(key{}); got != "session-7" {
@@ -38,7 +38,7 @@ func TestSearchRunKeepsContextValues(t *testing.T) {
 }
 
 func TestCancelSearchRunStopsIt(t *testing.T) {
-	ctx, stop := startSearchRun(context.Background(), "owner", "run-1")
+	ctx, stop := startDetachedRun(context.Background(), "owner", "run-1")
 	defer stop()
 
 	if !cancelSearchRun("owner", "run-1") {
@@ -54,7 +54,7 @@ func TestCancelSearchRunStopsIt(t *testing.T) {
 // A run id is only meaningful within its owner. Without the scoping, one
 // account could stop another's research by guessing an id.
 func TestCancelSearchRunIsScopedToTheOwner(t *testing.T) {
-	ctx, stop := startSearchRun(context.Background(), "owner", "run-1")
+	ctx, stop := startDetachedRun(context.Background(), "owner", "run-1")
 	defer stop()
 
 	if cancelSearchRun("someone-else", "run-1") {
@@ -70,7 +70,7 @@ func TestCancelSearchRunIsScopedToTheOwner(t *testing.T) {
 // A cancel that arrives after the run finished is not an error: the client
 // pressed the button while the last event was already on the wire.
 func TestCancelSearchRunAfterItFinished(t *testing.T) {
-	_, stop := startSearchRun(context.Background(), "owner", "run-1")
+	_, stop := startDetachedRun(context.Background(), "owner", "run-1")
 	stop()
 
 	if cancelSearchRun("owner", "run-1") {
@@ -82,7 +82,7 @@ func TestCancelSearchRunAfterItFinished(t *testing.T) {
 // cannot be cancelled, which is the lesser loss.
 func TestSearchRunWithoutAnIDStillDetaches(t *testing.T) {
 	request, disconnect := context.WithCancel(context.Background())
-	ctx, stop := startSearchRun(request, "owner", "")
+	ctx, stop := startDetachedRun(request, "owner", "")
 	defer stop()
 
 	disconnect()

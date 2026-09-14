@@ -7,6 +7,7 @@ import { ChatComposer } from '../components/ChatComposer'
 import { ChatSessionList } from '../components/ChatSessionList'
 import { MarkdownContent } from '../components/MarkdownContent'
 import { runId } from '../lib/runId'
+import { StreamInterruptedError } from '../lib/apiClient'
 import { useAsync } from '../hooks/useAsync'
 import { useChatSession, type ChatSendResult } from '../hooks/useChatSession'
 import { BindingOverride } from '../components/BindingOverride'
@@ -24,6 +25,7 @@ import {
   listChatSessions,
   mergeChatSession,
   renameChatSession,
+  waitForStoredTurn,
   chatSessionBinding,
   type ChatSession,
   type ChatTurn,
@@ -195,13 +197,22 @@ export function SearchPage() {
       let incomplete = false
       // In a box rather than a plain `let`: TypeScript cannot see an assignment
       // made inside the stream callback and would narrow the variable to null.
-      const box: { stored: Extract<ResearchEvent, { type: 'saved' }> | null } = { stored: null }
+      const box: {
+        stored: Extract<ResearchEvent, { type: 'saved' }> | null
+        // The conversation the run is writing into, known from the first event
+        // on. It is what makes a dropped stream recoverable, including on the
+        // first question of a chat whose id the page would otherwise never see.
+        session: ChatSession | null
+      } = { stored: null, session: null }
 
       try {
         await searchStream(
           { sessionId: id, content, mode: turnMode, runId: run.id, binding: turnBinding },
           (event) => {
             switch (event.type) {
+              case 'session':
+                box.session = event.session
+                break
               case 'step':
                 applyStep(collected, event)
                 setSteps([...collected])
@@ -240,11 +251,25 @@ export function SearchPage() {
         if (box.stored) {
           streamError = ''
         } else if (run.controller.signal.aborted) {
-          // Cancelling is not a provider failure, and the fetch reports it as
-          // a DOMException nobody wants to read.
-          throw new Error(turnMode === 'research' ? 'Research cancelled.' : 'Search cancelled.', {
-            cause: err,
-          })
+          throw cancelled(turnMode, err)
+        } else if (err instanceof StreamInterruptedError && box.session) {
+          // The connection died, the run did not. The server finishes it and
+          // stores the turn regardless, so the answer is not gone -- only the
+          // delivery is. Waiting for it in the transcript is what turns a lost
+          // connection back into a normal turn: the alternative, which this
+          // replaces, was telling the user the answer would be "in your chat
+          // history" and leaving them to find it by reloading the page.
+          box.stored = await recoverTurn(box.session, content, run.controller.signal)
+          if (!box.stored) {
+            // Nothing landed inside the run's budget: it failed, or a cancel
+            // arrived while we were waiting. A plain Error on purpose -- this
+            // is where the question does belong back in the composer, since
+            // there is no longer a run producing an answer to wait for.
+            throw run.controller.signal.aborted
+              ? cancelled(turnMode, err)
+              : new Error(interruptedWithoutAnswerMessage, { cause: err })
+          }
+          streamError = ''
         } else {
           throw err
         }
@@ -544,6 +569,46 @@ export function SearchPage() {
       </div>
     </section>
   )
+}
+
+/**
+ * What is said when the connection broke and waiting it out produced nothing.
+ *
+ * Not `streamConnectionLostMessage`, which promises the answer will be in the
+ * chat history: by the time this is reached the run has been waited out and no
+ * turn was stored, so the honest thing is to offer the question back.
+ */
+const interruptedWithoutAnswerMessage =
+  'The connection was interrupted and the run ended without an answer. Try again.'
+
+/** Cancelling is not a provider failure, and fetch reports it as a DOMException nobody wants to read. */
+function cancelled(mode: SearchMode, cause: unknown) {
+  return new Error(mode === 'research' ? 'Research cancelled.' : 'Search cancelled.', { cause })
+}
+
+/**
+ * Collects the turn a dropped stream never delivered, shaped like the `saved`
+ * event it stands in for so the rest of the run is none the wiser.
+ *
+ * Null when the wait ran out: the run failed, or was cancelled, and there is
+ * nothing in the transcript to show.
+ */
+async function recoverTurn(
+  session: ChatSession,
+  question: string,
+  signal: AbortSignal,
+): Promise<Extract<ResearchEvent, { type: 'saved' }> | null> {
+  const stored = await waitForStoredTurn(session.id, question, { signal })
+  if (!stored) {
+    return null
+  }
+  return {
+    type: 'saved',
+    session: stored.session,
+    message: stored.message,
+    documents: stored.message.documents,
+    saved: true,
+  }
 }
 
 /**

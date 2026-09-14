@@ -47,6 +47,22 @@ export const streamConnectionLostMessage =
   'The connection to the server was interrupted. The run continues, and its answer will be in your chat history.'
 
 /**
+ * A request that never made it over the wire.
+ *
+ * Typed so a caller that knows more can act on it. Most cannot -- a POST that
+ * died on the wire may or may not have been applied -- but the two chat
+ * surfaces can: their runs are detached from the connection, so the turn is
+ * being stored regardless and is worth waiting for rather than reporting as a
+ * loss. The message is unchanged for everyone else.
+ */
+export class ConnectionLostError extends Error {
+  constructor(cause: unknown) {
+    super(connectionLostMessage, { cause })
+    this.name = 'ConnectionLostError'
+  }
+}
+
+/**
  * A stream that broke after the run had already started.
  *
  * Typed rather than a plain Error because callers must treat it differently
@@ -106,7 +122,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions): Promi
     })
   } catch (err) {
     if (isConnectionError(err)) {
-      throw new Error(connectionLostMessage, { cause: err })
+      throw new ConnectionLostError(err)
     }
     throw err
   }
@@ -174,7 +190,7 @@ export async function apiStream<TEvent>(path: string, options: ApiStreamOptions<
     // The generic message, not the stream's: this request never connected, so
     // there is no run on the other side to promise anything about.
     if (isConnectionError(err)) {
-      throw new Error(connectionLostMessage, { cause: err })
+      throw new ConnectionLostError(err)
     }
     throw err
   }
@@ -245,7 +261,8 @@ export type PollJobOptions = {
   label?: string
 }
 
-function sleep(ms: number) {
+/** Exported so other polling loops (a run recovering from a dropped stream) share it. */
+export function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 

@@ -1,4 +1,4 @@
-import { apiFetch } from '../apiClient'
+import { apiFetch, sleep } from '../apiClient'
 import type { ProviderBinding } from './providers'
 
 export type ChatSessionKind = 'search' | 'document'
@@ -103,6 +103,93 @@ export function getChatSession(id: string): Promise<ChatSessionDetail> {
   return apiFetch<ChatSessionDetail>(`/api/app/chats/${encodeURIComponent(id)}`, {
     fallbackError: 'Failed to load the chat',
   })
+}
+
+/** How often an interrupted run's conversation is re-read while waiting. */
+const storedTurnPollMs = 3000
+
+/**
+ * How long to keep waiting. The server gives a detached run 20 minutes and
+ * stops it there, so anything past that has no turn coming.
+ */
+const storedTurnWaitMs = 21 * 60 * 1000
+
+/**
+ * The answer to `question` in a transcript, or null if it is not there yet.
+ *
+ * Matched on the question rather than on a message count, because the count a
+ * client remembers can be a turn out of date and would then hand back the
+ * *previous* answer as the reply to this one. A turn is stored as one
+ * user+assistant pair, so the newest user message carrying this question has
+ * our answer directly after it -- and asking the same thing twice resolves to
+ * the newer answer, which is the one that was waited for.
+ *
+ * The question is compared verbatim: the server only trims it, and the composer
+ * has already done that.
+ */
+export function storedAnswerTo(
+  messages: ChatMessageRecord[],
+  question: string,
+): ChatMessageRecord | null {
+  for (let i = messages.length - 1; i > 0; i--) {
+    const answer = messages[i]
+    if (answer.role !== 'assistant') {
+      continue
+    }
+    const asked = messages[i - 1]
+    if (asked.role === 'user' && asked.content === question) {
+      return answer
+    }
+  }
+  return null
+}
+
+/**
+ * Waits for the turn a lost connection stopped this client from receiving.
+ *
+ * The run does not stop when the connection does -- the server finishes it and
+ * stores the turn whether or not anyone is still listening. Until now nobody
+ * went back for it: the page reported a lost connection and the answer sat in
+ * the transcript, invisible until a manual reload, which on a follow-up
+ * question looks exactly like the work having been thrown away.
+ *
+ * Resolves null when nothing landed in time -- a run that failed, was
+ * cancelled, or outlived its budget. Errors are swallowed and retried on
+ * purpose: the connection that broke is usually still broken.
+ */
+export async function waitForStoredTurn(
+  sessionId: string,
+  question: string,
+  options: {
+    signal?: AbortSignal
+    timeoutMs?: number
+    intervalMs?: number
+    /** Swapped out in tests; production always reads the real session. */
+    load?: (id: string) => Promise<ChatSessionDetail>
+  } = {},
+): Promise<{ session: ChatSession; message: ChatMessageRecord } | null> {
+  const load = options.load ?? getChatSession
+  const interval = options.intervalMs ?? storedTurnPollMs
+  const deadline = Date.now() + (options.timeoutMs ?? storedTurnWaitMs)
+
+  for (;;) {
+    if (options.signal?.aborted) {
+      return null
+    }
+    try {
+      const detail = await load(sessionId)
+      const message = storedAnswerTo(detail.messages, question)
+      if (message) {
+        return { session: detail.session, message }
+      }
+    } catch {
+      // Still unreachable, or not finished. Either way, ask again.
+    }
+    if (Date.now() >= deadline) {
+      return null
+    }
+    await sleep(interval)
+  }
 }
 
 export async function renameChatSession(id: string, title: string): Promise<ChatSession> {

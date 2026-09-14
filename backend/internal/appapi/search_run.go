@@ -6,12 +6,12 @@ import (
 	"time"
 )
 
-// searchRunBudget caps a detached run. The run no longer ends when the client
+// detachedRunBudget caps a detached run. The run no longer ends when the client
 // goes away, so something else has to end it: without this a provider that
 // hangs would keep a goroutine and its API spend alive for as long as the
 // process lives. Generous, because the ceiling is a backstop against a stuck
 // provider and not a limit on how long research may legitimately take.
-const searchRunBudget = 20 * time.Minute
+const detachedRunBudget = 20 * time.Minute
 
 // runTooLongMessage is what a caller is told when a run hit that ceiling. It
 // names no provider: the provider is usually fine, and pointing at it sends
@@ -35,14 +35,14 @@ var searchRuns = struct {
 // run by guessing an id.
 func runKey(ownerID, runID string) string { return ownerID + "\x00" + runID }
 
-// startSearchRun derives the context a run executes under: the request's values
+// startDetachedRun derives the context a run executes under: the request's values
 // (the provider cache key rides on the context) without its cancellation, plus
 // its own budget.
 //
 // The returned stop must be called when the run finishes; it releases the
 // registry entry and the context.
-func startSearchRun(parent context.Context, ownerID, runID string) (context.Context, func()) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), searchRunBudget)
+func startDetachedRun(parent context.Context, ownerID, runID string) (context.Context, func()) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), detachedRunBudget)
 	if runID == "" {
 		// Nothing to cancel it by. Still detached -- an un-cancellable run is
 		// better than one a flaky network can destroy.

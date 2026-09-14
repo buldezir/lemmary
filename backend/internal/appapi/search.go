@@ -321,7 +321,7 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 		// and discarded an answer the provider had already been paid for. Now
 		// the run finishes and the turn is stored either way; only the delivery
 		// of this response depends on the caller still being there.
-		ctx, stopRun := startSearchRun(e.Request.Context(), turn.ownerID, turn.runID)
+		ctx, stopRun := startDetachedRun(e.Request.Context(), turn.ownerID, turn.runID)
 		defer stopRun()
 
 		var reply string
@@ -348,7 +348,7 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 			// Running out of budget is not the provider failing, and saying so
 			// sends the caller to check an AI configuration that is fine.
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				app.Logger().Warn("deep search ran out of budget", "mode", turn.mode, "budget", searchRunBudget.String())
+				app.Logger().Warn("deep search ran out of budget", "mode", turn.mode, "budget", detachedRunBudget.String())
 				return writeError(e, http.StatusGatewayTimeout, runTooLongMessage)
 			}
 			app.Logger().Error("deep search failed", "mode", turn.mode, slog.Any("error", err))
@@ -362,6 +362,15 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 		response.Incomplete = incomplete
 		return writeJSON(e, http.StatusOK, response)
 	}
+}
+
+// searchStartedEvent opens a search stream with the conversation the run
+// belongs to, which exists before the run does. It is sent for one reason: a
+// client that loses the connection can only go looking for the stored turn if
+// it knows which conversation to look in.
+type searchStartedEvent struct {
+	Type    string           `json:"type"`
+	Session chat.SessionInfo `json:"session"`
 }
 
 // searchSavedEvent closes a research stream with the stored turn: the session
@@ -399,6 +408,14 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 		// Everything below is streamed, so errors are reported as events —
 		// the status line has already been written by this point.
 		stream := newSSEWriter(e)
+		// First frame, before a single provider call: it names the conversation
+		// this run is writing into. That is what a client whose connection dies
+		// mid-run needs to go and collect the answer afterwards -- the turn is
+		// stored either way, but a page that never learnt the session id has
+		// nowhere to look, which is exactly the case on the first question of a
+		// new chat.
+		started := chat.ToSessionInfo(turn.session)
+		stream.Send(searchStartedEvent{Type: "session", Session: started})
 		// Every model completion is a silent gap on this connection, and the
 		// first one comes before any step event. Stopped before returning.
 		//
@@ -413,8 +430,8 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 		// not anyone is still reading this stream, which is the difference
 		// between a network blip losing a paragraph of progress and losing a
 		// finished, already-paid-for answer. Deliberate cancellation comes
-		// through /search/cancel instead -- see startSearchRun.
-		ctx, stopRun := startSearchRun(e.Request.Context(), turn.ownerID, turn.runID)
+		// through /search/cancel instead -- see startDetachedRun.
+		ctx, stopRun := startDetachedRun(e.Request.Context(), turn.ownerID, turn.runID)
 		defer stopRun()
 		ctx = turn.agentContext(ctx)
 

@@ -3,8 +3,12 @@ import {
   chatSessionDateLabel,
   chatSessionTitle,
   mergeChatSession,
+  storedAnswerTo,
   toChatTurn,
+  waitForStoredTurn,
+  type ChatMessageRecord,
   type ChatSession,
+  type ChatSessionDetail,
 } from './chats'
 
 function session(overrides: Partial<ChatSession> = {}): ChatSession {
@@ -101,5 +105,99 @@ describe('toChatTurn', () => {
     expect(
       toChatTurn({ id: 'm1', role: 'assistant', content: 'x', documents: [] }).documents,
     ).toBeUndefined()
+  })
+})
+
+describe('storedAnswerTo', () => {
+  const asked = { id: 'm1', role: 'user', content: 'How much for the car?' } as ChatMessageRecord
+  const answered = { id: 'm2', role: 'assistant', content: '€412.' } as ChatMessageRecord
+
+  it('finds the answer to the question that was asked', () => {
+    expect(storedAnswerTo([asked, answered], 'How much for the car?')).toBe(answered)
+  })
+
+  it('is null while only the earlier turns are stored', () => {
+    expect(storedAnswerTo([asked, answered], 'And the bike?')).toBeNull()
+  })
+
+  // A repeated question resolves to the newer answer: that is the run that was
+  // being waited for, and the older one is already on screen.
+  it('prefers the newest matching turn', () => {
+    const again = { id: 'm4', role: 'assistant', content: '€480.' } as ChatMessageRecord
+    const messages = [asked, answered, { ...asked, id: 'm3' }, again]
+    expect(storedAnswerTo(messages, 'How much for the car?')).toBe(again)
+  })
+
+  // The question is stored with its answer in one write, so a transcript that
+  // ends on the question means the run has not finished.
+  it('ignores a question with nothing after it', () => {
+    expect(storedAnswerTo([asked], 'How much for the car?')).toBeNull()
+  })
+})
+
+describe('waitForStoredTurn', () => {
+  const question = 'How much for the car?'
+  const pending: ChatSessionDetail = {
+    session: session(),
+    messages: [{ id: 'm0', role: 'assistant', content: 'Earlier answer.' }],
+  }
+  const landed: ChatSessionDetail = {
+    session: session(),
+    messages: [
+      { id: 'm1', role: 'user', content: question },
+      { id: 'm2', role: 'assistant', content: '€412.' },
+    ],
+  }
+
+  // The whole point: the run kept going after the connection died, so the
+  // answer turns up in the transcript a while later and has to be collected.
+  it('resolves once the turn lands', async () => {
+    let calls = 0
+    const result = await waitForStoredTurn('s1', question, {
+      intervalMs: 0,
+      load: async () => {
+        calls += 1
+        return calls < 3 ? pending : landed
+      },
+    })
+    expect(calls).toBe(3)
+    expect(result?.message.content).toBe('€412.')
+  })
+
+  // The connection that broke is usually still broken; giving up on the first
+  // failed poll would lose exactly the answer we came back for.
+  it('keeps asking through failures', async () => {
+    let calls = 0
+    const result = await waitForStoredTurn('s1', question, {
+      intervalMs: 0,
+      load: async () => {
+        calls += 1
+        if (calls === 1) throw new Error('Could not reach the server.')
+        return landed
+      },
+    })
+    expect(result?.message.content).toBe('€412.')
+  })
+
+  it('gives up at the deadline', async () => {
+    const result = await waitForStoredTurn('s1', question, {
+      intervalMs: 0,
+      timeoutMs: 0,
+      load: async () => pending,
+    })
+    expect(result).toBeNull()
+  })
+
+  // Cancelling has to stop the wait too, or the composer stays disabled until
+  // the run budget runs out.
+  it('stops when the run is cancelled', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const result = await waitForStoredTurn('s1', question, {
+      intervalMs: 0,
+      signal: controller.signal,
+      load: async () => landed,
+    })
+    expect(result).toBeNull()
   })
 })

@@ -9,19 +9,21 @@ import { BindingOverride } from '../components/BindingOverride'
 import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
 import { chatWithDocument } from '../lib/api/ai'
+import { ConnectionLostError } from '../lib/apiClient'
 import {
   deleteChatSession,
   getChatSession,
   listChatSessions,
   mergeChatSession,
   renameChatSession,
+  waitForStoredTurn,
   chatSessionBinding,
   type ChatSession,
 } from '../lib/api/chats'
 import type { ProviderBinding } from '../lib/api/providers'
 import type { DocumentRecord } from '../lib/api/documents'
 import { useAsync } from '../hooks/useAsync'
-import { useChatSession } from '../hooks/useChatSession'
+import { useChatSession, type ChatSendResult } from '../hooks/useChatSession'
 
 export function DocumentAskPage() {
   const { documentId } = useParams({ from: '/document/$documentId/ask' })
@@ -70,6 +72,37 @@ export function DocumentAskPage() {
     [documentId, navigate, sessions],
   )
 
+  /**
+   * Asks the question, and does not let a dropped connection lose the answer.
+   *
+   * The completion is detached from this request on the server: it finishes and
+   * the turn is stored whether or not the reply can still be delivered. So a
+   * connection that dies mid-answer has lost the delivery, not the answer, and
+   * the thing to do is wait for the turn to appear in the transcript rather
+   * than report a failure over work that was already paid for.
+   */
+  const ask = useCallback(
+    async (id: string | undefined, content: string): Promise<ChatSendResult> => {
+      try {
+        return await chatWithDocument({ documentId, sessionId: id, content, binding })
+      } catch (err) {
+        if (!(err instanceof ConnectionLostError)) {
+          throw err
+        }
+        const stored = id ? await waitForStoredTurn(id, content) : null
+        if (!stored) {
+          // Either nothing landed, or this send is what opened the chat and
+          // only the server knows its id. Refreshing the rail is what makes
+          // that second one a click away instead of invisible until a reload.
+          void sessions.reload()
+          throw err
+        }
+        return { session: stored.session, message: stored.message, saved: true }
+      }
+    },
+    [binding, documentId, sessions],
+  )
+
   const chat = useChatSession({
     sessionId,
     // A session id from another document's chat must not open here: it would
@@ -81,8 +114,7 @@ export function DocumentAskPage() {
       }
       return detail
     },
-    send: ({ sessionId: id, content }) =>
-      chatWithDocument({ documentId, sessionId: id, content, binding }),
+    send: ({ sessionId: id, content }) => ask(id, content),
     onSessionSettled,
   })
 
