@@ -761,8 +761,10 @@ func TestRelaxedFuzzyOnlyInFallback(t *testing.T) {
 		t.Fatalf("digits must not match fuzzily, got %v", resultIDs(digits))
 	}
 
-	// Too short: one edit reaches most of the dictionary from three runes.
-	short := mustSearch(t, idx, Query{Text: "bil", UserID: "u1", Relaxed: true})
+	// Too short: one edit reaches most of the dictionary from three runes. The
+	// term is not a prefix of anything indexed either, so the prefix leg cannot
+	// answer for the fuzzy one that is deliberately absent here.
+	short := mustSearch(t, idx, Query{Text: "bll", UserID: "u1", Relaxed: true})
 	if len(short.Hits) != 0 {
 		t.Fatalf("short terms must not match fuzzily, got %v", resultIDs(short))
 	}
@@ -889,5 +891,70 @@ func TestSearchUndatedFilter(t *testing.T) {
 	both := searchIDs(t, idx, Query{Text: "invoice", UserID: "u1"})
 	if !containsID(both, "undated") || !containsID(both, "dated") {
 		t.Fatalf("unfiltered: %v", both)
+	}
+}
+
+// The reported failure: a search box is typed one letter at a time, so a
+// half-spelled word has to reach the word it starts. Strict mode, because the
+// Documents page never relaxes.
+func TestSearchMatchesWordPrefix(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "amazon", map[string]any{
+		FieldUser:    "u1",
+		FieldTitle:   "Order confirmation",
+		FieldSummary: "Amazon delivered the monitor stand",
+	})
+	mustPut(t, idx, "other", map[string]any{
+		FieldUser:    "u1",
+		FieldTitle:   "Gas bill",
+		FieldSummary: "Quarterly reading from the meter",
+	})
+
+	for _, typed := range []string{"amaz", "amazo", "amazon", "Amaz"} {
+		hits := searchIDs(t, idx, Query{Text: typed, UserID: "u1"})
+		if !containsID(hits, "amazon") {
+			t.Fatalf("%q should reach Amazon, got %v", typed, hits)
+		}
+		if containsID(hits, "other") {
+			t.Fatalf("%q should not match an unrelated document, got %v", typed, hits)
+		}
+	}
+
+	// Every term still has to match in strict mode; a prefix leg widens each
+	// term, it does not drop any.
+	both := searchIDs(t, idx, Query{Text: "amaz monit", UserID: "u1"})
+	if !containsID(both, "amazon") {
+		t.Fatalf("both prefixes present, got %v", both)
+	}
+	if hits := searchIDs(t, idx, Query{Text: "amaz gas", UserID: "u1"}); len(hits) != 0 {
+		t.Fatalf("prefixes from different documents must not match, got %v", hits)
+	}
+
+	// Under minPrefixLen there is no prefix leg: one or two letters would drag
+	// in most of the vocabulary for a full dictionary scan.
+	if hits := searchIDs(t, idx, Query{Text: "am", UserID: "u1"}); len(hits) != 0 {
+		t.Fatalf("a two-letter prefix should not match, got %v", hits)
+	}
+}
+
+// A whole word beats a word that merely starts with it, rather than the two
+// landing in arbitrary order.
+func TestSearchRanksExactAbovePrefix(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "exact", map[string]any{
+		FieldUser:    "u1",
+		FieldSummary: "The invoice is attached",
+	})
+	mustPut(t, idx, "prefixed", map[string]any{
+		FieldUser:    "u1",
+		FieldSummary: "The invoices are attached",
+	})
+
+	hits := searchIDs(t, idx, Query{Text: "invoice", UserID: "u1"})
+	if len(hits) != 2 {
+		t.Fatalf("want both documents, got %v", hits)
+	}
+	if hits[0] != "exact" {
+		t.Fatalf("exact match should rank first, got %v", hits)
 	}
 }

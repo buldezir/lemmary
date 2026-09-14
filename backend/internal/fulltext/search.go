@@ -26,6 +26,9 @@ const (
 	// caller pays for; the disjunction's coord factor has already put the best
 	// coverage first.
 	relaxedFallbackLimit = 10
+	// minPrefixLen is the shortest word that also matches as a prefix. See
+	// prefixTerm.
+	minPrefixLen = 3
 )
 
 // ErrNoSearchableTerms is text that is not empty but tokenises to nothing: a
@@ -599,6 +602,13 @@ func fieldQuery(part queryPart, fuzzy bool, fields []boostedField) query.Query {
 		tq.SetBoost(f.boost)
 		disjuncts = append(disjuncts, tq)
 
+		if prefix := prefixTerm(part.text); prefix != "" {
+			pq := bleve.NewPrefixQuery(prefix)
+			pq.SetField(f.field)
+			pq.SetBoost(f.boost * 0.5)
+			disjuncts = append(disjuncts, pq)
+		}
+
 		if !fuzzy || !fuzzyWorthy(part.text) {
 			continue
 		}
@@ -614,6 +624,33 @@ func fieldQuery(part queryPart, fuzzy bool, fields []boostedField) query.Query {
 		return disjuncts[0]
 	}
 	return bleve.NewDisjunctionQuery(disjuncts...)
+}
+
+// prefixTerm is the term-dictionary prefix a word should also match, or "" for
+// a word too short to use as one.
+//
+// The search box is read as the user types it, so a half-typed word ("amaz")
+// has to reach the word it starts ("Amazon"). Nothing in the index does this
+// by itself: the analyzer only lowercases, so a match query compares whole
+// terms and a partial word matches nothing at all. A prefix query walks the
+// term dictionary instead, which needs the lowercasing applied by hand because
+// it is not analyzed.
+//
+// Below minPrefixLen the leg is dropped: one or two letters prefix a large
+// share of any vocabulary, so the query would cost a wide dictionary scan to
+// return most of the archive.
+//
+// ponytail: prefix, not substring -- "mazon" still misses "Amazon". That needs
+// an ngram-analyzed field and a mapping version bump to reindex behind it.
+func prefixTerm(term string) string {
+	term = strings.ToLower(strings.TrimSpace(term))
+	if utf8.RuneCountInString(term) < minPrefixLen {
+		return ""
+	}
+	if strings.ContainsFunc(term, unicode.IsSpace) {
+		return ""
+	}
+	return term
 }
 
 // fuzzyWorthy decides which terms get an edit of slack. Short words are out
