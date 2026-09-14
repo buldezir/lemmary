@@ -141,8 +141,8 @@ func TestChatWithWebDeclaresBothToolsAndRunsThem(t *testing.T) {
 	}
 }
 
-// The loop has to end, and the last round is what ends it: tools stay declared
-// (a bare tool_choice with no tools array is a 400) with the choice set to none.
+// The loop has to end, and the answer turn is what ends it: it declares no
+// tools at all rather than keeping them with tool_choice "none".
 func TestChatStopsAtTheRoundCapAndForcesAnAnswer(t *testing.T) {
 	web, _ := newWebServer(t, `{"results":[{"title":"t","url":"https://example.com/a","content":"c"}]}`, `{}`)
 
@@ -164,11 +164,47 @@ func TestChatStopsAtTheRoundCapAndForcesAnAnswer(t *testing.T) {
 		t.Fatalf("completions = %d, want %d tool rounds plus one answer", len(*turns), maxChatToolRounds)
 	}
 	final := (*turns)[maxChatToolRounds]
-	if got := final.ToolChoice; got != "none" {
-		t.Errorf("final tool_choice = %v, want none", got)
+	if len(final.Tools) != 0 || final.ToolChoice != nil {
+		t.Errorf("answer turn declared tools = %v, tool_choice = %v; want neither", final.Tools, final.ToolChoice)
 	}
-	if len(final.Tools) == 0 {
-		t.Error("the final round must still declare the tools array")
+	last := final.Messages[len(final.Messages)-1]
+	if got, _ := last["content"].(string); !strings.Contains(got, "Do not call any tools") {
+		t.Errorf("answer turn was not told to stop gathering: %q", got)
+	}
+}
+
+// The bug this pins: with tools still declared, a model that emits its calls as
+// message content answers the last round with markup rather than prose. The
+// loop then billed the provider and returned an error, losing a turn that had
+// already been paid for. Declaring nothing on the answer turn is what makes the
+// markup impossible; this asserts the turn survives a model that tries anyway.
+func TestChatAnswersEvenWhenTheLastRoundIsStillToolMarkup(t *testing.T) {
+	web, _ := newWebServer(t, `{"results":[{"title":"t","url":"https://example.com/a","content":"c"}]}`, `{}`)
+
+	markup := `<｜DSML｜invoke name="web_search">` +
+		`<｜DSML｜parameter name="query">again</｜DSML｜parameter>` +
+		`</｜DSML｜invoke>`
+	replies := make([]map[string]any, 0, maxChatToolRounds+1)
+	for i := 0; i < maxChatToolRounds; i++ {
+		replies = append(replies, map[string]any{"role": "assistant", "content": markup})
+	}
+	// What the model sends on the answer turn: prose with leftover markup on it.
+	replies = append(replies, map[string]any{"role": "assistant", "content": "95 EUR an hour. " + markup})
+	server, turns := scriptedChatServer(t, replies...)
+
+	reply, err := chatTestClient(t, server.URL).Chat(context.Background(), "ocr text",
+		[]ChatMessage{{Role: "user", Content: "hi"}}, web)
+	if err != nil {
+		t.Fatalf("Chat() error = %v; a turn the provider was paid for must not be lost", err)
+	}
+	if !strings.Contains(reply, "95 EUR an hour") {
+		t.Errorf("reply = %q, want the prose kept", reply)
+	}
+	if strings.Contains(reply, "DSML") {
+		t.Errorf("reply = %q, want the markup stripped", reply)
+	}
+	if len(*turns) != maxChatToolRounds+1 {
+		t.Fatalf("completions = %d, want %d tool rounds plus one answer", len(*turns), maxChatToolRounds)
 	}
 }
 

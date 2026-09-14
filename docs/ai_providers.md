@@ -185,12 +185,18 @@ provider, in **Settings → AI → Web search** or from the environment below; a
 reader then turns *Search the web* on for a conversation. Without the binding
 the toggle is not rendered at all, and the toggle starts off on every page load
 — every call is billed by the provider, so off is the direction worth
-forgetting in. One research run makes at most ten calls; Ask AI reaches the web
-at most four times per question.
+forgetting in. One answer makes at most ten calls, on either surface.
 
 The archive stays the primary source. The prompt says to search it first and use
 the web to check or complete what it found, and an answer cites a web claim as an
 ordinary link, so you can see which sentences came from outside.
+
+**What leaves your instance is a query the model wrote**, not the question the
+reader typed — and the model has your document text in front of it when it
+writes one. Assume a search can carry a phrase out of a document (a name, an
+address, an invoice number) rather than only the subject of the question.
+Fetching runs on the provider's side as well, so the pages you read see their
+address rather than yours.
 
 Plain **Search** mode is untouched: it is one round against the archive that
 renders a list of cards, and there is nowhere in that to put a web result.

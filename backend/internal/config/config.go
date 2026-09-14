@@ -450,18 +450,18 @@ func HasLLM(cfg Config) bool {
 // because treating it as on makes every document fail its embed step instead
 // of skipping it. CanEmbed rather than IsLLM and Configured rather than a bare
 // key test: the local SDK embeds without chatting and authenticates to nobody.
+func HasEmbedding(cfg Config) bool {
+	p := cfg.EmbeddingProvider
+	return p != nil && aiprovider.CanEmbed(p.SDK) && p.Configured() &&
+		strings.TrimSpace(cfg.EmbeddingModel) != ""
+}
+
 // HasWebSearch reports whether the web_search and web_fetch tools can be
 // offered at all. No model term, unlike HasEmbedding: a web-search API takes
 // none.
 func HasWebSearch(cfg Config) bool {
 	p := cfg.WebSearchProvider
 	return p != nil && p.Configured() && aiprovider.CanWebSearch(p.SDK)
-}
-
-func HasEmbedding(cfg Config) bool {
-	p := cfg.EmbeddingProvider
-	return p != nil && aiprovider.CanEmbed(p.SDK) && p.Configured() &&
-		strings.TrimSpace(cfg.EmbeddingModel) != ""
 }
 
 var recordEmbeddingDimsMu sync.Mutex

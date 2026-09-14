@@ -17,10 +17,17 @@ import (
 	"lemmary/backend/internal/websearch"
 )
 
-// maxChatToolRounds bounds how many times document chat may reach the web
+// maxChatToolRounds bounds how many rounds document chat may gather over
 // before it has to answer. Unlike research, this endpoint streams nothing and
-// the user is staring at a spinner, so the loop is short by design.
+// the user is staring at a spinner, so the loop is short by design. It is a
+// round cap, not a call cap: one round may make several calls, and maxWebCalls
+// is what bounds the bill.
 const maxChatToolRounds = 4
+
+const chatAnswerInstruction = `Stop searching. Do not call any tools and do not output tool markup.
+Answer the user's question now, in markdown, from the document above and whatever the tool results actually contain.
+Cite a claim taken from the web as [Page title](https://...), with the URL the tool returned.
+If the evidence is incomplete, say what is missing instead of filling the gap.`
 
 type ChatMessage struct {
 	Role    string `json:"role"`
@@ -82,7 +89,7 @@ func (c *OpenAIClient) Chat(ctx context.Context, ocrText string, messages []Chat
 	}
 
 	if web == nil {
-		chatResp, err := c.completeChatTurn(ctx, apiMessages, nil, false, 0)
+		chatResp, err := c.completeChatTurn(ctx, apiMessages, nil, 0)
 		if err != nil {
 			return "", err
 		}
@@ -91,10 +98,14 @@ func (c *OpenAIClient) Chat(ctx context.Context, ocrText string, messages []Chat
 	return c.chatWithWeb(ctx, apiMessages, web)
 }
 
-// chatWithWeb is the Search agent's fixed-round loop (see search.go): tools stay
-// declared on every round because OpenAI-compatible endpoints reject a bare
-// tool_choice with no tools array, and the last round flips the choice to none
-// so there is always an answer rather than a fifth tool call.
+// chatWithWeb gathers over a bounded number of tool rounds and then answers.
+//
+// The answer turn declares no tools at all, the way answerResearch does, rather
+// than keeping them with tool_choice "none". The shipped default model emits
+// tool calls as message content, which no tool_choice suppresses, so a schema
+// still in front of it can end the turn in markup -- after the provider has
+// been billed for the round. With nothing declared there is nothing to answer
+// with but prose.
 func (c *OpenAIClient) chatWithWeb(
 	ctx context.Context,
 	apiMessages []openai.ChatCompletionMessageParamUnion,
@@ -103,9 +114,8 @@ func (c *OpenAIClient) chatWithWeb(
 	tools := []openai.ChatCompletionToolParam{webSearchTool(), webFetchTool()}
 	budget := &webBudget{}
 
-	for round := 0; round <= maxChatToolRounds; round++ {
-		allowTools := round < maxChatToolRounds
-		chatResp, err := c.completeChatTurn(ctx, apiMessages, tools, allowTools, round)
+	for round := 0; round < maxChatToolRounds; round++ {
+		chatResp, err := c.completeChatTurn(ctx, apiMessages, tools, round)
 		if err != nil {
 			return "", err
 		}
@@ -138,15 +148,21 @@ func (c *OpenAIClient) chatWithWeb(
 		apiMessages = append(apiMessages, openai.UserMessage(formatDSMLToolResults(results)))
 	}
 
-	// Unreachable: the final round declares tool_choice none, so it answers.
-	return "", fmt.Errorf("chat did not produce an answer")
+	// Out of rounds: answer from what was gathered rather than losing a turn the
+	// provider has already been paid for.
+	msgs := append([]openai.ChatCompletionMessageParamUnion{}, apiMessages...)
+	msgs = append(msgs, openai.UserMessage(chatAnswerInstruction))
+	chatResp, err := c.completeChatTurn(ctx, msgs, nil, maxChatToolRounds)
+	if err != nil {
+		return "", err
+	}
+	return stripDSMLMarkup(strings.TrimSpace(chatResp.Choices[0].Message.Content)), nil
 }
 
 func (c *OpenAIClient) completeChatTurn(
 	ctx context.Context,
 	apiMessages []openai.ChatCompletionMessageParamUnion,
 	tools []openai.ChatCompletionToolParam,
-	allowTools bool,
 	round int,
 ) (*openai.ChatCompletion, error) {
 	params := openai.ChatCompletionNewParams{
@@ -156,18 +172,14 @@ func (c *OpenAIClient) completeChatTurn(
 	}
 	if len(tools) > 0 {
 		params.Tools = tools
-		choice := "none"
-		if allowTools {
-			choice = "auto"
-		}
-		params.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{OfAuto: openai.String(choice)}
+		params.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{OfAuto: openai.String("auto")}
 	}
 
 	requestStart := time.Now()
 	chatResp, err := c.Complete(ctx, params,
 		"purpose", "chat",
 		"round", round,
-		"allow_tools", allowTools,
+		"tools", len(tools),
 		"messages", len(apiMessages),
 	)
 	if err != nil {

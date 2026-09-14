@@ -166,10 +166,16 @@ func Apply(app core.App, settings *core.Record, b Bootstrap) error {
 	if embeddingID != "" {
 		bindEmbedding(settings, embeddingID, b.LLM.EmbeddingModel)
 	}
-	if webSearchID != "" {
-		settings.Set("websearch_provider_id", webSearchID)
-	}
+	bindWebSearch(settings, webSearchID)
 	return nil
+}
+
+// bindWebSearch points the web-search binding at the seeded provider. An empty
+// id clears it, so removing WEB_SEARCH_SDK actually turns the tools off again --
+// the same contract bindEmbedding has, and the only way back to the off
+// behaviour on a managed instance, whose Settings page refuses this field.
+func bindWebSearch(settings *core.Record, providerID string) {
+	settings.Set("websearch_provider_id", strings.TrimSpace(providerID))
 }
 
 // bindHelper points the Deep Search helper binding at the language model's

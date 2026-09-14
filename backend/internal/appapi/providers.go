@@ -289,7 +289,7 @@ func handleDeleteProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 			return writeError(e, http.StatusInternalServerError, "Failed to verify provider usage.")
 		}
 		if aiprovider.ReferencedBySettings(settings, id) {
-			return writeError(e, http.StatusConflict, "Provider is assigned to OCR, extraction, chat, search, or embeddings. Unassign it first.")
+			return writeError(e, http.StatusConflict, "Provider is assigned to OCR, extraction, chat, search, embeddings, or web search. Unassign it first.")
 		}
 		if err := app.Delete(record); err != nil {
 			return writeError(e, http.StatusInternalServerError, "Failed to delete provider.")
