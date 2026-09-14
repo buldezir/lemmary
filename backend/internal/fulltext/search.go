@@ -26,6 +26,14 @@ const (
 	// caller pays for; the disjunction's coord factor has already put the best
 	// coverage first.
 	relaxedFallbackLimit = 10
+	// minPrefixLen is the shortest word that also matches as a prefix. Under it
+	// a prefix reaches most of the vocabulary. See prefixTerm.
+	minPrefixLen = 3
+	// prefixBoost scales a prefix match down far enough that the widest one
+	// (title, boost 4) still scores under the narrowest whole-word match
+	// (ocr_text, boost 1). Exact beats approximate across fields, not only
+	// within one.
+	prefixBoost = 0.2
 )
 
 // ErrNoSearchableTerms is text that is not empty but tokenises to nothing: a
@@ -111,9 +119,13 @@ const (
 // wider rung to fall back on when the first matches nothing at all.
 type searchPlan struct {
 	primary  query.Query
-	fallback query.Query // nil unless relaxing further would change the query
+	fallback query.Query // nil unless widening further would change the query
 	terms    int
 	required int
+	// fallbackRequired is what Required becomes once the wider rung answers.
+	// Unchanged for a strict query: that rung widens each term into a prefix,
+	// it does not drop any.
+	fallbackRequired int
 }
 
 // boostedField is one searchable field and how much a match in it counts.
@@ -178,7 +190,7 @@ func (i *Index) Search(q Query) (Result, error) {
 			if err != nil {
 				return err
 			}
-			required = 1
+			required = plan.fallbackRequired
 		}
 
 		hits := make([]Hit, 0, len(res.Hits))
@@ -308,10 +320,14 @@ func (i *Index) MatchingIDs(q Query, limit int) (ids []string, total uint64, com
 		return nil, 0, false, err
 	}
 	err = i.withIndex(func(b bleve.Index) error {
+		bq, err := chosenRung(b, plan)
+		if err != nil {
+			return err
+		}
 		offset := 0
 		for len(ids) < limit {
 			page := min(MaxSearchLimit, limit-len(ids))
-			req := bleve.NewSearchRequestOptions(plan.primary, page, offset, false)
+			req := bleve.NewSearchRequestOptions(bq, page, offset, false)
 			res, err := b.Search(req)
 			if err != nil {
 				return fmt.Errorf("bleve search: %w", err)
@@ -349,15 +365,46 @@ func (i *Index) CountMatching(q Query) (uint64, error) {
 	}
 	var total uint64
 	err = i.withIndex(func(b bleve.Index) error {
-		req := bleve.NewSearchRequestOptions(plan.primary, 0, 0, false)
-		res, err := b.Search(req)
+		res, err := countRung(b, plan.primary)
 		if err != nil {
-			return fmt.Errorf("bleve search: %w", err)
+			return err
+		}
+		if res.Total == 0 && plan.fallback != nil {
+			res, err = countRung(b, plan.fallback)
+			if err != nil {
+				return err
+			}
 		}
 		total = res.Total
 		return nil
 	})
 	return total, err
+}
+
+// chosenRung is the rung a non-highlighting caller should run: the wider one
+// only when the first matches nothing, which is how Search escalates. Counting
+// and listing have to agree with the list the user is looking at, so the ladder
+// belongs to the query rather than to Search.
+func chosenRung(b bleve.Index, plan searchPlan) (query.Query, error) {
+	if plan.fallback == nil {
+		return plan.primary, nil
+	}
+	res, err := countRung(b, plan.primary)
+	if err != nil {
+		return nil, err
+	}
+	if res.Total > 0 {
+		return plan.primary, nil
+	}
+	return plan.fallback, nil
+}
+
+func countRung(b bleve.Index, bq query.Query) (*bleve.SearchResult, error) {
+	res, err := b.Search(bleve.NewSearchRequestOptions(bq, 0, 0, false))
+	if err != nil {
+		return nil, fmt.Errorf("bleve search: %w", err)
+	}
+	return res, nil
 }
 
 // KeepEligible returns the subset of ids that satisfies q's filters. The
@@ -402,13 +449,18 @@ func buildSearchPlan(q Query, text string) (searchPlan, error) {
 	fields := searchFields(q.Fields)
 
 	if !q.Relaxed {
-		return searchPlan{primary: withFilters(textQuery(parts, relaxOff, fields), filters)}, nil
+		plan := searchPlan{primary: withFilters(textQuery(parts, relaxOff, false, fields), filters)}
+		if anyPrefixWorthy(parts) {
+			plan.fallback = withFilters(textQuery(parts, relaxOff, true, fields), filters)
+		}
+		return plan, nil
 	}
 
 	loose := looseParts(parts)
 	plan := searchPlan{
-		primary: withFilters(textQuery(parts, relaxSome, fields), filters),
-		terms:   len(loose),
+		primary:          withFilters(textQuery(parts, relaxSome, false, fields), filters),
+		terms:            len(loose),
+		fallbackRequired: 1,
 	}
 	if len(loose) == 0 {
 		// Every part is a closed phrase, so there is nothing left to relax.
@@ -418,8 +470,8 @@ func buildSearchPlan(q Query, text string) (searchPlan, error) {
 	// Only build the wider rung when it would actually differ. A single short
 	// term is already its own floor; a single long one still earns a rung,
 	// because there the fallback degenerates into a spelling-correction retry.
-	if plan.required > 1 || anyFuzzyWorthy(loose) {
-		plan.fallback = withFilters(textQuery(parts, relaxAny, fields), filters)
+	if plan.required > 1 || anyFuzzyWorthy(loose) || anyPrefixWorthy(loose) {
+		plan.fallback = withFilters(textQuery(parts, relaxAny, true, fields), filters)
 	}
 	return plan, nil
 }
@@ -510,11 +562,11 @@ func mandatoryPhrase(part queryPart) bool {
 	return part.phrase && part.closed
 }
 
-func textQuery(parts []queryPart, mode relaxMode, fields []boostedField) query.Query {
+func textQuery(parts []queryPart, mode relaxMode, prefix bool, fields []boostedField) query.Query {
 	if mode == relaxOff {
 		conjuncts := make([]query.Query, 0, len(parts))
 		for _, part := range parts {
-			conjuncts = append(conjuncts, fieldQuery(part, false, fields))
+			conjuncts = append(conjuncts, fieldQuery(part, false, prefix, fields))
 		}
 		if len(conjuncts) == 1 {
 			return conjuncts[0]
@@ -525,13 +577,13 @@ func textQuery(parts []queryPart, mode relaxMode, fields []boostedField) query.Q
 	must := make([]query.Query, 0, len(parts))
 	for _, part := range parts {
 		if mandatoryPhrase(part) {
-			must = append(must, fieldQuery(part, false, fields))
+			must = append(must, fieldQuery(part, false, prefix, fields))
 		}
 	}
 	if loose := looseParts(parts); len(loose) > 0 {
 		should := make([]query.Query, 0, len(loose))
 		for _, part := range loose {
-			should = append(should, fieldQuery(part, mode == relaxAny, fields))
+			should = append(should, fieldQuery(part, mode == relaxAny, prefix, fields))
 		}
 		dq := bleve.NewDisjunctionQuery(should...)
 		if mode == relaxAny {
@@ -582,7 +634,11 @@ func searchFields(names []string) []boostedField {
 // "#") becomes a match-none clause that still counts toward the disjunction's
 // numerator, tightening a relaxSome floor it can never satisfy. The relaxAny
 // rung absorbs it, and detecting it properly needs the index's analyzer.
-func fieldQuery(part queryPart, fuzzy bool, fields []boostedField) query.Query {
+func fieldQuery(part queryPart, fuzzy, prefix bool, fields []boostedField) query.Query {
+	prefixText := ""
+	if prefix {
+		prefixText = prefixTerm(part.text)
+	}
 	disjuncts := make([]query.Query, 0, 2*len(fields))
 	for _, f := range fields {
 		if part.phrase {
@@ -598,6 +654,13 @@ func fieldQuery(part queryPart, fuzzy bool, fields []boostedField) query.Query {
 		tq.Analyzer = AnalyzerName
 		tq.SetBoost(f.boost)
 		disjuncts = append(disjuncts, tq)
+
+		if prefixText != "" {
+			pq := bleve.NewPrefixQuery(prefixText)
+			pq.SetField(f.field)
+			pq.SetBoost(f.boost * prefixBoost)
+			disjuncts = append(disjuncts, pq)
+		}
 
 		if !fuzzy || !fuzzyWorthy(part.text) {
 			continue
@@ -616,6 +679,57 @@ func fieldQuery(part queryPart, fuzzy bool, fields []boostedField) query.Query {
 	return bleve.NewDisjunctionQuery(disjuncts...)
 }
 
+// prefixTerm is the term-dictionary prefix a word should also match, or "" for
+// a word that must not be used as one. A match query compares whole terms, so
+// a half-typed "amaz" would otherwise miss "Amazon".
+//
+// Prefix legs only ever appear on a widening rung, never on the rung that runs
+// first. A prefix query is not a range check: it walks the field dictionary
+// and scores every term it finds, which measured 415ms for one three-letter
+// term against an OCR-sized vocabulary. Paying that only when the strict query
+// matched nothing keeps it off every query that already works, and makes
+// "exact beats prefix" structural -- a prefix hit cannot appear beside an
+// exact one, because the rung that produces it only runs when there are none.
+//
+// ponytail: an empty-result query still pays one wide expansion. Bound it with
+// a dictionary-size check (FieldDictPrefix) if a large archive makes typing
+// through a dense prefix slow.
+//
+// A prefix query is not analyzed, so the analyzer is approximated here: lower
+// case, and the leading token only, or a trailing comma would be searched for
+// literally and match nothing. Digits are out for the reason fuzzyWorthy gives
+// -- "202" prefixes every year in the archive, and a near miss on a number is
+// a different document.
+//
+// ponytail: prefix, not substring -- "mazon" still misses "Amazon". Needs an
+// ngram field and a mapping version bump to reindex behind it.
+func prefixTerm(term string) string {
+	term = strings.ToLower(strings.TrimSpace(term))
+	term = strings.TrimFunc(term, isSeparator)
+	if i := strings.IndexFunc(term, isSeparator); i >= 0 {
+		term = term[:i]
+	}
+	if utf8.RuneCountInString(term) < minPrefixLen || hasDigit(term) {
+		return ""
+	}
+	return term
+}
+
+func anyPrefixWorthy(parts []queryPart) bool {
+	for _, part := range parts {
+		if !mandatoryPhrase(part) && prefixTerm(part.text) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// isSeparator is what the unicode tokenizer splits on, near enough: a prefix
+// is only ever the leading run of letters.
+func isSeparator(r rune) bool {
+	return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+}
+
 // fuzzyWorthy decides which terms get an edit of slack. Short words are out
 // because one edit reaches most of the dictionary from them, and anything with
 // a digit is out because it is an id, an amount or a date — the values where a
@@ -625,15 +739,11 @@ func fieldQuery(part queryPart, fuzzy bool, fields []boostedField) query.Query {
 // dictionary automaton scan per field per term, over an OCR vocabulary full of
 // garbage tokens, so only a query that already found nothing pays for it.
 func fuzzyWorthy(term string) bool {
-	if utf8.RuneCountInString(term) < 5 {
-		return false
-	}
-	for _, r := range term {
-		if unicode.IsDigit(r) {
-			return false
-		}
-	}
-	return true
+	return utf8.RuneCountInString(term) >= 5 && !hasDigit(term)
+}
+
+func hasDigit(term string) bool {
+	return strings.ContainsFunc(term, unicode.IsDigit)
 }
 
 func anyFuzzyWorthy(parts []queryPart) bool {

@@ -14,6 +14,14 @@
 
 import { isDocumentStatus } from './documentStatus'
 
+/** Matches the index's prefix floor, fulltext.minPrefixLen. */
+export const MIN_SEARCH_LENGTH = 3
+
+export function searchableTerm(value: string): string {
+  const term = value.trim()
+  return term.length < MIN_SEARCH_LENGTH ? '' : term
+}
+
 export type DocumentQuery = {
   /** Fulltext search; empty means list everything. */
   q: string
@@ -79,7 +87,7 @@ function pageNumber(value: unknown): number {
 export function parseDocumentQuery(raw: DocumentQueryInput): DocumentQuery {
   const status = text(raw.status)
   return {
-    q: typeof raw.q === 'string' ? raw.q : '',
+    q: typeof raw.q === 'string' ? searchableTerm(raw.q) : '',
     // 'all' is the absence of a status filter rather than one of them, so it
     // is not in DOCUMENT_STATUSES -- but a URL may name it.
     status: isDocumentStatus(status) || status === 'all' ? status : defaultDocumentQuery.status,

@@ -761,8 +761,9 @@ func TestRelaxedFuzzyOnlyInFallback(t *testing.T) {
 		t.Fatalf("digits must not match fuzzily, got %v", resultIDs(digits))
 	}
 
-	// Too short: one edit reaches most of the dictionary from three runes.
-	short := mustSearch(t, idx, Query{Text: "bil", UserID: "u1", Relaxed: true})
+	// Too short for fuzzy, and a prefix of nothing indexed, so the prefix leg
+	// cannot stand in for the fuzzy one that is deliberately absent.
+	short := mustSearch(t, idx, Query{Text: "bll", UserID: "u1", Relaxed: true})
 	if len(short.Hits) != 0 {
 		t.Fatalf("short terms must not match fuzzily, got %v", resultIDs(short))
 	}
@@ -889,5 +890,119 @@ func TestSearchUndatedFilter(t *testing.T) {
 	both := searchIDs(t, idx, Query{Text: "invoice", UserID: "u1"})
 	if !containsID(both, "undated") || !containsID(both, "dated") {
 		t.Fatalf("unfiltered: %v", both)
+	}
+}
+
+// A half-spelled word must reach the word it starts. Strict mode, because the
+// Documents page never relaxes.
+func TestSearchMatchesWordPrefix(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "amazon", map[string]any{
+		FieldUser:    "u1",
+		FieldTitle:   "Order confirmation",
+		FieldSummary: "Amazon delivered the monitor stand",
+	})
+	mustPut(t, idx, "other", map[string]any{
+		FieldUser:    "u1",
+		FieldTitle:   "Gas bill",
+		FieldSummary: "Quarterly reading from the meter",
+	})
+
+	// "ama" is the advertised three-rune floor; the comma is what a real search
+	// box collects when someone types a list.
+	for _, typed := range []string{"ama", "amaz", "amazo", "amazon", "Amaz", "amaz,"} {
+		hits := searchIDs(t, idx, Query{Text: typed, UserID: "u1"})
+		if !containsID(hits, "amazon") {
+			t.Fatalf("%q should reach Amazon, got %v", typed, hits)
+		}
+		if containsID(hits, "other") {
+			t.Fatalf("%q should not match an unrelated document, got %v", typed, hits)
+		}
+	}
+
+	// A prefix leg widens each term; it never drops one.
+	both := searchIDs(t, idx, Query{Text: "amaz monit", UserID: "u1"})
+	if !containsID(both, "amazon") {
+		t.Fatalf("both prefixes present, got %v", both)
+	}
+	if hits := searchIDs(t, idx, Query{Text: "amaz gas", UserID: "u1"}); len(hits) != 0 {
+		t.Fatalf("prefixes from different documents must not match, got %v", hits)
+	}
+
+	// Under minPrefixLen there is no prefix leg.
+	if hits := searchIDs(t, idx, Query{Text: "am", UserID: "u1"}); len(hits) != 0 {
+		t.Fatalf("a two-letter prefix should not match, got %v", hits)
+	}
+}
+
+// The compound case this buys on a German archive, in OCR text rather than
+// metadata: no stemmer can split Rechnungsnummer, a prefix reaches it.
+func TestSearchPrefixMatchesGermanCompound(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "de", ocrDoc("Handwerker", "Die Rechnungsnummer lautet 4711"))
+
+	if hits := searchIDs(t, idx, Query{Text: "Rechnung", UserID: "u1"}); !containsID(hits, "de") {
+		t.Fatalf("Rechnung should reach Rechnungsnummer, got %v", hits)
+	}
+}
+
+// A number is an id, an amount or a date: a prefix of one is a different
+// document, which is the rule fuzzyWorthy already applies.
+func TestSearchPrefixSkipsDigits(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "y2024", ocrDoc("Steuerbescheid", "Fällig 2024 nach Abzug"))
+
+	if hits := searchIDs(t, idx, Query{Text: "202", UserID: "u1"}); len(hits) != 0 {
+		t.Fatalf("a digit prefix must not match a year, got %v", hits)
+	}
+	if hits := searchIDs(t, idx, Query{Text: "2024", UserID: "u1"}); !containsID(hits, "y2024") {
+		t.Fatalf("the whole number should still match, got %v", hits)
+	}
+}
+
+// Prefix hits live on a widening rung, so they cannot appear beside exact ones
+// — including across fields, where a title prefix (boost 4) would otherwise
+// outscore an exact hit in OCR text (boost 1).
+func TestSearchPrefixOnlyWhenExactFindsNothing(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "exact", ocrDoc("Quarterly report", "the form was signed"))
+	mustPut(t, idx, "prefixed", map[string]any{
+		FieldUser:  "u1",
+		FieldTitle: "Formation documents",
+	})
+
+	hits := searchIDs(t, idx, Query{Text: "form", UserID: "u1"})
+	if !containsID(hits, "exact") {
+		t.Fatalf("the exact match must be found, got %v", hits)
+	}
+	if containsID(hits, "prefixed") {
+		t.Fatalf("a prefix hit must not join an exact one, got %v", hits)
+	}
+
+	// With no exact match anywhere, the wider rung answers.
+	if hits := searchIDs(t, idx, Query{Text: "forma", UserID: "u1"}); !containsID(hits, "prefixed") {
+		t.Fatalf("the widening rung should find Formation, got %v", hits)
+	}
+}
+
+// Counting and listing run the same ladder, so a grouped count cannot report
+// zero for the page the user is looking at.
+func TestCountAndMatchingIDsFollowPrefixRung(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "amazon", ocrDoc("Order", "Amazon delivered the stand"))
+
+	total, err := idx.CountMatching(Query{Text: "amaz", UserID: "u1"})
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("count=%d, want 1", total)
+	}
+	ids, total, _, err := idx.MatchingIDs(Query{Text: "amaz", UserID: "u1"}, 10)
+	if err != nil {
+		t.Fatalf("matching ids: %v", err)
+	}
+	if total != 1 || !containsID(ids, "amazon") {
+		t.Fatalf("ids=%v total=%d, want the Amazon document", ids, total)
 	}
 }
