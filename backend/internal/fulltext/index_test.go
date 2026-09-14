@@ -761,9 +761,8 @@ func TestRelaxedFuzzyOnlyInFallback(t *testing.T) {
 		t.Fatalf("digits must not match fuzzily, got %v", resultIDs(digits))
 	}
 
-	// Too short: one edit reaches most of the dictionary from three runes. The
-	// term is not a prefix of anything indexed either, so the prefix leg cannot
-	// answer for the fuzzy one that is deliberately absent here.
+	// Too short for fuzzy, and a prefix of nothing indexed, so the prefix leg
+	// cannot stand in for the fuzzy one that is deliberately absent.
 	short := mustSearch(t, idx, Query{Text: "bll", UserID: "u1", Relaxed: true})
 	if len(short.Hits) != 0 {
 		t.Fatalf("short terms must not match fuzzily, got %v", resultIDs(short))
@@ -894,8 +893,7 @@ func TestSearchUndatedFilter(t *testing.T) {
 	}
 }
 
-// The reported failure: a search box is typed one letter at a time, so a
-// half-spelled word has to reach the word it starts. Strict mode, because the
+// A half-spelled word must reach the word it starts. Strict mode, because the
 // Documents page never relaxes.
 func TestSearchMatchesWordPrefix(t *testing.T) {
 	idx := testIndex(t)
@@ -920,8 +918,7 @@ func TestSearchMatchesWordPrefix(t *testing.T) {
 		}
 	}
 
-	// Every term still has to match in strict mode; a prefix leg widens each
-	// term, it does not drop any.
+	// A prefix leg widens each term; it never drops one.
 	both := searchIDs(t, idx, Query{Text: "amaz monit", UserID: "u1"})
 	if !containsID(both, "amazon") {
 		t.Fatalf("both prefixes present, got %v", both)
@@ -930,15 +927,13 @@ func TestSearchMatchesWordPrefix(t *testing.T) {
 		t.Fatalf("prefixes from different documents must not match, got %v", hits)
 	}
 
-	// Under minPrefixLen there is no prefix leg: one or two letters would drag
-	// in most of the vocabulary for a full dictionary scan.
+	// Under minPrefixLen there is no prefix leg.
 	if hits := searchIDs(t, idx, Query{Text: "am", UserID: "u1"}); len(hits) != 0 {
 		t.Fatalf("a two-letter prefix should not match, got %v", hits)
 	}
 }
 
-// A whole word beats a word that merely starts with it, rather than the two
-// landing in arbitrary order.
+// A whole word beats a word that merely starts with it.
 func TestSearchRanksExactAbovePrefix(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "exact", map[string]any{

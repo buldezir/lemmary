@@ -23,16 +23,14 @@ import (
 //	strict:  recall@5 0.511  MRR 0.522
 //	relaxed: recall@5 0.772  MRR 0.783
 //
-// Re-measured when prefix matching landed, which is what a half-typed word and
-// a German compound both need:
+// Re-measured when prefix matching landed:
 //
 //	strict:  recall@5 0.598  MRR 0.609
 //	relaxed: recall@5 0.989  MRR 1.000
 //
-// The gap between those two lines is what relaxing buys: typos and inflections
-// a prefix cannot reach. Paraphrase, which used to be pure headroom for the
-// dense path, is now mostly answered lexically — the wide rung's prefix legs
-// reach the stem the question and the document share.
+// The gap is what relaxing buys: typos and inflections a prefix cannot reach.
+// Paraphrase used to be headroom for the dense path and is now mostly answered
+// lexically, by prefix legs reaching a shared stem.
 //
 // Raise them when a change raises the numbers; a floor that is never revised
 // stops measuring anything. Never lower one to make a change pass.
@@ -194,9 +192,8 @@ func TestSearchEvalRelaxedRescuesMissedQueries(t *testing.T) {
 	if rescued[testdata.KindMorphology] == 0 {
 		t.Error("no inflected query was rescued")
 	}
-	// The exact class needs no rescue any more: prefix matching serves it
-	// strictly, which is the stronger result. Assert that rather than deleting
-	// the check, so a regression that pushes it back onto relaxing is visible.
+	// The exact class needs no rescue any more: strict serves it. Asserted
+	// rather than deleted, so a slide back onto relaxing is visible.
 	for _, c := range testdata.Cases() {
 		if c.Kind != testdata.KindExact {
 			continue
@@ -209,9 +206,8 @@ func TestSearchEvalRelaxedRescuesMissedQueries(t *testing.T) {
 		}
 	}
 
-	// Paraphrases used to score zero on both paths. They no longer do, because
-	// a loose term matching as a prefix reaches the stem a paraphrase shares
-	// with the document. The dense path still owns the rest of this class.
+	// Paraphrases used to score zero on both paths; prefix legs now reach the
+	// stem they share with the document. The dense path owns the rest.
 	if rescued[testdata.KindParaphrase] == 0 {
 		t.Logf("no paraphrase was rescued lexically; the floors above assume some are")
 	}

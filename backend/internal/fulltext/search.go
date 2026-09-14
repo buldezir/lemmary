@@ -26,8 +26,8 @@ const (
 	// caller pays for; the disjunction's coord factor has already put the best
 	// coverage first.
 	relaxedFallbackLimit = 10
-	// minPrefixLen is the shortest word that also matches as a prefix. See
-	// prefixTerm.
+	// minPrefixLen is the shortest word that also matches as a prefix. Under it
+	// a prefix reaches most of the vocabulary. See prefixTerm.
 	minPrefixLen = 3
 )
 
@@ -627,21 +627,12 @@ func fieldQuery(part queryPart, fuzzy bool, fields []boostedField) query.Query {
 }
 
 // prefixTerm is the term-dictionary prefix a word should also match, or "" for
-// a word too short to use as one.
+// a word too short to use as one. A match query compares whole terms, so a
+// half-typed "amaz" would otherwise miss "Amazon". Lowercased by hand: a
+// prefix query is not analyzed.
 //
-// The search box is read as the user types it, so a half-typed word ("amaz")
-// has to reach the word it starts ("Amazon"). Nothing in the index does this
-// by itself: the analyzer only lowercases, so a match query compares whole
-// terms and a partial word matches nothing at all. A prefix query walks the
-// term dictionary instead, which needs the lowercasing applied by hand because
-// it is not analyzed.
-//
-// Below minPrefixLen the leg is dropped: one or two letters prefix a large
-// share of any vocabulary, so the query would cost a wide dictionary scan to
-// return most of the archive.
-//
-// ponytail: prefix, not substring -- "mazon" still misses "Amazon". That needs
-// an ngram-analyzed field and a mapping version bump to reindex behind it.
+// ponytail: prefix, not substring -- "mazon" still misses "Amazon". Needs an
+// ngram field and a mapping version bump to reindex behind it.
 func prefixTerm(term string) string {
 	term = strings.ToLower(strings.TrimSpace(term))
 	if utf8.RuneCountInString(term) < minPrefixLen {
