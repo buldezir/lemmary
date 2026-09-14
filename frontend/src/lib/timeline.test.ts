@@ -6,6 +6,7 @@ import {
   monthLabel,
   monthRange,
   openYear,
+  shouldFold,
   periodRange,
   yearRange,
 } from './timeline'
@@ -164,5 +165,38 @@ describe('openYear', () => {
 
   it('opens the newest year for the undated row whatever the From date says', () => {
     expect(openYear(UNDATED_PERIOD, years, '')).toBe('2025')
+  })
+})
+
+describe('shouldFold', () => {
+  function months(count: number, from = 2025): { month: string; count: number }[] {
+    return Array.from({ length: count }, (_, index) => ({
+      month: `${from - Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`,
+      count: 1,
+    }))
+  }
+
+  it('leaves a short archive whole', () => {
+    expect(shouldFold(groupByYear(months(24)))).toBe(false)
+  })
+
+  it('folds once the months outgrow the column', () => {
+    expect(shouldFold(groupByYear(months(25)))).toBe(true)
+  })
+
+  it('counts months, not years -- three sparse years still fit', () => {
+    expect(
+      shouldFold(
+        groupByYear([
+          { month: '2025-03', count: 1 },
+          { month: '2024-07', count: 2 },
+          { month: '2023-01', count: 3 },
+        ]),
+      ),
+    ).toBe(false)
+  })
+
+  it('has nothing to fold for an empty library', () => {
+    expect(shouldFold([])).toBe(false)
   })
 })
