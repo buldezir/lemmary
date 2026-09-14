@@ -160,7 +160,6 @@ type openAISearchAgent struct {
 // appapi is the backstop against a stuck provider, not this timeout.
 const minSearchTimeout = 10 * time.Minute
 
-// searchTimeout raises the shared AI timeout to what a search round needs.
 func searchTimeout(shared time.Duration) time.Duration {
 	if shared < minSearchTimeout {
 		return minSearchTimeout

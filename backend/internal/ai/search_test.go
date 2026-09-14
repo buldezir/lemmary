@@ -6,9 +6,6 @@ import (
 	"time"
 )
 
-// The shared AI timeout is sized for one extraction call; a late research
-// round that replays the whole thread outlives it and loses the run. The run
-// budget is the backstop against a stuck provider, so the agent gets a floor.
 func TestSearchTimeoutHasAFloor(t *testing.T) {
 	for _, tc := range []struct {
 		name string

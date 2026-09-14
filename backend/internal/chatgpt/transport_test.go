@@ -121,8 +121,6 @@ func TestChatCompletionBecomesACodexResponsesCall(t *testing.T) {
 	if len(sent.Input) != 2 || sent.Input[0].Role != "user" || sent.Input[0].Content[0].Type != "input_text" {
 		t.Fatalf("input = %+v", sent.Input)
 	}
-	// The system message's "JSON" went into instructions, which the backend
-	// does not scan, so JSON mode needs an input item that says it.
 	if sent.Input[1].Role != "user" || !strings.Contains(strings.ToLower(sent.Input[1].Content[0].Text), "json") {
 		t.Errorf("json nudge = %+v", sent.Input[1])
 	}
