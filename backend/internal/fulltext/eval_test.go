@@ -192,16 +192,17 @@ func TestSearchEvalRelaxedRescuesMissedQueries(t *testing.T) {
 	if rescued[testdata.KindMorphology] == 0 {
 		t.Error("no inflected query was rescued")
 	}
-	// The exact class needs no rescue any more: strict serves it. Asserted
-	// rather than deleted, so a slide back onto relaxing is visible.
+	// The exact class needs no rescue any more: strict serves all of it, which
+	// is the stronger claim and the one asserted -- "relaxed did not rescue it"
+	// would also pass if both paths missed.
 	for _, c := range testdata.Cases() {
 		if c.Kind != testdata.KindExact {
 			continue
 		}
 		strict := searchIDs(t, idx, caseQuery(c, false))
 		for _, want := range c.Want {
-			if !containsID(strict, want) && containsID(searchIDs(t, idx, caseQuery(c, true)), want) {
-				t.Errorf("%q: strict search should find %s without relaxing", c.Name, want)
+			if !containsID(strict, want) {
+				t.Errorf("%q: strict search should find %s, got %v", c.Name, want, strict)
 			}
 		}
 	}

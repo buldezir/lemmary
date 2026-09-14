@@ -362,7 +362,7 @@ Archive search uses a [Bleve](https://github.com/blevesearch/bleve) inverted ind
 Query behavior:
 
 - Terms are **AND**ed (all must match) and ranked with **BM25**. Quoted `"phrases"` must appear in order.
-- A term of three letters or more also matches as a **prefix**, so `amaz` finds *Amazon* while you are still typing and `Rechnung` finds *Rechnungsnummer*. A whole-word hit always outranks a prefix-only one. It is a prefix, not a substring: `mazon` still finds nothing.
+- **When nothing matches exactly, terms of three letters or more are retried as prefixes** — `amaz` finds *Amazon* while you are still typing, `Rechnung` finds *Rechnungsnummer*. Exact and prefix hits never mix: the retry only runs when the whole-word search came back empty, so a document that really contains the word is never pushed down by one that merely starts with it. Terms containing a digit are excluded (`202` would prefix every year in the archive), and it is a prefix, not a substring — `mazon` still finds nothing.
 - Search covers bilingual title/purpose/summary, OCR text, tag/type/correspondent names, and `people_or_organizations`.
 - The homepage search box calls `GET /api/app/documents/search`. An empty search box still lists via PocketBase (sort by created).
 - Deep Search’s `search_documents` tool (both modes) and paperless-ngx `GET /api/documents/?query=` use the same index. Research’s `read_documents` reads `ocr_text` straight from the database, not the index.
