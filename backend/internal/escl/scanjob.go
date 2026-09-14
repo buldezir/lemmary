@@ -32,7 +32,7 @@ const (
 	// cannot be stored is refused while there is still something to do about it
 	// -- save what you have and start a second document -- rather than at the
 	// end, after the pages are gone.
-	maxScanBytes int64 = 20 << 20
+	maxScanBytes = models.MaxFileBytes
 )
 
 var (

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildDocumentFilter, fileUrlWithToken, parseDuplicateOfId } from './documents'
+import {
+  buildDocumentFilter,
+  fileUrlWithToken,
+  parseDuplicateOfId,
+  uploadErrorMessage,
+} from './documents'
 import { UNFINISHED_STATUS } from '../documentStatus'
 
 const noFilters = {
@@ -109,5 +114,52 @@ describe('fileUrlWithToken', () => {
     const record = { id: 'abc123def456ghi', collectionId: 'pbc_1', file: '' }
     await expect(fileUrlWithToken(record)).rejects.toThrow('This document has no file.')
     await expect(fileUrlWithToken(record, '')).rejects.toThrow('This document has no file.')
+  })
+})
+
+describe('uploadErrorMessage', () => {
+  const generic = 'Failed to create record.'
+
+  it('rewords the file size rejection with both sizes', () => {
+    const err = {
+      response: {
+        message: generic,
+        data: {
+          file: {
+            code: 'validation_file_size_limit',
+            message: 'Failed to upload x.pdf - the maximum allowed file size is 50000000 bytes.',
+          },
+        },
+      },
+    }
+    expect(uploadErrorMessage(err, 52_428_800)).toBe(
+      'This file is 50 MB, over the 48 MB limit for a single document.',
+    )
+  })
+
+  it('prefers a field message over the generic one', () => {
+    const err = {
+      response: {
+        message: generic,
+        data: { file: { code: 'validation_invalid_mime_type', message: 'Wrong type.' } },
+      },
+    }
+    expect(uploadErrorMessage(err)).toBe('Wrong type.')
+  })
+
+  it('keeps a hook message over the data PocketBase rewrote', () => {
+    const err = {
+      response: {
+        message: 'File is a duplicate of abc123def456ghi.',
+        data: { duplicate_of: { code: 'validation_invalid_value', message: 'Invalid value.' } },
+      },
+    }
+    expect(uploadErrorMessage(err)).toBe('File is a duplicate of abc123def456ghi.')
+  })
+
+  it('falls back to the top-level message, then Error, then a default', () => {
+    expect(uploadErrorMessage({ response: { message: generic, data: {} } })).toBe(generic)
+    expect(uploadErrorMessage(new Error('boom'))).toBe('boom')
+    expect(uploadErrorMessage(undefined)).toBe('Upload failed')
   })
 })

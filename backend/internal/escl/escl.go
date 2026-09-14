@@ -11,7 +11,7 @@
 //
 // Everything is fixed at A4, 300 dpi, colour, PDF. A scanner will happily do
 // 1200 dpi, but a page of it is tens of megabytes and no better to read, and
-// the documents.file field stops at 20 MB either way.
+// the documents.file field stops at 50 MB either way.
 package escl
 
 import (

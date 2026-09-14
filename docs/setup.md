@@ -25,14 +25,14 @@ All variables live in `.env` at the project root (see `.env.example`). The
 | `WORKER_CRON_EXPR` | `* * * * *` | Cron expression for sweeping stuck pending jobs (registered once at startup) |
 | `LOG_LEVEL` | unset (no stdout slog) | Min level for JSON slog lines on stdout (`debug`, `info`, `warn`/`warning`, `error`). Ignored while PocketBase `--dev` is on (that mode already prints to the console, including SQL). PocketBase Admin → Settings → Logs still controls the logs table. |
 | `IMPORT_ALLOW_PRIVATE` | unset (blocked) | Set to `1`/`true` to let ngx import reach loopback and RFC1918 hosts. Link-local / cloud-metadata addresses stay blocked. Needed when Paperless-ngx is on the same LAN or Docker network. |
-| `UPLOAD_MAX_MB` | `100` | Cap on a staged split-document PDF upload, in megabytes. Read at startup, not from Settings: staging a PDF costs several times its size in memory while pages are rendered, so it protects the host as much as it shapes the product. A malformed or non-positive value falls back to the default rather than failing the boot. Per-file uploads are capped separately by the `documents.file` field (20 MB). |
+| `UPLOAD_MAX_MB` | `100` | Cap on a staged split-document PDF upload, in megabytes. Read at startup, not from Settings: staging a PDF costs several times its size in memory while pages are rendered, so it protects the host as much as it shapes the product. A malformed or non-positive value falls back to the default rather than failing the boot. Per-file uploads are capped separately by the `documents.file` field (50 MB). |
 | `IMPORT_STAGING_MAX_BYTES` | `1073741824` (1 GiB) | Cap on an archive staged for import (Amazon orders, Lemmary backup), in bytes. Staging a new archive discards that account's previous one, so this is also the disk a single account can occupy while deciding whether to confirm — the staging area's ceiling is roughly this times the number of accounts. Lower it on a small volume; raise it for a library whose backup runs past a gigabyte. A malformed value, or one under 1 MiB, falls back to the default rather than rejecting every upload. |
 | `PASSKEY_RP_ID` | derived from the request host | Relying-party ID for [passkey sign-in](/passkeys): a bare domain name, no scheme and no port. Defaults to the hostname the request arrived with, which is right whenever the proxy forwards the public `Host`. Set it when it does not, or to pin a parent domain (`example.com` while serving `app.example.com`). **Every enrolled passkey is bound to this value — changing it makes all of them unusable.** Read at startup, not from Settings. |
 | `PASSKEY_ORIGINS` | derived from the request scheme + host | Comma-separated full origins (scheme, host and port) allowed to complete a passkey ceremony. Defaults to the origin the request arrived on, using `X-Forwarded-Proto` for the scheme when present. Set it when the app is reachable at more than one origin, or when a TLS-terminating proxy does not set that header. |
 | `LIMIT_DOCUMENTS` | unset (unlimited) | Total documents this instance may store. |
 | `LIMIT_DOCUMENT_PAGES` | unset (unlimited) | Total pages across all stored documents. Anything that is not a PDF counts as one page &mdash; including a multi-page `.docx` or `.xlsx`, whose real page count is not knowable without converting the file. |
 | `LIMIT_STORAGE_BYTES` | unset (unlimited) | Total bytes of stored document files. Counts the uploaded originals only, not the generated thumbnails or the extracted OCR text. When sizing a volume, budget for the database separately: extracted text is stored inline in the row and a single document may hold up to 20 Mi characters of it, so a text-heavy library's `data.db` can approach the same order as the files themselves. |
-| `LIMIT_FILE_BYTES` | unset (unlimited) | Largest single document file, in bytes. Can only **lower** the effective cap: the `documents.file` field carries its own 20 MB `MaxSize` that PocketBase validates on every save, and no value here can raise it. Distinct from `UPLOAD_MAX_MB`, which caps the one staged PDF a split is cut from rather than each document it produces. |
+| `LIMIT_FILE_BYTES` | unset (unlimited) | Largest single document file, in bytes. Can only **lower** the effective cap: the `documents.file` field carries its own 50 MB `MaxSize` (Mistral OCR's documented ceiling, 50,000,000 bytes) that PocketBase validates on every save, and no value here can raise it. Files over 20 MB upload but are flagged on the upload page: OCR providers and the worker get slower and less reliable with them. Distinct from `UPLOAD_MAX_MB`, which caps the one staged PDF a split is cut from rather than each document it produces. |
 | `LIMIT_FILE_PAGES` | unset (unlimited) | Most pages in a single document. Can only **lower** the effective cap: a 1000-page ceiling applies to every install regardless (see [the page ceiling](#the-page-ceiling)), and no value here can raise it. |
 | `LIMIT_ADDITIONAL_USERS` | unset (unlimited) | Accounts beyond the admin account. Exactly one account is free, so `0` is a single-account instance. |
 | `VITE_POCKETBASE_URL` | `http://127.0.0.1:8090` | PocketBase API URL (frontend) |
@@ -97,7 +97,7 @@ pages**, on every install. An upload over that is refused with
 
 It exists because of where the text goes. The OCR providers return a document's
 whole text as one string, and that string has to fit the `ocr_text` column,
-which holds 20 Mi characters — the same 20 MB the `documents.file` field accepts,
+which holds 50 M characters — the same 50 MB the `documents.file` field accepts,
 counted in characters instead of bytes. Nothing else bounds an OCR result:
 Mistral is the only provider that documents a page limit (1000 pages, which is
 where this number comes from), and Google Vision reads however many pages the
@@ -109,7 +109,7 @@ for and then discarded.
 Consequences worth knowing:
 
 - `LIMIT_FILE_PAGES` can lower this and cannot raise it, the same way
-  `LIMIT_FILE_BYTES` relates to the 20 MB `documents.file` cap. When both would
+  `LIMIT_FILE_BYTES` relates to the 50 MB `documents.file` cap. When both would
   refuse a file, the message names the plan limit, since that is the one the
   account can do something about.
 - Every install now counts the pages of each PDF upload with `pdfinfo`, where

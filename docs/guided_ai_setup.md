@@ -72,7 +72,7 @@ better choice for the OCR binding:
 - **Faster and cheaper per page.** A dedicated OCR endpoint returns page
   markdown; a chat model reasons its way through the same image.
 - **Better with big files.** Mistral's Document OCR takes a whole PDF — up to
-  50 MB and 1000 pages, well past Lemmary's own 20 MB upload cap — where a chat
+  50 MB and 1000 pages, the same 50 MB Lemmary accepts per upload — where a chat
   model's context is the ceiling, and long scans get truncated or refused.
 - **You need the Mistral key anyway.** Opencode serves no `/embeddings`
   endpoint at all, so meaning-based Deep Search has to run on Mistral. Since

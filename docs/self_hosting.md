@@ -115,7 +115,7 @@ different proxy can get wrong:
   `X-Forwarded-Proto`, which is exactly what `PASSKEY_RP_ID` and
   `PASSKEY_ORIGINS` derive themselves from when unset.
 - **Uploads are not capped by the proxy.** Traefik buffers no request body by
-  default, so a 20 MB document and a gigabyte-scale staged archive both pass
+  default, so a 50 MB document and a gigabyte-scale staged archive both pass
   through — there is no `client_max_body_size` to raise. If you add a
   `buffering` middleware, set its `maxRequestBodyBytes` past
   `IMPORT_STAGING_MAX_BYTES` or archive uploads start failing.

@@ -312,8 +312,8 @@ TXT, CSV, DOCX and XLSX uses native parsers and calls no OCR API at all.
 Uses the [Mistral Document OCR API](https://docs.mistral.ai/en/studio-api/document-processing/basic_ocr)
 when the provider is bound for OCR — not the chat endpoint, which the same
 provider can serve for extraction, chat and search at the same time. Local files
-are sent as base64 data URLs, up to Mistral's documented 50 MB, which the 20 MB
-`documents.file` cap already keeps every upload under.
+are sent as base64 data URLs, up to Mistral's documented 50 MB, which is also
+the `documents.file` cap, so every upload fits.
 
 - **PDFs and office documents** — `document_url` with a base64 data URL
 - **Images** — `image_url` with a base64 data URL

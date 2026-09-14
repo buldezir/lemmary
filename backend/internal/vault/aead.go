@@ -19,7 +19,7 @@ import (
 //	header: "LMVB" | version(1) | chunkSizeLog2(1)
 //	chunk:  nonce(24) | AEAD(plaintext chunk)+tag(16)
 //
-// Chunking keeps memory flat — a 20 MiB upload is never fully resident — and
+// Chunking keeps memory flat — a 50 MB upload is never fully resident — and
 // bounds the blast radius of a corrupt region to one chunk rather than the whole
 // archive.
 //

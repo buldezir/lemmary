@@ -16,21 +16,14 @@ import (
 
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
+	"lemmary/backend/internal/models"
 )
 
 // mistralOCRMaxFileBytes is Mistral's own documented ceiling for an OCR input,
-// restated so an oversized file is refused here instead of at their edge.
-//
-// Decimal megabytes, unlike the binary units elsewhere in this codebase,
-// because the number belongs to someone else: Mistral documents 50 MB, and
-// reading that as 52,428,800 would put a file just over their limit past a
-// check meant to keep it inside.
-//
-// It cannot actually fire today -- documents.file caps an upload at 20 MiB
-// first -- and that is the point of raising it from the 10 MiB it used to be.
-// A document between 10 and 20 MiB was accepted at upload and then failed OCR
-// against a lower, undocumented limit of our own.
-const mistralOCRMaxFileBytes = 50 * 1000 * 1000
+// restated so an oversized file is refused here instead of at their edge. The
+// documents.file cap is set to the same number, so this fires only for a file
+// that slipped past the field (a dashboard edit raising MaxSize, say).
+const mistralOCRMaxFileBytes = models.MaxFileBytes
 
 type MistralProvider struct {
 	apiKey  string
@@ -64,7 +57,7 @@ func (p *MistralProvider) ExtractText(ctx context.Context, filePath string, mime
 	if err != nil {
 		return "", fmt.Errorf("read file for OCR: %w", err)
 	}
-	if len(data) > mistralOCRMaxFileBytes {
+	if int64(len(data)) > mistralOCRMaxFileBytes {
 		return "", fmt.Errorf("mistral OCR supports files up to %d bytes (got %d)", mistralOCRMaxFileBytes, len(data))
 	}
 

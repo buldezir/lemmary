@@ -1,8 +1,10 @@
 package pdfsplit
 
+import "lemmary/backend/internal/models"
+
 // DefaultMaxPartBytes is the per-part cap with no instance limit configured. It
 // mirrors the documents.file field limit, which is what actually stores a part.
-const DefaultMaxPartBytes int64 = 20 << 20
+const DefaultMaxPartBytes = models.MaxFileBytes
 
 // SetMaxPartBytes sets the per-part cap to the effective per-document limit.
 //
