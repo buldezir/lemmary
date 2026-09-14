@@ -29,8 +29,6 @@ export function DocumentFilters({
   /** Omit to hide the status dropdown. */
   status?: string
 }) {
-  // Typed, but not yet enough to search for: the list is still unfiltered, and
-  // saying so beats leaving the reader to wonder why nothing narrowed.
   const tooShort = search.trim().length > 0 && search.trim().length < MIN_SEARCH_LENGTH
 
   return (

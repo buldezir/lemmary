@@ -138,11 +138,8 @@ export function useDocumentList({
     [navigate, route, fixedStatus],
   )
 
-  // Box -> URL, once the typing settles. What gets published is the searchable
-  // term, so the first two characters of a word never reach the server and the
-  // URL never carries a term the list is not actually filtered by. Skipped
-  // while the two already agree, so the sync above cannot bounce back as a
-  // navigation.
+  // Box -> URL, once the typing settles. Skipped while the two already agree,
+  // so the sync above cannot bounce back as a navigation.
   const term = searchableTerm(search)
   useEffect(() => {
     if (term === debouncedSearch) return

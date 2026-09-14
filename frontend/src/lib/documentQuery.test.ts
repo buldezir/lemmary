@@ -166,8 +166,6 @@ describe('searchableTerm', () => {
     expect(searchableTerm('  b ')).toBe('')
   })
 
-  // Whitespace does not count towards the floor: two letters and a space is
-  // still two letters.
   test('measures the trimmed term', () => {
     expect(searchableTerm('a  ')).toBe('')
   })
