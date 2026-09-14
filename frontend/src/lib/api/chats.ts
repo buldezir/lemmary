@@ -1,4 +1,4 @@
-import { apiFetch, ConnectionLostError, sleep } from '../apiClient'
+import { apiFetch, ConnectionLostError, HttpError, sleep } from '../apiClient'
 import { foldSteps, type ResearchStep, type StoredResearchStep } from '../researchSteps'
 import type { ProviderBinding } from './providers'
 
@@ -146,14 +146,21 @@ export function storedAnswerForRun(
   )
 }
 
+/** Worth another try: the wire, or a server that is failing rather than refusing. */
+export function isRetryableFailure(err: unknown): boolean {
+  return err instanceof ConnectionLostError || (err instanceof HttpError && err.status >= 500)
+}
+
 type PollAttempt<T> = { done: false } | { done: true; value: T | null }
 
 /**
  * Asks repeatedly until `attempt` produces something, or the deadline passes.
  *
- * Transport failures are retried because whatever broke the original
- * connection is usually still broken. HTTP errors are terminal: a deleted
- * empty session, for example, means the failed run has no answer coming.
+ * Transport failures and 5xx are retried: whatever broke the original
+ * connection is usually still broken, and one bad gateway answer in a
+ * twenty-minute wait must not hand the question back while the run goes on.
+ * 4xx is terminal: a deleted empty session means the failed run has no answer
+ * coming.
  */
 async function pollUntil<T>(
   attempt: () => Promise<PollAttempt<T>>,
@@ -174,12 +181,9 @@ async function pollUntil<T>(
       if (options.signal?.aborted) {
         return null
       }
-      if (!(err instanceof ConnectionLostError)) {
+      if (!isRetryableFailure(err)) {
         throw err
       }
-      // A transport failure is usually the same interruption that brought us
-      // here. HTTP failures such as a deleted session are terminal and must not
-      // hold the composer for the whole run budget.
     }
     if (Date.now() >= deadline) {
       return null

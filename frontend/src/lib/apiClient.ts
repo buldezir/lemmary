@@ -73,6 +73,19 @@ export class ConnectionLostError extends Error {
  * answered, so putting it back in the composer invites the user to pay for the
  * same run twice.
  */
+/**
+ * A response the server answered with a failure status. Carries the status so
+ * a poll can tell a 5xx worth retrying from a 4xx that ends the wait.
+ */
+export class HttpError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = 'HttpError'
+    this.status = status
+  }
+}
+
 export class RunInFlightError extends Error {
   constructor(cause: unknown) {
     super(streamConnectionLostMessage, { cause })
@@ -140,7 +153,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions): Promi
 
   const data = await readJson(response)
   if (!response.ok) {
-    throw new Error(errorDetail(data, fallbackError))
+    throw new HttpError(response.status, errorDetail(data, fallbackError))
   }
   return data as T
 }
@@ -207,7 +220,7 @@ export async function apiStream<TEvent>(path: string, options: ApiStreamOptions<
   }
 
   if (!response.ok) {
-    throw new Error(errorDetail(await readJson(response), options.fallbackError))
+    throw new HttpError(response.status, errorDetail(await readJson(response), options.fallbackError))
   }
   if (!response.body) {
     throw new Error(options.fallbackError)

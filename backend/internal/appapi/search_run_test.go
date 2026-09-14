@@ -132,3 +132,34 @@ func TestSessionRunningCountsConcurrentRuns(t *testing.T) {
 		t.Fatal("both runs ended and the session still reads as busy")
 	}
 }
+
+// A page reloaded mid-run never saw the run id, so the conversation is all it
+// has to cancel with. Runs registered without an id, like a document chat's,
+// are reachable this way too.
+func TestCancelSessionRunsStopsEveryRunOnTheConversation(t *testing.T) {
+	first, stopFirst := startDetachedRun(context.Background(), "owner", "", "session-12")
+	defer stopFirst()
+	second, stopSecond := startDetachedRun(context.Background(), "owner", "run-12", "session-12")
+	defer stopSecond()
+	other, stopOther := startDetachedRun(context.Background(), "owner", "run-13", "session-13")
+	defer stopOther()
+
+	if !cancelSessionRuns("session-12") {
+		t.Fatal("cancel did not find the session's runs")
+	}
+	for _, ctx := range []context.Context{first, second} {
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Second):
+			t.Fatal("a run on the cancelled session kept going")
+		}
+	}
+	select {
+	case <-other.Done():
+		t.Fatal("a run on another session was cancelled")
+	case <-time.After(50 * time.Millisecond):
+	}
+	if cancelSessionRuns("session-14") || cancelSessionRuns("") {
+		t.Fatal("an unknown session matched a run")
+	}
+}

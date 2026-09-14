@@ -168,11 +168,13 @@ export async function searchStream(
  * has nothing to stop, and a failure here must not surface over a turn the user
  * has abandoned anyway.
  */
-export async function cancelSearchRun(runId: string): Promise<void> {
+export async function cancelSearchRun(
+  target: { runId: string } | { sessionId: string },
+): Promise<void> {
   try {
     await apiFetch('/api/app/search/cancel', {
       method: 'POST',
-      body: { run_id: runId },
+      body: 'runId' in target ? { run_id: target.runId } : { session_id: target.sessionId },
       fallbackError: 'Failed to cancel the run',
     })
   } catch {

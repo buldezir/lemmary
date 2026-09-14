@@ -9,10 +9,11 @@ import { BindingOverride } from '../components/BindingOverride'
 import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
 import { chatWithDocument } from '../lib/api/ai'
-import { ConnectionLostError, RunInFlightError } from '../lib/apiClient'
+import { RunInFlightError } from '../lib/apiClient'
 import {
   deleteChatSession,
   getChatSession,
+  isRetryableFailure,
   listChatSessions,
   mergeChatSession,
   renameChatSession,
@@ -25,12 +26,6 @@ import type { DocumentRecord } from '../lib/api/documents'
 import { useAsync } from '../hooks/useAsync'
 import { useChatSession, type ChatSendResult } from '../hooks/useChatSession'
 import { runId } from '../lib/runId'
-
-/**
- * How long a lost Ask AI send waits for its answer. One completion, so the
- * provider timeout bounds it -- nothing like a research run's budget.
- */
-const askWaitMs = 3 * 60 * 1000
 
 export function DocumentAskPage() {
   const { documentId } = useParams({ from: '/document/$documentId/ask' })
@@ -100,18 +95,12 @@ export function DocumentAskPage() {
           binding,
         })
       } catch (err) {
-        if (!(err instanceof ConnectionLostError)) {
-          throw err
-        }
-        // A shorter budget than a search run's: this is one completion, bounded
-        // by the provider timeout, and a wait long enough for topic-scale
-        // research would leave the composer disabled for twenty minutes when
-        // the request never left the browser at all. The wait ends as soon as
-        // the server says nothing is running on this chat, so this ceiling is
-        // only reached while still offline.
-        const stored = id
-          ? await waitForStoredTurn(id, requestId, { timeoutMs: askWaitMs })
-          : null
+        // Any failure, not only a dropped socket: a reverse proxy that gives up
+        // on the completion answers 502/504 while the server keeps working, and
+        // the page cannot tell that from a genuine refusal. The transcript
+        // can. One read says whether a run is still writing into this chat;
+        // if not, the wait returns at once and the original error stands.
+        const stored = id ? await waitForStoredTurn(id, requestId) : null
         if (stored) {
           return { session: stored.session, message: stored.message, saved: true }
         }
@@ -120,7 +109,10 @@ export function DocumentAskPage() {
         // away instead of invisible until a reload. Reported as a run in
         // flight, not as a failed send: the completion may well be running, and
         // handing the question back would invite paying for it twice.
-        if (!id) {
+        // ponytail: a first prompt cannot be recovered on the page until the
+        // session id is on the wire before the completion, as search does with
+        // its `session` frame; convert this endpoint to SSE when that matters.
+        if (!id && isRetryableFailure(err)) {
           void sessions.reload()
           throw new RunInFlightError(err)
         }

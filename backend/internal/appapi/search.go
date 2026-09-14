@@ -541,6 +541,9 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 
 type searchCancelRequest struct {
 	RunID string `json:"run_id"`
+	// SessionID stops every run on a conversation instead. For a page that
+	// reloaded mid-run and so never held the run id. Ignored when RunID is set.
+	SessionID string `json:"session_id"`
 }
 
 // handleSearchCancel stops a run the caller started. It exists because runs no
@@ -563,8 +566,19 @@ func handleSearchCancel(app core.App) func(*core.RequestEvent) error {
 		}
 		// Scoped to the owner inside cancelSearchRun, so a guessed id from
 		// another account finds nothing.
-		stopped := cancelSearchRun(ownerID, strings.TrimSpace(req.RunID))
-		return writeJSON(e, http.StatusOK, map[string]bool{"stopped": stopped})
+		if runID := strings.TrimSpace(req.RunID); runID != "" {
+			return writeJSON(e, http.StatusOK, map[string]bool{"stopped": cancelSearchRun(ownerID, runID)})
+		}
+		// The registry has no owners, so the ownership check happens here, on
+		// the session record, before anything is stopped.
+		sessionID := strings.TrimSpace(req.SessionID)
+		if _, err := chat.FindOwnedSession(app, ownerID, sessionID); err != nil {
+			if errors.Is(err, chat.ErrNotFound) {
+				return writeJSON(e, http.StatusOK, map[string]bool{"stopped": false})
+			}
+			return writeError(e, http.StatusInternalServerError, "Failed to cancel the run.")
+		}
+		return writeJSON(e, http.StatusOK, map[string]bool{"stopped": cancelSessionRuns(sessionID)})
 	}
 }
 

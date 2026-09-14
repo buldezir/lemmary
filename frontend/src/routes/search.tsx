@@ -125,7 +125,7 @@ export function SearchPage() {
     // Said out loud, because hanging up does not stop it any more. Without
     // this the abandoned run would go on to finish and store a turn for a
     // conversation the user has already left.
-    void cancelSearchRun(run.id)
+    void cancelSearchRun({ runId: run.id })
     runRef.current = null
     void sessions.reload()
   }, [sessions])
@@ -513,7 +513,15 @@ export function SearchPage() {
               // A run can take a while, so there has to be a way out of one
               // that is taking too long. Research most of all, but a search
               // waiting on a slow provider is no different to sit through.
-              onCancel={chat.resuming ? undefined : endRun}
+              //
+              // A run this page is only watching -- it was started before a
+              // reload -- has no run id here, so it is stopped by conversation.
+              // The wait then sees the run end and settles on its own.
+              onCancel={
+                chat.resuming && sessionId
+                  ? () => void cancelSearchRun({ sessionId })
+                  : endRun
+              }
               autoFocus
             />
           </ChatPanel>

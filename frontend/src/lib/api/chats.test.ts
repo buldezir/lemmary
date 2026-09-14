@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ConnectionLostError } from '../apiClient'
+import { ConnectionLostError, HttpError } from '../apiClient'
 import {
   chatSessionDateLabel,
   chatSessionTitle,
@@ -224,6 +224,23 @@ describe('waitForStoredTurn', () => {
     expect(result?.message.content).toBe('€480.')
   })
 
+  // A proxy answering for a server that is briefly unreachable is the same
+  // interruption as a dropped socket, and the run behind it is still going.
+  it('keeps asking through a 5xx', async () => {
+    let calls = 0
+    const result = await waitForStoredTurn('s1', runID, {
+      intervalMs: 0,
+      load: async () => {
+        calls += 1
+        if (calls === 1) {
+          throw new HttpError(502, 'Bad gateway')
+        }
+        return { session: session(), messages: newer }
+      },
+    })
+    expect(result?.message.content).toBe('€480.')
+  })
+
   // A newly-created chat is discarded when its provider fails. Its 404 means
   // the run is over, not that the original network interruption persists.
   it('does not retry a terminal HTTP failure until the run budget', async () => {
@@ -232,7 +249,7 @@ describe('waitForStoredTurn', () => {
       intervalMs: 0,
       load: async () => {
         calls += 1
-        throw new Error('Chat not found.')
+        throw new HttpError(404, 'Chat not found.')
       },
     })
     await expect(waiting).rejects.toThrow('Chat not found.')
