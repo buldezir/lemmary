@@ -42,13 +42,6 @@ const (
 	StatusFailed = "failed"
 )
 
-// Chunk kinds. The header chunk is ordinal 0 and carries rendered metadata
-// rather than a slice of the OCR text, which is why it stores its own text.
-const (
-	KindHeader = "header"
-	KindBody   = "body"
-)
-
 // State is one document's embedding bookkeeping: what was embedded, with what,
 // and whether it is still current.
 type State struct {
@@ -58,7 +51,6 @@ type State struct {
 	Dims           int
 	ChunkerVersion int
 	TextHash       string
-	HeaderHash     string
 	ChunkCount     int
 	Truncated      bool
 	Status         string
@@ -69,18 +61,16 @@ type State struct {
 	EmbeddedAt     string
 }
 
-// Chunk is one embedded passage. Body chunks store byte offsets into
-// documents.ocr_text rather than a copy of the text: the column is the single
-// source of truth, and duplicating it would double the archive's size for no
-// retrieval benefit.
+// Chunk is one embedded passage: a slice of documents.ocr_text, stored as byte
+// offsets rather than as a copy of the text. The column is the single source of
+// truth, and duplicating it would double the archive's size for no retrieval
+// benefit.
 type Chunk struct {
 	DocumentID string
 	Ordinal    int
 	UserID     string
-	Kind       string
 	StartByte  int
 	EndByte    int
-	Text       string
 	Model      string
 	Dims       int
 	Vector     []float32
@@ -110,7 +100,6 @@ func EnsureSchema(db dbx.Builder) error {
 			dims            INTEGER NOT NULL DEFAULT 0,
 			chunker_version INTEGER NOT NULL DEFAULT 0,
 			text_hash       TEXT NOT NULL DEFAULT '',
-			header_hash     TEXT NOT NULL DEFAULT '',
 			chunk_count     INTEGER NOT NULL DEFAULT 0,
 			truncated       INTEGER NOT NULL DEFAULT 0,
 			status          TEXT NOT NULL DEFAULT 'ok',
@@ -126,10 +115,8 @@ func EnsureSchema(db dbx.Builder) error {
 			document_id TEXT NOT NULL,
 			ordinal     INTEGER NOT NULL,
 			user        TEXT NOT NULL DEFAULT '',
-			kind        TEXT NOT NULL DEFAULT 'body',
 			start_byte  INTEGER NOT NULL DEFAULT 0,
 			end_byte    INTEGER NOT NULL DEFAULT 0,
-			text        TEXT NOT NULL DEFAULT '',
 			model       TEXT NOT NULL DEFAULT '',
 			dims        INTEGER NOT NULL DEFAULT 0,
 			vector      BLOB NOT NULL,

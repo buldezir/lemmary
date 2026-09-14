@@ -6,9 +6,9 @@ const (
 	StepDetectDuplicates = "detect_duplicates"
 	StepExtractMetadata  = "extract_metadata"
 	StepApplyMetadata    = "apply_metadata"
-	// StepEmbed builds the retrieval vectors. It runs last because the header
-	// chunk embeds the document's metadata, which apply_metadata has only just
-	// written.
+	// StepEmbed builds the retrieval vectors from the document's OCR text. It
+	// runs after ocr for the obvious reason, and last so that a document whose
+	// extraction failed is still embedded.
 	StepEmbed = "embed"
 )
 

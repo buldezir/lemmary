@@ -37,9 +37,10 @@ encryption.
 
 ## Embeddings
 
-When an embedding model is configured, Lemmary splits each document's metadata
-and OCR text into passages. The float32 vectors and embedding state are stored
-in raw SQLite tables inside `data.db`; they do not go into S3.
+When an embedding model is configured, Lemmary splits each document's OCR text
+into passages. The float32 vectors and embedding state are stored in raw SQLite
+tables inside `data.db`; they do not go into S3. A passage is stored as a pair
+of byte offsets into the OCR text rather than as a second copy of it.
 
 Deep Search queries a derived Bleve vector index at `pb_data/bleve/chunks`.
 That index can be deleted and rebuilt from the vectors in SQLite without
