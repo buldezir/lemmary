@@ -354,8 +354,27 @@ func toResponsesRequest(in chatRequest) responsesRequest {
 
 	if in.ResponseFormat != nil && strings.TrimSpace(in.ResponseFormat.Type) != "" {
 		out.Text = &responsesText{Format: responseFormat{Type: in.ResponseFormat.Type}}
+		// The backend insists an input item mention "json" for JSON mode and
+		// does not scan instructions, which is where system messages went.
+		if in.ResponseFormat.Type == "json_object" && !inputMentionsJSON(out.Input) {
+			out.Input = append(out.Input, responsesItem{
+				Type: "message", Role: "user",
+				Content: []responsesContent{{Type: "input_text", Text: "Respond with a JSON object."}},
+			})
+		}
 	}
 	return out
+}
+
+func inputMentionsJSON(items []responsesItem) bool {
+	for _, item := range items {
+		for _, part := range item.Content {
+			if strings.Contains(strings.ToLower(part.Text), "json") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // chatContentPart is one part of a multi-part chat message. OCR is the caller

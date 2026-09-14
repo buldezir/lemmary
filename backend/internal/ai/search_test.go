@@ -3,7 +3,29 @@ package ai
 import (
 	"strings"
 	"testing"
+	"time"
 )
+
+// The shared AI timeout is sized for one extraction call; a late research
+// round that replays the whole thread outlives it and loses the run. The run
+// budget is the backstop against a stuck provider, so the agent gets a floor.
+func TestSearchTimeoutHasAFloor(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		give time.Duration
+		want time.Duration
+	}{
+		{"an extraction-sized timeout is raised", 2 * time.Minute, minSearchTimeout},
+		{"unset gets the floor", 0, minSearchTimeout},
+		{"a longer timeout is respected", 30 * time.Minute, 30 * time.Minute},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := searchTimeout(tc.give); got != tc.want {
+				t.Fatalf("timeout = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
 
 func TestFormatAvailableTagsPrompt(t *testing.T) {
 	empty := formatAvailableTagsPrompt(nil)
