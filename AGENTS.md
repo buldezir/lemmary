@@ -2,7 +2,13 @@
 
 ## Commits
 
-Write a detailed commit message so later agents can understand what was done from `git log`.
+Write a detailed commit message so later agents can understand what was done from `git log`, limited to about one paragraph.
+
+## Code Comments Guidelines
+* Write comments **only** when workarounds or "hacks" are introduced:
+  * When requested directly by the user.
+  * When unavoidable due to technical constraints.
+* Avoid commenting self-explanatory or clean code.
 
 ## Overlay
 
