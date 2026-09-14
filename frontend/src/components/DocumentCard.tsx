@@ -77,7 +77,7 @@ export function DocumentCard({
   markingReviewed,
   job,
 }: Props) {
-  const tags = document.expand?.tags?.map((tag) => tag.name) ?? []
+  const tags = document.expand?.tags ?? []
   const correspondent = document.expand?.correspondent?.name
   const documentType = document.expand?.document_type?.name
   const title = document.title || 'Untitled document'
@@ -134,9 +134,16 @@ export function DocumentCard({
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {tags.map((tag) => (
-              <span key={tag} className="border border-line px-1.5 py-0.5 text-[11px] text-ink-muted">
-                {tag}
-              </span>
+              // Above the full-bleed link, like the checkbox, so a click
+              // filters the list instead of opening the document.
+              <Link
+                key={tag.id}
+                to="/"
+                search={{ tags: tag.id }}
+                className="relative z-10 pointer-events-auto border border-line px-1.5 py-0.5 text-[11px] text-ink-muted transition-colors hover:border-ink hover:text-ink"
+              >
+                {tag.name}
+              </Link>
             ))}
           </div>
         )}

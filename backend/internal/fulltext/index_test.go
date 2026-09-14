@@ -277,6 +277,32 @@ func TestSearchTagNameAndDateRange(t *testing.T) {
 	}
 }
 
+func TestSearchAllTagIDsRequiresEveryTag(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "both", map[string]any{
+		FieldUser:  "u1",
+		FieldTags:  []string{"tag1", "tag2"},
+		FieldTitle: "Both invoice",
+		FieldAll:   "Both invoice",
+	})
+	mustPut(t, idx, "one", map[string]any{
+		FieldUser:  "u1",
+		FieldTags:  []string{"tag1"},
+		FieldTitle: "One invoice",
+		FieldAll:   "One invoice",
+	})
+
+	all := searchIDs(t, idx, Query{Text: "invoice", UserID: "u1", AllTagIDs: []string{"tag1", "tag2"}})
+	if !containsID(all, "both") || containsID(all, "one") {
+		t.Fatalf("all-tag filter should keep only the document carrying both: %v", all)
+	}
+
+	anyOf := searchIDs(t, idx, Query{Text: "invoice", UserID: "u1", TagIDs: []string{"tag1", "tag2"}})
+	if !containsID(anyOf, "both") || !containsID(anyOf, "one") {
+		t.Fatalf("TagIDs stays any-of for the agent tool: %v", anyOf)
+	}
+}
+
 func TestSearchHighlightSnippet(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "doc1", map[string]any{

@@ -65,6 +65,11 @@ func handleDocumentSearch(app core.App, idx *fulltext.Index) func(*core.RequestE
 		if corrID != "" && corrID != "all" {
 			query.CorrespondentIDs = []string{corrID}
 		}
+		for _, tagID := range strings.Split(e.Request.URL.Query().Get("tags"), ",") {
+			if tagID = strings.TrimSpace(tagID); tagID != "" && tagID != "all" {
+				query.AllTagIDs = append(query.AllTagIDs, tagID)
+			}
+		}
 
 		result, err := idx.Search(query)
 		if err != nil {

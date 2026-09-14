@@ -1,7 +1,9 @@
 import { DOCUMENT_STATUSES, DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
 import type { CorrespondentRecord, DocumentTypeRecord } from '../lib/api/documents'
-import { MIN_SEARCH_LENGTH, type DocumentQuery } from '../lib/documentQuery'
+import { MIN_SEARCH_LENGTH, tagIds, type DocumentQuery } from '../lib/documentQuery'
+import type { TagRecord } from '../lib/api/tags'
 import { FilterCombobox } from './FilterCombobox'
+import { TagFilter } from './TagFilter'
 import { selectClassName } from './ui'
 
 /**
@@ -15,6 +17,7 @@ export function DocumentFilters({
   updateQuery,
   documentTypes,
   correspondents,
+  tags,
   status,
 }: {
   query: DocumentQuery
@@ -23,6 +26,7 @@ export function DocumentFilters({
   updateQuery: (patch: Partial<DocumentQuery>, replace?: boolean) => void
   documentTypes: DocumentTypeRecord[]
   correspondents: CorrespondentRecord[]
+  tags: TagRecord[]
   /** Omit to hide the status dropdown. */
   status?: string
 }) {
@@ -103,6 +107,12 @@ export function DocumentFilters({
           onChange={(next) => updateQuery({ correspondent: next })}
         />
       </div>
+
+      <TagFilter
+        value={tagIds(query.tags)}
+        options={tags}
+        onChange={(next) => updateQuery({ tags: next.join(',') })}
+      />
     </div>
   )
 }

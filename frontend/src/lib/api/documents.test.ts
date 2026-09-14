@@ -39,6 +39,17 @@ describe('buildDocumentFilter', () => {
     )
   })
 
+  // ALL, not any: a document has to carry every tag the reader picked.
+  it('requires every chosen tag', () => {
+    expect(buildDocumentFilter({ ...noFilters, tags: ['tag1', 'tag2'] })).toBe(
+      "tags ~ 'tag1' && tags ~ 'tag2'",
+    )
+  })
+
+  it('builds no tag clause for an empty selection', () => {
+    expect(buildDocumentFilter({ ...noFilters, tags: [] })).toBeUndefined()
+  })
+
   it('combines active filters with &&', () => {
     expect(
       buildDocumentFilter({

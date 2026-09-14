@@ -14,12 +14,14 @@ import {
   type DocumentTypeRecord,
   type JobOverrides,
 } from '../lib/api/documents'
+import { listTags } from '../lib/api/tags'
 import { getLatestJobsFor } from '../lib/api/jobs'
 import {
   defaultDocumentQuery,
   documentQuerySearch,
   parseDocumentQuery,
   searchableTerm,
+  tagIds,
   type DocumentQuery,
 } from '../lib/documentQuery'
 import { onDocumentsChanged } from '../lib/documentEvents'
@@ -68,6 +70,7 @@ export function useDocumentList({
     undated,
     type: documentTypeFilter,
     correspondent: correspondentFilter,
+    tags: tagFilter,
     page,
   } = query
   const statusFilter = fixedStatus ?? query.status
@@ -151,6 +154,7 @@ export function useDocumentList({
           undated,
           documentType: documentTypeFilter,
           correspondent: correspondentFilter,
+          tags: tagIds(tagFilter),
         })
         const result = text
           ? await searchDocuments({
@@ -163,6 +167,7 @@ export function useDocumentList({
               dateFrom,
               dateTo,
               undated,
+              tags: tagIds(tagFilter),
             })
           : await pb.collection('documents').getList<DocumentRecord>(page, DOCUMENT_PAGE_SIZE, {
               sort: '-created',
@@ -242,6 +247,7 @@ export function useDocumentList({
     undated,
     documentTypeFilter,
     correspondentFilter,
+    tagFilter,
     debouncedSearch,
     updateQuery,
   ])
@@ -437,21 +443,23 @@ export function useDocumentList({
 
 /**
  * Its own hook rather than part of useDocumentList: a list without filter
- * controls has no use for two requests' worth of options.
+ * controls has no use for three requests' worth of options.
  */
 export function useDocumentFilterOptions() {
   const { data, error } = useAsync(async () => {
     await ensureAuth()
-    const [types, correspondents] = await Promise.all([
+    const [types, correspondents, tags] = await Promise.all([
       pb.collection('document_types').getFullList<DocumentTypeRecord>({ sort: 'name' }),
       pb.collection('correspondents').getFullList<CorrespondentRecord>({ sort: 'name' }),
+      listTags(),
     ])
-    return { types, correspondents }
+    return { types, correspondents, tags }
   }, [])
 
   return {
     documentTypes: data?.types ?? [],
     correspondents: data?.correspondents ?? [],
+    tags: data?.tags ?? [],
     error,
   }
 }

@@ -80,6 +80,7 @@ export function IndexPage() {
             updateQuery={updateQuery}
             documentTypes={filterOptions.documentTypes}
             correspondents={filterOptions.correspondents}
+            tags={filterOptions.tags}
             status={statusFilter}
           />
 

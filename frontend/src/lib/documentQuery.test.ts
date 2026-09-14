@@ -6,6 +6,7 @@ import {
   inboxQuerySearch,
   parseDocumentQuery,
   searchableTerm,
+  tagIds,
 } from './documentQuery'
 
 describe('parseDocumentQuery', () => {
@@ -22,6 +23,7 @@ describe('parseDocumentQuery', () => {
         to: '2025-03-31',
         type: 'abc123',
         correspondent: 'def456',
+        tags: 'tag1,tag2',
         undated: 'true',
         page: '3',
       }),
@@ -32,9 +34,19 @@ describe('parseDocumentQuery', () => {
       to: '2025-03-31',
       type: 'abc123',
       correspondent: 'def456',
+      tags: 'tag1,tag2',
       undated: true,
       page: 3,
     })
+  })
+
+  test('keeps only the usable tag ids, once each', () => {
+    expect(parseDocumentQuery({ tags: 'tag1,,tag 2,tag1,tag3' }).tags).toBe('tag1,tag3')
+  })
+
+  test('an all-junk tags value shows the unfiltered list', () => {
+    expect(parseDocumentQuery({ tags: ' ,;,--' }).tags).toBe('')
+    expect(parseDocumentQuery({ tags: 42 }).tags).toBe('')
   })
 
   test('an unknown status is dropped rather than sent to the server', () => {
@@ -84,6 +96,7 @@ describe('documentQuerySearch', () => {
       to: '2024-06-30',
       type: 'typ1',
       correspondent: 'cor1',
+      tags: 'tag1,tag2',
       undated: false,
       page: 4,
     }
@@ -148,6 +161,17 @@ describe('hasActiveFilters', () => {
 
   test('so is a date bound on its own', () => {
     expect(hasActiveFilters({ ...defaultDocumentQuery, from: '2025-01-01' })).toBe(true)
+  })
+})
+
+describe('tagIds', () => {
+  test('splits a comma-joined value', () => {
+    expect(tagIds('tag1,tag2')).toEqual(['tag1', 'tag2'])
+  })
+
+  test('is empty for anything unusable, so no clause is built', () => {
+    expect(tagIds('')).toEqual([])
+    expect(tagIds(undefined)).toEqual([])
   })
 })
 

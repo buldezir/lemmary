@@ -41,9 +41,11 @@ type Query struct {
 	ProcessingStatus string
 	DocumentTypeIDs  []string
 	CorrespondentIDs []string
-	TagIDs           []string
-	DateFrom         string
-	DateTo           string
+	// TagIDs keeps documents carrying any of them; AllTagIDs, every one.
+	TagIDs    []string
+	AllTagIDs []string
+	DateFrom  string
+	DateTo    string
 	// Undated keeps only documents with no document_date. Asking for both this
 	// and a date range is asking for nothing, which the conjunction answers.
 	Undated bool
@@ -458,6 +460,7 @@ func filterConjuncts(q Query) []query.Query {
 	if idQuery := anyTermQuery(FieldTags, q.TagIDs); idQuery != nil {
 		conjuncts = append(conjuncts, idQuery)
 	}
+	conjuncts = append(conjuncts, termQueries(FieldTags, q.AllTagIDs)...)
 	if dateQuery := dateRangeQuery(q.DateFrom, q.DateTo); dateQuery != nil {
 		conjuncts = append(conjuncts, dateQuery)
 	}
@@ -711,7 +714,7 @@ func termQuery(field, value string) *query.TermQuery {
 	return tq
 }
 
-func anyTermQuery(field string, values []string) query.Query {
+func termQueries(field string, values []string) []query.Query {
 	seen := map[string]struct{}{}
 	queries := make([]query.Query, 0, len(values))
 	for _, v := range values {
@@ -725,6 +728,11 @@ func anyTermQuery(field string, values []string) query.Query {
 		seen[v] = struct{}{}
 		queries = append(queries, termQuery(field, v))
 	}
+	return queries
+}
+
+func anyTermQuery(field string, values []string) query.Query {
+	queries := termQueries(field, values)
 	switch len(queries) {
 	case 0:
 		return nil
