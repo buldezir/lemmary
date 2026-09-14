@@ -30,10 +30,9 @@ export function reindexSearch() {
 }
 
 /**
- * The embedding backfill's state. `started` says whether this call is what
- * started the sweep; `running` says whether one is in flight either way, so a
- * click that lands on an already-running sweep reads as "still going" rather
- * than as a failure.
+ * `started` says whether this call started the sweep; `running` says whether one
+ * is in flight either way, so a click landing on a running sweep reads as
+ * "still going" rather than as a failure.
  */
 export type EmbeddingBackfillState = {
   started: boolean
@@ -42,8 +41,7 @@ export type EmbeddingBackfillState = {
 }
 
 /**
- * Starts a sweep over every document that still needs embedding. It returns as
- * soon as the sweep is queued — progress comes from polling
+ * Returns as soon as the sweep is queued; progress comes from polling
  * getEmbeddingBackfillState.
  */
 export function startEmbeddingBackfill() {
@@ -87,17 +85,10 @@ function countJobs(filter: string) {
 }
 
 /**
- * How much work is outstanding, split into queued and in flight.
- *
- * Both halves are bounded by finished_at = '' rather than by status alone, for
- * the reason createProcessingJob gives: apply_metadata writes "completed" onto
- * the job before embed has run, so for the whole of that window a job that is
- * very much still working reads status=completed. Counting by status left the
- * header badge saying zero while the Activity page listed the work, and let a
- * stale-data sweep start on top of a running pipeline.
- *
- * Counted through the processing_jobs collection, so it only covers jobs on the
- * caller's own documents (that collection's list rule is document.user = auth.id).
+ * Both halves are bounded by finished_at = '' rather than by status:
+ * apply_metadata writes "completed" onto the job before embed has run, so
+ * counting by status left the header badge at zero while the Activity page
+ * listed the work. Scoped to the caller's own documents by the list rule.
  */
 export async function getActiveJobCounts(): Promise<ActiveJobCounts> {
   await ensureAuth()
@@ -119,17 +110,12 @@ export type StopQueueResult = {
 }
 
 /**
- * Cancels every queued job, for an import that turned out to be a mistake.
+ * The worker has no cancellation channel, so the document being worked on
+ * finishes and this empties the queue behind it. Stopped documents land on
+ * "cancelled", where Reprocess can pick them up.
  *
- * The document already being worked on finishes -- the worker has no
- * cancellation channel -- so this empties the queue behind it rather than
- * interrupting it. Stopped documents land on "cancelled", where Reprocess can
- * pick them up again.
- *
- * It also only empties the queue as it stands. An archive still unpacking keeps
- * creating documents, and each one enqueues a job of its own, so stopping
- * mid-import needs a second click once the unpack has finished. The page says so
- * rather than the importer growing a cancel path.
+ * Only the queue as it stands: an archive still unpacking keeps enqueueing, so
+ * stopping mid-import needs a second click once the unpack has finished.
  */
 export function stopQueue() {
   return apiFetch<StopQueueResult>('/api/app/jobs/stop', {
@@ -147,14 +133,10 @@ export type DiscardResult = {
 }
 
 /**
- * Deletes queued and deliberately cancelled documents, files and all, as long as
- * they have never been through the pipeline.
- *
- * Status is not enough to decide that in either direction. Failed is untouched
- * because a failed reprocess may belong to a document that processed fine
- * before; queued is not automatically deleted either, because reprocess puts
- * library documents back on "pending" to run them again. Those come back as
- * `kept`.
+ * Deletes queued and cancelled documents that have never been through the
+ * pipeline. Status alone cannot decide that either way: a failed reprocess may
+ * belong to a document that processed fine before, and reprocess puts library
+ * documents back on "pending". Those come back as `kept`.
  */
 export function discardUnprocessedDocuments() {
   return apiFetch<DiscardResult>('/api/app/documents/discard-unprocessed', {

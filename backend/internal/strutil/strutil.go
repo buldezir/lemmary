@@ -6,11 +6,9 @@ import (
 	"unicode/utf8"
 )
 
-// Ellipsis marks a value that was shortened.
 const Ellipsis = "…"
 
-// FirstNonEmpty returns the first value that is non-empty once trimmed.
-// The returned value is trimmed; "" when every value is blank.
+// FirstNonEmpty returns the first value that is non-empty once trimmed, trimmed.
 func FirstNonEmpty(values ...string) string {
 	for _, v := range values {
 		if trimmed := strings.TrimSpace(v); trimmed != "" {
@@ -20,9 +18,8 @@ func FirstNonEmpty(values ...string) string {
 	return ""
 }
 
-// Truncate shortens s to at most maxBytes bytes without splitting a UTF-8 rune,
-// so the result is always valid UTF-8. Nothing is appended; use this for byte
-// budgets (API payload caps, column widths) rather than for display.
+// Truncate shortens s to at most maxBytes bytes without splitting a UTF-8 rune.
+// Nothing is appended; for byte budgets rather than for display.
 func Truncate(s string, maxBytes int) string {
 	if maxBytes <= 0 {
 		return ""
@@ -37,8 +34,8 @@ func Truncate(s string, maxBytes int) string {
 	return s[:cut]
 }
 
-// TruncateRunes trims s and shortens it to at most maxRunes runes, appending an
-// ellipsis when anything was dropped. Use this for human-facing text.
+// TruncateRunes trims s and shortens it to maxRunes runes, appending an ellipsis
+// when anything was dropped. For human-facing text.
 func TruncateRunes(s string, maxRunes int) string {
 	s = strings.TrimSpace(s)
 	if maxRunes <= 0 || s == "" {

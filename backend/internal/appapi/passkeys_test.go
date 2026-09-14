@@ -25,8 +25,8 @@ func testUserRecord(passwordEnabled bool) *core.Record {
 	return record
 }
 
-// testUserRecordWithOAuth builds a record whose collection has OAuth2 enabled and
-// the named providers configured.
+// testUserRecordWithOAuth builds a record whose collection has OAuth2 enabled
+// and the named providers configured.
 func testUserRecordWithOAuth(passwordEnabled bool, providers ...string) *core.Record {
 	record := testUserRecord(passwordEnabled)
 	collection := record.Collection()
@@ -41,8 +41,7 @@ func testUserRecordWithOAuth(passwordEnabled bool, providers ...string) *core.Re
 	return record
 }
 
-// testExternalAuth builds the model directly rather than via core.NewExternalAuth,
-// which needs a live app.
+// Built directly rather than via core.NewExternalAuth, which needs a live app.
 func testExternalAuth(provider string) *core.ExternalAuth {
 	collection := core.NewBaseCollection(core.CollectionNameExternalAuths)
 	collection.Fields.Add(&core.TextField{Name: "provider"})
@@ -53,8 +52,8 @@ func testExternalAuth(provider string) *core.ExternalAuth {
 
 func TestIsLastSignInMethodFalseWhilePasswordAuthIsOn(t *testing.T) {
 	t.Parallel()
-	// The default install. Deleting every passkey has to stay allowed here, or
-	// the guard would block the ordinary "I replaced my phone" cleanup.
+	// The default install: deleting every passkey stays allowed, or the guard
+	// blocks the ordinary "I replaced my phone" cleanup.
 	last, err := isLastSignInMethod(stubExternalAuths{}, testUserRecord(true))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -66,8 +65,8 @@ func TestIsLastSignInMethodFalseWhilePasswordAuthIsOn(t *testing.T) {
 
 func TestIsLastSignInMethodTrueWhenOnlyPasskeysRemain(t *testing.T) {
 	t.Parallel()
-	// Identity/password turned off and no OAuth2 identity linked: this is the
-	// configuration where removing the final passkey locks the account out.
+	// Password off and no OAuth2 identity linked: the configuration where
+	// removing the final passkey locks the account out.
 	last, err := isLastSignInMethod(stubExternalAuths{}, testUserRecord(false))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -92,9 +91,8 @@ func TestIsLastSignInMethodFalseWhenAConfiguredOAuthProviderIsLinked(t *testing.
 func TestIsLastSignInMethodIgnoresStaleExternalAuthRows(t *testing.T) {
 	t.Parallel()
 	// An _externalAuths row outlives both turning OAuth2 off and removing that
-	// provider from the collection, and PocketBase refuses the sign-in in either
-	// case. Counting such a row as a working method is how an account ends up with
-	// its last passkey deleted and nothing left that can sign in.
+	// provider, and PocketBase refuses the sign-in either way, so counting one as
+	// a working method is how an account loses its last way in.
 	cases := []struct {
 		name   string
 		record *core.Record
@@ -126,9 +124,9 @@ func TestIsLastSignInMethodIgnoresStaleExternalAuthRows(t *testing.T) {
 
 func TestIsLastSignInMethodPropagatesLookupFailure(t *testing.T) {
 	t.Parallel()
-	// A failed lookup must not be read as "no OAuth2 linked", which would let the
-	// guard pass and delete the account's last credential. The record needs OAuth2
-	// enabled, since that is the only path that consults the finder at all.
+	// A failed lookup must not read as "no OAuth2 linked", which would let the
+	// guard pass and delete the last credential. OAuth2 has to be enabled, since
+	// that is the only path consulting the finder.
 	finder := stubExternalAuths{err: errors.New("boom")}
 	if _, err := isLastSignInMethod(finder, testUserRecordWithOAuth(false, "google")); err == nil {
 		t.Fatal("expected the lookup error to propagate")

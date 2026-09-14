@@ -19,7 +19,7 @@ var (
 )
 
 // invalidAdmin is the sentence shown to the user. Do not wrap it: the setup
-// wizard renders Error() verbatim. Is() keeps errors.Is working.
+// wizard renders Error() verbatim.
 type invalidAdmin struct{ msg string }
 
 func (e invalidAdmin) Error() string        { return e.msg }
@@ -45,7 +45,7 @@ func handleGetSetupStatus(app core.App, rt *config.Runtime) func(*core.RequestEv
 			app.Logger().Warn("ensure settings before setup status failed", "error", err)
 		}
 		// No reload here: this endpoint is polled on every page load and the
-		// runtime is already kept current by the settings/provider record hooks.
+		// runtime is kept current by the settings/provider record hooks.
 
 		cfg := rt.Snapshot().Cfg
 		needsAdmin, err := needsAdminSetup(app)
@@ -98,9 +98,9 @@ func handlePostSetupAdmin(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// CreateFirstAdmin mints the first admin (superuser + paired users account).
-// Shared by the wizard and SETUP_ADMIN_* bootstrap. Refuses if an admin exists:
-// the wizard endpoint is unauthenticated and the bootstrap runs on every boot.
+// CreateFirstAdmin mints a superuser and its paired users account. Refuses if
+// an admin exists: the wizard endpoint is unauthenticated and the SETUP_ADMIN_*
+// bootstrap runs on every boot.
 func CreateFirstAdmin(app core.App, email, password string) (superuserID, userID string, err error) {
 	email = strings.TrimSpace(email)
 	if err := validateAdminCredentials(email, password); err != nil {
@@ -126,8 +126,7 @@ func CreateFirstAdmin(app core.App, email, password string) (superuserID, userID
 	record.SetVerified(true)
 
 	// The needs-admin check and the create must be atomic: the wizard endpoint
-	// is unauthenticated, so two racing requests would otherwise both pass the
-	// guard above and both mint a superuser.
+	// is unauthenticated, so two racing requests would both mint a superuser.
 	var userRecord *core.Record
 	err = app.RunInTransaction(func(txApp core.App) error {
 		stillNeeded, err := needsAdminSetup(txApp)

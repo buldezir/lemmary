@@ -9,66 +9,37 @@ const (
 	SDKMistral      = "mistral"
 
 	// SDKOpenCode is OpenCode Go (Zen), a gateway in front of a catalogue of
-	// third-party models. It is its own SDK rather than an `openai` row with a
-	// base URL because it differs from an OpenAI-compatible endpoint in two ways
-	// that no base URL can express.
+	// third-party models. Its own SDK rather than an `openai` row with a base URL,
+	// because it differs in two ways no base URL can express: it requires the
+	// x-opencode-session header, and it serves each model on one of
+	// /chat/completions, /responses or /messages, the last of which speaks
+	// Anthropic's Messages API. Which one is a property of the model and /v1/models
+	// does not say, so internal/opencode carries the table.
 	//
-	// It requires the x-opencode-session header -- requests that arrive without
-	// one are liable to be refused outright -- and it serves each model on one of
-	// three endpoints: /chat/completions, /responses or /messages, the last of
-	// which speaks Anthropic's Messages API rather than OpenAI's. Which one is a
-	// property of the model, and /v1/models does not say, so internal/opencode
-	// carries the table and wraps both SDKs behind it.
-	//
-	// Before this SDK existed both facts were guessed at: the header was sent to
-	// any host under opencode.ai, and the endpoint was discovered by reading the
-	// shape of a failed request -- one rejected request per model per process,
-	// and no way to reach the /messages third of the catalogue at all.
-	//
-	// It chats and reads documents; it does not embed. Its catalogue is chat
-	// models only and the gateway serves no /embeddings, so CanEmbed refuses it
-	// -- point AI_EMBEDDING_SDK at a provider that does, or leave Deep Search
-	// on keyword retrieval.
+	// It chats and reads documents; it does not embed, so CanEmbed refuses it.
 	SDKOpenCode = "opencode"
 
 	// SDKChatGPT reaches OpenAI's Codex backend with a ChatGPT subscription
-	// instead of a metered API key: the operator signs in once and the
-	// conversation is billed against the seat they already pay for.
+	// instead of a metered API key. It is the only SDK whose credential is not a
+	// string an admin can paste: the device-code flow in internal/chatgpt mints an
+	// OAuth token pair, which lives in the row's `oauth` column, hence RequiresOAuth
+	// beside RequiresAPIKey.
 	//
-	// It is the only SDK whose credential is not a string an admin can paste.
-	// The device-code flow in internal/chatgpt mints an OAuth token pair, which
-	// lives in the row's `oauth` column and is refreshed in place -- hence
-	// RequiresOAuth beside RequiresAPIKey.
-	//
-	// It chats and reads documents; it does not embed. The Codex backend
-	// serves no /embeddings, so CanEmbed refuses it and Deep Search's vectors
-	// keep whatever provider they had. Its models do take file and image input,
-	// so OCR runs on the seat like any other LLM OCR provider -- see
-	// internal/ocr.NewLLMProvider and the input_file/input_image parts in
-	// internal/chatgpt.messageContent.
-	//
-	// Off unless AI_CHATGPT_LOGIN=1: the endpoints behind it are OpenAI's own
-	// first-party ones, undocumented and reserved for OpenAI's clients, so
-	// whether to point an account at them is the operator's call to make
-	// deliberately. See docs/chatgpt_login.md.
+	// It chats and reads documents; the Codex backend serves no /embeddings, so
+	// CanEmbed refuses it. Off unless AI_CHATGPT_LOGIN=1: the endpoints behind it
+	// are OpenAI's own first-party ones, undocumented and reserved for OpenAI's
+	// clients. See docs/chatgpt_login.md.
 	SDKChatGPT = "chatgpt"
 
-	// SDKLocalEmbeddings is an OpenAI-compatible embeddings endpoint the operator runs
-	// themselves -- text-embeddings-inference in the compose overlay, though
-	// anything that serves /v1/embeddings will do. It embeds and nothing else:
-	// it is refused as AI_SDK and OCR_SDK, and like SDKDocling it needs no
-	// credential, because a service on the compose network has nobody to
-	// authenticate to.
+	// SDKLocalEmbeddings is an OpenAI-compatible embeddings endpoint the operator
+	// runs themselves. It embeds and nothing else, and like SDKDocling needs no
+	// credential: a service on the compose network has nobody to authenticate to.
 	SDKLocalEmbeddings = "local"
 
-	// SDKDocling is an OCR engine the operator runs themselves, as a sidecar
-	// container beside the app. Like SDKLocalEmbeddings it is reached without
-	// a credential: see RequiresAPIKey.
-	//
-	// One local OCR SDK rather than several, on purpose. Docling's default
-	// engine is RapidOCR, which is PaddleOCR's own PP-OCR models exported to
-	// ONNX, so a separate PaddleOCR SDK would have been a second multi-gigabyte
-	// container to run the recognition this one already does.
+	// SDKDocling is an OCR engine the operator runs themselves, reached without a
+	// credential. One local OCR SDK rather than several: Docling's default engine is
+	// RapidOCR, PaddleOCR's own models exported to ONNX, so a separate PaddleOCR SDK
+	// would be a second multi-gigabyte container doing the same recognition.
 	SDKDocling = "docling"
 
 	CollectionName = "ai_providers"
@@ -95,19 +66,10 @@ func IsLLM(sdk string) bool {
 }
 
 // CanEmbed reports whether an SDK can serve the retrieval embedding binding.
-//
-// It is deliberately not IsLLM, which it used to be by coincidence: every SDK
-// that chatted also embedded, so one predicate covered both.
-// SDKLocalEmbeddings embeds without chatting, which is what forces them apart
-// -- and asking the right question at each binding is what keeps a local
-// provider out of the extraction picker and a Google Vision provider out of the
-// embedding one.
-//
-// SDKOpenCode and SDKChatGPT are the two that chat without embedding: neither
-// catalogue has an embedding model in it, and neither endpoint serves
-// /embeddings. Deep Search's vectors want a second provider on those --
-// AI_EMBEDDING_SDK, or a local sidecar -- and keyword retrieval alone is a
-// working state until there is one.
+// Deliberately not IsLLM: SDKLocalEmbeddings embeds without chatting, and
+// SDKOpenCode and SDKChatGPT chat without embedding. Deep Search's vectors want
+// a second provider on those, and keyword retrieval alone is a working state
+// until there is one.
 func CanEmbed(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
 	case SDKOpenAI, SDKOpenRouter, SDKMistral, SDKLocalEmbeddings:
@@ -117,14 +79,10 @@ func CanEmbed(sdk string) bool {
 	}
 }
 
-// CanOCR reports whether an SDK can read a document. google_vision and docling
-// are engines OCR exists for, and every LLM SDK sends the file to a model --
-// SDKChatGPT included, since its models take the same file and image input the
-// metered ones do. A local embeddings endpoint has no way to do it at all.
-//
-// Without this, ValidSDK would let OCR_SDK=local through -- it is a valid SDK,
-// just not for this job -- and the failure would only appear on the first
-// document uploaded.
+// CanOCR reports whether an SDK can read a document: the OCR engines, and every
+// LLM SDK, which sends the file to a model. A local embeddings endpoint cannot.
+// Without this, ValidSDK would let OCR_SDK=local through and the failure would
+// only appear on the first document uploaded.
 func CanOCR(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
 	case SDKLocalEmbeddings:
@@ -135,29 +93,16 @@ func CanOCR(sdk string) bool {
 }
 
 // RequiresOAuth reports whether an SDK is reached with a token this app minted
-// rather than one an admin typed.
-//
-// Only SDKChatGPT is. It is asked separately from RequiresAPIKey because the
-// two answers differ everywhere it matters: the create handler must not demand
-// an api_key, the Settings form must show a sign-in button instead of a
-// password field, and Configured has to look at a different column.
+// rather than one an admin typed. Asked separately from RequiresAPIKey: the
+// create handler must not demand an api_key, Settings must show a sign-in
+// button, and Configured has to look at a different column.
 func RequiresOAuth(sdk string) bool {
 	return strings.TrimSpace(sdk) == SDKChatGPT
 }
 
-// RequiresAPIKey reports whether an SDK is reached with a credential.
-//
-// Every hosted SDK is. The two sidecar SDKs are addressed by URL alone: they
-// sit on the compose network with no port published, and inventing a key for
-// them would be a field an admin has to fill in with something arbitrary before
-// anything would run.
-//
-// This exists because "has an API key" was the codebase's synonym for "is
-// configured" -- in ProviderSpec.Configured, Provider.Configured, config.HasOCR,
-// config.HasEmbedding, aiprovider.ListModels, the provider create handler and
-// the OCR test listing. Every one of those now asks this or Configured first.
-// It defaults to the strict answer: an unknown or empty SDK still demands a
-// key.
+// RequiresAPIKey reports whether an SDK is reached with a credential. Every
+// hosted SDK is; the two sidecar SDKs are addressed by URL alone. It defaults
+// to the strict answer: an unknown or empty SDK still demands a key.
 func RequiresAPIKey(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
 	case SDKLocalEmbeddings, SDKDocling, SDKChatGPT:
@@ -170,8 +115,7 @@ func RequiresAPIKey(sdk string) bool {
 // IsLocalOCR reports whether the SDK is an OCR engine on the operator's own
 // hardware. Named separately from !RequiresAPIKey because the call sites mean
 // different things: one is about authentication, the other about where the
-// document goes and how long it takes to read. SDKLocalEmbeddings is not one
-// of these -- it cannot read a document at all.
+// document goes and how long it takes to read.
 func IsLocalOCR(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
 	case SDKDocling:
@@ -181,14 +125,11 @@ func IsLocalOCR(sdk string) bool {
 	}
 }
 
-// RequiresBaseURL reports whether an SDK is useless without an address.
-//
-// The hosted SDKs all have a documented endpoint that DefaultBaseURL supplies,
-// so an empty base_url means "use the default" rather than "unconfigured".
-// google_vision takes no base URL at all: it speaks gRPC through the official
-// client, which owns its own address. The sidecars are the opposite -- their
-// address is the only thing distinguishing one install's from another's, and
-// DefaultBaseURL can do no better than guess at the compose service name.
+// RequiresBaseURL reports whether an SDK is useless without an address. The
+// hosted SDKs have a documented endpoint DefaultBaseURL supplies, and
+// google_vision takes none at all: it speaks gRPC through the official client.
+// A sidecar's address is the only thing distinguishing one install from
+// another's.
 func RequiresBaseURL(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
 	case SDKLocalEmbeddings, SDKDocling:
@@ -208,12 +149,8 @@ func RequiresOCRModel(sdk string) bool {
 }
 
 // sdksWhere names every valid SDK a predicate accepts, in ValidSDKs order.
-//
-// Every "want one of ..." message is built through this rather than written
-// out. The four-name list in the OCR conflict message was already wrong when
-// docling shipped -- it named openai, openrouter, mistral and google_vision,
-// and an admin who believed it would not have tried the one SDK that reads a
-// document on their own hardware.
+// Every "want one of ..." message is built through this rather than written out,
+// so it cannot drift from the predicates.
 func sdksWhere(pred func(string) bool) []string {
 	out := make([]string, 0, len(ValidSDKs))
 	for _, sdk := range ValidSDKs {
@@ -231,12 +168,8 @@ func OCRSDKs() []string       { return sdksWhere(CanOCR) }
 
 // EnvLLMSDKs and EnvOCRSDKs name the SDKs AI_SDK and OCR_SDK accept, which is
 // LLMSDKs and OCRSDKs minus the ones whose credential cannot be written down.
-//
-// The environment can carry a key. It cannot carry a sign-in: a chatgpt
-// provider is created and signed in to from Settings, so naming it in either
-// variable would seed a provider row nobody can complete from the file that
-// named it. That is true of OCR_SDK as much as AI_SDK, even though the SDK can
-// now do the job -- the obstacle is the credential, not the capability.
+// The environment can carry a key but not a sign-in, so naming a chatgpt
+// provider there would seed a row nobody can complete.
 func EnvLLMSDKs() []string {
 	return sdksWhere(func(sdk string) bool { return IsLLM(sdk) && !RequiresOAuth(sdk) })
 }
@@ -246,9 +179,8 @@ func EnvOCRSDKs() []string {
 }
 
 // ModellessOCRSDKs names the SDKs that read a document without a model, for the
-// error messages that have to list them. Derived rather than written out, so it
-// cannot drift from RequiresOCRModel the way the old message naming only
-// google_vision did.
+// error messages that list them. Derived so it cannot drift from
+// RequiresOCRModel.
 func ModellessOCRSDKs() []string {
 	out := make([]string, 0, len(ValidSDKs))
 	for _, sdk := range ValidSDKs {
@@ -275,11 +207,10 @@ func DefaultBaseURL(sdk string) string {
 		return "https://chatgpt.com/backend-api/codex"
 	case SDKLocalEmbeddings:
 		// The service name in docker-compose.embeddings.yml, so the default is
-		// already right for the overlay and inert for anyone not running it.
+		// right for the overlay and inert for anyone not running it.
 		return "http://embeddings:80/v1"
 	// The sidecar service name and port from docker-compose.local-ocr.yml, so
-	// that OCR_SDK=docling alone is a complete configuration for anyone running
-	// the overlay unedited. Anyone who moved it sets OCR_BASE_URL.
+	// OCR_SDK=docling alone is a complete configuration for that overlay.
 	case SDKDocling:
 		return "http://docling:5001"
 	default:

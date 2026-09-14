@@ -9,12 +9,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// RegisterSystemCommands registers PocketBase's built-in serve/superuser commands
-// and wraps superuser create/update/upsert/delete so the paired users account
-// stays in sync. Call this instead of app.Start(); then call app.Execute().
-//
-// app.Start() registers these commands itself, so hooks registered before Start
-// never find them.
+// RegisterSystemCommands wraps superuser create/update/upsert/delete so the
+// paired users account stays in sync. Call this instead of app.Start(), then
+// call app.Execute(): Start registers these commands itself, so hooks
+// registered before it never find them.
 func RegisterSystemCommands(app *pocketbase.PocketBase, showStartBanner bool) {
 	app.RootCmd.AddCommand(cmd.NewSuperuserCommand(app))
 	app.RootCmd.AddCommand(cmd.NewServeCommand(app, showStartBanner))

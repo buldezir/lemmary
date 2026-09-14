@@ -22,7 +22,6 @@ type embedRequestBody struct {
 	Model string   `json:"model"`
 }
 
-// embedServer answers /embeddings, recording every request it saw.
 type embedServer struct {
 	mu       sync.Mutex
 	requests []embedRequestBody
@@ -180,7 +179,7 @@ func TestEmbedSplitsBatchesByTotalLength(t *testing.T) {
 }
 
 // The response is documented as unordered; reassembling by position would
-// attach every vector to the wrong chunk without anything erroring.
+// attach every vector to the wrong chunk.
 func TestEmbedReassemblesByIndex(t *testing.T) {
 	t.Parallel()
 	srv := &embedServer{
@@ -221,7 +220,7 @@ func TestEmbedDetectsDimensionsFromTheFirstResponse(t *testing.T) {
 }
 
 // Rows of mixed length are dropped silently by the vector index, so a provider
-// that changes its answer has to stop the run rather than write half of it.
+// that changes its answer has to stop the run.
 func TestEmbedRefusesAChangedDimensionCount(t *testing.T) {
 	t.Parallel()
 	srv := &embedServer{}
@@ -263,8 +262,7 @@ func TestEmbedRetriesRateLimitsAndServerErrors(t *testing.T) {
 		if n := len(srv.seen()); n != 3 {
 			t.Fatalf("status %d: server saw %d requests, want 3", status, n)
 		}
-		// Requests counts batches, not attempts: it is what the caller logs as
-		// the document's cost.
+		// Requests counts batches, not attempts: it is what the caller logs.
 		if result.Requests != 1 {
 			t.Fatalf("status %d: Requests = %d, want 1", status, result.Requests)
 		}
@@ -419,9 +417,8 @@ func TestEmbedderReportsNameAndModel(t *testing.T) {
 	}
 }
 
-// TestEmbedSendsSessionHeaderToOpenCode is the production-client case: dropping
-// SessionMiddleware from NewEmbedder must fail this, not only the hand-built
-// SDK wiring test.
+// The production-client case: dropping SessionMiddleware from NewEmbedder must
+// fail this, not only the hand-built SDK wiring test.
 func TestEmbedSendsSessionHeaderToOpenCode(t *testing.T) {
 	var seen, agent string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -464,10 +461,9 @@ func TestEmbedSendsSessionHeaderToOpenCode(t *testing.T) {
 	}
 }
 
-// A local endpoint on the compose network has nobody to authenticate to. The
-// round trip has to work with no credential at all, and the header must be
-// absent rather than an empty "Bearer " -- a sidecar started with --api-key
-// would read a blank credential as a wrong one.
+// A local endpoint on the compose network has nobody to authenticate to, and
+// the header must be absent rather than an empty "Bearer ": a sidecar started
+// with --api-key would read a blank credential as a wrong one.
 func TestEmbedAgainstAKeylessEndpoint(t *testing.T) {
 	t.Parallel()
 	var authSeen []string

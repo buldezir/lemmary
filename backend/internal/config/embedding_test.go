@@ -7,9 +7,8 @@ import (
 	"lemmary/backend/internal/aiprovider"
 )
 
-// One variable is still the ordinary configuration: AI_EMBEDDING_MODEL alone
-// embeds on the provider AI_SDK already names, and the embedding provider block
-// stays out of the way.
+// AI_EMBEDDING_MODEL alone embeds on the provider AI_SDK already names, with
+// the embedding provider block out of the way.
 func TestAIEnvReadsTheEmbeddingModel(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAIAPIKey, "sk-test")
@@ -28,8 +27,7 @@ func TestAIEnvReadsTheEmbeddingModel(t *testing.T) {
 	}
 }
 
-// Unset is the pre-feature behaviour and must stay a working configuration:
-// no vectors, keyword search only.
+// Unset is the pre-feature behaviour: no vectors, keyword search only.
 func TestAIEnvWithoutAnEmbeddingModelLeavesTheFeatureOff(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAIAPIKey, "sk-test")
@@ -46,8 +44,7 @@ func TestAIEnvWithoutAnEmbeddingModelLeavesTheFeatureOff(t *testing.T) {
 	}
 }
 
-// A managed instance without an embedding model is a perfectly good instance,
-// so the validation must not start demanding one.
+// A managed instance without an embedding model is a perfectly good instance.
 func TestManagedDoesNotRequireAnEmbeddingModel(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvManaged, "1")
@@ -104,10 +101,9 @@ func TestHasEmbedding(t *testing.T) {
 				EmbeddingModel:    "m",
 			}, false,
 		},
-		// The local SDK is the exception to "no key means half a
-		// configuration": a sidecar on the compose network has nobody to
-		// authenticate to, and reading it as absent would leave dense
-		// retrieval silently off on an instance configured for it.
+		// The local SDK is the exception to "no key means half a configuration": a
+		// sidecar has nobody to authenticate to, and reading it as absent would leave
+		// dense retrieval silently off on an instance configured for it.
 		"a keyless local provider with a model": {
 			Config{
 				EmbeddingProvider: &aiprovider.Provider{SDK: aiprovider.SDKLocalEmbeddings, BaseURL: "http://embeddings:80/v1"},
@@ -129,8 +125,6 @@ func TestHasEmbedding(t *testing.T) {
 	}
 }
 
-// Unset, the embedding provider block changes nothing: embeddings ride on the
-// AI_SDK provider exactly as they did before it existed.
 func TestNoEmbeddingSDKLeavesEmbeddingsOnTheLanguageModel(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAIAPIKey, "sk-test")
@@ -149,8 +143,7 @@ func TestNoEmbeddingSDKLeavesEmbeddingsOnTheLanguageModel(t *testing.T) {
 	}
 }
 
-// The case the block exists for: an endpoint on the compose network, with no
-// credential because there is nobody to authenticate to.
+// An endpoint on the compose network, with nobody to authenticate to.
 func TestLocalEmbeddingProviderNeedsNoKey(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAIAPIKey, "sk-test")
@@ -188,10 +181,8 @@ func TestLocalEmbeddingProviderNeedsNoKey(t *testing.T) {
 	}
 }
 
-// Every way to half-write the block, refused with the variable named. Off
-// managed mode these still error: the environment seeds once, so a silent
-// fallback would bind embeddings somewhere nobody asked for and there would be
-// nothing later to correct it.
+// Off managed mode these still error: the environment seeds once, so a silent
+// fallback would bind embeddings somewhere nobody asked for.
 func TestEmbeddingProviderHalfConfigurations(t *testing.T) {
 	cases := map[string]struct {
 		env  map[string]string
@@ -220,9 +211,8 @@ func TestEmbeddingProviderHalfConfigurations(t *testing.T) {
 			},
 			want: EnvAIEmbeddingAPIKey,
 		},
-		// The mirror of the above: `local` is a valid SDK, so ValidSDK alone
-		// would let it serve OCR and the mismatch would not surface until
-		// somebody uploaded a document.
+		// `local` is a valid SDK, so ValidSDK alone would let it serve OCR and the
+		// mismatch would not surface until somebody uploaded a document.
 		"the local SDK asked to do OCR": {
 			env: map[string]string{
 				EnvOCRSDK:    aiprovider.SDKLocalEmbeddings,
@@ -252,9 +242,8 @@ func TestEmbeddingProviderHalfConfigurations(t *testing.T) {
 	}
 }
 
-// Naming the language model's own SDK is a way to say "a different embedding
-// model on the same endpoint", so the key and address are reused rather than
-// written out twice -- the same courtesy OCR_SDK has always had.
+// Naming the language model's own SDK says "a different embedding model on the
+// same endpoint", so the key and address are reused rather than written twice.
 func TestEmbeddingSDKMatchingTheLanguageModelReusesItsEndpoint(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAISDK, aiprovider.SDKOpenAI)
@@ -280,9 +269,7 @@ func TestEmbeddingSDKMatchingTheLanguageModelReusesItsEndpoint(t *testing.T) {
 	}
 }
 
-// AI_EMBEDDING_MODEL alone means "embed on the AI_SDK provider", which is no
-// longer always available: opencode chats but serves no /embeddings. Refused
-// here rather than at the first upload, where the binding would read as
+// Refused here rather than at the first upload, where the binding would read as
 // configured and every document's embed step would fail.
 func TestAnEmbeddingModelIsRefusedOnAnSDKThatCannotEmbed(t *testing.T) {
 	clearAIEnv(t)
@@ -302,8 +289,6 @@ func TestAnEmbeddingModelIsRefusedOnAnSDKThatCannotEmbed(t *testing.T) {
 	}
 }
 
-// And the way out works: a second provider for embeddings, which is what the
-// AI_EMBEDDING_SDK block exists for.
 func TestOpenCodeEmbedsThroughASecondProvider(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAISDK, aiprovider.SDKOpenCode)
@@ -323,8 +308,7 @@ func TestOpenCodeEmbedsThroughASecondProvider(t *testing.T) {
 	}
 }
 
-// Without an embedding model, opencode is a complete configuration on its own:
-// keyword retrieval is the pre-feature behaviour and still a working state.
+// Keyword retrieval is the pre-feature behaviour and still a working state.
 func TestOpenCodeWithoutAnEmbeddingModelIsFine(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAISDK, aiprovider.SDKOpenCode)

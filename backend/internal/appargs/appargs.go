@@ -1,18 +1,13 @@
-// Package appargs reads the command line the way PocketBase's own cobra setup
-// will, before cobra has had a chance to parse it.
+// Package appargs reads the command line the way PocketBase's cobra setup will,
+// before cobra has parsed it.
 //
-// Anything that has to act before app.Execute runs — placing the data
-// directory, occupying the address the server is about to take, answering a
-// subcommand with no database open — needs to know the subcommand and the
-// listen address at a point where cobra cannot be asked, because asking cobra
-// means bootstrapping the app, which is the thing being deferred.
-//
-// The conventions mirrored here are cobra's and PocketBase's, not this
-// package's invention: a flag's value is never mistaken for a subcommand, "--"
-// ends flag parsing, and bare arguments after `serve` are autocert domains.
-// Keeping that in one tested package upstream is deliberate — the same logic
-// spread across callers, or carried in a fork, rots silently the next time
-// PocketBase adds a flag that takes a value.
+// Anything acting before app.Execute (placing the data directory, occupying the
+// listen address, answering a subcommand with no database open) needs the
+// subcommand and the address at a point where asking cobra would mean
+// bootstrapping the app, which is the thing being deferred. The conventions
+// mirrored here are cobra's and PocketBase's: a flag's value is never a
+// subcommand, "--" ends flag parsing, bare arguments after serve are autocert
+// domains.
 package appargs
 
 import (
@@ -20,21 +15,16 @@ import (
 	"strings"
 )
 
-// valueFlags are the flags that consume the following argument, so scanning
-// does not mistake a flag's value for the subcommand or vice versa.
-//
-// PocketBase's own persistent flags plus the two this binary adds. Boolean
-// flags (--dev, --indexFallback) are absent on purpose: they never take a
-// separate value, and listing one here would swallow the argument after it.
+// valueFlags consume the following argument, so scanning does not mistake a
+// flag's value for the subcommand. Boolean flags are absent on purpose:
+// listing one here would swallow the argument after it.
 var valueFlags = map[string]bool{
 	"--dir": true, "--encryptionEnv": true, "--queryTimeout": true,
 	"--http": true, "--https": true, "--origins": true, "--publicDir": true,
 }
 
-// Bare returns the non-flag arguments, in order.
-//
-// The first is the subcommand; a second is that subcommand's own operand. Use
-// it when a subcommand has to be recognised before cobra exists.
+// Bare returns the non-flag arguments, in order: the subcommand first, then its
+// own operands.
 func Bare(args []string) []string {
 	var out []string
 	for i := 0; i < len(args); i++ {
@@ -53,14 +43,14 @@ func Bare(args []string) []string {
 	return out
 }
 
-// Subcommand returns the first bare argument, or "" for PocketBase's default.
+// Subcommand returns the first bare argument, "" for PocketBase's default (serve).
 func Subcommand(args []string) string {
 	sub, _ := scan(args)
 	return sub
 }
 
 // Flag returns the value of a value-taking flag in either spelling
-// (--name value or --name=value), or "" when it is absent.
+// (--name value or --name=value), or "" when absent.
 func Flag(args []string, name string) string {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -86,17 +76,12 @@ func Flag(args []string, name string) string {
 	return ""
 }
 
-// IsServe reports whether this invocation will start the web server.
-//
-// An empty subcommand is PocketBase's default, which is serve. Callers use this
-// to tell an interactive path from a one-shot: a CLI subcommand must not block
-// on something a person is expected to answer, because nobody is watching.
-//
-// A help or version flag is not serve however it is spelled, even though it
-// leaves the subcommand empty. Treating `lemmary --help` as serve would block
-// the process on an unlock form to print usage — and, worse, would unlock and
-// restore the archive for a command that never bootstraps the databases, which
-// is the one state a flush must not commit from.
+// IsServe reports whether this invocation will start the web server, which is
+// what tells an interactive path from a one-shot that must not block on a
+// person. A help or version flag also leaves the subcommand empty but is not
+// serve: treating `lemmary --help` as serve would unlock and restore the
+// archive for a command that never bootstraps the databases, which is the one
+// state a flush must not commit from.
 func IsServe(args []string) bool {
 	if HasHelpOrVersionFlag(args) {
 		return false
@@ -105,11 +90,8 @@ func IsServe(args []string) bool {
 	return sub == "" || sub == "serve"
 }
 
-// helpOrVersionFlags are the flags cobra answers by printing and exiting.
-//
-// The list mirrors PocketBase's own skipBootstrap exactly: an invocation
-// carrying one of these never opens a database, so anything that assumes an
-// app has bootstrapped must agree with PocketBase about which they are.
+// helpOrVersionFlags mirrors PocketBase's own skipBootstrap: an invocation
+// carrying one of these never opens a database.
 var helpOrVersionFlags = map[string]bool{
 	"-h": true, "--help": true, "-v": true, "--version": true,
 }
@@ -135,24 +117,14 @@ func HasHelpOrVersionFlag(args []string) bool {
 }
 
 // ServeAddr returns the address the server will listen on, and whether reaching
-// that address means sending cleartext over a network.
+// it means sending cleartext over a network.
 //
-// The gate that occupies this address before PocketBase does speaks plain HTTP
-// and nothing else — it exists precisely because no application, and so no TLS
-// configuration, is running yet. So the question a caller needs answered is not
-// whether TLS is configured somewhere, but whether anything off this host can
-// reach the port: a password typed into a form served on 0.0.0.0:80 crosses the
-// network in the clear, and the same form on 127.0.0.1:8090 does not, because a
-// TLS-terminating proxy on the host is the only way to it.
-//
-// Loopback is therefore the whole test, and it is applied to an explicit --http
-// too. An earlier version exempted every explicit address on the grounds that
-// somebody who passed --http had chosen it deliberately, which quietly excused
-// the stock container: its entrypoint passes --http=0.0.0.0:${PORT}.
-//
-// With domain arguments PocketBase switches to autocert: HTTPS on :443, with
-// :80 used only to redirect. The plain port is still where a browser lands
-// first, so anything occupying the address before the server starts gets it.
+// The gate occupying this address before PocketBase starts speaks plain HTTP
+// only, since no TLS configuration exists yet. Loopback is therefore the whole
+// test, explicit --http included: the stock container's entrypoint passes
+// --http=0.0.0.0:${PORT}, so exempting explicit addresses would excuse the one
+// configuration most people run. With domain arguments PocketBase uses autocert
+// on :443 and :80 only redirects, but :80 is still where a browser lands first.
 func ServeAddr(args []string) (addr string, cleartext bool) {
 	sub, explicit := scan(args)
 	if explicit != "" {
@@ -165,13 +137,9 @@ func ServeAddr(args []string) (addr string, cleartext bool) {
 }
 
 // isLoopbackAddr reports whether a listen address is reachable only from this
-// host.
-//
-// An empty host ("" or ":8090") means every interface, which is the opposite of
-// loopback and is the spelling most likely to be mistaken for one. A name this
-// cannot resolve without DNS is treated as exposed: guessing wrong in that
-// direction only costs an operator one explicit escape hatch, while guessing
-// wrong in the other silently serves the archive's password over the network.
+// host. An empty host (":8090") is every interface, not none. An unresolvable
+// name counts as exposed: guessing wrong the other way serves the archive's
+// password over the network.
 func isLoopbackAddr(addr string) bool {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -188,7 +156,6 @@ func isLoopbackAddr(addr string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// scan walks argv once, yielding the subcommand and the value of --http.
 func scan(args []string) (subcommand, httpAddr string) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -217,11 +184,9 @@ func scan(args []string) (subcommand, httpAddr string) {
 	return subcommand, httpAddr
 }
 
-// hasDomainArgs reports whether any bare argument after the subcommand looks
-// like a domain, which is what switches PocketBase into autocert mode.
-//
-// Only serve accepts domains — for any other subcommand the trailing arguments
-// are its own operands, not hostnames.
+// hasDomainArgs reports whether a bare argument after the subcommand looks like
+// a domain, which switches PocketBase into autocert mode. Only serve accepts
+// domains; elsewhere trailing arguments are the subcommand's own operands.
 func hasDomainArgs(args []string, sub string) bool {
 	seenSub := sub == ""
 	for i := 0; i < len(args); i++ {

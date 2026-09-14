@@ -3,19 +3,16 @@ import { accentContrastText } from '../lib/accent'
 
 export const inputClassName =
   'w-full rounded-xs border border-line-strong bg-bright px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood'
-/** A native select sized like an input. */
 export const selectClassName =
   'rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm outline-none focus:border-oxblood focus:ring-1 focus:ring-oxblood'
 export const labelClassName = 'flex flex-col gap-1'
 export const labelTextClassName =
   'text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-soft'
-/** Small explanation shown under a form field. */
 export const fieldHintClassName = 'text-xs text-ink-soft'
 
 /**
- * Link into the bundled docs site, for the explanations under a form field that
- * are too long to fit there. Opens in a new tab: these appear mid-form, and a
- * same-tab navigation would throw away whatever is half-typed.
+ * Link into the bundled docs site. Opens in a new tab: these appear mid-form,
+ * and a same-tab navigation would throw away whatever is half-typed.
  */
 export function DocsLink({ href, children }: { href: string; children: ReactNode }) {
   return (
@@ -31,8 +28,7 @@ export function DocsLink({ href, children }: { href: string; children: ReactNode
 }
 
 /**
- * A tab in a page's sub-navigation, for the shells whose tabs are routes:
- * Upload, Import and Settings. `data-[status=active]` is what a router Link
+ * A tab in a page's sub-navigation. `data-[status=active]` is what a router Link
  * sets on itself.
  */
 export const tabClassName =
@@ -59,7 +55,7 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   size?: keyof typeof buttonSizeClassName
 }
 
-/** Shared button. Defaults to type="button" so forms opt into submit explicitly. */
+/** Defaults to type="button" so forms opt into submit explicitly. */
 export function Button({
   variant = 'primary',
   size = 'md',
@@ -76,7 +72,6 @@ export function Button({
   )
 }
 
-/** App initial on the accent color, used in the header and the gate screens. */
 export function AppLogo({ appName, accent }: { appName: string; accent: string }) {
   return (
     <span

@@ -5,10 +5,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# The backend does not build without the vectors tag: bleve compiles its kNN API
-# out otherwise, and internal/fulltext/vectors_required.go stops a tag-less
-# build with one readable error. Exported rather than passed per command so the
-# overlay suite, which runs go commands of its own, inherits it too.
+# bleve compiles its kNN API out without the vectors tag (see
+# internal/fulltext/vectors_required.go). Exported so the overlay's own go
+# commands inherit it.
 export GOFLAGS=-tags=vectors
 export CGO_ENABLED=1
 
@@ -21,7 +20,5 @@ if ! OVERLAY="$("$ROOT/scripts/overlay.sh" "${ARGS[@]+"${ARGS[@]}"}")"; then
   exit 3
 fi
 
-# LEMMARY_ROOT is how the overlay learns which tree to test. It no longer
-# infers that from its own location, which is what let it move out of the
-# tree in the first place.
+# LEMMARY_ROOT tells the overlay which tree to test.
 exec env LEMMARY_ROOT="$ROOT" "$OVERLAY/scripts/test-all.sh" "$@"

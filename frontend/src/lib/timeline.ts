@@ -1,10 +1,6 @@
 /**
- * Turning the documents timeline into date ranges.
- *
- * A "period" is either a year ("2025") or a month ("2025-03"). Selecting one on
- * the timeline just writes the existing From/To date filters, so there is only
- * ever one date filter in play and the date inputs visibly show what the
- * sidebar selected.
+ * A "period" is a year ("2025") or a month ("2025-03"). Selecting one writes the
+ * existing From/To filters, so there is only ever one date filter in play.
  */
 
 export type TimelineMonth = {
@@ -42,9 +38,8 @@ const monthNames = [
 ]
 
 /**
- * The timeline's one row that is not a date range: the documents carrying no
- * date at all. It travels the same onSelect path as a year or a month, and the
- * page turns it into the `undated` filter instead of a From/To.
+ * The one row that is not a date range. It travels the same onSelect path as a
+ * year or a month, and the page turns it into the `undated` filter.
  */
 export const UNDATED_PERIOD = 'undated'
 
@@ -93,9 +88,8 @@ export function periodRange(period: string | null): DateRange {
 }
 
 /**
- * Which period, if any, the current From/To filters spell out. Derived rather
- * than stored, so typing the dates by hand lights up the matching row too, and
- * clicking the lit row can clear it.
+ * Derived rather than stored, so typing the dates by hand lights up the
+ * matching row too.
  */
 export function activePeriod(dateFrom: string, dateTo: string): string | null {
   if (!dateFrom || !dateTo) return null
@@ -115,10 +109,7 @@ export function activePeriod(dateFrom: string, dateTo: string): string | null {
   return null
 }
 
-/**
- * Groups months under their year, newest first, keeping only the months that
- * actually hold documents.
- */
+/** Newest first, keeping only the months that hold documents. */
 export function groupByYear(months: TimelineMonth[]): TimelineYear[] {
   const years = new Map<string, TimelineYear>()
 
@@ -143,14 +134,10 @@ export function groupByYear(months: TimelineMonth[]): TimelineYear[] {
 }
 
 /**
- * Which year the timeline shows months for: the active period's year, else the
- * year the From filter falls in, else the newest. Derived rather than stored,
- * like activePeriod -- typing a date by hand opens that year too.
- *
- * dateFrom is what covers a range activePeriod cannot name. A hand-typed
- * 2019-01-01..2019-06-30 is neither a whole year nor a whole month, so `active`
- * is null, and without the From date the newest year would open instead --
- * collapsing the very months the filter was typed to see.
+ * The active period's year, else the year the From filter falls in, else the
+ * newest. dateFrom covers a range activePeriod cannot name: 2019-01-01..06-30
+ * is neither a whole year nor a whole month, and the newest year would open
+ * instead, collapsing the months the filter was typed to see.
  */
 export function openYear(
   active: string | null,
@@ -168,9 +155,8 @@ export function openYear(
 }
 
 /**
- * Month rows a timeline may show all at once before folding earns its keep.
- * Two years' worth still fits a sidebar without burying the grid, and an
- * archive that short reads better whole than one year at a time.
+ * Month rows shown at once before folding earns its keep: two years' worth
+ * still fits a sidebar, and an archive that short reads better whole.
  */
 const MAX_UNFOLDED_MONTHS = 24
 

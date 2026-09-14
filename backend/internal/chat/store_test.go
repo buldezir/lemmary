@@ -8,10 +8,9 @@ import (
 
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/chat"
-	// Registers the migrations that create users and documents, which
-	// chat_sessions relates to. Importing them is also why this file is an
-	// external test package: internal/chat cannot import migrations, which
-	// import it back to define the collections.
+	// Registers the migrations that create users and documents. Importing them
+	// is why this file is an external test package: internal/chat cannot import
+	// migrations, which import it back.
 	_ "lemmary/backend/migrations"
 )
 
@@ -46,9 +45,8 @@ func makeUser(t *testing.T, app core.App, email string) string {
 	return user.Id
 }
 
-// The binding is fixed for a conversation, so it has to survive the write and
-// come back out: without the round trip, every turn after the first would
-// silently fall back to the model in Settings.
+// The binding is fixed for a conversation, so it has to survive the write:
+// otherwise every turn after the first falls back to the model in Settings.
 func TestCreateSessionStoresAndReturnsItsBinding(t *testing.T) {
 	app := bootAppForStore(t)
 	userID := makeUser(t, app, "binding@example.test")
@@ -65,8 +63,7 @@ func TestCreateSessionStoresAndReturnsItsBinding(t *testing.T) {
 		t.Fatalf("CreateSession: %v", err)
 	}
 
-	// Re-read rather than trusting the in-memory record: the columns are what a
-	// later turn reads the binding back out of.
+	// Re-read rather than trusting the in-memory record.
 	stored, err := app.FindRecordById(chat.SessionsCollection, session.Id)
 	if err != nil {
 		t.Fatalf("reload session: %v", err)
@@ -81,8 +78,8 @@ func TestCreateSessionStoresAndReturnsItsBinding(t *testing.T) {
 	}
 }
 
-// A chat opened on the configured model must store nothing, so it reads back as
-// "use Settings" -- which is every session that existed before overrides did.
+// A chat opened on the configured model must store nothing, so it reads back
+// as "use Settings".
 func TestCreateSessionLeavesTheBindingUnsetWhenThereIsNone(t *testing.T) {
 	app := bootAppForStore(t)
 	userID := makeUser(t, app, "nobinding@example.test")
@@ -105,8 +102,7 @@ func TestCreateSessionLeavesTheBindingUnsetWhenThereIsNone(t *testing.T) {
 }
 
 // A model with no provider is refused by the API, so it must not become a
-// stored half-binding either -- BindingOf would hand it back and the next
-// turn would be refused for a choice nobody made.
+// stored half-binding either.
 func TestCreateSessionDropsAModelWithNoProvider(t *testing.T) {
 	app := bootAppForStore(t)
 	userID := makeUser(t, app, "halfbinding@example.test")
@@ -133,9 +129,8 @@ func TestBindingOfNilRecord(t *testing.T) {
 	}
 }
 
-// Recovery identifies a request by its client-generated run id rather than by
-// question text. Both records in the pair carry it so the stored transcript is
-// self-contained and the assistant projection can return it to the browser.
+// Recovery identifies a request by its client-generated run id. Both records
+// in the pair carry it, so the stored transcript is self-contained.
 func TestAppendTurnStoresAndReturnsRunID(t *testing.T) {
 	app := bootAppForStore(t)
 	userID := makeUser(t, app, "run-id@example.test")
@@ -170,9 +165,8 @@ func TestAppendTurnStoresAndReturnsRunID(t *testing.T) {
 	}
 }
 
-// Research progress is stored on the assistant row so a reopened chat can
-// still show how the answer was produced. The user half of the pair stays
-// empty, and History still sees only role+content.
+// Research progress is stored on the assistant row. The user half stays empty,
+// and History still sees only role+content.
 func TestAppendTurnStoresStepsAndIncompleteOnTheAssistant(t *testing.T) {
 	app := bootAppForStore(t)
 	userID := makeUser(t, app, "steps@example.test")

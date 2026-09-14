@@ -13,9 +13,8 @@ import (
 	"lemmary/backend/internal/aiprovider"
 )
 
-// TestChatUserAgent pins both halves of the rule on the client every
-// completion goes through: an ordinary provider hears our name, and the Codex
-// backend -- which vets its callers -- still hears the SDK's.
+// Both halves of the rule: an ordinary provider hears our name, and the Codex
+// backend, which vets its callers, still hears the SDK's.
 func TestChatUserAgent(t *testing.T) {
 	for _, tc := range []struct {
 		sdk  string

@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 )
 
-// writeFileAtomic writes data to path atomically.
 func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 	return writeStreamAtomic(path, perm, func(w io.Writer) error {
 		_, err := w.Write(data)
@@ -25,15 +24,11 @@ func fsyncDir(dir string) error {
 	return d.Sync()
 }
 
-// writeStreamAtomic streams write() into a temporary file in the target
-// directory, fsyncs it, then renames it into place and fsyncs the directory.
-//
-// Both fsyncs matter. Without the file fsync the rename can land while the
-// contents are still in page cache, so a power loss leaves a correctly named
-// file full of zeroes. Without the directory fsync the rename itself can be lost.
-// This is the primitive the whole commit ordering rests on, which is why there
-// is one of it: the two copies this replaced had already drifted, one creating
-// the parent directory and the other assuming it existed.
+// writeStreamAtomic streams into a temp file in the target directory, fsyncs it,
+// renames it into place and fsyncs the directory. Both fsyncs matter: without
+// the file fsync a power loss leaves a correctly named file full of zeroes, and
+// without the directory fsync the rename itself can be lost. The whole commit
+// ordering rests on this, which is why there is exactly one of it.
 func writeStreamAtomic(path string, perm os.FileMode, write func(io.Writer) error) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -85,7 +80,7 @@ func dirSize(root string) (int64, error) {
 	return total, err
 }
 
-// removeContents empties a directory without removing the directory itself.
+// removeContents empties a directory without removing it.
 func removeContents(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

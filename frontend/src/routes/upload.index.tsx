@@ -15,9 +15,8 @@ import {
 } from '../lib/fileDrop'
 import { Button } from '../components/ui'
 
-// The documents.file allowlist (see the migrations), as the one thing the three
-// forms below are derived from. Mirrors `storable` in
-// backend/internal/zipimport; the server decides by sniffing content, so this is
+// The documents.file allowlist (see the migrations), mirroring `storable` in
+// backend/internal/zipimport. The server decides by sniffing content, so this is
 // what to offer the file picker, not what the collection will ultimately take.
 const ACCEPTED: Record<string, string> = {
   '.pdf': 'application/pdf',
@@ -70,27 +69,21 @@ function duplicateIdFromError(err: unknown, message: string): string | null {
   return parseDuplicateOfId(message)
 }
 
-/**
- * The limits that bound the whole instance, as opposed to one upload. Hitting
- * one of these means no further file can succeed either.
- */
+/** Hitting one of these means no further file can succeed either. */
 const INSTANCE_WIDE_LIMITS = new Set<LimitName>([
   'documents',
   'document_pages',
   'storage_bytes',
 ])
 
-// Files chosen but not yet sent, kept outside the component: switching to
-// another upload tab unmounts this page (#47) and a File cannot be serialised
-// into the router or into storage, so the only place it survives is a module
-// variable. It holds what has not been submitted -- an upload empties it on the
-// way in -- so a session never inherits a list somebody else already sent.
+// Kept outside the component: switching upload tabs unmounts this page (#47)
+// and a File cannot be serialised into the router or into storage, so a module
+// variable is the only place it survives.
 let stagedFiles: File[] = []
 
 // Same reason meCache is dropped in lib/auth: a module outlives the app tree,
-// and the next person to sign in on this browser must not find the last one's
-// files staged. Only on the way out -- this also fires when a live token is
-// refreshed, which must not empty the list under someone mid-selection.
+// and the next person to sign in must not find the last one's files staged.
+// Only on the way out, since this also fires when a live token is refreshed.
 pb.authStore.onChange(() => {
   if (!pb.authStore.isValid) stagedFiles = []
 })
@@ -106,7 +99,7 @@ export function UploadFilesPage() {
   const inputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const [files, setStagedFiles] = useState<File[]>(stagedFiles)
-  // A zip is not an unsupported file, it is the wrong page -- so it gets a link
+  // A zip is not an unsupported file, it is the wrong page, so it gets a link
   // rather than the "use PDF, JPEG, ..." message.
   const [zipRejected, setZipRejected] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -120,9 +113,7 @@ export function UploadFilesPage() {
 
   // The module is the source of truth and is written first: React discards a
   // state update aimed at an unmounted component, and a folder walk can finish
-  // after the tab it was dropped on has gone. Functional updates still see the
-  // latest list rather than a stale render, which is what two overlapping drops
-  // need.
+  // after the tab it was dropped on has gone.
   const setFiles = useCallback((next: File[] | ((current: File[]) => File[])) => {
     stagedFiles = typeof next === 'function' ? next(stagedFiles) : next
     setStagedFiles(stagedFiles)
@@ -151,10 +142,9 @@ export function UploadFilesPage() {
       file.webkitRelativePath ? withFolderName(file, file.webkitRelativePath) : file,
     )
 
-    // Appending, not replacing: a folder and then a stray file is one upload as
-    // far as the person doing it is concerned. The dedupe happens inside the
-    // updater rather than against a captured list, because walking a folder is
-    // asynchronous and two drops can land before either has re-rendered.
+    // Appending, not replacing: a folder and then a stray file is one upload.
+    // The dedupe happens inside the updater rather than against a captured list,
+    // because two drops can land before either has re-rendered.
     setFiles((current) => appendNew(current, named))
 
     setFileErrors([])
@@ -202,8 +192,8 @@ export function UploadFilesPage() {
   function onDrop(event: DragEvent<HTMLLabelElement>) {
     event.preventDefault()
     setDragging(false)
-    // Folders only exist through the entry API, and it has to be read before
-    // this handler returns -- filesFromDataTransfer does that part first.
+    // Folders only exist through the entry API, which has to be read before this
+    // handler returns; filesFromDataTransfer does that part first.
     setScanning(true)
     void filesFromDataTransfer(event.dataTransfer)
       .then(selectFiles)
@@ -233,8 +223,7 @@ export function UploadFilesPage() {
       const failures: FileUploadError[] = []
       const failedFiles: File[] = []
       // Set when an instance allowance ran out and the loop stopped early, so
-      // the summary can say files were not attempted rather than implying they
-      // were tried and failed.
+      // the summary can say files were not attempted rather than failed.
       let stoppedAt = -1
 
       for (let i = 0; i < files.length; i++) {
@@ -256,11 +245,9 @@ export function UploadFilesPage() {
           })
           failedFiles.push(file)
 
-          // An instance-wide allowance ran out, so every remaining file would
-          // be refused for the same reason. Stop and keep them staged rather
-          // than printing the same rejection once per file. A per-file limit
-          // (this one is too big) says nothing about the next file, so those
-          // keep going.
+          // An instance-wide allowance ran out, so every remaining file would be
+          // refused for the same reason: stop and keep them staged. A per-file
+          // limit says nothing about the next file, so those keep going.
           const limit = limitFromError(err)
           if (limit && INSTANCE_WIDE_LIMITS.has(limit)) {
             failedFiles.push(...files.slice(i + 1))
@@ -345,7 +332,7 @@ export function UploadFilesPage() {
         </label>
 
         {/* An input cannot offer files and folders at once, so the folder
-            picker is its own control. Dropping needs no such split. */}
+            picker is its own control. */}
         <div className="-mt-2">
           <input
             ref={folderInputRef}

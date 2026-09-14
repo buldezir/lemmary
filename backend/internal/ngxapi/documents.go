@@ -28,11 +28,9 @@ func handleListDocuments(idx *fulltext.Index) func(*core.RequestEvent) error {
 		if err != nil {
 			return badRequest(e, err.Error())
 		}
-		// A filter naming something that does not exist matches nothing. It
-		// must not fall through to the unfiltered archive -- which is what this
-		// endpoint returned for every filter before it understood any of them,
-		// so the client rendered the whole library as the answer to "tagged
-		// Invoice".
+		// A filter naming something that does not exist matches nothing; falling
+		// through to the unfiltered archive would answer "tagged Invoice" with the
+		// whole library.
 		if filters.impossible {
 			return paginatedList(e, 0, page, pageSize, nil)
 		}
@@ -76,13 +74,10 @@ func handleListDocuments(idx *fulltext.Index) func(*core.RequestEvent) error {
 
 // maxTextIDs caps how many index matches one request enumerates.
 //
-// The text query and the filters live in different stores, so the only exact
-// way to combine them is to enumerate the text matches and intersect. Past the
-// cap the count under-reports -- but self-consistently: paginatedList derives
-// both totalPages and the next link from that same number, so a client is never
-// handed a link to a page that cannot be served. 5000 is what the agent's
-// grouped count already uses (appapi.maxCountIDs), and what paperless-ngx
-// itself switches intersection strategies at.
+// Text and filters live in different stores, so combining them exactly means
+// enumerating the text matches and intersecting. Past the cap the count
+// under-reports, but self-consistently: paginatedList derives both totalPages
+// and the next link from that same number. 5000 matches appapi.maxCountIDs.
 const maxTextIDs = 5000
 
 // maxPushedIDs is how many index hits go to SQLite as an IN list rather than
@@ -90,13 +85,11 @@ const maxTextIDs = 5000
 // limit and scanning the owner's id column is cheaper.
 const maxPushedIDs = 500
 
-// listDocumentsByText answers a request carrying a text filter: the index says
-// which documents match the words, the database says which of those match
-// everything else, and the intersection is the page. The order is the index's
-// unless the client asked for one the database can serve.
+// listDocumentsByText intersects the index's matches with the database's, in
+// the index's order unless the client asked for one the database can serve.
 //
-// When dbFiltered is false and the wanted order is relevance, the database is
-// not consulted at all -- selecting the owner's every document id to intersect
+// When dbFiltered is false and the wanted order is relevance the database is
+// not consulted at all: selecting the owner's every document id to intersect
 // with a list the index already agrees with is what a search over a large
 // archive cost per keystroke.
 func listDocumentsByText(
@@ -164,8 +157,6 @@ func listDocumentsByText(
 	return paginatedList(e, total, page, pageSize, results)
 }
 
-// intersectKeepingOrder is the members of source that also appear in filter, in
-// source's order.
 func intersectKeepingOrder(source, filter []string) []string {
 	allowed := make(map[string]struct{}, len(filter))
 	for _, id := range filter {
@@ -275,7 +266,6 @@ func mapDocuments(app core.App, records []*core.Record, truncate bool) ([]any, e
 	return results, nil
 }
 
-// mapOneDocument is mapDocuments for a single-record response.
 func mapOneDocument(app core.App, record *core.Record) (map[string]any, error) {
 	lens, err := newNgxIDLens(app, []*core.Record{record})
 	if err != nil {
@@ -556,9 +546,8 @@ func parseTagIDs(form url.Values) []string {
 // documentOrder maps a paperless ordering to quoted ORDER BY clauses.
 //
 // dbSorted is false when the database cannot serve the ordering: relevance,
-// which paperless spells score, or a field this server does not know. The plain
-// list then falls back to the columns returned; the search path reads the flag
-// and lets the index's ranking stand, as paperless-ngx does.
+// which paperless spells score, or a field this server does not know. The
+// search path then lets the index's ranking stand, as paperless-ngx does.
 //
 // The id tiebreaker is not decoration: documents routinely share a timestamp,
 // and without a total order paging shows one row twice and another never.

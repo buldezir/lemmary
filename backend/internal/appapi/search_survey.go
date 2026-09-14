@@ -13,15 +13,10 @@ import (
 	"lemmary/backend/internal/strutil"
 )
 
-// survey backs the agent's survey_documents tool: select documents, have the
-// helper read every one of them for the question, and return a row each.
-//
-// The selection is the same retrieval a search runs, just kept past the
-// search's page: fused ranking, then hydration until the cap. The reading is
-// the helper's, batched and concurrent, and none of the text reaches the
-// research model -- rows do. Number fields are added up here, because a model
-// summing three hundred figures gets some of them wrong and the server does
-// not.
+// survey backs the agent's survey_documents tool. Selection is the retrieval a
+// search runs, kept past the search's page; the reading is the helper's, and
+// none of the text reaches the research model, only rows. Number fields are
+// added up here, because a model summing three hundred figures gets some wrong.
 func (r *agentRetriever) survey(ctx context.Context, args ai.SurveyArgs, progress func(done, total int)) (ai.SurveyResult, error) {
 	if r.helper == nil {
 		return ai.SurveyResult{}, fmt.Errorf("no helper model is configured for surveys")
@@ -47,9 +42,8 @@ func (r *agentRetriever) survey(ctx context.Context, args ai.SurveyArgs, progres
 		return result, nil
 	}
 
-	// Load what the helper will read: the whole text up to its cap, an
-	// excerpt around the question past it. Hits are built at the same time
-	// for the rows' titles and dates and for the result list.
+	// The whole text up to the helper's cap, an excerpt around the question
+	// past it. Hits are built at the same time for the rows and the list.
 	docs := make([]ai.DistillDoc, 0, len(ids))
 	hits := make(map[string]ai.DocumentHit, len(ids))
 	rank := r.focusRanker(ctx)
@@ -130,9 +124,8 @@ func (r *agentRetriever) survey(ctx context.Context, args ai.SurveyArgs, progres
 	return result, nil
 }
 
-// surveyCandidates picks the documents to survey: the given ids, or the fused
-// ranking for the query, cut to limit. candidates is how many there were
-// before the cut.
+// surveyCandidates takes the given ids, or the fused ranking for the query, cut
+// to limit. candidates is how many there were before the cut.
 func (r *agentRetriever) surveyCandidates(ctx context.Context, args ai.SurveyArgs, limit int) ([]string, int, error) {
 	if len(args.IDs) > 0 {
 		ids := args.IDs
@@ -168,8 +161,8 @@ func (r *agentRetriever) surveyCandidates(ctx context.Context, args ai.SurveyArg
 	return ids, total, nil
 }
 
-// surveyTotals adds up every number field over the relevant rows, per
-// currency, and counts the relevant rows that had no value for each field.
+// surveyTotals sums per currency, and counts the relevant rows that had no
+// value for each field.
 func surveyTotals(fields []ai.SurveyField, rows []ai.SurveyRow) ([]ai.SurveyTotal, map[string]int) {
 	type acc struct {
 		count    int
@@ -237,9 +230,8 @@ func surveyTotals(fields []ai.SurveyField, rows []ai.SurveyRow) ([]ai.SurveyTota
 
 // parseNumber reads what a model calls a number: "1.234,56", "1,234.56",
 // "EUR 1234.56", "-12". When both separators appear the later one is the
-// decimal point. A lone comma or dot followed by exactly three digits is read
-// as a thousands group only when it is a comma -- "1,234" -- since "1.234"
-// with one dot is far more often a decimal in the sources this reads.
+// decimal point. A lone separator before exactly three digits is a thousands
+// group only for a comma, since "1.234" is far more often a decimal here.
 func parseNumber(raw string) (float64, bool) {
 	var b strings.Builder
 	for _, r := range strings.TrimSpace(raw) {

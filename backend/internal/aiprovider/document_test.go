@@ -78,8 +78,7 @@ func TestStampDocument(t *testing.T) {
 	}
 }
 
-// The header's value is the checksum: the record id is what the last mistake
-// put there, and it is the field sitting right next to it.
+// The header's value is the checksum, never the record id sitting next to it.
 func TestWithDocumentRecordCarriesChecksumNotID(t *testing.T) {
 	documents := core.NewBaseCollection("documents")
 	documents.Fields.Add(&core.TextField{Name: "checksum"})

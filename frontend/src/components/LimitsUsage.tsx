@@ -13,11 +13,8 @@ function barToneClassName(status: LimitStatus): string {
 }
 
 /**
- * One allowance as a labelled meter.
- *
- * `used` can exceed `limit` — a plan can be lowered under a library that is
- * already larger than it — so the bar clamps while the numbers tell the truth.
- * Nothing is ever deleted to make usage fit a limit.
+ * `used` can exceed `limit`, since a plan can be lowered under a library already
+ * larger than it, so the bar clamps while the numbers tell the truth.
  */
 function LimitRow({
   label,
@@ -56,12 +53,9 @@ function LimitRow({
 }
 
 /**
- * Instance allowances and what is used against them.
- *
- * Renders nothing at all when this install bounds nothing, which is the default
- * — a self-hosted instance that sets no LIMIT_* variables should not grow a
- * quota widget it has no use for. Unlimited individual limits are dropped for
- * the same reason, rather than shown as an infinity sign.
+ * Instance allowances and what is used against them. Renders nothing when this
+ * install bounds nothing, which is the default: an instance that sets no LIMIT_*
+ * variables should not grow a quota widget.
  */
 export function LimitsUsage({
   limits,

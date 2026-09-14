@@ -30,8 +30,7 @@ func TestSetMaxEntryBytes(t *testing.T) {
 }
 
 // Wiring calls this on every boot, so it must raise the cap back to the default
-// as well as lower it -- otherwise the e2e harness, which boots repeatedly in one
-// test binary, leaks the smallest cap any earlier boot set.
+// as well as lower it; see SetMaxEntryBytes.
 func TestSetMaxEntryBytesIsNotOneWay(t *testing.T) {
 	original := maxEntryBytes
 	t.Cleanup(func() { maxEntryBytes = original })

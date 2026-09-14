@@ -13,14 +13,12 @@ import (
 // Widens ai_providers.sdk to the two sidecar SDKs, docling and local.
 //
 // aiprovider.EnsureCollection builds that select field's values from ValidSDKs,
-// but it returns an existing collection untouched -- which is every install
-// past its first boot. Without this, adding a sidecar provider from Settings
-// fails PocketBase's own select validation, with a message that names no SDK at
-// all and no way for an admin to act on it.
+// but it returns an existing collection untouched, which is every install past
+// its first boot. Without this, adding a sidecar provider from Settings fails
+// PocketBase's own select validation with a message an admin cannot act on.
 //
 // Written against ValidSDKs rather than a literal so the next SDK needs no new
-// migration body, and idempotent so a managed instance can re-run it on every
-// boot.
+// migration body, and idempotent so a managed instance can re-run it on boot.
 func init() {
 	m.Register(func(app core.App) error {
 		return setProviderSDKValues(app, aiprovider.ValidSDKs)
@@ -47,11 +45,10 @@ func init() {
 
 // priorSDKs is the SDK list as it stood before either sidecar existed.
 //
-// Written out, unlike the up-migration's aiprovider.ValidSDKs. A
-// down-migration's target is a historical fact, not a view of the current code,
-// and deriving it is what went wrong here before: it was "every SDK that
-// requires an API key", which quietly grew an entry the moment a keyed SDK was
-// added after the sidecars.
+// Written out, unlike the up-migration's aiprovider.ValidSDKs: a
+// down-migration's target is a historical fact, not a view of the current code.
+// Deriving it is what went wrong before, when it was "every SDK that requires an
+// API key" and quietly grew an entry.
 func priorSDKs() []string {
 	return []string{
 		aiprovider.SDKOpenAI, aiprovider.SDKOpenRouter,

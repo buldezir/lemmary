@@ -11,8 +11,6 @@ import (
 	"lemmary/backend/internal/crypt"
 )
 
-// Startup sequence owned by the vault so main need not know about encryption.
-
 // Open prepares encryption at rest and, for serve, blocks until unlock.
 // Disabled, it returns a usable zero vault. Unlock has to precede
 // pocketbase.New; see internal/boot.
@@ -36,8 +34,8 @@ func Open(argv []string) (v *Vault, err error) {
 		return nil, err
 	}
 
-	// Vault holds the directory lock here, and plaintext after unlock. Close
-	// both on any error: main only defers Close for a Result it received.
+	// Vault holds the directory lock here, and plaintext after unlock. Close both
+	// on any error: main only defers Close for a Result it received.
 	defer func() {
 		if err != nil {
 			if cerr := v.Close(); cerr != nil {
@@ -48,7 +46,7 @@ func Open(argv []string) (v *Vault, err error) {
 	}()
 
 	// Only serving needs the interactive gate. CLI subcommands unlock from the
-	// environment or fail, rather than hanging on a web form nobody is watching.
+	// environment or fail, rather than hanging on a form nobody is watching.
 	if !appargs.IsServe(argv) {
 		if !v.Initialized() {
 			return nil, fmt.Errorf("this instance is not initialised yet; start the server once and set an unlock password")
@@ -56,9 +54,8 @@ func Open(argv []string) (v *Vault, err error) {
 		if err = v.Unlock(Credential{Password: os.Getenv(EnvPassphrase)}); err != nil {
 			return nil, err
 		}
-		// Subcommands get the redirect too. None of them touches a document
-		// today, so this changes nothing now -- but the day one does, the
-		// alternative is plaintext copies written to the container overlay,
+		// Subcommands get the redirect too. None touches a document today, but the day
+		// one does, the alternative is plaintext written to the container overlay,
 		// which is real disk, by a path nobody would think to check.
 		if err = v.InstallTempDir(); err != nil {
 			return nil, err
@@ -66,23 +63,20 @@ func Open(argv []string) (v *Vault, err error) {
 		return v, nil
 	}
 
-	// The gate takes exactly the address the server is about to take over, and
-	// is told whether that address will carry cleartext — with domain arguments
-	// PocketBase serves HTTPS on :443 via autocert and uses :80 only to
-	// redirect, but nothing is listening on :443 while the instance is locked,
-	// so a browser reaching :80 has no TLS to fall back to and the password
-	// typed into the unlock form would travel in the clear.
+	// The gate takes exactly the address the server is about to take, and is told
+	// whether it will carry cleartext: with domain arguments PocketBase serves
+	// HTTPS on :443 via autocert, but nothing listens there while locked, so a
+	// browser reaching :80 has no TLS and the password would travel in the clear.
 	addr, cleartext := appargs.ServeAddr(argv)
 	res, err := v.Gate(context.Background(), addr, cleartext)
 	if err != nil {
 		return nil, err
 	}
 	if res.Initialized && res.RecoveryCode != "" {
-		// Never log the code itself. It is a standalone, unrevokable credential
-		// for the whole archive, and container logs land unencrypted on the very
-		// host disk this feature exists to protect. The browser that initialised
-		// the vault already received it in the response; this path had no
-		// browser, so point the operator at the API instead.
+		// Never log the code itself: it is a standalone, unrevokable credential for the
+		// whole archive, and container logs land unencrypted on the host disk this
+		// feature exists to protect. This path had no browser to receive it, so point
+		// the operator at the API instead.
 		log.Printf("vault: initialised. A recovery code ending %q was generated but deliberately not logged — "+
 			"mint one you can record with POST /api/vault/recovery-code once signed in.",
 			crypt.RecoveryHint(res.RecoveryCode))
@@ -94,26 +88,20 @@ func Open(argv []string) (v *Vault, err error) {
 }
 
 // checkNotEncrypted refuses to boot a plaintext install on top of an encrypted
-// volume.
+// volume. checkNoPlaintextInstall guards the other direction; this one is by
+// far the easier mistake, because it is made by omitting something: bringing an
+// instance up without the encrypted overlay, or dropping one line from an
+// environment file.
 //
-// checkNoPlaintextInstall guards the other direction — switching encryption on
-// over existing plaintext. This is the same mistake mirrored, and it is by far
-// the easier of the two to make, because it is made by *omitting* something:
-// running `docker compose up` without the encrypted overlay, or dropping one
-// line from an environment file.
+// Nothing else would notice. Open returns the zero vault, PocketBase opens the
+// volume the ciphertext is on, finds no data.db, creates one and serves a setup
+// wizard, writing plaintext into the volume documented to hold only ciphertext.
+// The operator's first evidence is an archive that appears to have lost every
+// document.
 //
-// Nothing else would notice. Open returns the zero vault, no data directory is
-// overridden, and PocketBase opens the same volume the ciphertext is on, finds
-// no data.db, creates one, and serves a setup wizard — a fresh empty install
-// with the encrypted archive sitting beside it, and a plaintext database now
-// written into the volume whose whole documented guarantee was that it holds
-// only ciphertext. The operator's first evidence is an archive that appears to
-// have lost every document.
-//
-// It looks where PocketBase is actually about to look, which is why the --dir
-// flag and the executable-relative default are both consulted rather than just
-// VAULT_DIR: the mistake being caught is an environment that is already wrong,
-// so its VAULT_DIR may well be the thing that went missing.
+// It looks where PocketBase is about to look, consulting --dir and the
+// executable-relative default as well as VAULT_DIR: the environment being
+// caught is already wrong, so VAULT_DIR may be the thing that went missing.
 func checkNotEncrypted(argv []string, opts Options) error {
 	for _, dir := range candidateDataDirs(argv, opts) {
 		if !looksLikeVault(dir) {
@@ -135,8 +123,8 @@ func candidateDataDirs(argv []string, opts Options) []string {
 	if d := appargs.Flag(argv, "--dir"); d != "" {
 		dirs = append(dirs, d)
 	}
-	// Set but disregarded is the exact shape of the accident: an environment
-	// that still describes an encrypted install with the switch turned off.
+	// Set but disregarded is the exact shape of the accident: an environment that
+	// still describes an encrypted install with the switch turned off.
 	if opts.Dir != "" {
 		dirs = append(dirs, opts.Dir)
 	}
@@ -146,13 +134,10 @@ func candidateDataDirs(argv []string, opts Options) []string {
 	return dirs
 }
 
-// looksLikeVault reports whether a directory holds a vault rather than a
-// PocketBase data directory.
-//
-// Both markers are required. A keyring alone can be left behind by a `vault
+// looksLikeVault requires both markers. A keyring alone can be left by a `vault
 // init` that was never used, and refusing to start over that would strand an
-// install nobody had put any data into yet; CURRENT beside it means a generation
-// was committed, so there is an archive here to lose.
+// install with no data in it; CURRENT beside it means a generation was
+// committed, so there is an archive here to lose.
 func looksLikeVault(dir string) bool {
 	for _, name := range []string{keyringName, currentName} {
 		st, err := os.Stat(filepath.Join(dir, name))
@@ -163,13 +148,9 @@ func looksLikeVault(dir string) bool {
 	return true
 }
 
-// IsCommand reports whether argv asks for a vault subcommand, and returns the
-// operand after it.
-//
-// Matched on argv directly rather than through cobra because cobra runs inside
-// app.Execute, by which point PocketBase has bootstrapped — the thing these
-// commands must not do. appargs applies the same flag conventions cobra does,
-// so a flag whose value happens to be "vault" or "init" is never mistaken for
+// IsCommand matches argv directly rather than through cobra, because cobra runs
+// inside app.Execute, by which point PocketBase has bootstrapped, which is the
+// thing these commands must not do.
 // the subcommand.
 func IsCommand(argv []string) (op string, ok bool) {
 	bare := appargs.Bare(argv)
@@ -182,11 +163,9 @@ func IsCommand(argv []string) (op string, ok bool) {
 	return "", true
 }
 
-// RunCommand answers a vault subcommand and returns the process exit status.
-//
-// Anything but `init` is refused here rather than left to fall through: Open
-// would try to unlock from the environment and app.Execute would then report an
-// unknown command, which reads as an encryption failure rather than a typo.
+// RunCommand refuses anything but `init` here rather than letting it fall
+// through: Open would try to unlock from the environment and app.Execute would
+// then report an unknown command, which reads as an encryption failure.
 func RunCommand(op string) int {
 	if op != "init" {
 		fmt.Fprintln(os.Stderr, "usage: vault init")
@@ -196,15 +175,10 @@ func RunCommand(op string) int {
 }
 
 // runInit creates the keyring for a brand new instance and prints the recovery
-// code exactly once.
-//
-// It exists because there was otherwise no way to reach one. A vault could only
-// be created from serve, which never returns, and the recovery code Init
-// produces is deliberately never logged — logs land unencrypted on the very host
-// disk this feature exists to protect. The endpoint that mints a replacement
-// needs superuser auth, which does not exist yet at the moment a fresh vault is
-// unlocked with no account in it. So whoever provisions an instance had no path
-// to the code at all, and this command is that path.
+// code exactly once. Nothing else reaches one: a vault could only be created
+// from serve, which never returns, the code is deliberately never logged, and
+// the endpoint that mints a replacement needs superuser auth, which does not
+// exist when a fresh vault is unlocked.
 //
 // The contract is meant to be read by a script:
 //
@@ -212,8 +186,7 @@ func RunCommand(op string) int {
 //	exit 0, stdout "vault-recovery-code: <code>"    one was created
 //	exit 1, stderr <reason>                         anything else
 //
-// Re-running it is safe, which is what lets a provisioning step retry after a
-// failure later in the sequence without a special case for "maybe it worked".
+// Re-running is safe, so a provisioning step can retry after a later failure.
 func runInit() int {
 	opts, err := OptionsFromEnv()
 	if err != nil {
@@ -236,10 +209,9 @@ func runInit() int {
 		return 1
 	}
 	defer func() {
-		// Wipes the plaintext working directory and releases the lock. A
-		// one-shot that skipped this would leave the decrypted (empty) archive
-		// on a tmpfs and the lock held, and the serving container would then
-		// refuse to start.
+		// Wipes the plaintext working directory and releases the lock; skipping it
+		// would leave the decrypted archive on a tmpfs and the lock held, and the
+		// serving container would then refuse to start.
 		if cerr := v.Close(); cerr != nil {
 			fmt.Fprintf(os.Stderr, "vault init: cleanup failed: %v\n", cerr)
 		}
@@ -250,18 +222,16 @@ func runInit() int {
 		return 0
 	}
 
-	// An empty user id: no account exists yet. The wrap this creates is removed
-	// the first time a real credential is enrolled — see
-	// Keyring.RemoveBootstrapWrap — so the password used here does not stay a
-	// valid key to the archive for the life of the instance.
+	// An empty user id: no account exists yet. The wrap this creates is removed the
+	// first time a real credential is enrolled (Keyring.RemoveBootstrapWrap), so
+	// this password does not stay a valid key to the archive.
 	code, err := v.Init("", passphrase)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "vault init: %v\n", err)
 		return 1
 	}
 
-	// The only time this string is ever printed. It is not logged, and there is
-	// no way to ask for it again.
+	// The only time this string is ever printed; there is no way to ask again.
 	fmt.Printf("vault-recovery-code: %s\n", code)
 	return 0
 }

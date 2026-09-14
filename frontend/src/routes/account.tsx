@@ -128,9 +128,9 @@ function PasskeysSection() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
-  // Only enrolling needs a working ceremony. Listing and deleting must keep
-  // working on an address that cannot run one, or somebody who enrolled over
-  // HTTPS and later opened the app over plain HTTP on the LAN could not clean up.
+  // Only enrolling needs a working ceremony: listing and deleting must keep
+  // working on an address that cannot run one, or a passkey enrolled over HTTPS
+  // could never be cleaned up from a plain-HTTP LAN address.
   const canEnroll = passkeysSupported()
   const rows = passkeys ?? []
 

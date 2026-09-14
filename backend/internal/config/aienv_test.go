@@ -24,8 +24,6 @@ func clearAIEnv(t *testing.T) {
 	}
 }
 
-// One API key is the whole configuration: it names the language model and, with
-// no OCR provider asked for, serves OCR as well.
 func TestOneKeyConfiguresEverything(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAIAPIKey, "sk-test")
@@ -52,7 +50,6 @@ func TestOneKeyConfiguresEverything(t *testing.T) {
 	}
 }
 
-// A dedicated OCR provider is a second endpoint with its own credential.
 func TestSeparateOCRProvider(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAIAPIKey, "sk-test")
@@ -67,16 +64,15 @@ func TestSeparateOCRProvider(t *testing.T) {
 	if env.Providers.SharesOneProvider() {
 		t.Fatal("expected a provider of its own for OCR")
 	}
-	// Google Vision reads a document without a model, and storing one would
-	// fail the Settings page's own validation.
+	// Google Vision reads a document without a model, and storing one would fail
+	// the Settings page's own validation.
 	if got := env.Providers.OCRModel(); got != "" {
 		t.Fatalf("ocr model=%q, want empty for google_vision", got)
 	}
 }
 
-// A local OCR sidecar is reached by address alone. It has to survive both of
-// the checks that a second provider normally faces -- "bring your own key" and
-// "name a model" -- because it has neither to give.
+// A sidecar has neither a key nor a model to give, so it has to survive both
+// checks a second provider normally faces.
 func TestKeylessOCRSDKNeedsNoKeyAndNoModel(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAIAPIKey, "sk-test")
@@ -106,8 +102,7 @@ func TestKeylessOCRSDKNeedsNoKeyAndNoModel(t *testing.T) {
 	}
 }
 
-// The case the feature exists for: no hosted key anywhere, OCR still runs.
-// The language model is a separate problem, and the setup wizard still asks.
+// No hosted key anywhere, and the setup wizard still asks for the LLM.
 func TestKeylessOCRConfiguresWithoutAnyHostedKey(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvOCRSDK, aiprovider.SDKDocling)
@@ -141,8 +136,6 @@ func TestOCRBaseURLOverridesTheSidecarDefault(t *testing.T) {
 	}
 }
 
-// Naming the same SDK for both means one endpoint, so the key and the model
-// carry over rather than having to be written out twice.
 func TestOCRReusesTheLLMCredentialOnTheSameSDK(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAISDK, aiprovider.SDKMistral)
@@ -196,9 +189,8 @@ func TestParseRejectsMalformedInput(t *testing.T) {
 			want: EnvOCRSDK,
 		},
 		{
-			// The case that made the managed OCR check unreachable: a named OCR
-			// provider with no key used to read as "no OCR asked for", bind OCR
-			// to the language model, and bill the LLM for every page.
+			// A named OCR provider with no key used to read as "no OCR asked
+			// for", bind OCR to the language model, and bill for every page.
 			name: "a named OCR provider with no key of its own",
 			env: map[string]string{
 				EnvAIAPIKey: "sk-test", EnvOCRSDK: aiprovider.SDKGoogleVision,
@@ -235,8 +227,7 @@ func TestParseRejectsMalformedInput(t *testing.T) {
 	}
 }
 
-// Off managed mode an absent key is not an error: it is an install that intends
-// to be configured from the setup wizard.
+// An absent key is an install that intends to be configured from the wizard.
 func TestAnEmptyEnvironmentIsFineUntilItIsManaged(t *testing.T) {
 	clearAIEnv(t)
 	env, err := AIEnvFromEnv()
@@ -257,8 +248,6 @@ func TestAnEmptyEnvironmentIsFineUntilItIsManaged(t *testing.T) {
 	}
 }
 
-// AI_MANAGED accepts the same 1/true/yes/on spellings as VAULT_*, and refuses
-// anything else rather than reading it as off.
 func TestManagedAcceptsTheDocumentedBooleans(t *testing.T) {
 	for _, on := range []string{"1", "true", "yes", "on", "TRUE", " on "} {
 		clearAIEnv(t)
@@ -286,8 +275,7 @@ func TestManagedAcceptsTheDocumentedBooleans(t *testing.T) {
 	}
 }
 
-// OCR on a provider of its own must not be mistaken for OCR on the language
-// model, which is what decides who gets billed for a page.
+// Which provider serves OCR decides who gets billed for a page.
 func TestOCRProviderResolution(t *testing.T) {
 	cases := []struct {
 		name               string
@@ -340,9 +328,8 @@ func TestOCRProviderResolution(t *testing.T) {
 	}
 }
 
-// Managed mode refuses to start on a configuration nobody inside the instance
-// could repair. A keyless OCR SDK is not one of those: it needs no key, and its
-// address always resolves to the compose default.
+// A keyless OCR SDK needs no key, and its address always resolves to the
+// compose default, so managed mode has nothing to refuse.
 func TestManagedAcceptsAKeylessOCRSDK(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvManaged, "1")
@@ -370,10 +357,6 @@ func TestManagedAcceptsACompleteEnvironment(t *testing.T) {
 	}
 }
 
-// AI_CHATGPT_LOGIN opens an SDK that talks to OpenAI's first-party endpoints
-// with somebody's personal subscription. A typo read as "off" would leave an
-// operator staring at a Settings page with no sign-in button and nothing to
-// explain why, so it is strict like AI_MANAGED.
 func TestChatGPTLoginIsStrictAndOffByDefault(t *testing.T) {
 	clearAIEnv(t)
 	env, err := AIEnvFromEnv()
@@ -401,9 +384,6 @@ func TestChatGPTLoginIsStrictAndOffByDefault(t *testing.T) {
 	}
 }
 
-// The tenant of a managed instance is not the party whose ChatGPT account would
-// be at risk, and the operator already chose and pays for a provider. Refusing
-// the combination at parse time beats discovering it from Settings.
 func TestChatGPTLoginIsRefusedOnAManagedInstance(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvManaged, "1")
@@ -415,10 +395,8 @@ func TestChatGPTLoginIsRefusedOnAManagedInstance(t *testing.T) {
 	}
 }
 
-// AI_SDK=openai with an opencode.ai base URL was the only way to reach OpenCode
-// before the SDK existed, and it is what .env.example shipped. It has to keep
-// working, and it has to keep working on a *managed* instance in particular:
-// migration 1730000026 moves the provider row, but ApplyManaged re-applies the
+// It has to keep working on a managed instance in particular: migration
+// 1730000026 moves the provider row, but ApplyManaged re-applies the
 // environment on every boot and would move it straight back, with no Settings
 // page for anyone inside to intervene.
 func TestAnOpenCodeBaseURLIsReadAsTheOpenCodeSDK(t *testing.T) {
@@ -436,7 +414,6 @@ func TestAnOpenCodeBaseURLIsReadAsTheOpenCodeSDK(t *testing.T) {
 			if got := env.Providers.LLM.SDK; got != aiprovider.SDKOpenCode {
 				t.Fatalf("LLM SDK = %q, want %q", got, aiprovider.SDKOpenCode)
 			}
-			// The address the operator gave is still the address used.
 			if got := env.Providers.LLM.BaseURL; got != "https://opencode.ai/zen/go/v1" {
 				t.Fatalf("base URL = %q", got)
 			}
@@ -444,8 +421,8 @@ func TestAnOpenCodeBaseURLIsReadAsTheOpenCodeSDK(t *testing.T) {
 	}
 }
 
-// The rule is narrow on purpose: a real OpenAI endpoint, and a URL that merely
-// mentions the name in a path, are both left alone.
+// A real OpenAI endpoint, and a URL that merely mentions the name in a path,
+// are both left alone.
 func TestOtherBaseURLsAreLeftOnTheirSDK(t *testing.T) {
 	for name, baseURL := range map[string]string{
 		"openai's own":     "https://api.openai.com/v1",
@@ -471,8 +448,7 @@ func TestOtherBaseURLsAreLeftOnTheirSDK(t *testing.T) {
 	}
 }
 
-// OCR named as openai on the same OpenCode endpoint is still the same endpoint.
-// Read before the two SDKs are compared, or it would look like a second
+// Read before the two SDKs are compared, or this would look like a second
 // provider and be refused for having no key of its own.
 func TestOCROnTheSameOpenCodeEndpointSharesTheProvider(t *testing.T) {
 	clearAIEnv(t)
@@ -497,8 +473,6 @@ func TestOCROnTheSameOpenCodeEndpointSharesTheProvider(t *testing.T) {
 	}
 }
 
-// And the embedding binding is refused on it, which is the honest answer: that
-// endpoint has no /embeddings whatever the variable calls it.
 func TestEmbeddingsOnAnOpenCodeBaseURLAreRefused(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAISDK, aiprovider.SDKOpenAI)

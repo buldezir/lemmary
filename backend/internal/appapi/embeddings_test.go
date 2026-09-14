@@ -23,8 +23,8 @@ func (s *stubSweeper) StartSweep() bool {
 
 func (s *stubSweeper) SweepRunning() bool { return s.running }
 
-// Nothing to embed with means nothing to start, and the admin has to be told
-// where the binding is made -- Management has no model picker of its own.
+// The admin has to be told where the binding is made: Management has no model
+// picker of its own.
 func TestEmbeddingBackfillRefusesWithNoModelBound(t *testing.T) {
 	t.Parallel()
 	sweeper := &stubSweeper{}

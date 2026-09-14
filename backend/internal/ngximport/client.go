@@ -22,7 +22,6 @@ const (
 	downloadTimeout   = 5 * time.Minute
 )
 
-// Client talks to a remote Paperless-ngx REST API.
 type Client struct {
 	baseURL        string
 	apiKey         string
@@ -128,7 +127,6 @@ func (c *Client) ListDocuments() ([]ngxDocument, error) {
 	return listAll[ngxDocument](c, "/api/documents/", documentPageSize)
 }
 
-// ForEachDocuments invokes fn for each page of remote documents.
 func (c *Client) ForEachDocuments(fn func([]ngxDocument) error) error {
 	return forEachPage[ngxDocument](c, "/api/documents/", documentPageSize, fn)
 }

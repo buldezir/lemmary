@@ -79,9 +79,7 @@ func TestNormalizeTitle(t *testing.T) {
 }
 
 // The ellipsis TruncateRunes appends is part of the result, so a value cut to
-// exactly the column width would be one rune too long to save. Everything
-// written to a bounded column goes through FitColumn for that reason, and this
-// is the assertion that keeps it honest.
+// exactly the column width would be one rune too long to save.
 func TestFitColumnLeavesRoomForTheEllipsis(t *testing.T) {
 	for _, max := range []int{1, 2, 10, chat.MaxTitleColumnRunes, chat.MaxMessageRunes} {
 		got := chat.FitColumn(strings.Repeat("b", max*2), max)
@@ -98,8 +96,7 @@ func TestNormalizeTitleFitsTheColumn(t *testing.T) {
 	}
 }
 
-// A derived title has to fit too, and it is cut to the shorter display length
-// rather than the column width.
+// A derived title is cut to the display length, not the column width.
 func TestDeriveTitleFitsTheColumn(t *testing.T) {
 	long := chat.DeriveTitle(strings.Repeat("c", 500))
 	if n := utf8.RuneCountInString(long); n > chat.MaxTitleColumnRunes {
@@ -170,8 +167,8 @@ func TestClampHistoryCapsRunes(t *testing.T) {
 	}
 }
 
-// The last message is the question being asked. Dropping it would send the
-// model a conversation with no request in it.
+// Dropping the last message would send the model a conversation with no
+// request in it.
 func TestClampHistoryKeepsOversizedFinalMessage(t *testing.T) {
 	in := []ai.ChatMessage{
 		msg(chat.RoleUser, "old"),
@@ -187,8 +184,8 @@ func TestClampHistoryKeepsOversizedFinalMessage(t *testing.T) {
 	}
 }
 
-// A window opening on an answer reads as though the user's question had been
-// edited out of the conversation.
+// A window opening on an answer reads as though the question had been edited
+// out.
 func TestClampHistoryNeverStartsOnAnAssistantTurn(t *testing.T) {
 	big := strings.Repeat("z", chat.MaxHistoryRunes/2)
 	in := []ai.ChatMessage{
@@ -285,8 +282,7 @@ func TestEncodeHitsCapsCount(t *testing.T) {
 	}
 }
 
-// Over budget, the long free-text fields go before any hit does: losing a
-// snippet costs a preview line, losing a hit costs a card the answer names.
+// Over budget, the long free-text fields go before any hit does.
 func TestEncodeHitsShedsSnippetsBeforeHits(t *testing.T) {
 	hits := make([]ai.DocumentHit, 0, chat.MaxHitsPerTurn)
 	for i := 0; i < chat.MaxHitsPerTurn; i++ {
@@ -314,7 +310,7 @@ func TestEncodeHitsShedsSnippetsBeforeHits(t *testing.T) {
 }
 
 // PocketBase hands a JSON field back as a raw string after a fresh read and as
-// a typed value after a save. Both have to decode.
+// a typed value after a save.
 func TestDecodeHitsHandlesBothRecordShapes(t *testing.T) {
 	raw, err := json.Marshal([]ai.DocumentHit{{ID: "x", Title: "X"}})
 	if err != nil {
@@ -338,8 +334,8 @@ func TestDecodeHitsEmptyRecord(t *testing.T) {
 	}
 }
 
-// The column has to be able to hold anything the API accepts, and a derived
-// title has to fit the column a rename also writes to.
+// The column has to hold anything the API accepts, and a derived title has to
+// fit the column a rename also writes to.
 func TestLimitsAreConsistent(t *testing.T) {
 	if chat.MaxUserContentRunes >= chat.MaxMessageRunes {
 		t.Fatalf("MaxUserContentRunes (%d) must fit inside MaxMessageRunes (%d)",
@@ -366,8 +362,6 @@ func messageRecord(t *testing.T, role string, hits []ai.DocumentHit) *core.Recor
 	return record
 }
 
-// TestPriorHitsDedupesAndCaps: the evidence a conversation carries forward is
-// what the answers actually found, newest version of each document first.
 func TestPriorHitsDedupesAndCaps(t *testing.T) {
 	records := []*core.Record{
 		messageRecord(t, chat.RoleUser, nil),
@@ -422,9 +416,8 @@ func TestPriorHitsDedupesAndCaps(t *testing.T) {
 	}
 }
 
-// Passages are much the largest field on a hit, and the snippet already carries
-// the best of them shortened -- so they are the first thing given up, before
-// anything the result card needs.
+// Passages are the largest field on a hit and the snippet already carries the
+// best of them, so they are the first thing given up.
 func TestEncodeHitsShedsPassagesFirst(t *testing.T) {
 	hits := make([]ai.DocumentHit, 0, 20)
 	for i := 0; i < 20; i++ {

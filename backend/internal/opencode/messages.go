@@ -19,43 +19,31 @@ import (
 )
 
 // The models on EndpointMessages speak Anthropic's Messages API. Everything
-// below converts in one direction and back -- openai.ChatCompletionNewParams to
-// anthropic.MessageNewParams, and the Message to a *openai.ChatCompletion the
-// existing call sites already know how to read -- so no caller changes. It is
-// the same trade internal/ai/responses.go makes for /responses, and for the
-// same reason: the archive has one request shape, and a gateway's choice of
-// endpoint is not something forty call sites should know about.
-//
-// Only the fields this codebase actually sends are carried across. A field
-// nobody sets is a field that cannot silently mistranslate.
+// below converts openai.ChatCompletionNewParams to anthropic.MessageNewParams
+// and the reply back, so no call site changes. Only the fields this codebase
+// actually sends are carried across.
 
-// defaultMaxTokens caps a Messages reply.
-//
-// The parameter is required there and optional on /chat/completions, so no
-// caller in this codebase sets it and one has to be invented. This is generous
-// enough for the longest thing the archive asks for -- a Deep Search distil
-// over a batch of documents -- and the tokens are only spent if the model
-// writes them.
+// defaultMaxTokens caps a Messages reply. The parameter is required there and
+// optional on /chat/completions, so no caller sets one and it has to be
+// invented; generous enough for a Deep Search distil, and only spent if the
+// model writes it.
 //
 // ponytail: one number for every purpose. If a caller ever needs a different
 // ceiling, thread it through openai.ChatCompletionNewParams.MaxTokens, which
 // responsesParamsFrom already honours and this already prefers.
 const defaultMaxTokens = 32768
 
-// NewMessages builds the Anthropic client for an OpenCode base URL.
-//
-// Both credentials are sent: x-api-key, which is what @ai-sdk/anthropic (the
-// package OpenCode's own docs pair with this endpoint) presents, and an
-// Authorization bearer, which is what its other two endpoints take. The docs
-// specify neither, and one header costs nothing.
+// NewMessages builds the Anthropic client for an OpenCode base URL. Both
+// credentials are sent: x-api-key, which @ai-sdk/anthropic presents, and an
+// Authorization bearer, which OpenCode's other endpoints take. The docs
+// specify neither and one header costs nothing.
 func NewMessages(apiKey, baseURL string, timeout time.Duration) anthropic.Client {
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
 	opts := []anthropicoption.RequestOption{
-		// This is an OpenCode endpoint reached with an OpenCode key. Without
-		// this marker the SDK also walks its own credential chain --
-		// ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, a config profile -- and a
+		// Without this marker the SDK also walks its own credential chain
+		// (ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, a config profile), so a
 		// developer with Claude configured on the same host would have it
 		// contribute to these requests.
 		anthropicoption.WithoutEnvironmentDefaults(),
@@ -75,16 +63,15 @@ func NewMessages(apiKey, baseURL string, timeout time.Duration) anthropic.Client
 }
 
 // documentMiddleware is the Anthropic SDK's copy of the document-header
-// middleware aiprovider.DocumentOptions installs on the OpenAI one. Same
-// header, same context value; the two SDKs simply cannot share a middleware.
+// middleware aiprovider.DocumentOptions installs on the OpenAI one: same
+// header, same context value, but the two SDKs cannot share a middleware.
 func documentMiddleware(req *http.Request, next anthropicoption.MiddlewareNext) (*http.Response, error) {
 	aiprovider.StampDocument(req)
 	return next(req)
 }
 
 // sessionMiddleware is aiprovider.SessionMiddleware for the Anthropic SDK,
-// whose option package is its own type. Same header, same context value; the
-// two SDKs simply cannot share a middleware.
+// whose option package is its own type.
 func sessionMiddleware() anthropicoption.Middleware {
 	return func(req *http.Request, next anthropicoption.MiddlewareNext) (*http.Response, error) {
 		if req != nil {
@@ -97,10 +84,9 @@ func sessionMiddleware() anthropicoption.Middleware {
 }
 
 // MessagesBaseURL is the base URL to build the Anthropic client with.
-//
-// anthropic-sdk-go appends the relative path "v1/messages" itself, so the /v1
-// that every other endpoint's base URL carries has to come off first -- left on,
-// the request would go to /zen/go/v1/v1/messages.
+// anthropic-sdk-go appends "v1/messages" itself, so the /v1 every other
+// endpoint's base URL carries has to come off first, or the request goes to
+// /zen/go/v1/v1/messages.
 func MessagesBaseURL(baseURL string) string {
 	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if base == "" {
@@ -109,15 +95,13 @@ func MessagesBaseURL(baseURL string) string {
 	return strings.TrimSuffix(base, "/v1") + "/"
 }
 
-// MessagesURL is the /messages endpoint for an OpenCode base URL. It exists for
-// the outbound request log: the SDK builds the real URL itself, and a log line
-// that guessed a different one would be worse than none.
+// MessagesURL is the /messages endpoint for an OpenCode base URL. It exists
+// for the outbound request log: the SDK builds the real URL itself, and a log
+// line that guessed a different one would be worse than none.
 func MessagesURL(baseURL string) string {
 	return MessagesBaseURL(baseURL) + "v1/messages"
 }
 
-// CompleteViaMessages runs a chat-completions-shaped request through the
-// Messages API and hands back a chat completion.
 func CompleteViaMessages(
 	ctx context.Context,
 	client anthropic.Client,
@@ -148,13 +132,8 @@ func CompleteViaMessages(
 	return chatCompletionFrom(msg), nil
 }
 
-// CompleteStreamingViaMessages is the streaming twin: text arrives as
-// content_block_delta events and the usage totals ride on message_delta.
-//
-// It returns openai.CompletionUsage rather than internal/ai's own Usage type
-// because this package is a leaf: internal/ai imports it, so it cannot import
-// internal/ai back. The caller folds it with the same usageFrom it uses for an
-// ordinary completion.
+// CompleteStreamingViaMessages returns openai.CompletionUsage rather than
+// internal/ai's Usage because this package is a leaf that internal/ai imports.
 func CompleteStreamingViaMessages(
 	ctx context.Context,
 	client anthropic.Client,
@@ -191,9 +170,9 @@ func CompleteStreamingViaMessages(
 		case "message_start":
 			usage = usageFrom(event.Message.Usage)
 		case "content_block_delta":
-			// text_delta only. A thinking_delta carries no answer text, and
-			// an input_json_delta belongs to a tool call, which the streaming
-			// call sites do not send.
+			// text_delta only: a thinking_delta carries no answer text, and an
+			// input_json_delta belongs to a tool call the streaming call sites do
+			// not send.
 			delta := event.Delta.Text
 			if delta == "" {
 				continue
@@ -217,7 +196,6 @@ func CompleteStreamingViaMessages(
 	return b.String(), usage, stream.Err()
 }
 
-// messagesParamsFrom translates a chat completion request into a Messages one.
 func messagesParamsFrom(params openai.ChatCompletionNewParams) (anthropic.MessageNewParams, error) {
 	system, messages, err := messagesFrom(params.Messages)
 	if err != nil {
@@ -234,18 +212,12 @@ func messagesParamsFrom(params openai.ChatCompletionNewParams) (anthropic.Messag
 	}
 	if params.Temperature.Valid() {
 		// The two APIs scale it differently: chat completions takes 0-2,
-		// Messages takes 0-1. Everything this codebase sends is already inside
-		// 0-1 (see ai.CompletionTemperature), so this only guards a future
-		// caller from having its 1.4 silently rejected.
+		// Messages takes 0-1.
 		req.Temperature = anthropic.Float(min(params.Temperature.Value, 1))
 	}
-	// params.ResponseFormat is deliberately dropped. The Messages API has no
-	// bare "give me JSON" mode -- its structured output wants a full schema, and
-	// the callers here ask for json_object with none. Every one of them already
-	// says "Return one JSON object" in its own prompt and parses the answer
-	// leniently through models.NormalizeJSONObject, which is why the
-	// chat-completions path already retries without the parameter when a
-	// provider rejects it.
+	// params.ResponseFormat is deliberately dropped: the Messages API has no bare
+	// "give me JSON" mode, and every caller here already asks for JSON in its own
+	// prompt and parses leniently through models.NormalizeJSONObject.
 	for _, tool := range params.Tools {
 		fn := anthropic.ToolParam{
 			Name:        tool.Function.Name,
@@ -270,8 +242,8 @@ func messagesParamsFrom(params openai.ChatCompletionNewParams) (anthropic.Messag
 }
 
 // toolInputSchemaFrom carries a function's JSON schema across. Only properties
-// and required are named fields there; anything else the schema declares rides
-// in ExtraFields, so a hand-written schema is not quietly trimmed.
+// and required are named fields there; anything else rides in ExtraFields, so a
+// hand-written schema is not quietly trimmed.
 func toolInputSchemaFrom(schema map[string]any) anthropic.ToolInputSchemaParam {
 	out := anthropic.ToolInputSchemaParam{}
 	extras := map[string]any{}
@@ -310,12 +282,9 @@ func stringsFrom(value any) []string {
 }
 
 // messagesFrom splits the chat message list into the top-level system prompt
-// and the conversation.
-//
-// The two shapes disagree twice. There is no system role in Messages -- it is a
-// parameter of its own -- and a tool call is a content block on the turn rather
-// than a field beside it, answered by a user turn carrying a tool_result block
-// instead of a message with its own role.
+// and the conversation. The two shapes disagree twice: there is no system role
+// in Messages, and a tool call is a content block on the turn answered by a
+// user turn carrying tool_result, rather than a message with its own role.
 func messagesFrom(messages []openai.ChatCompletionMessageParamUnion) ([]anthropic.TextBlockParam, []anthropic.MessageParam, error) {
 	var system []anthropic.TextBlockParam
 	out := make([]anthropic.MessageParam, 0, len(messages))
@@ -364,21 +333,12 @@ func messagesFrom(messages []openai.ChatCompletionMessageParamUnion) ([]anthropi
 	return system, out, nil
 }
 
-// appendBlocks adds blocks to the conversation under role, merging them into
-// the previous turn when that turn has the same role.
-//
-// The Messages API alternates user and assistant turns, and a chat completion
-// list does not: a round of parallel tool calls answers with one tool-role
-// message per call, and Deep Search then appends a user instruction after them
-// -- three messages that all become user turns. Anthropic's own API documents
-// that it combines consecutive same-role turns, but OpenCode's /messages
-// models are MiniMax and Qwen behind a translating gateway, and a tool_use left
-// unanswered in the turn that immediately follows it is a 400 wherever the
-// combining does not happen. Merging here costs a few lines and removes the
-// question.
-//
-// Order within the merged turn is preserved, which is what keeps the
-// tool_result blocks ahead of the instruction that follows them.
+// appendBlocks adds blocks under role, merging them into the previous turn
+// when that turn has the same role. The Messages API alternates user and
+// assistant turns and a chat completion list does not; behind OpenCode's
+// translating gateway a tool_use left unanswered in the turn that immediately
+// follows it is a 400. Order within the merged turn is preserved, which keeps
+// the tool_result blocks ahead of the instruction after them.
 func appendBlocks(out []anthropic.MessageParam, role anthropic.MessageParamRole, blocks ...anthropic.ContentBlockParamUnion) []anthropic.MessageParam {
 	if len(blocks) == 0 {
 		return out
@@ -390,8 +350,6 @@ func appendBlocks(out []anthropic.MessageParam, role anthropic.MessageParamRole,
 	return append(out, anthropic.MessageParam{Role: role, Content: blocks})
 }
 
-// userBlocksFrom carries a user message across, including the image and file
-// parts LLM OCR sends.
 func userBlocksFrom(msg openai.ChatCompletionUserMessageParam) ([]anthropic.ContentBlockParamUnion, error) {
 	if msg.Content.OfString.Valid() {
 		return []anthropic.ContentBlockParamUnion{anthropic.NewTextBlock(msg.Content.OfString.Value)}, nil
@@ -404,8 +362,8 @@ func userBlocksFrom(msg openai.ChatCompletionUserMessageParam) ([]anthropic.Cont
 		case part.OfImageURL != nil:
 			mediaType, data, ok := splitDataURI(part.OfImageURL.ImageURL.URL)
 			if !ok {
-				// A remote URL, which Messages does accept -- unlike the file
-				// part below, which only ever carries inline data.
+				// A remote URL, which Messages accepts unlike the file part
+				// below.
 				blocks = append(blocks, anthropic.NewImageBlock(anthropic.URLImageSourceParam{
 					URL: part.OfImageURL.ImageURL.URL,
 				}))
@@ -417,10 +375,8 @@ func userBlocksFrom(msg openai.ChatCompletionUserMessageParam) ([]anthropic.Cont
 			if !ok {
 				return nil, fmt.Errorf("messages: file part carries no inline data")
 			}
-			// ocr.LLMUserContentParts refuses anything but a PDF before it gets
-			// here, and a PDF is the only document source the Messages API takes
-			// as base64. Checked anyway: sent as one, a docx would come back as
-			// an opaque upstream error.
+			// A PDF is the only document source the Messages API takes as base64;
+			// sent as one, a docx would come back as an opaque upstream error.
 			if mediaType != "application/pdf" {
 				return nil, fmt.Errorf("messages: cannot send %s as a document; use a PDF or an image", mediaType)
 			}
@@ -433,8 +389,7 @@ func userBlocksFrom(msg openai.ChatCompletionUserMessageParam) ([]anthropic.Cont
 }
 
 // splitDataURI reads "data:<media type>;base64,<data>" into its two halves.
-// Anything else -- a remote URL, a bare string -- is reported as not one rather
-// than guessed at.
+// Anything else is reported as not one rather than guessed at.
 func splitDataURI(uri string) (mediaType, data string, ok bool) {
 	if !strings.HasPrefix(uri, "data:") {
 		return "", "", false
@@ -454,9 +409,8 @@ func splitDataURI(uri string) (mediaType, data string, ok bool) {
 }
 
 // chatCompletionFrom folds a Message back into the one-choice chat completion
-// the call sites read. Thinking blocks are dropped: they carry no text to show,
-// and replaying them would mean threading provider-specific state through every
-// caller.
+// the call sites read. Thinking blocks are dropped: replaying them would mean
+// threading provider-specific state through every caller.
 func chatCompletionFrom(msg *anthropic.Message) *openai.ChatCompletion {
 	if msg == nil {
 		return nil
@@ -504,9 +458,8 @@ func chatCompletionFrom(msg *anthropic.Message) *openai.ChatCompletion {
 }
 
 // usageFrom folds Anthropic's token counts into the chat-completions shape.
-// cache_read_input_tokens is Anthropic's CachedTokens: the part of the prompt
-// served from the prefix cache, included in the input total rather than
-// additional to it -- the same convention ai.Usage documents.
+// cache_read_input_tokens is CachedTokens: part of the input total rather than
+// additional to it, the same convention ai.Usage documents.
 func usageFrom(u anthropic.Usage) openai.CompletionUsage {
 	return openai.CompletionUsage{
 		PromptTokens:     u.InputTokens,

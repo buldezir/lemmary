@@ -14,9 +14,7 @@ import (
 	"lemmary/backend/internal/strutil"
 )
 
-// Kind separates the two chat surfaces sharing this collection. They have the
-// same lifecycle and the same sidebar, so one collection with a discriminator
-// beats two near-identical ones.
+// Kind separates the two chat surfaces sharing this collection.
 type Kind string
 
 const (
@@ -32,15 +30,12 @@ const (
 )
 
 // The two things a search turn can be: find documents and list them, or read
-// them and answer with citations. Plain strings so the collection definition
-// does not drag in the ai package.
+// them and answer with citations.
 const (
 	ModeSearch   = "search"
 	ModeResearch = "research"
 )
 
-// UntitledSession is what a session is called when nothing usable can be
-// derived from its first message.
 const UntitledSession = "New chat"
 
 const (
@@ -55,13 +50,12 @@ const (
 	// worse than saying no.
 	MaxUserContentRunes = 8000
 	// MaxMessageRunes bounds the content column. An assistant reply longer
-	// than this is truncated on the way in, never rejected -- 1730000016 is
-	// what a column Max the producer did not know about costs, and here it
-	// would mean throwing away an answer the provider was already paid for.
+	// than this is truncated on the way in, never rejected: the alternative is
+	// throwing away an answer the provider was already paid for.
 	MaxMessageRunes = 60000
 	// MaxRunIDRunes bounds the client-generated correlation id stored beside a
-	// turn. It is not a credential; it only lets a client recover the exact
-	// answer produced by a request whose connection was interrupted.
+	// turn. Not a credential; it only lets a client recover the exact answer of
+	// a request whose connection was interrupted.
 	MaxRunIDRunes = 200
 
 	// MaxHistoryMessages and MaxHistoryRunes bound the transcript replayed to
@@ -74,20 +68,16 @@ const (
 	// unbounded table. Breaching it is an error, never a silent prune.
 	MaxSessionsPerUser = 500
 
-	// MaxHitsPerTurn and MaxHitsJSONBytes bound the search hits stored beside
-	// an assistant turn.
 	MaxHitsPerTurn   = 50
 	MaxHitsJSONBytes = 64000
 
 	// MaxStepsPerTurn and MaxStepsJSONBytes bound the research trail stored
-	// beside an assistant turn. A run emits a handful of start/progress/done
-	// events; the cap exists so a malformed producer cannot bloat a row.
+	// beside an assistant turn, so a malformed producer cannot bloat a row.
 	MaxStepsPerTurn   = 80
 	MaxStepsJSONBytes = 16000
 
-	// MaxReplayMessages caps one transcript read. Sessions do not get near it
-	// in practice; the cap exists so a single request cannot load an unbounded
-	// number of rows.
+	// MaxReplayMessages caps one transcript read, so a single request cannot
+	// load an unbounded number of rows.
 	MaxReplayMessages = 500
 )
 
@@ -97,7 +87,6 @@ var (
 	// for other accounts' session ids. Same reasoning as passkey.ErrNotFound.
 	ErrNotFound = errors.New("chat session not found")
 
-	// ErrTooManySessions is MaxSessionsPerUser refusing a new session.
 	ErrTooManySessions = errors.New("too many chat sessions")
 )
 
@@ -114,11 +103,9 @@ func ParseKind(raw string) (Kind, bool) {
 	}
 }
 
-// DeriveTitle names a session after the message that started it.
-//
-// Whitespace is collapsed first: a pasted multi-line question would otherwise
-// put newlines into a sidebar row, and the visible part would be only its first
-// line however long the rest is.
+// DeriveTitle names a session after the message that started it. Whitespace is
+// collapsed first: a pasted multi-line question would otherwise put newlines
+// into a sidebar row.
 func DeriveTitle(firstUserMessage string) string {
 	collapsed := strings.Join(strings.Fields(firstUserMessage), " ")
 	if collapsed == "" {
@@ -127,9 +114,8 @@ func DeriveTitle(firstUserMessage string) string {
 	return strutil.TruncateRunes(collapsed, MaxTitleRunes)
 }
 
-// NormalizeTitle cleans a user-supplied rename, falling back to the placeholder
-// rather than rejecting a blank one -- the same forgiving shape as
-// passkey.NormalizeName.
+// NormalizeTitle cleans a user-supplied rename, falling back to the
+// placeholder rather than rejecting a blank one.
 func NormalizeTitle(title string) string {
 	collapsed := strings.Join(strings.Fields(title), " ")
 	if collapsed == "" {
@@ -139,10 +125,8 @@ func NormalizeTitle(title string) string {
 }
 
 // FitColumn shortens s to something a column of max runes will accept.
-//
 // The -1 is not an off-by-one: TruncateRunes appends an ellipsis, so cutting to
-// exactly max hands back max+1 runes and the save fails validation -- which is
-// the failure mode 1730000016 already paid for once.
+// exactly max hands back max+1 runes and the save fails validation.
 func FitColumn(s string, max int) string {
 	if max <= 0 {
 		return ""
@@ -158,15 +142,10 @@ func FitColumn(s string, max int) string {
 	return strutil.TruncateRunes(s, max-1)
 }
 
-// ClampHistory trims a transcript to what is worth replaying to the model:
-// the most recent MaxHistoryMessages turns, and within that the most recent
-// MaxHistoryRunes of text.
-//
-// Two shape rules the caps must not break. The last message is the question
-// being asked, so it survives even when it alone exceeds the rune budget --
-// dropping it would send the model a conversation with no request in it. And
-// the window never opens on an assistant turn, which reads as though the user's
-// question had been edited out.
+// ClampHistory trims a transcript to the most recent MaxHistoryMessages turns
+// and, within that, the most recent MaxHistoryRunes of text. The last message
+// survives even when it alone exceeds the budget, and the window never opens on
+// an assistant turn, which reads as though the question had been edited out.
 func ClampHistory(messages []ai.ChatMessage) []ai.ChatMessage {
 	if len(messages) == 0 {
 		return []ai.ChatMessage{}
@@ -177,8 +156,6 @@ func ClampHistory(messages []ai.ChatMessage) []ai.ChatMessage {
 		start = len(messages) - MaxHistoryMessages
 	}
 
-	// Walk backwards adding whole messages while the budget lasts, always
-	// keeping the last one.
 	budget := MaxHistoryRunes
 	first := len(messages) - 1
 	for i := len(messages) - 1; i >= start; i-- {
@@ -203,17 +180,11 @@ func ClampHistory(messages []ai.ChatMessage) []ai.ChatMessage {
 	return out
 }
 
-// EncodeHits renders the search hits stored beside an assistant turn.
-//
-// They are a snapshot, not relations: the reply text describes what was found
-// at that moment, and re-resolving the documents later would let a retitled or
-// re-summarized document make the transcript disagree with itself.
-//
-// Over budget, the long free-text fields go before any hit does -- losing a
-// snippet costs a preview line, losing a hit costs a result card the answer
-// refers to by name. Passages go first of all: they are by far the largest
-// field, and the snippet already carries the best of them shortened, which is
-// all the card ever shows.
+// EncodeHits renders the search hits stored beside an assistant turn. They are
+// a snapshot, not relations: re-resolving the documents later would let a
+// retitled one make the transcript disagree with itself. Over budget, passages
+// go first and the other free-text fields next, because losing a hit costs a
+// result card the answer refers to by name.
 func EncodeHits(hits []ai.DocumentHit) types.JSONRaw {
 	if len(hits) == 0 {
 		return nil
@@ -288,7 +259,6 @@ func StepFromEvent(ev ai.ResearchEvent) StoredStep {
 	}
 }
 
-// EncodeSteps renders the research trail stored beside an assistant turn.
 func EncodeSteps(steps []StoredStep) types.JSONRaw {
 	if len(steps) == 0 {
 		return nil
@@ -313,7 +283,6 @@ func EncodeSteps(steps []StoredStep) types.JSONRaw {
 	return types.JSONRaw(encoded)
 }
 
-// DecodeSteps reads the research trail back off a message record.
 func DecodeSteps(record *core.Record) []StoredStep {
 	raw := strings.TrimSpace(record.GetString("steps"))
 	if raw == "" || raw == "null" {
@@ -326,11 +295,9 @@ func DecodeSteps(record *core.Record) []StoredStep {
 	return steps
 }
 
-// DecodeHits reads the hits back off a message record.
-//
-// The raw-string dance is not defensive padding: PocketBase hands a JSON field
-// back as a typed value after a save and as a raw string after a fresh read,
-// the same polymorphism models.PeopleOrOrganizations documents.
+// DecodeHits reads the hits back off a message record. PocketBase hands a JSON
+// field back typed after a save and as a raw string after a fresh read, the
+// polymorphism models.PeopleOrOrganizations documents.
 func DecodeHits(record *core.Record) []ai.DocumentHit {
 	raw := strings.TrimSpace(record.GetString("documents"))
 	if raw == "" || raw == "null" {
@@ -343,18 +310,14 @@ func DecodeHits(record *core.Record) []ai.DocumentHit {
 	return hits
 }
 
-// SessionInfo is the client-facing view of a session.
 type SessionInfo struct {
-	ID   string `json:"id"`
-	Kind string `json:"kind"`
-	// Title is what the sidebar shows.
+	ID    string `json:"id"`
+	Kind  string `json:"kind"`
 	Title string `json:"title"`
 	// Mode is the search mode the last turn ran in ("" for document chats).
 	Mode string `json:"mode,omitempty"`
 	// Provider and Model are the binding the conversation runs on, empty when
-	// it runs on the one in Settings. Sent so reopening a chat restores the
-	// picker on the choice its transcript was produced with -- the same reason
-	// Mode is here.
+	// it runs on the one in Settings, so reopening a chat restores the picker.
 	Provider string `json:"provider,omitempty"`
 	Model    string `json:"model,omitempty"`
 	// Document is set for KindDocument sessions; DocumentTitle is filled by the
@@ -367,7 +330,6 @@ type SessionInfo struct {
 	Updated       string `json:"updated"`
 }
 
-// MessageInfo is the client-facing view of one turn.
 type MessageInfo struct {
 	ID         string           `json:"id"`
 	Seq        int              `json:"seq"`
@@ -380,7 +342,6 @@ type MessageInfo struct {
 	Created    string           `json:"created"`
 }
 
-// ToSessionInfo projects a session record for the API.
 func ToSessionInfo(record *core.Record) SessionInfo {
 	lastMessageAt := ""
 	if value := record.GetDateTime("last_message_at"); !value.IsZero() {
@@ -401,12 +362,9 @@ func ToSessionInfo(record *core.Record) SessionInfo {
 	}
 }
 
-// BindingOf reads the provider and model a conversation is pinned to.
-//
-// The only reader of those two fields, so that "a session with no override runs
-// on Settings" is one line rather than a nil check at each of the two chat
-// handlers. A nil record answers the same as an unpinned one, which is what a
-// conversation that does not exist yet needs.
+// BindingOf reads the provider and model a conversation is pinned to. A nil
+// record answers the same as an unpinned one, which is what a conversation that
+// does not exist yet needs.
 func BindingOf(record *core.Record) aiprovider.Binding {
 	if record == nil {
 		return aiprovider.Binding{}
@@ -417,7 +375,6 @@ func BindingOf(record *core.Record) aiprovider.Binding {
 	}.Normalized()
 }
 
-// ToMessageInfo projects a message record for the API.
 func ToMessageInfo(record *core.Record) MessageInfo {
 	return MessageInfo{
 		ID:         record.Id,

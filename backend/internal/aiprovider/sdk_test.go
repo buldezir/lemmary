@@ -40,9 +40,8 @@ func TestIsLLM(t *testing.T) {
 }
 
 // TestSDKCapabilities is one table over every SDK, because the three predicates
-// have to agree: they are read together at the provider create handler, the
-// environment parser and the readiness check, and a row that disagrees with
-// itself is how a provider becomes unconfigurable.
+// are read together at the create handler, the environment parser and the
+// readiness check.
 func TestSDKCapabilities(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -59,9 +58,8 @@ func TestSDKCapabilities(t *testing.T) {
 		{SDKMistral, true, false, true, false, "https://api.mistral.ai/v1", "Mistral"},
 		{SDKGoogleVision, true, false, false, false, "", "Google Cloud Vision"},
 		{SDKDocling, false, true, false, true, "http://docling:5001", "Docling"},
-		// The rows that matter most: an unrecognised or empty SDK must fall on
-		// the side that still demands a key, because every call site now reads
-		// RequiresAPIKey instead of testing the key itself.
+		// An unrecognised or empty SDK must fall on the side that still demands
+		// a key, because every call site reads RequiresAPIKey rather than the key.
 		{"tesseract", true, false, true, false, "", "tesseract"},
 		{"", true, false, true, false, "", ""},
 		{"  ", true, false, true, false, "", "  "},
@@ -103,7 +101,7 @@ func TestEverySDKInValidSDKsIsValid(t *testing.T) {
 }
 
 // The environment parser's "needs a model" error enumerates these rather than
-// naming google_vision from memory, which is how that sentence went stale.
+// naming google_vision from memory.
 func TestModellessOCRSDKsMatchesRequiresOCRModel(t *testing.T) {
 	t.Parallel()
 	want := map[string]bool{SDKGoogleVision: true, SDKDocling: true}
@@ -144,8 +142,7 @@ func TestProviderConfigured(t *testing.T) {
 }
 
 // The local SDK is the one that embeds without chatting, which is why CanEmbed
-// exists at all: before it, IsLLM stood in for both questions because every SDK
-// that answered one answered the other.
+// is asked rather than IsLLM.
 func TestLocalSDKEmbedsWithoutChatting(t *testing.T) {
 	t.Parallel()
 	if !ValidSDK(SDKLocalEmbeddings) {
@@ -159,14 +156,11 @@ func TestLocalSDKEmbedsWithoutChatting(t *testing.T) {
 	}
 }
 
-// ValidSDK is not the question OCR asks. `local` is a valid SDK and a useless
-// OCR provider, and without CanOCR the mismatch would only surface on the first
-// document someone uploaded.
+// ValidSDK is not the question OCR asks: `local` is a valid SDK and a useless
+// OCR provider, and the mismatch would only surface on the first upload.
 func TestCanOCR(t *testing.T) {
 	t.Parallel()
-	// docling belongs in this list as much as google_vision does: it is an OCR
-	// engine, and leaving it out let a whitelist of the other four stay green
-	// while refusing every sidecar OCR binding.
+	// docling belongs in this list as much as google_vision does.
 	for _, sdk := range []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKGoogleVision, SDKDocling} {
 		if !CanOCR(sdk) {
 			t.Fatalf("CanOCR(%q) = false", sdk)
@@ -177,9 +171,8 @@ func TestCanOCR(t *testing.T) {
 	}
 }
 
-// The messages that enumerate SDKs are derived from the predicates, so a new
-// SDK cannot leave a sentence naming an old list. These assert the derivation,
-// not the wording.
+// The messages that enumerate SDKs are derived from the predicates. These
+// assert the derivation, not the wording.
 func TestSDKListsMatchTheirPredicates(t *testing.T) {
 	t.Parallel()
 	cases := map[string]struct {
@@ -220,8 +213,7 @@ func TestCanEmbed(t *testing.T) {
 	if CanEmbed(SDKGoogleVision) || CanEmbed("unknown") || CanEmbed("") {
 		t.Fatal("google_vision, an unknown SDK and an empty SDK cannot embed")
 	}
-	// The two that chat without embedding, which is what forces CanEmbed apart
-	// from IsLLM in the other direction: neither catalogue has an embedding
+	// The two that chat without embedding: neither catalogue has an embedding
 	// model, and neither endpoint serves /embeddings.
 	for _, sdk := range []string{SDKOpenCode, SDKChatGPT} {
 		if !IsLLM(sdk) {
@@ -234,9 +226,8 @@ func TestCanEmbed(t *testing.T) {
 }
 
 // A sidecar on the compose network has nobody to authenticate to, so an empty
-// key there is a complete configuration rather than a half-written one. Both
-// sidecar SDKs answer this the same way; Provider.Configured is what turns it
-// into "reachable", by asking for the address instead.
+// key there is a complete configuration. Provider.Configured turns that into
+// "reachable" by asking for the address instead.
 func TestRequiresAPIKey(t *testing.T) {
 	t.Parallel()
 	for _, sdk := range []string{SDKLocalEmbeddings, SDKDocling} {

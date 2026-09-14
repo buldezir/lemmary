@@ -7,8 +7,6 @@ import (
 	pblogger "github.com/pocketbase/pocketbase/tools/logger"
 )
 
-// teeHandler writes records to a console handler when they meet that
-// handler's min level, and forwards to inner only when inner.Enabled.
 type teeHandler struct {
 	console slog.Handler
 	inner   slog.Handler

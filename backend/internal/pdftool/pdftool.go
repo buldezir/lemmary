@@ -59,9 +59,8 @@ func lookPath(binary string) (string, error) {
 // instead of just an exit code.
 //
 // The two streams are kept apart on purpose: poppler prints warnings about
-// damaged files ("Internal Error: xref num 1 not found") to standard error even
-// on success, and folding those into the output would count a warning as
-// extracted page text — which is enough to make a scan look born-digital.
+// damaged files to standard error even on success, and counting those as
+// extracted page text is enough to make a scan look born-digital.
 func run(ctx context.Context, binary string, args ...string) ([]byte, error) {
 	path, err := lookPath(binary)
 	if err != nil {
@@ -117,9 +116,8 @@ func PageCount(ctx context.Context, pdfPath string) (int, error) {
 //
 // One pdftoppm call renders the whole file; invoking it per page would pay the
 // document parse cost again for every page. pdftoppm zero-pads the page suffix
-// to the width of the highest page number (page-01.png for a 12 page file), so
-// the outputs are read back in sorted order and renamed to unpadded names that
-// callers can address directly by page number.
+// to the width of the highest page number, so the outputs are read back in
+// sorted order and renamed to unpadded names callers can address by page number.
 func RenderPages(ctx context.Context, pdfPath, outDir string, maxEdge, pageCount int) ([]string, error) {
 	if err := RequirePDF(pdfPath); err != nil {
 		return nil, err
@@ -227,8 +225,6 @@ func PageText(ctx context.Context, pdfPath string, page int) (string, error) {
 //
 // One call rather than one per page: pdftotext re-parses the whole document
 // every time it starts, so a per-page loop pays that cost pageCount times.
-// pdftotext writes a form feed after each page, which is what the output is cut
-// on.
 func AllPagesText(ctx context.Context, pdfPath string, pageCount int) ([]string, error) {
 	if err := RequirePDF(pdfPath); err != nil {
 		return nil, err
@@ -239,8 +235,6 @@ func AllPagesText(ctx context.Context, pdfPath string, pageCount int) ([]string,
 	ctx, cancel := context.WithTimeout(ctx, AllTextTimeout)
 	defer cancel()
 
-	// -layout keeps columns readable, which matters when the text is fed to a
-	// model that has to recognize letterheads and totals.
 	output, err := run(ctx, "pdftotext", "-layout", pdfPath, "-")
 	if err != nil {
 		return nil, err
@@ -320,10 +314,6 @@ func ExtractRange(ctx context.Context, pdfPath string, from, to int, outPath str
 
 // Merge concatenates inputs into a single PDF at outPath.
 //
-// pdfunite is what ExtractRange already stitches a range back together with;
-// this is the same call without the pdfseparate half, for callers that hold
-// whole PDFs already -- a scan that grows a page at a time, say.
-//
 // outPath may name one of the inputs. pdfunite refuses to write over a file it
 // is reading, so the result goes to a temp file and is moved into place, which
 // also means a failed run leaves the old outPath untouched.
@@ -356,9 +346,8 @@ func Merge(ctx context.Context, outPath string, inputs ...string) error {
 	if err := movePDF(merged, outPath); err != nil {
 		return err
 	}
-	// Same reason ExtractRange does it: pdfunite stamps a fresh random trailer
-	// /ID, which would give the same pages a different checksum every run and
-	// stop duplicate detection ever firing.
+	// pdfunite stamps a fresh random trailer /ID, which would give the same
+	// pages a different checksum every run; see canonicalizeFileID.
 	return canonicalizeFileID(outPath)
 }
 

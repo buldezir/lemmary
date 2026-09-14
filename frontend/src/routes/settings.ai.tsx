@@ -35,9 +35,8 @@ type Bindings = {
   embedding_model: string
 }
 
-// The four LLM bindings the simple view collapses into one "general" model.
-// An empty Deep Search helper still fits: it means the search model does that
-// work itself, which is the same model either way.
+// The four LLM bindings the simple view collapses into one "general" model. An
+// empty Deep Search helper still fits: it means the search model does that work.
 function fitsOneGeneralModel(form: Bindings): boolean {
   const general = `${form.extract_provider_id}|${form.extract_model}`
   const helper = `${form.search_helper_provider_id}|${form.search_helper_model}`
@@ -64,10 +63,8 @@ function setGeneralModel(providerId: string, model: string): Partial<Bindings> {
   }
 }
 
-// EmbeddingStatsLine says how much of the archive the chosen model has actually
-// covered. Without it, switching the model looks instantaneous while the
-// backfill is in fact working through the archive a batch a minute, and nothing
-// on the page would say so.
+// Without this, switching the embedding model looks instantaneous while the
+// backfill is in fact working through the archive a batch a minute.
 function EmbeddingStatsLine({ stats }: { stats: EmbeddingStats | null }) {
   if (!stats || !stats.enabled) return null
 
@@ -121,15 +118,13 @@ export function SettingsAIPage() {
   async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!form) return
-    // No client-side validation: which provider may serve which binding, and
-    // which of them needs a model, is the server's answer -- see
-    // applySettingsPatch.
+    // No client-side validation: which provider may serve which binding is the
+    // server's answer, see applySettingsPatch.
     await save(form)
   }
 
-  // Waiting on meta before saying who owns these settings: undefined means the
-  // request is still out, and claiming a hosting provider owns them is a
-  // statement, not a safe default.
+  // undefined means the meta request is still out, and claiming a hosting
+  // provider owns these settings is a statement, not a safe default.
   if (!metaLoaded) return <SettingsLoading error="" />
   if (aiManaged !== false) return <ManagedByHostNotice />
   if (loading || !form) return <SettingsLoading error={error} />
@@ -159,8 +154,8 @@ export function SettingsAIPage() {
               variant="secondary"
               size="xs"
               onClick={() => {
-                // Collapsing on the way in, not on save: the simple view
-                // shows one model, so the three it hides must already agree.
+                // Collapsing on the way in, not on save: the simple view shows
+                // one model, so the three it hides must already agree.
                 if (advancedModels) {
                   updateFields((current) =>
                     setGeneralModel(current.extract_provider_id, current.extract_model),

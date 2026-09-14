@@ -232,9 +232,8 @@ func TestResearchRunsOnTheResponsesAPI(t *testing.T) {
 	}
 
 	chat, resp := h.counts()
-	// None. The table already knew, so there is no rejected request to pay for
-	// -- which is what the error-shape discovery this replaced cost, twice per
-	// model before it would believe an ambiguous refusal.
+	// None: the routing table already knew, so there is no rejected request
+	// to pay for.
 	if chat != 0 {
 		t.Fatalf("chat/completions attempts = %d, want none", chat)
 	}
@@ -413,7 +412,7 @@ func TestStreamingRunsOnTheResponsesAPI(t *testing.T) {
 
 // The Responses API reports a generation it gave up on in the body, with a 200.
 // Handed back as a completion it would reach the caller as a successful empty
-// answer -- and would count as proof that the endpoint works.
+// answer.
 func TestFailedResponseIsNotASuccess(t *testing.T) {
 	model := "failed-status-model"
 	resetModelNotes()
@@ -436,8 +435,7 @@ func TestFailedResponseIsNotASuccess(t *testing.T) {
 }
 
 // A Responses error event puts its code and message at the top level, with no
-// nested "error" object, so the SDK's stream decoder does not raise it. Unread,
-// an exploded generation looks like a short but successful answer.
+// nested "error" object, so the SDK's stream decoder does not raise it.
 func TestStreamErrorEventIsNotSilentlySwallowed(t *testing.T) {
 	model := "stream-error-model"
 	resetModelNotes()
@@ -539,10 +537,9 @@ func TestOrdinaryModelStaysOnChatCompletions(t *testing.T) {
 
 // The chatgpt SDK reaches the Responses API from underneath: its middleware
 // rewrites /chat/completions into /responses and is the only thing holding the
-// Codex auth headers. So the one remaining route up here -- the
-// reasoning_effort/tools conflict, which every gpt-5-family model can raise --
-// must not be taken for it: doing so would POST /responses directly, past the
-// middleware, with the placeholder key and no originator.
+// Codex auth headers. Taking the reasoning_effort/tools route up here would
+// POST /responses past the middleware, with the placeholder key and no
+// originator.
 func TestTheChatGPTSDKNeverTranslatesToResponsesItself(t *testing.T) {
 	const model = "gpt-5.6-luna"
 	resetModelNotes()
@@ -576,18 +573,15 @@ func TestTheChatGPTSDKNeverTranslatesToResponsesItself(t *testing.T) {
 	if needsResponsesAPI(srv.URL, model) {
 		t.Fatal("the chatgpt SDK was pinned to a /responses route its middleware does not serve")
 	}
-	// And it did not retry at all: the whole reasoning_effort block is behind
-	// the same guard, because for this SDK the request is already a Responses
-	// one by the time it leaves -- the middleware made it so, and the
-	// parameters chat completions would argue about never reach the backend.
+	// And it did not retry at all: for this SDK the request is already a
+	// Responses one by the time it leaves.
 	if conflicts.Load() != 1 {
 		t.Fatalf("chat/completions requests = %d, want just the one", conflicts.Load())
 	}
 }
 
 // The routing for an opencode model comes from the table, not from a failed
-// request: /chat/completions is never tried for a model the docs put on
-// /responses.
+// request.
 func TestAnOpenCodeResponsesModelSkipsChatCompletionsEntirely(t *testing.T) {
 	h := &responsesHarness{respTurns: []scriptedTurn{{content: "from responses"}}}
 	base := newResponsesHarness(t, h)
@@ -619,9 +613,8 @@ func TestTheChatGPTSDKDoesNotTranslateStreamsEither(t *testing.T) {
 
 	h := &responsesHarness{chatStatus: http.StatusInternalServerError}
 	base := newResponsesHarness(t, h)
-	// Pinned, as a 500 on any other SDK would pin it: the guard has to hold
-	// even once the note is set, because notes are keyed by endpoint and model
-	// and say nothing about which SDK is reaching them.
+	// Pinned, as a 500 on any other SDK would pin it: notes are keyed by
+	// endpoint and model and say nothing about which SDK is reaching them.
 	rememberResponsesAPI(base, model)
 	client := NewOpenAIClient(aiprovider.SDKChatGPT, "chatgpt-oauth", model, base, "v1", "", 5*time.Second, slog.Default())
 

@@ -9,45 +9,38 @@ import (
 	"strings"
 )
 
-// Environment configuration.
-//
-// These are read from the environment rather than from app_settings on purpose:
-// a toggle stored in the database would live inside the very file it is meant to
-// protect, and could not be consulted before the database is decrypted.
+// Read from the environment rather than app_settings: a toggle stored in the
+// database would live inside the very file it is meant to protect, and could
+// not be consulted before the database is decrypted.
 const (
 	EnvEnabled     = "VAULT_ENABLED"
 	EnvDir         = "VAULT_DIR"
 	EnvWorkDir     = "VAULT_WORKDIR"
 	EnvKeep        = "VAULT_KEEP_GENERATIONS"
 	EnvAllowShrink = "VAULT_ALLOW_SHRINK"
-	// EnvAllowDiskWorkDir permits decrypting into a working directory that is
-	// not memory-backed. Tests and local development only.
+	// EnvAllowDiskWorkDir permits decrypting into a working directory that is not
+	// memory-backed. Tests and local development only.
 	EnvAllowDiskWorkDir = "VAULT_ALLOW_DISK_WORKDIR"
 	// EnvAllowInsecureGate accepts serving the unlock form over cleartext HTTP.
 	EnvAllowInsecureGate = "VAULT_ALLOW_INSECURE_GATE"
-	// EnvPassphrase unlocks non-interactively. It exists for CLI subcommands
-	// and for tests, never as the recommended way to run a server: a passphrase
-	// in the environment sits next to the ciphertext it protects.
+	// EnvPassphrase unlocks non-interactively, for CLI subcommands and tests: a
+	// passphrase in the environment sits next to the ciphertext it protects.
 	//
-	// The deliberate exception to the read-once rule below: it is a credential,
-	// not a setting, so it is read with os.Getenv at each of the three points
-	// that consume it and never stored on Options. Options is logged, compared
-	// and carried for the life of the process; the master password for the whole
-	// archive should live in none of those places.
+	// The exception to the read-once rule below. It is a credential, not a setting,
+	// so it is read with os.Getenv at each of the three points that consume it and
+	// never stored on Options, which is logged, compared and kept for the life of
+	// the process.
 	EnvPassphrase = "VAULT_PASSPHRASE"
 )
 
-// OptionsFromEnv builds vault options from the process environment.
+// OptionsFromEnv reads every switch once and carries it in Options: a getenv
+// buried in a path reached only while locked is a setting nobody can answer
+// questions about, and one of these decides whether the archive's password may
+// cross a network in the clear.
 //
-// Every switch is read here, once, and carried in Options from then on — the
-// house rule for environment flags, and load-bearing for these in particular:
-// a getenv buried in a code path reached only while locked is a setting nobody
-// can answer questions about, and one of these decides whether the archive's
-// password may cross a network in the clear.
-//
-// WorkDir defaults to a sibling of the vault directory rather than to somewhere
-// under it, so a misconfiguration cannot end up writing plaintext inside the
-// directory that is supposed to hold only ciphertext.
+// WorkDir defaults to a sibling of the vault directory rather than somewhere
+// under it, so a misconfiguration cannot write plaintext inside the directory
+// meant to hold only ciphertext.
 func OptionsFromEnv() (Options, error) {
 	o := Options{
 		Dir:     os.Getenv(EnvDir),
@@ -72,9 +65,8 @@ func OptionsFromEnv() (Options, error) {
 		}
 	}
 
-	// Unlike the booleans, a generation count that does not parse falls back to
-	// the default: too few generations costs rollback depth, never the archive,
-	// and refusing to boot over it would be out of proportion.
+	// Unlike the booleans, an unparseable generation count falls back to the
+	// default: too few generations costs rollback depth, never the archive.
 	if n, convErr := strconv.Atoi(os.Getenv(EnvKeep)); convErr == nil && n > 0 {
 		o.KeepGenerations = n
 	}
@@ -90,16 +82,11 @@ func OptionsFromEnv() (Options, error) {
 	return o, nil
 }
 
-// envBool reads a boolean environment variable, refusing a value it does not
-// recognise.
-//
-// Falling back to false is the wrong answer for this family. VAULT_ENABLED=Y is
-// a plausible thing to write and would leave encryption off while the operator
-// believed it on — the volume filling with plaintext, every guarantee in the
-// documentation silently void, and nothing anywhere saying so. The same
-// reasoning applies to the escape hatches in the other direction. An unparseable
-// value is a mistake, and the only safe response to a mistake in this file is to
-// refuse to start.
+// envBool refuses a value it does not recognise. VAULT_ENABLED=Y is a plausible
+// thing to write, and falling back to false would leave encryption off while the
+// operator believed it on, with the volume filling with plaintext and nothing
+// anywhere saying so. The escape hatches cut the same way in the other
+// direction.
 func envBool(key string) (bool, error) {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
 	case "":

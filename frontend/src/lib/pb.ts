@@ -10,13 +10,11 @@ export const pb = new PocketBase(pbUrl)
 export const pbAdminUrl = `${pbUrl}/_/`
 
 // An encrypted instance answers 423 Locked on every API route until somebody
-// unlocks it: the vault's gate runs before PocketBase exists and serves its own
-// unlock form. A tab that was already open when the server restarted into that
-// state would otherwise sit there failing every request; reloading lands it on
-// the unlock form instead.
+// unlocks it, and the vault's gate serves its own unlock form. A tab open
+// across that restart would otherwise fail every request for ever.
 //
-// Guarded by a flag because many requests can fail at once, and each would
-// otherwise trigger its own reload.
+// Guarded by a flag because many requests can fail at once, each of which would
+// trigger its own reload.
 let reloadingForLock = false
 
 pb.afterSend = (response, data) => {

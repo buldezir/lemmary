@@ -17,7 +17,6 @@ const (
 	pdftoppmTimeout = 30 * time.Second
 )
 
-// GenerateFirstPagePNG renders the first page of a PDF to a small PNG preview.
 func GenerateFirstPagePNG(pdfPath string) (*filesystem.File, error) {
 	if err := pdftool.RequirePDF(pdfPath); err != nil {
 		return nil, fmt.Errorf("preview: not a PDF file")

@@ -13,9 +13,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// openTestDB gives the store a real SQLite file with the pragmas PocketBase
-// uses, because the store speaks SQL directly: a mock would only prove that the
-// strings in this package match the strings in its tests.
+// A real SQLite file with PocketBase's pragmas: the store speaks SQL directly,
+// so a mock would only prove its strings match its tests' strings.
 func openTestDB(t *testing.T) *dbx.DB {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "data.db")
@@ -26,7 +25,6 @@ func openTestDB(t *testing.T) *dbx.DB {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	// The candidate and orphan queries join `documents`, so the tests need one.
 	_, err = db.NewQuery(`CREATE TABLE documents (
 		id TEXT PRIMARY KEY,
 		user TEXT NOT NULL DEFAULT '',
@@ -88,8 +86,7 @@ func sampleChunks(id string) []Chunk {
 }
 
 // The BLOB layout is the contract with the vector index, which decodes the same
-// bytes as little-endian float32. A round trip through SQLite is the only place
-// that is actually proven.
+// bytes as little-endian float32.
 func TestVectorRoundTripsThroughSQLite(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
@@ -120,8 +117,7 @@ func TestVectorRoundTripsThroughSQLite(t *testing.T) {
 			}
 		}
 	}
-	// A chunk is offsets into the live ocr_text column, never a copy of it, so
-	// the offsets are the whole of what has to survive the round trip.
+	// A chunk is offsets, never a copy, so the offsets are all that matters.
 	for i := range got {
 		if got[i].EndByte != want[i].EndByte {
 			t.Fatalf("chunk %d lost its end offset: %+v", i, got[i])
@@ -139,8 +135,8 @@ func TestDecodeVectorRejectsCorruptLength(t *testing.T) {
 	}
 }
 
-// A re-embed after an edit produces a different number of chunks; the previous
-// tail must not survive as passages that no longer exist.
+// A re-embed produces a different number of chunks; the previous tail must not
+// survive as passages that no longer exist.
 func TestReplaceDropsThePreviousChunks(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
@@ -170,8 +166,8 @@ func TestReplaceDropsThePreviousChunks(t *testing.T) {
 	}
 }
 
-// A vector of the wrong length is dropped silently by the vector index, so a
-// document holding one would look embedded and never be findable.
+// The vector index drops a wrong-length vector silently, so a document holding
+// one would look embedded and never be findable.
 func TestReplaceRefusesMixedDimensions(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
@@ -245,8 +241,7 @@ func TestMarkFailedCountsAttemptsAndKeepsChunks(t *testing.T) {
 		}
 	}
 
-	// A provider outage degrades retrieval to what it was, it does not delete
-	// the document out of the dense index.
+	// A provider outage degrades retrieval; it does not empty the dense index.
 	chunks, err := Chunks(db, "doc1")
 	if err != nil || len(chunks) != 3 {
 		t.Fatalf("chunks after failures: %d (%v)", len(chunks), err)
@@ -308,8 +303,8 @@ func TestCandidatesCoversEveryReasonToReEmbed(t *testing.T) {
 	write("doc-processing", nil)
 	write("doc-pending", nil)
 
-	// Dimensions are stored per chunk from the vector itself, so a dims change
-	// has to be written straight onto the state row.
+	// Dims are stored per chunk from the vector, so a change has to be written
+	// straight onto the state row.
 	write("doc-other-dims", nil)
 	if _, err := db.NewQuery(`UPDATE document_embeddings SET dims = 8 WHERE document_id = 'doc-other-dims'`).Execute(); err != nil {
 		t.Fatalf("update dims: %v", err)
@@ -349,8 +344,7 @@ func TestCandidatesIgnoresDimsBeforeTheFirstResponse(t *testing.T) {
 		t.Fatalf("Replace: %v", err)
 	}
 
-	// dims 0 means "not recorded yet", which must not read as "every stored
-	// row has the wrong length".
+	// dims 0 is "not recorded yet", not "every stored row is the wrong length".
 	got, err := Candidates(db, state.Model, 0, 1, 10, time.Now())
 	if err != nil {
 		t.Fatalf("Candidates: %v", err)
@@ -360,10 +354,8 @@ func TestCandidatesIgnoresDimsBeforeTheFirstResponse(t *testing.T) {
 	}
 }
 
-// A scan that OCRed to a couple of newlines is not embeddable: the embedder
-// skips it without writing a row, so a predicate that only compared against the
-// empty string handed it back as a candidate on every tick for the life of the
-// archive.
+// The embedder skips whitespace-only OCR without writing a row, so a predicate
+// comparing only against the empty string handed it back on every tick.
 func TestCandidatesSkipsWhitespaceOnlyOCR(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
@@ -382,8 +374,8 @@ func TestCandidatesSkipsWhitespaceOnlyOCR(t *testing.T) {
 		t.Fatalf("candidates = %v, want only doc-real", got)
 	}
 
-	// The same definition backs the progress bar, or the Settings page would
-	// count documents the queue will never reach.
+	// The same definition backs the progress bar, or Settings would count
+	// documents the queue never reaches.
 	stats, err := LoadStats(db, "m", 0, 1, now)
 	if err != nil {
 		t.Fatalf("LoadStats: %v", err)
@@ -393,18 +385,15 @@ func TestCandidatesSkipsWhitespaceOnlyOCR(t *testing.T) {
 	}
 }
 
-// The predicate and Go's own idea of whitespace do not have to agree
-// character for character, so the embedder's terminal row is the second
-// guard: a document it could make nothing of stops being a candidate for
-// good, rather than costing a record read on every tick.
+// SQLite's trim() and Go's idea of whitespace need not agree character for
+// character, so the embedder's terminal row is the second guard.
 func TestATerminalRowEndsTheCandidateLoop(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
 	now := time.Now()
 	const model = "text-embedding-3-small"
 
-	// A non-breaking space: not blank to SQLite's trim(), blank to the
-	// embedder, which is the mismatch that used to loop.
+	// A non-breaking space: not blank to SQLite's trim(), blank to the embedder.
 	insertDocument(t, db, "doc1", " ")
 
 	first, err := Candidates(db, model, 4, 1, 10, now)
@@ -415,8 +404,7 @@ func TestATerminalRowEndsTheCandidateLoop(t *testing.T) {
 		t.Fatalf("first tick = %v, want doc1", first)
 	}
 
-	// What the embedder writes when a document yields no passages at all:
-	// current model, current chunker, no chunks.
+	// What the embedder writes when a document yields no passages at all.
 	terminal := State{
 		DocumentID:     "doc1",
 		UserID:         "user1",
@@ -488,8 +476,6 @@ func TestDeleteRemovesBothTables(t *testing.T) {
 	}
 }
 
-// The record hook cannot run for a document deleted while the feature was off,
-// or for one that vanished with a restored backup.
 func TestDeleteOrphansSweepsRowsWithNoDocument(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
@@ -519,13 +505,11 @@ func TestDeleteOrphansSweepsRowsWithNoDocument(t *testing.T) {
 		t.Fatalf("live chunks were swept: %d (%v)", len(chunks), err)
 	}
 
-	// A second sweep has nothing to do and must not report work.
 	if got, err := DeleteOrphans(db); err != nil || len(got) != 0 {
 		t.Fatalf("second sweep = %v (%v), want nothing", got, err)
 	}
 }
 
-// recordingListener is the derived vector index as this package sees it.
 type recordingListener struct {
 	mu      sync.Mutex
 	deleted map[string]int
@@ -548,9 +532,8 @@ func (l *recordingListener) count(documentID string) int {
 	return l.deleted[documentID]
 }
 
-// The sweep deletes by SQL, which no hook sees. Without an explicit
-// notification the vectors stay in the Bleve chunk index and keep answering
-// searches for a document that is gone, until the next boot heals it.
+// The sweep deletes by SQL, which no hook sees: without an explicit
+// notification the vectors keep answering searches for a document that is gone.
 func TestDeleteOrphansNotifiesTheIndex(t *testing.T) {
 	// Not parallel: the listener is process-wide.
 	db := openTestDB(t)
@@ -597,8 +580,8 @@ func TestMarkStaleFlagsWithoutDeleting(t *testing.T) {
 	}
 }
 
-// A rebuild after a model switch must not silently pick up the previous
-// model's vectors: the index drops the wrong length without a word.
+// A rebuild after a model switch must not pick up the previous model's
+// vectors: the index drops the wrong length without a word.
 func TestForEachChunkFiltersByModelAndDims(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
@@ -754,7 +737,6 @@ func TestDropSchemaRemovesBothTables(t *testing.T) {
 	if _, err := Chunks(db, "doc1"); err == nil {
 		t.Fatal("the chunks table still exists after DropSchema")
 	}
-	// Idempotent, so a down migration can run twice.
 	if err := DropSchema(db); err != nil {
 		t.Fatalf("second DropSchema: %v", err)
 	}

@@ -38,8 +38,7 @@ func TestSplitIsDeterministic(t *testing.T) {
 	}
 }
 
-// The stored range is sliced out of the live ocr_text column later, so every
-// offset has to be a valid rune boundary in the original string.
+// The stored range is sliced out of the live ocr_text column later.
 func TestSplitCutsOnlyAtRuneBoundaries(t *testing.T) {
 	t.Parallel()
 	text := strings.Repeat("héllo 🌍 世界 привіт ", 900)
@@ -64,8 +63,6 @@ func TestSplitCutsOnlyAtRuneBoundaries(t *testing.T) {
 	}
 }
 
-// Every byte of the document must belong to at least one chunk, or a passage
-// simply cannot be retrieved.
 func TestSplitCoversTheWholeText(t *testing.T) {
 	t.Parallel()
 	text := sampleText(t)
@@ -168,8 +165,7 @@ func TestSplitWhitespaceOnlyYieldsNothing(t *testing.T) {
 	}
 }
 
-// A run with no whitespace at all has no cut candidate; the pass must still
-// terminate, falling back to the rune boundary at MaxRunes.
+// No whitespace means no cut candidate; the fallback is the rune boundary.
 func TestSplitTerminatesWithoutWhitespace(t *testing.T) {
 	t.Parallel()
 	text := strings.Repeat("a", 10000)
@@ -201,8 +197,7 @@ func TestSplitShortTextIsOneChunk(t *testing.T) {
 
 func TestSplitPrefersParagraphBreaks(t *testing.T) {
 	t.Parallel()
-	// Two paragraphs of ~900 runes each: the break sits inside the cut window,
-	// so it must be chosen over any of the sentence ends around it.
+	// Two paragraphs of ~900 runes: the break sits inside the cut window.
 	first := strings.Repeat("word ", 180)
 	second := strings.Repeat("other ", 200)
 	text := first + "\n\n" + second
@@ -217,8 +212,7 @@ func TestSplitPrefersParagraphBreaks(t *testing.T) {
 	}
 }
 
-// The zero Options must behave, so a caller cannot accidentally build a
-// chunker that loops or emits one chunk per rune.
+// A zero Options must not build a chunker that loops or emits one chunk per rune.
 func TestSplitNormalizesZeroOptions(t *testing.T) {
 	t.Parallel()
 	text := sampleText(t)

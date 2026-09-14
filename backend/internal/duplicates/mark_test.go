@@ -21,8 +21,7 @@ func newDuplicateTestRecord(id, duplicateOf string) *core.Record {
 }
 
 // An already-linked document must report marked=false so a repeated scan does
-// not count the same document again. A document with a cleared checksum is
-// re-hashed on every scan, so this path runs on every run.
+// not count it again; a cleared checksum makes this path run on every scan.
 func TestMarkAsDuplicateReportsNoOpForAlreadyLinked(t *testing.T) {
 	t.Parallel()
 
@@ -53,7 +52,6 @@ func TestMarkAsDuplicateRejectsMissingRecords(t *testing.T) {
 	}
 }
 
-// Guards the intended status on the marking path without needing a live app.
 func TestDuplicateStatusConstant(t *testing.T) {
 	t.Parallel()
 

@@ -123,8 +123,8 @@ func hasTools(body map[string]any) bool {
 	return len(tools) > 0
 }
 
-// Issue #49, on a provider with no Responses endpoint to move to: the refusal's
-// other option, reasoning_effort=none, is then the only way to keep the tools.
+// Issue #49 on a provider with no Responses endpoint: reasoning_effort=none is
+// then the only way to keep the tools.
 func TestResearchFallsBackToReasoningEffortNoneAndRemembers(t *testing.T) {
 	// Not parallel: the learned-model set is process-wide.
 	model := "gpt-5.6-luna-research-test"
@@ -160,8 +160,7 @@ func TestResearchFallsBackToReasoningEffortNoneAndRemembers(t *testing.T) {
 	if h.rejections != 1 {
 		t.Fatalf("rejections = %d, want exactly 1: the model should be remembered after the first refusal", h.rejections)
 	}
-	// /responses is the better of the two options the refusal names, so it has
-	// to be offered the request before "none" is settled for.
+	// /responses is the better of the two options the refusal names.
 	if h.responsesTried != 1 {
 		t.Fatalf("responses attempts = %d, want 1 before falling back to none", h.responsesTried)
 	}
@@ -208,9 +207,8 @@ func TestReasoningEffortNoneIsNotAppliedWithoutTools(t *testing.T) {
 	}
 }
 
-// The refusal names /responses first because it keeps the tools *and* the
-// reasoning; "none" keeps the tools by switching the reasoning off. Where both
-// are available, the request must take the first.
+// The refusal names /responses first because it keeps the tools and the
+// reasoning, where "none" switches the reasoning off.
 func TestReasoningEffortConflictPrefersTheResponsesAPI(t *testing.T) {
 	model := "gpt-5.6-luna-prefers-responses"
 	resetModelNotes()
@@ -255,8 +253,7 @@ func TestReasoningEffortConflictPrefersTheResponsesAPI(t *testing.T) {
 	}
 }
 
-// A "none" the provider also refuses is not worth pinning: the next call would
-// send a value already known to fail.
+// A "none" the provider also refuses is not worth pinning.
 func TestReasoningEffortNoneIsNotRememberedWhenItAlsoFails(t *testing.T) {
 	model := "gpt-5.6-luna-none-also-fails"
 	resetModelNotes()

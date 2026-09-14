@@ -30,8 +30,7 @@ func bindSuperuser(handler func(*core.RequestEvent) error) func(*core.RequestEve
 	}
 }
 
-// bindAdmin allows PocketBase superuser auth or a paired users session
-// (users record with is_app_admin).
+// bindAdmin allows PocketBase superuser auth or a paired users session.
 func bindAdmin(handler func(*core.RequestEvent) error) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		if e.Auth == nil {
@@ -62,9 +61,8 @@ func writeOwnerError(e *core.RequestEvent, err error) error {
 	return writeError(e, http.StatusInternalServerError, "Failed to resolve document owner.")
 }
 
-// resolveOwnerUserID returns the users-collection record id that owns the
-// documents this request acts on. A superuser session has no users record of its
-// own, so it is mapped to the paired account by email.
+// resolveOwnerUserID maps a superuser session, which has no users record of its
+// own, to the paired account by email.
 func resolveOwnerUserID(app core.App, e *core.RequestEvent) (string, error) {
 	if e.Auth == nil {
 		return "", &ownerClientError{msg: "Authentication required."}

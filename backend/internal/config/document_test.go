@@ -10,9 +10,8 @@ import (
 )
 
 // NewRuntime is the only production write of the managed flag, and every other
-// test in the tree sets it by hand. Without this one, deleting the SetManaged
-// call would leave managed installs sending no header and the suite would
-// still pass.
+// test sets it by hand: without this one, deleting the SetManaged call would
+// leave managed installs sending no header and the suite would still pass.
 func TestNewRuntimeHandsManagedToAIProvider(t *testing.T) {
 	prev := aiprovider.Managed()
 	t.Cleanup(func() { aiprovider.SetManaged(prev) })
@@ -26,8 +25,8 @@ func TestNewRuntimeHandsManagedToAIProvider(t *testing.T) {
 		{"self-hosted", false, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// Deliberately set to the opposite first, so a NewRuntime that
-			// wrote nothing at all would fail rather than inherit the answer.
+			// Set to the opposite first, so a NewRuntime that wrote nothing at all would
+			// fail rather than inherit the answer.
 			aiprovider.SetManaged(!tc.managed)
 			NewRuntime(AIEnv{Managed: tc.managed})
 

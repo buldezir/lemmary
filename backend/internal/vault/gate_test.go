@@ -126,8 +126,7 @@ func TestGateUnlockRejectsNonPost(t *testing.T) {
 	}
 }
 
-// The unlock page is served before any template data could be attacker
-// controlled, but pin that: the only value it interpolates is a bool.
+// The only value the page interpolates is a bool; pin that.
 func TestGateUnlockPageRendersWithoutUserInput(t *testing.T) {
 	_, _, handler := newGateHarness(t)
 
@@ -150,12 +149,10 @@ func TestGateUnlockPageRendersWithoutUserInput(t *testing.T) {
 	}
 }
 
-// The same field on a fresh vault is asking the visitor to *choose* the
-// password that will encrypt everything. current-password there makes a
-// password manager offer some unrelated saved credential instead of generating
-// a strong one, which is the opposite of what this one moment needs -- and it
-// is the only moment, because the password cannot be changed afterwards
-// without the archive.
+// On a fresh vault the visitor is choosing the password that will encrypt
+// everything, so current-password would make a password manager offer some
+// unrelated saved credential instead of generating a strong one. It is the only
+// moment, because the password cannot be changed afterwards without the archive.
 func TestGateSetupPageAsksForAGeneratedPassword(t *testing.T) {
 	root := t.TempDir()
 	v, err := New(Options{
@@ -252,10 +249,8 @@ func TestGateRefusesEmptyInitialisationPassword(t *testing.T) {
 }
 
 // Initialising an empty vault mints a master key under a caller-chosen
-// password. Nothing authenticates that request, so it must at least be
-// unreachable from a hostile page in the operator's browser: a form POST is a
-// CORS simple request and would otherwise let any site seize the key of a fresh
-// instance on localhost or the LAN.
+// password, and nothing authenticates that request, so it must at least be
+// unreachable from a hostile page: a form POST is a CORS simple request.
 func TestGateUnlockRejectsCrossOriginAndFormPosts(t *testing.T) {
 	root := t.TempDir()
 	v, err := New(Options{
@@ -361,14 +356,9 @@ func TestInitRefusesAnExistingPlaintextInstall(t *testing.T) {
 }
 
 // A passphrase that no longer opens anything must fall through to the unlock
-// form, not fail startup.
-//
-// The way to reach this is not a typo. Provisioning with VAULT_PASSPHRASE set is
-// documented, and the first account save deliberately revokes the bootstrap wrap
-// that passphrase created. Leave the variable in the compose file — the natural
-// thing to do — and a hard failure here exits 1 on every restart, crash-looping
-// the container under any restart policy, with the form that would have accepted
-// an ordinary account password never served.
+// form, not fail startup: a VAULT_PASSPHRASE left in the compose file is
+// revoked by the first account save, and a hard failure would crash-loop the
+// container.
 func TestGateFallsBackToTheFormWhenTheEnvPassphraseIsStale(t *testing.T) {
 	h := newHarness(t)
 	t.Setenv(EnvPassphrase, "the-revoked-bootstrap-passphrase")
@@ -427,10 +417,9 @@ func TestGateUnlocksFromTheEnvironmentWhenThePassphraseIsCurrent(t *testing.T) {
 	}
 }
 
-// The refusal to serve the unlock form in the clear has to fire for the address
-// the stock container actually uses. Its entrypoint passes
-// --http=0.0.0.0:${PORT}, and an explicit address used to be exempt — so the
-// check never fired on the one configuration most people run.
+// The refusal has to fire for the address the stock container actually uses:
+// its entrypoint passes --http=0.0.0.0:${PORT}, and an explicit address used to
+// be exempt.
 func TestGateRefusesAnExposedCleartextAddress(t *testing.T) {
 	h := newHarness(t)
 	t.Setenv(EnvPassphrase, "")
@@ -455,14 +444,10 @@ func TestGateRefusesAnExposedCleartextAddress(t *testing.T) {
 
 func ctxErr(_ GateResult, err error) error { return err }
 
-// A second unlock on an already-open vault must not run the restore again.
-//
-// Unlock empties the working directory before it materialises anything into it,
-// and gateMu only orders two concurrent requests — it does not stop the second
-// one. Gate's Shutdown gives an in-flight handler five seconds and then returns
-// without stopping its goroutine, so on an archive whose restore outlasts that
-// the second handler deletes the working directory after PocketBase has opened
-// the database inside it. Two tabs on the unlock form is the entire setup.
+// A second unlock on an already-open vault must not run the restore again: it
+// empties the working directory first, and an abandoned handler would delete
+// the database PocketBase has already opened. Two tabs on the form is the
+// entire setup.
 func TestGateSecondUnlockDoesNotRestoreAgain(t *testing.T) {
 	v, done, handler := newGateHarness(t)
 

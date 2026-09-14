@@ -30,9 +30,8 @@ func settingsRecordForTest(t *testing.T) *core.Record {
 
 func strptr(s string) *string { return &s }
 
-// Every stored vector was produced by one model at one length. Changing either
-// makes the recorded length a lie, and a vector index sized from it would
-// silently drop everything.
+// Changing the model or its length makes the recorded length a lie, and a
+// vector index sized from it would silently drop everything.
 func TestPatchResetsDimensionsWhenTheBindingChanges(t *testing.T) {
 	t.Parallel()
 	record := settingsRecordForTest(t)
@@ -80,8 +79,7 @@ func TestPatchRefusesAnEmbeddingProviderWithoutAModel(t *testing.T) {
 	}
 }
 
-// Clearing both is how an admin turns dense retrieval off, and it has to be
-// allowed.
+// Clearing both is how an admin turns dense retrieval off.
 func TestPatchAllowsClearingTheWholeEmbeddingBinding(t *testing.T) {
 	t.Parallel()
 	record := settingsRecordForTest(t)
@@ -100,9 +98,8 @@ func TestPatchAllowsClearingTheWholeEmbeddingBinding(t *testing.T) {
 	}
 }
 
-// The operator owns the AI bill in managed mode, and the embedding binding is
-// part of it: a tenant able to point it at their own model would be spending
-// the operator's key.
+// The operator owns the AI bill in managed mode: a tenant pointing the embedding
+// binding at their own model would spend the operator's key.
 func TestTouchesManagedCoversTheEmbeddingBinding(t *testing.T) {
 	t.Parallel()
 
@@ -118,8 +115,7 @@ func TestTouchesManagedCoversTheEmbeddingBinding(t *testing.T) {
 	}
 }
 
-// embedding_dims has no patch field at all: it is learned from the provider,
-// not chosen.
+// embedding_dims has no patch field: it is learned from the provider.
 func TestSettingsResponseExposesTheEmbeddingBinding(t *testing.T) {
 	t.Parallel()
 	got := settingsResponseFromConfig(config.Config{
@@ -137,9 +133,7 @@ func TestSettingsResponseExposesTheEmbeddingBinding(t *testing.T) {
 }
 
 // The three binding messages are derived from the capability predicates, so a
-// new SDK cannot leave a sentence naming an old list. The OCR one had already
-// gone stale once -- it named four SDKs after docling shipped -- which is what
-// these pin.
+// new SDK cannot leave a sentence naming an old list.
 func TestBindingRefusalsNameEverySDKThatCouldServe(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -149,10 +143,9 @@ func TestBindingRefusalsNameEverySDKThatCouldServe(t *testing.T) {
 		serves  []string
 		mustSay []string
 	}{
-		// refused is a real SDK this binding turns down, which is how the
-		// message is reached. CanOCR answers true for anything it does not know,
-		// so an invented name would not do -- and would not be reachable anyway,
-		// since ValidSDK gates what a row may hold.
+		// refused has to be a real SDK this binding turns down: CanOCR answers
+		// true for anything it does not know, and ValidSDK gates what a row may
+		// hold anyway.
 		{"llm", needLLM, aiprovider.SDKGoogleVision, aiprovider.LLMSDKs(),
 			[]string{aiprovider.SDKChatGPT}},
 		{"embedding", needEmbedding, aiprovider.SDKGoogleVision, aiprovider.EmbeddingSDKs(),
@@ -181,8 +174,8 @@ func TestBindingRefusalsNameEverySDKThatCouldServe(t *testing.T) {
 		})
 	}
 
-	// And every SDK that can serve is actually accepted, so the lists and the
-	// predicates cannot disagree.
+	// Every SDK that can serve is accepted too, so the lists and the predicates
+	// cannot disagree.
 	for _, sdk := range aiprovider.OCRSDKs() {
 		if err := providerServes(aiprovider.Provider{SDK: sdk}, needOCR); err != nil {
 			t.Errorf("OCR refused %s, which OCRSDKs names: %v", sdk, err)
@@ -219,9 +212,8 @@ func TestPatchTurnsAlwaysRequireReviewOnAndOff(t *testing.T) {
 	}
 }
 
-// Requiring review buys no API calls, so a managed tenant keeps it. Naming a
-// managed field fails the whole PATCH with a 403, which would make the toggle
-// unusable on every hosted plan.
+// Requiring review buys no API calls, so a managed tenant keeps it: naming a
+// managed field fails the whole PATCH with a 403.
 func TestAlwaysRequireReviewIsNotAManagedSetting(t *testing.T) {
 	t.Parallel()
 	if (settingsPatchRequest{AlwaysRequireReview: boolptr(true)}).touchesManaged() {
@@ -251,8 +243,8 @@ func TestPatchStoresTrimmedExtractionRules(t *testing.T) {
 	}
 }
 
-// The read side of the same field. Without this, a patch could store rules the
-// Settings page would never show back.
+// Without the read side, a patch could store rules the Settings page would
+// never show back.
 func TestSettingsResponseCarriesExtractionRules(t *testing.T) {
 	t.Parallel()
 	res := settingsResponseFromConfig(config.Config{
@@ -292,8 +284,8 @@ func TestOneOfReadsAsASentence(t *testing.T) {
 	}
 }
 
-// The branding half of a patch is validated before the record is touched, so a
-// value PocketBase would reject cannot leave the rest of the patch applied.
+// Validated before the record is touched, so a value PocketBase would reject
+// cannot leave the rest of the patch applied.
 func TestBrandingPatchValidatesNameAndAccent(t *testing.T) {
 	t.Parallel()
 

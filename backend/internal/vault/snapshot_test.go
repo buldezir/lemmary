@@ -27,10 +27,9 @@ func openTestDB(t *testing.T, path string) *dbx.DB {
 	return db
 }
 
-// The snapshot runs on the concurrent pool, so it has to work there: VACUUM INTO
-// is a read transaction, but it is still being issued on a connection from a
-// pool rather than on the single write connection, and a snapshot that silently
-// failed would take the databases out of every flush.
+// The snapshot is issued on a pooled connection rather than the single write
+// connection, and one that silently failed would take the databases out of
+// every flush.
 func TestSnapshotterWritesReadableDatabases(t *testing.T) {
 	dir := t.TempDir()
 	data := openTestDB(t, filepath.Join(dir, "source.db"))
@@ -75,11 +74,8 @@ func TestSnapshotterOverwritesAStaleStagedFile(t *testing.T) {
 	}
 }
 
-// The reason for choosing VACUUM INTO over copying the database and its WAL was
-// that it does not block writers. Issuing it on the single write connection
-// gives that property straight back — every write on the instance would stall
-// for the length of a full database read, on every flush — so the snapshot runs
-// on the concurrent pool and writers must keep going while it does.
+// VACUUM INTO was chosen because it does not block writers, so it runs on the
+// concurrent pool and writers must keep going while it does.
 func TestSnapshotDoesNotBlockWriters(t *testing.T) {
 	dir := t.TempDir()
 	data := openTestDB(t, filepath.Join(dir, "source.db"))

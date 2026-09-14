@@ -9,12 +9,9 @@ export type TagRecord = {
 }
 
 /**
- * The tag vocabulary, straight through the PocketBase SDK.
- *
- * No Go endpoint sits in front of this: the tags collection has been scoped to
- * `user = @request.auth.id` on all five rules since tags became per-user, so
- * the caller can only ever see and write their own. A wrapper would add a hop
- * and one more place for the ownership rule to drift.
+ * The tag vocabulary, straight through the PocketBase SDK. No Go endpoint in
+ * front: all five collection rules are scoped to `user = @request.auth.id`, and
+ * a wrapper would be one more place for that to drift.
  */
 export async function listTags(): Promise<TagRecord[]> {
   await ensureAuth()
@@ -49,12 +46,9 @@ export async function deleteTag(id: string): Promise<void> {
 }
 
 /**
- * Turns the unique (user, name) index violation into something a person can
- * act on. PocketBase reports it as a 400 with a per-field validation code, and
- * the raw message ("Value must be unique.") never says which value.
- *
- * Exported for its test: the rest of this module is SDK calls, and this is the
- * only part with a decision in it.
+ * PocketBase reports the unique (user, name) violation as a 400 with a per-field
+ * validation code, whose message ("Value must be unique.") never says which
+ * value. Exported for its test.
  */
 export function duplicateNameError(err: unknown, name: string): Error {
   if (err instanceof ClientResponseError) {

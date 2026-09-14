@@ -6,12 +6,9 @@ import (
 
 const pairedAdminField = "is_app_admin"
 
-// IsAppAdmin is true for PocketBase superuser auth, or a users-collection
-// session marked as the paired admin identity (is_app_admin).
-//
+// IsAppAdmin is true for superuser auth or a users session with is_app_admin.
 // Exported because this rule decides who may mint a recovery code for the
-// encrypted archive, and a second copy of it in another package is a rule that
-// can drift apart from this one without anything failing.
+// encrypted archive, and a second copy elsewhere could drift from it silently.
 func IsAppAdmin(e *core.RequestEvent) bool {
 	if e.Auth == nil {
 		return false

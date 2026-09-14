@@ -2,9 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { runId } from './runId'
 
 describe('runId', () => {
-  // The bug this replaced: crypto.randomUUID is secure-context only, so Deep
-  // Search threw "crypto.randomUUID is not a function" on an instance reached
-  // over plain HTTP at a LAN address. Nothing here may touch crypto.
+  // crypto.randomUUID is secure-context only, and threw on an instance reached
+  // over plain HTTP. Nothing here may touch crypto.
   it('needs no Web Crypto', () => {
     const real = globalThis.crypto
     Object.defineProperty(globalThis, 'crypto', { value: undefined, configurable: true })

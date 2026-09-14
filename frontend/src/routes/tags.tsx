@@ -84,11 +84,8 @@ function TagRow({ tag, busy, onRename, onDelete }: TagRowProps) {
 }
 
 /**
- * The tag vocabulary, and the only place it grows.
- *
- * Extraction picks tags from this list and never adds to it, so an archive with
- * no tags here gets no tags at all -- which is why the empty state says so
- * rather than leaving the page blank.
+ * The tag vocabulary, and the only place it grows: extraction picks from this
+ * list and never adds to it, so an archive with no tags here gets none at all.
  */
 export function TagsPage() {
   const { data: tags, loading, error: loadError, reload } = useAsync(listTags, [])

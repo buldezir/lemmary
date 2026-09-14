@@ -22,9 +22,6 @@ import (
 // LIVE_AI_MODEL is what picks the endpoint: gpt-5.6-luna for /responses,
 // minimax-m3 for Anthropic's /messages, deepseek-v4-flash for the untranslated
 // /chat/completions. LIVE_AI_BASE_URL is optional; it defaults to the SDK's own.
-//
-// It is the only way to check the parts a fake server cannot: that the
-// translated request is one the provider actually accepts.
 func TestLiveTranslatedModel(t *testing.T) {
 	key := strings.TrimSpace(os.Getenv("LIVE_AI_KEY"))
 	sdk := strings.TrimSpace(os.Getenv("LIVE_AI_SDK"))

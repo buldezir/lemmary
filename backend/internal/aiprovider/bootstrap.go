@@ -22,11 +22,8 @@ type ProviderSpec struct {
 	Model   string
 
 	// EmbeddingModel is the retrieval embedding model. It rides on the LLM spec
-	// rather than being a field of the embedding spec because the common case
-	// is still one endpoint serving both: one key, one address, a second model
-	// name. AI_EMBEDDING_SDK is what moves it onto its own endpoint, and the
-	// model name is read from the same variable either way. Empty means dense
-	// retrieval is off.
+	// because the common case is one endpoint serving both; AI_EMBEDDING_SDK is
+	// what moves it onto its own. Empty means dense retrieval is off.
 	EmbeddingModel string
 
 	// HelperModel is the Deep Search helper on this same endpoint, the model
@@ -35,14 +32,10 @@ type ProviderSpec struct {
 	HelperModel string
 }
 
-// Configured is whether this spec names a provider the app can actually reach.
-//
-// For a hosted SDK that is a credential. For a sidecar there is no credential
-// to have, so naming the SDK and having an address is the whole of it:
-// NormalizeBaseURL has already supplied the compose default when
-// OCR_BASE_URL / AI_EMBEDDING_BASE_URL was left empty.
-// Keying this on the API key for everything is what would silently drop a
-// keyless provider before Apply ever saw it.
+// Configured is whether this spec names a provider the app can actually reach:
+// a credential for a hosted SDK, and for a sidecar, which has none to have,
+// naming the SDK and having an address. Keying it on the API key for everything
+// would silently drop a keyless provider before Apply ever saw it.
 func (s ProviderSpec) Configured() bool {
 	if !RequiresAPIKey(s.SDK) {
 		return s.Requested() && strings.TrimSpace(s.BaseURL) != ""
@@ -166,8 +159,7 @@ func Apply(app core.App, settings *core.Record, b Bootstrap) error {
 
 // bindHelper points the Deep Search helper binding at the language model's
 // provider. An empty model clears the binding so the fallback to the search
-// model takes over, the same way removing AI_EMBEDDING_MODEL turns dense
-// retrieval off rather than leaving a stale binding standing.
+// model takes over.
 func bindHelper(settings *core.Record, providerID, model string) {
 	model = strings.TrimSpace(model)
 	if model == "" {
@@ -180,14 +172,10 @@ func bindHelper(settings *core.Record, providerID, model string) {
 }
 
 // bindEmbedding points the retrieval embedding binding at the language model's
-// provider.
-//
-// Two behaviours are deliberate. An empty model clears the binding rather than
-// leaving the previous one standing, so removing AI_EMBEDDING_MODEL from a
-// managed instance actually turns dense retrieval off. And embedding_dims is
-// reset only when the binding actually changed: it is a fact learned from the
-// provider's first response, and rewriting it on every boot would make the
-// whole archive look stale once a minute.
+// provider. An empty model clears the binding, so removing AI_EMBEDDING_MODEL
+// actually turns dense retrieval off. embedding_dims is reset only when the
+// binding changed: it is learned from the provider's first response, and
+// rewriting it every boot would make the whole archive look stale.
 func bindEmbedding(settings *core.Record, providerID, model string) {
 	model = strings.TrimSpace(model)
 	if model == "" {

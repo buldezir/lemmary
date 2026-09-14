@@ -22,7 +22,6 @@ import (
 // cap is also a character cap.
 const maxPartNameBytes = 80
 
-// Job statuses for in-memory async splits.
 const (
 	JobStatusRunning   = importjob.StatusRunning
 	JobStatusCompleted = importjob.StatusCompleted
@@ -38,7 +37,6 @@ type Part struct {
 	To   int `json:"to"`
 }
 
-// Result summarizes a completed split run.
 type Result struct {
 	Created           int      `json:"created"`
 	SkippedDuplicates int      `json:"skipped_duplicates"`
@@ -53,11 +51,9 @@ type Job = importjob.Job[Result]
 
 var registry = importjob.NewRegistry[Result](importjob.DefaultRetention)
 
-// ValidateParts requires the parts to cover every page exactly once, in order.
-//
-// That is precisely what the cut-marking UI can express, so keeping the
-// contract exact lets a malformed request be rejected with a concrete message
-// instead of silently producing documents the user did not ask for.
+// ValidateParts requires the parts to cover every page exactly once, in order:
+// precisely what the cut-marking UI can express, so a malformed request gets a
+// concrete message instead of documents the user did not ask for.
 func ValidateParts(parts []Part, pageCount int) error {
 	if len(parts) == 0 {
 		return fmt.Errorf("at least one part is required")
@@ -116,12 +112,10 @@ func Start(app core.App, ownerUserID, uploadID string, parts []Part) (string, er
 	return jobID, nil
 }
 
-// settleUpload ends the hold a split job took on the staged upload.
-//
-// The upload is consumed once the run got as far as creating documents (or
-// finished cleanly). A run that fell over before a single document existed
-// leaves it staged instead: retrying beats making the user upload the scan and
-// mark every cut again.
+// settleUpload ends the hold a split job took on the staged upload. It is
+// consumed once the run got as far as creating documents, and left staged
+// otherwise: retrying beats making the user upload the scan and mark every cut
+// again.
 func settleUpload(item *stagedPDF, result Result, runErr error, finished bool) {
 	if !finished || (runErr != nil && result.Created == 0) {
 		stagingRegistry.Restore(item)
@@ -233,7 +227,6 @@ func applyPart(
 	return nil
 }
 
-// partBaseName derives a safe file-name stem from the uploaded file name.
 func partBaseName(fileName string) string {
 	base := filepath.Base(strings.TrimSpace(fileName))
 	base = strings.TrimSuffix(base, filepath.Ext(base))

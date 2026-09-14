@@ -12,8 +12,7 @@ import (
 	"time"
 )
 
-// authServer stands in for auth.openai.com. Each handler is a field so a test
-// can change one leg of the flow without restating the other three.
+// authServer stands in for auth.openai.com, a handler per leg of the flow.
 type authServer struct {
 	usercode    http.HandlerFunc
 	deviceToken http.HandlerFunc
@@ -43,8 +42,7 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-// idToken builds an unsigned JWT with the claim the account id lives in. Only
-// the payload segment is ever read, so the header and signature are filler.
+// idToken builds an unsigned JWT: only the payload segment is ever read.
 func idToken(t *testing.T, accountID, plan, email string) string {
 	t.Helper()
 	payload := map[string]any{
@@ -62,7 +60,7 @@ func idToken(t *testing.T, accountID, plan, email string) string {
 }
 
 // The whole point of the device flow: no redirect listener, so a headless
-// server can complete a sign-in the operator approves from their own browser.
+// server can complete a sign-in approved from the operator's own browser.
 func TestDeviceLoginCompletesWithoutARedirect(t *testing.T) {
 	t.Parallel()
 	approved := false
@@ -89,7 +87,7 @@ func TestDeviceLoginCompletesWithoutARedirect(t *testing.T) {
 		},
 		oauthToken: func(w http.ResponseWriter, r *http.Request) {
 			// The code grant goes out form-encoded, against the issuer's own
-			// device callback -- the value the code was issued for.
+			// device callback: the value the code was issued for.
 			if err := r.ParseForm(); err != nil {
 				t.Error(err)
 			}
@@ -129,8 +127,7 @@ func TestDeviceLoginCompletesWithoutARedirect(t *testing.T) {
 	if tok.Access != "access-1" || tok.Refresh != "refresh-1" {
 		t.Fatalf("token = %+v", tok)
 	}
-	// The account id is what the inference request's chatgpt-account-id header
-	// carries; losing it here would fail every later request with a 4xx.
+	// Losing the account id fails every later inference request with a 4xx.
 	if tok.AccountID != "acct-9" || tok.Plan != "pro" || tok.Email != "someone@example.com" {
 		t.Fatalf("identity = %+v", tok)
 	}
@@ -139,8 +136,8 @@ func TestDeviceLoginCompletesWithoutARedirect(t *testing.T) {
 	}
 }
 
-// Device-code sign-in is off by default on every account, so this is the first
-// thing most operators hit. It has to arrive as advice, not as a bare 4xx.
+// Device-code sign-in is off by default on every account, so this has to
+// arrive as advice, not as a bare 4xx.
 func TestDisabledDeviceAuthIsNamed(t *testing.T) {
 	t.Parallel()
 	client := authServer{
@@ -182,8 +179,8 @@ func TestExpiredCodeIsNotRetried(t *testing.T) {
 	}
 }
 
-// The refresh token rotates on use, but the issuer does not always send a new
-// one. Dropping it in that case would sign the account out at the next restart.
+// The issuer does not always send a new refresh token; dropping it in that
+// case would sign the account out at the next restart.
 func TestRefreshKeepsTheOldRefreshTokenWhenNoneIsReturned(t *testing.T) {
 	t.Parallel()
 	client := authServer{
@@ -227,8 +224,7 @@ func TestTokenRoundTripsThroughTheColumn(t *testing.T) {
 	}
 }
 
-// The issuer quotes interval and expires_in as strings on some responses, and
-// a sign-in that dies on the poll hint is a sign-in lost to nothing.
+// The issuer quotes interval and expires_in as strings on some responses.
 func TestDeviceLoginAcceptsQuotedNumbers(t *testing.T) {
 	t.Parallel()
 	client := authServer{
@@ -269,7 +265,7 @@ func TestDeviceLoginAcceptsQuotedNumbers(t *testing.T) {
 }
 
 // The poll endpoint answers 403 or 404 for the whole time the operator is in
-// the browser. Reading either as a failure ends every sign-in on its first try.
+// the browser.
 func TestPollReadsARefusalAsWaiting(t *testing.T) {
 	t.Parallel()
 	replies := []int{http.StatusForbidden, http.StatusNotFound}
@@ -304,8 +300,7 @@ func TestPollReadsARefusalAsWaiting(t *testing.T) {
 }
 
 // The refresh grant answers with no expires_in, so the access token's own exp
-// claim is the only honest answer. Guessing an hour against a shorter lifetime
-// is a stack of 401s nobody refreshes out of.
+// claim is the only honest answer.
 func TestRefreshTakesExpiryFromTheAccessToken(t *testing.T) {
 	t.Parallel()
 	exp := time.Now().Add(20 * time.Minute).Truncate(time.Second)

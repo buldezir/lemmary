@@ -59,12 +59,7 @@ const examples: Record<SearchMode, string> = {
 
 export function SearchPage() {
   const navigate = useNavigate()
-  // The mode is the path: /rag/search lists documents, /rag/research reads them
-  // and answers. Both render this page, so a reload, a bookmark and a shared
-  // link all carry the mode with them, and there is no state to keep in step.
-  //
-  // The session id lives on a child route, and a child's params are invisible
-  // to useParams from here — the closest match is /rag/search, which has none.
+  // The session id lives on a child route, so useParams cannot see it here.
   // matchRoute also hands back a fresh object each render, so the id is
   // destructured out before anything depends on it.
   const matchRoute = useMatchRoute()
@@ -80,41 +75,27 @@ export function SearchPage() {
   const [justSettled, setJustSettled] = useState<ChatSession | null>(null)
   const [railBusy, setRailBusy] = useState(false)
   const [railError, setRailError] = useState('')
-  // The model the next conversation opens on. Kept across a new chat: having
-  // picked one, the likely next thing is another question for the same model.
+  // The model the next conversation opens on, deliberately kept across a new chat.
   const [binding, setBinding] = useState<ProviderBinding | undefined>()
-  // Live progress of a research run, cleared when it ends.
   const [steps, setSteps] = useState<ResearchStep[]>([])
   const [draft, setDraft] = useState('')
-  // A research run outlives an unmount unless it is cancelled: the fetch keeps
-  // the stream open and the server keeps calling the provider.
-  // The controller abandons this page's view of the run; the id is what stops
-  // the run itself. Both are needed: since the server keeps working through a
-  // dropped connection, letting go of the stream no longer cancels anything.
+  // The controller only abandons this page's view of the run; the id is what
+  // stops the run itself. Both are needed, because the server keeps working
+  // through a dropped connection.
   const runRef = useRef<{ controller: AbortController; id: string } | null>(null)
 
   const sessions = useAsync(() => listChatSessions({ kind: 'search' }), [])
 
-  // Unmounting stops this page painting the run. It deliberately does not stop
-  // the run: leaving the page, closing the tab and losing the network are the
-  // same event to everything downstream, and cancelling here would restore the
-  // exact behaviour this change removed -- an answer thrown away because
-  // nobody was watching it arrive. Cancelling is `endRun`, which is reached
-  // only by someone actually asking for it.
+  // Stops this page painting the run, deliberately not the run itself: an
+  // answer must not be thrown away just because nobody was watching it arrive.
+  // Cancelling for real is `endRun`.
   useEffect(() => () => runRef.current?.controller.abort(), [])
 
   /**
-   * Ends the run that owns the screen.
-   *
-   * Switching conversations does not unmount this page — the session id lives
-   * on a child route — so without this a run started in one chat keeps painting
-   * its steps and its streamed draft over whichever transcript replaced it,
-   * and keeps that chat's composer disabled until the provider is done.
-   *
-   * The server drops a cancelled research turn rather than storing it, but the
-   * abort can land in the moment after it was saved, so the rail is refreshed
-   * either way: a chat that did get written is in the list rather than missing
-   * until the next full reload.
+   * Ends the run that owns the screen. Switching conversations does not unmount
+   * this page, so without this a run keeps painting its steps over whichever
+   * transcript replaced it. The rail is reloaded either way, because the abort
+   * can land just after the turn was saved.
    */
   const endRun = useCallback(() => {
     const run = runRef.current
@@ -122,9 +103,8 @@ export function SearchPage() {
       return
     }
     run.controller.abort()
-    // Said out loud, because hanging up does not stop it any more. Without
-    // this the abandoned run would go on to finish and store a turn for a
-    // conversation the user has already left.
+    // Said out loud, because hanging up does not stop the run any more: it
+    // would finish and store a turn for a conversation already left.
     void cancelSearchRun({ runId: run.id })
     runRef.current = null
     void sessions.reload()
@@ -132,8 +112,7 @@ export function SearchPage() {
 
   const onSessionSettled = useCallback(
     (session: ChatSession, created: boolean) => {
-      // Merged in straight away so the row is there with the transcript, not a
-      // round trip later.
+      // Merged in straight away so the row is there with the transcript.
       setJustSettled(session)
       if (created) {
         // replace: Back should not land on the now-orphaned empty /search.
@@ -152,14 +131,9 @@ export function SearchPage() {
 
   /**
    * Runs a turn as a stream, resolving with the stored turn so the conversation
-   * hook treats it like any other send. The steps and the streamed draft are
-   * this page's own state — they belong to a run in progress, not to the
-   * transcript.
-   *
-   * Both modes go through here. Research needs the stream for its steps;
-   * plain search needs it for the heartbeat underneath, having previously been
-   * a POST that stayed silent until the answer was ready and so was liable to
-   * be hung up on by anything with a read timeout in between.
+   * hook treats it like any other send. Both modes stream: research for its
+   * steps, plain search for the heartbeat underneath, without which a slow
+   * answer is hung up on by anything with a read timeout in between.
    */
   const runTurn = useCallback(
     async (
@@ -219,25 +193,17 @@ export function SearchPage() {
         )
       } catch (err) {
         // A turn that was already stored is not a failed send, however the
-        // stream ended.
-        //
-        // The `saved` event can be the last thing to arrive before a drop, and
-        // treating that as a failure was expensive: the composer came back
-        // with the question still in it, the answer vanished, and retrying
-        // bought a second run of research that had already been paid for --
-        // plus a second chat, since the session is created before the agent
-        // starts and the page has not learnt its id yet.
+        // stream ended: `saved` can be the last event before a drop, and
+        // treating that as a failure buys a second paid run and a second chat.
         if (box.stored) {
           streamError = ''
         } else if (run.controller.signal.aborted) {
           throw cancelled(turnMode, err)
         } else if (err instanceof RunInFlightError && (box.session ?? id)) {
-          // The connection died, the run did not. The server finishes it and
-          // stores the turn regardless, so the answer is not gone -- only the
-          // delivery is. Waiting for it in the transcript is what turns a lost
-          // connection back into a normal turn. Keep the live steps on screen
-          // until this wait returns: clearing them here is how a follow-up
-          // used to look like the whole run had been thrown away.
+          // The connection died, the run did not: the server stores the turn
+          // regardless, so waiting for it turns a lost connection back into a
+          // normal one. Keep the live steps up until the wait returns, or the
+          // whole run looks thrown away.
           box.stored = await recoverTurn(
             box.session?.id ?? (id as string),
             run.id,
@@ -287,10 +253,9 @@ export function SearchPage() {
 
   const chat = useChatSession({
     sessionId,
-    // A document chat's id must not open here: its transcript is about one
-    // document's OCR text, and replaying it into a search turn asks the archive
-    // a question that was never put to it. The Ask AI page makes the mirror
-    // check.
+    // A document chat's id must not open here: replaying its one-document
+    // transcript into a search turn asks the archive a question never put to
+    // it. The Ask AI page makes the mirror check.
     load: async (id) => {
       const detail = await getChatSession(id)
       if (detail.session.kind !== 'search') {
@@ -302,10 +267,8 @@ export function SearchPage() {
     onSessionSettled,
   })
 
-  // The path says which mode, but a chat's stored mode is what it actually is,
-  // and the two can disagree — a hand-edited URL, or a link to /rag/search/<id>
-  // for a chat that turns out to be Research. Corrected here rather than obeyed,
-  // so the next turn is not sent under a mode the server would refuse.
+  // A chat's stored mode wins over the path, which a hand-edited or stale URL
+  // can contradict, so the next turn is not sent under a mode the server refuses.
   const loadedMode = chat.session?.mode
   useEffect(() => {
     if (!sessionId || !loadedMode || loadedMode === mode) {
@@ -320,33 +283,24 @@ export function SearchPage() {
 
   const rows = mergeChatSession(sessions.data ?? [], justSettled)
   const active = modes.find((item) => item.value === mode) ?? modes[0]
-  // A chat is locked to its mode from the moment it has one turn — including
-  // the turn still in flight, whose request already carries the mode it was
-  // sent under.
+  // Locked from the first turn, including the one in flight, whose request
+  // already carries the mode it was sent under.
   const locked = Boolean(sessionId) || chat.sending
   // The binding is fixed for a conversation for the same reason mode is: the
-  // transcript replayed to the model was produced by one model, and answering
-  // the next question with another reads that work back as its own. Locked as
-  // soon as a turn exists, not only once the session id lands, so it cannot
-  // change during the send that creates the conversation.
+  // replayed transcript was produced by one model, and answering with another
+  // reads that work back as its own.
   //
-  // Keyed on whether the URL names a conversation, not on whether one is
-  // loaded. Those differ in the two cases that matter, in opposite directions:
-  //
-  //   - Opening an existing chat, the session is briefly null while it loads.
-  //     Falling back to the local pick there is what showed the model from the
-  //     *previous* chat on a conversation that never used it, until the page
-  //     was reloaded.
-  //   - During the send that creates a conversation there is no id and no
-  //     session yet, and the local pick is genuinely what is answering, so
-  //     showing nothing would blank the row mid-answer.
+  // Keyed on whether the URL names a conversation rather than on whether one is
+  // loaded: an existing chat's session is briefly null while it loads, and
+  // during the send that creates one there is no id yet but the local pick is
+  // genuinely what is answering.
   const inConversation = Boolean(sessionId) || Boolean(chat.session)
   const shownBinding = inConversation ? chatSessionBinding(chat.session) : binding
   const bindingLocked = inConversation || chat.sending || chat.turns.length > 0
 
-  // A chat opens in the mode its last turn ran in, which is also the path it
-  // lives on: continuing a research conversation as a plain search would answer
-  // a different question than the one above it in the transcript.
+  // A chat opens in the mode its last turn ran in: continuing a research
+  // conversation as a plain search answers a different question than the
+  // transcript above it.
   function openSession(session: ChatSession) {
     setRailOpen(false)
     endRun()
@@ -413,15 +367,9 @@ export function SearchPage() {
             {locked ? 'A chat stays in the mode it started in.' : 'Chats are saved.'}
           </p>
         </div>
-        {/* Links, not a radiogroup: each mode is a path, so these navigate —
-            which is also what makes the back button, a bookmark and an
-            open-in-new-tab work on them.
-
-            They stop being links once the chat exists. A transcript is a
-            sequence: its answers were produced by one mode, and the next turn
-            reads them back to the model as its own prior work. Switching
-            underneath that would answer a later question in a way the earlier
-            ones do not support, so the way to the other mode is a new chat. */}
+        {/* Links rather than a radiogroup, so back, bookmark and open-in-new-tab
+            work on them. They stop being links once the chat exists: see the
+            mode lock above. */}
         <ModeSwitch mode={mode} locked={locked} />
       </div>
 
@@ -437,8 +385,7 @@ export function SearchPage() {
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-3">
         {/* One instance across breakpoints, toggled by class: two would put the
-            rows, their aria-current and their rename inputs into the
-            accessibility tree twice. */}
+            rows and their rename inputs into the accessibility tree twice. */}
         <aside className={`${railOpen ? 'block' : 'hidden'} lg:block lg:w-60 lg:shrink-0`}>
           <ChatSessionList
             sessions={rows}
@@ -510,13 +457,8 @@ export function SearchPage() {
               sending={chat.sending}
               disabled={chat.loading}
               error={chat.error}
-              // A run can take a while, so there has to be a way out of one
-              // that is taking too long. Research most of all, but a search
-              // waiting on a slow provider is no different to sit through.
-              //
               // A run this page is only watching -- it was started before a
               // reload -- has no run id here, so it is stopped by conversation.
-              // The wait then sees the run end and settles on its own.
               onCancel={
                 chat.resuming && sessionId
                   ? () => void cancelSearchRun({ sessionId })
@@ -525,12 +467,9 @@ export function SearchPage() {
               autoFocus
             />
           </ChatPanel>
-          {/* Directly below the panel rather than inside it: ChatPanel is
-              overflow-hidden -- which is what makes the transcript scroll
-              instead of stretching the box -- and the model dropdown is
-              absolutely positioned, so inside the panel its list was clipped at
-              the panel's edge. border-t-0 butts this strip against the panel's
-              bottom border, so it still reads as part of it. */}
+          {/* Below the panel rather than inside it: ChatPanel is overflow-hidden
+              so the transcript scrolls, which clips the absolutely positioned
+              model dropdown. border-t-0 keeps it reading as part of the panel. */}
           <div className="border border-t-0 border-line bg-surface px-4 py-3">
             <BindingOverride
               label="Search"
@@ -550,11 +489,8 @@ export function SearchPage() {
 }
 
 /**
- * What is said when the connection broke and waiting it out produced nothing.
- *
  * Not `streamConnectionLostMessage`, which promises the answer will be in the
- * chat history: by the time this is reached the run has been waited out and no
- * turn was stored, so the honest thing is to offer the question back.
+ * chat history: by the time this is reached no turn was stored.
  */
 const interruptedWithoutAnswerMessage =
   'The connection was interrupted and the run ended without an answer. Try again.'
@@ -566,10 +502,7 @@ function cancelled(mode: SearchMode, cause: unknown) {
 
 /**
  * Collects the turn a dropped stream never delivered, shaped like the `saved`
- * event it stands in for so the rest of the run is none the wiser.
- *
- * Null when the wait ran out: the run failed, or was cancelled, and there is
- * nothing in the transcript to show.
+ * event it stands in for. Null when the wait ran out and nothing was stored.
  */
 async function recoverTurn(
   sessionId: string,
@@ -589,11 +522,6 @@ async function recoverTurn(
   }
 }
 
-/**
- * Shown under an answer whose generation was cut off. The text above it is
- * real as far as it goes, which is exactly why it needs saying: a partial
- * answer reads like a complete one.
- */
 function IncompleteNotice() {
   return (
     <p className="border-t border-line pt-2 text-xs text-ink-muted">
@@ -640,10 +568,6 @@ function StepList({ steps, collapsed = false }: { steps: ResearchStep[]; collaps
   )
 }
 
-/**
- * The two modes, as the two paths they are — or, once the chat is under way,
- * as a plain statement of which one it is in.
- */
 function ModeSwitch({ mode, locked }: { mode: SearchMode; locked: boolean }) {
   const className = (item: (typeof modes)[number]) =>
     `px-3 py-1.5 text-sm transition-colors ${
@@ -688,15 +612,10 @@ function ModeSwitch({ mode, locked }: { mode: SearchMode; locked: boolean }) {
 }
 
 /**
- * The documents behind an answer, in Search mode only.
- *
- * In Search the cards are the answer: the mode's whole job is to find documents
- * and list them. Research answers in prose and cites what it actually read
- * inline, so the same grid there would restate the citations and, worse, show
- * every document the search turned up beside them — including the ones the run
- * looked at and discarded. A reader cannot tell those apart from sources, so
- * the cards would make the answer look better evidenced than it is. The hits
- * are still stored with the turn either way; Research just does not draw them.
+ * The documents behind an answer, in Search mode only. Research cites what it
+ * read inline, so drawing every hit beside those citations -- including the
+ * ones it looked at and discarded -- would make the answer look better
+ * evidenced than it is.
  */
 function SearchHits({ turn }: { turn: ChatTurn }) {
   if (!turn.documents || turn.documents.length === 0) {
@@ -713,9 +632,8 @@ function SearchHits({ turn }: { turn: ChatTurn }) {
 
 function SearchHitCard({ document }: { document: SearchDocumentHit }) {
   const meta = [document.document_type, document.correspondent].filter(Boolean).join(' · ')
-  // The snippet is the best matching passage, shortened by the backend. The
-  // page is shown only when the extraction knew one, which no current OCR
-  // provider reports -- so in practice this is never rendered today.
+  // Shown only when the extraction knew a page, which no current OCR provider
+  // reports, so in practice this never renders today.
   const page = document.passages?.[0]?.page
 
   return (

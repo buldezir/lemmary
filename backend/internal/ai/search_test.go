@@ -34,8 +34,7 @@ func TestBuildSearchSystemPromptIncludesTags(t *testing.T) {
 	if !strings.Contains(prompt, "en,de") {
 		t.Fatalf("expected archive languages in system prompt, got %q", prompt)
 	}
-	// Search mode is one round now; the deep-mode knob is gone, and a question
-	// that needs more belongs in Research mode.
+	// Search mode is one round; a question that needs more belongs in Research.
 	if strings.Contains(strings.ToLower(prompt), "deep search mode") {
 		t.Fatalf("search prompt still advertises deep mode: %q", prompt)
 	}
@@ -75,8 +74,7 @@ func TestFormatLanguagePromptFallsBackToResultLanguage(t *testing.T) {
 }
 
 func TestDecodeSearchArgsCoercesScalarKinds(t *testing.T) {
-	// Models (and the DSML fallback) routinely emit the wrong JSON scalar
-	// kinds; the whole tool call used to be dropped as invalid.
+	// Models (and the DSML fallback) routinely emit the wrong JSON scalar kinds.
 	args, err := decodeSearchArgs(`{"query": 2023, "tags": ["invoice", 7], "limit": "5"}`)
 	if err != nil {
 		t.Fatalf("decodeSearchArgs: %v", err)

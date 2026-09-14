@@ -22,24 +22,21 @@ import (
 	"github.com/pocketbase/pocketbase/tools/hook"
 )
 
-// Register wires all application hooks, APIs, and the SPA static handler onto app.
-// publicDir is the directory containing the built frontend; indexFallback enables SPA routing.
+// Register wires the application hooks, APIs and the SPA static handler onto
+// app. publicDir holds the built frontend; indexFallback enables SPA routing.
 func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, indexFallback bool) {
-	// Read once, here, so every consumer sees the same numbers: the hooks that
-	// enforce them, the caps the bulk importers lower to match, and the usage
-	// endpoint the UI reads.
+	// Read once so the enforcing hooks, the importer caps and the usage endpoint
+	// all see the same numbers.
 	lim, badLimitKeys := limits.FromEnv(app.Logger())
 	applyPerFileCaps(lim)
 
 	ft := fulltext.New()
-	// The chunk index is derived from the embedding store, so it is given its
-	// source before anything can open it, and the store is told where to send
-	// its change notifications. Both are process-wide, like the index itself.
+	// The chunk index is derived from the embedding store, so it gets its source
+	// before anything can open it. Both are process-wide, like the index.
 	ft.SetChunkSource(embed.NewChunkSource())
 	embedstore.SetListener(ft)
-	// The dimension count is not known until a provider has answered once, so
-	// the binding the chunk index is built for can change at runtime; every
-	// reload re-points the index and schedules the fill in the background.
+	// The dimension count is unknown until a provider has answered once, so the
+	// binding can change at runtime and every reload re-points the index.
 	rt.OnReload(func(reloadApp core.App, snap config.Snapshot) {
 		if err := ft.SetVectorSpec(embed.SpecFrom(snap.Cfg)); err != nil {
 			reloadApp.Logger().Error("chunk index reconfigure failed", "error", err)
@@ -47,32 +44,25 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 		ft.EnqueueChunkRebuild(reloadApp)
 	})
 	config.RegisterHooks(app, rt)
-	// Before anything that creates records: the paperless-ngx API addresses
-	// documents and taxonomy by an integer id stored on the row, and a record
-	// that slipped in unstamped would be invisible to every paperless client.
+	// Before anything that creates records: paperless-ngx addresses rows by an
+	// integer id stored on them, and an unstamped record is invisible to it.
 	ngxid.Register(app)
 	authguard.Register(app)
 	mailsink.Register(app)
 	fulltext.Register(app, ft)
-	// Before worker.Register: PocketBase runs equal-priority handlers in
-	// registration order, so this is what makes an over-limit upload refused
-	// before duplicates.AssignChecksumFromUpload reads the whole file to hash it.
-	// The same ordering now carries limits.MaxOCRPages, which binds on every
-	// install and not only where a plan limit is set.
+	// Before worker.Register: equal-priority handlers run in registration order,
+	// so an over-limit upload is refused before AssignChecksumFromUpload reads
+	// the whole file to hash it. limits.MaxOCRPages rides the same ordering.
 	limits.Register(app, lim)
-	// Keeps the chunk vectors in step with the documents they describe: a
-	// deleted document takes its rows with it, an edited one is marked stale
-	// for the backfill.
+	// Keeps chunk vectors in step: a deleted document takes its rows with it, an
+	// edited one is marked stale for the backfill.
 	embedstore.Register(app)
-	// One backfiller for both callers: the worker's cron below and the manual
-	// sweep the API exposes. It is built here because appapi binds its routes
-	// before worker.Register runs, and two instances would each think they had
-	// the backlog to themselves.
+	// One backfiller for the worker cron and the manual API sweep: two instances
+	// would each think they had the backlog to themselves.
 	backfill := worker.NewBackfiller(app, rt)
 	appapi.Register(app, rt, ft, lim, badLimitKeys, backfill)
-	// After config.RegisterHooks so the settings singleton and any env-seeded
-	// providers exist by the time an account is minted: an instance that hands
-	// somebody a login should have somewhere for them to land.
+	// After config.RegisterHooks, so the settings singleton and env-seeded
+	// providers exist by the time an account is minted.
 	appapi.RegisterAdminBootstrap(app)
 	ngxapi.Register(app, ft)
 	worker.Register(app, rt, backfill, config.WorkerConcurrencyFromEnv())

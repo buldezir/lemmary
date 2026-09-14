@@ -1,17 +1,12 @@
 /**
- * Expanding a dropped or picked folder into the files inside it.
- *
- * The upload form posts one document per file, so a folder only has to become a
- * flat File[] before it reaches the code that was already there. The browser
- * offers two unrelated ways to hand one over — `webkitdirectory` on an input,
- * and the drag-and-drop entry API — and this module is where both become the
- * same thing.
+ * Expanding a dropped or picked folder into a flat File[]. The browser offers
+ * two unrelated ways to hand one over, `webkitdirectory` on an input and the
+ * drag-and-drop entry API, and this is where both become the same thing.
  */
 
 /**
- * The shape of a `FileSystemEntry` this walk uses. Written out rather than taken
- * from lib.dom so the recursion can be tested with plain objects: the real
- * entries only exist inside a drop event.
+ * Written out rather than taken from lib.dom so the recursion can be tested
+ * with plain objects: real entries only exist inside a drop event.
  */
 export type DropEntry = {
   isFile: boolean
@@ -32,11 +27,9 @@ export function extensionOf(name: string): string {
 }
 
 /**
- * Archiver and filesystem bookkeeping, which a folder carries and nobody means
- * to upload: macOS resource forks and AppleDouble side files (mirroring
- * isJunkEntry in backend/internal/zipimport, so a folder and a zip of the same
- * tree agree), plus any dot-file — `.DS_Store` sits in almost every macOS
- * folder and is not an upload the user got wrong, it is one they never made.
+ * Filesystem bookkeeping nobody means to upload: macOS resource forks and any
+ * dot-file. Mirrors isJunkEntry in backend/internal/zipimport, so a folder and
+ * a zip of the same tree agree.
  *
  * Checked on the path rather than the name, because by the time a file is
  * renamed for its folder `._1.pdf` reads as `scans-._1.pdf`.
@@ -49,17 +42,12 @@ export function isJunkPath(path: string): boolean {
 }
 
 /**
- * The name an imported file gets, from the folder path it arrived under.
- *
  * Mirrors documentName in backend/internal/zipimport, so a folder and a zip of
  * the same tree produce the same names. The parent folder is kept as a prefix
- * because it is often the only thing telling two files apart — a scanner that
- * writes 1.pdf into a folder per batch, an Amazon export that numbers invoices
- * per order.
+ * because it is often the only thing telling two 1.pdf files apart.
  */
 export function folderPrefixedName(relativePath: string, name: string): string {
   const parts = relativePath.replace(/\\/g, '/').split('/').filter(Boolean)
-  // The last part is the file itself; the one before it is the folder.
   const parent = parts.length >= 2 ? parts[parts.length - 2] : ''
   if (!parent || parent === name) return name
   return `${parent}-${name}`
@@ -86,9 +74,8 @@ function readFile(entry: DropEntry): Promise<File | null> {
 function readDirectory(entry: DropEntry): Promise<DropEntry[]> {
   const reader = entry.createReader?.()
   if (!reader) return Promise.resolve([])
-  // readEntries returns a batch, not the directory — Chrome caps it at 100 —
-  // and signals the end by returning an empty one. Calling it once silently
-  // truncates any folder with more files in it than the cap.
+  // readEntries returns a batch, not the directory (Chrome caps it at 100),
+  // and signals the end with an empty one. Calling it once silently truncates.
   return new Promise((resolve) => {
     const found: DropEntry[] = []
     const next = () =>
@@ -122,11 +109,8 @@ export async function filesFromEntries(entries: DropEntry[]): Promise<File[]> {
 }
 
 /**
- * Every file in a drop, including the contents of any folder in it.
- *
  * The entries are collected before the first await on purpose: the items list
- * is emptied once the drop handler returns, so reaching for it afterwards finds
- * nothing.
+ * is emptied once the drop handler returns.
  */
 export async function filesFromDataTransfer(dt: DataTransfer): Promise<File[]> {
   const entries: DropEntry[] = []
@@ -149,11 +133,7 @@ export type Classified = {
   zipped: boolean
 }
 
-/**
- * Sorts one selection into what can be uploaded and what must be said about the
- * rest. Depends on nothing but its arguments, so the caller can run it before
- * touching state.
- */
+/** Depends on nothing but its arguments, so it can run before state is touched. */
 export function classifySelection(
   incoming: File[],
   accepts: (file: File) => boolean,
@@ -181,11 +161,9 @@ export function fileKey(file: File): string {
 }
 
 /**
- * The staged list with this selection added, minus anything already in it.
- *
- * Pure, and deduplicating against the list it is given rather than against a
- * captured one: walking a folder is asynchronous, so two drops can land before
- * either has re-rendered, and a stale snapshot would stage the same tree twice.
+ * Deduplicates against the list it is given rather than a captured one: walking
+ * a folder is asynchronous, so two drops can land before either re-renders and
+ * a stale snapshot would stage the same tree twice.
  */
 export function appendNew(current: File[], accepted: File[]): File[] {
   const seen = new Set(current.map(fileKey))

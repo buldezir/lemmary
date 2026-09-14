@@ -40,9 +40,7 @@ export function DocumentAskPage() {
   const [justSettled, setJustSettled] = useState<ChatSession | null>(null)
   const [railBusy, setRailBusy] = useState(false)
   const [railError, setRailError] = useState('')
-  // The model this page will open its next conversation on. Not reset by
-  // startNewChat: having picked a model once, the likely next thing is another
-  // question for the same one.
+  // The model the next conversation opens on, deliberately kept across a new chat.
   const [binding, setBinding] = useState<ProviderBinding | undefined>()
 
   const {
@@ -75,13 +73,9 @@ export function DocumentAskPage() {
   )
 
   /**
-   * Asks the question, and does not let a dropped connection lose the answer.
-   *
-   * The completion is detached from this request on the server: it finishes and
-   * the turn is stored whether or not the reply can still be delivered. So a
-   * connection that dies mid-answer has lost the delivery, not the answer, and
-   * the thing to do is wait for the turn to appear in the transcript rather
-   * than report a failure over work that was already paid for.
+   * The completion is detached from this request on the server, so a connection
+   * that dies mid-answer has lost the delivery, not the answer: wait for the
+   * turn to appear rather than report a failure over paid-for work.
    */
   const ask = useCallback(
     async (id: string | undefined, content: string): Promise<ChatSendResult> => {
@@ -96,19 +90,16 @@ export function DocumentAskPage() {
         })
       } catch (err) {
         // Any failure, not only a dropped socket: a reverse proxy that gives up
-        // on the completion answers 502/504 while the server keeps working, and
-        // the page cannot tell that from a genuine refusal. The transcript
-        // can. One read says whether a run is still writing into this chat;
-        // if not, the wait returns at once and the original error stands.
+        // answers 502/504 while the server keeps working, and only the
+        // transcript can tell that from a genuine refusal.
         const stored = id ? await waitForStoredTurn(id, requestId) : null
         if (stored) {
           return { session: stored.session, message: stored.message, saved: true }
         }
         // A chat this send opened has an id only the server knows, so there is
-        // nothing to wait on -- refreshing the rail is what makes it a click
-        // away instead of invisible until a reload. Reported as a run in
-        // flight, not as a failed send: the completion may well be running, and
-        // handing the question back would invite paying for it twice.
+        // nothing to wait on and the rail refresh is what makes it reachable.
+        // Reported as a run in flight, not a failed send, since handing the
+        // question back would invite paying for it twice.
         // ponytail: a first prompt cannot be recovered on the page until the
         // session id is on the wire before the completion, as search does with
         // its `session` frame; convert this endpoint to SSE when that matters.
@@ -138,20 +129,13 @@ export function DocumentAskPage() {
   })
 
   const hasOcrText = Boolean(document?.ocr_text?.trim())
-  // A conversation keeps the binding its transcript was produced with -- the
-  // server ignores anything else a request carries -- so once one exists the
-  // picker reports it instead of offering to change it.
+  // A conversation keeps the binding its transcript was produced with, and the
+  // server ignores anything else a request carries.
   //
-  // Keyed on whether the URL names a conversation, not on whether one is
-  // loaded. Those differ in the two cases that matter, in opposite directions:
-  //
-  //   - Opening someone's existing chat, the session is briefly null while it
-  //     loads. Falling back to the local pick there is what showed the model
-  //     from the *previous* chat on a conversation that never used it, until
-  //     the page was reloaded.
-  //   - During the send that creates a conversation there is no id and no
-  //     session yet, and the local pick is genuinely what is answering, so
-  //     showing nothing would blank the row mid-answer.
+  // Keyed on whether the URL names a conversation rather than on whether one is
+  // loaded: an existing chat's session is briefly null while it loads, and
+  // during the send that creates one there is no id yet but the local pick is
+  // genuinely what is answering.
   const inConversation = Boolean(sessionId) || Boolean(chat.session)
   const shownBinding = inConversation ? chatSessionBinding(chat.session) : binding
   const bindingLocked = inConversation || chat.turns.length > 0
@@ -304,12 +288,10 @@ export function DocumentAskPage() {
                   autoFocus
                 />
               </ChatPanel>
-            {/* Directly below the panel rather than inside it: ChatPanel is
-                overflow-hidden -- which is what makes the transcript scroll
-                instead of stretching the box -- and the model dropdown is
-                absolutely positioned, so inside the panel its list was clipped
-                at the panel's edge. border-t-0 butts this strip against the
-                panel's bottom border, so it still reads as part of it. */}
+            {/* Below the panel rather than inside it: ChatPanel is
+                overflow-hidden so the transcript scrolls, which clips the
+                absolutely positioned model dropdown. border-t-0 keeps it
+                reading as part of the panel. */}
               <div className="border border-t-0 border-line bg-surface px-4 py-3">
                 <BindingOverride
                   label="Chat"

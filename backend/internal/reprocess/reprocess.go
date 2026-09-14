@@ -20,28 +20,23 @@ import (
 )
 
 const (
-	// DefaultLimit is how many documents one batch queues when the caller does
-	// not say. Small enough that a mistaken click is cheap to absorb.
+	// Small enough that a mistaken click is cheap to absorb.
 	DefaultLimit = 100
-	// MaxLimit caps a single batch. The worker drains serially, so a larger
-	// batch does not finish sooner - it only commits more AI spend up front.
+	// A larger batch does not finish sooner, it only commits more AI spend.
 	MaxLimit = 1000
 )
 
-// Mode decides which pipeline steps a requeued document runs.
 type Mode string
 
 const (
-	// ModeAuto re-runs only what the document still needs: extraction alone
-	// when OCR text survived the failed run, the full pipeline otherwise.
+	// Extraction alone when OCR text survived the failed run, else everything.
 	ModeAuto Mode = "auto"
-	// ModeFull re-runs every step, including OCR.
 	ModeFull Mode = "full"
-	// ModeExtraction re-runs metadata extraction over the existing OCR text.
+	// Re-runs extraction over the existing OCR text.
 	ModeExtraction Mode = "extraction"
 )
 
-// ParseMode validates a mode from a request body. An empty value means ModeAuto.
+// An empty value means ModeAuto.
 func ParseMode(raw string) (Mode, error) {
 	switch mode := Mode(strings.TrimSpace(raw)); mode {
 	case "":
@@ -53,33 +48,28 @@ func ParseMode(raw string) (Mode, error) {
 	}
 }
 
-// Request describes one batch.
 type Request struct {
 	OwnerUserID string
-	// DocumentIDs restricts the batch to these documents (ownership is still
-	// enforced). When set, Limit is ignored - the caller already picked the set.
+	// Ownership is still enforced. When set, Limit is ignored.
 	DocumentIDs []string
 	Limit       int
 	Mode        Mode
-	// Overrides are the provider and model this batch runs on, instead of the
-	// bindings in Settings. Stored on each job rather than resolved here: the
-	// worker may not reach a queued job for minutes, and a batch queued to try
-	// a different extractor must not quietly run on whatever Settings holds by
-	// then. Zero means the configured bindings.
+	// Stored on each job rather than resolved here: the worker may not reach a
+	// queued job for minutes, and a batch queued to try a different extractor
+	// must not run on whatever Settings holds by then. Zero means Settings.
 	Overrides config.Overrides
 }
 
-// Result reports what a batch did. Remaining counts documents still failed
-// afterwards, so a caller knows whether another batch is worth running.
+// Remaining counts documents still failed afterwards, so a caller knows whether
+// another batch is worth running.
 type Result struct {
 	Queued    int `json:"queued"`
 	Skipped   int `json:"skipped"`
 	Remaining int `json:"remaining"`
 }
 
-// StepsFor returns the pipeline steps to run for document, and the subset to
-// force. apply_metadata is never forced: forcing it would overwrite metadata the
-// user corrected by hand.
+// apply_metadata is never forced: that would overwrite metadata the user
+// corrected by hand.
 func StepsFor(document *core.Record, mode Mode) (steps []string, forceSteps []string) {
 	switch mode {
 	case ModeFull:
@@ -104,7 +94,6 @@ func StepsFor(document *core.Record, mode Mode) (steps []string, forceSteps []st
 	return steps, forceSteps
 }
 
-// RunBatch queues a fresh job for up to Limit of the owner's failed documents.
 func RunBatch(app core.App, req Request) (Result, error) {
 	if strings.TrimSpace(req.OwnerUserID) == "" {
 		return Result{}, fmt.Errorf("owner user id is required")
@@ -144,11 +133,10 @@ func RunBatch(app core.App, req Request) (Result, error) {
 	return result, nil
 }
 
-// queueOne flips the document back to pending and creates its job in one
-// transaction. Order matters: the job's after-create hook kicks the worker,
-// which would set the document to processing, so the job must not become visible
-// before the pending write lands. A rollback also means a failed create cannot
-// leave the document stranded at pending with no job to move it.
+// One transaction, and order matters: the job's after-create hook kicks the
+// worker, which sets the document to processing, so the job must not become
+// visible before the pending write lands. A rollback also keeps a failed create
+// from stranding the document at pending with no job to move it.
 func queueOne(app core.App, document *core.Record, steps, forceSteps []string, overrides config.Overrides) error {
 	return app.RunInTransaction(func(txApp core.App) error {
 		document.Set("processing_status", models.DocStatusPending)
@@ -160,8 +148,6 @@ func queueOne(app core.App, document *core.Record, steps, forceSteps []string, o
 	})
 }
 
-// selectDocuments resolves the batch, returning the documents to queue and how
-// many candidates were passed over.
 func selectDocuments(app core.App, req Request) ([]*core.Record, int, error) {
 	if len(req.DocumentIDs) > 0 {
 		return selectByID(app, req)
@@ -181,8 +167,6 @@ func selectDocuments(app core.App, req Request) ([]*core.Record, int, error) {
 	return documents, 0, nil
 }
 
-// clampLimit keeps one batch inside [1, MaxLimit], treating a missing limit as
-// DefaultLimit.
 func clampLimit(limit int) int {
 	if limit <= 0 {
 		return DefaultLimit
@@ -193,9 +177,8 @@ func clampLimit(limit int) int {
 	return limit
 }
 
-// selectByID loads an explicit selection, dropping anything the caller does not
-// own or that is already queued. A selection made in the UI can go stale while
-// it sits on screen, so this is what stops a double-queue.
+// Drops anything the caller does not own or that is already queued: a selection
+// can go stale while it sits on screen.
 func selectByID(app core.App, req Request) ([]*core.Record, int, error) {
 	documents := make([]*core.Record, 0, len(req.DocumentIDs))
 	skipped := 0
@@ -210,8 +193,7 @@ func selectByID(app core.App, req Request) ([]*core.Record, int, error) {
 
 		document, err := app.FindRecordById("documents", id)
 		if err != nil {
-			// Deleted between selection and submit: not an error worth failing
-			// the whole batch over.
+			// Deleted between selection and submit.
 			skipped++
 			continue
 		}

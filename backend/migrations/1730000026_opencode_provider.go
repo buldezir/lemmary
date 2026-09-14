@@ -13,15 +13,13 @@ import (
 //
 // The widening is the same reasoning as 1730000024 and 1730000025:
 // EnsureCollection builds the select field from ValidSDKs but returns an
-// existing collection untouched, which is every install past its first boot.
+// existing collection untouched.
 //
-// The rows are the part specific to this SDK. Before it existed the only way to
-// reach OpenCode was an openai or openrouter row with base_url pointing at it,
-// and that is what .env.example shipped, so most installs have one. The header
-// OpenCode requires used to be sent to any host under opencode.ai; it is now
-// sent because the SDK says so, and a row left behind would stop carrying it --
-// which is what gets a request refused outright. Its models would also lose
-// their endpoint routing, and the /messages ones stop working entirely.
+// Before the SDK existed the only way to reach OpenCode was an openai or
+// openrouter row with base_url pointing at it, which is what .env.example
+// shipped. The header OpenCode requires is now sent because the SDK says so, so
+// a row left behind would stop carrying it and be refused outright, and its
+// models would lose their endpoint routing.
 func init() {
 	m.Register(func(app core.App) error {
 		// Values before rows: a row cannot be saved with an sdk the select

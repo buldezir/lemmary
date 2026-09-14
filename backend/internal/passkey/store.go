@@ -34,7 +34,6 @@ type Info struct {
 	LastUsed string `json:"last_used"`
 }
 
-// ToInfo projects a credential record for the API.
 func ToInfo(record *core.Record) Info {
 	lastUsed := ""
 	if value := record.GetDateTime("last_used"); !value.IsZero() {
@@ -82,8 +81,6 @@ func Credentials(app core.App, userID string) ([]webauthn.Credential, error) {
 	return credentials, nil
 }
 
-// FindByCredentialID resolves the record for a raw credential ID as presented in
-// an assertion.
 func FindByCredentialID(app core.App, rawID []byte) (*core.Record, error) {
 	records := []*core.Record{}
 	err := app.RecordQuery(CollectionName).
@@ -117,13 +114,11 @@ func FindOwned(app core.App, userID, recordID string) (*core.Record, error) {
 	return records[0], nil
 }
 
-// Count reports how many passkeys the account has.
 func Count(app core.App, userID string) (int, error) {
 	total, err := app.CountRecords(CollectionName, dbx.HashExp{"user": userID})
 	return int(total), err
 }
 
-// Create stores a freshly registered credential.
 func Create(app core.App, userID, name string, credential *webauthn.Credential) (*core.Record, error) {
 	collection, err := app.FindCollectionByNameOrId(CollectionName)
 	if err != nil {
@@ -159,7 +154,6 @@ func TouchCredential(app core.App, record *core.Record, credential *webauthn.Cre
 	return app.Save(record)
 }
 
-// Rename sets the user-visible label.
 func Rename(app core.App, record *core.Record, name string) error {
 	record.Set("name", NormalizeName(name))
 	return app.Save(record)
@@ -178,7 +172,6 @@ func NormalizeName(name string) string {
 	return name
 }
 
-// DecodeCredential reads the stored webauthn.Credential back out of a record.
 func DecodeCredential(record *core.Record) (*webauthn.Credential, error) {
 	raw := record.GetString("credential")
 	if raw == "" {

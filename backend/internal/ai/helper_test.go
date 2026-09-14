@@ -13,8 +13,7 @@ import (
 	"time"
 )
 
-// helperHarness fakes the helper's endpoint: canned replies in order, and a
-// record of what was asked.
+// helperHarness fakes the helper's endpoint: canned replies in order.
 type helperHarness struct {
 	mu       sync.Mutex
 	replies  []helperReply
@@ -183,10 +182,8 @@ func TestHelperDistillRejectsAnEmptyQuestion(t *testing.T) {
 	}
 }
 
-// The helper inherits the general AI timeout, which is sized for the main
-// model. A helper call is the cheap, disposable leg of a run -- a batch that
-// fails is passed through as raw text -- so waiting minutes on one buys
-// nothing and lengthens the run for every batch that hangs.
+// A helper call is the cheap, disposable leg of a run - a batch that fails is
+// passed through as raw text - so it must not inherit the general AI timeout.
 func TestHelperTimeoutIsCapped(t *testing.T) {
 	for _, tc := range []struct {
 		name string

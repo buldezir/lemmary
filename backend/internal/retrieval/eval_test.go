@@ -11,18 +11,11 @@ import (
 	"lemmary/backend/internal/retrieval/testdata"
 )
 
-// This is the fusion half of the retrieval evaluation. The Bleve half lives in
-// internal/fulltext and measures the real index; this one measures what fusing
-// a dense list into a lexical one does to the same corpus and the same queries,
-// with no provider, no API key and no vector index.
-//
-// The dense signal here is HashEmbedder, which is not a semantic model: it
-// hashes words and their character n-grams. So it cannot answer a true
-// cross-language question, and the numbers below are not a prediction of what a
-// real embedding model scores. What it does model faithfully is the shape of
-// the pipeline — a chunk-level list, grouped to documents, fused by rank — and
-// the classes an n-gram signal genuinely reaches: inflections, compounds and
-// typos, where the lexical index needs the exact token and this does not.
+// The fusion half of the retrieval evaluation; internal/fulltext measures the
+// real index. The dense signal is HashEmbedder, not a semantic model, so the
+// numbers below do not predict a real embedding model. What it models
+// faithfully is the pipeline's shape and the classes an n-gram signal reaches:
+// inflections, compounds and typos, where a term index needs the exact token.
 //
 // Measured at calibration, over the same 23 cases the Bleve evaluation uses:
 //
@@ -33,16 +26,10 @@ import (
 // sit under those numbers by enough to absorb a reordering and not enough to
 // hide a regression. Never lower one to make a change pass.
 //
-// The MRR floor was lowered once, from 0.89, when the metadata header passage
-// was dropped and embeddings became a function of ocr_text alone. Two cases pay
-// for it, both paraphrase: "monthly rent" fell from rank 1 to rank 5 and
-// "notice period" from rank 1 to rank 2. Both score 0.000 on the lexical leg,
-// so the header passage was the only thing answering them at all, and nothing
-// else moved -- one morphology case improved. Read the number with the caveat
-// above in mind: HashEmbedder reaches a paraphrase only when the words happen
-// to share n-grams, which is exactly the class a real embedding model answers
-// from the body text without any metadata. 0.878 is this stand-in's floor, not
-// a measurement of production.
+// The MRR floor was lowered once, from 0.89, when embeddings became a function
+// of ocr_text alone: two paraphrase cases pay for it, both of which the dropped
+// metadata header passage was the only thing answering. 0.878 is this
+// stand-in's floor, not a measurement of production.
 const (
 	hybridRecallFloor = 0.92
 	hybridMRRFloor    = 0.87
@@ -50,9 +37,8 @@ const (
 
 const evalK = 5
 
-// chunkCorpus cuts every document into body chunks and nothing else, which is
-// how the ingestion pipeline chunks them: only ocr_text is embedded, so the
-// metadata reaches a query through the lexical half of the fusion alone.
+// Body chunks only, as the ingestion pipeline cuts them: only ocr_text is
+// embedded, so metadata reaches a query through the lexical half alone.
 func chunkCorpus() []MemoryChunk {
 	chunks := make([]MemoryChunk, 0, 128)
 	for _, doc := range testdata.Documents() {
@@ -70,15 +56,10 @@ func chunkCorpus() []MemoryChunk {
 	return chunks
 }
 
-// lexicalRanking is the baseline the fusion is measured against: whole-token
-// matching over each document's searchable text, admitted by the same
-// min-should-match rule the relaxed index query uses.
-//
-// Tokens, not substrings, and that is the point. A term index can only match
-// the words that are there, which is why "Vollkasko" misses
-// "Vollkaskoversicherung" and a paraphrase misses everything. Scoring the
-// baseline with TermOverlap instead would quietly hand it substring matching
-// and hide the gap fusion exists to close.
+// The baseline fusion is measured against: whole-token matching under the same
+// min-should-match rule the relaxed index query uses. Tokens, not substrings:
+// scoring the baseline with TermOverlap would hand it substring matching and
+// hide the gap fusion exists to close.
 func lexicalRanking(query string, filters testdata.Filters) []Ranked {
 	terms := focusTerms(query)
 	if len(terms) == 0 {
@@ -119,9 +100,8 @@ func lexicalRanking(query string, filters testdata.Filters) []Ranked {
 	return scored
 }
 
-// evalMinShouldMatch mirrors the index's min-should-match rule. Duplicated
-// rather than imported: this package must not depend on the index, and the
-// baseline is only a reference point, not the thing under test.
+// Mirrors the index's rule, duplicated rather than imported: this package must
+// not depend on the index.
 func evalMinShouldMatch(n int) int {
 	switch {
 	case n <= 2:
@@ -161,9 +141,7 @@ func matchesFilters(doc testdata.Document, f testdata.Filters) bool {
 	return true
 }
 
-// eligibleIDs is the pre-filter the real retriever applies: filters are
-// resolved against the document index, and the chunk search is restricted to
-// what came back.
+// The pre-filter the real retriever applies against the document index.
 func eligibleIDs(filters testdata.Filters) []string {
 	ids := make([]string, 0, 16)
 	for _, doc := range testdata.Documents() {
@@ -261,8 +239,7 @@ func TestHybridEvalBeatsLexical(t *testing.T) {
 		t.Errorf("hybrid MRR %.3f below the %.2f floor", hybMRR, hybridMRRFloor)
 	}
 
-	// The classes an n-gram signal can reach are exactly the ones a term index
-	// cannot: a different inflection, a compound, a word spelled wrong.
+	// The classes an n-gram signal reaches and a term index cannot.
 	if improved[testdata.KindMorphology] == 0 {
 		t.Error("fusion answered no morphology case")
 	}
@@ -271,7 +248,7 @@ func TestHybridEvalBeatsLexical(t *testing.T) {
 	}
 }
 
-// The dense leg is user-scoped in the query, not filtered afterwards: the
+// The dense leg is user-scoped in the query, not filtered afterwards; the
 // corpus holds another account's copy of one document, worded the same.
 func TestHybridEvalKeepsOwnerScoping(t *testing.T) {
 	ctx := context.Background()
@@ -321,8 +298,7 @@ func TestHashEmbedderIsDeterministicAndNormalised(t *testing.T) {
 	if score := Cosine(got[0], got[2]); score > 0.5 {
 		t.Fatalf("unrelated texts scored %v", score)
 	}
-	// A related word scores above an unrelated one, which is the whole reason
-	// the n-grams are there.
+	// A related word scores above an unrelated one: the reason for n-grams.
 	related, _ := embedder.Embed(context.Background(), []string{"Kaltmieten"})
 	if Cosine(got[0], related[0]) <= Cosine(got[2], related[0]) {
 		t.Fatal("an inflected form did not score above an unrelated text")

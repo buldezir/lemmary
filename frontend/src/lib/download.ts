@@ -1,4 +1,3 @@
-/** Triggers a browser download of the given blob. */
 export function saveBlob(blob: Blob, filename: string) {
   const objectUrl = URL.createObjectURL(blob)
   try {

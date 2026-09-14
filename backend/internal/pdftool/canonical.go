@@ -11,11 +11,9 @@ import (
 )
 
 // canonicalVerifyTimeout bounds the re-open check after the trailer rewrite.
-//
-// It is deliberately independent of the caller's context: verification runs at
-// the tail of ExtractRange's budget, so reusing that nearly spent deadline would
-// time the check out and hand back a randomly-identified file — exactly the
-// duplicate that canonicalization exists to prevent.
+// Independent of the caller's context: verification runs at the tail of
+// ExtractRange's budget, so reusing that nearly spent deadline would time the
+// check out and hand back a randomly-identified file.
 const canonicalVerifyTimeout = 15 * time.Second
 
 // canonicalID is the fixed trailer /ID written in place of poppler's random one.
@@ -28,19 +26,17 @@ var canonicalID = []byte("[(AAAAAAAAAAAAAAAA) (AAAAAAAAAAAAAAAA)]")
 //
 // pdfseparate and pdfunite stamp a fresh random /ID into every file they write,
 // so extracting the same pages twice yields different bytes and the app's
-// exact-duplicate check never fires — re-splitting a scan would silently create
+// exact-duplicate check never fires: re-splitting a scan would silently create
 // a second copy of every part.
 //
 // The rewrite changes the length of the trailer, which is only safe because the
-// trailer sits after the cross-reference table: nothing in the file points past
-// it. That is checked, not assumed — the rewrite is skipped unless the /ID lies
-// beyond the offset startxref names. The result is then verified, and the
-// original bytes are restored if it does not open: a file that hashes
-// differently is a far smaller problem than one that cannot be read.
+// trailer sits after the cross-reference table. That is checked, not assumed:
+// the rewrite is skipped unless the /ID lies beyond the offset startxref names,
+// and the result is verified and the original bytes restored if it does not
+// open.
 //
-// Falling back is logged rather than returned as an error, because the file is
-// still perfectly usable — but it will not deduplicate against a later split of
-// the same source, so the reason has to be visible somewhere.
+// Falling back is logged rather than returned as an error: the file is still
+// usable, but it will not deduplicate against a later split of the same source.
 func canonicalizeFileID(path string) error {
 	original, err := os.ReadFile(path)
 	if err != nil {

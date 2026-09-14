@@ -91,8 +91,8 @@ export function defaultReprocessSteps(hasOcrText: boolean): ProcessingStep[] {
   return hasOcrText ? [...EXTRACTION_PIPELINE_STEPS] : [...FULL_PIPELINE_STEPS]
 }
 
-// Which steps a bulk requeue re-runs. 'auto' decides per document: extraction
-// only when OCR text survived the failed run, the full pipeline otherwise.
+// 'auto' decides per document: extraction only when OCR text survived the
+// failed run, the full pipeline otherwise.
 export type ReprocessMode = 'auto' | 'full' | 'extraction'
 
 export const REPROCESS_MODE_LABELS: Record<ReprocessMode, string> = {
@@ -102,11 +102,9 @@ export const REPROCESS_MODE_LABELS: Record<ReprocessMode, string> = {
 }
 
 /**
- * Parse a PocketBase timestamp, which the worker writes as
- * `2006-01-02 15:04:05.000Z` -- a space where ISO 8601 wants a `T`. Date's
- * handling of that spelling is implementation-defined, so normalise it rather
- * than trust the engine. Returns null for the empty string, which is what a
- * step that has not reached a given moment carries.
+ * The worker writes `2006-01-02 15:04:05.000Z`, a space where ISO 8601 wants a
+ * `T`, and Date's handling of that spelling is implementation-defined. Null for
+ * the empty string a step that has not reached the moment carries.
  */
 export function parseStepTimestamp(value?: string): number | null {
   if (!value) return null
@@ -115,21 +113,13 @@ export function parseStepTimestamp(value?: string): number | null {
 }
 
 /**
- * How long a step ran, in milliseconds, or null when that is not a question
- * with an answer.
+ * Null for a pending step, which has no start, and for a skipped one, which has
+ * only a finish: the pipeline skips before booking an attempt, so started_at
+ * stays empty and subtracting it would print the whole Unix epoch.
  *
- * Null covers two cases that must not render as a number. A pending step has
- * no start. A *skipped* one has only a finish: the pipeline decides to skip
- * before it books an attempt, so it never calls markStepRunning and started_at
- * stays empty -- subtracting it would print the whole Unix epoch as a duration.
- *
- * A running step is measured against `now`, so the caller re-rendering on the
- * document page's one-second poll is what makes it tick. Clamped at zero
- * because `now` is the viewer's clock and started_at is the server's, and a
- * viewer running a few seconds behind should see 0s rather than a negative.
- *
- * On a retry markStepRunning resets started_at, so this is the duration of the
- * latest attempt, not of all of them summed.
+ * A running step is measured against `now`, clamped at zero because `now` is
+ * the viewer's clock and started_at is the server's. A retry resets started_at,
+ * so this is the latest attempt, not all of them summed.
  */
 export function stepDurationMs(run: StepRunRecord, now: number = Date.now()): number | null {
   const started = parseStepTimestamp(run.started_at)
@@ -141,17 +131,12 @@ export function stepDurationMs(run: StepRunRecord, now: number = Date.now()): nu
 }
 
 /**
- * Whether the job is still running, which is *not* what the document's
- * processing_status says.
+ * Not what the document's processing_status says: apply_metadata marks the
+ * document 'completed' before embed runs, so a caller reading the document
+ * alone stops watching mid-pipeline.
  *
- * apply_metadata sets the document to 'completed' and saves it, and only then
- * does embed run -- eight seconds of it against a local sidecar. A caller that
- * reads the document alone stops watching while the pipeline is still working,
- * and is left holding a job whose last step reads 'running' for ever.
- *
- * finished_at rather than status, because status is set to completed by
- * apply_metadata too. finished_at is written once, at the very end of
- * PipelineRunner.Run, and is the only field that means the whole job is done.
+ * finished_at rather than status for the same reason: it is written once, at
+ * the end of PipelineRunner.Run, and is the only field meaning the job is done.
  */
 export function jobStillRunning(job: ProcessingJobRecord | null | undefined): boolean {
   return Boolean(job?.started_at) && !job?.finished_at
@@ -167,10 +152,8 @@ export function jobDurationMs(job: ProcessingJobRecord, now: number = Date.now()
 }
 
 /**
- * A duration at one significant moment rather than a fixed unit: OCR on a
- * sidecar is seconds, applying metadata is milliseconds, and a backfilled
- * embed can be minutes. Sub-second is rounded to the millisecond because
- * "0.0s" tells a reader nothing about a step that did almost no work.
+ * One significant figure rather than a fixed unit: a step can be milliseconds
+ * or minutes. Sub-second rounds to the millisecond, because "0.0s" says nothing.
  */
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`
@@ -192,14 +175,10 @@ export function stepLabel(name: string): string {
 }
 
 /**
- * How long a job may sit pending, never having started, before the UI stops
- * calling it "queued" and starts suggesting a cause.
- *
- * The worker leaves every job pending and returns when OCR or the AI extractor
- * is unconfigured (providersReady, backend/internal/worker/processor.go), and
- * records nothing about having done so -- the document simply reads "Pending"
- * for ever. Two minutes is long enough that a queue merely working through a
- * bulk upload is not accused of being broken.
+ * The worker leaves every job pending and records nothing when OCR or the AI
+ * extractor is unconfigured (providersReady in worker/processor.go), so the
+ * document would read "Pending" for ever. Two minutes is long enough that a
+ * queue working through a bulk upload is not accused of being broken.
  */
 export const stalledAfterMs = 2 * 60_000
 
@@ -212,14 +191,10 @@ export type ProcessingSummary = {
 }
 
 /**
- * What to tell the reader about a job, in one line.
- *
- * The document's own processing_status cannot answer this: it is one word, it
- * says "completed" for a document whose embeddings failed softly, and it says
- * "pending" both for a job queued a second ago and for one no worker will ever
- * pick up. Everything here comes off the job record the caller already holds.
- *
- * Returns null when there is nothing to add beyond the status badge.
+ * The document's own processing_status cannot answer this: it says "completed"
+ * for a document whose embeddings failed softly, and "pending" both for a job
+ * queued a second ago and for one no worker will pick up. Null when there is
+ * nothing to add beyond the status badge.
  */
 export function summarizeJob(
   job: ProcessingJobRecord | null | undefined,
@@ -241,9 +216,8 @@ export function summarizeJob(
     }
   }
 
-  // A hard failure is recorded before the job is re-pended for its next
-  // attempt, so during the backoff window a failed run and a pending job mean
-  // "retrying", not "failed". Checked before the failure branches for exactly
+  // A hard failure is recorded before the job is re-pended, so in the backoff
+  // window a failed run plus a pending job means "retrying". Checked first for
   // that reason.
   const failed = runs.find((run) => run.status === 'failed' && !run.soft)
   if (failed && !job.finished_at && job.status === 'pending') {
@@ -255,8 +229,7 @@ export function summarizeJob(
   }
 
   // The step first: it names what broke. job.error is the fallback for a
-  // failure that happened outside any step and so left step_runs untouched --
-  // and for rows written before failJob stopped duplicating a step's message.
+  // failure outside any step, which leaves step_runs untouched.
   if (failed) {
     return {
       tone: 'error',
@@ -280,8 +253,8 @@ export function summarizeJob(
     return null
   }
 
-  // Soft failures are the quiet ones: the job completed, the document reads
-  // "completed", and only this says the work is missing.
+  // The job and the document both read "completed"; only this says the work is
+  // missing.
   const soft = runs.find((run) => run.status === 'failed' && run.soft)
   if (soft) {
     return { tone: 'warning', label: `${stepLabel(soft.name)} failed`, detail: soft.error }

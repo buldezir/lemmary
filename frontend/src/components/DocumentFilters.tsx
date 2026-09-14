@@ -5,11 +5,8 @@ import { FilterCombobox } from './FilterCombobox'
 import { selectClassName } from './ui'
 
 /**
- * The search box and the filters that compose with it.
- *
  * The status dropdown is opt-in: a list whose status the path already decides
- * must not offer one, or a reader could filter their way out of the list they
- * are on.
+ * must not offer one, or a reader could filter their way out of it.
  */
 export function DocumentFilters({
   query,

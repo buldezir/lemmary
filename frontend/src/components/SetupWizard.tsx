@@ -46,16 +46,14 @@ type SetupWizardProps = {
 
 type Step = 'admin' | 'passkey' | 'providers' | 'models' | 'done'
 
-// Deliberately never returns 'passkey'. SetupStatus has no notion of passkeys, so
-// the optional step is reachable only from the in-session transition out of
-// 'admin' -- which is the whole mechanism that stops it resurfacing on a later
-// boot, or on a wizard that resumes at 'providers'.
+// Deliberately never returns 'passkey': the optional step is reachable only
+// from the in-session transition out of 'admin', which is what stops it
+// resurfacing on a later boot or on a wizard that resumes at 'providers'.
 function initialStep(status: SetupStatus): Step {
   if (status.needs_admin) return 'admin'
   return nextConfigStep(status)
 }
 
-// The step to land on once the admin account exists.
 function nextConfigStep(status: SetupStatus): Step {
   if (!status.needs_config) return 'done'
   return status.provider_count ? 'models' : 'providers'
@@ -74,16 +72,14 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
 
-  // Where to go once the optional passkey step is done or skipped. Stashed rather
-  // than re-derived so both paths land in the same place without a second round
-  // trip; nothing can change the setup status while the dialog is open.
+  // Stashed rather than re-derived, so skip and finish land in the same place
+  // without a second round trip.
   const [afterPasskey, setAfterPasskey] = useState<Step>('done')
   const [passkeyName, setPasskeyName] = useState('')
 
   const [providers, setProviders] = useState<AIProvider[]>([])
   // The guided form is the way in; the generic one below is the escape hatch
-  // for anything it does not cover -- a ChatGPT sign-in, a local sidecar, a
-  // second key on an instance that already has one.
+  // for anything it does not cover.
   const [guided, setGuided] = useState(!initialStatus.provider_count)
   const [mistralKey, setMistralKey] = useState('')
   const [generalSdk, setGeneralSdk] = useState<ProviderSDK>('opencode')
@@ -92,9 +88,8 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
   const [alias, setAlias] = useState('')
   const [baseURL, setBaseURL] = useState(SDK_DEFAULT_BASE.openai)
   const [apiKey, setApiKey] = useState('')
-  // The row a ChatGPT sign-in is waiting on. Signing in needs a provider id to
-  // store the token against, so the SDK cannot be finished in one step: the row
-  // is created first, then signed in to, and only then does the wizard move on.
+  // The row a ChatGPT sign-in is waiting on: the token needs a provider id to
+  // be stored against, so the row is created before the sign-in.
   const [signInProvider, setSignInProvider] = useState<AIProvider | null>(null)
 
   const [ocrProviderId, setOcrProviderId] = useState('')
@@ -114,21 +109,16 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
         if (!active) return
         setProviders(nextProviders)
         // Each binding falls back to a provider that can serve it and then to
-        // the model the guide names for that provider's SDK, so the guided path
-        // reaches this step with nothing left to choose. `recommendedModel`
-        // answers for two SDKs and empty for the rest, which leaves the picker
-        // to ask as it always did.
+        // the model the guide names for its SDK, so the guided path reaches
+        // this step with nothing left to choose.
         const byId = (id: string) => nextProviders.find((item) => item.id === id)
-        // A provider we can name a model for wins the job it has one for --
-        // which is how the guided pair sorts itself out: Mistral takes OCR and
-        // embeddings, and the other key is left to do the thinking.
+        // A provider we can name a model for wins the job it has one for, which
+        // is how the guided pair sorts itself out.
         const named = (purpose: ModelPurpose) =>
           nextProviders.find((item) => recommendedModel(item.sdk, purpose))
-        // A saved model belongs to the provider it was saved against. Where
-        // that row is gone -- a half-finished earlier run, providers deleted
-        // and re-added -- the fallback provider gets the model the guide names
-        // for its SDK, never the orphaned string, which the picker could only
-        // show as a custom model id its catalogue has never heard of.
+        // A saved model belongs to the provider it was saved against. Where that
+        // row is gone, the fallback provider gets the guide's model for its SDK,
+        // never the orphaned string the picker has no catalogue entry for.
         const saved = (id: string, model: string, provider?: AIProvider) =>
           provider && provider.id === id ? model : ''
         const ocr = byId(settings.ocr_provider_id) ?? named('ocr') ?? nextProviders[0]
@@ -141,8 +131,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
         const llm =
           byId(settings.extract_provider_id) ??
           // Not the row OCR just took, where there is another: Mistral serves
-          // both, so the first LLM row is the OCR one, and the language model
-          // the operator added a second key for would never be offered.
+          // both, so the second key would otherwise never be offered.
           llmProviders.find((item) => item.id !== ocr?.id) ??
           llmProviders[0]
         setExtractProviderId(llm?.id ?? '')
@@ -188,9 +177,8 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       const next = await refreshStatus()
       const target = nextConfigStep(next)
       setAfterPasskey(target)
-      // Offered only where it can actually work. An install reached over plain
-      // HTTP on a LAN address cannot create a passkey, and a dead end here would
-      // be worse than not asking.
+      // Offered only where it can work: an install reached over plain HTTP
+      // cannot create a passkey, and a dead end here is worse than not asking.
       if (passkeysSupported()) {
         setPasskeyName(defaultPasskeyName())
         setStep('passkey')
@@ -218,10 +206,8 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
     }
   }
 
-  // The two keys of docs/guided_ai_setup.html in one submit: Mistral for OCR
-  // and embeddings, one other provider for the language model. Either half may
-  // be left out -- a Mistral key alone is a complete install, and an instance
-  // that already has one only needs the other.
+  // The two keys of docs/guided_ai_setup.html in one submit. Either half may be
+  // left out: a Mistral key alone is a complete install.
   async function onSaveGuided(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     try {
@@ -234,10 +220,9 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       if (wanted.length === 0) {
         throw new Error('Enter at least one API key.')
       }
-      // Read from the server rather than from state: this submit creates two
-      // rows, and a failure on the second leaves the first saved but unknown to
-      // the component -- the retry would then ask for an alias that now exists
-      // and be refused, with no way forward but the manual form.
+      // Read from the server rather than from state: a failure on the second row
+      // leaves the first saved but unknown here, and the retry would be refused
+      // for an alias that now exists.
       const already = await listAIProviders()
       for (const item of wanted) {
         // An SDK already added is left alone rather than added twice.
@@ -279,8 +264,8 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       setProviders(nextProviders)
       setApiKey('')
       setAlias('')
-      // A row that signs in is not usable yet, and the models step would offer
-      // a provider that answers nothing. Hold here until the token is stored.
+      // A row that signs in is not usable yet, so hold here until the token is
+      // stored rather than offer a provider that answers nothing.
       if (requiresSignIn(sdk)) {
         setSignInProvider(nextProviders.find((item) => item.id === created.id) ?? created)
         return
@@ -298,8 +283,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
     }
   }
 
-  // Called by the sign-in panel whenever it stores or clears a token. It is the
-  // provider list that says whether the sign-in took, not the panel: the token
+  // The provider list says whether the sign-in took, not the panel: the token
   // never reaches the browser, so `signed_in` on the reloaded row is the only
   // evidence there is.
   async function onSignedIn() {
@@ -329,11 +313,9 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
         throw new Error('Choose an extraction provider.')
       }
       // The rules the settings endpoint enforces, asked here so the answer is a
-      // field to fill rather than a 400 quoting a request field. Only the two
+      // field to fill rather than a 400 quoting a request field. The two
       // modelless OCR SDKs are exempt, the same pair the picker hides the model
-      // box for. Nothing prefills an extraction model on most SDKs -- a
-      // one-key Mistral install reaches this step with that field empty -- so
-      // this is the common miss, not an edge case.
+      // box for.
       const ocrSdk = providers.find((item) => item.id === ocrProviderId)?.sdk
       if (usesOCRModel(ocrSdk) && !ocrModel.trim()) {
         throw new Error('Choose an OCR model.')
@@ -344,9 +326,8 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       if (embeddingProviderId && !embeddingModel.trim()) {
         throw new Error('Choose an embedding model, or set the embedding provider to None.')
       }
-      // First-launch setup only asks for one LLM binding: chat and search start
-      // out pointing at the extraction provider/model and can be split later in
-      // Settings.
+      // First-launch setup asks for one LLM binding: chat and search start out
+      // pointing at extraction and can be split later in Settings.
       await updateAppSettings({
         ocr_provider_id: ocrProviderId,
         ocr_model: ocrModel,
@@ -357,8 +338,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
         search_provider_id: extractProviderId,
         search_model: extractModel,
         // Optional, unlike the two above: empty clears the binding and Deep
-        // Search runs on keywords alone, which is what every install did before
-        // embeddings existed.
+        // Search runs on keywords alone.
         embedding_provider_id: embeddingProviderId,
         embedding_model: embeddingProviderId ? embeddingModel : '',
       })
@@ -406,8 +386,6 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           <h2 className="mb-4 font-display text-lg font-semibold text-ink">
             {step === 'admin' && 'Create your admin account'}
             {step === 'passkey' && 'Add a passkey'}
-            {/* The sign-in stands on a row that is already added, so the
-                heading follows what the step is actually asking for. */}
             {step === 'providers' &&
               (signInProvider
                 ? 'Sign in to ChatGPT'
@@ -554,10 +532,9 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                   onChange={(e) => setGeneralSdk(e.target.value as ProviderSDK)}
                   className={inputClassName}
                 >
-                  {/* Every SDK that can run the language model, except the two
-                      this form cannot ask for in one submit: mistral is the
-                      field above, and chatgpt is signed in to rather than
-                      given a key -- both reachable through the manual form. */}
+                  {/* The two this form cannot ask for in one submit are left out:
+                      mistral is the field above, chatgpt is signed in to rather
+                      than given a key. Both are in the manual form. */}
                   {SDK_OPTIONS.filter(
                     (option) =>
                       isLLMProvider(option.value) &&
@@ -616,9 +593,6 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                   </>
                 )}
               </p>
-              {/* The step asks for a key from an account the operator may not
-                  have opened yet, which is the one thing no hint here can
-                  supply. The guide is the walk-through for that. */}
               <p className={fieldHintClassName}>
                 No provider account yet?{' '}
                 <DocsLink href="/docs/guided_ai_setup.html">
@@ -642,11 +616,9 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                   }}
                   className={inputClassName}
                 >
-                  {/* chatgpt only where the instance opted in, the same
-                      condition Settings uses. Signing in needs a saved row to
-                      store the token against, so choosing it here creates the
-                      row and then holds the step open for the sign-in rather
-                      than finishing in one submit. */}
+                  {/* chatgpt only where the instance opted in, the same condition
+                      Settings uses. Choosing it creates the row and holds the
+                      step open for the sign-in. */}
                   {SDK_OPTIONS.filter(
                     (option) => option.value !== 'chatgpt' || chatgptLogin === true,
                   ).map((option) => (

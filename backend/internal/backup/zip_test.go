@@ -60,8 +60,8 @@ func TestWriteArchiveShape(t *testing.T) {
 	if manifest.DocumentCount != 2 || len(manifest.Documents) != 2 {
 		t.Fatalf("document_count=%d documents=%d", manifest.DocumentCount, len(manifest.Documents))
 	}
-	// The taxonomy carries a tag no document references; that is the only place
-	// such a tag exists, so losing it here loses it from the restore.
+	// The taxonomy is the only place a tag no document references exists, so losing
+	// it here loses it from the restore.
 	if len(manifest.Taxonomy.Tags) != 2 || manifest.Taxonomy.Tags[1] != "unused" {
 		t.Fatalf("tags=%#v", manifest.Taxonomy.Tags)
 	}
@@ -78,7 +78,6 @@ func TestWriteArchiveShape(t *testing.T) {
 		t.Fatalf("expected no sidecars for doc2, got %#v", second)
 	}
 
-	// Every path the manifest names must actually be in the archive.
 	for _, doc := range manifest.Documents {
 		for _, name := range []string{doc.File, doc.OCR, doc.Metadata, doc.Preview} {
 			if name == "" {

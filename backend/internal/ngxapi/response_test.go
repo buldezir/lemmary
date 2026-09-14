@@ -10,11 +10,9 @@ import (
 	"github.com/pocketbase/pocketbase/core/validators"
 )
 
-// TestSaveErrorMapsPocketBaseValidation guards the type identity between the
-// ozzo-validation fork PocketBase returns and the one saveError matches on.
-// PocketBase moved from go-ozzo to its own fork in v0.40; because the two
-// declare distinct Go types, importing the wrong one still compiles but turns
-// every client-caused validation failure into a generic 500.
+// PocketBase moved from go-ozzo to its own ozzo-validation fork in v0.40. The
+// two declare distinct Go types, so importing the wrong one still compiles but
+// turns every client-caused validation failure into a generic 500.
 func TestSaveErrorMapsPocketBaseValidation(t *testing.T) {
 	t.Parallel()
 

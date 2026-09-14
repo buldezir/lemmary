@@ -18,8 +18,7 @@ func TestEnvLimitParsing(t *testing.T) {
 		{name: "whitespace", raw: "   ", set: true, wantUnlimited: true},
 		{name: "positive", raw: "25", set: true, wantValue: 25},
 		{name: "padded", raw: " 25 ", set: true, wantValue: 25},
-		// Zero is a limit a plan sells ("no extra accounts"), not a way of
-		// saying unset, so it has to survive parsing as a real bound.
+		// Zero is a limit a plan sells ("no extra accounts"), not a way of saying unset.
 		{name: "explicit zero", raw: "0", set: true, wantValue: 0},
 		// A typo grants room rather than taking the instance down.
 		{name: "not a number", raw: "2O", set: true, wantUnlimited: true},
@@ -77,8 +76,7 @@ func TestFromEnvReadsEveryVariable(t *testing.T) {
 	}
 }
 
-// The default has to be "nothing is bounded" or an existing self-hosted install
-// changes behaviour on upgrade.
+// An existing self-hosted install must not change behaviour on upgrade.
 func TestZeroLimitsBoundNothing(t *testing.T) {
 	var lim Limits
 	if lim.Any() {
@@ -111,8 +109,7 @@ func TestFromEnvUnsetIsUnlimited(t *testing.T) {
 }
 
 // A value nobody can read falls back to unlimited, which is a working instance
-// on the wrong plan. The name has to come back so it can be logged loudly and
-// shown to an admin.
+// on the wrong plan, so the name has to come back to be shown to an admin.
 func TestFromEnvReportsUnusableValues(t *testing.T) {
 	t.Setenv(EnvDocuments, "2O")
 	t.Setenv(EnvFilePages, "-3")

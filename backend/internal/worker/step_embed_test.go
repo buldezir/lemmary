@@ -27,9 +27,8 @@ func embedTestDocument(t *testing.T, set func(*core.Record)) *core.Record {
 	return record
 }
 
-// The feature being off has to look like a skipped step, not a failed one: a
-// self-hosted install with no embedding model would otherwise show every
-// document with a red step in its history.
+// Off has to look like a skipped step: an install with no embedding model would
+// otherwise show every document with a red step in its history.
 func TestEmbedStepSkipsWhenNoModelIsBound(t *testing.T) {
 	t.Parallel()
 	step := &EmbedStep{}
@@ -87,8 +86,8 @@ func TestEmbedStepIsNamedForThePipeline(t *testing.T) {
 	}
 }
 
-// A soft failure is recorded as failed but walked past, so the loop must not
-// pick it up again -- it would retry the same step forever inside one job.
+// A soft failure is walked past, so the loop must not pick it up again and
+// retry the same step forever inside one job.
 func TestNextRunnableIndexSkipsSoftFailures(t *testing.T) {
 	t.Parallel()
 	runs := []models.StepRun{
@@ -101,7 +100,6 @@ func TestNextRunnableIndexSkipsSoftFailures(t *testing.T) {
 	}
 }
 
-// A hard failure still stops the pipeline where it stands.
 func TestNextRunnableIndexStopsAtHardFailures(t *testing.T) {
 	t.Parallel()
 	runs := []models.StepRun{
@@ -130,8 +128,7 @@ func TestMarkStepSoftFailedRecordsBothTheFailureAndThePardon(t *testing.T) {
 		t.Fatalf("run = %+v", run)
 	}
 
-	// markStepFailed must clear it, so a hard failure on a later attempt is not
-	// mistaken for a pardoned one.
+	// markStepFailed must clear it, or a later hard failure reads as pardoned.
 	markStepFailed(&run, errors.New("boom"))
 	if run.Soft {
 		t.Fatal("a hard failure left Soft set")

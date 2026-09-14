@@ -9,13 +9,9 @@ import {
 import { useAsync } from './useAsync'
 
 /**
- * One Settings tab's slice of the app_settings record: its own copy of the
- * fields it edits, and a save that PATCHes only those.
- *
- * Every field in the PATCH body is optional on the server, so a tab that names
- * only its own fields leaves the rest of the record untouched. That is what
- * lets the five tabs live on five routes: one form can no longer span them, and
- * none of them has to know what the others hold.
+ * One Settings tab's slice of app_settings. Every PATCH field is optional on
+ * the server, so a tab naming only its own fields leaves the rest untouched,
+ * which is what lets the tabs live on separate routes.
  */
 export function useSettingsForm<T extends object>(pick: (settings: AppSettings) => T) {
   const { data, loading, error: loadError } = useAsync(getAppSettings, [])
@@ -24,9 +20,8 @@ export function useSettingsForm<T extends object>(pick: (settings: AppSettings) 
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  // Held in a ref because every caller passes an inline lambda: in the deps of
-  // the effect below it would re-seed the form on every render and throw away
-  // whatever was half-typed.
+  // Held in a ref because every caller passes an inline lambda: in the effect's
+  // deps it would re-seed the form each render and lose what was half-typed.
   const pickRef = useRef(pick)
   useEffect(() => {
     pickRef.current = pick

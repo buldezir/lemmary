@@ -13,8 +13,7 @@ func TestOverridesEmpty(t *testing.T) {
 		t.Fatal("the zero Overrides overrides nothing")
 	}
 	// A model with no provider is not empty: it is a request Validate has to
-	// refuse. Reading it as empty would run the configured model instead of the
-	// one that was asked for, silently.
+	// refuse, and reading it as empty would silently run the configured model.
 	partial := Overrides{Chat: aiprovider.Binding{Model: "gpt-6-astra"}}
 	if partial.Empty() {
 		t.Fatal("a model with no provider must not read as no override")
@@ -25,9 +24,8 @@ func TestOverridesEmpty(t *testing.T) {
 	}
 }
 
-// Every binding has to be reachable: an override dropped by a missing case in
-// Purposes would run on the configured model with nothing to show it had been
-// ignored.
+// An override dropped by a missing case in Purposes would run on the configured
+// model with nothing to show it had been ignored.
 func TestOverridesPurposesCoversEveryBinding(t *testing.T) {
 	t.Parallel()
 	o := Overrides{
@@ -58,9 +56,8 @@ func TestOverridesPurposesCoversEveryBinding(t *testing.T) {
 	}
 }
 
-// The guard that keeps a re-embed from spending a provider call on vectors
-// nothing will ever read: a chunk row records its model, and the index only
-// reads rows matching the configured spec.
+// A chunk row records its model and the index only reads rows matching the
+// configured spec, so a re-embed on another model writes rows nobody reads.
 func TestValidateEmbeddingModel(t *testing.T) {
 	t.Parallel()
 	cases := map[string]struct {
@@ -98,8 +95,8 @@ func TestValidateEmbeddingModel(t *testing.T) {
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("validateEmbeddingModel() error = %v, wantErr %v", err, tc.wantErr)
 			}
-			// The message has to name the model to re-embed on; an admin cannot
-			// act on "wrong model".
+			// The message has to name the model to re-embed on; an admin cannot act on
+			// "wrong model".
 			if err != nil && tc.configured != "" && !strings.Contains(err.Error(), tc.configured) {
 				t.Fatalf("error does not name the configured model: %v", err)
 			}

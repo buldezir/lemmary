@@ -22,8 +22,7 @@ export function SettingsAppearancePage() {
     useSettingsForm((settings) => ({
       app_name: settings.app_name,
       // The color input has no empty state, so it shows the accent actually in
-      // force. Saving an untouched form therefore writes the default down,
-      // which is what it was already resolving to.
+      // force, and saving an untouched form writes the default down.
       accent: settings.accent || DEFAULT_ACCENT,
     }))
 

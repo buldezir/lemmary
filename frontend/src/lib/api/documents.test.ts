@@ -15,8 +15,7 @@ describe('buildDocumentFilter', () => {
     expect(buildDocumentFilter(noFilters)).toBeUndefined()
   })
 
-  // The timeline's "No date" row. PocketBase compares an empty literal
-  // null-safely, so this reaches a null date too.
+  // The timeline's "No date" row, which must reach a null date too.
   it('filters on the absence of a date', () => {
     expect(buildDocumentFilter({ ...noFilters, undated: true })).toBe("document_date = ''")
   })
@@ -27,8 +26,8 @@ describe('buildDocumentFilter', () => {
     )
   })
 
-  // The Inbox, and the count its badge shows: not one status but the absence of
-  // one, so a document that failed or is still queued is in there too.
+  // Not one status but the absence of completion, so failed and queued
+  // documents are in there too.
   it('turns the Inbox filter into everything except completed', () => {
     expect(buildDocumentFilter({ ...noFilters, status: UNFINISHED_STATUS })).toBe(
       "processing_status != 'completed'",
@@ -49,10 +48,8 @@ describe('buildDocumentFilter', () => {
   })
 
   it('bounds dateTo exclusively on the next day so the To day is included', () => {
-    // document_date is a DateField: stored as "YYYY-MM-DD HH:MM:SS.sssZ" and
-    // compared as a string. `<= '2025-03-31'` sorts before every timestamp on
-    // the 31st, so an inclusive-looking To silently dropped that whole day --
-    // exactly the day a timeline month click selects.
+    // Compared as a string, `<= '2025-03-31'` sorts before every timestamp on
+    // the 31st, dropping the day a timeline month click selects.
     const stored = '2025-03-31 00:00:00.000Z'
     const filter = buildDocumentFilter({ ...noFilters, dateTo: '2025-03-31' })
     expect(filter).toBe("document_date < '2025-04-01'")
@@ -102,8 +99,7 @@ describe('parseDuplicateOfId', () => {
 })
 
 describe('fileUrlWithToken', () => {
-  // getURL answers "" for an empty filename, and fetching "" resolves against
-  // the current page -- index.html, with a 200 that no response check would
+  // Fetching "" resolves against index.html with a 200 no response check would
   // catch. Refused before the token is minted, so this needs no server.
   it('refuses a document with no file', async () => {
     const record = { id: 'abc123def456ghi', collectionId: 'pbc_1', file: '' }

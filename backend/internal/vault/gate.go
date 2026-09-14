@@ -14,18 +14,14 @@ import (
 	"time"
 )
 
-// The unlock gate is a small HTTP server that runs *before* PocketBase exists.
-//
+// The unlock gate is a small HTTP server that runs before PocketBase exists.
 // It has to: the users collection and its password hashes live inside the
-// encrypted database, so nothing in PocketBase can authenticate anyone until the
-// database has already been decrypted. The keyring is what breaks that circle —
-// it lets a credential be checked, and the master key recovered, without opening
-// anything.
-//
-// The page it serves is deliberately hand-written rather than the SPA: public/
-// is served by PocketBase, which is not running yet.
+// encrypted database, so nothing in PocketBase can authenticate anyone until
+// the database has been decrypted. The keyring breaks that circle by letting a
+// credential be checked, and the master key recovered, without opening
+// anything. The page is hand-written rather than the SPA because public/ is
+// served by PocketBase, which is not running yet.
 
-// GateResult reports how the gate finished.
 type GateResult struct {
 	// Initialized is true when the gate created a brand new vault.
 	Initialized bool
@@ -33,17 +29,14 @@ type GateResult struct {
 	RecoveryCode string
 }
 
-// Gate blocks until the vault is unlocked, then returns.
-//
-// It listens on addr, which must be the address PocketBase will later bind, and
-// releases it before returning so the handover can happen.
+// Gate blocks until the vault is unlocked. It listens on addr, which must be
+// the address PocketBase will later bind, and releases it before returning.
 //
 // insecure reports that addr is reachable from off this host while carrying
-// cleartext HTTP. The gate refuses to collect a credential in that case unless
-// the operator has explicitly accepted it: this form submits the password that
-// unwraps the master key for the whole archive, and nothing is serving TLS while
-// the instance is locked — PocketBase is not running yet, so under autocert
-// there is not even anything listening on 443 to fall back to.
+// cleartext HTTP, which the gate refuses unless the operator has accepted it:
+// this form submits the password that unwraps the master key for the whole
+// archive, and nothing serves TLS while the instance is locked, not even an
+// autocert 443 to fall back to.
 func (v *Vault) Gate(ctx context.Context, addr string, insecure bool) (GateResult, error) {
 	var result GateResult
 
@@ -68,15 +61,12 @@ func (v *Vault) Gate(ctx context.Context, addr string, insecure bool) (GateResul
 		if !errors.Is(err, ErrWrongKey) {
 			return result, err
 		}
-		// A passphrase that no longer opens anything must not be fatal here.
-		// The expected way to reach this is not a typo: provisioning with
-		// VAULT_PASSPHRASE set is documented, and the first account save
-		// deliberately revokes the bootstrap wrap that passphrase created. Leave
-		// the variable in the compose file — the natural thing to do — and the
-		// next restart would fail startup, exit 1, and crash-loop the container
-		// under any restart policy, with the unlock form that would have
-		// accepted an ordinary account password never served. Fall through to
-		// the gate instead; a human at a browser can still get in.
+		// A passphrase that no longer opens anything must not be fatal. Provisioning
+		// with VAULT_PASSPHRASE is documented, and the first account save deliberately
+		// revokes the bootstrap wrap it created: leaving the variable in the compose
+		// file, the natural thing to do, would fail the next startup and crash-loop the
+		// container, with the form that would have accepted an ordinary account
+		// password never served.
 		v.opts.Log("vault: %s did not unlock the archive (it is probably the bootstrap passphrase, which is revoked once an account is enrolled); waiting for a sign-in instead", EnvPassphrase)
 	}
 
@@ -117,8 +107,8 @@ func (v *Vault) Gate(ctx context.Context, addr string, insecure bool) (GateResul
 	case result = <-done:
 	}
 
-	// Hand the port back. Shutdown waits for the response to reach the browser,
-	// then the listener is closed before PocketBase tries to bind it.
+	// Hand the port back: Shutdown waits for the response to reach the browser,
+	// then closes the listener before PocketBase tries to bind it.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
@@ -145,9 +135,9 @@ func (v *Vault) gateHandler(done chan<- GateResult) http.Handler {
 		})
 	})
 
-	// The container healthcheck must treat locked as healthy: an instance
-	// waiting for its first sign-in is working as designed, and failing here
-	// would make Docker restart-loop it forever.
+	// The container healthcheck must treat locked as healthy: an instance awaiting
+	// its first sign-in works as designed, and failing here would make Docker
+	// restart-loop it forever.
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"code":    http.StatusOK,
@@ -163,12 +153,9 @@ func (v *Vault) gateHandler(done chan<- GateResult) http.Handler {
 			return
 		}
 		if err := checkSameOrigin(r); err != nil {
-			// Initialising an empty vault mints a master key under a
-			// caller-chosen password, and unlocking is the one operation that
-			// matters here, so neither may be reachable by cross-origin script.
-			// JSON-only forces a CORS preflight this server never answers, and
-			// the fetch-metadata check rejects anything a browser labels
-			// cross-site.
+			// Initialising an empty vault mints a master key under a caller-chosen
+			// password, so neither that nor unlocking may be reachable by cross-origin
+			// script.
 			writeJSON(w, http.StatusForbidden, map[string]string{"message": err.Error()})
 			return
 		}
@@ -179,22 +166,19 @@ func (v *Vault) gateHandler(done chan<- GateResult) http.Handler {
 			return
 		}
 
-		// Init is not idempotent, so the check and the call have to be atomic:
-		// two racing requests would otherwise save one keyring while the process
-		// encrypted under the other's master key.
+		// Init is not idempotent, so the check and the call have to be atomic: two
+		// racing requests would save one keyring while encrypting under the other's
+		// master key.
 		v.gateMu.Lock()
 		defer v.gateMu.Unlock()
 
 		// An open vault must never be unlocked again. Unlock empties the working
-		// directory before restoring into it, and the mutex above only orders
-		// the two requests — it does not stop the second one. Shutdown below
-		// waits five seconds and then abandons a handler that is still running
-		// without stopping its goroutine, so on an archive large enough for the
-		// restore to outlast that timeout the sequence is: the gate returns,
-		// PocketBase opens data.db in the working directory, and the orphaned
-		// handler then deletes it out from under the live SQLite connection.
-		// Two tabs on the unlock form, or one impatient retry, is the whole
-		// setup. Answer the second request from the state the first one reached.
+		// directory before restoring into it, and the mutex above only orders the two
+		// requests. Shutdown below abandons a handler still running after five seconds
+		// without stopping its goroutine, so on an archive large enough the gate
+		// returns, PocketBase opens data.db, and the orphaned handler deletes it out
+		// from under the live SQLite connection. Two tabs on the form is the whole
+		// setup, so answer from the state the first request reached.
 		if v.Loaded() {
 			writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 			return
@@ -223,9 +207,9 @@ func (v *Vault) gateHandler(done chan<- GateResult) http.Handler {
 
 		err := v.Unlock(Credential{Password: req.Password, RecoveryCode: req.RecoveryCode})
 		if err != nil {
-			// Deliberately uniform: a wrong password and a tampered keyring are
-			// the same answer, and the delay blunts online guessing without
-			// pretending to replace the Argon2 cost.
+			// Deliberately uniform: a wrong password and a tampered keyring are the same
+			// answer, and the delay blunts online guessing without pretending to replace
+			// the Argon2 cost.
 			time.Sleep(500 * time.Millisecond)
 			status := http.StatusUnauthorized
 			msg := "That credential did not unlock this instance."
@@ -251,13 +235,11 @@ func (v *Vault) gateHandler(done chan<- GateResult) http.Handler {
 	return mux
 }
 
-// checkSameOrigin rejects requests a browser would let a hostile page make.
-//
-// The unlock endpoint has no session, so SameSite cookies protect nothing. Two
-// cheap checks cover it: requiring a JSON content type means a cross-origin
-// caller must send a preflight, which this server never approves, and
-// Sec-Fetch-Site catches browsers that send the request anyway. Non-browser
-// clients (curl, the CLI) send neither header and are unaffected.
+// checkSameOrigin covers an endpoint with no session, where SameSite cookies
+// protect nothing: requiring a JSON content type forces a cross-origin caller
+// into a preflight this server never approves, and Sec-Fetch-Site catches
+// browsers that send the request anyway. Non-browser clients send neither
+// header and are unaffected.
 func checkSameOrigin(r *http.Request) error {
 	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
 		return errors.New("Send this request as application/json.")

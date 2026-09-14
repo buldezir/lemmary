@@ -12,12 +12,9 @@ import (
 )
 
 // The two tools that let a research run cover a topic instead of a document.
-//
 // read_documents is right for a handful of documents. A question about a
-// correspondent's whole year, or about how many of something there are, is
-// not a read problem: reading two hundred documents one call at a time puts
-// two hundred documents into one conversation, and counting search results
-// counts a page. survey_documents hands the reading to the helper model and
+// correspondent's whole year, or about how many of something there are, is not
+// a read problem. survey_documents hands the reading to the helper model and
 // returns a row per document; count_documents asks the index and the database
 // and returns a number.
 
@@ -145,8 +142,7 @@ const (
 	// DefaultSurveyDocuments is how many documents a survey reads when the
 	// call does not say; MaxSurveyDocuments is the most it may ask for. The
 	// rows come back as one tool result, so this bounds one message of the
-	// conversation: a thousand rows is on the order of a hundred thousand
-	// tokens, which the models this is built for carry.
+	// conversation.
 	DefaultSurveyDocuments = 300
 	MaxSurveyDocuments     = 1000
 )
@@ -520,5 +516,4 @@ func sortRows(rows []SurveyRow) {
 	})
 }
 
-// SortSurveyRows is sortRows for callers outside the package.
 func SortSurveyRows(rows []SurveyRow) { sortRows(rows) }

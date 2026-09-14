@@ -87,8 +87,8 @@ func TestResolvedAppName(t *testing.T) {
 	}
 }
 
-// The accent is seeded like the name: PocketBase installs its own blue, which
-// would otherwise be what a fresh Lemmary shows in its logo mark.
+// PocketBase installs its own blue, which would otherwise be what a fresh
+// instance shows in its logo mark.
 func TestRegisterAppNameSeedsTheAccent(t *testing.T) {
 	app := bootNamedApp(t, "", true)
 	if got := app.Settings().Meta.AccentColor; got != defaultAccent {

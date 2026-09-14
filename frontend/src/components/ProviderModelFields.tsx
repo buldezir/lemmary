@@ -128,17 +128,13 @@ export function ProviderModelFields({
 }: ProviderModelFieldsProps) {
   const providerInputId = useId()
   const selected = providers.find((item) => item.id === providerId)
-  // Only offer providers this binding can actually use. The API refuses the
-  // rest anyway; showing them meant the only way to learn that a local endpoint
-  // cannot do extraction was to save and read the error. Callers pass every
-  // provider they have -- narrowing the list before it gets here is what hid
-  // the local SDK from the embedding picker.
+  // Narrowed here, not by the caller, which must pass every provider it has:
+  // narrowing earlier is what hid the local SDK from the embedding picker.
   const eligible = eligibleProviders(providers, purpose, providerId)
   const hideModel = purpose === 'ocr' && selected?.sdk === 'google_vision'
   const showWarning = purpose === 'ocr' && showsOCRModelWarning(selected?.sdk)
-  // A local sidecar has no catalogue to list, so the picker falls back to a
-  // free-text box. Left bare that box reads as a required model id; the hint is
-  // what says it is optional and what the handful of accepted words are.
+  // A local sidecar has no catalogue, so the picker falls back to a free-text
+  // box; bare, that box reads as a required model id.
   const localHint = purpose === 'ocr' ? localOCRModelHint(selected?.sdk) : ''
 
   const modelsState = useAsync(async () => {
@@ -165,19 +161,15 @@ export function ProviderModelFields({
           placeholder={allowEmpty ? 'None' : 'Select a provider'}
           onChange={(next) => {
             onProviderChange(next)
-            // The model the guide names for the new provider, not an empty box:
-            // switching OCR to Mistral knows it wants mistral-ocr-latest, the
-            // same answer the wizard's prefill gives. Empty for every other SDK,
-            // which is the clear this line used to be.
+            // The model the guide names for the new provider, not an empty box,
+            // and empty for every SDK it has no answer for.
             onModelChange(recommendedModel(providers.find((item) => item.id === next)?.sdk, purpose))
           }}
         />
       </div>
-      {/* No provider, no model field. The catalogue is fetched per provider, so
-          with none chosen there is nothing to list -- and ModelSelect reads an
-          empty list as "this provider has no catalogue" and falls back to a
-          free-text box, which is how an unbound binding came to show a text
-          input where every bound one shows a dropdown. */}
+      {/* No provider, no model field: ModelSelect reads an empty catalogue as
+          "this provider has none" and falls back to a free-text box, which an
+          unbound binding must not show. */}
       {!hideModel && providerId && (
         <ModelSelect
           key={providerId || 'none'}

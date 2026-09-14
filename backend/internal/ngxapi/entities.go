@@ -70,15 +70,13 @@ func handleDeleteDocumentType(e *core.RequestEvent) error {
 	return deleteNamedRecord(e, "document_types", e.Auth.Id)
 }
 
-// namedEntityBody is the write payload shared by correspondents and document types.
 type namedEntityBody struct {
 	Name         string `json:"name"`
 	NameOriginal string `json:"name_original"`
 }
 
-// createOwnedNamedRecord creates a user-owned named entity (tag, correspondent,
-// or document type). For collections that carry name_original it defaults to
-// name when the client omits it; tags have no such column.
+// createOwnedNamedRecord defaults name_original to name for the collections
+// that carry it; tags have no such column.
 func createOwnedNamedRecord(e *core.RequestEvent, collection string, mapper recordMapper) error {
 	var body namedEntityBody
 	if err := e.BindBody(&body); err != nil {
@@ -108,8 +106,8 @@ func createOwnedNamedRecord(e *core.RequestEvent, collection string, mapper reco
 	return writeJSON(e, http.StatusCreated, mapper(record))
 }
 
-// patchOwnedNamedRecord updates a user-owned named entity. Blank fields are left
-// unchanged so a partial PATCH cannot clear a name.
+// patchOwnedNamedRecord leaves blank fields unchanged so a partial PATCH cannot
+// clear a name.
 func patchOwnedNamedRecord(e *core.RequestEvent, collection string, mapper recordMapper) error {
 	ngxID, err := parseNgxID(e.Request.PathValue("id"))
 	if err != nil {

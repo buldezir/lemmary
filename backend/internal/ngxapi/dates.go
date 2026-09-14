@@ -30,7 +30,6 @@ func formatNgxDateTime(datetime string) string {
 	return datetime
 }
 
-// formatNgxCreatedDate formats document created dates for API consumers.
 func formatNgxCreatedDate(docDate string) string {
 	if docDate == "" {
 		return ""

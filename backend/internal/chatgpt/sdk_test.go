@@ -14,7 +14,7 @@ import (
 )
 
 // codexServer answers like the Codex backend: an SSE stream with no
-// Content-Type header. It records the path and headers it was reached with.
+// Content-Type header.
 func codexServer(t *testing.T, seen *http.Request, path *string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -31,19 +31,14 @@ func codexServer(t *testing.T, seen *http.Request, path *string) *httptest.Serve
 
 // The end-to-end case: the middleware sits under a real openai-go client, so
 // the path it rewrites is the one the SDK actually built from the base URL.
-//
-// It is worth asserting through the SDK rather than by hand because
-// option.WithBaseURL appends a trailing slash and resolves the endpoint as a
-// relative reference. A base URL of ".../backend-api/codex" that lost its last
-// segment on the way would post to /backend-api/responses and 404, and no unit
-// test over a hand-built request would notice.
+// option.WithBaseURL resolves the endpoint as a relative reference, so a base
+// URL that lost its last segment would post to /backend-api/responses and 404.
 func TestTheMiddlewareRewritesThePathTheSDKBuilds(t *testing.T) {
 	var seen http.Request
 	var path string
 	srv := codexServer(t, &seen, &path)
 
-	// The host is httptest's; the path is the real one, which is the half this
-	// test is about.
+	// The host is httptest's; the path is the real one.
 	client := openai.NewClient(
 		option.WithAPIKey(PlaceholderKey),
 		option.WithBaseURL(srv.URL+chatgptBasePath),
@@ -68,8 +63,7 @@ func TestTheMiddlewareRewritesThePathTheSDKBuilds(t *testing.T) {
 		t.Errorf("Authorization = %q, want the live token rather than the placeholder", got)
 	}
 
-	// And the SDK decoded the reassembled answer, which is the whole point:
-	// ai.CompleteChat and everything above it see an ordinary completion.
+	// And the SDK decoded the reassembled answer: an ordinary completion.
 	if len(resp.Choices) != 1 || resp.Choices[0].Message.Content != "ok" {
 		t.Fatalf("choices = %+v", resp.Choices)
 	}

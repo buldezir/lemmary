@@ -59,11 +59,8 @@ export function Combobox({
   // null means "showing the selection", a string means the user is typing.
   const [query, setQuery] = useState<string | null>(null)
   const [highlightedIndex, setHighlightedIndex] = useState(0)
-  // Which way the list opens. Downward is what every list does when there is
-  // room; near the foot of the viewport there is not, and a list that opens
-  // past the fold has to be scrolled to before it can be read. The chat pages
-  // put a picker directly under the composer, at the bottom of a tall panel,
-  // which is exactly where that happens.
+  // Which way the list opens: downward unless it would land past the fold, as
+  // it does for the picker under the chat composer.
   const [dropUp, setDropUp] = useState(false)
 
   const selectedLabel = options.find((option) => option.value === value)?.label ?? ''
@@ -90,10 +87,8 @@ export function Combobox({
 
   function openList() {
     if (disabled || loading) return
-    // Measured on open rather than in a layout effect: the list has no box
-    // until it is open, and the input's does not move while it is. Upward only
-    // when there is genuinely less room below than above, so a list that fits
-    // still opens the ordinary way.
+    // Measured on open rather than in a layout effect: the list has no box until
+    // it is open, and the input's does not move while it is.
     const rect = rootRef.current?.getBoundingClientRect()
     if (rect) {
       const below = window.innerHeight - rect.bottom

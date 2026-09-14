@@ -41,7 +41,6 @@ type Preview struct {
 	Source Source `json:"-"`
 }
 
-// stagedArchive is one upload waiting to be imported.
 type stagedArchive = staging.Item[Preview]
 
 var stagingRegistry = newStagingRegistry()
@@ -163,7 +162,6 @@ func saveArchive(path string, src io.Reader, limit int64) (int64, error) {
 	return size, nil
 }
 
-// Discard drops a staged archive that the user chose not to import.
 func Discard(uploadID, ownerUserID string) bool {
 	item, ok := stagingRegistry.Claim(uploadID, ownerUserID)
 	if !ok {

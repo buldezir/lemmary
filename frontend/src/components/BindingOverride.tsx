@@ -18,52 +18,39 @@ type BindingOverrideProps = {
   label: string
   purpose: ModelPurpose
   /**
-   * The chosen binding, or undefined for "use the configured model".
-   *
-   * Undefined is the off state rather than an empty binding, because an empty
-   * one is a real intermediate state: the picker is open and no provider has
-   * been chosen yet. Collapsing the two would make the checkbox unable to open.
+   * The chosen binding, or undefined for "use the configured model". Undefined
+   * rather than an empty binding, because an empty one is the real state of an
+   * open picker with no provider chosen yet.
    */
   value: ProviderBinding | undefined
   onChange: (binding: ProviderBinding | undefined) => void
   /** Short explanation of what this binding is used for. */
   help?: string
   /**
-   * Locks the choice open on its current value. For a conversation that already
-   * has turns: the binding is fixed once a transcript exists, so the picker has
-   * to show what it is running on without offering to change it.
+   * Locks the choice on its current value, for a conversation that already has
+   * turns: it must show what it runs on without offering to change it.
    */
   locked?: boolean
   /** What the locked state says in place of the picker. */
   lockedHint?: string
   /**
-   * Names the model that answers when nothing is overridden.
-   *
-   * For the chat surfaces, where "which model am I talking to?" is a fair
-   * question whether or not anyone touched the picker. Off for the reprocess
-   * forms, where it would cost a request per binding on every page load to
-   * answer something the step history already records after the fact.
+   * Names the model that answers when nothing is overridden. Off for the
+   * reprocess forms, where it would cost a request per binding on every page
+   * load to say what the step history already records.
    */
   showConfigured?: boolean
   /**
    * Names which configured binding to report as the default, when the purpose
-   * alone cannot say -- "search" and "chat" are both `llm`. Passed through to
-   * the providers endpoint.
+   * alone cannot say -- "search" and "chat" are both `llm`.
    */
   bindingName?: string
 }
 
 /**
- * An optional provider/model choice for one chat or one reprocess job.
- *
- * Off by default, and off means the request carries no binding at all -- so a
- * page whose checkbox is never ticked behaves exactly as it did before
- * overrides existed. That default is the whole reason this wraps
+ * An optional provider/model choice for one chat or one reprocess job. Off means
+ * the request carries no binding at all, which is why this wraps
  * ProviderModelFields rather than using it directly: in Settings a binding
- * always exists, and on these five surfaces it usually should not.
- *
- * The provider list comes from /api/app/ai/providers, which any signed-in user
- * may read; ProviderModelFields fetches the model catalogue per provider.
+ * always exists, and here it usually should not.
  */
 export function BindingOverride({
   label,
@@ -79,19 +66,12 @@ export function BindingOverride({
   const open = value !== undefined
 
   // The binding as it stands *within* the current event, not as of the last
-  // render.
-  //
-  // ProviderModelFields reports a provider change as two calls in one handler:
-  // onProviderChange(next), then onModelChange('') to drop the model that
-  // belonged to the old provider. Both run before React re-renders, so a
-  // handler that merged into the `value` prop would compute the second update
-  // from the pre-change binding -- and the model reset would put the empty
-  // provider back, leaving the picker stuck on "Select a provider" however many
-  // times it was clicked. Settings does not hit this: each of its two callbacks
-  // writes a different field of one settings object.
-  // Synced in an effect rather than assigned during render, which React
-  // forbids; the handlers below keep it current within an event themselves,
-  // which is the case that matters here.
+  // render: ProviderModelFields reports a provider change as onProviderChange
+  // then onModelChange(''), both before React re-renders, so merging into the
+  // `value` prop computes the second update from the pre-change binding and
+  // leaves the picker stuck on "Select a provider".
+  // Synced in an effect rather than during render, which React forbids; the
+  // handlers below keep it current within an event themselves.
   const latest = useRef(value)
   useEffect(() => {
     latest.current = value
@@ -103,18 +83,15 @@ export function BindingOverride({
   }
 
   const providersState = useAsync(async () => {
-    // Fetched when the picker is opened, and also when the caller wants the
-    // configured model named -- that answer comes from the same request. A page
-    // that shows neither pays for nothing: most visits to a reprocess form
-    // override no model at all.
+    // Fetched only when the picker is open or the configured model is named;
+    // both answers come from the same request, and a page showing neither pays
+    // for nothing.
     if (!open && !showConfigured) return { providers: [], configured: {} }
     return listPickableProviders(purpose, bindingName)
   }, [open, showConfigured, purpose, bindingName])
   const providers = (providersState.data?.providers ?? []).map(asPickerProvider)
   const configured = providersState.data?.configured ?? {}
 
-  // The model this binding actually runs on: the override when there is one,
-  // the Settings binding when there is not.
   const effectiveModel = value?.provider_id ? value.model : configured.model
   const source = value?.provider_id ? '' : ' (from Settings)'
 
@@ -134,8 +111,8 @@ export function BindingOverride({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Which model answers, whether or not it was chosen here. Without it the
-          only way to know was to open Settings, which most accounts cannot. */}
+      {/* Which model answers, whether or not it was chosen here: the only other
+          way to know is Settings, which most accounts cannot open. */}
       {showConfigured && !open && (
         <p className="text-xs text-ink-soft">
           {label} model:{' '}
@@ -179,11 +156,9 @@ export function BindingOverride({
 
 /**
  * How each overridable step is presented; STEP_BINDINGS says which binding it
- * reads. One table, read by both shapes of the picker -- grouped, for the pages
- * that queue by mode, and per step -- so there is one embedding warning.
- *
- * Not exported: nothing outside needs it, and exporting a constant from a file
- * that also exports components costs Fast Refresh.
+ * reads. Both shapes of the picker read this one table, so there is one
+ * embedding warning. Not exported: a constant exported from a file that also
+ * exports components costs Fast Refresh.
  */
 const JOB_BINDINGS = [
   {
@@ -216,10 +191,6 @@ const JOB_BINDINGS = [
 /**
  * The model override for one pipeline step, or nothing for a step that calls no
  * provider.
- *
- * Rendered beside the step it belongs to rather than in a block of its own: the
- * question "which model?" only means anything once you have said you are
- * re-running the step that uses one.
  */
 export function StepBindingOverride({
   step,
@@ -246,13 +217,9 @@ export function StepBindingOverride({
 
 /**
  * All three bindings in one block, for the pages that queue a reprocess by mode
- * rather than by ticking steps: the bulk bar on the document list and the
- * failed-processing panel.
- *
- * All three are offered whatever the mode is. "Auto" does not know which steps
- * it will run until the server looks at each document, and a picker that
- * appears and disappears as the mode dropdown moves is harder to reason about
- * than one a job simply ignores.
+ * rather than by ticking steps. All three show whatever the mode is, because
+ * "Auto" does not know which steps it will run until the server looks at each
+ * document.
  */
 export function JobOverrideFields({
   value,

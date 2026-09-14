@@ -4,15 +4,9 @@ import { useAppMeta } from '../hooks/useAppMeta'
 import { tabClassName } from '../components/ui'
 
 /**
- * The Settings shell: a header, the tabs, and whichever tab is on the URL.
- *
- * The sections used to be stacked on one page sharing one form, which had grown
- * past what anyone could scan. Each is now its own route, and each saves only
- * its own fields -- the settings PATCH treats every field as optional, so a tab
- * naming its own leaves the rest of the record alone.
- *
- * Admin access is enforced by the route's beforeLoad guard, which the tab routes
- * inherit.
+ * The Settings shell: a header, the tabs, and whichever tab is on the URL. Each
+ * tab saves only its own fields -- the settings PATCH treats every field as
+ * optional, so a tab naming its own leaves the rest of the record alone.
  */
 export function SettingsPage() {
   // unknown/failed meta counts as managed; see AppMeta.aiManaged
@@ -41,7 +35,7 @@ export function SettingsPage() {
           Appearance
         </Link>
         {/* Hidden rather than disabled on a managed instance: there is nothing
-            editable behind them. Typed in by hand they explain themselves. */}
+            editable behind them. */}
         {aiEditable && (
           <Link to="/settings/ai" className={tabClassName}>
             AI

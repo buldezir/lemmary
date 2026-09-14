@@ -1,24 +1,18 @@
 // Package vault keeps a PocketBase data directory encrypted on the persistent
 // volume and plaintext only in memory.
 //
-// The shape of the thing: the volume holds a keyring, a chain of sealed
-// manifests, and a content-addressed store of sealed blobs. Nothing else. On
-// unlock, a credential unwraps the master key, the newest manifest is
-// materialised into a memory-backed working directory, and PocketBase is pointed
-// at that directory. From then on the application is an ordinary single-tenant
-// install that happens to live in RAM; it needs no knowledge of any of this,
-// which is the entire point — the alternative, sealing individual database
-// columns, means touching every query path and still leaves the uploaded files
-// and the search index in the clear.
+// The volume holds a keyring, a chain of sealed manifests, and a
+// content-addressed store of sealed blobs. On unlock, a credential unwraps the
+// master key, the newest manifest is materialised into a memory-backed working
+// directory, and PocketBase is pointed at it. The application then needs no
+// knowledge of any of this, which is the point: sealing individual database
+// columns instead would touch every query path and still leave the uploaded
+// files and the search index in the clear.
 //
-// What it protects: the volume is ciphertext whenever the process is stopped,
-// and from boot until the first sign-in. A stolen disk, a leaked snapshot, or an
-// operator browsing the filesystem gets nothing.
-//
-// What it does not protect: anything, from someone who controls the running
-// process. The key is in memory once unlocked, and whoever runs the binary can
-// patch it to capture the key at unlock. This is at-rest encryption, not
-// zero-knowledge, and it must not be described as the latter.
+// The volume is ciphertext whenever the process is stopped, and from boot until
+// the first sign-in. It protects nothing from someone who controls the running
+// process, whose memory holds the key. This is at-rest encryption, not
+// zero-knowledge, and must not be described as the latter.
 package vault
 
 import (
@@ -43,16 +37,10 @@ const (
 )
 
 // excludedPrefixes are working-directory paths the vault deliberately does not
-// persist.
-//
-//   - bleve is derived data: the index self-heals and is rebuilt from the
-//     database on boot, and it is also a full plaintext shadow of every
-//     document's OCR text, so keeping it out of the vault removes a whole class
-//     of leak rather than merely encrypting it.
-//   - temp holds staged uploads whose registry is in-memory anyway, so a restart
-//     already orphans them.
-//   - the rest are PocketBase scratch, our own staging, and the OS temp
-//     directory we redirect into RAM.
+// persist. bleve is derived data that self-heals, and is also a full plaintext
+// shadow of every document's OCR text, so leaving it out removes a class of
+// leak rather than encrypting it; temp holds staged uploads a restart already
+// orphans; the rest are scratch directories.
 var excludedPrefixes = []string{
 	"bleve",
 	"temp",
@@ -76,9 +64,8 @@ func isExcluded(rel string) bool {
 		}
 	}
 	for _, db := range databaseFiles {
-		// The snapshot supplies these; the live file and its -wal/-shm sidecars
-		// are never captured directly because copying them mid-write is exactly
-		// how you get a torn database.
+		// The snapshot supplies these: copying the live file and its -wal/-shm sidecars
+		// mid-write is how a torn database happens.
 		if rel == db || strings.HasPrefix(rel, db+"-") {
 			return true
 		}
@@ -86,40 +73,33 @@ func isExcluded(rel string) bool {
 	return false
 }
 
-// Snapshotter produces consistent copies of the application databases into a
-// staging directory.
-//
-// It is an interface so the storage engine can be tested without PocketBase; the
-// real implementation uses VACUUM INTO.
+// Snapshotter is an interface so the storage engine can be tested without
+// PocketBase; the real implementation uses VACUUM INTO.
 type Snapshotter interface {
 	SnapshotDatabases(stageDir string) error
 }
 
-// Logger is the minimal logging surface the vault needs.
 type Logger func(format string, args ...any)
 
-// Options configures a vault.
 type Options struct {
 	// Dir is the persistent vault directory (the Docker volume).
 	Dir string
 	// WorkDir is the memory-backed directory the plaintext lives in.
 	WorkDir string
-	// Enabled reports whether encryption is on at all. When false every method
-	// is a no-op and the application runs exactly as it does today.
+	// Enabled false makes every method a no-op.
 	Enabled bool
 	// KeepGenerations bounds rollback depth; zero means the default.
 	KeepGenerations int
 	// AllowShrink disables the guard that refuses a flush which would drop more
 	// than half the archive.
 	AllowShrink bool
-	// AllowDiskWorkDir permits a working directory that is not memory-backed.
-	// Only tests and local development should set it.
+	// AllowDiskWorkDir permits a working directory that is not memory-backed. Only
+	// tests and local development should set it.
 	AllowDiskWorkDir bool
-	// AllowInsecureGate accepts serving the unlock form over cleartext HTTP on
-	// an address something other than this host can reach.
+	// AllowInsecureGate accepts serving the unlock form over cleartext HTTP on an
+	// address something other than this host can reach.
 	AllowInsecureGate bool
-	// Log receives progress and warnings.
-	Log Logger
+	Log               Logger
 }
 
 func (o *Options) applyDefaults() {
@@ -150,11 +130,9 @@ type Vault struct {
 	flushMu sync.Mutex
 	// gateMu serialises the unlock gate's check-then-initialise.
 	gateMu sync.Mutex
-	// keyringMu serialises keyring mutation and its save. The enrollment hooks
-	// run on PocketBase's request goroutines, so two concurrent account saves
-	// would otherwise race on the wrap list — and the loser's wrap could be
-	// missing from the keyring that lands on disk, leaving that user unable to
-	// unlock after the next restart.
+	// keyringMu serialises keyring mutation and its save: the enrollment hooks run
+	// on request goroutines, so two concurrent account saves would race on the wrap
+	// list and the loser's wrap could be missing from the keyring on disk.
 	keyringMu sync.Mutex
 	snap      Snapshotter
 
@@ -162,26 +140,22 @@ type Vault struct {
 	flushes atomicCounter
 }
 
-// Enabled reports whether this vault does anything.
 func (v *Vault) Enabled() bool { return v != nil && v.opts.Enabled }
 
-// WorkDir is the plaintext directory PocketBase should use as its data dir.
+// WorkDir is the plaintext directory PocketBase uses as its data dir.
 func (v *Vault) WorkDir() string { return v.opts.WorkDir }
 
-// Dir is the persistent vault directory.
 func (v *Vault) Dir() string { return v.opts.Dir }
 
-// Loaded reports whether the vault has been materialised. Nothing may be
-// flushed before this is true: writing a manifest built from an empty working
+// Loaded gates every flush: writing a manifest built from an empty working
 // directory over a good vault is the one unrecoverable mistake this design can
-// make, so it is gated here rather than at each call site.
+// make, so it is checked here rather than at each call site.
 func (v *Vault) Loaded() bool {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.loaded
 }
 
-// Generation returns the currently committed generation, or zero.
 func (v *Vault) Generation() uint64 {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -191,30 +165,26 @@ func (v *Vault) Generation() uint64 {
 	return v.prev.Gen
 }
 
-// SetSnapshotter installs the database snapshot strategy.
-//
-// It is called from the bootstrap hook, on a different goroutine from the
-// flushes that read it, so it takes the lock like every other field.
+// SetSnapshotter is called from the bootstrap hook, on a different goroutine
+// from the flushes that read it, so it takes the lock like every other field.
 func (v *Vault) SetSnapshotter(s Snapshotter) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.snap = s
 }
 
-// Keyring exposes the keyring for enrollment operations.
 func (v *Vault) Keyring() *Keyring { return v.kr }
 
 // MasterKey returns the unwrapped master key. Callers must not retain it.
 func (v *Vault) MasterKey() crypt.Key { return v.mk }
 
-// UpdateKeyring runs fn with exclusive access to the keyring, then persists the
-// result. Every mutation after the vault is serving must go through here: the
+// UpdateKeyring is how every mutation after the vault is serving must go: the
 // enrollment hooks run on concurrent request goroutines, and an unserialised
 // read-modify-write of the wrap list can persist a keyring missing the losing
-// goroutine's wrap — a user who silently cannot unlock after the next restart.
+// goroutine's wrap, leaving that user unable to unlock after a restart.
 //
 // An error from fn skips the save and is returned unchanged, so a caller can
-// treat conditions like ErrLastWrap as "leave the keyring alone".
+// treat ErrLastWrap as "leave the keyring alone".
 func (v *Vault) UpdateKeyring(fn func(kr *Keyring) error) error {
 	v.keyringMu.Lock()
 	defer v.keyringMu.Unlock()
@@ -243,8 +213,8 @@ func New(opts Options) (*Vault, error) {
 	if err := os.MkdirAll(opts.Dir, 0o700); err != nil {
 		return nil, err
 	}
-	// Before anything is created or read: refusing late would already have
-	// written a keyring, leaving a half-initialised vault behind.
+	// Before anything is created or read: refusing late would already have written
+	// a keyring, leaving a half-initialised vault behind.
 	v.opts = opts
 	if err := v.checkWorkDirIsMemoryBacked(); err != nil {
 		return nil, err
@@ -264,12 +234,9 @@ func New(opts Options) (*Vault, error) {
 	return v, nil
 }
 
-// Initialized reports whether this vault has ever been set up.
 func (v *Vault) Initialized() bool { return v.kr != nil }
 
-// Init creates a brand new vault around a first credential.
-//
-// It returns the recovery code, which is shown once and never stored in
+// Init returns the recovery code, which is shown once and never stored in
 // recoverable form.
 func (v *Vault) Init(userID, password string) (string, error) {
 	if v.kr != nil {
@@ -284,9 +251,8 @@ func (v *Vault) Init(userID, password string) (string, error) {
 	}
 
 	// Adopt first, save second. A keyring on disk is what makes an instance
-	// "initialised", so writing one for a vault that then fails to materialise
-	// would strand the volume: the next boot would demand a password nobody
-	// meant to set.
+	// initialised, so writing one for a vault that then fails to materialise would
+	// strand the volume: the next boot would demand a password nobody meant to set.
 	v.kr = kr
 	if err := v.adopt(mk); err != nil {
 		v.kr = nil
@@ -300,8 +266,6 @@ func (v *Vault) Init(userID, password string) (string, error) {
 	return code, nil
 }
 
-// Unlock opens the vault with a credential and materialises the working
-// directory.
 func (v *Vault) Unlock(c Credential) error {
 	if v.kr == nil {
 		return ErrNoKeyring
@@ -341,25 +305,18 @@ func (v *Vault) adopt(mk crypt.Key) error {
 }
 
 // checkDirsDisjoint refuses a configuration where either directory contains the
-// other.
+// other. The working directory is emptied on every unlock: nest the vault
+// inside it (VAULT_WORKDIR=/data with VAULT_DIR=/data/vault, natural enough to
+// write) and that wipe deletes the keyring, every manifest and every blob at
+// the one moment the master key exists only in memory. Nothing downstream would
+// notice, and the first flush commits the emptiness.
 //
-// The working directory is emptied on every unlock, before anything is restored
-// into it. Nest the vault inside it — VAULT_WORKDIR=/data with
-// VAULT_DIR=/data/vault, which is a natural enough thing to write — and that
-// wipe deletes the keyring, every manifest and every blob, at the one moment the
-// master key exists only in this process's memory. Nothing downstream would
-// notice: the restore succeeds against an empty directory, the vault reports
-// itself unlocked, and the first flush commits that emptiness. The archive is
-// gone and there is no copy of it anywhere.
+// The reverse nesting is merely bad, plaintext inside the ciphertext-only
+// directory, and is refused in the same breath.
 //
-// The reverse nesting is merely bad rather than fatal — plaintext written inside
-// the directory documented to hold only ciphertext — and is refused in the same
-// breath because no correct deployment wants either.
-//
-// Comparison is on cleaned absolute paths. Symlinks are not resolved because
-// neither directory is required to exist yet, and a check that refuses the
-// obvious spelling of the mistake is worth more than one that handles every
-// spelling but cannot run until after the damage.
+// Comparison is on cleaned absolute paths; symlinks are not resolved because
+// neither directory need exist yet, and a check that catches the obvious
+// spelling beats one that cannot run until after the damage.
 func checkDirsDisjoint(dir, workDir string) error {
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
@@ -388,19 +345,15 @@ func checkDirsDisjoint(dir, workDir string) error {
 	return nil
 }
 
-// checkNoPlaintextInstall refuses to create a vault on top of an existing
-// unencrypted install.
+// checkNoPlaintextInstall refuses to create a vault over an existing
+// unencrypted install. The vault directory defaults to pb_data, so switching
+// encryption on for a running install would initialise an empty vault and
+// present an archive that appears to have lost every document, while the real
+// data sat beside it in plaintext.
 //
-// Without this the failure is quiet and awful: the vault directory defaults to
-// pb_data, so switching encryption on for a running install would initialise an
-// empty vault, restore an empty working directory, and present the operator with
-// an archive that appears to have lost every document — while the real data sat
-// beside it as plaintext files that nothing would ever clean up or encrypt.
-//
-// Migration is deliberately manual, because doing it properly means moving the
-// data onto a fresh volume: deleting the old files would leave their contents
-// recoverable in free space, which is not encryption at rest by any useful
-// definition.
+// Migration is deliberately manual, because doing it properly means moving onto
+// a fresh volume: deleting the old files would leave their contents recoverable
+// in free space.
 func (v *Vault) checkNoPlaintextInstall() error {
 	var found []string
 	for _, name := range append([]string{}, databaseFiles...) {
@@ -424,20 +377,14 @@ func (v *Vault) checkNoPlaintextInstall() error {
 }
 
 // checkMemoryBacked is isMemoryBacked, indirected so a test can exercise the
-// branch where the filesystem type cannot be determined. That branch is
-// unreachable on Linux, where statfs on a directory MkdirAll has just created
-// does not fail, and it is the branch that decides whether an unverifiable
-// platform boots.
+// branch where the filesystem type cannot be determined. That branch decides
+// whether an unverifiable platform boots, and is unreachable on Linux.
 var checkMemoryBacked = isMemoryBacked
 
-// checkWorkDirIsMemoryBacked refuses to decrypt into ordinary storage.
-//
-// The entire promise here is that plaintext never reaches persistent disk, and
-// nothing else in the design enforces it: point WorkDir at a normal directory
-// and the archive is silently decrypted onto the very medium it was being
-// protected from, with every other guarantee still appearing to hold. A
-// misconfiguration that quietly voids the feature is worse than a failure to
-// start, so this refuses rather than warns.
+// checkWorkDirIsMemoryBacked refuses to decrypt into ordinary storage. Nothing
+// else enforces the promise that plaintext never reaches persistent disk: point
+// WorkDir at a normal directory and the archive is decrypted onto the medium it
+// was being protected from, with every other guarantee still appearing to hold.
 func (v *Vault) checkWorkDirIsMemoryBacked() error {
 	if v.opts.AllowDiskWorkDir {
 		return nil
@@ -447,14 +394,9 @@ func (v *Vault) checkWorkDirIsMemoryBacked() error {
 	}
 	mem, err := checkMemoryBacked(v.opts.WorkDir)
 	if err != nil {
-		// Cannot tell: non-Linux, where the check is not implemented at all, or a
-		// statfs that refused. Continuing here would reach the exact outcome the
-		// paragraph above refuses — the archive decrypted onto ordinary storage
-		// with every other guarantee still appearing to hold — just by a
-		// different route, and it would do it silently on every boot. So the
-		// unverifiable case is treated as the unsafe one, and an operator who
-		// knows their platform says so with the same switch that accepts a disk
-		// working directory outright.
+		// Cannot tell: non-Linux, or a statfs that refused. Continuing would reach the
+		// same outcome the doc comment refuses, silently and on every boot, so the
+		// unverifiable case is treated as the unsafe one.
 		return fmt.Errorf(
 			"vault: cannot verify that %s is memory-backed (%v), so there is no way from in here to tell whether decrypting into it would write every document to disk in the clear. Mount a tmpfs there (in compose: tmpfs: [\"%s:size=2g,mode=0700\"]), or set %s=1 to accept plaintext on disk",
 			v.opts.WorkDir, err, v.opts.WorkDir, EnvAllowDiskWorkDir)
@@ -467,34 +409,26 @@ func (v *Vault) checkWorkDirIsMemoryBacked() error {
 	return nil
 }
 
-// drainWait bounds the wait for in-flight work before the shutdown flush.
-//
-// It has to fit inside the container's stop grace period with room for the
-// flush itself to run afterwards; the encrypted compose overlay allows 60s. A
-// variable only so tests need not sit through it.
+// drainWait has to fit inside the container stop grace period with room for the
+// flush itself; the encrypted compose overlay allows 60s. A variable only so
+// tests need not sit through it.
 var drainWait = 20 * time.Second
 
-// finalizeRetries bounds the re-flush loop that catches work which landed while
-// the previous flush was running.
+// finalizeRetries bounds the re-flush loop that catches work landing while the
+// previous flush ran.
 const finalizeRetries = 2
 
 // Finalize performs the last flush while the databases are still open.
+// PocketBase triggers OnTerminate for every command, so this runs on any clean
+// exit and Close then only wipes and unlocks; by the time a deferred Close runs
+// the databases are closed and the snapshot would fail.
 //
-// PocketBase triggers OnTerminate for every command, so this runs on a clean
-// exit of any kind; Close then only has to wipe and unlock. Splitting the two
-// matters because by the time a deferred Close runs the databases are closed
-// and the snapshot would fail.
-//
-// It waits for in-flight work first, and that wait is the difference between a
-// clean stop being lossless and only appearing to be. PocketBase's graceful
-// shutdown gives the HTTP server one second and then returns whether or not
-// handlers are still running, and cron jobs are fired and forgotten and never
-// waited for at all. Without this, an upload that finishes a moment after the
-// flush is answered 200, written into the working directory, and then wiped
-// along with it — data acknowledged to a client and lost on a clean SIGTERM.
-//
-// Then it flushes until nothing is dirty, because a write can also land during
-// the flush that was supposed to capture it.
+// It waits for in-flight work first, which is the difference between a clean
+// stop being lossless and only appearing to be: PocketBase's graceful shutdown
+// gives handlers one second and never waits for cron jobs, so an upload
+// finishing a moment after the flush is answered 200, written into the working
+// directory, and wiped with it. Then it flushes until nothing is dirty, since a
+// write can land during the flush meant to capture it.
 func (v *Vault) Finalize() {
 	if !v.Enabled() || !v.Loaded() {
 		return
@@ -513,9 +447,9 @@ func (v *Vault) Finalize() {
 		if err = v.Flush("terminate"); err != nil {
 			break
 		}
-		// Anything dirtied while that flush ran is not in it. One more pass
-		// picks it up; the bound is there because a system still taking writes
-		// at shutdown must not keep the process alive indefinitely.
+		// Anything dirtied while that flush ran is not in it. The bound is there
+		// because a system still taking writes at shutdown must not keep the process
+		// alive indefinitely.
 		if v.dirty.get() == 0 || attempt >= finalizeRetries {
 			break
 		}
@@ -530,12 +464,10 @@ func (v *Vault) Finalize() {
 	}
 }
 
-// drain waits for HTTP handlers and worker jobs to finish before the shutdown
-// flush reads the working directory.
-//
-// A timeout is not fatal. The flush that follows still captures everything
-// written up to this moment, which is strictly better than not waiting; the log
-// line exists so that a stop which may have clipped a write says so, rather than
+// drain waits for handlers and worker jobs before the shutdown flush reads the
+// working directory. A timeout is not fatal: the flush still captures
+// everything written up to that moment, and the log line exists so a stop that
+// may have clipped a write says so.
 // reporting the clean shutdown it did not quite achieve.
 func (v *Vault) drain() {
 	if inflight.Active() == 0 {
@@ -553,11 +485,9 @@ func (v *Vault) drain() {
 }
 
 // Close flushes, wipes the plaintext working directory, and releases the lock.
-//
-// The wipe is not merely tidiness. On a correctly configured deployment the
-// working directory is tmpfs and vanishes with the container anyway, but if it
-// ever lands on real storage the decrypted archive would outlive the process and
-// the whole feature would be silently defeated. Removing it on the way out means
+// The wipe is not tidiness: on a correct deployment the working directory is
+// tmpfs and vanishes anyway, but if it ever lands on real storage the decrypted
+// archive would outlive the process and defeat the whole feature.
 // a clean shutdown always leaves ciphertext only.
 func (v *Vault) Close() error {
 	if !v.Enabled() {
@@ -589,16 +519,12 @@ func (v *Vault) releaseLock() {
 	}
 }
 
-// Wipe removes the plaintext working directory. It is called after a final
-// flush, so that a stopped container leaves nothing behind.
-//
-// Emptying it is the part that matters and the part that is checked. Removing
-// the directory itself is best-effort on purpose: in the intended deployment
-// WorkDir *is* the tmpfs mount point, and unlinking a mount point always fails
-// with EBUSY — so returning that error would report an alarming failure to
-// remove the plaintext on every single clean shutdown, at the exact moment an
-// operator most needs to trust the message, while the plaintext had in fact
-// been removed.
+// Wipe empties the working directory, which is the part that matters and the
+// part that is checked. Removing the directory itself is best-effort: in the
+// intended deployment WorkDir is the tmpfs mount point, and unlinking a mount
+// point always fails with EBUSY, so returning that would report an alarming
+// failure to remove plaintext on every clean shutdown that had in fact removed
+// it.
 func (v *Vault) Wipe() error {
 	if v.opts.WorkDir == "" {
 		return nil
@@ -625,7 +551,6 @@ type Stats struct {
 	MasterKeyFP string `json:"master_key_fp,omitempty"`
 }
 
-// Stats reports current vault state.
 func (v *Vault) Stats() Stats {
 	s := Stats{Enabled: v.Enabled()}
 	if !s.Enabled {
@@ -653,7 +578,6 @@ func (v *Vault) Stats() Stats {
 
 func nowUnixNano() int64 { return time.Now().UnixNano() }
 
-// atomicCounter is a tiny mutex-free counter used for metrics.
 type atomicCounter struct {
 	mu sync.Mutex
 	n  int64
@@ -678,16 +602,12 @@ func (c *atomicCounter) reset() {
 	c.n = 0
 }
 
-// InstallTempDir points the process temporary directory inside the working
-// directory.
-//
-// This is what stops the OCR and preview paths writing plaintext copies of
-// documents onto real disk. There are seven such sites across the worker,
-// preview, pdfsplit, pdftool, appapi and limits packages, all using
-// os.CreateTemp/os.MkdirTemp with an empty dir argument, and in the container
-// image /tmp is the writable overlay — actual disk. os.TempDir consults the
+// InstallTempDir stops the OCR and preview paths writing plaintext copies of
+// documents onto real disk: seven sites across worker, preview, pdfsplit,
+// pdftool, appapi and limits call os.CreateTemp with an empty dir argument, and
+// in the container image /tmp is the writable overlay. os.TempDir consults the
 // environment on every call and exec'd children inherit it, so one assignment
-// covers all of them, poppler included, with no change to any of those
+// covers all of them, poppler included.
 // packages.
 func (v *Vault) InstallTempDir() error {
 	if !v.Enabled() {
@@ -705,12 +625,9 @@ func (v *Vault) InstallTempDir() error {
 	return nil
 }
 
-// GuardDataDirFlag refuses to start when --dir is passed alongside an enabled
-// vault.
-//
-// PocketBase parses --dir eagerly and lets it override DefaultDataDir, so a
-// stale entrypoint or a debugging session would silently produce a fully
-// plaintext install on the persistent volume with nothing to indicate anything
+// GuardDataDirFlag refuses --dir alongside an enabled vault. PocketBase parses
+// it eagerly and lets it override DefaultDataDir, so a stale entrypoint would
+// silently produce a fully plaintext install on the persistent volume.
 // was wrong. Failing loudly is the only safe response.
 func GuardDataDirFlag(args []string) error {
 	for i, a := range args {

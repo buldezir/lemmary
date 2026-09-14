@@ -17,12 +17,10 @@ type importZipRequest struct {
 	UploadID string `json:"upload_id"`
 }
 
-// handlePostImportUpload stages an uploaded zip so the user can confirm what it
-// holds before any document is created.
-//
-// The source is the only thing the two flows disagree about, and only here: the
-// staged upload remembers it, so discard, confirm and status below are shared
-// verbatim and their upload and job ids are unique across both.
+// handlePostImportUpload stages a zip so the user can confirm what it holds
+// before any document is created. The source is the only thing the two flows
+// disagree about, and only here: the staged upload remembers it, so discard,
+// confirm and status below are shared verbatim.
 func handlePostImportUpload(app core.App, lim limits.Limits, src zipimport.Source) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		ownerID, err := resolveOwnerUserID(app, e)
@@ -51,8 +49,8 @@ func handlePostImportUpload(app core.App, lim limits.Limits, src zipimport.Sourc
 		}
 
 		// Checked while the user is still deciding whether to confirm, rather
-		// than leaving the create hook to refuse the overflow one file at a time
-		// partway through the import.
+		// than leaving the create hook to refuse one file at a time partway
+		// through the import.
 		var bytes int64
 		for _, entry := range preview.Files {
 			if entry.Duplicate || entry.Oversized {
@@ -69,7 +67,6 @@ func handlePostImportUpload(app core.App, lim limits.Limits, src zipimport.Sourc
 	}
 }
 
-// handleDeleteImportUpload drops a staged archive the user did not confirm.
 func handleDeleteImportUpload(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		ownerID, err := resolveOwnerUserID(app, e)
@@ -87,7 +84,6 @@ func handleDeleteImportUpload(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// handlePostImport starts the confirmed import of a staged archive.
 func handlePostImport(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var req importZipRequest
@@ -148,12 +144,10 @@ func handleGetImportStatus(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// archiveErrorDetail maps a rejected archive to a client-facing message,
-// or "" when the failure is not the caller's fault.
-//
-// Only the empty-archive case needs the source: "no PDF files" is the useful
-// thing to tell someone who uploaded the wrong Amazon export, and misleading to
-// someone who uploaded a zip of photos.
+// archiveErrorDetail returns "" when the failure is not the caller's fault.
+// Only the empty-archive case needs the source: "no PDF files" helps someone
+// who uploaded the wrong Amazon export and misleads someone with a zip of
+// photos.
 func archiveErrorDetail(src zipimport.Source, err error) string {
 	noun := "importable files"
 	if src == zipimport.SourceAmazon {

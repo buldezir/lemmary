@@ -12,8 +12,6 @@ import (
 	"github.com/openai/openai-go/shared"
 )
 
-// completionServer answers one chat completion and records the session header
-// it was sent.
 func completionServer(t *testing.T, seen *string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -46,10 +44,8 @@ func completeOnce(t *testing.T, client openai.Client, ctx context.Context) {
 	}
 }
 
-// TestSessionMiddlewareStampsThroughTheSDK is the end-to-end case: the SDK must
-// hand the middleware a request carrying the caller's context, or the header
-// never gets a value -- it is a request clone per attempt, and an earlier
-// version of this read the context off the wrong one.
+// The end-to-end case: the SDK must hand the middleware a request carrying the
+// caller's context, which is a request clone per attempt.
 func TestSessionMiddlewareStampsThroughTheSDK(t *testing.T) {
 	var seen string
 	srv := completionServer(t, &seen)
@@ -68,8 +64,7 @@ func TestSessionMiddlewareStampsThroughTheSDK(t *testing.T) {
 	}
 }
 
-// TestAClientWithoutTheMiddlewareSendsNoHeader is the other half: a provider
-// that is not OpenCode never installs it, and that is the whole of the gate.
+// The other half: a provider that is not OpenCode never installs it.
 func TestAClientWithoutTheMiddlewareSendsNoHeader(t *testing.T) {
 	var seen string
 	srv := completionServer(t, &seen)

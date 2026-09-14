@@ -12,7 +12,6 @@ import (
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 )
 
-// ErrDuplicate is returned when an exact checksum match already exists for the user.
 type ErrDuplicate struct {
 	ExistingID    string
 	ExistingTitle string
@@ -26,7 +25,6 @@ func (e *ErrDuplicate) Error() string {
 	return fmt.Sprintf("document already exists (duplicate of %s)", e.ExistingID)
 }
 
-// SHA256Reader hashes all bytes from r.
 func SHA256Reader(r io.Reader) (string, error) {
 	h := sha256.New()
 	if _, err := io.Copy(h, r); err != nil {
@@ -35,7 +33,6 @@ func SHA256Reader(r io.Reader) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// SHA256File hashes a PocketBase unsaved filesystem.File.
 func SHA256File(file *filesystem.File) (string, error) {
 	if file == nil || file.Reader == nil {
 		return "", fmt.Errorf("missing file reader")
@@ -48,7 +45,7 @@ func SHA256File(file *filesystem.File) (string, error) {
 	return SHA256Reader(r)
 }
 
-// FindByChecksum returns the earliest document owned by userID with the same checksum.
+// The earliest document owned by userID with the same checksum.
 func FindByChecksum(app core.App, userID, checksum, excludeID string) (*core.Record, error) {
 	checksum = strings.TrimSpace(checksum)
 	if userID == "" || checksum == "" {
@@ -70,7 +67,6 @@ func FindByChecksum(app core.App, userID, checksum, excludeID string) (*core.Rec
 	return records[0], nil
 }
 
-// IsChecksumUniqueViolation reports whether err is a unique (user, checksum) constraint failure.
 func IsChecksumUniqueViolation(err error) bool {
 	for err != nil {
 		msg := strings.ToLower(err.Error())
@@ -83,8 +79,7 @@ func IsChecksumUniqueViolation(err error) bool {
 	return false
 }
 
-// ErrDuplicateFromSaveConflict maps a unique-checksum save failure to ErrDuplicate.
-// Returns nil when saveErr is not a checksum uniqueness conflict.
+// Nil when saveErr is not a checksum uniqueness conflict.
 func ErrDuplicateFromSaveConflict(app core.App, record *core.Record, saveErr error) *ErrDuplicate {
 	if record == nil || !IsChecksumUniqueViolation(saveErr) {
 		return nil
@@ -99,9 +94,8 @@ func ErrDuplicateFromSaveConflict(app core.App, record *core.Record, saveErr err
 	}
 }
 
-// DuplicateOfFromError extracts an ExistingID from a PocketBase ApiError that
-// carries {"duplicate_of": id} in its raw data (as returned by the documents create hook).
-// Returns "" when err is not such an ApiError.
+// Reads {"duplicate_of": id} out of a PocketBase ApiError's raw data, as the
+// documents create hook returns it. Empty when err is not such an ApiError.
 func DuplicateOfFromError(err error) string {
 	type rawDataCarrier interface {
 		RawData() any
@@ -118,7 +112,6 @@ func DuplicateOfFromError(err error) string {
 	return strings.TrimSpace(id)
 }
 
-// ErrDuplicateFromAPIError maps a create-hook ApiError with duplicate_of into ErrDuplicate.
 func ErrDuplicateFromAPIError(err error) *ErrDuplicate {
 	id := DuplicateOfFromError(err)
 	if id == "" {
@@ -127,13 +120,9 @@ func ErrDuplicateFromAPIError(err error) *ErrDuplicate {
 	return &ErrDuplicate{ExistingID: id}
 }
 
-// NormalizeSaveError folds every shape a duplicate rejection can arrive in into
-// *ErrDuplicate, so an ingest path only has to test for that one type. Any other
-// error is returned unchanged, and nil stays nil.
-//
-// The three shapes are the create hook rejecting the upload outright, the same
-// rejection arriving wrapped in an ApiError, and the database's unique
-// (user, checksum) index firing when two saves race.
+// Folds every shape a duplicate rejection arrives in into *ErrDuplicate, so an
+// ingest path tests one type: the create hook rejecting outright, the same
+// rejection wrapped in an ApiError, and the unique index firing on a race.
 func NormalizeSaveError(app core.App, record *core.Record, saveErr error) error {
 	if saveErr == nil {
 		return nil
@@ -151,9 +140,8 @@ func NormalizeSaveError(app core.App, record *core.Record, saveErr error) error 
 	return saveErr
 }
 
-// AssignChecksumFromUpload hashes the unsaved upload, sets checksum, and rejects duplicates.
-// Callers should still handle unique-constraint failures from Save via ErrDuplicateFromSaveConflict
-// so concurrent uploads cannot both succeed.
+// Callers must still handle unique-constraint failures from Save via
+// ErrDuplicateFromSaveConflict, or concurrent uploads both succeed.
 func AssignChecksumFromUpload(app core.App, record *core.Record) error {
 	files := record.GetUnsavedFiles("file")
 	if len(files) == 0 {
@@ -179,7 +167,6 @@ func AssignChecksumFromUpload(app core.App, record *core.Record) error {
 	return nil
 }
 
-// HashDocumentFile hashes a persisted document file from storage.
 func HashDocumentFile(app core.App, document *core.Record) (string, error) {
 	fileName := document.GetString("file")
 	if fileName == "" {

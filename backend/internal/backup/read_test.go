@@ -30,8 +30,8 @@ func TestReadManifestRejectsNewerVersion(t *testing.T) {
 }
 
 func TestReadManifestRejectsCorrupt(t *testing.T) {
-	// A present-but-broken manifest must not silently fall back to sniffing:
-	// the archive is corrupt, and guessing would restore a subtly wrong library.
+	// A broken manifest must not fall back to sniffing: the archive is corrupt, and
+	// guessing would restore a subtly wrong library.
 	zr := zipOf(t, map[string]string{ManifestName: "{not json"})
 	if _, err := ReadManifest(zr); err == nil {
 		t.Fatal("expected an error for a corrupt manifest")
@@ -84,7 +84,6 @@ func TestGroupsFromManifest(t *testing.T) {
 	if groups[1].ID != "doc2" || groups[1].OCR != "" {
 		t.Fatalf("group %#v", groups[1])
 	}
-	// A sidecar the manifest names but the archive lacks is simply absent.
 	if groups[1].Preview != "" {
 		t.Fatalf("preview=%q, want empty for a path not in the archive", groups[1].Preview)
 	}
@@ -117,7 +116,7 @@ func TestGroupsSniffedWithoutManifest(t *testing.T) {
 	if groups[1].ID != "doc2" || groups[1].File != "lemmary-export/[doc2] Note.txt" {
 		t.Fatalf("group %#v", groups[1])
 	}
-	// Orphan sidecar + the two entries outside the flat root. The macOS fork is
+	// Orphan sidecar plus the two entries outside the flat root. The macOS fork is
 	// bookkeeping, not an ignored entry.
 	if ignored != 3 {
 		t.Fatalf("ignored=%d want 3", ignored)
@@ -125,7 +124,7 @@ func TestGroupsSniffedWithoutManifest(t *testing.T) {
 }
 
 // A document whose own file is a .txt named like an OCR sidecar is the one case
-// entry names cannot resolve. The manifest is what makes it unambiguous.
+// entry names cannot resolve.
 func TestManifestResolvesSidecarLookalike(t *testing.T) {
 	entries := map[string]string{
 		"lemmary-export/[doc1] Report.ocr.txt": "the actual document",
@@ -152,8 +151,8 @@ func TestManifestResolvesSidecarLookalike(t *testing.T) {
 
 func zipOf(t *testing.T, entries map[string]string) *zip.Reader {
 	t.Helper()
-	// Written in sorted order so the entry order — and therefore the group
-	// order the assertions rely on — does not depend on map iteration.
+	// Written in sorted order so the group order the assertions rely on does not
+	// depend on map iteration.
 	names := make([]string, 0, len(entries))
 	for name := range entries {
 		names = append(names, name)

@@ -34,8 +34,7 @@ type scriptedToolCall struct {
 	args string
 }
 
-// researchHarness fakes an OpenAI-compatible endpoint that replays turns in
-// order, and records what the agent sent.
+// researchHarness replays turns in order and records what the agent sent.
 type researchHarness struct {
 	mu       sync.Mutex
 	turns    []scriptedTurn
@@ -111,9 +110,9 @@ func writeToolCallJSON(w http.ResponseWriter, turn scriptedTurn) {
 	})
 }
 
-// writeChatStream emits the answer as SSE chunks, one word at a time, the way
-// a real provider does. cutOff stops half way and drops the connection instead
-// of finishing, which is what a timeout mid-generation looks like to the client.
+// writeChatStream emits the answer as SSE chunks, one word at a time. cutOff
+// stops half way and drops the connection, which is what a timeout
+// mid-generation looks like to the client.
 func writeChatStream(w http.ResponseWriter, content string, cutOff bool) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.WriteHeader(http.StatusOK)
@@ -214,8 +213,8 @@ func TestResearchSearchesThenReadsThenAnswers(t *testing.T) {
 		t.Fatalf("steps = %v, want %v", kinds, want)
 	}
 
-	// The answer streamed, and it streamed with no tools declared so the model
-	// cannot emit tool markup into visible prose.
+	// The answer streamed with no tools declared, so the model cannot emit
+	// tool markup into visible prose.
 	var streamed strings.Builder
 	for _, e := range events {
 		if e.Type == "delta" {
@@ -236,8 +235,7 @@ func TestResearchSearchesThenReadsThenAnswers(t *testing.T) {
 
 func TestResearchIsNotCappedAtFourRounds(t *testing.T) {
 	t.Parallel()
-	// The removed deep mode stopped after four tool rounds. A research run that
-	// keeps finding new documents must not stop there.
+	// A research run that keeps finding new documents must not stop early.
 	turns := make([]scriptedTurn, 0, 9)
 	for i := 0; i < 8; i++ {
 		turns = append(turns, scriptedTurn{toolCalls: []scriptedToolCall{
@@ -271,9 +269,8 @@ func TestResearchIsNotCappedAtFourRounds(t *testing.T) {
 
 func TestResearchReturnsAProviderContextError(t *testing.T) {
 	t.Parallel()
-	// A run that outgrows the model is the provider's to refuse. We used to
-	// guess a window and stop gathering before that happened; now the error
-	// surfaces instead of a synthesized answer.
+	// A run that outgrows the model is the provider's to refuse: the error
+	// surfaces rather than a synthesized answer.
 	_, agent := newResearchAgent(t,
 		scriptedTurn{toolCalls: []scriptedToolCall{{name: "search_documents", args: `{"query":"everything"}`}}},
 		scriptedTurn{httpStatus: http.StatusBadRequest},
@@ -332,8 +329,7 @@ func TestResearchSuppressesRepeatedIdenticalCalls(t *testing.T) {
 
 func TestResearchStopsAfterStalledRounds(t *testing.T) {
 	t.Parallel()
-	// Distinct queries that surface nothing: the stall detector, not a round
-	// cap, is what ends this.
+	// Distinct queries that surface nothing: the stall detector ends this.
 	turns := make([]scriptedTurn, 0, 30)
 	for i := 0; i < 30; i++ {
 		turns = append(turns, scriptedTurn{toolCalls: []scriptedToolCall{
@@ -447,10 +443,9 @@ func TestBuildResearchSystemPromptDemandsReadingBeforeClaiming(t *testing.T) {
 	}
 }
 
-// TestResearchMarksACutOffAnswerIncomplete covers the failure that looks most
-// like success: the answer stream dies part-way through, tokens have already
-// reached the user, and the text kept is a fragment. Keeping it is right;
-// presenting it as the whole answer is not.
+// The failure that looks most like success: the answer stream dies part-way
+// through, tokens have already reached the user, and the text kept is a
+// fragment. Keeping it is right; presenting it as the whole answer is not.
 func TestResearchMarksACutOffAnswerIncomplete(t *testing.T) {
 	t.Parallel()
 	_, agent := newResearchAgent(t,
@@ -492,8 +487,7 @@ func TestResearchMarksACutOffAnswerIncomplete(t *testing.T) {
 	}
 }
 
-// TestResearchAnswerCompletesNormally is the control for the test above: the
-// same path with an intact stream must not be flagged.
+// The control for the test above: the same path with an intact stream.
 func TestResearchAnswerCompletesNormally(t *testing.T) {
 	t.Parallel()
 	h, agent := newResearchAgent(t,
@@ -518,8 +512,8 @@ func TestResearchAnswerCompletesNormally(t *testing.T) {
 		t.Fatalf("a complete answer was flagged incomplete: %q", result.Reply)
 	}
 
-	// Nothing caps the answer any more: what the model may spend on it is the
-	// provider's business, not a reserve computed from a guessed window.
+	// Nothing caps the answer any more: what the model may spend on it is
+	// the provider's business.
 	last := h.request(h.requestCount() - 1)
 	if _, ok := last["max_tokens"]; ok {
 		t.Fatalf("answer phase declared max_tokens: %v", last)
@@ -541,8 +535,7 @@ func TestEncodeSearchResultsKeepsEveryDocument(t *testing.T) {
 	if count, _ := decoded["count"].(float64); int(count) != len(hits) {
 		t.Fatalf("count = %v, want %d", decoded["count"], len(hits))
 	}
-	// A run is limited only by what the provider accepts, so no envelope field
-	// may claim otherwise.
+	// A run is limited only by what the provider accepts.
 	if _, ok := decoded["context_chars_left"]; ok {
 		t.Fatalf("the result still reports a context budget: %s", content)
 	}
@@ -575,9 +568,8 @@ func hitsWithPassages(n int, passageRunes int) []DocumentHit {
 	return hits
 }
 
-// TestEncodeSearchResultsDropsTheSnippetBesidePassages pins the one thing the
-// encoder still decides: ocr_snippet is the first passage shortened, so sending
-// both spends the conversation twice on the same sentence.
+// The one thing the encoder still decides: ocr_snippet is the first passage
+// shortened, so sending both spends the conversation twice on one sentence.
 func TestEncodeSearchResultsDropsTheSnippetBesidePassages(t *testing.T) {
 	t.Parallel()
 	hits := hitsWithPassages(4, 400)
@@ -617,10 +609,9 @@ func mustEncode(t *testing.T, hits []DocumentHit) string {
 	return content
 }
 
-// TestResearchReadsDocumentsCitedEarlierWithoutSearching is the follow-up
-// question: "and what does the second one say about the deductible?" used to
-// start with an empty seen-id set, so the model had to invent a query that
-// would rediscover a document it had already read.
+// The follow-up question: "and what does the second one say about the
+// deductible?" must not have to invent a query that rediscovers a document the
+// conversation has already read.
 func TestResearchReadsDocumentsCitedEarlierWithoutSearching(t *testing.T) {
 	t.Parallel()
 	_, agent := newResearchAgent(t,
@@ -667,9 +658,8 @@ func TestResearchReadsDocumentsCitedEarlierWithoutSearching(t *testing.T) {
 	}
 }
 
-// TestResearchDoesNotListUncitedPriorDocuments is the other half: carried
-// evidence is readable, but it is not a result of this turn until the answer
-// says it is.
+// The other half: carried evidence is readable, but it is not a result of this
+// turn until the answer says it is.
 func TestResearchDoesNotListUncitedPriorDocuments(t *testing.T) {
 	t.Parallel()
 	_, agent := newResearchAgent(t,
@@ -696,10 +686,8 @@ func TestResearchDoesNotListUncitedPriorDocuments(t *testing.T) {
 	}
 }
 
-// TestResearchRereadsWithANewFocus covers the other half of a long document:
-// re-reading the same ids is normally suppressed as a repeat, but asking a
-// different question of them selects different passages and has to count as
-// progress.
+// Re-reading the same ids is normally suppressed as a repeat, but asking a
+// different question of them selects different passages and counts as progress.
 func TestResearchRereadsWithANewFocus(t *testing.T) {
 	t.Parallel()
 	_, agent := newResearchAgent(t,
@@ -776,9 +764,7 @@ func TestResearchPromptExplainsFocus(t *testing.T) {
 	}
 }
 
-// TestResearchReadsEveryRequestedID: read_documents used to slice the ids at
-// twenty per call, so a model that asked for everything it had found was
-// silently answered about part of it.
+// read_documents must answer about every id asked for, not a slice of them.
 func TestResearchReadsEveryRequestedID(t *testing.T) {
 	t.Parallel()
 	const n = 25

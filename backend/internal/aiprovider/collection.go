@@ -6,14 +6,9 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// OAuthField holds the token pair for the SDKs that sign in instead of taking a
-// pasted key. Named rather than spelled inline because three packages read it:
-// the record mapper here, the migration that adds it to installs that predate
-// it, and the sign-in handlers that write it.
-//
-// Sized for a JWT id_token plus two opaque tokens with room to spare. It sits
-// beside api_key in SQLite and is covered by the vault exactly as the key is;
-// like the key it is never returned by the API.
+// OAuthField holds the token pair for the SDKs that sign in instead of taking
+// a pasted key. Sized for a JWT id_token plus two opaque tokens; covered by the
+// vault exactly as api_key is, and never returned by the API.
 const OAuthField = "oauth"
 
 func EnsureCollection(app core.App) (*core.Collection, error) {

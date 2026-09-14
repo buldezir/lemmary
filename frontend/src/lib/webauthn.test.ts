@@ -49,8 +49,6 @@ describe('base64url codecs', () => {
   })
 
   it('encodes a buffer larger than one chunk', () => {
-    // An attestation object runs to several kilobytes; spreading that into
-    // String.fromCharCode in one call overflows the argument limit.
     const raw = new Uint8Array(100_000)
     for (let i = 0; i < raw.length; i++) {
       raw[i] = i % 256
@@ -158,8 +156,6 @@ describe('toRequestOptions', () => {
   })
 
   it('omits allowCredentials for the usernameless flow', () => {
-    // The absence of the list is what tells the authenticator to offer whatever
-    // discoverable credentials it holds.
     const options = toRequestOptions({ publicKey: { challenge: 'AQIDBA' } })
     expect('allowCredentials' in options).toBe(false)
   })
@@ -180,8 +176,7 @@ describe('toRequestOptions', () => {
   })
 })
 
-// Plain objects rather than real credentials: the converters are duck-typed on
-// purpose so they can be exercised without a browser.
+// Plain objects rather than real credentials, which the duck-typing allows.
 function fakeRegistration(overrides: Record<string, unknown> = {}) {
   return {
     id: 'Y3JlZC1pZA',
@@ -213,8 +208,8 @@ describe('registrationToJSON', () => {
   })
 
   it('omits the fields the server recomputes from the attestation object', () => {
-    // Sending these back is not just wasteful; the getters throw on some older
-    // implementations. Pinned so nobody "fixes" it by adding them.
+    // Their getters throw on some older implementations. Pinned so nobody
+    // "fixes" it by adding them back.
     const json = registrationToJSON(fakeRegistration()) as Record<string, unknown>
     const response = json.response as Record<string, unknown>
     expect('authenticatorData' in response).toBe(false)
@@ -273,8 +268,6 @@ describe('assertionToJSON', () => {
   })
 
   it('omits a null user handle rather than sending null', () => {
-    // The user handle is how a discoverable login names the account, so both
-    // branches matter.
     const credential = fakeAssertion({
       response: {
         clientDataJSON: bytes(4, 5, 6).buffer,

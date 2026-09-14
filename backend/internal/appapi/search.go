@@ -19,7 +19,6 @@ import (
 	"lemmary/backend/internal/fulltext"
 )
 
-// maxAvailableTagNames caps how many tag names are inlined into the agent prompt.
 const maxAvailableTagNames = 500
 
 type searchRequest struct {
@@ -27,14 +26,12 @@ type searchRequest struct {
 	SessionID string `json:"session_id"`
 	Content   string `json:"content"`
 	Mode      string `json:"mode"`
-	// RunID lets the client cancel this run explicitly. A run outlives its
-	// connection now, so hanging up no longer stops it; a client that wants it
-	// stopped generates an id here and POSTs it to /search/cancel. Optional:
-	// omitting it costs the ability to cancel, nothing else.
+	// RunID lets the client cancel this run explicitly: a run outlives its
+	// connection, so hanging up does not stop it. Optional; omitting it costs
+	// the ability to cancel, nothing else.
 	RunID string `json:"run_id"`
 	// The provider and model to open the conversation on, instead of the search
-	// binding in Settings. Read only when SessionID is empty, like Mode is
-	// fixed once a conversation exists -- see conversationBinding.
+	// binding in Settings. Read only when SessionID is empty, as Mode is.
 	ProviderID string `json:"provider_id"`
 	Model      string `json:"model"`
 }
@@ -45,23 +42,17 @@ type searchResponse struct {
 	Message   chat.MessageInfo  `json:"message"`
 	Documents []ai.DocumentHit  `json:"documents"`
 	Saved     bool              `json:"saved"`
-	// Set when a research answer was cut off mid-generation; see
-	// ai.ResearchResult.Incomplete. Stored on the assistant row so a reopened
-	// chat can still say so.
+	// Set when a research answer was cut off mid-generation; stored on the
+	// assistant row so a reopened chat can still say so.
 	Incomplete bool `json:"incomplete,omitempty"`
 	// Why the turn could not be saved, when Saved is false.
 	Detail string `json:"detail,omitempty"`
 }
 
-// searchTurn is everything a search turn needs resolved before the provider is
-// called: whose conversation it is, what the model is shown, and what it may
-// search.
 type searchTurn struct {
 	agent ai.SearchAgent
-	// session is the conversation this turn belongs to, opened before the
-	// provider is called rather than after it answers. opened holds the same
-	// record only when this request is what created it -- what may be taken
-	// back when the turn never lands.
+	// opened holds the same record as session only when this request created
+	// it, which is what may be taken back when the turn never lands.
 	session  *core.Record
 	opened   *core.Record
 	ownerID  string
@@ -70,29 +61,25 @@ type searchTurn struct {
 	mode     string
 	messages []ai.ChatMessage
 	tools    agentTools
-	// priorDocuments are the hits earlier turns of this conversation found.
-	// Research may read them by id without searching for them again.
+	// priorDocuments are earlier turns' hits, readable by id without searching
+	// for them again.
 	priorDocuments []ai.DocumentHit
 }
 
 func (t searchTurn) research() bool { return t.mode == chat.ModeResearch }
 
-// agentContext names the conversation on the context the agent loop runs under,
-// so every completion it makes -- rounds, the final answer, and the helper
-// calls its tools fan out -- reaches the provider under one cache key.
+// agentContext names the conversation on the context, so every completion the
+// loop makes reaches the provider under one cache key.
 func (t searchTurn) agentContext(parent context.Context) context.Context {
 	return aiprovider.WithSession(parent, t.session.Id)
 }
 
-// agentTools resolves the per-request scoping shared by both modes: the tag
-// catalogue offered to the agent, and the searcher/reader closures bound to the
-// caller's own documents.
 type agentTools struct {
 	tags   []string
 	search ai.DocumentSearcher
 	read   ai.DocumentReader
-	// survey and count are nil when the tools are unavailable: no helper
-	// model for a survey, no database for a count.
+	// survey and count are nil when unavailable: no helper model for a
+	// survey, no database for a count.
 	survey ai.DocumentSurveyor
 	count  ai.DocumentCounter
 	// dense is set when the retriever has an embedding leg; the prompt is
@@ -100,13 +87,9 @@ type agentTools struct {
 	dense bool
 }
 
-// buildAgentTools binds one retriever per request. Both closures share it, so
-// per-turn work is done once rather than per tool call.
-//
-// The dense half is attached only when both ends of it exist: an embedding
-// model to turn the question into a vector, and a chunk index to search with
-// it. Either one missing leaves the retriever on keywords alone, which is the
-// same code path an instance with no embedding provider has always run.
+// buildAgentTools binds one retriever per request, shared by both closures so
+// per-turn work is done once. The dense half is attached only when both an
+// embedder and a chunk index exist; either one missing leaves keywords alone.
 func buildAgentTools(app core.App, rt *config.Runtime, idx *fulltext.Index, userID string) (agentTools, error) {
 	tags, err := listAvailableTagNames(app, userID)
 	if err != nil {
@@ -131,9 +114,6 @@ func buildAgentTools(app core.App, rt *config.Runtime, idx *fulltext.Index, user
 	return tools, nil
 }
 
-// embedQueryFunc adapts the embedder to the one vector the retriever wants.
-// The production interface reports token usage and batches, neither of which
-// the retriever has any use for.
 func embedQueryFunc(embedder ai.Embedder) func(context.Context, string) ([]float32, error) {
 	return func(ctx context.Context, text string) ([]float32, error) {
 		result, err := embedder.Embed(ctx, []string{text})
@@ -147,12 +127,9 @@ func embedQueryFunc(embedder ai.Embedder) func(context.Context, string) ([]float
 	}
 }
 
-// prepareSearchTurn does the work both search handlers share, from decoding the
-// body to loading the conversation's history.
-//
-// On failure it writes the response itself and reports handled: the caller
-// returns the error straight through. Both handlers call this before anything
-// is streamed, so a failure here is still an ordinary HTTP error.
+// prepareSearchTurn does the work both search handlers share. On failure it
+// writes the response itself and reports handled; it runs before anything is
+// streamed, so a failure here is still an ordinary HTTP error.
 func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e *core.RequestEvent) (searchTurn, bool, error) {
 	var req searchRequest
 	if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
@@ -167,14 +144,10 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		return searchTurn{}, true, writeError(e, http.StatusBadRequest, err.Error())
 	}
 
-	// Two different questions, deliberately answered differently.
-	//
 	// ownerID is whose sidebar this conversation belongs in, so a superuser
-	// session resolves to its paired users record. searchUserID is whose
-	// documents the search may see, and there a superuser stays unscoped --
-	// matching the homepage listing and the PocketBase collection rules.
-	// Collapsing them would either hide an admin's own chats or scope an
-	// admin's search to one account.
+	// resolves to its paired users record; searchUserID is whose documents the
+	// search may see, where a superuser stays unscoped. Collapsing them would
+	// either hide an admin's own chats or scope an admin's search to one account.
 	ownerID, err := resolveOwnerUserID(app, e)
 	if err != nil {
 		return searchTurn{}, true, writeOwnerError(e, err)
@@ -190,13 +163,10 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 	}
 
 	// A conversation stays in the mode it started in, and this is where that
-	// holds rather than in the page that hides the switch. The transcript
-	// replayed below was produced by one mode, and answering the next question
-	// under the other one reads that work back as if it were its own -- a
-	// research transcript continued as a listing search, or the reverse, is a
-	// different product answering from the wrong material. Refused rather than
-	// silently corrected, because the client already knows which mode the chat
-	// is in and sending the other one means the two have drifted.
+	// holds rather than in the page that hides the switch: the replayed
+	// transcript was produced by one mode, and the other would read that work
+	// back as its own. Refused rather than corrected, since a client sending the
+	// wrong mode means the two have drifted.
 	mode := parseSearchMode(req.Mode)
 	if session != nil {
 		if stored := session.GetString("mode"); stored != "" && stored != mode {
@@ -206,10 +176,8 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 	}
 
 	// After the session, so a continued conversation runs on the binding stored
-	// with it rather than on whatever the request echoed back.
-	// The search binding, not the chat one: applyBindingFallbacks makes them
-	// coincide on most instances, but an instance that bound them separately did
-	// so deliberately.
+	// with it rather than on whatever the request echoed back. The search
+	// binding, not the chat one: an instance that bound them separately meant it.
 	cfg := rt.Snapshot().Cfg
 	requested := aiprovider.Binding{ProviderID: req.ProviderID, Model: req.Model}
 	binding := conversationBinding(session, recordedBinding(requested, cfg.SearchProviderID, cfg.SearchModel))
@@ -228,9 +196,8 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		return searchTurn{}, true, writeError(e, http.StatusInternalServerError, "Search is unavailable.")
 	}
 
-	// A follow-up question is usually about what the last answer just cited,
-	// and until now the run started with no memory of it at all: the model had
-	// to guess a query that would rediscover a document it had already read.
+	// A follow-up is usually about what the last answer cited, so carrying the
+	// hits saves the model guessing a query to rediscover them.
 	var priorDocuments []ai.DocumentHit
 	if session != nil {
 		priorDocuments, err = chat.PriorHits(app, session.Id)
@@ -277,13 +244,9 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 	}, false, nil
 }
 
-// persistSearchTurn stores the exchange and renders what the client gets back.
-//
-// A storage failure is not allowed to swallow the answer: the provider has
-// already been paid for it, so the reply is handed over unsaved and the
-// conversation simply does not become resumable -- which is why a session this
-// request opened is dropped again on that path. The session cap cannot surface
-// here at all any more: prepareSearchTurn answers it before the run starts.
+// persistSearchTurn must not let a storage failure swallow the answer: the
+// provider has already been paid for it, so the reply is handed over unsaved
+// and a session this request opened is dropped again.
 func persistSearchTurn(app core.App, t searchTurn, reply string, hits []ai.DocumentHit, steps []chat.StoredStep, incomplete bool) searchResponse {
 	session, err := chat.AppendTurn(app, t.ownerID, t.session.Id, chat.Turn{
 		UserContent:      t.content,
@@ -321,13 +284,10 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 			return err
 		}
 
-		// Detached from the connection. This endpoint writes nothing until the
-		// whole answer is ready, so it is silent for its entire duration --
-		// exactly what a reverse proxy with a read timeout hangs up on. Tying
-		// the agent loop to the socket meant such a hangup cancelled the run
-		// and discarded an answer the provider had already been paid for. Now
-		// the run finishes and the turn is stored either way; only the delivery
-		// of this response depends on the caller still being there.
+		// Detached from the connection: this endpoint is silent until the whole
+		// answer is ready, which is what a proxy read timeout hangs up on. The
+		// run finishes and the turn is stored either way; only the delivery of
+		// this response depends on the caller still being there.
 		ctx, stopRun := startDetachedRun(e.Request.Context(), turn.ownerID, turn.runID, turn.session.Id)
 		defer stopRun()
 
@@ -376,19 +336,15 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 	}
 }
 
-// searchStartedEvent opens a search stream with the conversation the run
-// belongs to, which exists before the run does. It is sent for one reason: a
-// client that loses the connection can only go looking for the stored turn if
-// it knows which conversation to look in.
+// searchStartedEvent is sent so a client that loses the connection knows which
+// conversation to find the stored turn in.
 type searchStartedEvent struct {
 	Type    string           `json:"type"`
 	Session chat.SessionInfo `json:"session"`
 }
 
-// searchSavedEvent closes a research stream with the stored turn: the session
-// the client needs for its URL and sidebar, and the message with its real
-// record id. Saved is false when the answer was produced but could not be
-// stored, and Detail then says why.
+// searchSavedEvent closes the stream with the stored turn. Saved is false when
+// the answer was produced but could not be stored, and Detail then says why.
 type searchSavedEvent struct {
 	Type      string            `json:"type"`
 	Session   *chat.SessionInfo `json:"session"`
@@ -398,18 +354,11 @@ type searchSavedEvent struct {
 	Detail    string            `json:"detail,omitempty"`
 }
 
-// handleSearchStream runs a search turn over SSE. Research reports each step as
-// it happens, then streams the answer -- a research run can spend a minute
-// searching and reading, which is far too long to show as a single spinner.
-// Plain search has no steps to report, but it streams anyway, for the
-// heartbeat: a response that writes nothing until it is finished looks
-// indistinguishable from a hung backend to whatever proxy sits in front.
-//
-// This used to refuse anything but research, to stop a client that omitted the
-// mode from being billed for the expensive one. Serving both makes that guard
-// unnecessary rather than absent: an unrecognised mode parses as "search", so
-// the failure of omitting it is now a cheap search rather than a costly
-// surprise.
+// handleSearchStream runs a search turn over SSE. Plain search has no steps to
+// report but streams anyway, for the heartbeat: a response that writes nothing
+// until it is finished is indistinguishable from a hung backend to a proxy.
+// An unrecognised mode parses as "search", so omitting it costs a cheap search
+// rather than a billed research run.
 func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		turn, handled, err := prepareSearchTurn(app, rt, idx, e)
@@ -417,40 +366,30 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 			return err
 		}
 
-		// Register before sending the session frame. Recovery treats that frame
-		// as proof the run started; sending it first left a window where an
-		// immediate poll saw running=false and gave up on work the next line was
-		// about to detach.
+		// Register before sending the session frame: recovery treats that frame
+		// as proof the run started, and sending it first leaves a window where an
+		// immediate poll sees running=false.
 		ctx, stopRun := startDetachedRun(e.Request.Context(), turn.ownerID, turn.runID, turn.session.Id)
 		defer stopRun()
 		ctx = turn.agentContext(ctx)
 
-		// Everything below is streamed, so errors are reported as events —
-		// the status line has already been written by this point.
+		// Everything below is streamed, so errors are reported as events: the
+		// status line has already been written by this point.
 		stream := newSSEWriter(e)
-		// First frame, before a single provider call: it names the conversation
-		// this run is writing into. That is what a client whose connection dies
-		// mid-run needs to go and collect the answer afterwards -- the turn is
-		// stored either way, but a page that never learnt the session id has
-		// nowhere to look, which is exactly the case on the first question of a
-		// new chat.
+		// First frame, before a single provider call: a client whose connection
+		// dies mid-run has nowhere to collect the answer from if it never learnt
+		// the session id, which is the case on a new chat's first question.
 		started := chat.ToSessionInfo(turn.session)
 		stream.Send(searchStartedEvent{Type: "session", Session: started})
 		// Every model completion is a silent gap on this connection, and the
-		// first one comes before any step event. Stopped before returning.
-		//
-		// On the request context, not the run's: this keeps the socket warm
-		// while someone is listening, and there is nothing to keep warm once
-		// nobody is.
+		// first one comes before any step event. On the request context, not the
+		// run's: there is nothing to keep warm once nobody is listening.
 		stopHeartbeat := stream.Heartbeat(e.Request.Context())
 		defer stopHeartbeat()
 
-		// Detached from the connection, so a dropped socket costs the view of
-		// the run and not the run itself. The answer is stored below whether or
-		// not anyone is still reading this stream, which is the difference
-		// between a network blip losing a paragraph of progress and losing a
-		// finished, already-paid-for answer. Deliberate cancellation comes
-		// through /search/cancel instead -- see startDetachedRun.
+		// Detached from the connection, so a dropped socket costs the view of the
+		// run and not the already-paid-for answer, which is stored below either
+		// way. Deliberate cancellation comes through /search/cancel instead.
 		var steps []chat.StoredStep
 		var result ai.ResearchResult
 		if turn.research() {
@@ -477,14 +416,11 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 			// Either way the conversation this request opened never got a turn.
 			discardEmptySession(app, turn.opened)
 			if runErr := ctx.Err(); runErr != nil {
-				// The run itself was stopped -- out of budget, or cancelled
-				// through /search/cancel. Not the same as the client merely
-				// hanging up, which no longer reaches here at all.
+				// The run itself was stopped, out of budget or cancelled. Not the
+				// client merely hanging up, which does not reach here.
 				app.Logger().Info("search run stopped", "mode", turn.mode, slog.Any("error", runErr))
-				// Someone may still be watching. A cancel they asked for needs
-				// no explanation, but a run that ran out of budget would
-				// otherwise end as a bare EOF, which the page can only report
-				// as having produced no answer at all.
+				// A cancel the viewer asked for needs no explanation, but a
+				// run out of budget would otherwise end as a bare EOF.
 				if errors.Is(runErr, context.DeadlineExceeded) {
 					stream.Send(ai.ResearchEvent{Type: "error", Message: runTooLongMessage})
 				}
@@ -502,30 +438,22 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 			documents = []ai.DocumentHit{}
 		}
 
-		// Stored before anything else is written, and this order is the point.
-		// The session has been there since before the run started; the turn is
-		// what was missing, and it must not be made to wait behind a socket.
-		// A write to a half-closed connection can block until the kernel gives
-		// up on it, and every one of those blocked between a finished answer
-		// and the save that keeps it -- which is the failure this whole change
-		// exists to end. Unconditional for the same reason: a client that hung
-		// up mid-run is exactly the case that must still find its answer
-		// waiting in the sidebar.
+		// Stored before anything is written, and unconditionally: a write to a
+		// half-closed connection can block until the kernel gives up, and that
+		// must never sit between a finished answer and the save that keeps it.
 		saved := persistSearchTurn(app, turn, result.Reply, documents, steps, result.Incomplete)
 
 		stream.Send(ai.ResearchEvent{Type: "documents", Documents: documents})
-		// The whole answer follows the deltas: the deltas are a live preview,
-		// this is the authoritative text (citation-checked). Incomplete says
-		// whether it is the whole answer — a generation that outran the request
-		// timeout is kept, not discarded, but the client has to be able to tell
-		// the difference and say so.
+		// The whole answer follows the deltas: those are a live preview, this is
+		// the citation-checked text. Incomplete says whether a generation that
+		// outran the timeout was kept short, so the client can say so.
 		stream.Send(ai.ResearchEvent{
 			Type:       "message",
 			Content:    result.Reply,
 			Incomplete: result.Incomplete,
 		})
-		// For a client still here, this is what makes the conversation
-		// resumable, not what makes the answer visible -- that arrived above.
+		// This makes the conversation resumable, not the answer visible; that
+		// arrived above.
 		stream.Send(searchSavedEvent{
 			Type:      "saved",
 			Session:   saved.Session,
@@ -541,19 +469,15 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 
 type searchCancelRequest struct {
 	RunID string `json:"run_id"`
-	// SessionID stops every run on a conversation instead. For a page that
-	// reloaded mid-run and so never held the run id. Ignored when RunID is set.
+	// SessionID stops every run on a conversation instead, for a page that
+	// reloaded mid-run. Ignored when RunID is set.
 	SessionID string `json:"session_id"`
 }
 
-// handleSearchCancel stops a run the caller started. It exists because runs no
-// longer die with their connection: to the server a closed socket is a closed
-// socket, whether the user pressed Cancel or their wifi dropped, and only one
-// of those should throw the work away. So stopping is said out loud, here.
-//
-// An id that is not running answers 200 all the same -- a run that finished
-// while the cancel was in flight is not a client error, and saying so would
-// only give the page an error to render over a result that is already correct.
+// handleSearchCancel exists because runs do not die with their connection: a
+// closed socket looks the same whether the user pressed Cancel or their wifi
+// dropped, so stopping is said out loud. An id that is not running answers 200
+// all the same, since a run that finished mid-cancel is not a client error.
 func handleSearchCancel(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var req searchCancelRequest
@@ -582,7 +506,6 @@ func handleSearchCancel(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// listAvailableTagNames returns the tag names offered to the search agent.
 // userID scopes the list to that owner; empty lists every tag (superusers).
 func listAvailableTagNames(app core.App, userID string) ([]string, error) {
 	filter := ""

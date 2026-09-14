@@ -32,19 +32,16 @@ const (
 //
 // A plain text or CSV file needs no bound: a rune is at least one byte, so it
 // cannot yield more characters than the 20 MiB documents.file cap let through.
-// An OOXML file can, and not only by being a zip bomb -- maxUncompressedBytes
-// bounds the XML read in, and XLSX resolves shared strings on the way out, so a
-// sheet of a million cells pointing at one string produces far more text than
-// the bytes it was stored in. Counting as the text accumulates is the only
-// thing that catches that, and it is cheap: no provider call is involved and
-// abandoning a local parse costs nothing.
+// An OOXML file can, and not only by being a zip bomb: XLSX resolves shared
+// strings on the way out, so a sheet of a million cells pointing at one string
+// produces far more text than the bytes it was stored in. Counting as the text
+// accumulates is the only thing that catches that.
 //
 // Without it the overflow surfaced as a field-validation error from inside
 // app.Save when the OCR step tried to store the result, which failed the
 // document rather than the extraction.
 //
-// A var so tests can shrink it instead of building 20 MB fixtures, the way
-// pdfsplit.maxPartBytes does.
+// A var so tests can shrink it instead of building 20 MB fixtures.
 var maxTextRunes = models.MaxOCRTextRunes
 
 // ErrTooMuchText is returned when a file's text runs past maxTextRunes.
@@ -74,7 +71,6 @@ func Supports(mimeType string) bool {
 	}
 }
 
-// Extract reads born-digital document text from path based on mimeType.
 func Extract(path, mimeType string) (string, error) {
 	switch mimeType {
 	case MIMEPlainText:

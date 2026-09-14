@@ -12,7 +12,6 @@ import (
 	"lemmary/backend/internal/models"
 )
 
-// Job statuses for in-memory async imports.
 const (
 	JobStatusRunning   = importjob.StatusRunning
 	JobStatusCompleted = importjob.StatusCompleted
@@ -26,7 +25,6 @@ var ErrImportInProgress = importjob.ErrBusy
 // belongs to someone else.
 var ErrUploadNotFound = errors.New("upload not found or expired")
 
-// Result summarizes a completed import run.
 type Result struct {
 	Imported          int      `json:"imported"`
 	SkippedDuplicates int      `json:"skipped_duplicates"`
@@ -115,7 +113,7 @@ func runImport(app core.App, ownerUserID string, item *stagedArchive, report fun
 // from, by position rather than by name: duplicate entry names are legal in a
 // zip, and a name-keyed map would import the last file's bytes for every
 // same-named entry. The preview was built by walking the same staged file with
-// the same source, so the order aligns -- which is why the source comes off the
+// the same source, so the order aligns, which is why the source comes off the
 // staged payload rather than being passed in again.
 //
 // The name check is the belt to that braces: if the two filters ever did

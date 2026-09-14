@@ -5,7 +5,6 @@ import (
 	"strings"
 )
 
-// LogRequest writes an INFO line for an outbound AI HTTP/SDK call.
 func LogRequest(logger *slog.Logger, sdk, method, url, model string, extra ...any) {
 	if logger == nil {
 		return

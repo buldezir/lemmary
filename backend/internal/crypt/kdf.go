@@ -9,30 +9,24 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-// SaltLen is the size of a per-user KDF salt.
 const SaltLen = 16
 
-// Default Argon2id cost. These land at roughly 60-120ms and 64MiB of transient
-// allocation per derivation on a modern core, which is the right order for an
-// interactive login. It is also why the paperless-ngx HTTP Basic path must cache
-// verified passwords rather than derive on every request: Basic auth resends the
-// password with each call, and 64MiB per request is a self-inflicted DoS.
+// Roughly 60-120ms and 64MiB of transient allocation per derivation, the right
+// order for an interactive login. It is also why the paperless-ngx HTTP Basic
+// path caches verified passwords: Basic auth resends the password on every
+// call, and 64MiB per request is a self-inflicted DoS.
 const (
 	DefaultArgonMemKiB uint32 = 64 * 1024
 	DefaultArgonTime   uint32 = 3
 	DefaultArgonLanes  uint8  = 4
 )
 
-// KDFAlgoArgon2id is the only algorithm this package derives with.
 const KDFAlgoArgon2id = "argon2id"
 
-// KDFParams records how a particular user's key-encryption key is derived.
-//
-// The parameters are stored per user rather than as global constants so the cost
-// can be raised later without invalidating existing wraps: an old record keeps
-// deriving with the parameters it was written with, and is re-wrapped with the
-// new ones the next time its password is set. The JSON keys are short because
-// this is persisted in a text column for every user.
+// KDFParams is stored per user rather than as global constants so the cost can
+// be raised without invalidating existing wraps: an old record keeps deriving
+// with what it was written with until its password is next set. The JSON keys
+// are short because this sits in a text column on every user.
 type KDFParams struct {
 	Algo   string `json:"a"`
 	MemKiB uint32 `json:"m"`
@@ -41,7 +35,6 @@ type KDFParams struct {
 	Salt   []byte `json:"s"`
 }
 
-// NewKDFParams returns default parameters with a fresh random salt.
 func NewKDFParams() (KDFParams, error) {
 	salt := make([]byte, SaltLen)
 	if _, err := rand.Read(salt); err != nil {
@@ -56,11 +49,8 @@ func NewKDFParams() (KDFParams, error) {
 	}, nil
 }
 
-// Validate rejects parameters that would derive a weak or unusable key.
-//
-// This runs on values read back from the database, so it is a trust boundary: an
-// operator who can edit the users table could otherwise set memory=1 and turn
-// the KDF into a no-op, making offline password guessing cheap.
+// Validate is a trust boundary: these values come back from the database, and
+// an operator who could set memory=1 would turn the KDF into a no-op.
 func (p KDFParams) Validate() error {
 	if p.Algo != KDFAlgoArgon2id {
 		return fmt.Errorf("crypt: unsupported kdf %q", p.Algo)
@@ -68,8 +58,7 @@ func (p KDFParams) Validate() error {
 	if len(p.Salt) < SaltLen {
 		return fmt.Errorf("crypt: kdf salt is %d bytes, need at least %d", len(p.Salt), SaltLen)
 	}
-	// Floors, not the defaults: parameters written by an older version may be
-	// lower than what we would choose today and must keep working.
+	// Floors, not the defaults: an older version's parameters must keep working.
 	if p.MemKiB < 8*1024 {
 		return fmt.Errorf("crypt: kdf memory %d KiB is below the minimum", p.MemKiB)
 	}
@@ -82,7 +71,6 @@ func (p KDFParams) Validate() error {
 	return nil
 }
 
-// Encode serialises the parameters for storage in a text column.
 func (p KDFParams) Encode() (string, error) {
 	b, err := json.Marshal(p)
 	if err != nil {
@@ -91,7 +79,6 @@ func (p KDFParams) Encode() (string, error) {
 	return string(b), nil
 }
 
-// DecodeKDFParams parses parameters previously produced by Encode.
 func DecodeKDFParams(s string) (KDFParams, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -107,11 +94,8 @@ func DecodeKDFParams(s string) (KDFParams, error) {
 	return p, nil
 }
 
-// DeriveKEK turns a password into a key-encryption key.
-//
-// The result only ever wraps a data-encryption key; it never encrypts user data
-// directly, so that changing a password re-wraps one small blob instead of
-// rewriting every document.
+// DeriveKEK's result only ever wraps a data-encryption key, never user data, so
+// a password change re-wraps one small blob instead of every document.
 func DeriveKEK(password string, p KDFParams) (Key, error) {
 	if err := p.Validate(); err != nil {
 		return Key{}, err

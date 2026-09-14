@@ -17,15 +17,12 @@ import (
 
 const exportPageSize = 100
 
-// handleExportDocuments streams a full backup of the caller's library: every
-// document with its OCR text, metadata and thumbnail, plus the taxonomy they
-// reference and the taxonomy they do not. It is the archive
-// POST /api/app/import/archive restores from.
+// handleExportDocuments writes the archive POST /api/app/import/archive
+// restores from.
 func handleExportDocuments(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		// Superuser sessions export their paired user's archive; e.Auth.Id would
-		// be the _superusers record id, which matches no document and would
-		// yield a silently empty zip.
+		// Superuser sessions export their paired user's archive; e.Auth.Id is
+		// the _superusers record id, which matches no document at all.
 		userID, err := resolveOwnerUserID(app, e)
 		if err != nil {
 			return writeOwnerError(e, err)
@@ -81,9 +78,8 @@ func handleExportDocuments(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// openStoredFile returns a reader factory for one of a record's file fields.
-// A blob missing from storage is logged and skips its entry rather than failing
-// the whole backup.
+// A blob missing from storage is logged and skips its entry rather than
+// failing the whole backup.
 func openStoredFile(app core.App, fsys *filesystem.System, record *core.Record, fileName string) func() (io.ReadCloser, error) {
 	key := record.BaseFilesPath() + "/" + fileName
 	return func() (io.ReadCloser, error) {
@@ -100,7 +96,6 @@ func listOwnedDocuments(app core.App, userID string) ([]*core.Record, error) {
 	return listOwnedRecords(app, "documents", userID, "-created")
 }
 
-// listOwnedRecords pages a user-owned collection into one slice.
 func listOwnedRecords(app core.App, collection, userID, sort string) ([]*core.Record, error) {
 	var all []*core.Record
 	page := 1
@@ -125,18 +120,17 @@ func listOwnedRecords(app core.App, collection, userID, sort string) ([]*core.Re
 	return all, nil
 }
 
-// taxonomyIndex resolves relation ids to names while packing, so a library with
-// a few hundred documents does not re-read the same tag record per document.
+// taxonomyIndex resolves relation ids to names while packing, so a few hundred
+// documents do not re-read the same tag record each.
 type taxonomyIndex struct {
 	tags           map[string]string
 	correspondents map[string]string
 	documentTypes  map[string]string
 }
 
-// listOwnedTaxonomy returns the user's whole taxonomy for the manifest and an
-// index for resolving document relations. Records no document references are
-// included on purpose: they exist only here, and a restore that dropped them
-// would quietly lose part of the library.
+// listOwnedTaxonomy includes records no document references on purpose: they
+// exist only here, and a restore that dropped them would lose part of the
+// library.
 func listOwnedTaxonomy(app core.App, userID string) (backup.Taxonomy, taxonomyIndex, error) {
 	index := taxonomyIndex{
 		tags:           map[string]string{},
@@ -190,9 +184,8 @@ func listOwnedTaxonomy(app core.App, userID string) (backup.Taxonomy, taxonomyIn
 	return taxonomy, index, nil
 }
 
-// buildExportMetadata is the sidecar a restore reads a document back from.
-// Relations are written as names, not ids: ids mean nothing in the instance the
-// archive is restored into.
+// buildExportMetadata writes relations as names, not ids: ids mean nothing in
+// the instance the archive is restored into.
 func buildExportMetadata(record *core.Record, index taxonomyIndex, originalFilename string) map[string]any {
 	tags := make([]string, 0)
 	for _, tagID := range record.GetStringSlice("tags") {
@@ -220,8 +213,7 @@ func buildExportMetadata(record *core.Record, index taxonomyIndex, originalFilen
 		"checksum":                record.GetString("checksum"),
 		"text_fingerprint":        record.GetString("text_fingerprint"),
 		// The exporting instance's id for the near-duplicate original. Import
-		// remaps it to the restored record, or drops it when that document is
-		// not in the archive.
+		// remaps it, or drops it when that document is not in the archive.
 		"duplicate_of":      record.GetString("duplicate_of"),
 		"created":           record.GetString("created"),
 		"updated":           record.GetString("updated"),

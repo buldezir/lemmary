@@ -17,8 +17,8 @@ type importArchiveRequest struct {
 	Mode     string `json:"mode"`
 }
 
-// handlePostImportArchiveUpload stages a Lemmary backup archive so the user can
-// see what it holds before any document is created.
+// handlePostImportArchiveUpload stages a backup archive so the user can see
+// what it holds before any document is created.
 func handlePostImportArchiveUpload(app core.App, lim limits.Limits) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		ownerID, err := resolveOwnerUserID(app, e)
@@ -47,9 +47,9 @@ func handlePostImportArchiveUpload(app core.App, lim limits.Limits) func(*core.R
 			return writeError(e, http.StatusInternalServerError, "Failed to read the archive.")
 		}
 
-		// Checked here, while the user is still deciding whether to confirm,
-		// rather than leaving the create hook to refuse several hundred
-		// documents one at a time halfway through the restore.
+		// Checked while the user is still deciding whether to confirm, rather
+		// than leaving the create hook to refuse several hundred documents one
+		// at a time halfway through the restore.
 		var bytes int64
 		for _, entry := range preview.Files {
 			if entry.Duplicate || entry.Oversized || entry.Missing {
@@ -66,7 +66,6 @@ func handlePostImportArchiveUpload(app core.App, lim limits.Limits) func(*core.R
 	}
 }
 
-// handleDeleteImportArchiveUpload drops a staged archive the user did not confirm.
 func handleDeleteImportArchiveUpload(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		ownerID, err := resolveOwnerUserID(app, e)
@@ -84,7 +83,6 @@ func handleDeleteImportArchiveUpload(app core.App) func(*core.RequestEvent) erro
 	}
 }
 
-// handlePostImportArchive starts the confirmed restore of a staged archive.
 func handlePostImportArchive(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var req importArchiveRequest
@@ -148,8 +146,7 @@ func handleGetImportArchiveStatus(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// backupArchiveErrorDetail maps a rejected archive to a client-facing message,
-// or "" when the failure is not the caller's fault.
+// backupArchiveErrorDetail returns "" when the failure is not the caller's fault.
 func backupArchiveErrorDetail(err error) string {
 	switch {
 	case errors.Is(err, archiveimport.ErrNotArchive):

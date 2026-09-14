@@ -49,10 +49,9 @@ func dropAlwaysRequireReviewField(app core.App) error {
 
 // Covering index for the counts and lists keyed on processing_status: the
 // header's Inbox count, Management's failed count, and the ?status= filter.
-//
-// Same reasoning as idx_documents_user_document_date -- the documents table
-// stores ocr_text inline, so a query that reads row bodies to test a status
-// pays for text it never looks at.
+// Same reasoning as idx_documents_user_document_date: the documents table stores
+// ocr_text inline, so testing a status by reading row bodies pays for text it
+// never looks at.
 func addDocumentStatusIndex(app core.App) error {
 	documents, err := app.FindCollectionByNameOrId("documents")
 	if err != nil {

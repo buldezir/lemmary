@@ -15,7 +15,6 @@ const (
 	minNormalizedRunes = 40
 )
 
-// NormalizeText lowercases, strips punctuation, and collapses whitespace.
 func NormalizeText(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -36,7 +35,6 @@ func NormalizeText(s string) string {
 	return strings.TrimSpace(b.String())
 }
 
-// WordShingles returns overlapping word n-grams.
 func WordShingles(normalized string, n int) []string {
 	if n <= 0 {
 		n = shingleSize
@@ -161,13 +159,12 @@ func fromHex(c byte) (byte, bool) {
 	}
 }
 
-// HammingDistance returns the bit distance between two 64-bit fingerprints.
 func HammingDistance(a, b uint64) int {
 	return bits.OnesCount64(a ^ b)
 }
 
-// TextSimilarity returns Jaccard similarity of word trigrams after normalization.
-// Returns 0 when either side is too short for a reliable comparison.
+// Jaccard similarity of word trigrams, or 0 when either side is too short for
+// a reliable comparison.
 func TextSimilarity(a, b string) float64 {
 	na := NormalizeText(a)
 	nb := NormalizeText(b)
@@ -177,7 +174,6 @@ func TextSimilarity(a, b string) float64 {
 	return JaccardSimilarity(WordShingles(na, shingleSize), WordShingles(nb, shingleSize))
 }
 
-// IsNearDuplicate reports whether OCR texts are near-duplicates at the given threshold.
 func IsNearDuplicate(a, b string, threshold float64) bool {
 	if threshold <= 0 {
 		threshold = 0.92
