@@ -56,6 +56,10 @@ func NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage stri
 	// Production callers pass the chatgpt middleware here, which mints a bearer
 	// token per request; see config.providerCredential.
 	opts = append(opts, extra...)
+	// Last, so a caller cannot supply a document id of its own: the managed
+	// gateway attributes the call by this header, and the only id it may carry
+	// is the one the job or the route put on the context.
+	opts = append(opts, aiprovider.DocumentOptions()...)
 	if strings.TrimSpace(baseURL) != "" {
 		opts = append(opts, option.WithBaseURL(strings.TrimRight(baseURL, "/")))
 	}

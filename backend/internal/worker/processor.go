@@ -20,25 +20,42 @@ import (
 )
 
 type Processor struct {
-	app        core.App
-	rt         *config.Runtime
-	processing sync.Mutex
+	app core.App
+	rt  *config.Runtime
+	// limit is how many pipelines may run at once. It replaces a plain mutex:
+	// a document is mostly time spent waiting on somebody else's HTTP server,
+	// so one at a time left the machine idle for hours on a bulk import.
+	limit int
+
+	mu     sync.Mutex
+	active int
+	// inflight is the jobs a live drain goroutine has picked but not yet
+	// claimed in the database. Without it every drain would select the same
+	// globally oldest row, and the losers of the claim transaction would spin
+	// on a job they can never have.
+	inflight map[string]struct{}
+
+	// snapshot is the published configuration, rt.Snapshot in production. A
+	// field because a drain test has to hand the pipeline stub providers, and
+	// a Runtime only ever publishes what it built from the settings record.
+	snapshot func() config.Snapshot
 }
 
-func Register(app core.App, rt *config.Runtime, backfill *Backfiller) {
-	p := &Processor{
-		app: app,
-		rt:  rt,
+func Register(app core.App, rt *config.Runtime, backfill *Backfiller, concurrency int) {
+	if concurrency < 1 {
+		concurrency = 1
 	}
+	p := &Processor{
+		app:      app,
+		rt:       rt,
+		limit:    concurrency,
+		inflight: make(map[string]struct{}),
+	}
+	p.snapshot = rt.Snapshot
 	p.registerHooks()
 
 	cronExpr := config.WorkerCronFromEnv()
 	app.Cron().MustAdd("process_pending_jobs", cronExpr, func() {
-		// Counted as in-flight work so a shutdown can wait for it. Cron jobs
-		// are fired and forgotten, and nothing else would wait: with encryption
-		// at rest on, a job still writing while the archive is sealed and the
-		// working directory wiped loses everything it had done.
-		defer inflight.Begin()()
 		if err := p.processNextPending(); err != nil {
 			app.Logger().Error("cron error", slog.Any("error", err))
 		}
@@ -68,7 +85,7 @@ func Register(app core.App, rt *config.Runtime, backfill *Backfiller) {
 		return e.Next()
 	})
 
-	app.Logger().Info("worker registered", "cron", cronExpr)
+	app.Logger().Info("worker registered", "cron", cronExpr, "concurrency", concurrency)
 }
 
 // recoverStaleRunningJobs re-pends jobs a previous process left in "running".
@@ -252,11 +269,62 @@ func createProcessingJob(app core.App, documentID string, steps []string, forceS
 	return job, nil
 }
 
+// takeSlot reserves one of the p.limit concurrent pipeline slots, or reports
+// that they are all busy. Same shape as the TryLock it replaces, with N tokens.
+func (p *Processor) takeSlot() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.active >= p.limit {
+		return false
+	}
+	p.active++
+	return true
+}
+
+func (p *Processor) releaseSlot() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.active--
+}
+
+// releaseJob drops a job from the picked-but-not-yet-claimed set.
+func (p *Processor) releaseJob(jobID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.inflight, jobID)
+}
+
+// fanOut runs one drain per slot and waits for them.
+//
+// The hooks on processing_jobs already start a drain per job, so the upload
+// path fans out on its own. This is for the paths that only the cron reaches --
+// a restart with a full queue, or an install where the provider was missing
+// when the jobs were made -- which a single drain would work through serially.
+func (p *Processor) fanOut() {
+	var wg sync.WaitGroup
+	for i := 0; i < p.limit; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			p.drainPending()
+		}()
+	}
+	wg.Wait()
+}
+
 func (p *Processor) drainPending() {
-	if !p.processing.TryLock() {
+	if !p.takeSlot() {
 		return
 	}
-	defer p.processing.Unlock()
+	defer p.releaseSlot()
+
+	// Counted as in-flight work so a shutdown can wait for it. Nothing else
+	// would: cron jobs are fired and forgotten, and the record hooks start this
+	// with a bare `go`. With encryption at rest on, a job still writing while
+	// the archive is sealed and the working directory wiped loses everything it
+	// had done. This sits here rather than in the cron closure because the hook
+	// callers are the common path and were never counted at all.
+	defer inflight.Begin()()
 
 	lastJobID := ""
 	for {
@@ -278,50 +346,63 @@ func (p *Processor) drainPending() {
 			// runnable set, so picking it up again would spin. Hand it back to
 			// the cron instead.
 			p.app.Logger().Error("job made no progress; deferring to next cron tick", "job", job.Id)
+			p.releaseJob(job.Id)
 			return
 		}
 		lastJobID = job.Id
 
-		// The job's own bindings are applied before readiness is judged, not
-		// after. A job queued with an OCR or extraction override may be the one
-		// job that *can* run on an instance whose configured provider is gone,
-		// and asking providersReady about the configured snapshot would defer it
-		// forever over a binding it does not use.
-		snap, err := p.effectiveSnapshot(job)
-		if err != nil {
-			// Stored overrides that no longer resolve -- a provider deleted
-			// between queueing and draining. Failed rather than deferred: the
-			// job asked for a provider that no longer exists, and no amount of
-			// waiting brings it back. The document lands on "failed", where a
-			// plain reprocess can pick it up again without the override.
-			//
-			// Return value dropped deliberately: failJob hands back the error it
-			// was given whether or not the write succeeded, so testing it would
-			// log the same error twice under a message about the write. failJob
-			// logs "job failed" with the cause itself.
-			_ = failJob(p.app, job, nil, err)
-			continue
-		}
-		if err := providersReady(snap); err != nil {
-			// Leave the job pending so it runs once Settings are complete. Returning
-			// (rather than retrying inline) is what keeps this from becoming a hot
-			// loop on a fresh install where no provider is configured yet; the cron
-			// re-enters drainPending on the next tick.
-			p.app.Logger().Warn("pending jobs deferred; provider unavailable",
-				"job", job.Id,
-				slog.Any("error", err),
-			)
+		if !p.attempt(job) {
 			return
 		}
-
-		if err := p.runJob(job.Id, snap); err != nil {
-			p.app.Logger().Error("job error", "job", job.Id, slog.Any("error", err))
-			// Push the job's next attempt back if it is still immediately due.
-			// Without this, one persistently unclaimable job sits at the head of
-			// nextDueJob forever and starves every job created after it.
-			p.deferErroredJob(job.Id)
-		}
 	}
+}
+
+// attempt runs one picked job and reports whether the drain should keep going.
+// It exists so the job's release from p.inflight can be deferred over every
+// path out, including the ones that fail before the pipeline starts.
+func (p *Processor) attempt(job *core.Record) bool {
+	defer p.releaseJob(job.Id)
+
+	// The job's own bindings are applied before readiness is judged, not
+	// after. A job queued with an OCR or extraction override may be the one
+	// job that *can* run on an instance whose configured provider is gone,
+	// and asking providersReady about the configured snapshot would defer it
+	// forever over a binding it does not use.
+	snap, err := p.effectiveSnapshot(job)
+	if err != nil {
+		// Stored overrides that no longer resolve -- a provider deleted
+		// between queueing and draining. Failed rather than deferred: the
+		// job asked for a provider that no longer exists, and no amount of
+		// waiting brings it back. The document lands on "failed", where a
+		// plain reprocess can pick it up again without the override.
+		//
+		// Return value dropped deliberately: failJob hands back the error it
+		// was given whether or not the write succeeded, so testing it would
+		// log the same error twice under a message about the write. failJob
+		// logs "job failed" with the cause itself.
+		_ = failJob(p.app, job, nil, err)
+		return true
+	}
+	if err := providersReady(snap); err != nil {
+		// Leave the job pending so it runs once Settings are complete. Returning
+		// (rather than retrying inline) is what keeps this from becoming a hot
+		// loop on a fresh install where no provider is configured yet; the cron
+		// re-enters drainPending on the next tick.
+		p.app.Logger().Warn("pending jobs deferred; provider unavailable",
+			"job", job.Id,
+			slog.Any("error", err),
+		)
+		return false
+	}
+
+	if err := p.runJob(job.Id, snap); err != nil {
+		p.app.Logger().Error("job error", "job", job.Id, slog.Any("error", err))
+		// Push the job's next attempt back if it is still immediately due.
+		// Without this, one persistently unclaimable job sits at the head of
+		// nextDueJob forever and starves every job created after it.
+		p.deferErroredJob(job.Id)
+	}
+	return true
 }
 
 // deferErroredJob applies a short backoff to a job that errored while still
@@ -343,23 +424,43 @@ func (p *Processor) deferErroredJob(jobID string) {
 	}
 }
 
-// nextDueJob returns the oldest pending job whose backoff has elapsed, or nil.
+// nextDueJob returns the oldest pending job whose backoff has elapsed and that
+// no other drain goroutine has already picked, or nil.
+//
+// It reads limit+1 candidates rather than one because the globally oldest row
+// is the same row for every drain. The claim transaction in runJob would still
+// let exactly one through, but the losers come back with claimed=false, loop,
+// and can re-read the same id before the claim is visible -- which trips the
+// no-progress guard and parks a worker until the next cron tick. Handing each
+// drain a different row keeps that guard for the genuine no-progress it was
+// written for. limit+1 always covers it: a job is only in the set while a
+// goroutine holds a slot, and each holds one at a time.
+//
+// Ordering stays strict global FIFO by created. One account's 500-file import
+// still delays everyone else's uploads, now N times less; round-robin over
+// owners is a separate change.
 func (p *Processor) nextDueJob() (*core.Record, error) {
 	jobs, err := p.app.FindRecordsByFilter(
 		"processing_jobs",
 		"status = {:status} && (next_attempt_at = '' || next_attempt_at <= {:now})",
 		"created",
-		1,
+		p.limit+1,
 		0,
 		map[string]any{"status": models.JobStatusPending, "now": nowTimestamp()},
 	)
 	if err != nil {
 		return nil, err
 	}
-	if len(jobs) == 0 {
-		return nil, nil
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, job := range jobs {
+		if _, taken := p.inflight[job.Id]; taken {
+			continue
+		}
+		p.inflight[job.Id] = struct{}{}
+		return job, nil
 	}
-	return jobs[0], nil
+	return nil, nil
 }
 
 // providersReady reports whether the snapshot has everything a job needs.
@@ -374,7 +475,7 @@ func providersReady(snap config.Snapshot) error {
 }
 
 func (p *Processor) processNextPending() error {
-	p.drainPending()
+	p.fanOut()
 	return nil
 }
 

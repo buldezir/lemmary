@@ -21,7 +21,7 @@ import {
 } from '../lib/api/maintenance'
 import { getLimits, type InstanceLimits } from '../lib/api/limits'
 import { LimitsUsage } from '../components/LimitsUsage'
-import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
+import { REPROCESS_MODE_LABELS, countLabel, type ReprocessMode } from '../lib/processing'
 import { Button, labelTextClassName, sectionClassName, sectionTitleClassName } from '../components/ui'
 
 const selectClassName =
@@ -40,10 +40,6 @@ const embeddingPollMs = 3_000
 const reprocessBatchSizes = [50, 100, 500] as const
 const reprocessModes: ReprocessMode[] = ['auto', 'full', 'extraction']
 
-function countLabel(count: number, singular: string, plural: string) {
-  return `${count} ${count === 1 ? singular : plural}`
-}
-
 function activeJobsTotal(counts: ActiveJobCounts | null) {
   return counts ? counts.pending + counts.running : 0
 }
@@ -54,13 +50,14 @@ function activeJobsLabel(counts: ActiveJobCounts) {
   return `${pending} pending, ${running} running`
 }
 
+// result.tags is not read: tags are a hand-curated vocabulary now, so the prune
+// leaves them alone and the count is always zero.
 function pruneSummary(result: TaxonomyPruneResult) {
   const parts = [
-    countLabel(result.tags, 'tag', 'tags'),
     countLabel(result.correspondents, 'correspondent', 'correspondents'),
     countLabel(result.document_types, 'document type', 'document types'),
   ]
-  return `Removed ${parts.join(', ')}.`
+  return `Removed ${parts.join(' and ')}.`
 }
 
 // Admin access is enforced by the route's beforeLoad guard, so this page can
@@ -396,10 +393,11 @@ export function ManagementPage() {
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>Stale data</h2>
           <p className="text-xs text-ink-soft">
-            Deletes tags, correspondents and document types that no document points at any more —
-            left behind by deleted documents, renames, or an aborted import. Documents are never
-            touched. Blocked while documents are processing, so entities a job is about to attach
-            are not swept up.
+            Deletes correspondents and document types that no document points at any more — left
+            behind by deleted documents, renames, or an aborted import. Documents are never touched,
+            and neither are tags: you create those by hand, so an unused one is simply one you have
+            not applied yet. Blocked while documents are processing, so entities a job is about to
+            attach are not swept up.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <Button

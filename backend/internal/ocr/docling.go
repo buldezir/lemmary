@@ -75,6 +75,12 @@ func (p *DoclingProvider) Name() string {
 // MaxConcurrency is 1: the shipped overlay runs one uvicorn worker, and docling
 // already threads inside a single conversion, so a second request in flight
 // takes cores away from the first rather than adding any.
+//
+// Callers honour this by not fanning out past it (pdfsplit.providerConcurrency),
+// never by queueing behind a semaphore. ExtractText is called with OCRTimeout
+// already running, so a queue would spend a waiter's whole deadline before it
+// reached the sidecar and fail it outright rather than make it wait. The worker
+// obeys it the same way, by WORKER_CONCURRENCY staying at 1 for local OCR.
 func (p *DoclingProvider) MaxConcurrency() int { return 1 }
 
 func (p *DoclingProvider) ExtractText(ctx context.Context, filePath string, mimeType string) (string, error) {
@@ -249,6 +255,7 @@ func (p *DoclingProvider) convert(ctx context.Context, fileName, mimeType string
 	if p.apiKey != "" {
 		req.Header.Set("X-Api-Key", p.apiKey)
 	}
+	aiprovider.StampDocument(req)
 
 	aiprovider.LogRequest(p.logger, aiprovider.SDKDocling, http.MethodPost, endpoint, p.engine, "purpose", "ocr", "mime", mimeType)
 	resp, err := p.client.Do(req)

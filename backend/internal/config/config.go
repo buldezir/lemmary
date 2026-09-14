@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -81,6 +82,29 @@ const DefaultNearDuplicateThreshold = 0.92
 
 func WorkerCronFromEnv() string {
 	return getEnv("WORKER_CRON_EXPR", "* * * * *")
+}
+
+// DefaultWorkerConcurrency is how many document pipelines run at once.
+//
+// One, so an absent flag is the behaviour this codebase has always had. There
+// is no idle time to win back by raising it -- drainPending already picks the
+// next job the instant the current one ends, and has never waited for a cron
+// tick between two jobs. What raising it buys is overlap, and overlap is only
+// free when the work is somebody else's HTTP server waiting: a local OCR
+// sidecar spends this host's CPUs, and N documents in flight there queue
+// rather than overlap.
+//
+// Two things still behave differently above 1, both documented in .env.example:
+// near-duplicate detection assumes documents are fingerprinted in creation
+// order (see DetectDuplicatesStep.Run), and the OCR deadline is per call, so a
+// provider that serialises internally spends it queueing.
+const DefaultWorkerConcurrency = 1
+
+// WorkerConcurrencyFromEnv is how many jobs the worker drains in parallel.
+// Below 1 is meaningless and falls back to the default rather than stopping the
+// worker.
+func WorkerConcurrencyFromEnv() int {
+	return envIntDefault("WORKER_CONCURRENCY", DefaultWorkerConcurrency, 1)
 }
 
 const DefaultStagingMaxBytes int64 = 1 << 30 // 1 GiB
@@ -445,6 +469,8 @@ func HasEmbedding(cfg Config) bool {
 		strings.TrimSpace(cfg.EmbeddingModel) != ""
 }
 
+var recordEmbeddingDimsMu sync.Mutex
+
 // RecordEmbeddingDims stores the vector length the provider answered with, once.
 //
 // It is called from the pipeline rather than from Settings because nobody can
@@ -456,6 +482,16 @@ func RecordEmbeddingDims(app core.App, dims int) error {
 	if dims <= 0 {
 		return nil
 	}
+	// ponytail: one process-wide lock. On the first embed after a model is
+	// bound, every concurrent pipeline reads 0 and every one of them saves the
+	// settings record -- and each save reloads the runtime, rebuilding the OCR,
+	// AI, embedder and chat clients the other pipelines are mid-call on. Under
+	// the lock the re-read below means only the first writer saves. It is two
+	// queries on a path that already spent a round trip embedding, so a
+	// finer-grained scheme would buy nothing.
+	recordEmbeddingDimsMu.Lock()
+	defer recordEmbeddingDimsMu.Unlock()
+
 	record, err := app.FindRecordById(CollectionName, SingletonID)
 	if err != nil {
 		return fmt.Errorf("load %s: %w", CollectionName, err)

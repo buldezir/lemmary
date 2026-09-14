@@ -198,9 +198,10 @@ paces spending rather than describing the instance:
 | `EMBEDDING_BACKFILL_BATCH` | `20` | Documents one backfill tick embeds, on `WORKER_CRON_EXPR`. `0` disables the scheduled backfill, so only newly processed documents are embedded and an existing archive is left alone — **Management → Embeddings** still embeds it on demand. |
 
 The **result language** has no variable at all. It decides what language a
-document's title, summary and tags are stored in, which is a reader's preference
-rather than an operator's, so it is set in **Settings** and a managed instance
-keeps it.
+document's title, summary, type and correspondent are stored in, which is a
+reader's preference rather than an operator's, so it is set in **Settings** and a
+managed instance keeps it. Tags are exempt: they are assigned from a list the
+user writes, so they are already in the language that user chose.
 
 ## Binding models in Settings
 
@@ -268,14 +269,15 @@ Turning `AI_EMBEDDING_MODEL` on is a commitment to embed the whole archive, not
 just the next upload, so it is worth knowing the shape of the bill before you
 make it.
 
-- **Tokens.** Each document is cut into ~1100-character passages plus one
-  passage rendered from its metadata, and each passage is one embedding input —
-  roughly one request per 30 KB of text. Embedding models are cheap per token;
-  this is simply every document you have.
-- **Re-embedding.** A document is embedded again whenever its OCR text or its
-  metadata changes: a re-OCR, an edited title, a renamed tag, a reprocess. And
-  *every* document is embedded again when you change the model, because vectors
-  from two models cannot be compared — there is no partial migration.
+- **Tokens.** Each document's OCR text is cut into ~1100-character passages, and
+  each passage is one embedding input — roughly one request per 30 KB of text.
+  Embedding models are cheap per token; this is simply every document you have.
+- **Re-embedding.** Only the OCR text is embedded, so only the OCR text can date
+  a document's vectors: a re-OCR, a corrected page, a reprocess. Editing a
+  title, retagging a document or renaming a tag across the archive costs
+  nothing. *Every* document is embedded again when you change the model,
+  because vectors from two models cannot be compared — there is no partial
+  migration.
 - **Space, which under encryption is RAM.** A 1536-dimension vector is about
   6 KB; a typical document is a handful of passages, so 30–60 KB each inside
   `data.db`. With `VAULT_ENABLED=1` the archive is decrypted into a tmpfs, so

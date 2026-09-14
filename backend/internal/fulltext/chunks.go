@@ -30,8 +30,8 @@ const (
 // Chunk is one embedded passage on its way into the index.
 //
 // The vector is the durable copy from SQLite; Text is what the passage says,
-// already resolved (a body chunk's slice of ocr_text, or a header chunk's own
-// rendered metadata). Text may be empty when the stored offsets no longer fit
+// already resolved to its slice of ocr_text. Text may be empty when the stored
+// offsets no longer fit
 // the document's text: the chunk is still indexed, because its vector is still
 // a valid answer to "what is this document about", and the passage layer falls
 // back to a highlight fragment.

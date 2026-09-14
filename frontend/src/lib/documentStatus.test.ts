@@ -20,6 +20,7 @@ describe('document statuses', () => {
       'processing',
       'completed',
       'failed',
+      'cancelled',
       'needs_review',
     ])
   })

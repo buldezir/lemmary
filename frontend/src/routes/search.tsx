@@ -7,6 +7,7 @@ import { ChatComposer } from '../components/ChatComposer'
 import { ChatSessionList } from '../components/ChatSessionList'
 import { MarkdownContent } from '../components/MarkdownContent'
 import { runId } from '../lib/runId'
+import { RunInFlightError } from '../lib/apiClient'
 import { useAsync } from '../hooks/useAsync'
 import { useChatSession, type ChatSendResult } from '../hooks/useChatSession'
 import { BindingOverride } from '../components/BindingOverride'
@@ -15,7 +16,6 @@ import {
   cancelSearchRun,
   searchStream,
   type ResearchEvent,
-  type ResearchStepKind,
   type SearchMode,
 } from '../lib/api/ai'
 import {
@@ -24,28 +24,13 @@ import {
   listChatSessions,
   mergeChatSession,
   renameChatSession,
+  waitForStoredTurn,
   chatSessionBinding,
   type ChatSession,
   type ChatTurn,
   type SearchDocumentHit,
 } from '../lib/api/chats'
-
-type ResearchStep = {
-  kind: ResearchStepKind
-  label: string
-  done: boolean
-}
-
-/**
- * What a research run produced beyond its text. Neither is stored with the
- * turn — the steps are a record of this run, and `incomplete` describes this
- * generation rather than the answer — so both are kept in memory, keyed by the
- * stored message, and are gone when the chat is reopened.
- */
-type TurnExtras = {
-  steps: ResearchStep[]
-  incomplete: boolean
-}
+import { applyStep, type ResearchStep } from '../lib/researchSteps'
 
 const modes: {
   value: SearchMode
@@ -101,7 +86,6 @@ export function SearchPage() {
   // Live progress of a research run, cleared when it ends.
   const [steps, setSteps] = useState<ResearchStep[]>([])
   const [draft, setDraft] = useState('')
-  const [extras, setExtras] = useState<Record<string, TurnExtras>>({})
   // A research run outlives an unmount unless it is cancelled: the fetch keeps
   // the stream open and the server keeps calling the provider.
   // The controller abandons this page's view of the run; the id is what stops
@@ -141,7 +125,7 @@ export function SearchPage() {
     // Said out loud, because hanging up does not stop it any more. Without
     // this the abandoned run would go on to finish and store a turn for a
     // conversation the user has already left.
-    void cancelSearchRun(run.id)
+    void cancelSearchRun({ runId: run.id })
     runRef.current = null
     void sessions.reload()
   }, [sessions])
@@ -195,13 +179,19 @@ export function SearchPage() {
       let incomplete = false
       // In a box rather than a plain `let`: TypeScript cannot see an assignment
       // made inside the stream callback and would narrow the variable to null.
-      const box: { stored: Extract<ResearchEvent, { type: 'saved' }> | null } = { stored: null }
+      const box: {
+        stored: Extract<ResearchEvent, { type: 'saved' }> | null
+        session: ChatSession | null
+      } = { stored: null, session: null }
 
       try {
         await searchStream(
           { sessionId: id, content, mode: turnMode, runId: run.id, binding: turnBinding },
           (event) => {
             switch (event.type) {
+              case 'session':
+                box.session = event.session
+                break
               case 'step':
                 applyStep(collected, event)
                 setSteps([...collected])
@@ -240,11 +230,25 @@ export function SearchPage() {
         if (box.stored) {
           streamError = ''
         } else if (run.controller.signal.aborted) {
-          // Cancelling is not a provider failure, and the fetch reports it as
-          // a DOMException nobody wants to read.
-          throw new Error(turnMode === 'research' ? 'Research cancelled.' : 'Search cancelled.', {
-            cause: err,
-          })
+          throw cancelled(turnMode, err)
+        } else if (err instanceof RunInFlightError && (box.session ?? id)) {
+          // The connection died, the run did not. The server finishes it and
+          // stores the turn regardless, so the answer is not gone -- only the
+          // delivery is. Waiting for it in the transcript is what turns a lost
+          // connection back into a normal turn. Keep the live steps on screen
+          // until this wait returns: clearing them here is how a follow-up
+          // used to look like the whole run had been thrown away.
+          box.stored = await recoverTurn(
+            box.session?.id ?? (id as string),
+            run.id,
+            run.controller.signal,
+          )
+          if (!box.stored) {
+            throw run.controller.signal.aborted
+              ? cancelled(turnMode, err)
+              : new Error(interruptedWithoutAnswerMessage, { cause: err })
+          }
+          streamError = ''
         } else {
           throw err
         }
@@ -268,19 +272,11 @@ export function SearchPage() {
         )
       }
 
-      const finished = collected.map((step) => ({ ...step, done: true }))
-      // Keyed by the stored message. An unsaved turn has no id to key on, and
-      // its steps are simply not shown — the unsaved notice is the thing that
-      // matters there.
-      if (stored.message.id) {
-        setExtras((current) => ({
-          ...current,
-          [stored.message.id]: { steps: finished, incomplete },
-        }))
-      }
       return {
         session: stored.session,
-        message: stored.message,
+        message: stored.message.incomplete || !incomplete
+          ? stored.message
+          : { ...stored.message, incomplete: true },
         documents: stored.documents,
         saved: stored.saved,
         detail: stored.detail,
@@ -477,14 +473,13 @@ export function SearchPage() {
               sendingLabel="Searching..."
               emptyHint={`Try something like: "${examples[mode]}"`}
               renderBefore={(turn) => {
-                const turnSteps = extras[turn.id]?.steps
-                return turnSteps && turnSteps.length > 0 ? (
-                  <StepList steps={turnSteps} collapsed />
+                return turn.steps && turn.steps.length > 0 ? (
+                  <StepList steps={turn.steps} collapsed />
                 ) : null
               }}
               renderExtra={(turn) => (
                 <>
-                  {extras[turn.id]?.incomplete && <IncompleteNotice />}
+                  {turn.incomplete && <IncompleteNotice />}
                   {mode === 'search' && <SearchHits turn={turn} />}
                 </>
               )}
@@ -518,7 +513,15 @@ export function SearchPage() {
               // A run can take a while, so there has to be a way out of one
               // that is taking too long. Research most of all, but a search
               // waiting on a slow provider is no different to sit through.
-              onCancel={endRun}
+              //
+              // A run this page is only watching -- it was started before a
+              // reload -- has no run id here, so it is stopped by conversation.
+              // The wait then sees the run end and settles on its own.
+              onCancel={
+                chat.resuming && sessionId
+                  ? () => void cancelSearchRun({ sessionId })
+                  : endRun
+              }
               autoFocus
             />
           </ChatPanel>
@@ -547,77 +550,42 @@ export function SearchPage() {
 }
 
 /**
- * Folds one event into the visible step list: a "start" appends a pending step,
- * the matching "done" completes it in place rather than adding a second line.
+ * What is said when the connection broke and waiting it out produced nothing.
+ *
+ * Not `streamConnectionLostMessage`, which promises the answer will be in the
+ * chat history: by the time this is reached the run has been waited out and no
+ * turn was stored, so the honest thing is to offer the question back.
  */
-function applyStep(steps: ResearchStep[], event: Extract<ResearchEvent, { type: 'step' }>) {
-  if (event.status === 'start') {
-    steps.push({ kind: event.kind, label: startLabel(event), done: false })
-    return
-  }
-  const pending = [...steps].reverse().find((step) => step.kind === event.kind && !step.done)
-  if (event.status === 'progress') {
-    // A running count rewrites the pending line in place; a progress event
-    // with nothing pending is a stray and is dropped rather than shown twice.
-    if (pending) pending.label = progressLabel(event)
-    return
-  }
-  if (!pending) {
-    steps.push({ kind: event.kind, label: doneLabel(event), done: true })
-    return
-  }
-  pending.label = doneLabel(event, pending.label)
-  pending.done = true
+const interruptedWithoutAnswerMessage =
+  'The connection was interrupted and the run ended without an answer. Try again.'
+
+/** Cancelling is not a provider failure, and fetch reports it as a DOMException nobody wants to read. */
+function cancelled(mode: SearchMode, cause: unknown) {
+  return new Error(mode === 'research' ? 'Research cancelled.' : 'Search cancelled.', { cause })
 }
 
-function plural(n: number, noun: string) {
-  return `${n} ${noun}${n === 1 ? '' : 's'}`
-}
-
-function startLabel(event: Extract<ResearchEvent, { type: 'step' }>) {
-  switch (event.kind) {
-    case 'search':
-      return event.query ? `Searching “${event.query}”` : 'Searching'
-    case 'read':
-      return `Reading ${plural(event.count ?? 0, 'document')}`
-    case 'survey':
-      return event.query ? `Surveying documents for “${event.query}”` : 'Surveying documents'
-    case 'count':
-      return event.query ? `Counting documents matching “${event.query}”` : 'Counting documents'
-    default:
-      return 'Writing answer'
+/**
+ * Collects the turn a dropped stream never delivered, shaped like the `saved`
+ * event it stands in for so the rest of the run is none the wiser.
+ *
+ * Null when the wait ran out: the run failed, or was cancelled, and there is
+ * nothing in the transcript to show.
+ */
+async function recoverTurn(
+  sessionId: string,
+  runId: string,
+  signal: AbortSignal,
+): Promise<Extract<ResearchEvent, { type: 'saved' }> | null> {
+  const stored = await waitForStoredTurn(sessionId, runId, { signal })
+  if (!stored) {
+    return null
   }
-}
-
-function progressLabel(event: Extract<ResearchEvent, { type: 'step' }>) {
-  const total = event.count ?? 0
-  const done = event.done ?? 0
-  return total > 0 ? `Surveyed ${done} of ${plural(total, 'document')}` : 'Surveying documents'
-}
-
-function doneLabel(event: Extract<ResearchEvent, { type: 'step' }>, fallback?: string) {
-  switch (event.kind) {
-    case 'search': {
-      const found = `${event.count ?? 0} document${event.count === 1 ? '' : 's'} found`
-      return event.query ? `“${event.query}” — ${found}` : found
-    }
-    case 'read': {
-      const titles = event.titles ?? []
-      const shown = titles.slice(0, 3).join(', ')
-      const rest = titles.length > 3 ? `, and ${titles.length - 3} more` : ''
-      const verb = event.distilled ? 'Read and summarised' : 'Read'
-      return titles.length > 0 ? `${verb} ${shown}${rest}` : (fallback ?? `${verb} documents`)
-    }
-    case 'survey': {
-      const surveyed = `Surveyed ${plural(event.count ?? 0, 'document')}`
-      return event.query ? `${surveyed} for “${event.query}”` : surveyed
-    }
-    case 'count': {
-      const counted = `Counted ${plural(event.count ?? 0, 'document')}`
-      return event.query ? `${counted} matching “${event.query}”` : counted
-    }
-    default:
-      return 'Answer written'
+  return {
+    type: 'saved',
+    session: stored.session,
+    message: stored.message,
+    documents: stored.message.documents,
+    saved: true,
   }
 }
 

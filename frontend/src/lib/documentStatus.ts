@@ -8,6 +8,7 @@ export const DOCUMENT_STATUSES = [
   'processing',
   'completed',
   'failed',
+  'cancelled',
   'needs_review',
 ] as const
 
@@ -18,6 +19,7 @@ export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
   processing: 'Processing',
   completed: 'Completed',
   failed: 'Failed',
+  cancelled: 'Cancelled',
   needs_review: 'Needs review',
 }
 

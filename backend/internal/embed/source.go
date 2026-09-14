@@ -14,9 +14,8 @@ import (
 // ChunkSource reads stored chunks back out for the Bleve chunk index.
 //
 // It lives here rather than in embedstore because it is the mirror image of
-// what this package writes: the same rule about which text a chunk stands for
-// (a header chunk carries its own, a body chunk is a slice of ocr_text) has to
-// hold on the way out, and keeping both halves in one package is what makes
+// what this package writes: the rule that a chunk is a slice of ocr_text has to
+// hold on the way out too, and keeping both halves in one package is what makes
 // that checkable.
 type ChunkSource struct{}
 
@@ -68,17 +67,17 @@ func (s *ChunkSource) ForDocument(app core.App, documentID string, spec fulltext
 	if err != nil {
 		return nil, err
 	}
+	if len(rows) == 0 {
+		// Nothing stored, so nothing to resolve: reading the record here would
+		// be a fetch per unembedded document on every index pass.
+		return nil, nil
+	}
 
-	ocrText := ""
-	loaded := false
+	ocrText := documentText(app, documentID)
 	out := make([]fulltext.Chunk, 0, len(rows))
 	for _, row := range rows {
 		if !matchesSpec(row, spec) {
 			continue
-		}
-		if row.Kind != embedstore.KindHeader && !loaded {
-			ocrText = documentText(app, documentID)
-			loaded = true
 		}
 		out = append(out, chunkFrom(row, ocrText))
 	}
@@ -96,16 +95,10 @@ func (s *ChunkSource) ForEach(app core.App, spec fulltext.VectorSpec, fn func(fu
 	}
 	currentID := ""
 	currentText := ""
-	loaded := false
 	return embedstore.ForEachChunk(app.DB(), spec.Model, spec.Dims, func(row embedstore.Chunk) error {
 		if row.DocumentID != currentID {
 			currentID = row.DocumentID
-			currentText = ""
-			loaded = false
-		}
-		if row.Kind != embedstore.KindHeader && !loaded {
 			currentText = documentText(app, row.DocumentID)
-			loaded = true
 		}
 		return fn(chunkFrom(row, currentText))
 	})
@@ -123,26 +116,18 @@ func matchesSpec(row embedstore.Chunk, spec fulltext.VectorSpec) bool {
 	return row.Model == spec.Model && row.Dims == spec.Dims && len(row.Vector) == spec.Dims
 }
 
-// chunkFrom converts a stored row, resolving a body chunk against the text it
-// was cut from.
+// chunkFrom converts a stored row, resolving it against the text it was cut
+// from.
 func chunkFrom(row embedstore.Chunk, ocrText string) fulltext.Chunk {
-	c := fulltext.Chunk{
+	return fulltext.Chunk{
 		DocumentID: row.DocumentID,
 		UserID:     row.UserID,
 		Ord:        row.Ordinal,
 		StartByte:  row.StartByte,
 		EndByte:    row.EndByte,
-		Text:       row.Text,
+		Text:       sliceText(ocrText, row.StartByte, row.EndByte),
 		Vector:     row.Vector,
 	}
-	if row.Kind == embedstore.KindHeader {
-		// The header chunk is rendered metadata; it has no place in the text
-		// and must never be quoted as if it did.
-		c.StartByte, c.EndByte = 0, 0
-		return c
-	}
-	c.Text = sliceText(ocrText, row.StartByte, row.EndByte)
-	return c
 }
 
 // sliceText is the chunk's slice of the document, or nothing when the offsets

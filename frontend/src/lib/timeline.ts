@@ -141,3 +141,40 @@ export function groupByYear(months: TimelineMonth[]): TimelineYear[] {
   }
   return grouped
 }
+
+/**
+ * Which year the timeline shows months for: the active period's year, else the
+ * year the From filter falls in, else the newest. Derived rather than stored,
+ * like activePeriod -- typing a date by hand opens that year too.
+ *
+ * dateFrom is what covers a range activePeriod cannot name. A hand-typed
+ * 2019-01-01..2019-06-30 is neither a whole year nor a whole month, so `active`
+ * is null, and without the From date the newest year would open instead --
+ * collapsing the very months the filter was typed to see.
+ */
+export function openYear(
+  active: string | null,
+  years: TimelineYear[],
+  dateFrom = '',
+): string | null {
+  // "undated" is not a period in time, so it opens nothing of its own.
+  const named = active && active !== UNDATED_PERIOD ? active : dateFrom
+  if (named) {
+    const year = named.slice(0, 4)
+    if (years.some((entry) => entry.year === year)) return year
+  }
+  // groupByYear already sorted newest first.
+  return years[0]?.year ?? null
+}
+
+/**
+ * Month rows a timeline may show all at once before folding earns its keep.
+ * Two years' worth still fits a sidebar without burying the grid, and an
+ * archive that short reads better whole than one year at a time.
+ */
+const MAX_UNFOLDED_MONTHS = 24
+
+/** Whether the timeline is long enough that only one year should show months. */
+export function shouldFold(years: TimelineYear[]): boolean {
+  return years.reduce((rows, year) => rows + year.months.length, 0) > MAX_UNFOLDED_MONTHS
+}

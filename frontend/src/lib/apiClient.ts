@@ -8,6 +8,8 @@ type ApiFetchOptions = {
   formData?: FormData
   /** Skip auth entirely (setup and meta endpoints are public). */
   public?: boolean
+  /** Cancels the request when the caller no longer owns the result. */
+  signal?: AbortSignal
   /** Error shown when the server response carries no `detail`. */
   fallbackError: string
 }
@@ -47,17 +49,47 @@ export const streamConnectionLostMessage =
   'The connection to the server was interrupted. The run continues, and its answer will be in your chat history.'
 
 /**
- * A stream that broke after the run had already started.
+ * A request that never made it over the wire.
+ *
+ * Typed so a caller that knows more can act on it. Most cannot -- a POST that
+ * died on the wire may or may not have been applied -- but the two chat
+ * surfaces can: their runs are detached from the connection, so the turn is
+ * being stored regardless and is worth waiting for rather than reporting as a
+ * loss. The message is unchanged for everyone else.
+ */
+export class ConnectionLostError extends Error {
+  constructor(cause: unknown) {
+    super(connectionLostMessage, { cause })
+    this.name = 'ConnectionLostError'
+  }
+}
+
+/**
+ * A request that broke once a run was already under way -- a stream frame that
+ * arrived and then stopped, or a send the server may well have accepted.
  *
  * Typed rather than a plain Error because callers must treat it differently
  * from a send that failed: the question reached the server and is being
  * answered, so putting it back in the composer invites the user to pay for the
  * same run twice.
  */
-export class StreamInterruptedError extends Error {
+/**
+ * A response the server answered with a failure status. Carries the status so
+ * a poll can tell a 5xx worth retrying from a 4xx that ends the wait.
+ */
+export class HttpError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = 'HttpError'
+    this.status = status
+  }
+}
+
+export class RunInFlightError extends Error {
   constructor(cause: unknown) {
     super(streamConnectionLostMessage, { cause })
-    this.name = 'StreamInterruptedError'
+    this.name = 'RunInFlightError'
   }
 }
 
@@ -84,7 +116,14 @@ export function isConnectionError(err: unknown): boolean {
  * `detail` message.
  */
 export async function apiFetch<T>(path: string, options: ApiFetchOptions): Promise<T> {
-  const { method = 'GET', body, formData, public: isPublic = false, fallbackError } = options
+  const {
+    method = 'GET',
+    body,
+    formData,
+    public: isPublic = false,
+    signal,
+    fallbackError,
+  } = options
   if (!isPublic) {
     await ensureAuth()
   }
@@ -103,17 +142,18 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions): Promi
       method,
       headers,
       body: formData ?? (body !== undefined ? JSON.stringify(body) : undefined),
+      signal,
     })
   } catch (err) {
     if (isConnectionError(err)) {
-      throw new Error(connectionLostMessage, { cause: err })
+      throw new ConnectionLostError(err)
     }
     throw err
   }
 
   const data = await readJson(response)
   if (!response.ok) {
-    throw new Error(errorDetail(data, fallbackError))
+    throw new HttpError(response.status, errorDetail(data, fallbackError))
   }
   return data as T
 }
@@ -174,13 +214,13 @@ export async function apiStream<TEvent>(path: string, options: ApiStreamOptions<
     // The generic message, not the stream's: this request never connected, so
     // there is no run on the other side to promise anything about.
     if (isConnectionError(err)) {
-      throw new Error(connectionLostMessage, { cause: err })
+      throw new ConnectionLostError(err)
     }
     throw err
   }
 
   if (!response.ok) {
-    throw new Error(errorDetail(await readJson(response), options.fallbackError))
+    throw new HttpError(response.status, errorDetail(await readJson(response), options.fallbackError))
   }
   if (!response.body) {
     throw new Error(options.fallbackError)
@@ -205,7 +245,7 @@ export async function apiStream<TEvent>(path: string, options: ApiStreamOptions<
       // `TypeError: Error in input stream`, which is not something to show
       // anyone; the run itself may well be finishing on the server.
       if (isConnectionError(err)) {
-        throw new StreamInterruptedError(err)
+        throw new RunInFlightError(err)
       }
       throw err
     }
@@ -245,8 +285,24 @@ export type PollJobOptions = {
   label?: string
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+/** Exported so other polling loops (a run recovering from a dropped stream) share it. */
+export function sleep(ms: number, signal?: AbortSignal) {
+  if (!signal) {
+    return new Promise<void>((resolve) => setTimeout(resolve, ms))
+  }
+  if (signal.aborted) {
+    return Promise.resolve()
+  }
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(done, ms)
+    signal.addEventListener('abort', done, { once: true })
+
+    function done() {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', done)
+      resolve()
+    }
+  })
 }
 
 /**

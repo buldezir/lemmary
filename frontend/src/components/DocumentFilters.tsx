@@ -1,6 +1,6 @@
 import { DOCUMENT_STATUSES, DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
 import type { CorrespondentRecord, DocumentTypeRecord } from '../lib/api/documents'
-import type { DocumentQuery } from '../lib/documentQuery'
+import { MIN_SEARCH_LENGTH, type DocumentQuery } from '../lib/documentQuery'
 import { FilterCombobox } from './FilterCombobox'
 import { selectClassName } from './ui'
 
@@ -29,16 +29,26 @@ export function DocumentFilters({
   /** Omit to hide the status dropdown. */
   status?: string
 }) {
+  const tooShort = search.trim().length > 0 && search.trim().length < MIN_SEARCH_LENGTH
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-3 sm:flex-row">
-        <input
-          type="search"
-          placeholder="Search title, tags, purpose, summary..."
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-          className="w-full rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood"
-        />
+        <div className="flex w-full flex-col gap-1">
+          <input
+            type="search"
+            placeholder="Search title, tags, purpose, summary..."
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            aria-describedby={tooShort ? 'search-too-short' : undefined}
+            className="w-full rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood"
+          />
+          {tooShort && (
+            <p id="search-too-short" role="status" className="text-xs text-ink-soft">
+              Type at least {MIN_SEARCH_LENGTH} characters to search.
+            </p>
+          )}
+        </div>
         {status !== undefined && (
           <select
             value={status}

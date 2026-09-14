@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { StreamInterruptedError } from '../lib/apiClient'
+import { RunInFlightError } from '../lib/apiClient'
 import {
   toChatTurn,
+  waitWhileRunning,
   type ChatMessageRecord,
   type ChatSession,
   type ChatSessionDetail,
@@ -34,6 +35,8 @@ export type UseChatSessionResult = {
   setInput: (value: string) => void
   loading: boolean
   sending: boolean
+  /** True when this page is observing a run started before it mounted. */
+  resuming: boolean
   /** Failure of the last send; cleared when the next one starts. */
   error: string
   /** Failure to load the session named in the URL. */
@@ -66,6 +69,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
+  const [resuming, setResuming] = useState(false)
   const [error, setError] = useState('')
   const [loadError, setLoadError] = useState('')
   const [unsaved, setUnsaved] = useState(false)
@@ -93,6 +97,50 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     settledRef.current = options.onSessionSettled
   })
 
+  /**
+   * Sits out a run this page did not start, then shows what it produced.
+   *
+   * Reloading during a long research run is the case that matters: the run
+   * outlives the connection by design, but the chat that comes back is empty
+   * and says nothing about an answer being on its way -- the turn is stored
+   * whole when the run ends, so until then there is nothing in the transcript
+   * to show. `sending` is what puts the page back into its waiting state, the
+   * same one it would be in had the tab never been reloaded.
+   */
+  const resume = useCallback(
+    (id: string, known: number, epoch: number, signal: AbortSignal) => {
+      setSending(true)
+      setResuming(true)
+      void waitWhileRunning(id, { signal })
+        .then((settled) => {
+          if (epochRef.current !== epoch) {
+            return
+          }
+          if (!settled || settled.messages.length <= known) {
+            // The run ended and stored nothing: it failed, or someone cancelled
+            // it from the tab that started it.
+            setError('That run ended without an answer.')
+            return
+          }
+          setSession(settled.session)
+          setTurns(settled.messages.map((message) => toChatTurn(message)))
+          settledRef.current?.(settled.session, false)
+        })
+        .catch((err: unknown) => {
+          if (epochRef.current === epoch && !signal.aborted) {
+            setError(err instanceof Error ? err.message : 'Failed to follow the running chat')
+          }
+        })
+        .finally(() => {
+          if (epochRef.current === epoch) {
+            setSending(false)
+            setResuming(false)
+          }
+        })
+    },
+    [],
+  )
+
   useEffect(() => {
     const next = sessionId ?? null
     // The promotion no-op. After a send created the session, ownedRef already
@@ -111,6 +159,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     // useAsync uses. A cancelled switch is caught by the epoch either way.
     let started = false
     let cancelled = false
+    let resumeController: AbortController | null = null
     void Promise.resolve().then(() => {
       if (cancelled || epochRef.current !== epoch) {
         return
@@ -124,6 +173,11 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
       setLoadError('')
       setUnsaved(false)
       setUnsavedDetail('')
+      // A resumed run has no live submit promise whose finally can release the
+      // flag. Sending belongs to the conversation being left, so a genuine
+      // switch must make the next chat usable immediately.
+      setSending(false)
+      setResuming(false)
 
       if (!next) {
         setLoading(false)
@@ -134,20 +188,24 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
       loadRef
         .current(next)
         .then((detail) => {
-          if (epochRef.current !== epoch) {
+          if (cancelled || epochRef.current !== epoch) {
             return
           }
           setSession(detail.session)
           setTurns(detail.messages.map((message) => toChatTurn(message)))
+          if (detail.running) {
+            resumeController = new AbortController()
+            resume(next, detail.messages.length, epoch, resumeController.signal)
+          }
         })
         .catch((err: unknown) => {
-          if (epochRef.current !== epoch) {
+          if (cancelled || epochRef.current !== epoch) {
             return
           }
           setLoadError(err instanceof Error ? err.message : 'Failed to load the chat')
         })
         .finally(() => {
-          if (epochRef.current === epoch) {
+          if (!cancelled && epochRef.current === epoch) {
             setLoading(false)
           }
         })
@@ -155,6 +213,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
 
     return () => {
       cancelled = true
+      resumeController?.abort()
       // Hand the claim back when the load never got as far as starting.
       //
       // React invokes an effect twice on mount in development, and the teardown
@@ -169,7 +228,9 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
         ownedRef.current = previous
       }
     }
-  }, [sessionId])
+    // resume is stable (no deps of its own), so it never re-runs this effect;
+    // it is listed only because the linter cannot see that from here.
+  }, [sessionId, resume])
 
   const submit = useCallback(async () => {
     const text = input.trim()
@@ -190,6 +251,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     setError('')
     setUnsaved(false)
     setUnsavedDetail('')
+    setResuming(false)
     setTurns((current) => [...current, pending])
 
     try {
@@ -225,7 +287,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
       // started leaves the server working on this exact question, and handing
       // it back invites the user to submit it a second time and pay for the
       // same run twice. The error text tells them where the answer will be.
-      if (!(err instanceof StreamInterruptedError)) {
+      if (!(err instanceof RunInFlightError)) {
         setInput(text)
       }
     } finally {
@@ -247,6 +309,8 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     setUnsaved(false)
     setUnsavedDetail('')
     setLoading(false)
+    setSending(false)
+    setResuming(false)
   }, [])
 
   return {
@@ -256,6 +320,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     setInput,
     loading,
     sending,
+    resuming,
     error,
     loadError,
     unsaved,

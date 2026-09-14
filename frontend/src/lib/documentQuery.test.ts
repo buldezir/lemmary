@@ -5,6 +5,7 @@ import {
   hasActiveFilters,
   inboxQuerySearch,
   parseDocumentQuery,
+  searchableTerm,
 } from './documentQuery'
 
 describe('parseDocumentQuery', () => {
@@ -150,5 +151,27 @@ describe('hasActiveFilters', () => {
 
   test('so is a date bound on its own', () => {
     expect(hasActiveFilters({ ...defaultDocumentQuery, from: '2025-01-01' })).toBe(true)
+  })
+})
+
+describe('searchableTerm', () => {
+  test('keeps a term long enough to search for, trimmed', () => {
+    expect(searchableTerm('  amaz ')).toBe('amaz')
+    expect(searchableTerm('ama')).toBe('ama')
+  })
+
+  test('drops a term still being typed', () => {
+    expect(searchableTerm('am')).toBe('')
+    expect(searchableTerm('a')).toBe('')
+    expect(searchableTerm('  b ')).toBe('')
+  })
+
+  test('measures the trimmed term', () => {
+    expect(searchableTerm('a  ')).toBe('')
+  })
+
+  test('a hand-typed short ?q= shows the unfiltered list rather than filtering', () => {
+    expect(parseDocumentQuery({ q: 'am' }).q).toBe('')
+    expect(parseDocumentQuery({ q: 'amaz' }).q).toBe('amaz')
   })
 })

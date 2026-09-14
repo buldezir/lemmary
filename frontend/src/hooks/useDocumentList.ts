@@ -19,6 +19,7 @@ import {
   defaultDocumentQuery,
   documentQuerySearch,
   parseDocumentQuery,
+  searchableTerm,
   type DocumentQuery,
 } from '../lib/documentQuery'
 import { onDocumentsChanged } from '../lib/documentEvents'
@@ -139,11 +140,12 @@ export function useDocumentList({
 
   // Box -> URL, once the typing settles. Skipped while the two already agree,
   // so the sync above cannot bounce back as a navigation.
+  const term = searchableTerm(search)
   useEffect(() => {
-    if (search === debouncedSearch) return
-    const timer = window.setTimeout(() => updateQuery({ q: search }, true), 300)
+    if (term === debouncedSearch) return
+    const timer = window.setTimeout(() => updateQuery({ q: term }, true), 300)
     return () => window.clearTimeout(timer)
-  }, [search, debouncedSearch, updateQuery])
+  }, [term, debouncedSearch, updateQuery])
 
   useEffect(() => {
     let active = true

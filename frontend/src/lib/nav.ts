@@ -71,6 +71,7 @@ export function primaryNavItems(reviewRequired: boolean): readonly NavItem[] {
 export function secondaryNavItems(pbAdminUrl: string): readonly NavItem[] {
   return [
     { kind: 'route', label: 'Account', to: '/account' },
+    { kind: 'route', label: 'Tags', to: '/tags' },
     { kind: 'route', label: 'OCR test', to: '/ocr-test' },
     { kind: 'route', label: 'Export', to: '/export' },
     { kind: 'route', label: 'Import', to: '/import' },

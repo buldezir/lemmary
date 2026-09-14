@@ -233,6 +233,44 @@ func TestEncodeHitsEmpty(t *testing.T) {
 	}
 }
 
+func TestEncodeDecodeStepsRoundTrip(t *testing.T) {
+	steps := []chat.StoredStep{
+		{Kind: "search", Status: "done", Query: "plumbing", Count: 2},
+		{Kind: "read", Status: "done", Titles: []string{"Invoice"}, Distilled: true},
+	}
+	encoded := chat.EncodeSteps(steps)
+	if encoded == nil {
+		t.Fatal("expected an encoded payload")
+	}
+	collection := core.NewBaseCollection(chat.MessagesCollection)
+	collection.Fields.Add(&core.JSONField{Name: "steps", MaxSize: chat.MaxStepsJSONBytes})
+	record := core.NewRecord(collection)
+	record.Set("steps", encoded)
+	got := chat.DecodeSteps(record)
+	if len(got) != 2 || got[0].Query != "plumbing" || !got[1].Distilled {
+		t.Fatalf("round trip lost data: %+v", got)
+	}
+}
+
+func TestEncodeStepsEmpty(t *testing.T) {
+	if chat.EncodeSteps(nil) != nil {
+		t.Fatal("no steps should encode to nothing")
+	}
+}
+
+func TestStepFromEventCopiesTrailFields(t *testing.T) {
+	got := chat.StepFromEvent(ai.ResearchEvent{
+		Type:      "step",
+		Kind:      "read",
+		Status:    "done",
+		Titles:    []string{"Invoice"},
+		Distilled: true,
+	})
+	if got.Kind != "read" || got.Status != "done" || !got.Distilled || len(got.Titles) != 1 {
+		t.Fatalf("StepFromEvent = %+v", got)
+	}
+}
+
 func TestEncodeHitsCapsCount(t *testing.T) {
 	hits := make([]ai.DocumentHit, 0, chat.MaxHitsPerTurn+20)
 	for i := 0; i < chat.MaxHitsPerTurn+20; i++ {

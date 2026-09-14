@@ -158,10 +158,18 @@ func ensureMessages(app core.App, sessions *core.Collection) error {
 		// Max is explicit on purpose: a TextField left at zero defaults to 5000
 		// runes, which would reject most assistant replies.
 		&core.TextField{Name: "content", Required: true, Max: MaxMessageRunes},
+		// The client-generated id of the request that produced this pair. Both
+		// halves carry it so a dropped connection can recover its exact answer,
+		// even when another tab asks the same question concurrently.
+		&core.TextField{Name: "run_id", Max: MaxRunIDRunes},
 		// The search hits the assistant turn was grounded in, so a replayed
 		// transcript still renders its result cards. Not Required -- a JSON
 		// field's Required rejects an empty array, and user turns have none.
 		&core.JSONField{Name: "documents", MaxSize: MaxHitsJSONBytes},
+		// Research progress as the stream emitted it, so reopening a chat still
+		// shows how the answer was produced. Empty on user turns and on Search.
+		&core.JSONField{Name: "steps", MaxSize: MaxStepsJSONBytes},
+		&core.BoolField{Name: "incomplete"},
 		&core.AutodateField{Name: "created", OnCreate: true},
 		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
 	)

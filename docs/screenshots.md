@@ -99,7 +99,9 @@ reads in English without losing what it actually said.
 ![Document detail, top of the page](./screenshots/document-detail-top.png)
 
 Corrections are saved back onto the document, and the taxonomy follows: a new
-tag, type or correspondent typed here is created and reused from then on.
+type or correspondent typed here is created and reused from then on. Tags are
+different -- they are picked from a list you keep under **Tags**, so the editor
+offers what exists rather than creating one from whatever you type.
 
 ![Editing a document's metadata](./screenshots/document-detail-edit.png)
 

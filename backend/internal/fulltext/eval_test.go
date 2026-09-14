@@ -23,19 +23,22 @@ import (
 //	strict:  recall@5 0.511  MRR 0.522
 //	relaxed: recall@5 0.772  MRR 0.783
 //
-// The gap between those two lines is what relaxing bought: typos, inflections
-// and queries with one keyword the document does not carry. What neither
-// reaches is the three paraphrases and the two compounds — a term index cannot
-// match words that are not there, and those five cases are the headroom the
-// dense path exists to take.
+// Re-measured when prefix matching landed:
+//
+//	strict:  recall@5 0.598  MRR 0.609
+//	relaxed: recall@5 0.989  MRR 1.000
+//
+// The gap is what relaxing buys: typos and inflections a prefix cannot reach.
+// Paraphrase used to be headroom for the dense path and is now mostly answered
+// lexically, by prefix legs reaching a shared stem.
 //
 // Raise them when a change raises the numbers; a floor that is never revised
 // stops measuring anything. Never lower one to make a change pass.
 const (
-	strictRecallFloor  = 0.48
-	strictMRRFloor     = 0.49
-	relaxedRecallFloor = 0.74
-	relaxedMRRFloor    = 0.75
+	strictRecallFloor  = 0.57
+	strictMRRFloor     = 0.58
+	relaxedRecallFloor = 0.96
+	relaxedMRRFloor    = 0.97
 )
 
 // evalK is the cut-off recall is measured at: what an agent actually looks at
@@ -189,16 +192,25 @@ func TestSearchEvalRelaxedRescuesMissedQueries(t *testing.T) {
 	if rescued[testdata.KindMorphology] == 0 {
 		t.Error("no inflected query was rescued")
 	}
-	if rescued[testdata.KindExact] == 0 {
-		t.Error("no partly-matching query was rescued by min-should-match")
+	// The exact class needs no rescue any more: strict serves all of it, which
+	// is the stronger claim and the one asserted -- "relaxed did not rescue it"
+	// would also pass if both paths missed.
+	for _, c := range testdata.Cases() {
+		if c.Kind != testdata.KindExact {
+			continue
+		}
+		strict := searchIDs(t, idx, caseQuery(c, false))
+		for _, want := range c.Want {
+			if !containsID(strict, want) {
+				t.Errorf("%q: strict search should find %s, got %v", c.Name, want, strict)
+			}
+		}
 	}
 
-	// Paraphrases stay unrescued here, and that is the honest result: a query
-	// of eleven words, most of them function words, cannot be served by term
-	// matching however it is relaxed. It is what the dense path is for, and
-	// the floors above are set knowing these three cases score zero.
-	if rescued[testdata.KindParaphrase] != 0 {
-		t.Logf("a paraphrase was rescued lexically; revisit the floors")
+	// Paraphrases used to score zero on both paths; prefix legs now reach the
+	// stem they share with the document. The dense path owns the rest.
+	if rescued[testdata.KindParaphrase] == 0 {
+		t.Logf("no paraphrase was rescued lexically; the floors above assume some are")
 	}
 }
 

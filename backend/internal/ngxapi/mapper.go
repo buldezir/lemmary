@@ -259,6 +259,11 @@ func mapJobStatus(status string) string {
 		return "SUCCESS"
 	case "failed":
 		return "FAILURE"
+	case "cancelled":
+		// Celery's word for work a user called off. Without it a stopped job
+		// falls through to PENDING and reads as queued for ever in a paperless
+		// client, which has no other way to learn the queue was emptied.
+		return "REVOKED"
 	case "running":
 		return "STARTED"
 	default:

@@ -29,6 +29,11 @@ type chatSessionDetail struct {
 	// message pagination yet; the field is here so adding it later is not a
 	// breaking change.
 	Truncated bool `json:"truncated"`
+	// Running says a run is writing into this conversation right now. Nothing
+	// in the transcript can say that -- a turn is stored whole when the run
+	// ends -- so a chat opened mid-run reads as empty and finished unless the
+	// server says otherwise. See sessionRunning.
+	Running bool `json:"running"`
 }
 
 type chatSessionResponse struct {
@@ -177,6 +182,7 @@ func handleGetChat(app core.App) func(*core.RequestEvent) error {
 			Session:   info,
 			Messages:  messages,
 			Truncated: truncated,
+			Running:   sessionRunning(session.Id),
 		})
 	}
 }

@@ -27,28 +27,6 @@ func applyExtractedMetadata(document *core.Record, metadata *models.ExtractedMet
 	document.Set("purpose", metadata.Purpose)
 }
 
-func mergeTagNames(original, translated []string) []string {
-	seen := make(map[string]struct{}, len(original)+len(translated))
-	names := make([]string, 0, len(original)+len(translated))
-
-	for _, group := range [][]string{original, translated} {
-		for _, rawName := range group {
-			name := strings.TrimSpace(rawName)
-			if name == "" {
-				continue
-			}
-			key := strings.ToLower(name)
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			names = append(names, name)
-		}
-	}
-
-	return names
-}
-
 func documentTypeNames(metadata *models.ExtractedMetadata, resultLanguage string) (displayName, originalName string) {
 	originalName = strings.TrimSpace(metadata.DocumentType)
 	if originalName == "" {

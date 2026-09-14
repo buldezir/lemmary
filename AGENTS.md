@@ -2,14 +2,25 @@
 
 ## Commits
 
-Write a detailed commit message so later agents can understand what was done from `git log`.
+Write a detailed commit message so later agents can understand what was done from `git log`, limited to about one paragraph.
+
+## Code Comments Guidelines
+* Write comments **only** when workarounds or "hacks" are introduced:
+  * When requested directly by the user.
+  * When unavoidable due to technical constraints.
+* Avoid commenting self-explanatory or clean code.
 
 ## Overlay
 
 E2e suites live in a sibling repo at `../lemmary-dev`, found by `scripts/overlay.sh`.
-`./scripts/test-all.sh` is tracked and locates it; nothing to attach by hand.
+`./scripts/test-all.sh` is tracked and locates it; no test suites need attaching by hand.
 
-When a change needs an e2e update, create a matching overlay branch first:
+If this project checkout is a Git worktree, always create a corresponding overlay
+worktree on the matching branch, even if the main overlay checkout is already on
+that branch. Keep it outside this project tree and use it for overlay work.
+
+When a change needs an e2e update in a regular checkout, create a matching
+branch directly in the overlay checkout first:
 
 ```bash
 git -C ../lemmary-dev fetch origin

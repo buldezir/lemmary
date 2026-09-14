@@ -27,38 +27,40 @@ import (
 // Measured at calibration, over the same 23 cases the Bleve evaluation uses:
 //
 //	lexical: recall@5 0.641  MRR 0.652
-//	hybrid:  recall@5 0.957  MRR 0.928
+//	hybrid:  recall@5 0.935  MRR 0.878
 //
 // Improved by fusion: 3 morphology, 2 typo, 2 paraphrase, 1 filter. The floors
 // sit under those numbers by enough to absorb a reordering and not enough to
 // hide a regression. Never lower one to make a change pass.
+//
+// The MRR floor was lowered once, from 0.89, when the metadata header passage
+// was dropped and embeddings became a function of ocr_text alone. Two cases pay
+// for it, both paraphrase: "monthly rent" fell from rank 1 to rank 5 and
+// "notice period" from rank 1 to rank 2. Both score 0.000 on the lexical leg,
+// so the header passage was the only thing answering them at all, and nothing
+// else moved -- one morphology case improved. Read the number with the caveat
+// above in mind: HashEmbedder reaches a paraphrase only when the words happen
+// to share n-grams, which is exactly the class a real embedding model answers
+// from the body text without any metadata. 0.878 is this stand-in's floor, not
+// a measurement of production.
 const (
 	hybridRecallFloor = 0.92
-	hybridMRRFloor    = 0.89
+	hybridMRRFloor    = 0.87
 )
 
 const evalK = 5
 
-// chunkCorpus cuts every document into a metadata header chunk plus body
-// chunks, which is how the ingestion pipeline will chunk them.
+// chunkCorpus cuts every document into body chunks and nothing else, which is
+// how the ingestion pipeline chunks them: only ocr_text is embedded, so the
+// metadata reaches a query through the lexical half of the fusion alone.
 func chunkCorpus() []MemoryChunk {
 	chunks := make([]MemoryChunk, 0, 128)
 	for _, doc := range testdata.Documents() {
-		header := strings.Join([]string{
-			doc.Title, doc.TitleOriginal, doc.Purpose, doc.Summary,
-			doc.DocumentType, doc.Correspondent, strings.Join(doc.Tags, " "),
-		}, "\n")
-		chunks = append(chunks, MemoryChunk{
-			DocumentID: doc.ID,
-			UserID:     doc.User,
-			Ord:        0,
-			Text:       header,
-		})
 		for _, w := range Windows(doc.Text, nil) {
 			chunks = append(chunks, MemoryChunk{
 				DocumentID: doc.ID,
 				UserID:     doc.User,
-				Ord:        w.Ord + 1,
+				Ord:        w.Ord,
 				StartByte:  w.StartByte,
 				EndByte:    w.EndByte,
 				Text:       doc.Text[w.StartByte:w.EndByte],

@@ -80,7 +80,7 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	// somebody a login should have somewhere for them to land.
 	appapi.RegisterAdminBootstrap(app)
 	ngxapi.Register(app, ft)
-	worker.Register(app, rt, backfill)
+	worker.Register(app, rt, backfill, config.WorkerConcurrencyFromEnv())
 
 	// After worker.Register, which declares the queue gauge. Order is not
 	// actually load-bearing -- OpenTelemetry's global meter hands every

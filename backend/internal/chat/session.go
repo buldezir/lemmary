@@ -59,6 +59,10 @@ const (
 	// what a column Max the producer did not know about costs, and here it
 	// would mean throwing away an answer the provider was already paid for.
 	MaxMessageRunes = 60000
+	// MaxRunIDRunes bounds the client-generated correlation id stored beside a
+	// turn. It is not a credential; it only lets a client recover the exact
+	// answer produced by a request whose connection was interrupted.
+	MaxRunIDRunes = 200
 
 	// MaxHistoryMessages and MaxHistoryRunes bound the transcript replayed to
 	// the model. The rune budget matters most for Deep Search: its agent loop
@@ -74,6 +78,12 @@ const (
 	// an assistant turn.
 	MaxHitsPerTurn   = 50
 	MaxHitsJSONBytes = 64000
+
+	// MaxStepsPerTurn and MaxStepsJSONBytes bound the research trail stored
+	// beside an assistant turn. A run emits a handful of start/progress/done
+	// events; the cap exists so a malformed producer cannot bloat a row.
+	MaxStepsPerTurn   = 80
+	MaxStepsJSONBytes = 16000
 
 	// MaxReplayMessages caps one transcript read. Sessions do not get near it
 	// in practice; the cap exists so a single request cannot load an unbounded
@@ -252,6 +262,70 @@ func EncodeHits(hits []ai.DocumentHit) types.JSONRaw {
 	return types.JSONRaw(encoded)
 }
 
+// StoredStep is one research progress line as the stream emitted it. Folded
+// into labels by the client; not replayed to the model.
+type StoredStep struct {
+	Kind      string   `json:"kind"`
+	Status    string   `json:"status,omitempty"`
+	Query     string   `json:"query,omitempty"`
+	Titles    []string `json:"titles,omitempty"`
+	Count     int      `json:"count,omitempty"`
+	Done      int      `json:"done,omitempty"`
+	Distilled bool     `json:"distilled,omitempty"`
+}
+
+// StepFromEvent copies the fields a stored trail needs off a live research
+// event. Other event types are ignored by the collector.
+func StepFromEvent(ev ai.ResearchEvent) StoredStep {
+	return StoredStep{
+		Kind:      ev.Kind,
+		Status:    ev.Status,
+		Query:     ev.Query,
+		Titles:    ev.Titles,
+		Count:     ev.Count,
+		Done:      ev.Done,
+		Distilled: ev.Distilled,
+	}
+}
+
+// EncodeSteps renders the research trail stored beside an assistant turn.
+func EncodeSteps(steps []StoredStep) types.JSONRaw {
+	if len(steps) == 0 {
+		return nil
+	}
+	if len(steps) > MaxStepsPerTurn {
+		steps = steps[len(steps)-MaxStepsPerTurn:]
+	}
+	encoded, err := json.Marshal(steps)
+	if err != nil {
+		return nil
+	}
+	for len(encoded) > MaxStepsJSONBytes && len(steps) > 1 {
+		steps = steps[1:]
+		encoded, err = json.Marshal(steps)
+		if err != nil {
+			return nil
+		}
+	}
+	if len(encoded) > MaxStepsJSONBytes {
+		return nil
+	}
+	return types.JSONRaw(encoded)
+}
+
+// DecodeSteps reads the research trail back off a message record.
+func DecodeSteps(record *core.Record) []StoredStep {
+	raw := strings.TrimSpace(record.GetString("steps"))
+	if raw == "" || raw == "null" {
+		return nil
+	}
+	var steps []StoredStep
+	if err := json.Unmarshal([]byte(raw), &steps); err != nil {
+		return nil
+	}
+	return steps
+}
+
 // DecodeHits reads the hits back off a message record.
 //
 // The raw-string dance is not defensive padding: PocketBase hands a JSON field
@@ -295,12 +369,15 @@ type SessionInfo struct {
 
 // MessageInfo is the client-facing view of one turn.
 type MessageInfo struct {
-	ID        string           `json:"id"`
-	Seq       int              `json:"seq"`
-	Role      string           `json:"role"`
-	Content   string           `json:"content"`
-	Documents []ai.DocumentHit `json:"documents,omitempty"`
-	Created   string           `json:"created"`
+	ID         string           `json:"id"`
+	Seq        int              `json:"seq"`
+	Role       string           `json:"role"`
+	Content    string           `json:"content"`
+	RunID      string           `json:"run_id,omitempty"`
+	Documents  []ai.DocumentHit `json:"documents,omitempty"`
+	Steps      []StoredStep     `json:"steps,omitempty"`
+	Incomplete bool             `json:"incomplete,omitempty"`
+	Created    string           `json:"created"`
 }
 
 // ToSessionInfo projects a session record for the API.
@@ -343,11 +420,14 @@ func BindingOf(record *core.Record) aiprovider.Binding {
 // ToMessageInfo projects a message record for the API.
 func ToMessageInfo(record *core.Record) MessageInfo {
 	return MessageInfo{
-		ID:        record.Id,
-		Seq:       record.GetInt("seq"),
-		Role:      record.GetString("role"),
-		Content:   record.GetString("content"),
-		Documents: DecodeHits(record),
-		Created:   record.GetDateTime("created").String(),
+		ID:         record.Id,
+		Seq:        record.GetInt("seq"),
+		Role:       record.GetString("role"),
+		Content:    record.GetString("content"),
+		RunID:      record.GetString("run_id"),
+		Documents:  DecodeHits(record),
+		Steps:      DecodeSteps(record),
+		Incomplete: record.GetBool("incomplete"),
+		Created:    record.GetDateTime("created").String(),
 	}
 }

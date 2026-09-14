@@ -78,13 +78,6 @@ func TestDocumentTypeNamesWithTranslation(t *testing.T) {
 	}
 }
 
-func TestMergeTagNames(t *testing.T) {
-	got := mergeTagNames([]string{"Rechnung", "Büro"}, []string{"Invoice", "Office"})
-	if len(got) != 4 {
-		t.Fatalf("expected 4 unique tags, got %d: %v", len(got), got)
-	}
-}
-
 func TestCorrespondentNamesFromExplicitField(t *testing.T) {
 	metadata := &models.ExtractedMetadata{
 		Correspondent:         "Acme GmbH",

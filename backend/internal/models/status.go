@@ -5,12 +5,14 @@ const (
 	JobStatusRunning     = "running"
 	JobStatusCompleted   = "completed"
 	JobStatusFailed      = "failed"
+	JobStatusCancelled   = "cancelled"
 	JobStatusNeedsReview = "needs_review"
 
 	DocStatusPending     = "pending"
 	DocStatusProcessing  = "processing"
 	DocStatusCompleted   = "completed"
 	DocStatusFailed      = "failed"
+	DocStatusCancelled   = "cancelled"
 	DocStatusNeedsReview = "needs_review"
 
 	MetadataSourceUser = "user"
@@ -29,5 +31,6 @@ var UnfinishedDocStatuses = []string{
 	DocStatusPending,
 	DocStatusProcessing,
 	DocStatusFailed,
+	DocStatusCancelled,
 	DocStatusNeedsReview,
 }
