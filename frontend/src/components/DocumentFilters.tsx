@@ -31,10 +31,15 @@ export function DocumentFilters({
   status?: string
 }) {
   const tooShort = search.trim().length > 0 && search.trim().length < MIN_SEARCH_LENGTH
+  const chosenTags = tagIds(query.tags)
+  // Nothing to offer and nothing chosen is no filter at all. Decided here
+  // rather than inside TagFilter because the search box shares the row and
+  // has to know whether it is sharing it.
+  const showTags = tags.length > 0 || chosenTags.length > 0
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-3 sm:flex-row">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
         <div className="flex w-full flex-col gap-1">
           <input
             type="search"
@@ -50,6 +55,13 @@ export function DocumentFilters({
             </p>
           )}
         </div>
+        {showTags && (
+          <TagFilter
+            value={chosenTags}
+            options={tags}
+            onChange={(next) => updateQuery({ tags: next.join(',') })}
+          />
+        )}
         {status !== undefined && (
           <select
             value={status}
@@ -107,12 +119,6 @@ export function DocumentFilters({
           onChange={(next) => updateQuery({ correspondent: next })}
         />
       </div>
-
-      <TagFilter
-        value={tagIds(query.tags)}
-        options={tags}
-        onChange={(next) => updateQuery({ tags: next.join(',') })}
-      />
     </div>
   )
 }
