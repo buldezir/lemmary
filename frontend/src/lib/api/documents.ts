@@ -109,8 +109,8 @@ export async function openDocumentFile(record: DocumentFileRef, filename?: strin
   }
 }
 
-/** The documents.file MaxSize: Mistral OCR's 50 MB, decimal, see models.MaxFileBytes. */
-export const MAX_FILE_BYTES = 50_000_000
+/** The documents.file MaxSize, see models.MaxFileBytes: 47 MiB, just under Mistral OCR's 50 MB. */
+export const MAX_FILE_BYTES = 47 * 1024 * 1024
 
 /** Above this a file still uploads, but OCR providers and the worker get slow or fail. */
 export const PROCESSING_WARN_BYTES = 20 * 1024 * 1024

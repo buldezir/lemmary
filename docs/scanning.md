@@ -84,7 +84,7 @@ for the lot; either way it arrives as one document.
 
 ## Limits
 
-A document may be at most 50 MB, which is the same ceiling as any upload, and
+A document may be at most 47 MB, which is the same ceiling as any upload, and
 at 300 dpi colour it works out at somewhere between twenty-five and fifty pages
 of ordinary paper. Past 20 MB, OCR gets slower and less reliable, so a smaller
 document is still the better one. When the scan reaches it, add what you have to your library and

@@ -133,7 +133,7 @@ describe('uploadErrorMessage', () => {
       },
     }
     expect(uploadErrorMessage(err, 52_428_800)).toBe(
-      'This file is 50 MB, over the 48 MB limit for a single document.',
+      'This file is 50 MB, over the 47 MB limit for a single document.',
     )
   })
 

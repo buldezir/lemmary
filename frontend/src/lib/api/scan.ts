@@ -31,7 +31,7 @@ export type StagedScan = {
  * A scan is minutes of real work: the head moves, and a feeder runs a stack of
  * paper through. The poll budget has to cover that, or the page reports a
  * failure while the scanner is still going — the backend allows three minutes
- * per sheet, and a feeder load is as many sheets as fit in 50 MB.
+ * per sheet, and a feeder load is as many sheets as fit in 47 MB.
  *
  * Polling ends the moment the job does, so this only bounds a scanner that has
  * genuinely stopped answering.

@@ -56,7 +56,7 @@ func maxPDFBytesFromEnv() int64 {
 
 // maxPartBytes matches the documents.file field limit, so a part that cannot be
 // stored is reported as skipped instead of failing the whole run.
-// A var so tests can shrink it instead of building 50 MB fixtures.
+// A var so tests can shrink it instead of building 47 MB fixtures.
 var maxPartBytes = DefaultMaxPartBytes
 
 var (

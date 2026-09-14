@@ -23,7 +23,7 @@ const (
 	MIMEDOCX      = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 	MIMEXLSX      = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-	// Cap expanded OOXML size well above the 50 MB upload limit without
+	// Cap expanded OOXML size well above the 47 MB upload limit without
 	// allowing multi-gigabyte zip bombs into memory.
 	maxUncompressedBytes = 200 << 20
 )
@@ -43,7 +43,7 @@ const (
 // app.Save when the OCR step tried to store the result, which failed the
 // document rather than the extraction.
 //
-// A var so tests can shrink it instead of building 50 MB fixtures, the way
+// A var so tests can shrink it instead of building 47 MB fixtures, the way
 // pdfsplit.maxPartBytes does.
 var maxTextRunes = models.MaxOCRTextRunes
 

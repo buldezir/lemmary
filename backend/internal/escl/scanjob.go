@@ -28,7 +28,7 @@ const (
 	stagingTTL = 30 * time.Minute
 
 	// maxScanBytes is the documents.file field's own MaxSize (see
-	// migrations/1730000001_initial.go). Enforcing it here means a scan that
+	// migrations/1730000034_documents_file_max.go). Enforcing it here means a scan that
 	// cannot be stored is refused while there is still something to do about it
 	// -- save what you have and start a second document -- rather than at the
 	// end, after the pages are gone.

@@ -16,14 +16,18 @@ import (
 
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
-	"lemmary/backend/internal/models"
 )
 
 // mistralOCRMaxFileBytes is Mistral's own documented ceiling for an OCR input,
-// restated so an oversized file is refused here instead of at their edge. The
-// documents.file cap is set to the same number, so this fires only for a file
-// that slipped past the field (a dashboard edit raising MaxSize, say).
-const mistralOCRMaxFileBytes = models.MaxFileBytes
+// restated so an oversized file is refused here instead of at their edge.
+//
+// Decimal megabytes, unlike the binary units elsewhere in this codebase,
+// because the number belongs to someone else: Mistral documents 50 MB, and
+// reading that as 52,428,800 would put a file just over their limit past a
+// check meant to keep it inside. models.MaxFileBytes sits under it, so this
+// fires only for a file that slipped past the field (a dashboard edit raising
+// MaxSize, say).
+const mistralOCRMaxFileBytes int64 = 50 * 1000 * 1000
 
 type MistralProvider struct {
 	apiKey  string

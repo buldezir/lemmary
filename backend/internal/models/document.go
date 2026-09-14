@@ -7,11 +7,13 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// MaxFileBytes is the documents.file MaxSize: Mistral OCR's documented 50 MB
-// ceiling, in decimal megabytes because the number is theirs (see ocr/mistral.go).
-// Every per-file cap that mirrors the field (scan, zip and archive import, PDF
-// split) reads this rather than restating it.
-const MaxFileBytes int64 = 50 * 1000 * 1000
+// MaxFileBytes is the documents.file MaxSize. It sits just under Mistral OCR's
+// documented 50 MB (decimal, see ocr/mistral.go) and is a whole number of
+// binary megabytes so every formatter in the product -- the limits package, the
+// upload page, the scan error's >>20 -- prints it exactly rather than as a
+// rounded 47.7. Every per-file cap that mirrors the field (scan, zip and
+// archive import, PDF split) reads this rather than restating it.
+const MaxFileBytes int64 = 47 << 20 // 49,283,072
 
 // MaxOCRTextRunes is the documents.file size cap expressed in characters, and
 // the length documents.ocr_text is declared at.
