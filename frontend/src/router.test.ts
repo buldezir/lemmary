@@ -33,6 +33,7 @@ describe('route tree', () => {
       '/import/ngx',
       '/import/archive',
       '/account',
+      '/tags',
       '/export',
       '/document/$documentId',
       '/document/$documentId/ask',

@@ -44,9 +44,16 @@ func TestListNamedEntityNamesEmptyUser(t *testing.T) {
 	}
 }
 
+// The tag list is the complete set of answers the model may give and apply
+// writes the result over the document, so a document with no owner -- whose
+// vocabulary cannot be read at all -- fails the step rather than being
+// extracted against an empty one and stripped of the tags it had.
 func TestLoadExtractionCatalogEmptyUser(t *testing.T) {
-	catalog := loadExtractionCatalog(nil, "  ", slog.Default())
-	if len(catalog.Correspondents) != 0 || len(catalog.DocumentTypes) != 0 {
+	catalog, err := loadExtractionCatalog(nil, "  ", slog.Default())
+	if err == nil {
+		t.Fatal("expected an error for a document with no owner")
+	}
+	if len(catalog.Correspondents) != 0 || len(catalog.DocumentTypes) != 0 || len(catalog.Tags) != 0 {
 		t.Fatalf("expected empty catalog, got %+v", catalog)
 	}
 }

@@ -13,7 +13,10 @@ import {
   type DocumentRecord,
   type JobOverrides,
 } from '../lib/api/documents'
+import { listTags, type TagRecord } from '../lib/api/tags'
 import { StepBindingOverride } from '../components/BindingOverride'
+import { Combobox } from '../components/Combobox'
+import { useAsync } from '../hooks/useAsync'
 import { DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
 import { documentsLanding } from '../lib/reviewPolicy'
 import {
@@ -46,7 +49,10 @@ export function DocumentDetailPage() {
   const navigate = useNavigate()
   const [document, setDocument] = useState<DocumentRecord | null>(null)
   const [job, setJob] = useState<ProcessingJobRecord | null>(null)
-  const [tagInput, setTagInput] = useState('')
+  const [tagIds, setTagIds] = useState<string[]>([])
+  // The whole vocabulary, loaded once: the picker needs every tag, not only the
+  // ones this document carries, and it is a short list by design.
+  const { data: vocabulary, error: vocabularyError } = useAsync(listTags, [])
   const [documentTypeInput, setDocumentTypeInput] = useState('')
   const [correspondentInput, setCorrespondentInput] = useState('')
   const [loading, setLoading] = useState(true)
@@ -78,7 +84,7 @@ export function DocumentDetailPage() {
 
   function applyLoadedDocument(doc: DocumentRecord) {
     setDocument(doc)
-    setTagInput((doc.expand?.tags ?? []).map((tag) => tag.name).join(', '))
+    setTagIds(doc.tags ?? [])
     setDocumentTypeInput(doc.expand?.document_type?.name ?? '')
     setCorrespondentInput(doc.expand?.correspondent?.name ?? '')
 
@@ -427,7 +433,7 @@ export function DocumentDetailPage() {
         documentDate: document.document_date,
         documentTypeName: documentTypeInput,
         correspondentName: correspondentInput,
-        tagNames: tagInput.split(','),
+        tagIds,
         processingStatus: document.processing_status,
       })
 
@@ -779,15 +785,17 @@ export function DocumentDetailPage() {
               )}
             </label>
 
-            <label className={`${labelClass} sm:col-span-2`}>
-              Tags (comma separated)
-              <input
-                className={fieldClass(editing)}
-                readOnly={!editing}
-                value={tagInput}
-                onChange={(event) => setTagInput(event.target.value)}
+            <div className={`${labelClass} sm:col-span-2`}>
+              <span>Tags</span>
+              <TagField
+                editing={editing}
+                vocabulary={vocabulary}
+                vocabularyError={vocabularyError}
+                known={document.expand?.tags ?? []}
+                selected={tagIds}
+                onChange={setTagIds}
               />
-            </label>
+            </div>
 
             <label className={`${labelClass} sm:col-span-2`}>
               Summary
@@ -859,6 +867,107 @@ export function DocumentDetailPage() {
         )}
       </div>
     </section>
+  )
+}
+
+/**
+ * The document's tags, as chips plus a picker over the rest of the vocabulary.
+ *
+ * A text box used to sit here and every name typed into it became a tag, which
+ * is how the archive filled up with near-duplicates nobody chose. Tags are now
+ * created only on /tags, so this offers what exists and nothing more -- which
+ * is also why an empty vocabulary sends the reader there rather than showing a
+ * picker with no options.
+ *
+ * The chips do not wait for the vocabulary. The document's own expand already
+ * carries the names it has, and the list cards show them; blanking this row
+ * while a separate request is in flight -- or has failed -- would be the one
+ * place in the app that pretends a tagged document has no tags. The vocabulary
+ * is only needed to offer the rest.
+ */
+function TagField({
+  editing,
+  vocabulary,
+  vocabularyError,
+  known,
+  selected,
+  onChange,
+}: {
+  editing: boolean
+  /** null until the vocabulary loads, and if it fails. */
+  vocabulary: TagRecord[] | null
+  vocabularyError: string
+  /** The document's own expanded tags, so chips render without the vocabulary. */
+  known: TagRecord[]
+  selected: string[]
+  onChange: (next: string[]) => void
+}) {
+  const byId = new Map([...known, ...(vocabulary ?? [])].map((tag) => [tag.id, tag]))
+  // An id with no name behind it is a tag deleted from /tags since the document
+  // was loaded. Shown as a placeholder rather than dropped: saving writes
+  // `selected`, not what is on screen, so a chip silently missing from the row
+  // would still be written back -- and this one can be removed on purpose.
+  const chosen = selected.map((id) => byId.get(id) ?? { id, name: 'Deleted tag' })
+  const available = (vocabulary ?? []).filter((tag) => !selected.includes(tag.id))
+
+  return (
+    <div className="flex flex-col gap-2">
+      {chosen.length === 0 ? (
+        <p className="text-sm font-normal text-ink-soft">No tags.</p>
+      ) : (
+        <ul className="flex flex-wrap gap-1.5">
+          {chosen.map((tag) => (
+            <li
+              key={tag.id}
+              className="flex items-center gap-1 rounded-xs border border-line-strong bg-wash px-2 py-1 text-xs font-normal text-ink"
+            >
+              {tag.name}
+              {editing && (
+                <button
+                  type="button"
+                  aria-label={`Remove ${tag.name}`}
+                  className="text-ink-faint transition-colors hover:text-madder"
+                  onClick={() => onChange(selected.filter((id) => id !== tag.id))}
+                >
+                  &times;
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {editing && vocabularyError && (
+        <p className="text-sm font-normal text-madder">
+          {vocabularyError}. Tags already on this document can still be removed.
+        </p>
+      )}
+
+      {editing &&
+        vocabulary !== null &&
+        (vocabulary.length === 0 ? (
+          <p className="text-sm font-normal text-ink-soft">
+            You have no tags yet.{' '}
+            {/* A new tab on purpose: this renders mid-edit, and navigating away
+                from a half-corrected document throws the corrections away. */}
+            <Link to="/tags" target="_blank" rel="noopener noreferrer" className="text-oxblood underline">
+              Create some
+            </Link>{' '}
+            and they will be offered here.
+          </p>
+        ) : (
+          available.length > 0 && (
+            <Combobox
+              value=""
+              options={available.map((tag) => ({ value: tag.id, label: tag.name }))}
+              placeholder="Add a tag..."
+              ariaLabel="Add a tag"
+              className="max-w-xs"
+              onChange={(id) => onChange([...selected, id])}
+            />
+          )
+        ))}
+    </div>
   )
 }
 

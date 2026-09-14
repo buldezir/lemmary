@@ -258,6 +258,51 @@ func TestBuildExtractionSystemPromptForbidsPartialDates(t *testing.T) {
 	}
 }
 
+func TestBuildExtractionSystemPromptClosesTheTagVocabulary(t *testing.T) {
+	t.Parallel()
+
+	// No tags yet: the model must be told to return none, not to make some up.
+	empty := buildExtractionSystemPrompt("", "", ExtractionCatalog{})
+	if !strings.Contains(empty, "Existing tags: none are defined yet. Return an empty tags array.") {
+		t.Fatalf("expected the empty-vocabulary instruction, got:\n%s", empty)
+	}
+
+	prompt := buildExtractionSystemPrompt("", "", ExtractionCatalog{
+		Tags: []string{"Invoices", "Büro", "  ", "invoices"},
+	})
+	for _, want := range []string{
+		`["Invoices","Büro"]`,
+		"Choose tags only from this array, copying each string exactly.",
+		"Never invent a tag name; return an empty array when none apply",
+		"untrusted user data",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("expected the tag catalog to contain %q, got:\n%s", want, prompt)
+		}
+	}
+
+	// The reuse wording the other two catalogs end on invites invention, which
+	// is exactly what a closed vocabulary must not do.
+	tagBlock := prompt[strings.Index(prompt, "the archive's tags"):]
+	if strings.Contains(tagBlock, "only invent a new") {
+		t.Fatalf("the tag block reuses the invent-when-no-match wording:\n%s", tagBlock)
+	}
+}
+
+// A result language translates the prose fields; tags come from a vocabulary the
+// user owns, so there is nothing to translate and no tags_translated field.
+func TestBuildExtractionSystemPromptDoesNotTranslateTags(t *testing.T) {
+	t.Parallel()
+	prompt := buildExtractionSystemPrompt("English", "", ExtractionCatalog{Tags: []string{"Invoices"}})
+
+	if !strings.Contains(prompt, "title_translated") {
+		t.Fatalf("expected the translated block, got:\n%s", prompt)
+	}
+	if strings.Contains(prompt, "tags_translated") {
+		t.Fatalf("tags_translated is gone from the contract, got:\n%s", prompt)
+	}
+}
+
 func TestBuildExtractionSystemPromptAppendsAdminRules(t *testing.T) {
 	t.Parallel()
 	const rules = "Treat Rechnung as the document type Invoice."

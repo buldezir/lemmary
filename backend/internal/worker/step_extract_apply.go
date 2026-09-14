@@ -71,7 +71,10 @@ func (s *ExtractMetadataStep) Run(ctx context.Context, state *StepState) error {
 	state.OCRText = ocrText
 
 	userID := strings.TrimSpace(state.Document.GetString("user"))
-	catalog := loadExtractionCatalog(state.App, userID, state.Logger)
+	catalog, err := loadExtractionCatalog(state.App, userID, state.Logger)
+	if err != nil {
+		return err
+	}
 
 	state.Logger.Info("starting AI extraction",
 		"provider", s.Extractor.Name(),
@@ -79,6 +82,7 @@ func (s *ExtractMetadataStep) Run(ctx context.Context, state *StepState) error {
 		"ocr_chars", len(ocrText),
 		"catalog_correspondent_names", len(catalog.Correspondents),
 		"catalog_document_type_names", len(catalog.DocumentTypes),
+		"catalog_tag_names", len(catalog.Tags),
 	)
 
 	aiStart := time.Now()
@@ -110,12 +114,23 @@ func (s *ExtractMetadataStep) Run(ctx context.Context, state *StepState) error {
 	return nil
 }
 
-func loadExtractionCatalog(app core.App, userID string, logger *slog.Logger) ai.ExtractionCatalog {
+// loadExtractionCatalog reads the names the extraction prompt offers the model.
+//
+// The correspondent and document-type lists are advisory -- they exist so the
+// model reuses a name rather than coining a variant of it, and a model that
+// never sees them still answers something usable. A failure there is logged and
+// the document is extracted without them.
+//
+// The tag list is not advisory. It is the complete set of answers the model is
+// allowed to give, and apply writes whatever comes back over the document's
+// tags. An empty list therefore reads as "this archive has no tags" and clears
+// the tags a reprocess was meant to leave alone -- so a tag list that cannot be
+// read fails the step instead, and the document keeps what it had.
+func loadExtractionCatalog(app core.App, userID string, logger *slog.Logger) (ai.ExtractionCatalog, error) {
 	if strings.TrimSpace(userID) == "" {
-		if logger != nil {
-			logger.Warn("extraction catalog skipped: document has no owner")
-		}
-		return ai.ExtractionCatalog{}
+		// Not a warning to carry on from, for the same reason: apply cannot
+		// resolve tags without an owner either, so this document is broken.
+		return ai.ExtractionCatalog{}, fmt.Errorf("extraction catalog: document has no owner")
 	}
 
 	correspondents, err := listCorrespondentNames(app, userID)
@@ -132,10 +147,24 @@ func loadExtractionCatalog(app core.App, userID string, logger *slog.Logger) ai.
 		}
 		documentTypes = nil
 	}
+	tags, err := listTagNames(app, userID)
+	if err != nil {
+		return ai.ExtractionCatalog{}, fmt.Errorf("extraction catalog tags: %w", err)
+	}
+	// The prompt calls the array the complete set of legal tags, so a vocabulary
+	// past the cap makes that a lie: the names beyond it are alphabetically last
+	// and simply never offered. Worth a line in the log, because the symptom --
+	// some tags are never assigned -- looks like nothing at all otherwise.
+	if logger != nil && len(tags) >= ai.MaxExtractionCatalogNames {
+		logger.Warn("tag vocabulary is larger than the extraction catalog holds; tags past the cap are never offered to the model",
+			"cap", ai.MaxExtractionCatalogNames,
+		)
+	}
 	return ai.ExtractionCatalog{
 		Correspondents: correspondents,
 		DocumentTypes:  documentTypes,
-	}
+		Tags:           tags,
+	}, nil
 }
 
 type ApplyMetadataStep struct{}
@@ -189,12 +218,15 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 		state.Document.Set("document_date", metadata.DocumentDate)
 	}
 
-	tagIDs, err := ensureTags(state.App, state.Document.GetString("user"), mergeTagNames(metadata.Tags, metadata.TagsTranslated))
+	tagIDs, droppedTags, err := matchTags(state.App, state.Document.GetString("user"), metadata.Tags)
 	if err != nil {
 		return fmt.Errorf("tags: %w", err)
 	}
 	state.Document.Set("tags", tagIDs)
-	state.Logger.Info("tags applied", "count", len(tagIDs))
+	// dropped is the model ignoring its catalog. Logged rather than swallowed:
+	// a document that keeps proposing the same absent name is the archive
+	// telling its owner which tag to go and create.
+	state.Logger.Info("tags applied", "count", len(tagIDs), "dropped", droppedTags)
 
 	lowConfidence := metadata.Confidence < minExtractionConfidence
 

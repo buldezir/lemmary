@@ -50,13 +50,14 @@ function activeJobsLabel(counts: ActiveJobCounts) {
   return `${pending} pending, ${running} running`
 }
 
+// result.tags is not read: tags are a hand-curated vocabulary now, so the prune
+// leaves them alone and the count is always zero.
 function pruneSummary(result: TaxonomyPruneResult) {
   const parts = [
-    countLabel(result.tags, 'tag', 'tags'),
     countLabel(result.correspondents, 'correspondent', 'correspondents'),
     countLabel(result.document_types, 'document type', 'document types'),
   ]
-  return `Removed ${parts.join(', ')}.`
+  return `Removed ${parts.join(' and ')}.`
 }
 
 // Admin access is enforced by the route's beforeLoad guard, so this page can
@@ -392,10 +393,11 @@ export function ManagementPage() {
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>Stale data</h2>
           <p className="text-xs text-ink-soft">
-            Deletes tags, correspondents and document types that no document points at any more —
-            left behind by deleted documents, renames, or an aborted import. Documents are never
-            touched. Blocked while documents are processing, so entities a job is about to attach
-            are not swept up.
+            Deletes correspondents and document types that no document points at any more — left
+            behind by deleted documents, renames, or an aborted import. Documents are never touched,
+            and neither are tags: you create those by hand, so an unused one is simply one you have
+            not applied yet. Blocked while documents are processing, so entities a job is about to
+            attach are not swept up.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <Button

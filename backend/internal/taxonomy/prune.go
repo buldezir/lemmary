@@ -6,12 +6,10 @@ import (
 	"fmt"
 
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 const (
 	collectionDocuments      = "documents"
-	collectionTags           = "tags"
 	collectionCorrespondents = "correspondents"
 	collectionDocumentTypes  = "document_types"
 )
@@ -20,6 +18,11 @@ const (
 const prunePageSize = 500
 
 // PruneResult counts the records a prune removed, per collection.
+//
+// Tags is always 0 and stays in the shape because the API response and the
+// Management page have read it since before tags became a hand-curated
+// vocabulary; dropping the field would break both for a number that is now
+// simply always zero.
 type PruneResult struct {
 	Tags           int `json:"tags"`
 	Correspondents int `json:"correspondents"`
@@ -31,7 +34,7 @@ func (r PruneResult) Total() int {
 	return r.Tags + r.Correspondents + r.DocumentTypes
 }
 
-// PruneOrphans deletes every tag, correspondent and document type that no
+// PruneOrphans deletes every correspondent and document type that no
 // document references. Collecting the references and deleting share one
 // transaction, so a document saved concurrently either shows up here as a
 // reference or fails its own relation check — it cannot end up pointing at an
@@ -49,7 +52,6 @@ func PruneOrphans(app core.App) (PruneResult, error) {
 			collection string
 			removed    *int
 		}{
-			{collectionTags, &result.Tags},
 			{collectionCorrespondents, &result.Correspondents},
 			{collectionDocumentTypes, &result.DocumentTypes},
 		} {
@@ -67,13 +69,12 @@ func PruneOrphans(app core.App) (PruneResult, error) {
 	return result, nil
 }
 
-// documentRefs is the projection a prune reads from documents: the three
-// relation columns and nothing else. Documents also carry OCR text, which must
-// not be loaded just to look at relations.
+// documentRefs is the projection a prune reads from documents: the two relation
+// columns it prunes and nothing else. Documents also carry OCR text, which must
+// not be loaded just to look at relations, and tags, which are never pruned.
 type documentRefs struct {
-	Correspondent string                  `db:"correspondent"`
-	DocumentType  string                  `db:"document_type"`
-	Tags          types.JSONArray[string] `db:"tags"`
+	Correspondent string `db:"correspondent"`
+	DocumentType  string `db:"document_type"`
 }
 
 // referencedIDs collects the taxonomy ids currently in use, keyed by collection.
@@ -84,7 +85,6 @@ func referencedIDs(app core.App) (map[string]map[string]struct{}, error) {
 	}
 
 	refs := map[string]map[string]struct{}{
-		collectionTags:           {},
 		collectionCorrespondents: {},
 		collectionDocumentTypes:  {},
 	}
@@ -93,7 +93,7 @@ func referencedIDs(app core.App) (map[string]map[string]struct{}, error) {
 	for {
 		var page []documentRefs
 		err := app.RecordQuery(collection).
-			Select("correspondent", "document_type", "tags").
+			Select("correspondent", "document_type").
 			OrderBy("id ASC").
 			Limit(int64(prunePageSize)).
 			Offset(int64(offset)).
@@ -105,9 +105,6 @@ func referencedIDs(app core.App) (map[string]map[string]struct{}, error) {
 		for _, row := range page {
 			addRef(refs[collectionCorrespondents], row.Correspondent)
 			addRef(refs[collectionDocumentTypes], row.DocumentType)
-			for _, tagID := range row.Tags {
-				addRef(refs[collectionTags], tagID)
-			}
 		}
 
 		if len(page) < prunePageSize {
