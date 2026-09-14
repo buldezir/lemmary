@@ -24,9 +24,9 @@ import (
 // Decimal megabytes, unlike the binary units elsewhere in this codebase, because
 // the number belongs to someone else: Mistral documents 50 MB, and reading that
 // as 52,428,800 would put a file just over their limit past a check meant to
-// keep it inside. It cannot actually fire today, since documents.file caps an
-// upload at 20 MiB first.
-const mistralOCRMaxFileBytes = 50 * 1000 * 1000
+// keep it inside. models.MaxFileBytes sits under it, so this fires only for a
+// file that slipped past the field (a dashboard edit raising MaxSize, say).
+const mistralOCRMaxFileBytes int64 = 50 * 1000 * 1000
 
 type MistralProvider struct {
 	apiKey  string
@@ -60,7 +60,7 @@ func (p *MistralProvider) ExtractText(ctx context.Context, filePath string, mime
 	if err != nil {
 		return "", fmt.Errorf("read file for OCR: %w", err)
 	}
-	if len(data) > mistralOCRMaxFileBytes {
+	if int64(len(data)) > mistralOCRMaxFileBytes {
 		return "", fmt.Errorf("mistral OCR supports files up to %d bytes (got %d)", mistralOCRMaxFileBytes, len(data))
 	}
 

@@ -66,7 +66,7 @@ type Limits struct {
 	DocumentPages Limit
 	StorageBytes  Limit
 	// FileBytes can only lower the effective cap: the documents.file field carries
-	// its own 20 MB MaxSize, which PocketBase enforces in the field validator.
+	// its own 47 MB MaxSize, which PocketBase enforces in the field validator.
 	FileBytes Limit
 	// FilePages can only lower the effective cap: MaxOCRPages bounds every install.
 	FilePages       Limit

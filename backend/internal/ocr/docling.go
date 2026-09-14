@@ -22,9 +22,9 @@ import (
 // doclingMaxFileBytes bounds what is sent to the sidecar. Binary megabytes,
 // unlike the Mistral cap: this limit is ours rather than somebody else's
 // documented number, and it exists only so an oversized file fails here instead
-// of after minutes of upload. 32 MiB comfortably clears the 20 MiB
+// of after minutes of upload. 64 MiB comfortably clears the 47 MB
 // documents.file cap.
-const doclingMaxFileBytes = 32 << 20
+const doclingMaxFileBytes = 64 << 20
 
 // DoclingProvider reads documents through a docling-serve container the
 // operator runs themselves. The whole exchange is one multipart POST returning

@@ -28,10 +28,10 @@ const (
 	stagingTTL = 30 * time.Minute
 
 	// maxScanBytes is the documents.file field's own MaxSize (see
-	// migrations/1730000001_initial.go). Enforced here so a scan that cannot be
-	// stored is refused while there is still something to do about it, rather
-	// than at the end, after the pages are gone.
-	maxScanBytes int64 = 20 << 20
+	// migrations/1730000034_documents_file_max.go). Enforced here so a scan that
+	// cannot be stored is refused while there is still something to do about it,
+	// rather than at the end, after the pages are gone.
+	maxScanBytes = models.MaxFileBytes
 )
 
 var (

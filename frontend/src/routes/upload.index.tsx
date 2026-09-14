@@ -2,8 +2,15 @@ import { type DragEvent, type SubmitEvent, useCallback, useRef, useState } from 
 import { Link, useNavigate } from '@tanstack/react-router'
 import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
-import { parseDuplicateOfId } from '../lib/api/documents'
-import { limitFromError, type LimitName } from '../lib/api/limits'
+import {
+  MAX_FILE_BYTES,
+  PROCESSING_WARN_BYTES,
+  fileTooLargeMessage,
+  largeFileWarning,
+  parseDuplicateOfId,
+  uploadErrorMessage,
+} from '../lib/api/documents'
+import { formatBytes, limitFromError, type LimitName } from '../lib/api/limits'
 import { documentsLanding } from '../lib/reviewPolicy'
 import {
   appendNew,
@@ -46,19 +53,6 @@ function isAcceptedFile(file: File) {
   return ACCEPTED_MIME_TYPES.has(file.type)
 }
 
-function uploadErrorMessage(err: unknown): string {
-  if (err && typeof err === 'object') {
-    const withResponse = err as {
-      message?: string
-      response?: { message?: string }
-    }
-    if (withResponse.response?.message) return withResponse.response.message
-    if (typeof withResponse.message === 'string' && withResponse.message) return withResponse.message
-  }
-  if (err instanceof Error) return err.message
-  return 'Upload failed'
-}
-
 function duplicateIdFromError(err: unknown, message: string): string | null {
   if (err && typeof err === 'object') {
     const data = (err as { response?: { data?: { duplicate_of?: string } } }).response?.data
@@ -87,12 +81,6 @@ let stagedFiles: File[] = []
 pb.authStore.onChange(() => {
   if (!pb.authStore.isValid) stagedFiles = []
 })
-
-function formatBytes(size: number) {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`
-}
 
 export function UploadFilesPage() {
   const navigate = useNavigate()
@@ -229,6 +217,11 @@ export function UploadFilesPage() {
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
         setUploadIndex(i + 1)
+        if (file.size > MAX_FILE_BYTES) {
+          failures.push({ name: file.name, message: fileTooLargeMessage(file.size), duplicateOfId: null })
+          failedFiles.push(file)
+          continue
+        }
         try {
           const formData = new FormData()
           formData.append('file', file)
@@ -237,7 +230,7 @@ export function UploadFilesPage() {
           const record = await pb.collection('documents').create(formData)
           uploadedIds.push(record.id)
         } catch (err) {
-          const message = uploadErrorMessage(err)
+          const message = uploadErrorMessage(err, file.size)
           failures.push({
             name: file.name,
             message,
@@ -374,6 +367,9 @@ export function UploadFilesPage() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-ink">{file.name}</p>
                     <p className="text-xs text-ink-faint">{formatBytes(file.size)}</p>
+                    {file.size > PROCESSING_WARN_BYTES && file.size <= MAX_FILE_BYTES && (
+                      <p className="text-xs text-oxblood">{largeFileWarning}</p>
+                    )}
                     {fileError && (
                       <div className="mt-1 flex flex-col gap-1 text-sm text-madder">
                         <p>{fileError.message}</p>

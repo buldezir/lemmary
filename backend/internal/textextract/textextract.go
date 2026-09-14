@@ -23,7 +23,7 @@ const (
 	MIMEDOCX      = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 	MIMEXLSX      = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-	// Cap expanded OOXML size well above the 20 MiB upload limit without
+	// Cap expanded OOXML size well above the 47 MB upload limit without
 	// allowing multi-gigabyte zip bombs into memory.
 	maxUncompressedBytes = 200 << 20
 )
@@ -31,7 +31,7 @@ const (
 // maxTextRunes bounds what one document may extract to.
 //
 // A plain text or CSV file needs no bound: a rune is at least one byte, so it
-// cannot yield more characters than the 20 MiB documents.file cap let through.
+// cannot yield more characters than the documents.file cap let through.
 // An OOXML file can, and not only by being a zip bomb: XLSX resolves shared
 // strings on the way out, so a sheet of a million cells pointing at one string
 // produces far more text than the bytes it was stored in. Counting as the text
@@ -41,7 +41,7 @@ const (
 // app.Save when the OCR step tried to store the result, which failed the
 // document rather than the extraction.
 //
-// A var so tests can shrink it instead of building 20 MB fixtures.
+// A var so tests can shrink it instead of building 47 MB fixtures.
 var maxTextRunes = models.MaxOCRTextRunes
 
 // ErrTooMuchText is returned when a file's text runs past maxTextRunes.

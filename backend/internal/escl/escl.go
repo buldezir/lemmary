@@ -8,7 +8,7 @@
 // DELETE {job} to let the device go. See discover.go for finding the device.
 //
 // Everything is fixed at A4, 300 dpi, colour, PDF: 1200 dpi is tens of megabytes
-// a page and no better to read, and documents.file stops at 20 MB either way.
+// a page and no better to read, and documents.file stops at 47 MB either way.
 package escl
 
 import (

@@ -27,9 +27,12 @@ const (
 // count is the one measurement taken before any provider is called that says
 // whether the result could be stored.
 //
-// 1000 is Mistral's documented limit and is comfortably inside the character
-// ceiling: even 20,000 characters a page over 1000 pages stays under 20,971,520.
-// LIMIT_FILE_PAGES can lower this and cannot raise it.
+// A property of what this can extract, not an allowance a plan sells: OCR
+// providers return the whole text in one string that must fit
+// models.MaxOCRTextRunes, and the page count is the one measurement taken before
+// any provider is called. 1000 is Mistral's documented limit and is comfortably
+// inside the character ceiling: even 20,000 characters a page over 1000 pages
+// stays under 20,971,520. LIMIT_FILE_PAGES can lower this and cannot raise it.
 const MaxOCRPages int64 = 1000
 
 // ErrExceeded carries the numbers, so a caller can render "3 of 3 used" without

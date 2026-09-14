@@ -30,7 +30,7 @@ export type StagedScan = {
 /**
  * The budget has to cover a feeder running a stack of paper through, or the
  * page reports a failure while the scanner is still going: the backend allows
- * three minutes per sheet, and a load is as many sheets as fit in 20 MB.
+ * three minutes per sheet, and a load is as many sheets as fit in 47 MB.
  * Polling ends when the job does, so this only bounds a scanner gone quiet.
  */
 const scanTimeoutMs = 45 * 60 * 1000

@@ -1,6 +1,7 @@
 import { pb, pbUrl } from '../pb'
 import { ensureAuth } from '../auth'
 import { apiFetch, errorDetail } from '../apiClient'
+import { formatBytes } from './limits'
 import { bindingBody, type ProviderBinding } from './providers'
 import { notifyDocumentsChanged } from '../documentEvents'
 import { UNFINISHED_STATUS, type DocumentStatus } from '../documentStatus'
@@ -98,6 +99,49 @@ export async function openDocumentFile(record: DocumentFileRef, filename?: strin
     tab?.close()
     throw err
   }
+}
+
+/** The documents.file MaxSize, see models.MaxFileBytes: 47 MiB, just under Mistral OCR's 50 MB. */
+export const MAX_FILE_BYTES = 47 * 1024 * 1024
+
+/** Above this a file still uploads, but OCR providers and the worker get slow or fail. */
+export const PROCESSING_WARN_BYTES = 20 * 1024 * 1024
+
+export const largeFileWarning =
+  `Over ${formatBytes(PROCESSING_WARN_BYTES)}. Large files may fail OCR or take much longer to process.`
+
+export function fileTooLargeMessage(sizeBytes: number): string {
+  return `This file is ${formatBytes(sizeBytes)}, over the ${formatBytes(MAX_FILE_BYTES)} limit for a single document.`
+}
+
+/**
+ * What to show beside a file whose upload was refused.
+ *
+ * PocketBase answers a field rejection with the generic "Failed to create
+ * record." on top and the reason underneath, per field, so the field message
+ * wins when there is one. The size code is reworded because its text quotes
+ * the limit in raw bytes.
+ */
+export function uploadErrorMessage(err: unknown, sizeBytes = 0): string {
+  if (err && typeof err === 'object') {
+    const { message, response } = err as {
+      message?: string
+      response?: { message?: string; data?: Record<string, { code?: string; message?: string }> }
+    }
+    // Only a field validation failure hides its reason under the generic text.
+    // A hook's own message (a duplicate, a limit) is already the reason, and
+    // PocketBase rewrites whatever data it carries to "Invalid value.".
+    if (response?.message === 'Failed to create record.') {
+      for (const field of Object.values(response.data ?? {})) {
+        if (field?.code === 'validation_file_size_limit') return fileTooLargeMessage(sizeBytes)
+        if (field?.message) return field.message
+      }
+    }
+    if (response?.message) return response.message
+    if (typeof message === 'string' && message) return message
+  }
+  if (err instanceof Error) return err.message
+  return 'Upload failed'
 }
 
 export function parseDuplicateOfId(message: string): string | null {

@@ -118,8 +118,13 @@ func TestChatCompletionBecomesACodexResponsesCall(t *testing.T) {
 	if !strings.Contains(sent.Instructions, "Return JSON.") {
 		t.Errorf("instructions dropped the caller's system message: %q", sent.Instructions)
 	}
-	if len(sent.Input) != 1 || sent.Input[0].Role != "user" || sent.Input[0].Content[0].Type != "input_text" {
+	if len(sent.Input) != 2 || sent.Input[0].Role != "user" || sent.Input[0].Content[0].Type != "input_text" {
 		t.Fatalf("input = %+v", sent.Input)
+	}
+	// The system message's "JSON" went into instructions, which the backend
+	// does not scan, so JSON mode needs an input item that says it.
+	if sent.Input[1].Role != "user" || !strings.Contains(strings.ToLower(sent.Input[1].Content[0].Text), "json") {
+		t.Errorf("json nudge = %+v", sent.Input[1])
 	}
 	if !sent.Stream {
 		t.Error("stream must be forced on: the endpoint answers no other way")
@@ -810,5 +815,30 @@ func TestAssistantTextIsOutputText(t *testing.T) {
 	}
 	if sent.Input[1].Role != "assistant" || sent.Input[1].Content[0].Type != "output_text" {
 		t.Errorf("assistant part = %+v", sent.Input[1])
+	}
+}
+
+func TestAUserMessageThatSaysJSONGetsNoNudge(t *testing.T) {
+	t.Parallel()
+	raw, err := json.Marshal(map[string]any{
+		"model": "gpt-5.6-luna",
+		"messages": []map[string]any{
+			{"role": "system", "content": "You extract fields."},
+			{"role": "user", "content": "Answer as JSON: who signed this?"},
+		},
+		"response_format": map[string]any{"type": "json_object"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		"https://chatgpt.com/backend-api/codex/chat/completions", io.NopCloser(bytes.NewReader(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent := sentInputFor(t, Middleware(signedInSource(t, "t25"), nil), req)
+
+	if len(sent.Input) != 1 {
+		t.Fatalf("input = %+v", sent.Input)
 	}
 }

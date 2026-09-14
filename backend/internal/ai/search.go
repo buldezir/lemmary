@@ -154,9 +154,23 @@ type openAISearchAgent struct {
 	resultLanguage string
 }
 
+// The shared AI timeout is sized for one extraction call. A search or research
+// round replays the whole thread to a reasoning model and comes back as one
+// blocking reply, so a legitimate late round outlives it. The run budget in
+// appapi is the backstop against a stuck provider, not this timeout.
+const minSearchTimeout = 10 * time.Minute
+
+// searchTimeout raises the shared AI timeout to what a search round needs.
+func searchTimeout(shared time.Duration) time.Duration {
+	if shared < minSearchTimeout {
+		return minSearchTimeout
+	}
+	return shared
+}
+
 func NewSearchAgent(sdk, apiKey, model, baseURL string, timeout time.Duration, languages, resultLanguage string, logger *slog.Logger, extra ...option.RequestOption) SearchAgent {
 	return &openAISearchAgent{
-		client:         NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", timeout, logger, extra...),
+		client:         NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", searchTimeout(timeout), logger, extra...),
 		languages:      strings.TrimSpace(languages),
 		resultLanguage: strings.TrimSpace(resultLanguage),
 	}
