@@ -1,9 +1,11 @@
 package archiveimport
 
+import "lemmary/backend/internal/models"
+
 // DefaultMaxEntryBytes is the per-entry cap with no instance limit configured.
 // It mirrors the documents.file field limit, which is what actually stores the
 // restored file.
-const DefaultMaxEntryBytes int64 = 20 << 20
+const DefaultMaxEntryBytes = models.MaxFileBytes
 
 // SetMaxEntryBytes sets the per-entry cap to the effective per-document limit.
 //

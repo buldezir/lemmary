@@ -87,7 +87,7 @@ type Limits struct {
 	// StorageBytes caps the sum of every stored document's size.
 	StorageBytes Limit
 	// FileBytes caps one document's file. It can only lower the effective cap:
-	// the documents.file field carries its own 20 MB MaxSize, which PocketBase
+	// the documents.file field carries its own 47 MB MaxSize, which PocketBase
 	// enforces in the field validator, so a larger value here has no effect.
 	FileBytes Limit
 	// FilePages caps the page count of one document. Like FileBytes it can only

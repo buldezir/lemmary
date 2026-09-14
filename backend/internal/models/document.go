@@ -7,13 +7,21 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
+// MaxFileBytes is the documents.file MaxSize. It sits just under Mistral OCR's
+// documented 50 MB (decimal, see ocr/mistral.go) and is a whole number of
+// binary megabytes so every formatter in the product -- the limits package, the
+// upload page, the scan error's >>20 -- prints it exactly rather than as a
+// rounded 47.7. Every per-file cap that mirrors the field (scan, zip and
+// archive import, PDF split) reads this rather than restating it.
+const MaxFileBytes int64 = 47 << 20 // 49,283,072
+
 // MaxOCRTextRunes is the documents.file size cap expressed in characters, and
 // the length documents.ocr_text is declared at.
 //
 // PocketBase counts a text field's Max in runes, so the two units have to be
 // reconciled deliberately rather than by picking a round number. A rune is at
 // least one byte, which means a text/plain or text/csv upload cannot yield more
-// characters than its file has bytes -- the 20 MiB documents.file MaxSize is
+// characters than its file has bytes -- the documents.file MaxSize is
 // therefore already a character ceiling for everything extracted natively, and
 // restating it here is what makes the column hold whatever this instance was
 // willing to accept.
@@ -25,7 +33,7 @@ import (
 // bounded from the upload at all -- it resolves shared strings, so a sheet of a
 // million cells pointing at one string expands far past the bytes it arrived
 // in.
-const MaxOCRTextRunes = 20 << 20 // 20,971,520
+const MaxOCRTextRunes = int(MaxFileBytes)
 
 // PeopleOrOrganizations reads the documents.people_or_organizations JSON field.
 //

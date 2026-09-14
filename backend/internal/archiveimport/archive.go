@@ -31,7 +31,7 @@ const (
 
 // maxEntryBytes matches the documents.file field limit, so an entry that cannot
 // be stored is reported at preview time instead of failing mid-restore.
-// A var so tests can shrink it instead of building 20 MB fixtures.
+// A var so tests can shrink it instead of building 47 MB fixtures.
 var maxEntryBytes = DefaultMaxEntryBytes
 
 // maxTotalScanBytes budgets the total decompression one scan may do, across

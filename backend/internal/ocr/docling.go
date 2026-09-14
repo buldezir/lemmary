@@ -24,8 +24,8 @@ import (
 // Binary megabytes, unlike the Mistral cap: this limit is ours rather than
 // somebody else's documented number, and it exists only so an oversized file
 // fails here instead of after minutes of upload into a container that will
-// refuse it. 32 MiB comfortably clears the 20 MiB documents.file cap.
-const doclingMaxFileBytes = 32 << 20
+// refuse it. 64 MiB comfortably clears the 47 MB documents.file cap.
+const doclingMaxFileBytes = 64 << 20
 
 // DoclingProvider reads documents through a docling-serve container the
 // operator runs themselves.

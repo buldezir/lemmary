@@ -36,7 +36,7 @@ const (
 // so even 20,000 a page over 1000 pages stays under 20,971,520.
 //
 // LIMIT_FILE_PAGES can lower this and cannot raise it, the same way
-// LIMIT_FILE_BYTES relates to the 20 MB documents.file MaxSize.
+// LIMIT_FILE_BYTES relates to the 47 MB documents.file MaxSize.
 const MaxOCRPages int64 = 1000
 
 // ErrExceeded is a limit refusing something. It carries the numbers so a caller
