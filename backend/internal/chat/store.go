@@ -42,7 +42,15 @@ type NewSession struct {
 type Turn struct {
 	UserContent      string
 	AssistantContent string
-	Documents        []ai.DocumentHit
+	// RunID correlates the stored pair with the client request that produced
+	// it. Empty preserves transcripts written by older clients.
+	RunID     string
+	Documents []ai.DocumentHit
+	// Steps is the research trail shown while the run was live. Empty for
+	// Search and for Ask AI. Not replayed to the model.
+	Steps []StoredStep
+	// Incomplete marks an assistant answer that was cut off mid-generation.
+	Incomplete bool
 	// Mode records which search mode produced the answer; empty leaves the
 	// session's current value alone.
 	Mode string
@@ -324,10 +332,10 @@ func AppendTurn(app core.App, userID, sessionID string, turn Turn) (*core.Record
 			return err
 		}
 
-		if err := saveMessage(txApp, session.Id, next, RoleUser, turn.UserContent, nil); err != nil {
+		if err := saveMessage(txApp, session.Id, next, RoleUser, turn.UserContent, turn.RunID, nil, nil, false); err != nil {
 			return err
 		}
-		if err := saveMessage(txApp, session.Id, next+1, RoleAssistant, turn.AssistantContent, turn.Documents); err != nil {
+		if err := saveMessage(txApp, session.Id, next+1, RoleAssistant, turn.AssistantContent, turn.RunID, turn.Documents, turn.Steps, turn.Incomplete); err != nil {
 			return err
 		}
 
@@ -365,7 +373,7 @@ func nextSeq(app core.App, sessionID string) (int, error) {
 	return highest.Value + 1, nil
 }
 
-func saveMessage(app core.App, sessionID string, seq int, role, content string, hits []ai.DocumentHit) error {
+func saveMessage(app core.App, sessionID string, seq int, role, content, runID string, hits []ai.DocumentHit, steps []StoredStep, incomplete bool) error {
 	collection, err := app.FindCollectionByNameOrId(MessagesCollection)
 	if err != nil {
 		return err
@@ -374,11 +382,20 @@ func saveMessage(app core.App, sessionID string, seq int, role, content string, 
 	record.Set("session", sessionID)
 	record.Set("seq", seq)
 	record.Set("role", role)
+	record.Set("run_id", runID)
 	// Truncated rather than rejected: the answer is already paid for, and a
 	// validation error here would discard it. See MaxMessageRunes.
 	record.Set("content", FitColumn(content, MaxMessageRunes))
 	if encoded := EncodeHits(hits); encoded != nil {
 		record.Set("documents", encoded)
+	}
+	if role == RoleAssistant {
+		if encoded := EncodeSteps(steps); encoded != nil {
+			record.Set("steps", encoded)
+		}
+		if incomplete {
+			record.Set("incomplete", true)
+		}
 	}
 	return app.Save(record)
 }

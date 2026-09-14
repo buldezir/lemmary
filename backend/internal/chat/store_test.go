@@ -132,3 +132,96 @@ func TestBindingOfNilRecord(t *testing.T) {
 		t.Fatalf("BindingOf(nil) = %+v, want empty", got)
 	}
 }
+
+// Recovery identifies a request by its client-generated run id rather than by
+// question text. Both records in the pair carry it so the stored transcript is
+// self-contained and the assistant projection can return it to the browser.
+func TestAppendTurnStoresAndReturnsRunID(t *testing.T) {
+	app := bootAppForStore(t)
+	userID := makeUser(t, app, "run-id@example.test")
+	session, err := chat.CreateSession(app, chat.NewSession{
+		UserID:       userID,
+		Kind:         chat.KindSearch,
+		Mode:         chat.ModeSearch,
+		FirstMessage: "same question",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	if _, err := chat.AppendTurn(app, userID, session.Id, chat.Turn{
+		UserContent:      "same question",
+		AssistantContent: "this run's answer",
+		RunID:            "run-current",
+	}); err != nil {
+		t.Fatalf("AppendTurn: %v", err)
+	}
+	records, err := chat.ListMessages(app, session.Id, 0)
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("got %d messages, want 2", len(records))
+	}
+	for _, record := range records {
+		if got := chat.ToMessageInfo(record).RunID; got != "run-current" {
+			t.Fatalf("message run id = %q, want run-current", got)
+		}
+	}
+}
+
+// Research progress is stored on the assistant row so a reopened chat can
+// still show how the answer was produced. The user half of the pair stays
+// empty, and History still sees only role+content.
+func TestAppendTurnStoresStepsAndIncompleteOnTheAssistant(t *testing.T) {
+	app := bootAppForStore(t)
+	userID := makeUser(t, app, "steps@example.test")
+	session, err := chat.CreateSession(app, chat.NewSession{
+		UserID:       userID,
+		Kind:         chat.KindSearch,
+		Mode:         chat.ModeResearch,
+		FirstMessage: "how much?",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	steps := []chat.StoredStep{
+		{Kind: "search", Status: "start", Query: "plumbing"},
+		{Kind: "search", Status: "done", Query: "plumbing", Count: 2},
+	}
+	if _, err := chat.AppendTurn(app, userID, session.Id, chat.Turn{
+		UserContent:      "how much?",
+		AssistantContent: "€412.",
+		Steps:            steps,
+		Incomplete:       true,
+	}); err != nil {
+		t.Fatalf("AppendTurn: %v", err)
+	}
+	records, err := chat.ListMessages(app, session.Id, 0)
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("got %d messages, want 2", len(records))
+	}
+	user := chat.ToMessageInfo(records[0])
+	if len(user.Steps) != 0 || user.Incomplete {
+		t.Fatalf("user message carried research extras: %+v", user)
+	}
+	assistant := chat.ToMessageInfo(records[1])
+	if !assistant.Incomplete {
+		t.Fatal("assistant incomplete = false, want true")
+	}
+	if len(assistant.Steps) != 2 || assistant.Steps[0].Query != "plumbing" {
+		t.Fatalf("assistant steps = %+v", assistant.Steps)
+	}
+
+	history, err := chat.History(app, session.Id)
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	if len(history) != 2 || history[1].Content != "€412." {
+		t.Fatalf("History = %+v", history)
+	}
+}
