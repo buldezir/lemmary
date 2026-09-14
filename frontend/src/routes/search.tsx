@@ -265,7 +265,7 @@ export function SearchPage() {
           // would drop it back to "look in your chat history" for no reason.
           box.stored = await recoverTurn(
             box.session?.id ?? (id as string),
-            content,
+            run.id,
             run.controller.signal,
           )
           if (!box.stored) {
@@ -551,7 +551,9 @@ export function SearchPage() {
               // A run can take a while, so there has to be a way out of one
               // that is taking too long. Research most of all, but a search
               // waiting on a slow provider is no different to sit through.
-              onCancel={endRun}
+              // A run resumed after reload has no client-side run handle, so
+              // do not render a Cancel button that cannot stop anything.
+              onCancel={chat.resuming ? undefined : endRun}
               autoFocus
             />
           </ChatPanel>
@@ -603,10 +605,10 @@ function cancelled(mode: SearchMode, cause: unknown) {
  */
 async function recoverTurn(
   sessionId: string,
-  question: string,
+  runId: string,
   signal: AbortSignal,
 ): Promise<Extract<ResearchEvent, { type: 'saved' }> | null> {
-  const stored = await waitForStoredTurn(sessionId, question, { signal })
+  const stored = await waitForStoredTurn(sessionId, runId, { signal })
   if (!stored) {
     return null
   }

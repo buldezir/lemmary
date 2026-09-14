@@ -43,6 +43,7 @@ export async function chatWithDocument(input: {
   documentId: string
   sessionId?: string
   content: string
+  runId: string
   /**
    * The provider and model to open the conversation on. Read by the server
    * only when there is no session id yet: a conversation keeps the binding its
@@ -57,6 +58,7 @@ export async function chatWithDocument(input: {
       body: {
         session_id: input.sessionId ?? '',
         content: input.content,
+        run_id: input.runId,
         ...bindingBody(input.binding),
       },
       fallbackError: 'Failed to get AI response',

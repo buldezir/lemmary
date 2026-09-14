@@ -132,3 +132,40 @@ func TestBindingOfNilRecord(t *testing.T) {
 		t.Fatalf("BindingOf(nil) = %+v, want empty", got)
 	}
 }
+
+// Recovery identifies a request by its client-generated run id rather than by
+// question text. Both records in the pair carry it so the stored transcript is
+// self-contained and the assistant projection can return it to the browser.
+func TestAppendTurnStoresAndReturnsRunID(t *testing.T) {
+	app := bootAppForStore(t)
+	userID := makeUser(t, app, "run-id@example.test")
+	session, err := chat.CreateSession(app, chat.NewSession{
+		UserID:       userID,
+		Kind:         chat.KindSearch,
+		Mode:         chat.ModeSearch,
+		FirstMessage: "same question",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	if _, err := chat.AppendTurn(app, userID, session.Id, chat.Turn{
+		UserContent:      "same question",
+		AssistantContent: "this run's answer",
+		RunID:            "run-current",
+	}); err != nil {
+		t.Fatalf("AppendTurn: %v", err)
+	}
+	records, err := chat.ListMessages(app, session.Id, 0)
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("got %d messages, want 2", len(records))
+	}
+	for _, record := range records {
+		if got := chat.ToMessageInfo(record).RunID; got != "run-current" {
+			t.Fatalf("message run id = %q, want run-current", got)
+		}
+	}
+}

@@ -24,6 +24,7 @@ import type { ProviderBinding } from '../lib/api/providers'
 import type { DocumentRecord } from '../lib/api/documents'
 import { useAsync } from '../hooks/useAsync'
 import { useChatSession, type ChatSendResult } from '../hooks/useChatSession'
+import { runId } from '../lib/runId'
 
 /**
  * How long a lost Ask AI send waits for its answer. One completion, so the
@@ -89,8 +90,15 @@ export function DocumentAskPage() {
    */
   const ask = useCallback(
     async (id: string | undefined, content: string): Promise<ChatSendResult> => {
+      const requestId = runId()
       try {
-        return await chatWithDocument({ documentId, sessionId: id, content, binding })
+        return await chatWithDocument({
+          documentId,
+          sessionId: id,
+          content,
+          runId: requestId,
+          binding,
+        })
       } catch (err) {
         if (!(err instanceof ConnectionLostError)) {
           throw err
@@ -101,7 +109,9 @@ export function DocumentAskPage() {
         // the request never left the browser at all. The wait ends as soon as
         // the server says nothing is running on this chat, so this ceiling is
         // only reached while still offline.
-        const stored = id ? await waitForStoredTurn(id, content, { timeoutMs: askWaitMs }) : null
+        const stored = id
+          ? await waitForStoredTurn(id, requestId, { timeoutMs: askWaitMs })
+          : null
         if (stored) {
           return { session: stored.session, message: stored.message, saved: true }
         }

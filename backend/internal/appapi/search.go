@@ -162,6 +162,10 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 	if err != nil {
 		return searchTurn{}, true, writeError(e, http.StatusBadRequest, err.Error())
 	}
+	runID, err := validateRunID(req.RunID)
+	if err != nil {
+		return searchTurn{}, true, writeError(e, http.StatusBadRequest, err.Error())
+	}
 
 	// Two different questions, deliberately answered differently.
 	//
@@ -264,7 +268,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		session:        session,
 		opened:         opened,
 		ownerID:        ownerID,
-		runID:          strings.TrimSpace(req.RunID),
+		runID:          runID,
 		content:        content,
 		mode:           mode,
 		messages:       append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content}),
@@ -284,6 +288,7 @@ func persistSearchTurn(app core.App, t searchTurn, reply string, hits []ai.Docum
 	session, err := chat.AppendTurn(app, t.ownerID, t.session.Id, chat.Turn{
 		UserContent:      t.content,
 		AssistantContent: reply,
+		RunID:            t.runID,
 		Documents:        hits,
 		Mode:             t.mode,
 	})
@@ -301,7 +306,7 @@ func persistSearchTurn(app core.App, t searchTurn, reply string, hits []ai.Docum
 	info := chat.ToSessionInfo(session)
 	return searchResponse{
 		Session:   &info,
-		Message:   latestAssistantMessage(app, session.Id, reply, hits),
+		Message:   latestAssistantMessage(app, session.Id, t.runID, reply, hits),
 		Documents: hits,
 		Saved:     true,
 	}
@@ -405,6 +410,14 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 			return err
 		}
 
+		// Register before sending the session frame. Recovery treats that frame
+		// as proof the run started; sending it first left a window where an
+		// immediate poll saw running=false and gave up on work the next line was
+		// about to detach.
+		ctx, stopRun := startDetachedRun(e.Request.Context(), turn.ownerID, turn.runID, turn.session.Id)
+		defer stopRun()
+		ctx = turn.agentContext(ctx)
+
 		// Everything below is streamed, so errors are reported as events —
 		// the status line has already been written by this point.
 		stream := newSSEWriter(e)
@@ -431,10 +444,6 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 		// between a network blip losing a paragraph of progress and losing a
 		// finished, already-paid-for answer. Deliberate cancellation comes
 		// through /search/cancel instead -- see startDetachedRun.
-		ctx, stopRun := startDetachedRun(e.Request.Context(), turn.ownerID, turn.runID, turn.session.Id)
-		defer stopRun()
-		ctx = turn.agentContext(ctx)
-
 		var result ai.ResearchResult
 		if turn.research() {
 			result, err = turn.agent.Research(ctx, ai.ResearchRequest{

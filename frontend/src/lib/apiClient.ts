@@ -8,6 +8,8 @@ type ApiFetchOptions = {
   formData?: FormData
   /** Skip auth entirely (setup and meta endpoints are public). */
   public?: boolean
+  /** Cancels the request when the caller no longer owns the result. */
+  signal?: AbortSignal
   /** Error shown when the server response carries no `detail`. */
   fallbackError: string
 }
@@ -101,7 +103,14 @@ export function isConnectionError(err: unknown): boolean {
  * `detail` message.
  */
 export async function apiFetch<T>(path: string, options: ApiFetchOptions): Promise<T> {
-  const { method = 'GET', body, formData, public: isPublic = false, fallbackError } = options
+  const {
+    method = 'GET',
+    body,
+    formData,
+    public: isPublic = false,
+    signal,
+    fallbackError,
+  } = options
   if (!isPublic) {
     await ensureAuth()
   }
@@ -120,6 +129,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions): Promi
       method,
       headers,
       body: formData ?? (body !== undefined ? JSON.stringify(body) : undefined),
+      signal,
     })
   } catch (err) {
     if (isConnectionError(err)) {
@@ -263,8 +273,23 @@ export type PollJobOptions = {
 }
 
 /** Exported so other polling loops (a run recovering from a dropped stream) share it. */
-export function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+export function sleep(ms: number, signal?: AbortSignal) {
+  if (!signal) {
+    return new Promise<void>((resolve) => setTimeout(resolve, ms))
+  }
+  if (signal.aborted) {
+    return Promise.resolve()
+  }
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(done, ms)
+    signal.addEventListener('abort', done, { once: true })
+
+    function done() {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', done)
+      resolve()
+    }
+  })
 }
 
 /**

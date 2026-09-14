@@ -1,4 +1,4 @@
-import { apiFetch, sleep } from '../apiClient'
+import { apiFetch, ConnectionLostError, sleep } from '../apiClient'
 import type { ProviderBinding } from './providers'
 
 export type ChatSessionKind = 'search' | 'document'
@@ -51,6 +51,8 @@ export type ChatMessageRecord = {
   seq?: number
   role: ChatRole
   content: string
+  /** Client-generated id of the request that produced this stored pair. */
+  run_id?: string
   documents?: SearchDocumentHit[]
   created?: string
 }
@@ -106,9 +108,10 @@ export async function listChatSessions(params?: {
   return data.items ?? []
 }
 
-export function getChatSession(id: string): Promise<ChatSessionDetail> {
+export function getChatSession(id: string, signal?: AbortSignal): Promise<ChatSessionDetail> {
   return apiFetch<ChatSessionDetail>(`/api/app/chats/${encodeURIComponent(id)}`, {
     fallbackError: 'Failed to load the chat',
+    signal,
   })
 }
 
@@ -122,46 +125,32 @@ const storedTurnPollMs = 3000
 const storedTurnWaitMs = 21 * 60 * 1000
 
 /**
- * The answer to `question` in a transcript, or null if it is not there yet.
+ * The answer produced by `runId` in a transcript, or null if it is not there.
  *
- * Matched on the question rather than on a message count, because the count a
- * client remembers can be a turn out of date and would then hand back the
- * *previous* answer as the reply to this one. A turn is stored as one
- * user+assistant pair, so the newest user message carrying this question has
- * our answer directly after it -- and asking the same thing twice resolves to
- * the newer answer, which is the one that was waited for. Only ever read once
- * the run is over, or a repeat would match the older pair while the answer to
- * this one was still being written; waitForStoredTurn is what enforces that.
- *
- * The question is compared verbatim: the server only trims it, and the composer
- * has already done that.
+ * Text is deliberately not the identity. Two tabs can ask the same question
+ * concurrently, and whichever finishes last would otherwise be presented as
+ * both tabs' answer. The correlation id is stored with the pair atomically.
  */
-export function storedAnswerTo(
+export function storedAnswerForRun(
   messages: ChatMessageRecord[],
-  question: string,
+  runId: string,
 ): ChatMessageRecord | null {
-  for (let i = messages.length - 1; i > 0; i--) {
-    const answer = messages[i]
-    if (answer.role !== 'assistant') {
-      continue
-    }
-    const asked = messages[i - 1]
-    if (asked.role === 'user' && asked.content === question) {
-      return answer
-    }
-  }
-  return null
+  return (
+    messages.findLast((message) => message.role === 'assistant' && message.run_id === runId) ?? null
+  )
 }
+
+type PollAttempt<T> = { done: false } | { done: true; value: T | null }
 
 /**
  * Asks repeatedly until `attempt` produces something, or the deadline passes.
  *
- * Failures are swallowed and retried on purpose: whatever broke the connection
- * in the first place is usually still broken, and giving up on the first bad
- * poll loses exactly the answer this came back for.
+ * Transport failures are retried because whatever broke the original
+ * connection is usually still broken. HTTP errors are terminal: a deleted
+ * empty session, for example, means the failed run has no answer coming.
  */
 async function pollUntil<T>(
-  attempt: () => Promise<T | null>,
+  attempt: () => Promise<PollAttempt<T>>,
   options: { signal?: AbortSignal; timeoutMs?: number; intervalMs?: number },
 ): Promise<T | null> {
   const interval = options.intervalMs ?? storedTurnPollMs
@@ -171,17 +160,25 @@ async function pollUntil<T>(
       return null
     }
     try {
-      const found = await attempt()
-      if (found) {
-        return found
+      const result = await attempt()
+      if (result.done) {
+        return result.value
       }
-    } catch {
-      // Still unreachable, or not finished. Either way, ask again.
+    } catch (err) {
+      if (options.signal?.aborted) {
+        return null
+      }
+      if (!(err instanceof ConnectionLostError)) {
+        throw err
+      }
+      // A transport failure is usually the same interruption that brought us
+      // here. HTTP failures such as a deleted session are terminal and must not
+      // hold the composer for the whole run budget.
     }
     if (Date.now() >= deadline) {
       return null
     }
-    await sleep(interval)
+    await sleep(interval, options.signal)
   }
 }
 
@@ -202,27 +199,28 @@ export type WaitOptions = {
  * the transcript, invisible until a manual reload, which on a follow-up
  * question looks exactly like the work having been thrown away.
  *
- * The run is waited out *first*, and only then is the transcript read. That
- * ordering is what makes a repeated question safe: asking the same thing twice
- * would otherwise match the earlier pair on the first poll and paint last
- * week's answer as this one's, while the real run was still working. It is
- * also what ends the wait quickly when the request never reached the server at
- * all -- nothing is running, so there is nothing to wait for.
+ * Every read first looks for the request's correlation id, so this returns as
+ * soon as this exact turn lands even if another tab is still writing into the
+ * conversation. If neither the turn nor any run exists, there is nothing to
+ * wait for and the recovery ends immediately.
  *
  * Resolves null when nothing landed: a run that failed, was cancelled, outlived
  * its budget, or never started.
  */
 export async function waitForStoredTurn(
   sessionId: string,
-  question: string,
+  runId: string,
   options: WaitOptions = {},
 ): Promise<{ session: ChatSession; message: ChatMessageRecord } | null> {
-  const detail = await waitWhileRunning(sessionId, options)
-  if (!detail) {
-    return null
-  }
-  const message = storedAnswerTo(detail.messages, question)
-  return message ? { session: detail.session, message } : null
+  const load = options.load ?? ((id: string) => getChatSession(id, options.signal))
+  return pollUntil<{ session: ChatSession; message: ChatMessageRecord }>(async () => {
+    const detail = await load(sessionId)
+    const message = storedAnswerForRun(detail.messages, runId)
+    if (message) {
+      return { done: true, value: { session: detail.session, message } }
+    }
+    return detail.running ? { done: false } : { done: true, value: null }
+  }, options)
 }
 
 /**
@@ -241,10 +239,10 @@ export function waitWhileRunning(
   sessionId: string,
   options: WaitOptions = {},
 ): Promise<ChatSessionDetail | null> {
-  const load = options.load ?? getChatSession
-  return pollUntil(async () => {
+  const load = options.load ?? ((id: string) => getChatSession(id, options.signal))
+  return pollUntil<ChatSessionDetail>(async () => {
     const detail = await load(sessionId)
-    return detail.running ? null : detail
+    return detail.running ? { done: false } : { done: true, value: detail }
   }, options)
 }
 

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import { ConnectionLostError } from '../apiClient'
 import {
   chatSessionDateLabel,
   chatSessionTitle,
   mergeChatSession,
-  storedAnswerTo,
+  storedAnswerForRun,
   toChatTurn,
   waitForStoredTurn,
   waitWhileRunning,
@@ -109,60 +110,58 @@ describe('toChatTurn', () => {
   })
 })
 
-describe('storedAnswerTo', () => {
-  const asked = { id: 'm1', role: 'user', content: 'How much for the car?' } as ChatMessageRecord
-  const answered = { id: 'm2', role: 'assistant', content: '€412.' } as ChatMessageRecord
+describe('storedAnswerForRun', () => {
+  const older = {
+    id: 'm2',
+    role: 'assistant',
+    content: '€412.',
+    run_id: 'run-old',
+  } as ChatMessageRecord
+  const newer = {
+    id: 'm4',
+    role: 'assistant',
+    content: '€480.',
+    run_id: 'run-new',
+  } as ChatMessageRecord
 
-  it('finds the answer to the question that was asked', () => {
-    expect(storedAnswerTo([asked, answered], 'How much for the car?')).toBe(answered)
+  it('finds the answer produced by the requested run', () => {
+    expect(storedAnswerForRun([older, newer], 'run-old')).toBe(older)
+    expect(storedAnswerForRun([older, newer], 'run-new')).toBe(newer)
   })
 
-  it('is null while only the earlier turns are stored', () => {
-    expect(storedAnswerTo([asked, answered], 'And the bike?')).toBeNull()
-  })
-
-  // A repeated question resolves to the newer answer: that is the run that was
-  // being waited for, and the older one is already on screen.
-  it('prefers the newest matching turn', () => {
-    const again = { id: 'm4', role: 'assistant', content: '€480.' } as ChatMessageRecord
-    const messages = [asked, answered, { ...asked, id: 'm3' }, again]
-    expect(storedAnswerTo(messages, 'How much for the car?')).toBe(again)
-  })
-
-  // The question is stored with its answer in one write, so a transcript that
-  // ends on the question means the run has not finished.
-  it('ignores a question with nothing after it', () => {
-    expect(storedAnswerTo([asked], 'How much for the car?')).toBeNull()
+  it('does not confuse two answers to identical question text', () => {
+    expect(storedAnswerForRun([older, newer], 'run-elsewhere')).toBeNull()
   })
 })
 
 describe('waitForStoredTurn', () => {
   const question = 'How much for the car?'
+  const runID = 'run-current'
   const older = [
-    { id: 'm1', role: 'user', content: question },
-    { id: 'm2', role: 'assistant', content: '€412.' },
+    { id: 'm1', role: 'user', content: question, run_id: 'run-old' },
+    { id: 'm2', role: 'assistant', content: '€412.', run_id: 'run-old' },
   ] as ChatMessageRecord[]
   const newer = [
     ...older,
-    { id: 'm3', role: 'user', content: question },
-    { id: 'm4', role: 'assistant', content: '€480.' },
+    { id: 'm3', role: 'user', content: question, run_id: runID },
+    { id: 'm4', role: 'assistant', content: '€480.', run_id: runID },
   ] as ChatMessageRecord[]
 
   // The run kept going after the connection died, so the answer turns up in the
   // transcript a while later and has to be collected.
   it('resolves once the run ends and the turn is there', async () => {
     let calls = 0
-    const result = await waitForStoredTurn('s1', question, {
+    const result = await waitForStoredTurn('s1', runID, {
       intervalMs: 0,
       load: async () => {
         calls += 1
         return calls < 3
           ? { session: session(), messages: [], running: true }
-          : { session: session(), messages: older }
+          : { session: session(), messages: newer }
       },
     })
     expect(calls).toBe(3)
-    expect(result?.message.content).toBe('€412.')
+    expect(result?.message.content).toBe('€480.')
   })
 
   // The failure that makes question-matching alone unsafe: the same question is
@@ -170,7 +169,7 @@ describe('waitForStoredTurn', () => {
   // older answer must not be handed back as this one's.
   it('never hands back an earlier answer while the run is still going', async () => {
     let calls = 0
-    const result = await waitForStoredTurn('s1', question, {
+    const result = await waitForStoredTurn('s1', runID, {
       intervalMs: 0,
       load: async () => {
         calls += 1
@@ -182,26 +181,54 @@ describe('waitForStoredTurn', () => {
     expect(result?.message.content).toBe('€480.')
   })
 
+  // Another tab can still be writing to the same conversation. Once this
+  // exact run's pair is stored, its answer is recoverable without waiting for
+  // the other run or accidentally returning the other run's later reply.
+  it('returns its exact answer while another run is still active', async () => {
+    const result = await waitForStoredTurn('s1', runID, {
+      intervalMs: 0,
+      load: async () => ({ session: session(), messages: newer, running: true }),
+    })
+    expect(result?.message.id).toBe('m4')
+  })
+
   // The connection that broke is usually still broken; giving up on the first
   // failed poll would lose exactly the answer we came back for.
   it('keeps asking through failures', async () => {
     let calls = 0
-    const result = await waitForStoredTurn('s1', question, {
+    const result = await waitForStoredTurn('s1', runID, {
       intervalMs: 0,
       load: async () => {
         calls += 1
-        if (calls === 1) throw new Error('Could not reach the server.')
-        return { session: session(), messages: older }
+        if (calls === 1) {
+          throw new ConnectionLostError(new TypeError('Failed to fetch'))
+        }
+        return { session: session(), messages: newer }
       },
     })
-    expect(result?.message.content).toBe('€412.')
+    expect(result?.message.content).toBe('€480.')
+  })
+
+  // A newly-created chat is discarded when its provider fails. Its 404 means
+  // the run is over, not that the original network interruption persists.
+  it('does not retry a terminal HTTP failure until the run budget', async () => {
+    let calls = 0
+    const waiting = waitForStoredTurn('s1', runID, {
+      intervalMs: 0,
+      load: async () => {
+        calls += 1
+        throw new Error('Chat not found.')
+      },
+    })
+    await expect(waiting).rejects.toThrow('Chat not found.')
+    expect(calls).toBe(1)
   })
 
   // A request that never reached the server leaves nothing running, so there is
   // nothing to wait for: say so at once instead of sitting out the budget.
   it('gives up as soon as nothing is running and nothing landed', async () => {
     let calls = 0
-    const result = await waitForStoredTurn('s1', question, {
+    const result = await waitForStoredTurn('s1', runID, {
       intervalMs: 0,
       load: async () => {
         calls += 1
@@ -213,7 +240,7 @@ describe('waitForStoredTurn', () => {
   })
 
   it('gives up at the deadline', async () => {
-    const result = await waitForStoredTurn('s1', question, {
+    const result = await waitForStoredTurn('s1', runID, {
       intervalMs: 0,
       timeoutMs: 0,
       load: async () => ({ session: session(), messages: [], running: true }),
@@ -226,7 +253,7 @@ describe('waitForStoredTurn', () => {
   it('stops when the run is cancelled', async () => {
     const controller = new AbortController()
     controller.abort()
-    const result = await waitForStoredTurn('s1', question, {
+    const result = await waitForStoredTurn('s1', runID, {
       intervalMs: 0,
       signal: controller.signal,
       load: async () => ({ session: session(), messages: older }),

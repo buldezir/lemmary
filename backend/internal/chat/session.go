@@ -59,6 +59,10 @@ const (
 	// what a column Max the producer did not know about costs, and here it
 	// would mean throwing away an answer the provider was already paid for.
 	MaxMessageRunes = 60000
+	// MaxRunIDRunes bounds the client-generated correlation id stored beside a
+	// turn. It is not a credential; it only lets a client recover the exact
+	// answer produced by a request whose connection was interrupted.
+	MaxRunIDRunes = 200
 
 	// MaxHistoryMessages and MaxHistoryRunes bound the transcript replayed to
 	// the model. The rune budget matters most for Deep Search: its agent loop
@@ -299,6 +303,7 @@ type MessageInfo struct {
 	Seq       int              `json:"seq"`
 	Role      string           `json:"role"`
 	Content   string           `json:"content"`
+	RunID     string           `json:"run_id,omitempty"`
 	Documents []ai.DocumentHit `json:"documents,omitempty"`
 	Created   string           `json:"created"`
 }
@@ -347,6 +352,7 @@ func ToMessageInfo(record *core.Record) MessageInfo {
 		Seq:       record.GetInt("seq"),
 		Role:      record.GetString("role"),
 		Content:   record.GetString("content"),
+		RunID:     record.GetString("run_id"),
 		Documents: DecodeHits(record),
 		Created:   record.GetDateTime("created").String(),
 	}

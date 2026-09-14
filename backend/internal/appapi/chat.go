@@ -26,6 +26,10 @@ const tooManySessionsMessage = "You have reached the maximum number of saved cha
 type chatRequest struct {
 	SessionID string `json:"session_id"`
 	Content   string `json:"content"`
+	// RunID correlates this request with the stored assistant message, so a
+	// caller that loses the response can recover this answer rather than a
+	// different answer to identical text.
+	RunID string `json:"run_id"`
 	// The provider and model to open the conversation on, instead of the chat
 	// binding in Settings. Read only when SessionID is empty: see
 	// conversationBinding.
@@ -133,6 +137,17 @@ func validateChatContent(raw string) (string, error) {
 	return content, nil
 }
 
+// validateRunID normalizes the optional client-generated correlation id. It
+// is persisted with both halves of a turn, so reject values the column cannot
+// represent rather than silently making recovery ambiguous.
+func validateRunID(raw string) (string, error) {
+	runID := strings.TrimSpace(raw)
+	if utf8.RuneCountInString(runID) > chat.MaxRunIDRunes {
+		return "", fmt.Errorf("A run id may be at most %d characters.", chat.MaxRunIDRunes)
+	}
+	return runID, nil
+}
+
 // parseSearchMode reads the mode field. Research is the only mode worth naming:
 // anything else -- including a legacy "shallow" or "deep" from an older client
 // -- is plain search, which is also the cheaper of the two to get wrong.
@@ -207,12 +222,15 @@ func unsavedMessage(role, content string, hits []ai.DocumentHit) chat.MessageInf
 //
 // Falls back to an id-less view rather than failing the request: the turn is
 // already committed, and re-reading it is a convenience.
-func latestAssistantMessage(app core.App, sessionID, reply string, hits []ai.DocumentHit) chat.MessageInfo {
+func latestAssistantMessage(app core.App, sessionID, runID, reply string, hits []ai.DocumentHit) chat.MessageInfo {
 	records, err := chat.ListMessages(app, sessionID, chat.MaxReplayMessages)
-	if err == nil && len(records) > 0 {
-		last := records[len(records)-1]
-		if last.GetString("role") == chat.RoleAssistant {
-			return chat.ToMessageInfo(last)
+	if err == nil {
+		for i := len(records) - 1; i >= 0; i-- {
+			record := records[i]
+			if record.GetString("role") == chat.RoleAssistant &&
+				(runID == "" || record.GetString("run_id") == runID) {
+				return chat.ToMessageInfo(record)
+			}
 		}
 	}
 	return unsavedMessage(chat.RoleAssistant, reply, hits)
@@ -246,6 +264,10 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 			return writeError(e, http.StatusBadRequest, "Invalid request body.")
 		}
 		content, err := validateChatContent(req.Content)
+		if err != nil {
+			return writeError(e, http.StatusBadRequest, err.Error())
+		}
+		requestID, err := validateRunID(req.RunID)
 		if err != nil {
 			return writeError(e, http.StatusBadRequest, err.Error())
 		}
@@ -322,6 +344,7 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 		session, err = chat.AppendTurn(app, ownerID, session.Id, chat.Turn{
 			UserContent:      content,
 			AssistantContent: reply,
+			RunID:            requestID,
 		})
 		if err != nil {
 			app.Logger().Error("document chat persist failed", "document", documentID, slog.Any("error", err))
@@ -335,7 +358,7 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 		info := chat.ToSessionInfo(session)
 		return writeJSON(e, http.StatusOK, chatResponse{
 			Session: &info,
-			Message: latestAssistantMessage(app, session.Id, reply, nil),
+			Message: latestAssistantMessage(app, session.Id, requestID, reply, nil),
 			Saved:   true,
 		})
 	}
