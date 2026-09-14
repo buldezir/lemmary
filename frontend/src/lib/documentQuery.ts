@@ -14,6 +14,24 @@
 
 import { isDocumentStatus } from './documentStatus'
 
+/**
+ * The shortest term worth searching for, matching the index's own prefix floor
+ * (fulltext.minPrefixLen): under three characters a prefix reaches most of the
+ * vocabulary, so the server would work hard to return nearly everything.
+ */
+export const MIN_SEARCH_LENGTH = 3
+
+/**
+ * What a typed box actually searches for: the trimmed term, or nothing at all
+ * while it is still too short. Applied on the way *into* the query so the box,
+ * the Back button and a hand-typed ?q= all agree -- a short term shows the
+ * unfiltered list rather than a filtered one nobody asked for.
+ */
+export function searchableTerm(value: string): string {
+  const term = value.trim()
+  return term.length < MIN_SEARCH_LENGTH ? '' : term
+}
+
 export type DocumentQuery = {
   /** Fulltext search; empty means list everything. */
   q: string
@@ -79,7 +97,7 @@ function pageNumber(value: unknown): number {
 export function parseDocumentQuery(raw: DocumentQueryInput): DocumentQuery {
   const status = text(raw.status)
   return {
-    q: typeof raw.q === 'string' ? raw.q : '',
+    q: typeof raw.q === 'string' ? searchableTerm(raw.q) : '',
     // 'all' is the absence of a status filter rather than one of them, so it
     // is not in DOCUMENT_STATUSES -- but a URL may name it.
     status: isDocumentStatus(status) || status === 'all' ? status : defaultDocumentQuery.status,
