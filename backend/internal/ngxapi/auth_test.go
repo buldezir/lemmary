@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/security"
 )
@@ -183,19 +182,6 @@ func assertUnauthorizedDetail(t *testing.T, e *core.RequestEvent, want string) {
 	if body.Detail != want {
 		t.Fatalf("detail = %q, want %q", body.Detail, want)
 	}
-}
-
-func bootTestApp(t *testing.T) *pocketbase.PocketBase {
-	t.Helper()
-	app := pocketbase.NewWithConfig(pocketbase.Config{
-		DefaultDataDir:  t.TempDir(),
-		HideStartBanner: true,
-	})
-	if err := app.Bootstrap(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = app.ResetBootstrapState() })
-	return app
 }
 
 func jwtExpUnix(v any) int64 {

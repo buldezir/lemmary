@@ -12,6 +12,7 @@ import (
 	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/chat"
+	"lemmary/backend/internal/testpb"
 	// Registers the migrations that create users and documents. Importing them
 	// is why this file is an external test package: internal/chat cannot import
 	// migrations, which import it back.
@@ -20,18 +21,7 @@ import (
 
 func bootAppForStore(t *testing.T) *pocketbase.PocketBase {
 	t.Helper()
-	app := pocketbase.NewWithConfig(pocketbase.Config{
-		DefaultDataDir:  t.TempDir(),
-		HideStartBanner: true,
-	})
-	if err := app.Bootstrap(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = app.ResetBootstrapState() })
-	if err := app.RunAppMigrations(); err != nil {
-		t.Fatalf("run app migrations: %v", err)
-	}
-	return app
+	return testpb.Open(t)
 }
 
 func makeUser(t *testing.T, app core.App, email string) string {

@@ -5,24 +5,13 @@ import (
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
+
+	"lemmary/backend/internal/testpb"
 )
 
-// Bootstrap alone runs only PocketBase's system migrations, so tags and users
-// do not exist until the app migrations run too.
 func bootTagTestApp(t *testing.T) *pocketbase.PocketBase {
 	t.Helper()
-	app := pocketbase.NewWithConfig(pocketbase.Config{
-		DefaultDataDir:  t.TempDir(),
-		HideStartBanner: true,
-	})
-	if err := app.Bootstrap(); err != nil {
-		t.Fatalf("bootstrap: %v", err)
-	}
-	t.Cleanup(func() { _ = app.ResetBootstrapState() })
-	if err := app.RunAppMigrations(); err != nil {
-		t.Fatalf("run app migrations: %v", err)
-	}
-	return app
+	return testpb.Open(t)
 }
 
 func createTagUser(t *testing.T, app core.App, email string) string {

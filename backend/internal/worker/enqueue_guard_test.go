@@ -9,25 +9,15 @@ import (
 
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/models"
+	"lemmary/backend/internal/testpb"
 	// Registers the migrations that create processing_jobs; without them
-	// RunAppMigrations builds an empty schema.
+	// the shared schema template is empty.
 	_ "lemmary/backend/migrations"
 )
 
 func bootAppForEnqueue(t *testing.T) *pocketbase.PocketBase {
 	t.Helper()
-	app := pocketbase.NewWithConfig(pocketbase.Config{
-		DefaultDataDir:  t.TempDir(),
-		HideStartBanner: true,
-	})
-	if err := app.Bootstrap(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = app.ResetBootstrapState() })
-	if err := app.RunAppMigrations(); err != nil {
-		t.Fatalf("run app migrations: %v", err)
-	}
-	return app
+	return testpb.Open(t)
 }
 
 func makeDocumentForEnqueue(t *testing.T, app core.App) string {

@@ -7,25 +7,15 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"lemmary/backend/internal/taxonomy"
-	// Blank import on purpose: RunAppMigrations only runs what this package
-	// registered, and the taxonomy package itself never imports it.
+	"lemmary/backend/internal/testpb"
+	// Blank import on purpose: the shared schema template only includes what
+	// this package registered, and the taxonomy package itself never imports it.
 	_ "lemmary/backend/migrations"
 )
 
 func bootTestApp(t *testing.T) *pocketbase.PocketBase {
 	t.Helper()
-	app := pocketbase.NewWithConfig(pocketbase.Config{
-		DefaultDataDir:  t.TempDir(),
-		HideStartBanner: true,
-	})
-	if err := app.Bootstrap(); err != nil {
-		t.Fatalf("bootstrap: %v", err)
-	}
-	t.Cleanup(func() { _ = app.ResetBootstrapState() })
-	if err := app.RunAppMigrations(); err != nil {
-		t.Fatalf("run app migrations: %v", err)
-	}
-	return app
+	return testpb.Open(t)
 }
 
 func createUser(t *testing.T, app core.App, email string) string {

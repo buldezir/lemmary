@@ -13,23 +13,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 
 	"lemmary/backend/internal/fulltext"
-	"lemmary/backend/internal/ngxid"
-
-	_ "lemmary/backend/migrations"
 )
-
-// bootSchemaTestApp is bootTestApp plus the Lemmary schema and ngxid.Register:
-// Bootstrap runs only PocketBase's system migrations, and a record created
-// without the hook carries no client-facing id.
-func bootSchemaTestApp(t *testing.T) *pocketbase.PocketBase {
-	t.Helper()
-	app := bootTestApp(t)
-	if err := app.RunAppMigrations(); err != nil {
-		t.Fatalf("run app migrations: %v", err)
-	}
-	ngxid.Register(app)
-	return app
-}
 
 // listFixture is one owner with two tags and three documents, plus a second
 // owner whose document must never appear.
