@@ -78,6 +78,39 @@ func TestNormalizeTitle(t *testing.T) {
 	}
 }
 
+// The marks stack rather than the prefix nesting, so a fork of a fork says how
+// far it is from the original in one glance.
+func TestForkTitleStacksItsMarks(t *testing.T) {
+	first := chat.ForkTitle("Tax 2024")
+	if first != "⑂ Tax 2024" {
+		t.Fatalf("ForkTitle() = %q", first)
+	}
+	second := chat.ForkTitle(first)
+	if second != "⑂⑂ Tax 2024" {
+		t.Fatalf("ForkTitle(fork) = %q", second)
+	}
+	if third := chat.ForkTitle(second); third != "⑂⑂⑂ Tax 2024" {
+		t.Fatalf("ForkTitle(fork of fork) = %q", third)
+	}
+}
+
+func TestForkTitleBlankFallsBack(t *testing.T) {
+	if got := chat.ForkTitle("   "); got != "⑂ "+chat.UntitledSession {
+		t.Fatalf("ForkTitle(blank) = %q", got)
+	}
+}
+
+// A title already at the column width must not be pushed past it by the mark.
+func TestForkTitleFitsTheColumn(t *testing.T) {
+	long := chat.ForkTitle(strings.Repeat("d", chat.MaxTitleColumnRunes))
+	if n := utf8.RuneCountInString(long); n > chat.MaxTitleColumnRunes {
+		t.Fatalf("forked title exceeded the column: %d runes", n)
+	}
+	if !strings.HasPrefix(long, chat.ForkMark) {
+		t.Fatalf("truncation ate the mark: %q", long)
+	}
+}
+
 // The ellipsis TruncateRunes appends is part of the result, so a value cut to
 // exactly the column width would be one rune too long to save.
 func TestFitColumnLeavesRoomForTheEllipsis(t *testing.T) {

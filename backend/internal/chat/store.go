@@ -260,6 +260,70 @@ func CreateSession(app core.App, spec NewSession) (*core.Record, error) {
 	return session, nil
 }
 
+// ForkSession copies a conversation and its transcript into a new one, so a
+// question can branch off an answer without disturbing the chat it came from.
+// Kind, mode and binding travel with it because a session refuses a turn that
+// contradicts them, and the hits are re-encoded rather than re-resolved: they
+// are a snapshot of what the answer cited. run_id is deliberately dropped --
+// it correlates a stored turn with the live request that produced it, and the
+// copy produced none.
+func ForkSession(app core.App, userID string, source *core.Record) (*core.Record, error) {
+	var session *core.Record
+
+	err := app.RunInTransaction(func(txApp core.App) error {
+		total, err := CountSessions(txApp, userID)
+		if err != nil {
+			return err
+		}
+		if total >= MaxSessionsPerUser {
+			return ErrTooManySessions
+		}
+		messages, err := ListMessages(txApp, source.Id, 0)
+		if err != nil {
+			return err
+		}
+		collection, err := txApp.FindCollectionByNameOrId(SessionsCollection)
+		if err != nil {
+			return err
+		}
+
+		session = core.NewRecord(collection)
+		session.Set("user", userID)
+		session.Set("kind", source.GetString("kind"))
+		if document := source.GetString("document"); document != "" {
+			session.Set("document", document)
+		}
+		if mode := source.GetString("mode"); mode != "" {
+			session.Set("mode", mode)
+		}
+		session.Set("provider", source.GetString("provider"))
+		session.Set("model", source.GetString("model"))
+		session.Set("title", ForkTitle(source.GetString("title")))
+		session.Set("message_count", len(messages))
+		// Now rather than the source's, so the fork is where the sidebar puts
+		// what just happened.
+		session.Set("last_message_at", types.NowDateTime())
+		if err := txApp.Save(session); err != nil {
+			return err
+		}
+
+		// Renumbered from 1: seq is unique per session and only has to order
+		// this transcript, and the source's may start past 1 after a trim.
+		for i, message := range messages {
+			if err := saveMessage(txApp, session.Id, i+1, message.GetString("role"),
+				message.GetString("content"), "", DecodeHits(message), DecodeSteps(message),
+				message.GetBool("incomplete")); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
 // DiscardEmptySession removes a conversation that never got a turn. Guarded on
 // the transcript rather than on message_count, which a caller holding a stale
 // record could read as 0 after a turn had landed.
