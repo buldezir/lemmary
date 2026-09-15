@@ -232,7 +232,7 @@ func AppendThreadMessage(app core.App, userID, sessionID string, msg ThreadEntry
 
 		// Counted as a person counts them: the machinery underneath a turn is
 		// not what the sidebar means by a message.
-		if Visible(msg.Role, msg.Content) {
+		if Visible(msg.Role, msg.Content, len(msg.Calls) > 0) {
 			session.Set("message_count", session.GetInt("message_count")+1)
 		}
 		session.Set("last_message_at", types.NowDateTime())
@@ -268,7 +268,7 @@ type ThreadEntry struct {
 func visibleCount(records []*core.Record) int {
 	total := 0
 	for _, record := range records {
-		if Visible(record.GetString("role"), record.GetString("content")) {
+		if VisibleRecord(record) {
 			total++
 		}
 	}
@@ -280,7 +280,7 @@ func visibleCount(records []*core.Record) int {
 func snapToAnswer(records []*core.Record) []*core.Record {
 	for len(records) > 0 {
 		last := records[len(records)-1]
-		if Visible(last.GetString("role"), last.GetString("content")) && last.GetString("role") == RoleAssistant {
+		if VisibleRecord(last) && last.GetString("role") == RoleAssistant {
 			break
 		}
 		records = records[:len(records)-1]
@@ -294,14 +294,14 @@ func snapToAnswer(records []*core.Record) []*core.Record {
 func Unfinished(records []*core.Record) bool {
 	for i := len(records) - 1; i >= 0; i-- {
 		record := records[i]
-		role, content := record.GetString("role"), record.GetString("content")
+		role := record.GetString("role")
 		if role == RoleSystem {
 			continue
 		}
 		// Finished means answered. A transcript that ends on a question, on a
 		// tool result, or on a call nothing answered is a turn that stopped
 		// somewhere in the middle.
-		return !(role == RoleAssistant && Visible(role, content))
+		return !(role == RoleAssistant && VisibleRecord(record))
 	}
 	return false
 }

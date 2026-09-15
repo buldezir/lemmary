@@ -607,7 +607,10 @@ func TestVisibleMessagesFoldTheTrailOntoTheTurn(t *testing.T) {
 
 	for _, row := range []chat.ThreadEntry{
 		{Role: chat.RoleUser, Content: "how much?"},
-		{Role: chat.RoleAssistant, Calls: []ai.ToolCall{{ID: "call_0", Name: "search_documents"}}},
+		// With prose in front of the call: models narrate the search they are
+		// about to make, and that is thinking out loud, not an answer.
+		{Role: chat.RoleAssistant, Content: "Let me look for the invoices first.",
+			Calls: []ai.ToolCall{{ID: "call_0", Name: "search_documents"}}},
 		{Role: chat.RoleTool, Content: "two documents", CallID: "call_0",
 			Steps: []chat.StoredStep{{Kind: "search", Status: "done", Query: "invoice", Count: 2}}},
 	} {
@@ -623,6 +626,20 @@ func TestVisibleMessagesFoldTheTrailOntoTheTurn(t *testing.T) {
 	}
 	if len(visible[0].Steps) != 1 || visible[0].Steps[0].Query != "invoice" {
 		t.Fatalf("the unfinished turn lost its trail: %+v", visible[0])
+	}
+
+	// The same rule the sidebar counts by, and the one that decides whether the
+	// turn is finished: a call the model talked its way into is still a call.
+	records, _ = chat.ListMessages(app, session.Id, 0)
+	if !chat.Unfinished(records) {
+		t.Fatal("a turn whose last assistant row is a tool call must read as unfinished")
+	}
+	reloaded, err := chat.FindOwnedSession(app, userID, session.Id)
+	if err != nil {
+		t.Fatalf("FindOwnedSession: %v", err)
+	}
+	if got := reloaded.GetInt("message_count"); got != 1 {
+		t.Fatalf("message_count = %d, want 1: the narration is not a message", got)
 	}
 }
 

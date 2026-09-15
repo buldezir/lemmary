@@ -271,9 +271,10 @@ The denominator comes from the catalogue chosen on the provider row, read from
 and worth correcting when the `openai` SDK points somewhere that is not OpenAI:
 a base URL of `https://api.groq.com/openai/v1` wants the **groq** catalogue.
 
-Leave it on **None**, or set `AI_MODEL_CATALOG_URL=` empty, and nothing is
-fetched: research runs exactly as before and the usage line shows a token count
-with no limit beside it. When a provider reports no usage of its own, the count
+Leave it on **None** and nothing is fetched: research runs exactly as before
+and the usage line shows a token count with no limit beside it. That select is
+the off switch. `AI_MODEL_CATALOG_URL` only moves the lookup somewhere other
+than pi.dev; left empty or unset it falls back to that default. When a provider reports no usage of its own, the count
 is estimated from the text sent and marked with a `~`.
 
 ### Prompt caching

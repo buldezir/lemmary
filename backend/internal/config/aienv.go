@@ -42,8 +42,9 @@ type AIEnv struct {
 	ExtractionPromptVer string
 
 	// ModelCatalogURL is where a model's context window is looked up, so a
-	// research turn can be shown against it. Blank turns the lookup off and
-	// with it the denominator on the usage line.
+	// research turn can be shown against it. Never blank as read from the
+	// environment: an empty AI_MODEL_CATALOG_URL falls back to the default, and
+	// the lookup is turned off by giving a provider no catalogue in Settings.
 	ModelCatalogURL string
 }
 
@@ -53,7 +54,7 @@ const (
 	EnvManaged = "AI_MANAGED"
 
 	// EnvModelCatalogURL points the context-window lookup somewhere other than
-	// pi.dev, or nowhere at all when set empty.
+	// pi.dev. Empty falls back to that default rather than turning it off.
 	EnvModelCatalogURL = "AI_MODEL_CATALOG_URL"
 
 	EnvAISDK     = "AI_SDK"
