@@ -168,24 +168,6 @@ func discardEmptySession(app core.App, session *core.Record) {
 	}
 }
 
-// discardOpenedSession takes back the conversation a search turn opened when
-// that turn never landed. A fork is deleted outright rather than handed to
-// DiscardEmptySession: it was opened with a copy of the source transcript, so it
-// is never empty, and would otherwise survive every failed run as a duplicate
-// chat nobody asked for.
-func discardOpenedSession(app core.App, t searchTurn) {
-	if t.opened == nil {
-		return
-	}
-	if !t.forked {
-		discardEmptySession(app, t.opened)
-		return
-	}
-	if err := chat.DeleteSession(app, t.opened); err != nil {
-		app.Logger().Error("discard forked chat session failed", "session", t.opened.Id, slog.Any("error", err))
-	}
-}
-
 func writeChatSessionError(e *core.RequestEvent, app core.App, err error) error {
 	if errors.Is(err, chat.ErrNotFound) {
 		return writeError(e, http.StatusNotFound, "Chat not found.")

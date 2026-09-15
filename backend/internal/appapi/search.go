@@ -62,11 +62,8 @@ type searchTurn struct {
 	agent ai.SearchAgent
 	// opened holds the same record as session only when this request created
 	// it, which is what may be taken back when the turn never lands.
-	session *core.Record
-	opened  *core.Record
-	// forked says opened is a copy of another conversation rather than an empty
-	// one, which changes how it is taken back: see discardOpenedSession.
-	forked   bool
+	session  *core.Record
+	opened   *core.Record
 	ownerID  string
 	runID    string
 	content  string
@@ -250,7 +247,10 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		if forking {
 			// From here `session` is the copy, so the run, the session frame and
 			// the stored turn all name the fork; the source keeps the transcript
-			// it had when this request read it.
+			// it had when this request read it. Deliberately not taken back when
+			// the run fails, unlike an empty conversation: the copy is named to
+			// the client before the first provider call, and by then the page is
+			// standing in it.
 			created, createErr = chat.ForkSession(app, ownerID, session)
 		} else {
 			created, createErr = chat.CreateSession(app, chat.NewSession{
@@ -275,7 +275,6 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		agent:          agent,
 		session:        session,
 		opened:         opened,
-		forked:         forking,
 		ownerID:        ownerID,
 		runID:          runID,
 		content:        content,
@@ -301,7 +300,7 @@ func persistSearchTurn(app core.App, t searchTurn, reply string, hits []ai.Docum
 	})
 	if err != nil {
 		app.Logger().Error("search persist failed", slog.Any("error", err))
-		discardOpenedSession(app, t)
+		discardEmptySession(app, t.opened)
 		return searchResponse{
 			Message:   unsavedMessage(chat.RoleAssistant, reply, hits),
 			Documents: hits,
@@ -359,7 +358,7 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 			reply, hits, err = turn.agent.Search(turn.agentContext(ctx), turn.messages, turn.tools.tags, turn.tools.search, ai.SearchOptions{DenseRetrieval: turn.tools.dense})
 		}
 		if err != nil {
-			discardOpenedSession(app, turn)
+			discardEmptySession(app, turn.opened)
 			// Running out of budget is not the provider failing, and saying so
 			// sends the caller to check an AI configuration that is fine.
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -458,7 +457,7 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 		}
 		if err != nil {
 			// Either way the conversation this request opened never got a turn.
-			discardOpenedSession(app, turn)
+			discardEmptySession(app, turn.opened)
 			if runErr := ctx.Err(); runErr != nil {
 				// The run itself was stopped, out of budget or cancelled. Not the
 				// client merely hanging up, which does not reach here.

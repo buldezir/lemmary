@@ -91,6 +91,9 @@ export function SearchPage() {
   // reads the send closure through a ref refreshed in an effect, so a setState
   // in the click handler would not be visible to the send that click triggers.
   const forkRef = useRef(false)
+  // The hook's own claim, reached from inside a run. Assigned rather than
+  // called directly because the run is defined before the hook that owns it.
+  const adoptRef = useRef<(session: ChatSession) => void>(() => {})
 
   const sessions = useAsync(() => listChatSessions({ kind: 'search' }), [])
 
@@ -188,6 +191,14 @@ export function SearchPage() {
             switch (event.type) {
               case 'session':
                 box.session = event.session
+                // A fork exists before the run makes a single provider call,
+                // and this is where the page moves into it: the rail row, the
+                // URL and the steps below belong to the copy from here, rather
+                // than appearing once the answer is already in.
+                if (forkFrom) {
+                  adoptRef.current(event.session)
+                  onSessionSettled(event.session, false)
+                }
                 break
               case 'step':
                 applyStep(collected, event)
@@ -271,7 +282,7 @@ export function SearchPage() {
         detail: stored.detail,
       }
     },
-    [],
+    [onSessionSettled],
   )
 
   const chat = useChatSession({
@@ -295,6 +306,9 @@ export function SearchPage() {
     },
     onSessionSettled,
   })
+  useEffect(() => {
+    adoptRef.current = chat.adoptSession
+  }, [chat.adoptSession])
 
   // A chat's stored mode wins over the path, which a hand-edited or stale URL
   // can contradict, so the next turn is not sent under a mode the server refuses.
