@@ -251,7 +251,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 			// the run fails, unlike an empty conversation: the copy is named to
 			// the client before the first provider call, and by then the page is
 			// standing in it.
-			created, createErr = chat.ForkSession(app, ownerID, session)
+			created, createErr = chat.ForkSession(app, ownerID, session, "")
 		} else {
 			created, createErr = chat.CreateSession(app, chat.NewSession{
 				UserID:       ownerID,

@@ -253,7 +253,7 @@ func TestForkSessionCopiesTheTranscriptAndLeavesTheSourceAlone(t *testing.T) {
 		t.Fatalf("AppendTurn: %v", err)
 	}
 
-	fork, err := chat.ForkSession(app, userID, source)
+	fork, err := chat.ForkSession(app, userID, source, "")
 	if err != nil {
 		t.Fatalf("ForkSession: %v", err)
 	}
@@ -333,6 +333,74 @@ func TestForkSessionCopiesTheTranscriptAndLeavesTheSourceAlone(t *testing.T) {
 	}
 }
 
+// Branching off an answer the conversation has since moved past: the copy ends
+// where it was asked to, and what came after it is what the fork exists to
+// leave behind.
+func TestForkSessionCutsTheTranscriptAtUpto(t *testing.T) {
+	app := bootAppForStore(t)
+	userID := makeUser(t, app, "fork-upto@example.test")
+
+	source, err := chat.CreateSession(app, chat.NewSession{
+		UserID:       userID,
+		Kind:         chat.KindSearch,
+		Mode:         chat.ModeResearch,
+		FirstMessage: "how much did I spend on the car in 2024?",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	for _, turn := range []chat.Turn{
+		{UserContent: "how much did I spend on the car in 2024?", AssistantContent: "€412."},
+		{UserContent: "and on the boiler?", AssistantContent: "€180."},
+	} {
+		turn.Mode = chat.ModeResearch
+		if _, err := chat.AppendTurn(app, userID, source.Id, turn); err != nil {
+			t.Fatalf("AppendTurn: %v", err)
+		}
+	}
+
+	messages, err := chat.ListMessages(app, source.Id, 0)
+	if err != nil {
+		t.Fatalf("ListMessages(source): %v", err)
+	}
+	if len(messages) != 4 {
+		t.Fatalf("source holds %d messages, want 4", len(messages))
+	}
+
+	fork, err := chat.ForkSession(app, userID, source, messages[1].Id)
+	if err != nil {
+		t.Fatalf("ForkSession: %v", err)
+	}
+
+	forked, err := chat.ListMessages(app, fork.Id, 0)
+	if err != nil {
+		t.Fatalf("ListMessages(fork): %v", err)
+	}
+	if len(forked) != 2 {
+		t.Fatalf("fork holds %d messages, want the first pair only", len(forked))
+	}
+	first := chat.ToMessageInfo(forked[0])
+	second := chat.ToMessageInfo(forked[1])
+	if first.Seq != 1 || second.Seq != 2 {
+		t.Fatalf("fork seqs = %d/%d, want 1/2", first.Seq, second.Seq)
+	}
+	if second.Content != "€412." {
+		t.Fatalf("fork ends on %q, want the answer it branched from", second.Content)
+	}
+	if info := chat.ToSessionInfo(fork); info.MessageCount != 2 {
+		t.Fatalf("fork message_count = %d, want 2", info.MessageCount)
+	}
+
+	// An anchor the source does not hold means the transcript moved under the
+	// client, and a whole copy is not what it asked for.
+	if _, err := chat.ForkSession(app, userID, source, "nosuchmessage00"); !errors.Is(err, chat.ErrNotFound) {
+		t.Fatalf("ForkSession with an unknown upto = %v, want ErrNotFound", err)
+	}
+	if total, err := chat.CountSessions(app, userID); err != nil || total != 2 {
+		t.Fatalf("CountSessions() = %d, %v; want 2 and no error", total, err)
+	}
+}
+
 // The cap is what stops an account turning the sidebar into an unbounded table,
 // and a fork is a new row like any other.
 func TestForkSessionRefusesPastTheSessionCap(t *testing.T) {
@@ -359,7 +427,7 @@ func TestForkSessionRefusesPastTheSessionCap(t *testing.T) {
 		}
 	}
 
-	if _, err := chat.ForkSession(app, userID, source); !errors.Is(err, chat.ErrTooManySessions) {
+	if _, err := chat.ForkSession(app, userID, source, ""); !errors.Is(err, chat.ErrTooManySessions) {
 		t.Fatalf("ForkSession at the cap = %v, want ErrTooManySessions", err)
 	}
 	if total, err := chat.CountSessions(app, userID); err != nil || total != chat.MaxSessionsPerUser {
