@@ -1,4 +1,4 @@
-import { type SubmitEvent } from 'react'
+import { type KeyboardEvent, type SubmitEvent } from 'react'
 import { Button } from './ui'
 
 type ChatComposerProps = {
@@ -18,12 +18,15 @@ type ChatComposerProps = {
    * useful upper bound on how long it can run.
    */
   onCancel?: () => void
-  /**
-   * A second way to send what is in the box, beside the main one and under the
-   * same enablement rule. Absent on pages that have only one.
-   */
-  secondary?: { label: string; title?: string; onClick: () => void }
 }
+
+// Named for the keyboard the reader has. Read once: nothing about it changes
+// while the page is open, and it labels a button that rerenders on every
+// keystroke.
+const sendChord =
+  typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.userAgent)
+    ? '⌘ + Enter'
+    : 'Ctrl + Enter'
 
 export function ChatComposer({
   value,
@@ -37,11 +40,24 @@ export function ChatComposer({
   error,
   autoFocus = false,
   onCancel,
-  secondary,
 }: ChatComposerProps) {
+  const ready = !sending && !disabled && value.trim() !== ''
+
   function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     onSubmit()
+  }
+
+  // The chord rather than Enter alone: the box is two rows and resizable
+  // because these questions run long, so a bare Enter belongs to the text.
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey)) {
+      return
+    }
+    event.preventDefault()
+    if (ready) {
+      onSubmit()
+    }
   }
 
   return (
@@ -53,25 +69,20 @@ export function ChatComposer({
           rows={2}
           value={value}
           onChange={(event) => onChange(event.target.value)}
+          onKeyDown={handleKeyDown}
           autoFocus={autoFocus}
           disabled={sending || disabled}
           placeholder={placeholder}
           className="min-h-12 w-0 min-w-40 flex-1 resize-y rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood disabled:cursor-not-allowed disabled:opacity-50"
         />
-        <Button type="submit" disabled={sending || disabled || !value.trim()}>
-          {sending ? sendingLabel : submitLabel}
-        </Button>
-        {secondary && (
-          <Button
-            type="button"
-            variant="secondary"
-            title={secondary.title}
-            disabled={sending || disabled || !value.trim()}
-            onClick={secondary.onClick}
-          >
-            {secondary.label}
+        {/* Under the button rather than beside it, so the hint cannot push the
+            row into a second line at phone width. */}
+        <div className="flex flex-col items-stretch gap-1">
+          <Button type="submit" disabled={!ready}>
+            {sending ? sendingLabel : submitLabel}
           </Button>
-        )}
+          <span className="text-center text-xs text-ink-faint">{sendChord}</span>
+        </div>
         {sending && onCancel && (
           <Button type="button" variant="secondary" onClick={onCancel}>
             Cancel

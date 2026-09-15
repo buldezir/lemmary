@@ -37,16 +37,34 @@ var ThreadRoles = []string{RoleUser, RoleAssistant, RoleTool, RoleSystem}
 
 // Visible reports whether a row is part of the conversation a person reads.
 // The others are the machinery underneath it, replayed to the model and folded
-// into the research trail rather than rendered as a message.
-func Visible(role, content string) bool {
+// into the research trail rather than rendered as a message. An assistant row
+// that carries tool calls is machinery whatever it said on the way: a model
+// that narrates its next search before making it is thinking out loud, and that
+// belongs in the trail rather than in a bubble of its own.
+//
+// Tool calls come two ways. An OpenAI-shaped model fills tool_calls, which is
+// hasCalls; the DSML dialect writes its invoke markup into the content and
+// leaves the column empty, so that content is the same round by another route
+// and is read here the same way.
+func Visible(role, content string, hasCalls bool) bool {
 	switch role {
 	case RoleUser:
 		return true
 	case RoleAssistant:
-		return strings.TrimSpace(content) != ""
+		return !hasCalls && !ai.ContentHasDSMLToolCalls(content) && strings.TrimSpace(content) != ""
 	default:
 		return false
 	}
+}
+
+// VisibleRecord is Visible over a stored row.
+func VisibleRecord(record *core.Record) bool {
+	return Visible(record.GetString("role"), record.GetString("content"), hasToolCalls(record))
+}
+
+func hasToolCalls(record *core.Record) bool {
+	raw := strings.TrimSpace(record.GetString("tool_calls"))
+	return raw != "" && raw != "null"
 }
 
 // The two things a search turn can be: find documents and list them, or read
@@ -310,10 +328,10 @@ func EncodeToolCalls(calls []ai.ToolCall) types.JSONRaw {
 }
 
 func DecodeToolCalls(record *core.Record) []ai.ToolCall {
-	raw := strings.TrimSpace(record.GetString("tool_calls"))
-	if raw == "" || raw == "null" {
+	if !hasToolCalls(record) {
 		return nil
 	}
+	raw := strings.TrimSpace(record.GetString("tool_calls"))
 	var calls []ai.ToolCall
 	if err := json.Unmarshal([]byte(raw), &calls); err != nil {
 		return nil
@@ -451,7 +469,7 @@ func VisibleMessages(records []*core.Record) []MessageInfo {
 	var pending []StoredStep
 	for _, record := range records {
 		info := ToMessageInfo(record)
-		if !Visible(info.Role, info.Content) {
+		if !VisibleRecord(record) {
 			pending = append(pending, info.Steps...)
 			continue
 		}
