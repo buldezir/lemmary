@@ -49,8 +49,8 @@ type Config struct {
 	EmbeddingDims int
 
 	// WebSearchProviderID binds the provider backing the web_search and
-	// web_fetch tools. Unset means the tools are never offered, which is the
-	// pre-flag behaviour. No model: a web-search API has none.
+	// web_fetch tools. Unset means no web call is served, which is the pre-flag
+	// behaviour. No model: a web-search API has none.
 	WebSearchProviderID string
 
 	OCRProvider          *aiprovider.Provider

@@ -319,27 +319,3 @@ func TestAnUnknownWebToolNameIsReportedBack(t *testing.T) {
 	}
 }
 
-// The tools are declared only when a provider is bound, so an archive-only run
-// cannot be talked into reaching the web.
-func TestWebToolsAreOfferedOnlyWithAProvider(t *testing.T) {
-	t.Parallel()
-	names := func(req ResearchRequest) []string {
-		tools := researchTools()
-		if req.Web != nil {
-			tools = append(tools, webSearchTool(), webFetchTool())
-		}
-		out := make([]string, 0, len(tools))
-		for _, tool := range tools {
-			out = append(out, tool.Function.Name)
-		}
-		return out
-	}
-	without := strings.Join(names(ResearchRequest{}), ",")
-	if strings.Contains(without, "web_") {
-		t.Errorf("tools without a provider = %s", without)
-	}
-	with := strings.Join(names(ResearchRequest{Web: websearch.NewTavily("k", "", time.Second, nil)}), ",")
-	if !strings.Contains(with, "web_search") || !strings.Contains(with, "web_fetch") {
-		t.Errorf("tools with a provider = %s", with)
-	}
-}

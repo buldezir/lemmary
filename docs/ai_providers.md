@@ -203,7 +203,7 @@ renders a list of cards, and there is nowhere in that to put a web result.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `WEB_SEARCH_SDK` | unset (the tools are never offered) | The web-search provider's SDK. `tavily` is the only value; every other SDK is refused, none of them searches the web. |
+| `WEB_SEARCH_SDK` | unset (no web call is served) | The web-search provider's SDK. `tavily` is the only value; every other SDK is refused, none of them searches the web. |
 | `WEB_SEARCH_API_KEY` | empty | Its credential, required whenever the SDK is named. There is nothing to borrow it from: a web-search provider is always its own endpoint. |
 | `WEB_SEARCH_BASE_URL` | the SDK's own endpoint | Where that provider lives, for a gateway in front of it. Defaults to `https://api.tavily.com`. |
 
@@ -287,11 +287,18 @@ the Messages API, the `x-opencode-session` header on the rest of OpenCode.
 Nothing is asked of the others: an unknown field is a rejected request, not a
 missed saving.
 
-A research turn declares the web tools whether or not that question has the web
-enabled, and refuses the call when it does not. The tool list is part of what
-was cached, so a list that followed the per-turn toggle would throw the whole
-transcript away every time someone ticked the box; a few hundred tokens of
-schema on every call is the cheaper side of that trade.
+A research turn declares every tool schema on every call, whatever is behind
+them — the web tools with the toggle off, `survey_documents` with no helper
+model bound, `count_documents` either way — and refuses the call when there is
+nothing to serve it. The tool list is part of what was cached, so a list that
+followed the toggle, or that changed the moment an admin bound a helper, would
+throw the whole transcript away; a few hundred tokens of schema on every call
+is the cheaper side of that trade. Ask AI is unaffected: it has no stored
+thread to lose, and still offers the web tools only when they work.
+
+A chat that was opened before this landed keeps the system prompt it was opened
+with, which does not mention the web. That costs it one re-read and nothing
+after; rewriting the stored prompt would move the very prefix this is about.
 
 What still costs a full re-read is an idle gap longer than the provider's cache
 lifetime — five minutes on Anthropic's default. It shows as `cached_tokens=0`

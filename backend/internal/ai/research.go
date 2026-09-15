@@ -99,8 +99,11 @@ type ResearchRequest struct {
 	// DenseRetrieval says searches match by meaning as well as by keyword;
 	// see SearchOptions.
 	DenseRetrieval bool
-	// Survey and Count back survey_documents and count_documents. Either may
-	// be nil, and the tool is then not offered.
+	// Survey and Count back survey_documents and count_documents. Either may be
+	// nil -- a helper model can be bound and unbound between two questions of
+	// one conversation -- and the tool is declared anyway, because the list is
+	// part of what the provider cached. A call with nothing behind it is
+	// refused.
 	Survey DocumentSurveyor
 	Count  DocumentCounter
 	// Web backs web_search and web_fetch. Nil unless an operator configured a
@@ -230,20 +233,19 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 		apiMessages = append(apiMessages, param)
 	}
 
-	tools := researchTools()
-	if req.Survey != nil {
-		tools = append(tools, surveyDocumentsTool())
-	}
-	if req.Count != nil {
-		tools = append(tools, countDocumentsTool())
-	}
-	// Declared whether or not this turn has the web, because the tool list is
-	// part of what the provider cached and the toggle is per turn: a list that
-	// grew and shrank with it would forfeit the whole transcript's prefix on
-	// every change. What the toggle moves instead is the note beside the
-	// question, which is at the tail where a turn's own instruction belongs.
-	// Off, the schemas are answered by a refusal; see runWebTool.
-	tools = append(tools, webSearchTool(), webFetchTool())
+	// Every schema, every turn, whatever is behind them. The tool list is part
+	// of what the provider cached, and what backs these three moves underneath
+	// a conversation: the web toggle is per question, and a helper or a counter
+	// can be bound or unbound between two of them. A list that followed would
+	// forfeit the whole transcript's prefix each time. A call with nothing
+	// behind it is refused instead -- see runWebTool, runSurveyTool and
+	// runCountTool -- which costs one round and no cache.
+	tools := append(researchTools(),
+		surveyDocumentsTool(),
+		countDocumentsTool(),
+		webSearchTool(),
+		webFetchTool(),
+	)
 	stalled := 0
 	round := 0
 	var usage Usage
@@ -792,8 +794,8 @@ func decodeReadArgs(data string) (readDocumentsArgs, error) {
 }
 
 // latestUserMessage is the question the run is answering: the last user turn.
-// latestUserMessage finds the question the run is answering. Tool results are
-// stored as tool rows even when the dialect feeds them back as user messages,
+// Tool results are stored as tool rows even when the dialect feeds them back
+// as user messages,
 // so the loop talking to itself cannot be mistaken for the question -- which
 // would send every read off to focus on a JSON blob.
 func latestUserMessage(thread []ThreadMessage) string {
@@ -887,11 +889,11 @@ Documents cited earlier in this conversation can be read by id straight away; yo
 For a question about many documents at once -- a topic, everything from one correspondent, a total over a year -- use survey_documents once with the question and the fields you need instead of reading documents one by one. Its rows and totals are evidence you may cite.
 For how-many or distribution questions call count_documents with the filters instead of counting search results: a search result is a capped page, not the archive.
 There is no limit on how many searches or reads you may make. Stop gathering and write the answer once you have enough evidence.
+Not every tool is backed on every question. When a call comes back saying it is not available or not enabled, do not try it again: work with the tools that answer, and say what you could not check.
 Cite real document ids from tool results only. Never invent a document or an id.
 If the archive does not contain the answer, say so plainly and say what is missing.
 
-You can also reach the public web with web_search and web_fetch, for what the archive cannot hold: current prices, rates and rules, a company's present details, anything that changed after the documents were written.
-Web access is granted per question. When a web call comes back saying it is not enabled, do not try again: answer from the archive and say what you could not check.
+You can also reach the public web with web_search and web_fetch, for what the archive cannot hold: current prices, rates and rules, a company's present details, anything that changed after the documents were written. Web access is granted per question, so these are the calls most likely to come back refused.
 The archive is still the primary source. Search it first, and use the web to check or complete what you found there rather than instead of looking.
 A search result's snippet is a reason to fetch the page, not the whole of what it says: web_fetch before claiming what a page contains, exactly as you would read a document.
 Web calls are limited and billed; make them count.

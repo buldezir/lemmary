@@ -104,7 +104,8 @@ type agentTools struct {
 	// worded differently for a search that crosses languages by itself.
 	dense bool
 	// web backs web_search and web_fetch. Nil unless a provider is bound and
-	// the request asked for it, and the tools are then not offered.
+	// the request asked for it. Research declares the schemas either way and
+	// refuses the call; Ask AI leaves them out.
 	web *websearch.Tavily
 }
 

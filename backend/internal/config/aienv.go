@@ -81,8 +81,8 @@ const (
 	EnvChatGPTLogin = "AI_CHATGPT_LOGIN"
 
 	// The web-search block seeds the provider backing web_search and web_fetch.
-	// Unset means the tools are never offered. Its own SDK always: no SDK that
-	// chats or reads a document also searches the web.
+	// Unset means no web call is served. Its own SDK always: no SDK that chats
+	// or reads a document also searches the web.
 	EnvWebSearchSDK     = "WEB_SEARCH_SDK"
 	EnvWebSearchAPIKey  = "WEB_SEARCH_API_KEY"
 	EnvWebSearchBaseURL = "WEB_SEARCH_BASE_URL"
@@ -335,9 +335,9 @@ func parseEmbedding(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error
 	}, nil
 }
 
-// parseWebSearch reads the optional web-search provider. Unset means the
-// web_search and web_fetch tools are never offered, which is the pre-flag
-// behaviour and a working state.
+// parseWebSearch reads the optional web-search provider. Unset means no web
+// call is served -- Ask AI offers no web tools, and research declares them and
+// refuses -- which is the pre-flag behaviour and a working state.
 func parseWebSearch() (aiprovider.ProviderSpec, error) {
 	sdk := strings.TrimSpace(os.Getenv(EnvWebSearchSDK))
 	key := strings.TrimSpace(os.Getenv(EnvWebSearchAPIKey))
