@@ -50,7 +50,8 @@ export type UseChatSessionResult = {
   /** True when a turn was answered but could not be stored. */
   unsaved: boolean
   unsavedDetail: string
-  submit: () => Promise<void>
+  /** `resume` continues the stored turn instead of sending the composer. */
+  submit: (options?: { resume?: boolean }) => Promise<void>
   /** Abandons an unsaved chat and starts a fresh one in place. */
   reset: () => void
   /**
@@ -229,19 +230,26 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     // only for the linter.
   }, [sessionId, resume])
 
-  const submit = useCallback(async () => {
+  const submit = useCallback(async (options?: { resume?: boolean }) => {
+    // A resume sends no question: the one it continues is already stored, the
+    // server ignores the content, and the composer of a reloaded chat is empty
+    // -- which is exactly where continuing is offered. The run's own resume
+    // flag travels through the page's `send`; this only waives the text.
+    const resume = options?.resume === true
     const text = input.trim()
-    if (!text || sending) {
+    if ((!text && !resume) || sending) {
       return
     }
 
     const epoch = epochRef.current
     const owner = ownedRef.current
-    const pending: ChatTurn = {
-      id: `pending-${++pendingIdRef.current}`,
-      role: 'user',
-      content: text,
-    }
+    const pending: ChatTurn | null = text
+      ? {
+          id: `pending-${++pendingIdRef.current}`,
+          role: 'user',
+          content: text,
+        }
+      : null
 
     setSending(true)
     setInput('')
@@ -249,7 +257,9 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     setUnsaved(false)
     setUnsavedDetail('')
     setResuming(false)
-    setTurns((current) => [...current, pending])
+    if (pending) {
+      setTurns((current) => [...current, pending])
+    }
 
     try {
       const result = await sendRef.current({ sessionId: owner ?? undefined, content: text })
@@ -277,7 +287,19 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
         return
       }
       setError(err instanceof Error ? err.message : 'Failed to get AI response')
-      setTurns((current) => current.filter((turn) => turn.id !== pending.id))
+      // A run that claimed a conversation mid-flight has already stored the
+      // question and whatever work it got through, so this turn is unfinished
+      // rather than gone. Taking the bubble back and handing the text to the
+      // composer would offer a fresh send that appends the same question to
+      // that thread a second time; the way on is Continue, which is the state a
+      // reload of this chat would land in.
+      if (ownedRef.current !== owner) {
+        setUnfinished(true)
+        return
+      }
+      if (pending) {
+        setTurns((current) => current.filter((turn) => turn.id !== pending.id))
+      }
       // The question goes back in the composer unless it is already being
       // answered: a broken stream leaves the server working on it, and
       // resubmitting would pay for the same run twice.

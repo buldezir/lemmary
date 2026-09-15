@@ -31,7 +31,11 @@ type parsedToolCall struct {
 	Arguments string // JSON object
 }
 
-func contentHasDSMLToolCalls(content string) bool {
+// ContentHasDSMLToolCalls reports markup this dialect puts where an
+// OpenAI-shaped model would have filled tool_calls. Exported because a stored
+// row has to be recognised as a tool round outside this package too: it is
+// machinery, not something to render.
+func ContentHasDSMLToolCalls(content string) bool {
 	return dsmlLooseMarkerRe.MatchString(content) && strings.Contains(strings.ToLower(content), "invoke")
 }
 

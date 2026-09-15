@@ -153,7 +153,7 @@ export function ResearchPage() {
   function continueTurn() {
     resumeRef.current = true
     chat.setUnfinished(false)
-    void chat.submit()
+    void chat.submit({ resume: true })
   }
 
   return (

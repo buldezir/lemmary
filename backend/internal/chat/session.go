@@ -41,12 +41,17 @@ var ThreadRoles = []string{RoleUser, RoleAssistant, RoleTool, RoleSystem}
 // that carries tool calls is machinery whatever it said on the way: a model
 // that narrates its next search before making it is thinking out loud, and that
 // belongs in the trail rather than in a bubble of its own.
+//
+// Tool calls come two ways. An OpenAI-shaped model fills tool_calls, which is
+// hasCalls; the DSML dialect writes its invoke markup into the content and
+// leaves the column empty, so that content is the same round by another route
+// and is read here the same way.
 func Visible(role, content string, hasCalls bool) bool {
 	switch role {
 	case RoleUser:
 		return true
 	case RoleAssistant:
-		return !hasCalls && strings.TrimSpace(content) != ""
+		return !hasCalls && !ai.ContentHasDSMLToolCalls(content) && strings.TrimSpace(content) != ""
 	default:
 		return false
 	}

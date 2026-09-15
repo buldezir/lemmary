@@ -643,6 +643,67 @@ func TestVisibleMessagesFoldTheTrailOntoTheTurn(t *testing.T) {
 	}
 }
 
+// The DSML dialect writes its calls into the content and leaves tool_calls
+// empty, so a rule that reads only the column lets the markup through as an
+// answer -- and reads a run that died on that row as finished, which hides the
+// Continue button. Same round, other route.
+func TestVisibleMessagesHideDSMLToolCallRows(t *testing.T) {
+	app := bootAppForStore(t)
+	userID := makeUser(t, app, "dsml@example.test")
+	session, err := chat.CreateSession(app, chat.NewSession{
+		UserID:       userID,
+		Kind:         chat.KindSearch,
+		Mode:         chat.ModeResearch,
+		FirstMessage: "how much?",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	const markup = "Let me look.\n<｜DSML｜invoke name=\"search_documents\">" +
+		"<｜DSML｜parameter name=\"query\">invoice</｜DSML｜parameter>" +
+		"</｜DSML｜invoke>"
+	for _, row := range []chat.ThreadEntry{
+		{Role: chat.RoleUser, Content: "how much?"},
+		// No Calls: this dialect's round is the markup, and the result comes
+		// back as a tool row with no call id to answer.
+		{Role: chat.RoleAssistant, Content: markup},
+	} {
+		if _, err := chat.AppendThreadMessage(app, userID, session.Id, row); err != nil {
+			t.Fatalf("AppendThreadMessage: %v", err)
+		}
+	}
+
+	records, _ := chat.ListMessages(app, session.Id, 0)
+	if visible := chat.VisibleMessages(records); len(visible) != 1 || visible[0].Role != chat.RoleUser {
+		t.Fatalf("visible messages = %+v, want the question alone", visible)
+	}
+	if !chat.Unfinished(records) {
+		t.Fatal("a run that died on a DSML tool-call row must read as unfinished")
+	}
+	reloaded, err := chat.FindOwnedSession(app, userID, session.Id)
+	if err != nil {
+		t.Fatalf("FindOwnedSession: %v", err)
+	}
+	if got := reloaded.GetInt("message_count"); got != 1 {
+		t.Fatalf("message_count = %d, want 1: the markup is not a message", got)
+	}
+
+	// And an ordinary answer is still an answer, markup-free.
+	if _, err := chat.AppendThreadMessage(app, userID, session.Id, chat.ThreadEntry{
+		Role: chat.RoleAssistant, Content: "EUR 412.",
+	}); err != nil {
+		t.Fatalf("AppendThreadMessage answer: %v", err)
+	}
+	records, _ = chat.ListMessages(app, session.Id, 0)
+	if chat.Unfinished(records) {
+		t.Fatal("a turn that reached an answer must not read as unfinished")
+	}
+	if visible := chat.VisibleMessages(records); len(visible) != 2 {
+		t.Fatalf("visible = %d messages, want the question and the answer: %+v", len(visible), visible)
+	}
+}
+
 // A research conversation is replayed whole. A row cap would slide the window
 // as it grew, dropping the system prompt off the front and handing the provider
 // a different prefix on every turn -- the opposite of what storing the thread is

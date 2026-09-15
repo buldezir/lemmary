@@ -284,14 +284,14 @@ func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, 
 		if !allowTools || !hasToolCalls {
 			a.client.logger.Info("search agent finalizing",
 				"allow_tools", allowTools,
-				"dsml", contentHasDSMLToolCalls(msg.Content),
+				"dsml", ContentHasDSMLToolCalls(msg.Content),
 				"content_chars", len(msg.Content),
 				"hits", len(allHits),
 			)
 			reply := finalizeSearchReply(msg.Content, allHits)
 			// If the model ignored "no tools" and emitted DSML again, force one
 			// more answer-only turn while we still have hits to ground it.
-			if !allowTools && contentHasDSMLToolCalls(msg.Content) && round == maxRounds {
+			if !allowTools && ContentHasDSMLToolCalls(msg.Content) && round == maxRounds {
 				forced, forcedHits, err := a.forceFinalAnswer(ctx, apiMessages, allHits)
 				if err == nil && strings.TrimSpace(forced) != "" && !replyLooksLikeToolMarkup(forced) {
 					return forced, forcedHits, nil
@@ -357,10 +357,10 @@ If nothing relevant was found, say so clearly.`,
 func finalizeSearchReply(content string, hits []DocumentHit) string {
 	reply := stripDSMLMarkup(strings.TrimSpace(content))
 	// Defense in depth: drop any leftover DSML-looking markup.
-	if contentHasDSMLToolCalls(reply) {
+	if ContentHasDSMLToolCalls(reply) {
 		reply = stripDSMLMarkup(reply)
 	}
-	if contentHasDSMLToolCalls(reply) || replyLooksLikeToolMarkup(reply) {
+	if ContentHasDSMLToolCalls(reply) || replyLooksLikeToolMarkup(reply) {
 		reply = ""
 	}
 	if reply != "" {
