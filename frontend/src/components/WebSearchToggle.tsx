@@ -33,7 +33,7 @@ export function WebSearchToggle({
         Search the web
         <span className="ml-2 text-xs text-ink-muted">
           Looks things up online when your archive cannot answer. Costs a web-search credit
-          per lookup.
+          per lookup. Applies to this question only — the next one starts with it off again.
         </span>
       </span>
     </label>

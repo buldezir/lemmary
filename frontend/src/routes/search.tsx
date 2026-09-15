@@ -87,6 +87,10 @@ export function SearchPage() {
   // stops the run itself. Both are needed, because the server keeps working
   // through a dropped connection.
   const runRef = useRef<{ controller: AbortController; id: string } | null>(null)
+  // Which button started the send in flight. A ref rather than state: `submit`
+  // reads the send closure through a ref refreshed in an effect, so a setState
+  // in the click handler would not be visible to the send that click triggers.
+  const forkRef = useRef(false)
 
   const sessions = useAsync(() => listChatSessions({ kind: 'search' }), [])
 
@@ -118,19 +122,22 @@ export function SearchPage() {
     (session: ChatSession, created: boolean) => {
       // Merged in straight away so the row is there with the transcript.
       setJustSettled(session)
-      if (created) {
-        // replace: Back should not land on the now-orphaned empty /search.
+      // Also when the turn landed somewhere else than where it was typed, which
+      // is what a fork does. replace only for `created`: Back should not land on
+      // the now-orphaned empty /search, but it should lead out of a fork and
+      // back into the conversation it branched from.
+      if (created || session.id !== sessionId) {
         void navigate({
           to: `${basePath}/$sessionId`,
           params: { sessionId: session.id },
-          replace: true,
+          replace: created,
         })
       }
       // After every turn, not only the first: last_message_at moved and the row
       // has to move with it. reload() refreshes without a loading flash.
       void sessions.reload()
     },
-    [basePath, navigate, sessions],
+    [basePath, navigate, sessionId, sessions],
   )
 
   /**
@@ -146,6 +153,7 @@ export function SearchPage() {
       turnMode: SearchMode,
       turnBinding: ProviderBinding | undefined,
       turnWeb: boolean,
+      forkFrom?: string,
     ): Promise<ChatSendResult> => {
       const run = { controller: new AbortController(), id: runId() }
       runRef.current = run
@@ -167,6 +175,7 @@ export function SearchPage() {
         await searchStream(
           {
             sessionId: id,
+            forkFrom,
             content,
             mode: turnMode,
             runId: run.id,
@@ -277,7 +286,13 @@ export function SearchPage() {
       }
       return detail
     },
-    send: ({ sessionId: id, content }) => runTurn(id, content, mode, binding, web),
+    send: ({ sessionId: id, content }) => {
+      const fork = forkRef.current && Boolean(id)
+      forkRef.current = false
+      return fork
+        ? runTurn(undefined, content, mode, binding, web, id)
+        : runTurn(id, content, mode, binding, web)
+    },
     onSessionSettled,
   })
 
@@ -477,6 +492,21 @@ export function SearchPage() {
                 chat.resuming && sessionId
                   ? () => void cancelSearchRun({ sessionId })
                   : endRun
+              }
+              // Only where there is a conversation to branch from, and only in
+              // Research: a fork exists to keep a transcript worth keeping.
+              secondary={
+                mode === 'research' && sessionId
+                  ? {
+                      label: 'Research in fork',
+                      title:
+                        'Ask this in a copy of the chat, leaving this one as it is.',
+                      onClick: () => {
+                        forkRef.current = true
+                        void chat.submit()
+                      },
+                    }
+                  : undefined
               }
               autoFocus
             />
