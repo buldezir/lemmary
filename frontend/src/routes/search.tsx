@@ -21,6 +21,7 @@ import {
 } from '../lib/api/ai'
 import {
   deleteChatSession,
+  forkChatSession,
   getChatSession,
   listChatSessions,
   mergeChatSession,
@@ -76,6 +77,9 @@ export function SearchPage() {
   const [justSettled, setJustSettled] = useState<ChatSession | null>(null)
   const [railBusy, setRailBusy] = useState(false)
   const [railError, setRailError] = useState('')
+  // Its own line rather than railError: the button is in the transcript, and at
+  // phone width the rail that would carry the message is collapsed away.
+  const [forkError, setForkError] = useState('')
   // The model the next conversation opens on, deliberately kept across a new chat.
   const [binding, setBinding] = useState<ProviderBinding | undefined>()
   // Per turn, not per conversation: the server stores nothing about it, so a
@@ -340,6 +344,10 @@ export function SearchPage() {
   const inConversation = Boolean(sessionId) || Boolean(chat.session)
   const shownBinding = inConversation ? chatSessionBinding(chat.session) : binding
   const bindingLocked = inConversation || chat.sending || chat.turns.length > 0
+  // A fork exists to keep a transcript worth keeping, so there is nothing to
+  // branch before the conversation is saved -- and nothing in Search, a fork of
+  // which would be a copy of a list of cards.
+  const canFork = mode === 'research' && Boolean(sessionId)
 
   // A chat opens in the mode its last turn ran in: continuing a research
   // conversation as a plain search answers a different question than the
@@ -372,6 +380,26 @@ export function SearchPage() {
       await sessions.reload()
     } catch (err) {
       setRailError(err instanceof Error ? err.message : 'Failed to rename the chat')
+    } finally {
+      setRailBusy(false)
+    }
+  }
+
+  /**
+   * Branches the conversation at one of its answers. The copy is saved before
+   * this returns, so there is nothing to adopt: onSessionSettled merges the row
+   * and navigates, and the hook loads the fork as the chat switch it is.
+   */
+  async function onForkFrom(messageId: string) {
+    if (!sessionId) {
+      return
+    }
+    try {
+      setRailBusy(true)
+      setForkError('')
+      onSessionSettled(await forkChatSession(sessionId, messageId), false)
+    } catch (err) {
+      setForkError(err instanceof Error ? err.message : 'Failed to fork the chat')
     } finally {
       setRailBusy(false)
     }
@@ -448,6 +476,7 @@ export function SearchPage() {
             markdown reply stretches this column past the page's max width. */}
         <div className="min-w-0 flex-1">
           {chat.loadError && <p className="mb-3 text-sm text-madder">{chat.loadError}</p>}
+          {forkError && <p className="mb-3 text-sm text-madder">{forkError}</p>}
           {chat.unsaved && (
             <p className="mb-3 text-sm text-madder">
               {chat.unsavedDetail ||
@@ -471,6 +500,20 @@ export function SearchPage() {
                 <>
                   {turn.incomplete && <IncompleteNotice />}
                   {mode === 'search' && <SearchHits turn={turn} />}
+                  {/* Only on a stored answer: an id-less bubble is one the
+                      server could not save, and a copy taken at it would end
+                      on the turn before instead. */}
+                  {canFork && turn.role === 'assistant' && Boolean(turn.id) && (
+                    <Button
+                      variant="secondary"
+                      size="xs"
+                      title="Copy this chat up to this answer and continue there, leaving this one as it is."
+                      disabled={chat.sending || railBusy}
+                      onClick={() => void onForkFrom(turn.id)}
+                    >
+                      ⑂ Fork from here
+                    </Button>
+                  )}
                 </>
               )}
               renderSending={

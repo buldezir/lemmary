@@ -42,6 +42,12 @@ type chatRenameRequest struct {
 	Title string `json:"title"`
 }
 
+type chatForkRequest struct {
+	// Upto is the id of the last message the copy keeps. Empty copies the whole
+	// transcript, which is what the composer's fork does.
+	Upto string `json:"upto"`
+}
+
 // chatListPageSize follows MaxSessionsPerUser rather than the document list's
 // 12: the chat rail is a scrolling sidebar, and since an account cannot hold
 // more sessions than this, one request is always the whole list. It also bounds
@@ -192,6 +198,40 @@ func handlePatchChat(app core.App) func(*core.RequestEvent) error {
 		}
 
 		return writeJSON(e, http.StatusOK, chatSessionResponse{Session: chat.ToSessionInfo(session)})
+	}
+}
+
+// handlePostForkChat branches a conversation at one of its answers: the copy
+// keeps the transcript up to Upto and nothing after it, so a different line of
+// questions can start from an answer the chat has already moved past. The
+// composer's fork rides a turn request instead, because that one has a question
+// to send with it; this one hands back a copy to stand in and type the question
+// there.
+func handlePostForkChat(app core.App) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		session, err := ownedChatSession(app, e)
+		if err != nil {
+			return writeChatOwnerOrSessionError(e, app, err)
+		}
+
+		var req chatForkRequest
+		if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
+			return writeError(e, http.StatusBadRequest, "Invalid request body.")
+		}
+
+		forked, err := chat.ForkSession(app, session.GetString("user"), session, strings.TrimSpace(req.Upto))
+		if err != nil {
+			switch {
+			case errors.Is(err, chat.ErrTooManySessions):
+				return writeError(e, http.StatusConflict, tooManySessionsMessage)
+			case errors.Is(err, chat.ErrNotFound):
+				return writeError(e, http.StatusNotFound, "That answer is no longer in this chat.")
+			}
+			app.Logger().Error("fork chat failed", slog.Any("error", err))
+			return writeError(e, http.StatusInternalServerError, "Failed to fork the chat.")
+		}
+
+		return writeJSON(e, http.StatusOK, chatSessionResponse{Session: chat.ToSessionInfo(forked)})
 	}
 }
 

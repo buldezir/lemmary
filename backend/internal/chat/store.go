@@ -267,7 +267,13 @@ func CreateSession(app core.App, spec NewSession) (*core.Record, error) {
 // are a snapshot of what the answer cited. run_id is deliberately dropped --
 // it correlates a stored turn with the live request that produced it, and the
 // copy produced none.
-func ForkSession(app core.App, userID string, source *core.Record) (*core.Record, error) {
+//
+// upto names the last message the copy keeps, for branching off an answer with
+// a conversation already past it; empty takes the whole transcript. A message
+// id the source does not hold is ErrNotFound rather than the whole transcript:
+// a client asking to branch somewhere that is no longer there means a trim or
+// another window moved under it, and a full copy is not what it asked for.
+func ForkSession(app core.App, userID string, source *core.Record, upto string) (*core.Record, error) {
 	var session *core.Record
 
 	err := app.RunInTransaction(func(txApp core.App) error {
@@ -281,6 +287,19 @@ func ForkSession(app core.App, userID string, source *core.Record) (*core.Record
 		messages, err := ListMessages(txApp, source.Id, 0)
 		if err != nil {
 			return err
+		}
+		if upto != "" {
+			cut := -1
+			for i, message := range messages {
+				if message.Id == upto {
+					cut = i
+					break
+				}
+			}
+			if cut < 0 {
+				return ErrNotFound
+			}
+			messages = messages[:cut+1]
 		}
 		collection, err := txApp.FindCollectionByNameOrId(SessionsCollection)
 		if err != nil {
