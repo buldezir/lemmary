@@ -285,7 +285,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		messages:       append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content}),
 		tools:          tools,
 		priorDocuments: priorDocuments,
-		contextWindow:  contextWindowFor(e.Request.Context(), app, rt, snap.Cfg, binding),
+		contextWindow:  contextWindowFor(e.Request.Context(), app, rt, snap.Cfg, binding, mode),
 	}, false, nil
 }
 
@@ -293,7 +293,14 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 // catalogue named on its provider row. Zero for every way of not knowing --
 // catalogue off, provider untagged, model unlisted, host unreachable -- and a
 // zero only costs the denominator on the usage line.
-func contextWindowFor(ctx context.Context, app core.App, rt *config.Runtime, cfg config.Config, binding aiprovider.Binding) int {
+//
+// Research only. A search turn is one round that reports no usage, and a cold
+// catalogue costs a lookup this request would then hold the first SSE frame
+// behind for nothing.
+func contextWindowFor(ctx context.Context, app core.App, rt *config.Runtime, cfg config.Config, binding aiprovider.Binding, mode string) int {
+	if mode != chat.ModeResearch {
+		return 0
+	}
 	providerID, model := binding.ProviderID, binding.Model
 	if providerID == "" || model == "" {
 		providerID, model = cfg.SearchProviderID, cfg.SearchModel

@@ -121,6 +121,46 @@ func TestCatalogDoesNotRetryAFailedFetchImmediately(t *testing.T) {
 	}
 }
 
+// The cache is process-wide, so one viewer hanging up mid-fetch must not turn
+// their own cancellation into a failure every other request then reads.
+func TestCatalogIgnoresTheCallersCancellation(t *testing.T) {
+	t.Parallel()
+	srv, calls := catalogServer(t, oneModel)
+	catalog := NewCatalog(srv.URL, quietLogger())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got := catalog.ContextWindow(ctx, "openai", "gpt-4o"); got != 128000 {
+		t.Fatalf("window = %d, want the fetch to run despite the cancelled caller", got)
+	}
+	// And it was cached as a real answer, not as a failure to retry in minutes.
+	if got := catalog.ContextWindow(context.Background(), "openai", "gpt-4o"); got != 128000 {
+		t.Fatalf("second lookup = %d", got)
+	}
+	if got := atomic.LoadInt32(calls); got != 1 {
+		t.Fatalf("requests = %d, want the answer cached after one", got)
+	}
+}
+
+// Two lookups can miss at once. The one that fails must not bury what the one
+// that succeeded just filled in.
+func TestCatalogFailureDoesNotReplaceAGoodEntry(t *testing.T) {
+	t.Parallel()
+	srv, _ := catalogServer(t, oneModel)
+	catalog := NewCatalog(srv.URL, quietLogger())
+
+	if got := catalog.ContextWindow(context.Background(), "openai", "gpt-4o"); got != 128000 {
+		t.Fatalf("window = %d", got)
+	}
+	// What a concurrent loser does on its way out, with the good entry already in.
+	if got := catalog.cacheFailure("openai"); got == nil {
+		t.Fatal("a failure buried a live catalogue")
+	}
+	if got := catalog.ContextWindow(context.Background(), "openai", "gpt-4o"); got != 128000 {
+		t.Fatalf("window after a concurrent failure = %d, want it kept", got)
+	}
+}
+
 func TestDefaultCatalogAndValidCatalog(t *testing.T) {
 	t.Parallel()
 	if got := DefaultCatalog(SDKOpenAI); got != "openai" {

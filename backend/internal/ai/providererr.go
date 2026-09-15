@@ -19,10 +19,20 @@ const maxProviderErrorRunes = 400
 // Credentials and addresses providers echo back in error text. api_key is the
 // operator's, not the reader's, and the base URL is of no use to someone who
 // cannot change it; both would otherwise reach a user-visible message.
+//
+// The last three are for the errors that never reach an API type at all: a
+// transport failure names the address it could not reach, so "dial tcp
+// 10.0.0.5:11434: connect: connection refused" would otherwise tell every user
+// where the operator's model runs. A host is only redacted when it carries a
+// port, which is what a dial error has and what prose mentioning a vendor does
+// not.
 var providerSecretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\bbearer\s+\S+`),
 	regexp.MustCompile(`\b(?:sk|pk|rk)-[A-Za-z0-9_\-]{8,}`),
 	regexp.MustCompile(`https?://\S+`),
+	regexp.MustCompile(`\b\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?\b`),
+	regexp.MustCompile(`\[[0-9a-fA-F:]+\](?::\d{1,5})?`),
+	regexp.MustCompile(`(?i)\b(?:localhost|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9-]+)+):\d{1,5}\b`),
 }
 
 // ProviderErrorMessage renders a failed completion as something a user can act

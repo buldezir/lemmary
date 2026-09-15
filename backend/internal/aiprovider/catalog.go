@@ -139,19 +139,33 @@ func (c *Catalog) models(ctx context.Context, catalogID string) map[string]Model
 		return entry.models
 	}
 
-	models, err := c.fetch(ctx, catalogID)
-	// A failed fetch is cached as an empty catalogue for a short while, so an
-	// unreachable host costs one request per few minutes rather than one per turn.
-	ttl := catalogTTL
+	// Detached from the caller: this fills a process-wide cache, and a viewer
+	// who hangs up mid-fetch would otherwise turn their own cancellation into a
+	// failure cached for everyone. The client's own timeout still bounds it.
+	models, err := c.fetch(context.WithoutCancel(ctx), catalogID)
 	if err != nil {
 		c.logger.Warn("model catalog fetch failed", "catalog", catalogID, slog.Any("error", err))
-		models, ttl = nil, catalogRetryIn
+		return c.cacheFailure(catalogID)
 	}
 
 	c.mu.Lock()
-	c.entries[catalogID] = catalogEntry{models: models, expiresAt: time.Now().Add(ttl)}
+	c.entries[catalogID] = catalogEntry{models: models, expiresAt: time.Now().Add(catalogTTL)}
 	c.mu.Unlock()
 	return models
+}
+
+// cacheFailure remembers that the catalogue is unreachable, so an unreachable
+// host costs one request per few minutes rather than one per turn. It never
+// replaces an answer that is still good: two lookups can miss at once, and the
+// one that failed must not bury what the one that succeeded just filled in.
+func (c *Catalog) cacheFailure(catalogID string) map[string]ModelLimits {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if entry, ok := c.entries[catalogID]; ok && entry.models != nil && time.Now().Before(entry.expiresAt) {
+		return entry.models
+	}
+	c.entries[catalogID] = catalogEntry{expiresAt: time.Now().Add(catalogRetryIn)}
+	return nil
 }
 
 func (c *Catalog) fetch(ctx context.Context, catalogID string) (map[string]ModelLimits, error) {

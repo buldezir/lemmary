@@ -77,3 +77,44 @@ func TestProviderErrorMessageHandlesPlainErrors(t *testing.T) {
 		t.Fatalf("a non-SDK error should still reach the user: %q", got)
 	}
 }
+
+// A transport failure never reaches an API type, so it arrives with the address
+// it could not reach -- which is where the operator's model lives.
+func TestProviderErrorMessageRedactsAddressesInTransportErrors(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		err    error
+		secret string
+	}{
+		{"ipv4 and port", errors.New("dial tcp 10.0.0.5:11434: connect: connection refused"), "10.0.0.5"},
+		{"hostname and port", errors.New("dial tcp ollama.internal:11434: i/o timeout"), "ollama.internal:11434"},
+		{"localhost and port", errors.New("dial tcp localhost:8080: connection refused"), "localhost:8080"},
+		{"ipv6 and port", errors.New("dial tcp [fd00::1]:11434: no route to host"), "fd00::1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ProviderErrorMessage(tc.err)
+			if strings.Contains(got, tc.secret) {
+				t.Fatalf("message leaked %q: %s", tc.secret, got)
+			}
+			// Redacting the address must not cost the diagnosis.
+			if !strings.Contains(got, "dial tcp") {
+				t.Fatalf("redaction ate the reason: %q", got)
+			}
+		})
+	}
+}
+
+// Only an address, not every dotted name: a vendor named in prose carries no
+// port and is the part of the message worth reading.
+func TestProviderErrorMessageKeepsHostnamesWithoutAPort(t *testing.T) {
+	t.Parallel()
+	got := ProviderErrorMessage(apiError(404, "The model gpt-4.1-mini does not exist for api.openai.com accounts."))
+	if !strings.Contains(got, "gpt-4.1-mini") {
+		t.Fatalf("a model id was redacted as an address: %q", got)
+	}
+	if !strings.Contains(got, "api.openai.com") {
+		t.Fatalf("a bare hostname was redacted: %q", got)
+	}
+}

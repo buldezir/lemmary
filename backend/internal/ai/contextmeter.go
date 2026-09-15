@@ -38,14 +38,17 @@ func (m *contextMeter) grew(chars ...int) {
 }
 
 // observe folds one completion's reported usage in and returns the turn so far.
+//
+// Estimated describes the number being reported, not the run: it travels with
+// the peak, so a turn whose widest request the provider counted is not marked a
+// guess because some smaller round went uncounted.
 func (m *contextMeter) observe(u Usage) TurnUsage {
-	prompt := u.Prompt
+	prompt, estimated := u.Prompt, false
 	if prompt <= 0 {
-		prompt = m.chars / charsPerToken
-		m.usage.Estimated = true
+		prompt, estimated = m.chars/charsPerToken, true
 	}
 	if prompt > m.usage.PeakPrompt {
-		m.usage.PeakPrompt = prompt
+		m.usage.PeakPrompt, m.usage.Estimated = prompt, estimated
 	}
 	return m.usage
 }

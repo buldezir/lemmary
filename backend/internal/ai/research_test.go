@@ -361,6 +361,13 @@ func TestResearchReportsThePeakPromptAgainstTheWindow(t *testing.T) {
 	if result.Usage.ContextWindow != 200000 {
 		t.Fatalf("result window = %d", result.Usage.ContextWindow)
 	}
+
+	// The answer phase streams, and the harness reports no usage there, so some
+	// round of this run was estimated. The peak was not, and the flag describes
+	// the number being shown -- otherwise a counted figure renders as a guess.
+	if result.Usage.Estimated {
+		t.Fatal("a counted peak was marked estimated")
+	}
 }
 
 func TestResearchEstimatesWhenTheProviderCountsNothing(t *testing.T) {
