@@ -1,18 +1,15 @@
-import { useState } from 'react'
 import type { JobOverrides } from '../lib/api/documents'
-import type { TagRecord } from '../lib/api/tags'
 import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
 import { JobOverrideFields } from './BindingOverride'
-import { Button, fieldHintClassName, selectClassName } from './ui'
+import { Button, selectClassName } from './ui'
 
-export type BulkMode = 'reprocess' | 'review' | 'tag'
+export type BulkMode = 'reprocess' | 'review'
 
 const reprocessModes: ReprocessMode[] = ['auto', 'full', 'extraction']
 
 const hints: Record<BulkMode, string> = {
   reprocess: 'Select failed or cancelled documents to reprocess.',
   review: 'Select documents to mark reviewed.',
-  tag: 'Select documents to tag.',
 }
 
 type Props = {
@@ -32,14 +29,6 @@ type Props = {
    * button.
    */
   onDelete?: () => void
-  /**
-   * The tag controls, likewise alongside rather than instead: tagging is worth
-   * doing on an Inbox pass too, not only on an unfiltered list. Omit `tags` to
-   * hide both.
-   */
-  tags?: TagRecord[]
-  onAddTag?: (tagId: string) => void
-  onAssignTagsWithAI?: (tagIds: string[]) => void
 }
 
 export function DocumentBulkBar({
@@ -55,18 +44,9 @@ export function DocumentBulkBar({
   onSelectAll,
   onClear,
   onDelete,
-  tags,
-  onAddTag,
-  onAssignTagsWithAI,
 }: Props) {
-  const [tagId, setTagId] = useState('')
-
   return (
-    <div
-      role="group"
-      aria-label="Bulk actions"
-      className="flex flex-wrap items-center gap-3 rounded-none border border-line bg-surface px-4 py-3"
-    >
+    <div className="flex flex-wrap items-center gap-3 rounded-none border border-line bg-surface px-4 py-3">
       <span className="text-sm text-ink-muted">
         {selectedCount > 0
           ? `${selectedCount} selected`
@@ -75,7 +55,7 @@ export function DocumentBulkBar({
             : hints[mode]}
       </span>
 
-      {mode === 'reprocess' && (
+      {mode === 'reprocess' ? (
         <>
           <select
             value={reprocessMode}
@@ -93,49 +73,9 @@ export function DocumentBulkBar({
             {busy ? 'Queueing...' : 'Reprocess'}
           </Button>
         </>
-      )}
-
-      {/* Each mode offers its own action and no other: review completes a
-          document, and offering that on a mixed library page would clear Inbox
-          items a reader only meant to tag. */}
-      {mode === 'review' && (
+      ) : (
         <Button disabled={busy || selectedCount === 0} onClick={onMarkReviewed}>
           {busy ? 'Marking...' : 'Mark reviewed'}
-        </Button>
-      )}
-
-      {tags && onAddTag && (
-        <>
-          <select
-            value={tagId}
-            onChange={(event) => setTagId(event.target.value)}
-            aria-label="Tag to add"
-            className={selectClassName}
-          >
-            <option value="">Tag...</option>
-            {tags.map((tag) => (
-              <option key={tag.id} value={tag.id}>
-                {tag.name}
-              </option>
-            ))}
-          </select>
-          <Button
-            variant="secondary"
-            disabled={busy || selectedCount === 0 || !tagId}
-            onClick={() => onAddTag(tagId)}
-          >
-            Add tag
-          </Button>
-        </>
-      )}
-
-      {tags && onAssignTagsWithAI && (
-        <Button
-          variant="secondary"
-          disabled={busy || selectedCount === 0}
-          onClick={() => onAssignTagsWithAI(tags.map((tag) => tag.id))}
-        >
-          {busy ? 'Working...' : 'Assign tags with AI'}
         </Button>
       )}
 
@@ -153,14 +93,6 @@ export function DocumentBulkBar({
           Clear
         </Button>
       )}
-      {tags && onAssignTagsWithAI && (
-        <p className={`w-full ${fieldHintClassName}`}>
-          Adding a tag is free. Assigning with AI reads every selected document with your model and
-          is charged for each one; it only adds tags, but reprocessing a document later discards what
-          it added.
-        </p>
-      )}
-
       {mode === 'reprocess' && selectedCount > 0 && (
         <div className="w-full">
           <JobOverrideFields value={reprocessOverrides} onChange={onReprocessOverridesChange} />

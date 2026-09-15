@@ -1,7 +1,7 @@
 import { type SubmitEvent, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
-  assignTagsWithAI,
+  assignTagWithAI,
   createTag,
   deleteTag,
   listTags,
@@ -175,7 +175,7 @@ export function TagsPage() {
       if (
         !window.confirm(
           `Ask the model which of ${asked === 1 ? 'this document' : `these ${asked} documents`} warrant "${tag.name}"?\n\n` +
-            `This sends ${asked === 1 ? 'one AI request' : `${asked} AI requests`} and is charged to your provider.\n` +
+            `Your model reads ${asked === 1 ? 'the document' : `all ${asked} documents`}, and your provider charges for each one.\n` +
             'It only adds the tag; nothing else on the documents changes.' +
             capped,
         )
@@ -183,7 +183,7 @@ export function TagsPage() {
         return
       }
 
-      const result = await assignTagsWithAI([tag.id])
+      const result = await assignTagWithAI(tag.id)
       setNotice(
         `Tagged ${result.assigned} of ${result.asked}; ${result.declined} did not warrant it` +
           (result.failed > 0 ? `, ${result.failed} failed` : '') +
@@ -226,9 +226,10 @@ export function TagsPage() {
         </p>
         <p className={`${fieldHintClassName} mt-2`}>
           A new tag is not applied to documents already in the archive. "Find documents" searches for
-          it so you can tag them yourself, for free. "Assign with AI" asks the model instead, one
-          request per document, charged to your provider; it only ever adds the tag, but reprocessing
-          a document later discards what it added.
+          it, so you can open the ones that match and tag them from their own pages, for free.
+          "Assign with AI" asks the model instead: it reads every document that lacks the tag, which
+          your provider charges for. It only ever adds the tag, but reprocessing a document later
+          discards what it added.
         </p>
       </header>
 

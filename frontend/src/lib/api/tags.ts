@@ -1,7 +1,7 @@
 import { ClientResponseError } from 'pocketbase'
 import { pb } from '../pb'
 import { ensureAuth } from '../auth'
-import { apiFetch, pollJob, type JobProgress } from '../apiClient'
+import { apiFetch, pollJob } from '../apiClient'
 import { notifyDocumentsChanged } from '../documentEvents'
 
 export type TagRecord = {
@@ -65,7 +65,6 @@ export type TagAssignResult = {
   asked: number
   assigned: number
   declined: number
-  skipped: number
   failed: number
   errors?: string[]
   prompt_tokens: number
@@ -73,18 +72,13 @@ export type TagAssignResult = {
 }
 
 /**
- * One AI call per document. Without `documentIds` the server picks the
- * documents that lack the single tag given; with them it asks about the whole
- * vocabulary passed. Either way it only ever adds tags.
+ * Asks the model about every document that lacks this tag, and only ever adds
+ * it: nothing else on a document changes.
  */
-export async function assignTagsWithAI(
-  tagIds: string[],
-  documentIds?: string[],
-  onProgress?: (progress: JobProgress) => void,
-): Promise<TagAssignResult> {
-  const start = await apiFetch<{ job_id?: string }>('/api/app/tags/assign', {
+export async function assignTagWithAI(tagId: string): Promise<TagAssignResult> {
+  const path = `/api/app/tags/${encodeURIComponent(tagId)}/assign`
+  const start = await apiFetch<{ job_id?: string }>(path, {
     method: 'POST',
-    body: { tag_ids: tagIds, document_ids: documentIds ?? [] },
     fallbackError: 'Tag assignment failed to start',
   })
   if (!start.job_id) {
@@ -93,7 +87,7 @@ export async function assignTagsWithAI(
 
   const result = await pollJob<TagAssignResult>(
     `/api/app/tags/assign/status?job_id=${encodeURIComponent(start.job_id)}`,
-    { label: 'tag assignment', onProgress },
+    { label: 'tag assignment' },
   )
   // The server wrote the tags, so nothing on this side has seen them: without
   // this the cards keep their old chips beside a success message.

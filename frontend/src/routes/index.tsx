@@ -24,14 +24,12 @@ export function IndexPage() {
   // only goes stale when the library itself changes.
   const timeline = useAsync(fetchDocumentTimeline, [list.libraryVersion])
 
-  // Never null: without a mode the grid renders no checkboxes at all, and
-  // tagging is the one bulk action worth having on an unfiltered list.
-  const bulkMode: BulkMode =
+  const bulkMode: BulkMode | null =
     statusFilter === 'failed' || statusFilter === 'cancelled'
       ? 'reprocess'
       : statusFilter === 'needs_review'
         ? 'review'
-        : 'tag'
+        : null
 
   // The timeline has no date filter of its own: picking a period writes the
   // From/To inputs. "No date" is the exception, since no range expresses it, so
@@ -110,9 +108,7 @@ export function IndexPage() {
 
           {list.message && <p className="text-sm text-forest">{list.message}</p>}
 
-          {!loading && documents.length > 0 && (
-            <DocumentGrid list={list} bulkMode={bulkMode} tags={filterOptions.tags} />
-          )}
+          {!loading && documents.length > 0 && <DocumentGrid list={list} bulkMode={bulkMode} />}
         </div>
       </div>
     </section>

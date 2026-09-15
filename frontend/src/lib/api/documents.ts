@@ -316,33 +316,6 @@ export async function markDocumentsReviewed(documentIds: string[]): Promise<void
   }
 }
 
-/**
- * A merge, not a write: PocketBase's `tags+` modifier appends to the relation
- * server-side, so two tabs tagging the same document cannot each drop the
- * other's tag, and re-adding a tag the document already has is a no-op.
- * allSettled so one document deleted in another tab does not discard the rest.
- */
-export async function addTagToDocuments(documentIds: string[], tagId: string): Promise<void> {
-  if (documentIds.length === 0) return
-  await ensureAuth()
-
-  const results = await Promise.allSettled(
-    documentIds.map((id) =>
-      pb.collection('documents').update(id, { 'tags+': tagId }, { requestKey: null }),
-    ),
-  )
-  notifyDocumentsChanged()
-
-  const failed = results.filter((result) => result.status === 'rejected').length
-  if (failed > 0) {
-    throw new Error(
-      failed === documentIds.length
-        ? 'Could not add the tag.'
-        : `Tagged ${documentIds.length - failed}; ${failed} failed.`,
-    )
-  }
-}
-
 export type ReprocessResult = {
   queued: number
   skipped: number

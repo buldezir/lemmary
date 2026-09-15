@@ -125,7 +125,7 @@ func TestRunTagAssignMergesAndTouchesNothingElse(t *testing.T) {
 		document.Id: {"tags": " invoices "},
 	}}
 	result, err := runTagAssign(context.Background(), app, helper, owner,
-		tagAssignRequest{TagIDs: []string{invoices.Id}}, nil)
+		invoices.Id, nil)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestRunTagAssignWritesNothingWhenTheModelDeclines(t *testing.T) {
 
 	helper := &fakeHelper{values: map[string]map[string]string{document.Id: {"tags": ""}}}
 	result, err := runTagAssign(context.Background(), app, helper, owner,
-		tagAssignRequest{TagIDs: []string{invoices.Id}}, nil)
+		invoices.Id, nil)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestRunTagAssignKeepsToTheOfferedVocabulary(t *testing.T) {
 		document.Id: {"tags": "Invoices, Tax, Groceries"},
 	}}
 	if _, err := runTagAssign(context.Background(), app, helper, owner,
-		tagAssignRequest{TagIDs: []string{invoices.Id}}, nil); err != nil {
+		invoices.Id, nil); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 
@@ -215,64 +215,5 @@ func TestRunTagAssignKeepsToTheOfferedVocabulary(t *testing.T) {
 	}
 	if got := after.GetStringSlice("tags"); !slices.Equal(got, []string{invoices.Id}) {
 		t.Fatalf("tags = %v, want only the offered tag", got)
-	}
-}
-
-// The documents-list path offers the whole vocabulary, so one answer can name
-// several tags. They land together, in one save.
-func TestRunTagAssignMergesEveryNamedTagAtOnce(t *testing.T) {
-	app := bootQueueApp(t)
-	owner := makeQueueUser(t, app, "assign-multi@example.test")
-	invoices := makeTag(t, app, owner, "Invoices")
-	tax := makeTag(t, app, owner, "Tax")
-	unused := makeTag(t, app, owner, "Holiday")
-
-	document := makeQueueDocument(t, app, owner, models.DocStatusCompleted, "an invoice for tax")
-
-	helper := &fakeHelper{values: map[string]map[string]string{
-		document.Id: {"tags": "Invoices, Tax"},
-	}}
-	result, err := runTagAssign(context.Background(), app, helper, owner,
-		tagAssignRequest{TagIDs: []string{invoices.Id, tax.Id, unused.Id}, DocumentIDs: []string{document.Id}}, nil)
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	if result.Assigned != 1 {
-		t.Fatalf("result = %+v, want one assigned", result)
-	}
-
-	after, err := app.FindRecordById("documents", document.Id)
-	if err != nil {
-		t.Fatalf("reload: %v", err)
-	}
-	got := after.GetStringSlice("tags")
-	slices.Sort(got)
-	want := []string{invoices.Id, tax.Id}
-	slices.Sort(want)
-	if !slices.Equal(got, want) {
-		t.Fatalf("tags = %v, want %v", got, want)
-	}
-}
-
-func TestSelectTagAssignByIDDropsStaleSelections(t *testing.T) {
-	app := bootQueueApp(t)
-	owner := makeQueueUser(t, app, "assign-select@example.test")
-	stranger := makeQueueUser(t, app, "assign-stranger@example.test")
-
-	ready := makeQueueDocument(t, app, owner, models.DocStatusCompleted, "text")
-	queued := makeQueueDocument(t, app, owner, models.DocStatusPending, "text")
-	blank := makeQueueDocument(t, app, owner, models.DocStatusCompleted, "")
-	theirs := makeQueueDocument(t, app, stranger, models.DocStatusCompleted, "text")
-
-	ids, skipped, err := selectTagAssignByID(app, owner,
-		[]string{ready.Id, ready.Id, queued.Id, blank.Id, theirs.Id, "gone"})
-	if err != nil {
-		t.Fatalf("select: %v", err)
-	}
-	if !slices.Equal(ids, []string{ready.Id}) {
-		t.Fatalf("ids = %v, want only the ready document", ids)
-	}
-	if skipped != 4 {
-		t.Fatalf("skipped = %d, want 4", skipped)
 	}
 }
