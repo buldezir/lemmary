@@ -41,10 +41,7 @@ var ThreadRoles = []string{RoleUser, RoleAssistant, RoleTool, RoleSystem}
 func Visible(role, content string) bool {
 	switch role {
 	case RoleUser:
-		// The per-turn web instruction is a user message because that is the
-		// only role the transports keep in place, but it is the server talking
-		// to the model, not the person talking to either.
-		return content != ai.ResearchWebPrompt()
+		return true
 	case RoleAssistant:
 		return strings.TrimSpace(content) != ""
 	default:

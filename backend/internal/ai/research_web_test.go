@@ -6,10 +6,9 @@ import (
 	"testing"
 )
 
-// Everything the research loop shows the model changes with whether a
-// web-search provider is bound. Off is the pre-flag state and has to stay
-// silent about tools nobody can call: a prompt that advertises web_search on an
-// instance that cannot serve it spends a round being refused.
+// The web tools are declared on every research turn and the prompt explains
+// them once, so neither moves under the provider's cache. What the per-turn
+// toggle decides is whether a call is served or refused.
 
 func researchWithWeb(t *testing.T, req ResearchRequest, turns ...scriptedTurn) (*researchHarness, ResearchResult) {
 	t.Helper()
@@ -70,49 +69,6 @@ func TestAWebCallOnATurnWithoutTheWebIsRefused(t *testing.T) {
 	fed := toolMessageContent(t, h.request(1), "web_search")
 	if !strings.Contains(fed, "not enabled for this question") {
 		t.Fatalf("the refusal does not say why: %s", fed)
-	}
-}
-
-// A caller that stores nothing gets the same rows the handler would have
-// written: the opening prompt, then the web instruction beside the question.
-// One system message, because only the opening prompt belongs to the whole
-// conversation -- and because the transports that lift system messages to the
-// head of the prompt would put a per-turn note there and keep it.
-func TestResearchSendsTheWebInstructionBesideTheQuestion(t *testing.T) {
-	t.Parallel()
-
-	web, _ := newWebServer(t, `{"results":[]}`, `{}`)
-	h, _ := researchWithWeb(t, ResearchRequest{Web: web},
-		scriptedTurn{content: "ready"}, scriptedTurn{content: "Nothing."})
-
-	messages, _ := h.request(0)["messages"].([]any)
-	if len(messages) < 3 {
-		t.Fatalf("messages = %v", messages)
-	}
-	systems := 0
-	for _, raw := range messages {
-		if msg, _ := raw.(map[string]any); msg["role"] == "system" {
-			systems++
-			if content, _ := msg["content"].(string); strings.Contains(content, "web_search") {
-				t.Fatalf("the per-turn web instruction was sent as a system message: %s", content)
-			}
-		}
-	}
-	if systems != 1 {
-		t.Fatalf("system messages = %d, want only the opening prompt: %v", systems, messages)
-	}
-
-	note, _ := messages[1].(map[string]any)
-	if note["role"] != "user" {
-		t.Fatalf("the web note has role %v, want user", note["role"])
-	}
-	if got, _ := note["content"].(string); got != ResearchWebPrompt() {
-		t.Fatalf("second message = %q, want the web prompt", got)
-	}
-	// And the question after it, so the last user message is still the question.
-	question, _ := messages[2].(map[string]any)
-	if got, _ := question["content"].(string); got != "What does Acme charge now?" {
-		t.Fatalf("third message = %q, want the question", got)
 	}
 }
 
@@ -205,21 +161,14 @@ func TestResearchAnswerInstructionAsksForWebCitationsOnlyWithTheWeb(t *testing.T
 	}
 }
 
-// The web toggle is per turn and the system prompt is per conversation, so the
-// two cannot be the same string: the opening prompt never mentions the web, and
-// what does is recorded beside the question of a turn that carries the tools.
-func TestTheWebInstructionIsSeparateFromTheOpeningPrompt(t *testing.T) {
+// The web tools are declared on every turn, so the prompt that explains them
+// belongs with the rest of the conversation's opening instructions -- written
+// once, replayed verbatim, never moved. What varies per turn is only whether a
+// call is served, and the refusal says so at the point it happens.
+func TestTheOpeningPromptExplainsTheWebTools(t *testing.T) {
 	t.Parallel()
 
 	opening := buildResearchSystemPrompt("en", "en", []string{"invoice"}, false)
-	if strings.Contains(opening, "web_search") || strings.Contains(opening, "web_fetch") {
-		t.Fatalf("the opening prompt advertises tools a later turn may not offer: %s", opening)
-	}
-	if !strings.Contains(opening, "read_documents") {
-		t.Error("the opening prompt dropped the archive instructions")
-	}
-
-	web := ResearchWebPrompt()
 	for _, want := range []string{
 		"web_search",
 		"web_fetch",
@@ -229,9 +178,14 @@ func TestTheWebInstructionIsSeparateFromTheOpeningPrompt(t *testing.T) {
 		// A snippet is a reason to fetch, not evidence -- the same rule
 		// search_documents has about its passages.
 		"web_fetch before claiming what a page contains",
+		// And what to do when the call comes back refused, or the model spends
+		// the run rediscovering that the web is off.
+		"not enabled",
+		// The archive instructions are still there.
+		"read_documents",
 	} {
-		if !strings.Contains(web, want) {
-			t.Errorf("web prompt missing %q: %s", want, web)
+		if !strings.Contains(opening, want) {
+			t.Errorf("opening prompt missing %q: %s", want, opening)
 		}
 	}
 }
@@ -250,25 +204,5 @@ func TestEachResearchRunGetsItsOwnWebBudget(t *testing.T) {
 	}
 	if got := calls.Load(); got != int64(2*maxWebCalls) {
 		t.Fatalf("provider calls = %d, want %d -- each run spends its own %d", got, 2*maxWebCalls, maxWebCalls)
-	}
-}
-
-// The note is a user message, so the naive "last user row" would answer the
-// note rather than the question on a turn whose question never made it to disk.
-func TestTheWebNoteIsNeverMistakenForTheQuestion(t *testing.T) {
-	t.Parallel()
-
-	thread := []ThreadMessage{
-		{Role: "system", Content: "you research the archive"},
-		{Role: "user", Content: ResearchWebPrompt()},
-		{Role: "user", Content: "What does Acme charge now?"},
-	}
-	if got := latestUserMessage(thread); got != "What does Acme charge now?" {
-		t.Fatalf("latestUserMessage = %q, want the question", got)
-	}
-
-	// And with the question missing, the note is not promoted into its place.
-	if got := latestUserMessage(thread[:2]); got != "" {
-		t.Fatalf("latestUserMessage = %q, want nothing: no question was asked", got)
 	}
 }

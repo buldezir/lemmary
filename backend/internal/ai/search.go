@@ -158,9 +158,6 @@ type Researcher interface {
 	// SystemPrompt is the instruction a new conversation opens with, so the
 	// caller that stores the thread can store it first and replay it after.
 	SystemPrompt(req ResearchRequest) string
-	// WebPrompt explains the web tools, for the turns that carry them. Per
-	// turn rather than per conversation, because the toggle is.
-	WebPrompt() string
 }
 
 // SearchAgent is both, which is what the provider binding builds.

@@ -97,19 +97,7 @@ func runResearchTurn(app core.App, turn searchTurn, ctx context.Context, recorde
 	// The question is stored before the first provider call, not after the last.
 	// A run that never answers then leaves a conversation that says what was
 	// asked and how far it got, instead of nothing at all.
-	//
-	// The web instruction rides in front of it, on the turns that carry the web
-	// tools. Per turn, because the toggle is: a conversation that gains the web
-	// on its third question says so there, and one that loses it again simply
-	// stops saying it, without either rewriting what the earlier turns were told.
-	//
-	// A user row, not a system one: two transports lift system messages into a
-	// field of their own at the head of the prompt, where a per-turn note does
-	// not belong and where repeating it would cost the whole transcript's cache.
 	if !turn.resume {
-		if turn.tools.web != nil {
-			recorder.record(ai.ThreadMessage{Role: chat.RoleUser, Content: turn.agent.WebPrompt()})
-		}
 		recorder.record(ai.ThreadMessage{Role: chat.RoleUser, Content: turn.content})
 	}
 

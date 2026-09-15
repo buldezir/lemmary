@@ -104,8 +104,9 @@ type ResearchRequest struct {
 	Survey DocumentSurveyor
 	Count  DocumentCounter
 	// Web backs web_search and web_fetch. Nil unless an operator configured a
-	// web-search provider and the user asked for it on this turn, and the tools
-	// are then not offered at all.
+	// web-search provider and the user asked for it on this turn. The tools are
+	// declared either way -- the list is part of what the provider cached, and
+	// this is per turn -- and a call made without them behind it is refused.
 	Web *websearch.Tavily
 	// ContextWindow is the bound model's context length in tokens, or 0 when
 	// nobody knows it. Reported, never enforced: what fits is the provider's
@@ -211,11 +212,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	// stored order is the order it replays in; prepending it here is for the
 	// callers that store nothing.
 	if !startsWithSystem(thread) {
-		opening := []ThreadMessage{{Role: "system", Content: a.SystemPrompt(req)}}
-		if req.Web != nil {
-			opening = append(opening, ThreadMessage{Role: "user", Content: a.WebPrompt()})
-		}
-		thread = append(opening, thread...)
+		thread = append([]ThreadMessage{{Role: "system", Content: a.SystemPrompt(req)}}, thread...)
 	}
 	state.question = latestUserMessage(thread)
 	if state.question == "" {
@@ -798,12 +795,10 @@ func decodeReadArgs(data string) (readDocumentsArgs, error) {
 // latestUserMessage finds the question the run is answering. Tool results are
 // stored as tool rows even when the dialect feeds them back as user messages,
 // so the loop talking to itself cannot be mistaken for the question -- which
-// would send every read off to focus on a JSON blob. The per-turn web note is
-// skipped for the same reason: it is a user message so that the transports keep
-// it beside the question, not because a person wrote it.
+// would send every read off to focus on a JSON blob.
 func latestUserMessage(thread []ThreadMessage) string {
 	for i := len(thread) - 1; i >= 0; i-- {
-		if thread[i].Role != "user" || thread[i].Content == ResearchWebPrompt() {
+		if thread[i].Role != "user" {
 			continue
 		}
 		if content := strings.TrimSpace(thread[i].Content); content != "" {
@@ -822,33 +817,6 @@ func startsWithSystem(thread []ThreadMessage) bool {
 // for once per conversation and replayed on every turn after.
 func (a *openAISearchAgent) SystemPrompt(req ResearchRequest) string {
 	return buildResearchSystemPrompt(a.languages, a.resultLanguage, req.AvailableTags, req.DenseRetrieval)
-}
-
-// WebPrompt is what the web tools need explaining, kept out of SystemPrompt
-// because the web toggle is per turn and the system prompt is per conversation.
-// Writing it into the opening prompt would either freeze the first turn's
-// answer for the rest of the conversation -- tools appearing later that nothing
-// tells the model about -- or move the prefix the provider has cached every
-// time the toggle changed. The caller records it beside the question instead,
-// where a per-turn instruction belongs.
-func (a *openAISearchAgent) WebPrompt() string {
-	return ResearchWebPrompt()
-}
-
-// ResearchWebPrompt is that instruction, as a user message rather than a system
-// one. Two transports hoist system messages out of the conversation and into a
-// field of their own -- the Messages API's system array, the Codex request's
-// instructions string -- so a per-turn system row would not stay beside its
-// question there: it would join the head of the prompt, and a second web turn
-// would send that head with the note in it twice. The head is the part the
-// whole transcript's cache hangs off. A user message stays where it was put.
-//
-// chat.Visible keeps it out of the transcript a person reads.
-func ResearchWebPrompt() string {
-	return `You can also reach the public web with web_search and web_fetch, for what the archive cannot hold: current prices, rates and rules, a company's present details, anything that changed after the documents were written.
-The archive is still the primary source. Search it first, and use the web to check or complete what you found there rather than instead of looking.
-A search result's snippet is a reason to fetch the page, not the whole of what it says: web_fetch before claiming what a page contains, exactly as you would read a document.
-Web calls are limited and billed; make them count.`
 }
 
 func normalizeIDs(ids []string) []string {
@@ -921,6 +889,12 @@ For how-many or distribution questions call count_documents with the filters ins
 There is no limit on how many searches or reads you may make. Stop gathering and write the answer once you have enough evidence.
 Cite real document ids from tool results only. Never invent a document or an id.
 If the archive does not contain the answer, say so plainly and say what is missing.
+
+You can also reach the public web with web_search and web_fetch, for what the archive cannot hold: current prices, rates and rules, a company's present details, anything that changed after the documents were written.
+Web access is granted per question. When a web call comes back saying it is not enabled, do not try again: answer from the archive and say what you could not check.
+The archive is still the primary source. Search it first, and use the web to check or complete what you found there rather than instead of looking.
+A search result's snippet is a reason to fetch the page, not the whole of what it says: web_fetch before claiming what a page contains, exactly as you would read a document.
+Web calls are limited and billed; make them count.
 `)
 
 	b.WriteString(formatAvailableTagsPrompt(availableTags))
