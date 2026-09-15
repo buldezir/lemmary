@@ -1,4 +1,5 @@
 import { apiFetch, ConnectionLostError, HttpError, sleep } from '../apiClient'
+import type { ContextUsage } from '../contextUsage'
 import { foldSteps, type ResearchStep, type StoredResearchStep } from '../researchSteps'
 import type { ProviderBinding } from './providers'
 
@@ -56,6 +57,8 @@ export type ChatMessageRecord = {
   documents?: SearchDocumentHit[]
   /** Research trail as the stream emitted it. Empty on user turns and Search. */
   steps?: StoredResearchStep[]
+  /** What the turn took of the model's context. Research answers only. */
+  usage?: ContextUsage
   incomplete?: boolean
   created?: string
 }
@@ -80,6 +83,7 @@ export type ChatTurn = {
   content: string
   documents?: SearchDocumentHit[]
   steps?: ResearchStep[]
+  usage?: ContextUsage
   incomplete?: boolean
 }
 
@@ -314,6 +318,7 @@ export function toChatTurn(
   }
   const steps = foldSteps(message.steps)
   if (steps) turn.steps = steps
+  if (message.usage) turn.usage = message.usage
   if (message.incomplete) turn.incomplete = true
   return turn
 }

@@ -159,6 +159,7 @@ func createLegacyProvider(app core.App, sdk, apiKey, baseURL, alias string) (str
 	record.Set("alias", alias)
 	record.Set("base_url", NormalizeBaseURL(sdk, baseURL))
 	record.Set("api_key", apiKey)
+	record.Set("catalog", DefaultCatalog(sdk))
 	if err := app.Save(record); err != nil {
 		return "", err
 	}

@@ -25,6 +25,15 @@ func EnsureCollection(app core.App) (*core.Collection, error) {
 			Values:    ValidSDKs,
 		},
 		&core.TextField{Name: "alias", Required: true, Max: 100},
+		// Which pi.dev catalogue answers for this row's models, so a context
+		// window can be looked up. Defaulted from the SDK and editable, because
+		// the openai SDK serves any OpenAI-compatible endpoint and Groq,
+		// DeepSeek and Together are separate catalogues there.
+		&core.SelectField{
+			Name:      "catalog",
+			MaxSelect: 1,
+			Values:    CatalogProviders,
+		},
 		&core.TextField{Name: "base_url", Max: 500},
 		&core.TextField{Name: "api_key", Max: 2000},
 		&core.TextField{Name: OAuthField, Max: 8000},

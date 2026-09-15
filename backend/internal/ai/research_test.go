@@ -27,6 +27,10 @@ type scriptedTurn struct {
 	// httpStatus, when set, is returned instead of a completion - the way a
 	// provider refuses a request that has outgrown the model's context window.
 	httpStatus int
+	// promptTokens, when set, is reported as this turn's prompt usage. Zero
+	// leaves the usage object out entirely, the way a provider that counts
+	// nothing answers.
+	promptTokens int
 }
 
 type scriptedToolCall struct {
@@ -101,13 +105,21 @@ func writeToolCallJSON(w http.ResponseWriter, turn scriptedTurn) {
 		message["tool_calls"] = calls
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	body := map[string]any{
 		"id":      "chatcmpl-test",
 		"object":  "chat.completion",
 		"created": 1,
 		"model":   "test",
 		"choices": []map[string]any{{"index": 0, "message": message, "finish_reason": "stop"}},
-	})
+	}
+	if turn.promptTokens > 0 {
+		body["usage"] = map[string]any{
+			"prompt_tokens":     turn.promptTokens,
+			"completion_tokens": 10,
+			"total_tokens":      turn.promptTokens + 10,
+		}
+	}
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 // writeChatStream emits the answer as SSE chunks, one word at a time. cutOff
@@ -295,6 +307,94 @@ func TestResearchReturnsAProviderContextError(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(err.Error()), "context") && !strings.Contains(err.Error(), "400") {
 		t.Fatalf("error should name the provider refusal, got %v", err)
+	}
+}
+
+func usageEvents(events []ResearchEvent) []ResearchEvent {
+	var out []ResearchEvent
+	for _, e := range events {
+		if e.Type == "usage" {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func TestResearchReportsThePeakPromptAgainstTheWindow(t *testing.T) {
+	t.Parallel()
+	_, agent := newResearchAgent(t,
+		scriptedTurn{toolCalls: []scriptedToolCall{{name: "search_documents", args: `{"query":"invoices"}`}}, promptTokens: 1200},
+		scriptedTurn{content: "ready", promptTokens: 4800},
+		scriptedTurn{content: "An answer."},
+	)
+
+	var events []ResearchEvent
+	result, err := agent.Research(context.Background(), ResearchRequest{
+		Messages:      []ChatMessage{{Role: "user", Content: "what did I pay?"}},
+		ContextWindow: 200000,
+		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
+			return hitsFor("doc1"), nil
+		},
+		Read: func(_ context.Context, _ ReadRequest) ([]DocumentContent, error) { return nil, nil },
+	}, func(e ResearchEvent) { events = append(events, e) })
+	if err != nil {
+		t.Fatalf("Research: %v", err)
+	}
+
+	// One per completion the main thread made: two tool rounds and the answer.
+	reported := usageEvents(events)
+	if len(reported) != 3 {
+		t.Fatalf("usage events = %d, want 3", len(reported))
+	}
+	if reported[0].PromptTokens != 1200 {
+		t.Fatalf("first usage = %d, want the provider's 1200", reported[0].PromptTokens)
+	}
+	if reported[0].ContextWindow != 200000 {
+		t.Fatalf("window = %d, want it carried through", reported[0].ContextWindow)
+	}
+
+	// Peak, not sum: the rounds resend one growing conversation, so adding them
+	// up would claim a turn used several times the context it did.
+	if result.Usage.PeakPrompt != 4800 {
+		t.Fatalf("peak = %d, want the largest single request (4800)", result.Usage.PeakPrompt)
+	}
+	if result.Usage.ContextWindow != 200000 {
+		t.Fatalf("result window = %d", result.Usage.ContextWindow)
+	}
+}
+
+func TestResearchEstimatesWhenTheProviderCountsNothing(t *testing.T) {
+	t.Parallel()
+	// The harness omits the usage object unless asked, which is how a provider
+	// that reports nothing answers.
+	_, agent := newResearchAgent(t,
+		scriptedTurn{content: "ready"},
+		scriptedTurn{content: "An answer."},
+	)
+
+	var events []ResearchEvent
+	result, err := agent.Research(context.Background(), ResearchRequest{
+		Messages:      []ChatMessage{{Role: "user", Content: "what did I pay?"}},
+		ContextWindow: 8000,
+		Search:        func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
+		Read:          func(_ context.Context, _ ReadRequest) ([]DocumentContent, error) { return nil, nil },
+	}, func(e ResearchEvent) { events = append(events, e) })
+	if err != nil {
+		t.Fatalf("Research: %v", err)
+	}
+
+	if !result.Usage.Estimated {
+		t.Fatal("usage should be marked estimated when the provider reported none")
+	}
+	// The system prompt alone is thousands of characters, so the estimate is
+	// well clear of zero; the exact number is not the contract.
+	if result.Usage.PeakPrompt <= 0 {
+		t.Fatalf("estimated peak = %d, want a positive estimate", result.Usage.PeakPrompt)
+	}
+	for _, e := range usageEvents(events) {
+		if !e.Estimated {
+			t.Fatalf("usage event not marked estimated: %+v", e)
+		}
 	}
 }
 

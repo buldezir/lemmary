@@ -235,6 +235,11 @@ func upsertProvider(app core.App, spec ProviderSpec) (string, error) {
 	record.Set("sdk", spec.SDK)
 	record.Set("base_url", NormalizeBaseURL(spec.SDK, spec.BaseURL))
 	record.Set("api_key", strings.TrimSpace(spec.APIKey))
+	// Only when unset, so a re-applied environment does not undo a catalogue an
+	// admin corrected for an OpenAI-compatible endpoint that is not OpenAI.
+	if record.GetString("catalog") == "" {
+		record.Set("catalog", DefaultCatalog(spec.SDK))
+	}
 	if err := app.Save(record); err != nil {
 		return "", fmt.Errorf("save provider %s: %w", alias, err)
 	}

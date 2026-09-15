@@ -69,6 +69,9 @@ type searchTurn struct {
 	// priorDocuments are earlier turns' hits, readable by id without searching
 	// for them again.
 	priorDocuments []ai.DocumentHit
+	// contextWindow is the bound model's limit in tokens, 0 when unknown. Shown
+	// to the user beside what the turn used; never enforced here.
+	contextWindow int
 }
 
 func (t searchTurn) research() bool { return t.mode == chat.ModeResearch }
@@ -254,19 +257,37 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		messages:       append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content}),
 		tools:          tools,
 		priorDocuments: priorDocuments,
+		contextWindow:  contextWindowFor(e.Request.Context(), app, rt, snap.Cfg, binding),
 	}, false, nil
+}
+
+// contextWindowFor resolves how much context the bound model has, through the
+// catalogue named on its provider row. Zero for every way of not knowing --
+// catalogue off, provider untagged, model unlisted, host unreachable -- and a
+// zero only costs the denominator on the usage line.
+func contextWindowFor(ctx context.Context, app core.App, rt *config.Runtime, cfg config.Config, binding aiprovider.Binding) int {
+	providerID, model := binding.ProviderID, binding.Model
+	if providerID == "" || model == "" {
+		providerID, model = cfg.SearchProviderID, cfg.SearchModel
+	}
+	provider, err := aiprovider.FindByID(app, providerID)
+	if err != nil || provider == nil {
+		return 0
+	}
+	return rt.ModelCatalog().ContextWindow(ctx, provider.Catalog, model)
 }
 
 // persistSearchTurn must not let a storage failure swallow the answer: the
 // provider has already been paid for it, so the reply is handed over unsaved
 // and a session this request opened is dropped again.
-func persistSearchTurn(app core.App, t searchTurn, reply string, hits []ai.DocumentHit, steps []chat.StoredStep, incomplete bool) searchResponse {
+func persistSearchTurn(app core.App, t searchTurn, reply string, hits []ai.DocumentHit, steps []chat.StoredStep, usage ai.TurnUsage, incomplete bool) searchResponse {
 	session, err := chat.AppendTurn(app, t.ownerID, t.session.Id, chat.Turn{
 		UserContent:      t.content,
 		AssistantContent: reply,
 		RunID:            t.runID,
 		Documents:        hits,
 		Steps:            steps,
+		Usage:            usage,
 		Incomplete:       incomplete,
 		Mode:             t.mode,
 	})
@@ -308,6 +329,7 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 		var hits []ai.DocumentHit
 		incomplete := false
 		var steps []chat.StoredStep
+		var usage ai.TurnUsage
 		if turn.research() {
 			// Non-streaming fallback for clients that cannot read SSE.
 			result, researchErr := turn.agent.Research(turn.agentContext(ctx), ai.ResearchRequest{
@@ -320,12 +342,14 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 				Survey:         turn.tools.survey,
 				Count:          turn.tools.count,
 				Web:            turn.tools.web,
+				ContextWindow:  turn.contextWindow,
 			}, func(event ai.ResearchEvent) {
 				if event.Type == "step" {
 					steps = append(steps, chat.StepFromEvent(event))
 				}
 			})
 			reply, hits, incomplete, err = result.Reply, result.Documents, result.Incomplete, researchErr
+			usage = result.Usage
 		} else {
 			reply, hits, err = turn.agent.Search(turn.agentContext(ctx), turn.messages, turn.tools.tags, turn.tools.search, ai.SearchOptions{DenseRetrieval: turn.tools.dense})
 		}
@@ -338,13 +362,13 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 				return writeError(e, http.StatusGatewayTimeout, runTooLongMessage)
 			}
 			app.Logger().Error("deep search failed", "mode", turn.mode, slog.Any("error", err))
-			return writeError(e, http.StatusBadGateway, "The AI provider could not complete the search.")
+			return writeError(e, http.StatusBadGateway, ai.ProviderErrorMessage(err))
 		}
 		if hits == nil {
 			hits = []ai.DocumentHit{}
 		}
 
-		response := persistSearchTurn(app, turn, reply, hits, steps, incomplete)
+		response := persistSearchTurn(app, turn, reply, hits, steps, usage, incomplete)
 		response.Incomplete = incomplete
 		return writeJSON(e, http.StatusOK, response)
 	}
@@ -417,6 +441,7 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 				Survey:         turn.tools.survey,
 				Count:          turn.tools.count,
 				Web:            turn.tools.web,
+				ContextWindow:  turn.contextWindow,
 			}, func(event ai.ResearchEvent) {
 				if event.Type == "step" {
 					steps = append(steps, chat.StepFromEvent(event))
@@ -443,7 +468,7 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 				return nil
 			}
 			app.Logger().Error("search run failed", "mode", turn.mode, slog.Any("error", err))
-			stream.Send(ai.ResearchEvent{Type: "error", Message: "The AI provider could not complete the search."})
+			stream.Send(ai.ResearchEvent{Type: "error", Message: ai.ProviderErrorMessage(err)})
 			stream.Send(ai.ResearchEvent{Type: "done"})
 			return nil
 		}
@@ -456,7 +481,7 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 		// Stored before anything is written, and unconditionally: a write to a
 		// half-closed connection can block until the kernel gives up, and that
 		// must never sit between a finished answer and the save that keeps it.
-		saved := persistSearchTurn(app, turn, result.Reply, documents, steps, result.Incomplete)
+		saved := persistSearchTurn(app, turn, result.Reply, documents, steps, result.Usage, result.Incomplete)
 
 		stream.Send(ai.ResearchEvent{Type: "documents", Documents: documents})
 		// The whole answer follows the deltas: those are a live preview, this is

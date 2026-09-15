@@ -297,7 +297,7 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 		if err != nil {
 			app.Logger().Error("document chat failed", "document", documentID, slog.Any("error", err))
 			discardEmptySession(app, opened)
-			return writeError(e, http.StatusBadGateway, "The AI provider could not complete the request.")
+			return writeError(e, http.StatusBadGateway, ai.ProviderErrorMessage(err))
 		}
 
 		session, err = chat.AppendTurn(app, ownerID, session.Id, chat.Turn{

@@ -32,6 +32,7 @@ import {
   type SearchDocumentHit,
 } from '../lib/api/chats'
 import { applyStep, type ResearchStep } from '../lib/researchSteps'
+import { formatContextUsage, type ContextUsage } from '../lib/contextUsage'
 
 const modes: {
   value: SearchMode
@@ -83,6 +84,7 @@ export function SearchPage() {
   const [web, setWeb] = useState(false)
   const [steps, setSteps] = useState<ResearchStep[]>([])
   const [draft, setDraft] = useState('')
+  const [liveUsage, setLiveUsage] = useState<ContextUsage | null>(null)
   // The controller only abandons this page's view of the run; the id is what
   // stops the run itself. Both are needed, because the server keeps working
   // through a dropped connection.
@@ -188,6 +190,13 @@ export function SearchPage() {
                 answer += event.content
                 setDraft(answer)
                 break
+              case 'usage':
+                setLiveUsage({
+                  peak_prompt: event.prompt_tokens,
+                  context_window: event.context_window,
+                  estimated: event.estimated,
+                })
+                break
               case 'message':
                 answer = event.content
                 incomplete = event.incomplete ?? false
@@ -238,6 +247,7 @@ export function SearchPage() {
         }
         setSteps([])
         setDraft('')
+        setLiveUsage(null)
       }
 
       if (streamError) {
@@ -441,6 +451,7 @@ export function SearchPage() {
               renderExtra={(turn) => (
                 <>
                   {turn.incomplete && <IncompleteNotice />}
+                  {turn.usage && <ContextUsageNotice usage={turn.usage} />}
                   {mode === 'search' && <SearchHits turn={turn} />}
                 </>
               )}
@@ -449,6 +460,7 @@ export function SearchPage() {
                   ? () => (
                       <div className="space-y-3">
                         <StepList steps={steps} />
+                        {liveUsage && <LiveContextUsage usage={liveUsage} />}
                         {draft && (
                           <div className="flex justify-start">
                             <div className="max-w-[85%] rounded-none border border-line bg-paper px-4 py-2.5 text-sm leading-relaxed text-ink">
@@ -545,6 +557,22 @@ function IncompleteNotice() {
   return (
     <p className="border-t border-line pt-2 text-xs text-ink-muted">
       This answer was cut off before it finished. Ask again to get the rest.
+    </p>
+  )
+}
+
+function ContextUsageNotice({ usage }: { usage: ContextUsage }) {
+  const text = formatContextUsage(usage)
+  if (!text) return null
+  return <p className="border-t border-line pt-2 text-xs text-ink-muted">Context used: {text}</p>
+}
+
+function LiveContextUsage({ usage }: { usage: ContextUsage }) {
+  const text = formatContextUsage(usage)
+  if (!text) return null
+  return (
+    <p className="border-l-2 border-line pl-3 text-xs text-ink-faint tabular-nums">
+      Context: {text}
     </p>
   )
 }

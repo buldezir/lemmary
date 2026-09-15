@@ -40,12 +40,21 @@ type AIEnv struct {
 	WorkerMaxRetries    int
 	DeepSearchLanguages string
 	ExtractionPromptVer string
+
+	// ModelCatalogURL is where a model's context window is looked up, so a
+	// research turn can be shown against it. Blank turns the lookup off and
+	// with it the denominator on the usage line.
+	ModelCatalogURL string
 }
 
 // Environment variable names in one place, so the error messages and the
 // parsing cannot drift apart.
 const (
 	EnvManaged = "AI_MANAGED"
+
+	// EnvModelCatalogURL points the context-window lookup somewhere other than
+	// pi.dev, or nowhere at all when set empty.
+	EnvModelCatalogURL = "AI_MODEL_CATALOG_URL"
 
 	EnvAISDK     = "AI_SDK"
 	EnvAIAPIKey  = "AI_API_KEY"
@@ -113,6 +122,7 @@ func AIEnvFromEnv() (AIEnv, error) {
 		WorkerMaxRetries:       envIntDefault("WORKER_MAX_RETRIES", 0, 0),
 		DeepSearchLanguages:    NormalizeLanguageList(os.Getenv("DEEP_SEARCH_LANGUAGES")),
 		ExtractionPromptVer:    getEnv("EXTRACTION_PROMPT_VERSION", "v1"),
+		ModelCatalogURL:        getEnv(EnvModelCatalogURL, aiprovider.DefaultCatalogURL),
 	}
 
 	llm, err := parseLLM()

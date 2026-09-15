@@ -514,7 +514,7 @@ The chat list is not paged: one request carries every chat an account can hold, 
 Limits:
 
 - A message may be at most 8,000 characters.
-- The model sees the most recent 40 messages, capped at 24,000 characters — older turns drop out of the prompt but stay in the transcript.
+- The model sees the transcript whole, up to the 500 most recent messages of one read. Nothing else trims it: the provider's context window is the only limit, and a conversation that outgrows it fails with the provider's own error rather than quietly losing its oldest turns. Research turns report what they used — see [AI providers → The model catalogue](/ai_providers#the-model-catalogue).
 - An account may keep 500 chats. Past that, new ones are refused until some are deleted; nothing is pruned automatically.
 
 Deleting a document deletes its Ask AI chats, and deleting an account deletes all of its chats. The `chat_sessions` and `chat_messages` collections carry no API rules, so — like `passkey_credentials` — they are not reachable through `/api/collections` at all and `/api/app/chats` is the only way in. That is deliberate: a client able to write its own `assistant` messages could plant text that the server would then replay to the model as a genuine prior answer.

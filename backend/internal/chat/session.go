@@ -58,12 +58,6 @@ const (
 	// a request whose connection was interrupted.
 	MaxRunIDRunes = 200
 
-	// MaxHistoryMessages and MaxHistoryRunes bound the transcript replayed to
-	// the model. The rune budget matters most for Deep Search: its agent loop
-	// resends the whole array on each of up to five rounds.
-	MaxHistoryMessages = 40
-	MaxHistoryRunes    = 24000
-
 	// MaxSessionsPerUser stops an account from turning the sidebar into an
 	// unbounded table. Breaching it is an error, never a silent prune.
 	MaxSessionsPerUser = 500
@@ -76,8 +70,13 @@ const (
 	MaxStepsPerTurn   = 80
 	MaxStepsJSONBytes = 16000
 
+	// MaxUsageJSONBytes bounds the context-usage record: three numbers, with
+	// room for the field to grow.
+	MaxUsageJSONBytes = 512
+
 	// MaxReplayMessages caps one transcript read, so a single request cannot
-	// load an unbounded number of rows.
+	// load an unbounded number of rows. A read guard, not a context budget:
+	// what fits the model is the model's business, and it says so by refusing.
 	MaxReplayMessages = 500
 )
 
@@ -140,44 +139,6 @@ func FitColumn(s string, max int) string {
 		return string([]rune(s)[:1])
 	}
 	return strutil.TruncateRunes(s, max-1)
-}
-
-// ClampHistory trims a transcript to the most recent MaxHistoryMessages turns
-// and, within that, the most recent MaxHistoryRunes of text. The last message
-// survives even when it alone exceeds the budget, and the window never opens on
-// an assistant turn, which reads as though the question had been edited out.
-func ClampHistory(messages []ai.ChatMessage) []ai.ChatMessage {
-	if len(messages) == 0 {
-		return []ai.ChatMessage{}
-	}
-
-	start := 0
-	if len(messages) > MaxHistoryMessages {
-		start = len(messages) - MaxHistoryMessages
-	}
-
-	budget := MaxHistoryRunes
-	first := len(messages) - 1
-	for i := len(messages) - 1; i >= start; i-- {
-		cost := utf8.RuneCountInString(messages[i].Content)
-		if i < len(messages)-1 && cost > budget {
-			break
-		}
-		budget -= cost
-		first = i
-	}
-	if first < start {
-		first = start
-	}
-
-	// Never start mid-answer.
-	if first < len(messages)-1 && messages[first].Role == RoleAssistant {
-		first++
-	}
-
-	out := make([]ai.ChatMessage, 0, len(messages)-first)
-	out = append(out, messages[first:]...)
-	return out
 }
 
 // EncodeHits renders the search hits stored beside an assistant turn. They are
@@ -283,6 +244,32 @@ func EncodeSteps(steps []StoredStep) types.JSONRaw {
 	return types.JSONRaw(encoded)
 }
 
+// EncodeUsage stores what the turn cost in context. Nil for a turn that
+// reported nothing, so an older transcript and a turn on a provider that counts
+// nothing read the same way: no line rather than a zero.
+func EncodeUsage(usage ai.TurnUsage) types.JSONRaw {
+	if usage.Empty() {
+		return nil
+	}
+	encoded, err := json.Marshal(usage)
+	if err != nil || len(encoded) > MaxUsageJSONBytes {
+		return nil
+	}
+	return types.JSONRaw(encoded)
+}
+
+func DecodeUsage(record *core.Record) *ai.TurnUsage {
+	raw := strings.TrimSpace(record.GetString("usage"))
+	if raw == "" || raw == "null" {
+		return nil
+	}
+	var usage ai.TurnUsage
+	if err := json.Unmarshal([]byte(raw), &usage); err != nil {
+		return nil
+	}
+	return &usage
+}
+
 func DecodeSteps(record *core.Record) []StoredStep {
 	raw := strings.TrimSpace(record.GetString("steps"))
 	if raw == "" || raw == "null" {
@@ -338,6 +325,7 @@ type MessageInfo struct {
 	RunID      string           `json:"run_id,omitempty"`
 	Documents  []ai.DocumentHit `json:"documents,omitempty"`
 	Steps      []StoredStep     `json:"steps,omitempty"`
+	Usage      *ai.TurnUsage    `json:"usage,omitempty"`
 	Incomplete bool             `json:"incomplete,omitempty"`
 	Created    string           `json:"created"`
 }
@@ -384,6 +372,7 @@ func ToMessageInfo(record *core.Record) MessageInfo {
 		RunID:      record.GetString("run_id"),
 		Documents:  DecodeHits(record),
 		Steps:      DecodeSteps(record),
+		Usage:      DecodeUsage(record),
 		Incomplete: record.GetBool("incomplete"),
 		Created:    record.GetDateTime("created").String(),
 	}

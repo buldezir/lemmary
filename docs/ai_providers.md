@@ -252,10 +252,29 @@ user writes, so they are already in the language that user chose.
 
 1. Sign in with the admin account and open **Settings** (shown when
    `/api/app/me` reports `is_admin`).
-2. Add a provider — SDK, API key, optional base URL.
+2. Add a provider — SDK, API key, optional base URL, and the **model
+   catalogue** its context windows are read from (see below).
 3. Under **Models**, bind a provider and model to OCR and to metadata
    extraction; chat and search inherit extraction unless bound separately.
    **Deep Search helper** and **Deep search languages** live here too.
+
+### The model catalogue
+
+Deep Search replays a conversation whole and lets the provider decide what fits:
+nothing is trimmed on the way out, and a request that outgrows the model comes
+back as the provider's own error. So that a run can be watched against its
+limit, each research turn reports the tokens its widest request used — live
+while it runs, and stored with the answer.
+
+The denominator comes from the catalogue chosen on the provider row, read from
+[pi.dev](https://pi.dev)'s model list once a day. It is defaulted from the SDK
+and worth correcting when the `openai` SDK points somewhere that is not OpenAI:
+a base URL of `https://api.groq.com/openai/v1` wants the **groq** catalogue.
+
+Leave it on **None**, or set `AI_MODEL_CATALOG_URL=` empty, and nothing is
+fetched: research runs exactly as before and the usage line shows a token count
+with no limit beside it. When a provider reports no usage of its own, the count
+is estimated from the text sent and marked with a `~`.
 
 Changes hot-reload the in-process clients — no restart. The OCR picker lists
 only file-capable models where the provider says which those are (OpenRouter's

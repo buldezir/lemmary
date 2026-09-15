@@ -94,6 +94,10 @@ type ResearchRequest struct {
 	// web-search provider and the user asked for it on this turn, and the tools
 	// are then not offered at all.
 	Web *websearch.Tavily
+	// ContextWindow is the bound model's context length in tokens, or 0 when
+	// nobody knows it. Reported, never enforced: what fits is the provider's
+	// ruling, and it delivers it by refusing the request.
+	ContextWindow int
 }
 
 type ResearchResult struct {
@@ -103,10 +107,12 @@ type ResearchResult struct {
 	// anyway. The text is real as far as it goes, but it is not the whole
 	// answer, and a caller must not present it as one.
 	Incomplete bool
+	// Usage is how much context the run's own conversation took at its widest.
+	Usage TurnUsage
 }
 
 // ResearchEvent is one line of the run's visible progress. Types: "step",
-// "delta", "documents", "message", "error", "done".
+// "delta", "documents", "message", "usage", "error", "done".
 type ResearchEvent struct {
 	Type   string   `json:"type"`
 	Kind   string   `json:"kind,omitempty"`   // search | read | survey | count | answer
@@ -124,6 +130,12 @@ type ResearchEvent struct {
 	Documents  []DocumentHit `json:"documents,omitempty"`
 	Message    string        `json:"message,omitempty"`
 	Incomplete bool          `json:"incomplete,omitempty"`
+	// PromptTokens, ContextWindow and Estimated carry a "usage" event: how
+	// wide the conversation has grown, out of what, and whether the number was
+	// counted by the provider or estimated from the text we sent.
+	PromptTokens  int  `json:"prompt_tokens,omitempty"`
+	ContextWindow int  `json:"context_window,omitempty"`
+	Estimated     bool `json:"estimated,omitempty"`
 }
 
 type readDocumentsArgs struct {
@@ -177,6 +189,9 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 
 	system := buildResearchSystemPrompt(a.languages, a.resultLanguage, req.AvailableTags, req.DenseRetrieval, req.Web != nil)
 
+	meter := newContextMeter(req.ContextWindow)
+	meter.grew(len(system))
+
 	apiMessages := []openai.ChatCompletionMessageParamUnion{openai.SystemMessage(system)}
 	for _, msg := range req.Messages {
 		role := strings.TrimSpace(msg.Role)
@@ -187,6 +202,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 		if role != "user" && role != "assistant" {
 			return ResearchResult{}, fmt.Errorf("invalid message role: %s", role)
 		}
+		meter.grew(len(content))
 		if role == "user" {
 			apiMessages = append(apiMessages, openai.UserMessage(content))
 		} else {
@@ -250,6 +266,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 			return ResearchResult{}, fmt.Errorf("openai returned no choices")
 		}
 		usage.Add(usageOf(chatResp))
+		emit(usageEvent(meter.observe(usageOf(chatResp))))
 
 		msg := chatResp.Choices[0].Message
 		nativeCalls := msg.ToolCalls
@@ -265,14 +282,18 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 		progressed := false
 		if len(nativeCalls) > 0 {
 			apiMessages = append(apiMessages, msg.ToParam())
+			meter.grew(len(msg.Content))
 			for _, call := range nativeCalls {
+				meter.grew(len(call.Function.Name), len(call.Function.Arguments))
 				result, advanced := a.runResearchTool(ctx, req, state, call.ID, call.Function.Name, call.Function.Arguments, emit)
 				progressed = progressed || advanced
+				meter.grew(len(result.Content))
 				apiMessages = append(apiMessages, openai.ToolMessage(result.Content, call.ID))
 			}
 		} else {
 			// DSML models put tool calls in content; feed results back as a user message.
 			apiMessages = append(apiMessages, openai.AssistantMessage(msg.Content))
+			meter.grew(len(msg.Content))
 			results := make([]toolExecResult, 0, len(dsmlCalls))
 			for _, call := range dsmlCalls {
 				result, advanced := a.runResearchTool(ctx, req, state, call.ID, call.Name, call.Arguments, emit)
@@ -280,6 +301,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 				results = append(results, result)
 			}
 			formatted := formatDSMLToolResults(results)
+			meter.grew(len(formatted))
 			apiMessages = append(apiMessages, openai.UserMessage(formatted))
 		}
 
@@ -292,7 +314,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 
 	emit(ResearchEvent{Type: "step", Kind: "answer", Status: "start"})
-	reply, incomplete, answerUsage, err := a.answerResearch(ctx, apiMessages, req.Web != nil, emit)
+	reply, incomplete, answerUsage, err := a.answerResearch(ctx, apiMessages, req.Web != nil, meter, emit)
 	if err != nil {
 		return ResearchResult{}, err
 	}
@@ -316,7 +338,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 	emit(ResearchEvent{Type: "step", Kind: "answer", Status: "done", Count: len(state.read)})
 
-	return ResearchResult{Reply: reply, Documents: state.hits, Incomplete: incomplete}, nil
+	return ResearchResult{Reply: reply, Documents: state.hits, Incomplete: incomplete, Usage: meter.usage}, nil
 }
 
 // answerResearch is the second phase: one completion with no tools declared, so
@@ -329,10 +351,17 @@ func (a *openAISearchAgent) answerResearch(
 	ctx context.Context,
 	apiMessages []openai.ChatCompletionMessageParamUnion,
 	web bool,
+	meter *contextMeter,
 	emit func(ResearchEvent),
 ) (reply string, incomplete bool, usage Usage, err error) {
+	instruction := researchAnswerInstruction(web)
+	meter.grew(len(instruction))
+	// Deferred so every exit reports, the partial answer and the blocking
+	// fallback included: the prompt was sent whatever became of the reply.
+	defer func() { emit(usageEvent(meter.observe(usage))) }()
+
 	msgs := append([]openai.ChatCompletionMessageParamUnion{}, apiMessages...)
-	msgs = append(msgs, openai.UserMessage(researchAnswerInstruction(web)))
+	msgs = append(msgs, openai.UserMessage(instruction))
 
 	params := openai.ChatCompletionNewParams{
 		Model:       shared.ChatModel(a.client.model),

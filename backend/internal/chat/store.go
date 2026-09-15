@@ -47,6 +47,9 @@ type Turn struct {
 	// Steps is the research trail shown while the run was live. Empty for
 	// Search and for Ask AI. Not replayed to the model.
 	Steps []StoredStep
+	// Usage is how much context the answer took, for the line a reopened chat
+	// shows under it. Zero for Search and for Ask AI.
+	Usage ai.TurnUsage
 	// Incomplete marks an assistant answer that was cut off mid-generation.
 	Incomplete bool
 	// Mode records which search mode produced the answer; empty leaves the
@@ -145,8 +148,9 @@ func ListMessages(app core.App, sessionID string, limit int) ([]*core.Record, er
 	return records, nil
 }
 
-// History returns the prior turns to replay to the model, already clamped to
-// the budget in ClampHistory.
+// History returns the prior turns to replay to the model, whole. Nothing here
+// decides what fits: the provider's context window is the only limit, and a
+// request that exceeds it comes back as an error the user is shown.
 func History(app core.App, sessionID string) ([]ai.ChatMessage, error) {
 	records, err := ListMessages(app, sessionID, MaxReplayMessages)
 	if err != nil {
@@ -159,7 +163,7 @@ func History(app core.App, sessionID string) ([]ai.ChatMessage, error) {
 			Content: record.GetString("content"),
 		})
 	}
-	return ClampHistory(messages), nil
+	return messages, nil
 }
 
 // MaxPriorHits caps the evidence one conversation carries forward. Well past
@@ -299,10 +303,10 @@ func AppendTurn(app core.App, userID, sessionID string, turn Turn) (*core.Record
 			return err
 		}
 
-		if err := saveMessage(txApp, session.Id, next, RoleUser, turn.UserContent, turn.RunID, nil, nil, false); err != nil {
+		if err := saveMessage(txApp, session.Id, next, RoleUser, turn.UserContent, turn.RunID, nil, nil, ai.TurnUsage{}, false); err != nil {
 			return err
 		}
-		if err := saveMessage(txApp, session.Id, next+1, RoleAssistant, turn.AssistantContent, turn.RunID, turn.Documents, turn.Steps, turn.Incomplete); err != nil {
+		if err := saveMessage(txApp, session.Id, next+1, RoleAssistant, turn.AssistantContent, turn.RunID, turn.Documents, turn.Steps, turn.Usage, turn.Incomplete); err != nil {
 			return err
 		}
 
@@ -337,7 +341,7 @@ func nextSeq(app core.App, sessionID string) (int, error) {
 	return highest.Value + 1, nil
 }
 
-func saveMessage(app core.App, sessionID string, seq int, role, content, runID string, hits []ai.DocumentHit, steps []StoredStep, incomplete bool) error {
+func saveMessage(app core.App, sessionID string, seq int, role, content, runID string, hits []ai.DocumentHit, steps []StoredStep, usage ai.TurnUsage, incomplete bool) error {
 	collection, err := app.FindCollectionByNameOrId(MessagesCollection)
 	if err != nil {
 		return err
@@ -356,6 +360,9 @@ func saveMessage(app core.App, sessionID string, seq int, role, content, runID s
 	if role == RoleAssistant {
 		if encoded := EncodeSteps(steps); encoded != nil {
 			record.Set("steps", encoded)
+		}
+		if encoded := EncodeUsage(usage); encoded != nil {
+			record.Set("usage", encoded)
 		}
 		if incomplete {
 			record.Set("incomplete", true)

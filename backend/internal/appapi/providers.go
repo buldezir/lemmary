@@ -17,6 +17,7 @@ type providerResponse struct {
 	SDK       string `json:"sdk"`
 	Alias     string `json:"alias"`
 	BaseURL   string `json:"base_url"`
+	Catalog   string `json:"catalog"`
 	APIKeySet bool   `json:"api_key_set"`
 
 	// SignedIn is api_key_set's counterpart for the SDKs that sign in. The
@@ -32,7 +33,24 @@ type providerWriteRequest struct {
 	Alias   *string `json:"alias"`
 	BaseURL *string `json:"base_url"`
 	APIKey  *string `json:"api_key"`
+	Catalog *string `json:"catalog"`
 }
+
+// catalogOrDefault validates the pi.dev catalogue an admin picked, falling back
+// to the one the SDK implies. Blank is a real answer -- it means no model
+// window is known -- but only when it was sent on purpose.
+func catalogOrDefault(requested *string, sdk string) (string, bool) {
+	if requested == nil {
+		return aiprovider.DefaultCatalog(sdk), true
+	}
+	catalog := strings.TrimSpace(*requested)
+	return catalog, aiprovider.ValidCatalog(catalog)
+}
+
+// The catalogue list is long enough that naming all of it would bury the point;
+// it is a dropdown in the UI, so a bad value means a client sent something the
+// form cannot produce.
+const invalidCatalogMessage = "catalog must be one of the known model catalogues, or empty."
 
 // invalidSDKMessage is built from the list rather than written out, and takes
 // the runtime because one SDK is conditional: naming chatgpt on an instance
@@ -58,6 +76,7 @@ func providerJSON(p aiprovider.Provider) providerResponse {
 		SDK:       p.SDK,
 		Alias:     p.Alias,
 		BaseURL:   p.BaseURL,
+		Catalog:   p.Catalog,
 		APIKeySet: p.APIKey != "",
 		SignedIn:  p.OAuth != "",
 	}
@@ -150,6 +169,11 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 			return writeError(e, http.StatusBadRequest, "base_url is required for a local OCR provider.")
 		}
 
+		catalog, ok := catalogOrDefault(req.Catalog, sdk)
+		if !ok {
+			return writeError(e, http.StatusBadRequest, invalidCatalogMessage)
+		}
+
 		collection, err := aiprovider.EnsureCollection(app)
 		if err != nil {
 			return writeError(e, http.StatusInternalServerError, "Providers are unavailable.")
@@ -159,6 +183,7 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 		record.Set("alias", alias)
 		record.Set("base_url", aiprovider.NormalizeBaseURL(sdk, baseURL))
 		record.Set("api_key", apiKey)
+		record.Set("catalog", catalog)
 		if err := app.Save(record); err != nil {
 			return writeError(e, http.StatusBadRequest, "Failed to create provider: "+err.Error())
 		}
@@ -263,6 +288,17 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 		}
 		if req.APIKey != nil && strings.TrimSpace(*req.APIKey) != "" {
 			record.Set("api_key", strings.TrimSpace(*req.APIKey))
+		}
+		// An explicit choice wins; otherwise an SDK change only fills a row that
+		// never had a catalogue. Re-defaulting a row that has one would undo a
+		// deliberate pick -- the form sends the new default itself when the
+		// admin switches SDK and had not overridden it.
+		if req.Catalog != nil || (req.SDK != nil && record.GetString("catalog") == "") {
+			catalog, ok := catalogOrDefault(req.Catalog, sdk)
+			if !ok {
+				return writeError(e, http.StatusBadRequest, invalidCatalogMessage)
+			}
+			record.Set("catalog", catalog)
 		}
 		if err := app.Save(record); err != nil {
 			return writeError(e, http.StatusBadRequest, "Failed to update provider: "+err.Error())

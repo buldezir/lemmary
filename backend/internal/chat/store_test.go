@@ -1,11 +1,14 @@
 package chat_test
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 
+	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/chat"
 	// Registers the migrations that create users and documents. Importing them
@@ -217,5 +220,91 @@ func TestAppendTurnStoresStepsAndIncompleteOnTheAssistant(t *testing.T) {
 	}
 	if len(history) != 2 || history[1].Content != "€412." {
 		t.Fatalf("History = %+v", history)
+	}
+}
+
+// The turn's context usage rides on the assistant row, so a reopened chat can
+// still say how close it came to the model's limit.
+func TestAppendTurnStoresUsageOnTheAssistant(t *testing.T) {
+	app := bootAppForStore(t)
+	userID := makeUser(t, app, "usage@example.test")
+	session, err := chat.CreateSession(app, chat.NewSession{
+		UserID:       userID,
+		Kind:         chat.KindSearch,
+		Mode:         chat.ModeResearch,
+		FirstMessage: "how much?",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	if _, err := chat.AppendTurn(app, userID, session.Id, chat.Turn{
+		UserContent:      "how much?",
+		AssistantContent: "EUR 412.",
+		Usage:            ai.TurnUsage{PeakPrompt: 38200, ContextWindow: 200000},
+	}); err != nil {
+		t.Fatalf("AppendTurn: %v", err)
+	}
+
+	records, err := chat.ListMessages(app, session.Id, 0)
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if got := chat.ToMessageInfo(records[0]).Usage; got != nil {
+		t.Fatalf("user message carried usage: %+v", got)
+	}
+	usage := chat.ToMessageInfo(records[1]).Usage
+	if usage == nil {
+		t.Fatal("assistant message lost its usage")
+	}
+	if usage.PeakPrompt != 38200 || usage.ContextWindow != 200000 {
+		t.Fatalf("usage = %+v", usage)
+	}
+}
+
+// Nothing clamps the replayed transcript any more: what fits is the provider's
+// ruling, and it delivers it by refusing the request. A conversation past the
+// old 40-message, 24000-rune budget must come back whole.
+func TestHistoryReplaysTheWholeTranscript(t *testing.T) {
+	app := bootAppForStore(t)
+	userID := makeUser(t, app, "history@example.test")
+	session, err := chat.CreateSession(app, chat.NewSession{
+		UserID:       userID,
+		Kind:         chat.KindSearch,
+		Mode:         chat.ModeResearch,
+		FirstMessage: "first",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	const turns = 30
+	answer := strings.Repeat("a", 2000)
+	for i := 0; i < turns; i++ {
+		if _, err := chat.AppendTurn(app, userID, session.Id, chat.Turn{
+			UserContent:      fmt.Sprintf("question %d", i),
+			AssistantContent: answer,
+		}); err != nil {
+			t.Fatalf("AppendTurn %d: %v", i, err)
+		}
+	}
+
+	history, err := chat.History(app, session.Id)
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	if len(history) != turns*2 {
+		t.Fatalf("history = %d messages, want all %d", len(history), turns*2)
+	}
+	if history[0].Content != "question 0" {
+		t.Fatalf("history starts at %q, want the first question", history[0].Content)
+	}
+
+	total := 0
+	for _, m := range history {
+		total += len(m.Content)
+	}
+	if total < turns*len(answer) {
+		t.Fatalf("history is %d chars, less than was stored", total)
 	}
 }

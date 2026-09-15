@@ -153,6 +153,9 @@ func ensureMessages(app core.App, sessions *core.Collection) error {
 		// Research progress as the stream emitted it, so reopening a chat still
 		// shows how the answer was produced. Empty on user turns and on Search.
 		&core.JSONField{Name: "steps", MaxSize: MaxStepsJSONBytes},
+		// How much of the model's context the turn took at its widest, so a
+		// reopened chat can still say so. Assistant turns only.
+		&core.JSONField{Name: "usage", MaxSize: MaxUsageJSONBytes},
 		&core.BoolField{Name: "incomplete"},
 		&core.AutodateField{Name: "created", OnCreate: true},
 		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
