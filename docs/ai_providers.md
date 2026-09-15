@@ -287,10 +287,15 @@ the Messages API, the `x-opencode-session` header on the rest of OpenCode.
 Nothing is asked of the others: an unknown field is a rejected request, not a
 missed saving.
 
-Two things still cost a full re-read, both visible as `cached_tokens=0` in the
-completion log. Turning web search on or off mid-conversation changes the tool
-list, which is part of what was cached. And an idle gap longer than the
-provider's cache lifetime — five minutes on Anthropic's default — expires it.
+A research turn declares the web tools whether or not that question has the web
+enabled, and refuses the call when it does not. The tool list is part of what
+was cached, so a list that followed the per-turn toggle would throw the whole
+transcript away every time someone ticked the box; a few hundred tokens of
+schema on every call is the cheaper side of that trade.
+
+What still costs a full re-read is an idle gap longer than the provider's cache
+lifetime — five minutes on Anthropic's default. It shows as `cached_tokens=0`
+in the completion log.
 
 Changes hot-reload the in-process clients — no restart. The OCR picker lists
 only file-capable models where the provider says which those are (OpenRouter's

@@ -291,14 +291,17 @@ func mustContent(t *testing.T, web *websearch.Tavily, budget *webBudget) string 
 	return result.Content
 }
 
-func TestWebToolsRefuseWhenNoProviderIsBound(t *testing.T) {
+// The schemas are always declared, so this is the answer to a model reaching
+// for the web on a turn that does not have it -- the toggle off, or no provider
+// bound at all.
+func TestWebToolsRefuseWhenTheTurnHasNoWeb(t *testing.T) {
 	t.Parallel()
 	budget := &webBudget{}
 	result, advanced := runWebTool(context.Background(), nil, budget, "c1", "web_search", `{"query":"x"}`, nil)
 	if advanced {
 		t.Error("nothing happened")
 	}
-	if got := decodeToolContent(t, result.Content)["error"]; got != "web access is not configured" {
+	if got := decodeToolContent(t, result.Content)["error"]; got != "web access is not enabled for this question" {
 		t.Errorf("error = %v", got)
 	}
 	// A refusal must not spend the budget it never used.

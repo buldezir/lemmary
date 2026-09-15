@@ -169,8 +169,12 @@ func runWebTool(
 	if emit == nil {
 		emit = func(ResearchEvent) {}
 	}
+	// The schemas are declared on every research turn so the tool list never
+	// moves under the provider's cache, which means the model can reach for them
+	// on a turn that has no web behind it -- because the toggle is off, or
+	// because no provider was ever configured. Both read the same from here.
 	if web == nil {
-		return webError(callID, name, "web access is not configured"), false
+		return webError(callID, name, "web access is not enabled for this question"), false
 	}
 	if !budget.claim() {
 		return toolExecResult{

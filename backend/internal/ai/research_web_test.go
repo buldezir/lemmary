@@ -24,30 +24,52 @@ func researchWithWeb(t *testing.T, req ResearchRequest, turns ...scriptedTurn) (
 	return h, result
 }
 
-func TestResearchOffersTheWebToolsOnlyWhenBacked(t *testing.T) {
+// The tool list is part of what the provider cached and the web toggle is per
+// turn, so the list cannot follow the toggle: it would forfeit the transcript's
+// prefix on every change. The schemas are always declared, and a turn without
+// the web answers them with a refusal instead of not offering them.
+func TestTheWebToolsAreDeclaredWhicheverWayTheToggleIs(t *testing.T) {
 	t.Parallel()
+
+	want := []string{"search_documents", "read_documents", "web_search", "web_fetch"}
 
 	h, _ := researchWithWeb(t, ResearchRequest{},
 		scriptedTurn{content: "ready"}, scriptedTurn{content: "Nothing."})
-	names := toolNames(t, h.request(0))
-	for _, tool := range []string{"web_search", "web_fetch"} {
-		if _, ok := names[tool]; ok {
-			t.Fatalf("%s offered with no provider bound: %v", tool, names)
+	off := toolNames(t, h.request(0))
+	for _, tool := range want {
+		if _, ok := off[tool]; !ok {
+			t.Errorf("%s missing with the web off: %v", tool, off)
 		}
-	}
-	// The archive tools are unaffected by the feature being off.
-	if _, ok := names["search_documents"]; !ok {
-		t.Fatalf("archive tools missing: %v", names)
 	}
 
 	web, _ := newWebServer(t, `{"results":[]}`, `{}`)
 	h, _ = researchWithWeb(t, ResearchRequest{Web: web},
 		scriptedTurn{content: "ready"}, scriptedTurn{content: "Nothing."})
-	names = toolNames(t, h.request(0))
-	for _, tool := range []string{"search_documents", "read_documents", "web_search", "web_fetch"} {
-		if _, ok := names[tool]; !ok {
-			t.Errorf("%s missing with a provider bound: %v", tool, names)
+	on := toolNames(t, h.request(0))
+	for _, tool := range want {
+		if _, ok := on[tool]; !ok {
+			t.Errorf("%s missing with the web on: %v", tool, on)
 		}
+	}
+	if len(on) != len(off) {
+		t.Fatalf("the toggle changed the tool list: %v with the web, %v without", on, off)
+	}
+}
+
+// What the toggle does move is the refusal: the model can reach for the web on
+// a turn that does not have it, and has to be told so in a way it can act on
+// rather than being left to guess why nothing came back.
+func TestAWebCallOnATurnWithoutTheWebIsRefused(t *testing.T) {
+	t.Parallel()
+
+	h, _ := researchWithWeb(t, ResearchRequest{},
+		scriptedTurn{toolCalls: []scriptedToolCall{{name: "web_search", args: `{"query":"acme rates"}`}}},
+		scriptedTurn{content: "ready"},
+		scriptedTurn{content: "The archive does not say."},
+	)
+	fed := toolMessageContent(t, h.request(1), "web_search")
+	if !strings.Contains(fed, "not enabled for this question") {
+		t.Fatalf("the refusal does not say why: %s", fed)
 	}
 }
 

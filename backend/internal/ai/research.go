@@ -240,9 +240,13 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	if req.Count != nil {
 		tools = append(tools, countDocumentsTool())
 	}
-	if req.Web != nil {
-		tools = append(tools, webSearchTool(), webFetchTool())
-	}
+	// Declared whether or not this turn has the web, because the tool list is
+	// part of what the provider cached and the toggle is per turn: a list that
+	// grew and shrank with it would forfeit the whole transcript's prefix on
+	// every change. What the toggle moves instead is the note beside the
+	// question, which is at the tail where a turn's own instruction belongs.
+	// Off, the schemas are answered by a refusal; see runWebTool.
+	tools = append(tools, webSearchTool(), webFetchTool())
 	stalled := 0
 	round := 0
 	var usage Usage
