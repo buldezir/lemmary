@@ -47,6 +47,14 @@ export type UseChatSessionResult = {
   submit: () => Promise<void>
   /** Abandons an unsaved chat and starts a fresh one in place. */
   reset: () => void
+  /**
+   * Moves the conversation in flight into another session, for a send the
+   * server answers in a conversation of its own making. Claim it before the URL
+   * follows: the load effect reads a claimed id as a promotion and leaves the
+   * running turn alone, where an unclaimed one is a switch that throws the
+   * transcript and the reply being watched away.
+   */
+  adoptSession: (session: ChatSession) => void
 }
 
 /**
@@ -273,6 +281,11 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     }
   }, [input, sending])
 
+  const adoptSession = useCallback((next: ChatSession) => {
+    ownedRef.current = next.id
+    setSession(next)
+  }, [])
+
   const reset = useCallback(() => {
     ownedRef.current = null
     epochRef.current += 1
@@ -302,5 +315,6 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     unsavedDetail,
     submit,
     reset,
+    adoptSession,
   }
 }

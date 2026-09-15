@@ -21,6 +21,7 @@ import {
 } from '../lib/api/ai'
 import {
   deleteChatSession,
+  forkChatSession,
   getChatSession,
   listChatSessions,
   mergeChatSession,
@@ -77,6 +78,9 @@ export function SearchPage() {
   const [justSettled, setJustSettled] = useState<ChatSession | null>(null)
   const [railBusy, setRailBusy] = useState(false)
   const [railError, setRailError] = useState('')
+  // Its own line rather than railError: the button is in the transcript, and at
+  // phone width the rail that would carry the message is collapsed away.
+  const [forkError, setForkError] = useState('')
   // The model the next conversation opens on, deliberately kept across a new chat.
   const [binding, setBinding] = useState<ProviderBinding | undefined>()
   // Per turn, not per conversation: the server stores nothing about it, so a
@@ -89,6 +93,13 @@ export function SearchPage() {
   // stops the run itself. Both are needed, because the server keeps working
   // through a dropped connection.
   const runRef = useRef<{ controller: AbortController; id: string } | null>(null)
+  // Which button started the send in flight. A ref rather than state: `submit`
+  // reads the send closure through a ref refreshed in an effect, so a setState
+  // in the click handler would not be visible to the send that click triggers.
+  const forkRef = useRef(false)
+  // The hook's own claim, reached from inside a run. Assigned rather than
+  // called directly because the run is defined before the hook that owns it.
+  const adoptRef = useRef<(session: ChatSession) => void>(() => {})
 
   const sessions = useAsync(() => listChatSessions({ kind: 'search' }), [])
 
@@ -120,19 +131,22 @@ export function SearchPage() {
     (session: ChatSession, created: boolean) => {
       // Merged in straight away so the row is there with the transcript.
       setJustSettled(session)
-      if (created) {
-        // replace: Back should not land on the now-orphaned empty /search.
+      // Also when the turn landed somewhere else than where it was typed, which
+      // is what a fork does. replace only for `created`: Back should not land on
+      // the now-orphaned empty /search, but it should lead out of a fork and
+      // back into the conversation it branched from.
+      if (created || session.id !== sessionId) {
         void navigate({
           to: `${basePath}/$sessionId`,
           params: { sessionId: session.id },
-          replace: true,
+          replace: created,
         })
       }
       // After every turn, not only the first: last_message_at moved and the row
       // has to move with it. reload() refreshes without a loading flash.
       void sessions.reload()
     },
-    [basePath, navigate, sessions],
+    [basePath, navigate, sessionId, sessions],
   )
 
   /**
@@ -148,6 +162,7 @@ export function SearchPage() {
       turnMode: SearchMode,
       turnBinding: ProviderBinding | undefined,
       turnWeb: boolean,
+      forkFrom?: string,
     ): Promise<ChatSendResult> => {
       const run = { controller: new AbortController(), id: runId() }
       runRef.current = run
@@ -169,6 +184,7 @@ export function SearchPage() {
         await searchStream(
           {
             sessionId: id,
+            forkFrom,
             content,
             mode: turnMode,
             runId: run.id,
@@ -181,6 +197,14 @@ export function SearchPage() {
             switch (event.type) {
               case 'session':
                 box.session = event.session
+                // A fork exists before the run makes a single provider call,
+                // and this is where the page moves into it: the rail row, the
+                // URL and the steps below belong to the copy from here, rather
+                // than appearing once the answer is already in.
+                if (forkFrom) {
+                  adoptRef.current(event.session)
+                  onSessionSettled(event.session, false)
+                }
                 break
               case 'step':
                 applyStep(collected, event)
@@ -272,7 +296,7 @@ export function SearchPage() {
         detail: stored.detail,
       }
     },
-    [],
+    [onSessionSettled],
   )
 
   const chat = useChatSession({
@@ -287,9 +311,18 @@ export function SearchPage() {
       }
       return detail
     },
-    send: ({ sessionId: id, content }) => runTurn(id, content, mode, binding, web),
+    send: ({ sessionId: id, content }) => {
+      const fork = forkRef.current && Boolean(id)
+      forkRef.current = false
+      return fork
+        ? runTurn(undefined, content, mode, binding, web, id)
+        : runTurn(id, content, mode, binding, web)
+    },
     onSessionSettled,
   })
+  useEffect(() => {
+    adoptRef.current = chat.adoptSession
+  }, [chat.adoptSession])
 
   // A chat's stored mode wins over the path, which a hand-edited or stale URL
   // can contradict, so the next turn is not sent under a mode the server refuses.
@@ -321,6 +354,10 @@ export function SearchPage() {
   const inConversation = Boolean(sessionId) || Boolean(chat.session)
   const shownBinding = inConversation ? chatSessionBinding(chat.session) : binding
   const bindingLocked = inConversation || chat.sending || chat.turns.length > 0
+  // A fork exists to keep a transcript worth keeping, so there is nothing to
+  // branch before the conversation is saved -- and nothing in Search, a fork of
+  // which would be a copy of a list of cards.
+  const canFork = mode === 'research' && Boolean(sessionId)
 
   // A chat opens in the mode its last turn ran in: continuing a research
   // conversation as a plain search answers a different question than the
@@ -353,6 +390,26 @@ export function SearchPage() {
       await sessions.reload()
     } catch (err) {
       setRailError(err instanceof Error ? err.message : 'Failed to rename the chat')
+    } finally {
+      setRailBusy(false)
+    }
+  }
+
+  /**
+   * Branches the conversation at one of its answers. The copy is saved before
+   * this returns, so there is nothing to adopt: onSessionSettled merges the row
+   * and navigates, and the hook loads the fork as the chat switch it is.
+   */
+  async function onForkFrom(messageId: string) {
+    if (!sessionId) {
+      return
+    }
+    try {
+      setRailBusy(true)
+      setForkError('')
+      onSessionSettled(await forkChatSession(sessionId, messageId), false)
+    } catch (err) {
+      setForkError(err instanceof Error ? err.message : 'Failed to fork the chat')
     } finally {
       setRailBusy(false)
     }
@@ -429,6 +486,7 @@ export function SearchPage() {
             markdown reply stretches this column past the page's max width. */}
         <div className="min-w-0 flex-1">
           {chat.loadError && <p className="mb-3 text-sm text-madder">{chat.loadError}</p>}
+          {forkError && <p className="mb-3 text-sm text-madder">{forkError}</p>}
           {chat.unsaved && (
             <p className="mb-3 text-sm text-madder">
               {chat.unsavedDetail ||
@@ -453,6 +511,20 @@ export function SearchPage() {
                   {turn.incomplete && <IncompleteNotice />}
                   {turn.usage && <ContextUsageNotice usage={turn.usage} />}
                   {mode === 'search' && <SearchHits turn={turn} />}
+                  {/* Only on a stored answer: an id-less bubble is one the
+                      server could not save, and a copy taken at it would end
+                      on the turn before instead. */}
+                  {canFork && turn.role === 'assistant' && Boolean(turn.id) && (
+                    <Button
+                      variant="secondary"
+                      size="xs"
+                      title="Copy this chat up to this answer and continue there, leaving this one as it is."
+                      disabled={chat.sending || railBusy}
+                      onClick={() => void onForkFrom(turn.id)}
+                    >
+                      ⑂ Fork from here
+                    </Button>
+                  )}
                 </>
               )}
               renderSending={
@@ -489,6 +561,21 @@ export function SearchPage() {
                 chat.resuming && sessionId
                   ? () => void cancelSearchRun({ sessionId })
                   : endRun
+              }
+              // Only where there is a conversation to branch from, and only in
+              // Research: a fork exists to keep a transcript worth keeping.
+              secondary={
+                mode === 'research' && sessionId
+                  ? {
+                      label: 'Research in fork',
+                      title:
+                        'Ask this in a copy of the chat, leaving this one as it is.',
+                      onClick: () => {
+                        forkRef.current = true
+                        void chat.submit()
+                      },
+                    }
+                  : undefined
               }
               autoFocus
             />

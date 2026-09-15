@@ -248,6 +248,22 @@ export async function renameChatSession(id: string, title: string): Promise<Chat
   return data.session
 }
 
+/**
+ * Copies a conversation into one of its own, up to and including `upto`.
+ * Without it the copy is the whole transcript, as the composer's fork is.
+ */
+export async function forkChatSession(id: string, upto?: string): Promise<ChatSession> {
+  const data = await apiFetch<ChatSessionResponse>(
+    `/api/app/chats/${encodeURIComponent(id)}/fork`,
+    {
+      method: 'POST',
+      body: { upto: upto ?? '' },
+      fallbackError: 'Failed to fork the chat',
+    },
+  )
+  return data.session
+}
+
 export function deleteChatSession(id: string) {
   return apiFetch<unknown>(`/api/app/chats/${encodeURIComponent(id)}`, {
     method: 'DELETE',

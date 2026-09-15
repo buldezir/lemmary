@@ -123,6 +123,28 @@ func NormalizeTitle(title string) string {
 	return FitColumn(collapsed, MaxTitleColumnRunes)
 }
 
+// ForkMark labels a conversation copied from another. The marks stack, so a
+// fork of a fork carries two and the sidebar says how far from the original a
+// conversation has been taken.
+const ForkMark = "⑂"
+
+// ForkTitle marks a copy of source's title. The marks gather at the front
+// ("⑂⑂ title") rather than nesting a prefix per fork, and the result is cut
+// to what the title column accepts.
+func ForkTitle(title string) string {
+	rest := strings.TrimSpace(title)
+	marks := 1
+	for strings.HasPrefix(rest, ForkMark) {
+		marks++
+		rest = strings.TrimPrefix(rest, ForkMark)
+	}
+	rest = strings.TrimSpace(rest)
+	if rest == "" {
+		rest = UntitledSession
+	}
+	return FitColumn(strings.Repeat(ForkMark, marks)+" "+rest, MaxTitleColumnRunes)
+}
+
 // FitColumn shortens s to something a column of max runes will accept.
 // The -1 is not an off-by-one: TruncateRunes appends an ellipsis, so cutting to
 // exactly max hands back max+1 runes and the save fails validation.
