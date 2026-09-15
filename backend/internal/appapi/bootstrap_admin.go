@@ -15,14 +15,19 @@ const (
 
 // RegisterAdminBootstrap creates the first admin from SETUP_ADMIN_* if absent.
 // Never upsert: that would reset the password on every restart.
+//
+// Credentials are read at registration, not inside the bootstrap hook: the e2e
+// harness mutates process env under a lock around Register, then bootstraps
+// several instances in parallel. Reading later would pick up another harness's
+// environment.
 func RegisterAdminBootstrap(app core.App) {
+	email := strings.TrimSpace(os.Getenv(EnvSetupAdminEmail))
+	password := os.Getenv(EnvSetupAdminPassword)
 	app.OnBootstrap().BindFunc(func(e *core.BootstrapEvent) error {
 		if err := e.Next(); err != nil {
 			return err
 		}
 
-		email := strings.TrimSpace(os.Getenv(EnvSetupAdminEmail))
-		password := os.Getenv(EnvSetupAdminPassword)
 		if email == "" || password == "" {
 			return nil
 		}
