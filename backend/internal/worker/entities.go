@@ -452,3 +452,7 @@ func findTagByName(app core.App, userID, name string) (string, error) {
 	}
 	return existing[0].Id, nil
 }
+
+// NormalizeTagKey exposes the key apply_metadata matches tag names on, so a
+// caller outside the pipeline resolves a model's answer exactly as apply does.
+func NormalizeTagKey(s string) string { return normalizeNamedEntityKey(s) }
