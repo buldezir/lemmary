@@ -14,7 +14,7 @@ import (
 func researchWithWeb(t *testing.T, req ResearchRequest, turns ...scriptedTurn) (*researchHarness, ResearchResult) {
 	t.Helper()
 	h, agent := newResearchAgent(t, turns...)
-	req.Messages = []ChatMessage{{Role: "user", Content: "What does Acme charge now?"}}
+	req.Thread = []ThreadMessage{{Role: "user", Content: "What does Acme charge now?"}}
 	req.Search = func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil }
 	req.Read = func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil }
 	result, err := agent.Research(context.Background(), req, nil)
@@ -96,7 +96,7 @@ func TestResearchEmitsWebSteps(t *testing.T) {
 
 	var kinds []string
 	_, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "q"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "q"}},
 		Search:   func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
 		Read:     func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil },
 		Web:      web,

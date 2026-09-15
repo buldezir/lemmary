@@ -186,11 +186,16 @@ func unsavedMessage(role, content string, hits []ai.DocumentHit) chat.MessageInf
 func latestAssistantMessage(app core.App, sessionID, runID, reply string, hits []ai.DocumentHit) chat.MessageInfo {
 	records, err := chat.ListMessages(app, sessionID, chat.MaxReplayMessages)
 	if err == nil {
-		for i := len(records) - 1; i >= 0; i-- {
-			record := records[i]
-			if record.GetString("role") == chat.RoleAssistant &&
-				(runID == "" || record.GetString("run_id") == runID) {
-				return chat.ToMessageInfo(record)
+		// Through the same fold a reload goes through, so the answer the client
+		// is handed now carries the trail it will still have after a refresh. A
+		// research transcript is also full of assistant rows that are tool
+		// calls, and the fold is what keeps one of those from being mistaken
+		// for the answer.
+		messages := chat.VisibleMessages(records)
+		for i := len(messages) - 1; i >= 0; i-- {
+			info := messages[i]
+			if info.Role == chat.RoleAssistant && (runID == "" || info.RunID == runID) {
+				return info
 			}
 		}
 	}

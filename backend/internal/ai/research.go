@@ -75,7 +75,20 @@ type ReadRequest struct {
 type DocumentReader func(ctx context.Context, req ReadRequest) ([]DocumentContent, error)
 
 type ResearchRequest struct {
-	Messages      []ChatMessage
+	// Thread is the conversation as it was last sent to the provider, read back
+	// from storage: the system prompt, every question, every tool call and its
+	// result, every answer. It is replayed verbatim, which is what lets a
+	// follow-up build on earlier turns and what gives the provider a prefix it
+	// has already cached. The caller appends the new question to it before the
+	// run; a Thread that ends mid-turn resumes that turn instead.
+	Thread []ThreadMessage
+	// Record is handed every message this run adds, in order, as it happens, so
+	// a run that dies leaves its work behind. The final answer is not recorded
+	// here: it comes back in ResearchResult, and the caller stores it with the
+	// documents and usage that belong to it.
+	Record func(ThreadMessage)
+	// AvailableTags is read only when the conversation has no system prompt
+	// yet; after that the stored one is what the model sees.
 	AvailableTags []string
 	Search        DocumentSearcher
 	Read          DocumentReader
@@ -173,6 +186,10 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	if emit == nil {
 		emit = func(ResearchEvent) {}
 	}
+	record := req.Record
+	if record == nil {
+		record = func(ThreadMessage) {}
+	}
 	ctx = aiprovider.EnsureSession(ctx, "research")
 
 	state := &researchState{
@@ -185,32 +202,31 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 		prior:     map[string]DocumentHit{},
 	}
 	state.seedPrior(req.PriorDocuments)
-	state.question = latestUserMessage(req.Messages)
 
-	system := buildResearchSystemPrompt(a.languages, a.resultLanguage, req.AvailableTags, req.DenseRetrieval, req.Web != nil)
+	thread := req.Thread
+	// A conversation keeps the prompt it was opened with, the way it already
+	// keeps its model: rebuilding it per turn from a live tag query would move
+	// the prefix under the provider's cache on every question. A caller that
+	// stores the thread writes this row itself, before the question, so the
+	// stored order is the order it replays in; prepending it here is for the
+	// callers that store nothing.
+	if !startsWithSystem(thread) {
+		thread = append([]ThreadMessage{{Role: "system", Content: a.SystemPrompt(req)}}, thread...)
+	}
+	state.question = latestUserMessage(thread)
+	if state.question == "" {
+		return ResearchResult{}, fmt.Errorf("at least one user message is required")
+	}
 
 	meter := newContextMeter(req.ContextWindow)
-	meter.grew(len(system))
-
-	apiMessages := []openai.ChatCompletionMessageParamUnion{openai.SystemMessage(system)}
-	for _, msg := range req.Messages {
-		role := strings.TrimSpace(msg.Role)
-		content := strings.TrimSpace(msg.Content)
-		if role == "" || content == "" {
+	apiMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(thread))
+	for _, msg := range thread {
+		param, ok := msg.Param()
+		if !ok {
 			continue
 		}
-		if role != "user" && role != "assistant" {
-			return ResearchResult{}, fmt.Errorf("invalid message role: %s", role)
-		}
-		meter.grew(len(content))
-		if role == "user" {
-			apiMessages = append(apiMessages, openai.UserMessage(content))
-		} else {
-			apiMessages = append(apiMessages, openai.AssistantMessage(content))
-		}
-	}
-	if len(apiMessages) < 2 {
-		return ResearchResult{}, fmt.Errorf("at least one user message is required")
+		meter.grew(msg.Size())
+		apiMessages = append(apiMessages, param)
 	}
 
 	tools := researchTools()
@@ -281,19 +297,35 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 
 		progressed := false
 		if len(nativeCalls) > 0 {
-			apiMessages = append(apiMessages, msg.ToParam())
-			meter.grew(len(msg.Content))
+			asked := ThreadMessage{Role: "assistant", Content: msg.Content}
 			for _, call := range nativeCalls {
-				meter.grew(len(call.Function.Name), len(call.Function.Arguments))
+				asked.Calls = append(asked.Calls, ToolCall{
+					ID:        call.ID,
+					Name:      call.Function.Name,
+					Arguments: call.Function.Arguments,
+				})
+			}
+			// Recorded before the tools run, so a run that dies inside one still
+			// shows what it was doing.
+			record(asked)
+			apiMessages = append(apiMessages, msg.ToParam())
+			meter.grew(asked.Size())
+
+			for _, call := range nativeCalls {
 				result, advanced := a.runResearchTool(ctx, req, state, call.ID, call.Function.Name, call.Function.Arguments, emit)
 				progressed = progressed || advanced
-				meter.grew(len(result.Content))
+				answer := ThreadMessage{Role: "tool", Content: result.Content, CallID: call.ID}
+				record(answer)
+				meter.grew(answer.Size())
 				apiMessages = append(apiMessages, openai.ToolMessage(result.Content, call.ID))
 			}
 		} else {
 			// DSML models put tool calls in content; feed results back as a user message.
+			said := ThreadMessage{Role: "assistant", Content: msg.Content}
+			record(said)
 			apiMessages = append(apiMessages, openai.AssistantMessage(msg.Content))
-			meter.grew(len(msg.Content))
+			meter.grew(said.Size())
+
 			results := make([]toolExecResult, 0, len(dsmlCalls))
 			for _, call := range dsmlCalls {
 				result, advanced := a.runResearchTool(ctx, req, state, call.ID, call.Name, call.Arguments, emit)
@@ -301,7 +333,11 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 				results = append(results, result)
 			}
 			formatted := formatDSMLToolResults(results)
-			meter.grew(len(formatted))
+			// Stored as a tool row with no call id; ThreadMessage.Param turns
+			// it back into the user message this dialect expects.
+			fed := ThreadMessage{Role: "tool", Content: formatted}
+			record(fed)
+			meter.grew(fed.Size())
 			apiMessages = append(apiMessages, openai.UserMessage(formatted))
 		}
 
@@ -739,13 +775,31 @@ func decodeReadArgs(data string) (readDocumentsArgs, error) {
 }
 
 // latestUserMessage is the question the run is answering: the last user turn.
-func latestUserMessage(messages []ChatMessage) string {
-	for i := len(messages) - 1; i >= 0; i-- {
-		if strings.TrimSpace(messages[i].Role) == "user" {
-			return strings.TrimSpace(messages[i].Content)
+// latestUserMessage finds the question the run is answering. Tool results are
+// stored as tool rows even when the dialect feeds them back as user messages,
+// so the loop talking to itself cannot be mistaken for the question -- which
+// would send every read off to focus on a JSON blob.
+func latestUserMessage(thread []ThreadMessage) string {
+	for i := len(thread) - 1; i >= 0; i-- {
+		if thread[i].Role != "user" {
+			continue
+		}
+		if content := strings.TrimSpace(thread[i].Content); content != "" {
+			return content
 		}
 	}
 	return ""
+}
+
+func startsWithSystem(thread []ThreadMessage) bool {
+	return len(thread) > 0 && thread[0].Role == "system"
+}
+
+// SystemPrompt is the instruction a conversation opens with, for the caller
+// that stores it. Built from what the archive looks like now, so it is asked
+// for once per conversation and replayed on every turn after.
+func (a *openAISearchAgent) SystemPrompt(req ResearchRequest) string {
+	return buildResearchSystemPrompt(a.languages, a.resultLanguage, req.AvailableTags, req.DenseRetrieval, req.Web != nil)
 }
 
 func normalizeIDs(ids []string) []string {

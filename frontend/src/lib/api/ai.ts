@@ -160,6 +160,11 @@ export async function searchStream(
      * the original as it was. Read only when there is no session id.
      */
     forkFrom?: string
+    /**
+     * Finishes a research turn whose run did not: no new question, the stored
+     * conversation is replayed and the loop re-entered where it stopped.
+     */
+    resume?: boolean
   },
   onEvent: (event: ResearchEvent) => void,
   signal?: AbortSignal,
@@ -172,6 +177,7 @@ export async function searchStream(
       run_id: input.runId,
       web: input.web === true,
       fork_from: input.forkFrom ?? '',
+      resume: input.resume === true,
       ...bindingBody(input.binding),
     },
     onEvent,

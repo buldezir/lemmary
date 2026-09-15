@@ -137,11 +137,18 @@ func ensureMessages(app core.App, sessions *core.Collection) error {
 			Name:      "role",
 			Required:  true,
 			MaxSelect: 1,
-			Values:    []string{RoleUser, RoleAssistant},
+			Values:    ThreadRoles,
 		},
 		// Max is explicit on purpose: a TextField left at zero defaults to 5000
-		// runes, which would reject most assistant replies.
-		&core.TextField{Name: "content", Required: true, Max: MaxMessageRunes},
+		// runes, which would reject most assistant replies. Not Required: an
+		// assistant turn that only calls tools carries no text, and a research
+		// transcript stores those. Assistant prose is still trimmed to
+		// MaxMessageRunes on the way in; the column is sized for tool results.
+		&core.TextField{Name: "content", Max: MaxThreadContentRunes},
+		// What an assistant turn asked the tools for, and which of those asks a
+		// tool turn answers. Empty on everything a person typed or was shown.
+		&core.JSONField{Name: "tool_calls", MaxSize: MaxToolCallsJSONBytes},
+		&core.TextField{Name: "tool_call_id", Max: MaxToolCallIDRunes},
 		// The client-generated id of the request that produced this pair, so a
 		// dropped connection can recover its exact answer even when another tab
 		// asks the same question concurrently.
@@ -160,9 +167,11 @@ func ensureMessages(app core.App, sessions *core.Collection) error {
 		&core.AutodateField{Name: "created", OnCreate: true},
 		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
 	)
-	// Unique, which makes it both the replay ordering index and a concurrency
-	// guard: two tabs posting into one session cannot interleave into
-	// user, user, assistant, assistant -- the second transaction fails here.
+	// Unique, and still the replay ordering index. It no longer guards against
+	// two tabs interleaving, because a research turn is appended a row at a
+	// time rather than written whole: that is what the one-run-per-conversation
+	// rule in appapi is for. It remains the guard against a lost update racing
+	// two appends onto the same seq.
 	collection.AddIndex("idx_chat_messages_session_seq", true, "session, seq", "")
 
 	if err := app.Save(collection); err != nil {

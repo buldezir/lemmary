@@ -142,7 +142,7 @@ func TestResearchFallsBackToReasoningEffortNoneAndRemembers(t *testing.T) {
 	agent := NewSearchAgent("openai", "test-key", model, base, 5*time.Second, "en,de", "en", slog.Default())
 
 	result, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "how much did I pay?"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "how much did I pay?"}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return hitsFor("doc1"), nil
 		},
@@ -225,7 +225,7 @@ func TestReasoningEffortConflictPrefersTheResponsesAPI(t *testing.T) {
 	agent := NewSearchAgent("openai", "test-key", model, base, 5*time.Second, "en,de", "en", slog.Default())
 
 	if _, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "how much did I pay?"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "how much did I pay?"}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return hitsFor("doc1"), nil
 		},

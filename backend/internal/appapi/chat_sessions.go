@@ -32,6 +32,11 @@ type chatSessionDetail struct {
 	// is stored whole when the run ends, so a chat opened mid-run otherwise
 	// reads as empty and finished.
 	Running bool `json:"running"`
+	// Unfinished says the last turn never reached an answer: a run that was
+	// cancelled, ran out of budget, was refused by the provider, or was cut off
+	// by a restart. Its work is stored and can be continued. Unlike Running,
+	// this is read from the transcript, so it survives the process that made it.
+	Unfinished bool `json:"unfinished"`
 }
 
 type chatSessionResponse struct {
@@ -159,10 +164,14 @@ func handleGetChat(app core.App) func(*core.RequestEvent) error {
 			records = records[len(records)-chat.MaxReplayMessages:]
 		}
 
-		messages := make([]chat.MessageInfo, 0, len(records))
-		for _, record := range records {
-			messages = append(messages, chat.ToMessageInfo(record))
-		}
+		// Whether the last turn is still open is read off the whole window,
+		// before the machinery is filtered out of it: an unfinished turn is one
+		// that ends on a tool result, which is exactly what is about to be
+		// dropped. Derived rather than asked of the run registry, which a
+		// restart empties.
+		unfinished := chat.Unfinished(records)
+
+		messages := chat.VisibleMessages(records)
 
 		info := chat.ToSessionInfo(session)
 		if info.Document != "" {
@@ -174,8 +183,9 @@ func handleGetChat(app core.App) func(*core.RequestEvent) error {
 		return writeJSON(e, http.StatusOK, chatSessionDetail{
 			Session:   info,
 			Messages:  messages,
-			Truncated: truncated,
-			Running:   sessionRunning(session.Id),
+			Truncated:  truncated,
+			Running:    sessionRunning(session.Id),
+			Unfinished: unfinished,
 		})
 	}
 }

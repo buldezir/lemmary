@@ -32,7 +32,7 @@ func TestResearchSurveysThenCitesTheRows(t *testing.T) {
 	var readIDs []string
 	var events []ResearchEvent
 	result, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "How much did I pay in invoices in 2025?"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "How much did I pay in invoices in 2025?"}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			t.Fatal("a survey should not go through search")
 			return nil, nil
@@ -111,7 +111,7 @@ func TestResearchSurveyRequiresASelection(t *testing.T) {
 	)
 	called := false
 	_, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "q"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "q"}},
 		Search:   func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
 		Read:     func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil },
 		Survey: func(context.Context, SurveyArgs, func(int, int)) (SurveyResult, error) {
@@ -137,7 +137,7 @@ func TestResearchSurveyOnlyAcceptsSeenIDs(t *testing.T) {
 	)
 	var got SurveyArgs
 	_, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "q"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "q"}},
 		Search: func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) {
 			return hitsFor("seen"), nil
 		},
@@ -165,7 +165,7 @@ func TestResearchCountsWithoutSearching(t *testing.T) {
 	var got CountArgs
 	var events []ResearchEvent
 	_, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "how many invoices in 2025?"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "how many invoices in 2025?"}},
 		Search: func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) {
 			t.Fatal("a count should not search")
 			return nil, nil
@@ -200,7 +200,7 @@ func TestResearchRejectsAnUnknownGroupBy(t *testing.T) {
 		scriptedTurn{content: "Cannot."},
 	)
 	_, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "q"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "q"}},
 		Search:   func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
 		Read:     func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil },
 		Count: func(context.Context, CountArgs) (CountResult, error) {
@@ -221,7 +221,7 @@ func TestResearchOffersSurveyAndCountOnlyWhenBacked(t *testing.T) {
 	t.Parallel()
 	h, agent := newResearchAgent(t, scriptedTurn{content: "ready"}, scriptedTurn{content: "Nothing."})
 	_, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "q"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "q"}},
 		Search:   func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
 		Read:     func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil },
 		Count:    func(context.Context, CountArgs) (CountResult, error) { return CountResult{}, nil },

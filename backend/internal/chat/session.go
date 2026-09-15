@@ -22,12 +22,32 @@ const (
 	KindDocument Kind = "document"
 )
 
-// Roles a stored turn can carry. Tool calls and system prompts stay inside the
-// agent loop: only what the user typed and what they were shown is persisted.
+// Roles a stored row can carry. A research conversation stores the provider
+// array itself, so the work a turn did survives the turn: the system prompt it
+// was opened with, the tool calls it made, and what the tools answered. Search
+// and Ask AI write only user and assistant rows, as they always did.
 const (
 	RoleUser      = "user"
 	RoleAssistant = "assistant"
+	RoleTool      = "tool"
+	RoleSystem    = "system"
 )
+
+var ThreadRoles = []string{RoleUser, RoleAssistant, RoleTool, RoleSystem}
+
+// Visible reports whether a row is part of the conversation a person reads.
+// The others are the machinery underneath it, replayed to the model and folded
+// into the research trail rather than rendered as a message.
+func Visible(role, content string) bool {
+	switch role {
+	case RoleUser:
+		return true
+	case RoleAssistant:
+		return strings.TrimSpace(content) != ""
+	default:
+		return false
+	}
+}
 
 // The two things a search turn can be: find documents and list them, or read
 // them and answer with citations.
@@ -57,6 +77,15 @@ const (
 	// turn. Not a credential; it only lets a client recover the exact answer of
 	// a request whose connection was interrupted.
 	MaxRunIDRunes = 200
+
+	// MaxThreadContentRunes bounds the content column, which now holds tool
+	// results as well as prose. Far above MaxMessageRunes because a read of
+	// several documents dwarfs any answer, and a truncated tool result is a
+	// corrupted one: the model would read half a JSON object as fact.
+	MaxThreadContentRunes = 400000
+	// MaxToolCallsJSONBytes bounds the calls one assistant turn may make.
+	MaxToolCallsJSONBytes = 64000
+	MaxToolCallIDRunes    = 200
 
 	// MaxSessionsPerUser stops an account from turning the sidebar into an
 	// unbounded table. Breaching it is an error, never a silent prune.
@@ -266,6 +295,32 @@ func EncodeSteps(steps []StoredStep) types.JSONRaw {
 	return types.JSONRaw(encoded)
 }
 
+// EncodeToolCalls stores what an assistant turn asked the tools for. Over
+// budget it stores nothing rather than a prefix: half a call list replays as a
+// call nothing answered, which providers refuse outright.
+func EncodeToolCalls(calls []ai.ToolCall) types.JSONRaw {
+	if len(calls) == 0 {
+		return nil
+	}
+	encoded, err := json.Marshal(calls)
+	if err != nil || len(encoded) > MaxToolCallsJSONBytes {
+		return nil
+	}
+	return types.JSONRaw(encoded)
+}
+
+func DecodeToolCalls(record *core.Record) []ai.ToolCall {
+	raw := strings.TrimSpace(record.GetString("tool_calls"))
+	if raw == "" || raw == "null" {
+		return nil
+	}
+	var calls []ai.ToolCall
+	if err := json.Unmarshal([]byte(raw), &calls); err != nil {
+		return nil
+	}
+	return calls
+}
+
 // EncodeUsage stores what the turn cost in context. Nil for a turn that
 // reported nothing, so an older transcript and a turn on a provider that counts
 // nothing read the same way: no line rather than a zero.
@@ -383,6 +438,34 @@ func BindingOf(record *core.Record) aiprovider.Binding {
 		ProviderID: record.GetString("provider"),
 		Model:      record.GetString("model"),
 	}.Normalized()
+}
+
+// VisibleMessages is the conversation a person reads, folded out of the
+// provider array a research turn stores. The tool calls and their results are
+// not messages; they are how an answer was arrived at, so they ride on it as
+// its trail. A turn whose run died has a trail and no answer to hang it on, and
+// it rides on the question instead -- that is what makes an interrupted turn
+// look like one still in progress rather than like nothing at all.
+func VisibleMessages(records []*core.Record) []MessageInfo {
+	messages := make([]MessageInfo, 0, len(records))
+	var pending []StoredStep
+	for _, record := range records {
+		info := ToMessageInfo(record)
+		if !Visible(info.Role, info.Content) {
+			pending = append(pending, info.Steps...)
+			continue
+		}
+		if len(pending) > 0 && info.Role == RoleAssistant {
+			info.Steps = append(pending, info.Steps...)
+			pending = nil
+		}
+		messages = append(messages, info)
+	}
+	if len(pending) > 0 && len(messages) > 0 {
+		last := &messages[len(messages)-1]
+		last.Steps = append(last.Steps, pending...)
+	}
+	return messages
 }
 
 func ToMessageInfo(record *core.Record) MessageInfo {

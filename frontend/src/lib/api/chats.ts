@@ -68,11 +68,17 @@ export type ChatSessionDetail = {
   messages: ChatMessageRecord[]
   truncated?: boolean
   /**
-   * A run is writing into this conversation right now. A turn is stored whole
-   * when the run ends, so a chat opened mid-run reads as empty and finished
-   * unless the server says otherwise.
+   * A run is writing into this conversation right now. Read from the server's
+   * in-process registry, so it is only ever true while that process lives.
    */
   running?: boolean
+  /**
+   * The last turn never reached an answer: cancelled, out of budget, refused by
+   * the provider, or cut off by a restart. Its work is stored and the turn can
+   * be continued. Unlike `running`, this is read from the transcript, so it
+   * survives the process that produced it.
+   */
+  unfinished?: boolean
 }
 
 /** One rendered row of a transcript. */

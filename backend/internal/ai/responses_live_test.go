@@ -41,7 +41,7 @@ func TestLiveTranslatedModel(t *testing.T) {
 		agent := NewSearchAgent(sdk, key, model, base, 120*time.Second, "en,de", "en", slog.Default())
 		var read bool
 		result, err := agent.Research(ctx, ResearchRequest{
-			Messages: []ChatMessage{{Role: "user", Content: "How much did I pay for car insurance?"}},
+			Thread: []ThreadMessage{{Role: "user", Content: "How much did I pay for car insurance?"}},
 			Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 				return hitsFor("doc1"), nil
 			},

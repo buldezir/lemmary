@@ -3,6 +3,7 @@ package chat
 import (
 	"fmt"
 	"slices"
+	"unicode/utf8"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -166,6 +167,141 @@ func History(app core.App, sessionID string) ([]ai.ChatMessage, error) {
 	return messages, nil
 }
 
+// Thread returns the conversation as it was sent to the provider: the system
+// prompt it was opened with, every question, every tool call and result, and
+// every answer. Replaying it is what lets a follow-up build on the work earlier
+// turns did instead of repeating it, and what gives the provider a prefix it
+// has already cached.
+//
+// Trimmed at both ends, because the read is capped by rows: see ai.TrimThread.
+func Thread(app core.App, sessionID string) ([]ai.ThreadMessage, error) {
+	records, err := ListMessages(app, sessionID, MaxReplayMessages)
+	if err != nil {
+		return nil, err
+	}
+	thread := make([]ai.ThreadMessage, 0, len(records))
+	for _, record := range records {
+		thread = append(thread, ai.ThreadMessage{
+			Role:    record.GetString("role"),
+			Content: record.GetString("content"),
+			Calls:   DecodeToolCalls(record),
+			CallID:  record.GetString("tool_call_id"),
+		})
+	}
+	return ai.TrimThread(thread), nil
+}
+
+// AppendThreadMessage writes one row of a research conversation as it happens,
+// rather than the whole turn once it has finished. That is what keeps the work
+// of a run that dies -- the documents it read are on disk before the answer
+// that would have cited them exists.
+//
+// The session is re-read under its owner on every append, exactly as AppendTurn
+// does, so a request cannot write into someone else's conversation.
+func AppendThreadMessage(app core.App, userID, sessionID string, msg ThreadEntry) (*core.Record, error) {
+	var session *core.Record
+
+	err := app.RunInTransaction(func(txApp core.App) error {
+		var err error
+		session, err = FindOwnedSession(txApp, userID, sessionID)
+		if err != nil {
+			return err
+		}
+
+		next, err := nextSeq(txApp, session.Id)
+		if err != nil {
+			return err
+		}
+		if err := saveMessage(txApp, session.Id, next, storedMessage{
+			Role:       msg.Role,
+			Content:    msg.Content,
+			RunID:      msg.RunID,
+			Calls:      msg.Calls,
+			CallID:     msg.CallID,
+			Documents:  msg.Documents,
+			Steps:      msg.Steps,
+			Usage:      msg.Usage,
+			Incomplete: msg.Incomplete,
+		}); err != nil {
+			return err
+		}
+
+		// Counted as a person counts them: the machinery underneath a turn is
+		// not what the sidebar means by a message.
+		if Visible(msg.Role, msg.Content) {
+			session.Set("message_count", session.GetInt("message_count")+1)
+		}
+		session.Set("last_message_at", types.NowDateTime())
+		if msg.Mode != "" {
+			session.Set("mode", msg.Mode)
+		}
+		return txApp.Save(session)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+// ThreadEntry is one appended row. Same shape as the internal write, with the
+// session's mode alongside, so a caller outside the package can build one.
+type ThreadEntry struct {
+	Role       string
+	Content    string
+	RunID      string
+	Calls      []ai.ToolCall
+	CallID     string
+	Documents  []ai.DocumentHit
+	Steps      []StoredStep
+	Usage      ai.TurnUsage
+	Incomplete bool
+	// Mode stamps the session on the first row of a turn; empty leaves it.
+	Mode string `json:"-"`
+}
+
+// visibleCount is how many of these rows a person would count as messages. The
+// tool calls and results between them are the turn's working, not the turn.
+func visibleCount(records []*core.Record) int {
+	total := 0
+	for _, record := range records {
+		if Visible(record.GetString("role"), record.GetString("content")) {
+			total++
+		}
+	}
+	return total
+}
+
+// snapToAnswer drops a trailing half-turn, so what is left ends where a person
+// would say the conversation ended.
+func snapToAnswer(records []*core.Record) []*core.Record {
+	for len(records) > 0 {
+		last := records[len(records)-1]
+		if Visible(last.GetString("role"), last.GetString("content")) && last.GetString("role") == RoleAssistant {
+			break
+		}
+		records = records[:len(records)-1]
+	}
+	return records
+}
+
+// Unfinished reports a conversation whose last row is not an answer: a run that
+// died, was cancelled, or is still going. Derived rather than stored, so it is
+// still true after a restart, which the in-process run registry is not.
+func Unfinished(records []*core.Record) bool {
+	for i := len(records) - 1; i >= 0; i-- {
+		record := records[i]
+		role, content := record.GetString("role"), record.GetString("content")
+		if role == RoleSystem {
+			continue
+		}
+		// Finished means answered. A transcript that ends on a question, on a
+		// tool result, or on a call nothing answered is a turn that stopped
+		// somewhere in the middle.
+		return !(role == RoleAssistant && Visible(role, content))
+	}
+	return false
+}
+
 // MaxPriorHits caps the evidence one conversation carries forward. Well past
 // what a transcript that fits the replay budget can hold, so it is a guard
 // against a pathological session rather than a working limit.
@@ -305,6 +441,10 @@ func ForkSession(app core.App, userID string, source *core.Record, upto string) 
 			}
 			messages = messages[:cut+1]
 		}
+		// A research transcript is the provider array, so a cut can land
+		// between a tool call and its result. Snapped back to the last finished
+		// answer: a fork is a conversation to continue, not a turn to resume.
+		messages = snapToAnswer(messages)
 		collection, err := txApp.FindCollectionByNameOrId(SessionsCollection)
 		if err != nil {
 			return err
@@ -322,7 +462,7 @@ func ForkSession(app core.App, userID string, source *core.Record, upto string) 
 		session.Set("provider", source.GetString("provider"))
 		session.Set("model", source.GetString("model"))
 		session.Set("title", ForkTitle(source.GetString("title")))
-		session.Set("message_count", len(messages))
+		session.Set("message_count", visibleCount(messages))
 		// Now rather than the source's, so the fork is where the sidebar puts
 		// what just happened.
 		session.Set("last_message_at", types.NowDateTime())
@@ -339,9 +479,16 @@ func ForkSession(app core.App, userID string, source *core.Record, upto string) 
 			if stored := DecodeUsage(message); stored != nil {
 				usage = *stored
 			}
-			if err := saveMessage(txApp, session.Id, i+1, message.GetString("role"),
-				message.GetString("content"), "", DecodeHits(message), DecodeSteps(message),
-				usage, message.GetBool("incomplete")); err != nil {
+			if err := saveMessage(txApp, session.Id, i+1, storedMessage{
+				Role:       message.GetString("role"),
+				Content:    message.GetString("content"),
+				Calls:      DecodeToolCalls(message),
+				CallID:     message.GetString("tool_call_id"),
+				Documents:  DecodeHits(message),
+				Steps:      DecodeSteps(message),
+				Usage:      usage,
+				Incomplete: message.GetBool("incomplete"),
+			}); err != nil {
 				return err
 			}
 		}
@@ -392,10 +539,22 @@ func AppendTurn(app core.App, userID, sessionID string, turn Turn) (*core.Record
 			return err
 		}
 
-		if err := saveMessage(txApp, session.Id, next, RoleUser, turn.UserContent, turn.RunID, nil, nil, ai.TurnUsage{}, false); err != nil {
+		if err := saveMessage(txApp, session.Id, next, storedMessage{
+			Role:    RoleUser,
+			Content: turn.UserContent,
+			RunID:   turn.RunID,
+		}); err != nil {
 			return err
 		}
-		if err := saveMessage(txApp, session.Id, next+1, RoleAssistant, turn.AssistantContent, turn.RunID, turn.Documents, turn.Steps, turn.Usage, turn.Incomplete); err != nil {
+		if err := saveMessage(txApp, session.Id, next+1, storedMessage{
+			Role:       RoleAssistant,
+			Content:    turn.AssistantContent,
+			RunID:      turn.RunID,
+			Documents:  turn.Documents,
+			Steps:      turn.Steps,
+			Usage:      turn.Usage,
+			Incomplete: turn.Incomplete,
+		}); err != nil {
 			return err
 		}
 
@@ -430,7 +589,29 @@ func nextSeq(app core.App, sessionID string) (int, error) {
 	return highest.Value + 1, nil
 }
 
-func saveMessage(app core.App, sessionID string, seq int, role, content, runID string, hits []ai.DocumentHit, steps []StoredStep, usage ai.TurnUsage, incomplete bool) error {
+// storedMessage is one row on its way in. A struct rather than a dozen
+// positional arguments: the row grew a tool call, a call id and a trail, and
+// half of them are empty on any given write.
+type storedMessage struct {
+	Role    string
+	Content string
+	RunID   string
+	// Calls and CallID carry a research thread's machinery: what an assistant
+	// turn asked for, and which ask a tool turn answers.
+	Calls      []ai.ToolCall
+	CallID     string
+	Documents  []ai.DocumentHit
+	Steps      []StoredStep
+	Usage      ai.TurnUsage
+	Incomplete bool
+}
+
+// toolResultTooLarge stands in for a result past the column. Truncating one
+// would be worse than losing it: the model reads a tool result as fact, and
+// half a JSON object is a confidently wrong fact.
+const toolResultTooLarge = `{"error":"the tool result was too large to store and was dropped"}`
+
+func saveMessage(app core.App, sessionID string, seq int, msg storedMessage) error {
 	collection, err := app.FindCollectionByNameOrId(MessagesCollection)
 	if err != nil {
 		return err
@@ -438,26 +619,48 @@ func saveMessage(app core.App, sessionID string, seq int, role, content, runID s
 	record := core.NewRecord(collection)
 	record.Set("session", sessionID)
 	record.Set("seq", seq)
-	record.Set("role", role)
-	record.Set("run_id", runID)
-	// Truncated rather than rejected: the answer is already paid for, and a
-	// validation error here would discard it. See MaxMessageRunes.
-	record.Set("content", FitColumn(content, MaxMessageRunes))
-	if encoded := EncodeHits(hits); encoded != nil {
+	record.Set("role", msg.Role)
+	record.Set("run_id", msg.RunID)
+	record.Set("content", fitContent(msg.Role, msg.Content))
+	if msg.CallID != "" {
+		record.Set("tool_call_id", FitColumn(msg.CallID, MaxToolCallIDRunes))
+	}
+	if encoded := EncodeToolCalls(msg.Calls); encoded != nil {
+		record.Set("tool_calls", encoded)
+	}
+	if encoded := EncodeHits(msg.Documents); encoded != nil {
 		record.Set("documents", encoded)
 	}
-	if role == RoleAssistant {
-		if encoded := EncodeSteps(steps); encoded != nil {
-			record.Set("steps", encoded)
-		}
-		if encoded := EncodeUsage(usage); encoded != nil {
+	// Not assistant-only any more: a tool row carries the one step describing
+	// it, which is what lets a turn whose run died still render its trail.
+	if encoded := EncodeSteps(msg.Steps); encoded != nil {
+		record.Set("steps", encoded)
+	}
+	if msg.Role == RoleAssistant {
+		if encoded := EncodeUsage(msg.Usage); encoded != nil {
 			record.Set("usage", encoded)
 		}
-		if incomplete {
+		if msg.Incomplete {
 			record.Set("incomplete", true)
 		}
 	}
 	return app.Save(record)
+}
+
+// fitContent sizes a row's text by what it is. Prose is truncated rather than
+// rejected -- the answer is already paid for, and a validation error here would
+// discard it -- but a tool result is replaced whole rather than cut.
+func fitContent(role, content string) string {
+	if role == RoleTool || role == RoleSystem {
+		if utf8.RuneCountInString(content) > MaxThreadContentRunes {
+			if role == RoleTool {
+				return toolResultTooLarge
+			}
+			return FitColumn(content, MaxThreadContentRunes)
+		}
+		return content
+	}
+	return FitColumn(content, MaxMessageRunes)
 }
 
 // RenameSession applies a user-supplied title. last_message_at is deliberately

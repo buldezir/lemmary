@@ -37,6 +37,12 @@ export type UseChatSessionResult = {
   sending: boolean
   /** True when this page is observing a run started before it mounted. */
   resuming: boolean
+  /**
+   * The last turn stopped before it answered and can be continued. Research
+   * only: a search turn is one round, and there is no half of it to keep.
+   */
+  unfinished: boolean
+  setUnfinished: (unfinished: boolean) => void
   /** Failure of the last send; cleared when the next one starts. */
   error: string
   /** Failure to load the session named in the URL. */
@@ -72,6 +78,8 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [resuming, setResuming] = useState(false)
+  // The last turn stopped short of an answer and can be continued.
+  const [unfinished, setUnfinished] = useState(false)
   const [error, setError] = useState('')
   const [loadError, setLoadError] = useState('')
   const [unsaved, setUnsaved] = useState(false)
@@ -120,6 +128,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
           }
           setSession(settled.session)
           setTurns(settled.messages.map((message) => toChatTurn(message)))
+          setUnfinished(settled.unfinished === true)
           settledRef.current?.(settled.session, false)
         })
         .catch((err: unknown) => {
@@ -186,6 +195,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
           }
           setSession(detail.session)
           setTurns(detail.messages.map((message) => toChatTurn(message)))
+          setUnfinished(detail.unfinished === true)
           if (detail.running) {
             resumeController = new AbortController()
             resume(next, detail.messages.length, epoch, resumeController.signal)
@@ -309,6 +319,8 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     loading,
     sending,
     resuming,
+    unfinished,
+    setUnfinished,
     error,
     loadError,
     unsaved,
