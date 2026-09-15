@@ -144,6 +144,11 @@ export async function searchStream(
     web?: boolean
     /** Read only when there is no session id yet; see `chatWithDocument`. */
     binding?: ProviderBinding
+    /**
+     * Runs this turn in a copy of that conversation instead of in it, leaving
+     * the original as it was. Read only when there is no session id.
+     */
+    forkFrom?: string
   },
   onEvent: (event: ResearchEvent) => void,
   signal?: AbortSignal,
@@ -155,6 +160,7 @@ export async function searchStream(
       mode: input.mode,
       run_id: input.runId,
       web: input.web === true,
+      fork_from: input.forkFrom ?? '',
       ...bindingBody(input.binding),
     },
     onEvent,

@@ -35,6 +35,10 @@ type searchRequest struct {
 	// binding in Settings. Read only when SessionID is empty, as Mode is.
 	ProviderID string `json:"provider_id"`
 	Model      string `json:"model"`
+	// ForkFrom continues another conversation in a copy of it, leaving the
+	// original untouched. Read only when SessionID is empty, as Mode and the
+	// binding are; the copy takes its kind, mode and binding from the source.
+	ForkFrom string `json:"fork_from"`
 	// Web lets this turn reach the public web. Per turn rather than stored with
 	// the conversation: unlike Mode, nothing in the transcript depends on it,
 	// and a metered tool is better defaulted off on every reload.
@@ -165,7 +169,19 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		searchUserID = e.Auth.Id
 	}
 
-	session, history, err := loadChatHistory(app, ownerID, req.SessionID, chat.KindSearch, "")
+	// A fork reads the conversation it branches from exactly as a continuation
+	// would: same history, same mode, same binding. Only the session the turn
+	// lands in differs, and that is decided further down.
+	sourceID := strings.TrimSpace(req.SessionID)
+	forking := false
+	if sourceID == "" {
+		if forkFrom := strings.TrimSpace(req.ForkFrom); forkFrom != "" {
+			sourceID = forkFrom
+			forking = true
+		}
+	}
+
+	session, history, err := loadChatHistory(app, ownerID, sourceID, chat.KindSearch, "")
 	if err != nil {
 		return searchTurn{}, true, writeChatSessionError(e, app, err)
 	}
@@ -225,22 +241,34 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 	// stored in. Hitting the cap is a plain 409 here; once the stream has
 	// started there is no status line left to say so with.
 	var opened *core.Record
-	if session == nil {
-		session, err = chat.CreateSession(app, chat.NewSession{
-			UserID:       ownerID,
-			Kind:         chat.KindSearch,
-			Mode:         mode,
-			Binding:      binding,
-			FirstMessage: content,
-		})
-		if err != nil {
-			if errors.Is(err, chat.ErrTooManySessions) {
+	if session == nil || forking {
+		var created *core.Record
+		var createErr error
+		if forking {
+			// From here `session` is the copy, so the run, the session frame and
+			// the stored turn all name the fork; the source keeps the transcript
+			// it had when this request read it. Deliberately not taken back when
+			// the run fails, unlike an empty conversation: the copy is named to
+			// the client before the first provider call, and by then the page is
+			// standing in it.
+			created, createErr = chat.ForkSession(app, ownerID, session, "")
+		} else {
+			created, createErr = chat.CreateSession(app, chat.NewSession{
+				UserID:       ownerID,
+				Kind:         chat.KindSearch,
+				Mode:         mode,
+				Binding:      binding,
+				FirstMessage: content,
+			})
+		}
+		if createErr != nil {
+			if errors.Is(createErr, chat.ErrTooManySessions) {
 				return searchTurn{}, true, writeError(e, http.StatusConflict, tooManySessionsMessage)
 			}
-			app.Logger().Error("search session create failed", slog.Any("error", err))
+			app.Logger().Error("search session create failed", "forked", forking, slog.Any("error", createErr))
 			return searchTurn{}, true, writeError(e, http.StatusInternalServerError, "Search is unavailable.")
 		}
-		opened = session
+		session, opened = created, created
 	}
 
 	return searchTurn{

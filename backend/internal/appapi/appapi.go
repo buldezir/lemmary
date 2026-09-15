@@ -66,6 +66,7 @@ func Register(
 			g.GET("/chats/{id}", bindAuth(handleGetChat(app)))
 			g.PATCH("/chats/{id}", bindAuth(handlePatchChat(app)))
 			g.DELETE("/chats/{id}", bindAuth(handleDeleteChat(app)))
+			g.POST("/chats/{id}/fork", bindAuth(handlePostForkChat(app)))
 			// The OCR test page sends no purpose and means OCR.
 			g.GET("/ocr/providers", bindAuth(handlePickableProviders(app, rt, aiprovider.PurposeOCR)))
 			// Auth rather than admin: an override is a per-user choice among
