@@ -213,7 +213,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	if !startsWithSystem(thread) {
 		opening := []ThreadMessage{{Role: "system", Content: a.SystemPrompt(req)}}
 		if req.Web != nil {
-			opening = append(opening, ThreadMessage{Role: "system", Content: a.WebPrompt()})
+			opening = append(opening, ThreadMessage{Role: "user", Content: a.WebPrompt()})
 		}
 		thread = append(opening, thread...)
 	}
@@ -381,8 +381,9 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	return ResearchResult{Reply: reply, Documents: state.hits, Incomplete: incomplete, Usage: meter.usage}, nil
 }
 
-// answerResearch is the second phase: one completion with no tools declared, so
-// the model cannot emit tool markup and every chunk is safe to stream. It
+// answerResearch is the second phase: one completion with the tools refused
+// rather than removed, so the model cannot emit tool markup and every chunk is
+// safe to stream, while the prefix the rounds before it cached still holds. It
 // returns the answer and whether it was cut short: the request timeout covers
 // the whole generation, so a long answer can fail with most of it delivered.
 // That text is worth keeping, but not as an ordinary success, or every caller
@@ -793,10 +794,12 @@ func decodeReadArgs(data string) (readDocumentsArgs, error) {
 // latestUserMessage finds the question the run is answering. Tool results are
 // stored as tool rows even when the dialect feeds them back as user messages,
 // so the loop talking to itself cannot be mistaken for the question -- which
-// would send every read off to focus on a JSON blob.
+// would send every read off to focus on a JSON blob. The per-turn web note is
+// skipped for the same reason: it is a user message so that the transports keep
+// it beside the question, not because a person wrote it.
 func latestUserMessage(thread []ThreadMessage) string {
 	for i := len(thread) - 1; i >= 0; i-- {
-		if thread[i].Role != "user" {
+		if thread[i].Role != "user" || thread[i].Content == ResearchWebPrompt() {
 			continue
 		}
 		if content := strings.TrimSpace(thread[i].Content); content != "" {
@@ -825,10 +828,19 @@ func (a *openAISearchAgent) SystemPrompt(req ResearchRequest) string {
 // time the toggle changed. The caller records it beside the question instead,
 // where a per-turn instruction belongs.
 func (a *openAISearchAgent) WebPrompt() string {
-	return researchWebPrompt()
+	return ResearchWebPrompt()
 }
 
-func researchWebPrompt() string {
+// ResearchWebPrompt is that instruction, as a user message rather than a system
+// one. Two transports hoist system messages out of the conversation and into a
+// field of their own -- the Messages API's system array, the Codex request's
+// instructions string -- so a per-turn system row would not stay beside its
+// question there: it would join the head of the prompt, and a second web turn
+// would send that head with the note in it twice. The head is the part the
+// whole transcript's cache hangs off. A user message stays where it was put.
+//
+// chat.Visible keeps it out of the transcript a person reads.
+func ResearchWebPrompt() string {
 	return `You can also reach the public web with web_search and web_fetch, for what the archive cannot hold: current prices, rates and rules, a company's present details, anything that changed after the documents were written.
 The archive is still the primary source. Search it first, and use the web to check or complete what you found there rather than instead of looking.
 A search result's snippet is a reason to fetch the page, not the whole of what it says: web_fetch before claiming what a page contains, exactly as you would read a document.

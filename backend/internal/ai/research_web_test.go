@@ -51,10 +51,12 @@ func TestResearchOffersTheWebToolsOnlyWhenBacked(t *testing.T) {
 	}
 }
 
-// A caller that stores nothing gets the same two rows the handler would have
-// written: the opening prompt, then the web instruction beside it. Two messages
-// rather than one string, because only one of them belongs to the conversation.
-func TestResearchSendsTheWebInstructionAsItsOwnMessage(t *testing.T) {
+// A caller that stores nothing gets the same rows the handler would have
+// written: the opening prompt, then the web instruction beside the question.
+// One system message, because only the opening prompt belongs to the whole
+// conversation -- and because the transports that lift system messages to the
+// head of the prompt would put a per-turn note there and keep it.
+func TestResearchSendsTheWebInstructionBesideTheQuestion(t *testing.T) {
 	t.Parallel()
 
 	web, _ := newWebServer(t, `{"results":[]}`, `{}`)
@@ -65,17 +67,30 @@ func TestResearchSendsTheWebInstructionAsItsOwnMessage(t *testing.T) {
 	if len(messages) < 3 {
 		t.Fatalf("messages = %v", messages)
 	}
-	first, _ := messages[0].(map[string]any)
-	second, _ := messages[1].(map[string]any)
-	if first["role"] != "system" || second["role"] != "system" {
-		t.Fatalf("the opening rows are %v and %v, want two system messages", first["role"], second["role"])
+	systems := 0
+	for _, raw := range messages {
+		if msg, _ := raw.(map[string]any); msg["role"] == "system" {
+			systems++
+			if content, _ := msg["content"].(string); strings.Contains(content, "web_search") {
+				t.Fatalf("the per-turn web instruction was sent as a system message: %s", content)
+			}
+		}
 	}
-	opening, _ := first["content"].(string)
-	if strings.Contains(opening, "web_search") {
-		t.Fatalf("the opening prompt carries the per-turn web instruction: %s", opening)
+	if systems != 1 {
+		t.Fatalf("system messages = %d, want only the opening prompt: %v", systems, messages)
 	}
-	if got, _ := second["content"].(string); got != researchWebPrompt() {
+
+	note, _ := messages[1].(map[string]any)
+	if note["role"] != "user" {
+		t.Fatalf("the web note has role %v, want user", note["role"])
+	}
+	if got, _ := note["content"].(string); got != ResearchWebPrompt() {
 		t.Fatalf("second message = %q, want the web prompt", got)
+	}
+	// And the question after it, so the last user message is still the question.
+	question, _ := messages[2].(map[string]any)
+	if got, _ := question["content"].(string); got != "What does Acme charge now?" {
+		t.Fatalf("third message = %q, want the question", got)
 	}
 }
 
@@ -182,7 +197,7 @@ func TestTheWebInstructionIsSeparateFromTheOpeningPrompt(t *testing.T) {
 		t.Error("the opening prompt dropped the archive instructions")
 	}
 
-	web := researchWebPrompt()
+	web := ResearchWebPrompt()
 	for _, want := range []string{
 		"web_search",
 		"web_fetch",
@@ -213,5 +228,25 @@ func TestEachResearchRunGetsItsOwnWebBudget(t *testing.T) {
 	}
 	if got := calls.Load(); got != int64(2*maxWebCalls) {
 		t.Fatalf("provider calls = %d, want %d -- each run spends its own %d", got, 2*maxWebCalls, maxWebCalls)
+	}
+}
+
+// The note is a user message, so the naive "last user row" would answer the
+// note rather than the question on a turn whose question never made it to disk.
+func TestTheWebNoteIsNeverMistakenForTheQuestion(t *testing.T) {
+	t.Parallel()
+
+	thread := []ThreadMessage{
+		{Role: "system", Content: "you research the archive"},
+		{Role: "user", Content: ResearchWebPrompt()},
+		{Role: "user", Content: "What does Acme charge now?"},
+	}
+	if got := latestUserMessage(thread); got != "What does Acme charge now?" {
+		t.Fatalf("latestUserMessage = %q, want the question", got)
+	}
+
+	// And with the question missing, the note is not promoted into its place.
+	if got := latestUserMessage(thread[:2]); got != "" {
+		t.Fatalf("latestUserMessage = %q, want nothing: no question was asked", got)
 	}
 }
