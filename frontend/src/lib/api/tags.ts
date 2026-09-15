@@ -2,6 +2,7 @@ import { ClientResponseError } from 'pocketbase'
 import { pb } from '../pb'
 import { ensureAuth } from '../auth'
 import { apiFetch, pollJob, type JobProgress } from '../apiClient'
+import { notifyDocumentsChanged } from '../documentEvents'
 
 export type TagRecord = {
   id: string
@@ -94,6 +95,9 @@ export async function assignTagsWithAI(
     `/api/app/tags/assign/status?job_id=${encodeURIComponent(start.job_id)}`,
     { label: 'tag assignment', onProgress },
   )
+  // The server wrote the tags, so nothing on this side has seen them: without
+  // this the cards keep their old chips beside a success message.
+  notifyDocumentsChanged()
   return { ...result, errors: result.errors ?? [] }
 }
 

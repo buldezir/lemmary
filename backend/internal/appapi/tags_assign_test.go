@@ -218,6 +218,42 @@ func TestRunTagAssignKeepsToTheOfferedVocabulary(t *testing.T) {
 	}
 }
 
+// The documents-list path offers the whole vocabulary, so one answer can name
+// several tags. They land together, in one save.
+func TestRunTagAssignMergesEveryNamedTagAtOnce(t *testing.T) {
+	app := bootQueueApp(t)
+	owner := makeQueueUser(t, app, "assign-multi@example.test")
+	invoices := makeTag(t, app, owner, "Invoices")
+	tax := makeTag(t, app, owner, "Tax")
+	unused := makeTag(t, app, owner, "Holiday")
+
+	document := makeQueueDocument(t, app, owner, models.DocStatusCompleted, "an invoice for tax")
+
+	helper := &fakeHelper{values: map[string]map[string]string{
+		document.Id: {"tags": "Invoices, Tax"},
+	}}
+	result, err := runTagAssign(context.Background(), app, helper, owner,
+		tagAssignRequest{TagIDs: []string{invoices.Id, tax.Id, unused.Id}, DocumentIDs: []string{document.Id}}, nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if result.Assigned != 1 {
+		t.Fatalf("result = %+v, want one assigned", result)
+	}
+
+	after, err := app.FindRecordById("documents", document.Id)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	got := after.GetStringSlice("tags")
+	slices.Sort(got)
+	want := []string{invoices.Id, tax.Id}
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Fatalf("tags = %v, want %v", got, want)
+	}
+}
+
 func TestSelectTagAssignByIDDropsStaleSelections(t *testing.T) {
 	app := bootQueueApp(t)
 	owner := makeQueueUser(t, app, "assign-select@example.test")

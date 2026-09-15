@@ -415,7 +415,7 @@ export function useDocumentList({
 
     const confirmed = window.confirm(
       `Let the model pick tags for ${ids.length === 1 ? 'this document' : `these ${ids.length} documents`}?\n\n` +
-        `This sends ${ids.length === 1 ? 'one AI request' : `${ids.length} AI requests`} and is charged to your provider.\n` +
+        `Your model reads ${ids.length === 1 ? 'the document' : `all ${ids.length} documents`}, and your provider charges for each one.\n` +
         'It only adds tags from your vocabulary; nothing else on the documents changes.',
     )
     if (!confirmed) return

@@ -249,8 +249,13 @@ func runTagAssign(ctx context.Context, app core.App, helper ai.Helper, ownerID s
 			DocumentDate:  truncateDate(record.GetString("document_date")),
 			DocumentType:  relatedName(app, "document_types", record.GetString("document_type")),
 			Correspondent: relatedName(app, "correspondents", record.GetString("correspondent")),
-			Text:          strutil.Truncate(record.GetString("ocr_text"), tagAssignDocBytes),
-			Excerpted:     len(record.GetString("ocr_text")) > tagAssignDocBytes,
+			Text: strutil.Truncate(record.GetString("ocr_text"), tagAssignDocBytes),
+			// ponytail: a prefix, though Excerpted tells the helper the text was
+			// picked for relevance. Marked anyway: believing it has the whole
+			// document is the worse error, since then a tag that fits reads as
+			// one the text never mentions. Rank the text against the tag names
+			// (excerptDocument, as the read path does) if the cut costs recall.
+			Excerpted: len(record.GetString("ocr_text")) > tagAssignDocBytes,
 		})
 	}
 	result.Asked = len(docs)
@@ -275,8 +280,12 @@ func runTagAssign(ctx context.Context, app core.App, helper ai.Helper, ownerID s
 		row, ok := rows[doc.ID]
 		if !ok {
 			// Its batch failed, or the model skipped it. Either way nobody
-			// judged this document, so it is not a decline.
+			// judged this document, so it is not a decline -- and it needs a
+			// reason of its own, since a failed batch raises the count without
+			// any per-document error to explain it.
 			result.Failed++
+			result.Errors = importjob.AppendError(result.Errors,
+				fmt.Sprintf("%s: the model returned no answer", doc.Title))
 			continue
 		}
 		added, err := assignTagsToDocument(app, doc.ID, resolveAssignedTags(row.Values["tags"], byKey))

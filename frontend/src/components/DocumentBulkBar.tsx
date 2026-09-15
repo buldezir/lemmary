@@ -62,7 +62,11 @@ export function DocumentBulkBar({
   const [tagId, setTagId] = useState('')
 
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-none border border-line bg-surface px-4 py-3">
+    <div
+      role="group"
+      aria-label="Bulk actions"
+      className="flex flex-wrap items-center gap-3 rounded-none border border-line bg-surface px-4 py-3"
+    >
       <span className="text-sm text-ink-muted">
         {selectedCount > 0
           ? `${selectedCount} selected`
@@ -71,7 +75,7 @@ export function DocumentBulkBar({
             : hints[mode]}
       </span>
 
-      {mode === 'reprocess' ? (
+      {mode === 'reprocess' && (
         <>
           <select
             value={reprocessMode}
@@ -89,7 +93,12 @@ export function DocumentBulkBar({
             {busy ? 'Queueing...' : 'Reprocess'}
           </Button>
         </>
-      ) : (
+      )}
+
+      {/* Each mode offers its own action and no other: review completes a
+          document, and offering that on a mixed library page would clear Inbox
+          items a reader only meant to tag. */}
+      {mode === 'review' && (
         <Button disabled={busy || selectedCount === 0} onClick={onMarkReviewed}>
           {busy ? 'Marking...' : 'Mark reviewed'}
         </Button>
@@ -146,9 +155,9 @@ export function DocumentBulkBar({
       )}
       {tags && onAssignTagsWithAI && (
         <p className={`w-full ${fieldHintClassName}`}>
-          Adding a tag is free. Assigning with AI sends one request per selected document and is
-          charged to your provider; it only adds tags, but reprocessing a document later discards
-          what it added.
+          Adding a tag is free. Assigning with AI reads every selected document with your model and
+          is charged for each one; it only adds tags, but reprocessing a document later discards what
+          it added.
         </p>
       )}
 

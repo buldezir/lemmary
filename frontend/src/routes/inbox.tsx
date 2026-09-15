@@ -1,5 +1,5 @@
 import { UNFINISHED_STATUS } from '../lib/documentStatus'
-import { useDocumentList } from '../hooks/useDocumentList'
+import { useDocumentFilterOptions, useDocumentList } from '../hooks/useDocumentList'
 import { DocumentGrid } from '../components/DocumentGrid'
 
 /**
@@ -13,6 +13,9 @@ export function InboxPage() {
     status: UNFINISHED_STATUS,
     filters: false,
   })
+  // The vocabulary, not a filter: reviewing is when a reader notices a tag is
+  // missing, and the tray still offers no way to narrow itself.
+  const { tags } = useDocumentFilterOptions()
   const { documents, loading, error } = list
 
   return (
@@ -41,7 +44,7 @@ export function InboxPage() {
             documents actually waiting for it, so a mixed page cannot mark a
             failed one reviewed. */}
         {!loading && documents.length > 0 && (
-          <DocumentGrid list={list} bulkMode="review" allowDelete />
+          <DocumentGrid list={list} bulkMode="review" allowDelete tags={tags} />
         )}
       </div>
     </section>
