@@ -54,7 +54,7 @@ func candidateDB(t *testing.T) dbx.Builder {
 func TestTagAssignCandidatesSkipWhatCannotOrNeedNotBeAsked(t *testing.T) {
 	db := candidateDB(t)
 
-	ids, err := tagAssignCandidateIDs(db, "me", "tax", maxTagAssignDocuments)
+	ids, err := tagAssignCandidateIDs(db, "me", []string{"tax"}, maxTagAssignDocuments)
 	if err != nil {
 		t.Fatalf("candidate ids: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestTagAssignCandidatesSkipWhatCannotOrNeedNotBeAsked(t *testing.T) {
 		t.Fatalf("candidates = %v, want %v", got, want)
 	}
 
-	total, err := countTagAssignCandidates(db, "me", "tax")
+	total, err := countTagAssignCandidates(db, "me", []string{"tax"})
 	if err != nil {
 		t.Fatalf("count: %v", err)
 	}
@@ -77,12 +77,39 @@ func TestTagAssignCandidatesSkipWhatCannotOrNeedNotBeAsked(t *testing.T) {
 func TestTagAssignCandidatesNewestFirst(t *testing.T) {
 	db := candidateDB(t)
 
-	ids, err := tagAssignCandidateIDs(db, "me", "tax", 1)
+	ids, err := tagAssignCandidateIDs(db, "me", []string{"tax"}, 1)
 	if err != nil {
 		t.Fatalf("candidate ids: %v", err)
 	}
 	if len(ids) != 1 || ids[0] != "legacy" {
 		t.Fatalf("limited candidates = %v, want [legacy]", ids)
+	}
+}
+
+// Several tags is one pass, not one per tag: a document is a candidate while it
+// is missing any of them, so "has-it" still qualifies on the tag it lacks.
+func TestTagAssignCandidatesCoverEveryTagInOnePass(t *testing.T) {
+	db := candidateDB(t)
+
+	ids, err := tagAssignCandidateIDs(db, "me", []string{"tax", "paid"}, maxTagAssignDocuments)
+	if err != nil {
+		t.Fatalf("candidate ids: %v", err)
+	}
+	got := slices.Clone(ids)
+	slices.Sort(got)
+	// Only "has-it" carries both; everything else is missing at least one, and
+	// the excluded rows are excluded for the reasons they always were.
+	want := []string{"legacy", "untagged", "wants-it"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("candidates = %v, want %v", got, want)
+	}
+
+	total, err := countTagAssignCandidates(db, "me", []string{"tax", "paid"})
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if total != len(want) {
+		t.Fatalf("count = %d, want %d", total, len(want))
 	}
 }
 
@@ -125,7 +152,7 @@ func TestRunTagAssignMergesAndTouchesNothingElse(t *testing.T) {
 		document.Id: {"tags": " invoices "},
 	}}
 	result, err := runTagAssign(context.Background(), app, helper, owner,
-		invoices.Id, nil)
+		[]string{invoices.Id}, nil)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -171,7 +198,7 @@ func TestRunTagAssignWritesNothingWhenTheModelDeclines(t *testing.T) {
 
 	helper := &fakeHelper{values: map[string]map[string]string{document.Id: {"tags": ""}}}
 	result, err := runTagAssign(context.Background(), app, helper, owner,
-		invoices.Id, nil)
+		[]string{invoices.Id}, nil)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -191,6 +218,45 @@ func TestRunTagAssignWritesNothingWhenTheModelDeclines(t *testing.T) {
 	}
 }
 
+// The multi-tag run's whole point: one pass writes every tag the model named.
+func TestRunTagAssignMergesEveryNamedTagInOnePass(t *testing.T) {
+	app := bootQueueApp(t)
+	owner := makeQueueUser(t, app, "assign-multi@example.test")
+	invoices := makeTag(t, app, owner, "Invoices")
+	tax := makeTag(t, app, owner, "Tax")
+	unnamed := makeTag(t, app, owner, "Holiday")
+
+	document := makeQueueDocument(t, app, owner, models.DocStatusCompleted, "an invoice for tax")
+
+	helper := &fakeHelper{values: map[string]map[string]string{
+		document.Id: {"tags": "Invoices, Tax"},
+	}}
+	result, err := runTagAssign(context.Background(), app, helper, owner,
+		[]string{invoices.Id, tax.Id, unnamed.Id}, nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if result.Assigned != 1 {
+		t.Fatalf("result = %+v, want one document assigned", result)
+	}
+	// One pass, not three: the helper saw the document once.
+	if len(helper.batches) != 1 {
+		t.Fatalf("helper called %d times, want 1", len(helper.batches))
+	}
+
+	after, err := app.FindRecordById("documents", document.Id)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	got := after.GetStringSlice("tags")
+	slices.Sort(got)
+	want := []string{invoices.Id, tax.Id}
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Fatalf("tags = %v, want %v -- the tag it did not name must stay off", got, want)
+	}
+}
+
 // Only what was offered: a name outside the vocabulary is one the model
 // invented, even when a tag by that name exists.
 func TestRunTagAssignKeepsToTheOfferedVocabulary(t *testing.T) {
@@ -205,7 +271,7 @@ func TestRunTagAssignKeepsToTheOfferedVocabulary(t *testing.T) {
 		document.Id: {"tags": "Invoices, Tax, Groceries"},
 	}}
 	if _, err := runTagAssign(context.Background(), app, helper, owner,
-		invoices.Id, nil); err != nil {
+		[]string{invoices.Id}, nil); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 

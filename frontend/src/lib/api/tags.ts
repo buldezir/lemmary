@@ -47,15 +47,28 @@ export async function deleteTag(id: string): Promise<void> {
   await pb.collection('tags').delete(id)
 }
 
+/**
+ * Mirrors maxTagAssignDocuments in backend/internal/appapi/tags_assign.go. Read
+ * only to word the cost block before any preview has been fetched; every run
+ * takes the limit the server reports back.
+ */
+export const MAX_TAG_ASSIGN_DOCUMENTS = 1000
+
 export type TagAssignPreview = {
   candidates: number
   limit: number
   running: boolean
 }
 
-/** How many documents lack this tag, so the button can price itself first. */
-export function previewTagAssign(tagId: string): Promise<TagAssignPreview> {
-  return apiFetch<TagAssignPreview>(`/api/app/tags/${encodeURIComponent(tagId)}/assign`, {
+const assignQuery = (tagIds: string[]) =>
+  `tag_ids=${encodeURIComponent(tagIds.join(','))}`
+
+/**
+ * How many documents are missing at least one of these tags, so the button can
+ * price itself first. One number, because one pass covers them all.
+ */
+export function previewTagAssign(tagIds: string[]): Promise<TagAssignPreview> {
+  return apiFetch<TagAssignPreview>(`/api/app/tags/assign?${assignQuery(tagIds)}`, {
     fallbackError: 'Failed to count documents',
   })
 }
@@ -72,12 +85,15 @@ export type TagAssignResult = {
 }
 
 /**
- * Asks the model about every document that lacks this tag, and only ever adds
- * it: nothing else on a document changes.
+ * Asks the model which of these tags apply to each document missing any of
+ * them, and only ever adds: nothing else on a document changes.
+ *
+ * Several tags cost what one costs. The prompt is mostly the document's own
+ * text, so one pass offering every name beats a pass per name, which would
+ * re-read the whole archive each time.
  */
-export async function assignTagWithAI(tagId: string): Promise<TagAssignResult> {
-  const path = `/api/app/tags/${encodeURIComponent(tagId)}/assign`
-  const start = await apiFetch<{ job_id?: string }>(path, {
+export async function assignTagsWithAI(tagIds: string[]): Promise<TagAssignResult> {
+  const start = await apiFetch<{ job_id?: string }>(`/api/app/tags/assign?${assignQuery(tagIds)}`, {
     method: 'POST',
     fallbackError: 'Tag assignment failed to start',
   })
