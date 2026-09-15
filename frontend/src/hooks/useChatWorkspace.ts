@@ -129,7 +129,6 @@ export function useChatWorkspace({
         content: string
         binding?: ProviderBinding
         web?: boolean
-        forkFrom?: string
         resume?: boolean
       },
       onEvent?: (event: ResearchEvent) => void,
@@ -153,7 +152,6 @@ export function useChatWorkspace({
         await searchStream(
           {
             sessionId: input.sessionId,
-            forkFrom: input.forkFrom,
             content: input.content,
             mode,
             runId: run.id,
@@ -166,21 +164,16 @@ export function useChatWorkspace({
             switch (event.type) {
               case 'session':
                 box.session = event.session
-                // A fork exists before the run makes a single provider call,
-                // and this is where the page moves into it: the rail row, the
-                // URL and the steps below belong to the copy from here, rather
-                // than appearing once the answer is already in.
-                //
-                // A new research chat moves the same way, for the same reason
-                // plus one: a research run is long, and until the URL names the
+                // The conversation exists before the run makes a single
+                // provider call, and this is where a new research chat moves
+                // into it: the rail row, the URL and the steps below belong to
+                // it from here rather than from once the answer is in. A
+                // research run is long, and until the URL names the
                 // conversation a reload during it lands on an empty page with
                 // the answer nowhere in sight. Search stays put -- a search turn
                 // that fails takes its session back with it, and the URL would
                 // be left pointing at a chat that no longer exists.
-                if (input.forkFrom) {
-                  adoptRef.current(event.session)
-                  onSessionSettled(event.session, false)
-                } else if (!input.sessionId && mode === 'research') {
+                if (!input.sessionId && mode === 'research') {
                   adoptRef.current(event.session)
                   onSessionSettled(event.session, true)
                 }

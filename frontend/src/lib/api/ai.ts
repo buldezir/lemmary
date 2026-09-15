@@ -156,11 +156,6 @@ export async function searchStream(
     /** Read only when there is no session id yet; see `chatWithDocument`. */
     binding?: ProviderBinding
     /**
-     * Runs this turn in a copy of that conversation instead of in it, leaving
-     * the original as it was. Read only when there is no session id.
-     */
-    forkFrom?: string
-    /**
      * Finishes a research turn whose run did not: no new question, the stored
      * conversation is replayed and the loop re-entered where it stopped.
      */
@@ -176,7 +171,6 @@ export async function searchStream(
       mode: input.mode,
       run_id: input.runId,
       web: input.web === true,
-      fork_from: input.forkFrom ?? '',
       resume: input.resume === true,
       ...bindingBody(input.binding),
     },

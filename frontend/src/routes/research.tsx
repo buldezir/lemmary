@@ -36,10 +36,9 @@ export function ResearchPage() {
   const [steps, setSteps] = useState<ResearchStep[]>([])
   const [draft, setDraft] = useState('')
   const [liveUsage, setLiveUsage] = useState<ContextUsage | null>(null)
-  // Which button started the send in flight. A ref rather than state: `submit`
+  // Whether the send in flight is a resume. A ref rather than state: `submit`
   // reads the send closure through a ref refreshed in an effect, so a setState
   // in the click handler would not be visible to the send that click triggers.
-  const forkRef = useRef(false)
   const resumeRef = useRef(false)
 
   // The live view of a run, rebuilt from the frames as they arrive. Collected
@@ -70,14 +69,14 @@ export function ResearchPage() {
   }, [])
 
   const runResearch = useCallback(
-    async (id: string | undefined, content: string, forkFrom?: string, resume?: boolean) => {
+    async (id: string | undefined, content: string, resume?: boolean) => {
       collected.current = []
       setSteps([])
       setDraft('')
       setLiveUsage(null)
       try {
         return await ws.runTurn(
-          { sessionId: id, content, forkFrom, resume, web, binding: ws.binding },
+          { sessionId: id, content, resume, web, binding: ws.binding },
           onEvent,
         )
       } finally {
@@ -99,14 +98,9 @@ export function ResearchPage() {
       return detail
     },
     send: ({ sessionId: id, content }) => {
-      const fork = forkRef.current && Boolean(id)
       const resume = resumeRef.current && Boolean(id)
-      forkRef.current = false
       resumeRef.current = false
-      if (fork) {
-        return runResearch(undefined, content, id)
-      }
-      return runResearch(id, content, undefined, resume)
+      return runResearch(id, content, resume)
     },
     onSessionSettled: ws.onSessionSettled,
   })
@@ -247,18 +241,6 @@ export function ResearchPage() {
             chat.resuming && ws.sessionId
               ? () => void cancelSearchRun({ sessionId: ws.sessionId as string })
               : ws.endRun
-          }
-          secondary={
-            ws.sessionId
-              ? {
-                  label: 'Research in fork',
-                  title: 'Ask this in a copy of the chat, leaving this one as it is.',
-                  onClick: () => {
-                    forkRef.current = true
-                    void chat.submit()
-                  },
-                }
-              : undefined
           }
           autoFocus
         />

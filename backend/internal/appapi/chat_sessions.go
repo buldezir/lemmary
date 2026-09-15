@@ -213,10 +213,10 @@ func handlePatchChat(app core.App) func(*core.RequestEvent) error {
 
 // handlePostForkChat branches a conversation at one of its answers: the copy
 // keeps the transcript up to Upto and nothing after it, so a different line of
-// questions can start from an answer the chat has already moved past. The
-// composer's fork rides a turn request instead, because that one has a question
-// to send with it; this one hands back a copy to stand in and type the question
-// there.
+// questions can start from an answer the chat has already moved past. It hands
+// back a copy to stand in and type the question there, which is the only way a
+// fork is made: the composer used to carry one on a turn request, and that was
+// this with the last answer picked for you.
 func handlePostForkChat(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		session, err := ownedChatSession(app, e)
