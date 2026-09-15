@@ -17,6 +17,10 @@ type Provider struct {
 	BaseURL string
 	APIKey  string
 
+	// Catalog names the pi.dev provider whose model list gives this row's
+	// context windows. Empty means no window is known, which is not an error.
+	Catalog string
+
 	// OAuth is the serialized token pair for the SDKs that sign in rather than
 	// take a pasted key. Opaque here because aiprovider must not import
 	// internal/chatgpt; the shape is chatgpt.Token.
@@ -45,6 +49,7 @@ func FromRecord(record *core.Record) Provider {
 		Alias:   strings.TrimSpace(record.GetString("alias")),
 		BaseURL: NormalizeBaseURL(sdk, record.GetString("base_url")),
 		APIKey:  strings.TrimSpace(record.GetString("api_key")),
+		Catalog: strings.TrimSpace(record.GetString("catalog")),
 		OAuth:   strings.TrimSpace(record.GetString(OAuthField)),
 	}
 }

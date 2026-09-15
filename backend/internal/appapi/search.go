@@ -43,6 +43,9 @@ type searchRequest struct {
 	// the conversation: unlike Mode, nothing in the transcript depends on it,
 	// and a metered tool is better defaulted off on every reload.
 	Web bool `json:"web"`
+	// Resume finishes a research turn whose run did not: no new question, the
+	// stored thread is replayed and the loop re-entered where it stopped.
+	Resume bool `json:"resume"`
 }
 
 type searchResponse struct {
@@ -73,6 +76,12 @@ type searchTurn struct {
 	// priorDocuments are earlier turns' hits, readable by id without searching
 	// for them again.
 	priorDocuments []ai.DocumentHit
+	// contextWindow is the bound model's limit in tokens, 0 when unknown. Shown
+	// to the user beside what the turn used; never enforced here.
+	contextWindow int
+	// resume continues a research turn whose run stopped before it answered,
+	// rather than asking something new.
+	resume bool
 }
 
 func (t searchTurn) research() bool { return t.mode == chat.ModeResearch }
@@ -95,7 +104,8 @@ type agentTools struct {
 	// worded differently for a search that crosses languages by itself.
 	dense bool
 	// web backs web_search and web_fetch. Nil unless a provider is bound and
-	// the request asked for it, and the tools are then not offered.
+	// the request asked for it. Research declares the schemas either way and
+	// refuses the call; Ask AI leaves them out.
 	web *websearch.Tavily
 }
 
@@ -147,9 +157,15 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 	if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
 		return searchTurn{}, true, writeError(e, http.StatusBadRequest, "Invalid request body.")
 	}
-	content, err := validateChatContent(req.Content)
-	if err != nil {
-		return searchTurn{}, true, writeError(e, http.StatusBadRequest, err.Error())
+	content := ""
+	if !req.Resume {
+		validated, err := validateChatContent(req.Content)
+		content = validated
+		if err != nil {
+			return searchTurn{}, true, writeError(e, http.StatusBadRequest, err.Error())
+		}
+	} else if strings.TrimSpace(req.SessionID) == "" {
+		return searchTurn{}, true, writeError(e, http.StatusBadRequest, "A chat to resume is required.")
 	}
 	runID, err := validateRunID(req.RunID)
 	if err != nil {
@@ -197,6 +213,15 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 			return searchTurn{}, true, writeError(e, http.StatusConflict,
 				"This chat is a "+stored+" chat and cannot change mode. Start a new chat to switch.")
 		}
+	}
+
+	// A research conversation is appended to a row at a time, so two runs
+	// writing into one at once would interleave their threads into something no
+	// provider will replay. One run per conversation, refused rather than
+	// queued: the second asker is a person who can ask again.
+	if session != nil && mode == chat.ModeResearch && sessionRunning(session.Id) {
+		return searchTurn{}, true, writeError(e, http.StatusConflict,
+			"This chat is already working on a question. Wait for it to finish, or stop it first.")
 	}
 
 	// After the session, so a continued conversation runs on the binding stored
@@ -282,20 +307,48 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		messages:       append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content}),
 		tools:          tools,
 		priorDocuments: priorDocuments,
+		contextWindow:  contextWindowFor(e.Request.Context(), app, rt, snap.Cfg, binding, mode),
+		resume:         req.Resume,
 	}, false, nil
 }
 
-// persistSearchTurn must not let a storage failure swallow the answer: the
-// provider has already been paid for it, so the reply is handed over unsaved
-// and a session this request opened is dropped again.
-func persistSearchTurn(app core.App, t searchTurn, reply string, hits []ai.DocumentHit, steps []chat.StoredStep, incomplete bool) searchResponse {
+// contextWindowFor resolves how much context the bound model has, through the
+// catalogue named on its provider row. Zero for every way of not knowing --
+// catalogue off, provider untagged, model unlisted, host unreachable -- and a
+// zero only costs the denominator on the usage line.
+//
+// Research only. A search turn is one round that reports no usage, and a cold
+// catalogue costs a lookup this request would then hold the first SSE frame
+// behind for nothing.
+func contextWindowFor(ctx context.Context, app core.App, rt *config.Runtime, cfg config.Config, binding aiprovider.Binding, mode string) int {
+	if mode != chat.ModeResearch {
+		return 0
+	}
+	providerID, model := binding.ProviderID, binding.Model
+	if providerID == "" || model == "" {
+		providerID, model = cfg.SearchProviderID, cfg.SearchModel
+	}
+	provider, err := aiprovider.FindByID(app, providerID)
+	if err != nil || provider == nil {
+		return 0
+	}
+	return rt.ModelCatalog().ContextWindow(ctx, provider.Catalog, model)
+}
+
+// persistSearchTurn writes the pair a search turn is: one question, one answer,
+// both at once once the model has replied. Research does not come through here
+// -- it appends as it goes, in research.go -- so there are no steps, no usage
+// and no half-turn to account for.
+//
+// A storage failure must not swallow the answer: the provider has already been
+// paid for it, so the reply is handed over unsaved and a session this request
+// opened is dropped again.
+func persistSearchTurn(app core.App, t searchTurn, reply string, hits []ai.DocumentHit) searchResponse {
 	session, err := chat.AppendTurn(app, t.ownerID, t.session.Id, chat.Turn{
 		UserContent:      t.content,
 		AssistantContent: reply,
 		RunID:            t.runID,
 		Documents:        hits,
-		Steps:            steps,
-		Incomplete:       incomplete,
 		Mode:             t.mode,
 	})
 	if err != nil {
@@ -332,48 +385,48 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 		ctx, stopRun := startDetachedRun(e.Request.Context(), turn.ownerID, turn.runID, turn.session.Id)
 		defer stopRun()
 
-		var reply string
-		var hits []ai.DocumentHit
-		incomplete := false
-		var steps []chat.StoredStep
+		// Non-streaming fallback for clients that cannot read SSE. Research runs
+		// and stores exactly as it does with someone watching; only the report
+		// differs, so the failure paths differ too -- see below.
 		if turn.research() {
-			// Non-streaming fallback for clients that cannot read SSE.
-			result, researchErr := turn.agent.Research(turn.agentContext(ctx), ai.ResearchRequest{
-				Messages:       turn.messages,
-				AvailableTags:  turn.tools.tags,
-				Search:         turn.tools.search,
-				Read:           turn.tools.read,
-				PriorDocuments: turn.priorDocuments,
-				DenseRetrieval: turn.tools.dense,
-				Survey:         turn.tools.survey,
-				Count:          turn.tools.count,
-				Web:            turn.tools.web,
-			}, func(event ai.ResearchEvent) {
-				if event.Type == "step" {
-					steps = append(steps, chat.StepFromEvent(event))
+			recorder := &threadRecorder{app: app, turn: turn}
+			result, researchErr := runResearchTurn(app, turn, turn.agentContext(ctx), recorder, nil)
+			if researchErr != nil {
+				// Nothing is discarded: what the run got through is stored, and
+				// the turn reads as unfinished.
+				if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+					app.Logger().Warn("research ran out of budget", "budget", detachedRunBudget.String())
+					return writeError(e, http.StatusGatewayTimeout, runTooLongMessage)
 				}
-			})
-			reply, hits, incomplete, err = result.Reply, result.Documents, result.Incomplete, researchErr
-		} else {
-			reply, hits, err = turn.agent.Search(turn.agentContext(ctx), turn.messages, turn.tools.tags, turn.tools.search, ai.SearchOptions{DenseRetrieval: turn.tools.dense})
+				app.Logger().Error("research failed", slog.Any("error", researchErr))
+				return writeError(e, http.StatusBadGateway, ai.ProviderErrorMessage(researchErr))
+			}
+			documents := result.Documents
+			if documents == nil {
+				documents = []ai.DocumentHit{}
+			}
+			response := persistResearchAnswer(app, turn, result, documents, recorder.drain())
+			response.Incomplete = result.Incomplete
+			return writeJSON(e, http.StatusOK, response)
 		}
+
+		reply, hits, err := turn.agent.Search(turn.agentContext(ctx), turn.messages, turn.tools.tags, turn.tools.search, ai.SearchOptions{DenseRetrieval: turn.tools.dense})
 		if err != nil {
 			discardEmptySession(app, turn.opened)
 			// Running out of budget is not the provider failing, and saying so
 			// sends the caller to check an AI configuration that is fine.
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				app.Logger().Warn("deep search ran out of budget", "mode", turn.mode, "budget", detachedRunBudget.String())
+				app.Logger().Warn("deep search ran out of budget", "budget", detachedRunBudget.String())
 				return writeError(e, http.StatusGatewayTimeout, runTooLongMessage)
 			}
-			app.Logger().Error("deep search failed", "mode", turn.mode, slog.Any("error", err))
-			return writeError(e, http.StatusBadGateway, "The AI provider could not complete the search.")
+			app.Logger().Error("deep search failed", slog.Any("error", err))
+			return writeError(e, http.StatusBadGateway, ai.ProviderErrorMessage(err))
 		}
 		if hits == nil {
 			hits = []ai.DocumentHit{}
 		}
 
-		response := persistSearchTurn(app, turn, reply, hits, steps, incomplete)
-		response.Incomplete = incomplete
+		response := persistSearchTurn(app, turn, reply, hits)
 		return writeJSON(e, http.StatusOK, response)
 	}
 }
@@ -430,38 +483,24 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 		defer stopHeartbeat()
 
 		// Detached from the connection, so a dropped socket costs the view of the
-		// run and not the already-paid-for answer, which is stored below either
-		// way. Deliberate cancellation comes through /search/cancel instead.
-		var steps []chat.StoredStep
-		var result ai.ResearchResult
+		// run and not the already-paid-for answer, which is stored either way.
+		// Deliberate cancellation comes through /search/cancel instead.
+		//
+		// The two modes part company here and do not meet again: research keeps
+		// its conversation and stores it a row at a time (research.go), search
+		// answers once and stores the pair.
 		if turn.research() {
-			result, err = turn.agent.Research(ctx, ai.ResearchRequest{
-				Messages:       turn.messages,
-				AvailableTags:  turn.tools.tags,
-				Search:         turn.tools.search,
-				Read:           turn.tools.read,
-				PriorDocuments: turn.priorDocuments,
-				DenseRetrieval: turn.tools.dense,
-				Survey:         turn.tools.survey,
-				Count:          turn.tools.count,
-				Web:            turn.tools.web,
-			}, func(event ai.ResearchEvent) {
-				if event.Type == "step" {
-					steps = append(steps, chat.StepFromEvent(event))
-				}
-				stream.Send(event)
-			})
-		} else {
-			reply, hits, searchErr := turn.agent.Search(ctx, turn.messages, turn.tools.tags, turn.tools.search, ai.SearchOptions{DenseRetrieval: turn.tools.dense})
-			result, err = ai.ResearchResult{Reply: reply, Documents: hits}, searchErr
+			return streamResearchTurn(app, turn, ctx, stream)
 		}
+
+		reply, hits, err := turn.agent.Search(ctx, turn.messages, turn.tools.tags, turn.tools.search, ai.SearchOptions{DenseRetrieval: turn.tools.dense})
 		if err != nil {
-			// Either way the conversation this request opened never got a turn.
+			// The conversation this request opened never got a turn.
 			discardEmptySession(app, turn.opened)
 			if runErr := ctx.Err(); runErr != nil {
 				// The run itself was stopped, out of budget or cancelled. Not the
 				// client merely hanging up, which does not reach here.
-				app.Logger().Info("search run stopped", "mode", turn.mode, slog.Any("error", runErr))
+				app.Logger().Info("search run stopped", slog.Any("error", runErr))
 				// A cancel the viewer asked for needs no explanation, but a
 				// run out of budget would otherwise end as a bare EOF.
 				if errors.Is(runErr, context.DeadlineExceeded) {
@@ -470,21 +509,22 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 				stream.Send(ai.ResearchEvent{Type: "done"})
 				return nil
 			}
-			app.Logger().Error("search run failed", "mode", turn.mode, slog.Any("error", err))
-			stream.Send(ai.ResearchEvent{Type: "error", Message: "The AI provider could not complete the search."})
+			app.Logger().Error("search run failed", slog.Any("error", err))
+			stream.Send(ai.ResearchEvent{Type: "error", Message: ai.ProviderErrorMessage(err)})
 			stream.Send(ai.ResearchEvent{Type: "done"})
 			return nil
 		}
 
-		documents := result.Documents
+		documents := hits
 		if documents == nil {
 			documents = []ai.DocumentHit{}
 		}
+		result := ai.ResearchResult{Reply: reply, Documents: documents}
 
 		// Stored before anything is written, and unconditionally: a write to a
 		// half-closed connection can block until the kernel gives up, and that
 		// must never sit between a finished answer and the save that keeps it.
-		saved := persistSearchTurn(app, turn, result.Reply, documents, steps, result.Incomplete)
+		saved := persistSearchTurn(app, turn, result.Reply, documents)
 
 		stream.Send(ai.ResearchEvent{Type: "documents", Documents: documents})
 		// The whole answer follows the deltas: those are a live preview, this is

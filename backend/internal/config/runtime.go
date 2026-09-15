@@ -48,6 +48,10 @@ type Runtime struct {
 	// because Runtime already reaches the refuse-write endpoints and /meta.
 	env AIEnv
 
+	// Outside the snapshot on purpose: it caches what a third party answered,
+	// and a settings save must not throw that away.
+	catalog *aiprovider.Catalog
+
 	// Called after every published snapshot, in registration order.
 	onReload []func(core.App, Snapshot)
 }
@@ -70,10 +74,17 @@ func NewRuntime(env AIEnv) *Runtime {
 	// header: see aiprovider.SetManaged.
 	aiprovider.SetManaged(env.Managed)
 	return &Runtime{
-		snap: Snapshot{Cfg: env.Defaults()},
-		env:  env,
+		snap:    Snapshot{Cfg: env.Defaults()},
+		env:     env,
+		// slog's default rather than app.Logger(): this is built before the app
+		// exists, and swapping the logger in later would race every lookup.
+		catalog: aiprovider.NewCatalog(env.ModelCatalogURL, slog.Default().With("component", "ai")),
 	}
 }
+
+// ModelCatalog answers how large a model's context window is, for the code that
+// reports a turn against it.
+func (r *Runtime) ModelCatalog() *aiprovider.Catalog { return r.catalog }
 
 func (r *Runtime) Env() AIEnv { return r.env }
 

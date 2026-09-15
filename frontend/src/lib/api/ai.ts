@@ -107,6 +107,17 @@ export type ResearchEvent =
       distilled?: boolean
     }
   | { type: 'delta'; content: string }
+  // How wide the research conversation has grown, emitted after every
+  // completion the main thread makes. Helper models are a separate
+  // conversation and are not counted.
+  | {
+      type: 'usage'
+      prompt_tokens: number
+      /** The model's limit, absent when no catalogue knows it. */
+      context_window?: number
+      /** True when the provider reported nothing and this was estimated. */
+      estimated?: boolean
+    }
   | { type: 'documents'; documents?: SearchDocumentHit[] }
   | { type: 'message'; content: string; incomplete?: boolean }
   // Closes a successful run with the stored turn; the answer itself already
@@ -149,6 +160,11 @@ export async function searchStream(
      * the original as it was. Read only when there is no session id.
      */
     forkFrom?: string
+    /**
+     * Finishes a research turn whose run did not: no new question, the stored
+     * conversation is replayed and the loop re-entered where it stopped.
+     */
+    resume?: boolean
   },
   onEvent: (event: ResearchEvent) => void,
   signal?: AbortSignal,
@@ -161,6 +177,7 @@ export async function searchStream(
       run_id: input.runId,
       web: input.web === true,
       fork_from: input.forkFrom ?? '',
+      resume: input.resume === true,
       ...bindingBody(input.binding),
     },
     onEvent,

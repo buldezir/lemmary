@@ -27,8 +27,9 @@ type settingsResponse struct {
 	SearchHelperModel      string `json:"search_helper_model"`
 	EmbeddingProviderID    string `json:"embedding_provider_id"`
 	EmbeddingModel         string `json:"embedding_model"`
-	// Empty means the web_search and web_fetch tools are never offered. No
-	// model: a web-search API takes none.
+	// Empty means no web call is served: Ask AI offers no web tools at all, and
+	// research declares the schemas but refuses every call. No model: a
+	// web-search API takes none.
 	WebSearchProviderID string `json:"websearch_provider_id"`
 	// EmbeddingDims is read-only, recorded from the first real response: a
 	// number that disagreed with the model would build an index that silently

@@ -16,6 +16,12 @@ export type AIProvider = {
   sdk: ProviderSDK
   alias: string
   base_url: string
+  /**
+   * Which model catalogue answers for this provider's context windows. Empty
+   * means no window is known, which costs the denominator on the usage line
+   * and nothing else.
+   */
+  catalog: string
   api_key_set: boolean
   /** api_key_set's counterpart for the SDKs that sign in instead of taking a key. */
   signed_in: boolean
@@ -29,6 +35,68 @@ export type AIProviderWrite = {
   alias: string
   base_url?: string
   api_key?: string
+  catalog?: string
+}
+
+/**
+ * The model catalogues the server accepts, mirroring aiprovider.CatalogProviders.
+ * Hardcoded on both sides: it names a dropdown's options, and a list that has to
+ * be fetched before a provider can be saved would put a third party's uptime in
+ * the way of configuring one.
+ */
+export const MODEL_CATALOGS = [
+  'amazon-bedrock',
+  'ant-ling',
+  'anthropic',
+  'azure-openai-responses',
+  'baseten',
+  'cerebras',
+  'cloudflare-ai-gateway',
+  'cloudflare-workers-ai',
+  'deepseek',
+  'fireworks',
+  'github-copilot',
+  'google',
+  'google-vertex',
+  'groq',
+  'huggingface',
+  'kimi-coding',
+  'minimax',
+  'minimax-cn',
+  'mistral',
+  'moonshotai',
+  'moonshotai-cn',
+  'nvidia',
+  'openai',
+  'openai-codex',
+  'opencode',
+  'opencode-go',
+  'openrouter',
+  'qwen-token-plan',
+  'qwen-token-plan-cn',
+  'qwen-token-plan-individual',
+  'together',
+  'vercel-ai-gateway',
+  'xai',
+  'xiaomi',
+  'xiaomi-token-plan-ams',
+  'xiaomi-token-plan-cn',
+  'xiaomi-token-plan-sgp',
+  'zai',
+  'zai-coding-cn',
+] as const
+
+const SDK_DEFAULT_CATALOG: Partial<Record<ProviderSDK, string>> = {
+  openai: 'openai',
+  openrouter: 'openrouter',
+  mistral: 'mistral',
+  opencode: 'opencode-go',
+  chatgpt: 'openai-codex',
+}
+
+/** The catalogue an SDK is most likely served by; the admin can correct it. */
+export function defaultCatalog(sdk: ProviderSDK): string {
+  return SDK_DEFAULT_CATALOG[sdk] ?? ''
 }
 
 export type ModelPurpose = 'ocr' | 'llm' | 'embedding' | 'websearch'
@@ -409,6 +477,7 @@ export function asPickerProvider(item: OCRProviderInfo): AIProvider {
     sdk: item.sdk as ProviderSDK,
     alias: item.name,
     base_url: '',
+    catalog: '',
     api_key_set: true,
     signed_in: true,
   }

@@ -139,13 +139,31 @@ type SearchOptions struct {
 	DenseRetrieval bool
 }
 
-type SearchAgent interface {
+// Searcher answers from what a search turns up, in one round with no tools
+// beyond the search itself, and stores nothing between turns.
+type Searcher interface {
 	// Search finds documents and answers from their metadata and snippets.
 	Search(ctx context.Context, messages []ChatMessage, availableTags []string, search DocumentSearcher, opts SearchOptions) (reply string, hits []DocumentHit, err error)
+}
 
-	// Research reads the documents it finds and writes a cited answer,
-	// reporting each step through emit as it goes.
+// Researcher runs the agent loop: it reads what it finds, reports each step as
+// it goes, and keeps its conversation, so the next question builds on this
+// one's work rather than repeating it.
+//
+// Separate from Searcher because the two have stopped resembling each other.
+// One is a completion; the other is a thread with storage, a resume and a
+// context budget. One implementation still satisfies both.
+type Researcher interface {
 	Research(ctx context.Context, req ResearchRequest, emit func(ResearchEvent)) (ResearchResult, error)
+	// SystemPrompt is the instruction a new conversation opens with, so the
+	// caller that stores the thread can store it first and replay it after.
+	SystemPrompt(req ResearchRequest) string
+}
+
+// SearchAgent is both, which is what the provider binding builds.
+type SearchAgent interface {
+	Searcher
+	Researcher
 }
 
 type openAISearchAgent struct {

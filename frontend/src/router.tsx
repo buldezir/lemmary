@@ -26,6 +26,7 @@ import { DocumentDetailPage } from './routes/document.$documentId'
 import { DocumentAskPage } from './routes/document.$documentId.ask'
 import { OCRTestPage } from './routes/ocr-test'
 import { SearchPage } from './routes/search'
+import { ResearchPage } from './routes/research'
 import { SettingsPage } from './routes/settings'
 import { SettingsAppearancePage } from './routes/settings.index'
 import { SettingsAIPage } from './routes/settings.ai'
@@ -160,7 +161,7 @@ const searchSessionRoute = createRoute({
 const researchRoute = createRoute({
   getParentRoute: () => ragRoute,
   path: 'research',
-  component: SearchPage,
+  component: ResearchPage,
 })
 
 const researchSessionRoute = createRoute({

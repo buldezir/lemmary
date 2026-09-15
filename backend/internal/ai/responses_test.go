@@ -212,7 +212,7 @@ func TestResearchRunsOnTheResponsesAPI(t *testing.T) {
 
 	var searched bool
 	result, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "how much did I pay?"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "how much did I pay?"}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			searched = true
 			return hitsFor("doc1"), nil

@@ -291,14 +291,17 @@ func mustContent(t *testing.T, web *websearch.Tavily, budget *webBudget) string 
 	return result.Content
 }
 
-func TestWebToolsRefuseWhenNoProviderIsBound(t *testing.T) {
+// The schemas are always declared, so this is the answer to a model reaching
+// for the web on a turn that does not have it -- the toggle off, or no provider
+// bound at all.
+func TestWebToolsRefuseWhenTheTurnHasNoWeb(t *testing.T) {
 	t.Parallel()
 	budget := &webBudget{}
 	result, advanced := runWebTool(context.Background(), nil, budget, "c1", "web_search", `{"query":"x"}`, nil)
 	if advanced {
 		t.Error("nothing happened")
 	}
-	if got := decodeToolContent(t, result.Content)["error"]; got != "web access is not configured" {
+	if got := decodeToolContent(t, result.Content)["error"]; got != "web access is not enabled for this question" {
 		t.Errorf("error = %v", got)
 	}
 	// A refusal must not spend the budget it never used.
@@ -316,27 +319,3 @@ func TestAnUnknownWebToolNameIsReportedBack(t *testing.T) {
 	}
 }
 
-// The tools are declared only when a provider is bound, so an archive-only run
-// cannot be talked into reaching the web.
-func TestWebToolsAreOfferedOnlyWithAProvider(t *testing.T) {
-	t.Parallel()
-	names := func(req ResearchRequest) []string {
-		tools := researchTools()
-		if req.Web != nil {
-			tools = append(tools, webSearchTool(), webFetchTool())
-		}
-		out := make([]string, 0, len(tools))
-		for _, tool := range tools {
-			out = append(out, tool.Function.Name)
-		}
-		return out
-	}
-	without := strings.Join(names(ResearchRequest{}), ",")
-	if strings.Contains(without, "web_") {
-		t.Errorf("tools without a provider = %s", without)
-	}
-	with := strings.Join(names(ResearchRequest{Web: websearch.NewTavily("k", "", time.Second, nil)}), ",")
-	if !strings.Contains(with, "web_search") || !strings.Contains(with, "web_fetch") {
-		t.Errorf("tools with a provider = %s", with)
-	}
-}

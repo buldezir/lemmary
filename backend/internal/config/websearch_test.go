@@ -7,7 +7,7 @@ import (
 	"lemmary/backend/internal/aiprovider"
 )
 
-// Unset is the pre-flag behaviour: the tools are never offered, and that is a
+// Unset is the pre-flag behaviour: nothing reaches the web, and that is a
 // working instance rather than a broken one.
 func TestAIEnvWithoutAWebSearchProviderLeavesTheToolsOff(t *testing.T) {
 	clearAIEnv(t)

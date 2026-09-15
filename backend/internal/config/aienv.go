@@ -40,12 +40,21 @@ type AIEnv struct {
 	WorkerMaxRetries    int
 	DeepSearchLanguages string
 	ExtractionPromptVer string
+
+	// ModelCatalogURL is where a model's context window is looked up, so a
+	// research turn can be shown against it. Blank turns the lookup off and
+	// with it the denominator on the usage line.
+	ModelCatalogURL string
 }
 
 // Environment variable names in one place, so the error messages and the
 // parsing cannot drift apart.
 const (
 	EnvManaged = "AI_MANAGED"
+
+	// EnvModelCatalogURL points the context-window lookup somewhere other than
+	// pi.dev, or nowhere at all when set empty.
+	EnvModelCatalogURL = "AI_MODEL_CATALOG_URL"
 
 	EnvAISDK     = "AI_SDK"
 	EnvAIAPIKey  = "AI_API_KEY"
@@ -72,8 +81,8 @@ const (
 	EnvChatGPTLogin = "AI_CHATGPT_LOGIN"
 
 	// The web-search block seeds the provider backing web_search and web_fetch.
-	// Unset means the tools are never offered. Its own SDK always: no SDK that
-	// chats or reads a document also searches the web.
+	// Unset means no web call is served. Its own SDK always: no SDK that chats
+	// or reads a document also searches the web.
 	EnvWebSearchSDK     = "WEB_SEARCH_SDK"
 	EnvWebSearchAPIKey  = "WEB_SEARCH_API_KEY"
 	EnvWebSearchBaseURL = "WEB_SEARCH_BASE_URL"
@@ -113,6 +122,7 @@ func AIEnvFromEnv() (AIEnv, error) {
 		WorkerMaxRetries:       envIntDefault("WORKER_MAX_RETRIES", 0, 0),
 		DeepSearchLanguages:    NormalizeLanguageList(os.Getenv("DEEP_SEARCH_LANGUAGES")),
 		ExtractionPromptVer:    getEnv("EXTRACTION_PROMPT_VERSION", "v1"),
+		ModelCatalogURL:        getEnv(EnvModelCatalogURL, aiprovider.DefaultCatalogURL),
 	}
 
 	llm, err := parseLLM()
@@ -325,9 +335,9 @@ func parseEmbedding(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error
 	}, nil
 }
 
-// parseWebSearch reads the optional web-search provider. Unset means the
-// web_search and web_fetch tools are never offered, which is the pre-flag
-// behaviour and a working state.
+// parseWebSearch reads the optional web-search provider. Unset means no web
+// call is served -- Ask AI offers no web tools, and research declares them and
+// refuses -- which is the pre-flag behaviour and a working state.
 func parseWebSearch() (aiprovider.ProviderSpec, error) {
 	sdk := strings.TrimSpace(os.Getenv(EnvWebSearchSDK))
 	key := strings.TrimSpace(os.Getenv(EnvWebSearchAPIKey))

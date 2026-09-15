@@ -100,12 +100,17 @@ func (c *OpenAIClient) Chat(ctx context.Context, ocrText string, messages []Chat
 
 // chatWithWeb gathers over a bounded number of tool rounds and then answers.
 //
-// The answer turn declares no tools at all, the way answerResearch does, rather
-// than keeping them with tool_choice "none". The shipped default model emits
-// tool calls as message content, which no tool_choice suppresses, so a schema
-// still in front of it can end the turn in markup -- after the provider has
-// been billed for the round. With nothing declared there is nothing to answer
-// with but prose.
+// The answer turn declares no tools at all, rather than keeping them with
+// tool_choice "none". The shipped default model emits tool calls as message
+// content, which no tool_choice suppresses, so a schema still in front of it
+// can end the turn in markup -- after the provider has been billed for the
+// round. With nothing declared there is nothing to answer with but prose.
+//
+// answerResearch makes the opposite trade, and the difference is what the
+// request carries. A research answer resends the whole stored thread, so the
+// tool list dropping out of it forfeits the cache on every tool result the
+// conversation ever gathered. Ask AI replays a short history and two tools;
+// there is little cache to lose and a cleaner answer to keep.
 func (c *OpenAIClient) chatWithWeb(
 	ctx context.Context,
 	apiMessages []openai.ChatCompletionMessageParamUnion,

@@ -32,7 +32,7 @@ func TestResearchSurveysThenCitesTheRows(t *testing.T) {
 	var readIDs []string
 	var events []ResearchEvent
 	result, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "How much did I pay in invoices in 2025?"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "How much did I pay in invoices in 2025?"}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			t.Fatal("a survey should not go through search")
 			return nil, nil
@@ -111,7 +111,7 @@ func TestResearchSurveyRequiresASelection(t *testing.T) {
 	)
 	called := false
 	_, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "q"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "q"}},
 		Search:   func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
 		Read:     func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil },
 		Survey: func(context.Context, SurveyArgs, func(int, int)) (SurveyResult, error) {
@@ -137,7 +137,7 @@ func TestResearchSurveyOnlyAcceptsSeenIDs(t *testing.T) {
 	)
 	var got SurveyArgs
 	_, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "q"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "q"}},
 		Search: func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) {
 			return hitsFor("seen"), nil
 		},
@@ -165,7 +165,7 @@ func TestResearchCountsWithoutSearching(t *testing.T) {
 	var got CountArgs
 	var events []ResearchEvent
 	_, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "how many invoices in 2025?"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "how many invoices in 2025?"}},
 		Search: func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) {
 			t.Fatal("a count should not search")
 			return nil, nil
@@ -200,7 +200,7 @@ func TestResearchRejectsAnUnknownGroupBy(t *testing.T) {
 		scriptedTurn{content: "Cannot."},
 	)
 	_, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "q"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "q"}},
 		Search:   func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
 		Read:     func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil },
 		Count: func(context.Context, CountArgs) (CountResult, error) {
@@ -217,24 +217,59 @@ func TestResearchRejectsAnUnknownGroupBy(t *testing.T) {
 	}
 }
 
-func TestResearchOffersSurveyAndCountOnlyWhenBacked(t *testing.T) {
+// The tool list is part of what the provider cached, and a helper model can be
+// bound or unbound between two questions of one conversation. So the schemas go
+// out on every turn whatever backs them, and a call with nothing behind it is
+// refused rather than never offered.
+func TestSurveyAndCountAreDeclaredWhateverBacksThem(t *testing.T) {
 	t.Parallel()
-	h, agent := newResearchAgent(t, scriptedTurn{content: "ready"}, scriptedTurn{content: "Nothing."})
+	run := func(req ResearchRequest) map[string]struct{} {
+		t.Helper()
+		h, agent := newResearchAgent(t, scriptedTurn{content: "ready"}, scriptedTurn{content: "Nothing."})
+		req.Thread = []ThreadMessage{{Role: "user", Content: "q"}}
+		req.Search = func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil }
+		req.Read = func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil }
+		if _, err := agent.Research(context.Background(), req, nil); err != nil {
+			t.Fatalf("Research: %v", err)
+		}
+		return toolNames(t, h.request(0))
+	}
+
+	bare := run(ResearchRequest{})
+	for _, tool := range []string{"survey_documents", "count_documents"} {
+		if _, ok := bare[tool]; !ok {
+			t.Errorf("%s missing with nothing behind it: %v", tool, bare)
+		}
+	}
+
+	backed := run(ResearchRequest{
+		Count:  func(context.Context, CountArgs) (CountResult, error) { return CountResult{}, nil },
+		Survey: func(context.Context, SurveyArgs, func(int, int)) (SurveyResult, error) { return SurveyResult{}, nil },
+	})
+	if len(backed) != len(bare) {
+		t.Fatalf("binding a helper changed the tool list: %v backed, %v bare", backed, bare)
+	}
+}
+
+// And the refusal reaches the model, so it stops asking instead of guessing why
+// the call came back empty.
+func TestASurveyCallWithNoSurveyorIsRefused(t *testing.T) {
+	t.Parallel()
+	h, agent := newResearchAgent(t,
+		scriptedTurn{toolCalls: []scriptedToolCall{{name: "survey_documents", args: `{"question":"what?"}`}}},
+		scriptedTurn{content: "ready"},
+		scriptedTurn{content: "Nothing."},
+	)
 	_, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "q"}},
-		Search:   func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
-		Read:     func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil },
-		Count:    func(context.Context, CountArgs) (CountResult, error) { return CountResult{}, nil },
+		Thread: []ThreadMessage{{Role: "user", Content: "q"}},
+		Search: func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
+		Read:   func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil },
 	}, nil)
 	if err != nil {
 		t.Fatalf("Research: %v", err)
 	}
-	names := toolNames(t, h.request(0))
-	if _, ok := names["count_documents"]; !ok {
-		t.Fatalf("count_documents should be offered when a counter is set: %v", names)
-	}
-	if _, ok := names["survey_documents"]; ok {
-		t.Fatalf("survey_documents should not be offered without a surveyor: %v", names)
+	if fed := toolMessageContent(t, h.request(1), "survey_documents"); !strings.Contains(fed, "not available") {
+		t.Fatalf("the refusal does not say why: %s", fed)
 	}
 }
 

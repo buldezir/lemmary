@@ -129,6 +129,7 @@ describe('asPickerProvider', () => {
       sdk: 'openai',
       alias: 'My OpenAI',
       base_url: '',
+      catalog: '',
       api_key_set: true,
       signed_in: true,
     })

@@ -2,6 +2,7 @@ package chat_test
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -432,5 +433,250 @@ func TestForkSessionRefusesPastTheSessionCap(t *testing.T) {
 	}
 	if total, err := chat.CountSessions(app, userID); err != nil || total != chat.MaxSessionsPerUser {
 		t.Fatalf("CountSessions() = %d, %v; want %d sessions and no error", total, err, chat.MaxSessionsPerUser)
+	}
+}
+
+// The turn's context usage rides on the assistant row, so a reopened chat can
+// still say how close it came to the model's limit.
+func TestAppendTurnStoresUsageOnTheAssistant(t *testing.T) {
+	app := bootAppForStore(t)
+	userID := makeUser(t, app, "usage@example.test")
+	session, err := chat.CreateSession(app, chat.NewSession{
+		UserID:       userID,
+		Kind:         chat.KindSearch,
+		Mode:         chat.ModeResearch,
+		FirstMessage: "how much?",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	if _, err := chat.AppendTurn(app, userID, session.Id, chat.Turn{
+		UserContent:      "how much?",
+		AssistantContent: "EUR 412.",
+		Usage:            ai.TurnUsage{PeakPrompt: 38200, ContextWindow: 200000},
+	}); err != nil {
+		t.Fatalf("AppendTurn: %v", err)
+	}
+
+	records, err := chat.ListMessages(app, session.Id, 0)
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if got := chat.ToMessageInfo(records[0]).Usage; got != nil {
+		t.Fatalf("user message carried usage: %+v", got)
+	}
+	usage := chat.ToMessageInfo(records[1]).Usage
+	if usage == nil {
+		t.Fatal("assistant message lost its usage")
+	}
+	if usage.PeakPrompt != 38200 || usage.ContextWindow != 200000 {
+		t.Fatalf("usage = %+v", usage)
+	}
+}
+
+// Nothing clamps the replayed transcript any more: what fits is the provider's
+// ruling, and it delivers it by refusing the request. A conversation past the
+// old 40-message, 24000-rune budget must come back whole.
+func TestHistoryReplaysTheWholeTranscript(t *testing.T) {
+	app := bootAppForStore(t)
+	userID := makeUser(t, app, "history@example.test")
+	session, err := chat.CreateSession(app, chat.NewSession{
+		UserID:       userID,
+		Kind:         chat.KindSearch,
+		Mode:         chat.ModeResearch,
+		FirstMessage: "first",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	const turns = 30
+	answer := strings.Repeat("a", 2000)
+	for i := 0; i < turns; i++ {
+		if _, err := chat.AppendTurn(app, userID, session.Id, chat.Turn{
+			UserContent:      fmt.Sprintf("question %d", i),
+			AssistantContent: answer,
+		}); err != nil {
+			t.Fatalf("AppendTurn %d: %v", i, err)
+		}
+	}
+
+	history, err := chat.History(app, session.Id)
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	if len(history) != turns*2 {
+		t.Fatalf("history = %d messages, want all %d", len(history), turns*2)
+	}
+	if history[0].Content != "question 0" {
+		t.Fatalf("history starts at %q, want the first question", history[0].Content)
+	}
+
+	total := 0
+	for _, m := range history {
+		total += len(m.Content)
+	}
+	if total < turns*len(answer) {
+		t.Fatalf("history is %d chars, less than was stored", total)
+	}
+}
+
+// A research turn is appended a row at a time, so the work of a run that dies
+// is already on disk. What it leaves behind has to read back as the provider
+// array it was, and count as the one question a person asked.
+func TestAppendThreadMessageStoresTheProviderArray(t *testing.T) {
+	app := bootAppForStore(t)
+	userID := makeUser(t, app, "thread@example.test")
+	session, err := chat.CreateSession(app, chat.NewSession{
+		UserID:       userID,
+		Kind:         chat.KindSearch,
+		Mode:         chat.ModeResearch,
+		FirstMessage: "how much did I pay?",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	rows := []chat.ThreadEntry{
+		{Role: chat.RoleSystem, Content: "you are researching the archive"},
+		{Role: chat.RoleUser, Content: "how much did I pay?"},
+		{Role: chat.RoleAssistant, Calls: []ai.ToolCall{{ID: "call_0", Name: "search_documents", Arguments: `{"query":"invoice"}`}}},
+		{Role: chat.RoleTool, Content: `{"documents":[{"id":"doc1"}]}`, CallID: "call_0"},
+	}
+	for i, row := range rows {
+		if _, err := chat.AppendThreadMessage(app, userID, session.Id, row); err != nil {
+			t.Fatalf("AppendThreadMessage %d: %v", i, err)
+		}
+	}
+
+	thread, err := chat.Thread(app, session.Id)
+	if err != nil {
+		t.Fatalf("Thread: %v", err)
+	}
+	// The dangling-call rule does not bite: this call was answered.
+	if len(thread) != len(rows) {
+		t.Fatalf("thread = %d messages, want %d: %+v", len(thread), len(rows), thread)
+	}
+	if thread[2].Calls[0].Arguments != `{"query":"invoice"}` {
+		t.Fatalf("the call did not round-trip: %+v", thread[2])
+	}
+	if thread[3].CallID != "call_0" {
+		t.Fatalf("the result lost the call it answers: %+v", thread[3])
+	}
+
+	// One question asked, no answer yet: the machinery in between is not what
+	// the sidebar counts.
+	reloaded, err := chat.FindOwnedSession(app, userID, session.Id)
+	if err != nil {
+		t.Fatalf("FindOwnedSession: %v", err)
+	}
+	if got := reloaded.GetInt("message_count"); got != 1 {
+		t.Fatalf("message_count = %d, want 1", got)
+	}
+
+	records, err := chat.ListMessages(app, session.Id, 0)
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if !chat.Unfinished(records) {
+		t.Fatal("a turn that stops on a tool result must read as unfinished")
+	}
+	// And the transcript a person sees is the question alone.
+	if visible := chat.VisibleMessages(records); len(visible) != 1 || visible[0].Role != chat.RoleUser {
+		t.Fatalf("visible messages = %+v, want only the question", visible)
+	}
+
+	if _, err := chat.AppendThreadMessage(app, userID, session.Id, chat.ThreadEntry{
+		Role:    chat.RoleAssistant,
+		Content: "EUR 412.",
+	}); err != nil {
+		t.Fatalf("AppendThreadMessage answer: %v", err)
+	}
+	records, _ = chat.ListMessages(app, session.Id, 0)
+	if chat.Unfinished(records) {
+		t.Fatal("a turn that reached an answer must not read as unfinished")
+	}
+}
+
+// The trail of a finished turn hangs on its answer, and the trail of one that
+// never finished hangs on its question -- so an interrupted turn still shows
+// what it got through.
+func TestVisibleMessagesFoldTheTrailOntoTheTurn(t *testing.T) {
+	app := bootAppForStore(t)
+	userID := makeUser(t, app, "trail@example.test")
+	session, err := chat.CreateSession(app, chat.NewSession{
+		UserID:       userID,
+		Kind:         chat.KindSearch,
+		Mode:         chat.ModeResearch,
+		FirstMessage: "how much?",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	for _, row := range []chat.ThreadEntry{
+		{Role: chat.RoleUser, Content: "how much?"},
+		{Role: chat.RoleAssistant, Calls: []ai.ToolCall{{ID: "call_0", Name: "search_documents"}}},
+		{Role: chat.RoleTool, Content: "two documents", CallID: "call_0",
+			Steps: []chat.StoredStep{{Kind: "search", Status: "done", Query: "invoice", Count: 2}}},
+	} {
+		if _, err := chat.AppendThreadMessage(app, userID, session.Id, row); err != nil {
+			t.Fatalf("AppendThreadMessage: %v", err)
+		}
+	}
+
+	records, _ := chat.ListMessages(app, session.Id, 0)
+	visible := chat.VisibleMessages(records)
+	if len(visible) != 1 {
+		t.Fatalf("visible = %d messages, want the question alone: %+v", len(visible), visible)
+	}
+	if len(visible[0].Steps) != 1 || visible[0].Steps[0].Query != "invoice" {
+		t.Fatalf("the unfinished turn lost its trail: %+v", visible[0])
+	}
+}
+
+// A research conversation is replayed whole. A row cap would slide the window
+// as it grew, dropping the system prompt off the front and handing the provider
+// a different prefix on every turn -- the opposite of what storing the thread is
+// for. What the model can hold is the model's business.
+func TestThreadIsNotCappedByRowCount(t *testing.T) {
+	app := bootAppForStore(t)
+	userID := makeUser(t, app, "long-thread@example.test")
+	session, err := chat.CreateSession(app, chat.NewSession{
+		UserID:       userID,
+		Kind:         chat.KindSearch,
+		Mode:         chat.ModeResearch,
+		FirstMessage: "how much did I pay?",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	rows := []chat.ThreadEntry{{Role: chat.RoleSystem, Content: "you are researching the archive"}}
+	for len(rows) < chat.MaxReplayMessages+10 {
+		call := fmt.Sprintf("call_%d", len(rows))
+		rows = append(rows,
+			chat.ThreadEntry{Role: chat.RoleUser, Content: "and then?"},
+			chat.ThreadEntry{Role: chat.RoleAssistant, Calls: []ai.ToolCall{{ID: call, Name: "search_documents", Arguments: `{"query":"invoice"}`}}},
+			chat.ThreadEntry{Role: chat.RoleTool, Content: `{"documents":[]}`, CallID: call},
+			chat.ThreadEntry{Role: chat.RoleAssistant, Content: "nothing yet"},
+		)
+	}
+	for i, row := range rows {
+		if _, err := chat.AppendThreadMessage(app, userID, session.Id, row); err != nil {
+			t.Fatalf("AppendThreadMessage %d: %v", i, err)
+		}
+	}
+
+	thread, err := chat.Thread(app, session.Id)
+	if err != nil {
+		t.Fatalf("Thread: %v", err)
+	}
+	if len(thread) != len(rows) {
+		t.Fatalf("thread = %d messages, want all %d", len(thread), len(rows))
+	}
+	if thread[0].Role != chat.RoleSystem {
+		t.Fatalf("the conversation lost the prompt it opened with: %+v", thread[0])
 	}
 }

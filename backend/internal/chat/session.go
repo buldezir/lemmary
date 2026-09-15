@@ -22,12 +22,32 @@ const (
 	KindDocument Kind = "document"
 )
 
-// Roles a stored turn can carry. Tool calls and system prompts stay inside the
-// agent loop: only what the user typed and what they were shown is persisted.
+// Roles a stored row can carry. A research conversation stores the provider
+// array itself, so the work a turn did survives the turn: the system prompt it
+// was opened with, the tool calls it made, and what the tools answered. Search
+// and Ask AI write only user and assistant rows, as they always did.
 const (
 	RoleUser      = "user"
 	RoleAssistant = "assistant"
+	RoleTool      = "tool"
+	RoleSystem    = "system"
 )
+
+var ThreadRoles = []string{RoleUser, RoleAssistant, RoleTool, RoleSystem}
+
+// Visible reports whether a row is part of the conversation a person reads.
+// The others are the machinery underneath it, replayed to the model and folded
+// into the research trail rather than rendered as a message.
+func Visible(role, content string) bool {
+	switch role {
+	case RoleUser:
+		return true
+	case RoleAssistant:
+		return strings.TrimSpace(content) != ""
+	default:
+		return false
+	}
+}
 
 // The two things a search turn can be: find documents and list them, or read
 // them and answer with citations.
@@ -58,11 +78,14 @@ const (
 	// a request whose connection was interrupted.
 	MaxRunIDRunes = 200
 
-	// MaxHistoryMessages and MaxHistoryRunes bound the transcript replayed to
-	// the model. The rune budget matters most for Deep Search: its agent loop
-	// resends the whole array on each of up to five rounds.
-	MaxHistoryMessages = 40
-	MaxHistoryRunes    = 24000
+	// MaxThreadContentRunes bounds the content column, which now holds tool
+	// results as well as prose. Far above MaxMessageRunes because a read of
+	// several documents dwarfs any answer, and a truncated tool result is a
+	// corrupted one: the model would read half a JSON object as fact.
+	MaxThreadContentRunes = 400000
+	// MaxToolCallsJSONBytes bounds the calls one assistant turn may make.
+	MaxToolCallsJSONBytes = 64000
+	MaxToolCallIDRunes    = 200
 
 	// MaxSessionsPerUser stops an account from turning the sidebar into an
 	// unbounded table. Breaching it is an error, never a silent prune.
@@ -76,8 +99,13 @@ const (
 	MaxStepsPerTurn   = 80
 	MaxStepsJSONBytes = 16000
 
+	// MaxUsageJSONBytes bounds the context-usage record: three numbers, with
+	// room for the field to grow.
+	MaxUsageJSONBytes = 512
+
 	// MaxReplayMessages caps one transcript read, so a single request cannot
-	// load an unbounded number of rows.
+	// load an unbounded number of rows. A read guard, not a context budget:
+	// what fits the model is the model's business, and it says so by refusing.
 	MaxReplayMessages = 500
 )
 
@@ -162,44 +190,6 @@ func FitColumn(s string, max int) string {
 		return string([]rune(s)[:1])
 	}
 	return strutil.TruncateRunes(s, max-1)
-}
-
-// ClampHistory trims a transcript to the most recent MaxHistoryMessages turns
-// and, within that, the most recent MaxHistoryRunes of text. The last message
-// survives even when it alone exceeds the budget, and the window never opens on
-// an assistant turn, which reads as though the question had been edited out.
-func ClampHistory(messages []ai.ChatMessage) []ai.ChatMessage {
-	if len(messages) == 0 {
-		return []ai.ChatMessage{}
-	}
-
-	start := 0
-	if len(messages) > MaxHistoryMessages {
-		start = len(messages) - MaxHistoryMessages
-	}
-
-	budget := MaxHistoryRunes
-	first := len(messages) - 1
-	for i := len(messages) - 1; i >= start; i-- {
-		cost := utf8.RuneCountInString(messages[i].Content)
-		if i < len(messages)-1 && cost > budget {
-			break
-		}
-		budget -= cost
-		first = i
-	}
-	if first < start {
-		first = start
-	}
-
-	// Never start mid-answer.
-	if first < len(messages)-1 && messages[first].Role == RoleAssistant {
-		first++
-	}
-
-	out := make([]ai.ChatMessage, 0, len(messages)-first)
-	out = append(out, messages[first:]...)
-	return out
 }
 
 // EncodeHits renders the search hits stored beside an assistant turn. They are
@@ -305,6 +295,58 @@ func EncodeSteps(steps []StoredStep) types.JSONRaw {
 	return types.JSONRaw(encoded)
 }
 
+// EncodeToolCalls stores what an assistant turn asked the tools for. Over
+// budget it stores nothing rather than a prefix: half a call list replays as a
+// call nothing answered, which providers refuse outright.
+func EncodeToolCalls(calls []ai.ToolCall) types.JSONRaw {
+	if len(calls) == 0 {
+		return nil
+	}
+	encoded, err := json.Marshal(calls)
+	if err != nil || len(encoded) > MaxToolCallsJSONBytes {
+		return nil
+	}
+	return types.JSONRaw(encoded)
+}
+
+func DecodeToolCalls(record *core.Record) []ai.ToolCall {
+	raw := strings.TrimSpace(record.GetString("tool_calls"))
+	if raw == "" || raw == "null" {
+		return nil
+	}
+	var calls []ai.ToolCall
+	if err := json.Unmarshal([]byte(raw), &calls); err != nil {
+		return nil
+	}
+	return calls
+}
+
+// EncodeUsage stores what the turn cost in context. Nil for a turn that
+// reported nothing, so an older transcript and a turn on a provider that counts
+// nothing read the same way: no line rather than a zero.
+func EncodeUsage(usage ai.TurnUsage) types.JSONRaw {
+	if usage.Empty() {
+		return nil
+	}
+	encoded, err := json.Marshal(usage)
+	if err != nil || len(encoded) > MaxUsageJSONBytes {
+		return nil
+	}
+	return types.JSONRaw(encoded)
+}
+
+func DecodeUsage(record *core.Record) *ai.TurnUsage {
+	raw := strings.TrimSpace(record.GetString("usage"))
+	if raw == "" || raw == "null" {
+		return nil
+	}
+	var usage ai.TurnUsage
+	if err := json.Unmarshal([]byte(raw), &usage); err != nil {
+		return nil
+	}
+	return &usage
+}
+
 func DecodeSteps(record *core.Record) []StoredStep {
 	raw := strings.TrimSpace(record.GetString("steps"))
 	if raw == "" || raw == "null" {
@@ -360,6 +402,7 @@ type MessageInfo struct {
 	RunID      string           `json:"run_id,omitempty"`
 	Documents  []ai.DocumentHit `json:"documents,omitempty"`
 	Steps      []StoredStep     `json:"steps,omitempty"`
+	Usage      *ai.TurnUsage    `json:"usage,omitempty"`
 	Incomplete bool             `json:"incomplete,omitempty"`
 	Created    string           `json:"created"`
 }
@@ -397,6 +440,34 @@ func BindingOf(record *core.Record) aiprovider.Binding {
 	}.Normalized()
 }
 
+// VisibleMessages is the conversation a person reads, folded out of the
+// provider array a research turn stores. The tool calls and their results are
+// not messages; they are how an answer was arrived at, so they ride on it as
+// its trail. A turn whose run died has a trail and no answer to hang it on, and
+// it rides on the question instead -- that is what makes an interrupted turn
+// look like one still in progress rather than like nothing at all.
+func VisibleMessages(records []*core.Record) []MessageInfo {
+	messages := make([]MessageInfo, 0, len(records))
+	var pending []StoredStep
+	for _, record := range records {
+		info := ToMessageInfo(record)
+		if !Visible(info.Role, info.Content) {
+			pending = append(pending, info.Steps...)
+			continue
+		}
+		if len(pending) > 0 && info.Role == RoleAssistant {
+			info.Steps = append(pending, info.Steps...)
+			pending = nil
+		}
+		messages = append(messages, info)
+	}
+	if len(pending) > 0 && len(messages) > 0 {
+		last := &messages[len(messages)-1]
+		last.Steps = append(last.Steps, pending...)
+	}
+	return messages
+}
+
 func ToMessageInfo(record *core.Record) MessageInfo {
 	return MessageInfo{
 		ID:         record.Id,
@@ -406,6 +477,7 @@ func ToMessageInfo(record *core.Record) MessageInfo {
 		RunID:      record.GetString("run_id"),
 		Documents:  DecodeHits(record),
 		Steps:      DecodeSteps(record),
+		Usage:      DecodeUsage(record),
 		Incomplete: record.GetBool("incomplete"),
 		Created:    record.GetDateTime("created").String(),
 	}

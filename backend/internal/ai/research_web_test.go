@@ -6,15 +6,14 @@ import (
 	"testing"
 )
 
-// Everything the research loop shows the model changes with whether a
-// web-search provider is bound. Off is the pre-flag state and has to stay
-// silent about tools nobody can call: a prompt that advertises web_search on an
-// instance that cannot serve it spends a round being refused.
+// The web tools are declared on every research turn and the prompt explains
+// them once, so neither moves under the provider's cache. What the per-turn
+// toggle decides is whether a call is served or refused.
 
 func researchWithWeb(t *testing.T, req ResearchRequest, turns ...scriptedTurn) (*researchHarness, ResearchResult) {
 	t.Helper()
 	h, agent := newResearchAgent(t, turns...)
-	req.Messages = []ChatMessage{{Role: "user", Content: "What does Acme charge now?"}}
+	req.Thread = []ThreadMessage{{Role: "user", Content: "What does Acme charge now?"}}
 	req.Search = func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil }
 	req.Read = func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil }
 	result, err := agent.Research(context.Background(), req, nil)
@@ -24,30 +23,52 @@ func researchWithWeb(t *testing.T, req ResearchRequest, turns ...scriptedTurn) (
 	return h, result
 }
 
-func TestResearchOffersTheWebToolsOnlyWhenBacked(t *testing.T) {
+// The tool list is part of what the provider cached and the web toggle is per
+// turn, so the list cannot follow the toggle: it would forfeit the transcript's
+// prefix on every change. The schemas are always declared, and a turn without
+// the web answers them with a refusal instead of not offering them.
+func TestTheWebToolsAreDeclaredWhicheverWayTheToggleIs(t *testing.T) {
 	t.Parallel()
+
+	want := []string{"search_documents", "read_documents", "web_search", "web_fetch"}
 
 	h, _ := researchWithWeb(t, ResearchRequest{},
 		scriptedTurn{content: "ready"}, scriptedTurn{content: "Nothing."})
-	names := toolNames(t, h.request(0))
-	for _, tool := range []string{"web_search", "web_fetch"} {
-		if _, ok := names[tool]; ok {
-			t.Fatalf("%s offered with no provider bound: %v", tool, names)
+	off := toolNames(t, h.request(0))
+	for _, tool := range want {
+		if _, ok := off[tool]; !ok {
+			t.Errorf("%s missing with the web off: %v", tool, off)
 		}
-	}
-	// The archive tools are unaffected by the feature being off.
-	if _, ok := names["search_documents"]; !ok {
-		t.Fatalf("archive tools missing: %v", names)
 	}
 
 	web, _ := newWebServer(t, `{"results":[]}`, `{}`)
 	h, _ = researchWithWeb(t, ResearchRequest{Web: web},
 		scriptedTurn{content: "ready"}, scriptedTurn{content: "Nothing."})
-	names = toolNames(t, h.request(0))
-	for _, tool := range []string{"search_documents", "read_documents", "web_search", "web_fetch"} {
-		if _, ok := names[tool]; !ok {
-			t.Errorf("%s missing with a provider bound: %v", tool, names)
+	on := toolNames(t, h.request(0))
+	for _, tool := range want {
+		if _, ok := on[tool]; !ok {
+			t.Errorf("%s missing with the web on: %v", tool, on)
 		}
+	}
+	if len(on) != len(off) {
+		t.Fatalf("the toggle changed the tool list: %v with the web, %v without", on, off)
+	}
+}
+
+// What the toggle does move is the refusal: the model can reach for the web on
+// a turn that does not have it, and has to be told so in a way it can act on
+// rather than being left to guess why nothing came back.
+func TestAWebCallOnATurnWithoutTheWebIsRefused(t *testing.T) {
+	t.Parallel()
+
+	h, _ := researchWithWeb(t, ResearchRequest{},
+		scriptedTurn{toolCalls: []scriptedToolCall{{name: "web_search", args: `{"query":"acme rates"}`}}},
+		scriptedTurn{content: "ready"},
+		scriptedTurn{content: "The archive does not say."},
+	)
+	fed := toolMessageContent(t, h.request(1), "web_search")
+	if !strings.Contains(fed, "not enabled for this question") {
+		t.Fatalf("the refusal does not say why: %s", fed)
 	}
 }
 
@@ -96,7 +117,7 @@ func TestResearchEmitsWebSteps(t *testing.T) {
 
 	var kinds []string
 	_, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "q"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "q"}},
 		Search:   func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
 		Read:     func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil },
 		Web:      web,
@@ -140,15 +161,14 @@ func TestResearchAnswerInstructionAsksForWebCitationsOnlyWithTheWeb(t *testing.T
 	}
 }
 
-func TestResearchPromptMentionsTheWebOnlyWhenItIsAvailable(t *testing.T) {
+// The web tools are declared on every turn, so the prompt that explains them
+// belongs with the rest of the conversation's opening instructions -- written
+// once, replayed verbatim, never moved. What varies per turn is only whether a
+// call is served, and the refusal says so at the point it happens.
+func TestTheOpeningPromptExplainsTheWebTools(t *testing.T) {
 	t.Parallel()
 
-	without := buildResearchSystemPrompt("en", "en", []string{"invoice"}, false, false)
-	if strings.Contains(without, "web_search") || strings.Contains(without, "web_fetch") {
-		t.Fatalf("prompt advertises tools that are not offered: %s", without)
-	}
-
-	with := buildResearchSystemPrompt("en", "en", []string{"invoice"}, false, true)
+	opening := buildResearchSystemPrompt("en", "en", []string{"invoice"}, false)
 	for _, want := range []string{
 		"web_search",
 		"web_fetch",
@@ -158,13 +178,15 @@ func TestResearchPromptMentionsTheWebOnlyWhenItIsAvailable(t *testing.T) {
 		// A snippet is a reason to fetch, not evidence -- the same rule
 		// search_documents has about its passages.
 		"web_fetch before claiming what a page contains",
+		// And what to do when the call comes back refused, or the model spends
+		// the run rediscovering that the web is off.
+		"not enabled",
+		// The archive instructions are still there.
+		"read_documents",
 	} {
-		if !strings.Contains(with, want) {
-			t.Errorf("web prompt missing %q: %s", want, with)
+		if !strings.Contains(opening, want) {
+			t.Errorf("opening prompt missing %q: %s", want, opening)
 		}
-	}
-	if !strings.Contains(with, "read_documents") {
-		t.Error("web prompt dropped the archive instructions")
 	}
 }
 

@@ -1,4 +1,5 @@
 import { apiFetch, ConnectionLostError, HttpError, sleep } from '../apiClient'
+import type { ContextUsage } from '../contextUsage'
 import { foldSteps, type ResearchStep, type StoredResearchStep } from '../researchSteps'
 import type { ProviderBinding } from './providers'
 
@@ -56,6 +57,8 @@ export type ChatMessageRecord = {
   documents?: SearchDocumentHit[]
   /** Research trail as the stream emitted it. Empty on user turns and Search. */
   steps?: StoredResearchStep[]
+  /** What the turn took of the model's context. Research answers only. */
+  usage?: ContextUsage
   incomplete?: boolean
   created?: string
 }
@@ -65,11 +68,17 @@ export type ChatSessionDetail = {
   messages: ChatMessageRecord[]
   truncated?: boolean
   /**
-   * A run is writing into this conversation right now. A turn is stored whole
-   * when the run ends, so a chat opened mid-run reads as empty and finished
-   * unless the server says otherwise.
+   * A run is writing into this conversation right now. Read from the server's
+   * in-process registry, so it is only ever true while that process lives.
    */
   running?: boolean
+  /**
+   * The last turn never reached an answer: cancelled, out of budget, refused by
+   * the provider, or cut off by a restart. Its work is stored and the turn can
+   * be continued. Unlike `running`, this is read from the transcript, so it
+   * survives the process that produced it.
+   */
+  unfinished?: boolean
 }
 
 /** One rendered row of a transcript. */
@@ -80,6 +89,7 @@ export type ChatTurn = {
   content: string
   documents?: SearchDocumentHit[]
   steps?: ResearchStep[]
+  usage?: ContextUsage
   incomplete?: boolean
 }
 
@@ -330,6 +340,7 @@ export function toChatTurn(
   }
   const steps = foldSteps(message.steps)
   if (steps) turn.steps = steps
+  if (message.usage) turn.usage = message.usage
   if (message.incomplete) turn.incomplete = true
   return turn
 }

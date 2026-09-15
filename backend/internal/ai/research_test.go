@@ -27,6 +27,10 @@ type scriptedTurn struct {
 	// httpStatus, when set, is returned instead of a completion - the way a
 	// provider refuses a request that has outgrown the model's context window.
 	httpStatus int
+	// promptTokens, when set, is reported as this turn's prompt usage. Zero
+	// leaves the usage object out entirely, the way a provider that counts
+	// nothing answers.
+	promptTokens int
 }
 
 type scriptedToolCall struct {
@@ -101,13 +105,21 @@ func writeToolCallJSON(w http.ResponseWriter, turn scriptedTurn) {
 		message["tool_calls"] = calls
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	body := map[string]any{
 		"id":      "chatcmpl-test",
 		"object":  "chat.completion",
 		"created": 1,
 		"model":   "test",
 		"choices": []map[string]any{{"index": 0, "message": message, "finish_reason": "stop"}},
-	})
+	}
+	if turn.promptTokens > 0 {
+		body["usage"] = map[string]any{
+			"prompt_tokens":     turn.promptTokens,
+			"completion_tokens": 10,
+			"total_tokens":      turn.promptTokens + 10,
+		}
+	}
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 // writeChatStream emits the answer as SSE chunks, one word at a time. cutOff
@@ -175,7 +187,7 @@ func TestResearchSearchesThenReadsThenAnswers(t *testing.T) {
 	var readIDs []string
 	var events []ResearchEvent
 	result, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "how much did I pay?"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "how much did I pay?"}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return hitsFor("doc1", "doc2"), nil
 		},
@@ -213,8 +225,9 @@ func TestResearchSearchesThenReadsThenAnswers(t *testing.T) {
 		t.Fatalf("steps = %v, want %v", kinds, want)
 	}
 
-	// The answer streamed with no tools declared, so the model cannot emit
-	// tool markup into visible prose.
+	// The answer streamed with the tools refused rather than removed: the model
+	// cannot emit tool markup into visible prose, and the prefix the rounds
+	// before it cached still matches, tool list included.
 	var streamed strings.Builder
 	for _, e := range events {
 		if e.Type == "delta" {
@@ -225,8 +238,11 @@ func TestResearchSearchesThenReadsThenAnswers(t *testing.T) {
 		t.Fatalf("answer did not stream, got %q", streamed.String())
 	}
 	last := h.request(h.requestCount() - 1)
-	if _, ok := last["tools"]; ok {
-		t.Fatalf("answer phase declared tools: %v", last)
+	if !hasTools(last) {
+		t.Fatalf("answer phase dropped the tools, breaking the cached prefix: %v", last)
+	}
+	if choice, _ := last["tool_choice"].(string); choice != "none" {
+		t.Fatalf("answer phase tool_choice = %q, want none", choice)
 	}
 	if stream, _ := last["stream"].(bool); !stream {
 		t.Fatalf("answer phase was not streamed: %v", last)
@@ -247,7 +263,7 @@ func TestResearchIsNotCappedAtFourRounds(t *testing.T) {
 
 	searches := 0
 	result, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "summarise everything"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "summarise everything"}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			searches++
 			return hitsFor(fmt.Sprintf("doc%d", searches)), nil
@@ -278,7 +294,7 @@ func TestResearchReturnsAProviderContextError(t *testing.T) {
 
 	searches := 0
 	_, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "summarise everything"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "summarise everything"}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			searches++
 			return hitsFor("doc1"), nil
@@ -298,6 +314,238 @@ func TestResearchReturnsAProviderContextError(t *testing.T) {
 	}
 }
 
+// The point of storing a thread: the next turn inherits the last one's work
+// rather than paying for it again. Everything stored is sent, in order, and the
+// run appends only what it adds.
+func TestResearchReplaysTheStoredThreadAndRecordsWhatItAdds(t *testing.T) {
+	t.Parallel()
+	h, agent := newResearchAgent(t,
+		scriptedTurn{toolCalls: []scriptedToolCall{{name: "read_documents", args: `{"ids":["doc1"]}`}}},
+		scriptedTurn{content: "ready"},
+		scriptedTurn{content: "Still 200 EUR."},
+	)
+
+	// What an earlier turn left behind.
+	stored := []ThreadMessage{
+		{Role: "system", Content: "you are researching the archive"},
+		{Role: "user", Content: "how much did I pay?"},
+		{Role: "assistant", Calls: []ToolCall{{ID: "call_0", Name: "search_documents", Arguments: `{"query":"insurance"}`}}},
+		{Role: "tool", Content: `{"documents":[{"id":"doc1"}]}`, CallID: "call_0"},
+		{Role: "assistant", Content: "You paid 200 EUR."},
+		{Role: "user", Content: "and with the discount?"},
+	}
+
+	var recorded []ThreadMessage
+	_, err := agent.Research(context.Background(), ResearchRequest{
+		Thread: stored,
+		Record: func(msg ThreadMessage) { recorded = append(recorded, msg) },
+		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
+		Read: func(_ context.Context, _ ReadRequest) ([]DocumentContent, error) {
+			return []DocumentContent{{ID: "doc1", Title: "Doc doc1", Text: "Premium 200 EUR"}}, nil
+		},
+		PriorDocuments: hitsFor("doc1"),
+	}, nil)
+	if err != nil {
+		t.Fatalf("Research: %v", err)
+	}
+
+	sent, _ := h.request(0)["messages"].([]any)
+	if len(sent) < len(stored) {
+		t.Fatalf("first request carried %d messages, want at least the %d stored", len(sent), len(stored))
+	}
+	for i, want := range stored {
+		got, _ := sent[i].(map[string]any)
+		if got["role"] != want.Role {
+			t.Fatalf("message %d role = %v, want %q -- the stored thread was not replayed in order", i, got["role"], want.Role)
+		}
+	}
+	// The tool result of the earlier turn is in the prompt, which is what saves
+	// this turn from reading the document again.
+	if !strings.Contains(fmt.Sprint(sent), `{"documents":[{"id":"doc1"}]}`) {
+		t.Fatalf("the earlier turn's tool result was not replayed: %v", sent)
+	}
+	// And the system prompt was not rebuilt over the stored one, or every turn
+	// would move the prefix the provider caches.
+	if first, _ := sent[0].(map[string]any); first["content"] != "you are researching the archive" {
+		t.Fatalf("stored system prompt was replaced: %v", first)
+	}
+
+	// Recorded: this turn's call and its result, and nothing that was already
+	// stored. The answer is not here -- it comes back in the result, with the
+	// documents and usage that belong to it.
+	var roles []string
+	for _, msg := range recorded {
+		roles = append(roles, msg.Role)
+	}
+	if strings.Join(roles, ",") != "assistant,tool" {
+		t.Fatalf("recorded = %v, want this turn's call and its result", roles)
+	}
+	if len(recorded[0].Calls) != 1 || recorded[0].Calls[0].Name != "read_documents" {
+		t.Fatalf("the recorded call is not the one that was made: %+v", recorded[0])
+	}
+	if recorded[1].CallID != recorded[0].Calls[0].ID {
+		t.Fatalf("the recorded result does not answer the recorded call: %+v", recorded)
+	}
+}
+
+// A new conversation is opened with the prompt the caller asks for and stores,
+// so that every later turn replays that one rather than a freshly built one.
+// A thread that arrives without it is still run: the prompt is prepended for
+// the call and nothing is recorded, which is what the one-shot callers need.
+func TestResearchOpensOnTheCallersSystemPrompt(t *testing.T) {
+	t.Parallel()
+	h, agent := newResearchAgent(t,
+		scriptedTurn{content: "ready"},
+		scriptedTurn{content: "An answer."},
+	)
+
+	if prompt := agent.SystemPrompt(ResearchRequest{}); !strings.Contains(prompt, "search_documents") {
+		t.Fatalf("SystemPrompt is not the research one: %q", prompt)
+	}
+
+	var recorded []ThreadMessage
+	_, err := agent.Research(context.Background(), ResearchRequest{
+		Thread: []ThreadMessage{{Role: "user", Content: "how much did I pay?"}},
+		Record: func(msg ThreadMessage) { recorded = append(recorded, msg) },
+		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
+		Read:   func(_ context.Context, _ ReadRequest) ([]DocumentContent, error) { return nil, nil },
+	}, nil)
+	if err != nil {
+		t.Fatalf("Research: %v", err)
+	}
+	for _, msg := range recorded {
+		if msg.Role == "system" {
+			t.Fatalf("the run recorded a system row the caller had not stored: %+v", recorded)
+		}
+	}
+	sent, _ := h.request(0)["messages"].([]any)
+	if first, _ := sent[0].(map[string]any); first["role"] != "system" {
+		t.Fatalf("the request opened on %v, want a system message", first["role"])
+	}
+}
+
+// Resuming: a thread that stops on a tool result is a turn whose run died. The
+// loop picks it up rather than asking for a new question.
+func TestResearchResumesAThreadThatEndsOnAToolResult(t *testing.T) {
+	t.Parallel()
+	_, agent := newResearchAgent(t,
+		scriptedTurn{content: "ready"},
+		scriptedTurn{content: "EUR 412, from the invoice."},
+	)
+
+	result, err := agent.Research(context.Background(), ResearchRequest{
+		Thread: []ThreadMessage{
+			{Role: "system", Content: "you are researching the archive"},
+			{Role: "user", Content: "how much did I pay?"},
+			{Role: "assistant", Calls: []ToolCall{{ID: "call_0", Name: "search_documents", Arguments: `{"query":"invoice"}`}}},
+			{Role: "tool", Content: `{"documents":[{"id":"doc1"}]}`, CallID: "call_0"},
+		},
+		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
+		Read:   func(_ context.Context, _ ReadRequest) ([]DocumentContent, error) { return nil, nil },
+	}, nil)
+	if err != nil {
+		t.Fatalf("Research: %v", err)
+	}
+	if !strings.Contains(result.Reply, "412") {
+		t.Fatalf("resumed run did not answer the stored question: %q", result.Reply)
+	}
+}
+
+func usageEvents(events []ResearchEvent) []ResearchEvent {
+	var out []ResearchEvent
+	for _, e := range events {
+		if e.Type == "usage" {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func TestResearchReportsThePeakPromptAgainstTheWindow(t *testing.T) {
+	t.Parallel()
+	_, agent := newResearchAgent(t,
+		scriptedTurn{toolCalls: []scriptedToolCall{{name: "search_documents", args: `{"query":"invoices"}`}}, promptTokens: 1200},
+		scriptedTurn{content: "ready", promptTokens: 4800},
+		scriptedTurn{content: "An answer."},
+	)
+
+	var events []ResearchEvent
+	result, err := agent.Research(context.Background(), ResearchRequest{
+		Thread:      []ThreadMessage{{Role: "user", Content: "what did I pay?"}},
+		ContextWindow: 200000,
+		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
+			return hitsFor("doc1"), nil
+		},
+		Read: func(_ context.Context, _ ReadRequest) ([]DocumentContent, error) { return nil, nil },
+	}, func(e ResearchEvent) { events = append(events, e) })
+	if err != nil {
+		t.Fatalf("Research: %v", err)
+	}
+
+	// One per completion the main thread made: two tool rounds and the answer.
+	reported := usageEvents(events)
+	if len(reported) != 3 {
+		t.Fatalf("usage events = %d, want 3", len(reported))
+	}
+	if reported[0].PromptTokens != 1200 {
+		t.Fatalf("first usage = %d, want the provider's 1200", reported[0].PromptTokens)
+	}
+	if reported[0].ContextWindow != 200000 {
+		t.Fatalf("window = %d, want it carried through", reported[0].ContextWindow)
+	}
+
+	// Peak, not sum: the rounds resend one growing conversation, so adding them
+	// up would claim a turn used several times the context it did.
+	if result.Usage.PeakPrompt != 4800 {
+		t.Fatalf("peak = %d, want the largest single request (4800)", result.Usage.PeakPrompt)
+	}
+	if result.Usage.ContextWindow != 200000 {
+		t.Fatalf("result window = %d", result.Usage.ContextWindow)
+	}
+
+	// The answer phase streams, and the harness reports no usage there, so some
+	// round of this run was estimated. The peak was not, and the flag describes
+	// the number being shown -- otherwise a counted figure renders as a guess.
+	if result.Usage.Estimated {
+		t.Fatal("a counted peak was marked estimated")
+	}
+}
+
+func TestResearchEstimatesWhenTheProviderCountsNothing(t *testing.T) {
+	t.Parallel()
+	// The harness omits the usage object unless asked, which is how a provider
+	// that reports nothing answers.
+	_, agent := newResearchAgent(t,
+		scriptedTurn{content: "ready"},
+		scriptedTurn{content: "An answer."},
+	)
+
+	var events []ResearchEvent
+	result, err := agent.Research(context.Background(), ResearchRequest{
+		Thread:      []ThreadMessage{{Role: "user", Content: "what did I pay?"}},
+		ContextWindow: 8000,
+		Search:        func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
+		Read:          func(_ context.Context, _ ReadRequest) ([]DocumentContent, error) { return nil, nil },
+	}, func(e ResearchEvent) { events = append(events, e) })
+	if err != nil {
+		t.Fatalf("Research: %v", err)
+	}
+
+	if !result.Usage.Estimated {
+		t.Fatal("usage should be marked estimated when the provider reported none")
+	}
+	// The system prompt alone is thousands of characters, so the estimate is
+	// well clear of zero; the exact number is not the contract.
+	if result.Usage.PeakPrompt <= 0 {
+		t.Fatalf("estimated peak = %d, want a positive estimate", result.Usage.PeakPrompt)
+	}
+	for _, e := range usageEvents(events) {
+		if !e.Estimated {
+			t.Fatalf("usage event not marked estimated: %+v", e)
+		}
+	}
+}
+
 func TestResearchSuppressesRepeatedIdenticalCalls(t *testing.T) {
 	t.Parallel()
 	turns := make([]scriptedTurn, 0, 6)
@@ -311,7 +559,7 @@ func TestResearchSuppressesRepeatedIdenticalCalls(t *testing.T) {
 
 	searches := 0
 	if _, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "anything"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "anything"}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			searches++
 			return hitsFor("doc1"), nil
@@ -340,7 +588,7 @@ func TestResearchStopsAfterStalledRounds(t *testing.T) {
 
 	searches := 0
 	if _, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "anything"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "anything"}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			searches++
 			return nil, nil
@@ -365,7 +613,7 @@ func TestResearchRefusesToReadUnseenDocuments(t *testing.T) {
 
 	reads := 0
 	if _, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "read someone else's document"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "read someone else's document"}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return nil, nil
 		},
@@ -430,7 +678,7 @@ func TestDecodeReadArgsAcceptsLooseShapes(t *testing.T) {
 
 func TestBuildResearchSystemPromptDemandsReadingBeforeClaiming(t *testing.T) {
 	t.Parallel()
-	prompt := buildResearchSystemPrompt("en,de", "en", []string{"invoice"}, false, false)
+	prompt := buildResearchSystemPrompt("en,de", "en", []string{"invoice"}, false)
 	for _, want := range []string{
 		"read_documents",
 		"Never state what a document contains without reading it",
@@ -456,7 +704,7 @@ func TestResearchMarksACutOffAnswerIncomplete(t *testing.T) {
 
 	var events []ResearchEvent
 	result, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "how much did I pay?"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "how much did I pay?"}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return hitsFor("doc1"), nil
 		},
@@ -497,7 +745,7 @@ func TestResearchAnswerCompletesNormally(t *testing.T) {
 	)
 
 	result, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "how much did I pay?"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "how much did I pay?"}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return hitsFor("doc1"), nil
 		},
@@ -623,7 +871,7 @@ func TestResearchReadsDocumentsCitedEarlierWithoutSearching(t *testing.T) {
 	searches := 0
 	var gotRequest ReadRequest
 	result, err := agent.Research(context.Background(), ResearchRequest{
-		Messages:       []ChatMessage{{Role: "user", Content: "what is the deductible?"}},
+		Thread:       []ThreadMessage{{Role: "user", Content: "what is the deductible?"}},
 		PriorDocuments: []DocumentHit{{ID: "prior1", Title: "Prior policy", Passages: []Passage{{Text: "stale"}}}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			searches++
@@ -669,7 +917,7 @@ func TestResearchDoesNotListUncitedPriorDocuments(t *testing.T) {
 	)
 
 	result, err := agent.Research(context.Background(), ResearchRequest{
-		Messages:       []ChatMessage{{Role: "user", Content: "what is the rent?"}},
+		Thread:       []ThreadMessage{{Role: "user", Content: "what is the rent?"}},
 		PriorDocuments: []DocumentHit{{ID: "prior1", Title: "Prior policy"}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return hitsFor("doc1"), nil
@@ -700,7 +948,7 @@ func TestResearchRereadsWithANewFocus(t *testing.T) {
 
 	var focuses []string
 	if _, err := agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "summarise the lease"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "summarise the lease"}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return hitsFor("doc1"), nil
 		},
@@ -724,7 +972,7 @@ func TestResearchRereadsWithANewFocus(t *testing.T) {
 
 func TestResearchPromptExplainsFocus(t *testing.T) {
 	t.Parallel()
-	prompt := buildResearchSystemPrompt("en,de", "en", []string{"invoice"}, false, false)
+	prompt := buildResearchSystemPrompt("en,de", "en", []string{"invoice"}, false)
 	for _, want := range []string{
 		"Pass focus to steer the excerpt",
 		"survey_documents once",
@@ -785,7 +1033,7 @@ func TestResearchReadsEveryRequestedID(t *testing.T) {
 
 	var readIDs []string
 	_, err = agent.Research(context.Background(), ResearchRequest{
-		Messages: []ChatMessage{{Role: "user", Content: "read them all"}},
+		Thread: []ThreadMessage{{Role: "user", Content: "read them all"}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return hitsFor(ids...), nil
 		},

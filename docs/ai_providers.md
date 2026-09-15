@@ -203,7 +203,7 @@ renders a list of cards, and there is nowhere in that to put a web result.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `WEB_SEARCH_SDK` | unset (the tools are never offered) | The web-search provider's SDK. `tavily` is the only value; every other SDK is refused, none of them searches the web. |
+| `WEB_SEARCH_SDK` | unset (no web call is served) | The web-search provider's SDK. `tavily` is the only value; every other SDK is refused, none of them searches the web. |
 | `WEB_SEARCH_API_KEY` | empty | Its credential, required whenever the SDK is named. There is nothing to borrow it from: a web-search provider is always its own endpoint. |
 | `WEB_SEARCH_BASE_URL` | the SDK's own endpoint | Where that provider lives, for a gateway in front of it. Defaults to `https://api.tavily.com`. |
 
@@ -252,10 +252,57 @@ user writes, so they are already in the language that user chose.
 
 1. Sign in with the admin account and open **Settings** (shown when
    `/api/app/me` reports `is_admin`).
-2. Add a provider — SDK, API key, optional base URL.
+2. Add a provider — SDK, API key, optional base URL, and the **model
+   catalogue** its context windows are read from (see below).
 3. Under **Models**, bind a provider and model to OCR and to metadata
    extraction; chat and search inherit extraction unless bound separately.
    **Deep Search helper** and **Deep search languages** live here too.
+
+### The model catalogue
+
+Deep Search replays a conversation whole and lets the provider decide what fits:
+nothing is trimmed on the way out, and a request that outgrows the model comes
+back as the provider's own error. So that a run can be watched against its
+limit, each research turn reports the tokens its widest request used — live
+while it runs, and stored with the answer.
+
+The denominator comes from the catalogue chosen on the provider row, read from
+[pi.dev](https://pi.dev)'s model list once a day. It is defaulted from the SDK
+and worth correcting when the `openai` SDK points somewhere that is not OpenAI:
+a base URL of `https://api.groq.com/openai/v1` wants the **groq** catalogue.
+
+Leave it on **None**, or set `AI_MODEL_CATALOG_URL=` empty, and nothing is
+fetched: research runs exactly as before and the usage line shows a token count
+with no limit beside it. When a provider reports no usage of its own, the count
+is estimated from the text sent and marked with a `~`.
+
+### Prompt caching
+
+Replaying the conversation whole is what makes it cacheable: the part that has
+not changed is byte-identical from one turn to the next, so a provider can reuse
+the work it already did on it instead of reading everything again. Lemmary asks
+for that where the provider needs asking — a cache key on OpenAI, a
+`cache_control` breakpoint on OpenRouter and on the OpenCode models served by
+the Messages API, the `x-opencode-session` header on the rest of OpenCode.
+Nothing is asked of the others: an unknown field is a rejected request, not a
+missed saving.
+
+A research turn declares every tool schema on every call, whatever is behind
+them — the web tools with the toggle off, `survey_documents` with no helper
+model bound, `count_documents` either way — and refuses the call when there is
+nothing to serve it. The tool list is part of what was cached, so a list that
+followed the toggle, or that changed the moment an admin bound a helper, would
+throw the whole transcript away; a few hundred tokens of schema on every call
+is the cheaper side of that trade. Ask AI is unaffected: it has no stored
+thread to lose, and still offers the web tools only when they work.
+
+A chat that was opened before this landed keeps the system prompt it was opened
+with, which does not mention the web. That costs it one re-read and nothing
+after; rewriting the stored prompt would move the very prefix this is about.
+
+What still costs a full re-read is an idle gap longer than the provider's cache
+lifetime — five minutes on Anthropic's default. It shows as `cached_tokens=0`
+in the completion log.
 
 Changes hot-reload the in-process clients — no restart. The OCR picker lists
 only file-capable models where the provider says which those are (OpenRouter's
