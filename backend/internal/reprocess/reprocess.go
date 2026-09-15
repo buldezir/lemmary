@@ -68,8 +68,12 @@ type Result struct {
 	Remaining int `json:"remaining"`
 }
 
-// apply_metadata is never forced: that would overwrite metadata the user
-// corrected by hand.
+// Forcing a step makes it re-run work it already has; apply_metadata is left
+// out because it has none to reuse. It does not spare hand-corrected metadata:
+// ApplyMetadataStep.ShouldSkip ignores the force list and returns false, so
+// apply runs whenever it is in the steps, and writes the model's answer over
+// the whole of the document's metadata. Tags included. A caller that must not
+// disturb what a human wrote should not be reprocessing at all.
 func StepsFor(document *core.Record, mode Mode) (steps []string, forceSteps []string) {
 	switch mode {
 	case ModeFull:

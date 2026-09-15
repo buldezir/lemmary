@@ -96,6 +96,11 @@ func Register(
 			g.DELETE("/providers/{id}/chatgpt", bindAdmin(handleChatGPTSignOut(app, rt)))
 			g.POST("/duplicates/scan", bindAdmin(handlePostDuplicatesScan(app, rt)))
 			g.POST("/taxonomy/prune", bindAdmin(handlePostTaxonomyPrune(app)))
+			// Auth rather than admin: tags are user-owned, and a run spends
+			// only on the caller's own documents.
+			g.GET("/tags/{tagId}/assign", bindAuth(handleGetTagAssignPreview(app)))
+			g.POST("/tags/assign", bindAuth(handlePostTagAssign(app, rt)))
+			g.GET("/tags/assign/status", bindAuth(handleGetTagAssignStatus(app)))
 			g.POST("/import/ngx", bindAuth(handlePostImportNgx(app)))
 			g.GET("/import/ngx/status", bindAuth(handleGetImportNgxStatus(app)))
 			// Two path families over one implementation: only the upload route

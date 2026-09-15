@@ -1,6 +1,7 @@
 import { ClientResponseError } from 'pocketbase'
 import { pb } from '../pb'
 import { ensureAuth } from '../auth'
+import { apiFetch, pollJob, type JobProgress } from '../apiClient'
 
 export type TagRecord = {
   id: string
@@ -43,6 +44,57 @@ export async function renameTag(id: string, name: string): Promise<TagRecord> {
 export async function deleteTag(id: string): Promise<void> {
   await ensureAuth()
   await pb.collection('tags').delete(id)
+}
+
+export type TagAssignPreview = {
+  candidates: number
+  limit: number
+  running: boolean
+}
+
+/** How many documents lack this tag, so the button can price itself first. */
+export function previewTagAssign(tagId: string): Promise<TagAssignPreview> {
+  return apiFetch<TagAssignPreview>(`/api/app/tags/${encodeURIComponent(tagId)}/assign`, {
+    fallbackError: 'Failed to count documents',
+  })
+}
+
+export type TagAssignResult = {
+  candidates: number
+  asked: number
+  assigned: number
+  declined: number
+  skipped: number
+  failed: number
+  errors?: string[]
+  prompt_tokens: number
+  completion_tokens: number
+}
+
+/**
+ * One AI call per document. Without `documentIds` the server picks the
+ * documents that lack the single tag given; with them it asks about the whole
+ * vocabulary passed. Either way it only ever adds tags.
+ */
+export async function assignTagsWithAI(
+  tagIds: string[],
+  documentIds?: string[],
+  onProgress?: (progress: JobProgress) => void,
+): Promise<TagAssignResult> {
+  const start = await apiFetch<{ job_id?: string }>('/api/app/tags/assign', {
+    method: 'POST',
+    body: { tag_ids: tagIds, document_ids: documentIds ?? [] },
+    fallbackError: 'Tag assignment failed to start',
+  })
+  if (!start.job_id) {
+    throw new Error('Tag assignment job id missing from server response')
+  }
+
+  const result = await pollJob<TagAssignResult>(
+    `/api/app/tags/assign/status?job_id=${encodeURIComponent(start.job_id)}`,
+    { label: 'tag assignment', onProgress },
+  )
+  return { ...result, errors: result.errors ?? [] }
 }
 
 /**

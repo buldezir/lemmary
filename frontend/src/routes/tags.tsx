@@ -1,5 +1,14 @@
 import { type SubmitEvent, useState } from 'react'
-import { createTag, deleteTag, listTags, renameTag, type TagRecord } from '../lib/api/tags'
+import { Link } from '@tanstack/react-router'
+import {
+  assignTagsWithAI,
+  createTag,
+  deleteTag,
+  listTags,
+  previewTagAssign,
+  renameTag,
+  type TagRecord,
+} from '../lib/api/tags'
 import { useAsync } from '../hooks/useAsync'
 import {
   Button,
@@ -16,9 +25,10 @@ type TagRowProps = {
   busy: boolean
   onRename: (id: string, name: string) => Promise<void>
   onDelete: (tag: TagRecord) => Promise<void>
+  onAssign: (tag: TagRecord) => Promise<void>
 }
 
-function TagRow({ tag, busy, onRename, onDelete }: TagRowProps) {
+function TagRow({ tag, busy, onRename, onDelete, onAssign }: TagRowProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(tag.name)
 
@@ -61,7 +71,17 @@ function TagRow({ tag, busy, onRename, onDelete }: TagRowProps) {
       ) : (
         <>
           <p className="min-w-0 truncate text-sm font-medium text-ink">{tag.name}</p>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to="/"
+              search={{ q: tag.name }}
+              className="rounded-xs border border-line px-2 py-1 text-xs text-ink-soft transition-colors hover:text-ink"
+            >
+              Find documents
+            </Link>
+            <Button size="xs" variant="secondary" disabled={busy} onClick={() => void onAssign(tag)}>
+              Assign with AI
+            </Button>
             <Button
               size="xs"
               variant="secondary"
@@ -132,6 +152,50 @@ export function TagsPage() {
     }
   }
 
+  /**
+   * Priced before it runs: the count comes from the server, so the confirmation
+   * says what the click actually costs rather than "this may take a while".
+   */
+  async function onAssign(tag: TagRecord) {
+    try {
+      setBusy(true)
+      setError('')
+      setNotice('')
+
+      const preview = await previewTagAssign(tag.id)
+      if (preview.candidates === 0) {
+        setNotice(`Every document already has "${tag.name}", or none has text to judge.`)
+        return
+      }
+      const asked = Math.min(preview.candidates, preview.limit)
+      const capped =
+        preview.candidates > preview.limit
+          ? `\n\nOnly the ${preview.limit} newest of ${preview.candidates} run this time.`
+          : ''
+      if (
+        !window.confirm(
+          `Ask the model which of ${asked === 1 ? 'this document' : `these ${asked} documents`} warrant "${tag.name}"?\n\n` +
+            `This sends ${asked === 1 ? 'one AI request' : `${asked} AI requests`} and is charged to your provider.\n` +
+            'It only adds the tag; nothing else on the documents changes.' +
+            capped,
+        )
+      ) {
+        return
+      }
+
+      const result = await assignTagsWithAI([tag.id])
+      setNotice(
+        `Tagged ${result.assigned} of ${result.asked}; ${result.declined} did not warrant it` +
+          (result.failed > 0 ? `, ${result.failed} failed` : '') +
+          '.',
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not assign the tag')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function onDelete(tag: TagRecord) {
     if (
       !window.confirm(`Delete "${tag.name}"? It will be removed from every document that has it.`)
@@ -160,6 +224,12 @@ export function TagsPage() {
           Your tag vocabulary. Processing assigns tags from this list and never invents new ones, so
           a tag only exists once you create it here.
         </p>
+        <p className={`${fieldHintClassName} mt-2`}>
+          A new tag is not applied to documents already in the archive. "Find documents" searches for
+          it so you can tag them yourself, for free. "Assign with AI" asks the model instead, one
+          request per document, charged to your provider; it only ever adds the tag, but reprocessing
+          a document later discards what it added.
+        </p>
       </header>
 
       <section className={sectionClassName}>
@@ -184,6 +254,7 @@ export function TagsPage() {
                 busy={busy}
                 onRename={onRename}
                 onDelete={onDelete}
+                onAssign={onAssign}
               />
             ))}
           </ul>

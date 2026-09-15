@@ -3,6 +3,7 @@ import { ClientResponseError } from 'pocketbase'
 import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
 import {
+  addTagToDocuments,
   buildDocumentFilter,
   deleteDocuments,
   describeJobOverrides,
@@ -14,7 +15,7 @@ import {
   type DocumentTypeRecord,
   type JobOverrides,
 } from '../lib/api/documents'
-import { listTags } from '../lib/api/tags'
+import { assignTagsWithAI, listTags } from '../lib/api/tags'
 import { getLatestJobsFor } from '../lib/api/jobs'
 import {
   defaultDocumentQuery,
@@ -92,6 +93,7 @@ export function useDocumentList({
   const [reprocessing, setReprocessing] = useState(false)
   const [markingReviewed, setMarkingReviewed] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [tagging, setTagging] = useState(false)
   const [libraryVersion, setLibraryVersion] = useState(0)
 
   // URL -> box. Adjusted during render rather than in an effect, so the box
@@ -383,6 +385,61 @@ export function useDocumentList({
     }
   }
 
+  /** No confirmation: adding a tag removes nothing and costs nothing. */
+  async function onAddTagToSelected(tagId: string) {
+    const ids = selectedOnPage.map((document) => document.id)
+    if (ids.length === 0 || !tagId) return
+
+    try {
+      setTagging(true)
+      setError('')
+      setMessage('')
+      await addTagToDocuments(ids, tagId)
+      setSelectedIds(new Set())
+      setMessage(ids.length === 1 ? 'Tagged.' : `Tagged ${ids.length} documents.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add the tag')
+    } finally {
+      setTagging(false)
+    }
+  }
+
+  /** Confirmed: one AI call per document, and the caller pays for every one. */
+  async function onAssignTagsWithAI(tagIds: string[]) {
+    const ids = selectedOnPage.map((document) => document.id)
+    if (ids.length === 0) return
+    if (tagIds.length === 0) {
+      setError('Create a tag first: the model only picks from your vocabulary.')
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Let the model pick tags for ${ids.length === 1 ? 'this document' : `these ${ids.length} documents`}?\n\n` +
+        `This sends ${ids.length === 1 ? 'one AI request' : `${ids.length} AI requests`} and is charged to your provider.\n` +
+        'It only adds tags from your vocabulary; nothing else on the documents changes.',
+    )
+    if (!confirmed) return
+
+    try {
+      setTagging(true)
+      setError('')
+      setMessage('')
+      const result = await assignTagsWithAI(tagIds, ids)
+      setSelectedIds(new Set())
+      setLibraryVersion((version) => version + 1)
+      setMessage(
+        `Tagged ${result.assigned} of ${result.asked}; ${result.declined} needed no tag` +
+          (result.failed > 0 ? `, ${result.failed} failed` : '') +
+          (result.skipped > 0 ? `, ${result.skipped} skipped` : '') +
+          '.',
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not assign tags')
+    } finally {
+      setTagging(false)
+    }
+  }
+
   /** Confirmed: the one bulk action that destroys the file, with no undo. */
   async function onDeleteSelected() {
     const ids = selectedOnPage.map((document) => document.id)
@@ -441,8 +498,11 @@ export function useDocumentList({
     reprocessing,
     markingReviewed,
     deleting,
+    tagging,
     onReprocessSelected,
     onMarkReviewed,
+    onAddTagToSelected,
+    onAssignTagsWithAI,
     onDeleteSelected,
   }
 }

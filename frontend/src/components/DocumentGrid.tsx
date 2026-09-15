@@ -1,4 +1,5 @@
 import { DOCUMENT_PAGE_SIZE, type DocumentList } from '../hooks/useDocumentList'
+import type { TagRecord } from '../lib/api/tags'
 import { DocumentBulkBar, type BulkMode } from './DocumentBulkBar'
 import { DocumentCard } from './DocumentCard'
 import { Pagination } from './Pagination'
@@ -11,11 +12,14 @@ export function DocumentGrid({
   list,
   bulkMode,
   allowDelete = false,
+  tags,
 }: {
   list: DocumentList
   bulkMode: BulkMode | null
   /** Adds "Delete selected" to the bulk bar. */
   allowDelete?: boolean
+  /** Adds the tag controls to the bulk bar. Omit where there is no vocabulary. */
+  tags?: TagRecord[]
 }) {
   const {
     documents,
@@ -32,8 +36,11 @@ export function DocumentGrid({
     reprocessing,
     markingReviewed,
     deleting,
+    tagging,
     onReprocessSelected,
     onMarkReviewed,
+    onAddTagToSelected,
+    onAssignTagsWithAI,
     onDeleteSelected,
     filterByTag,
     page,
@@ -48,7 +55,7 @@ export function DocumentGrid({
         <DocumentBulkBar
           mode={bulkMode}
           selectedCount={selectedOnPage.length}
-          busy={reprocessing || markingReviewed || deleting}
+          busy={reprocessing || markingReviewed || deleting || tagging}
           reprocessMode={reprocessMode}
           onReprocessModeChange={setReprocessMode}
           reprocessOverrides={reprocessOverrides}
@@ -58,6 +65,9 @@ export function DocumentGrid({
           onSelectAll={selectAll}
           onClear={clearSelection}
           onDelete={allowDelete ? () => void onDeleteSelected() : undefined}
+          tags={tags}
+          onAddTag={(tagId) => void onAddTagToSelected(tagId)}
+          onAssignTagsWithAI={(tagIds) => void onAssignTagsWithAI(tagIds)}
         />
       )}
 
