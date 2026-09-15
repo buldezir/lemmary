@@ -635,3 +635,48 @@ func TestVisibleMessagesFoldTheTrailOntoTheTurn(t *testing.T) {
 		t.Fatalf("the unfinished turn lost its trail: %+v", visible[0])
 	}
 }
+
+// A research conversation is replayed whole. A row cap would slide the window
+// as it grew, dropping the system prompt off the front and handing the provider
+// a different prefix on every turn -- the opposite of what storing the thread is
+// for. What the model can hold is the model's business.
+func TestThreadIsNotCappedByRowCount(t *testing.T) {
+	app := bootAppForStore(t)
+	userID := makeUser(t, app, "long-thread@example.test")
+	session, err := chat.CreateSession(app, chat.NewSession{
+		UserID:       userID,
+		Kind:         chat.KindSearch,
+		Mode:         chat.ModeResearch,
+		FirstMessage: "how much did I pay?",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	rows := []chat.ThreadEntry{{Role: chat.RoleSystem, Content: "you are researching the archive"}}
+	for len(rows) < chat.MaxReplayMessages+10 {
+		call := fmt.Sprintf("call_%d", len(rows))
+		rows = append(rows,
+			chat.ThreadEntry{Role: chat.RoleUser, Content: "and then?"},
+			chat.ThreadEntry{Role: chat.RoleAssistant, Calls: []ai.ToolCall{{ID: call, Name: "search_documents", Arguments: `{"query":"invoice"}`}}},
+			chat.ThreadEntry{Role: chat.RoleTool, Content: `{"documents":[]}`, CallID: call},
+			chat.ThreadEntry{Role: chat.RoleAssistant, Content: "nothing yet"},
+		)
+	}
+	for i, row := range rows {
+		if _, err := chat.AppendThreadMessage(app, userID, session.Id, row); err != nil {
+			t.Fatalf("AppendThreadMessage %d: %v", i, err)
+		}
+	}
+
+	thread, err := chat.Thread(app, session.Id)
+	if err != nil {
+		t.Fatalf("Thread: %v", err)
+	}
+	if len(thread) != len(rows) {
+		t.Fatalf("thread = %d messages, want all %d", len(thread), len(rows))
+	}
+	if thread[0].Role != chat.RoleSystem {
+		t.Fatalf("the conversation lost the prompt it opened with: %+v", thread[0])
+	}
+}

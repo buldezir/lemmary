@@ -97,6 +97,7 @@ func (c *OpenAIClient) Model() string {
 // the Responses API, which keeps both, and is remembered per model and
 // endpoint.
 func (c *OpenAIClient) Complete(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
+	c.markPromptCache(ctx, &params)
 	switch opencode.Endpoint(c.sdk, string(params.Model)) {
 	case opencode.EndpointMessages:
 		resp, err := opencode.CompleteViaMessages(ctx, c.messages, c.logger, c.baseURL, params, extra...)
@@ -287,6 +288,7 @@ func (c *OpenAIClient) completeStreaming(
 	onDelta func(string),
 	extra ...any,
 ) (string, Usage, error) {
+	c.markPromptCache(ctx, &params)
 	switch opencode.Endpoint(c.sdk, string(params.Model)) {
 	case opencode.EndpointMessages:
 		text, u, err := opencode.CompleteStreamingViaMessages(ctx, c.messages, c.logger, c.baseURL, params, onDelta, extra...)
@@ -302,6 +304,13 @@ func (c *OpenAIClient) completeStreaming(
 	// middleware, the only thing holding the Codex headers.
 	if !aiprovider.RequiresOAuth(c.sdk) && needsResponsesAPI(c.baseURL, string(params.Model)) {
 		return c.completeStreamingViaResponses(ctx, params, onDelta, extra...)
+	}
+	// Same pre-correction Complete applies, and for the same reason: a streamed
+	// request that carries tools is refused by the same models. There is no
+	// degradation path here to learn it, only the one the loop already walked.
+	if len(params.Tools) > 0 && needsNoReasoningEffort(c.baseURL, string(params.Model)) {
+		params.ReasoningEffort = shared.ReasoningEffort(reasoningEffortNone)
+		extra = append(extra, "reasoning_effort", reasoningEffortNone)
 	}
 	params.StreamOptions = openai.ChatCompletionStreamOptionsParam{IncludeUsage: openai.Bool(true)}
 	aiprovider.LogRequest(

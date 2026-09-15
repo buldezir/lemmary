@@ -276,6 +276,22 @@ fetched: research runs exactly as before and the usage line shows a token count
 with no limit beside it. When a provider reports no usage of its own, the count
 is estimated from the text sent and marked with a `~`.
 
+### Prompt caching
+
+Replaying the conversation whole is what makes it cacheable: the part that has
+not changed is byte-identical from one turn to the next, so a provider can reuse
+the work it already did on it instead of reading everything again. Lemmary asks
+for that where the provider needs asking — a cache key on OpenAI, a
+`cache_control` breakpoint on OpenRouter and on the OpenCode models served by
+the Messages API, the `x-opencode-session` header on the rest of OpenCode.
+Nothing is asked of the others: an unknown field is a rejected request, not a
+missed saving.
+
+Two things still cost a full re-read, both visible as `cached_tokens=0` in the
+completion log. Turning web search on or off mid-conversation changes the tool
+list, which is part of what was cached. And an idle gap longer than the
+provider's cache lifetime — five minutes on Anthropic's default — expires it.
+
 Changes hot-reload the in-process clients — no restart. The OCR picker lists
 only file-capable models where the provider says which those are (OpenRouter's
 `file` input, Mistral's `ocr` capability); other SDKs show the full catalogue

@@ -51,6 +51,34 @@ func TestResearchOffersTheWebToolsOnlyWhenBacked(t *testing.T) {
 	}
 }
 
+// A caller that stores nothing gets the same two rows the handler would have
+// written: the opening prompt, then the web instruction beside it. Two messages
+// rather than one string, because only one of them belongs to the conversation.
+func TestResearchSendsTheWebInstructionAsItsOwnMessage(t *testing.T) {
+	t.Parallel()
+
+	web, _ := newWebServer(t, `{"results":[]}`, `{}`)
+	h, _ := researchWithWeb(t, ResearchRequest{Web: web},
+		scriptedTurn{content: "ready"}, scriptedTurn{content: "Nothing."})
+
+	messages, _ := h.request(0)["messages"].([]any)
+	if len(messages) < 3 {
+		t.Fatalf("messages = %v", messages)
+	}
+	first, _ := messages[0].(map[string]any)
+	second, _ := messages[1].(map[string]any)
+	if first["role"] != "system" || second["role"] != "system" {
+		t.Fatalf("the opening rows are %v and %v, want two system messages", first["role"], second["role"])
+	}
+	opening, _ := first["content"].(string)
+	if strings.Contains(opening, "web_search") {
+		t.Fatalf("the opening prompt carries the per-turn web instruction: %s", opening)
+	}
+	if got, _ := second["content"].(string); got != researchWebPrompt() {
+		t.Fatalf("second message = %q, want the web prompt", got)
+	}
+}
+
 // The whole leg end to end: the model calls web_search, the result is fed back
 // as a tool message, and the answer keeps the URL. validateCitations strips
 // document links to ids never seen, and an https link has to survive that.
@@ -140,15 +168,21 @@ func TestResearchAnswerInstructionAsksForWebCitationsOnlyWithTheWeb(t *testing.T
 	}
 }
 
-func TestResearchPromptMentionsTheWebOnlyWhenItIsAvailable(t *testing.T) {
+// The web toggle is per turn and the system prompt is per conversation, so the
+// two cannot be the same string: the opening prompt never mentions the web, and
+// what does is recorded beside the question of a turn that carries the tools.
+func TestTheWebInstructionIsSeparateFromTheOpeningPrompt(t *testing.T) {
 	t.Parallel()
 
-	without := buildResearchSystemPrompt("en", "en", []string{"invoice"}, false, false)
-	if strings.Contains(without, "web_search") || strings.Contains(without, "web_fetch") {
-		t.Fatalf("prompt advertises tools that are not offered: %s", without)
+	opening := buildResearchSystemPrompt("en", "en", []string{"invoice"}, false)
+	if strings.Contains(opening, "web_search") || strings.Contains(opening, "web_fetch") {
+		t.Fatalf("the opening prompt advertises tools a later turn may not offer: %s", opening)
+	}
+	if !strings.Contains(opening, "read_documents") {
+		t.Error("the opening prompt dropped the archive instructions")
 	}
 
-	with := buildResearchSystemPrompt("en", "en", []string{"invoice"}, false, true)
+	web := researchWebPrompt()
 	for _, want := range []string{
 		"web_search",
 		"web_fetch",
@@ -159,12 +193,9 @@ func TestResearchPromptMentionsTheWebOnlyWhenItIsAvailable(t *testing.T) {
 		// search_documents has about its passages.
 		"web_fetch before claiming what a page contains",
 	} {
-		if !strings.Contains(with, want) {
-			t.Errorf("web prompt missing %q: %s", want, with)
+		if !strings.Contains(web, want) {
+			t.Errorf("web prompt missing %q: %s", want, web)
 		}
-	}
-	if !strings.Contains(with, "read_documents") {
-		t.Error("web prompt dropped the archive instructions")
 	}
 }
 

@@ -173,9 +173,13 @@ func History(app core.App, sessionID string) ([]ai.ChatMessage, error) {
 // turns did instead of repeating it, and what gives the provider a prefix it
 // has already cached.
 //
-// Trimmed at both ends, because the read is capped by rows: see ai.TrimThread.
+// Read whole, with no row cap. A cap would slide the window as the
+// conversation grew, dropping the system prompt off the front and moving the
+// prefix under the provider's cache on every turn; what the model can hold is
+// the model's business, and it says so by refusing. TrimThread still tidies the
+// ends, which a fork or an interrupted run can leave ragged.
 func Thread(app core.App, sessionID string) ([]ai.ThreadMessage, error) {
-	records, err := ListMessages(app, sessionID, MaxReplayMessages)
+	records, err := ListMessages(app, sessionID, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -302,9 +306,10 @@ func Unfinished(records []*core.Record) bool {
 	return false
 }
 
-// MaxPriorHits caps the evidence one conversation carries forward. Well past
-// what a transcript that fits the replay budget can hold, so it is a guard
-// against a pathological session rather than a working limit.
+// MaxPriorHits caps the evidence one conversation carries forward, newest
+// first. A guard against a pathological session rather than a working limit:
+// the thread replays the tool results these came from anyway, so this is the
+// shortcut to reading one by id, not the only record that it exists.
 const MaxPriorHits = 100
 
 // PriorHits returns the documents a session's earlier answers found, so a

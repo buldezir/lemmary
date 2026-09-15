@@ -211,7 +211,11 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	// stored order is the order it replays in; prepending it here is for the
 	// callers that store nothing.
 	if !startsWithSystem(thread) {
-		thread = append([]ThreadMessage{{Role: "system", Content: a.SystemPrompt(req)}}, thread...)
+		opening := []ThreadMessage{{Role: "system", Content: a.SystemPrompt(req)}}
+		if req.Web != nil {
+			opening = append(opening, ThreadMessage{Role: "system", Content: a.WebPrompt()})
+		}
+		thread = append(opening, thread...)
 	}
 	state.question = latestUserMessage(thread)
 	if state.question == "" {
@@ -350,7 +354,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 
 	emit(ResearchEvent{Type: "step", Kind: "answer", Status: "start"})
-	reply, incomplete, answerUsage, err := a.answerResearch(ctx, apiMessages, req.Web != nil, meter, emit)
+	reply, incomplete, answerUsage, err := a.answerResearch(ctx, apiMessages, tools, req.Web != nil, meter, emit)
 	if err != nil {
 		return ResearchResult{}, err
 	}
@@ -386,6 +390,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 func (a *openAISearchAgent) answerResearch(
 	ctx context.Context,
 	apiMessages []openai.ChatCompletionMessageParamUnion,
+	tools []openai.ChatCompletionToolParam,
 	web bool,
 	meter *contextMeter,
 	emit func(ResearchEvent),
@@ -399,10 +404,20 @@ func (a *openAISearchAgent) answerResearch(
 	msgs := append([]openai.ChatCompletionMessageParamUnion{}, apiMessages...)
 	msgs = append(msgs, openai.UserMessage(instruction))
 
+	// The same tools as the rounds before, refused rather than removed. A
+	// provider caches the tool list as part of the prefix, so dropping it here
+	// would re-bill the whole conversation on the largest request of the turn;
+	// tool_choice "none" buys the text answer without moving the prefix.
 	params := openai.ChatCompletionNewParams{
 		Model:       shared.ChatModel(a.client.model),
 		Messages:    msgs,
 		Temperature: CompletionTemperature(a.client.model, 0.2),
+		Tools:       tools,
+	}
+	if len(tools) > 0 {
+		params.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{
+			OfAuto: openai.String("none"),
+		}
 	}
 
 	emitted := 0
@@ -799,7 +814,25 @@ func startsWithSystem(thread []ThreadMessage) bool {
 // that stores it. Built from what the archive looks like now, so it is asked
 // for once per conversation and replayed on every turn after.
 func (a *openAISearchAgent) SystemPrompt(req ResearchRequest) string {
-	return buildResearchSystemPrompt(a.languages, a.resultLanguage, req.AvailableTags, req.DenseRetrieval, req.Web != nil)
+	return buildResearchSystemPrompt(a.languages, a.resultLanguage, req.AvailableTags, req.DenseRetrieval)
+}
+
+// WebPrompt is what the web tools need explaining, kept out of SystemPrompt
+// because the web toggle is per turn and the system prompt is per conversation.
+// Writing it into the opening prompt would either freeze the first turn's
+// answer for the rest of the conversation -- tools appearing later that nothing
+// tells the model about -- or move the prefix the provider has cached every
+// time the toggle changed. The caller records it beside the question instead,
+// where a per-turn instruction belongs.
+func (a *openAISearchAgent) WebPrompt() string {
+	return researchWebPrompt()
+}
+
+func researchWebPrompt() string {
+	return `You can also reach the public web with web_search and web_fetch, for what the archive cannot hold: current prices, rates and rules, a company's present details, anything that changed after the documents were written.
+The archive is still the primary source. Search it first, and use the web to check or complete what you found there rather than instead of looking.
+A search result's snippet is a reason to fetch the page, not the whole of what it says: web_fetch before claiming what a page contains, exactly as you would read a document.
+Web calls are limited and billed; make them count.`
 }
 
 func normalizeIDs(ids []string) []string {
@@ -855,7 +888,7 @@ Cite a claim taken from the web as [Page title](https://...), with the URL the t
 	return instruction
 }
 
-func buildResearchSystemPrompt(languages, resultLanguage string, availableTags []string, dense, web bool) string {
+func buildResearchSystemPrompt(languages, resultLanguage string, availableTags []string, dense bool) string {
 	var b strings.Builder
 	b.WriteString(`You are researching the user's personal document archive to answer their question.
 Work in steps. First find candidate documents with search_documents, then read the promising ones with read_documents.
@@ -873,15 +906,6 @@ There is no limit on how many searches or reads you may make. Stop gathering and
 Cite real document ids from tool results only. Never invent a document or an id.
 If the archive does not contain the answer, say so plainly and say what is missing.
 `)
-
-	if web {
-		b.WriteString(`
-You can also reach the public web with web_search and web_fetch, for what the archive cannot hold: current prices, rates and rules, a company's present details, anything that changed after the documents were written.
-The archive is still the primary source. Search it first, and use the web to check or complete what you found there rather than instead of looking.
-A search result's snippet is a reason to fetch the page, not the whole of what it says: web_fetch before claiming what a page contains, exactly as you would read a document.
-Web calls are limited and billed; make them count.
-`)
-	}
 
 	b.WriteString(formatAvailableTagsPrompt(availableTags))
 	b.WriteString(formatLanguagePrompt(languages, resultLanguage, dense))

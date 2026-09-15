@@ -238,7 +238,35 @@ func messagesParamsFrom(params openai.ChatCompletionNewParams) (anthropic.Messag
 			req.ToolChoice = anthropic.ToolChoiceUnionParam{OfAuto: &anthropic.ToolChoiceAutoParam{}}
 		}
 	}
+	markCacheBreakpoints(&req)
 	return req, nil
+}
+
+// markCacheBreakpoints says which part of the request the model may reuse from
+// the last one. This API caches nothing unasked: without a breakpoint every
+// request pays for the whole conversation again, however little of it changed.
+//
+// Three, in the order the prompt is built. The system prompt and the tools are
+// the fixed head and are worth their own marks, so they survive a conversation
+// that is edited or branched. The last block of the last message is the moving
+// one: it writes the cache the next request reads.
+func markCacheBreakpoints(req *anthropic.MessageNewParams) {
+	if n := len(req.System); n > 0 {
+		req.System[n-1].CacheControl = anthropic.NewCacheControlEphemeralParam()
+	}
+	if n := len(req.Tools); n > 0 {
+		if control := req.Tools[n-1].GetCacheControl(); control != nil {
+			*control = anthropic.NewCacheControlEphemeralParam()
+		}
+	}
+	if n := len(req.Messages); n > 0 {
+		blocks := req.Messages[n-1].Content
+		if m := len(blocks); m > 0 {
+			if control := blocks[m-1].GetCacheControl(); control != nil {
+				*control = anthropic.NewCacheControlEphemeralParam()
+			}
+		}
+	}
 }
 
 // toolInputSchemaFrom carries a function's JSON schema across. Only properties

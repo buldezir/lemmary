@@ -156,6 +156,10 @@ func responsesParamsFrom(params openai.ChatCompletionNewParams) (responses.Respo
 		// The archive replays the whole thread every round, so a stored copy is a
 		// copy we did not ask for.
 		Store: openai.Bool(false),
+		// The same grouping key /chat/completions carries. A gpt-5 model that
+		// was moved here by a refusal is still the same conversation, and would
+		// otherwise lose the cache on the way across.
+		PromptCacheKey: params.PromptCacheKey,
 	}
 	if params.Temperature.Valid() {
 		req.Temperature = params.Temperature

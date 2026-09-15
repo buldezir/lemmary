@@ -225,8 +225,9 @@ func TestResearchSearchesThenReadsThenAnswers(t *testing.T) {
 		t.Fatalf("steps = %v, want %v", kinds, want)
 	}
 
-	// The answer streamed with no tools declared, so the model cannot emit
-	// tool markup into visible prose.
+	// The answer streamed with the tools refused rather than removed: the model
+	// cannot emit tool markup into visible prose, and the prefix the rounds
+	// before it cached still matches, tool list included.
 	var streamed strings.Builder
 	for _, e := range events {
 		if e.Type == "delta" {
@@ -237,8 +238,11 @@ func TestResearchSearchesThenReadsThenAnswers(t *testing.T) {
 		t.Fatalf("answer did not stream, got %q", streamed.String())
 	}
 	last := h.request(h.requestCount() - 1)
-	if _, ok := last["tools"]; ok {
-		t.Fatalf("answer phase declared tools: %v", last)
+	if !hasTools(last) {
+		t.Fatalf("answer phase dropped the tools, breaking the cached prefix: %v", last)
+	}
+	if choice, _ := last["tool_choice"].(string); choice != "none" {
+		t.Fatalf("answer phase tool_choice = %q, want none", choice)
 	}
 	if stream, _ := last["stream"].(bool); !stream {
 		t.Fatalf("answer phase was not streamed: %v", last)
@@ -674,7 +678,7 @@ func TestDecodeReadArgsAcceptsLooseShapes(t *testing.T) {
 
 func TestBuildResearchSystemPromptDemandsReadingBeforeClaiming(t *testing.T) {
 	t.Parallel()
-	prompt := buildResearchSystemPrompt("en,de", "en", []string{"invoice"}, false, false)
+	prompt := buildResearchSystemPrompt("en,de", "en", []string{"invoice"}, false)
 	for _, want := range []string{
 		"read_documents",
 		"Never state what a document contains without reading it",
@@ -968,7 +972,7 @@ func TestResearchRereadsWithANewFocus(t *testing.T) {
 
 func TestResearchPromptExplainsFocus(t *testing.T) {
 	t.Parallel()
-	prompt := buildResearchSystemPrompt("en,de", "en", []string{"invoice"}, false, false)
+	prompt := buildResearchSystemPrompt("en,de", "en", []string{"invoice"}, false)
 	for _, want := range []string{
 		"Pass focus to steer the excerpt",
 		"survey_documents once",
