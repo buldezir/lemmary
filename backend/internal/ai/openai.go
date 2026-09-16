@@ -97,6 +97,11 @@ func (c *OpenAIClient) Model() string {
 // the Responses API, which keeps both, and is remembered per model and
 // endpoint.
 func (c *OpenAIClient) Complete(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
+	resp, err := c.complete(ctx, params, extra...)
+	return nameToolCallVariants(resp), err
+}
+
+func (c *OpenAIClient) complete(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
 	c.markPromptCache(ctx, &params)
 	switch opencode.Endpoint(c.sdk, string(params.Model)) {
 	case opencode.EndpointMessages:
@@ -113,6 +118,27 @@ func (c *OpenAIClient) Complete(ctx context.Context, params openai.ChatCompletio
 		return resp, err
 	}
 	return c.completeChat(ctx, params, extra...)
+}
+
+// nameToolCallVariants fills in the tool call variant a provider left off.
+// ToParam replays only a call it can classify, and classification is the "type"
+// field alone, so a gateway that omits it -- the SDK made it optional in v3 --
+// turns the whole call into a literal null in the next request's tool_calls.
+// The openai-go v1 this codebase pinned until recently copied the function
+// across regardless, so this is where that leniency now lives.
+func nameToolCallVariants(resp *openai.ChatCompletion) *openai.ChatCompletion {
+	if resp == nil {
+		return nil
+	}
+	for i := range resp.Choices {
+		calls := resp.Choices[i].Message.ToolCalls
+		for j := range calls {
+			if calls[j].Type == "" && calls[j].Function.Name != "" {
+				calls[j].Type = "function"
+			}
+		}
+	}
+	return resp
 }
 
 func (c *OpenAIClient) completeChat(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {

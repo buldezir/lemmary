@@ -382,6 +382,87 @@ func TestChatCompletionFromResponse(t *testing.T) {
 	}
 }
 
+// The invariant behind the whole tool loop: a call the Responses API reported
+// must come back on the next request as a function_call and a matching
+// function_call_output, with the call id intact through both translations.
+func TestAResponsesToolCallSurvivesBeingReplayed(t *testing.T) {
+	t.Parallel()
+	var resp responses.Response
+	raw := `{"id":"resp_1","model":"m","status":"completed","output":[
+	  {"id":"fc_1","type":"function_call","call_id":"call_9","name":"search_documents","arguments":"{\"query\":\"x\"}"}]}`
+	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	replay := []openai.ChatCompletionMessageParamUnion{
+		openai.UserMessage("find it"),
+		chatCompletionFrom(&resp).Choices[0].Message.ToParam(),
+		openai.ToolMessage("1 hit", "call_9"),
+	}
+	input, err := responsesInputFrom(replay)
+	if err != nil {
+		t.Fatalf("responsesInputFrom: %v", err)
+	}
+	body, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var items []map[string]any
+	if err := json.Unmarshal(body, &items); err != nil {
+		t.Fatalf("unmarshal items: %v", err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("items = %s; the call or its output was dropped", body)
+	}
+	if items[1]["type"] != "function_call" || items[1]["call_id"] != "call_9" {
+		t.Fatalf("call item = %+v", items[1])
+	}
+	if items[2]["type"] != "function_call_output" || items[2]["call_id"] != "call_9" {
+		t.Fatalf("output item = %+v", items[2])
+	}
+}
+
+// openai-go v3 replays only a tool call whose "type" it recognises, and a
+// gateway is free to omit that field. Left alone the call marshals as a literal
+// null and the provider rejects the next request.
+func TestAToolCallWithoutATypeIsStillReplayable(t *testing.T) {
+	t.Parallel()
+	var resp openai.ChatCompletion
+	raw := `{"id":"c1","model":"m","choices":[{"index":0,"finish_reason":"tool_calls",
+	  "message":{"role":"assistant","content":"","tool_calls":[
+	    {"id":"call_9","function":{"name":"search_documents","arguments":"{}"}}]}}]}`
+	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got := resp.Choices[0].Message.ToolCalls[0].Type; got != "" {
+		t.Fatalf("type = %q; the fixture is meant to leave it off", got)
+	}
+
+	body, err := json.Marshal(nameToolCallVariants(&resp).Choices[0].Message.ToParam())
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(body), "null") {
+		t.Fatalf("replayed assistant message = %s", body)
+	}
+	var msg struct {
+		ToolCalls []struct {
+			ID       string `json:"id"`
+			Type     string `json:"type"`
+			Function struct {
+				Name string `json:"name"`
+			} `json:"function"`
+		} `json:"tool_calls"`
+	}
+	if err := json.Unmarshal(body, &msg); err != nil {
+		t.Fatalf("unmarshal replay: %v", err)
+	}
+	if len(msg.ToolCalls) != 1 || msg.ToolCalls[0].ID != "call_9" ||
+		msg.ToolCalls[0].Type != "function" || msg.ToolCalls[0].Function.Name != "search_documents" {
+		t.Fatalf("replayed tool calls = %s", body)
+	}
+}
+
 func TestStreamingRunsOnTheResponsesAPI(t *testing.T) {
 	const model = "grok-4.6"
 	h := &responsesHarness{respTurns: []scriptedTurn{{content: "streamed from responses"}}}
