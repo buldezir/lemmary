@@ -8,6 +8,7 @@ import type { ChatSendResult } from './useChatSession'
 import type { ProviderBinding } from '../lib/api/providers'
 import { cancelSearchRun, searchStream, type ResearchEvent, type SearchMode } from '../lib/api/ai'
 import {
+  chatSessionsInMode,
   deleteChatSession,
   forkChatSession,
   listChatSessions,
@@ -340,7 +341,7 @@ export function useChatWorkspace({
     sessionId,
     basePath,
     navigate,
-    rows: mergeChatSession(sessions.data ?? [], justSettled),
+    rows: chatSessionsInMode(mergeChatSession(sessions.data ?? [], justSettled), mode),
     sessions,
     railOpen,
     setRailOpen,
