@@ -81,7 +81,7 @@ function EmbeddingStatsLine({ stats }: { stats: EmbeddingStats | null }) {
 
 export function SettingsAIPage() {
   // unknown/failed meta counts as managed; see AppMeta.aiManaged
-  const { aiManaged, chatgptLogin, metaLoaded } = useAppMeta()
+  const { aiManaged, metaLoaded } = useAppMeta()
   const [advancedModels, setAdvancedModels] = useState(false)
   const { data: providers, reload: reloadProviders } = useAsync(listAIProviders, [])
   // Allowed to fail, and loaded apart from the settings: it scans two tables,
@@ -136,7 +136,6 @@ export function SettingsAIPage() {
     <>
       <ProvidersBlock
         providers={providers ?? []}
-        chatgptLogin={chatgptLogin}
         onChanged={reloadProviders}
         onError={setError}
         onSuccess={setSuccess}

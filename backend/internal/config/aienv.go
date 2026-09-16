@@ -22,13 +22,6 @@ type AIEnv struct {
 	Managed   bool
 	Providers aiprovider.Bootstrap
 
-	// ChatGPTLogin opens the chatgpt SDK, which bills an operator's ChatGPT
-	// subscription by talking to OpenAI's own Codex backend. Off unless asked for:
-	// those endpoints are undocumented and reserved for OpenAI's clients, so
-	// pointing an account at them is the operator's decision. Refused together
-	// with Managed, whose tenant is not the party whose account is at risk.
-	ChatGPTLogin bool
-
 	// Operator-owned in managed mode.
 	NearDuplicateEnabled   bool
 	NearDuplicateThreshold float64
@@ -77,10 +70,6 @@ const (
 	// Search hands bulk per-document work to. Empty falls back to the search model.
 	EnvAISearchHelperModel = "AI_SEARCH_HELPER_MODEL"
 
-	// EnvChatGPTLogin opens the chatgpt SDK. See AIEnv.ChatGPTLogin and
-	// docs/chatgpt_login.md.
-	EnvChatGPTLogin = "AI_CHATGPT_LOGIN"
-
 	// The web-search block seeds the provider backing web_search and web_fetch.
 	// Unset means no web call is served. Its own SDK always: no SDK that chats
 	// or reads a document also searches the web.
@@ -102,19 +91,8 @@ func AIEnvFromEnv() (AIEnv, error) {
 	if err != nil {
 		return AIEnv{}, err
 	}
-	// Strict for the same reason AI_MANAGED is: a typo read as "off" leaves an
-	// operator staring at a Settings page with no sign-in button.
-	chatgptLogin, err := strictBool(EnvChatGPTLogin)
-	if err != nil {
-		return AIEnv{}, err
-	}
-	if managed && chatgptLogin {
-		return AIEnv{}, fmt.Errorf("%s and %s cannot both be set: a managed instance bills the operator's own provider", EnvManaged, EnvChatGPTLogin)
-	}
-
 	env := AIEnv{
 		Managed:                managed,
-		ChatGPTLogin:           chatgptLogin,
 		NearDuplicateEnabled:   getEnvBool("NEAR_DUPLICATE_DETECTION_ENABLED", false),
 		NearDuplicateThreshold: getEnvFloat("NEAR_DUPLICATE_THRESHOLD", DefaultNearDuplicateThreshold),
 		OCRTimeout:             time.Duration(envIntDefault("OCR_TIMEOUT_SEC", 40, 1)) * time.Second,

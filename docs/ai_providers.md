@@ -68,9 +68,9 @@ The alternatives are worth naming:
   extraction, Deep Search or OCR to it. OCR works the way it does on `openai` —
   the file goes to the model — so an instance whose only AI credential is a
   ChatGPT seat is a complete install. Embeddings are refused: the endpoint has
-  no `/embeddings` at all. Off unless `AI_CHATGPT_LOGIN=1`, and refused on a
-  managed instance — it reaches OpenAI's own Codex endpoints, so the account you
-  sign in with is the one carrying the risk. Its SDK value is `chatgpt`, though
+  no `/embeddings` at all. Refused on a managed instance — it reaches OpenAI's
+  own Codex endpoints, so the account you sign in with is the one carrying the
+  risk. Its SDK value is `chatgpt`, though
   it is not an `AI_SDK` or `OCR_SDK` value: a sign-in cannot be written into
   `.env`. See [ChatGPT sign-in](/chatgpt_login).
 - **Local OCR (Docling)** — OCR only, and the only provider that reads a
@@ -130,7 +130,6 @@ after that.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `AI_MANAGED` | `0` | Whether the operator owns AI configuration. See the table above. |
-| `AI_CHATGPT_LOGIN` | `0` | Whether **Settings** offers the ChatGPT subscription SDK (`chatgpt`), which bills a ChatGPT subscription instead of a metered key. Off unless set, and refused together with `AI_MANAGED=1`. It is not an `AI_SDK` value: the provider is added and signed in to from Settings, because its credential is minted rather than typed. See [ChatGPT sign-in](/chatgpt_login). |
 | `AI_SDK` | `openai` | The language model's SDK: `opencode`, `openai`, `openrouter` or `mistral`. `google_vision`, `docling` (Local OCR) and `local` (Local Embeddings) are refused — none of them can serve extraction. `chatgpt` too: it has no key to seed from the environment. |
 | `AI_API_KEY` | empty | Its credential. **One key is usually the whole configuration**: with this and nothing else the app creates one provider and routes extraction, chat, Deep Search *and* OCR to it. |
 | `AI_MODEL` | `gpt-5.6-luna` | The model for extraction, chat and Deep Search. Be sure it supports the result language set in **Settings**. |

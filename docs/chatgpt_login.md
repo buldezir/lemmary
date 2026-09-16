@@ -72,20 +72,7 @@ sign-in from any browser, which is the only way this works on a server.
 
 If you skip this, Lemmary's sign-in fails with a message naming the setting.
 
-### 2. Set the flag
-
-```bash
-AI_CHATGPT_LOGIN=1
-```
-
-Absent means off. A value it cannot read — `AI_CHATGPT_LOGIN=ture` — is an error
-rather than a silent off, the same as `AI_MANAGED`. Setting it together with
-`AI_MANAGED=1` refuses to start.
-
-Restart the app. **Settings → Providers** now offers a **ChatGPT subscription**
-SDK.
-
-### 3. Add the provider and sign in
+### 2. Add the provider and sign in
 
 1. **Settings → Providers → Add provider**, SDK **ChatGPT subscription**. There
    is no API key field. Save it.
@@ -95,7 +82,7 @@ SDK.
    code, approve. The code is good for about fifteen minutes.
 4. The row reads **signed in**, with the account and plan beside it.
 
-### 4. Bind the models
+### 3. Bind the models
 
 Under **Settings → Models**, point **Chat**, **Extraction**, **Deep Search**,
 the **Deep Search helper** or **OCR** at the new provider and pick a model. The
@@ -112,8 +99,8 @@ Leave **Embeddings** where it is.
 
 ### Setting up a fresh instance this way
 
-The setup wizard offers **ChatGPT subscription** too, once `AI_CHATGPT_LOGIN=1`
-is set, so a first-boot instance can be configured with no API key at all.
+The setup wizard offers **ChatGPT subscription** too, so a first-boot instance
+can be configured with no API key at all.
 Choosing it saves the provider row and then holds the step open for the
 sign-in — the token needs a row to be stored against — and setup carries on to
 the model bindings once you have approved the code.
