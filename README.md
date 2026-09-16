@@ -59,7 +59,7 @@ with the cuts the model proposes:
 
 Admin Settings: providers, models and worker timeouts as runtime configuration:
 
-![Settings](docs/screenshots/settings-top.png)
+![Settings](docs/screenshots/settings.png)
 
 ## Stack
 
