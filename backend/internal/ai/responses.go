@@ -7,11 +7,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/packages/param"
-	"github.com/openai/openai-go/responses"
-	"github.com/openai/openai-go/shared"
-	"github.com/openai/openai-go/shared/constant"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
+	"github.com/openai/openai-go/v3/shared/constant"
 	"lemmary/backend/internal/aiprovider"
 )
 
@@ -107,7 +107,7 @@ func (c *OpenAIClient) completeStreamingViaResponses(
 		event := stream.Current()
 		switch event.Type {
 		case "response.output_text.delta":
-			delta := event.Delta.OfString
+			delta := event.Delta
 			if delta == "" {
 				continue
 			}
@@ -175,15 +175,19 @@ func responsesParamsFrom(params openai.ChatCompletionNewParams) (responses.Respo
 		}
 	}
 	for _, tool := range params.Tools {
+		def := tool.GetFunction()
+		if def == nil {
+			continue
+		}
 		fn := responses.FunctionToolParam{
-			Name:       tool.Function.Name,
-			Parameters: map[string]any(tool.Function.Parameters),
+			Name:       def.Name,
+			Parameters: map[string]any(def.Parameters),
 			// The archive's schemas are hand-written guidance rather than
 			// contracts, and strict mode rejects several of them outright.
 			Strict: openai.Bool(false),
 		}
-		if tool.Function.Description.Valid() {
-			fn.Description = tool.Function.Description
+		if def.Description.Valid() {
+			fn.Description = def.Description
 		}
 		req.Tools = append(req.Tools, responses.ToolUnionParam{OfFunction: &fn})
 	}
@@ -221,12 +225,20 @@ func responsesInputFrom(messages []openai.ChatCompletionMessageParamUnion) (resp
 					text, responses.EasyInputMessageRoleAssistant))
 			}
 			for _, call := range msg.OfAssistant.ToolCalls {
+				fn := call.OfFunction
+				if fn == nil {
+					continue
+				}
 				input = append(input, responses.ResponseInputItemParamOfFunctionCall(
-					call.Function.Arguments, call.ID, call.Function.Name))
+					fn.Function.Arguments, fn.ID, fn.Function.Name))
 			}
 		case msg.OfTool != nil:
-			input = append(input, responses.ResponseInputItemParamOfFunctionCallOutput(
-				msg.OfTool.ToolCallID, msg.OfTool.Content.OfString.Or("")))
+			// The helper stopped taking the call id in v3, and an output that
+			// carries none correlates to nothing.
+			output := responses.ResponseInputItemParamOfFunctionCallOutput(
+				msg.OfTool.Content.OfString.Or(""))
+			output.OfFunctionCallOutput.CallID = openai.String(msg.OfTool.ToolCallID)
+			input = append(input, output)
 		default:
 			return nil, fmt.Errorf("responses: unsupported message shape")
 		}
@@ -275,7 +287,7 @@ func chatCompletionFrom(resp *responses.Response) *openai.ChatCompletion {
 		return nil
 	}
 	var text strings.Builder
-	var calls []openai.ChatCompletionMessageToolCall
+	var calls []openai.ChatCompletionMessageToolCallUnion
 	for _, item := range resp.Output {
 		switch item.Type {
 		case "message":
@@ -285,12 +297,12 @@ func chatCompletionFrom(resp *responses.Response) *openai.ChatCompletion {
 				}
 			}
 		case "function_call":
-			calls = append(calls, openai.ChatCompletionMessageToolCall{
+			calls = append(calls, openai.ChatCompletionMessageToolCallUnion{
 				ID:   item.CallID,
-				Type: constant.ValueOf[constant.Function](),
-				Function: openai.ChatCompletionMessageToolCallFunction{
+				Type: "function",
+				Function: openai.ChatCompletionMessageFunctionToolCallFunction{
 					Name:      item.Name,
-					Arguments: item.Arguments,
+					Arguments: item.Arguments.OfString,
 				},
 			})
 		}

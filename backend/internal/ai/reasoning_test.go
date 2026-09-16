@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/shared"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/shared"
 )
 
 // reasoningHarness fakes the gpt-5-family behaviour from issue #49: a request
@@ -273,7 +273,7 @@ func TestReasoningEffortNoneIsNotRememberedWhenItAlsoFails(t *testing.T) {
 	_, err := client.Complete(context.Background(), openai.ChatCompletionNewParams{
 		Model:    shared.ChatModel(model),
 		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
-		Tools:    []openai.ChatCompletionToolParam{{Function: shared.FunctionDefinitionParam{Name: "search_documents"}}},
+		Tools:    []openai.ChatCompletionToolUnionParam{openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{Name: "search_documents"})},
 	})
 	if err == nil {
 		t.Fatal("expected the refusal to surface")

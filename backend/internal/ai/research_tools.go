@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/shared"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/shared"
 )
 
 // The two tools that let a research run cover a topic instead of a document.
@@ -150,92 +150,88 @@ const (
 // ValidGroupBy is the accepted group_by set, in the order the tool lists it.
 var ValidGroupBy = []string{"document_type", "correspondent", "year", "month", "tag"}
 
-func surveyDocumentsTool() openai.ChatCompletionToolParam {
-	return openai.ChatCompletionToolParam{
-		Function: shared.FunctionDefinitionParam{
-			Name: "survey_documents",
-			Description: openai.String("Have every matching document read for one question, in parallel, and get back one compact row per document: " +
-				"whether it is relevant, notes on what it says, a supporting quote, and any requested fields. " +
-				"Use this for questions about many documents at once -- a topic, a correspondent's year, a total -- instead of reading them one call at a time. " +
-				"Number fields are summed for you; report the server's totals rather than adding rows yourself."),
-			Parameters: shared.FunctionParameters{
-				"type": "object",
-				"properties": map[string]any{
-					"question": map[string]any{
-						"type":        "string",
-						"description": "What each document should be read for. Required.",
-					},
-					"query": map[string]any{
-						"type":        "string",
-						"description": "Search terms selecting the documents to survey, with the same filters as search_documents. Either query or ids is required.",
-					},
-					"ids": map[string]any{
-						"type":        "array",
-						"items":       map[string]any{"type": "string"},
-						"description": "Document ids already seen in this conversation to survey instead of searching.",
-					},
-					"date_from":     map[string]any{"type": "string", "description": "Inclusive lower bound on document_date, YYYY-MM-DD."},
-					"date_to":       map[string]any{"type": "string", "description": "Inclusive upper bound on document_date, YYYY-MM-DD."},
-					"document_type": map[string]any{"type": "string", "description": "Document type name filter."},
-					"correspondent": map[string]any{"type": "string", "description": "Correspondent name filter."},
-					"tags": map[string]any{
-						"type":        "array",
-						"items":       map[string]any{"type": "string"},
-						"description": "Exact tag names; documents with any of them match.",
-					},
-					"fields": map[string]any{
-						"type": "array",
-						"items": map[string]any{
-							"type": "object",
-							"properties": map[string]any{
-								"name":        map[string]any{"type": "string"},
-								"type":        map[string]any{"type": "string", "enum": []string{"string", "number", "date"}},
-								"description": map[string]any{"type": "string"},
-							},
-							"required": []string{"name"},
-						},
-						"description": "Values to extract from every document, e.g. {name: \"total_amount\", type: \"number\", description: \"invoice total incl. VAT\"}. Number fields are totalled per currency.",
-					},
-					"max_documents": map[string]any{
-						"type":        "integer",
-						"description": fmt.Sprintf("How many documents to survey at most; default %d, at most %d. Narrow the filters or the date range instead of raising it when the selection is large.", DefaultSurveyDocuments, MaxSurveyDocuments),
-					},
+func surveyDocumentsTool() openai.ChatCompletionToolUnionParam {
+	return openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+		Name: "survey_documents",
+		Description: openai.String("Have every matching document read for one question, in parallel, and get back one compact row per document: " +
+			"whether it is relevant, notes on what it says, a supporting quote, and any requested fields. " +
+			"Use this for questions about many documents at once -- a topic, a correspondent's year, a total -- instead of reading them one call at a time. " +
+			"Number fields are summed for you; report the server's totals rather than adding rows yourself."),
+		Parameters: shared.FunctionParameters{
+			"type": "object",
+			"properties": map[string]any{
+				"question": map[string]any{
+					"type":        "string",
+					"description": "What each document should be read for. Required.",
 				},
-				"required": []string{"question"},
+				"query": map[string]any{
+					"type":        "string",
+					"description": "Search terms selecting the documents to survey, with the same filters as search_documents. Either query or ids is required.",
+				},
+				"ids": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "Document ids already seen in this conversation to survey instead of searching.",
+				},
+				"date_from":     map[string]any{"type": "string", "description": "Inclusive lower bound on document_date, YYYY-MM-DD."},
+				"date_to":       map[string]any{"type": "string", "description": "Inclusive upper bound on document_date, YYYY-MM-DD."},
+				"document_type": map[string]any{"type": "string", "description": "Document type name filter."},
+				"correspondent": map[string]any{"type": "string", "description": "Correspondent name filter."},
+				"tags": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "Exact tag names; documents with any of them match.",
+				},
+				"fields": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"name":        map[string]any{"type": "string"},
+							"type":        map[string]any{"type": "string", "enum": []string{"string", "number", "date"}},
+							"description": map[string]any{"type": "string"},
+						},
+						"required": []string{"name"},
+					},
+					"description": "Values to extract from every document, e.g. {name: \"total_amount\", type: \"number\", description: \"invoice total incl. VAT\"}. Number fields are totalled per currency.",
+				},
+				"max_documents": map[string]any{
+					"type":        "integer",
+					"description": fmt.Sprintf("How many documents to survey at most; default %d, at most %d. Narrow the filters or the date range instead of raising it when the selection is large.", DefaultSurveyDocuments, MaxSurveyDocuments),
+				},
 			},
+			"required": []string{"question"},
 		},
-	}
+	})
 }
 
-func countDocumentsTool() openai.ChatCompletionToolParam {
-	return openai.ChatCompletionToolParam{
-		Function: shared.FunctionDefinitionParam{
-			Name: "count_documents",
-			Description: openai.String("Count the documents matching filters, optionally grouped. " +
-				"Use this for how-many and distribution questions instead of counting search results: a search result is a capped page, not the archive. " +
-				"Counts are exact keyword and filter matches; for what documents say about a topic, use survey_documents."),
-			Parameters: shared.FunctionParameters{
-				"type": "object",
-				"properties": map[string]any{
-					"query":         map[string]any{"type": "string", "description": "Optional keywords every counted document must contain."},
-					"date_from":     map[string]any{"type": "string", "description": "Inclusive lower bound on document_date, YYYY-MM-DD."},
-					"date_to":       map[string]any{"type": "string", "description": "Inclusive upper bound on document_date, YYYY-MM-DD."},
-					"document_type": map[string]any{"type": "string", "description": "Document type name filter."},
-					"correspondent": map[string]any{"type": "string", "description": "Correspondent name filter."},
-					"tags": map[string]any{
-						"type":        "array",
-						"items":       map[string]any{"type": "string"},
-						"description": "Exact tag names; documents with any of them match.",
-					},
-					"group_by": map[string]any{
-						"type":        "string",
-						"enum":        ValidGroupBy,
-						"description": "Break the count down by this property.",
-					},
+func countDocumentsTool() openai.ChatCompletionToolUnionParam {
+	return openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+		Name: "count_documents",
+		Description: openai.String("Count the documents matching filters, optionally grouped. " +
+			"Use this for how-many and distribution questions instead of counting search results: a search result is a capped page, not the archive. " +
+			"Counts are exact keyword and filter matches; for what documents say about a topic, use survey_documents."),
+		Parameters: shared.FunctionParameters{
+			"type": "object",
+			"properties": map[string]any{
+				"query":         map[string]any{"type": "string", "description": "Optional keywords every counted document must contain."},
+				"date_from":     map[string]any{"type": "string", "description": "Inclusive lower bound on document_date, YYYY-MM-DD."},
+				"date_to":       map[string]any{"type": "string", "description": "Inclusive upper bound on document_date, YYYY-MM-DD."},
+				"document_type": map[string]any{"type": "string", "description": "Document type name filter."},
+				"correspondent": map[string]any{"type": "string", "description": "Correspondent name filter."},
+				"tags": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "Exact tag names; documents with any of them match.",
+				},
+				"group_by": map[string]any{
+					"type":        "string",
+					"enum":        ValidGroupBy,
+					"description": "Break the count down by this property.",
 				},
 			},
 		},
-	}
+	})
 }
 
 func decodeSurveyArgs(data string) (SurveyArgs, error) {

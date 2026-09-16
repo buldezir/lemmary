@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/v3/option"
 	"lemmary/backend/internal/aiprovider"
 )
 

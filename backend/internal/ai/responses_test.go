@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/responses"
-	"github.com/openai/openai-go/shared"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 
 	"lemmary/backend/internal/aiprovider"
 )
@@ -259,23 +259,23 @@ func TestResponsesRequestShape(t *testing.T) {
 			openai.SystemMessage("you are an archivist"),
 			openai.UserMessage("find my insurance"),
 			{OfAssistant: &openai.ChatCompletionAssistantMessageParam{
-				ToolCalls: []openai.ChatCompletionMessageToolCallParam{{
-					ID: "call_7",
-					Function: openai.ChatCompletionMessageToolCallFunctionParam{
-						Name: "search_documents", Arguments: `{"query":"insurance"}`,
+				ToolCalls: []openai.ChatCompletionMessageToolCallUnionParam{{
+					OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
+						ID: "call_7",
+						Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
+							Name: "search_documents", Arguments: `{"query":"insurance"}`,
+						},
 					},
 				}},
 			}},
 			openai.ToolMessage("1 hit", "call_7"),
 		},
 		Temperature: openai.Float(0.2),
-		Tools: []openai.ChatCompletionToolParam{{
-			Function: shared.FunctionDefinitionParam{
-				Name:        "search_documents",
-				Description: openai.String("Search the archive"),
-				Parameters:  shared.FunctionParameters{"type": "object"},
-			},
-		}},
+		Tools: []openai.ChatCompletionToolUnionParam{openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+			Name:        "search_documents",
+			Description: openai.String("Search the archive"),
+			Parameters:  shared.FunctionParameters{"type": "object"},
+		})},
 		ToolChoice: openai.ChatCompletionToolChoiceOptionUnionParam{OfAuto: openai.String("auto")},
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONObject: &shared.ResponseFormatJSONObjectParam{},
@@ -562,7 +562,7 @@ func TestTheChatGPTSDKNeverTranslatesToResponsesItself(t *testing.T) {
 	_, err := client.Complete(context.Background(), openai.ChatCompletionNewParams{
 		Model:    shared.ChatModel(model),
 		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
-		Tools:    []openai.ChatCompletionToolParam{{Function: shared.FunctionDefinitionParam{Name: "search_documents"}}},
+		Tools:    []openai.ChatCompletionToolUnionParam{openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{Name: "search_documents"})},
 	})
 	if err == nil {
 		t.Fatal("the refusal was swallowed by a fallback that cannot carry the Codex headers")

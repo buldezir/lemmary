@@ -12,8 +12,8 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	anthropicoption "github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/shared/constant"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/shared/constant"
 
 	"lemmary/backend/internal/aiprovider"
 )
@@ -219,12 +219,16 @@ func messagesParamsFrom(params openai.ChatCompletionNewParams) (anthropic.Messag
 	// "give me JSON" mode, and every caller here already asks for JSON in its own
 	// prompt and parses leniently through models.NormalizeJSONObject.
 	for _, tool := range params.Tools {
-		fn := anthropic.ToolParam{
-			Name:        tool.Function.Name,
-			InputSchema: toolInputSchemaFrom(tool.Function.Parameters),
+		def := tool.GetFunction()
+		if def == nil {
+			continue
 		}
-		if tool.Function.Description.Valid() {
-			fn.Description = anthropic.String(tool.Function.Description.Value)
+		fn := anthropic.ToolParam{
+			Name:        def.Name,
+			InputSchema: toolInputSchemaFrom(def.Parameters),
+		}
+		if def.Description.Valid() {
+			fn.Description = anthropic.String(def.Description.Value)
 		}
 		req.Tools = append(req.Tools, anthropic.ToolUnionParam{OfTool: &fn})
 	}
@@ -340,12 +344,16 @@ func messagesFrom(messages []openai.ChatCompletionMessageParamUnion) ([]anthropi
 				blocks = append(blocks, anthropic.NewTextBlock(text))
 			}
 			for _, call := range msg.OfAssistant.ToolCalls {
+				fn := call.OfFunction
+				if fn == nil {
+					continue
+				}
 				// Arguments arrive as a JSON string; the block wants the value.
 				var input any
-				if err := json.Unmarshal([]byte(call.Function.Arguments), &input); err != nil {
-					input = call.Function.Arguments
+				if err := json.Unmarshal([]byte(fn.Function.Arguments), &input); err != nil {
+					input = fn.Function.Arguments
 				}
-				blocks = append(blocks, anthropic.NewToolUseBlock(call.ID, input, call.Function.Name))
+				blocks = append(blocks, anthropic.NewToolUseBlock(fn.ID, input, fn.Function.Name))
 			}
 			if len(blocks) == 0 {
 				continue
@@ -444,16 +452,16 @@ func chatCompletionFrom(msg *anthropic.Message) *openai.ChatCompletion {
 		return nil
 	}
 	var text strings.Builder
-	var calls []openai.ChatCompletionMessageToolCall
+	var calls []openai.ChatCompletionMessageToolCallUnion
 	for _, block := range msg.Content {
 		switch block.Type {
 		case "text":
 			text.WriteString(block.Text)
 		case "tool_use":
-			calls = append(calls, openai.ChatCompletionMessageToolCall{
+			calls = append(calls, openai.ChatCompletionMessageToolCallUnion{
 				ID:   block.ID,
-				Type: constant.ValueOf[constant.Function](),
-				Function: openai.ChatCompletionMessageToolCallFunction{
+				Type: "function",
+				Function: openai.ChatCompletionMessageFunctionToolCallFunction{
 					Name:      block.Name,
 					Arguments: string(block.Input),
 				},

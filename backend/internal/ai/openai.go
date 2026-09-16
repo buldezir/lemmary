@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/packages/param"
-	"github.com/openai/openai-go/shared"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/shared"
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/opencode"
 )
@@ -178,9 +178,6 @@ func (c *OpenAIClient) completeChat(ctx context.Context, params openai.ChatCompl
 	// refuse the request because function tools are present. The two ways out
 	// are not equal: /responses keeps the tools and the reasoning, while
 	// reasoning_effort=none keeps the tools by turning the reasoning off.
-	// refuse the request because function tools are present. The refusal names
-	// two ways out, and they are not equal: /responses keeps the tools and the
-	// reasoning, while reasoning_effort=none keeps the tools by turning the
 	if viaResponses && len(params.Tools) > 0 && isReasoningEffortToolConflictError(err) {
 		logger.Warn("model rejected reasoning_effort with function tools; retrying on the Responses API",
 			"model", params.Model,
