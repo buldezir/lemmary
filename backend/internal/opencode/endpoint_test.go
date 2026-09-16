@@ -73,20 +73,3 @@ func TestOnlyTheOpenCodeSDKIsRouted(t *testing.T) {
 		}
 	}
 }
-
-func TestMessagesBaseURLDropsTheVersionSegment(t *testing.T) {
-	t.Parallel()
-	cases := map[string]string{
-		"https://opencode.ai/zen/go/v1":  "https://opencode.ai/zen/go/v1/messages",
-		"https://opencode.ai/zen/go/v1/": "https://opencode.ai/zen/go/v1/messages",
-		// A test server's base URL has no /v1 to strip.
-		"http://127.0.0.1:8080": "http://127.0.0.1:8080/v1/messages",
-		// Empty falls back to the SDK's documented endpoint.
-		"": "https://opencode.ai/zen/go/v1/messages",
-	}
-	for base, want := range cases {
-		if got := MessagesURL(base); got != want {
-			t.Errorf("MessagesURL(%q) = %q, want %q", base, got, want)
-		}
-	}
-}

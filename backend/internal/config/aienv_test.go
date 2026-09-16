@@ -447,3 +447,42 @@ func TestEmbeddingsOnAnOpenCodeBaseURLAreRefused(t *testing.T) {
 		t.Fatal("an embedding model on an OpenCode endpoint was accepted")
 	}
 }
+
+// AI_SDK=anthropic is a complete configuration on its own: the base URL comes
+// from the SDK, and the row it seeds serves extraction, chat, search and OCR.
+func TestTheAnthropicSDKSeedsFromTheEnvironment(t *testing.T) {
+	clearAIEnv(t)
+	t.Setenv(EnvAISDK, aiprovider.SDKAnthropic)
+	t.Setenv(EnvAIAPIKey, "sk-ant-test")
+	t.Setenv(EnvAIModel, "claude-opus-5")
+
+	env, err := AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("AIEnvFromEnv: %v", err)
+	}
+	if env.Providers.LLM.SDK != aiprovider.SDKAnthropic {
+		t.Fatalf("sdk = %q, want anthropic", env.Providers.LLM.SDK)
+	}
+	if env.Providers.LLM.BaseURL != aiprovider.DefaultBaseURL(aiprovider.SDKAnthropic) {
+		t.Fatalf("base URL = %q, want the SDK default", env.Providers.LLM.BaseURL)
+	}
+	// No OCR block, so OCR rides the same provider.
+	if env.Providers.OCR.SDK != "" {
+		t.Fatalf("OCR sdk = %q, want it to ride the LLM provider", env.Providers.OCR.SDK)
+	}
+}
+
+// There is no /embeddings on api.anthropic.com at all, so a bound embedding
+// model there would fail on the first document rather than at boot.
+func TestAnthropicIsRefusedForEmbeddings(t *testing.T) {
+	clearAIEnv(t)
+	t.Setenv(EnvAISDK, aiprovider.SDKAnthropic)
+	t.Setenv(EnvAIAPIKey, "sk-ant-test")
+	t.Setenv(EnvAIEmbeddingSDK, aiprovider.SDKAnthropic)
+	t.Setenv(EnvAIEmbeddingAPIKey, "sk-ant-test")
+	t.Setenv(EnvAIEmbeddingModel, "claude-opus-5")
+
+	if _, err := AIEnvFromEnv(); err == nil {
+		t.Fatal("anthropic was accepted as an embedding provider")
+	}
+}

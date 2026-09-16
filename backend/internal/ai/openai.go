@@ -13,6 +13,7 @@ import (
 	"github.com/openai/openai-go/packages/param"
 	"github.com/openai/openai-go/shared"
 	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/messages"
 	"lemmary/backend/internal/opencode"
 )
 
@@ -29,8 +30,8 @@ type OpenAIClient struct {
 	client          openai.Client
 	logger          *slog.Logger
 
-	// messages is the Anthropic client the opencode SDK needs for the third of
-	// its catalogue served on /messages. Never used for any other SDK.
+	// messages is the Anthropic client: the whole of the anthropic SDK, and the
+	// third of opencode's catalogue served on /messages. Nil for the rest.
 	messages anthropic.Client
 }
 
@@ -72,8 +73,8 @@ func NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage stri
 		client:         openai.NewClient(opts...),
 		logger:         logger,
 	}
-	if sdk == aiprovider.SDKOpenCode {
-		c.messages = opencode.NewMessages(apiKey, baseURL, timeout)
+	if sdk == aiprovider.SDKOpenCode || sdk == aiprovider.SDKAnthropic {
+		c.messages = messages.NewClient(sdk, apiKey, baseURL, timeout)
 	}
 	return c
 }
@@ -89,8 +90,8 @@ func (c *OpenAIClient) Model() string {
 // Complete sends a chat completion, and gives a provider that refuses it a
 // second chance rather than treating the model as broken.
 //
-// opencode.Endpoint decides first whether this model is served somewhere other
-// than /chat/completions. Everything after that is degradation on the endpoint
+// usesMessagesAPI and opencode.Endpoint decide first whether this model is
+// served somewhere other than /chat/completions. Everything after that is degradation on the endpoint
 // the model does live on: JSON mode dropped if response_format is rejected,
 // reasoning_effort pinned to "none" if the model will not take tools alongside
 // it, temperature back to the API default. The reasoning_effort case prefers
@@ -98,13 +99,14 @@ func (c *OpenAIClient) Model() string {
 // endpoint.
 func (c *OpenAIClient) Complete(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
 	c.markPromptCache(ctx, &params)
-	switch opencode.Endpoint(c.sdk, string(params.Model)) {
-	case opencode.EndpointMessages:
-		resp, err := opencode.CompleteViaMessages(ctx, c.messages, c.logger, c.baseURL, params, extra...)
+	if c.usesMessagesAPI(string(params.Model)) {
+		resp, err := c.completeMessages(ctx, params, extra...)
 		if err == nil {
 			logUsage(c.logger, string(params.Model), usageOf(resp), extra...)
 		}
 		return resp, err
+	}
+	switch opencode.Endpoint(c.sdk, string(params.Model)) {
 	case opencode.EndpointResponses:
 		resp, err := CompleteViaResponses(ctx, c.client, c.logger, c.sdk, c.baseURL, params, extra...)
 		if err == nil {
@@ -113,6 +115,45 @@ func (c *OpenAIClient) Complete(ctx context.Context, params openai.ChatCompletio
 		return resp, err
 	}
 	return c.completeChat(ctx, params, extra...)
+}
+
+// usesMessagesAPI reports whether this model is served by Anthropic's Messages
+// API: always on the anthropic SDK, and for the part of OpenCode Go's catalogue
+// that lives there.
+func (c *OpenAIClient) usesMessagesAPI(model string) bool {
+	return c.sdk == aiprovider.SDKAnthropic ||
+		opencode.Endpoint(c.sdk, model) == opencode.EndpointMessages
+}
+
+// completeMessages sends the request, and drops output_config.effort if the
+// model will not take it. Only Claude 4.5 and later understand the parameter,
+// so an admin who binds an older one would otherwise fail on every request
+// rather than on the first. Remembered per model, like the degradations in
+// completeChat.
+func (c *OpenAIClient) completeMessages(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
+	params.ReasoningEffort = c.messagesEffort(string(params.Model), params.ReasoningEffort)
+	resp, err := messages.Complete(ctx, c.messages, c.logger, c.sdk, c.baseURL, params, extra...)
+	if err == nil || params.ReasoningEffort == "" || !isEffortUnsupportedError(err) {
+		return resp, err
+	}
+	rememberNoEffort(c.baseURL, string(params.Model))
+	params.ReasoningEffort = ""
+	return messages.Complete(ctx, c.messages, c.logger, c.sdk, c.baseURL, params, append(extra, "effort", "unsupported")...)
+}
+
+// messagesEffort is the effort to send. Low unless a caller asked for something
+// else: this codebase's completions are extraction, search and distillation
+// over documents already in hand, they are paid for by the token, and Claude's
+// own default is high. Empty -- the field left off -- for opencode, whose
+// models there take no such field, and for a model already known to refuse it.
+func (c *OpenAIClient) messagesEffort(model string, asked shared.ReasoningEffort) shared.ReasoningEffort {
+	if c.sdk != aiprovider.SDKAnthropic || needsNoEffort(c.baseURL, model) {
+		return ""
+	}
+	if strings.TrimSpace(string(asked)) != "" {
+		return asked
+	}
+	return shared.ReasoningEffortLow
 }
 
 func (c *OpenAIClient) completeChat(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
@@ -289,14 +330,15 @@ func (c *OpenAIClient) completeStreaming(
 	extra ...any,
 ) (string, Usage, error) {
 	c.markPromptCache(ctx, &params)
-	switch opencode.Endpoint(c.sdk, string(params.Model)) {
-	case opencode.EndpointMessages:
-		text, u, err := opencode.CompleteStreamingViaMessages(ctx, c.messages, c.logger, c.baseURL, params, onDelta, extra...)
+	if c.usesMessagesAPI(string(params.Model)) {
+		text, u, err := c.completeStreamingMessages(ctx, params, onDelta, extra...)
 		usage := usageFrom(u)
 		if err == nil {
 			logUsage(c.logger, string(params.Model), usage, append(extra, "stream", true, "api", "messages")...)
 		}
 		return text, usage, err
+	}
+	switch opencode.Endpoint(c.sdk, string(params.Model)) {
 	case opencode.EndpointResponses:
 		return c.completeStreamingViaResponses(ctx, params, onDelta, extra...)
 	}
@@ -349,6 +391,20 @@ func (c *OpenAIClient) completeStreaming(
 		logUsage(c.logger, string(params.Model), usage, append(extra, "stream", true)...)
 	}
 	return b.String(), usage, err
+}
+
+// completeStreamingMessages is completeMessages for a streamed reply, with the
+// same one-shot retry: a model that refuses the effort field refuses it before
+// the first event, so nothing has reached the caller yet.
+func (c *OpenAIClient) completeStreamingMessages(ctx context.Context, params openai.ChatCompletionNewParams, onDelta func(string), extra ...any) (string, openai.CompletionUsage, error) {
+	params.ReasoningEffort = c.messagesEffort(string(params.Model), params.ReasoningEffort)
+	text, usage, err := messages.CompleteStreaming(ctx, c.messages, c.logger, c.sdk, c.baseURL, params, onDelta, extra...)
+	if err == nil || text != "" || params.ReasoningEffort == "" || !isEffortUnsupportedError(err) {
+		return text, usage, err
+	}
+	rememberNoEffort(c.baseURL, string(params.Model))
+	params.ReasoningEffort = ""
+	return messages.CompleteStreaming(ctx, c.messages, c.logger, c.sdk, c.baseURL, params, onDelta, append(extra, "effort", "unsupported")...)
 }
 
 func (c *OpenAIClient) PromptVersion() string {

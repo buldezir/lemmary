@@ -2,6 +2,7 @@ import { apiFetch } from '../apiClient'
 
 export type ProviderSDK =
   | 'openai'
+  | 'anthropic'
   | 'openrouter'
   | 'google_vision'
   | 'mistral'
@@ -88,6 +89,7 @@ export const MODEL_CATALOGS = [
 
 const SDK_DEFAULT_CATALOG: Partial<Record<ProviderSDK, string>> = {
   openai: 'openai',
+  anthropic: 'anthropic',
   openrouter: 'openrouter',
   mistral: 'mistral',
   opencode: 'opencode-go',
@@ -137,6 +139,7 @@ export type CatalogModel = {
 /** Must stay identical to aiprovider.DefaultBaseURL in backend/internal/aiprovider/sdk.go. */
 export const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
   openai: 'https://api.openai.com/v1',
+  anthropic: 'https://api.anthropic.com/v1',
   openrouter: 'https://openrouter.ai/api/v1',
   mistral: 'https://api.mistral.ai/v1',
   opencode: 'https://opencode.ai/zen/go/v1',
@@ -152,6 +155,7 @@ export const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
 
 export const SDK_OPTIONS: { value: ProviderSDK; label: string }[] = [
   { value: 'openai', label: 'OpenAI' },
+  { value: 'anthropic', label: 'Anthropic' },
   { value: 'openrouter', label: 'OpenRouter' },
   { value: 'mistral', label: 'Mistral' },
   { value: 'opencode', label: 'Opencode Go' },
@@ -180,6 +184,7 @@ export function sdkAliasDefault(sdk: ProviderSDK | string) {
 export function isLLMProvider(sdk: string) {
   return (
     sdk === 'openai' ||
+    sdk === 'anthropic' ||
     sdk === 'openrouter' ||
     sdk === 'mistral' ||
     sdk === 'opencode' ||
@@ -209,11 +214,14 @@ export function providerConfigured(
 
 /**
  * Mirrors aiprovider.CanEmbed. Deliberately not isLLMProvider: `local` embeds
- * without chatting, and chatgpt and opencode chat without embedding because
- * neither endpoint serves /embeddings.
+ * without chatting, and anthropic, chatgpt and opencode chat without embedding
+ * because none of those endpoints serves /embeddings.
  */
 export function canEmbedProvider(sdk: string) {
-  return (isLLMProvider(sdk) && sdk !== 'chatgpt' && sdk !== 'opencode') || sdk === 'local'
+  return (
+    (isLLMProvider(sdk) && sdk !== 'chatgpt' && sdk !== 'opencode' && sdk !== 'anthropic') ||
+    sdk === 'local'
+  )
 }
 
 /**
@@ -319,6 +327,7 @@ export function recommendedModel(sdk: string | undefined, purpose: ModelPurpose)
   }
   // Mirrors aiprovider.DefaultExtractModel.
   if (sdk === 'opencode' && purpose === 'llm') return 'gpt-5.6-luna'
+  if (sdk === 'anthropic' && purpose !== 'embedding') return 'claude-opus-5'
   return ''
 }
 

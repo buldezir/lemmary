@@ -36,6 +36,11 @@ type modelCapabilities struct {
 
 const modelsListTimeout = 20 * time.Second
 
+// AnthropicVersion dates the Messages API for the hand-rolled requests in this
+// package. anthropic-sdk-go sends its own on every call it makes, so this is
+// only for the ones it does not make.
+const AnthropicVersion = "2023-06-01"
+
 // ModelPurpose is the task a model is being picked for. It decides both which
 // endpoint filter is asked for and which models are kept from the answer.
 type ModelPurpose string
@@ -176,6 +181,14 @@ func ListModels(ctx context.Context, p Provider, purpose ModelPurpose, client *h
 	// else does not see it.
 	if p.SDK == SDKOpenCode {
 		req.Header.Set(SessionHeader, SessionFor("models"))
+	}
+	// Anthropic authenticates with x-api-key and dates its API in a header. The
+	// bearer above is not merely redundant there: a request carrying both is
+	// read as an OAuth one and refused.
+	if p.SDK == SDKAnthropic {
+		req.Header.Del("Authorization")
+		req.Header.Set("x-api-key", p.APIKey)
+		req.Header.Set("anthropic-version", AnthropicVersion)
 	}
 
 	resp, err := client.Do(req)
@@ -378,8 +391,10 @@ func modelsFromRaw(raw []json.RawMessage) []Model {
 	seen := map[string]struct{}{}
 	for _, item := range raw {
 		var row struct {
-			ID           string `json:"id"`
-			Name         string `json:"name"`
+			ID   string `json:"id"`
+			Name string `json:"name"`
+			// display_name is Anthropic's, the only readable name it gives.
+			DisplayName  string `json:"display_name"`
 			Model        string `json:"model"`
 			Capabilities *struct {
 				CompletionChat bool `json:"completion_chat"`
@@ -388,9 +403,11 @@ func modelsFromRaw(raw []json.RawMessage) []Model {
 			Architecture *struct {
 				OutputModalities []string `json:"output_modalities"`
 			} `json:"architecture"`
-			// context_length is OpenRouter's; max_context_length is Mistral's.
+			// context_length is OpenRouter's; max_context_length is Mistral's;
+			// max_input_tokens is Anthropic's.
 			ContextLength    int `json:"context_length"`
 			MaxContextLength int `json:"max_context_length"`
+			MaxInputTokens   int `json:"max_input_tokens"`
 			TopProvider      *struct {
 				ContextLength int `json:"context_length"`
 			} `json:"top_provider"`
@@ -411,11 +428,14 @@ func modelsFromRaw(raw []json.RawMessage) []Model {
 		seen[id] = struct{}{}
 		name := strings.TrimSpace(row.Name)
 		if name == "" {
+			name = strings.TrimSpace(row.DisplayName)
+		}
+		if name == "" {
 			name = id
 		}
 		// context_length and max_context_length are the same number under two
 		// spellings (OpenRouter, Mistral), so the first positive one wins.
-		contextWindow := pickContextWindow(row.ContextLength, row.MaxContextLength)
+		contextWindow := pickContextWindow(row.ContextLength, row.MaxContextLength, row.MaxInputTokens)
 		if row.TopProvider != nil {
 			// top_provider.context_length is the window of the provider a request
 			// is actually routed to, which can be smaller than the model's

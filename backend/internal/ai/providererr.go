@@ -1,11 +1,13 @@
 package ai
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go"
 
 	"lemmary/backend/internal/strutil"
@@ -44,19 +46,54 @@ func ProviderErrorMessage(err error) string {
 		return ""
 	}
 
+	// Asked before the OpenAI one because the Messages API is a different SDK
+	// with a different error type, and without this an Anthropic failure loses
+	// its status code and reads as a bare Go error.
+	var messagesErr *anthropic.Error
+	if errors.As(err, &messagesErr) {
+		return providerErrorf(messagesErr.StatusCode, messagesErrorDetail(messagesErr))
+	}
+
 	var apiErr *openai.Error
 	if errors.As(err, &apiErr) {
 		detail := redactProviderSecrets(apiErr.Message)
 		if detail == "" {
 			detail = redactProviderSecrets(apiErr.Error())
 		}
-		if apiErr.StatusCode > 0 {
-			return fmt.Sprintf("Provider error (%d): %s", apiErr.StatusCode, detail)
-		}
-		return "Provider error: " + detail
+		return providerErrorf(apiErr.StatusCode, detail)
 	}
 
 	return "Provider error: " + redactProviderSecrets(err.Error())
+}
+
+func providerErrorf(status int, detail string) string {
+	if status > 0 {
+		return fmt.Sprintf("Provider error (%d): %s", status, detail)
+	}
+	return "Provider error: " + detail
+}
+
+// messagesErrorDetail digs the sentence out of an Anthropic failure. That SDK
+// parses no message field, only the body it arrived in, which is
+// {"type":"error","error":{"type":...,"message":...}}. The error type is the
+// fallback because a body that did not parse is still better named than not
+// named, and Error() itself is the last resort: it carries the request line.
+func messagesErrorDetail(err *anthropic.Error) string {
+	var envelope struct {
+		Error struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal([]byte(err.RawJSON()), &envelope) == nil {
+		if detail := redactProviderSecrets(envelope.Error.Message); detail != "" {
+			return detail
+		}
+		if detail := redactProviderSecrets(envelope.Error.Type); detail != "" {
+			return detail
+		}
+	}
+	return redactProviderSecrets(err.Error())
 }
 
 func redactProviderSecrets(text string) string {

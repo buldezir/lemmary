@@ -1,11 +1,13 @@
 package ai
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go"
 )
 
@@ -116,5 +118,37 @@ func TestProviderErrorMessageKeepsHostnamesWithoutAPort(t *testing.T) {
 	}
 	if !strings.Contains(got, "api.openai.com") {
 		t.Fatalf("a bare hostname was redacted: %q", got)
+	}
+}
+
+// The Messages API is a different SDK with a different error type, and the
+// message is only in the body it arrived in. Without a branch of its own an
+// Anthropic failure loses its status and reads as a bare Go error.
+func TestProviderErrorMessageReadsAnthropicErrors(t *testing.T) {
+	t.Parallel()
+	body := `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key sk-ant-secret1234567890"}}`
+	messagesErr := &anthropic.Error{
+		StatusCode: http.StatusUnauthorized,
+		Request:    &http.Request{},
+		Response:   &http.Response{StatusCode: http.StatusUnauthorized},
+	}
+	if err := json.Unmarshal([]byte(body), messagesErr); err != nil {
+		t.Fatalf("build the error: %v", err)
+	}
+
+	got := ProviderErrorMessage(messagesErr)
+	if !strings.Contains(got, "401") {
+		t.Fatalf("message lost the status: %q", got)
+	}
+	if !strings.Contains(got, "invalid x-api-key") {
+		t.Fatalf("message lost the provider's reason: %q", got)
+	}
+	if strings.Contains(got, "sk-ant-secret1234567890") {
+		t.Fatalf("message carried the operator's key to a reader: %q", got)
+	}
+	// The envelope was read, not the whole raw body echoed back: Error() would
+	// bring the request line and the JSON along with it.
+	if strings.ContainsAny(got, "{}") || strings.Contains(got, "Unauthorized") {
+		t.Fatalf("message is the raw error rather than the sentence in it: %q", got)
 	}
 }

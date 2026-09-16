@@ -1,4 +1,4 @@
-package opencode
+package messages
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
+
+	"lemmary/backend/internal/aiprovider"
 )
 
 // This API caches nothing unasked: without a breakpoint every request pays for
@@ -19,9 +21,9 @@ func TestCacheBreakpointsAreSentOnTheHeadAndTheTail(t *testing.T) {
 	t.Parallel()
 	srv := &messagesServer{}
 	base := srv.start(t, textReply("ok"))
-	client := NewMessages("k", base, time.Second)
+	client := NewClient(aiprovider.SDKOpenCode, "k", base, time.Second)
 
-	_, err := CompleteViaMessages(context.Background(), client, nil, base, openai.ChatCompletionNewParams{
+	_, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, openai.ChatCompletionNewParams{
 		Model: shared.ChatModel("minimax-m3"),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("you research the archive"),
@@ -35,7 +37,7 @@ func TestCacheBreakpointsAreSentOnTheHeadAndTheTail(t *testing.T) {
 		}},
 	})
 	if err != nil {
-		t.Fatalf("CompleteViaMessages: %v", err)
+		t.Fatalf("Complete: %v", err)
 	}
 
 	const breakpoint = `"cache_control":{"type":"ephemeral"}`
