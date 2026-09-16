@@ -21,6 +21,12 @@ start without.
 
 ![Setup wizard, admin account step](./screenshots/setup-admin.png)
 
+Then two keys, not a provider catalogue: Mistral reads the documents and powers
+meaning-based search, and one other provider does the thinking. The step links
+the guide that opens both accounts, for whoever arrives without them.
+
+![Setup wizard, the two provider keys](./screenshots/setup-providers.png)
+
 With a provider saved, the last step picks which model does what. The catalogue
 is fetched from the provider, so the list is whatever your key can actually
 reach.
@@ -63,6 +69,11 @@ the extraction step created.
 
 ![Documents filtered to one type](./screenshots/documents-filtered.png)
 
+Tags narrow the same list, and stack: picking two leaves the documents carrying
+both.
+
+![Documents narrowed to one tag](./screenshots/documents-tags.png)
+
 Picking a period in the timeline writes the date range, so the highlight and
 the filtered list are the same piece of state — and both survive a reload,
 because they live in the query string.
@@ -84,6 +95,28 @@ stacked behind the menu button.
 The less-travelled pages sit behind the header's gear menu.
 
 ![The More menu](./screenshots/nav-more.png)
+
+## Tags
+
+A tag exists only once you create it here. Processing assigns from this list and
+never invents anything, which is what keeps a library of 200 documents from
+ending up with 200 tags. Applying a new tag to documents already in the archive
+means reading them again, so the page prices that run before offering it.
+
+![The tag vocabulary](./screenshots/tags.png)
+
+## The tray and the queue
+
+With review always required, a finished document waits to be read rather than
+joining the library unseen. The Inbox is that tray — waiting, still processing
+and failed together — and the header carries what it holds.
+
+![The Inbox](./screenshots/inbox.png)
+
+Activity is the queue itself: what the worker is doing now, with what is left to
+do under it, and whatever was cancelled or failed in the last day still listed.
+
+![The processing queue](./screenshots/activity.png)
 
 ## One document
 
@@ -129,6 +162,18 @@ skip OCR entirely.
 
 ![Files staged for upload](./screenshots/upload-staged.png)
 
+A network scanner is a source of its own: the page speaks eSCL to the device
+over the LAN, so nothing is installed and no computer sits in between.
+
+![Scanning from a network scanner](./screenshots/upload-scan.png)
+
+A zip you packed yourself is read before anything is created, folders inside it
+kept as a name prefix.
+
+![Zip import, empty](./screenshots/upload-zip-empty.png)
+
+![A zip archive previewed](./screenshots/upload-zip.png)
+
 A scanner that produced one PDF from a stack of unrelated paper can be cut back
 apart — by hand, or with the cuts the model proposes.
 
@@ -166,6 +211,11 @@ when it finishes, so a long run stays legible.
 
 ![Research steps expanded](./screenshots/deep-search-steps.png)
 
+An answer worth keeping can be branched: the fork copies the chat up to that
+answer and carries on there, leaving the original as it was.
+
+![A research chat forked at one of its answers](./screenshots/deep-search-fork.png)
+
 Chats are saved, listed in a sidebar and resumable by URL.
 
 ![Saved chats in the sidebar](./screenshots/deep-search-sessions.png)
@@ -194,13 +244,36 @@ its metadata or re-running the pipeline over the files.
 
 ## Administration
 
-Providers, models, processing and worker timeouts are runtime settings, stored
-in the database rather than the environment. API keys are write-only: the page
-reports that a key is set, never what it is.
+Settings are runtime configuration, stored in the database rather than the
+environment, and split into a tab each. Appearance names the instance and picks
+the accent the whole interface takes.
+
+![Settings, appearance](./screenshots/settings-appearance.png)
+
+AI holds the providers and which model does what. API keys are write-only: the
+page reports that a key is set, never what it is.
 
 ![Settings, providers and models](./screenshots/settings-top.png)
 
-![Settings, full page](./screenshots/settings.png)
+![Settings, the AI tab in full](./screenshots/settings.png)
+
+Processing covers the timeouts, the language results come back in, whether every
+document waits for review, and house rules appended to the extraction prompt —
+the place to say that "Rechnung" is an invoice, or that these three senders are
+the same company.
+
+![Settings, processing](./screenshots/settings-processing.png)
+
+The worker's own limits: how long one job may run, and how often a failed step
+is retried.
+
+![Settings, worker](./screenshots/settings-worker.png)
+
+Exact duplicates are always refused on upload. Near-duplicate matching compares
+OCR text instead, which costs a pass over the library, so it is off until asked
+for.
+
+![Settings, duplicates](./screenshots/settings-duplicates.png)
 
 Library-wide maintenance: reprocess failed documents in batches, scan for
 duplicates, delete taxonomy nothing points at any more, rebuild the search
