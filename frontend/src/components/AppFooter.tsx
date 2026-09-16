@@ -18,7 +18,14 @@ export function AppFooter() {
   return (
     <footer className="mt-auto border-t border-line px-4 py-4 text-center text-[11px] uppercase tracking-[0.14em] text-ink-soft">
       <p className="inline-flex items-center">
-        Lemmary
+        <a
+          href="https://lemmary.app"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="transition-colors hover:text-oxblood"
+        >
+          Lemmary
+        </a>
         <span className="mx-2 text-line-strong" aria-hidden="true">
           ·
         </span>
