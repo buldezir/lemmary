@@ -77,6 +77,10 @@ export function DocumentDetailPage() {
     editingRef.current = editing
   }, [editing])
 
+  // The newest document from the server, kept even while editing so locking
+  // the form again can drop the unsaved edits it is hiding.
+  const loadedRef = useRef<DocumentRecord | null>(null)
+
   // Which (document, has-OCR-text) pair the reprocess defaults were computed
   // for, so background refreshes do not reset the user's selection.
   const reprocessDefaultsKey = useRef('')
@@ -121,6 +125,7 @@ export function DocumentDetailPage() {
         }
 
         setJob(jobs.items[0] ?? null)
+        loadedRef.current = doc
         if (!editingRef.current) {
           applyLoadedDocument(doc)
         }
@@ -394,6 +399,17 @@ export function DocumentDetailPage() {
     }
   }
 
+  function toggleEditing() {
+    if (!editing) {
+      setEditing(true)
+      return
+    }
+    setEditing(false)
+    if (loadedRef.current) {
+      applyLoadedDocument(loadedRef.current)
+    }
+  }
+
   async function onSave(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!document || !editing) {
@@ -525,20 +541,54 @@ export function DocumentDetailPage() {
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 100 100"
+              fill="currentColor"
+              className="h-4 w-4"
+              aria-hidden="true"
+            >
+              <path d="M82.17,82.17a2.49,2.49,0,0,1-.32.26h6a2.5,2.5,0,0,1,0,5h-12a2.5,2.5,0,0,1-2.5-2.5v-12a2.5,2.5,0,0,1,5,0v6l.26-.28A40.5,40.5,0,0,0,50,9.5a2.5,2.5,0,0,1,0-5A45.5,45.5,0,0,1,82.17,82.17ZM4.5,50A45.5,45.5,0,0,0,50,95.5a2.5,2.5,0,0,0,0-5A40.5,40.5,0,0,1,21.36,21.36c.08-.08.17-.18.26-.29v6a2.5,2.5,0,0,0,5,0v-12a2.5,2.5,0,0,0-2.5-2.5h-12a2.5,2.5,0,0,0,0,5h6a3.72,3.72,0,0,0-.31.26A45.2,45.2,0,0,0,4.5,50ZM58.63,41.37a12.2,12.2,0,1,1-17.25,0A12.21,12.21,0,0,1,58.63,41.37Zm-3.54,3.54a7.2,7.2,0,1,0,0,10.18A7.21,7.21,0,0,0,55.09,44.91ZM67.3,67.31a24.68,24.68,0,0,1-2.59,2.25L65,72.84a6.47,6.47,0,0,1-4.78,6.83L56,80.81a6.48,6.48,0,0,1-7.56-3.53l-1.39-3a24.24,24.24,0,0,1-6.61-1.77l-2.7,1.89a6.48,6.48,0,0,1-8.31-.72l-3.11-3.11a6.47,6.47,0,0,1-.72-8.31l1.89-2.7A24.24,24.24,0,0,1,25.71,53l-3-1.39A6.48,6.48,0,0,1,19.19,44l1.14-4.25A6.46,6.46,0,0,1,27.16,35l3.28.29a24.72,24.72,0,0,1,4.84-4.84L35,27.16a6.48,6.48,0,0,1,4.78-6.83L44,19.19a6.48,6.48,0,0,1,7.56,3.53l1.39,3a24.24,24.24,0,0,1,6.61,1.77l2.7-1.89a6.47,6.47,0,0,1,8.31.72l3.11,3.11a6.48,6.48,0,0,1,.72,8.31l-1.89,2.7A24.21,24.21,0,0,1,74.29,47l3,1.39A6.48,6.48,0,0,1,80.81,56l-1.14,4.25A6.46,6.46,0,0,1,72.84,65l-3.28-.29A24.69,24.69,0,0,1,67.3,67.31Zm1.26-7.7,4.71.42a1.48,1.48,0,0,0,1.56-1.09L76,54.69A1.48,1.48,0,0,0,75.17,53l-4.3-2a2.5,2.5,0,0,1-1.44-2.12,19.31,19.31,0,0,0-2-7.55,2.5,2.5,0,0,1,.19-2.56l2.72-3.88a1.48,1.48,0,0,0-.17-1.9L67,29.84a1.48,1.48,0,0,0-1.9-.17L61.27,32.4a2.5,2.5,0,0,1-2.55.19,19.33,19.33,0,0,0-7.55-2A2.5,2.5,0,0,1,49,29.12l-2-4.3A1.48,1.48,0,0,0,45.31,24l-4.25,1.14A1.48,1.48,0,0,0,40,26.72l.42,4.71a2.5,2.5,0,0,1-1.11,2.31,19.54,19.54,0,0,0-3,2.49h0a19.51,19.51,0,0,0-2.49,3,2.5,2.5,0,0,1-2.31,1.11L26.72,40a1.48,1.48,0,0,0-1.56,1.09L24,45.31A1.48,1.48,0,0,0,24.83,47l4.3,2a2.5,2.5,0,0,1,1.44,2.12,19.33,19.33,0,0,0,2,7.55,2.5,2.5,0,0,1-.19,2.55l-2.72,3.88a1.48,1.48,0,0,0,.17,1.9L33,70.16a1.48,1.48,0,0,0,1.9.17l3.88-2.72a2.5,2.5,0,0,1,2.55-.19,19.33,19.33,0,0,0,7.55,2A2.5,2.5,0,0,1,51,70.88l2,4.3a1.48,1.48,0,0,0,1.73.81l4.25-1.14A1.48,1.48,0,0,0,60,73.28l-.42-4.71a2.5,2.5,0,0,1,1.11-2.31,19.67,19.67,0,0,0,5.54-5.54A2.5,2.5,0,0,1,68.57,59.61Z" />
+            </svg>
+            Job
+          </button>
+          <button
+            type="button"
+            onClick={toggleEditing}
+            aria-pressed={editing}
+            aria-label={editing ? 'Lock editing' : 'Unlock editing'}
+            title={editing ? 'Lock editing and discard unsaved changes' : 'Unlock editing'}
+            className={`flex shrink-0 items-center justify-center rounded-xs border px-2.5 py-2 transition-colors ${
+              editing
+                ? 'border-ink bg-ink text-paper hover:bg-oxblood'
+                : 'border-line-strong bg-surface text-ink-muted hover:bg-bright hover:text-ink'
+            }`}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 20 20"
               fill="none"
               stroke="currentColor"
               strokeWidth="1.5"
               strokeLinecap="round"
-              className="h-4 w-4"
+              strokeLinejoin="round"
+              className="h-5 w-5"
               aria-hidden="true"
             >
-              <circle cx="10" cy="10" r="5.3" />
-              <circle cx="10" cy="10" r="1.8" />
-              <path d="M15.30 10.00L17.90 10.00M13.75 13.75L15.59 15.59M10.00 15.30L10.00 17.90M6.25 13.75L4.41 15.59M4.70 10.00L2.10 10.00M6.25 6.25L4.41 4.41M10.00 4.70L10.00 2.10M13.75 6.25L15.59 4.41" />
+              <rect x="4.5" y="9" width="11" height="8" rx="1.5" />
+              {/* The shackle's right leg is what comes off the body when the
+                  form is open for editing. */}
+              <path d={editing ? 'M7 9V6a3 3 0 0 1 6 0' : 'M7 9V6a3 3 0 0 1 6 0v3'} />
             </svg>
-            Job
           </button>
+          {document.processing_status === 'needs_review' && (
+            <Button
+              variant="secondary"
+              disabled={markingReviewed || editing}
+              title={editing ? 'Lock editing first' : undefined}
+              onClick={() => void onMarkReviewed()}
+            >
+              {markingReviewed ? 'Marking...' : 'Mark reviewed'}
+            </Button>
+          )}
           <Link
             to="/document/$documentId/ask"
             params={{ documentId }}
@@ -554,15 +604,6 @@ export function DocumentDetailPage() {
           >
             Ask AI
           </Link>
-          {document.processing_status === 'needs_review' && !editing && (
-            <Button
-              variant="secondary"
-              disabled={markingReviewed}
-              onClick={() => void onMarkReviewed()}
-            >
-              {markingReviewed ? 'Marking...' : 'Mark reviewed'}
-            </Button>
-          )}
           <div className="ml-1 border-l border-line pl-3">
             <Button variant="danger" onClick={() => void onDelete()} disabled={deleting}>
               {deleting ? 'Deleting...' : 'Delete'}
