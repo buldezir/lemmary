@@ -26,9 +26,9 @@ const (
 	// beside RequiresAPIKey.
 	//
 	// It chats and reads documents; the Codex backend serves no /embeddings, so
-	// CanEmbed refuses it. Off unless AI_CHATGPT_LOGIN=1: the endpoints behind it
-	// are OpenAI's own first-party ones, undocumented and reserved for OpenAI's
-	// clients. See docs/chatgpt_login.md.
+	// CanEmbed refuses it. The endpoints behind it are OpenAI's own first-party
+	// ones, undocumented and reserved for OpenAI's clients. See
+	// docs/chatgpt_login.md.
 	SDKChatGPT = "chatgpt"
 
 	// SDKLocalEmbeddings is an OpenAI-compatible embeddings endpoint the operator

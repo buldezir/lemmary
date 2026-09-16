@@ -13,9 +13,9 @@
 //     an openai-go middleware. Nothing above it knows any of this happened.
 //
 // Every endpoint here is OpenAI's own, undocumented, and meant for OpenAI's
-// clients. That is why the feature is off unless AI_CHATGPT_LOGIN=1 and refused
-// outright on a managed instance: pointing an account at them is a decision the
-// operator makes for themselves. See docs/chatgpt_login.md.
+// clients. That is why the sign-in is refused on a managed instance: pointing an
+// account at them is a decision the account holder makes for themselves. See
+// docs/chatgpt_login.md.
 package chatgpt
 
 import (

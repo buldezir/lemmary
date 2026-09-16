@@ -1,8 +1,8 @@
 # AI providers and models
 
 Lemmary needs two things from an AI provider: **OCR** for PDFs and images, and a
-**language model** for metadata extraction, document chat and Deep Search. An
-**embedding model** is optional and adds meaning-based retrieval to Deep Search.
+**language model** for metadata extraction, document chat and Deep Research. An
+**embedding model** is optional and adds meaning-based retrieval to Deep Research.
 
 One provider can serve all three. Configure them in the admin **Settings** page,
 or seed them from `.env` before the first boot so a fresh instance comes up ready
@@ -27,15 +27,15 @@ values used by `OCR_SDK`, `AI_EMBEDDING_SDK` and `WEB_SEARCH_SDK`.
 
 **Start with Mistral.** It is the only SDK that covers every job Lemmary has, so
 one key and one provider row configure the whole instance — OCR, extraction,
-chat, Deep Search and embeddings — with nothing left to bind. Its OCR is a
+chat, Deep Research and embeddings — with nothing left to bind. Its OCR is a
 purpose-built document endpoint rather than a general model asked to read a
 scan, and its catalogue advertises per-model capabilities, so the Settings model
 pickers show the right models instead of the whole catalogue.
 
 **Or start with Opencode Go**, if a subscription suits you better than metered
 keys: `AI_SDK=opencode` and a key is the whole configuration, and it covers
-extraction, chat, Deep Search and OCR across a catalogue of models from several
-vendors. It does not embed — see the bullet below — so Deep Search matches
+extraction, chat, Deep Research and OCR across a catalogue of models from several
+vendors. It does not embed — see the bullet below — so Deep Research matches
 keywords until you add a second provider for that.
 
 The alternatives are worth naming:
@@ -65,12 +65,12 @@ The alternatives are worth naming:
 - **ChatGPT subscription** — everything but embeddings, billed against a
   ChatGPT Plus, Pro or Business subscription instead of per token. There is no
   key to paste: you add the provider, sign in with a device code, and bind chat,
-  extraction, Deep Search or OCR to it. OCR works the way it does on `openai` —
+  extraction, Deep Research or OCR to it. OCR works the way it does on `openai` —
   the file goes to the model — so an instance whose only AI credential is a
   ChatGPT seat is a complete install. Embeddings are refused: the endpoint has
-  no `/embeddings` at all. Off unless `AI_CHATGPT_LOGIN=1`, and refused on a
-  managed instance — it reaches OpenAI's own Codex endpoints, so the account you
-  sign in with is the one carrying the risk. Its SDK value is `chatgpt`, though
+  no `/embeddings` at all. Refused on a managed instance — it reaches OpenAI's
+  own Codex endpoints, so the account you sign in with is the one carrying the
+  risk. Its SDK value is `chatgpt`, though
   it is not an `AI_SDK` or `OCR_SDK` value: a sign-in cannot be written into
   `.env`. See [ChatGPT sign-in](/chatgpt_login).
 - **Local OCR (Docling)** — OCR only, and the only provider that reads a
@@ -93,7 +93,7 @@ Together, Local OCR and Local Embeddings are the two halves of an install where
 nothing leaves the host: point `AI_BASE_URL` at Ollama or vLLM, set
 `OCR_SDK=docling`, and set `AI_EMBEDDING_SDK=local`.
 
-Without a language-model provider, AI extraction, document chat and Deep Search
+Without a language-model provider, AI extraction, document chat and Deep Research
 return a configuration error.
 
 ## Two modes, one build
@@ -130,17 +130,16 @@ after that.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `AI_MANAGED` | `0` | Whether the operator owns AI configuration. See the table above. |
-| `AI_CHATGPT_LOGIN` | `0` | Whether **Settings** offers the ChatGPT subscription SDK (`chatgpt`), which bills a ChatGPT subscription instead of a metered key. Off unless set, and refused together with `AI_MANAGED=1`. It is not an `AI_SDK` value: the provider is added and signed in to from Settings, because its credential is minted rather than typed. See [ChatGPT sign-in](/chatgpt_login). |
 | `AI_SDK` | `openai` | The language model's SDK: `opencode`, `openai`, `openrouter` or `mistral`. `google_vision`, `docling` (Local OCR) and `local` (Local Embeddings) are refused — none of them can serve extraction. `chatgpt` too: it has no key to seed from the environment. |
-| `AI_API_KEY` | empty | Its credential. **One key is usually the whole configuration**: with this and nothing else the app creates one provider and routes extraction, chat, Deep Search *and* OCR to it. |
-| `AI_MODEL` | `gpt-5.6-luna` | The model for extraction, chat and Deep Search. Be sure it supports the result language set in **Settings**. |
+| `AI_API_KEY` | empty | Its credential. **One key is usually the whole configuration**: with this and nothing else the app creates one provider and routes extraction, chat, Deep Research *and* OCR to it. |
+| `AI_MODEL` | `gpt-5.6-luna` | The model for extraction, chat and Deep Research. Be sure it supports the result language set in **Settings**. |
 | `AI_BASE_URL` | the SDK's own endpoint | An OpenAI-compatible base URL, for a gateway or a self-hosted endpoint. Leave it unset for `opencode`, whose own endpoint is `https://opencode.ai/zen/go/v1`. |
 | `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `opencode`, `openai`, `openrouter`, `mistral`, `google_vision` or `docling` (Local OCR). `local` (Local Embeddings) is refused — it serves embeddings only. `chatgpt` reads documents but is refused here too: it is signed in to from Settings rather than given a key, so the environment has nothing to seed it with. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
 | `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK` — except Local OCR (`docling`), which has no account behind it. Optional there, and only if you started the sidecar with `DOCLING_SERVE_API_KEY`. |
 | `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. For Local OCR (`docling`) the default is the compose service name, `http://docling:5001`, so `OCR_SDK=docling` alone is a complete configuration under the overlay. |
 | `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Not required for `google_vision` or Local OCR (`docling`), which read a document without one; for Local OCR it optionally names the OCR engine instead. See [Choosing an engine](/local_ocr#choosing-an-engine). |
-| `AI_EMBEDDING_MODEL` | unset (Deep Search matches keywords only) | An embedding model — on the `AI_SDK` provider, or on the `AI_EMBEDDING_SDK` one when that is set — so Deep Search can also find documents by meaning. Under `AI_SDK=opencode` it requires `AI_EMBEDDING_SDK`: Opencode serves no `/embeddings`, so there is no provider to fall back to, and naming a model without one is refused at boot. Operator-owned under `AI_MANAGED=1`; removing it there turns the feature off. See [what embeddings cost](#what-embeddings-cost). |
-| `AI_SEARCH_HELPER_MODEL` | unset (the Search model does this work) | A cheaper model on the `AI_SDK` provider for Deep Search's bulk per-document work: distilling long reads into notes and surveying many documents for one question. Operator-owned under `AI_MANAGED=1`. See [How Research covers a topic](/setup#how-research-covers-a-topic). |
+| `AI_EMBEDDING_MODEL` | unset (Deep Research matches keywords only) | An embedding model — on the `AI_SDK` provider, or on the `AI_EMBEDDING_SDK` one when that is set — so Deep Research can also find documents by meaning. Under `AI_SDK=opencode` it requires `AI_EMBEDDING_SDK`: Opencode serves no `/embeddings`, so there is no provider to fall back to, and naming a model without one is refused at boot. Operator-owned under `AI_MANAGED=1`; removing it there turns the feature off. See [what embeddings cost](#what-embeddings-cost). |
+| `AI_SEARCH_HELPER_MODEL` | unset (the Search model does this work) | A cheaper model on the `AI_SDK` provider for Deep Research's bulk per-document work: distilling long reads into notes and surveying many documents for one question. Operator-owned under `AI_MANAGED=1`. See [How Research covers a topic](/deep_research#how-research-covers-a-topic). |
 
 ### The embedding provider
 
@@ -223,7 +222,7 @@ afterwards, in both modes.
 | `AI_TIMEOUT_SEC` | `60` | Extraction, chat, search and split-detection request timeout |
 | `WORKER_TIMEOUT_SEC` | `300` | Per-job processing timeout |
 | `WORKER_MAX_RETRIES` | `0` | Max step retry attempts before a job fails |
-| `DEEP_SEARCH_LANGUAGES` | empty | Comma-separated ISO 639-1 codes (e.g. `de,en,uk`) for Deep Search keyword expansion. Only drives per-language searches when no embedding model is set; with one, a single search already crosses languages |
+| `DEEP_SEARCH_LANGUAGES` | empty | Comma-separated ISO 639-1 codes (e.g. `de,en,uk`) for keyword expansion on both search pages. Only drives per-language searches when no embedding model is set; with one, a single search already crosses languages |
 | `EXTRACTION_PROMPT_VERSION` | `v1` | Stored on each processing job step run, with a digest of the Settings extraction rules appended where any are set; bookkeeping only, not offered in the Settings UI |
 
 Two more are seeded the same way but are **operator-owned under
@@ -260,7 +259,7 @@ user writes, so they are already in the language that user chose.
 
 ### The model catalogue
 
-Deep Search replays a conversation whole and lets the provider decide what fits:
+Deep Research replays a conversation whole and lets the provider decide what fits:
 nothing is trimmed on the way out, and a request that outgrows the model comes
 back as the provider's own error. So that a run can be watched against its
 limit, each research turn reports the tokens its widest request used — live
@@ -319,13 +318,13 @@ question of a cheap model. Any signed-in user can do this; the choice is among
 the providers an admin has already configured, so it can spend the operator's
 credentials but never add a new one.
 
-- **Ask AI** and **Deep Search** offer *Use a different chat/search model*
-  under the composer, which also names the model in use when nothing is
-  overridden. The choice is fixed for the conversation, like the Search/Research
-  mode beside it: the transcript replayed on each turn was produced by one
-  model, and answering the next question with another reads that work back as if
-  it were its own. Start a new chat to switch. Deep Search's **helper** model is
-  not moved by this — it is a separate binding because it does many cheap
+- **Ask AI**, **AI assisted search** and **Deep Research** offer *Use a
+  different chat/search model* under the composer, which also names the model in
+  use when nothing is overridden. The choice is fixed for the conversation, like
+  the page it was started on: the transcript replayed on each turn was produced
+  by one model, and answering the next question with another reads that work
+  back as if it were its own. Start a new chat to switch. Deep Research's
+  **helper** model is not moved by this — it is a separate binding because it does many cheap
   per-document calls where the search model does a few expensive ones.
 
   **A conversation records the model it opened on, whether or not anyone picked
@@ -488,7 +487,7 @@ size, memory, GPU variants and the per-page cost — is in
   | `/responses` | `grok-*`, `gpt-5.6-luna`, `muse-spark-*` |
   | `/messages` (Anthropic's API) | `minimax-*`, `qwen*` |
 
-- **A `gpt-5`-family model refuses a Deep Search request** — those models set
+- **A `gpt-5`-family model refuses a Deep Research request** — those models set
   `reasoning_effort` themselves and then reject the request because function
   tools are present. Lemmary handles it without configuration: the request is
   translated to the *Responses* API, which keeps both the tools and the

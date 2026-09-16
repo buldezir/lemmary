@@ -53,9 +53,7 @@ export function primaryNavItems(reviewRequired: boolean): readonly NavItem[] {
       : []),
     { kind: 'route', label: 'Upload', to: '/upload' },
     { kind: 'route', label: 'Activity', to: '/activity', badgeKey: 'activity' },
-    // /rag, not a mode: it is the one path above both, so this marks itself
-    // active in Search and Research alike.
-    { kind: 'route', label: 'Deep Search', to: '/rag' },
+    { kind: 'route', label: 'Deep Research', to: '/rag/research' },
   ]
 }
 

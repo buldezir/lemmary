@@ -21,15 +21,46 @@ type Props = {
    * that a "completed" document is missing its search vectors.
    */
   job?: ProcessingJobRecord
+  /** Fills the status badge and edges the card in its colour, as the Inbox does. */
+  statusAccent?: boolean
 }
 
-const statusStyles: Record<DocumentStatus, string> = {
-  pending: 'text-amber-800 ring-amber-800/40',
-  processing: 'text-sky-900 ring-sky-900/40',
-  completed: 'text-forest ring-forest/40',
-  failed: 'text-madder ring-madder/50',
-  cancelled: 'text-ink-muted ring-ink-muted/40',
-  needs_review: 'text-amber-800 ring-amber-800/40',
+/**
+ * Two ways of wearing the status: an outline where it is one fact among many,
+ * and a filled badge with the card edged to match where the status is what the
+ * list is about.
+ */
+const statusStyles: Record<DocumentStatus, { outline: string; filled: string; border: string }> = {
+  pending: {
+    outline: 'text-amber-800 ring-amber-800/40',
+    filled: 'bg-amber-800 text-paper',
+    border: 'border-amber-800',
+  },
+  processing: {
+    outline: 'text-sky-900 ring-sky-900/40',
+    filled: 'bg-sky-900 text-paper',
+    border: 'border-sky-900',
+  },
+  completed: {
+    outline: 'text-forest ring-forest/40',
+    filled: 'bg-forest text-paper',
+    border: 'border-forest',
+  },
+  failed: {
+    outline: 'text-madder ring-madder/50',
+    filled: 'bg-madder text-paper',
+    border: 'border-madder',
+  },
+  cancelled: {
+    outline: 'text-ink-muted ring-ink-muted/40',
+    filled: 'bg-ink-muted text-paper',
+    border: 'border-ink-muted',
+  },
+  needs_review: {
+    outline: 'text-amber-800 ring-amber-800/40',
+    filled: 'bg-amber-800 text-paper',
+    border: 'border-amber-800',
+  },
 }
 
 function CardDescription({ document }: { document: DocumentRecord }) {
@@ -79,18 +110,24 @@ export function DocumentCard({
   markingReviewed,
   onFilterTag,
   job,
+  statusAccent,
 }: Props) {
   const tags = document.expand?.tags ?? []
   const correspondent = document.expand?.correspondent?.name
   const documentType = document.expand?.document_type?.name
   const title = document.title || 'Untitled document'
   const canMarkReviewed = Boolean(onMarkReviewed) && document.processing_status === 'needs_review'
+  const status = statusStyles[document.processing_status]
 
   return (
     <article
       data-document-id={document.id}
-      className={`relative flex flex-col border bg-surface p-4 transition-colors hover:border-ink/50 hover:bg-bright hover:shadow-sm hover:shadow-ink/10 ${
-        selected ? 'border-oxblood ring-1 ring-oxblood' : 'border-line'
+      className={`relative flex flex-col border bg-surface p-4 transition-colors hover:bg-bright hover:shadow-sm hover:shadow-ink/10 ${
+        selected
+          ? 'border-oxblood ring-1 ring-oxblood'
+          : statusAccent
+            ? status.border
+            : 'border-line hover:border-ink/50'
       }`}
     >
       <Link
@@ -113,7 +150,9 @@ export function DocumentCard({
               />
             )}
             <span
-              className={`inline-flex px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ring-1 ring-inset ${statusStyles[document.processing_status]}`}
+              className={`inline-flex px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                statusAccent ? status.filled : `ring-1 ring-inset ${status.outline}`
+              }`}
             >
               {DOCUMENT_STATUS_LABELS[document.processing_status]}
             </span>

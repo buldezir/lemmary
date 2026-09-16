@@ -23,7 +23,6 @@ import {
   type ProviderSDK,
 } from '../lib/api/providers'
 import { getAppSettings, updateAppSettings } from '../lib/api/settings'
-import { useAppMeta } from '../hooks/useAppMeta'
 import { AppFooter } from './AppFooter'
 import { ChatGPTSignIn } from './ChatGPTSignIn'
 import { ProviderModelFields } from './ProviderModelFields'
@@ -60,9 +59,6 @@ function nextConfigStep(status: SetupStatus): Step {
 }
 
 export function SetupWizard({ appName, accent, initialStatus, onComplete }: SetupWizardProps) {
-  // The meta endpoint is public, which is what lets the wizard read the flag
-  // before there is a session to read it with.
-  const { chatgptLogin } = useAppMeta()
   const [step, setStep] = useState<Step>(() => initialStep(initialStatus))
   const [status, setStatus] = useState(initialStatus)
   const [submitting, setSubmitting] = useState(false)
@@ -584,14 +580,9 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 Google Vision or Mistral OCR can run OCR, and one Mistral provider covers both.
                 Local OCR runs Docling on your own host and Local Embeddings serves Deep
                 Search's dense half — neither needs an API key, but each needs its compose
-                overlay running first.
-                {chatgptLogin === true && (
-                  <>
-                    {' '}
-                    A ChatGPT subscription covers extraction, chat and OCR on the seat you already
-                    pay for, with no API key at all — you sign in with a code instead.
-                  </>
-                )}
+                overlay running first. A ChatGPT subscription covers extraction, chat and OCR
+                on the seat you already pay for, with no API key at all — you sign in with a
+                code instead.
               </p>
               <p className={fieldHintClassName}>
                 No provider account yet?{' '}
@@ -616,12 +607,9 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                   }}
                   className={inputClassName}
                 >
-                  {/* chatgpt only where the instance opted in, the same condition
-                      Settings uses. Choosing it creates the row and holds the
-                      step open for the sign-in. */}
-                  {SDK_OPTIONS.filter(
-                    (option) => option.value !== 'chatgpt' || chatgptLogin === true,
-                  ).map((option) => (
+                  {/* Choosing chatgpt creates the row and holds the step open
+                      for the sign-in. */}
+                  {SDK_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -696,8 +684,8 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
               </p>
               {llmProviders.length === 0 && (
                 <p className="text-sm text-amber-800">
-                  Add an OpenAI, OpenRouter{chatgptLogin === true ? ', ChatGPT' : ''} or Mistral
-                  provider to enable extraction and chat.
+                  Add an OpenAI, OpenRouter, ChatGPT or Mistral provider to enable extraction
+                  and chat.
                 </p>
               )}
               <ProviderModelFields

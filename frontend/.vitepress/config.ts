@@ -32,6 +32,7 @@ export default defineConfig({
     nav: [
       { text: 'Screenshots', link: '/screenshots' },
       { text: 'Compare', link: '/comparison' },
+      { text: 'Deep Research', link: '/deep_research' },
       { text: 'Self-hosting', link: '/self_hosting' },
       { text: 'Configure', link: '/setup' },
       { text: 'AI setup', link: '/guided_ai_setup' },
@@ -44,6 +45,7 @@ export default defineConfig({
         items: [
           { text: 'Screenshots', link: '/screenshots' },
           { text: 'Lemmary vs alternatives', link: '/comparison' },
+          { text: 'Deep Research', link: '/deep_research' },
           { text: 'Self-hosting with Docker', link: '/self_hosting' },
           { text: 'Guided AI provider setup', link: '/guided_ai_setup' },
           { text: 'Configuration Guide', link: '/setup' },

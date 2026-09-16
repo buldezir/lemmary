@@ -365,13 +365,13 @@ Query behavior:
 - **When nothing matches exactly, terms of three letters or more are retried as prefixes** — `amaz` finds *Amazon* while you are still typing, `Rechnung` finds *Rechnungsnummer*. Exact and prefix hits never mix: the retry only runs when the whole-word search came back empty, so a document that really contains the word is never pushed down by one that merely starts with it. Terms containing a digit are excluded (`202` would prefix every year in the archive), and it is a prefix, not a substring — `mazon` still finds nothing.
 - Search covers bilingual title/purpose/summary, OCR text, tag/type/correspondent names, and `people_or_organizations`.
 - The homepage search box calls `GET /api/app/documents/search` once three characters are typed — below that it says so and leaves the list unfiltered, since a one- or two-letter prefix would match most of the archive. An empty search box still lists via PocketBase (sort by created).
-- Deep Search’s `search_documents` tool (both modes) and paperless-ngx `GET /api/documents/?query=` use the same index. Research’s `read_documents` reads `ocr_text` straight from the database, not the index.
+- The `search_documents` tool behind both [search pages](/deep_research) and paperless-ngx `GET /api/documents/?query=` use the same index. Deep Research’s `read_documents` reads `ocr_text` straight from the database, not the index.
 - **The agent’s searches relax that AND; the search box does not.** The prompts ask the model to expand a question into keywords, and requiring every one of them returned nothing for archives that held a document per keyword. So `search_documents` asks for most of the terms (all of 2, n−1 up to 5, then 70%), and if *that* matches nothing at all it retries for any one of them — with one edit of slack on words of five letters or more that carry no digits — capping the retry at 10 hits. A quoted phrase stays mandatory in both attempts. The search box keeps strict AND on purpose: there the query is a filter over documents the user knows, and a hit that dropped a word reads as a bug.
 - PocketBase collection filters (`field ~ "..."`) remain available to API clients; the UI no longer uses them for the search box.
 
 With an embedding model bound there is a second index beside it, at
 `{dataDir}/bleve/chunks`: one entry per embedded passage, carrying the passage's
-text and its vector. Only Deep Search's tools query it. It is derived data like
+text and its vector. Only the search agent queries it. It is derived data like
 the first — rebuilt from `data.db` with no calls to the embedding provider — and
 it is versioned by model *and* dimension count, so changing either wipes and
 refills that index alone while keyword search keeps serving. Clearing the
@@ -379,122 +379,18 @@ embedding binding deletes the directory.
 
 Admins can force a rebuild from **Management → Rebuild search index** (`POST /api/app/search/reindex`). It rebuilds both indexes.
 
-## Deep Search
+## Deep Research
 
-Deep Search uses a tool-calling agent over the Bleve full-text index, in two modes, one per path under `/rag`:
-
-- **Search** (`/rag/search`) — one round of `search_documents`, answered from titles, summaries and short OCR snippets. Results are shown as document cards.
-- **Research** (`/rag/research`) — the agent searches, reads the documents it finds (`read_documents`), surveys many at once when the question spans a topic (`survey_documents`), counts when asked how many (`count_documents`), and writes a markdown answer citing each document it used, with the documents it drew on listed under the answer. Progress streams over `POST /api/app/search/stream` (server-sent events), so each search, read, survey and count appears as it happens.
-
-Research has no round or document limit. It keeps searching and reading until it can answer, the model stops making progress, or a completion is rejected because the conversation exceeded the model's context window. Without a language-model provider, Deep Search returns a configuration error — see [AI providers and models](/ai_providers).
-
-### How Deep Search finds documents
-
-Both modes reach the archive through the same `search_documents` tool, and it
-runs up to two searches for every query.
-
-- **Keywords (BM25)** over the documents index, [relaxed in two
-  rungs](#full-text-search) rather than the strict AND the Documents page keeps:
-  there the query is a filter you typed, here it is a guess the model made from
-  a question.
-- **Meaning (kNN)** over `bleve/chunks`, a second index holding one entry per
-  embedded passage with its vector, searched by cosine similarity to the
-  embedded question. This half exists only when `AI_EMBEDDING_MODEL` is set and
-  documents have actually been embedded. The model can be a hosted one or [one
-  you run yourself](/local_embeddings).
-
-The two lists are fused by reciprocal rank fusion: a document scores the sum of
-`1/(60 + rank)` over the lists it appears in. Only positions are read, never
-scores — BM25 and cosine are not on the same scale, and normalising one against
-the other would be guesswork. A document found by either signal survives; one
-found by both rises.
-
-The passages the model is shown come from the same chunk index: a keyword search
-over the passages of exactly the documents being returned, narrowed to the
-sentence around the match. Without a chunk index they are cut from the OCR text
-around the query's terms instead, and failing that from the index's own
-highlight — the model always gets verbatim text, whatever the retrieval was. A
-read of a long document is always an excerpt: its head plus the passages ranked
-the same way against the read's `focus`, or against the user's question when the
-model named none. The whole text of a long document is never handed to the
-research model.
-
-With an embedding model set, the prompt tells the model that one search already
-crosses languages and not to repeat a search translated into another one; the
-`DEEP_SEARCH_LANGUAGES` list is then only a hint for spelling exact terms.
-Without one, the model is asked to search once per configured language, since
-translation is the only thing carrying an English question to a German invoice.
-
-Filters — a tag, a type, a correspondent, a date range — are properties of a
-document, and the chunk index deliberately carries none of them, so that
-renaming a tag never rewrites a vector. They are resolved against the documents
-index instead and applied to the passage search as a list of document ids.
-
-What it costs: one embedding request per distinct query string per turn (the
-result is reused for the rest of that turn, including a focused read with the
-same words), and one or two extra index searches. Everything on the dense path
-degrades rather than fails: no model bound, an embedding call that errored, an
-index still rebuilding — the search is the keyword search it has always been.
-Each call logs one line, `deep search retrieval lexical=… dense=… fused=…
-embedded=…`, which is where to look when an answer seems to have missed a
-document.
-
-### How Research covers a topic
-
-Reading documents one call at a time is right for a needle question and wrong
-for a topic: two hundred documents read into one conversation is two hundred
-documents re-sent on every later round. Three things keep a broad question
-affordable.
-
-- **Distilled reads.** When a `read_documents` call would put more than about
-  32 KB of text, or more than five documents, into the conversation, the
-  documents are read by the **Deep Search helper** model instead. The research
-  model gets, per document, notes on what it says about the focus, verbatim
-  quotes to cite, and any requested values — never the text. Smaller reads pass
-  through as excerpts, because on a needle question the exact wording is the
-  point. The helper is shown each document whole, up to 400 KB, and several
-  short documents share one call.
-- **`survey_documents`.** For "everything about X" or "the total of Y over the
-  year": the same retrieval as a search, kept to 300 documents by default and
-  1000 at most, every document read by the helper for one question, one compact
-  row back per document. Number fields (`fields: [{name, type: "number"}]`) are
-  summed, averaged and bounded on the server, per currency, and the model is
-  told to report those figures rather than add rows itself. Progress streams as
-  "Surveyed 120 of 300 documents".
-- **`count_documents`.** For "how many" and "how are they distributed": filters
-  alone are answered by the database (`COUNT(*)`, optionally `GROUP BY` type,
-  correspondent, year, month or tag); with query text the index reports the
-  exact strict-match total, and a grouped breakdown takes the index's ids to the
-  database (marked approximate past 5000 matches). A filter naming a type,
-  correspondent or tag that does not exist counts zero and says which name did
-  not resolve, rather than matching everything.
-
-The helper is a separate binding (`AI_SEARCH_HELPER_MODEL`, or **Deep Search
-helper** in Settings) because this work is many cheap calls where the research
-loop is a few expensive ones; unset, it falls back to the Search model and the
-same features run at the Search model's price. Helpers that reject JSON mode are
-retried in plain text and parsed leniently. Every completion logs its token usage
-(`ai completion usage prompt_tokens=… cached_tokens=… completion_tokens=…`) and a
-research run logs its total, which is where to look when checking what a question
-cost.
-
-Models that emit tool calls in their content rather than natively (the DSML
-path) are told to answer after one round of tool results, so they cannot chain a
-count into a survey into a read; they get one tool round and the answer.
-
-Each mode is its own path — `/rag/search` and `/rag/research` — so the mode is carried by the URL and survives a reload, the back button, a bookmark and a shared link. They share the `/rag` parent, which is what lets one navigation entry cover both; `/rag` on its own redirects to Search.
-
-The mode can only be chosen before a chat has a turn. A transcript is a sequence: its answers were produced by one mode, and the next turn replays them to the model as its own prior work, so switching underneath would answer a later question in a way the earlier ones do not support. Once a chat exists the switch shows which mode it is in and stops being a link — starting a new chat is the way to the other one. The server enforces this too: a turn sent under a mode the chat is not in is a 409, and opening `/rag/search/<research-chat>` redirects to the path that matches. A saved chat reopens on the path matching the mode it ran in.
-
-Configure **Search provider/model**, **Deep Search helper** and **Deep search languages** in [Settings](/ai_providers#binding-models-in-settings).
+Both search pages, how they retrieve and what a broad question costs are on
+their own page: [Deep Research](/deep_research).
 
 ## Chat sessions
 
-Deep Search (`/rag/search`, `/rag/research`) and a document's **Ask AI** page (`/document/<id>/ask`) both save their conversations. Each page lists past chats in a sidebar, gives the open one its own URL (`/rag/search/<chatId>`, `/rag/research/<chatId>`, `/document/<id>/ask/<chatId>`), and lets you rename or delete a chat. One sidebar covers both Deep Search modes: a chat is listed whichever mode you are in, and opens on its own mode's path.
+The two search pages (`/rag/search`, `/rag/research`) and a document's **Ask AI** page (`/document/<id>/ask`) both save their conversations. Each page lists past chats in a sidebar, gives the open one its own URL (`/rag/search/<chatId>`, `/rag/research/<chatId>`, `/document/<id>/ask/<chatId>`), and lets you rename or delete a chat. One sidebar covers both: a chat is listed on either page, and opens on the path it ran on.
 
 The server owns the transcript. A request carries a session id and one new message — `POST /api/app/search` with `{"session_id": "...", "content": "...", "mode": "search|research"}`, `POST /api/app/documents/<id>/chat` with `{"session_id": "...", "content": "..."}` — and the history is read back from the database rather than replayed by the browser. An omitted `session_id` starts a new chat, titled after its first message.
 
-`POST /api/app/search/stream` takes the same body and saves the same way; because its status line goes out with the first step event, the stored turn arrives as the `saved` event that closes the stream rather than as the response body. Both modes go through it — research for its step events, plain search for the heartbeat underneath, since a response that writes nothing until the answer is ready is indistinguishable from a hung backend to a proxy with a read timeout. Reopening a search chat restores the mode its last turn ran in.
+`POST /api/app/search/stream` takes the same body and saves the same way; because its status line goes out with the first step event, the stored turn arrives as the `saved` event that closes the stream rather than as the response body. Both go through it — Deep Research for its step events, AI assisted search for the heartbeat underneath, since a response that writes nothing until the answer is ready is indistinguishable from a hung backend to a proxy with a read timeout. Reopening a search chat restores the page its last turn ran on.
 
 A run does not end when its connection does. Losing the stream costs the live view of the run, not the run: it finishes and the turn is stored, so a network drop mid-answer leaves the chat waiting in the sidebar rather than losing an answer the provider has already been paid for. Cancelling is therefore said explicitly — send a `run_id` with the request and `POST /api/app/search/cancel` with `{"run_id": "..."}` to stop it. A run left uncancelled ends on its own budget, 20 minutes.
 

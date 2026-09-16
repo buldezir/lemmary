@@ -5,7 +5,7 @@ A tour of every screen in Lemmary, in the order you would meet them.
 The library shown throughout is a demo archive of invented documents — invoices,
 payslips, contracts, statements and receipts addressed to a fictional
 "Robin Marsh". Every name, amount, address and reference number in these images
-is made up; the metadata, OCR text and Deep Search answers around them are real
+is made up; the metadata, OCR text and Deep Research answers around them are real
 output from the pipeline reading those files.
 
 Every image on this page opens on click. The captures are taken at twice the
@@ -191,20 +191,21 @@ being ignored.
 
 ![Amazon order export imported](./screenshots/upload-amazon-done.png)
 
-## Deep Search
+## AI search and research
 
-Two modes on two paths. **Search** finds documents and lists them as cards.
+Two pages, two ways in. **AI assisted search**, reached from the document
+list, finds documents and lists them as cards.
 
-![Deep Search, empty](./screenshots/deep-search-empty.png)
+![AI assisted search, empty](./screenshots/deep-search-empty.png)
 
-![Deep Search in Search mode](./screenshots/deep-search.png)
+![AI assisted search, with hits](./screenshots/deep-search.png)
 
-**Research** reads what it found, counts and totals across the archive, and
-writes an answer that links to its sources.
+**Deep Research**, the header entry, reads what it found, counts and totals
+across the archive, and writes an answer that links to its sources.
 
-![Deep Search, Research mode empty](./screenshots/deep-search-research-empty.png)
+![Deep Research, empty](./screenshots/deep-search-research-empty.png)
 
-![A cited answer in Research mode](./screenshots/deep-search-research.png)
+![A cited answer in Deep Research](./screenshots/deep-search-research.png)
 
 The steps it took stream in while the run is live and collapse behind a summary
 when it finishes, so a long run stays legible.

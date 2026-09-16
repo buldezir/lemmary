@@ -90,13 +90,9 @@ func (r *Runtime) Env() AIEnv { return r.env }
 
 func (r *Runtime) Managed() bool { return r.env.Managed }
 
-// ChatGPTLogin is read by the provider endpoints, which refuse the SDK when it
-// is off, and by /meta, which is how the SPA knows whether to offer the button.
-func (r *Runtime) ChatGPTLogin() bool { return r.env.ChatGPTLogin }
-
-// AlwaysRequireReview comes off the snapshot rather than the env, unlike Managed
-// and ChatGPTLogin: it is a tenant's own setting, so it changes when Settings is
-// saved and the runtime reloads.
+// AlwaysRequireReview comes off the snapshot rather than the env, unlike
+// Managed: it is a tenant's own setting, so it changes when Settings is saved
+// and the runtime reloads.
 func (r *Runtime) AlwaysRequireReview() bool { return r.Snapshot().Cfg.AlwaysRequireReview }
 
 // WebSearchAvailable is read by /meta, which is how the SPA knows whether to

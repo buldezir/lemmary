@@ -81,7 +81,7 @@ function EmbeddingStatsLine({ stats }: { stats: EmbeddingStats | null }) {
 
 export function SettingsAIPage() {
   // unknown/failed meta counts as managed; see AppMeta.aiManaged
-  const { aiManaged, chatgptLogin, metaLoaded } = useAppMeta()
+  const { aiManaged, metaLoaded } = useAppMeta()
   const [advancedModels, setAdvancedModels] = useState(false)
   const { data: providers, reload: reloadProviders } = useAsync(listAIProviders, [])
   // Allowed to fail, and loaded apart from the settings: it scans two tables,
@@ -136,7 +136,6 @@ export function SettingsAIPage() {
     <>
       <ProvidersBlock
         providers={providers ?? []}
-        chatgptLogin={chatgptLogin}
         onChanged={reloadProviders}
         onError={setError}
         onSuccess={setSuccess}
@@ -223,7 +222,7 @@ export function SettingsAIPage() {
                 />
                 <ProviderModelFields
                   label="Search"
-                  help="Answers natural-language queries on the Deep Search page, in both Search and Research mode. Leave the provider empty to turn the feature off."
+                  help="Answers natural-language queries on AI assisted search and Deep Research. Leave the provider empty to turn the feature off."
                   providers={providers ?? []}
                   providerId={form.search_provider_id}
                   model={form.search_model}

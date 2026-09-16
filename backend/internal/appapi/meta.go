@@ -87,9 +87,6 @@ func handleGetMeta(app core.App, rt *config.Runtime) func(*core.RequestEvent) er
 			// Public: the SPA needs both before anyone has signed in.
 			"passkeys":   passkeyLoginAvailable(app, e),
 			"ai_managed": rt.Managed(),
-			// Public for the same reason ai_managed is: the SPA reads meta
-			// before it can know whether the session is an admin's.
-			"chatgpt_login": rt.ChatGPTLogin(),
 			// Public because it shapes what a regular user sees, while only an
 			// admin can change it.
 			"always_require_review": rt.AlwaysRequireReview(),
