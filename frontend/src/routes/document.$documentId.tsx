@@ -77,8 +77,8 @@ export function DocumentDetailPage() {
     editingRef.current = editing
   }, [editing])
 
-  // The newest document from the server, kept even while editing so locking
-  // the form again can drop the unsaved edits it is hiding.
+  // The last server record the form was filled from, kept even while editing so
+  // locking the form again can drop the unsaved edits it is hiding.
   const loadedRef = useRef<DocumentRecord | null>(null)
 
   // Which (document, has-OCR-text) pair the reprocess defaults were computed
@@ -86,6 +86,7 @@ export function DocumentDetailPage() {
   const reprocessDefaultsKey = useRef('')
 
   function applyLoadedDocument(doc: DocumentRecord) {
+    loadedRef.current = doc
     setDocument(doc)
     setTagIds(doc.tags ?? [])
     setDocumentTypeInput(doc.expand?.document_type?.name ?? '')
@@ -400,11 +401,15 @@ export function DocumentDetailPage() {
   }
 
   function toggleEditing() {
+    // editingRef alongside the state: a load() already in flight reads the ref,
+    // and the effect that mirrors it does not run until after this render.
     if (!editing) {
       setEditing(true)
+      editingRef.current = true
       return
     }
     setEditing(false)
+    editingRef.current = false
     if (loadedRef.current) {
       applyLoadedDocument(loadedRef.current)
     }
@@ -554,7 +559,7 @@ export function DocumentDetailPage() {
             type="button"
             onClick={toggleEditing}
             aria-pressed={editing}
-            aria-label={editing ? 'Lock editing' : 'Unlock editing'}
+            aria-label={editing ? 'Lock metadata editing' : 'Unlock metadata editing'}
             title={editing ? 'Lock editing and discard unsaved changes' : 'Unlock editing'}
             className={`flex shrink-0 items-center justify-center rounded-xs border px-2.5 py-2 transition-colors ${
               editing

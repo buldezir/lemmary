@@ -222,7 +222,7 @@ export function SettingsAIPage() {
                 />
                 <ProviderModelFields
                   label="Search"
-                  help="Answers natural-language queries on the Deep Search page, in both Search and Research mode. Leave the provider empty to turn the feature off."
+                  help="Answers natural-language queries on AI assisted search and Deep Research. Leave the provider empty to turn the feature off."
                   providers={providers ?? []}
                   providerId={form.search_provider_id}
                   model={form.search_model}

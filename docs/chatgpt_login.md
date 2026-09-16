@@ -5,8 +5,9 @@ subscription** instead of a metered API key. You sign in once with a device
 code, bind chat, extraction, Deep Research and OCR to it, and those calls come out
 of the seat you already pay for rather than out of API credits.
 
-It is off unless you turn it on, and there are good reasons for that. Read the
-whole page before you do.
+The SDK is offered on every self-hosted instance, but nothing runs on it until
+you add the provider and sign in — and there are good reasons to read the whole
+page before you do.
 
 ## What it can and cannot do
 
