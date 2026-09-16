@@ -2,7 +2,8 @@
 
 Setup and operation guides for Lemmary.
 
-- [Screenshots](/screenshots) — a tour of every screen, from the setup wizard to Deep Search
+- [Screenshots](/screenshots) — a tour of every screen, from the setup wizard to Deep Research
+- [Deep Research](/deep_research) — ask the archive a question and get a cited answer, and what a broad one costs
 - [Lemmary vs Paperless-ngx vs Papra](/comparison) — compare focus, OCR, AI, sharing, automation, encryption, and licensing
 - [Self-hosting with Docker](/self_hosting) — the image, volumes, proxies, backups, upgrades
 - [Guided AI provider setup](/guided_ai_setup) — a free Mistral key for OCR and embeddings, Opencode Go for the language model
@@ -13,9 +14,9 @@ Setup and operation guides for Lemmary.
 - [Paperless-ngx API compatibility](/paperless_ngx) — connect third-party clients, migrate an existing library
 - [Scanning from a network scanner](/scanning) — scan over eSCL/AirScan, and how the LAN search finds the device
 - [Local OCR](/local_ocr) — run the OCR engine yourself, so scans never leave the host
-- [Local embeddings](/local_embeddings) — run the embedding model yourself, so Deep Search costs no tokens
+- [Local embeddings](/local_embeddings) — run the embedding model yourself, so Deep Research costs no tokens
 - [Google Vision API key](/google_vision) — obtain a Cloud Vision API key for OCR
-- [ChatGPT sign-in](/chatgpt_login) — run chat, extraction and Deep Search on a ChatGPT subscription instead of a metered key
+- [ChatGPT sign-in](/chatgpt_login) — run chat, extraction and Deep Research on a ChatGPT subscription instead of a metered key
 - [OAuth2 / SSO sign-in](/oauth) — enable provider sign-in on the app login screen
 - [Passkey sign-in](/passkeys) — sign in with a fingerprint, face, or device PIN instead of a password
 - [Encryption at rest](/encryption) — keep the volume ciphertext-only, and what that costs

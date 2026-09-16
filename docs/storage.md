@@ -42,7 +42,7 @@ into passages. The float32 vectors and embedding state are stored in raw SQLite
 tables inside `data.db`; they do not go into S3. A passage is stored as a pair
 of byte offsets into the OCR text rather than as a second copy of it.
 
-Deep Search queries a derived Bleve vector index at `pb_data/bleve/chunks`.
+Deep Research queries a derived Bleve vector index at `pb_data/bleve/chunks`.
 That index can be deleted and rebuilt from the vectors in SQLite without
 calling the embedding provider again. The ordinary full-text index beside it,
 at `pb_data/bleve/documents`, is derived and rebuildable too.

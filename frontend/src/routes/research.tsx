@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 
-import { Button } from '../components/ui'
+import { Button, DocsLink } from '../components/ui'
 import { ChatPanel } from '../components/ChatPanel'
 import { ChatTranscript } from '../components/ChatTranscript'
 import { ChatComposer } from '../components/ChatComposer'
@@ -152,7 +152,12 @@ export function ResearchPage() {
   return (
     <ChatWorkspaceFrame
       title="Deep Research"
-      hint="Read the documents and answer, with citations."
+      hint={
+        <>
+          Read the documents and answer, with citations.{' '}
+          <DocsLink href="/docs/deep_research.html">How it works</DocsLink>.
+        </>
+      }
       rows={ws.rows}
       sessionId={ws.sessionId}
       sessionsLoading={ws.sessions.loading}

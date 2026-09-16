@@ -2,7 +2,7 @@
 
 Lemmary can run its language-model work on a **ChatGPT Plus, Pro or Business
 subscription** instead of a metered API key. You sign in once with a device
-code, bind chat, extraction, Deep Search and OCR to it, and those calls come out
+code, bind chat, extraction, Deep Research and OCR to it, and those calls come out
 of the seat you already pay for rather than out of API credits.
 
 It is off unless you turn it on, and there are good reasons for that. Read the
@@ -14,7 +14,7 @@ whole page before you do.
 | --- | --- |
 | Document chat | ✅ |
 | Metadata extraction | ✅ |
-| Deep Search (and its per-document helper) | ✅ |
+| Deep Research (and its per-document helper) | ✅ |
 | OCR | ✅ — a PDF or an image, up to 10 MB, read by the bound model |
 | Embeddings | ❌ — keep a keyed provider or the sidecar bound |
 
@@ -24,7 +24,7 @@ run on the subscription — which means an instance whose only AI credential is 
 ChatGPT seat is a complete install, with no API key anywhere.
 
 Embeddings are the exception, and not a matter of degree: the endpoint has no
-`/embeddings` at all, so Settings refuses that binding. Deep Search still works
+`/embeddings` at all, so Settings refuses that binding. Deep Research still works
 without them — it falls back to keyword matching — but its dense half needs a
 keyed provider or the [local embeddings sidecar](/local_embeddings).
 
@@ -51,7 +51,7 @@ Three consequences worth being clear about:
   refusing these requests. The failure shows up as a provider error on the next
   document, not as a silent fallback to a billed provider.
 - **Quota is a window, not a meter.** A subscription's allowance refills over
-  five-hour and weekly windows. Deep Search fans out across documents and can
+  five-hour and weekly windows. Deep Research fans out across documents and can
   spend a window quickly; if that becomes a problem, move the **Deep Search
   helper** binding back to a keyed provider first — it does the bulk reading.
 
@@ -84,7 +84,7 @@ If you skip this, Lemmary's sign-in fails with a message naming the setting.
 
 ### 3. Bind the models
 
-Under **Settings → Models**, point **Chat**, **Extraction**, **Deep Search**,
+Under **Settings → Models**, point **Chat**, **Extraction**, **Search**,
 the **Deep Search helper** or **OCR** at the new provider and pick a model. The
 picker is served locally — the endpoint publishes no catalogue — and the
 **Custom model id** box takes anything the list does not name. Which models the
@@ -136,7 +136,7 @@ with ChatGPT** again for a new one.
 not covering the bound model. Try the default model, or a smaller one.
 
 **Requests start failing for everyone at once** — most likely the quota window,
-or a change on OpenAI's side. Rebind chat and Deep Search to a keyed provider
+or a change on OpenAI's side. Rebind chat and Deep Research to a keyed provider
 while you work out which.
 
 **OCR returns empty or invented text** — the model was handed the file but
@@ -151,4 +151,4 @@ Google Vision or the Docling sidecar.
 **Extraction results got worse after switching** — extraction asks for JSON, and
 a backend that will not honour the request is answered in plain text and parsed
 leniently. If the metadata is thinner than it was, put **Extraction** back on a
-keyed provider and leave chat and Deep Search on the subscription.
+keyed provider and leave chat and Deep Research on the subscription.

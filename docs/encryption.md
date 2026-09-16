@@ -44,7 +44,7 @@ form — it is derived data, so it is rebuilt into the memory-backed working
 directory on each unlock rather than encrypted and stored, which keeps a
 plaintext shadow of every document's OCR text off the disk entirely.
 
-Deep Search's passage vectors follow the same split. The vectors themselves live
+Deep Research's passage vectors follow the same split. The vectors themselves live
 in `data.db`, so they are encrypted on the volume like every other row and are
 covered by the vault's snapshots and by PocketBase's backups without any extra
 step. The vector index built from them is derived data like the text index: it is
@@ -83,7 +83,7 @@ unlocked the key is in memory, and whoever runs the binary can modify it to
 capture the key at unlock. This is at-rest encryption, not zero-knowledge, and it
 should not be described as the latter. End-to-end encryption is incompatible with
 this product: OCR sends documents to Google Vision or Mistral, extraction, chat
-and deep search send OCR text to an LLM, and both full-text search and the SQL
+and the search agent send OCR text to an LLM, and both full-text search and the SQL
 filters need plaintext on the server.
 
 Also outside the boundary: container logs on the host stay plaintext.

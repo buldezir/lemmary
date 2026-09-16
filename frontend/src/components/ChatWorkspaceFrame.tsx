@@ -28,7 +28,7 @@ export function ChatWorkspaceFrame({
   children,
 }: {
   title: string
-  hint: string
+  hint: ReactNode
   rows: ChatSession[]
   sessionId: string | undefined
   sessionsLoading: boolean

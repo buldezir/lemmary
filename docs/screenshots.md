@@ -5,7 +5,7 @@ A tour of every screen in Lemmary, in the order you would meet them.
 The library shown throughout is a demo archive of invented documents — invoices,
 payslips, contracts, statements and receipts addressed to a fictional
 "Robin Marsh". Every name, amount, address and reference number in these images
-is made up; the metadata, OCR text and Deep Search answers around them are real
+is made up; the metadata, OCR text and Deep Research answers around them are real
 output from the pipeline reading those files.
 
 Every image on this page opens on click. The captures are taken at twice the
@@ -191,9 +191,9 @@ being ignored.
 
 ![Amazon order export imported](./screenshots/upload-amazon-done.png)
 
-## Deep Search
+## AI search and research
 
-Two modes on two paths. **AI assisted search**, reached from the document
+Two pages, two ways in. **AI assisted search**, reached from the document
 list, finds documents and lists them as cards.
 
 ![AI assisted search, empty](./screenshots/deep-search-empty.png)
