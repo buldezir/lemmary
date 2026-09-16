@@ -11,11 +11,14 @@ export function DocumentGrid({
   list,
   bulkMode,
   allowDelete = false,
+  statusAccent = false,
 }: {
   list: DocumentList
   bulkMode: BulkMode | null
   /** Adds "Delete selected" to the bulk bar. */
   allowDelete?: boolean
+  /** Draws each card in its status colour, as the Inbox does. */
+  statusAccent?: boolean
 }) {
   const {
     documents,
@@ -73,6 +76,7 @@ export function DocumentGrid({
             onMarkReviewed={(id) => void onMarkReviewed([id])}
             markingReviewed={markingReviewed}
             onFilterTag={filterByTag}
+            statusAccent={statusAccent}
           />
         ))}
       </div>
