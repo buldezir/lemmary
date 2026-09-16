@@ -448,8 +448,10 @@ func TestEmbeddingsOnAnOpenCodeBaseURLAreRefused(t *testing.T) {
 	}
 }
 
-// AI_SDK=anthropic is a complete configuration on its own: the base URL comes
-// from the SDK, and the row it seeds serves extraction, chat, search and OCR.
+// AI_SDK=anthropic seeds one row that serves extraction, chat, search and OCR,
+// with the base URL coming from the SDK. AI_MODEL is not optional here despite
+// having a default: that default is gpt-5.6-luna, which is nothing Anthropic
+// serves.
 func TestTheAnthropicSDKSeedsFromTheEnvironment(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAISDK, aiprovider.SDKAnthropic)

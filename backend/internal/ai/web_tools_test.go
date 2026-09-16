@@ -318,4 +318,3 @@ func TestAnUnknownWebToolNameIsReportedBack(t *testing.T) {
 		t.Errorf("error = %q, want it to name the tool", message)
 	}
 }
-

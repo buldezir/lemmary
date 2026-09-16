@@ -25,13 +25,29 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	anthropicoption "github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/shared"
 	"github.com/openai/openai-go/shared/constant"
 
 	"lemmary/backend/internal/aiprovider"
 )
 
 // Only the fields this codebase actually sends are carried across.
+
+// Options are the request fields that have no counterpart in
+// openai.ChatCompletionNewParams. internal/ai owns them because it owns the
+// ladder that drops one when a model refuses it: the zero value sends neither,
+// which is what every retry eventually falls back to.
+type Options struct {
+	// Effort is output_config.effort. Empty leaves the field off.
+	Effort string
+	// DisableThinking sends thinking:{"type":"disabled"}.
+	//
+	// On by default for the anthropic SDK, and not a cost decision: this
+	// package converts each reply to an openai.ChatCompletion, which has
+	// nowhere to keep a thinking block, so a tool loop cannot replay one -- and
+	// a replayed assistant turn that is missing the thinking block it was
+	// generated with is refused. See internal/ai.messagesOptions.
+	DisableThinking bool
+}
 
 // defaultMaxTokens caps a Messages reply. The parameter is required there and
 // optional on /chat/completions, so no caller sets one and it has to be
@@ -43,10 +59,13 @@ import (
 // responsesParamsFrom already honours and this already prefers.
 const defaultMaxTokens = 32768
 
-// NewClient builds the Anthropic client for one provider row. Both credentials
-// are sent: x-api-key, which Anthropic itself requires and @ai-sdk/anthropic
-// presents, and an Authorization bearer, which OpenCode's other endpoints take.
-// OpenCode's docs specify neither and one header costs nothing.
+// NewClient builds the Anthropic client for one provider row.
+//
+// x-api-key is how this API authenticates and both SDKs get it. The
+// Authorization bearer is OpenCode's: its other endpoints take one, its docs
+// specify neither header for /messages, and one more header costs nothing
+// there. Anthropic is not sent it -- a bearer beside the key is how an OAuth
+// request is shaped, and this is not one.
 func NewClient(sdk, apiKey, baseURL string, timeout time.Duration) anthropic.Client {
 	if timeout <= 0 {
 		timeout = 60 * time.Second
@@ -58,7 +77,6 @@ func NewClient(sdk, apiKey, baseURL string, timeout time.Duration) anthropic.Cli
 		// contribute to these requests.
 		anthropicoption.WithoutEnvironmentDefaults(),
 		anthropicoption.WithAPIKey(apiKey),
-		anthropicoption.WithAuthToken(apiKey),
 		anthropicoption.WithBaseURL(BaseURL(sdk, baseURL)),
 		anthropicoption.WithHTTPClient(&http.Client{Timeout: timeout}),
 		anthropicoption.WithRequestTimeout(timeout),
@@ -68,7 +86,10 @@ func NewClient(sdk, apiKey, baseURL string, timeout time.Duration) anthropic.Cli
 	// The session header is OpenCode's routing key and means nothing to
 	// Anthropic, which would only see an unknown header on every request.
 	if strings.TrimSpace(sdk) == aiprovider.SDKOpenCode {
-		opts = append(opts, anthropicoption.WithMiddleware(sessionMiddleware()))
+		opts = append(opts,
+			anthropicoption.WithAuthToken(apiKey),
+			anthropicoption.WithMiddleware(sessionMiddleware()),
+		)
 	}
 	if aiprovider.Managed() {
 		opts = append(opts, anthropicoption.WithMiddleware(documentMiddleware))
@@ -122,13 +143,14 @@ func Complete(
 	logger *slog.Logger,
 	sdk string,
 	baseURL string,
+	opts Options,
 	params openai.ChatCompletionNewParams,
 	extra ...any,
 ) (*openai.ChatCompletion, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	req, err := messagesParamsFrom(sdk, params)
+	req, err := messagesParamsFrom(sdk, opts, params)
 	if err != nil {
 		return nil, err
 	}
@@ -155,6 +177,7 @@ func CompleteStreaming(
 	logger *slog.Logger,
 	sdk string,
 	baseURL string,
+	opts Options,
 	params openai.ChatCompletionNewParams,
 	onDelta func(string),
 	extra ...any,
@@ -163,7 +186,7 @@ func CompleteStreaming(
 		logger = slog.Default()
 	}
 	var usage openai.CompletionUsage
-	req, err := messagesParamsFrom(sdk, params)
+	req, err := messagesParamsFrom(sdk, opts, params)
 	if err != nil {
 		return "", usage, err
 	}
@@ -212,7 +235,7 @@ func CompleteStreaming(
 	return b.String(), usage, stream.Err()
 }
 
-func messagesParamsFrom(sdk string, params openai.ChatCompletionNewParams) (anthropic.MessageNewParams, error) {
+func messagesParamsFrom(sdk string, opts Options, params openai.ChatCompletionNewParams) (anthropic.MessageNewParams, error) {
 	system, messages, err := messagesFrom(params.Messages)
 	if err != nil {
 		return anthropic.MessageNewParams{}, err
@@ -231,11 +254,13 @@ func messagesParamsFrom(sdk string, params openai.ChatCompletionNewParams) (anth
 		// Messages takes 0-1.
 		req.Temperature = anthropic.Float(min(params.Temperature.Value, 1))
 	}
-	// Anthropic only. The models OpenCode serves here are MiniMax's and Qwen's,
-	// which do not take output_config at all. Empty leaves the field off, which
-	// is how internal/ai retries a model that refuses it.
-	if strings.TrimSpace(sdk) == aiprovider.SDKAnthropic && strings.TrimSpace(string(params.ReasoningEffort)) != "" {
-		req.OutputConfig = anthropic.OutputConfigParam{Effort: effortFrom(params.ReasoningEffort)}
+	if strings.TrimSpace(opts.Effort) != "" {
+		req.OutputConfig = anthropic.OutputConfigParam{Effort: effortFrom(opts.Effort)}
+	}
+	if opts.DisableThinking {
+		req.Thinking = anthropic.ThinkingConfigParamUnion{
+			OfDisabled: &anthropic.ThinkingConfigDisabledParam{},
+		}
 	}
 	// params.ResponseFormat is deliberately dropped: the Messages API has no bare
 	// "give me JSON" mode, and every caller here already asks for JSON in its own
@@ -268,8 +293,8 @@ func messagesParamsFrom(sdk string, params openai.ChatCompletionNewParams) (anth
 // output_config.effort, which is the same dial under another name. "none" has
 // no counterpart there -- low is as little as Claude thinks -- and so falls in
 // with low, as does anything unrecognised.
-func effortFrom(effort shared.ReasoningEffort) anthropic.OutputConfigEffort {
-	switch strings.ToLower(strings.TrimSpace(string(effort))) {
+func effortFrom(effort string) anthropic.OutputConfigEffort {
+	switch strings.ToLower(strings.TrimSpace(effort)) {
 	case "medium":
 		return anthropic.OutputConfigEffortMedium
 	case "high":

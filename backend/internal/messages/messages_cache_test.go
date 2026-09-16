@@ -23,7 +23,7 @@ func TestCacheBreakpointsAreSentOnTheHeadAndTheTail(t *testing.T) {
 	base := srv.start(t, textReply("ok"))
 	client := NewClient(aiprovider.SDKOpenCode, "k", base, time.Second)
 
-	_, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, openai.ChatCompletionNewParams{
+	_, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, Options{}, openai.ChatCompletionNewParams{
 		Model: shared.ChatModel("minimax-m3"),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("you research the archive"),

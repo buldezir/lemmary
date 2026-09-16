@@ -2,10 +2,8 @@ package ai
 
 import (
 	"errors"
-	"net/http"
 	"strings"
 
-	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go"
 )
 
@@ -32,22 +30,6 @@ func isReasoningEffortToolConflictError(err error) bool {
 		return mentionsReasoningEffortToolConflict(apiErr.Message)
 	}
 	return mentionsReasoningEffortToolConflict(err.Error())
-}
-
-// isEffortUnsupportedError recognises the Messages API refusing
-// output_config.effort, which only Claude 4.5 and later accept. The SDK gives
-// no parsed message field, so the raw error body is what there is to read; the
-// parameter name is distinctive enough on its own.
-func isEffortUnsupportedError(err error) bool {
-	if err == nil {
-		return false
-	}
-	var apiErr *anthropic.Error
-	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusBadRequest {
-		return false
-	}
-	body := strings.ToLower(apiErr.RawJSON())
-	return strings.Contains(body, "output_config") || strings.Contains(body, "effort")
 }
 
 func mentionsReasoningEffortToolConflict(msg string) bool {

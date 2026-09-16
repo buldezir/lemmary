@@ -64,10 +64,13 @@ The alternatives are worth naming:
   reads documents — images and PDFs go to the model, as on `openai` — and serves
   no embeddings at all, so pair it with `AI_EMBEDDING_SDK=local` or a metered
   key if you want meaning-based retrieval. Requests ask for
-  `output_config.effort: low` unless a model refuses the field, which is where
-  Claude is cheapest for work of this shape; a model older than Claude 4.5 does
-  refuse it, and the first request to one costs a retry and is then remembered.
-  Its SDK value is `anthropic`.
+  `output_config.effort: low`, which is where Claude is cheapest for work of
+  this shape, and turn thinking off, because a tool loop here cannot replay a
+  thinking block and a turn replayed without one is refused. Which of those two
+  a model takes — and whether it takes a `temperature` at all, which Claude
+  removed after Opus 4.6 — depends on its generation, so each is sent hopefully
+  and dropped on refusal: the first request to a model may cost a retry, and
+  the answer is then remembered. Its SDK value is `anthropic`.
 - **`openrouter`** — one key across many vendors, and the only provider that
   filters its catalogue server-side (`input_modalities=file` for OCR,
   `output_modalities=embeddings` for embeddings), so both pickers are accurate.

@@ -183,8 +183,9 @@ func ListModels(ctx context.Context, p Provider, purpose ModelPurpose, client *h
 		req.Header.Set(SessionHeader, SessionFor("models"))
 	}
 	// Anthropic authenticates with x-api-key and dates its API in a header. The
-	// bearer above is not merely redundant there: a request carrying both is
-	// read as an OAuth one and refused.
+	// bearer above comes off rather than being left beside it: a bearer is how
+	// an OAuth request is shaped, and this is not one. internal/messages does
+	// the same for the completions.
 	if p.SDK == SDKAnthropic {
 		req.Header.Del("Authorization")
 		req.Header.Set("x-api-key", p.APIKey)

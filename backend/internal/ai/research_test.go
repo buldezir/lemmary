@@ -471,7 +471,7 @@ func TestResearchReportsThePeakPromptAgainstTheWindow(t *testing.T) {
 
 	var events []ResearchEvent
 	result, err := agent.Research(context.Background(), ResearchRequest{
-		Thread:      []ThreadMessage{{Role: "user", Content: "what did I pay?"}},
+		Thread:        []ThreadMessage{{Role: "user", Content: "what did I pay?"}},
 		ContextWindow: 200000,
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return hitsFor("doc1"), nil
@@ -522,7 +522,7 @@ func TestResearchEstimatesWhenTheProviderCountsNothing(t *testing.T) {
 
 	var events []ResearchEvent
 	result, err := agent.Research(context.Background(), ResearchRequest{
-		Thread:      []ThreadMessage{{Role: "user", Content: "what did I pay?"}},
+		Thread:        []ThreadMessage{{Role: "user", Content: "what did I pay?"}},
 		ContextWindow: 8000,
 		Search:        func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
 		Read:          func(_ context.Context, _ ReadRequest) ([]DocumentContent, error) { return nil, nil },
@@ -871,7 +871,7 @@ func TestResearchReadsDocumentsCitedEarlierWithoutSearching(t *testing.T) {
 	searches := 0
 	var gotRequest ReadRequest
 	result, err := agent.Research(context.Background(), ResearchRequest{
-		Thread:       []ThreadMessage{{Role: "user", Content: "what is the deductible?"}},
+		Thread:         []ThreadMessage{{Role: "user", Content: "what is the deductible?"}},
 		PriorDocuments: []DocumentHit{{ID: "prior1", Title: "Prior policy", Passages: []Passage{{Text: "stale"}}}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			searches++
@@ -917,7 +917,7 @@ func TestResearchDoesNotListUncitedPriorDocuments(t *testing.T) {
 	)
 
 	result, err := agent.Research(context.Background(), ResearchRequest{
-		Thread:       []ThreadMessage{{Role: "user", Content: "what is the rent?"}},
+		Thread:         []ThreadMessage{{Role: "user", Content: "what is the rent?"}},
 		PriorDocuments: []DocumentHit{{ID: "prior1", Title: "Prior policy"}},
 		Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 			return hitsFor("doc1"), nil

@@ -29,9 +29,10 @@ var (
 	// Models that would not take function tools alongside their default
 	// reasoning_effort, and had to be pinned to "none".
 	noReasoningEffortNotes sync.Map
-	// Models on the Messages API that refused output_config.effort, which only
-	// Claude 4.5 and later accept.
-	noEffortNotes sync.Map
+	// Fields of a Messages API request a model refused, keyed by the field as
+	// well as the model: which of the three it will not take varies by
+	// generation, and refusing one says nothing about the others.
+	messagesFieldNotes sync.Map
 	// Models this endpoint would not serve on /chat/completions with tools
 	// present, and that the Responses API served instead.
 	responsesAPINotes sync.Map
@@ -42,9 +43,11 @@ func needsNoReasoningEffort(baseURL, model string) bool {
 	return loaded(&noReasoningEffortNotes, baseURL, model)
 }
 
-func rememberNoEffort(baseURL, model string) { store(&noEffortNotes, baseURL, model) }
-func needsNoEffort(baseURL, model string) bool {
-	return loaded(&noEffortNotes, baseURL, model)
+func rememberMessagesField(baseURL, model, field string) {
+	store(&messagesFieldNotes, baseURL, model+"\x00"+field)
+}
+func messagesFieldRefused(baseURL, model, field string) bool {
+	return loaded(&messagesFieldNotes, baseURL, model+"\x00"+field)
 }
 
 func rememberResponsesAPI(baseURL, model string) { store(&responsesAPINotes, baseURL, model) }
@@ -69,7 +72,7 @@ func loaded(m *sync.Map, baseURL, model string) bool {
 
 // resetModelNotes clears everything this process has learned. Tests only.
 func resetModelNotes() {
-	for _, m := range []*sync.Map{&noReasoningEffortNotes, &noEffortNotes, &responsesAPINotes} {
+	for _, m := range []*sync.Map{&noReasoningEffortNotes, &messagesFieldNotes, &responsesAPINotes} {
 		m.Range(func(k, _ any) bool {
 			m.Delete(k)
 			return true

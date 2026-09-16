@@ -61,7 +61,7 @@ func TestSystemPromptIsHoistedOutOfTheMessageList(t *testing.T) {
 	base := srv.start(t, textReply("ok"))
 	client := NewClient(aiprovider.SDKOpenCode, "k", base, time.Second)
 
-	resp, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, openai.ChatCompletionNewParams{
+	resp, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, Options{}, openai.ChatCompletionNewParams{
 		Model: shared.ChatModel("minimax-m3"),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("you transcribe documents"),
@@ -101,7 +101,7 @@ func TestMaxTokensIsAlwaysSent(t *testing.T) {
 		Model:    shared.ChatModel("minimax-m3"),
 		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
 	}
-	if _, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, params); err != nil {
+	if _, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, Options{}, params); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
 	if got := fieldOf(t, srv.body, "max_tokens"); got != float64(defaultMaxTokens) {
@@ -110,7 +110,7 @@ func TestMaxTokensIsAlwaysSent(t *testing.T) {
 
 	// A caller that does name one is not overridden by it.
 	params.MaxTokens = openai.Int(64)
-	if _, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, params); err != nil {
+	if _, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, Options{}, params); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
 	if got := fieldOf(t, srv.body, "max_tokens"); got != float64(64) {
@@ -124,7 +124,7 @@ func TestJSONModeIsDroppedRatherThanSentUntranslated(t *testing.T) {
 	base := srv.start(t, textReply(`{"ok":true}`))
 	client := NewClient(aiprovider.SDKOpenCode, "k", base, time.Second)
 
-	_, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, openai.ChatCompletionNewParams{
+	_, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, Options{}, openai.ChatCompletionNewParams{
 		Model:    shared.ChatModel("minimax-m3"),
 		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
@@ -158,7 +158,7 @@ func TestToolCallsRoundTripThroughContentBlocks(t *testing.T) {
 	})
 	client := NewClient(aiprovider.SDKOpenCode, "k", base, time.Second)
 
-	resp, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, openai.ChatCompletionNewParams{
+	resp, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, Options{}, openai.ChatCompletionNewParams{
 		Model: shared.ChatModel("minimax-m3"),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage("find the rent"),
@@ -246,7 +246,7 @@ func TestOCRPartsBecomeImageAndDocumentBlocks(t *testing.T) {
 			base := srv.start(t, textReply("transcribed"))
 			client := NewClient(aiprovider.SDKOpenCode, "k", base, time.Second)
 
-			_, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, openai.ChatCompletionNewParams{
+			_, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, Options{}, openai.ChatCompletionNewParams{
 				Model: shared.ChatModel("minimax-m3"),
 				Messages: []openai.ChatCompletionMessageParamUnion{
 					openai.UserMessage([]openai.ChatCompletionContentPartUnionParam{
@@ -273,7 +273,7 @@ func TestANonPDFDocumentIsRefusedWithAUsefulError(t *testing.T) {
 	base := srv.start(t, textReply("unused"))
 	client := NewClient(aiprovider.SDKOpenCode, "k", base, time.Second)
 
-	_, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, openai.ChatCompletionNewParams{
+	_, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, Options{}, openai.ChatCompletionNewParams{
 		Model: shared.ChatModel("minimax-m3"),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage([]openai.ChatCompletionContentPartUnionParam{
@@ -300,7 +300,7 @@ func TestTheSessionHeaderIsSentOnMessagesToo(t *testing.T) {
 	client := NewClient(aiprovider.SDKOpenCode, "k", base, time.Second)
 
 	ctx := aiprovider.WithSession(context.Background(), "session-abc")
-	if _, err := Complete(ctx, client, nil, aiprovider.SDKOpenCode, base, openai.ChatCompletionNewParams{
+	if _, err := Complete(ctx, client, nil, aiprovider.SDKOpenCode, base, Options{}, openai.ChatCompletionNewParams{
 		Model:    shared.ChatModel("minimax-m3"),
 		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
 	}); err != nil {
@@ -328,7 +328,7 @@ func TestUsageIsFoldedIntoTheChatCompletionShape(t *testing.T) {
 	base := srv.start(t, textReply("ok"))
 	client := NewClient(aiprovider.SDKOpenCode, "k", base, time.Second)
 
-	resp, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, openai.ChatCompletionNewParams{
+	resp, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, Options{}, openai.ChatCompletionNewParams{
 		Model:    shared.ChatModel("minimax-m3"),
 		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
 	})
@@ -368,7 +368,7 @@ func TestStreamingDeltasAndUsage(t *testing.T) {
 	client := NewClient(aiprovider.SDKOpenCode, "k", srv.URL, time.Second)
 
 	var seen []string
-	text, usage, err := CompleteStreaming(context.Background(), client, nil, aiprovider.SDKOpenCode, srv.URL,
+	text, usage, err := CompleteStreaming(context.Background(), client, nil, aiprovider.SDKOpenCode, srv.URL, Options{},
 		openai.ChatCompletionNewParams{
 			Model:    shared.ChatModel("minimax-m3"),
 			Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
@@ -400,7 +400,7 @@ func TestParallelToolResultsLandInOneUserTurn(t *testing.T) {
 	base := srv.start(t, textReply("ok"))
 	client := NewClient(aiprovider.SDKOpenCode, "k", base, time.Second)
 
-	_, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, openai.ChatCompletionNewParams{
+	_, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, Options{}, openai.ChatCompletionNewParams{
 		Model: shared.ChatModel("minimax-m3"),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage("how much did I pay?"),
@@ -451,7 +451,7 @@ func TestSeparateTurnsAreNotMerged(t *testing.T) {
 	base := srv.start(t, textReply("ok"))
 	client := NewClient(aiprovider.SDKOpenCode, "k", base, time.Second)
 
-	_, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, openai.ChatCompletionNewParams{
+	_, err := Complete(context.Background(), client, nil, aiprovider.SDKOpenCode, base, Options{}, openai.ChatCompletionNewParams{
 		Model: shared.ChatModel("minimax-m3"),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage("first"),
@@ -492,49 +492,85 @@ func TestURLDropsTheVersionSegment(t *testing.T) {
 	}
 }
 
-// output_config is Anthropic's alone. The models OpenCode serves on this
-// endpoint are MiniMax's and Qwen's, which would be sent a field they do not
-// know.
-func TestEffortIsSentOnlyForTheAnthropicSDK(t *testing.T) {
+// Options are the two fields with no counterpart in the OpenAI-shaped
+// parameters. internal/ai decides what goes in them; this is the mapping.
+func TestOptionsBecomeOutputConfigAndThinking(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		sdk    string
-		asked  shared.ReasoningEffort
+		name   string
+		opts   Options
 		effort any
+		think  any
 	}{
-		{aiprovider.SDKAnthropic, shared.ReasoningEffortLow, "low"},
-		{aiprovider.SDKAnthropic, shared.ReasoningEffortMedium, "medium"},
-		{aiprovider.SDKAnthropic, shared.ReasoningEffortHigh, "high"},
+		{"effort low", Options{Effort: "low"}, "low", nil},
+		{"effort medium", Options{Effort: "medium"}, "medium", nil},
+		{"effort high", Options{Effort: "high"}, "high", nil},
 		// "none" has no counterpart on this API; low is as little as Claude
 		// thinks.
-		{aiprovider.SDKAnthropic, shared.ReasoningEffort("none"), "low"},
-		// Empty leaves the field off entirely, which is how internal/ai retries
-		// a model that refused it.
-		{aiprovider.SDKAnthropic, "", nil},
-		{aiprovider.SDKOpenCode, shared.ReasoningEffortHigh, nil},
+		{"effort none", Options{Effort: "none"}, "low", nil},
+		// The zero value sends neither, which is what every retry falls back
+		// to and what opencode always sends.
+		{"nothing", Options{}, nil, nil},
+		{"thinking off", Options{DisableThinking: true}, nil, "disabled"},
+		{"both", Options{Effort: "low", DisableThinking: true}, "low", "disabled"},
 	}
 	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := &messagesServer{}
+			base := srv.start(t, textReply("ok"))
+			client := NewClient(aiprovider.SDKAnthropic, "k", base, time.Second)
+
+			if _, err := Complete(context.Background(), client, nil, aiprovider.SDKAnthropic, base, tc.opts, openai.ChatCompletionNewParams{
+				Model:    shared.ChatModel("m"),
+				Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
+			}); err != nil {
+				t.Fatalf("Complete: %v", err)
+			}
+
+			config, _ := srv.body["output_config"].(map[string]any)
+			if tc.effort == nil {
+				if config != nil {
+					t.Errorf("output_config = %v, want none", config)
+				}
+			} else if config == nil || config["effort"] != tc.effort {
+				t.Errorf("output_config = %v, want effort %v", srv.body["output_config"], tc.effort)
+			}
+
+			thinking, _ := srv.body["thinking"].(map[string]any)
+			if tc.think == nil {
+				if thinking != nil {
+					t.Errorf("thinking = %v, want none", thinking)
+				}
+			} else if thinking == nil || thinking["type"] != tc.think {
+				t.Errorf("thinking = %v, want type %v", srv.body["thinking"], tc.think)
+			}
+		})
+	}
+}
+
+// The bearer is OpenCode's: its other endpoints take one. A bearer beside the
+// key is how an OAuth request is shaped, and this is not one.
+func TestTheBearerIsOpenCodesAlone(t *testing.T) {
+	t.Parallel()
+	for sdk, wantBearer := range map[string]bool{
+		aiprovider.SDKOpenCode:  true,
+		aiprovider.SDKAnthropic: false,
+	} {
 		srv := &messagesServer{}
 		base := srv.start(t, textReply("ok"))
-		client := NewClient(tc.sdk, "k", base, time.Second)
+		client := NewClient(sdk, "k", base, time.Second)
 
-		if _, err := Complete(context.Background(), client, nil, tc.sdk, base, openai.ChatCompletionNewParams{
-			Model:           shared.ChatModel("m"),
-			ReasoningEffort: tc.asked,
-			Messages:        []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
+		if _, err := Complete(context.Background(), client, nil, sdk, base, Options{}, openai.ChatCompletionNewParams{
+			Model:    shared.ChatModel("m"),
+			Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
 		}); err != nil {
 			t.Fatalf("Complete: %v", err)
 		}
-
-		config, ok := srv.body["output_config"].(map[string]any)
-		if tc.effort == nil {
-			if ok {
-				t.Errorf("%s with effort %q sent output_config = %v, want none", tc.sdk, tc.asked, config)
-			}
-			continue
+		if got := srv.header.Get("x-api-key"); got != "k" {
+			t.Errorf("%s sent x-api-key = %q, want the key", sdk, got)
 		}
-		if !ok || config["effort"] != tc.effort {
-			t.Errorf("%s with effort %q sent output_config = %v, want effort %v", tc.sdk, tc.asked, srv.body["output_config"], tc.effort)
+		if got := srv.header.Get("Authorization") != ""; got != wantBearer {
+			t.Errorf("%s sent an Authorization bearer = %v, want %v", sdk, got, wantBearer)
 		}
 	}
 }
@@ -552,7 +588,7 @@ func TestTheSessionHeaderIsOpenCodesAlone(t *testing.T) {
 		client := NewClient(sdk, "k", base, time.Second)
 
 		ctx := aiprovider.WithSession(context.Background(), "conv123")
-		if _, err := Complete(ctx, client, nil, sdk, base, openai.ChatCompletionNewParams{
+		if _, err := Complete(ctx, client, nil, sdk, base, Options{}, openai.ChatCompletionNewParams{
 			Model:    shared.ChatModel("m"),
 			Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
 		}); err != nil {

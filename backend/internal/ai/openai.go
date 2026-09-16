@@ -117,45 +117,6 @@ func (c *OpenAIClient) Complete(ctx context.Context, params openai.ChatCompletio
 	return c.completeChat(ctx, params, extra...)
 }
 
-// usesMessagesAPI reports whether this model is served by Anthropic's Messages
-// API: always on the anthropic SDK, and for the part of OpenCode Go's catalogue
-// that lives there.
-func (c *OpenAIClient) usesMessagesAPI(model string) bool {
-	return c.sdk == aiprovider.SDKAnthropic ||
-		opencode.Endpoint(c.sdk, model) == opencode.EndpointMessages
-}
-
-// completeMessages sends the request, and drops output_config.effort if the
-// model will not take it. Only Claude 4.5 and later understand the parameter,
-// so an admin who binds an older one would otherwise fail on every request
-// rather than on the first. Remembered per model, like the degradations in
-// completeChat.
-func (c *OpenAIClient) completeMessages(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
-	params.ReasoningEffort = c.messagesEffort(string(params.Model), params.ReasoningEffort)
-	resp, err := messages.Complete(ctx, c.messages, c.logger, c.sdk, c.baseURL, params, extra...)
-	if err == nil || params.ReasoningEffort == "" || !isEffortUnsupportedError(err) {
-		return resp, err
-	}
-	rememberNoEffort(c.baseURL, string(params.Model))
-	params.ReasoningEffort = ""
-	return messages.Complete(ctx, c.messages, c.logger, c.sdk, c.baseURL, params, append(extra, "effort", "unsupported")...)
-}
-
-// messagesEffort is the effort to send. Low unless a caller asked for something
-// else: this codebase's completions are extraction, search and distillation
-// over documents already in hand, they are paid for by the token, and Claude's
-// own default is high. Empty -- the field left off -- for opencode, whose
-// models there take no such field, and for a model already known to refuse it.
-func (c *OpenAIClient) messagesEffort(model string, asked shared.ReasoningEffort) shared.ReasoningEffort {
-	if c.sdk != aiprovider.SDKAnthropic || needsNoEffort(c.baseURL, model) {
-		return ""
-	}
-	if strings.TrimSpace(string(asked)) != "" {
-		return asked
-	}
-	return shared.ReasoningEffortLow
-}
-
 func (c *OpenAIClient) completeChat(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
 	logger := c.logger
 	baseURL := c.baseURL
@@ -391,20 +352,6 @@ func (c *OpenAIClient) completeStreaming(
 		logUsage(c.logger, string(params.Model), usage, append(extra, "stream", true)...)
 	}
 	return b.String(), usage, err
-}
-
-// completeStreamingMessages is completeMessages for a streamed reply, with the
-// same one-shot retry: a model that refuses the effort field refuses it before
-// the first event, so nothing has reached the caller yet.
-func (c *OpenAIClient) completeStreamingMessages(ctx context.Context, params openai.ChatCompletionNewParams, onDelta func(string), extra ...any) (string, openai.CompletionUsage, error) {
-	params.ReasoningEffort = c.messagesEffort(string(params.Model), params.ReasoningEffort)
-	text, usage, err := messages.CompleteStreaming(ctx, c.messages, c.logger, c.sdk, c.baseURL, params, onDelta, extra...)
-	if err == nil || text != "" || params.ReasoningEffort == "" || !isEffortUnsupportedError(err) {
-		return text, usage, err
-	}
-	rememberNoEffort(c.baseURL, string(params.Model))
-	params.ReasoningEffort = ""
-	return messages.CompleteStreaming(ctx, c.messages, c.logger, c.sdk, c.baseURL, params, onDelta, append(extra, "effort", "unsupported")...)
 }
 
 func (c *OpenAIClient) PromptVersion() string {
