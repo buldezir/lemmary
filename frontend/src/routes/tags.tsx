@@ -1,4 +1,4 @@
-import { type SubmitEvent, useState } from 'react'
+import { type SubmitEvent, useEffect, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
   MAX_TAG_ASSIGN_DOCUMENTS,
@@ -8,6 +8,7 @@ import {
   listTags,
   previewTagAssign,
   renameTag,
+  setTagColor,
   type TagRecord,
 } from '../lib/api/tags'
 import { useAsync } from '../hooks/useAsync'
@@ -21,6 +22,49 @@ import {
   sectionTitleClassName,
 } from '../components/ui'
 
+/** What the picker opens on for a tag that has no colour of its own. */
+const UNCOLORED_SWATCH = '#808080'
+
+/**
+ * React maps `onChange` on a colour input to the native `input` event, which
+ * fires all through a drag inside the picker — one save per pixel. The native
+ * `change` event fires once, when the picker closes, so the save hangs off that
+ * instead and the input stays uncontrolled; the row remounts it by key when the
+ * list reloads.
+ */
+function ColorSwatch({
+  tag,
+  busy,
+  onPick,
+}: {
+  tag: TagRecord
+  busy: boolean
+  onPick: (id: string, color: string) => void
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const input = ref.current
+    if (!input) {
+      return
+    }
+    const commit = () => onPick(tag.id, input.value)
+    input.addEventListener('change', commit)
+    return () => input.removeEventListener('change', commit)
+  }, [tag.id, onPick])
+
+  return (
+    <input
+      ref={ref}
+      type="color"
+      aria-label={`Color for ${tag.name}`}
+      disabled={busy}
+      defaultValue={tag.color || UNCOLORED_SWATCH}
+      className="h-6 w-8 shrink-0 cursor-pointer border border-line bg-surface p-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+    />
+  )
+}
+
 type TagRowProps = {
   tag: TagRecord
   busy: boolean
@@ -29,9 +73,10 @@ type TagRowProps = {
   onRename: (id: string, name: string) => Promise<void>
   onDelete: (tag: TagRecord) => Promise<void>
   onAssign: (tagIds: string[], label: string) => Promise<void>
+  onColor: (id: string, color: string) => void
 }
 
-function TagRow({ tag, busy, ticked, onTick, onRename, onDelete, onAssign }: TagRowProps) {
+function TagRow({ tag, busy, ticked, onTick, onRename, onDelete, onAssign, onColor }: TagRowProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(tag.name)
 
@@ -47,7 +92,10 @@ function TagRow({ tag, busy, ticked, onTick, onRename, onDelete, onAssign }: Tag
   }
 
   return (
-    <li className="flex flex-wrap items-center justify-between gap-2 rounded-xs border border-line bg-bright px-3 py-2">
+    <li
+      className="flex flex-wrap items-center justify-between gap-2 rounded-xs border border-line bg-bright px-3 py-2"
+      style={tag.color ? { borderLeftColor: tag.color, borderLeftWidth: 3 } : undefined}
+    >
       {editing ? (
         <form className="flex flex-1 flex-wrap items-center gap-2" onSubmit={onSubmit}>
           <input
@@ -73,16 +121,30 @@ function TagRow({ tag, busy, ticked, onTick, onRename, onDelete, onAssign }: Tag
         </form>
       ) : (
         <>
-          <label className="flex min-w-0 flex-1 items-center gap-2">
-            <input
-              type="checkbox"
-              checked={ticked}
-              disabled={busy}
-              onChange={() => onTick(tag.id)}
-              aria-label={`Include ${tag.name}`}
-            />
-            <span className="min-w-0 truncate text-sm font-medium text-ink">{tag.name}</span>
-          </label>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <ColorSwatch key={tag.color ?? ''} tag={tag} busy={busy} onPick={onColor} />
+            {tag.color && (
+              <button
+                type="button"
+                aria-label={`Clear color for ${tag.name}`}
+                disabled={busy}
+                className="shrink-0 text-xs text-ink-faint transition-colors hover:text-madder disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => onColor(tag.id, '')}
+              >
+                &times;
+              </button>
+            )}
+            <label className="flex min-w-0 flex-1 items-center gap-2">
+              <input
+                type="checkbox"
+                checked={ticked}
+                disabled={busy}
+                onChange={() => onTick(tag.id)}
+                aria-label={`Include ${tag.name}`}
+              />
+              <span className="min-w-0 truncate text-sm font-medium text-ink">{tag.name}</span>
+            </label>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <Link
               to="/"
@@ -252,6 +314,49 @@ export function TagsPage() {
     }
   }
 
+  async function onDeleteTicked() {
+    const ids = tickedIds
+    if (ids.length === 0) {
+      return
+    }
+    if (
+      !window.confirm(
+        `Delete ${ids.length === 1 ? 'this tag' : `these ${ids.length} tags`}?\n\n` +
+          'They will be removed from every document that has them.',
+      )
+    ) {
+      return
+    }
+    try {
+      setBusy(true)
+      setError('')
+      setNotice('')
+      await Promise.all(ids.map(deleteTag))
+      setTicked(new Set())
+      await reload()
+      setNotice(`Deleted ${ids.length === 1 ? '1 tag' : `${ids.length} tags`}.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete the tags')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // No notice: the swatch and the row's edge are the confirmation.
+  async function onColor(id: string, color: string) {
+    try {
+      setBusy(true)
+      setError('')
+      setNotice('')
+      await setTagColor(id, color)
+      await reload()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save the color')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5">
       <header>
@@ -326,6 +431,14 @@ export function TagsPage() {
               >
                 {busy ? 'Working...' : `Assign ${tickedIds.length || ''} ticked with AI`.trim()}
               </Button>
+              <Button
+                size="xs"
+                variant="danger"
+                disabled={busy || tickedIds.length === 0}
+                onClick={() => void onDeleteTicked()}
+              >
+                Delete selected
+              </Button>
             </div>
           )}
         </div>
@@ -352,6 +465,7 @@ export function TagsPage() {
                 onRename={onRename}
                 onDelete={onDelete}
                 onAssign={onAssign}
+                onColor={onColor}
               />
             ))}
           </ul>
