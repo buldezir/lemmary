@@ -14,11 +14,11 @@ import (
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/chat"
 	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/websearch"
 )
 
-// chatMaxBodyBytes caps a chat request. Both routes used to carry the whole
-// transcript and so inherited PocketBase's 32MB route default; now that the
-// body is one message plus a session id, there is no reason for it to be large.
+// chatMaxBodyBytes caps a chat request: the body is one message plus a session
+// id, where PocketBase's route default is 32MB.
 const chatMaxBodyBytes = 64 << 10
 
 const tooManySessionsMessage = "You have reached the maximum number of saved chats. Delete some to start a new one."
@@ -27,28 +27,23 @@ type chatRequest struct {
 	SessionID string `json:"session_id"`
 	Content   string `json:"content"`
 	// RunID correlates this request with the stored assistant message, so a
-	// caller that loses the response can recover this answer rather than a
+	// caller that lost the response recovers this answer rather than a
 	// different answer to identical text.
 	RunID string `json:"run_id"`
 	// The provider and model to open the conversation on, instead of the chat
-	// binding in Settings. Read only when SessionID is empty: see
-	// conversationBinding.
+	// binding in Settings. Read only when SessionID is empty.
 	ProviderID string `json:"provider_id"`
 	Model      string `json:"model"`
+	// Web lets this turn reach the public web. Per turn rather than stored with
+	// the conversation: unlike the binding, nothing in the transcript depends on
+	// it, and a metered tool is better defaulted off on every reload.
+	Web bool `json:"web"`
 }
 
-// conversationBinding decides which provider and model a turn runs on.
-//
-// An existing conversation runs on the one stored with it, and what the request
-// carries is ignored. The transcript replayed below was produced by that model,
-// and answering the next question with another one reads that work back as if
-// it were its own -- the same argument the search mode conflict makes a few
-// lines further down in search.go.
-//
-// Ignored rather than refused, unlike a mode mismatch. There the client is
-// choosing, and a disagreement means the two have drifted; here it is echoing
-// the binding it loaded with the session, and a stale echo is not a mistake
-// worth failing a question over.
+// conversationBinding pins an existing conversation to the binding stored with
+// it: the transcript was produced by that model. Ignored rather than refused,
+// unlike a mode mismatch, because the client is echoing what it loaded with the
+// session and a stale echo is not worth failing a question over.
 func conversationBinding(session *core.Record, requested aiprovider.Binding) aiprovider.Binding {
 	if session != nil {
 		return chat.BindingOf(session)
@@ -56,25 +51,14 @@ func conversationBinding(session *core.Record, requested aiprovider.Binding) aip
 	return requested.Normalized()
 }
 
-// recordedBinding is the binding a conversation is opened with: the override
-// when one was chosen, and otherwise the configured pair spelled out.
-//
-// Spelling it out is the point. A conversation that stored nothing followed
-// Settings for the rest of its life, so changing the chat model moved every
-// old conversation onto the new one -- mid-transcript, with the answers above
-// produced by a model that was no longer answering. That is the same
-// inconsistency the pinning rule exists to prevent; it was simply invisible
-// because the binding was never written down.
-//
-// Both halves or neither: a provider with no model is refused by
-// aiprovider.Resolve, so stamping half a pair on a part-configured instance
-// would turn a chat that used to work into a 400. Nothing stored means "follow
-// Settings", which is what those instances did before.
+// recordedBinding spells the configured pair out when no override was chosen,
+// so that changing the chat model later cannot move an old conversation onto it
+// mid-transcript. Both halves or neither: aiprovider.Resolve refuses a provider
+// with no model, and nothing stored means "follow Settings".
 func recordedBinding(requested aiprovider.Binding, providerID, model string) aiprovider.Binding {
-	// Against the zero value, not Binding.Empty, for the same reason
-	// config.Overrides.Empty is: Empty is keyed on the provider id, so a model
-	// with no provider would read as no override and quietly run the configured
-	// one. Resolve refuses that pair, and can only do so if it sees it.
+	// Against the zero value, not Binding.Empty: Empty is keyed on the provider
+	// id, so a model with no provider would read as no override and quietly run
+	// the configured one. Resolve refuses that pair, but only if it sees it.
 	if requested.Normalized() != (aiprovider.Binding{}) {
 		return requested.Normalized()
 	}
@@ -85,17 +69,11 @@ func recordedBinding(requested aiprovider.Binding, providerID, model string) aip
 	return configured
 }
 
-// conversationSnapshot turns the binding a turn runs on into the clients that
-// run it.
-//
-// An unusable binding this request picked is a bad request: answering on a
-// different model is the substitution the picker exists to prevent. One the
-// conversation carries falls back to Settings instead -- the provider row can
-// be deleted long after the transcript, which is why chat_sessions.provider is
-// text and not a relation, and refusing it would leave every pinned chat unable
-// to take another turn once its provider is rotated out. The stale pair stays
-// on the record, so the picker still names the gone provider: a chat naming the
-// wrong model beats one that cannot be continued.
+// conversationSnapshot treats an unusable binding this request picked as a bad
+// request: answering on another model is what the picker exists to prevent. One
+// the conversation carries falls back to Settings instead, since the provider
+// row can be deleted long after the transcript, and a chat naming a gone
+// provider beats one that cannot be continued.
 func conversationSnapshot(
 	app core.App,
 	rt *config.Runtime,
@@ -121,11 +99,8 @@ type chatResponse struct {
 	Saved   bool              `json:"saved"`
 }
 
-// validateChatContent normalizes and bounds an incoming message.
-//
-// Rejected rather than truncated, unlike the stored assistant reply: sending
-// the model half a question and answering it confidently is worse than saying
-// the message is too long.
+// Rejected rather than truncated, unlike the stored assistant reply: answering
+// half a question confidently is worse than saying the message is too long.
 func validateChatContent(raw string) (string, error) {
 	content := strings.TrimSpace(raw)
 	if content == "" {
@@ -137,9 +112,8 @@ func validateChatContent(raw string) (string, error) {
 	return content, nil
 }
 
-// validateRunID normalizes the optional client-generated correlation id. It
-// is persisted with both halves of a turn, so reject values the column cannot
-// represent rather than silently making recovery ambiguous.
+// validateRunID rejects what the column cannot represent rather than silently
+// making recovery ambiguous.
 func validateRunID(raw string) (string, error) {
 	runID := strings.TrimSpace(raw)
 	if utf8.RuneCountInString(runID) > chat.MaxRunIDRunes {
@@ -148,9 +122,8 @@ func validateRunID(raw string) (string, error) {
 	return runID, nil
 }
 
-// parseSearchMode reads the mode field. Research is the only mode worth naming:
-// anything else -- including a legacy "shallow" or "deep" from an older client
-// -- is plain search, which is also the cheaper of the two to get wrong.
+// parseSearchMode treats anything but research as plain search, which is the
+// cheaper of the two to get wrong.
 func parseSearchMode(raw string) string {
 	if strings.EqualFold(strings.TrimSpace(raw), chat.ModeResearch) {
 		return chat.ModeResearch
@@ -158,17 +131,11 @@ func parseSearchMode(raw string) string {
 	return chat.ModeSearch
 }
 
-// loadChatHistory returns the prior turns of an existing session, along with
-// the session itself. Both are nil for a new conversation.
-//
-// A session of the wrong kind, or one attached to a different document, is
-// reported as missing rather than forbidden: 404 for every mismatch means a
-// document session's id cannot be probed through the search endpoint, and the
-// document check in particular stops a conversation started against document A
-// from being continued against B's OCR text under A's title.
-//
-// The session comes back so a caller can check what only it knows about --
-// deep search uses it for the mode the conversation is already in.
+// loadChatHistory returns the prior turns and the session, both nil for a new
+// conversation. A session of the wrong kind, or one attached to another
+// document, is reported as missing rather than forbidden: that way an id cannot
+// be probed across endpoints, and a conversation started against document A
+// cannot be continued against B's OCR text under A's title.
 func loadChatHistory(app core.App, ownerID, sessionID string, kind chat.Kind, documentID string) (*core.Record, []ai.ChatMessage, error) {
 	if sessionID == "" {
 		return nil, nil, nil
@@ -190,10 +157,8 @@ func loadChatHistory(app core.App, ownerID, sessionID string, kind chat.Kind, do
 	return session, history, nil
 }
 
-// discardEmptySession drops a session opened for a turn that never landed, so
-// a failed or abandoned first question does not leave an empty chat in the
-// sidebar. Best effort: the answer, or the error being reported, is the thing
-// the caller owes the user.
+// discardEmptySession drops a session opened for a turn that never landed. Best
+// effort: the answer, or the error being reported, is what the caller owes.
 func discardEmptySession(app core.App, session *core.Record) {
 	if session == nil {
 		return
@@ -203,7 +168,6 @@ func discardEmptySession(app core.App, session *core.Record) {
 	}
 }
 
-// writeChatSessionError maps a session lookup failure onto a response.
 func writeChatSessionError(e *core.RequestEvent, app core.App, err error) error {
 	if errors.Is(err, chat.ErrNotFound) {
 		return writeError(e, http.StatusNotFound, "Chat not found.")
@@ -217,19 +181,21 @@ func unsavedMessage(role, content string, hits []ai.DocumentHit) chat.MessageInf
 	return chat.MessageInfo{Role: role, Content: content, Documents: hits}
 }
 
-// latestAssistantMessage returns the just-written assistant turn, so the client
-// gets its real record id and stored content.
-//
-// Falls back to an id-less view rather than failing the request: the turn is
-// already committed, and re-reading it is a convenience.
+// latestAssistantMessage falls back to an id-less view rather than failing the
+// request: the turn is already committed, and re-reading it is a convenience.
 func latestAssistantMessage(app core.App, sessionID, runID, reply string, hits []ai.DocumentHit) chat.MessageInfo {
 	records, err := chat.ListMessages(app, sessionID, chat.MaxReplayMessages)
 	if err == nil {
-		for i := len(records) - 1; i >= 0; i-- {
-			record := records[i]
-			if record.GetString("role") == chat.RoleAssistant &&
-				(runID == "" || record.GetString("run_id") == runID) {
-				return chat.ToMessageInfo(record)
+		// Through the same fold a reload goes through, so the answer the client
+		// is handed now carries the trail it will still have after a refresh. A
+		// research transcript is also full of assistant rows that are tool
+		// calls, and the fold is what keeps one of those from being mistaken
+		// for the answer.
+		messages := chat.VisibleMessages(records)
+		for i := len(messages) - 1; i >= 0; i-- {
+			info := messages[i]
+			if info.Role == chat.RoleAssistant && (runID == "" || info.RunID == runID) {
+				return info
 			}
 		}
 	}
@@ -247,9 +213,8 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 		if err != nil {
 			return writeError(e, http.StatusNotFound, "Document not found.")
 		}
-		// Superusers bypass ownership, matching deep search and the PocketBase
-		// collection rules. This answers document access; session ownership is
-		// resolved separately below.
+		// Superusers bypass ownership, matching the PocketBase collection rules.
+		// This answers document access; session ownership is resolved below.
 		if !e.HasSuperuserAuth() && document.GetString("user") != e.Auth.Id {
 			return writeError(e, http.StatusForbidden, "You do not have access to this document.")
 		}
@@ -283,8 +248,8 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 		}
 		messages := append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content})
 
-		// Resolved after the session is loaded, because a continued
-		// conversation's stored binding is what decides, not the request's.
+		// After the session is loaded, because a continued conversation's stored
+		// binding is what decides, not the request's.
 		cfg := rt.Snapshot().Cfg
 		requested := aiprovider.Binding{ProviderID: req.ProviderID, Model: req.Model}
 		binding := conversationBinding(session, recordedBinding(requested, cfg.ChatProviderID, cfg.ChatModel))
@@ -297,11 +262,9 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 			return writeError(e, http.StatusServiceUnavailable, "AI chat is not configured; update Settings.")
 		}
 
-		// The conversation exists before the question is asked, so the id the
-		// provider is given as a cache key is the id the chat keeps. opened
-		// holds the record only when this request is what created it: a
-		// conversation that was already there is never this request's to
-		// take back.
+		// The conversation exists before the question is asked, so the cache key
+		// given to the provider is the id the chat keeps. opened holds the record
+		// only when this request created it.
 		var opened *core.Record
 		if session == nil {
 			session, err = chat.CreateSession(app, chat.NewSession{
@@ -321,24 +284,25 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 			opened = session
 		}
 
-		// Detached from the connection, exactly like a search run and for the
-		// same reason: a dropped socket used to cancel the completion, take the
-		// conversation back and leave the user with nothing, even though the
-		// provider had already been paid for the answer. Now the turn is stored
-		// whether or not this response can still be delivered, and a client that
-		// lost its connection comes back for it -- see waitForStoredTurn.
-		//
-		// No run id: this surface has no Cancel button, so there is nothing to
-		// cancel by. The budget is what ends a run nobody is waiting for.
+		// Detached from the connection like a search run: the turn is stored
+		// whether or not this response can be delivered, and a client that lost
+		// its connection comes back for it. No run id, because this surface has
+		// no Cancel button; the budget ends a run nobody is waiting for.
 		runCtx, stopRun := startDetachedRun(e.Request.Context(), ownerID, "", session.Id)
 		defer stopRun()
 
 		chatCtx := aiprovider.WithDocumentRecord(runCtx, document)
-		reply, err := chatter.Chat(aiprovider.WithSession(chatCtx, session.Id), ocrText, messages)
+		// Nil unless both sides agreed: an operator bound a provider, and the
+		// user asked for the web on this turn.
+		var web *websearch.Tavily
+		if req.Web {
+			web = snap.WebSearch
+		}
+		reply, err := chatter.Chat(aiprovider.WithSession(chatCtx, session.Id), ocrText, messages, web)
 		if err != nil {
 			app.Logger().Error("document chat failed", "document", documentID, slog.Any("error", err))
 			discardEmptySession(app, opened)
-			return writeError(e, http.StatusBadGateway, "The AI provider could not complete the request.")
+			return writeError(e, http.StatusBadGateway, ai.ProviderErrorMessage(err))
 		}
 
 		session, err = chat.AppendTurn(app, ownerID, session.Id, chat.Turn{

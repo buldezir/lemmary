@@ -11,19 +11,15 @@ export type ChatMessage = {
 }
 
 /**
- * `search` finds documents and lists them as cards. `research` reads the
- * documents it finds and writes a cited answer — it can take a while and
- * streams its progress. A run that outgrows the model's context window fails
- * with the provider's error.
+ * `search` finds documents and lists them as cards. `research` reads them and
+ * writes a cited answer, streaming its progress. A run that outgrows the
+ * model's context window fails with the provider's error.
  */
 export type SearchMode = 'search' | 'research'
 
 /**
- * A turn the server answered.
- *
  * `session` is null when `saved` is false: the provider replied but the write
  * failed, so the answer is shown and the conversation is not resumable.
- * `detail` then says why.
  */
 export type ChatTurnResult = {
   session: ChatSession | null
@@ -45,6 +41,13 @@ export async function chatWithDocument(input: {
   content: string
   runId: string
   /**
+   * Lets this turn reach the public web. Per turn rather than stored with the
+   * conversation: nothing in the transcript depends on it, and a metered tool
+   * is better defaulted off on every reload. Ignored unless a provider is
+   * bound -- see `AppMeta.webSearch`.
+   */
+  web?: boolean
+  /**
    * The provider and model to open the conversation on. Read by the server
    * only when there is no session id yet: a conversation keeps the binding its
    * transcript was produced with.
@@ -59,6 +62,7 @@ export async function chatWithDocument(input: {
         session_id: input.sessionId ?? '',
         content: input.content,
         run_id: input.runId,
+        web: input.web === true,
         ...bindingBody(input.binding),
       },
       fallbackError: 'Failed to get AI response',
@@ -75,14 +79,19 @@ export async function chatWithDocument(input: {
   }
 }
 
-export type ResearchStepKind = 'search' | 'read' | 'survey' | 'count' | 'answer'
+export type ResearchStepKind =
+  | 'search'
+  | 'read'
+  | 'survey'
+  | 'count'
+  | 'web_search'
+  | 'web_fetch'
+  | 'answer'
 
 export type ResearchEvent =
   // First event of every run: the conversation it writes into, which exists
-  // before the run does. It is what makes a turn whose stream died
-  // recoverable — see `waitForStoredTurn` — and it arrives even for the first
-  // question of a new chat, which is the only way the page can learn the id of
-  // a session it did not know existed.
+  // before the run does. It is what makes a turn whose stream died recoverable
+  // (see `waitForStoredTurn`) and how the page learns a new chat's id.
   | { type: 'session'; session: ChatSession }
   | {
       type: 'step'
@@ -98,10 +107,21 @@ export type ResearchEvent =
       distilled?: boolean
     }
   | { type: 'delta'; content: string }
+  // How wide the research conversation has grown, emitted after every
+  // completion the main thread makes. Helper models are a separate
+  // conversation and are not counted.
+  | {
+      type: 'usage'
+      prompt_tokens: number
+      /** The model's limit, absent when no catalogue knows it. */
+      context_window?: number
+      /** True when the provider reported nothing and this was estimated. */
+      estimated?: boolean
+    }
   | { type: 'documents'; documents?: SearchDocumentHit[] }
   | { type: 'message'; content: string; incomplete?: boolean }
-  // Closes a successful run with the stored turn, which is what makes the
-  // conversation resumable — the answer itself already arrived above.
+  // Closes a successful run with the stored turn; the answer itself already
+  // arrived above.
   | {
       type: 'saved'
       session: ChatSession | null
@@ -114,22 +134,16 @@ export type ResearchEvent =
   | { type: 'done' }
 
 /**
- * Runs a search turn as a stream.
+ * A research answer arrives twice: as `delta` events for a live preview, then
+ * as one `message` event with the citation-checked text, whose `incomplete`
+ * says whether the generation was cut short.
  *
- * Research reports each step as it happens, and its answer arrives twice: as
- * `delta` events for a live preview, then as one `message` event with the
- * authoritative, citation-checked text. That event's `incomplete` says whether
- * the generation was cut short — the text is kept either way, but a partial
- * answer must not be shown as a finished one.
+ * Plain search emits only `documents`, `message` and `saved`, but streams
+ * regardless: a POST that writes nothing for minutes is what a reverse proxy
+ * cannot tell from a hung backend.
  *
- * Plain search emits none of those, only `documents`, `message` and `saved`.
- * It streams regardless, because the alternative is a POST that writes nothing
- * for however long the model takes, and a reverse proxy cannot tell that apart
- * from a backend that has hung.
- *
- * `runId` is what makes the run cancellable: the server no longer stops when
- * this connection closes, so cancelling has to be said out loud with
- * `cancelSearchRun`.
+ * `runId` is what makes a run cancellable, since the server does not stop when
+ * this connection closes -- see `cancelSearchRun`.
  */
 export async function searchStream(
   input: {
@@ -137,8 +151,15 @@ export async function searchStream(
     content: string
     mode: SearchMode
     runId: string
+    /** See `chatWithDocument`. Research mode only; search mode ignores it. */
+    web?: boolean
     /** Read only when there is no session id yet; see `chatWithDocument`. */
     binding?: ProviderBinding
+    /**
+     * Finishes a research turn whose run did not: no new question, the stored
+     * conversation is replayed and the loop re-entered where it stopped.
+     */
+    resume?: boolean
   },
   onEvent: (event: ResearchEvent) => void,
   signal?: AbortSignal,
@@ -149,6 +170,8 @@ export async function searchStream(
       content: input.content,
       mode: input.mode,
       run_id: input.runId,
+      web: input.web === true,
+      resume: input.resume === true,
       ...bindingBody(input.binding),
     },
     onEvent,
@@ -159,14 +182,9 @@ export async function searchStream(
 }
 
 /**
- * Stops a run started with `searchStream`.
- *
- * Abandoning the stream is not enough on its own and is no longer meant to be:
- * the server keeps a run alive through a dropped connection so a network blip
- * cannot destroy an answer it has already paid for, which means a deliberate
- * cancel needs a request of its own. Best-effort — a run that already finished
- * has nothing to stop, and a failure here must not surface over a turn the user
- * has abandoned anyway.
+ * Abandoning the stream is deliberately not enough: the server keeps a run
+ * alive through a dropped connection, so a cancel needs a request of its own.
+ * Best-effort, since a finished run has nothing to stop.
  */
 export async function cancelSearchRun(
   target: { runId: string } | { sessionId: string },

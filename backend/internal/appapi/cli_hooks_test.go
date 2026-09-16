@@ -32,8 +32,8 @@ func TestRegisterSystemCommandsWrapsSuperuserHooks(t *testing.T) {
 }
 
 func TestWrapBeforeStartIsNoOp(t *testing.T) {
-	// Documents the old bug: wrapping before Start finds nothing because
-	// PocketBase registers superuser commands inside Start.
+	// Wrapping before Start finds nothing: PocketBase registers the superuser
+	// commands inside Start.
 	app := pocketbase.NewWithConfig(pocketbase.Config{
 		DefaultDataDir:  t.TempDir(),
 		HideStartBanner: true,

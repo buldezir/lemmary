@@ -4,18 +4,10 @@ import { fileUrlWithToken, type DocumentFileRef } from '../lib/api/documents'
 import { previewKind } from '../lib/documentPreview'
 
 /**
- * The document file itself, beside its metadata.
- *
- * The browser does the viewing: a PDF gets its built-in viewer with page
- * navigation and find-in-document, an image just fits the pane. PocketBase
- * stamps every file response with `...; sandbox` in a CSP, which sounds like it
- * would stop a framed PDF viewer -- it does not, in either Chrome or Firefox,
- * so the tokened URL goes straight into the frame and the file is never pulled
- * through JavaScript.
- *
- * Only rendered for a file `previewKind` can show, and only on a viewport wide
- * enough to put it beside the form; the page leaves the column out entirely
- * otherwise rather than reserving one to apologise in.
+ * The document file itself, viewed by the browser. PocketBase stamps every file
+ * response with `...; sandbox` in a CSP, which sounds like it would stop a
+ * framed PDF viewer; it does not, in either Chrome or Firefox, so the tokened
+ * URL goes straight into the frame and the file is never pulled through JS.
  */
 export function DocumentPreview({ record }: { record: DocumentFileRef }) {
   // Primitives, not the record: the detail page hands down a fresh object every
@@ -40,8 +32,7 @@ export function DocumentPreview({ record }: { record: DocumentFileRef }) {
         }
       })
       .catch((err: unknown) => {
-        // Overlapping mints no longer auto-cancel, but a realtime-driven
-        // remount can still race one; the survivor has the token.
+        // A realtime-driven remount can race a mint; the survivor has the token.
         if (err instanceof ClientResponseError && err.isAbort) {
           return
         }
@@ -78,18 +69,15 @@ export function DocumentPreview({ record }: { record: DocumentFileRef }) {
     )
   }
 
-  // #view=FitH is the viewer's own initial-zoom hint, ignored where it is not
-  // understood. Set once: changing the fragment re-navigates the frame.
+  // #view=FitH is the viewer's own initial-zoom hint. Set once: changing the
+  // fragment re-navigates the frame.
   //
-  // The file token is user-scoped rather than per-file, and it rides in the
-  // query string, so referrerPolicy keeps it out of the Referer of anything the
-  // framed document navigates to -- a "view online" link in an invoice is
-  // ordinary content here. Modern browsers would send only the origin
-  // cross-origin anyway; this costs one attribute and does not rely on that.
+  // The file token is user-scoped and rides in the query string, so
+  // referrerPolicy keeps it out of the Referer of anything the framed document
+  // links to.
   //
-  // No onError: a frame that is refused gets an error *document*, which loads
-  // successfully as far as the element is concerned, so the handler would never
-  // run. PocketBase's message shows in the frame instead.
+  // No onError: a refused frame gets an error *document*, which loads
+  // successfully as far as the element is concerned.
   //
   // ponytail: the token lives three minutes, so a viewer that went back for more
   // bytes long after the frame loaded would be refused. In practice it has the

@@ -4,9 +4,8 @@ import { DocumentCard } from './DocumentCard'
 import { Pagination } from './Pagination'
 
 /**
- * A page of documents: the bulk bar for whatever this list can do to them, the
- * cards, and the pager. Identical wherever documents are listed -- what differs
- * between the lists is the heading, the filters and what an empty one means.
+ * A page of documents: the bulk bar, the cards and the pager, identical wherever
+ * documents are listed.
  */
 export function DocumentGrid({
   list,
@@ -36,6 +35,7 @@ export function DocumentGrid({
     onReprocessSelected,
     onMarkReviewed,
     onDeleteSelected,
+    filterByTag,
     page,
     totalPages,
     totalItems,
@@ -72,6 +72,7 @@ export function DocumentGrid({
             onToggleSelect={toggleSelected}
             onMarkReviewed={(id) => void onMarkReviewed([id])}
             markingReviewed={markingReviewed}
+            onFilterTag={filterByTag}
           />
         ))}
       </div>

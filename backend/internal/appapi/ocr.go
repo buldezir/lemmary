@@ -18,25 +18,17 @@ import (
 
 const ocrTestMaxFileBytes = 10 * 1024 * 1024
 
-// pickableProvider is a configured provider as a picker sees it: enough to name
-// a row in a dropdown, and nothing else.
-//
-// Deliberately not providerResponse, which carries api_key_set, the signed-in
-// ChatGPT account address and its plan. This list is readable by any signed-in
-// user, because any of them may override the model on their own chat or
-// reprocess job; what the operator pays with is not part of that.
+// pickableProvider is deliberately not providerResponse, which carries
+// api_key_set and the signed-in ChatGPT account. This list is readable by any
+// signed-in user; what the operator pays with is not part of that.
 type pickableProvider struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	SDK  string `json:"sdk"`
 }
 
-// configuredBinding is what Settings would use for a purpose, so a picker can
-// name the model that answers when nobody overrides anything.
-//
-// The provider's alias rides along because the id alone is not something to put
-// in front of a user, and a caller showing the default has no list to look it
-// up in -- an unconfigured binding sends nothing at all.
+// configuredBinding is what Settings would use for a purpose. The alias rides
+// along because a caller showing the default has no list to look the id up in.
 type configuredBinding struct {
 	ProviderID   string `json:"provider_id,omitempty"`
 	ProviderName string `json:"provider_name,omitempty"`
@@ -45,8 +37,8 @@ type configuredBinding struct {
 
 type pickableProvidersResponse struct {
 	Providers []pickableProvider `json:"providers"`
-	// Configured is the binding in Settings for the requested purpose. Empty
-	// when nothing is bound, which is what an instance mid-setup looks like.
+	// Configured is empty when nothing is bound, which is what an instance
+	// mid-setup looks like.
 	Configured configuredBinding `json:"configured"`
 }
 
@@ -57,20 +49,13 @@ type ocrTestResponse struct {
 	Duration  string `json:"duration"`
 }
 
-// handlePickableProviders lists the configured providers that can serve a
-// purpose, for a model picker outside Settings.
+// handlePickableProviders answers "which providers could do this" for a model
+// picker outside Settings, without admin rights.
 //
-// It grew out of the OCR-test page's own list, which is why it is here rather
-// than in providers.go: that page needed a non-admin answer to "which providers
-// could do this", and so does every provider/model override -- on a chat, on a
-// reprocess job.
-//
-// fallback is what an unqualified request means, per route: ParseModelPurpose
+// fallback is what an unqualified request means per route: ParseModelPurpose
 // reads anything it does not recognise as the language model, which is wrong
-// for the /ocr/providers path the OCR test page still calls with no purpose.
-//
-// The configured binding for the purpose is sorted first, so the picker opens
-// on what Settings would have used anyway.
+// for the /ocr/providers path the OCR test page calls with no purpose. The
+// configured binding is sorted first, so the picker opens on Settings' choice.
 func handlePickableProviders(app core.App, rt *config.Runtime, fallback aiprovider.ModelPurpose) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		purpose := fallback
@@ -91,11 +76,10 @@ func handlePickableProviders(app core.App, rt *config.Runtime, fallback aiprovid
 		var first *pickableProvider
 		rest := make([]pickableProvider, 0, len(providers))
 		for _, p := range providers {
-			// A local sidecar has an address instead of a key; skipping on the
-			// key alone would hide it from the very page an operator opens
-			// first to check the container is working. ServesPurpose is the
-			// other half: the local embeddings sidecar is configured and
-			// keyless too, and cannot read a document at all.
+			// A local sidecar has an address instead of a key, so skipping on the
+			// key alone would hide it from the page an operator opens to check the
+			// container works. ServesPurpose is the other half: that sidecar is
+			// keyless too and cannot read a document at all.
 			if !p.Configured() || !aiprovider.ServesPurpose(p.SDK, purpose) {
 				continue
 			}
@@ -116,14 +100,10 @@ func handlePickableProviders(app core.App, rt *config.Runtime, fallback aiprovid
 	}
 }
 
-// preferredBinding is the configured provider and model a picker opens on, and
-// what it reports as answering when nobody overrides anything.
-//
-// name breaks the tie the capability cannot. Chat, search and extraction are
-// all language models, so the purpose alone cannot tell them apart -- and
-// telling Deep Search that the chat model answers it would be wrong on any
-// instance that bound the two separately. Unnamed, the LLM purpose answers with
-// chat: it is the only LLM picker a non-admin reaches without naming one.
+// preferredBinding takes name to break the tie the capability cannot: chat,
+// search and extraction are all language models, and telling Deep Search that
+// the chat model answers it would be wrong wherever the two were bound
+// separately. Unnamed, the LLM purpose answers with chat.
 func preferredBinding(cfg config.Config, purpose aiprovider.ModelPurpose, name string) (providerID, model string) {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "search":

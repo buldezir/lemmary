@@ -41,11 +41,8 @@ export function deletePasskey(id: string) {
 }
 
 /**
- * Runs the registration ceremony: ask the server for options, hand them to the
- * authenticator, send the result back.
- *
- * Lives here rather than in auth.ts because it never touches the session — the
- * caller is already signed in, and apiFetch supplies the token.
+ * Here rather than in auth.ts because the ceremony never touches the session:
+ * the caller is already signed in, and apiFetch supplies the token.
  */
 export async function registerPasskey(name: string): Promise<Passkey> {
   if (!passkeysSupported()) {
@@ -81,9 +78,8 @@ export async function registerPasskey(name: string): Promise<Passkey> {
 }
 
 /**
- * Renders a PocketBase timestamp as a plain date, matching how DocumentCard
- * formats one. Deliberately not toLocaleDateString: that would make the browser
- * e2e assertions depend on the runner's locale.
+ * Deliberately not toLocaleDateString: that would make the browser e2e
+ * assertions depend on the runner's locale.
  */
 export function passkeyDateLabel(value: string): string {
   const trimmed = value.trim()

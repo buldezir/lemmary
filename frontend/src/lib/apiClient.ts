@@ -28,34 +28,24 @@ export function errorDetail(data: unknown, fallback: string): string {
 }
 
 /**
- * What the user is told when a plain request never made it.
- *
- * Deliberately says nothing about what happens next: `apiFetch` carries
- * documents, settings, imports and passkeys, and a POST that failed on the
+ * Deliberately says nothing about what happens next: a POST that failed on the
  * wire may or may not have been applied. Only the search stream can promise
- * more, and it does -- see `streamConnectionLostMessage`.
+ * more, in `streamConnectionLostMessage`.
  */
 export const connectionLostMessage = 'Could not reach the server. Check your connection and try again.'
 
 /**
- * The same failure on a search stream, where more is known.
- *
- * A run outlives its connection: the server finishes it and stores the turn
- * whether or not anyone is still reading. So losing the stream is not losing
- * the answer, and saying so is the difference between a user who waits and one
- * who pays for the same research twice.
+ * The same failure on a search stream, where more is known: a run outlives its
+ * connection, so losing the stream is not losing the answer, and saying so is
+ * what keeps a user from paying for the same research twice.
  */
 export const streamConnectionLostMessage =
   'The connection to the server was interrupted. The run continues, and its answer will be in your chat history.'
 
 /**
- * A request that never made it over the wire.
- *
- * Typed so a caller that knows more can act on it. Most cannot -- a POST that
- * died on the wire may or may not have been applied -- but the two chat
- * surfaces can: their runs are detached from the connection, so the turn is
- * being stored regardless and is worth waiting for rather than reporting as a
- * loss. The message is unchanged for everyone else.
+ * A request that never made it over the wire. Typed so the chat surfaces, whose
+ * runs are detached from the connection, can wait for the turn instead of
+ * reporting a loss; every other caller just shows the message.
  */
 export class ConnectionLostError extends Error {
   constructor(cause: unknown) {
@@ -64,15 +54,6 @@ export class ConnectionLostError extends Error {
   }
 }
 
-/**
- * A request that broke once a run was already under way -- a stream frame that
- * arrived and then stopped, or a send the server may well have accepted.
- *
- * Typed rather than a plain Error because callers must treat it differently
- * from a send that failed: the question reached the server and is being
- * answered, so putting it back in the composer invites the user to pay for the
- * same run twice.
- */
 /**
  * A response the server answered with a failure status. Carries the status so
  * a poll can tell a 5xx worth retrying from a 4xx that ends the wait.
@@ -86,6 +67,11 @@ export class HttpError extends Error {
   }
 }
 
+/**
+ * A request that broke once a run was already under way. The question reached
+ * the server and is being answered, so putting it back in the composer would
+ * invite the user to pay for the same run twice.
+ */
 export class RunInFlightError extends Error {
   constructor(cause: unknown) {
     super(streamConnectionLostMessage, { cause })
@@ -94,27 +80,17 @@ export class RunInFlightError extends Error {
 }
 
 /**
- * Turns a transport failure into something worth reading.
- *
  * A request that dies on the wire surfaces as whatever the browser calls it
- * that week — "Failed to fetch" in Chrome, "Error in input stream" when it is
- * the response body that breaks mid-read, "NetworkError…" in Firefox — and
- * those went straight into the page. None of them tell the user the one thing
- * that matters, which is that the run may well have finished anyway.
+ * that week ("Failed to fetch", "Error in input stream", "NetworkError"), none
+ * of which say the run may have finished anyway.
  *
  * Only transport failures: a DOMException from an abort is the caller's to
- * interpret, and an Error we raised ourselves already carries the server's own
- * wording.
+ * interpret, and an Error we raised carries the server's own wording.
  */
 export function isConnectionError(err: unknown): boolean {
   return err instanceof TypeError
 }
 
-/**
- * Calls a custom `/api/app` endpoint: attaches the session token, JSON-encodes
- * the body, and turns non-2xx responses into Errors carrying the server's
- * `detail` message.
- */
 export async function apiFetch<T>(path: string, options: ApiFetchOptions): Promise<T> {
   const {
     method = 'GET',
@@ -159,10 +135,8 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions): Promi
 }
 
 /**
- * Splits an SSE byte stream into event payloads. Kept separate from the fetch
- * plumbing because the boundary cases — a frame split across two chunks, a
- * trailing partial frame — are what actually break, and they are worth testing
- * without a server.
+ * Separate from the fetch plumbing so the boundary cases, a frame split across
+ * chunks and a trailing partial frame, are testable without a server.
  */
 export function createSSEParser(onEvent: (payload: string) => void) {
   let buffer = ''
@@ -192,9 +166,8 @@ type ApiStreamOptions<TEvent> = {
 }
 
 /**
- * POSTs to an endpoint that answers with server-sent events and delivers each
- * one to onEvent. It is a POST because the request carries the conversation, so
- * EventSource (GET-only) is not an option.
+ * A POST because the request carries the conversation, so EventSource
+ * (GET-only) is not an option.
  */
 export async function apiStream<TEvent>(path: string, options: ApiStreamOptions<TEvent>) {
   await ensureAuth()
@@ -241,9 +214,8 @@ export async function apiStream<TEvent>(path: string, options: ApiStreamOptions<
     try {
       chunk = await reader.read()
     } catch (err) {
-      // The body broke mid-stream. Chrome reports this as
-      // `TypeError: Error in input stream`, which is not something to show
-      // anyone; the run itself may well be finishing on the server.
+      // The body broke mid-stream, which Chrome reports as a bare TypeError;
+      // the run itself may well be finishing on the server.
       if (isConnectionError(err)) {
         throw new RunInFlightError(err)
       }
@@ -270,10 +242,8 @@ type JobStatusResponse = {
 const jobPollIntervalMs = 500
 
 /**
- * How long a job may run before the client gives up on it. Only a safety net:
- * a caller whose backend job can legitimately run longer passes its own budget,
- * because reporting a failure while the server keeps working is worse than
- * waiting.
+ * Only a safety net: a caller whose job legitimately runs longer passes its own
+ * budget, because reporting a failure while the server works is worse.
  */
 const defaultJobTimeoutMs = 5 * 60 * 1000
 

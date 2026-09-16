@@ -25,9 +25,8 @@ type Props = {
   onSelectAll: () => void
   onClear: () => void
   /**
-   * Offered alongside the mode's own action, not instead of it: the Inbox holds
-   * documents worth throwing away as well as ones worth reviewing. Omit to hide
-   * the button.
+   * Offered alongside the mode's own action, not instead of it. Omit to hide the
+   * button.
    */
   onDelete?: () => void
 }

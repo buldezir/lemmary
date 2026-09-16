@@ -25,11 +25,16 @@ export type AppSettings = {
   embedding_provider_id: string
   embedding_model: string
   /**
-   * Vector length, reported by the provider on the first real request. Read-only:
-   * only the provider knows it, and a number typed next to a model that
-   * disagrees would build an index that silently drops every vector.
+   * Vector length, reported by the provider on the first real request.
+   * Read-only: a number typed next to a model that disagrees would build an
+   * index that silently drops every vector.
    */
   embedding_dims: number
+  /**
+   * The web-search binding, backing the web_search and web_fetch tools. Empty
+   * means they are never offered. No model beside it: the SDKs take none.
+   */
+  websearch_provider_id: string
   ocr_timeout_sec: number
   processing_result_language: string
   deep_search_languages: string
@@ -43,11 +48,9 @@ export type AppSettings = {
    */
   extraction_prompt_version: string
   /**
-   * The admin's own additions to the extraction prompt: house conventions for
-   * titles, types, correspondents and tags. Appended to the built-in prompt,
-   * which stays in force — these cannot change which fields are stored. Empty
-   * means the prompt is what it always was. Tenant-owned, so a managed
-   * instance keeps it.
+   * The admin's own additions to the extraction prompt. Appended to the built-in
+   * one, which stays in force, so these cannot change which fields are stored.
+   * Tenant-owned, so a managed instance keeps it.
    */
   extraction_rules: string
   /** Tenant-owned, so a managed instance keeps it. */

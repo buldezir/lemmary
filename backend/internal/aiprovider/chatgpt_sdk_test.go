@@ -3,9 +3,7 @@ package aiprovider
 import "testing"
 
 // The chatgpt SDK's whole shape in one place: it chats, it reads documents, it
-// cannot embed, and its credential is a token rather than a pasted key. Each of
-// those answers gates a different binding, and getting one wrong would put a
-// provider somewhere it cannot serve.
+// cannot embed, and its credential is a token rather than a pasted key.
 func TestChatGPTSDKChatsAndReadsButDoesNotEmbed(t *testing.T) {
 	t.Parallel()
 	if !IsLLM(SDKChatGPT) {
@@ -15,8 +13,7 @@ func TestChatGPTSDKChatsAndReadsButDoesNotEmbed(t *testing.T) {
 		t.Error("the Codex backend serves no /embeddings")
 	}
 	// Its models take file and image input like any other LLM's, so OCR runs
-	// on the seat: see internal/chatgpt.messageContent for the parts, and
-	// internal/ocr.NewLLMProvider for the request they go in.
+	// on the seat: see internal/ocr.NewLLMProvider.
 	if !CanOCR(SDKChatGPT) {
 		t.Error("chatgpt reads documents like the other LLM SDKs")
 	}
@@ -29,8 +26,7 @@ func TestChatGPTSDKChatsAndReadsButDoesNotEmbed(t *testing.T) {
 	if RequiresAPIKey(SDKChatGPT) {
 		t.Error("chatgpt has no API key to demand")
 	}
-	// Every other SDK must keep answering the old way: RequiresOAuth is new,
-	// and a stray true would hide a working key behind a sign-in button.
+	// A stray true elsewhere would hide a working key behind a sign-in button.
 	for _, sdk := range ValidSDKs {
 		if sdk != SDKChatGPT && RequiresOAuth(sdk) {
 			t.Errorf("%s must not require a sign-in", sdk)
@@ -39,8 +35,7 @@ func TestChatGPTSDKChatsAndReadsButDoesNotEmbed(t *testing.T) {
 }
 
 // Configured is what the setup wizard, the readiness check and the runtime all
-// ask. For chatgpt the answer lives in a different column than for every other
-// SDK, and the old spelling would have read a signed-in provider as unusable.
+// ask. For chatgpt the answer lives in a different column.
 func TestChatGPTProviderIsConfiguredByItsToken(t *testing.T) {
 	t.Parallel()
 	// A base URL is not enough, or the row would read as ready before anyone
@@ -60,9 +55,8 @@ func TestChatGPTProviderIsConfiguredByItsToken(t *testing.T) {
 	}
 }
 
-// The Codex backend publishes no catalogue, so the picker is served locally --
-// for chat and for OCR, which bind the same models. Embeddings stay empty
-// rather than offering models for the one binding CanEmbed refuses.
+// The Codex backend publishes no catalogue, so the picker is served locally,
+// for chat and for OCR. Embeddings stay empty, the binding CanEmbed refuses.
 func TestChatGPTModelsAreServedWithoutTheNetwork(t *testing.T) {
 	t.Parallel()
 	p := Provider{SDK: SDKChatGPT, BaseURL: DefaultBaseURL(SDKChatGPT)}

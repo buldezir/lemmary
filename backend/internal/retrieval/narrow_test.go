@@ -5,9 +5,6 @@ import (
 	"testing"
 )
 
-// TestNarrowShrinksAChunkToItsMatch: a stored chunk is a block chosen for
-// embedding, and quoting its first 600 bytes back is quoting whatever happened
-// to start it.
 func TestNarrowShrinksAChunkToItsMatch(t *testing.T) {
 	head := strings.Repeat("Vorspann ohne Bedeutung. ", 30)
 	text := head + "Die monatliche Kaltmiete beträgt 1234 EUR. " +

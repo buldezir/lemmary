@@ -8,6 +8,7 @@ import (
 
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
+	"lemmary/backend/internal/websearch"
 	"regexp"
 	"sort"
 	"strings"
@@ -48,8 +49,7 @@ type DocumentContent struct {
 	// Distilled marks a document the helper model read on the agent's
 	// behalf: Notes, Quotes and Values stand in for Text, which is absent.
 	// The agent never sees the document itself, only what it says about the
-	// question -- that is what keeps a read of twenty documents from being
-	// twenty documents' worth of conversation.
+	// question.
 	Distilled bool `json:"distilled,omitempty"`
 	// Relevant is the helper's judgement of whether the document bears on
 	// the question at all. Meaningful only when Distilled.
@@ -59,12 +59,9 @@ type DocumentContent struct {
 	Values   map[string]string `json:"values,omitempty"`
 }
 
-// ReadRequest is one read_documents call after validation.
-//
-// Focus is retrieval, not rationing: a document read whole answers with its
-// first pages, and on a fifty-page statement the paragraph that matters is
-// rarely there. Naming what the read is for returns the passages about it
-// instead, with the head for context and the gaps marked.
+// ReadRequest is one read_documents call after validation. Focus is retrieval,
+// not rationing: a document read whole answers with its first pages, and on a
+// fifty-page statement the paragraph that matters is rarely there.
 type ReadRequest struct {
 	IDs   []string
 	Focus string
@@ -78,23 +75,46 @@ type ReadRequest struct {
 type DocumentReader func(ctx context.Context, req ReadRequest) ([]DocumentContent, error)
 
 type ResearchRequest struct {
-	Messages      []ChatMessage
+	// Thread is the conversation as it was last sent to the provider, read back
+	// from storage: the system prompt, every question, every tool call and its
+	// result, every answer. It is replayed verbatim, which is what lets a
+	// follow-up build on earlier turns and what gives the provider a prefix it
+	// has already cached. The caller appends the new question to it before the
+	// run; a Thread that ends mid-turn resumes that turn instead.
+	Thread []ThreadMessage
+	// Record is handed every message this run adds, in order, as it happens, so
+	// a run that dies leaves its work behind. The final answer is not recorded
+	// here: it comes back in ResearchResult, and the caller stores it with the
+	// documents and usage that belong to it.
+	Record func(ThreadMessage)
+	// AvailableTags is read only when the conversation has no system prompt
+	// yet; after that the stored one is what the model sees.
 	AvailableTags []string
 	Search        DocumentSearcher
 	Read          DocumentReader
 	// PriorDocuments are the hits earlier turns of this conversation already
-	// found. They are readable by id without searching again -- a follow-up
-	// question about a document the last answer cited should not have to
-	// rediscover it -- but they are not results of this turn, so they only
-	// join the answer's document list if the answer cites them.
+	// found. Readable by id without searching again, but not results of this
+	// turn, so they join the answer's document list only if the answer cites them.
 	PriorDocuments []DocumentHit
 	// DenseRetrieval says searches match by meaning as well as by keyword;
 	// see SearchOptions.
 	DenseRetrieval bool
-	// Survey and Count back survey_documents and count_documents. Either may
-	// be nil, and the tool is then not offered.
+	// Survey and Count back survey_documents and count_documents. Either may be
+	// nil -- a helper model can be bound and unbound between two questions of
+	// one conversation -- and the tool is declared anyway, because the list is
+	// part of what the provider cached. A call with nothing behind it is
+	// refused.
 	Survey DocumentSurveyor
 	Count  DocumentCounter
+	// Web backs web_search and web_fetch. Nil unless an operator configured a
+	// web-search provider and the user asked for it on this turn. The tools are
+	// declared either way -- the list is part of what the provider cached, and
+	// this is per turn -- and a call made without them behind it is refused.
+	Web *websearch.Tavily
+	// ContextWindow is the bound model's context length in tokens, or 0 when
+	// nobody knows it. Reported, never enforced: what fits is the provider's
+	// ruling, and it delivers it by refusing the request.
+	ContextWindow int
 }
 
 type ResearchResult struct {
@@ -104,10 +124,12 @@ type ResearchResult struct {
 	// anyway. The text is real as far as it goes, but it is not the whole
 	// answer, and a caller must not present it as one.
 	Incomplete bool
+	// Usage is how much context the run's own conversation took at its widest.
+	Usage TurnUsage
 }
 
 // ResearchEvent is one line of the run's visible progress. Types: "step",
-// "delta", "documents", "message", "error", "done".
+// "delta", "documents", "message", "usage", "error", "done".
 type ResearchEvent struct {
 	Type   string   `json:"type"`
 	Kind   string   `json:"kind,omitempty"`   // search | read | survey | count | answer
@@ -125,6 +147,12 @@ type ResearchEvent struct {
 	Documents  []DocumentHit `json:"documents,omitempty"`
 	Message    string        `json:"message,omitempty"`
 	Incomplete bool          `json:"incomplete,omitempty"`
+	// PromptTokens, ContextWindow and Estimated carry a "usage" event: how
+	// wide the conversation has grown, out of what, and whether the number was
+	// counted by the provider or estimated from the text we sent.
+	PromptTokens  int  `json:"prompt_tokens,omitempty"`
+	ContextWindow int  `json:"context_window,omitempty"`
+	Estimated     bool `json:"estimated,omitempty"`
 }
 
 type readDocumentsArgs struct {
@@ -148,6 +176,8 @@ type researchState struct {
 	// question is the user's latest message, handed to every read so a
 	// document read without a focus is still read for something.
 	question string
+	// web is this run's remaining web-call allowance; see maxWebCalls.
+	web webBudget
 }
 
 func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, emit func(ResearchEvent)) (ResearchResult, error) {
@@ -159,6 +189,10 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 	if emit == nil {
 		emit = func(ResearchEvent) {}
+	}
+	record := req.Record
+	if record == nil {
+		record = func(ThreadMessage) {}
 	}
 	ctx = aiprovider.EnsureSession(ctx, "research")
 
@@ -172,46 +206,54 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 		prior:     map[string]DocumentHit{},
 	}
 	state.seedPrior(req.PriorDocuments)
-	state.question = latestUserMessage(req.Messages)
 
-	system := buildResearchSystemPrompt(a.languages, a.resultLanguage, req.AvailableTags, req.DenseRetrieval)
-
-	apiMessages := []openai.ChatCompletionMessageParamUnion{openai.SystemMessage(system)}
-	for _, msg := range req.Messages {
-		role := strings.TrimSpace(msg.Role)
-		content := strings.TrimSpace(msg.Content)
-		if role == "" || content == "" {
-			continue
-		}
-		if role != "user" && role != "assistant" {
-			return ResearchResult{}, fmt.Errorf("invalid message role: %s", role)
-		}
-		if role == "user" {
-			apiMessages = append(apiMessages, openai.UserMessage(content))
-		} else {
-			apiMessages = append(apiMessages, openai.AssistantMessage(content))
-		}
+	thread := req.Thread
+	// A conversation keeps the prompt it was opened with, the way it already
+	// keeps its model: rebuilding it per turn from a live tag query would move
+	// the prefix under the provider's cache on every question. A caller that
+	// stores the thread writes this row itself, before the question, so the
+	// stored order is the order it replays in; prepending it here is for the
+	// callers that store nothing.
+	if !startsWithSystem(thread) {
+		thread = append([]ThreadMessage{{Role: "system", Content: a.SystemPrompt(req)}}, thread...)
 	}
-	if len(apiMessages) < 2 {
+	state.question = latestUserMessage(thread)
+	if state.question == "" {
 		return ResearchResult{}, fmt.Errorf("at least one user message is required")
 	}
 
-	tools := researchTools()
-	if req.Survey != nil {
-		tools = append(tools, surveyDocumentsTool())
+	meter := newContextMeter(req.ContextWindow)
+	apiMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(thread))
+	for _, msg := range thread {
+		param, ok := msg.Param()
+		if !ok {
+			continue
+		}
+		meter.grew(msg.Size())
+		apiMessages = append(apiMessages, param)
 	}
-	if req.Count != nil {
-		tools = append(tools, countDocumentsTool())
-	}
+
+	// Every schema, every turn, whatever is behind them. The tool list is part
+	// of what the provider cached, and what backs these three moves underneath
+	// a conversation: the web toggle is per question, and a helper or a counter
+	// can be bound or unbound between two of them. A list that followed would
+	// forfeit the whole transcript's prefix each time. A call with nothing
+	// behind it is refused instead -- see runWebTool, runSurveyTool and
+	// runCountTool -- which costs one round and no cache.
+	tools := append(researchTools(),
+		surveyDocumentsTool(),
+		countDocumentsTool(),
+		webSearchTool(),
+		webFetchTool(),
+	)
 	stalled := 0
 	round := 0
 	var usage Usage
 
-	// No round cap: the loop ends when the model is ready, when it stops
-	// making progress, or when a completion is rejected — typically because
-	// the conversation outgrew the model's context window. Every iteration
-	// appends at least an assistant message and a tool result, so a run that
-	// keeps gathering is finite: the provider will refuse the next request.
+	// No round cap: the loop ends when the model is ready, when it stops making
+	// progress, or when a completion is rejected. Every iteration appends at
+	// least an assistant message and a tool result, so a run that keeps
+	// gathering is finite: the provider will refuse the next request.
 	for {
 		if err := ctx.Err(); err != nil {
 			return ResearchResult{}, err
@@ -247,6 +289,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 			return ResearchResult{}, fmt.Errorf("openai returned no choices")
 		}
 		usage.Add(usageOf(chatResp))
+		emit(usageEvent(meter.observe(usageOf(chatResp))))
 
 		msg := chatResp.Choices[0].Message
 		nativeCalls := msg.ToolCalls
@@ -261,15 +304,35 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 
 		progressed := false
 		if len(nativeCalls) > 0 {
+			asked := ThreadMessage{Role: "assistant", Content: msg.Content}
+			for _, call := range nativeCalls {
+				asked.Calls = append(asked.Calls, ToolCall{
+					ID:        call.ID,
+					Name:      call.Function.Name,
+					Arguments: call.Function.Arguments,
+				})
+			}
+			// Recorded before the tools run, so a run that dies inside one still
+			// shows what it was doing.
+			record(asked)
 			apiMessages = append(apiMessages, msg.ToParam())
+			meter.grew(asked.Size())
+
 			for _, call := range nativeCalls {
 				result, advanced := a.runResearchTool(ctx, req, state, call.ID, call.Function.Name, call.Function.Arguments, emit)
 				progressed = progressed || advanced
+				answer := ThreadMessage{Role: "tool", Content: result.Content, CallID: call.ID}
+				record(answer)
+				meter.grew(answer.Size())
 				apiMessages = append(apiMessages, openai.ToolMessage(result.Content, call.ID))
 			}
 		} else {
 			// DSML models put tool calls in content; feed results back as a user message.
+			said := ThreadMessage{Role: "assistant", Content: msg.Content}
+			record(said)
 			apiMessages = append(apiMessages, openai.AssistantMessage(msg.Content))
+			meter.grew(said.Size())
+
 			results := make([]toolExecResult, 0, len(dsmlCalls))
 			for _, call := range dsmlCalls {
 				result, advanced := a.runResearchTool(ctx, req, state, call.ID, call.Name, call.Arguments, emit)
@@ -277,6 +340,11 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 				results = append(results, result)
 			}
 			formatted := formatDSMLToolResults(results)
+			// Stored as a tool row with no call id; ThreadMessage.Param turns
+			// it back into the user message this dialect expects.
+			fed := ThreadMessage{Role: "tool", Content: formatted}
+			record(fed)
+			meter.grew(fed.Size())
 			apiMessages = append(apiMessages, openai.UserMessage(formatted))
 		}
 
@@ -289,7 +357,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 
 	emit(ResearchEvent{Type: "step", Kind: "answer", Status: "start"})
-	reply, incomplete, answerUsage, err := a.answerResearch(ctx, apiMessages, emit)
+	reply, incomplete, answerUsage, err := a.answerResearch(ctx, apiMessages, tools, req.Web != nil, meter, emit)
 	if err != nil {
 		return ResearchResult{}, err
 	}
@@ -313,29 +381,47 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 	emit(ResearchEvent{Type: "step", Kind: "answer", Status: "done", Count: len(state.read)})
 
-	return ResearchResult{Reply: reply, Documents: state.hits, Incomplete: incomplete}, nil
+	return ResearchResult{Reply: reply, Documents: state.hits, Incomplete: incomplete, Usage: meter.usage}, nil
 }
 
-// answerResearch is the second phase: one completion with no tools declared, so
-// the model cannot emit tool markup and every chunk is safe to stream.
-// It returns the answer and whether it was cut short: the request timeout
-// covers the whole generation rather than the gap between chunks, so a long
-// answer can fail with most of it already delivered. Keeping that text is right
-// — it is better than nothing and the user has already watched it arrive — but
-// returning it as an ordinary success is not, because every caller then
+// answerResearch is the second phase: one completion with the tools refused
+// rather than removed, so the model cannot emit tool markup and every chunk is
+// safe to stream, while the prefix the rounds before it cached still holds. It
+// returns the answer and whether it was cut short: the request timeout covers
+// the whole generation, so a long answer can fail with most of it delivered.
+// That text is worth keeping, but not as an ordinary success, or every caller
 // presents a half-finished answer as the finished one.
 func (a *openAISearchAgent) answerResearch(
 	ctx context.Context,
 	apiMessages []openai.ChatCompletionMessageParamUnion,
+	tools []openai.ChatCompletionToolParam,
+	web bool,
+	meter *contextMeter,
 	emit func(ResearchEvent),
 ) (reply string, incomplete bool, usage Usage, err error) {
-	msgs := append([]openai.ChatCompletionMessageParamUnion{}, apiMessages...)
-	msgs = append(msgs, openai.UserMessage(researchAnswerInstruction))
+	instruction := researchAnswerInstruction(web)
+	meter.grew(len(instruction))
+	// Deferred so every exit reports, the partial answer and the blocking
+	// fallback included: the prompt was sent whatever became of the reply.
+	defer func() { emit(usageEvent(meter.observe(usage))) }()
 
+	msgs := append([]openai.ChatCompletionMessageParamUnion{}, apiMessages...)
+	msgs = append(msgs, openai.UserMessage(instruction))
+
+	// The same tools as the rounds before, refused rather than removed. A
+	// provider caches the tool list as part of the prefix, so dropping it here
+	// would re-bill the whole conversation on the largest request of the turn;
+	// tool_choice "none" buys the text answer without moving the prefix.
 	params := openai.ChatCompletionNewParams{
 		Model:       shared.ChatModel(a.client.model),
 		Messages:    msgs,
 		Temperature: CompletionTemperature(a.client.model, 0.2),
+		Tools:       tools,
+	}
+	if len(tools) > 0 {
+		params.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{
+			OfAuto: openai.String("none"),
+		}
 	}
 
 	emitted := 0
@@ -399,6 +485,8 @@ func (a *openAISearchAgent) runResearchTool(
 		return a.runSurveyTool(ctx, req, state, callID, name, argumentsJSON, emit)
 	case "count_documents":
 		return a.runCountTool(ctx, req, state, callID, name, argumentsJSON, emit)
+	case "web_search", "web_fetch":
+		return runWebTool(ctx, req.Web, &state.web, callID, name, argumentsJSON, emit)
 	default:
 		return toolExecResult{
 			ID:      callID,
@@ -498,9 +586,9 @@ func toolSearchHits(hits []DocumentHit) []toolSearchHit {
 }
 
 // encodeSearchResults renders the whole hit list. Nothing is dropped and
-// nothing is sliced: the only limit on how much a run may gather is the one
-// the provider enforces, and a payload trimmed to a guessed window cost the
-// model documents it could then never ask about.
+// nothing is sliced: the only limit on how much a run may gather is the one the
+// provider enforces, and a payload trimmed to a guessed window cost the model
+// documents it could then never ask about.
 func encodeSearchResults(hits []DocumentHit) (string, error) {
 	encoded, err := json.Marshal(map[string]any{
 		"count":     len(hits),
@@ -599,12 +687,8 @@ type readClaim struct {
 
 // seedPrior makes the documents of earlier turns readable without searching
 // again. They go into seenIDs and titles but not into hits: this turn has not
-// found them, and listing them as its results would attach documents to an
-// answer that never mentions them.
-//
-// Passages are dropped on the way in. They were selected for the question that
-// turn asked, and quoting them under a different one is misleading; if the
-// document matters here, the model reads it.
+// found them. Passages are dropped on the way in, having been selected for the
+// question that turn asked.
 func (state *researchState) seedPrior(docs []DocumentHit) {
 	for _, doc := range docs {
 		if doc.ID == "" {
@@ -624,8 +708,7 @@ func (state *researchState) seedPrior(docs []DocumentHit) {
 
 // adoptCitedPrior promotes an earlier turn's document into this turn's results
 // once the answer has cited it, so the citation resolves to a card the user can
-// click. Called after validateCitations, which has already removed links to ids
-// the run never saw.
+// click. Called after validateCitations.
 func (state *researchState) adoptCitedPrior(reply string) {
 	if len(state.prior) == 0 {
 		return
@@ -711,13 +794,31 @@ func decodeReadArgs(data string) (readDocumentsArgs, error) {
 }
 
 // latestUserMessage is the question the run is answering: the last user turn.
-func latestUserMessage(messages []ChatMessage) string {
-	for i := len(messages) - 1; i >= 0; i-- {
-		if strings.TrimSpace(messages[i].Role) == "user" {
-			return strings.TrimSpace(messages[i].Content)
+// Tool results are stored as tool rows even when the dialect feeds them back
+// as user messages,
+// so the loop talking to itself cannot be mistaken for the question -- which
+// would send every read off to focus on a JSON blob.
+func latestUserMessage(thread []ThreadMessage) string {
+	for i := len(thread) - 1; i >= 0; i-- {
+		if thread[i].Role != "user" {
+			continue
+		}
+		if content := strings.TrimSpace(thread[i].Content); content != "" {
+			return content
 		}
 	}
 	return ""
+}
+
+func startsWithSystem(thread []ThreadMessage) bool {
+	return len(thread) > 0 && thread[0].Role == "system"
+}
+
+// SystemPrompt is the instruction a conversation opens with, for the caller
+// that stores it. Built from what the archive looks like now, so it is asked
+// for once per conversation and replayed on every turn after.
+func (a *openAISearchAgent) SystemPrompt(req ResearchRequest) string {
+	return buildResearchSystemPrompt(a.languages, a.resultLanguage, req.AvailableTags, req.DenseRetrieval)
 }
 
 func normalizeIDs(ids []string) []string {
@@ -759,12 +860,19 @@ func validateCitations(reply string, seenIDs map[string]struct{}) string {
 	})
 }
 
-const researchAnswerInstruction = `Stop searching and reading. Do not call any tools and do not output tool markup.
+func researchAnswerInstruction(web bool) string {
+	instruction := `Stop searching and reading. Do not call any tools and do not output tool markup.
 Write the final answer for the user now, in markdown, using only what the tool results above actually contain.
 Cite each claim with a markdown link to the document it came from: [Document title](/document/<id>), using ids from the tool results.
 If you were asked for a total or a comparison, list the per-document figures you extracted before giving the result; when a survey reported totals, use those figures rather than adding rows yourself.
 If the evidence is incomplete, say what is missing instead of filling the gap.
 Answer in the same language as the user's latest message.`
+	if web {
+		instruction += `
+Cite a claim taken from the web as [Page title](https://...), with the URL the tool returned. Say which claims came from the web rather than from the archive.`
+	}
+	return instruction
+}
 
 func buildResearchSystemPrompt(languages, resultLanguage string, availableTags []string, dense bool) string {
 	var b strings.Builder
@@ -781,8 +889,14 @@ Documents cited earlier in this conversation can be read by id straight away; yo
 For a question about many documents at once -- a topic, everything from one correspondent, a total over a year -- use survey_documents once with the question and the fields you need instead of reading documents one by one. Its rows and totals are evidence you may cite.
 For how-many or distribution questions call count_documents with the filters instead of counting search results: a search result is a capped page, not the archive.
 There is no limit on how many searches or reads you may make. Stop gathering and write the answer once you have enough evidence.
+Not every tool is backed on every question. When a call comes back saying it is not available or not enabled, do not try it again: work with the tools that answer, and say what you could not check.
 Cite real document ids from tool results only. Never invent a document or an id.
 If the archive does not contain the answer, say so plainly and say what is missing.
+
+You can also reach the public web with web_search and web_fetch, for what the archive cannot hold: current prices, rates and rules, a company's present details, anything that changed after the documents were written. Web access is granted per question, so these are the calls most likely to come back refused.
+The archive is still the primary source. Search it first, and use the web to check or complete what you found there rather than instead of looking.
+A search result's snippet is a reason to fetch the page, not the whole of what it says: web_fetch before claiming what a page contains, exactly as you would read a document.
+Web calls are limited and billed; make them count.
 `)
 
 	b.WriteString(formatAvailableTagsPrompt(availableTags))

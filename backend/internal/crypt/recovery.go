@@ -6,8 +6,7 @@ import (
 	"strings"
 )
 
-// Recovery codes are 160 bits, rendered as eight groups of four Crockford
-// base32 characters.
+// 160 bits, rendered as eight groups of four Crockford base32 characters.
 const (
 	recoveryBits  = 160
 	recoveryBytes = recoveryBits / 8 // 20
@@ -15,15 +14,13 @@ const (
 	recoveryGroup = 4
 )
 
-// crockford omits I, L, O and U so a handwritten code cannot be misread as a
-// digit, and so no group can spell an unfortunate word.
+// Omits I, L, O and U so a handwritten code cannot be misread as a digit, and
+// so no group can spell an unfortunate word.
 const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
-// NewRecoveryCode returns a fresh code in display form.
-//
-// This is the only way back into an account after a password reset, because a
-// reset has no access to the old password and therefore cannot re-wrap the key.
-// It is shown once and never stored in recoverable form.
+// NewRecoveryCode is the only way back into an account after a password reset,
+// which has no access to the old password and so cannot re-wrap the key. Shown
+// once, never stored in recoverable form.
 func NewRecoveryCode() (string, error) {
 	raw := make([]byte, recoveryBytes)
 	if _, err := rand.Read(raw); err != nil {
@@ -32,12 +29,8 @@ func NewRecoveryCode() (string, error) {
 	return formatRecoveryCode(encodeCrockford(raw)), nil
 }
 
-// RecoveryKEK derives the key-encryption key for a recovery code.
-//
-// Argon2 is deliberately not used here. Password stretching exists to make
-// guessing a low-entropy human choice expensive; a code with 160 bits of uniform
-// entropy is already far beyond brute force, so a KDF would add latency and no
-// security. HKDF gives the domain separation we do want.
+// RecoveryKEK skips Argon2 on purpose: stretching buys nothing against 160 bits
+// of uniform entropy. HKDF is there for the domain separation.
 func RecoveryKEK(code string) (Key, error) {
 	raw, err := decodeCrockford(code)
 	if err != nil {
@@ -52,8 +45,8 @@ func RecoveryKEK(code string) (Key, error) {
 	return subkey(master, nil, "lemmary/recovery/v1")
 }
 
-// RecoveryHint returns the last four characters of a code, for a "the code
-// ending in ABCD" reminder. It is not a verifier and must never gate anything.
+// RecoveryHint is the last four characters, for a "code ending in ABCD"
+// reminder. Not a verifier; it must never gate anything.
 func RecoveryHint(code string) string {
 	norm := normalizeRecoveryCode(code)
 	if len(norm) < recoveryGroup {
@@ -73,12 +66,8 @@ func formatRecoveryCode(s string) string {
 	return b.String()
 }
 
-// normalizeRecoveryCode makes user-typed input canonical.
-//
-// Separators are dropped and the Crockford confusables are folded, so a code
-// read off paper as "O" or "l" still works. Without this, a correct code typed
-// by a careful person would be rejected for cosmetic reasons at exactly the
-// moment they can least afford it.
+// normalizeRecoveryCode drops separators and folds the Crockford confusables,
+// so a code read off paper as "O" or "l" still works.
 func normalizeRecoveryCode(code string) string {
 	var b strings.Builder
 	for _, r := range strings.ToUpper(strings.TrimSpace(code)) {
@@ -90,8 +79,8 @@ func normalizeRecoveryCode(code string) string {
 		case 'I', 'L':
 			b.WriteByte('1')
 		case 'U':
-			// Not in the alphabet and not a confusable for a digit; letting it
-			// through would decode to something wrong rather than erroring.
+			// Not in the alphabet and not a digit confusable: passing it through
+			// makes decode error rather than silently decode something else.
 			b.WriteByte('U')
 		default:
 			b.WriteRune(r)

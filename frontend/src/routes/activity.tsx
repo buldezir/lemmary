@@ -18,17 +18,14 @@ import { ProcessingSteps } from '../components/ProcessingSteps'
 import { Button, sectionClassName, sectionTitleClassName } from '../components/ui'
 
 // Realtime is optional everywhere in this app, so the queue also refreshes on a
-// timer. Matches the Management page's interval for the same counts.
+// timer, at the Management page's interval for the same counts.
 const pollMs = 5_000
 const realtimeDebounceMs = 300
 
 /**
- * The processing queue, across every document.
- *
- * The documents list answers "what do I have"; this answers "what is being done
- * to it, and what broke". It reads processing_jobs directly -- the collection's
- * list rule already scopes it to the caller's own documents -- so there is no
- * endpoint behind this page.
+ * The processing queue, across every document. It reads processing_jobs directly
+ * -- the collection's list rule already scopes it to the caller's own documents
+ * -- so there is no endpoint behind this page.
  */
 export function ActivityPage() {
   const { data, loading, error, reload } = useAsync(() => listActiveJobs(), [])
@@ -73,8 +70,8 @@ export function ActivityPage() {
     }
   }, [])
 
-  // Drives the elapsed times, and only while something is unfinished -- a
-  // settled queue must not re-render once a second for ever.
+  // Drives the elapsed times, and only while something is unfinished: a settled
+  // queue must not re-render once a second for ever.
   const [tick, setTick] = useState(() => Date.now())
   const anyRunning = jobs.some((job) => jobStillRunning(job))
   useEffect(() => {
@@ -87,10 +84,8 @@ export function ActivityPage() {
   const cancelled = jobs.filter((job) => job.finished_at && job.status === 'cancelled')
   const failed = jobs.filter((job) => job.finished_at && job.status !== 'cancelled')
 
-  // The way out of a mistaken import: stop what is queued, then throw away what
-  // it was queued for. Both live here rather than on Management, which is admin
-  // only -- the person who has just dropped four hundred documents in by
-  // accident is watching this page.
+  // Both live here rather than on admin-only Management: the person who has just
+  // dropped four hundred documents in by accident is watching this page.
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState('')
   const [actionError, setActionError] = useState('')
@@ -123,7 +118,7 @@ export function ActivityPage() {
   }
 
   // Counted on the click rather than polled: the number only matters at the
-  // moment it goes into the confirmation, and this page already polls enough.
+  // moment it goes into the confirmation.
   async function onDiscard() {
     setBusy('discard')
     setNotice('')

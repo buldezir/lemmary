@@ -11,23 +11,16 @@ import (
 	"lemmary/backend/internal/fulltext"
 )
 
-// ChunkSource reads stored chunks back out for the Bleve chunk index.
-//
-// It lives here rather than in embedstore because it is the mirror image of
-// what this package writes: the rule that a chunk is a slice of ocr_text has to
-// hold on the way out too, and keeping both halves in one package is what makes
-// that checkable.
+// ChunkSource reads stored chunks back out for the Bleve chunk index. It lives
+// here rather than in embedstore because the rule that a chunk is a slice of
+// ocr_text has to hold on the way out too.
 type ChunkSource struct{}
 
-// NewChunkSource returns the source the index is built from.
 func NewChunkSource() *ChunkSource { return &ChunkSource{} }
 
-// Spec reports the embedding binding from the saved settings.
-//
-// Read from the database rather than from a runtime snapshot on purpose: this
-// is called at boot, before the first reload has necessarily published one, and
-// a wrong answer there would mean rebuilding a whole archive's vectors for
-// nothing.
+// Read from the database rather than a runtime snapshot: this runs at boot,
+// before the first reload has necessarily published one, and a wrong answer
+// would rebuild a whole archive's vectors for nothing.
 func (s *ChunkSource) Spec(app core.App) (fulltext.VectorSpec, bool) {
 	if app == nil {
 		return fulltext.VectorSpec{}, false
@@ -40,9 +33,8 @@ func (s *ChunkSource) Spec(app core.App) (fulltext.VectorSpec, bool) {
 	return SpecFrom(cfg)
 }
 
-// SpecFrom projects a configuration onto the index's view of it. Exported so
-// the settings-reload path can answer the same question from the snapshot it
-// already holds, without a second read.
+// Exported so the settings-reload path can answer the same question from the
+// snapshot it already holds, without a second read.
 func SpecFrom(cfg config.Config) (fulltext.VectorSpec, bool) {
 	if !config.HasEmbedding(cfg) {
 		return fulltext.VectorSpec{}, false
@@ -51,14 +43,11 @@ func SpecFrom(cfg config.Config) (fulltext.VectorSpec, bool) {
 		Model: strings.TrimSpace(cfg.EmbeddingModel),
 		Dims:  cfg.EmbeddingDims,
 	}
-	// Dims is 0 until a provider has answered once. There is nothing to index
-	// yet either, so reporting "off" is accurate rather than pessimistic: the
-	// first embedding writes the number back, the settings reload lands, and
-	// the index is built then.
+	// Dims is 0 until a provider has answered once, and there is nothing to
+	// index yet either, so reporting "off" is accurate rather than pessimistic.
 	return spec, spec.Valid()
 }
 
-// ForDocument returns one document's chunks, resolved to text.
 func (s *ChunkSource) ForDocument(app core.App, documentID string, spec fulltext.VectorSpec) ([]fulltext.Chunk, error) {
 	if app == nil || strings.TrimSpace(documentID) == "" || !spec.Valid() {
 		return nil, nil
@@ -68,8 +57,8 @@ func (s *ChunkSource) ForDocument(app core.App, documentID string, spec fulltext
 		return nil, err
 	}
 	if len(rows) == 0 {
-		// Nothing stored, so nothing to resolve: reading the record here would
-		// be a fetch per unembedded document on every index pass.
+		// Reading the record here would be a fetch per unembedded document on
+		// every index pass.
 		return nil, nil
 	}
 
@@ -84,11 +73,8 @@ func (s *ChunkSource) ForDocument(app core.App, documentID string, spec fulltext
 	return out, nil
 }
 
-// ForEach walks every stored chunk for spec.
-//
 // The scan is ordered by document, which is what makes the one-document text
-// cache below enough: a document's ocr_text is read once however many chunks
-// it was cut into.
+// cache below enough.
 func (s *ChunkSource) ForEach(app core.App, spec fulltext.VectorSpec, fn func(fulltext.Chunk) error) error {
 	if app == nil || !spec.Valid() {
 		return nil
@@ -104,7 +90,6 @@ func (s *ChunkSource) ForEach(app core.App, spec fulltext.VectorSpec, fn func(fu
 	})
 }
 
-// Count is how many chunks the store holds for spec.
 func (s *ChunkSource) Count(app core.App, spec fulltext.VectorSpec) (int, error) {
 	if app == nil || !spec.Valid() {
 		return 0, nil
@@ -116,8 +101,6 @@ func matchesSpec(row embedstore.Chunk, spec fulltext.VectorSpec) bool {
 	return row.Model == spec.Model && row.Dims == spec.Dims && len(row.Vector) == spec.Dims
 }
 
-// chunkFrom converts a stored row, resolving it against the text it was cut
-// from.
 func chunkFrom(row embedstore.Chunk, ocrText string) fulltext.Chunk {
 	return fulltext.Chunk{
 		DocumentID: row.DocumentID,
@@ -130,9 +113,8 @@ func chunkFrom(row embedstore.Chunk, ocrText string) fulltext.Chunk {
 	}
 }
 
-// sliceText is the chunk's slice of the document, or nothing when the offsets
-// no longer fit — the text was re-OCRed since, and a clamped slice would be a
-// quote from nowhere. The chunk is still indexed: its vector is unaffected.
+// Nothing when the offsets no longer fit: the text was re-OCRed since, and a
+// clamped slice would be a quote from nowhere. The chunk is still indexed.
 func sliceText(ocrText string, start, end int) string {
 	if start < 0 || end <= start || end > len(ocrText) {
 		return ""

@@ -46,7 +46,6 @@ type staged struct {
 	renderMu sync.Mutex
 }
 
-// stagedPDF is one upload waiting to be split.
 type stagedPDF = staging.Item[*staged]
 
 var stagingRegistry = newStagingRegistry()
@@ -122,8 +121,6 @@ func Inspect(app core.App, ownerUserID, fileName string, src io.Reader) (Preview
 	return item.Payload.preview, nil
 }
 
-// savePDF streams src to path and validates it is a splittable PDF, returning
-// its page count and size.
 func savePDF(path string, src io.Reader) (int, int64, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -172,7 +169,6 @@ func hasPDFHeader(path string) bool {
 	return string(header[:]) == "%PDF-"
 }
 
-// Discard drops a staged upload that the user chose not to split.
 func Discard(uploadID, ownerUserID string) bool {
 	item, ok := stagingRegistry.Claim(uploadID, ownerUserID)
 	if !ok {

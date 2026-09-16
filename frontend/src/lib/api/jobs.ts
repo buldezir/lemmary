@@ -7,12 +7,8 @@ import type { ProcessingJobRecord } from '../processing'
 const collection = 'processing_jobs'
 
 /**
- * The newest job for each of the given documents, for a list that wants to say
- * more than the one-word status badge.
- *
  * One request for the whole page rather than one per card. Over-fetched on
- * purpose -- a page of twelve documents may have more than twelve jobs between
- * them, since reprocessing creates a fresh one each time -- and reduced to the
+ * purpose, since reprocessing creates a fresh job each time, and reduced to the
  * newest per document here.
  */
 export async function getLatestJobsFor(
@@ -44,11 +40,9 @@ export async function getLatestJobsFor(
 const failedWindowMs = 24 * 60 * 60_000
 
 /**
- * What the queue is doing: everything unfinished, plus failures and
- * cancellations from the last day so recent terminal work remains visible.
- *
- * finished_at = '' rather than a status test, for the reason createProcessingJob
- * gives: apply_metadata writes "completed" onto the job before embed has run.
+ * Everything unfinished, plus failures and cancellations from the last day.
+ * finished_at = '' rather than a status test, for the reason
+ * createProcessingJob gives.
  */
 export async function listActiveJobs(
   limit = 100,
@@ -56,8 +50,7 @@ export async function listActiveJobs(
   await ensureAuth()
   const since = new Date(Date.now() - failedWindowMs).toISOString().replace('T', ' ')
   // finished_at, not created: a job that ran for two days and then failed is a
-  // failure from a minute ago, and keying the window on when it was queued
-  // dropped exactly those off the page.
+  // failure from a minute ago.
   const filter = `finished_at = '' || ${pb.filter('((status = "failed" || status = "cancelled") && finished_at >= {:since})', { since })}`
 
   const jobs = await pb.collection(collection).getList<ProcessingJobRecord>(1, limit, {
@@ -66,8 +59,7 @@ export async function listActiveJobs(
     expand: 'document',
     requestKey: null,
   })
-  // The total as well as the page: a bulk upload of 150 documents makes a
-  // hundred rows and a header badge saying 150, and the page has to be able to
-  // say which it is showing rather than look like it lost fifty.
+  // The total as well as the page, so a bulk upload of 150 does not look like
+  // it lost fifty behind a hundred-row page.
   return { jobs: jobs.items, total: jobs.totalItems }
 }

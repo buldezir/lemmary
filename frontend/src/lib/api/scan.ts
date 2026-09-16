@@ -28,13 +28,10 @@ export type StagedScan = {
 }
 
 /**
- * A scan is minutes of real work: the head moves, and a feeder runs a stack of
- * paper through. The poll budget has to cover that, or the page reports a
- * failure while the scanner is still going — the backend allows three minutes
- * per sheet, and a feeder load is as many sheets as fit in 20 MB.
- *
- * Polling ends the moment the job does, so this only bounds a scanner that has
- * genuinely stopped answering.
+ * The budget has to cover a feeder running a stack of paper through, or the
+ * page reports a failure while the scanner is still going: the backend allows
+ * three minutes per sheet, and a load is as many sheets as fit in 47 MB.
+ * Polling ends when the job does, so this only bounds a scanner gone quiet.
  */
 const scanTimeoutMs = 45 * 60 * 1000
 
@@ -59,8 +56,6 @@ export function recallScanner(): string {
 }
 
 /**
- * Looks for scanners, by mDNS and by sweeping a network range.
- *
  * An omitted range makes the server suggest one from the address the browser
  * reached it from, and report back which it used.
  */
@@ -72,10 +67,8 @@ export function discoverScanners(cidr?: string) {
 }
 
 /**
- * Scans one page, or a whole feeder load, onto the end of the document.
- *
- * An omitted uploadId starts a new document; the id to pass next time comes
- * back in the result.
+ * Scans one page, or a whole feeder load, onto the end of the document. An
+ * omitted uploadId starts a new one; the id to pass next time is in the result.
  */
 export async function scanPage(
   scanner: string,
@@ -114,9 +107,8 @@ export function saveScan(uploadId: string) {
 }
 
 /**
- * Loads the scanned document as an object URL for the preview. The endpoint
- * needs the session token, which an `<object data>` cannot carry, so the PDF is
- * fetched and wrapped in a blob URL instead. Callers must revoke it when done.
+ * The endpoint needs the session token, which an `<object data>` cannot carry,
+ * so the PDF is wrapped in a blob URL. Callers must revoke it when done.
  */
 export async function fetchScanPdf(uploadId: string): Promise<string> {
   await ensureAuth()

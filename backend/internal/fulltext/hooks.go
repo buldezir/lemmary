@@ -16,8 +16,7 @@ const (
 	collectionDocumentTypes  = "document_types"
 )
 
-// Register opens the index after app migrations (outer bootstrap) and keeps it
-// in sync with document and named-entity changes.
+// Register opens the index after app migrations (outer bootstrap).
 func Register(app core.App, idx *Index) {
 	if idx == nil {
 		idx = New()
@@ -33,9 +32,8 @@ func Register(app core.App, idx *Index) {
 				e.App.Logger().Error("fulltext index open failed", slog.Any("error", err))
 				return nil
 			}
-			// Straight after Open, because the chunk index's mapping depends on
-			// the embedding binding: this is what reopens it after a restart,
-			// and what removes it when the binding is gone.
+			// Straight after Open: the chunk mapping depends on the embedding
+			// binding.
 			if err := idx.SetVectorSpec(idx.SourceSpec(e.App)); err != nil {
 				e.App.Logger().Error("chunk index open failed", slog.Any("error", err))
 			}

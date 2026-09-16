@@ -27,13 +27,11 @@ type OpenAIClient struct {
 	// extractionRules is the admin's own additions to the extraction prompt.
 	// Only NewExtractor sets it; every other client built here leaves it empty.
 	extractionRules string
-	client         openai.Client
-	logger         *slog.Logger
+	client          openai.Client
+	logger          *slog.Logger
 
 	// messages is the Anthropic client the opencode SDK needs for the third of
-	// its catalogue served on /messages. The zero value is never used: whether
-	// a model goes there is opencode.Endpoint's answer, and it only ever says
-	// so for SDKOpenCode.
+	// its catalogue served on /messages. Never used for any other SDK.
 	messages anthropic.Client
 }
 
@@ -47,8 +45,7 @@ func NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage stri
 		option.WithRequestTimeout(timeout),
 		option.WithMaxRetries(0),
 	}
-	// Only OpenCode asks for the session header, and now it is the SDK saying
-	// so rather than the middleware sniffing the request host for opencode.ai.
+	// Only OpenCode asks for the session header.
 	if sdk == aiprovider.SDKOpenCode {
 		opts = append(opts, option.WithMiddleware(aiprovider.SessionMiddleware()))
 	}
@@ -56,9 +53,8 @@ func NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage stri
 	// Production callers pass the chatgpt middleware here, which mints a bearer
 	// token per request; see config.providerCredential.
 	opts = append(opts, extra...)
-	// Last, so a caller cannot supply a document id of its own: the managed
-	// gateway attributes the call by this header, and the only id it may carry
-	// is the one the job or the route put on the context.
+	// Last, so a caller cannot supply a document id of its own: the only id the
+	// managed gateway may be told is the one the job or route put on the context.
 	opts = append(opts, aiprovider.DocumentOptions()...)
 	if strings.TrimSpace(baseURL) != "" {
 		opts = append(opts, option.WithBaseURL(strings.TrimRight(baseURL, "/")))
@@ -94,20 +90,18 @@ func (c *OpenAIClient) Model() string {
 // Complete sends a chat completion, and gives a provider that refuses it a
 // second chance rather than treating the model as broken.
 //
-// It first asks opencode.Endpoint whether this model is served somewhere other
-// than /chat/completions at all -- the opencode SDK routes each model to one of
-// three endpoints, and it is the only SDK that does. Everything after that is
-// degradation on the endpoint the model does live on: JSON mode is dropped if
-// response_format is rejected, reasoning_effort is pinned to "none" if the model
-// will not take tools alongside it, and temperature falls back to the API
-// default. The reasoning_effort case prefers the Responses API, which keeps both
-// the tools and the reasoning, and is remembered per model and endpoint so the
-// discovery costs one rejected request per process rather than one per call.
+// opencode.Endpoint decides first whether this model is served somewhere other
+// than /chat/completions. Everything after that is degradation on the endpoint
+// the model does live on: JSON mode dropped if response_format is rejected,
+// reasoning_effort pinned to "none" if the model will not take tools alongside
+// it, temperature back to the API default. The reasoning_effort case prefers
+// the Responses API, which keeps both, and is remembered per model and
+// endpoint.
 func (c *OpenAIClient) Complete(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (resp *openai.ChatCompletion, err error) {
 	// One measurement per call the caller made, not per HTTP request: the
-	// endpoint discovery and the four degradation retries below are all time
-	// it waited.
+	// endpoint discovery and the degradation retries below are all time it waited.
 	defer metrics.TimeAICall(ctx, "chat", c.sdk, string(params.Model))(&err)
+	c.markPromptCache(ctx, &params)
 	switch opencode.Endpoint(c.sdk, string(params.Model)) {
 	case opencode.EndpointMessages:
 		resp, err := opencode.CompleteViaMessages(ctx, c.messages, c.logger, c.baseURL, params, extra...)
@@ -128,11 +122,9 @@ func (c *OpenAIClient) Complete(ctx context.Context, params openai.ChatCompletio
 func (c *OpenAIClient) completeChat(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
 	logger := c.logger
 	baseURL := c.baseURL
-	// The chatgpt SDK already speaks the Responses API, from underneath: its
-	// middleware rewrites /chat/completions into /responses and only it knows
-	// the Codex auth headers. Translating again up here would post to
-	// /responses with the placeholder key and no originator, so the degradation
-	// path below stays on the endpoint the middleware owns.
+	// The chatgpt SDK already speaks the Responses API from underneath, and its
+	// middleware is the only thing holding the Codex auth headers, so the
+	// degradation path below stays on the endpoint that middleware owns.
 	viaResponses := !aiprovider.RequiresOAuth(c.sdk)
 
 	// A model already known to live on the Responses API never touches
@@ -146,8 +138,7 @@ func (c *OpenAIClient) completeChat(ctx context.Context, params openai.ChatCompl
 	}
 	// A model that has already refused tools alongside its default
 	// reasoning_effort gets the working value up front. Only tool-carrying
-	// requests: pinning "none" on the rest would drop the model's reasoning
-	// where nothing asked us to.
+	// requests: pinning "none" on the rest would drop reasoning nothing asked us to.
 	if len(params.Tools) > 0 && needsNoReasoningEffort(baseURL, string(params.Model)) {
 		params.ReasoningEffort = shared.ReasoningEffort(reasoningEffortNone)
 		extra = append(extra, "reasoning_effort", reasoningEffortNone)
@@ -166,8 +157,7 @@ func (c *OpenAIClient) completeChat(ctx context.Context, params openai.ChatCompl
 		return resp, nil
 	}
 	// JSON mode is a request, not a requirement: the callers that ask for it
-	// all parse leniently, so a provider that rejects response_format is
-	// asked again in plain text rather than treated as broken.
+	// all parse leniently.
 	if params.ResponseFormat.OfJSONObject != nil && isUnsupportedResponseFormatError(err) {
 		logger.Warn("model rejected response_format; retrying without JSON mode",
 			"model", params.Model,
@@ -189,11 +179,12 @@ func (c *OpenAIClient) completeChat(ctx context.Context, params openai.ChatCompl
 		}
 	}
 	// Some gpt-5-family models default reasoning_effort server-side and then
+	// refuse the request because function tools are present. The two ways out
+	// are not equal: /responses keeps the tools and the reasoning, while
+	// reasoning_effort=none keeps the tools by turning the reasoning off.
 	// refuse the request because function tools are present. The refusal names
 	// two ways out, and they are not equal: /responses keeps the tools and the
 	// reasoning, while reasoning_effort=none keeps the tools by turning the
-	// reasoning off. Take the first, and settle for the second only where
-	// there is no Responses endpoint to take it to.
 	if viaResponses && len(params.Tools) > 0 && isReasoningEffortToolConflictError(err) {
 		logger.Warn("model rejected reasoning_effort with function tools; retrying on the Responses API",
 			"model", params.Model,
@@ -249,16 +240,15 @@ func (c *OpenAIClient) completeChat(ctx context.Context, params openai.ChatCompl
 	return resp, err
 }
 
-// Usage is what one completion cost in tokens. Cached counts the part of the
-// prompt the provider served from its prefix cache, when it reports one; it is
-// included in Prompt, not additional to it.
+// Usage is what one completion cost in tokens. Cached is the part of the prompt
+// served from the provider's prefix cache, included in Prompt rather than
+// additional to it.
 type Usage struct {
 	Prompt     int
 	Completion int
 	Cached     int
 }
 
-// Add sums another completion into the total.
 func (u *Usage) Add(o Usage) {
 	u.Prompt += o.Prompt
 	u.Completion += o.Completion
@@ -280,9 +270,8 @@ func usageFrom(u openai.CompletionUsage) Usage {
 	}
 }
 
-// logUsage records what a completion cost next to the request that made it.
-// Providers that report no usage produce a line of zeros, which is still
-// worth having: it says the provider is not telling us.
+// logUsage records what a completion cost. Providers that report no usage
+// produce a line of zeros, which still says the provider is not telling us.
 func logUsage(logger *slog.Logger, model string, u Usage, extra ...any) {
 	args := []any{
 		"model", model,
@@ -294,13 +283,10 @@ func logUsage(logger *slog.Logger, model string, u Usage, extra ...any) {
 	metrics.AITokens(model, int64(u.Prompt), int64(u.Cached), int64(u.Completion))
 }
 
-// completeStreaming streams a chat completion, handing each content delta to
-// onDelta as it arrives, and returns the accumulated text with what it cost.
-// Errors come back with whatever text arrived before them, so the caller can
-// choose between keeping a partial answer and retrying without streaming.
-//
-// Usage arrives in a final chunk with no choices, and only when asked for;
-// providers that do not implement stream_options simply never send it.
+// completeStreaming hands each content delta to onDelta as it arrives and
+// returns the accumulated text with what it cost. Errors come back with
+// whatever text arrived before them, so the caller can keep a partial answer.
+// Usage arrives in a final chunk with no choices, and only when asked for.
 //
 // Only the error return is named, and only so the deferred timer can read it;
 // the body already has a `usage` of its own.
@@ -311,6 +297,7 @@ func (c *OpenAIClient) completeStreaming(
 	extra ...any,
 ) (_ string, _ Usage, err error) {
 	defer metrics.TimeAICall(ctx, "chat", c.sdk, string(params.Model))(&err)
+	c.markPromptCache(ctx, &params)
 	switch opencode.Endpoint(c.sdk, string(params.Model)) {
 	case opencode.EndpointMessages:
 		text, u, err := opencode.CompleteStreamingViaMessages(ctx, c.messages, c.logger, c.baseURL, params, onDelta, extra...)
@@ -323,9 +310,16 @@ func (c *OpenAIClient) completeStreaming(
 		return c.completeStreamingViaResponses(ctx, params, onDelta, extra...)
 	}
 	// See Complete: the chatgpt SDK reaches /responses through its own
-	// middleware, which is the only thing holding the Codex headers.
+	// middleware, the only thing holding the Codex headers.
 	if !aiprovider.RequiresOAuth(c.sdk) && needsResponsesAPI(c.baseURL, string(params.Model)) {
 		return c.completeStreamingViaResponses(ctx, params, onDelta, extra...)
+	}
+	// Same pre-correction Complete applies, and for the same reason: a streamed
+	// request that carries tools is refused by the same models. There is no
+	// degradation path here to learn it, only the one the loop already walked.
+	if len(params.Tools) > 0 && needsNoReasoningEffort(c.baseURL, string(params.Model)) {
+		params.ReasoningEffort = shared.ReasoningEffort(reasoningEffortNone)
+		extra = append(extra, "reasoning_effort", reasoningEffortNone)
 	}
 	params.StreamOptions = openai.ChatCompletionStreamOptionsParam{IncludeUsage: openai.Bool(true)}
 	aiprovider.LogRequest(

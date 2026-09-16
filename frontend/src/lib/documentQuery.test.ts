@@ -6,6 +6,7 @@ import {
   inboxQuerySearch,
   parseDocumentQuery,
   searchableTerm,
+  tagIds,
 } from './documentQuery'
 
 describe('parseDocumentQuery', () => {
@@ -22,6 +23,7 @@ describe('parseDocumentQuery', () => {
         to: '2025-03-31',
         type: 'abc123',
         correspondent: 'def456',
+        tags: 'tag1,tag2',
         undated: 'true',
         page: '3',
       }),
@@ -32,9 +34,19 @@ describe('parseDocumentQuery', () => {
       to: '2025-03-31',
       type: 'abc123',
       correspondent: 'def456',
+      tags: 'tag1,tag2',
       undated: true,
       page: 3,
     })
+  })
+
+  test('keeps only the usable tag ids, once each', () => {
+    expect(parseDocumentQuery({ tags: 'tag1,,tag 2,tag1,tag3' }).tags).toBe('tag1,tag3')
+  })
+
+  test('an all-junk tags value shows the unfiltered list', () => {
+    expect(parseDocumentQuery({ tags: ' ,;,--' }).tags).toBe('')
+    expect(parseDocumentQuery({ tags: 42 }).tags).toBe('')
   })
 
   test('an unknown status is dropped rather than sent to the server', () => {
@@ -84,6 +96,7 @@ describe('documentQuerySearch', () => {
       to: '2024-06-30',
       type: 'typ1',
       correspondent: 'cor1',
+      tags: 'tag1,tag2',
       undated: false,
       page: 4,
     }
@@ -91,9 +104,8 @@ describe('documentQuerySearch', () => {
   })
 })
 
-// /inbox holds its status in the path, so the query string must never carry
-// one -- neither a matching one, which would be noise on every link, nor a
-// conflicting one, which would silently show a different list.
+// /inbox holds its status in the path, so a query-string status could only be
+// noise or a contradiction.
 describe('inboxQuerySearch', () => {
   test('drops the status whatever it says', () => {
     expect(inboxQuerySearch({ status: 'needs_review' })).toEqual({})
@@ -101,8 +113,6 @@ describe('inboxQuerySearch', () => {
     expect(inboxQuerySearch({ status: 'nonsense' })).toEqual({})
   })
 
-  // The Inbox has no filter controls, so a filter in its URL would narrow the
-  // tray with nothing on screen to explain why. Only the page survives.
   test('drops every filter, keeping only the page', () => {
     expect(
       inboxQuerySearch({
@@ -112,6 +122,7 @@ describe('inboxQuerySearch', () => {
         to: '2024-06-30',
         type: 'typ1',
         correspondent: 'cor1',
+        tags: 'tag1,tag2',
         page: 4,
       }),
     ).toEqual({ page: 4 })
@@ -151,6 +162,23 @@ describe('hasActiveFilters', () => {
 
   test('so is a date bound on its own', () => {
     expect(hasActiveFilters({ ...defaultDocumentQuery, from: '2025-01-01' })).toBe(true)
+  })
+
+  // It decides the empty-state wording, which must not say "no documents yet"
+  // to someone who has only narrowed the list to a tag.
+  test('so is a tag', () => {
+    expect(hasActiveFilters({ ...defaultDocumentQuery, tags: 'tag1' })).toBe(true)
+  })
+})
+
+describe('tagIds', () => {
+  test('splits a comma-joined value', () => {
+    expect(tagIds('tag1,tag2')).toEqual(['tag1', 'tag2'])
+  })
+
+  test('is empty for anything unusable, so no clause is built', () => {
+    expect(tagIds('')).toEqual([])
+    expect(tagIds(undefined)).toEqual([])
   })
 })
 

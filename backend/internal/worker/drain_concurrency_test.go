@@ -15,14 +15,12 @@ import (
 	"lemmary/backend/internal/models"
 )
 
-// A 1x1 PNG. The OCR step hands plain text and office formats to textextract
-// and never reaches the provider, so a stub that counts calls needs a document
-// the provider is actually asked about.
+// A 1x1 PNG: the OCR step hands text and office formats to textextract without
+// reaching the provider, so a call-counting stub needs an image.
 const onePixelPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 
-// slowOCR records how many calls are in flight at once and what the high-water
-// mark was. That peak is the assertion the whole change rests on: it should sit
-// at the configured limit, never above it.
+// The high-water mark of concurrent calls should sit at the configured limit,
+// never above it.
 type slowOCR struct {
 	delay time.Duration
 
@@ -133,9 +131,8 @@ func newDrainProcessor(app core.App, limit int, provider *slowOCR) *Processor {
 }
 
 // The drain used to hold a process-wide mutex, so eight documents took eight
-// OCR round trips back to back. This is the regression test for that: the same
-// eight finish in roughly a quarter of the time, each exactly once, and never
-// more than the configured four at a time.
+// OCR round trips back to back. Now they finish in roughly a quarter of the
+// time, each exactly once, never more than the configured four at a time.
 func TestDrainPendingRunsJobsConcurrently(t *testing.T) {
 	const (
 		jobs  = 8
@@ -169,8 +166,7 @@ func TestDrainPendingRunsJobsConcurrently(t *testing.T) {
 	if peak < 2 {
 		t.Fatalf("peak concurrency %d: jobs still ran one at a time", peak)
 	}
-	// Serial would be 8 delays. Allow generous slack for a loaded CI box; the
-	// point is that it is nowhere near eight.
+	// Serial would be 8 delays; slack is generous for a loaded CI box.
 	if serial := jobs * delay; elapsed > serial*3/4 {
 		t.Fatalf("drained in %s, want well under the serial %s", elapsed, serial)
 	}

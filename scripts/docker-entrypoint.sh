@@ -10,14 +10,12 @@ fi
 
 # The app runs as the unprivileged "app" user: it renders untrusted PDFs
 # through poppler, and an exploit there should not be root in the container.
-# The container itself starts as root only so that volumes created by older
-# images (which ran everything as root) can be adopted — ownership is fixed
-# once, then privileges are dropped for good. Binding :80 still works because
-# Docker starts containers with net.ipv4.ip_unprivileged_port_start=0.
+# Starts as root only to adopt volumes created by older root-running images,
+# then drops privileges. :80 still binds: Docker sets
+# net.ipv4.ip_unprivileged_port_start=0.
 #
-# setpriv rather than su-exec: the image is Debian-based now, and util-linux is
-# Essential there, so this needs nothing installed. --init-groups is what makes
-# it equivalent — without it the process would keep root's supplementary groups.
+# setpriv: util-linux is Essential on Debian, so nothing to install.
+# --init-groups, or the process keeps root's supplementary groups.
 if [ "$(id -u)" = "0" ]; then
     if [ -d /app/pb_data ] && [ "$(stat -c %u /app/pb_data)" != "$(id -u app)" ]; then
         chown -R app:app /app/pb_data

@@ -2,9 +2,8 @@ package embedstore
 
 import "testing"
 
-// TestCountChunksMatchesWhatForEachWalks: the vector index compares this number
-// against its own document count to decide whether it has drifted, so counting
-// anything ForEachChunk would not walk would mean rebuilding on every boot.
+// The index compares this against its own document count to detect drift, so
+// counting anything ForEachChunk would not walk means rebuilding every boot.
 func TestCountChunksMatchesWhatForEachWalks(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
@@ -36,8 +35,6 @@ func TestCountChunksMatchesWhatForEachWalks(t *testing.T) {
 		t.Fatalf("CountChunks = %d, ForEachChunk walked %d", got, walked)
 	}
 
-	// A model or a dimension count nobody wrote has no chunks, and neither has
-	// an unconfigured binding.
 	for _, tc := range []struct {
 		model string
 		dims  int

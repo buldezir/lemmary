@@ -65,9 +65,6 @@ func TestKDFParamsRoundTripThroughStorage(t *testing.T) {
 	}
 }
 
-// A weakened parameter set read back from the database must be refused: an
-// operator who can edit the users table could otherwise turn the KDF into a
-// no-op and make offline password guessing cheap.
 func TestDecodeKDFParamsRejectsWeakened(t *testing.T) {
 	cases := map[string]string{
 		"tiny memory":  `{"a":"argon2id","m":64,"t":3,"p":4,"s":"AAAAAAAAAAAAAAAAAAAAAA"}`,
@@ -203,8 +200,7 @@ func TestUnwrapKeyRejectsWrongCredentialAndWrongAAD(t *testing.T) {
 		t.Fatalf("wrong credential: got %v, want ErrCorrupt", err)
 	}
 
-	// A rewritten AAD is how an attacker would try to downgrade the recorded
-	// Argon2 cost; the tag must refuse it.
+	// A rewritten AAD is how a recorded Argon2 cost would be downgraded.
 	if _, err := UnwrapKey(kek, wrapped, "slot=pw|kdf=argon2id-weak"); !errors.Is(err, ErrCorrupt) {
 		t.Fatalf("tampered aad: got %v, want ErrCorrupt", err)
 	}
@@ -261,7 +257,6 @@ func TestSubkeysAreSeparatedByInfo(t *testing.T) {
 		seen[k] = info
 	}
 
-	// Same info, different salt must not collide either.
 	a, _ := Subkey(mk, []byte("salt-a"), InfoBlob)
 	b, _ := Subkey(mk, []byte("salt-b"), InfoBlob)
 	if a == b {
@@ -291,9 +286,8 @@ func TestPasskeyKEKIsDerivedNotRaw(t *testing.T) {
 		t.Fatalf("PasskeyKEK: %v", err)
 	}
 
-	// The key must not be the authenticator's secret verbatim: that secret may be
-	// handed to other relying-party uses, and reusing it as our key would couple
-	// them together.
+	// The PRF secret may be handed to other relying-party uses, so the key must
+	// not be those bytes verbatim.
 	var raw Key
 	copy(raw[:], prf)
 	if kek == raw {
@@ -318,7 +312,6 @@ func TestPasskeyKEKIsDerivedNotRaw(t *testing.T) {
 		t.Fatal("distinct PRF secrets derived the same key")
 	}
 
-	// And it must be separated from the recovery-code derivation.
 	code, err := NewRecoveryCode()
 	if err != nil {
 		t.Fatalf("NewRecoveryCode: %v", err)

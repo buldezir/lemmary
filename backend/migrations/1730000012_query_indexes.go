@@ -7,8 +7,8 @@ import (
 
 // Every API read filters documents by owner (user = @request.auth.id) and the
 // default listing sorts by created, yet the collection shipped with no index at
-// all — every list was a full table scan. processing_jobs is looked up by
-// document (including the cascade delete scan) and drained by (status, created).
+// all. processing_jobs is looked up by document (including the cascade delete
+// scan) and drained by (status, created).
 func init() {
 	m.Register(func(app core.App) error {
 		documents, err := app.FindCollectionByNameOrId("documents")

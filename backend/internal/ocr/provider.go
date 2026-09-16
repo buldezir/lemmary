@@ -22,10 +22,9 @@ type Provider interface {
 // several requests at once.
 //
 // The hosted providers all want to be called in parallel: the time is spent on
-// the network, so a second request costs nothing while the first is in flight.
-// The local sidecar is the opposite -- it is spending this host's CPUs, so a
-// second request does not hide latency, it multiplies it, and every caller's
-// timeout is already running while it waits for a core.
+// the network. The local sidecar is the opposite, spending this host's CPUs, so
+// a second request multiplies latency while every caller's timeout is already
+// running.
 //
 // Callers that fan out ask before choosing a width; see pdfsplit.
 type LimitedConcurrency interface {
@@ -80,8 +79,7 @@ func newProvider(p aiprovider.Provider, model string, timeout time.Duration, log
 	case aiprovider.SDKOpenAI, aiprovider.SDKOpenRouter, aiprovider.SDKOpenCode, aiprovider.SDKChatGPT:
 		// chatgpt and opencode join the metered LLM SDKs here rather than getting
 		// branches of their own: the request is the same multimodal chat
-		// completion, and what differs -- a minted bearer token for one, a second
-		// wire protocol for the other -- is entirely inside the client that
+		// completion, and what differs is entirely inside the client that
 		// NewLLMProvider builds.
 		logger.Info("using provider", "provider", p.Alias, "sdk", p.SDK, "model", model)
 		return NewLLMProvider(p, model, timeout, logger, extra...), nil

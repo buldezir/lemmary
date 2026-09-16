@@ -11,7 +11,6 @@ import (
 	"time"
 )
 
-// signedInSource is a source that hands out a token without touching a network.
 func signedInSource(t *testing.T, id string) *TokenSource {
 	t.Helper()
 	Forget(id)
@@ -26,9 +25,8 @@ func signedInSource(t *testing.T, id string) *TokenSource {
 	return SourceFor(id, raw, nil, nil)
 }
 
-// sseBody is a Codex event stream. It is served without a Content-Type header
-// on purpose: the real backend sends none, and a reader that branched on it
-// would decide the body was JSON and fail on the first frame.
+// sseBody is a Codex event stream, served without a Content-Type header
+// because the real backend sends none.
 func sseResponse(events ...string) *http.Response {
 	var b strings.Builder
 	for _, e := range events {
@@ -113,16 +111,18 @@ func TestChatCompletionBecomesACodexResponsesCall(t *testing.T) {
 		t.Error("session_id is empty")
 	}
 
-	// The Responses API has no system role: it becomes instructions, behind
-	// the preamble the backend expects to lead them.
+	// The Responses API has no system role: it becomes instructions.
 	if !strings.HasPrefix(sent.Instructions, codexInstructions) {
 		t.Errorf("instructions = %q, want the Codex preamble first", sent.Instructions)
 	}
 	if !strings.Contains(sent.Instructions, "Return JSON.") {
 		t.Errorf("instructions dropped the caller's system message: %q", sent.Instructions)
 	}
-	if len(sent.Input) != 1 || sent.Input[0].Role != "user" || sent.Input[0].Content[0].Type != "input_text" {
+	if len(sent.Input) != 2 || sent.Input[0].Role != "user" || sent.Input[0].Content[0].Type != "input_text" {
 		t.Fatalf("input = %+v", sent.Input)
+	}
+	if sent.Input[1].Role != "user" || !strings.Contains(strings.ToLower(sent.Input[1].Content[0].Text), "json") {
+		t.Errorf("json nudge = %+v", sent.Input[1])
 	}
 	if !sent.Stream {
 		t.Error("stream must be forced on: the endpoint answers no other way")
@@ -167,8 +167,7 @@ func TestABufferedAnswerIsReassembledIntoAChatCompletion(t *testing.T) {
 	if out.Choices[0].FinishReason != "stop" {
 		t.Errorf("finish_reason = %q", out.Choices[0].FinishReason)
 	}
-	// Usage is what the token accounting in ai.logUsage records; dropping it
-	// would leave every ChatGPT completion logged as a line of zeros.
+	// Usage is what ai.logUsage records; dropping it would log zeros.
 	if out.Usage.PromptTokens != 11 || out.Usage.CompletionTokens != 3 {
 		t.Fatalf("usage = %+v", out.Usage)
 	}
@@ -241,8 +240,8 @@ func TestAStreamedAnswerBecomesChatCompletionChunks(t *testing.T) {
 	}
 }
 
-// The SDK's error decoding and ai.CompleteChat's retry-without-JSON-mode path
-// both read the upstream body. Rewriting a failure would hide both.
+// The SDK's error decoding and ai.CompleteChat's retry path both read the
+// upstream body.
 func TestAnErrorResponsePassesThroughUntouched(t *testing.T) {
 	t.Parallel()
 	mw := Middleware(signedInSource(t, "t4"), nil)
@@ -266,8 +265,7 @@ func TestAnErrorResponsePassesThroughUntouched(t *testing.T) {
 	}
 }
 
-// Anything that is not a chat completion -- a models listing, an embeddings
-// call from a misbound provider -- must reach the network as it was.
+// Anything that is not a chat completion must reach the network as it was.
 func TestOtherPathsAreNotRewritten(t *testing.T) {
 	t.Parallel()
 	mw := Middleware(signedInSource(t, "t5"), nil)
@@ -294,8 +292,7 @@ func TestOtherPathsAreNotRewritten(t *testing.T) {
 	}
 }
 
-// A stream that stops early still carries an answer worth keeping: the
-// extractor parses leniently and the chatter shows what arrived.
+// A stream that stops early still carries an answer worth keeping.
 func TestAPartialAnswerSurvivesAFailedStream(t *testing.T) {
 	t.Parallel()
 	mw := Middleware(signedInSource(t, "t6"), nil)
@@ -325,8 +322,6 @@ func TestAPartialAnswerSurvivesAFailedStream(t *testing.T) {
 	}
 }
 
-// A provider row nobody signed in to must fail before it reaches the network,
-// with a message that says what is missing.
 func TestAnUnsignedProviderNeverReachesTheNetwork(t *testing.T) {
 	t.Parallel()
 	Forget("t7")
@@ -341,8 +336,8 @@ func TestAnUnsignedProviderNeverReachesTheNetwork(t *testing.T) {
 	}
 }
 
-// messageText is the system role's path: instructions is a string, so an
-// attachment there has nowhere to go and text is all that is kept.
+// instructions is a string, so an attachment in a system message has nowhere
+// to go and text is all that is kept.
 func TestArrayContentIsFlattened(t *testing.T) {
 	t.Parallel()
 	raw := json.RawMessage(`[{"type":"text","text":"one"},{"type":"text","text":"two"}]`)
@@ -359,8 +354,7 @@ func TestArrayContentIsFlattened(t *testing.T) {
 }
 
 // searchToolBody is a tool-bearing completion in the shape openai-go marshals
-// one: the function's name and schema nested under "function", and tool_choice
-// as the bare string the search and research loops send.
+// one, with tool_choice as the bare string the search and research loops send.
 func searchToolBody(t *testing.T, choice string, messages []map[string]any) io.ReadCloser {
 	t.Helper()
 	if messages == nil {
@@ -402,10 +396,9 @@ func toolRequestFor(t *testing.T, choice string, messages []map[string]any) *htt
 	return req
 }
 
-// Deep Search and Research declare function tools on every round. A middleware
-// that dropped them would leave the model unable to reach the archive at all,
-// and the search loop reads a round with no tool calls as a finished answer --
-// so the failure is a confident reply with no documents behind it, not an error.
+// The search loop reads a round with no tool calls as a finished answer, so a
+// middleware that dropped the tools fails as a confident reply with no
+// documents behind it, not as an error.
 func TestFunctionToolsReachTheCodexEndpoint(t *testing.T) {
 	t.Parallel()
 	mw := Middleware(signedInSource(t, "t10"), nil)
@@ -429,8 +422,6 @@ func TestFunctionToolsReachTheCodexEndpoint(t *testing.T) {
 		t.Fatalf("tools = %+v, want the caller's one function", sent.Tools)
 	}
 	tool := sent.Tools[0]
-	// Flattened: the Responses shape puts the name on the tool itself rather
-	// than under a "function" key.
 	if tool.Type != "function" || tool.Name != "search_documents" {
 		t.Errorf("tool = %+v", tool)
 	}
@@ -448,8 +439,7 @@ func TestFunctionToolsReachTheCodexEndpoint(t *testing.T) {
 	}
 }
 
-// The final round declares its tools and forbids them, because an endpoint that
-// sees a bare tool_choice with no tools array answers 400.
+// An endpoint that sees a bare tool_choice with no tools array answers 400.
 func TestToolChoiceNoneIsCarriedWithTheTools(t *testing.T) {
 	t.Parallel()
 	mw := Middleware(signedInSource(t, "t11"), nil)
@@ -473,8 +463,7 @@ func TestToolChoiceNoneIsCarriedWithTheTools(t *testing.T) {
 	}
 }
 
-// A plain completion must not grow a tool_choice: the field is meaningless
-// without tools and some endpoints refuse it.
+// The field is meaningless without tools and some endpoints refuse it.
 func TestAToollessCompletionSendsNoToolChoice(t *testing.T) {
 	t.Parallel()
 	mw := Middleware(signedInSource(t, "t12"), nil)
@@ -495,10 +484,8 @@ func TestAToollessCompletionSendsNoToolChoice(t *testing.T) {
 	}
 }
 
-// The round after a tool call replays the whole conversation, and the two
-// shapes disagree about how: chat carries the calls on the assistant message
-// and answers them with a tool-role message, while Responses makes each one a
-// free-standing item.
+// Chat carries tool calls on the assistant message and answers them with a
+// tool-role message, where Responses makes each one a free-standing item.
 func TestAToolRoundReplaysAsFreeStandingItems(t *testing.T) {
 	t.Parallel()
 	mw := Middleware(signedInSource(t, "t13"), nil)
@@ -534,7 +521,7 @@ func TestAToolRoundReplaysAsFreeStandingItems(t *testing.T) {
 		t.Fatalf("input = %+v, want the user turn, the call and its result", sent.Input)
 	}
 	// An assistant message with tool calls and no content must not be dropped
-	// by the empty-content skip -- the call is the whole point of the turn.
+	// by the empty-content skip.
 	call := sent.Input[1]
 	if call.Type != "function_call" || call.CallID != "call_7" || call.Name != "search_documents" {
 		t.Fatalf("call item = %+v", call)
@@ -554,9 +541,8 @@ func TestAToolRoundReplaysAsFreeStandingItems(t *testing.T) {
 	}
 }
 
-// The answer side of the same gap: a function_call the model produced has to
-// come back as message.tool_calls, which is the only thing the search and
-// research loops look at.
+// A function_call the model produced has to come back as message.tool_calls,
+// the only thing the search and research loops look at.
 func TestAFunctionCallComesBackAsAToolCall(t *testing.T) {
 	t.Parallel()
 	mw := Middleware(signedInSource(t, "t14"), nil)
@@ -594,8 +580,7 @@ func TestAFunctionCallComesBackAsAToolCall(t *testing.T) {
 	}
 }
 
-// Some backends report their output only on the completed response. Read there
-// too -- but only when no per-item event arrived, so neither is counted twice.
+// Some backends report their output only on the completed response.
 func TestAFunctionCallOnTheCompletedResponseIsRead(t *testing.T) {
 	t.Parallel()
 	mw := Middleware(signedInSource(t, "t15"), nil)
@@ -616,8 +601,6 @@ func TestAFunctionCallOnTheCompletedResponseIsRead(t *testing.T) {
 	if len(calls) != 1 || calls[0].ID != "call_9" {
 		t.Fatalf("tool_calls = %+v", calls)
 	}
-	// A call with no arguments arrives with the field empty, and every caller
-	// here feeds it straight to json.Unmarshal.
 	if calls[0].Function.Arguments != "{}" {
 		t.Errorf("arguments = %q, want an empty object", calls[0].Function.Arguments)
 	}
@@ -645,8 +628,6 @@ func TestAnItemEventAndACompletedResponseDoNotDoubleCount(t *testing.T) {
 	}
 }
 
-// No caller streams a tool-bearing request today, but a stream that dropped a
-// tool call would be lossy in exactly the way the buffered path was.
 func TestAStreamedFunctionCallBecomesAToolCallChunk(t *testing.T) {
 	t.Parallel()
 	mw := Middleware(signedInSource(t, "t17"), nil)
@@ -685,9 +666,8 @@ func TestAStreamedFunctionCallBecomesAToolCallChunk(t *testing.T) {
 }
 
 // ocrRequestFor is the request internal/ocr builds: a system message, then a
-// user message whose content is a prompt plus the document -- an image_url part
-// for a scan or a file part for a PDF, each carrying a base64 data URI rather
-// than a URL the backend would have to fetch. See ocr.LLMUserContentParts.
+// prompt plus the document as an image_url or file part carrying a base64 data
+// URI. See ocr.LLMUserContentParts.
 func ocrRequestFor(t *testing.T, document map[string]any) *http.Request {
 	t.Helper()
 	raw, err := json.Marshal(map[string]any{
@@ -727,10 +707,9 @@ func sentInputFor(t *testing.T, mw func(*http.Request, func(*http.Request) (*htt
 	return sent
 }
 
-// OCR is the caller that sends something other than text. A middleware that
-// kept only the text parts would send the model a transcription prompt with no
-// document behind it -- and the model would answer, so the failure is an
-// invented or empty transcription rather than an error.
+// A middleware that kept only the text parts would send the model a
+// transcription prompt with no document behind it, and the model would answer:
+// an invented transcription rather than an error.
 func TestAScanReachesTheModelAsAnImage(t *testing.T) {
 	t.Parallel()
 	const dataURI = "data:image/png;base64,iVBORw0KGgo="
@@ -749,9 +728,8 @@ func TestAScanReachesTheModelAsAnImage(t *testing.T) {
 	if parts[0].Type != "input_text" || !strings.Contains(parts[0].Text, "Extract all text") {
 		t.Errorf("prompt part = %+v", parts[0])
 	}
-	// input_image carries the URL on the part itself; the chat shape nests it
-	// under an "image_url" object, and sending that nested shape earns an
-	// opaque 400.
+	// input_image carries the URL on the part itself; the nested chat shape
+	// earns an opaque 400.
 	if parts[1].Type != "input_image" || parts[1].ImageURL != dataURI {
 		t.Fatalf("image part = %+v", parts[1])
 	}
@@ -772,15 +750,14 @@ func TestAPDFReachesTheModelAsAFile(t *testing.T) {
 	if parts[1].Type != "input_file" || parts[1].FileData != dataURI {
 		t.Fatalf("file part = %+v", parts[1])
 	}
-	// The name is what tells the model it is looking at a PDF rather than an
-	// opaque blob, and openai-go sends one for every OCR call.
+	// The name is what tells the model it is looking at a PDF.
 	if parts[1].Filename != "rent.pdf" {
 		t.Errorf("filename = %q", parts[1].Filename)
 	}
 }
 
-// A file with no name still has to go: LLMUserContentParts defaults it, but a
-// caller reaching this middleware directly may not.
+// LLMUserContentParts defaults the name, but a caller reaching this
+// middleware directly may not.
 func TestAnUnnamedFileStillGetsAName(t *testing.T) {
 	t.Parallel()
 	sent := sentInputFor(t, Middleware(signedInSource(t, "t22"), nil), ocrRequestFor(t, map[string]any{
@@ -793,8 +770,7 @@ func TestAnUnnamedFileStillGetsAName(t *testing.T) {
 	}
 }
 
-// A part of a kind nothing here knows is dropped rather than forwarded as an
-// unknown shape, which the backend answers with an opaque 400.
+// An unknown shape forwarded to the backend earns an opaque 400.
 func TestAnUnknownContentPartIsDropped(t *testing.T) {
 	t.Parallel()
 	sent := sentInputFor(t, Middleware(signedInSource(t, "t23"), nil), ocrRequestFor(t, map[string]any{
@@ -807,9 +783,8 @@ func TestAnUnknownContentPartIsDropped(t *testing.T) {
 	}
 }
 
-// An assistant turn's text is output_text, not input_text: the Responses shape
-// distinguishes them, and a replayed conversation that got it wrong would be
-// refused.
+// An assistant turn's text is output_text, not input_text: a replayed
+// conversation that got it wrong would be refused.
 func TestAssistantTextIsOutputText(t *testing.T) {
 	t.Parallel()
 	raw, err := json.Marshal(map[string]any{
@@ -838,5 +813,30 @@ func TestAssistantTextIsOutputText(t *testing.T) {
 	}
 	if sent.Input[1].Role != "assistant" || sent.Input[1].Content[0].Type != "output_text" {
 		t.Errorf("assistant part = %+v", sent.Input[1])
+	}
+}
+
+func TestAUserMessageThatSaysJSONGetsNoNudge(t *testing.T) {
+	t.Parallel()
+	raw, err := json.Marshal(map[string]any{
+		"model": "gpt-5.6-luna",
+		"messages": []map[string]any{
+			{"role": "system", "content": "You extract fields."},
+			{"role": "user", "content": "Answer as JSON: who signed this?"},
+		},
+		"response_format": map[string]any{"type": "json_object"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		"https://chatgpt.com/backend-api/codex/chat/completions", io.NopCloser(bytes.NewReader(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent := sentInputFor(t, Middleware(signedInSource(t, "t25"), nil), req)
+
+	if len(sent.Input) != 1 {
+		t.Fatalf("input = %+v", sent.Input)
 	}
 }

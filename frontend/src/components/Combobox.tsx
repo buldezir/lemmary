@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 
 export type ComboboxOption = {
   value: string
@@ -23,6 +23,11 @@ type Props = {
   className?: string
   /** Background utility for the input, so it can match the surface it sits on. */
   bgClassName?: string
+  /**
+   * Rendered inside the box, before the text field, which then shares one
+   * border with it. For a multi-select whose chosen values sit in the control.
+   */
+  leading?: ReactNode
 }
 
 // max-h-56 on the listbox, in pixels. Read to decide which way the list opens,
@@ -31,6 +36,14 @@ const listMaxHeightPx = 224
 
 const comboboxInputClassName =
   'w-full rounded-xs border border-line-strong py-2 pr-8 pl-3 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood disabled:cursor-not-allowed disabled:opacity-50'
+
+// With a leading slot the border moves to the wrapper, so the field and what
+// sits before it read as one control.
+const tokenBoxClassName =
+  'flex w-full flex-wrap items-center gap-1.5 rounded-xs border border-line-strong py-1.5 pr-8 pl-1.5 focus-within:border-oxblood focus-within:ring-1 focus-within:ring-oxblood'
+
+const tokenInputClassName =
+  'min-w-32 flex-1 border-none bg-transparent px-1.5 py-0.5 text-sm text-ink outline-none placeholder:text-ink-faint disabled:cursor-not-allowed disabled:opacity-50'
 
 function normalize(value: string) {
   return value.trim().toLowerCase()
@@ -52,6 +65,7 @@ export function Combobox({
   loadingLabel = 'Loading…',
   className = '',
   bgClassName = 'bg-bright',
+  leading,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const highlightedRef = useRef<HTMLLIElement>(null)
@@ -59,11 +73,8 @@ export function Combobox({
   // null means "showing the selection", a string means the user is typing.
   const [query, setQuery] = useState<string | null>(null)
   const [highlightedIndex, setHighlightedIndex] = useState(0)
-  // Which way the list opens. Downward is what every list does when there is
-  // room; near the foot of the viewport there is not, and a list that opens
-  // past the fold has to be scrolled to before it can be read. The chat pages
-  // put a picker directly under the composer, at the bottom of a tall panel,
-  // which is exactly where that happens.
+  // Which way the list opens: downward unless it would land past the fold, as
+  // it does for the picker under the chat composer.
   const [dropUp, setDropUp] = useState(false)
 
   const selectedLabel = options.find((option) => option.value === value)?.label ?? ''
@@ -90,10 +101,8 @@ export function Combobox({
 
   function openList() {
     if (disabled || loading) return
-    // Measured on open rather than in a layout effect: the list has no box
-    // until it is open, and the input's does not move while it is. Upward only
-    // when there is genuinely less room below than above, so a list that fits
-    // still opens the ordinary way.
+    // Measured on open rather than in a layout effect: the list has no box until
+    // it is open, and the input's does not move while it is.
     const rect = rootRef.current?.getBoundingClientRect()
     if (rect) {
       const below = window.innerHeight - rect.bottom
@@ -169,34 +178,45 @@ export function Combobox({
     }
   }
 
+  const input = (
+    <input
+      id={id}
+      type="text"
+      role="combobox"
+      aria-label={ariaLabel}
+      aria-expanded={open}
+      aria-autocomplete="list"
+      aria-activedescendant={open ? `${id ?? 'combobox'}-option-${activeIndex}` : undefined}
+      autoComplete="off"
+      spellCheck={false}
+      disabled={disabled || loading}
+      placeholder={loading ? loadingLabel : selectedLabel || placeholder}
+      value={loading ? '' : open && query !== null ? query : selectedLabel}
+      onChange={(event) => {
+        setQuery(event.target.value)
+        setOpen(true)
+        setHighlightedIndex(0)
+      }}
+      onFocus={(event) => {
+        openList()
+        event.currentTarget.select()
+      }}
+      onClick={() => openList()}
+      onKeyDown={onKeyDown}
+      className={leading ? tokenInputClassName : `${comboboxInputClassName} ${bgClassName}`}
+    />
+  )
+
   return (
     <div className={`relative ${className}`} ref={rootRef}>
-      <input
-        id={id}
-        type="text"
-        role="combobox"
-        aria-label={ariaLabel}
-        aria-expanded={open}
-        aria-autocomplete="list"
-        aria-activedescendant={open ? `${id ?? 'combobox'}-option-${activeIndex}` : undefined}
-        autoComplete="off"
-        spellCheck={false}
-        disabled={disabled || loading}
-        placeholder={loading ? loadingLabel : selectedLabel || placeholder}
-        value={loading ? '' : open && query !== null ? query : selectedLabel}
-        onChange={(event) => {
-          setQuery(event.target.value)
-          setOpen(true)
-          setHighlightedIndex(0)
-        }}
-        onFocus={(event) => {
-          openList()
-          event.currentTarget.select()
-        }}
-        onClick={() => openList()}
-        onKeyDown={onKeyDown}
-        className={`${comboboxInputClassName} ${bgClassName}`}
-      />
+      {leading ? (
+        <div className={`${tokenBoxClassName} ${bgClassName}`}>
+          {leading}
+          {input}
+        </div>
+      ) : (
+        input
+      )}
       <span
         className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-ink-faint"
         aria-hidden="true"

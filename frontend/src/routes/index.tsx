@@ -18,14 +18,12 @@ export function IndexPage() {
 
   // A view preference, not a filter, so it lives in localStorage rather than the
   // URL: a shared link describes the list, not how the reader arranged their own
-  // screen, but their own arrangement should survive a reload.
+  // screen.
   const [showTimeline, setShowTimeline] = useStoredFlag('lemmary.showTimeline', true)
   // The timeline counts the whole library rather than the current query, so it
   // only goes stale when the library itself changes.
   const timeline = useAsync(fetchDocumentTimeline, [list.libraryVersion])
 
-  // What the current filter makes possible: a list of failures can be requeued,
-  // a list of doubtful documents can be cleared.
   const bulkMode: BulkMode | null =
     statusFilter === 'failed' || statusFilter === 'cancelled'
       ? 'reprocess'
@@ -34,8 +32,7 @@ export function IndexPage() {
         : null
 
   // The timeline has no date filter of its own: picking a period writes the
-  // From/To inputs, and the highlight is read back out of them. "No date" is
-  // the exception -- no range can express it -- so it writes its own flag, and
+  // From/To inputs. "No date" is the exception, since no range expresses it, so
   // the two clear each other because a document cannot be both.
   function onSelectPeriod(period: string | null) {
     const range = periodRange(period)
@@ -83,6 +80,7 @@ export function IndexPage() {
             updateQuery={updateQuery}
             documentTypes={filterOptions.documentTypes}
             correspondents={filterOptions.correspondents}
+            tags={filterOptions.tags}
             status={statusFilter}
           />
 

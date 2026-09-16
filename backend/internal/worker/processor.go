@@ -22,22 +22,19 @@ import (
 type Processor struct {
 	app core.App
 	rt  *config.Runtime
-	// limit is how many pipelines may run at once. It replaces a plain mutex:
-	// a document is mostly time spent waiting on somebody else's HTTP server,
-	// so one at a time left the machine idle for hours on a bulk import.
+	// How many pipelines may run at once: a document is mostly time spent
+	// waiting on someone else's HTTP server.
 	limit int
 
 	mu     sync.Mutex
 	active int
-	// inflight is the jobs a live drain goroutine has picked but not yet
-	// claimed in the database. Without it every drain would select the same
-	// globally oldest row, and the losers of the claim transaction would spin
-	// on a job they can never have.
+	// Jobs a live drain has picked but not yet claimed in the database.
+	// Without it every drain selects the same oldest row and the losers of the
+	// claim transaction spin on a job they can never have.
 	inflight map[string]struct{}
 
-	// snapshot is the published configuration, rt.Snapshot in production. A
-	// field because a drain test has to hand the pipeline stub providers, and
-	// a Runtime only ever publishes what it built from the settings record.
+	// rt.Snapshot in production; a field because a drain test has to hand the
+	// pipeline stub providers.
 	snapshot func() config.Snapshot
 }
 
@@ -66,10 +63,8 @@ func Register(app core.App, rt *config.Runtime, backfill *Backfiller, concurrenc
 		return e.Next()
 	})
 
-	// A second cron on the same expression: the job drain only ever reaches
-	// documents a job was created for, and most of the documents that need
-	// embedding never get one. The instance is passed in because the API binds
-	// its manual sweep to the same one.
+	// A second cron on the same expression: the job drain only reaches
+	// documents a job was created for, and most needing embedding never get one.
 	registerEmbeddingBackfill(app, backfill)
 
 	// Read on scrape rather than tracked, so nothing has to stay in step with
@@ -88,17 +83,13 @@ func Register(app core.App, rt *config.Runtime, backfill *Backfiller, concurrenc
 	app.Logger().Info("worker registered", "cron", cronExpr, "concurrency", concurrency)
 }
 
-// recoverStaleRunningJobs re-pends jobs a previous process left in "running".
-// The pipeline runs outside any transaction, so a crash or restart mid-run
-// strands the job (nextDueJob only picks pending) and its document in
-// "processing" with no path back — bulk reprocess skips processing documents.
+// The pipeline runs outside any transaction, so a crash mid-run strands the job
+// (nextDueJob only picks pending) and its document in "processing" with no way
+// back, since bulk reprocess skips processing documents.
 func (p *Processor) recoverStaleRunningJobs() {
-	// Unfinished and not already queued, rather than status = running. A crash
-	// during embed strands a job whose status apply_metadata already set to
-	// completed, so a status test walks straight past the one window where the
-	// pipeline spends real time -- and with the enqueue guard now keyed on
-	// finished_at, such a job would block its document from ever being
-	// reprocessed.
+	// Unfinished and not queued, rather than status = running: a crash during
+	// embed strands a job apply_metadata already marked completed, and the
+	// enqueue guard keyed on finished_at would then block its document forever.
 	jobs, err := p.app.FindRecordsByFilter(
 		"processing_jobs",
 		"finished_at = '' && status != {:pending}",
@@ -175,10 +166,8 @@ func (p *Processor) registerHooks() {
 			record.Set("steps", models.FullPipelineSteps)
 		}
 		// The trust boundary for the provider/model choices: this collection is
-		// writable by the document's owner, so `overrides` arrives from a
-		// browser on the single-document reprocess path as well as through the
-		// custom endpoint. Refused as a bad request, which is what the direct
-		// collection write surfaces to the form that made it.
+		// writable by the document's owner, so overrides arrive from a browser
+		// as well as through the custom endpoint.
 		if err := validateJobOverrides(e.App, p.rt.Snapshot().Cfg, record); err != nil {
 			return router.NewBadRequestError(err.Error(), nil)
 		}
@@ -200,29 +189,21 @@ func (p *Processor) registerHooks() {
 	})
 }
 
-// Enqueue creates a pending job for documentID so the worker picks it up on the
-// next drain. It is the entry point for callers outside this package (bulk
-// reprocess); forceSteps may be nil and overrides may be zero, which means the
-// job runs on the bindings in Settings.
+// The entry point for callers outside this package. forceSteps may be nil and
+// overrides may be zero, which runs the job on the bindings in Settings.
 func Enqueue(app core.App, documentID string, steps []string, forceSteps []string, overrides config.Overrides) (*core.Record, error) {
 	return createProcessingJob(app, documentID, steps, forceSteps, overrides)
 }
 
 func createProcessingJob(app core.App, documentID string, steps []string, forceSteps []string, overrides config.Overrides) (*core.Record, error) {
-	// Ensure-queued semantics: a document with an active job must not get a
-	// second one — concurrent reprocess requests would otherwise run OCR and
-	// AI extraction twice for the same document.
+	// Ensure-queued: a document with an active job must not get a second one,
+	// or concurrent reprocess requests run OCR and extraction twice.
 	//
-	// Active is finished_at = '', not a status test. apply_metadata sets the
-	// job's status to completed and saves it, and only then does embed run --
-	// so for the whole of that window (eight seconds against a local sidecar,
-	// longer on a backfill) a running job reads status=completed. Keying on
-	// pending/running let a second pipeline in for exactly that window, and
-	// the two then mutated the same document.
-	//
-	// Both terminal paths write finished_at: the end of PipelineRunner.Run and
-	// failJob. A retry leaves it empty and re-pends, which is correct -- that
-	// job is still active.
+	// Active is an empty finished_at, not a status test: apply_metadata marks
+	// the job completed before embed runs, so for that whole window a running
+	// job reads status=completed and a status test would let a second pipeline
+	// in. Both terminal paths (Run and failJob) write finished_at; a retry
+	// leaves it empty and re-pends, which is correct.
 	existing, err := app.FindRecordsByFilter(
 		"processing_jobs",
 		"document = {:doc} && finished_at = ''",
@@ -269,8 +250,7 @@ func createProcessingJob(app core.App, documentID string, steps []string, forceS
 	return job, nil
 }
 
-// takeSlot reserves one of the p.limit concurrent pipeline slots, or reports
-// that they are all busy. Same shape as the TryLock it replaces, with N tokens.
+// Reserves one of the p.limit concurrent pipeline slots, or reports them busy.
 func (p *Processor) takeSlot() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -287,19 +267,15 @@ func (p *Processor) releaseSlot() {
 	p.active--
 }
 
-// releaseJob drops a job from the picked-but-not-yet-claimed set.
 func (p *Processor) releaseJob(jobID string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	delete(p.inflight, jobID)
 }
 
-// fanOut runs one drain per slot and waits for them.
-//
-// The hooks on processing_jobs already start a drain per job, so the upload
-// path fans out on its own. This is for the paths that only the cron reaches --
-// a restart with a full queue, or an install where the provider was missing
-// when the jobs were made -- which a single drain would work through serially.
+// One drain per slot. The record hooks already fan the upload path out; this is
+// for the paths only the cron reaches (a restart with a full queue), which a
+// single drain would work through serially.
 func (p *Processor) fanOut() {
 	var wg sync.WaitGroup
 	for i := 0; i < p.limit; i++ {
@@ -318,12 +294,10 @@ func (p *Processor) drainPending() {
 	}
 	defer p.releaseSlot()
 
-	// Counted as in-flight work so a shutdown can wait for it. Nothing else
-	// would: cron jobs are fired and forgotten, and the record hooks start this
-	// with a bare `go`. With encryption at rest on, a job still writing while
-	// the archive is sealed and the working directory wiped loses everything it
-	// had done. This sits here rather than in the cron closure because the hook
-	// callers are the common path and were never counted at all.
+	// Counted as in-flight work so a shutdown can wait for it: cron jobs are
+	// fired and forgotten and the hooks start this with a bare `go`, and with
+	// encryption at rest a job still writing when the archive is sealed loses
+	// everything it had done.
 	defer inflight.Begin()()
 
 	lastJobID := ""
@@ -338,13 +312,10 @@ func (p *Processor) drainPending() {
 		}
 
 		// Checked before anything else touches the job, so every path below
-		// that leaves it runnable is caught here rather than spinning. It used
-		// to sit lower, which was safe only because both paths above it
-		// returned; the override paths do not.
+		// that leaves it runnable is caught here rather than spinning.
 		if job.Id == lastJobID {
-			// The previous iteration returned without moving the job out of the
-			// runnable set, so picking it up again would spin. Hand it back to
-			// the cron instead.
+			// The previous iteration left the job runnable, so picking it up
+			// again would spin. Hand it back to the cron instead.
 			p.app.Logger().Error("job made no progress; deferring to next cron tick", "job", job.Id)
 			p.releaseJob(job.Id)
 			return
@@ -357,37 +328,30 @@ func (p *Processor) drainPending() {
 	}
 }
 
-// attempt runs one picked job and reports whether the drain should keep going.
-// It exists so the job's release from p.inflight can be deferred over every
-// path out, including the ones that fail before the pipeline starts.
+// Runs one picked job and reports whether the drain should keep going. Separate
+// so the release from p.inflight is deferred over every path out, including the
+// ones that fail before the pipeline starts.
 func (p *Processor) attempt(job *core.Record) bool {
 	defer p.releaseJob(job.Id)
 
-	// The job's own bindings are applied before readiness is judged, not
-	// after. A job queued with an OCR or extraction override may be the one
-	// job that *can* run on an instance whose configured provider is gone,
-	// and asking providersReady about the configured snapshot would defer it
-	// forever over a binding it does not use.
+	// Bindings are applied before readiness is judged: a job with an override
+	// may be the one job that can run on an instance whose configured provider
+	// is gone, and judging the configured snapshot would defer it forever.
 	snap, err := p.effectiveSnapshot(job)
 	if err != nil {
-		// Stored overrides that no longer resolve -- a provider deleted
-		// between queueing and draining. Failed rather than deferred: the
-		// job asked for a provider that no longer exists, and no amount of
-		// waiting brings it back. The document lands on "failed", where a
-		// plain reprocess can pick it up again without the override.
+		// Overrides that no longer resolve: failed rather than deferred, since
+		// no amount of waiting brings a deleted provider back. The document
+		// lands on "failed", where a plain reprocess picks it up again.
 		//
 		// Return value dropped deliberately: failJob hands back the error it
-		// was given whether or not the write succeeded, so testing it would
-		// log the same error twice under a message about the write. failJob
-		// logs "job failed" with the cause itself.
+		// was given whether or not the write succeeded, and logs it itself.
 		_ = failJob(p.app, job, nil, err)
 		return true
 	}
 	if err := providersReady(snap); err != nil {
-		// Leave the job pending so it runs once Settings are complete. Returning
-		// (rather than retrying inline) is what keeps this from becoming a hot
-		// loop on a fresh install where no provider is configured yet; the cron
-		// re-enters drainPending on the next tick.
+		// Left pending so it runs once Settings are complete. Returning rather
+		// than retrying inline keeps a fresh install with no provider from
+		// becoming a hot loop; the cron re-enters on the next tick.
 		p.app.Logger().Warn("pending jobs deferred; provider unavailable",
 			"job", job.Id,
 			slog.Any("error", err),
@@ -397,16 +361,15 @@ func (p *Processor) attempt(job *core.Record) bool {
 
 	if err := p.runJob(job.Id, snap); err != nil {
 		p.app.Logger().Error("job error", "job", job.Id, slog.Any("error", err))
-		// Push the job's next attempt back if it is still immediately due.
-		// Without this, one persistently unclaimable job sits at the head of
-		// nextDueJob forever and starves every job created after it.
+		// Without a backoff, one persistently unclaimable job sits at the head
+		// of nextDueJob forever and starves every job created after it.
 		p.deferErroredJob(job.Id)
 	}
 	return true
 }
 
-// deferErroredJob applies a short backoff to a job that errored while still
-// pending and due, so the drain loop can move past it to younger jobs.
+// A short backoff for a job that errored while still pending and due, so the
+// drain loop can move past it to younger jobs.
 func (p *Processor) deferErroredJob(jobID string) {
 	job, err := p.app.FindRecordById("processing_jobs", jobID)
 	if err != nil {
@@ -424,21 +387,17 @@ func (p *Processor) deferErroredJob(jobID string) {
 	}
 }
 
-// nextDueJob returns the oldest pending job whose backoff has elapsed and that
-// no other drain goroutine has already picked, or nil.
+// The oldest pending job whose backoff has elapsed and that no other drain has
+// picked, or nil.
 //
-// It reads limit+1 candidates rather than one because the globally oldest row
-// is the same row for every drain. The claim transaction in runJob would still
-// let exactly one through, but the losers come back with claimed=false, loop,
-// and can re-read the same id before the claim is visible -- which trips the
-// no-progress guard and parks a worker until the next cron tick. Handing each
-// drain a different row keeps that guard for the genuine no-progress it was
-// written for. limit+1 always covers it: a job is only in the set while a
-// goroutine holds a slot, and each holds one at a time.
+// It reads limit+1 candidates because the globally oldest row is the same row
+// for every drain: the losers of the claim transaction would re-read that id
+// before the claim is visible, trip the no-progress guard and park a worker
+// until the next cron tick. limit+1 always covers it, since a job is only in
+// the set while a goroutine holds a slot.
 //
-// Ordering stays strict global FIFO by created. One account's 500-file import
-// still delays everyone else's uploads, now N times less; round-robin over
-// owners is a separate change.
+// Ordering stays strict global FIFO by created; round-robin over owners is a
+// separate change.
 func (p *Processor) nextDueJob() (*core.Record, error) {
 	jobs, err := p.app.FindRecordsByFilter(
 		"processing_jobs",
@@ -463,7 +422,6 @@ func (p *Processor) nextDueJob() (*core.Record, error) {
 	return nil, nil
 }
 
-// providersReady reports whether the snapshot has everything a job needs.
 func providersReady(snap config.Snapshot) error {
 	if snap.OCR == nil {
 		return fmt.Errorf("OCR provider is not configured; update Settings")
@@ -511,8 +469,8 @@ func (p *Processor) runJob(jobID string, snap config.Snapshot) error {
 		)
 
 		job.Set("status", models.JobStatusRunning)
-		// A retry re-pends this same job, so last attempt's message must not
-		// outlive it; failJob writes a fresh one if this attempt fails too.
+		// A retry re-pends this same job, so the last attempt's message must
+		// not outlive it.
 		job.Set("error", "")
 		if job.GetString("started_at") == "" {
 			job.Set("started_at", nowTimestamp())

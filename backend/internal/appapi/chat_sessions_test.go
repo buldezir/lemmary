@@ -65,8 +65,8 @@ func TestParseChatListQueryClampsPerPage(t *testing.T) {
 	}
 }
 
-// A junk or negative page must fall back rather than producing a negative
-// offset, which would make the query fail rather than return page one.
+// A negative page would produce a negative offset, which fails the query
+// rather than returning page one.
 func TestParseChatListQueryIgnoresJunkPaging(t *testing.T) {
 	for _, raw := range []string{"page=0", "page=-3", "page=abc"} {
 		q, page, _, err := parseChatListQuery(values(raw), "user1")

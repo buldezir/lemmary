@@ -54,10 +54,9 @@ func TestSSEWriterFramesEvents(t *testing.T) {
 	}
 }
 
-// TestSSEWriterHeartbeatKeepsTheConnectionBusy covers the gap this stream has
-// by design: nothing is sent for the whole of each model completion, and the
-// first one happens before any step event. A reverse proxy with a 30-60s idle
-// timeout drops that connection while the server is still working.
+// Nothing is sent for the whole of each model completion, and the first one
+// happens before any step event, so a proxy with a 30-60s idle timeout drops
+// the connection while the server is still working.
 func TestSSEWriterHeartbeatKeepsTheConnectionBusy(t *testing.T) {
 	rec := &syncRecorder{header: http.Header{}}
 	e := &core.RequestEvent{}
@@ -77,7 +76,7 @@ func TestSSEWriterHeartbeatKeepsTheConnectionBusy(t *testing.T) {
 		t.Fatalf("no heartbeat frame was written: %q", body)
 	}
 	// A comment frame carries no data line, so a client parsing "data: " sees
-	// nothing at all -- which is the point.
+	// nothing at all.
 	if strings.Contains(body, "data: ") {
 		t.Fatalf("heartbeat should not look like an event: %q", body)
 	}
@@ -92,8 +91,7 @@ func TestSSEWriterHeartbeatKeepsTheConnectionBusy(t *testing.T) {
 }
 
 // syncRecorder is httptest.NewRecorder with a lock, so a test can read the body
-// while the heartbeat goroutine is still writing to it. The writer under test
-// serializes its own writes; the recorder is what cannot be read concurrently.
+// while the heartbeat goroutine is still writing to it.
 type syncRecorder struct {
 	mu     sync.Mutex
 	buf    bytes.Buffer

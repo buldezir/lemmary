@@ -13,8 +13,8 @@ import (
 	"lemmary/backend/internal/ai"
 )
 
-// fakeHelper answers every document with a note built from its id, records
-// the batches it was given, and can be told to fail.
+// fakeHelper answers every document with a note built from its id, records the
+// batches it was given, and can be told to fail.
 type fakeHelper struct {
 	mu      sync.Mutex
 	batches [][]string

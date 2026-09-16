@@ -6,13 +6,9 @@ import { useAsync } from './useAsync'
 const debounceMs = 300
 
 /**
- * How many jobs are queued or running, for the header's Activity badge. Null
- * while unknown and on failure, so the badge hides rather than claiming an
- * idle queue.
- *
- * Same shape as useInboxCount, and for the same reasons: one request for the
- * header rather than one per layout, and debounced because a bulk upload turns
- * one answer into twenty realtime events.
+ * For the header's Activity badge. Null while unknown and on failure, so the
+ * badge hides rather than claiming an idle queue. Same shape as useInboxCount,
+ * debounced because a bulk upload turns one answer into twenty events.
  */
 export function useActiveJobCount(): number | null {
   const { data, reload } = useAsync(() => getActiveJobCounts(), [])

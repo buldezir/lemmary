@@ -28,8 +28,8 @@ func scanEvent(method, target string, body string) (*core.RequestEvent, *httptes
 }
 
 // The sweep makes the server issue requests on the caller's behalf, so a range
-// it should not touch has to be refused before anything is dialled -- which is
-// also why a nil app is safe here.
+// it must not touch is refused before anything is dialled, which is also why a
+// nil app is safe here.
 func TestScanDiscoverRefusesARangeOffTheLocalNetwork(t *testing.T) {
 	t.Parallel()
 
@@ -69,9 +69,8 @@ func TestScanRejectsAnUnreadableBody(t *testing.T) {
 	}
 }
 
-// Saving a scan has to fail the way saving a file fails: the Scan tab shows the
-// same messages, and the duplicate link is what makes "already in your library"
-// useful rather than annoying.
+// The Scan tab shows the same messages as the Files tab, and the duplicate link
+// is what makes "already in your library" useful rather than annoying.
 func TestScanSaveErrorsReadLikeAnUploadsDo(t *testing.T) {
 	t.Parallel()
 

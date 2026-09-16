@@ -2,9 +2,6 @@ package fulltext
 
 import "testing"
 
-// TestEligibleIDsResolvesFiltersWithoutText is the bridge to the chunk index:
-// the agent's filters are document properties the chunk index does not carry,
-// so they have to be answerable as a list of ids.
 func TestEligibleIDsResolvesFiltersWithoutText(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "tagged", map[string]any{
@@ -33,15 +30,13 @@ func TestEligibleIDsResolvesFiltersWithoutText(t *testing.T) {
 		t.Fatalf("ids = %v, complete = %v", ids, complete)
 	}
 
-	// A limit smaller than the result set has to say so, or the caller would
-	// pre-filter a dense search down to an arbitrary page of the archive.
+	// Truncation has to be reported, or the caller would pre-filter a dense
+	// search down to an arbitrary page of the archive.
 	broad := Query{TagIDs: []string{"tag1"}}
 	if ids, complete, err := idx.EligibleIDs(broad, 1); err != nil || complete || len(ids) != 1 {
 		t.Fatalf("truncation was not reported: ids = %v, complete = %v, err = %v", ids, complete, err)
 	}
 
-	// A query that filters nothing resolves to nothing, and the caller sends no
-	// pre-filter at all rather than the whole archive.
 	if ids, complete, err := idx.EligibleIDs(Query{}, 10); err != nil || !complete || len(ids) != 0 {
 		t.Fatalf("an unfiltered query should resolve to nothing: %v, %v, %v", ids, complete, err)
 	}
@@ -62,18 +57,14 @@ func TestKeepEligibleFiltersAShortList(t *testing.T) {
 		t.Fatalf("kept = %v", kept)
 	}
 
-	// No filters means nothing to check, and the list comes back untouched.
 	same, err := idx.KeepEligible(Query{UserID: "u1"}, []string{"untagged", "tagged"})
 	if err != nil || len(same) != 2 {
 		t.Fatalf("an unfiltered query should keep every id: %v, %v", same, err)
 	}
 }
 
-// TestFieldsRestrictsWhichFieldsMatch is what lets the paperless-ngx
-// compatibility layer answer title__icontains and content__icontains
-// differently. Without it every text query searches every field, so a
-// title-only filter would also match the OCR body and report the result as
-// though the filter had been applied.
+// What lets the paperless-ngx layer answer title__icontains and
+// content__icontains differently.
 func TestFieldsRestrictsWhichFieldsMatch(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "titled", map[string]any{
@@ -83,7 +74,6 @@ func TestFieldsRestrictsWhichFieldsMatch(t *testing.T) {
 		FieldUser: "u1", FieldTitle: "Invoice", FieldOCRText: "the lease runs to 2030", FieldAll: "Invoice",
 	})
 
-	// Unrestricted, both match -- that is the archive-wide search box.
 	if ids := searchIDs(t, idx, Query{UserID: "u1", Text: "lease"}); len(ids) != 2 {
 		t.Fatalf("unrestricted ids = %v, want both documents", ids)
 	}
@@ -103,9 +93,6 @@ func TestFieldsRestrictsWhichFieldsMatch(t *testing.T) {
 	}
 }
 
-// TestSearchFieldsKeepsTheTableOrderAndBoosts: the restriction selects from the
-// boost table rather than rebuilding it, so a restricted query still ranks the
-// fields it kept exactly as an unrestricted one would.
 func TestSearchFieldsKeepsTheTableOrderAndBoosts(t *testing.T) {
 	t.Parallel()
 	if got := searchFields(nil); len(got) != len(boostedTextFields) {
@@ -118,8 +105,6 @@ func TestSearchFieldsKeepsTheTableOrderAndBoosts(t *testing.T) {
 	if got[0].boost <= got[1].boost {
 		t.Fatalf("boosts were not preserved: %+v", got)
 	}
-	// An unknown name selects nothing rather than quietly widening back to
-	// every field, which would turn a title filter into an archive search.
 	if got := searchFields([]string{"no_such_field"}); len(got) != 0 {
 		t.Fatalf("searchFields(unknown) = %+v, want none", got)
 	}

@@ -13,10 +13,9 @@ import (
 	"lemmary/backend/internal/inflight"
 )
 
-// Flush pacing.
 const (
-	// debounceDelay is the workhorse trigger: a flush fires this long after the
-	// last write, so a burst of uploads produces one flush rather than dozens.
+	// debounceDelay fires a flush this long after the last write, so a burst of
+	// uploads produces one flush rather than dozens.
 	debounceDelay = 10 * time.Second
 	// minFlushInterval keeps a steady stream of writes from flushing constantly.
 	minFlushInterval = 15 * time.Second
@@ -32,11 +31,8 @@ const (
 // since the snapshot needs them open.
 const terminatePriority = -1000
 
-// Register wires the vault into a PocketBase application.
-//
-// Everything the vault needs from the app is bound here: no other package
-// imports it, and with encryption disabled every binding is skipped, so the
-// application behaves exactly as it does today.
+// Register binds everything the vault needs from the app: no other package
+// imports it, and with encryption disabled every binding is skipped.
 func Register(app *pocketbase.PocketBase, v *Vault) {
 	if !v.Enabled() {
 		return
@@ -48,15 +44,13 @@ func Register(app *pocketbase.PocketBase, v *Vault) {
 			if err := e.Next(); err != nil {
 				return err
 			}
-			// The databases only exist after bootstrap, so the snapshotter is
-			// installed here rather than at construction.
+			// The databases only exist after bootstrap, so the snapshotter is installed
+			// here rather than at construction.
 			//
-			// The concurrent pool, not the nonconcurrent one: VACUUM INTO is a
-			// read transaction, and the whole reason for choosing it over
-			// PocketBase's copy-the-WAL backup was that it does not block
-			// writers. Running it on the single write connection gives that
-			// property straight back — every write on the instance would stall
-			// for the length of a full database read, every flush.
+			// The concurrent pool, not the nonconcurrent one: VACUUM INTO is a read
+			// transaction, and the whole reason for choosing it was that it does not block
+			// writers. Running it on the single write connection would stall every write
+			// on the instance for the length of a full database read, every flush.
 			v.SetSnapshotter(NewPocketBaseSnapshotter(e.App.ConcurrentDB(), e.App.AuxConcurrentDB()))
 			return nil
 		},
@@ -78,11 +72,9 @@ type flusher struct {
 	stopped   bool
 }
 
-// run performs a flush and records when it happened.
-//
-// It is deliberately not gated on stopped: the shutdown path cancels the
-// debounce and then flushes, and an early return here would turn the most
-// important flush of all into a silent no-op.
+// run is deliberately not gated on stopped: the shutdown path cancels the
+// debounce and then flushes, and an early return would turn the most important
+// flush of all into a silent no-op.
 func (f *flusher) run(reason string) {
 	f.mu.Lock()
 	f.lastFlush = time.Now()
@@ -93,7 +85,6 @@ func (f *flusher) run(reason string) {
 	}
 }
 
-// touch records a write and schedules a debounced flush.
 func (f *flusher) touch() {
 	pending := f.v.MarkDirty()
 
@@ -139,8 +130,8 @@ func (f *flusher) stop() {
 
 func registerFlushTriggers(app *pocketbase.PocketBase, f *flusher) {
 	// Dirty tracking with no collection filter. This is how "flush after each
-	// processed document" is achieved without touching internal/worker: the
-	// pipeline's writes are ordinary record writes.
+	// processed document" works without touching internal/worker: the pipeline's
+	// writes are ordinary record writes.
 	mark := func(e *core.RecordEvent) error {
 		if err := e.Next(); err != nil {
 			return err
@@ -153,11 +144,10 @@ func registerFlushTriggers(app *pocketbase.PocketBase, f *flusher) {
 	app.OnRecordAfterDeleteSuccess().BindFunc(mark)
 
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
-		// Count every request as in-flight work, so the shutdown flush can wait
-		// for handlers PocketBase's own graceful shutdown gave up on. The
-		// priority puts it outside every other middleware, which is where the
-		// bracket has to be: a handler that has begun writing to the working
-		// directory must still be counted while it unwinds.
+		// Count every request as in-flight work, so the shutdown flush can wait for
+		// handlers PocketBase's graceful shutdown gave up on. The priority puts this
+		// outside every other middleware, where the bracket has to be: a handler that
+		// has begun writing must still be counted while it unwinds.
 		e.Router.Bind(&hook.Handler[*core.RequestEvent]{
 			Id:       "vaultInflight",
 			Priority: -99999,
@@ -182,23 +172,22 @@ func registerFlushTriggers(app *pocketbase.PocketBase, f *flusher) {
 		return e.Next()
 	})
 
-	// The shutdown flush. It runs before e.Next() because PocketBase's own
-	// terminate handler closes the databases, and the snapshot needs them open.
+	// The shutdown flush runs before e.Next(), because PocketBase's own terminate
+	// handler closes the databases and the snapshot needs them open.
 	app.OnTerminate().Bind(&hook.Handler[*core.TerminateEvent]{
 		Priority: terminatePriority,
 		Func: func(e *core.TerminateEvent) error {
 			f.stop()
-			// Stop the scheduler before draining, or the drain races the very
-			// thing it is waiting for: PocketBase stops the cron in its
-			// terminate *finalizer*, which runs after every handler here, so a
-			// tick landing in between would start a fresh worker job while this
-			// handler waited for the last one to finish.
+			// Stop the scheduler before draining, or the drain races the thing it waits
+			// for: PocketBase stops the cron in its terminate finalizer, which runs after
+			// every handler here, so a tick landing in between would start a fresh worker
+			// job while this handler waited for the last one.
 			e.App.Cron().Stop()
 			// Flush before e.Next(): PocketBase's terminate finalizer calls
-			// ResetBootstrapState, which closes the databases the snapshot
-			// needs, and App.Restart() execve's the process from inside that
-			// same finalizer — anything deferred past e.Next() would never run
-			// at all. This is the flush that makes a clean stop lossless.
+			// ResetBootstrapState, which closes the databases the snapshot needs, and
+			// App.Restart() execve's the process from inside that same finalizer, so
+			// anything deferred past e.Next() would never run. This is the flush that makes
+			// a clean stop lossless.
 			f.v.Finalize()
 			return e.Next()
 		},
@@ -209,10 +198,9 @@ func registerFlushTriggers(app *pocketbase.PocketBase, f *flusher) {
 // boundary in the clear.
 func registerGuards(app *pocketbase.PocketBase, v *Vault) {
 	// PocketBase's backup writes a plaintext zip of the whole data dir into the
-	// data dir — in RAM here, doubling memory — and ships it to S3 when
-	// configured. One binding blocks the HTTP route, the autobackup cron and the
-	// CLI at once. The vault directory is itself a consistent encrypted backup,
-	// so nothing of value is lost.
+	// data dir, in RAM here, and ships it to S3 when configured. One binding blocks
+	// the HTTP route, the autobackup cron and the CLI at once; the vault directory
+	// is itself a consistent encrypted backup.
 	refuse := func(e *core.BackupEvent) error {
 		return fmt.Errorf(
 			"backups are disabled while encryption at rest is on: a PocketBase backup would write an unencrypted archive of every document. Copy the vault directory %s instead — it is already encrypted and internally consistent", v.Dir())
@@ -220,8 +208,8 @@ func registerGuards(app *pocketbase.PocketBase, v *Vault) {
 	app.OnBackupCreate().Bind(&hook.Handler[*core.BackupEvent]{Priority: -99999, Func: refuse})
 	app.OnBackupRestore().Bind(&hook.Handler[*core.BackupEvent]{Priority: -99999, Func: refuse})
 
-	// With S3 record storage enabled PocketBase never touches the local data
-	// dir, so every uploaded document would leave the boundary entirely.
+	// With S3 record storage enabled PocketBase never touches the local data dir,
+	// so every uploaded document would leave the boundary entirely.
 	checkSettings := func(s *core.Settings) error {
 		if s.S3.Enabled {
 			return fmt.Errorf("S3 file storage cannot be used with encryption at rest: documents would be stored unencrypted outside the vault")
@@ -255,17 +243,17 @@ func registerGuards(app *pocketbase.PocketBase, v *Vault) {
 	})
 }
 
-// registerEnrollment keeps the keyring in step with the accounts that exist.
+// registerEnrollment gives every account its own wrap of the master key, since
+// every user of an instance can unlock it.
 //
-// Every user of an instance can unlock it, so each one needs their own wrap of
-// the master key. These are the *model* hooks, not the request hooks: accounts
-// are also created server-side — the setup wizard, `superuser upsert`, the
-// paired-admin path — and none of those go through the record API, so binding
-// only the request hooks would silently leave those users unable to unlock.
+// These are the model hooks, not the request hooks: the setup wizard,
+// `superuser upsert` and the paired-admin path all create accounts server-side
+// without going through the record API, and binding only the request hooks
+// would leave those users unable to unlock.
 //
 // The password is read before e.Next() because PocketBase clears the plaintext
-// once the record is persisted, and the wrap is added after, so a save that
-// fails does not leave a credential behind for a user that does not exist.
+// once the record is persisted, and the wrap is added after, so a failed save
+// leaves no credential behind for a user that does not exist.
 func registerEnrollment(app *pocketbase.PocketBase, v *Vault) {
 	enrollOnSave := func(e *core.RecordEvent) error {
 		password := e.Record.GetString("password")
@@ -278,8 +266,8 @@ func registerEnrollment(app *pocketbase.PocketBase, v *Vault) {
 		return enroll(v, e.Record.Id, password)
 	}
 
-	// Both collections: an operator may only ever have a superuser account, and
-	// it still has to be able to unlock the archive.
+	// Both collections: an operator may only ever have a superuser account, and it
+	// still has to be able to unlock the archive.
 	app.OnRecordCreate("users", "_superusers").BindFunc(enrollOnSave)
 	app.OnRecordUpdate("users", "_superusers").BindFunc(enrollOnSave)
 
@@ -294,8 +282,8 @@ func registerEnrollment(app *pocketbase.PocketBase, v *Vault) {
 			return kr.RemoveWrapsForUser(e.Record.Id)
 		})
 		if errors.Is(err, ErrLastWrap) {
-			// Refusing to remove the last credential is correct, not an error
-			// worth failing the delete over.
+			// Refusing to remove the last credential is correct, not an error worth failing
+			// the delete over.
 			v.opts.Log("vault: keeping the wrap for deleted account %s: %v", e.Record.Id, err)
 		} else if err != nil {
 			v.opts.Log("vault: failed to persist keyring after deleting account %s: %v", e.Record.Id, err)
@@ -315,11 +303,10 @@ func enroll(v *Vault, userID, password string) error {
 		if err := kr.AddPassword(v.MasterKey(), userID, password); err != nil {
 			return fmt.Errorf("vault: enroll %s: %w", userID, err)
 		}
-		// A real credential now exists, so the one the vault was created with
-		// stops being the only way in and starts being a permanent spare key
-		// held by whoever provisioned the instance. Removed in the same save as
-		// the wrap that replaces it, so no window exists where neither is on
-		// disk.
+		// A real credential now exists, so the bootstrap one stops being the only way
+		// in and becomes a spare key held by whoever provisioned the instance. Removed
+		// in the same save as the wrap that replaces it, so no window exists where
+		// neither is on disk.
 		if err := kr.RemoveBootstrapWrap(); err != nil {
 			return fmt.Errorf("vault: revoke the bootstrap credential for %s: %w", userID, err)
 		}

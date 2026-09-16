@@ -26,18 +26,16 @@ const (
 	errInjectedFailPoint           = "vault: injected failure at %s"
 )
 
-// Flush commits the working directory to the vault.
-//
-// The commit protocol, and why it needs no journal:
+// Flush commits the working directory to the vault. The commit protocol needs
+// no journal:
 //
 //  1. Blobs are content-addressed and immutable, and every one is fsynced and
-//     renamed into place *before* any manifest names it.
-//  2. The manifest is fsynced and renamed *before* CURRENT advances to it.
+//     renamed into place before any manifest names it.
+//  2. The manifest is fsynced and renamed before CURRENT advances to it.
 //
-// So a crash at any point leaves either the previous complete generation or the
-// new one. A partially written blob set is unreferenced garbage that the next
-// GC collects; a partially written manifest never becomes current. Torn state is
-// not merely unlikely, it is unrepresentable.
+// So a crash leaves either the previous complete generation or the new one. A
+// partial blob set is unreferenced garbage the next GC collects; a partial
+// manifest never becomes current. Torn state is unrepresentable.
 func (v *Vault) Flush(reason string) error {
 	return v.flush(reason, "")
 }
@@ -49,8 +47,8 @@ func (v *Vault) flush(reason string, fail failPoint) error {
 	v.flushMu.Lock()
 	defer v.flushMu.Unlock()
 
-	// The gate that makes the whole design safe: never write a manifest built
-	// from a working directory we did not populate from this vault.
+	// The gate that makes the whole design safe: never write a manifest built from
+	// a working directory this process did not populate from this vault.
 	if !v.Loaded() {
 		return ErrNotLoaded
 	}
@@ -72,28 +70,24 @@ func (v *Vault) flush(reason string, fail failPoint) error {
 	snap := v.snap
 	v.mu.Unlock()
 
-	// Step 1: a consistent database snapshot, taken *before* walking storage.
-	//
-	// The order is load-bearing. Snapshotting the database first means the walk
-	// may pick up files uploaded after the snapshot: those become blobs no row
-	// references, which is harmless. The reverse order would produce a database
-	// referencing files the walk never saw — a document whose PDF is missing.
+	// Step 1: a consistent database snapshot, taken before walking storage. The
+	// order is load-bearing: the walk may then pick up files uploaded after the
+	// snapshot, which become blobs no row references, and that is harmless. The
+	// reverse order would produce a database referencing files the walk never saw.
 	if snap != nil {
 		if err := snap.SnapshotDatabases(stage); err != nil {
 			return fmt.Errorf("vault: snapshot databases: %w", err)
 		}
 	} else if prev.hasDatabases() {
-		// No snapshotter, but the generation we are about to replace had
-		// databases in it. Committing here would write a manifest listing the
-		// documents and none of the metadata, and the very next unlock would
-		// restore an archive with no database at all.
+		// No snapshotter, but the generation about to be replaced had databases in it.
+		// Committing would write a manifest listing the documents and none of the
+		// metadata, and the next unlock would restore an archive with no database.
 		//
-		// This is reachable without anything going wrong. The snapshotter is
-		// installed from OnBootstrap, and PocketBase skips bootstrap entirely
-		// for `--help`, `--version` and any unknown command — while OnTerminate
-		// still fires for all of them, which is what calls Finalize. The shrink
-		// guard does not catch it either: dropping two database entries out of
-		// hundreds of files is nowhere near halving the archive.
+		// Reachable without anything going wrong: the snapshotter is installed from
+		// OnBootstrap, which PocketBase skips for `--help`, `--version` and unknown
+		// commands, while OnTerminate still fires and calls Finalize. The shrink guard
+		// does not catch it either, since two entries out of hundreds is nowhere near
+		// half the archive.
 		return fmt.Errorf(
 			"vault: refusing to flush generation %d without a database snapshot; the previous generation has one, "+
 				"so committing would leave the archive with documents and no metadata. This flush is running in a "+
@@ -103,8 +97,8 @@ func (v *Vault) flush(reason string, fail failPoint) error {
 
 	prevIdx := prev.index()
 	// Anything whose mtime is at or after the moment the previous generation was
-	// captured is "racily clean" and must be re-hashed regardless of what the
-	// index says (see reuseSafe below).
+	// captured is "racily clean" and must be re-hashed whatever the index says;
+	// see reuseSafe.
 	var raceFloor int64
 	if prev != nil {
 		raceFloor = prev.Created
@@ -117,9 +111,9 @@ func (v *Vault) flush(reason string, fail failPoint) error {
 		return fmt.Errorf(errInjectedFailPoint, fail)
 	}
 
-	// Step 2: the shrink guard. A flush that would drop most of the archive is
-	// far more likely to be a bug — an empty working directory, a failed
-	// snapshot, a mount that vanished — than a genuine mass deletion.
+	// Step 2: the shrink guard. A flush dropping most of the archive is far more
+	// likely a bug (an empty working directory, a failed snapshot, a vanished
+	// mount) than a genuine mass deletion.
 	if prev != nil && !v.opts.AllowShrink {
 		if before, after := len(prev.Entries), len(entries); before > 0 && after*2 < before {
 			return fmt.Errorf(
@@ -144,8 +138,8 @@ func (v *Vault) flush(reason string, fail failPoint) error {
 		return fmt.Errorf(errInjectedFailPoint, fail)
 	}
 
-	// Step 3: CURRENT advances last. Until this line lands, the previous
-	// generation is still the committed one.
+	// Step 3: CURRENT advances last. Until this line lands, the previous generation
+	// is still the committed one.
 	if fail == failBeforeCurrent {
 		return fmt.Errorf(errInjectedFailPoint, fail)
 	}
@@ -164,8 +158,8 @@ func (v *Vault) flush(reason string, fail failPoint) error {
 
 	collected, gcErr := v.collectGarbage()
 	if gcErr != nil {
-		// A failed GC leaves dead blobs on disk. That wastes space but cannot
-		// lose data, so it must not fail the flush that already committed.
+		// A failed GC wastes space but cannot lose data, so it must not fail a flush
+		// that already committed.
 		v.opts.Log("vault: generation %d committed but garbage collection failed: %v", gen, gcErr)
 	}
 
@@ -174,8 +168,8 @@ func (v *Vault) flush(reason string, fail failPoint) error {
 	return nil
 }
 
-// collect builds the entry list, sealing files that changed and reusing blob
-// addresses for those that did not.
+// collect seals files that changed and reuses blob addresses for those that
+// did not.
 func (v *Vault) collect(stage string, store *blobStore, prevIdx map[string]Entry, raceFloor int64, fail failPoint) ([]Entry, int, int, error) {
 	var (
 		entries []Entry
@@ -184,8 +178,8 @@ func (v *Vault) collect(stage string, store *blobStore, prevIdx map[string]Entry
 	)
 
 	add := func(root, rel string, info os.FileInfo) error {
-		// The unchanged-file fast path, which is what keeps a steady-state flush
-		// proportional to new data rather than to the whole archive.
+		// The unchanged-file fast path, which keeps a steady-state flush proportional
+		// to new data rather than to the whole archive.
 		if e, ok := prevIdx[rel]; ok && reuseSafe(e, info, raceFloor) {
 			if id, err := e.blobID(); err == nil && store.has(id) {
 				entries = append(entries, e)
@@ -270,29 +264,22 @@ func (v *Vault) collect(stage string, store *blobStore, prevIdx map[string]Entry
 }
 
 // mtimeGranularityGuard is how far back from a capture an mtime must be before
-// the unchanged-file cache will trust it.
-//
-// Filesystem timestamp granularity varies wildly — this kernel updates mtime on
-// a ~4ms tick, ext3 and several network filesystems only manage one second — and
-// the guard has to exceed whatever the vault is actually running on. Two seconds
-// covers every case in practice. The cost is re-hashing files touched in the
-// couple of seconds before a flush, which is a handful of recent uploads sitting
-// in RAM, and is bounded regardless of archive size.
+// the unchanged-file cache will trust it. Filesystem timestamp granularity
+// varies wildly (a ~4ms tick here, one second on ext3 and several network
+// filesystems) and the guard has to exceed whatever the vault runs on. The cost
+// is re-hashing files touched in the last couple of seconds, bounded regardless
+// of archive size.
 const mtimeGranularityGuard = 2 * int64(time.Second)
 
-// reuseSafe reports whether a file can be assumed unchanged since the previous
-// generation.
+// reuseSafe cannot go on size and mtime alone, and the failure mode is silent
+// data loss rather than an error: two writes of the same length landing inside
+// one filesystem timestamp tick are indistinguishable, so the vault would keep
+// persisting the stale blob. This is the "racily clean" hazard git has in its
+// index, and it reproduces in milliseconds on an ordinary rewrite.
 //
-// Size and mtime alone are not enough, and the failure mode is silent data loss
-// rather than an error: two writes of the same length landing inside one
-// filesystem timestamp tick are indistinguishable, so the vault would go on
-// persisting the stale blob while the working copy said otherwise. This is the
-// "racily clean" hazard git has in its index, and it is not hypothetical — it
-// reproduces in milliseconds on an ordinary rewrite.
-//
-// The fix is to trust an entry only when its mtime is comfortably older than the
-// moment the previous generation was captured. Anything more recent is re-read
-// and re-hashed, which for a memory-backed working directory costs no disk I/O.
+// So an entry is trusted only when its mtime is comfortably older than the
+// moment the previous generation was captured. Anything more recent is
+// re-hashed, which costs no disk I/O in a memory-backed working directory.
 func reuseSafe(e Entry, info os.FileInfo, raceFloor int64) bool {
 	mtime := info.ModTime().UnixNano()
 	if e.Size != info.Size() || e.MTime != mtime {
@@ -301,7 +288,6 @@ func reuseSafe(e Entry, info os.FileInfo, raceFloor int64) bool {
 	return raceFloor > 0 && mtime+mtimeGranularityGuard < raceFloor
 }
 
-// collectGarbage prunes old generations and deletes unreferenced blobs.
 func (v *Vault) collectGarbage() (int, error) {
 	keep, err := pruneGenerations(v.opts.Dir, v.opts.KeepGenerations)
 	if err != nil {

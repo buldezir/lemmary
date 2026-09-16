@@ -30,10 +30,8 @@ func TestSetMaxPartBytes(t *testing.T) {
 	}
 }
 
-// Wiring calls this on every boot, including boots that configure nothing, so it
-// has to be able to raise the cap back to the default rather than only lower it.
-// Without that the e2e harness -- which boots a whole app repeatedly in one test
-// binary -- would leak the smallest cap any earlier boot set into every later one.
+// Wiring calls this on every boot, so it has to raise the cap back to the
+// default rather than only lower it; see SetMaxPartBytes.
 func TestSetMaxPartBytesIsNotOneWay(t *testing.T) {
 	original := maxPartBytes
 	t.Cleanup(func() { maxPartBytes = original })

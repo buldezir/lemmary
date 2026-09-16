@@ -2,8 +2,15 @@ import { type DragEvent, type SubmitEvent, useCallback, useRef, useState } from 
 import { Link, useNavigate } from '@tanstack/react-router'
 import { pb } from '../lib/pb'
 import { ensureAuth } from '../lib/auth'
-import { parseDuplicateOfId } from '../lib/api/documents'
-import { limitFromError, type LimitName } from '../lib/api/limits'
+import {
+  MAX_FILE_BYTES,
+  PROCESSING_WARN_BYTES,
+  fileTooLargeMessage,
+  largeFileWarning,
+  parseDuplicateOfId,
+  uploadErrorMessage,
+} from '../lib/api/documents'
+import { formatBytes, limitFromError, type LimitName } from '../lib/api/limits'
 import { documentsLanding } from '../lib/reviewPolicy'
 import {
   appendNew,
@@ -15,9 +22,8 @@ import {
 } from '../lib/fileDrop'
 import { Button } from '../components/ui'
 
-// The documents.file allowlist (see the migrations), as the one thing the three
-// forms below are derived from. Mirrors `storable` in
-// backend/internal/zipimport; the server decides by sniffing content, so this is
+// The documents.file allowlist (see the migrations), mirroring `storable` in
+// backend/internal/zipimport. The server decides by sniffing content, so this is
 // what to offer the file picker, not what the collection will ultimately take.
 const ACCEPTED: Record<string, string> = {
   '.pdf': 'application/pdf',
@@ -47,19 +53,6 @@ function isAcceptedFile(file: File) {
   return ACCEPTED_MIME_TYPES.has(file.type)
 }
 
-function uploadErrorMessage(err: unknown): string {
-  if (err && typeof err === 'object') {
-    const withResponse = err as {
-      message?: string
-      response?: { message?: string }
-    }
-    if (withResponse.response?.message) return withResponse.response.message
-    if (typeof withResponse.message === 'string' && withResponse.message) return withResponse.message
-  }
-  if (err instanceof Error) return err.message
-  return 'Upload failed'
-}
-
 function duplicateIdFromError(err: unknown, message: string): string | null {
   if (err && typeof err === 'object') {
     const data = (err as { response?: { data?: { duplicate_of?: string } } }).response?.data
@@ -70,43 +63,31 @@ function duplicateIdFromError(err: unknown, message: string): string | null {
   return parseDuplicateOfId(message)
 }
 
-/**
- * The limits that bound the whole instance, as opposed to one upload. Hitting
- * one of these means no further file can succeed either.
- */
+/** Hitting one of these means no further file can succeed either. */
 const INSTANCE_WIDE_LIMITS = new Set<LimitName>([
   'documents',
   'document_pages',
   'storage_bytes',
 ])
 
-// Files chosen but not yet sent, kept outside the component: switching to
-// another upload tab unmounts this page (#47) and a File cannot be serialised
-// into the router or into storage, so the only place it survives is a module
-// variable. It holds what has not been submitted -- an upload empties it on the
-// way in -- so a session never inherits a list somebody else already sent.
+// Kept outside the component: switching upload tabs unmounts this page (#47)
+// and a File cannot be serialised into the router or into storage, so a module
+// variable is the only place it survives.
 let stagedFiles: File[] = []
 
 // Same reason meCache is dropped in lib/auth: a module outlives the app tree,
-// and the next person to sign in on this browser must not find the last one's
-// files staged. Only on the way out -- this also fires when a live token is
-// refreshed, which must not empty the list under someone mid-selection.
+// and the next person to sign in must not find the last one's files staged.
+// Only on the way out, since this also fires when a live token is refreshed.
 pb.authStore.onChange(() => {
   if (!pb.authStore.isValid) stagedFiles = []
 })
-
-function formatBytes(size: number) {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`
-}
 
 export function UploadFilesPage() {
   const navigate = useNavigate()
   const inputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const [files, setStagedFiles] = useState<File[]>(stagedFiles)
-  // A zip is not an unsupported file, it is the wrong page -- so it gets a link
+  // A zip is not an unsupported file, it is the wrong page, so it gets a link
   // rather than the "use PDF, JPEG, ..." message.
   const [zipRejected, setZipRejected] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -120,9 +101,7 @@ export function UploadFilesPage() {
 
   // The module is the source of truth and is written first: React discards a
   // state update aimed at an unmounted component, and a folder walk can finish
-  // after the tab it was dropped on has gone. Functional updates still see the
-  // latest list rather than a stale render, which is what two overlapping drops
-  // need.
+  // after the tab it was dropped on has gone.
   const setFiles = useCallback((next: File[] | ((current: File[]) => File[])) => {
     stagedFiles = typeof next === 'function' ? next(stagedFiles) : next
     setStagedFiles(stagedFiles)
@@ -151,10 +130,9 @@ export function UploadFilesPage() {
       file.webkitRelativePath ? withFolderName(file, file.webkitRelativePath) : file,
     )
 
-    // Appending, not replacing: a folder and then a stray file is one upload as
-    // far as the person doing it is concerned. The dedupe happens inside the
-    // updater rather than against a captured list, because walking a folder is
-    // asynchronous and two drops can land before either has re-rendered.
+    // Appending, not replacing: a folder and then a stray file is one upload.
+    // The dedupe happens inside the updater rather than against a captured list,
+    // because two drops can land before either has re-rendered.
     setFiles((current) => appendNew(current, named))
 
     setFileErrors([])
@@ -202,8 +180,8 @@ export function UploadFilesPage() {
   function onDrop(event: DragEvent<HTMLLabelElement>) {
     event.preventDefault()
     setDragging(false)
-    // Folders only exist through the entry API, and it has to be read before
-    // this handler returns -- filesFromDataTransfer does that part first.
+    // Folders only exist through the entry API, which has to be read before this
+    // handler returns; filesFromDataTransfer does that part first.
     setScanning(true)
     void filesFromDataTransfer(event.dataTransfer)
       .then(selectFiles)
@@ -233,13 +211,17 @@ export function UploadFilesPage() {
       const failures: FileUploadError[] = []
       const failedFiles: File[] = []
       // Set when an instance allowance ran out and the loop stopped early, so
-      // the summary can say files were not attempted rather than implying they
-      // were tried and failed.
+      // the summary can say files were not attempted rather than failed.
       let stoppedAt = -1
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
         setUploadIndex(i + 1)
+        if (file.size > MAX_FILE_BYTES) {
+          failures.push({ name: file.name, message: fileTooLargeMessage(file.size), duplicateOfId: null })
+          failedFiles.push(file)
+          continue
+        }
         try {
           const formData = new FormData()
           formData.append('file', file)
@@ -248,7 +230,7 @@ export function UploadFilesPage() {
           const record = await pb.collection('documents').create(formData)
           uploadedIds.push(record.id)
         } catch (err) {
-          const message = uploadErrorMessage(err)
+          const message = uploadErrorMessage(err, file.size)
           failures.push({
             name: file.name,
             message,
@@ -256,11 +238,9 @@ export function UploadFilesPage() {
           })
           failedFiles.push(file)
 
-          // An instance-wide allowance ran out, so every remaining file would
-          // be refused for the same reason. Stop and keep them staged rather
-          // than printing the same rejection once per file. A per-file limit
-          // (this one is too big) says nothing about the next file, so those
-          // keep going.
+          // An instance-wide allowance ran out, so every remaining file would be
+          // refused for the same reason: stop and keep them staged. A per-file
+          // limit says nothing about the next file, so those keep going.
           const limit = limitFromError(err)
           if (limit && INSTANCE_WIDE_LIMITS.has(limit)) {
             failedFiles.push(...files.slice(i + 1))
@@ -345,7 +325,7 @@ export function UploadFilesPage() {
         </label>
 
         {/* An input cannot offer files and folders at once, so the folder
-            picker is its own control. Dropping needs no such split. */}
+            picker is its own control. */}
         <div className="-mt-2">
           <input
             ref={folderInputRef}
@@ -387,6 +367,9 @@ export function UploadFilesPage() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-ink">{file.name}</p>
                     <p className="text-xs text-ink-faint">{formatBytes(file.size)}</p>
+                    {file.size > PROCESSING_WARN_BYTES && file.size <= MAX_FILE_BYTES && (
+                      <p className="text-xs text-oxblood">{largeFileWarning}</p>
+                    )}
                     {fileError && (
                       <div className="mt-1 flex flex-col gap-1 text-sm text-madder">
                         <p>{fileError.message}</p>

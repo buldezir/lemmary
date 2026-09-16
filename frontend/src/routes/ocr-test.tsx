@@ -54,7 +54,6 @@ export function OCRTestPage() {
   const providersState = useAsync(async () => {
     await ensureAuth()
     const next = await listOCRProviders()
-    // Preselect the first provider once the list arrives.
     setProvider((current) => current || next[0]?.id || '')
     return next
   }, [])
@@ -70,7 +69,6 @@ export function OCRTestPage() {
       return [] as CatalogModel[]
     }
     const next = await listProviderModels(provider, 'ocr')
-    // Preselect the first catalog model once the list arrives.
     setModel((current) => current || next.models[0]?.id || '')
     return next.models
   }, [provider, hideModel])

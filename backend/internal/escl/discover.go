@@ -19,27 +19,18 @@ import (
 
 // Two ways to find a scanner, because neither works everywhere.
 //
-// mDNS is the protocol's own answer: eSCL devices advertise _uscan._tcp, and a
-// browse gets the model name, the port and the resource path from the device
-// itself. It only works if multicast reaches the app -- which it does not
-// through Docker's default bridge network, where nothing is listening on
-// 224.0.0.251. See docs/scanning.md.
-//
-// The sweep is what works there: an ordinary unicast GET of
-// /eSCL/ScannerCapabilities on every address of one /24, which routes out of a
-// bridge network like any other request. It is also the only way to find a
-// scanner on a subnet mDNS does not cross.
-//
-// So both run, concurrently, and the results are merged.
+// mDNS is the protocol's own answer, but multicast does not reach the app
+// through Docker's default bridge network (see docs/scanning.md). The sweep is
+// an ordinary unicast GET of /eSCL/ScannerCapabilities over a /24, which routes
+// out of a bridge network like any other request, and is the only way to find a
+// scanner on a subnet mDNS does not cross. Both run, and the results are merged.
 const (
-	// probeTimeout is how long one address gets to answer. A scanner on the
-	// same LAN answers in single-digit milliseconds; this is generous, and it
-	// is what makes a /24 finish in about two seconds.
+	// probeTimeout is how long one address gets to answer. Generous for a LAN
+	// scanner, and what makes a /24 finish in about two seconds.
 	probeTimeout = 600 * time.Millisecond
-	// probeWorkers is how many addresses are in flight at once.
 	probeWorkers = 64
-	// browseTimeout is how long the mDNS query listens. Devices answer in well
-	// under a second; the rest is for a slow or lossy wireless link.
+	// browseTimeout is how long the mDNS query listens; the slack is for a slow
+	// or lossy wireless link.
 	browseTimeout = 2 * time.Second
 	// minPrefixBits bounds one range at 1024 addresses, so a mistyped CIDR
 	// costs a couple of seconds rather than scanning a corporate network.
@@ -49,18 +40,12 @@ const (
 	maxSweepAddresses = 1024
 )
 
-// defaultSweep is where a home network almost always is.
-//
-// The app normally runs in a container, and the address the browser reached it
-// from is then the bridge gateway (172.17.0.1) rather than the user's own --
-// a range holding nothing but other containers. Sweeping these two as well
-// means the button finds the scanner on an ordinary home LAN without anybody
-// having to know what a CIDR is.
+// defaultSweep is where a home network almost always is. In a container the
+// address the browser reached us from is the bridge gateway, a range holding
+// nothing but other containers, so these two are swept as well.
 var defaultSweep = []string{"192.168.1.0/24", "192.168.0.0/24"}
 
-// Scanner is one device that answered.
 type Scanner struct {
-	// Model is what the device calls itself, for the picker.
 	Model string `json:"model"`
 	// Host is the address to show, without the eSCL path.
 	Host string `json:"host"`
@@ -73,14 +58,12 @@ type Scanner struct {
 
 var makeAndModel = regexp.MustCompile(`<pwg:MakeAndModel>([^<]+)</pwg:MakeAndModel>`)
 
-// Discover looks for scanners, by mDNS and by sweeping cidr, and returns what
-// either method found. cidr may name several ranges, separated by commas; an
-// empty one skips the sweep.
+// Discover looks for scanners by mDNS and by sweeping cidr, which may name
+// several ranges separated by commas; an empty one skips the sweep.
 //
-// A CIDR that is not private, or is bigger than a /22, is refused, as is a list
-// adding up to more than maxSweepAddresses: this makes the server issue
-// requests on the caller's behalf, and a typo must not turn it into a port
-// scanner.
+// A range that is not private, is bigger than a /22, or adds up past
+// maxSweepAddresses is refused: this makes the server issue requests on the
+// caller's behalf, and a typo must not turn it into a port scanner.
 func Discover(ctx context.Context, cidr string) ([]Scanner, error) {
 	prefixes, err := parseSweepPrefixes(cidr)
 	if err != nil {
@@ -133,13 +116,11 @@ func Discover(ctx context.Context, cidr string) ([]Scanner, error) {
 }
 
 // DefaultCIDR is the ranges to offer when the user has not named one: the /24
-// the browser reached us from, which is right for a direct install or host
-// networking, followed by the two a home LAN almost always uses.
+// the browser reached us from, then the two a home LAN almost always uses.
 //
-// The browser's own /24 is dropped when its address is not a private IPv4 --
-// behind a reverse proxy it is the proxy's, and PocketBase's TrustedProxy is
-// not configured here -- leaving the two defaults, which is still a better
-// guess than nothing. The field stays editable either way.
+// The browser's own /24 is dropped when its address is not a private IPv4, since
+// behind a reverse proxy it is the proxy's and PocketBase's TrustedProxy is not
+// configured here. The field stays editable either way.
 func DefaultCIDR(clientIP string) string {
 	ranges := defaultSweep
 	if addr, err := netip.ParseAddr(strings.TrimSpace(clientIP)); err == nil && addr.Is4() && addr.IsPrivate() {
@@ -191,9 +172,8 @@ func parseSweepPrefix(cidr string) (netip.Prefix, error) {
 	return prefix, nil
 }
 
-// sweep probes every usable address of every prefix for an eSCL endpoint. One
-// worker pool covers the lot, so two ranges take twice as long rather than
-// twice as many sockets.
+// sweep probes every usable address of every prefix. One worker pool covers the
+// lot, so two ranges take twice as long rather than twice as many sockets.
 func sweep(ctx context.Context, prefixes []netip.Prefix) []Scanner {
 	client := newClient()
 
@@ -243,8 +223,6 @@ func sweep(ctx context.Context, prefixes []netip.Prefix) []Scanner {
 	return found
 }
 
-// probe asks one address for its scanner capabilities, returning the model name
-// if it is an eSCL device.
 func probe(ctx context.Context, client *http.Client, host string) (string, bool) {
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
@@ -271,8 +249,6 @@ func probe(ctx context.Context, client *http.Client, host string) (string, bool)
 	return modelFrom(string(body))
 }
 
-// modelFrom pulls the model name out of a ScannerCapabilities document, and
-// reports whether the document is one at all.
 func modelFrom(body string) (string, bool) {
 	if !strings.Contains(body, "ScannerCapabilities") && !strings.Contains(body, "MakeAndModel") {
 		return "", false
@@ -283,7 +259,6 @@ func modelFrom(body string) (string, bool) {
 	return "eSCL scanner", true
 }
 
-// browse asks the local link for eSCL services over mDNS.
 func browse(ctx context.Context) []Scanner {
 	var mu sync.Mutex
 	var found []Scanner
@@ -305,9 +280,9 @@ func browse(ctx context.Context) []Scanner {
 			}
 		}()
 
-		// Errors are not reported: no multicast route is the normal case inside
-		// a bridge-networked container, and it is not something the user asked
-		// about or can act on from here. The sweep is the answer there.
+		// No multicast route is the normal case inside a bridge-networked
+		// container, and not something the user can act on from here. The sweep
+		// is the answer there.
 		//nolint:errcheck
 		mdns.QueryContext(ctx, &mdns.QueryParam{
 			Service:     service,

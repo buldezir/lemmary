@@ -17,12 +17,12 @@ type providerResponse struct {
 	SDK       string `json:"sdk"`
 	Alias     string `json:"alias"`
 	BaseURL   string `json:"base_url"`
+	Catalog   string `json:"catalog"`
 	APIKeySet bool   `json:"api_key_set"`
 
 	// SignedIn is api_key_set's counterpart for the SDKs that sign in. The
-	// token itself never leaves the server, exactly as the key never does;
-	// the account and plan are here so Settings can say whose subscription is
-	// about to be spent without decoding a JWT in the browser.
+	// token never leaves the server; the account and plan are here so Settings
+	// can say whose subscription is spent without decoding a JWT in the browser.
 	SignedIn bool   `json:"signed_in"`
 	Account  string `json:"account,omitempty"`
 	Plan     string `json:"plan,omitempty"`
@@ -33,17 +33,28 @@ type providerWriteRequest struct {
 	Alias   *string `json:"alias"`
 	BaseURL *string `json:"base_url"`
 	APIKey  *string `json:"api_key"`
+	Catalog *string `json:"catalog"`
 }
 
-// invalidSDKMessage names every SDK this instance accepts.
-//
-// Built from the list rather than written out: this sentence was a literal in
-// two handlers, and both still said "openai, openrouter, google_vision, or
-// mistral" long enough for a third and fourth SDK to be a real prospect.
-//
-// It takes the runtime because one SDK is conditional. Naming chatgpt on an
-// instance that will refuse it would send an admin looking for a typo in a
-// value that was never going to work.
+// catalogOrDefault validates the pi.dev catalogue an admin picked, falling back
+// to the one the SDK implies. Blank is a real answer -- it means no model
+// window is known -- but only when it was sent on purpose.
+func catalogOrDefault(requested *string, sdk string) (string, bool) {
+	if requested == nil {
+		return aiprovider.DefaultCatalog(sdk), true
+	}
+	catalog := strings.TrimSpace(*requested)
+	return catalog, aiprovider.ValidCatalog(catalog)
+}
+
+// The catalogue list is long enough that naming all of it would bury the point;
+// it is a dropdown in the UI, so a bad value means a client sent something the
+// form cannot produce.
+const invalidCatalogMessage = "catalog must be one of the known model catalogues, or empty."
+
+// invalidSDKMessage is built from the list rather than written out, and takes
+// the runtime because one SDK is conditional: naming chatgpt on an instance
+// that will refuse it sends an admin hunting a typo in a value that cannot work.
 func invalidSDKMessage(rt *config.Runtime) string {
 	return "sdk must be one of " + strings.Join(availableSDKs(rt), ", ") + "."
 }
@@ -65,6 +76,7 @@ func providerJSON(p aiprovider.Provider) providerResponse {
 		SDK:       p.SDK,
 		Alias:     p.Alias,
 		BaseURL:   p.BaseURL,
+		Catalog:   p.Catalog,
 		APIKeySet: p.APIKey != "",
 		SignedIn:  p.OAuth != "",
 	}
@@ -151,11 +163,15 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 			baseURL = strings.TrimSpace(*req.BaseURL)
 		}
 		// A local OCR engine carries an address where a hosted one carries a
-		// credential, and there is no public endpoint to fall back on, so the
-		// requirement moves rather than disappearing. NormalizeBaseURL fills in
-		// the compose default, so this only fires if one was blanked on purpose.
+		// credential, with no public endpoint to fall back on. NormalizeBaseURL
+		// fills in the compose default, so this only fires if one was blanked.
 		if aiprovider.RequiresBaseURL(sdk) && aiprovider.NormalizeBaseURL(sdk, baseURL) == "" {
 			return writeError(e, http.StatusBadRequest, "base_url is required for a local OCR provider.")
+		}
+
+		catalog, ok := catalogOrDefault(req.Catalog, sdk)
+		if !ok {
+			return writeError(e, http.StatusBadRequest, invalidCatalogMessage)
 		}
 
 		collection, err := aiprovider.EnsureCollection(app)
@@ -167,6 +183,7 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 		record.Set("alias", alias)
 		record.Set("base_url", aiprovider.NormalizeBaseURL(sdk, baseURL))
 		record.Set("api_key", apiKey)
+		record.Set("catalog", catalog)
 		if err := app.Save(record); err != nil {
 			return writeError(e, http.StatusBadRequest, "Failed to create provider: "+err.Error())
 		}
@@ -175,31 +192,26 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 	}
 }
 
-// llmBindingFields are the settings bindings that only an LLM SDK can serve.
-// OCR is deliberately absent: it is the one binding google_vision exists for.
-// So is the embedding binding, which has its own predicate below -- the local
-// SDK embeds without chatting, so the two questions have different answers.
-//
-// search_helper_provider_id is here because applySettingsPatch already refuses
-// a non-LLM provider on write; without it there, a bound helper provider could
-// be switched to google_vision through this handler and leave Deep Search's
-// bulk reading pointed at an endpoint that cannot serve it.
+// llmBindingFields are the bindings only an LLM SDK can serve. OCR is absent:
+// it is the binding google_vision exists for. So is embedding, which the local
+// SDK serves without chatting. search_helper_provider_id is here so a bound
+// helper cannot be switched to an SDK that cannot do Deep Search's bulk reads.
 var llmBindingFields = []string{
 	"extract_provider_id", "chat_provider_id", "search_provider_id", "search_helper_provider_id",
 }
 
-// embeddingBindingField is checked against CanEmbed rather than IsLLM: the
-// embedding client speaks the OpenAI-shaped /embeddings API, which
-// google_vision has no equivalent of, so switching a bound provider to it would
-// leave Deep Search's dense half calling an endpoint that does not exist and
+// embeddingBindingField is checked against CanEmbed rather than IsLLM: an SDK
+// with no /embeddings endpoint would leave the dense half calling nothing, and
 // nothing would say so until a search came back thin.
 const embeddingBindingField = "embedding_provider_id"
 
 // ocrBindingField is checked against CanOCR, which admits everything but the
-// local SDK. It needed no guard while every SDK but google_vision could read a
-// document and google_vision was the one this binding existed for; a local
-// endpoint is the first SDK that can be bound here and do nothing.
+// local SDK, the first one that can be bound here and do nothing.
 const ocrBindingField = "ocr_provider_id"
+
+// webSearchBindingField is checked against CanWebSearch, an allow-list: no SDK
+// that chats or reads a document also searches the web.
+const webSearchBindingField = "websearch_provider_id"
 
 func boundTo(settings *core.Record, providerID string, fields ...string) bool {
 	if settings == nil || strings.TrimSpace(providerID) == "" {
@@ -238,10 +250,9 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 					return err
 				}
 			}
-			if !aiprovider.IsLLM(sdk) || !aiprovider.CanEmbed(sdk) || !aiprovider.CanOCR(sdk) {
-				// A failed settings lookup must not skip these guards:
-				// proceeding would let a bound provider become an SDK that
-				// cannot serve what it is bound to.
+			if !aiprovider.IsLLM(sdk) || !aiprovider.CanEmbed(sdk) || !aiprovider.CanOCR(sdk) || !aiprovider.CanWebSearch(sdk) {
+				// A failed settings lookup must not skip these guards: a bound
+				// provider could become an SDK that cannot serve the binding.
 				settings, err := config.FindSettingsRecord(app, rt.Env())
 				if err != nil {
 					app.Logger().Error("provider patch: settings lookup failed", "error", err)
@@ -255,6 +266,9 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 				}
 				if !aiprovider.CanOCR(sdk) && boundTo(settings, record.Id, ocrBindingField) {
 					return writeError(e, http.StatusConflict, "Provider is bound to OCR and must stay an SDK that can read a document ("+strings.Join(aiprovider.OCRSDKs(), ", ")+").")
+				}
+				if !aiprovider.CanWebSearch(sdk) && boundTo(settings, record.Id, webSearchBindingField) {
+					return writeError(e, http.StatusConflict, "Provider is bound to web search and must stay an SDK that can search the web ("+strings.Join(aiprovider.WebSearchSDKs(), ", ")+").")
 				}
 			}
 			record.Set("sdk", sdk)
@@ -275,6 +289,17 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 		if req.APIKey != nil && strings.TrimSpace(*req.APIKey) != "" {
 			record.Set("api_key", strings.TrimSpace(*req.APIKey))
 		}
+		// An explicit choice wins; otherwise an SDK change only fills a row that
+		// never had a catalogue. Re-defaulting a row that has one would undo a
+		// deliberate pick -- the form sends the new default itself when the
+		// admin switches SDK and had not overridden it.
+		if req.Catalog != nil || (req.SDK != nil && record.GetString("catalog") == "") {
+			catalog, ok := catalogOrDefault(req.Catalog, sdk)
+			if !ok {
+				return writeError(e, http.StatusBadRequest, invalidCatalogMessage)
+			}
+			record.Set("catalog", catalog)
+		}
 		if err := app.Save(record); err != nil {
 			return writeError(e, http.StatusBadRequest, "Failed to update provider: "+err.Error())
 		}
@@ -293,15 +318,14 @@ func handleDeleteProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 			return writeError(e, http.StatusNotFound, "Provider not found.")
 		}
 		// A failed settings lookup must not skip the in-use check: deleting a
-		// provider still bound to OCR/extraction/chat/search/embeddings leaves
-		// dangling *_provider_id values in settings.
+		// bound provider leaves dangling *_provider_id values in settings.
 		settings, err := config.FindSettingsRecord(app, rt.Env())
 		if err != nil {
 			app.Logger().Error("provider delete: settings lookup failed", "error", err)
 			return writeError(e, http.StatusInternalServerError, "Failed to verify provider usage.")
 		}
 		if aiprovider.ReferencedBySettings(settings, id) {
-			return writeError(e, http.StatusConflict, "Provider is assigned to OCR, extraction, chat, search, or embeddings. Unassign it first.")
+			return writeError(e, http.StatusConflict, "Provider is assigned to OCR, extraction, chat, search, embeddings, or web search. Unassign it first.")
 		}
 		if err := app.Delete(record); err != nil {
 			return writeError(e, http.StatusInternalServerError, "Failed to delete provider.")

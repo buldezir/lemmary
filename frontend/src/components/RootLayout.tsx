@@ -27,9 +27,8 @@ const iconButtonClass =
 const iconButtonActiveClass = 'text-oxblood'
 const menuItemClass =
   'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm font-medium text-ink-muted transition-colors hover:bg-wash hover:text-oxblood data-[status=active]:text-oxblood'
-// The narrow layout has no room for a bar, so the whole link set stacks: each
-// row is a full-width tap target with a hairline under it, the way a table of
-// contents reads, rather than a 12px label crowded against its neighbours.
+// The narrow layout has no room for a bar, so the whole link set stacks into
+// full-width tap targets.
 const panelItemClass =
   'flex w-full items-center gap-2 border-t border-line/70 px-0.5 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft transition-colors first:border-t-0 hover:text-oxblood focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood data-[status=active]:text-oxblood'
 
@@ -130,9 +129,8 @@ function AdminIcon() {
   )
 }
 
-// The shield stays decorative: these items only render for admins, so spelling
-// "admin only" into the accessible name would add nothing but ambiguity between
-// the three of them.
+// The shield stays decorative: these items only render for admins, so "admin
+// only" in the accessible name would add nothing.
 function AdminMenuLabel({ children }: { children: string }) {
   return (
     <>
@@ -149,8 +147,8 @@ function navBadge(item: NavItem, badges: NavBadges): number | null | undefined {
 }
 
 /**
- * The count beside a nav label. The digits are hidden from assistive tech and
- * replaced with a sentence, because "Inbox 3" is not a useful accessible name.
+ * The digits are hidden from assistive tech and replaced with a sentence,
+ * because "Inbox 3" is not a useful accessible name.
  */
 function NavBadge({ count, description }: { count: number; description: string }) {
   return (
@@ -285,12 +283,8 @@ function MoreNavMenu({ items }: { items: NavItem[] }) {
 }
 
 /**
- * The header, in two layouts.
- *
- * A phone cannot hold nine links, a user name and a bar of icons on one row --
- * they used to run straight off the side of the screen -- so below `md` the row
- * keeps only the wordmark and a toggle, and everything else stacks into a panel
- * underneath it. Both layouts render from the same item list.
+ * The header, in two layouts: below `md` the row keeps only the wordmark and a
+ * toggle and everything else stacks into a panel. Both render from one item list.
  */
 function AppHeader({
   appName,
@@ -309,8 +303,6 @@ function AppHeader({
   const primaryItems = primaryNavItems(reviewRequired)
   const secondaryItems = visibleNavItems(secondaryNavItems(pbAdminUrl), admin)
   const panelItems = [...primaryItems, ...secondaryItems]
-  // Once here, for both layouts: this component renders the wide bar and the
-  // narrow panel from the same item lists.
   const badges = { inbox: useInboxCount(), activity: useActiveJobCount() }
 
   useEffect(() => {
@@ -322,7 +314,7 @@ function AppHeader({
       }
     }
 
-    // Widening the viewport hides the panel by CSS. Closing it too keeps the
+    // Widening the viewport hides the panel by CSS; closing it too keeps the
     // toggle's state honest for the trip back to a narrow one.
     const wide = window.matchMedia('(min-width: 48rem)')
     function onWide(event: MediaQueryListEvent) {
@@ -430,7 +422,7 @@ type Gate =
 async function resolveGate(): Promise<Gate> {
   // Meta before the gate opens, because always_require_review decides what a
   // bare "/" means: without it the list paints every status for one frame and
-  // then narrows. getAppMeta never throws and caches its promise.
+  // then narrows.
   const [status] = await Promise.all([getSetupStatus(), getAppMeta()])
 
   if (status.needs_admin) {
@@ -478,7 +470,7 @@ export function RootLayout() {
 
   useEffect(() => {
     // The microtask keeps refreshGate's setState out of the effect's
-    // synchronous body; the gate resolves over the network anyway.
+    // synchronous body.
     let cancelled = false
     void Promise.resolve().then(() => {
       if (!cancelled) {

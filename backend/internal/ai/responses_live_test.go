@@ -22,9 +22,6 @@ import (
 // LIVE_AI_MODEL is what picks the endpoint: gpt-5.6-luna for /responses,
 // minimax-m3 for Anthropic's /messages, deepseek-v4-flash for the untranslated
 // /chat/completions. LIVE_AI_BASE_URL is optional; it defaults to the SDK's own.
-//
-// It is the only way to check the parts a fake server cannot: that the
-// translated request is one the provider actually accepts.
 func TestLiveTranslatedModel(t *testing.T) {
 	key := strings.TrimSpace(os.Getenv("LIVE_AI_KEY"))
 	sdk := strings.TrimSpace(os.Getenv("LIVE_AI_SDK"))
@@ -44,7 +41,7 @@ func TestLiveTranslatedModel(t *testing.T) {
 		agent := NewSearchAgent(sdk, key, model, base, 120*time.Second, "en,de", "en", slog.Default())
 		var read bool
 		result, err := agent.Research(ctx, ResearchRequest{
-			Messages: []ChatMessage{{Role: "user", Content: "How much did I pay for car insurance?"}},
+			Thread: []ThreadMessage{{Role: "user", Content: "How much did I pay for car insurance?"}},
 			Search: func(_ context.Context, _ SearchDocumentsArgs) ([]DocumentHit, error) {
 				return hitsFor("doc1"), nil
 			},

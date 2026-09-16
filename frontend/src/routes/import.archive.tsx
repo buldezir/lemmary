@@ -45,7 +45,6 @@ function taxonomyLabel(count: number) {
     : `${count} tags, correspondents and document types`
 }
 
-/** Entries that will become documents, i.e. everything not being skipped. */
 function importableFiles(preview: ArchivePreview) {
   return preview.files.filter((file) => !file.duplicate && !file.oversized && !file.missing)
 }
@@ -68,9 +67,8 @@ export function ImportArchivePage() {
 
   const importing = progress !== null
 
-  // A restore can be worth running with no new documents at all: the archive's
-  // tags, correspondents and document types are restored either way, and an
-  // archive can carry taxonomy that no document references.
+  // A restore can be worth running with no new documents at all: an archive can
+  // carry taxonomy that no document references.
   const taxonomyOnly =
     preview !== null &&
     mode === 'restore' &&
@@ -78,7 +76,7 @@ export function ImportArchivePage() {
     preview.taxonomy_count > 0
   const canImport = preview !== null && (preview.importable_count > 0 || taxonomyOnly)
   // Without a metadata sidecar there is nothing to restore, so those go through
-  // the normal pipeline instead -- which only older archives contain.
+  // the normal pipeline instead.
   const withoutMetadata =
     preview === null ? 0 : importableFiles(preview).filter((file) => !file.has_metadata).length
 

@@ -14,10 +14,8 @@ import { Button } from './ui'
 
 const ACCEPT_ATTR = '.zip,application/zip,application/x-zip-compressed'
 
-// The two sources run the identical stage -> preview -> confirm -> poll flow
-// against the identical endpoints; all that differs is what the user is looking
-// at while they do it. Keeping the copy here rather than in props means the
-// routes are one line each and the shapes cannot drift apart.
+// Both sources run the identical stage -> preview -> confirm -> poll flow
+// against the identical endpoints; only the copy differs.
 const COPY: Record<
   ZipImportSource,
   {

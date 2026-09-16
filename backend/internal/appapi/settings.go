@@ -22,15 +22,17 @@ type settingsResponse struct {
 	ChatModel         string `json:"chat_model"`
 	SearchProviderID  string `json:"search_provider_id"`
 	SearchModel       string `json:"search_model"`
-	// The Deep Search helper binding. Empty means the search model does the
-	// bulk per-document work itself.
+	// Empty means the search model does the bulk per-document work itself.
 	SearchHelperProviderID string `json:"search_helper_provider_id"`
 	SearchHelperModel      string `json:"search_helper_model"`
 	EmbeddingProviderID    string `json:"embedding_provider_id"`
 	EmbeddingModel         string `json:"embedding_model"`
-	// EmbeddingDims is read-only: only the provider knows how long its vectors
-	// are, and it is recorded from the first real response. An admin typing a
-	// number next to a model that disagrees would build an index that silently
+	// Empty means no web call is served: Ask AI offers no web tools at all, and
+	// research declares the schemas but refuses every call. No model: a
+	// web-search API takes none.
+	WebSearchProviderID string `json:"websearch_provider_id"`
+	// EmbeddingDims is read-only, recorded from the first real response: a
+	// number that disagreed with the model would build an index that silently
 	// drops every vector.
 	EmbeddingDims                 int     `json:"embedding_dims"`
 	OCRTimeoutSec                 int     `json:"ocr_timeout_sec"`
@@ -44,9 +46,8 @@ type settingsResponse struct {
 	NearDuplicateDetectionEnabled bool    `json:"near_duplicate_detection_enabled"`
 	NearDuplicateThreshold        float64 `json:"near_duplicate_threshold"`
 	AlwaysRequireReview           bool    `json:"always_require_review"`
-	// Branding lives in PocketBase's own settings, not in the app_settings
-	// record: the name is what passkeys, emails and backups are stamped with,
-	// and both are what /api/app/meta serves to the SPA before anyone signs in.
+	// Branding lives in PocketBase's own settings, not the app_settings record:
+	// the name is what passkeys, emails and backups are stamped with.
 	AppName string `json:"app_name"`
 	Accent  string `json:"accent"`
 }
@@ -64,6 +65,7 @@ type settingsPatchRequest struct {
 	SearchHelperModel             *string  `json:"search_helper_model"`
 	EmbeddingProviderID           *string  `json:"embedding_provider_id"`
 	EmbeddingModel                *string  `json:"embedding_model"`
+	WebSearchProviderID           *string  `json:"websearch_provider_id"`
 	OCRTimeoutSec                 *int     `json:"ocr_timeout_sec"`
 	ProcessingResultLanguage      *string  `json:"processing_result_language"`
 	DeepSearchLanguages           *string  `json:"deep_search_languages"`
@@ -95,6 +97,7 @@ func (r settingsPatchRequest) touchesManaged() bool {
 		r.SearchHelperModel != nil ||
 		r.EmbeddingProviderID != nil ||
 		r.EmbeddingModel != nil ||
+		r.WebSearchProviderID != nil ||
 		r.NearDuplicateDetectionEnabled != nil ||
 		r.NearDuplicateThreshold != nil
 }
@@ -119,17 +122,15 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 		if rt.Managed() && req.touchesManaged() {
 			return writeError(e, http.StatusForbidden, managedMessage)
 		}
-		// Checked before the record is touched: branding is saved separately
-		// from it, so a name PocketBase would reject must not leave half the
-		// patch applied.
+		// Checked before the record is touched: branding is saved separately,
+		// so a name PocketBase would reject must not half-apply the patch.
 		appName, accent, err := brandingPatch(req)
 		if err != nil {
 			return writeError(e, http.StatusBadRequest, err.Error())
 		}
 
-		// Load + patch + save in one transaction: settings is a singleton record
-		// saved whole, so two concurrent PATCHes would otherwise silently revert
-		// each other's fields.
+		// Load + patch + save in one transaction: settings is a singleton saved
+		// whole, so two concurrent PATCHes would silently revert each other.
 		var patchErr error
 		err = app.RunInTransaction(func(txApp core.App) error {
 			record, err := config.FindSettingsRecord(txApp, rt.Env())
@@ -169,11 +170,8 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 	}
 }
 
-// handleGetEmbeddingStats reports how much of the archive is embedded.
-//
-// It is a separate endpoint from the settings body because it is a scan of two
-// tables rather than a read of one record: folding it into GET /settings would
-// make every visit to the Settings page pay for it.
+// handleGetEmbeddingStats is separate from GET /settings because it scans two
+// tables, and every visit to the Settings page would otherwise pay for it.
 func handleGetEmbeddingStats(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		stats, err := loadEmbeddingStats(app, rt.Snapshot().Cfg)
@@ -185,8 +183,7 @@ func handleGetEmbeddingStats(app core.App, rt *config.Runtime) func(*core.Reques
 	}
 }
 
-// brandingPatch validates the branding half of a patch. A nil pointer back
-// means "not in this request", so the stored value is kept.
+// A nil pointer back means "not in this request", so the stored value is kept.
 func brandingPatch(req settingsPatchRequest) (appName *string, accent *string, err error) {
 	if req.AppName != nil {
 		name := strings.TrimSpace(*req.AppName)
@@ -214,8 +211,6 @@ var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 // maxExtractionRules matches the field's Max in the migration that added it.
 const maxExtractionRules = 4000
 
-// settingsResponseFor is settingsResponseFromConfig plus the branding, which
-// comes from PocketBase's settings rather than from the config record.
 func settingsResponseFor(app core.App, cfg config.Config) settingsResponse {
 	res := settingsResponseFromConfig(cfg)
 	res.AppName = resolvedAppName(app)
@@ -242,6 +237,7 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 		EmbeddingProviderID:           cfg.EmbeddingProviderID,
 		EmbeddingModel:                cfg.EmbeddingModel,
 		EmbeddingDims:                 cfg.EmbeddingDims,
+		WebSearchProviderID:           cfg.WebSearchProviderID,
 		OCRTimeoutSec:                 int(cfg.OCRTimeout.Seconds()),
 		ProcessingResultLanguage:      cfg.ProcessingResultLanguage,
 		DeepSearchLanguages:           cfg.DeepSearchLanguages,
@@ -307,9 +303,8 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	if req.SearchHelperModel != nil {
 		record.Set("search_helper_model", strings.TrimSpace(*req.SearchHelperModel))
 	}
-	// The embedding binding is read before it is written, so a change can be
-	// detected: switching model or endpoint invalidates the recorded vector
-	// length, and every stored vector along with it.
+	// Read before the write so a change can be detected: switching model or
+	// endpoint invalidates the recorded vector length and every stored vector.
 	embeddingBefore := strings.TrimSpace(record.GetString("embedding_provider_id")) + "|" +
 		strings.TrimSpace(record.GetString("embedding_model"))
 	if req.EmbeddingProviderID != nil {
@@ -321,6 +316,13 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	}
 	if req.EmbeddingModel != nil {
 		record.Set("embedding_model", strings.TrimSpace(*req.EmbeddingModel))
+	}
+	if req.WebSearchProviderID != nil {
+		id := strings.TrimSpace(*req.WebSearchProviderID)
+		if err := validateProviderID(app, id, needWebSearch); err != nil {
+			return err
+		}
+		record.Set("websearch_provider_id", id)
 	}
 	if req.OCRTimeoutSec != nil {
 		if *req.OCRTimeoutSec <= 0 {
@@ -407,19 +409,15 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 }
 
 // providerNeed is what a binding requires of the provider assigned to it.
-//
-// It replaced a bool once the local SDK arrived: "not LLM-only" and "can embed"
-// used to be the same set, and a boolean could only ever express two of the
-// three answers.
 type providerNeed int
 
 const (
-	// needOCR admits google_vision, the SDK that binding exists for, and every
-	// SDK that can send a file to a model -- but not local, which serves
-	// embeddings and has no way to read a document.
+	// needOCR admits google_vision and every SDK that can send a file to a
+	// model, but not local, which has no way to read a document.
 	needOCR providerNeed = iota
 	needLLM
 	needEmbedding
+	needWebSearch
 )
 
 func validateProviderID(app core.App, id string, need providerNeed) error {
@@ -433,15 +431,9 @@ func validateProviderID(app core.App, id string, need providerNeed) error {
 	return providerServes(*p, need)
 }
 
-// providerServes is the SDK half of the check above, split out so it can be
-// tested without a database -- the messages are the part that keeps going
-// stale.
-//
-// The three lists are derived, not written out. Spelled by hand they went stale
-// twice over: the OCR sentence still named four SDKs after docling shipped, and
-// would have gone on omitting chatgpt now that it reads documents -- so an
-// admin who believed either message would not have tried the provider that
-// works. Same reasoning as aiprovider.sdksWhere.
+// The three SDK lists are derived, not written out: spelled by hand the
+// messages went stale twice, and an admin who believed one would not have tried
+// the provider that works.
 func providerServes(p aiprovider.Provider, need providerNeed) error {
 	switch need {
 	case needLLM:
@@ -456,12 +448,15 @@ func providerServes(p aiprovider.Provider, need providerNeed) error {
 		if !aiprovider.CanOCR(p.SDK) {
 			return errInvalid("OCR requires " + oneOf(aiprovider.OCRSDKs()) + " provider")
 		}
+	case needWebSearch:
+		if !aiprovider.CanWebSearch(p.SDK) {
+			return errInvalid("web search requires " + oneOf(aiprovider.WebSearchSDKs()) + " provider")
+		}
 	}
 	return nil
 }
 
-// oneOf renders a list of SDK names as "an openai, openrouter, or mistral",
-// which is how these sentences have always read.
+// oneOf renders a list of SDK names as "an openai, openrouter, or mistral".
 func oneOf(sdks []string) string {
 	article := "a"
 	if len(sdks) > 0 && strings.ContainsRune("aeiou", rune(sdks[0][0])) {

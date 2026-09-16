@@ -16,9 +16,9 @@ import (
 //
 // The unit tests beside them assert the wire contract against a stub built from
 // the upstream schemas, which is what CI can afford: the images are several
-// gigabytes and take minutes to warm up. That leaves one thing unproven -- that
-// the schema we built the stub from is the one the container actually speaks --
-// and this is where that gets checked, by hand, against a container:
+// gigabytes. What that leaves unproven is that the schema the stub was built
+// from is the one the container actually speaks, and this is where that is
+// checked, by hand, against a container:
 //
 //	docker compose -f docker-compose.yml -f docker-compose.local-ocr.yml \
 //	  --profile docling up -d
@@ -125,10 +125,9 @@ func TestLiveDoclingRejectsWhatItCannotRead(t *testing.T) {
 }
 
 // The engine binding is an optional free-text field, not an enum, and docling
-// answers 200 for a name it does not recognise -- it falls back to its default
-// and says nothing. So this can only assert that binding one is harmless; a
-// typo there is invisible by design, which is why docs/local_ocr.md lists the
-// accepted values rather than leaving an operator to guess.
+// answers 200 for a name it does not recognise, falling back to its default. So
+// this can only assert that binding one is harmless; docs/local_ocr.md lists the
+// accepted values because a typo there is invisible by design.
 func TestLiveDoclingAcceptsABoundEngine(t *testing.T) {
 	url := liveURL(t, envDoclingURL)
 	for _, engine := range []string{"", "rapidocr"} {

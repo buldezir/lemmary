@@ -23,9 +23,8 @@ import (
 
 const (
 	// MaxExtractionCatalogNames caps how many existing tag/correspondent/
-	// document-type names are offered to the model. Producers of
-	// ExtractionCatalog should not exceed it; the prompt builder trims anything
-	// past it anyway.
+	// document-type names are offered to the model. The prompt builder trims
+	// anything past it.
 	MaxExtractionCatalogNames = 500
 
 	maxCatalogNameRunes = 200
@@ -34,9 +33,8 @@ const (
 type ExtractionCatalog struct {
 	Correspondents []string
 	DocumentTypes  []string
-	// Tags is the user's whole tag vocabulary, and unlike the other two it is a
-	// closed set: the model picks from it or returns nothing. Tags are created
-	// by hand on the Tags page, never by an extraction.
+	// Tags is a closed set, unlike the other two: the model picks from it or
+	// returns nothing. Tags are created by hand on the Tags page.
 	Tags []string
 }
 
@@ -77,9 +75,8 @@ Also include these fields translated into %s:
 	prompt += formatAllowedTagsPrompt(catalog.Tags)
 	prompt += formatExtractionRulesPrompt(rules)
 
-	// Last on purpose: the rules above are the admin's, but the JSON contract is
-	// not theirs to loosen, and the format instructions a model follows best are
-	// the ones it read last.
+	// Last on purpose: the rules above are the admin's, but the JSON contract
+	// is not theirs to loosen, and a model follows the instructions it read last.
 	prompt += `
 
 document_date must be a complete calendar date in YYYY-MM-DD form. Never return a bare year ("2026"), a year and month ("2026-03"), or any other date format; use an empty string when the document states no date.
@@ -89,15 +86,10 @@ Do not include markdown or explanation.`
 }
 
 // ExtractionPromptFingerprint identifies the prompt a document was extracted
-// with, for the step run that records it.
-//
-// The version alone stopped being enough the moment an admin could add rules:
-// the prompt changes while extraction_prompt_version stays "v1", so a run
-// recorded under it would claim a prompt that no longer exists. A short digest
-// of the rules rides along -- enough to tell one rule set from another in the
-// step's tooltip, which is all this is for; it is not a checksum anyone
-// verifies. No rules means the bare version, so runs from before this, and from
-// every instance that never sets any, read exactly as they did.
+// with, for the step run that records it. The version alone is not enough once
+// an admin can add rules: the prompt changes while extraction_prompt_version
+// stays "v1". A short digest of the rules rides along, enough to tell one rule
+// set from another in the step's tooltip; it is not a checksum anyone verifies.
 func ExtractionPromptFingerprint(promptVer, rules string) string {
 	rules = strings.TrimSpace(rules)
 	if rules == "" {
@@ -108,10 +100,8 @@ func ExtractionPromptFingerprint(promptVer, rules string) string {
 }
 
 // formatExtractionRulesPrompt carries the admin's own instructions into the
-// prompt. Unlike the catalog blocks these are trusted -- only an admin can set
-// them, through the Settings page -- so they are not labelled as untrusted
-// data; what they may not do is change the shape of the answer, because the
-// pipeline parses it into a fixed struct.
+// prompt. Unlike the catalog blocks these are trusted, so they are not labelled
+// as untrusted data; what they may not do is change the shape of the answer.
 func formatExtractionRulesPrompt(rules string) string {
 	rules = strings.TrimSpace(rules)
 	if rules == "" {
@@ -143,14 +133,10 @@ func formatExistingDocumentTypesPrompt(names []string) string {
 	)
 }
 
-// formatAllowedTagsPrompt lists the tags the model may assign.
-//
-// Deliberately not formatExistingNamedListPrompt: that one ends with "only
-// invent a new X when none of these match", which is exactly what tags must
-// never do. Tags are a vocabulary the user curates by hand, so the catalog is
-// the complete set of legal answers and an empty one means an empty array. The
-// untrusted-data framing is kept -- these names are user content reaching the
-// model, same as the other two lists.
+// formatAllowedTagsPrompt lists the tags the model may assign. Deliberately not
+// formatExistingNamedListPrompt: that one ends with "only invent a new X when
+// none of these match", which is exactly what tags must never do. The catalog is
+// the complete set of legal answers, and an empty one means an empty array.
 func formatAllowedTagsPrompt(names []string) string {
 	const none = `
 
@@ -250,16 +236,11 @@ func sanitizeCatalogName(name string) string {
 }
 
 // maxExtractionBytes bounds the OCR text one extraction sends. Long documents
-// carry their metadata near the front, so the tail is mostly cost -- but 12000
-// cut the middle out of ordinary multi-page scans, which is where a date or a
-// total often sits.
-//
-// Bytes, not runes: strutil.Truncate cuts on a rune boundary but counts bytes,
-// so a Cyrillic or CJK document gets roughly half or a third as much text as a
-// Latin one. Raising this is what buys those documents the same reach.
-//
-// Named because the log line below reports what was actually sent: two literals
-// could drift apart and the log would quietly start lying.
+// carry their metadata near the front, but 12000 cut the middle out of ordinary
+// multi-page scans, where a date or a total often sits. Bytes, not runes:
+// strutil.Truncate cuts on a rune boundary but counts bytes, so a CJK document
+// gets a third as much text as a Latin one. Named because the log line below
+// reports what was actually sent.
 const maxExtractionBytes = 24000
 
 func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, catalog ExtractionCatalog) (*models.ExtractedMetadata, error) {
@@ -316,12 +297,9 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 		c.logger.Warn("extraction metadata repaired", "note", note)
 	}
 	if err != nil {
-		// The reply itself, bounded, not only its length. "title is required"
-		// is raised after the JSON parsed cleanly, so the length alone cannot
-		// tell a model that answered `{}` from one that answered at length
-		// about the wrong thing -- and those want opposite fixes. It is the
-		// model's own answer about the operator's own document, and a failure
-		// path only.
+		// The reply itself, bounded, not only its length: "title is required"
+		// is raised after the JSON parsed, so a model that answered `{}` and one
+		// that answered at length about the wrong thing want opposite fixes.
 		c.logger.Error("parse failed",
 			"content_chars", len(content),
 			"content", strutil.TruncateRunes(strings.TrimSpace(content), 500),
@@ -343,8 +321,7 @@ func (c *OpenAIClient) ExtractMetadata(ctx context.Context, ocrText string, cata
 func NewExtractor(sdk, apiKey, model, baseURL, promptVer, resultLanguage, rules string, timeout time.Duration, logger *slog.Logger, extra ...option.RequestOption) Extractor {
 	c := NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage, timeout, logger, extra...)
 	// Set here rather than taken by NewOpenAIClient: the rules are extraction's
-	// alone, and that constructor is shared with chat, search, the splitter and
-	// LLM OCR, which would all have to pass one more empty string.
+	// alone, and that constructor is shared with four other callers.
 	c.extractionRules = rules
 	return c
 }

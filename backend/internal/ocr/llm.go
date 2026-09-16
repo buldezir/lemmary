@@ -22,13 +22,10 @@ const llmOCRMaxFileBytes = 10 * 1024 * 1024
 
 const llmOCRPrompt = "Extract all text from this document. Return plain text only, preserving reading order. Do not add commentary."
 
-// LLMProvider reads a document by sending it to a language model.
-//
-// The client is ai.OpenAIClient rather than an openai.Client of its own: which
-// endpoint a model is served on, and which of the two SDKs speaks to it, is
-// that type's business, and building a second client here meant two places had
-// to agree about it. The four fields this struct used to carry -- sdk, base
-// URL, client, and the request options behind them -- all live there.
+// LLMProvider reads a document by sending it to a language model. The client is
+// ai.OpenAIClient rather than an openai.Client of its own: which endpoint a
+// model is served on, and which of the two SDKs speaks to it, is that type's
+// business, and a second client here meant two places had to agree about it.
 type LLMProvider struct {
 	llm    *ai.OpenAIClient
 	model  string
@@ -107,7 +104,6 @@ func (p *LLMProvider) ExtractText(ctx context.Context, filePath string, mimeType
 	return text, nil
 }
 
-// LLMUserContentParts builds the multimodal user content for LLM OCR.
 func LLMUserContentParts(filename, mimeType string, data []byte) ([]openai.ChatCompletionContentPartUnionParam, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("empty file")

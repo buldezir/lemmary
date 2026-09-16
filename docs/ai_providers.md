@@ -10,19 +10,20 @@ to use.
 
 ## Choosing a provider
 
-| Provider | Language model | OCR | Embeddings |
-| --- | --- | --- | --- |
-| **Opencode Go** — `opencode` | ✅ **a catalogue of models on one subscription** | ✅ models that accept files/images | ❌ |
-| **`mistral`** | ✅ chat completions | ✅ dedicated Document OCR API | ✅ `mistral-embed` |
-| `openai` | ✅ | ✅ models that accept files/images | ✅ |
-| `openrouter` | ✅ many vendors on one key | ✅ models advertising `file` input | ✅ |
-| `google_vision` | ❌ | ✅ | ❌ |
-| **ChatGPT subscription** — `chatgpt` | ✅ **on a ChatGPT subscription** | ✅ **on the same seat** | ❌ |
-| **Local OCR (Docling)** — `docling` | ❌ | ✅ **on your own host** | ❌ |
-| **Local Embeddings (huggingface/text-embeddings-inference)** — `local` | ❌ | ❌ | ✅ **on your own hardware** |
+| Provider | Language model | OCR | Embeddings | Web search |
+| --- | --- | --- | --- | --- |
+| **Opencode Go** — `opencode` | ✅ **a catalogue of models on one subscription** | ✅ models that accept files/images | ❌ | ❌ |
+| **`mistral`** | ✅ chat completions | ✅ dedicated Document OCR API | ✅ `mistral-embed` | ❌ |
+| `openai` | ✅ | ✅ models that accept files/images | ✅ | ❌ |
+| `openrouter` | ✅ many vendors on one key | ✅ models advertising `file` input | ✅ | ❌ |
+| `google_vision` | ❌ | ✅ | ❌ | ❌ |
+| **ChatGPT subscription** — `chatgpt` | ✅ **on a ChatGPT subscription** | ✅ **on the same seat** | ❌ | ❌ |
+| **Local OCR (Docling)** — `docling` | ❌ | ✅ **on your own host** | ❌ | ❌ |
+| **Local Embeddings (huggingface/text-embeddings-inference)** — `local` | ❌ | ❌ | ✅ **on your own hardware** | ❌ |
+| **Tavily** — `tavily` | ❌ | ❌ | ❌ | ✅ **the only SDK that does** |
 
 The names in bold are what Settings shows. The shorter code values remain the
-values used by `OCR_SDK` and `AI_EMBEDDING_SDK`.
+values used by `OCR_SDK`, `AI_EMBEDDING_SDK` and `WEB_SEARCH_SDK`.
 
 **Start with Mistral.** It is the only SDK that covers every job Lemmary has, so
 one key and one provider row configure the whole instance — OCR, extraction,
@@ -167,6 +168,50 @@ exactly as they did before the block existed. Setting `AI_EMBEDDING_SDK` without
 with nothing bound to it, which reads as a configured feature that never embeds
 anything.
 
+### The web-search provider
+
+Deep Research and Ask AI can only reason over documents the archive holds. A
+question whose answer moved on — a rate that changed, a company's present
+address, a number that was never filed — comes back as *the archive does not
+contain this*, or worse, out of the model's memory.
+
+Bind a web-search provider and both gain two tools, `web_search` and
+`web_fetch`. There is one SDK, **Tavily** (`tavily`): search returns ranked
+results with a snippet each, and fetch returns a page as markdown. The fetching
+happens on Tavily's side, so nothing here dials a URL a model invented.
+
+**It stays off until two separate people ask for it.** An operator binds the
+provider, in **Settings → AI → Web search** or from the environment below; a
+reader then turns *Search the web* on for a conversation. Without the binding
+the toggle is not rendered at all, and the toggle starts off on every page load
+— every call is billed by the provider, so off is the direction worth
+forgetting in. One answer makes at most ten calls, on either surface.
+
+The archive stays the primary source. The prompt says to search it first and use
+the web to check or complete what it found, and an answer cites a web claim as an
+ordinary link, so you can see which sentences came from outside.
+
+**What leaves your instance is a query the model wrote**, not the question the
+reader typed — and the model has your document text in front of it when it
+writes one. Assume a search can carry a phrase out of a document (a name, an
+address, an invoice number) rather than only the subject of the question.
+Fetching runs on the provider's side as well, so the pages you read see their
+address rather than yours.
+
+Plain **Search** mode is untouched: it is one round against the archive that
+renders a list of cards, and there is nowhere in that to put a web result.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `WEB_SEARCH_SDK` | unset (no web call is served) | The web-search provider's SDK. `tavily` is the only value; every other SDK is refused, none of them searches the web. |
+| `WEB_SEARCH_API_KEY` | empty | Its credential, required whenever the SDK is named. There is nothing to borrow it from: a web-search provider is always its own endpoint. |
+| `WEB_SEARCH_BASE_URL` | the SDK's own endpoint | Where that provider lives, for a gateway in front of it. Defaults to `https://api.tavily.com`. |
+
+Unset, all three change nothing: no tool is declared to any model, and both
+surfaces behave exactly as they did before the block existed. Setting a key or a
+base URL without `WEB_SEARCH_SDK` is refused rather than ignored, the same way
+the `OCR_*` block is — there is no other provider to fold it into.
+
 ### Seeded settings
 
 Written to `app_settings` on the first boot and edited from **Settings**
@@ -207,10 +252,58 @@ user writes, so they are already in the language that user chose.
 
 1. Sign in with the admin account and open **Settings** (shown when
    `/api/app/me` reports `is_admin`).
-2. Add a provider — SDK, API key, optional base URL.
+2. Add a provider — SDK, API key, optional base URL, and the **model
+   catalogue** its context windows are read from (see below).
 3. Under **Models**, bind a provider and model to OCR and to metadata
    extraction; chat and search inherit extraction unless bound separately.
    **Deep Search helper** and **Deep search languages** live here too.
+
+### The model catalogue
+
+Deep Search replays a conversation whole and lets the provider decide what fits:
+nothing is trimmed on the way out, and a request that outgrows the model comes
+back as the provider's own error. So that a run can be watched against its
+limit, each research turn reports the tokens its widest request used — live
+while it runs, and stored with the answer.
+
+The denominator comes from the catalogue chosen on the provider row, read from
+[pi.dev](https://pi.dev)'s model list once a day. It is defaulted from the SDK
+and worth correcting when the `openai` SDK points somewhere that is not OpenAI:
+a base URL of `https://api.groq.com/openai/v1` wants the **groq** catalogue.
+
+Leave it on **None** and nothing is fetched: research runs exactly as before
+and the usage line shows a token count with no limit beside it. That select is
+the off switch. `AI_MODEL_CATALOG_URL` only moves the lookup somewhere other
+than pi.dev; left empty or unset it falls back to that default. When a provider reports no usage of its own, the count
+is estimated from the text sent and marked with a `~`.
+
+### Prompt caching
+
+Replaying the conversation whole is what makes it cacheable: the part that has
+not changed is byte-identical from one turn to the next, so a provider can reuse
+the work it already did on it instead of reading everything again. Lemmary asks
+for that where the provider needs asking — a cache key on OpenAI, a
+`cache_control` breakpoint on OpenRouter and on the OpenCode models served by
+the Messages API, the `x-opencode-session` header on the rest of OpenCode.
+Nothing is asked of the others: an unknown field is a rejected request, not a
+missed saving.
+
+A research turn declares every tool schema on every call, whatever is behind
+them — the web tools with the toggle off, `survey_documents` with no helper
+model bound, `count_documents` either way — and refuses the call when there is
+nothing to serve it. The tool list is part of what was cached, so a list that
+followed the toggle, or that changed the moment an admin bound a helper, would
+throw the whole transcript away; a few hundred tokens of schema on every call
+is the cheaper side of that trade. Ask AI is unaffected: it has no stored
+thread to lose, and still offers the web tools only when they work.
+
+A chat that was opened before this landed keeps the system prompt it was opened
+with, which does not mention the web. That costs it one re-read and nothing
+after; rewriting the stored prompt would move the very prefix this is about.
+
+What still costs a full re-read is an idle gap longer than the provider's cache
+lifetime — five minutes on Anthropic's default. It shows as `cached_tokens=0`
+in the completion log.
 
 Changes hot-reload the in-process clients — no restart. The OCR picker lists
 only file-capable models where the provider says which those are (OpenRouter's
@@ -312,8 +405,8 @@ TXT, CSV, DOCX and XLSX uses native parsers and calls no OCR API at all.
 Uses the [Mistral Document OCR API](https://docs.mistral.ai/en/studio-api/document-processing/basic_ocr)
 when the provider is bound for OCR — not the chat endpoint, which the same
 provider can serve for extraction, chat and search at the same time. Local files
-are sent as base64 data URLs, up to Mistral's documented 50 MB, which the 20 MB
-`documents.file` cap already keeps every upload under.
+are sent as base64 data URLs, up to Mistral's documented 50 MB, which the 47 MB
+`documents.file` cap keeps every upload under.
 
 - **PDFs and office documents** — `document_url` with a base64 data URL
 - **Images** — `image_url` with a base64 data URL

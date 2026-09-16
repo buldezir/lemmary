@@ -1,4 +1,5 @@
 import { apiFetch, ConnectionLostError, HttpError, sleep } from '../apiClient'
+import type { ContextUsage } from '../contextUsage'
 import { foldSteps, type ResearchStep, type StoredResearchStep } from '../researchSteps'
 import type { ProviderBinding } from './providers'
 
@@ -33,8 +34,7 @@ export type ChatSession = {
   /**
    * The provider row and model this conversation is pinned to, absent when it
    * runs on the binding in Settings. Fixed for the conversation's lifetime, so
-   * reopening a chat restores the picker on what its transcript was produced
-   * with.
+   * reopening restores the picker on what the transcript was produced with.
    */
   provider?: string
   model?: string
@@ -57,6 +57,8 @@ export type ChatMessageRecord = {
   documents?: SearchDocumentHit[]
   /** Research trail as the stream emitted it. Empty on user turns and Search. */
   steps?: StoredResearchStep[]
+  /** What the turn took of the model's context. Research answers only. */
+  usage?: ContextUsage
   incomplete?: boolean
   created?: string
 }
@@ -66,12 +68,17 @@ export type ChatSessionDetail = {
   messages: ChatMessageRecord[]
   truncated?: boolean
   /**
-   * A run is writing into this conversation right now. Nothing in the
-   * transcript can say so -- a turn is stored whole when the run ends -- so a
-   * chat opened mid-run reads as empty and finished unless the server says
-   * otherwise.
+   * A run is writing into this conversation right now. Read from the server's
+   * in-process registry, so it is only ever true while that process lives.
    */
   running?: boolean
+  /**
+   * The last turn never reached an answer: cancelled, out of budget, refused by
+   * the provider, or cut off by a restart. Its work is stored and the turn can
+   * be continued. Unlike `running`, this is read from the transcript, so it
+   * survives the process that produced it.
+   */
+  unfinished?: boolean
 }
 
 /** One rendered row of a transcript. */
@@ -82,16 +89,15 @@ export type ChatTurn = {
   content: string
   documents?: SearchDocumentHit[]
   steps?: ResearchStep[]
+  usage?: ContextUsage
   incomplete?: boolean
 }
 
 type ChatSessionListResponse = { items?: ChatSession[]; totalItems?: number }
 
 /**
- * How many chats the rail asks for. The server caps a listing at the same
- * number of sessions an account may hold, so one request is always the whole
- * list and the sidebar scrolls rather than paging — asking explicitly keeps
- * that from resting on whatever the server's default happens to be.
+ * The server caps a listing at the sessions an account may hold, so one request
+ * is the whole list. Asked explicitly rather than resting on the default.
  */
 const chatListPageSize = 500
 type ChatSessionResponse = { session: ChatSession }
@@ -131,11 +137,9 @@ const storedTurnPollMs = 3000
 const storedTurnWaitMs = 21 * 60 * 1000
 
 /**
- * The answer produced by `runId` in a transcript, or null if it is not there.
- *
- * Text is deliberately not the identity. Two tabs can ask the same question
- * concurrently, and whichever finishes last would otherwise be presented as
- * both tabs' answer. The correlation id is stored with the pair atomically.
+ * Text is deliberately not the identity: two tabs can ask the same question,
+ * and the last to finish would be presented as both tabs' answer. The
+ * correlation id is stored with the pair atomically.
  */
 export function storedAnswerForRun(
   messages: ChatMessageRecord[],
@@ -154,13 +158,10 @@ export function isRetryableFailure(err: unknown): boolean {
 type PollAttempt<T> = { done: false } | { done: true; value: T | null }
 
 /**
- * Asks repeatedly until `attempt` produces something, or the deadline passes.
- *
- * Transport failures and 5xx are retried: whatever broke the original
- * connection is usually still broken, and one bad gateway answer in a
- * twenty-minute wait must not hand the question back while the run goes on.
- * 4xx is terminal: a deleted empty session means the failed run has no answer
- * coming.
+ * Transport failures and 5xx are retried: whatever broke the connection is
+ * usually still broken, and one bad gateway in a twenty-minute wait must not
+ * hand the question back while the run goes on. 4xx is terminal, since a
+ * deleted empty session means no answer is coming.
  */
 async function pollUntil<T>(
   attempt: () => Promise<PollAttempt<T>>,
@@ -201,21 +202,13 @@ export type WaitOptions = {
 }
 
 /**
- * Waits for the turn a lost connection stopped this client from receiving.
+ * Waits for the turn a lost connection stopped this client from receiving: the
+ * server finishes the run and stores the turn whether or not anyone listens.
  *
- * The run does not stop when the connection does -- the server finishes it and
- * stores the turn whether or not anyone is still listening. Until now nobody
- * went back for it: the page reported a lost connection and the answer sat in
- * the transcript, invisible until a manual reload, which on a follow-up
- * question looks exactly like the work having been thrown away.
- *
- * Every read first looks for the request's correlation id, so this returns as
- * soon as this exact turn lands even if another tab is still writing into the
- * conversation. If neither the turn nor any run exists, there is nothing to
- * wait for and the recovery ends immediately.
- *
- * Resolves null when nothing landed: a run that failed, was cancelled, outlived
- * its budget, or never started.
+ * Every read looks for the request's correlation id, so this returns as soon as
+ * this exact turn lands even while another tab writes into the conversation.
+ * Resolves null when nothing landed: a run that failed, was cancelled,
+ * outlived its budget, or never started.
  */
 export async function waitForStoredTurn(
   sessionId: string,
@@ -234,16 +227,12 @@ export async function waitForStoredTurn(
 }
 
 /**
- * Follows a conversation somebody else's run is writing into, until it ends.
+ * Follows a conversation another run is writing into, until it ends. Reloading
+ * during a research run abandons the stream but not the run, and the turn is
+ * stored whole at the end, so the server reports the run and this waits it out.
  *
- * That somebody is usually the same user a moment ago: reloading the page
- * during a research run abandons the stream but not the run, and the chat that
- * comes back is empty, with nothing to say an answer is on its way. The
- * transcript cannot show it -- the turn is stored whole at the end -- so the
- * server reports it and this waits it out.
- *
- * Resolves with the transcript as it stands once the run is over, which is the
- * answer unless the run failed and stored nothing.
+ * Resolves with the transcript once the run is over, which is the answer unless
+ * the run stored nothing.
  */
 export function waitWhileRunning(
   sessionId: string,
@@ -265,6 +254,22 @@ export async function renameChatSession(id: string, title: string): Promise<Chat
   return data.session
 }
 
+/**
+ * Copies a conversation into one of its own, up to and including `upto`.
+ * Without it the copy is the whole transcript, as the composer's fork is.
+ */
+export async function forkChatSession(id: string, upto?: string): Promise<ChatSession> {
+  const data = await apiFetch<ChatSessionResponse>(
+    `/api/app/chats/${encodeURIComponent(id)}/fork`,
+    {
+      method: 'POST',
+      body: { upto: upto ?? '' },
+      fallbackError: 'Failed to fork the chat',
+    },
+  )
+  return data.session
+}
+
 export function deleteChatSession(id: string) {
   return apiFetch<unknown>(`/api/app/chats/${encodeURIComponent(id)}`, {
     method: 'DELETE',
@@ -278,12 +283,9 @@ export function chatSessionTitle(session: ChatSession): string {
 }
 
 /**
- * The binding a conversation is pinned to, as the picker wants it, or undefined
- * when it runs on the configured model.
- *
- * Undefined for a session with no provider even if it somehow carries a model:
- * the server refuses that pair, so offering it back as a choice would only
- * produce a request it will not accept.
+ * Undefined for a session with no provider even if it carries a model: the
+ * server refuses that pair, so offering it back would only produce a request
+ * it will not accept.
  */
 export function chatSessionBinding(session: ChatSession | null): ProviderBinding | undefined {
   const providerId = session?.provider?.trim()
@@ -301,11 +303,8 @@ export function chatSessionDateLabel(value: string | undefined): string {
 }
 
 /**
- * Upserts a session into the list and re-sorts by activity.
- *
- * Used to show a just-created chat in the rail immediately, before the
- * background list reload lands — without it the new row appears a round trip
- * late, after the transcript it belongs to is already on screen.
+ * Upserts a session into the list and re-sorts by activity, so a just-created
+ * chat is in the rail before the background list reload lands.
  */
 export function mergeChatSession(
   sessions: ChatSession[],
@@ -324,11 +323,9 @@ export function mergeChatSession(
 }
 
 /**
- * Projects a stored message into a transcript row.
- *
  * `fallbackDocuments` covers the send response, where the hits ride alongside
  * the message rather than inside it. Empty stays `undefined` rather than `[]`
- * so the hit grid renders nothing at all instead of an empty row.
+ * so the hit grid renders nothing instead of an empty row.
  */
 export function toChatTurn(
   message: ChatMessageRecord,
@@ -343,6 +340,7 @@ export function toChatTurn(
   }
   const steps = foldSteps(message.steps)
   if (steps) turn.steps = steps
+  if (message.usage) turn.usage = message.usage
   if (message.incomplete) turn.incomplete = true
   return turn
 }

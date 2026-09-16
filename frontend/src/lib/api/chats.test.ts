@@ -62,8 +62,6 @@ describe('mergeChatSession', () => {
     expect(merged.map((item) => item.id)).toEqual(['newer', 'older'])
   })
 
-  // The just-sent session arrives again from the background list reload; it has
-  // to replace the row rather than appear beside it.
   it('replaces an existing session instead of duplicating it', () => {
     const updated = { ...older, title: 'Renamed' }
     const merged = mergeChatSession([newer, older], updated)
@@ -92,7 +90,6 @@ describe('toChatTurn', () => {
     expect(turn.documents?.[0].id).toBe('stored')
   })
 
-  // The send response carries the hits beside the message rather than inside it.
   it('falls back to response-level hits', () => {
     const turn = toChatTurn({ id: 'm1', role: 'assistant', content: 'x' }, [
       { id: 'fallback', title: 'F' },
@@ -100,8 +97,6 @@ describe('toChatTurn', () => {
     expect(turn.documents?.[0].id).toBe('fallback')
   })
 
-  // undefined rather than [], so the hit grid renders nothing at all instead of
-  // an empty row under the answer.
   it('leaves an empty hit list undefined', () => {
     expect(toChatTurn({ id: 'm1', role: 'assistant', content: 'x' }, []).documents).toBeUndefined()
     expect(
@@ -162,8 +157,6 @@ describe('waitForStoredTurn', () => {
     { id: 'm4', role: 'assistant', content: '€480.', run_id: runID },
   ] as ChatMessageRecord[]
 
-  // The run kept going after the connection died, so the answer turns up in the
-  // transcript a while later and has to be collected.
   it('resolves once the run ends and the turn is there', async () => {
     let calls = 0
     const result = await waitForStoredTurn('s1', runID, {
@@ -179,9 +172,8 @@ describe('waitForStoredTurn', () => {
     expect(result?.message.content).toBe('€480.')
   })
 
-  // The failure that makes question-matching alone unsafe: the same question is
-  // already in the transcript, answered. Until the run in flight ends, its
-  // older answer must not be handed back as this one's.
+  // Why question-matching alone is unsafe: the same question is already in the
+  // transcript, answered, and that answer is not this one's.
   it('never hands back an earlier answer while the run is still going', async () => {
     let calls = 0
     const result = await waitForStoredTurn('s1', runID, {
@@ -196,9 +188,6 @@ describe('waitForStoredTurn', () => {
     expect(result?.message.content).toBe('€480.')
   })
 
-  // Another tab can still be writing to the same conversation. Once this
-  // exact run's pair is stored, its answer is recoverable without waiting for
-  // the other run or accidentally returning the other run's later reply.
   it('returns its exact answer while another run is still active', async () => {
     const result = await waitForStoredTurn('s1', runID, {
       intervalMs: 0,
@@ -207,8 +196,6 @@ describe('waitForStoredTurn', () => {
     expect(result?.message.id).toBe('m4')
   })
 
-  // The connection that broke is usually still broken; giving up on the first
-  // failed poll would lose exactly the answer we came back for.
   it('keeps asking through failures', async () => {
     let calls = 0
     const result = await waitForStoredTurn('s1', runID, {
@@ -224,8 +211,6 @@ describe('waitForStoredTurn', () => {
     expect(result?.message.content).toBe('€480.')
   })
 
-  // A proxy answering for a server that is briefly unreachable is the same
-  // interruption as a dropped socket, and the run behind it is still going.
   it('keeps asking through a 5xx', async () => {
     let calls = 0
     const result = await waitForStoredTurn('s1', runID, {
@@ -241,8 +226,8 @@ describe('waitForStoredTurn', () => {
     expect(result?.message.content).toBe('€480.')
   })
 
-  // A newly-created chat is discarded when its provider fails. Its 404 means
-  // the run is over, not that the original network interruption persists.
+  // A chat discarded when its provider failed answers 404, which means the run
+  // is over rather than that the interruption persists.
   it('does not retry a terminal HTTP failure until the run budget', async () => {
     let calls = 0
     const waiting = waitForStoredTurn('s1', runID, {
@@ -256,8 +241,6 @@ describe('waitForStoredTurn', () => {
     expect(calls).toBe(1)
   })
 
-  // A request that never reached the server leaves nothing running, so there is
-  // nothing to wait for: say so at once instead of sitting out the budget.
   it('gives up as soon as nothing is running and nothing landed', async () => {
     let calls = 0
     const result = await waitForStoredTurn('s1', runID, {
@@ -280,8 +263,8 @@ describe('waitForStoredTurn', () => {
     expect(result).toBeNull()
   })
 
-  // Cancelling has to stop the wait too, or the composer stays disabled until
-  // the run budget runs out.
+  // Cancelling must stop the wait, or the composer stays disabled for the
+  // whole run budget.
   it('stops when the run is cancelled', async () => {
     const controller = new AbortController()
     controller.abort()
@@ -303,8 +286,6 @@ describe('waitWhileRunning', () => {
     ],
   }
 
-  // Reloading during a research run leaves a chat that looks empty and
-  // finished. Only the server knows better, and this is what waits it out.
   it('waits for the run to end, then hands back the transcript', async () => {
     let calls = 0
     const result = await waitWhileRunning('s1', {

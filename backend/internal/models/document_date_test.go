@@ -32,8 +32,6 @@ func TestNormalizeDocumentDateAccepted(t *testing.T) {
 		{"textual month first", "March 15, 2026", "2026-03-15"},
 		{"textual short month first", "Mar 15, 2026", "2026-03-15"},
 		{"collapses inner whitespace", "15  March   2026", "2026-03-15"},
-		// The issue #28 cases: partial dates coerce to the first of the period
-		// instead of failing the whole extraction.
 		{"bare year", "2026", "2026-01-01"},
 		{"year and month", "2026-03", "2026-03-01"},
 		{"year and month slashed", "2026/03", "2026-03-01"},

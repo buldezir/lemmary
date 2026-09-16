@@ -41,7 +41,7 @@ func TestNeedsConfigSetup(t *testing.T) {
 		},
 		{
 			// The wizard must not reopen over a working sidecar just because it
-			// has no API key -- that is the whole point of the keyless SDKs.
+			// has no API key: that is the point of the keyless SDKs.
 			name: "ready with a local OCR sidecar",
 			cfg: config.Config{
 				OCRProvider:     docling,

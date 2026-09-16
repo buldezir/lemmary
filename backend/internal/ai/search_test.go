@@ -3,7 +3,26 @@ package ai
 import (
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestSearchTimeoutHasAFloor(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		give time.Duration
+		want time.Duration
+	}{
+		{"an extraction-sized timeout is raised", 2 * time.Minute, minSearchTimeout},
+		{"unset gets the floor", 0, minSearchTimeout},
+		{"a longer timeout is respected", 30 * time.Minute, 30 * time.Minute},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := searchTimeout(tc.give); got != tc.want {
+				t.Fatalf("timeout = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
 
 func TestFormatAvailableTagsPrompt(t *testing.T) {
 	empty := formatAvailableTagsPrompt(nil)
@@ -34,8 +53,7 @@ func TestBuildSearchSystemPromptIncludesTags(t *testing.T) {
 	if !strings.Contains(prompt, "en,de") {
 		t.Fatalf("expected archive languages in system prompt, got %q", prompt)
 	}
-	// Search mode is one round now; the deep-mode knob is gone, and a question
-	// that needs more belongs in Research mode.
+	// Search mode is one round; a question that needs more belongs in Research.
 	if strings.Contains(strings.ToLower(prompt), "deep search mode") {
 		t.Fatalf("search prompt still advertises deep mode: %q", prompt)
 	}
@@ -75,8 +93,7 @@ func TestFormatLanguagePromptFallsBackToResultLanguage(t *testing.T) {
 }
 
 func TestDecodeSearchArgsCoercesScalarKinds(t *testing.T) {
-	// Models (and the DSML fallback) routinely emit the wrong JSON scalar
-	// kinds; the whole tool call used to be dropped as invalid.
+	// Models (and the DSML fallback) routinely emit the wrong JSON scalar kinds.
 	args, err := decodeSearchArgs(`{"query": 2023, "tags": ["invoice", 7], "limit": "5"}`)
 	if err != nil {
 		t.Fatalf("decodeSearchArgs: %v", err)

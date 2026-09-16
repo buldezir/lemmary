@@ -9,36 +9,28 @@ import (
 	"lemmary/backend/internal/ai"
 )
 
-// The helper model's share of a read.
-//
-// These are choices about what the research model should have to carry, not
-// guesses at any model's context window. A read that stays under both
-// thresholds passes through as text, because on a needle question the exact
-// wording is what the answer quotes. Past either, the documents are read by
-// the helper and the research model gets what they say about the question.
+// The helper model's share of a read: choices about what the research model
+// should carry, not guesses at any model's context window. Under both
+// thresholds a read passes through as text, since on a needle question the
+// exact wording is what the answer quotes.
 const (
 	// distillThresholdBytes is the most text one read may put into the
 	// research conversation as-is. About eight thousand tokens.
 	distillThresholdBytes = 32000
-	// distillMinDocs is the most documents one read may pass through as
-	// text, however short they are: past a handful, the model is surveying
-	// rather than reading, and notes serve a survey better.
+	// distillMinDocs is the most documents one read may pass through as text,
+	// however short: past a handful the model is surveying, and notes serve
+	// a survey better.
 	distillMinDocs = 5
 
-	// helperInputBytes is how much of one document the helper is shown.
-	// Helpers are assumed to have windows of 250k tokens or more, so most
-	// documents go in whole; only past this is the document excerpted
-	// around the question first.
+	// helperInputBytes assumes a helper window of 250k tokens or more, so
+	// most documents go in whole; only past this is one excerpted first.
 	helperInputBytes = 400_000
-	// helperBatchBytes is how much text one helper call carries. Several
-	// short documents share a call so a read of twenty letters is a few
-	// calls, not twenty.
-	helperBatchBytes = 300_000
-	// helperConcurrency is how many helper calls run at once.
+	// helperBatchBytes lets several short documents share a call, so a read
+	// of twenty letters is a few calls, not twenty.
+	helperBatchBytes  = 300_000
 	helperConcurrency = 4
 )
 
-// shouldDistill decides whether a read is small enough to pass through raw.
 func shouldDistill(docs []ai.DocumentContent) bool {
 	if len(docs) > distillMinDocs {
 		return true
@@ -50,11 +42,9 @@ func shouldDistill(docs []ai.DocumentContent) bool {
 	return total > distillThresholdBytes
 }
 
-// distillDocuments has the helper read the documents and returns them with
-// notes, quotes and values in place of text. A document the helper failed on
-// -- the call errored, or the answer left it out -- keeps its text, cut to the
-// agent's own excerpt size, so a helper outage costs the saving and not the
-// read.
+// distillDocuments returns documents with notes, quotes and values in place of
+// text. One the helper failed on keeps its text, cut to the agent's excerpt
+// size, so a helper outage costs the saving and not the read.
 func (r *agentRetriever) distillDocuments(ctx context.Context, question string, fields []ai.SurveyField, docs []ai.DocumentContent) []ai.DocumentContent {
 	inputs := make([]ai.DistillDoc, 0, len(docs))
 	for _, doc := range docs {
@@ -97,11 +87,8 @@ func (r *agentRetriever) distillDocuments(ctx context.Context, question string, 
 	return out
 }
 
-// distillAll runs the helper over every document, packed into batches by
-// size and run helperConcurrency at a time. It returns the rows by document
-// id and the summed usage. Failed batches are logged and their documents are
-// simply absent from the result. progress, when given, is called with the
-// running count of documents finished.
+// distillAll returns the rows by document id and the summed usage. Failed
+// batches are logged and their documents are simply absent from the result.
 func (r *agentRetriever) distillAll(ctx context.Context, question string, fields []ai.SurveyField, docs []ai.DistillDoc, progress func(done int)) (map[string]ai.DistillRow, ai.Usage) {
 	batches := packDistillBatches(docs, helperBatchBytes)
 
@@ -155,10 +142,8 @@ func (r *agentRetriever) distillAll(ctx context.Context, question string, fields
 	return rows, usage
 }
 
-// packDistillBatches groups documents so no call carries more than
-// budgetBytes of text. Documents are taken in order; a single document over
-// the budget travels alone. Order is preserved so batches are deterministic
-// for the same input.
+// packDistillBatches keeps each call under budgetBytes; a single document over
+// it travels alone. Order is preserved so batches are deterministic.
 func packDistillBatches(docs []ai.DistillDoc, budgetBytes int) [][]ai.DistillDoc {
 	var batches [][]ai.DistillDoc
 	var current []ai.DistillDoc
@@ -179,7 +164,6 @@ func packDistillBatches(docs []ai.DistillDoc, budgetBytes int) [][]ai.DistillDoc
 	return batches
 }
 
-// numberField reports whether a survey field is numeric, by declared type.
 func numberField(f ai.SurveyField) bool {
 	return strings.EqualFold(strings.TrimSpace(f.Type), "number")
 }

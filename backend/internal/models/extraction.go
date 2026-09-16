@@ -48,13 +48,10 @@ func (m *ExtractedMetadata) Validate() error {
 	return nil
 }
 
-// Normalize repairs best-effort fields in place and returns human-readable
-// notes about anything it changed or dropped, so a caller with a logger can
-// report the repair.
-//
-// document_date is optional metadata: a model that answers "2026" instead of a
-// full calendar date should not sink an otherwise good extraction, so an
-// unusable value is dropped rather than turned into an error.
+// Normalize repairs best-effort fields in place and returns notes about what
+// it changed, for a caller with a logger. document_date is optional metadata:
+// an unusable value is dropped rather than turned into an error, so a model
+// answering "2026" does not sink an otherwise good extraction.
 func (m *ExtractedMetadata) Normalize() []string {
 	var notes []string
 
@@ -76,8 +73,6 @@ func ParseExtractedMetadata(raw string) (*ExtractedMetadata, error) {
 	return metadata, err
 }
 
-// ParseExtractedMetadataWithNotes parses a model response and additionally
-// returns the notes from Normalize, for callers that can log them.
 func ParseExtractedMetadataWithNotes(raw string) (*ExtractedMetadata, []string, error) {
 	raw = normalizeExtractionJSON(raw)
 
@@ -92,10 +87,9 @@ func ParseExtractedMetadataWithNotes(raw string) (*ExtractedMetadata, []string, 
 	return &metadata, notes, nil
 }
 
-// NormalizeJSONObject strips what models wrap a JSON object in -- code
-// fences, reasoning tags, prose before the brace -- and returns the object.
-// Shared by every caller that asks a model for JSON, because the same models
-// misbehave the same way whatever the question.
+// NormalizeJSONObject strips what models wrap a JSON object in: code fences,
+// reasoning tags, prose before the brace. Shared by every caller that asks a
+// model for JSON.
 func NormalizeJSONObject(raw string) string {
 	return normalizeExtractionJSON(raw)
 }

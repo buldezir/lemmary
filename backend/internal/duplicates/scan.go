@@ -11,10 +11,8 @@ import (
 	"lemmary/backend/internal/models"
 )
 
-// scanPageSize bounds how many records a scan holds in memory at once.
 const scanPageSize = 200
 
-// ScanResult summarizes a bulk duplicate scan.
 type ScanResult struct {
 	Scanned            int `json:"scanned"`
 	ChecksumBackfilled int `json:"checksum_backfilled"`
@@ -23,9 +21,8 @@ type ScanResult struct {
 	FingerprintsFilled int `json:"fingerprints_filled"`
 }
 
-// FindNearDuplicate returns the best matching earlier same-user document by OCR similarity.
-// Only documents created before the current one (and not already marked as duplicates) are
-// considered, so duplicate_of always points at the earlier original.
+// Only documents created before this one are considered, so duplicate_of always
+// points at the earlier original.
 func FindNearDuplicate(app core.App, document *core.Record, ocrText string, threshold float64) (*core.Record, float64, error) {
 	userID := document.GetString("user")
 	created := strings.TrimSpace(document.GetString("created"))
@@ -41,10 +38,9 @@ func FindNearDuplicate(app core.App, document *core.Record, ocrText string, thre
 		return nil, 0, nil
 	}
 
-	// Sweep a lightweight projection (id + fingerprint) and load a candidate's
-	// full record — with its OCR text — only after it passes the Hamming
-	// prefilter. Loading full rows here made every processed document pull the
-	// whole earlier corpus, OCR text included, into memory.
+	// A full record is loaded only after its fingerprint passes the Hamming
+	// prefilter: loading full rows here pulled the whole earlier corpus, OCR
+	// text included, into memory for every processed document.
 	rows, err := scanRows(app,
 		"[[user]] = {:user} AND id != {:id} AND text_fingerprint != '' AND ocr_text != '' AND duplicate_of = '' AND created < {:created}",
 		dbx.Params{"user": userID, "id": document.Id, "created": created},
@@ -79,8 +75,7 @@ func FindNearDuplicate(app core.App, document *core.Record, ocrText string, thre
 	return best, bestScore, nil
 }
 
-// EligibleNearDuplicateOriginal reports whether candidate may be treated as the original
-// for document (earlier, same timeline, not itself a duplicate).
+// Earlier, same timeline, not itself a duplicate.
 func EligibleNearDuplicateOriginal(document, candidate *core.Record) bool {
 	if document == nil || candidate == nil {
 		return false
@@ -96,7 +91,6 @@ func EligibleNearDuplicateOriginal(document, candidate *core.Record) bool {
 	return candCreated < docCreated
 }
 
-// MarkAsDuplicate links document to original and sets needs_review.
 // marked is false when the document was already linked, so scan counters do not
 // report a no-op as a fresh mark on every run.
 func MarkAsDuplicate(app core.App, document, original *core.Record) (marked bool, err error) {
@@ -114,7 +108,6 @@ func MarkAsDuplicate(app core.App, document, original *core.Record) (marked bool
 	return true, nil
 }
 
-// ScanAll backfills checksums/fingerprints and marks exact (and optional near) duplicates.
 func ScanAll(app core.App, cfg config.Config) (ScanResult, error) {
 	var result ScanResult
 	threshold := cfg.NearDuplicateThreshold
@@ -146,10 +139,9 @@ func ScanAll(app core.App, cfg config.Config) (ScanResult, error) {
 		page++
 	}
 
-	// Exact duplicates are fully handled inside backfillChecksum: the partial
-	// unique index idx_documents_user_checksum makes two rows with the same
-	// non-empty (user, checksum) impossible, so a group sweep over stored
-	// checksums can never find anything.
+	// backfillChecksum handles exact duplicates: the partial unique index makes
+	// two rows with the same non-empty (user, checksum) impossible, so a group
+	// sweep over stored checksums can never find anything.
 	if cfg.NearDuplicateDetectionEnabled {
 		if err := markNearDuplicates(app, threshold, &result); err != nil {
 			return result, err
@@ -162,9 +154,8 @@ func backfillChecksum(app core.App, record *core.Record, result *ScanResult) err
 	if strings.TrimSpace(record.GetString("checksum")) != "" {
 		return nil
 	}
-	// Marked duplicates deliberately carry no checksum (the original owns it);
-	// without this early exit every duplicate is re-read and re-hashed from
-	// storage on every scan just to rediscover that.
+	// Marked duplicates carry no checksum (the original owns it); without this
+	// they are re-read and re-hashed from storage on every scan.
 	if strings.TrimSpace(record.GetString("duplicate_of")) != "" {
 		return nil
 	}
@@ -180,9 +171,8 @@ func backfillChecksum(app core.App, record *core.Record, result *ScanResult) err
 	if existing != nil {
 		original, duplicate := earlierRecord(existing, record), laterRecord(existing, record)
 		if original.Id == record.Id {
-			// Older document missing checksum while a newer one already has it:
-			// take ownership. One transaction, so a failure between the two
-			// saves cannot leave the checksum stored on neither record.
+			// The older document takes ownership. One transaction, so a failure
+			// between the two saves cannot leave the checksum on neither.
 			err := app.RunInTransaction(func(txApp core.App) error {
 				if existing.GetString("checksum") != "" {
 					existing.Set("checksum", "")
@@ -286,9 +276,8 @@ func markNearDuplicates(app core.App, threshold float64, result *ScanResult) err
 		byUser[row.User] = append(byUser[row.User], row)
 	}
 
-	// Rows carry only the SimHash, so the O(n²) sweep stays in memory-cheap
-	// integer comparisons. OCR text is loaded only for the few pairs that pass
-	// the Hamming prefilter, and the outer document's text is loaded once.
+	// Rows carry only the SimHash, so the O(n²) sweep stays integer comparisons;
+	// OCR text loads only for the pairs that pass the Hamming prefilter.
 	marked := map[string]struct{}{}
 	for _, group := range byUser {
 		for i := 0; i < len(group); i++ {
@@ -332,7 +321,7 @@ func markNearDuplicates(app core.App, threshold float64, result *ScanResult) err
 				if TextSimilarity(aText, bRecord.GetString("ocr_text")) < threshold {
 					continue
 				}
-				// Prefer older as original (group sorted by created ascending).
+				// The older is the original; the group is sorted ascending.
 				linked, err := MarkAsDuplicate(app, bRecord, aRecord)
 				if err != nil {
 					return err
@@ -352,9 +341,8 @@ func isMarked(marked map[string]struct{}, id string) bool {
 	return ok
 }
 
-// scanRow is the projection the bulk scan works on: everything needed to group
-// and prefilter, and nothing large. OCR text is fetched per record only when a
-// pair actually has to be compared.
+// Everything needed to group and prefilter, and nothing large: OCR text is
+// fetched per record only when a pair has to be compared.
 type scanRow struct {
 	ID          string `db:"id"`
 	User        string `db:"user"`
@@ -364,8 +352,7 @@ type scanRow struct {
 	DuplicateOf string `db:"duplicate_of"`
 }
 
-// scanRows pages through documents matching filter, oldest first. params may
-// be nil when the filter has no placeholders.
+// Oldest first. params may be nil when the filter has no placeholders.
 func scanRows(app core.App, filter string, params dbx.Params) ([]scanRow, error) {
 	collection, err := app.FindCollectionByNameOrId("documents")
 	if err != nil {

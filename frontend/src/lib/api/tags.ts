@@ -1,6 +1,8 @@
 import { ClientResponseError } from 'pocketbase'
 import { pb } from '../pb'
 import { ensureAuth } from '../auth'
+import { apiFetch, pollJob } from '../apiClient'
+import { notifyDocumentsChanged } from '../documentEvents'
 
 export type TagRecord = {
   id: string
@@ -9,12 +11,9 @@ export type TagRecord = {
 }
 
 /**
- * The tag vocabulary, straight through the PocketBase SDK.
- *
- * No Go endpoint sits in front of this: the tags collection has been scoped to
- * `user = @request.auth.id` on all five rules since tags became per-user, so
- * the caller can only ever see and write their own. A wrapper would add a hop
- * and one more place for the ownership rule to drift.
+ * The tag vocabulary, straight through the PocketBase SDK. No Go endpoint in
+ * front: all five collection rules are scoped to `user = @request.auth.id`, and
+ * a wrapper would be one more place for that to drift.
  */
 export async function listTags(): Promise<TagRecord[]> {
   await ensureAuth()
@@ -49,12 +48,73 @@ export async function deleteTag(id: string): Promise<void> {
 }
 
 /**
- * Turns the unique (user, name) index violation into something a person can
- * act on. PocketBase reports it as a 400 with a per-field validation code, and
- * the raw message ("Value must be unique.") never says which value.
+ * Mirrors maxTagAssignDocuments in backend/internal/appapi/tags_assign.go. Read
+ * only to word the cost block before any preview has been fetched; every run
+ * takes the limit the server reports back.
+ */
+export const MAX_TAG_ASSIGN_DOCUMENTS = 1000
+
+export type TagAssignPreview = {
+  candidates: number
+  limit: number
+  running: boolean
+}
+
+const assignQuery = (tagIds: string[]) =>
+  `tag_ids=${encodeURIComponent(tagIds.join(','))}`
+
+/**
+ * How many documents are missing at least one of these tags, so the button can
+ * price itself first. One number, because one pass covers them all.
+ */
+export function previewTagAssign(tagIds: string[]): Promise<TagAssignPreview> {
+  return apiFetch<TagAssignPreview>(`/api/app/tags/assign?${assignQuery(tagIds)}`, {
+    fallbackError: 'Failed to count documents',
+  })
+}
+
+export type TagAssignResult = {
+  candidates: number
+  asked: number
+  assigned: number
+  declined: number
+  failed: number
+  errors?: string[]
+  prompt_tokens: number
+  completion_tokens: number
+}
+
+/**
+ * Asks the model which of these tags apply to each document missing any of
+ * them, and only ever adds: nothing else on a document changes.
  *
- * Exported for its test: the rest of this module is SDK calls, and this is the
- * only part with a decision in it.
+ * Several tags cost what one costs. The prompt is mostly the document's own
+ * text, so one pass offering every name beats a pass per name, which would
+ * re-read the whole archive each time.
+ */
+export async function assignTagsWithAI(tagIds: string[]): Promise<TagAssignResult> {
+  const start = await apiFetch<{ job_id?: string }>(`/api/app/tags/assign?${assignQuery(tagIds)}`, {
+    method: 'POST',
+    fallbackError: 'Tag assignment failed to start',
+  })
+  if (!start.job_id) {
+    throw new Error('Tag assignment job id missing from server response')
+  }
+
+  const result = await pollJob<TagAssignResult>(
+    `/api/app/tags/assign/status?job_id=${encodeURIComponent(start.job_id)}`,
+    { label: 'tag assignment' },
+  )
+  // The server wrote the tags, so nothing on this side has seen them: without
+  // this the cards keep their old chips beside a success message.
+  notifyDocumentsChanged()
+  return { ...result, errors: result.errors ?? [] }
+}
+
+/**
+ * PocketBase reports the unique (user, name) violation as a 400 with a per-field
+ * validation code, whose message ("Value must be unique.") never says which
+ * value. Exported for its test.
  */
 export function duplicateNameError(err: unknown, name: string): Error {
   if (err instanceof ClientResponseError) {

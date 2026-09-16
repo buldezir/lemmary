@@ -281,8 +281,7 @@ func TestBuildExtractionSystemPromptClosesTheTagVocabulary(t *testing.T) {
 		}
 	}
 
-	// The reuse wording the other two catalogs end on invites invention, which
-	// is exactly what a closed vocabulary must not do.
+	// The reuse wording the other two catalogs end on invites invention.
 	tagBlock := prompt[strings.Index(prompt, "the archive's tags"):]
 	if strings.Contains(tagBlock, "only invent a new") {
 		t.Fatalf("the tag block reuses the invent-when-no-match wording:\n%s", tagBlock)
@@ -319,8 +318,8 @@ func TestBuildExtractionSystemPromptAppendsAdminRules(t *testing.T) {
 	if !strings.Contains(prompt, "never add, rename or drop fields") {
 		t.Fatalf("expected the rules to be fenced off from the JSON contract, got:\n%s", prompt)
 	}
-	// The format instructions have to come after the rules: they are what the
-	// parser depends on, and a rule must not be the last word on the shape.
+	// The format instructions have to come after the rules: a rule must not
+	// be the last word on the shape the parser depends on.
 	if strings.Index(prompt, rules) > strings.Index(prompt, "Do not include markdown") {
 		t.Fatalf("expected the format rules after the admin's rules, got:\n%s", prompt)
 	}
@@ -329,8 +328,7 @@ func TestBuildExtractionSystemPromptAppendsAdminRules(t *testing.T) {
 func TestExtractionPromptFingerprintTracksTheRules(t *testing.T) {
 	t.Parallel()
 
-	// No rules is the bare version, so every run recorded before this reads the
-	// same and nothing in the UI changes for an instance that sets none.
+	// No rules is the bare version, so runs recorded before this read the same.
 	if got := ExtractionPromptFingerprint("v1", "  "); got != "v1" {
 		t.Fatalf("blank rules changed the fingerprint: %q", got)
 	}
@@ -370,7 +368,6 @@ func TestExtractMetadataSendsAdminRules(t *testing.T) {
 
 func TestExtractMetadataCoercesPartialDocumentDate(t *testing.T) {
 	t.Parallel()
-	// Issue #28: a bare year used to fail the whole extraction.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writeChatJSON(w, `{"title":"Invoice 001","document_date":"2026","confidence":0.9}`)
 	}))

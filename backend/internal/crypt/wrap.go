@@ -9,19 +9,15 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// wrapPrefix marks a wrapped key.
 const wrapPrefix = "lmwrap1:"
 
 // WrapKey seals a master key under a key-encryption key.
 //
-// XChaCha20-Poly1305 is used rather than AES-GCM because its 24-byte random
-// nonce is collision-safe without any counter state to keep. There is nowhere
-// convenient to persist nonce counters here, and a silent nonce reuse under
-// AES-GCM would be catastrophic rather than merely wrong.
-//
-// aad binds the wrap to its slot and to the KDF parameters it was written with,
-// so a wrap cannot be moved between slots and its cost parameters cannot be
-// rewritten downward by an attacker who can edit the keyring file.
+// XChaCha20-Poly1305 rather than AES-GCM: its 24-byte random nonce is
+// collision-safe with no counter state to persist, and a silent nonce reuse
+// under AES-GCM would be catastrophic. aad binds the wrap to its slot and KDF
+// parameters, so an attacker editing the keyring file can neither move a wrap
+// between slots nor rewrite its cost downward.
 func WrapKey(kek Key, mk Key, aad string) (string, error) {
 	aead, err := chacha20poly1305.NewX(kek[:])
 	if err != nil {
@@ -35,12 +31,9 @@ func WrapKey(kek Key, mk Key, aad string) (string, error) {
 	return wrapPrefix + base64.RawURLEncoding.EncodeToString(sealed), nil
 }
 
-// UnwrapKey recovers a master key sealed by WrapKey.
-//
-// A wrong credential is indistinguishable from a tampered wrap: both surface as
-// ErrCorrupt. That is deliberate — the AEAD tag is the credential check, so
-// nothing separate is stored that could tell an attacker which of the two they
-// achieved.
+// UnwrapKey recovers a master key sealed by WrapKey. The AEAD tag is the
+// credential check, so a wrong credential and a tampered wrap both surface as
+// ErrCorrupt.
 func UnwrapKey(kek Key, wrapped string, aad string) (Key, error) {
 	wrapped = strings.TrimSpace(wrapped)
 	if !strings.HasPrefix(wrapped, wrapPrefix) {
@@ -71,16 +64,12 @@ func UnwrapKey(kek Key, wrapped string, aad string) (Key, error) {
 	return mk, nil
 }
 
-// IsWrappedKey reports whether s looks like a wrapped key.
 func IsWrappedKey(s string) bool {
 	return strings.HasPrefix(strings.TrimSpace(s), wrapPrefix)
 }
 
-// KeyID returns a short, non-secret identifier for a key.
-//
-// It exists so logs and errors can say *which* key was involved without ever
-// printing key material, and so two wraps can be checked for holding the same
-// underlying key.
+// KeyID is a short non-secret identifier, so logs can name a key without
+// printing key material and two wraps can be checked for holding the same one.
 func KeyID(k Key) string {
 	sub, err := subkey(k, nil, infoKeyID)
 	if err != nil {
@@ -89,13 +78,9 @@ func KeyID(k Key) string {
 	return fmt.Sprintf("%x", sub[:8])
 }
 
-// PasskeyKEK derives a key-encryption key from a WebAuthn PRF secret.
-//
-// Like a recovery code, the PRF output is already uniform high-entropy material,
-// so password stretching would add latency and no security. HKDF is still worth
-// doing: it gives domain separation, so the value this package uses as a key is
-// never the same bytes the authenticator hands out and might hand to something
-// else.
+// PasskeyKEK derives a KEK from a WebAuthn PRF secret. The PRF output is
+// already uniform, so stretching would add latency and no security; HKDF is
+// there for domain separation from the bytes the authenticator hands out.
 func PasskeyKEK(prf []byte) (Key, error) {
 	if len(prf) != KeyLen {
 		return Key{}, fmt.Errorf("crypt: prf secret is %d bytes, want %d", len(prf), KeyLen)

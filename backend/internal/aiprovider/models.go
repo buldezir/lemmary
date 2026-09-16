@@ -18,9 +18,8 @@ type Model struct {
 	Name string `json:"name"`
 
 	// ContextWindow is the model's context length in tokens, when the provider
-	// reports one. OpenAI's /v1/models does not, so zero means "unknown" and
-	// the configured default applies. Research mode reads documents until this
-	// window is spent, which is why it is worth surfacing in Settings.
+	// reports one. OpenAI's /v1/models does not, so zero means "unknown" and the
+	// configured default applies.
 	ContextWindow int `json:"context_window,omitempty"`
 
 	// caps is set when the provider returned a capabilities object (Mistral).
@@ -39,10 +38,6 @@ const modelsListTimeout = 20 * time.Second
 
 // ModelPurpose is the task a model is being picked for. It decides both which
 // endpoint filter is asked for and which models are kept from the answer.
-//
-// It replaced a forOCR bool once embeddings arrived: the three lists are
-// genuinely disjoint (an OCR model does not chat, an embedding model does
-// neither), and a boolean could only ever express two of them.
 type ModelPurpose string
 
 const (
@@ -81,21 +76,16 @@ func ModelsURL(p Provider, purpose ModelPurpose) string {
 	if base == "" {
 		return ""
 	}
-	// A local endpoint has no /v1/models: text-embeddings-inference does not
-	// document one, so a picker built on it would be empty or wrong depending
-	// on the version. /info is in its OpenAPI spec and names the one model it
-	// is serving.
+	// A local endpoint has no /v1/models; /info is in TEI's OpenAPI spec and
+	// names the one model it is serving.
 	if p.SDK == SDKLocalEmbeddings {
 		return InfoURL(base)
 	}
 	endpoint := base + "/models"
-	// OpenRouter is the only provider that filters server-side. Two of its
-	// filters matter here: input_modalities=file for OCR, and
-	// output_modalities=embeddings for embedding models -- which the plain
-	// catalogue leaves out altogether, so without the parameter the embedding
-	// picker is empty for every OpenRouter user. The response is still run
-	// through filterModels afterwards; the parameter is what makes the models
-	// appear at all.
+	// OpenRouter is the only provider that filters server-side, and its
+	// embedding models are left out of the plain catalogue altogether, so
+	// without the parameter the embedding picker is empty. The response still
+	// goes through filterModels; the parameter is what makes the models appear.
 	if p.SDK == SDKOpenRouter {
 		var key, value string
 		switch purpose {
@@ -118,25 +108,12 @@ func ModelsURL(p Provider, purpose ModelPurpose) string {
 	return endpoint
 }
 
-// ChatGPTModels is the catalogue for the chatgpt SDK.
-//
-// Written out because the Codex backend publishes none: it serves one endpoint,
-// /responses, and has no /models to ask. Without this the model picker would be
-// empty for every signed-in operator, and the only way to configure the
-// provider would be the "Custom model id" escape hatch -- which still works,
-// and is what covers a model added after this list was written.
-//
-// Names, not capabilities: which of these an account may actually use depends
-// on its plan, and the backend is the only thing that knows. A model refused
-// there surfaces as a provider error on the first request rather than as a
-// missing entry here.
-//
-// Codex's own descriptions rather than a tidied "GPT-5.6 Sol", because these are
-// the only models whose catalogue Lemmary authors, and the picker renders
-// `id (name)`. Which of six near-identically-named models to bind is a real
-// question, and the sentence is the part that answers it.
-//
-// In Codex's order, most capable first.
+// ChatGPTModels is the catalogue for the chatgpt SDK, written out because the
+// Codex backend publishes none. Names, not capabilities: which of these an
+// account may use depends on its plan, and a model refused there surfaces as a
+// provider error on the first request. Codex's own descriptions, because the
+// picker renders `id (name)` and which of six near-identically-named models to
+// bind is a real question. In Codex's order, most capable first.
 func ChatGPTModels() []Model {
 	return []Model{
 		{ID: "gpt-6-astra", Name: "Our most capable model for complex, demanding work"},
@@ -150,29 +127,22 @@ func ChatGPTModels() []Model {
 
 func ListModels(ctx context.Context, p Provider, purpose ModelPurpose, client *http.Client, logger *slog.Logger) ([]Model, error) {
 	// The one SDK whose catalogue is local. Answered before the checks below,
-	// which would otherwise fail it for having no API key -- it has a token
-	// instead -- and turn a working sign-in into an error banner in Settings.
+	// which would otherwise fail it for having a token rather than a key.
 	if p.SDK == SDKChatGPT {
 		if purpose == PurposeEmbedding {
 			// CanEmbed already refuses that binding; returning nothing keeps
 			// the picker honest if it is ever asked for anyway.
 			return nil, nil
 		}
-		// The same list for OCR as for chat. The Codex catalogue says nothing
-		// about which models take a file, so this is the openai case rather
-		// than the openrouter one: every name, and a warning in Settings to
-		// pick one that can read a document.
+		// The same list for OCR as for chat: the Codex catalogue says nothing
+		// about which models take a file.
 		return ChatGPTModels(), nil
 	}
 
-	// An SDK that neither chats nor embeds has no catalogue to list: Google
-	// Vision annotates without a model, and docling serves one pipeline.
-	// Returning nothing here rather than falling through is what keeps the
-	// checks below from turning a perfectly healthy keyless sidecar into a 502
-	// and an error banner in Settings.
-	//
-	// It is not plain !IsLLM: the local embeddings sidecar is keyless too, but
-	// it does name its one model, at TEI's /info rather than /v1/models.
+	// An SDK that neither chats nor embeds has no catalogue to list, and
+	// returning nothing here keeps the checks below from turning a healthy
+	// keyless sidecar into a 502. Not plain !IsLLM: the local embeddings
+	// sidecar is keyless too, but it does name its one model at /info.
 	if !IsLLM(p.SDK) && !CanEmbed(p.SDK) {
 		return nil, nil
 	}
@@ -242,12 +212,9 @@ func ListModels(ctx context.Context, p Provider, purpose ModelPurpose, client *h
 }
 
 // parseInfoResponse reads text-embeddings-inference's /info into the one model
-// it is serving.
-//
-// model_type is the field that matters: TEI serves rerankers and classifiers
-// from the same image and the same endpoint shape, and either one bound as an
-// embedding model would fail on every document with nothing in the UI to
-// explain why. An unrecognised type yields no models rather than a guess.
+// it is serving. model_type is the field that matters: TEI serves rerankers and
+// classifiers from the same endpoint shape, and either bound as an embedding
+// model would fail on every document. An unrecognised type yields no models.
 func parseInfoResponse(body []byte) ([]Model, error) {
 	var info struct {
 		ModelID         string `json:"model_id"`
@@ -295,15 +262,11 @@ func infoIsEmbedding(modelType any) bool {
 	return false
 }
 
-// filterModels keeps only the models that can serve purpose.
-//
-// Providers describe their catalogue very differently -- Mistral ships a
-// capabilities object, OpenRouter ships modality lists, OpenAI ships nothing at
-// all -- so the rules are per-SDK with a name heuristic underneath. The
-// heuristic is deliberately one-sided: an embedding model must never appear in
-// the LLM or OCR lists, because binding one there fails on every document,
-// while a model missing from a list costs an admin one line of typing, which
-// the Custom model id field exists for.
+// filterModels keeps only the models that can serve purpose. Providers describe
+// their catalogue very differently, so the rules are per-SDK with a name
+// heuristic underneath. The heuristic is one-sided on purpose: an embedding
+// model must never appear in the LLM or OCR lists, while a model missing from a
+// list costs an admin one line in the Custom model id field.
 func filterModels(models []Model, sdk string, purpose ModelPurpose) []Model {
 	out := make([]Model, 0, len(models))
 	for _, m := range models {
@@ -315,10 +278,8 @@ func filterModels(models []Model, sdk string, purpose ModelPurpose) []Model {
 }
 
 func includeModel(m Model, sdk string, purpose ModelPurpose) bool {
-	// A local endpoint serves embeddings and nothing else, and the model it
-	// serves is whatever the operator started it with -- "BAAI/bge-m3" carries
-	// no "embed" for the name heuristic to find, so asking the heuristic here
-	// would empty the one picker this SDK exists for.
+	// A local endpoint serves embeddings and nothing else, and its model name
+	// ("BAAI/bge-m3") carries no "embed" for the heuristic to find.
 	if sdk == SDKLocalEmbeddings {
 		return purpose == PurposeEmbedding
 	}
@@ -365,12 +326,9 @@ func modelContains(m Model, needle string) bool {
 	return strings.Contains(strings.ToLower(m.ID), needle) || strings.Contains(strings.ToLower(m.Name), needle)
 }
 
-// pickContextWindow takes the first positive value: providers report the window
-// under different keys and only ever populate one of them.
-// smallestContextWindow returns the smallest positive value, or 0 when none is
-// positive. Unlike pickContextWindow, which chooses between alternative
-// spellings of one number, this reconciles two numbers that can genuinely
-// differ.
+// smallestContextWindow returns the smallest positive value, or 0. Unlike
+// pickContextWindow, which chooses between alternative spellings of one number,
+// this reconciles two numbers that can genuinely differ.
 func smallestContextWindow(values ...int) int {
 	best := 0
 	for _, v := range values {
@@ -384,6 +342,8 @@ func smallestContextWindow(values ...int) int {
 	return best
 }
 
+// pickContextWindow takes the first positive value: providers report the window
+// under different keys and only ever populate one of them.
 func pickContextWindow(values ...int) int {
 	for _, v := range values {
 		if v > 0 {
@@ -457,11 +417,9 @@ func modelsFromRaw(raw []json.RawMessage) []Model {
 		// spellings (OpenRouter, Mistral), so the first positive one wins.
 		contextWindow := pickContextWindow(row.ContextLength, row.MaxContextLength)
 		if row.TopProvider != nil {
-			// top_provider.context_length is different in kind: the window of
-			// the provider a request is actually routed to, which can be
-			// smaller than the model's advertised maximum. Research spends this
-			// number, so the smaller one is the only safe answer -- overshooting
-			// it means the completion is rejected mid-run.
+			// top_provider.context_length is the window of the provider a request
+			// is actually routed to, which can be smaller than the model's
+			// advertised maximum. Overshooting it fails the completion mid-run.
 			contextWindow = smallestContextWindow(contextWindow, row.TopProvider.ContextLength)
 		}
 

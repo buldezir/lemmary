@@ -20,8 +20,7 @@ const (
 	defaultLookupPage = 500
 )
 
-// lookupPageSize is the SQLite/Bleve page size for named-entity fan-out.
-// Tests may lower it to exercise pagination.
+// Page size for named-entity fan-out; tests lower it to exercise pagination.
 var lookupPageSize = defaultLookupPage
 
 // indexAllHook, if set, replaces SQLite listing during Rebuild. Tests only.
@@ -55,9 +54,7 @@ type Index struct {
 	versionPath  string
 	needsRebuild bool
 
-	// The chunk index is the same handle pattern one level down: passages
-	// rather than documents, with a vector field. It is optional — nil
-	// whenever no embedding model is bound — and everything that touches it
+	// Optional (nil when no embedding model is bound); everything touching it
 	// takes the locks above in the same order.
 	chunkIdx         bleve.Index
 	chunkPath        string
@@ -196,7 +193,6 @@ func (i *Index) Close() error {
 	return err
 }
 
-// WaitIdle blocks until queued async index tasks finish.
 func (i *Index) WaitIdle() {
 	i.qMu.Lock()
 	if i.qCond == nil {
@@ -208,7 +204,7 @@ func (i *Index) WaitIdle() {
 	i.qMu.Unlock()
 }
 
-// EnqueueUpsert reloads and indexes the document after the PocketBase write commits.
+// EnqueueUpsert reloads the record, so it must run after the write commits.
 func (i *Index) EnqueueUpsert(app core.App, id string) {
 	id = strings.TrimSpace(id)
 	if app == nil || id == "" {
@@ -381,10 +377,9 @@ func (i *Index) DocCount() (uint64, error) {
 	return n, err
 }
 
-// ShouldHeal reports whether the index has drifted from SQLite. Called at
-// boot: async index writes are fire-and-forget, so a crash (or a boot where
-// hooks never registered) leaves a non-empty but incomplete index that an
-// empty-only check would never notice.
+// ShouldHeal reports whether the index has drifted from SQLite. Async index
+// writes are fire-and-forget, so a crash leaves a non-empty but incomplete
+// index that an empty-only check would never notice.
 func (i *Index) ShouldHeal(app core.App) bool {
 	count, err := i.DocCount()
 	if err != nil {
@@ -400,9 +395,8 @@ func (i *Index) ShouldHeal(app core.App) bool {
 	return i.chunksShouldHeal(app)
 }
 
-// chunksShouldHeal compares the chunk index against the store the same way.
-// It is what turns embeddings on for an existing archive: the first boot after
-// a model is bound finds an empty chunk index over a full table and fills it.
+// This is what turns embeddings on for an existing archive: the first boot
+// after a model is bound finds an empty chunk index over a full table.
 func (i *Index) chunksShouldHeal(app core.App) bool {
 	i.mu.RLock()
 	src := i.source
@@ -463,8 +457,7 @@ func (i *Index) Rebuild(app core.App) (int, error) {
 	}
 
 	// Built before the swap, so a chunk store that errors costs nothing: the
-	// documents index still lands, and the chunk half is retried by the boot
-	// heal rather than leaving both halves half-installed.
+	// documents index still lands and the boot heal retries the chunk half.
 	chunks, chunkErr := i.buildChunkIndex(app)
 	if chunkErr != nil && app != nil {
 		app.Logger().Error("chunk index rebuild failed", slog.Any("error", chunkErr))
@@ -528,9 +521,8 @@ func (i *Index) installRebuilt(built bleve.Index, builtPath, versionPath string,
 	}
 	i.needsRebuild = false
 
-	// The chunk half is installed last and reported through needsRebuild
-	// rather than through the error: half a rebuild is still a working keyword
-	// search, and the boot heal will come back for the rest.
+	// Chunk failures go through needsRebuild rather than the error: half a
+	// rebuild is still a working keyword search.
 	if chunks != nil {
 		if err := i.installChunkBuild(chunks); err != nil {
 			i.needsRebuild = true
@@ -554,8 +546,7 @@ func indexAllDocumentsFromApp(app core.App, idx bleve.Index) (int, error) {
 		return 0, fmt.Errorf("documents collection: %w", err)
 	}
 
-	// One cache for the whole rebuild: tags/types/correspondents repeat heavily
-	// across documents, so this collapses tens of thousands of point lookups.
+	// One cache for the whole rebuild, not one per document.
 	names := newNameCache(app)
 	batch := idx.NewBatch()
 	n := 0

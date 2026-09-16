@@ -22,11 +22,8 @@ type ProviderSpec struct {
 	Model   string
 
 	// EmbeddingModel is the retrieval embedding model. It rides on the LLM spec
-	// rather than being a field of the embedding spec because the common case
-	// is still one endpoint serving both: one key, one address, a second model
-	// name. AI_EMBEDDING_SDK is what moves it onto its own endpoint, and the
-	// model name is read from the same variable either way. Empty means dense
-	// retrieval is off.
+	// because the common case is one endpoint serving both; AI_EMBEDDING_SDK is
+	// what moves it onto its own. Empty means dense retrieval is off.
 	EmbeddingModel string
 
 	// HelperModel is the Deep Search helper on this same endpoint, the model
@@ -35,14 +32,10 @@ type ProviderSpec struct {
 	HelperModel string
 }
 
-// Configured is whether this spec names a provider the app can actually reach.
-//
-// For a hosted SDK that is a credential. For a sidecar there is no credential
-// to have, so naming the SDK and having an address is the whole of it:
-// NormalizeBaseURL has already supplied the compose default when
-// OCR_BASE_URL / AI_EMBEDDING_BASE_URL was left empty.
-// Keying this on the API key for everything is what would silently drop a
-// keyless provider before Apply ever saw it.
+// Configured is whether this spec names a provider the app can actually reach:
+// a credential for a hosted SDK, and for a sidecar, which has none to have,
+// naming the SDK and having an address. Keying it on the API key for everything
+// would silently drop a keyless provider before Apply ever saw it.
 func (s ProviderSpec) Configured() bool {
 	if !RequiresAPIKey(s.SDK) {
 		return s.Requested() && strings.TrimSpace(s.BaseURL) != ""
@@ -61,10 +54,13 @@ type Bootstrap struct {
 	LLM       ProviderSpec
 	OCR       ProviderSpec
 	Embedding ProviderSpec
+	// WebSearch is always its own endpoint: no SDK that chats or reads a
+	// document also searches the web, so there is no SharesOneProvider twin.
+	WebSearch ProviderSpec
 }
 
 func (b Bootstrap) Configured() bool {
-	return b.LLM.Configured() || b.OCR.Configured() || b.Embedding.Configured()
+	return b.LLM.Configured() || b.OCR.Configured() || b.Embedding.Configured() || b.WebSearch.Configured()
 }
 
 // SharesEmbeddingProvider is true when embeddings run on the LLM's endpoint,
@@ -147,6 +143,15 @@ func Apply(app core.App, settings *core.Record, b Bootstrap) error {
 		embeddingID = id
 	}
 
+	webSearchID := ""
+	if b.WebSearch.Configured() {
+		id, err := upsertProvider(app, b.WebSearch)
+		if err != nil {
+			return err
+		}
+		webSearchID = id
+	}
+
 	if llmID != "" {
 		model := strings.TrimSpace(b.LLM.Model)
 		if model == "" {
@@ -161,13 +166,21 @@ func Apply(app core.App, settings *core.Record, b Bootstrap) error {
 	if embeddingID != "" {
 		bindEmbedding(settings, embeddingID, b.LLM.EmbeddingModel)
 	}
+	bindWebSearch(settings, webSearchID)
 	return nil
+}
+
+// bindWebSearch points the web-search binding at the seeded provider. An empty
+// id clears it, so removing WEB_SEARCH_SDK actually turns the tools off again --
+// the same contract bindEmbedding has, and the only way back to the off
+// behaviour on a managed instance, whose Settings page refuses this field.
+func bindWebSearch(settings *core.Record, providerID string) {
+	settings.Set("websearch_provider_id", strings.TrimSpace(providerID))
 }
 
 // bindHelper points the Deep Search helper binding at the language model's
 // provider. An empty model clears the binding so the fallback to the search
-// model takes over, the same way removing AI_EMBEDDING_MODEL turns dense
-// retrieval off rather than leaving a stale binding standing.
+// model takes over.
 func bindHelper(settings *core.Record, providerID, model string) {
 	model = strings.TrimSpace(model)
 	if model == "" {
@@ -180,14 +193,10 @@ func bindHelper(settings *core.Record, providerID, model string) {
 }
 
 // bindEmbedding points the retrieval embedding binding at the language model's
-// provider.
-//
-// Two behaviours are deliberate. An empty model clears the binding rather than
-// leaving the previous one standing, so removing AI_EMBEDDING_MODEL from a
-// managed instance actually turns dense retrieval off. And embedding_dims is
-// reset only when the binding actually changed: it is a fact learned from the
-// provider's first response, and rewriting it on every boot would make the
-// whole archive look stale once a minute.
+// provider. An empty model clears the binding, so removing AI_EMBEDDING_MODEL
+// actually turns dense retrieval off. embedding_dims is reset only when the
+// binding changed: it is learned from the provider's first response, and
+// rewriting it every boot would make the whole archive look stale.
 func bindEmbedding(settings *core.Record, providerID, model string) {
 	model = strings.TrimSpace(model)
 	if model == "" {
@@ -226,6 +235,11 @@ func upsertProvider(app core.App, spec ProviderSpec) (string, error) {
 	record.Set("sdk", spec.SDK)
 	record.Set("base_url", NormalizeBaseURL(spec.SDK, spec.BaseURL))
 	record.Set("api_key", strings.TrimSpace(spec.APIKey))
+	// Only when unset, so a re-applied environment does not undo a catalogue an
+	// admin corrected for an OpenAI-compatible endpoint that is not OpenAI.
+	if record.GetString("catalog") == "" {
+		record.Set("catalog", DefaultCatalog(spec.SDK))
+	}
 	if err := app.Save(record); err != nil {
 		return "", fmt.Errorf("save provider %s: %w", alias, err)
 	}

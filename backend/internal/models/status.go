@@ -19,9 +19,8 @@ const (
 )
 
 // StatusFilterUnfinished is not a document status: it is what the Inbox asks
-// for, meaning every status except completed. The list and the search endpoint
-// both accept it where a status goes, so the two agree about what the Inbox
-// holds. Mirrored in frontend/src/lib/documentStatus.ts.
+// for, every status except completed. Mirrored in
+// frontend/src/lib/documentStatus.ts.
 const StatusFilterUnfinished = "unfinished"
 
 // UnfinishedDocStatuses expands that filter. Spelled as the set rather than as

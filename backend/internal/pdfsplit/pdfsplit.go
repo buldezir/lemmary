@@ -28,20 +28,15 @@ const (
 // MaxPDFBytes caps the staged upload. Parts are limited separately by the
 // documents.file field, so this only stops runaway uploads.
 //
-// Read from UPLOAD_MAX_MB at process start rather than from app_settings,
-// because the cap protects the host as much as it shapes the product: staging a
-// PDF costs several times its size in memory while its pages are rendered, so
-// the operator who sized the machine decides, not the person uploading. Reading
-// it from the environment also makes it a per-container value, which is the
-// only kind an orchestrator can change — it recreates the container rather than
-// reaching into a running one.
+// Read from UPLOAD_MAX_MB at process start rather than from app_settings:
+// staging a PDF costs several times its size in memory while its pages are
+// rendered, so the operator who sized the machine decides. It is then also a
+// per-container value, which is the only kind an orchestrator can change.
 var MaxPDFBytes = maxPDFBytesFromEnv()
 
-// maxPDFBytesFromEnv parses UPLOAD_MAX_MB, falling back on anything unusable.
-//
-// A malformed or non-positive value falls back rather than failing the boot: a
-// typo in an orchestrator's environment must not take a customer's instance
-// down, and the default is a working configuration.
+// maxPDFBytesFromEnv parses UPLOAD_MAX_MB. A malformed or non-positive value
+// falls back rather than failing the boot: a typo in an orchestrator's
+// environment must not take a customer's instance down.
 func maxPDFBytesFromEnv() int64 {
 	raw := strings.TrimSpace(os.Getenv("UPLOAD_MAX_MB"))
 	if raw == "" {
@@ -56,7 +51,7 @@ func maxPDFBytesFromEnv() int64 {
 
 // maxPartBytes matches the documents.file field limit, so a part that cannot be
 // stored is reported as skipped instead of failing the whole run.
-// A var so tests can shrink it instead of building 20 MB fixtures.
+// A var so tests can shrink it instead of building 47 MB fixtures.
 var maxPartBytes = DefaultMaxPartBytes
 
 var (

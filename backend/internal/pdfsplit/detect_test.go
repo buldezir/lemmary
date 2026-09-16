@@ -272,10 +272,8 @@ func (l *limitedOCR) ExtractText(ctx context.Context, filePath, mimeType string)
 	return l.stubOCR.ExtractText(ctx, filePath, mimeType)
 }
 
-// The fan-out is tuned for hosted providers, where four requests cost about
-// what one does because the time goes on the network. A local sidecar spends
-// this host's CPUs instead: four at a time queues rather than overlapping, and
-// each page's OCR timeout is already counting down while it waits its turn.
+// The fan-out is tuned for hosted providers; a local sidecar queues rather than
+// overlapping. See providerConcurrency.
 func TestOCRPagesHonoursAProviderConcurrencyLimit(t *testing.T) {
 	provider := &limitedOCR{}
 	pages := make([]ai.PageText, 8)

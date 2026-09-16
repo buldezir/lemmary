@@ -7,12 +7,8 @@ import (
 )
 
 // The pure half of Apply's decision: which provider serves OCR.
-//
-// Worth locking down separately from the parser, because the two disagreed once
-// and the disagreement was invisible. A ProviderSpec naming an SDK with no key
-// is rejected by config.parseOCR before it can reach Apply, but nothing in this
-// package enforces that — so the resolution here must be driven by whether an
-// SDK was named, never by whether it happens to carry a credential.
+// The resolution must be driven by whether an SDK was named, never by whether
+// it happens to carry a credential.
 func TestOCRResolutionFollowsTheSDK(t *testing.T) {
 	llm := ProviderSpec{SDK: SDKOpenAI, APIKey: "sk", Model: "llm-model"}
 
@@ -38,16 +34,14 @@ func TestOCRResolutionFollowsTheSDK(t *testing.T) {
 			wantShares: false, wantSDK: SDKGoogleVision, wantModel: "",
 		},
 		{
-			// The regression. An SDK named without a key used to read as "no OCR
-			// asked for", so OCR bound to the language model and the operator
-			// paid the LLM to read every page.
+			// An SDK named without a key must not read as "no OCR asked for":
+			// OCR would bind to the language model and read every page on it.
 			name:       "a different SDK whose key is missing is still not the language model",
 			ocr:        ProviderSpec{SDK: SDKGoogleVision},
 			wantShares: false, wantSDK: SDKGoogleVision, wantModel: "",
 		},
 		{
-			// A local sidecar has no key by design, and no model either. The
-			// resolution keys on the SDK, so it lands here unchanged.
+			// A local sidecar has no key by design, and no model either.
 			name:       "a keyless local SDK",
 			ocr:        ProviderSpec{SDK: SDKDocling, BaseURL: "http://docling:5001"},
 			wantShares: false, wantSDK: SDKDocling, wantModel: "",
@@ -80,8 +74,7 @@ func TestNothingConfiguredIsNotAnInstruction(t *testing.T) {
 		t.Fatal("an SDK with no key should not count as configured")
 	}
 	// The keyless SDKs move the requirement rather than removing it: an
-	// address instead of a credential. A docling spec with neither is still
-	// half a configuration and must not be applied.
+	// address instead of a credential.
 	if (Bootstrap{OCR: ProviderSpec{SDK: SDKDocling}}).Configured() {
 		t.Fatal("a local SDK with no address should not count as configured")
 	}
@@ -98,10 +91,8 @@ func TestNothingConfiguredIsNotAnInstruction(t *testing.T) {
 	}
 }
 
-// SharesEmbeddingProvider decides whether Apply writes a second provider row.
-// Keying it on whether an SDK was named -- never on whether it has a key -- is
-// the same rule SharesOneProvider follows, and for the same reason: conflating
-// the two is how a binding silently lands on the language model.
+// SharesEmbeddingProvider decides whether Apply writes a second provider row,
+// keyed on whether an SDK was named and never on whether it has a key.
 func TestSharesEmbeddingProvider(t *testing.T) {
 	t.Parallel()
 	cases := map[string]struct {
@@ -139,12 +130,12 @@ func settingsRecordForTest() *core.Record {
 		&core.TextField{Name: "embedding_provider_id", Max: 15},
 		&core.TextField{Name: "embedding_model", Max: 200},
 		&core.NumberField{Name: "embedding_dims", OnlyInt: true},
+		&core.TextField{Name: "websearch_provider_id", Max: 15},
 	)
 	return core.NewRecord(collection)
 }
 
-// The dimension count is learned from the provider's first answer, so a boot
-// that rewrote it would make every document look stale once a minute. It resets
+// The dimension count is learned from the provider's first answer, so it resets
 // only when the binding it describes actually moved.
 func TestBindEmbeddingResetsDimsOnlyOnChange(t *testing.T) {
 	t.Parallel()
@@ -194,5 +185,39 @@ func TestReferencedBySettingsCoversTheEmbeddingBinding(t *testing.T) {
 
 	if !ReferencedBySettings(record, "provider1") {
 		t.Fatal("a provider bound to embeddings should count as referenced")
+	}
+}
+
+// Removing WEB_SEARCH_SDK from a managed instance has to actually turn the
+// tools off again. Leaving the binding standing would be a one-way door: the
+// Settings page refuses this field under AI_MANAGED=1, so an operator who
+// unset the environment would have no way back to the off behaviour.
+func TestBindWebSearchClearsWhenTheProviderIsRemoved(t *testing.T) {
+	t.Parallel()
+	record := settingsRecordForTest()
+
+	bindWebSearch(record, "provider1")
+	if got := record.GetString("websearch_provider_id"); got != "provider1" {
+		t.Fatalf("binding not written: %q", got)
+	}
+
+	bindWebSearch(record, "")
+	if got := record.GetString("websearch_provider_id"); got != "" {
+		t.Fatalf("binding survived removal: %q", got)
+	}
+}
+
+// Deleting a provider out from under the binding would leave a dangling id in
+// settings, which is what the delete handler's 409 exists to prevent.
+func TestReferencedBySettingsCoversTheWebSearchBinding(t *testing.T) {
+	t.Parallel()
+	record := settingsRecordForTest()
+	record.Set("websearch_provider_id", "provider1")
+
+	if !ReferencedBySettings(record, "provider1") {
+		t.Fatal("a provider bound to web search should count as referenced")
+	}
+	if ReferencedBySettings(record, "provider2") {
+		t.Fatal("an unbound provider is not referenced")
 	}
 }

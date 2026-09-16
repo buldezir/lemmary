@@ -13,31 +13,26 @@ import (
 	"lemmary/backend/internal/fulltext"
 )
 
-// truncatedContentLen is how much of the OCR text a list response carries when
-// the client asks for truncated content, matching paperless-ngx's own cut.
+// truncatedContentLen matches paperless-ngx's own truncated-content cut.
 const truncatedContentLen = 550
 
 // textCriterion is one text filter and the index fields it may match. Empty
-// fields means every searchable field, which is what a bare `query=` asks for;
-// paperless' title- and content-scoped filters name the fields they mean.
+// fields means every searchable field, which is what a bare `query=` asks for.
 type textCriterion struct {
 	text   string
 	fields []string
 }
 
-// dateBound is one comparison against a date column. value is already in the
-// spelling the column is compared against; day compares the leading ten
-// characters only, which is all a date filter can mean.
+// dateBound is one comparison against a date column. day compares the leading
+// ten characters only, which is all a date filter can mean.
 type dateBound struct {
 	op    string // ">=", ">", "<=" or "<"
 	value string
 	day   bool
 }
 
-// documentFilters is a parsed paperless-ngx document list query. Ids are
-// already translated to PocketBase ids, and dates are already normalised to
-// bounds the SQL can compare directly, so building the query from it needs no
-// further knowledge of paperless' parameter spelling.
+// documentFilters is a parsed paperless-ngx document list query: ids already
+// translated to PocketBase ids, dates already normalised to comparable bounds.
 type documentFilters struct {
 	text []textCriterion
 
@@ -63,23 +58,19 @@ type documentFilters struct {
 
 	truncateContent bool
 
-	// impossible means the filter set cannot match anything: a positive filter
-	// named an id that does not exist for this owner, or asked for a property
-	// no document here can have. The result is an empty page -- the client
-	// asked for documents carrying a tag nobody has, and the honest answer is
-	// none of them, never the unfiltered archive that silently dropping the
-	// filter would return.
+	// impossible means a positive filter named something no document here can
+	// have. The answer is an empty page, never the unfiltered archive that
+	// silently dropping the filter would return.
 	impossible bool
 }
 
-// hasText reports whether the query needs the search index at all. A pure tag
+// hasText reports whether the query needs the search index at all: a pure tag
 // or date filter must keep working while the index is still building.
 func (f documentFilters) hasText() bool {
 	return len(f.text) > 0
 }
 
-// textParams are the text filters and the index fields each may match. The
-// general query is first because its ranking is the one worth keeping.
+// The general query comes first because its ranking is the one worth keeping.
 var textParams = []struct {
 	param  string
 	fields []string
@@ -90,7 +81,6 @@ var textParams = []struct {
 	{"content__icontains", []string{fulltext.FieldOCRText}},
 }
 
-// relationSpec is one single-relation filter family.
 type relationSpec struct {
 	collection               string
 	single, in, none, isnull string
@@ -125,7 +115,7 @@ var nonFilterParams = []string{
 	"format", "full_perms", "truncate_content",
 	// swift-paperless sends `fields=id` on the sweep that reconciles remote
 	// deletions and swallows the error, so a 400 here stops deletions reaching
-	// the device. Lemmary always returns the full shape; this narrows nothing.
+	// the device.
 	"fields",
 }
 
@@ -160,13 +150,9 @@ var dateSuffixes = []struct {
 
 // handledParams are the query parameters the document list understands.
 //
-// Anything not in here is refused rather than ignored. Ignoring an unknown
-// filter is the bug this whole file exists to fix: the client renders a 200 as
-// though the filter had been applied, so "documents tagged Invoice" quietly
-// becomes "every document". A 400 is wrong far more visibly.
-//
-// Derived from the tables the parser reads rather than kept by hand: the two
-// had already drifted, refusing added__year that the parser handled fine.
+// Anything not in here is refused rather than ignored: a client renders a 200
+// as though the filter had been applied, so "documents tagged Invoice" quietly
+// becomes "every document".
 var handledParams = buildHandledParams()
 
 func buildHandledParams() map[string]struct{} {
@@ -202,9 +188,8 @@ func parseDocumentFilters(app core.App, authID string, q url.Values) (documentFi
 	return parseDocumentFiltersWith(requestNgxIDs(app, authID), toNgxID(authID), q)
 }
 
-// parseDocumentFiltersWith is parseDocumentFilters with the id resolver and the
-// caller's own client-facing id handed in, which is the seam the parser tests
-// use: everything except id translation is pure.
+// parseDocumentFiltersWith takes the id resolver and the caller's client-facing
+// id: everything except id translation is pure, which is the seam the tests use.
 func parseDocumentFiltersWith(ids *ngxIDs, ownerID int, q url.Values) (documentFilters, error) {
 	var f documentFilters
 
@@ -330,9 +315,8 @@ func parseDocumentFiltersWith(ids *ngxIDs, ownerID int, q url.Values) (documentF
 }
 
 // applyOwnerFilters answers the owner pill from the one fact this endpoint
-// guarantees: every document it can return belongs to the caller. So a filter
-// either names them and narrows nothing, or names somebody else and matches
-// nothing. Refusing these turned "My documents" into an error.
+// guarantees: every document it can return belongs to the caller. Refusing
+// these turned "My documents" into an error.
 func applyOwnerFilters(f *documentFilters, ownerID int, q url.Values) error {
 	named := func(param string) (map[int]bool, error) {
 		raw := csvValues(q, param)
@@ -391,15 +375,9 @@ func parseTextCriteria(q url.Values) []textCriterion {
 }
 
 // ngxIDs translates the integer ids a client sends into PocketBase ids for the
-// life of one request.
-//
-// It resolves in batches and remembers what it resolved, so a request naming
-// three tag ids costs one query rather than three, and naming the same tag in
-// two filters costs nothing the second time.
+// life of one request, resolving in batches and memoising what it resolved.
 type ngxIDs struct {
-	// lookup is injected rather than called directly on an app: everything in
-	// the parser except id translation is pure, and handing this in is what
-	// lets the parser tests stay that way.
+	// lookup is injected so the parser stays pure apart from id translation.
 	lookup func(collection string, ids []int) (map[int]string, error)
 	memo   map[string]map[int]string
 }
@@ -413,8 +391,6 @@ func requestNgxIDs(app core.App, authID string) *ngxIDs {
 	}
 }
 
-// resolve reads a batch of client ids, consulting the memo first and querying
-// only for what is left.
 func (r *ngxIDs) resolve(collection string, ids []int) (map[int]string, error) {
 	known := r.memo[collection]
 	if known == nil {
@@ -442,9 +418,9 @@ func (r *ngxIDs) resolve(collection string, ids []int) (map[int]string, error) {
 	return known, nil
 }
 
-// resolveAll maps client ids to PocketBase ids. complete is false when any of
-// them named a record that does not exist, which is what tells a positive
-// filter to match nothing rather than everything.
+// resolveAll maps client ids to PocketBase ids. complete is false when one of
+// them named a record that does not exist, which tells a positive filter to
+// match nothing rather than everything.
 func (r *ngxIDs) resolveAll(collection string, raw []string) (resolved []string, complete bool, err error) {
 	if len(raw) == 0 {
 		return nil, true, nil
@@ -521,10 +497,8 @@ const (
 )
 
 // parseDateBounds reads every comparator paperless spells for one date field.
-//
-// One bound per comparator rather than a folded [from, to] pair: ANDing keeps
-// the tightest automatically, and it lets a datetime bound stay a datetime.
-// Folding to days made added__gt=...T10:00:00Z drop that whole afternoon.
+// One bound per comparator rather than a folded [from, to] pair: folding to
+// days made added__gt=...T10:00:00Z drop that whole afternoon.
 func parseDateBounds(q url.Values, field dateFieldSpec) ([]dateBound, error) {
 	var bounds []dateBound
 	for _, spec := range dateSuffixes {
@@ -589,8 +563,8 @@ func parseFilterTime(raw string) (time.Time, error) {
 
 // createdValueSQL is the created date a client is shown: the document's own, or
 // its upload day when it has none. mapDocument renders exactly this, so the
-// filter and the sort must read it too -- otherwise every undated document is
-// missing from a range covering the date on its own card.
+// filter and the sort must read it too, or undated documents drop out of a
+// range covering the date on their own card.
 const createdValueSQL = `COALESCE(NULLIF([[documents.document_date]], ''), [[documents.created]])`
 
 // addedValueSQL is the upload timestamp, which paperless calls added.
@@ -598,13 +572,9 @@ const addedValueSQL = `[[documents.created]]`
 
 // documentFilterExprs compiles the filter set to SQL.
 //
-// Raw expressions rather than PocketBase's filter DSL, because the same slice
-// has to serve CountRecords and the page query: the DSL only reaches the latter,
-// and a count built from a different expression than the page it counts is a
-// pagination bug waiting to happen.
-//
-// Column references are qualified because both queries read FROM documents
-// unaliased, and because the json_each subquery correlates on the outer row.
+// Raw expressions rather than PocketBase's filter DSL: the same slice has to
+// serve CountRecords and the page query, and the DSL only reaches the latter.
+// Columns are qualified because the json_each subquery correlates on the outer row.
 func documentFilterExprs(f documentFilters) []dbx.Expression {
 	var exprs []dbx.Expression
 	names := &paramNamer{}
@@ -647,8 +617,7 @@ func documentFilterExprs(f documentFilters) []dbx.Expression {
 		if len(spec.none) > 0 {
 			// COALESCE, because a document with no relation at all must survive
 			// an exclusion: SQL three-valued logic drops NULL from a bare
-			// NOT IN, where paperless' exclude() keeps it. Measured on a table
-			// with a NULL and an empty document_type, the bare form loses both.
+			// NOT IN, where paperless' exclude() keeps it.
 			placeholders, params := names.bind(spec.column+"_none", spec.none)
 			exprs = append(exprs, dbx.NewExp(fmt.Sprintf(
 				"COALESCE([[documents.%s]], '') NOT IN (%s)",
@@ -676,21 +645,14 @@ func documentFilterExprs(f documentFilters) []dbx.Expression {
 	return exprs
 }
 
-// tagsJSON normalises the tags column to a JSON array before anything reads it.
-//
-// The column is a multi-relation, which PocketBase stores as a JSON array in a
-// TEXT column, but it also holds two non-arrays: the legacy empty string, and
-// NULL. Testing `json_valid(tags) AND ...` looks equivalent and is not --
-// json_valid(NULL) is NULL, so under negation the whole conjunct goes NULL and
-// the row is dropped. Measured: `NOT (json_valid(tags) AND json_array_length(
-// tags) > 0)` returns two of the three untagged rows, losing the NULL one. The
-// CASE returns all three.
+// tagsJSON normalises the tags column to a JSON array before anything reads it:
+// the TEXT column also holds the legacy empty string and NULL. `json_valid(tags)
+// AND ...` is not equivalent, since json_valid(NULL) is NULL, so under negation
+// the whole conjunct goes NULL and the untagged row is dropped.
 const tagsJSON = `CASE WHEN json_valid([[documents.tags]]) THEN [[documents.tags]] ELSE '[]' END`
 
-// hasAnyTagSQL is the "this document carries at least one tag" test.
 const hasAnyTagSQL = `json_array_length(` + tagsJSON + `) > 0`
 
-// tagsExpr tests membership against the tag id array.
 func tagsExpr(ids []string, negate bool, names *paramNamer) dbx.Expression {
 	placeholders, params := names.bind("tag", ids)
 	exists := "EXISTS"
@@ -727,9 +689,8 @@ func dateBoundExprs(value, prefix string, bounds []dateBound, names *paramNamer)
 	return exprs
 }
 
-// paramNamer hands out placeholder names that are unique across one query. dbx
-// merges every expression's parameters into one map, so two expressions reusing
-// a name would silently overwrite each other's value.
+// paramNamer hands out placeholder names that are unique across one query: dbx
+// merges every expression's parameters into one map.
 type paramNamer struct {
 	n int
 }

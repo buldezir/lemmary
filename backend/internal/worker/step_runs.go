@@ -122,7 +122,6 @@ func markStepFailed(run *models.StepRun, err error) {
 	run.Error = strutil.Truncate(err.Error(), 1900)
 }
 
-// markStepSoftFailed records a failure the pipeline is allowed to continue past.
 func markStepSoftFailed(run *models.StepRun, err error) {
 	markStepFailed(run, err)
 	run.Soft = true

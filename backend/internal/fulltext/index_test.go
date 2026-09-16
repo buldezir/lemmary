@@ -86,9 +86,8 @@ func TestSearchANDVsPhrase(t *testing.T) {
 		t.Fatalf("phrase should not match split terms, got %v", phraseHits)
 	}
 
-	// A third term nothing carries: strict finds nothing at all, which is the
-	// failure the agent tools hit constantly — the model guesses one keyword
-	// wrong and the whole search comes back empty.
+	// The failure the agent tools hit constantly: one keyword guessed wrong
+	// and the whole search comes back empty.
 	strictThree := searchIDs(t, idx, Query{Text: "plumber invoice bathroom", UserID: "u1"})
 	if len(strictThree) != 0 {
 		t.Fatalf("strict AND should require every term, got %v", strictThree)
@@ -98,15 +97,14 @@ func TestSearchANDVsPhrase(t *testing.T) {
 		t.Fatalf("relaxed should match 2 of 3 terms, got %v", relaxedThree)
 	}
 
-	// Two of the three terms is the floor the first rung asks for, and it is
-	// the requirement reported back while that rung answers.
+	// The first rung's floor is reported back while that rung answers.
 	firstRung := mustSearch(t, idx, Query{Text: "plumber invoice bathroom", UserID: "u1", Relaxed: true})
 	if firstRung.Required != 2 || firstRung.Terms != 3 {
 		t.Fatalf("terms=%d required=%d, want 3 and the 2-of-3 floor", firstRung.Terms, firstRung.Required)
 	}
 
-	// Only when nothing clears that floor does the wider rung run, and it
-	// reports the lower requirement so the caller can say the hits are partial.
+	// The wider rung reports the lower requirement, so the caller can say the
+	// hits are partial.
 	oneOfThree := mustSearch(t, idx, Query{Text: "plumber skylight bathroom", UserID: "u1", Relaxed: true})
 	if oneOfThree.Required != 1 || oneOfThree.Terms != 3 {
 		t.Fatalf("terms=%d required=%d, want 3 and 1", oneOfThree.Terms, oneOfThree.Required)
@@ -115,8 +113,7 @@ func TestSearchANDVsPhrase(t *testing.T) {
 		t.Fatalf("the fallback rung should rescue a one-term match, got %v", resultIDs(oneOfThree))
 	}
 
-	// A quoted phrase stays mandatory even in relaxed mode: "split" has both
-	// words but not adjacent, and no amount of slack may let it through.
+	// "split" has both words but not adjacent; no amount of slack lets it through.
 	relaxedPhrase := searchIDs(t, idx, Query{Text: `"plumber invoice" paid`, UserID: "u1", Relaxed: true})
 	if containsID(relaxedPhrase, "split") {
 		t.Fatalf("relaxed must not drop a quoted phrase, got %v", relaxedPhrase)
@@ -148,7 +145,7 @@ func TestSearchRelaxedFuzzyMatchesTypos(t *testing.T) {
 	if hits := searchIDs(t, idx, Query{Text: "Pole", UserID: "u1", Relaxed: true}); len(hits) != 0 {
 		t.Fatalf("short terms must stay exact, got %v", hits)
 	}
-	// Neither do numbers: 4712 is a different contract, not a misspelt one.
+	// Nor numbers: 4712 is a different contract, not a misspelt one.
 	if hits := searchIDs(t, idx, Query{Text: "4712", UserID: "u1", Relaxed: true}); len(hits) != 0 {
 		t.Fatalf("terms with digits must stay exact, got %v", hits)
 	}
@@ -170,7 +167,7 @@ func TestSearchRelaxedRanksExactAboveFuzzy(t *testing.T) {
 	})
 
 	// The fuzzy leg only exists on the fallback rung, so the query has to be
-	// one the first rung cannot answer: neither document carries both terms.
+	// one the first rung cannot answer.
 	res := mustSearch(t, idx, Query{Text: "Versicherung Zahnarztrechnung", UserID: "u1", Relaxed: true})
 	if res.Required != 1 {
 		t.Fatalf("expected the fallback rung, required=%d", res.Required)
@@ -277,6 +274,32 @@ func TestSearchTagNameAndDateRange(t *testing.T) {
 	})
 	if !containsID(inRange, "tagged") || containsID(inRange, "other") {
 		t.Fatalf("date range: %v", inRange)
+	}
+}
+
+func TestSearchAllTagIDsRequiresEveryTag(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "both", map[string]any{
+		FieldUser:  "u1",
+		FieldTags:  []string{"tag1", "tag2"},
+		FieldTitle: "Both invoice",
+		FieldAll:   "Both invoice",
+	})
+	mustPut(t, idx, "one", map[string]any{
+		FieldUser:  "u1",
+		FieldTags:  []string{"tag1"},
+		FieldTitle: "One invoice",
+		FieldAll:   "One invoice",
+	})
+
+	all := searchIDs(t, idx, Query{Text: "invoice", UserID: "u1", AllTagIDs: []string{"tag1", "tag2"}})
+	if !containsID(all, "both") || containsID(all, "one") {
+		t.Fatalf("all-tag filter should keep only the document carrying both: %v", all)
+	}
+
+	anyOf := searchIDs(t, idx, Query{Text: "invoice", UserID: "u1", TagIDs: []string{"tag1", "tag2"}})
+	if !containsID(anyOf, "both") || !containsID(anyOf, "one") {
+		t.Fatalf("TagIDs stays any-of for the agent tool: %v", anyOf)
 	}
 }
 
@@ -542,8 +565,7 @@ func TestEnqueueDrainsAndOrders(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "doc", sampleDoc("queued hello"))
 
-	// A delete enqueued after the document exists must win over the earlier
-	// state once the queue drains.
+	// A later delete must win over the earlier state once the queue drains.
 	idx.EnqueueDelete("doc")
 	idx.WaitIdle()
 	if hits := searchIDs(t, idx, Query{Text: "queued", UserID: "u1"}); len(hits) != 0 {
@@ -555,9 +577,8 @@ func TestConcurrentEnqueueAndSearch(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "doc", sampleDoc("racing hello"))
 
-	// Regression: WaitIdle (called by Search) used to wg.Wait concurrently
-	// with wg.Add in the enqueue path — an illegal WaitGroup reuse that could
-	// panic under load.
+	// Regression: WaitIdle used to wg.Wait concurrently with wg.Add in the
+	// enqueue path, an illegal WaitGroup reuse that could panic under load.
 	var wg sync.WaitGroup
 	for n := 0; n < 8; n++ {
 		wg.Add(2)
@@ -606,9 +627,8 @@ func TestIDsByKeywordPaginates(t *testing.T) {
 	}
 }
 
-// synonymBag is the query shape that motivated relaxed matching: a model told
-// to "expand the request into concrete keywords" emits alternative names for
-// one thing, and strict AND asks for a document that is all of them at once.
+// The query shape that motivated relaxed matching: alternative names for one
+// thing, which strict AND asks a document to be all of at once.
 const synonymBag = "purchase order receipt invoice payment amount"
 
 func mustSearch(t *testing.T, idx *Index, q Query) Result {
@@ -668,9 +688,7 @@ func TestRelaxedFindsSynonymBag(t *testing.T) {
 	}
 }
 
-// TestRelaxedTierAKeepsPrecision is the guard against "simplifying" the ladder
-// into a single min=1 query: when most terms do match, the near misses must
-// stay out.
+// The guard against "simplifying" the ladder into a single min=1 query.
 func TestRelaxedTierAKeepsPrecision(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "all", ocrDoc("Plumber invoice", "Paid the plumber invoice in July"))
@@ -688,9 +706,8 @@ func TestRelaxedTierAKeepsPrecision(t *testing.T) {
 	}
 }
 
-// TestRelaxedRanksMoreTermsFirst pins bleve's disjunction coord factor
-// (countMatch/countTotal). Without it the fallback rung would be unordered
-// noise, and a bleve upgrade that dropped it should fail here.
+// Pins bleve's disjunction coord factor (countMatch/countTotal): without it the
+// fallback rung is unordered noise, so a bleve upgrade dropping it fails here.
 func TestRelaxedRanksMoreTermsFirst(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "many", ocrDoc("Ledger", "purchase order receipt invoice"))
@@ -754,22 +771,20 @@ func TestRelaxedFuzzyOnlyInFallback(t *testing.T) {
 		t.Fatalf("one edit of slack should reach invoice, got %v", resultIDs(typo))
 	}
 
-	// A digit-bearing term is an id, an amount or a date: a near miss there is a
-	// different document, not the same one spelled badly.
 	digits := mustSearch(t, idx, Query{Text: "12345", UserID: "u1", Relaxed: true})
 	if len(digits.Hits) != 0 {
 		t.Fatalf("digits must not match fuzzily, got %v", resultIDs(digits))
 	}
 
-	// Too short for fuzzy, and a prefix of nothing indexed, so the prefix leg
-	// cannot stand in for the fuzzy one that is deliberately absent.
+	// Too short for fuzzy, and a prefix of nothing indexed, so no prefix leg
+	// stands in for the absent fuzzy one.
 	short := mustSearch(t, idx, Query{Text: "bll", UserID: "u1", Relaxed: true})
 	if len(short.Hits) != 0 {
 		t.Fatalf("short terms must not match fuzzily, got %v", resultIDs(short))
 	}
 
-	// Fuzziness must not creep into the first rung: a query that matches
-	// exactly is answered there, and reports the stricter floor.
+	// A query that matches exactly is answered on the first rung, at the
+	// stricter floor.
 	exact := mustSearch(t, idx, Query{Text: "plumber invoice", UserID: "u1", Relaxed: true})
 	if !containsID(resultIDs(exact), "inv") {
 		t.Fatalf("exact query should match, got %v", resultIDs(exact))
@@ -817,9 +832,8 @@ func TestRelaxedRespectsFilters(t *testing.T) {
 	}
 }
 
-// TestRelaxedDoesNotEscalatePastEnd pins the escalation predicate: paging past
-// the end of a result set empties the hit slice, and widening the query there
-// would swap the corpus under the caller.
+// Paging past the end of a result set empties the hit slice; widening the
+// query there would swap the corpus under the caller.
 func TestRelaxedDoesNotEscalatePastEnd(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "all", ocrDoc("Plumber invoice", "Paid the plumber invoice"))
@@ -866,8 +880,7 @@ func TestMinShouldMatch(t *testing.T) {
 	}
 }
 
-// The timeline's "No date" row: a document indexes no document_date at all
-// when it has none, so the filter has to answer on the absence of the field.
+// The timeline's "No date" row: the filter has to answer on a missing field.
 func TestSearchUndatedFilter(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "dated", map[string]any{
@@ -908,8 +921,8 @@ func TestSearchMatchesWordPrefix(t *testing.T) {
 		FieldSummary: "Quarterly reading from the meter",
 	})
 
-	// "ama" is the advertised three-rune floor; the comma is what a real search
-	// box collects when someone types a list.
+	// "ama" is the three-rune floor; the comma is what a real search box
+	// collects when someone types a list.
 	for _, typed := range []string{"ama", "amaz", "amazo", "amazon", "Amaz", "amaz,"} {
 		hits := searchIDs(t, idx, Query{Text: typed, UserID: "u1"})
 		if !containsID(hits, "amazon") {
@@ -929,7 +942,6 @@ func TestSearchMatchesWordPrefix(t *testing.T) {
 		t.Fatalf("prefixes from different documents must not match, got %v", hits)
 	}
 
-	// Under minPrefixLen there is no prefix leg.
 	if hits := searchIDs(t, idx, Query{Text: "am", UserID: "u1"}); len(hits) != 0 {
 		t.Fatalf("a two-letter prefix should not match, got %v", hits)
 	}
@@ -946,8 +958,6 @@ func TestSearchPrefixMatchesGermanCompound(t *testing.T) {
 	}
 }
 
-// A number is an id, an amount or a date: a prefix of one is a different
-// document, which is the rule fuzzyWorthy already applies.
 func TestSearchPrefixSkipsDigits(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "y2024", ocrDoc("Steuerbescheid", "Fällig 2024 nach Abzug"))
@@ -960,9 +970,8 @@ func TestSearchPrefixSkipsDigits(t *testing.T) {
 	}
 }
 
-// Prefix hits live on a widening rung, so they cannot appear beside exact ones
-// — including across fields, where a title prefix (boost 4) would otherwise
-// outscore an exact hit in OCR text (boost 1).
+// Prefix hits live on a widening rung, so they cannot appear beside exact ones,
+// including across fields where a title prefix would outscore an exact OCR hit.
 func TestSearchPrefixOnlyWhenExactFindsNothing(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "exact", ocrDoc("Quarterly report", "the form was signed"))
@@ -979,7 +988,6 @@ func TestSearchPrefixOnlyWhenExactFindsNothing(t *testing.T) {
 		t.Fatalf("a prefix hit must not join an exact one, got %v", hits)
 	}
 
-	// With no exact match anywhere, the wider rung answers.
 	if hits := searchIDs(t, idx, Query{Text: "forma", UserID: "u1"}); !containsID(hits, "prefixed") {
 		t.Fatalf("the widening rung should find Formation, got %v", hits)
 	}

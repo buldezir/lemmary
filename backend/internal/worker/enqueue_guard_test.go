@@ -9,29 +9,17 @@ import (
 
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/models"
+	"lemmary/backend/internal/testpb"
 	// Registers the migrations that create processing_jobs; without them
-	// RunAppMigrations builds an empty schema.
+	// the shared schema template is empty.
 	_ "lemmary/backend/migrations"
 )
 
 func bootAppForEnqueue(t *testing.T) *pocketbase.PocketBase {
 	t.Helper()
-	app := pocketbase.NewWithConfig(pocketbase.Config{
-		DefaultDataDir:  t.TempDir(),
-		HideStartBanner: true,
-	})
-	if err := app.Bootstrap(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = app.ResetBootstrapState() })
-	if err := app.RunAppMigrations(); err != nil {
-		t.Fatalf("run app migrations: %v", err)
-	}
-	return app
+	return testpb.Open(t)
 }
 
-// processing_jobs.document is a relation, so the guard cannot be exercised
-// without a real document behind it.
 func makeDocumentForEnqueue(t *testing.T, app core.App) string {
 	t.Helper()
 	users, err := app.FindCollectionByNameOrId("users")
@@ -81,10 +69,9 @@ func makeJob(t *testing.T, app core.App, documentID, status, finishedAt string) 
 	return job
 }
 
-// The window this guard exists for: apply_metadata sets the job's status to
-// completed and saves it, and only then does embed run. A guard keyed on
-// pending/running sees "completed" and lets a second pipeline in, and the two
-// then run OCR and extraction over the same document at once.
+// The window this guard exists for: apply_metadata marks the job completed
+// before embed runs, so a guard keyed on pending/running would let a second
+// pipeline in over the same document.
 func TestEnqueueRefusesASecondJobWhileEmbedIsStillRunning(t *testing.T) {
 	app := bootAppForEnqueue(t)
 	documentID := makeDocumentForEnqueue(t, app)

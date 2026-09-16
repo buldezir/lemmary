@@ -11,35 +11,26 @@ import (
 // Embeddings are built from documents.ocr_text and nothing else.
 //
 // Until now every document also carried a "header" chunk at ordinal 0: its
-// title, tags, correspondent and summary rendered as one passage and embedded
-// beside the text. That passage is what made a rename expensive -- retagging a
-// document, or renaming one tag across an archive, dated vectors that the OCR
-// text had not changed a byte of -- and the metadata it carried is already
-// searchable through the keyword index, which indexes all of those fields.
+// title, tags, correspondent and summary embedded beside the text. That passage
+// is what made a rename expensive, dating vectors the OCR text had not changed a
+// byte of, and the metadata it carried is already searchable through the keyword
+// index.
 //
-// The header rows are deleted rather than re-embedded away. A body chunk's
-// vector is a function of its slice of ocr_text, and neither the text nor the
-// cut rules change here, so every remaining vector is exactly as valid as it
-// was: bumping chunk.Version instead would re-buy an entire archive's
-// embeddings from the provider to produce identical numbers.
+// The header rows are deleted rather than re-embedded away: a body chunk's
+// vector is a function of its slice of ocr_text, which does not change here, so
+// bumping chunk.Version would re-buy an entire archive's embeddings to produce
+// identical numbers.
 //
 // document_chunks is rebuilt in one pass rather than edited in three. SQLite
 // implements DROP COLUMN by copying the whole table, and this is the table that
-// holds every float32 blob in the archive -- dropping `kind` and `text`
-// separately would copy all of it twice, on top of the DELETE. One
-// CREATE/INSERT/RENAME copies it once and drops the header rows on the way
-// through. That matters most under VAULT_ENABLED=1, where data.db lives in a
-// tmpfs and the copy is RAM.
+// holds every float32 blob in the archive, so dropping two columns separately
+// would copy all of it twice. That matters most under VAULT_ENABLED=1, where
+// data.db lives in a tmpfs and the copy is RAM.
 //
-// What happens to the derived Bleve chunk index on the upgrade boot: app
-// migrations run *before* the index opens (fulltext.Register binds OnBootstrap
-// at priority -10 and opens after e.Next(); config.RegisterHooks runs
-// RunAppMigrations inside that chain), so by the time the index is opened the
-// header rows are already gone. ShouldHeal compares the store's chunk count
-// against the index's, sees the drop, and rebuilds -- which reindexes the
-// keyword documents index as well as the chunks, synchronously, before the
-// process serves. So no header passage is ever quoted after this runs, at the
-// cost of one slow first boot on a large archive.
+// App migrations run before the Bleve chunk index opens, so ShouldHeal sees the
+// chunk count drop and rebuilds synchronously before the process serves. No
+// header passage is ever quoted after this runs, at the cost of one slow first
+// boot on a large archive.
 func init() {
 	m.Register(func(app core.App) error {
 		return dropHeaderChunks(app.DB())

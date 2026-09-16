@@ -6,9 +6,8 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// newDocumentRecord builds a documents record already "loaded from the
-// database", so Original() answers with the values it was given. PostScan is
-// what makes the current values the original ones.
+// PostScan is what makes the current values the original ones, so Original()
+// answers with the values the record was given.
 func newDocumentRecord(t *testing.T, id, title, ocrText string) *core.Record {
 	t.Helper()
 	collection := core.NewBaseCollection("documents")
@@ -33,9 +32,8 @@ func newDocumentRecord(t *testing.T, id, title, ocrText string) *core.Record {
 	return record
 }
 
-// Only the OCR text is embedded, so only the OCR text can date a vector. This
-// is the contract the whole feature rests on: an archive whose tags are being
-// tidied must not be re-embedded for it.
+// Only the OCR text is embedded, so an archive whose tags are being tidied must
+// not be re-embedded for it.
 func TestTouchesEmbeddedTextOnlyFollowsTheOCRText(t *testing.T) {
 	t.Parallel()
 
@@ -62,16 +60,13 @@ func TestTouchesEmbeddedTextOnlyFollowsTheOCRText(t *testing.T) {
 	}
 }
 
-// The detail form sends ocr_text on every save, including a save that only
-// corrected a title. Re-writing the same text must not date the vectors: a
-// re-embed of an unchanged 20-page document costs a provider call and buys
-// nothing.
+// The detail form sends ocr_text on every save, including one that only
+// corrected a title; re-writing the same text must not date the vectors.
 func TestTouchesEmbeddedTextIgnoresAnUnchangedOCRSave(t *testing.T) {
 	t.Parallel()
 	record := newDocumentRecord(t, "doc1", "Policy", "Acme Plumbing\nTotal 42.00\n")
 
-	// What "Save corrections" writes when only the title was touched: the same
-	// ocr_text back, plus the fields the save always sets.
+	// What "Save corrections" writes when only the title was touched.
 	record.Set("title", "Plumbing invoice")
 	record.Set("ocr_text", "Acme Plumbing\nTotal 42.00\n")
 	record.Set("metadata_source", "user")
@@ -81,8 +76,8 @@ func TestTouchesEmbeddedTextIgnoresAnUnchangedOCRSave(t *testing.T) {
 	}
 }
 
-// A record with no previous state is a record this cannot reason about, and
-// guessing "unchanged" there would leave a document permanently unembedded.
+// Guessing "unchanged" with no previous state leaves a document permanently
+// unembedded.
 func TestTouchesEmbeddedTextTreatsAnUnknownOriginalAsChanged(t *testing.T) {
 	t.Parallel()
 

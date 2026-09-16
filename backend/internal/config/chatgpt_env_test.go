@@ -9,9 +9,8 @@ import (
 	"lemmary/backend/internal/aiprovider"
 )
 
-// The environment can carry a key; it cannot carry a sign-in. AI_SDK=chatgpt
-// would otherwise pass the IsLLM check and seed a provider row that the file
-// naming it can never complete.
+// The environment can carry a key, not a sign-in: AI_SDK=chatgpt would pass
+// the IsLLM check and seed a provider row no file can ever complete.
 func TestChatGPTIsNotAnAISDKValue(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAISDK, aiprovider.SDKChatGPT)
@@ -24,18 +23,16 @@ func TestChatGPTIsNotAnAISDKValue(t *testing.T) {
 	if !strings.Contains(err.Error(), EnvAISDK) {
 		t.Errorf("the error does not name the variable: %v", err)
 	}
-	// The message lists what is allowed, and must not list the value it just
-	// refused -- that is the whole failure mode it exists to avoid.
+	// The message lists what is allowed and must not list the value it just
+	// refused, which is the whole failure mode it exists to avoid.
 	if strings.Contains(err.Error(), "want one of") && strings.Count(err.Error(), aiprovider.SDKChatGPT) > 1 {
 		t.Errorf("the error offers chatgpt as an alternative to itself: %v", err)
 	}
 }
 
-// OCR_SDK=chatgpt is refused, but no longer for want of the capability: the SDK
-// reads documents now. The obstacle is the credential -- a sign-in cannot be
-// written into a file -- so the message has to say that rather than repeat the
-// old "cannot read a document", which would now be a lie an operator could
-// disprove from Settings.
+// OCR_SDK=chatgpt is refused for the credential, not the capability: a sign-in
+// cannot be written into a file. The message has to say so rather than claim
+// the SDK cannot read a document, which Settings would disprove.
 func TestChatGPTIsNotAnOCRSDKValue(t *testing.T) {
 	clearAIEnv(t)
 	t.Setenv(EnvAIAPIKey, "sk-test")
@@ -64,9 +61,8 @@ func TestChatGPTIsNotAnOCRSDKValue(t *testing.T) {
 	}
 }
 
-// providerRecord is a detached ai_providers row loaded the way PocketBase loads
-// one: PostScan is what fills Original(), which is the whole basis of the
-// rotation test below.
+// providerRecord loads a row the way PocketBase does: PostScan is what fills
+// Original(), which the rotation test below rests on.
 func providerRecord(t *testing.T, oauth string) *core.Record {
 	t.Helper()
 	collection := core.NewBaseCollection(aiprovider.CollectionName)
@@ -88,9 +84,8 @@ func providerRecord(t *testing.T, oauth string) *core.Record {
 	return record
 }
 
-// An hourly refresh must not rebuild every AI client, and a sign-in or sign-out
-// must. Both write the token and nothing else, so "oauth moved" cannot tell
-// them apart -- only whether the row was, and stays, able to serve.
+// Sign-in and sign-out also write the token and nothing else, so "oauth moved"
+// cannot tell them from a refresh; only whether the row can still serve.
 func TestOnlyATokenRotationSkipsTheReload(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -114,8 +109,6 @@ func TestOnlyATokenRotationSkipsTheReload(t *testing.T) {
 	}
 }
 
-// A write that moves the token and something else is a configuration change,
-// whatever else it does, so it reloads.
 func TestARotationAlongsideAnotherFieldStillReloads(t *testing.T) {
 	for _, field := range []string{"sdk", "alias", "base_url", "api_key"} {
 		t.Run(field, func(t *testing.T) {

@@ -9,22 +9,16 @@ import (
 	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/ocr"
+	"lemmary/backend/internal/websearch"
 )
 
 // Overrides names the bindings that replace the configured ones for the length
 // of one request or one job. An empty field keeps the configured client.
 //
-// One struct rather than a method per binding: five near-identical
-// "OverrideChatter"/"OverrideExtractor" entry points would each have to repeat
-// the credential handling and the nil-provider fallback, and a caller wanting
-// two of them at once (a reprocess job overriding OCR and extraction) would
-// build two snapshots and pick fields out of both.
-//
-// The json tags are load-bearing: this is also the stored shape of a
-// processing job's `overrides` column, so a job carries the same document the
-// API accepts and there is no second struct to keep in step with this one. A
-// job never sets Chat or Search; the fields are inert there rather than
-// forbidden, which costs nothing and keeps one type.
+// The json tags are load-bearing: this is also the stored shape of a processing
+// job's `overrides` column, so a job carries the same document the API accepts.
+// A job never sets Chat or Search; the fields are inert there rather than
+// forbidden, which keeps one type.
 type Overrides struct {
 	Chat      aiprovider.Binding `json:"chat,omitzero"`
 	Search    aiprovider.Binding `json:"search,omitzero"`
@@ -33,15 +27,11 @@ type Overrides struct {
 	Embedding aiprovider.Binding `json:"embedding,omitzero"`
 }
 
-// Empty reports overrides that change nothing, so a caller can skip the rebuild
-// entirely and hand on the published snapshot.
-//
-// Compared against the zero value rather than asking each Binding.Empty().
-// That reads the same but is not: Binding.Empty is keyed on the provider id, so
-// a binding carrying a model and no provider is "empty" to it -- and this is
-// the short-circuit before Validate, so such a binding would be dropped and the
-// request would quietly run the configured model instead of the one it named.
-// Anything at all set here has to reach Validate, which is where a half-filled
+// Empty is compared against the zero value rather than asking each
+// Binding.Empty(), which is keyed on the provider id: a binding carrying a model
+// and no provider is empty to it, and since this short-circuits before Validate
+// such a binding would be dropped and the request would quietly run the
+// configured model. Anything set here has to reach Validate, where a half-filled
 // binding is refused.
 func (o Overrides) Empty() bool {
 	return o == Overrides{}
@@ -55,10 +45,8 @@ type BoundOverride struct {
 	Purpose aiprovider.ModelPurpose
 }
 
-// Purposes pairs each binding with the capability it has to serve.
-//
-// It is the one list of the five fields, so a binding cannot be added to the
-// struct and forgotten by the validator -- which would accept an override and
+// Purposes is the one list of the five fields, so a binding cannot be added to
+// the struct and forgotten by the validator, which would accept an override and
 // then silently run the configured model. Fixed order, so the same bad request
 // always names the same field first.
 func (o Overrides) Purposes() []BoundOverride {
@@ -82,20 +70,14 @@ func (o Overrides) Validate(app core.App, cfg Config) error {
 	return o.validateEmbeddingModel(cfg)
 }
 
-// validateEmbeddingModel refuses an embedding override naming a model other
-// than the one the retrieval index was built for.
-//
-// Not a stylistic restriction, and the reason it is checked here rather than
-// left to the embedder: a chunk row records the model and dimension count it
-// was produced with, and the index only reads rows matching the configured spec
-// -- embed.SpecFrom, and matchesSpec in internal/embed/source.go. Embedding a
-// document on a different model therefore spends the provider call, writes the
-// rows, reports success, and drops that document out of dense retrieval,
-// because nothing will ever read them. There is no way to make that outcome
-// visible afterwards, so it is refused up front.
-//
-// The configured model is allowed, and is the case worth having: re-running the
-// embed step for a document whose vectors are missing or stale.
+// validateEmbeddingModel refuses an embedding override naming a model other than
+// the one the retrieval index was built for. A chunk row records the model and
+// dimensions it was produced with, and the index only reads rows matching the
+// configured spec (embed.SpecFrom, matchesSpec in internal/embed/source.go), so
+// embedding on another model spends the call, writes rows, reports success and
+// drops the document out of dense retrieval with nothing to show for it. The
+// configured model is allowed: re-running the embed step for missing or stale
+// vectors is the case worth having.
 func (o Overrides) validateEmbeddingModel(cfg Config) error {
 	binding := o.Embedding.Normalized()
 	if binding.Empty() {
@@ -112,18 +94,14 @@ func (o Overrides) validateEmbeddingModel(cfg Config) error {
 		configured, binding.Model, configured)
 }
 
-// WithOverrides returns the published snapshot with the named clients rebuilt
-// on the bindings the caller supplied.
+// WithOverrides returns the published snapshot with the named clients rebuilt on
+// the bindings the caller supplied. It goes through the same builders apply
+// does, so overridden clients get the same token middleware, session header and
+// timeouts, with no second construction path to drift.
 //
-// It goes through the same builders apply does, which is the point: the
-// overridden clients get the same ChatGPT token middleware, the same OpenCode
-// session header and the same timeouts as the configured ones, and there is no
-// second construction path to drift from the first.
-//
-// Rebuilding is cheap -- the ai constructors only assemble an openai-go client,
-// with no network call -- so this runs per request on the chat surfaces. The one
-// exception is a google_vision OCR client, which opens a gRPC connection; that
-// binding is reached only from the worker, once per job.
+// Rebuilding is cheap (no network call), so this runs per request on the chat
+// surfaces. The exception is a google_vision OCR client, which opens a gRPC
+// connection; that binding is reached only from the worker, once per job.
 func (r *Runtime) WithOverrides(app core.App, o Overrides) (Snapshot, error) {
 	snap := r.Snapshot()
 	if o.Empty() {
@@ -136,9 +114,9 @@ func (r *Runtime) WithOverrides(app core.App, o Overrides) (Snapshot, error) {
 	logger := app.Logger()
 	aiLogger := logger.With("component", "ai")
 
-	// Resolved again rather than carried out of Validate: the loop there is a
-	// yes/no over five bindings, and threading five (provider, model) pairs out
-	// of it would make the shape of that answer depend on this caller.
+	// Resolved again rather than carried out of Validate, whose loop is a yes/no
+	// over five bindings; threading five pairs out of it would shape that answer
+	// around this caller.
 	resolve := func(b aiprovider.Binding, purpose aiprovider.ModelPurpose) (*aiprovider.Provider, string) {
 		p, model, _ := aiprovider.Resolve(app, b, purpose)
 		return p, model
@@ -154,9 +132,9 @@ func (r *Runtime) WithOverrides(app core.App, o Overrides) (Snapshot, error) {
 	}
 	if !o.Extract.Empty() {
 		p, model := resolve(o.Extract, aiprovider.PurposeLLM)
-		// The splitter moves with the extractor because it is defined as the
-		// extraction provider's second client; leaving it on the configured
-		// binding would make Snapshot.Splitter's own doc comment false.
+		// The splitter moves with the extractor because it is defined as the extraction
+		// provider's second client; leaving it behind would make Snapshot.Splitter's own
+		// doc comment false.
 		snap.AI, snap.Splitter = buildExtractPair(app, snap.Cfg, p, model, aiLogger)
 	}
 	if !o.Chat.Empty() {
@@ -165,10 +143,9 @@ func (r *Runtime) WithOverrides(app core.App, o Overrides) (Snapshot, error) {
 	}
 	if !o.Search.Empty() {
 		p, model := resolve(o.Search, aiprovider.PurposeLLM)
-		// SearchHelper deliberately stays put. It is a separate binding because
-		// it does many cheap per-document calls where the research model does a
-		// few expensive ones, and moving the bulk work onto whatever model was
-		// picked for the conversation is not what picking it asked for.
+		// SearchHelper stays put. It is a separate binding because it does many cheap
+		// per-document calls where the research model does a few expensive ones, and
+		// moving bulk work onto the conversation model is not what picking it asked for.
 		snap.SearchAgent = buildSearchAgent(app, snap.Cfg, p, model, aiLogger)
 	}
 	if !o.Embedding.Empty() {
@@ -178,11 +155,9 @@ func (r *Runtime) WithOverrides(app core.App, o Overrides) (Snapshot, error) {
 	return snap, nil
 }
 
-// buildOCR builds the OCR client for a provider row, or nil when there is none.
-//
-// The row is copied before its key is replaced: the caller's Provider may be
-// the one hanging off Config, and a chatgpt row's placeholder key written back
-// there would be published in the next snapshot as though it were real.
+// buildOCR copies the row before replacing its key: the caller's Provider may be
+// the one hanging off Config, and a chatgpt placeholder key written back there
+// would be published in the next snapshot as though it were real.
 func buildOCR(app core.App, cfg Config, p *aiprovider.Provider, model string, logger *slog.Logger) (ocr.Provider, error) {
 	if p == nil {
 		return nil, nil
@@ -193,12 +168,9 @@ func buildOCR(app core.App, cfg Config, p *aiprovider.Provider, model string, lo
 	return ocr.NewFromAIProvider(row, model, cfg.OCRTimeout, logger, opts...)
 }
 
-// buildExtractPair builds the extractor and the splitter together.
-//
-// One credential for both, which is why they are one function: asking twice
-// would put two middlewares over one ChatGPT token source, each refreshing
-// against the other. The splitter is always the extraction provider's client,
-// so there is no caller that wants one without the other.
+// buildExtractPair builds both from one credential: asking twice would put two
+// middlewares over one ChatGPT token source, each refreshing against the other.
+// The splitter is always the extraction provider's client.
 func buildExtractPair(app core.App, cfg Config, p *aiprovider.Provider, model string, logger *slog.Logger) (ai.Extractor, ai.Splitter) {
 	if !usableLLM(p) {
 		return nil, nil
@@ -262,13 +234,20 @@ func buildHelper(app core.App, cfg Config, p *aiprovider.Provider, model string,
 	return ai.NewHelper(p.SDK, key, model, p.BaseURL, cfg.OpenAITimeout, logger, opts...)
 }
 
-// buildEmbedder builds the embedding client, or nil when the provider cannot
-// embed.
-//
-// EmbeddingDims comes from the configuration rather than the binding: it is the
-// width the chunk index was built for, and an embedder asked for a different
-// one writes rows that index discards. An override here is only ever useful for
-// re-embedding on the model already bound -- see the guard in worker.
+// buildWebSearch has no model term and no override: a web-search API takes no
+// model, and the tools are turned on per turn rather than bound per request.
+func buildWebSearch(app core.App, cfg Config, p *aiprovider.Provider, logger *slog.Logger) *websearch.Tavily {
+	if p == nil || !p.Configured() || !aiprovider.CanWebSearch(p.SDK) {
+		return nil
+	}
+	key, _ := providerCredential(app, p, logger)
+	return websearch.NewTavily(key, p.BaseURL, cfg.OpenAITimeout, logger)
+}
+
+// buildEmbedder takes EmbeddingDims from the configuration rather than the
+// binding: it is the width the chunk index was built for, and an embedder asked
+// for a different one writes rows that index discards. An override here is only
+// useful for re-embedding on the model already bound; see the guard in worker.
 func buildEmbedder(app core.App, cfg Config, p *aiprovider.Provider, model string, logger *slog.Logger) ai.Embedder {
 	if p == nil || !p.Configured() || !aiprovider.CanEmbed(p.SDK) || model == "" {
 		return nil

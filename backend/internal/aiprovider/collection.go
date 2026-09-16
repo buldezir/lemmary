@@ -6,14 +6,9 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// OAuthField holds the token pair for the SDKs that sign in instead of taking a
-// pasted key. Named rather than spelled inline because three packages read it:
-// the record mapper here, the migration that adds it to installs that predate
-// it, and the sign-in handlers that write it.
-//
-// Sized for a JWT id_token plus two opaque tokens with room to spare. It sits
-// beside api_key in SQLite and is covered by the vault exactly as the key is;
-// like the key it is never returned by the API.
+// OAuthField holds the token pair for the SDKs that sign in instead of taking
+// a pasted key. Sized for a JWT id_token plus two opaque tokens; covered by the
+// vault exactly as api_key is, and never returned by the API.
 const OAuthField = "oauth"
 
 func EnsureCollection(app core.App) (*core.Collection, error) {
@@ -30,6 +25,15 @@ func EnsureCollection(app core.App) (*core.Collection, error) {
 			Values:    ValidSDKs,
 		},
 		&core.TextField{Name: "alias", Required: true, Max: 100},
+		// Which pi.dev catalogue answers for this row's models, so a context
+		// window can be looked up. Defaulted from the SDK and editable, because
+		// the openai SDK serves any OpenAI-compatible endpoint and Groq,
+		// DeepSeek and Together are separate catalogues there.
+		&core.SelectField{
+			Name:      "catalog",
+			MaxSelect: 1,
+			Values:    CatalogProviders,
+		},
 		&core.TextField{Name: "base_url", Max: 500},
 		&core.TextField{Name: "api_key", Max: 2000},
 		&core.TextField{Name: OAuthField, Max: 8000},

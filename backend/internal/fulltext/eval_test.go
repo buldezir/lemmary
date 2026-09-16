@@ -8,17 +8,12 @@ import (
 	"lemmary/backend/internal/retrieval/testdata"
 )
 
-// This file is the lexical half of the retrieval evaluation: a real Bleve index
-// over the synthetic corpus, scored on the queries in testdata.Cases.
+// The lexical half of the retrieval evaluation: a real Bleve index over the
+// synthetic corpus, scored on testdata.Cases. Unit tests pin one query at a
+// time and pass when the ranking as a whole got worse; this measures the set.
 //
-// It exists because "did the search get better" is otherwise unanswerable. Unit
-// tests pin behaviour one query at a time and pass just as happily when the
-// ranking as a whole has got worse; this measures the whole set at once, so a
-// change that fixes one query by breaking three is visible.
-//
-// The floors below were calibrated on the first run of this harness and sit a
-// little under what was measured, so ordinary noise does not fail the build
-// while a real regression does. Measured at calibration:
+// The floors below sit a little under what was measured, so ordinary noise does
+// not fail the build while a real regression does. Measured at calibration:
 //
 //	strict:  recall@5 0.511  MRR 0.522
 //	relaxed: recall@5 0.772  MRR 0.783
@@ -29,11 +24,9 @@ import (
 //	relaxed: recall@5 0.989  MRR 1.000
 //
 // The gap is what relaxing buys: typos and inflections a prefix cannot reach.
-// Paraphrase used to be headroom for the dense path and is now mostly answered
-// lexically, by prefix legs reaching a shared stem.
 //
-// Raise them when a change raises the numbers; a floor that is never revised
-// stops measuring anything. Never lower one to make a change pass.
+// Raise the floors when a change raises the numbers; one never revised stops
+// measuring anything. Never lower one to make a change pass.
 const (
 	strictRecallFloor  = 0.57
 	strictMRRFloor     = 0.58
@@ -41,8 +34,7 @@ const (
 	relaxedMRRFloor    = 0.97
 )
 
-// evalK is the cut-off recall is measured at: what an agent actually looks at
-// out of one search_documents call.
+// The cut-off recall is measured at: what an agent looks at out of one call.
 const evalK = 5
 
 func evalIndex(t *testing.T) *Index {
@@ -93,8 +85,6 @@ func caseQuery(c testdata.Case, relaxed bool) Query {
 	return q
 }
 
-// score reports mean recall@k and mean reciprocal rank over the cases, plus the
-// per-case recall so a failure can name what it lost.
 func score(t *testing.T, idx *Index, cases []testdata.Case, relaxed bool) (recall, mrr float64, perCase map[string]float64) {
 	t.Helper()
 	perCase = map[string]float64{}
@@ -166,9 +156,6 @@ func TestSearchEvalMeetsFloors(t *testing.T) {
 	}
 }
 
-// TestSearchEvalRelaxedRescuesMissedQueries names the classes strict matching
-// cannot serve at all, so the reason relaxed exists stays measured rather than
-// only asserted in a comment.
 func TestSearchEvalRelaxedRescuesMissedQueries(t *testing.T) {
 	idx := evalIndex(t)
 
@@ -192,9 +179,8 @@ func TestSearchEvalRelaxedRescuesMissedQueries(t *testing.T) {
 	if rescued[testdata.KindMorphology] == 0 {
 		t.Error("no inflected query was rescued")
 	}
-	// The exact class needs no rescue any more: strict serves all of it, which
-	// is the stronger claim and the one asserted -- "relaxed did not rescue it"
-	// would also pass if both paths missed.
+	// Asserting strict serves the whole exact class is stronger than "relaxed
+	// did not rescue it", which would also pass if both paths missed.
 	for _, c := range testdata.Cases() {
 		if c.Kind != testdata.KindExact {
 			continue
@@ -207,15 +193,14 @@ func TestSearchEvalRelaxedRescuesMissedQueries(t *testing.T) {
 		}
 	}
 
-	// Paraphrases used to score zero on both paths; prefix legs now reach the
-	// stem they share with the document. The dense path owns the rest.
+	// Prefix legs reach the stem a paraphrase shares with the document; the
+	// dense path owns the rest.
 	if rescued[testdata.KindParaphrase] == 0 {
 		t.Logf("no paraphrase was rescued lexically; the floors above assume some are")
 	}
 }
 
-// Scoping is not negotiable, whatever the ranking does: the corpus holds one
-// document belonging to another account, with the same wording as one of ours.
+// The corpus holds one document of another account, worded like one of ours.
 func TestSearchEvalKeepsOwnerScoping(t *testing.T) {
 	idx := evalIndex(t)
 	for _, relaxed := range []bool{false, true} {

@@ -9,11 +9,9 @@ import (
 	"lemmary/backend/internal/appapi"
 )
 
-// registerAPI exposes the small surface an operator and the SPA need.
-//
-// Everything here requires an authenticated session, which by definition means
-// the instance is already unlocked — these endpoints never participate in
-// unlocking, which happens before PocketBase exists at all.
+// registerAPI requires an authenticated session everywhere, which by definition
+// means the instance is already unlocked: these endpoints never participate in
+// unlocking, which happens before PocketBase exists.
 func registerAPI(app *pocketbase.PocketBase, v *Vault) {
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 		g := e.Router.Group("/api/vault")
@@ -25,14 +23,9 @@ func registerAPI(app *pocketbase.PocketBase, v *Vault) {
 			return re.JSON(http.StatusOK, v.Stats())
 		})
 
-		// Minting a recovery code needs the master key, so it is only possible
-		// while unlocked. The code is returned exactly once.
-		//
-		// Admins only. A recovery code is a standalone credential for the whole
-		// instance that outlives the account which created it: deleting a user
-		// drops their own wrap, but a code they minted earlier would keep
-		// working. Letting any signed-in user mint one hands a departing user a
-		// permanent way back in.
+		// Admins only, and only while unlocked. A recovery code is a standalone
+		// credential for the whole instance that outlives the account that created it,
+		// so letting any user mint one hands a departing user a permanent way back in.
 		g.POST("/recovery-code", func(re *core.RequestEvent) error {
 			if !appapi.IsAppAdmin(re) {
 				return re.JSON(http.StatusForbidden, map[string]string{"message": "Admin access required."})
@@ -56,8 +49,7 @@ func registerAPI(app *pocketbase.PocketBase, v *Vault) {
 			})
 		})
 
-		// An explicit flush, for operators who want a known-good point before
-		// stopping a container.
+		// An explicit flush, for a known-good point before stopping a container.
 		g.POST("/flush", func(re *core.RequestEvent) error {
 			if !appapi.IsAppAdmin(re) {
 				return re.JSON(http.StatusForbidden, map[string]string{"message": "Admin access required."})

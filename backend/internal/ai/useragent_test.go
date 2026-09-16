@@ -13,9 +13,8 @@ import (
 	"lemmary/backend/internal/aiprovider"
 )
 
-// TestChatUserAgent pins both halves of the rule on the client every
-// completion goes through: an ordinary provider hears our name, and the Codex
-// backend -- which vets its callers -- still hears the SDK's.
+// Both halves of the rule: an ordinary provider hears our name, and the Codex
+// backend, which vets its callers, still hears the SDK's.
 func TestChatUserAgent(t *testing.T) {
 	for _, tc := range []struct {
 		sdk  string
@@ -42,7 +41,7 @@ func TestChatUserAgent(t *testing.T) {
 			defer srv.Close()
 
 			client := NewOpenAIClient(tc.sdk, "test-key", "test-model", srv.URL, "", "", 5*time.Second, slog.Default())
-			if _, err := client.Chat(context.Background(), "text", []ChatMessage{{Role: "user", Content: "hi"}}); err != nil {
+			if _, err := client.Chat(context.Background(), "text", []ChatMessage{{Role: "user", Content: "hi"}}, nil); err != nil {
 				t.Fatalf("chat: %v", err)
 			}
 			if !strings.HasPrefix(seen, tc.want) {

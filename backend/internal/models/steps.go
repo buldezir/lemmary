@@ -6,8 +6,8 @@ const (
 	StepDetectDuplicates = "detect_duplicates"
 	StepExtractMetadata  = "extract_metadata"
 	StepApplyMetadata    = "apply_metadata"
-	// StepEmbed builds the retrieval vectors from the document's OCR text. It
-	// runs after ocr for the obvious reason, and last so that a document whose
+	// StepEmbed runs after apply_metadata so the header chunk indexes the
+	// metadata the document ended up with, and last so a document whose
 	// extraction failed is still embedded.
 	StepEmbed = "embed"
 )
@@ -35,10 +35,8 @@ type StepRun struct {
 	Provider      string `json:"provider,omitempty"`
 	Model         string `json:"model,omitempty"`
 	PromptVersion string `json:"prompt_version,omitempty"`
-	// Soft marks a failed step the pipeline was allowed to walk past. The run
-	// is still recorded as failed so the failure is visible, but the job and
-	// the document carry on: an embedding the provider refused is a smaller
-	// loss than a document stuck in "failed" with its text and metadata intact.
+	// Soft marks a failed step the pipeline was allowed to walk past: the run
+	// is still recorded as failed, but the job and the document carry on.
 	Soft       bool   `json:"soft,omitempty"`
 	StartedAt  string `json:"started_at,omitempty"`
 	FinishedAt string `json:"finished_at,omitempty"`

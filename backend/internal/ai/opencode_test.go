@@ -17,10 +17,9 @@ import (
 )
 
 // The wiring internal/opencode's own tests cannot cover: NewOpenAIClient has to
-// build the Anthropic client, and build it against the right base URL.
-// anthropic-sdk-go appends "v1/messages" itself, so a base URL left with its
-// /v1 on would post to /zen/go/v1/v1/messages -- which no unit test over the
-// translation would notice.
+// build the Anthropic client against the right base URL. anthropic-sdk-go
+// appends "v1/messages" itself, so a base URL left with its /v1 on would post
+// to /zen/go/v1/v1/messages.
 func TestAnOpenCodeMessagesModelReachesTheAnthropicEndpoint(t *testing.T) {
 	var path string
 	var session string

@@ -12,29 +12,24 @@ import (
 )
 
 // The keyring is the one file on the persistent volume that is not ciphertext.
-// It holds the master key sealed once per credential, so any user of the
-// instance can unlock it, and so adding a credential later re-seals one small
-// blob instead of rewriting the archive.
+// It holds the master key sealed once per credential, so any user can unlock
+// the instance and adding a credential re-seals one small blob.
 //
-// What it deliberately does not hold: email addresses or any other user
-// identifier beyond opaque PocketBase record ids. This file sits on the
-// untrusted volume, and a list of customer email addresses is exactly the kind
-// of metadata an at-rest attacker should not get for free. The cost is that an
-// unlock attempt has to try each password wrap in turn; with the handful of
-// users a single-customer instance has, that is a few hundred milliseconds once
-// per container start.
+// It deliberately holds no email addresses or identifiers beyond opaque record
+// ids: a list of customer emails is exactly what an at-rest attacker should not
+// get for free. The cost is trying each password wrap in turn, a few hundred
+// milliseconds once per container start.
 //
-// There is no separate verifier blob. The AEAD tag on each wrap *is* the
-// credential check: a wrong credential and a tampered wrap both fail to
-// authenticate, and storing anything extra would only tell an attacker which of
-// the two they achieved. MKFP exists solely to detect a keyring assembled from
-// two different vaults, never to gate an unlock.
+// There is no separate verifier blob. The AEAD tag on each wrap is the
+// credential check, and storing anything extra would only tell an attacker
+// which of wrong-credential and tampered-wrap they achieved. MKFP exists solely
+// to detect a keyring assembled from two different vaults, never to gate an
+// unlock.
 const (
 	keyringName    = "keyring.json"
 	keyringVersion = 1
 )
 
-// WrapType names a credential family.
 type WrapType string
 
 const (
@@ -57,7 +52,6 @@ type Wrap struct {
 	CT     string           `json:"ct"`
 }
 
-// Keyring is the on-disk keyring document.
 type Keyring struct {
 	Version int    `json:"v"`
 	Salt    []byte `json:"salt"`
@@ -68,20 +62,16 @@ type Keyring struct {
 var (
 	// ErrNoKeyring reports that the instance has never been initialised.
 	ErrNoKeyring = errors.New("vault: no keyring")
-	// ErrWrongKey reports that no wrap could be opened with the credential.
-	ErrWrongKey = errors.New("vault: wrong or missing credential")
+	ErrWrongKey  = errors.New("vault: wrong or missing credential")
 	// ErrLastWrap reports an attempt to remove the only way back in.
 	ErrLastWrap = errors.New("vault: refusing to remove the last credential")
 )
 
-// wrapAAD binds a wrap to its own metadata, including the Argon2 cost it was
-// written with.
-//
-// It covers only this wrap, never the whole document: binding the full wrap list
-// would mean enrolling one user invalidated everyone else's wrap. Including the
-// KDF parameters is what stops an attacker who can edit this file from rewriting
-// memory=64MiB down to memory=8KiB and making offline guessing cheap — the
-// rewritten parameters simply fail to authenticate.
+// wrapAAD covers only this wrap, never the whole document: binding the full
+// list would mean enrolling one user invalidated everyone else's wrap.
+// Including the KDF parameters stops an attacker who can edit this file from
+// rewriting memory=64MiB down to 8KiB, since the rewritten parameters simply
+// fail to authenticate.
 func wrapAAD(w Wrap) (string, error) {
 	b, err := json.Marshal(struct {
 		V      int              `json:"v"`
@@ -99,18 +89,15 @@ func wrapAAD(w Wrap) (string, error) {
 
 // Credential is one attempt to open the keyring.
 type Credential struct {
-	// Password is used for WrapPassword wraps.
-	Password string
-	// RecoveryCode is used for WrapRecovery wraps.
+	Password     string
 	RecoveryCode string
-	// PRF is the raw 32-byte WebAuthn PRF output for WrapPasskey wraps.
+	// PRF is the raw 32-byte WebAuthn PRF output, for WrapPasskey wraps.
 	PRF []byte
 	// CredID narrows a passkey attempt to one credential.
 	CredID string
 }
 
-// kekFor derives the key-encryption key a credential would use for a wrap, or
-// reports false when the credential cannot address that wrap at all.
+// kekFor reports false when the credential cannot address that wrap at all.
 func kekFor(c Credential, w Wrap) (crypt.Key, bool, error) {
 	switch w.Type {
 	case WrapPassword:
@@ -143,23 +130,17 @@ func kekFor(c Credential, w Wrap) (crypt.Key, bool, error) {
 	}
 }
 
-// Unlock recovers the master key using the first wrap the credential opens.
+// Unlock recovers the master key using the first wrap the credential opens,
+// returning ErrWrongKey when nothing matches and never reporting how far it
+// got.
 //
-// It returns ErrWrongKey when nothing matches, and never reports which wrap was
-// tried or how far it got.
-//
-// A wrap this cannot even attempt does not stop the loop. keyring.json sits on
-// the untrusted volume with no whole-document MAC — the per-wrap AAD is checked
-// at UnwrapKey, which a wrap with unsupported KDF parameters never reaches,
-// because deriving the KEK validates them first. So one entry written by a newer
-// build, hand-edited, or bit-flipped in a cost field used to abort the whole
-// loop, and every user's perfectly good password wrap went untried: password
-// sign-in dead for everybody, with only a recovery code left. Skipping the bad
-// wrap costs nothing — an unopenable wrap is exactly as useless either way.
-//
-// The deferred error is reported only when no wrap was usable at all, so a
-// genuine wrong password still reads as ErrWrongKey rather than as corruption,
-// and an operator whose keyring really is damaged still gets told why.
+// A wrap this cannot even attempt does not stop the loop. keyring.json has no
+// whole-document MAC, and the per-wrap AAD is checked at UnwrapKey, which a
+// wrap with unsupported KDF parameters never reaches. So one entry written by a
+// newer build, hand-edited or bit-flipped in a cost field used to abort the
+// whole loop, leaving every user's good password wrap untried. The deferred
+// error is reported only when no wrap was usable at all, so a genuine wrong
+// password still reads as ErrWrongKey.
 func (kr *Keyring) Unlock(c Credential) (crypt.Key, string, error) {
 	if kr == nil || len(kr.Wraps) == 0 {
 		return crypt.Key{}, "", ErrNoKeyring
@@ -195,7 +176,7 @@ func (kr *Keyring) Unlock(c Credential) (crypt.Key, string, error) {
 		if kr.MKFP != "" && crypt.KeyID(mk) != kr.MKFP {
 			// The wrap authenticated but yields a different master key than the
 			// rest of the document: this keyring was stitched together from two
-			// vaults and using it would encrypt new data under a key the other
+			// vaults, and new data would be encrypted under a key the other
 			// wraps cannot open.
 			mk.Zero()
 			return crypt.Key{}, "", fmt.Errorf("%w: wrap %q holds a foreign master key", ErrCorrupt, w.ID)
@@ -208,13 +189,10 @@ func (kr *Keyring) Unlock(c Credential) (crypt.Key, string, error) {
 	return crypt.Key{}, "", ErrWrongKey
 }
 
-// NewKeyring creates a keyring around a fresh master key, sealed under one
-// initial credential plus a recovery code.
-//
-// The recovery code is returned once and never stored in recoverable form. It is
-// mandatory rather than optional because every other wrap is derived from
-// something a user can forget or lose, and there is deliberately no operator
-// override.
+// NewKeyring seals a fresh master key under one initial credential plus a
+// recovery code, returned once and never stored in recoverable form. The code
+// is mandatory because every other wrap derives from something a user can
+// forget or lose, and there is deliberately no operator override.
 func NewKeyring(userID, password string) (*Keyring, crypt.Key, string, error) {
 	mk, err := crypt.NewKey()
 	if err != nil {
@@ -245,8 +223,7 @@ func newSalt() ([]byte, error) {
 	return salt, nil
 }
 
-// AddPassword seals the master key under a user's password, replacing any
-// existing password wrap for that user.
+// AddPassword replaces any existing password wrap for that user.
 func (kr *Keyring) AddPassword(mk crypt.Key, userID, password string) error {
 	if password == "" {
 		return errors.New("vault: empty password")
@@ -265,7 +242,6 @@ func (kr *Keyring) AddPassword(mk crypt.Key, userID, password string) error {
 	return kr.sealInto(&w, kek, mk)
 }
 
-// AddPasskey seals the master key under a WebAuthn PRF secret.
 func (kr *Keyring) AddPasskey(mk crypt.Key, userID, credID string, prf []byte) error {
 	kek, err := crypt.PasskeyKEK(prf)
 	if err != nil {
@@ -277,7 +253,7 @@ func (kr *Keyring) AddPasskey(mk crypt.Key, userID, credID string, prf []byte) e
 	return kr.sealInto(&w, kek, mk)
 }
 
-// AddRecoveryCode mints a new recovery code and seals the master key under it.
+// AddRecoveryCode mints a code and seals the master key under it.
 func (kr *Keyring) AddRecoveryCode(mk crypt.Key) (string, error) {
 	code, err := crypt.NewRecoveryCode()
 	if err != nil {
@@ -325,8 +301,7 @@ func (kr *Keyring) replace(w Wrap) {
 	kr.Wraps = append(kr.Wraps, w)
 }
 
-// RemoveWrapsForUser drops every wrap belonging to a user, refusing to leave the
-// keyring with no way in.
+// RemoveWrapsForUser refuses to leave the keyring with no way in.
 func (kr *Keyring) RemoveWrapsForUser(userID string) error {
 	kept := make([]Wrap, 0, len(kr.Wraps))
 	for _, w := range kr.Wraps {
@@ -344,27 +319,21 @@ func (kr *Keyring) RemoveWrapsForUser(userID string) error {
 	return nil
 }
 
-// RemoveBootstrapWrap deletes the credential NewKeyring("", password) leaves
-// behind, once a real user credential exists.
-//
-// A vault created before any account exists — `vault init`, run by an operator
-// or by an orchestrator with a password supplied at order time — gets a wrap
-// with no user. RemoveWrapsForUser keeps it on purpose: until somebody is
+// RemoveBootstrapWrap deletes the wrap NewKeyring("", password) leaves behind,
+// once a real user credential exists. `vault init` runs before any account,
+// so its wrap has no user and RemoveWrapsForUser keeps it: until somebody is
 // enrolled it is one of only two ways in.
 //
-// The moment a real credential exists it stops being a fallback and becomes a
-// standing one. That password passed through the memory of whatever created the
-// instance, and through the environment of a container that anyone holding the
-// daemon socket could inspect for the seconds it lived. Leaving its wrap in
-// place would make it a valid key to the whole archive forever, and would mean
-// a user who changed their password had revoked nothing.
+// Once a real credential exists it is a standing one instead of a fallback.
+// That password passed through the memory of whatever created the instance and
+// the environment of a container, so leaving the wrap would make it a valid key
+// to the archive forever, and a user changing their password would revoke
+// nothing.
 //
-// Two conditions guard the removal rather than the one strictly needed. Another
-// wrap must survive, so a failure between creating the vault and enrolling the
-// first account leaves the volume openable instead of stranded. And one of the
-// survivors must belong to a user: the recovery code alone is not a credential
-// anyone is guaranteed to still have, since it is printed once and whoever ran
-// the command may not have kept it. Callers that enroll first satisfy both.
+// Two conditions guard the removal. Another wrap must survive, so a failure
+// between creating the vault and enrolling the first account leaves the volume
+// openable. And one survivor must belong to a user: the recovery code is
+// printed once and whoever ran the command may not have kept it.
 func (kr *Keyring) RemoveBootstrapWrap() error {
 	bootstrapID := wrapID("", "pw")
 
@@ -425,7 +394,6 @@ func shortID(s string) string {
 	return s
 }
 
-// LoadKeyring reads the keyring from a vault directory.
 func LoadKeyring(dir string) (*Keyring, error) {
 	b, err := os.ReadFile(filepath.Join(dir, keyringName))
 	if errors.Is(err, os.ErrNotExist) {
@@ -450,7 +418,6 @@ func LoadKeyring(dir string) (*Keyring, error) {
 	return &kr, nil
 }
 
-// Save writes the keyring atomically.
 func (kr *Keyring) Save(dir string) error {
 	b, err := json.MarshalIndent(kr, "", "  ")
 	if err != nil {
@@ -459,7 +426,6 @@ func (kr *Keyring) Save(dir string) error {
 	return writeFileAtomic(filepath.Join(dir, keyringName), append(b, '\n'), 0o600)
 }
 
-// Subkeys derives the purpose-separated keys used to seal vault contents.
 func (kr *Keyring) Subkeys(mk crypt.Key) (blob, manifest, name crypt.Key, err error) {
 	if blob, err = crypt.Subkey(mk, kr.Salt, crypt.InfoBlob); err != nil {
 		return

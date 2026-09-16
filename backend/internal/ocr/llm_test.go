@@ -139,8 +139,8 @@ func TestExtractTextRetriesWithoutTemperatureForUnknownModel(t *testing.T) {
 	}
 }
 
-// TestExtractTextSendsSessionHeaderToOpenCode is the production-client case:
-// NewLLMProvider itself must install SessionMiddleware.
+// The production-client case: NewLLMProvider itself must install
+// SessionMiddleware.
 func TestExtractTextSendsSessionHeaderToOpenCode(t *testing.T) {
 	var seen string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

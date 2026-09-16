@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildDocumentFilter, fileUrlWithToken, parseDuplicateOfId } from './documents'
+import {
+  buildDocumentFilter,
+  fileUrlWithToken,
+  parseDuplicateOfId,
+  uploadErrorMessage,
+} from './documents'
 import { UNFINISHED_STATUS } from '../documentStatus'
 
 const noFilters = {
@@ -15,8 +20,7 @@ describe('buildDocumentFilter', () => {
     expect(buildDocumentFilter(noFilters)).toBeUndefined()
   })
 
-  // The timeline's "No date" row. PocketBase compares an empty literal
-  // null-safely, so this reaches a null date too.
+  // The timeline's "No date" row, which must reach a null date too.
   it('filters on the absence of a date', () => {
     expect(buildDocumentFilter({ ...noFilters, undated: true })).toBe("document_date = ''")
   })
@@ -27,12 +31,29 @@ describe('buildDocumentFilter', () => {
     )
   })
 
-  // The Inbox, and the count its badge shows: not one status but the absence of
-  // one, so a document that failed or is still queued is in there too.
+  // Not one status but the absence of completion, so failed and queued
+  // documents are in there too.
   it('turns the Inbox filter into everything except completed', () => {
     expect(buildDocumentFilter({ ...noFilters, status: UNFINISHED_STATUS })).toBe(
       "processing_status != 'completed'",
     )
+  })
+
+  // ALL, not any: a document has to carry every tag the reader picked.
+  it('requires every chosen tag', () => {
+    expect(buildDocumentFilter({ ...noFilters, tags: ['tag1', 'tag2'] })).toBe(
+      'tags ~ \'"tag1"\' && tags ~ \'"tag2"\'',
+    )
+  })
+
+  it('builds no tag clause for an empty selection', () => {
+    expect(buildDocumentFilter({ ...noFilters, tags: [] })).toBeUndefined()
+  })
+
+  // Without the quotes this is a bare LIKE '%a%', which keeps every document
+  // whose tag ids merely contain the letter.
+  it('quotes the id so a short one cannot match inside a longer one', () => {
+    expect(buildDocumentFilter({ ...noFilters, tags: ['a'] })).toBe('tags ~ \'"a"\'')
   })
 
   it('combines active filters with &&', () => {
@@ -49,10 +70,8 @@ describe('buildDocumentFilter', () => {
   })
 
   it('bounds dateTo exclusively on the next day so the To day is included', () => {
-    // document_date is a DateField: stored as "YYYY-MM-DD HH:MM:SS.sssZ" and
-    // compared as a string. `<= '2025-03-31'` sorts before every timestamp on
-    // the 31st, so an inclusive-looking To silently dropped that whole day --
-    // exactly the day a timeline month click selects.
+    // Compared as a string, `<= '2025-03-31'` sorts before every timestamp on
+    // the 31st, dropping the day a timeline month click selects.
     const stored = '2025-03-31 00:00:00.000Z'
     const filter = buildDocumentFilter({ ...noFilters, dateTo: '2025-03-31' })
     expect(filter).toBe("document_date < '2025-04-01'")
@@ -102,12 +121,58 @@ describe('parseDuplicateOfId', () => {
 })
 
 describe('fileUrlWithToken', () => {
-  // getURL answers "" for an empty filename, and fetching "" resolves against
-  // the current page -- index.html, with a 200 that no response check would
+  // Fetching "" resolves against index.html with a 200 no response check would
   // catch. Refused before the token is minted, so this needs no server.
   it('refuses a document with no file', async () => {
     const record = { id: 'abc123def456ghi', collectionId: 'pbc_1', file: '' }
     await expect(fileUrlWithToken(record)).rejects.toThrow('This document has no file.')
     await expect(fileUrlWithToken(record, '')).rejects.toThrow('This document has no file.')
+  })
+})
+
+describe('uploadErrorMessage', () => {
+  const generic = 'Failed to create record.'
+
+  it('rewords the file size rejection with both sizes', () => {
+    const err = {
+      response: {
+        message: generic,
+        data: {
+          file: {
+            code: 'validation_file_size_limit',
+            message: 'Failed to upload x.pdf - the maximum allowed file size is 50000000 bytes.',
+          },
+        },
+      },
+    }
+    expect(uploadErrorMessage(err, 52_428_800)).toBe(
+      'This file is 50 MB, over the 47 MB limit for a single document.',
+    )
+  })
+
+  it('prefers a field message over the generic one', () => {
+    const err = {
+      response: {
+        message: generic,
+        data: { file: { code: 'validation_invalid_mime_type', message: 'Wrong type.' } },
+      },
+    }
+    expect(uploadErrorMessage(err)).toBe('Wrong type.')
+  })
+
+  it('keeps a hook message over the data PocketBase rewrote', () => {
+    const err = {
+      response: {
+        message: 'File is a duplicate of abc123def456ghi.',
+        data: { duplicate_of: { code: 'validation_invalid_value', message: 'Invalid value.' } },
+      },
+    }
+    expect(uploadErrorMessage(err)).toBe('File is a duplicate of abc123def456ghi.')
+  })
+
+  it('falls back to the top-level message, then Error, then a default', () => {
+    expect(uploadErrorMessage({ response: { message: generic, data: {} } })).toBe(generic)
+    expect(uploadErrorMessage(new Error('boom'))).toBe('boom')
+    expect(uploadErrorMessage(undefined)).toBe('Upload failed')
   })
 })

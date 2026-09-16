@@ -5,8 +5,8 @@ import { describeJobOverrides, jobOverridesBody, overridesForSteps } from './doc
 import { chatSessionBinding, type ChatSession } from './chats'
 
 describe('bindingBody', () => {
-  // The whole point of the "or nothing" shape: a page whose picker is never
-  // opened has to send exactly what it sent before overrides existed.
+  // The point of the "or nothing" shape: an untouched picker sends what it sent
+  // before overrides existed.
   it('sends nothing when no provider was chosen', () => {
     expect(bindingBody(undefined)).toEqual({})
     expect(bindingBody({ provider_id: '', model: '' })).toEqual({})
@@ -20,8 +20,8 @@ describe('bindingBody', () => {
     })
   })
 
-  // A provider with no model is legitimate: the server falls back to the
-  // configured model for that provider rather than refusing the request.
+  // A provider with no model is legitimate: the server falls back to that
+  // provider's configured model.
   it('sends a provider with no model', () => {
     expect(bindingBody({ provider_id: 'p1', model: '' })).toEqual({
       provider_id: 'p1',
@@ -78,9 +78,8 @@ describe('overridesForSteps', () => {
     embedding: { provider_id: 'p2', model: 'text-embedding-3-small' },
   }
 
-  // The bug this exists for: tick Embed, choose a model, untick Embed, submit.
-  // The picker unmounts but its state does not, and the create hook validates
-  // every binding on the job.
+  // The bug this exists for: untick Embed after choosing a model. The picker
+  // unmounts but its state does not, and the hook validates every binding.
   it('drops the bindings whose steps are not being queued', () => {
     expect(overridesForSteps(overrides, ['ocr'])).toEqual({ ocr: overrides.ocr })
   })
@@ -118,23 +117,19 @@ describe('chatSessionBinding', () => {
     })
   })
 
-  // The server refuses a model with no provider, so offering it back as a
-  // choice would only produce a request it will not accept.
   it('ignores a model with no provider', () => {
     expect(chatSessionBinding({ ...base, model: 'gpt-6-astra' })).toBeUndefined()
   })
 })
 
 describe('asPickerProvider', () => {
-  // ProviderModelFields was written for Settings, where a provider is the full
-  // record. It reads only id, sdk and alias; the credential flags are true
-  // because /api/app/ai/providers only returns configured providers.
   it('maps a pickable row onto the shape the picker wants', () => {
     expect(asPickerProvider({ id: 'p1', name: 'My OpenAI', sdk: 'openai' })).toEqual({
       id: 'p1',
       sdk: 'openai',
       alias: 'My OpenAI',
       base_url: '',
+      catalog: '',
       api_key_set: true,
       signed_in: true,
     })

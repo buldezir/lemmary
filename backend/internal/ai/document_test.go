@@ -24,7 +24,6 @@ func managedForTest(t *testing.T, on bool) {
 	t.Cleanup(func() { aiprovider.SetManaged(prev) })
 }
 
-// docHeaderServer answers a chat completion, recording the document header.
 func docHeaderServer(t *testing.T, seen *string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -43,9 +42,8 @@ func docHeaderServer(t *testing.T, seen *string) *httptest.Server {
 	return srv
 }
 
-// The gate on the client every completion in the app goes through: the header
-// rides the context in managed mode, and a self-hosted install never sends it
-// however the context is stamped.
+// The gate on the client every completion goes through: the header rides the
+// context in managed mode, and a self-hosted install never sends it.
 func TestChatSendsDocumentHeaderOnlyWhenManaged(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -65,7 +63,7 @@ func TestChatSendsDocumentHeaderOnlyWhenManaged(t *testing.T) {
 
 			client := NewOpenAIClient(aiprovider.SDKOpenAI, "k", "test-model", srv.URL, "", "", 5*time.Second, slog.Default())
 			ctx := aiprovider.WithDocument(context.Background(), tc.doc)
-			if _, err := client.Chat(ctx, "ocr text", []ChatMessage{{Role: "user", Content: "hi"}}); err != nil {
+			if _, err := client.Chat(ctx, "ocr text", []ChatMessage{{Role: "user", Content: "hi"}}, nil); err != nil {
 				t.Fatalf("chat: %v", err)
 			}
 			if seen != tc.want {
@@ -76,7 +74,7 @@ func TestChatSendsDocumentHeaderOnlyWhenManaged(t *testing.T) {
 }
 
 // The /messages third of the OpenCode catalogue speaks a second SDK, so it
-// needs its own middleware -- and its own proof that it is installed.
+// needs its own middleware.
 func TestOpenCodeMessagesSendsDocumentHeader(t *testing.T) {
 	managedForTest(t, true)
 	var seen string

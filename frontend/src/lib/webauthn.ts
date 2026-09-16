@@ -1,30 +1,19 @@
 /**
- * Browser-side WebAuthn glue: base64url codecs, the JSON <-> BufferSource
- * conversions the credentials API needs, feature detection, and the error copy.
+ * Browser-side WebAuthn glue. Pure by design, no network and no PocketBase
+ * client, so every conversion here is unit-testable under plain Node.
  *
- * Pure by design — no network, no PocketBase client — so every piece here is
- * unit-testable under plain Node, which matters because this project has no
- * component-testing library and these conversions are the part most likely to
- * break silently.
- */
-
-/**
- * Conversions are done by hand rather than with PublicKeyCredential.toJSON() and
- * parseCreationOptionsFromJSON(). Those are typed in the TS lib this project
- * compiles against, but at runtime they only reached baseline in early 2025, so a
- * self-hosted install facing Firefox ESR or an older iOS would need this manual
- * path as a fallback anyway. One code path that always runs beats two where only
- * one is ever exercised.
+ * Converted by hand rather than with PublicKeyCredential.toJSON() and
+ * parseCreationOptionsFromJSON(): those are typed in the TS lib but only
+ * reached baseline in early 2025, so Firefox ESR and older iOS would need this
+ * path as a fallback anyway.
  */
 
 const base64ChunkSize = 0x8000
 
 /**
- * Decodes an unpadded (or padded) base64url string.
- *
- * The return type is spelled Uint8Array<ArrayBuffer> rather than plain
- * Uint8Array because the bare name now defaults to ArrayBufferLike, which
- * includes SharedArrayBuffer and so does not satisfy BufferSource.
+ * Spelled Uint8Array<ArrayBuffer> because the bare name defaults to
+ * ArrayBufferLike, which includes SharedArrayBuffer and so does not satisfy
+ * BufferSource.
  */
 export function base64UrlToBytes(value: string): Uint8Array<ArrayBuffer> {
   const normalized = value.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/')
@@ -42,7 +31,6 @@ export function base64UrlToBytes(value: string): Uint8Array<ArrayBuffer> {
   return bytes
 }
 
-/** Encodes bytes as unpadded base64url, which is what the WebAuthn JSON uses. */
 export function bytesToBase64Url(value: ArrayBuffer | Uint8Array): string {
   const bytes = value instanceof Uint8Array ? value : new Uint8Array(value)
   // Chunked: an attestation object runs to several kilobytes and spreading that
@@ -58,8 +46,7 @@ type JSONObject = Record<string, unknown>
 
 /**
  * The backend sends what Go's protocol.CredentialCreation serializes to, whose
- * top level is `{"publicKey": {...}}`. Unwrapping defensively means a bare
- * options object would also work.
+ * top level is `{"publicKey": {...}}`. A bare options object also works.
  */
 function unwrapOptions(raw: unknown): JSONObject {
   if (!raw || typeof raw !== 'object') {
@@ -104,14 +91,13 @@ function toDescriptors(raw: unknown): PublicKeyCredentialDescriptor[] | undefine
 }
 
 /**
- * `hints` is a WebAuthn Level 3 member that the non-JSON TS option types do not
- * declare yet. Browsers ignore members they do not implement, so passing it
- * through is safe; widening the type is just to keep tsc honest.
+ * `hints` is a WebAuthn Level 3 member the non-JSON TS option types do not
+ * declare yet. Browsers ignore members they do not implement; the widening is
+ * only to keep tsc honest.
  */
 export type CreationOptions = PublicKeyCredentialCreationOptions & { hints?: string[] }
 export type RequestOptions = PublicKeyCredentialRequestOptions & { hints?: string[] }
 
-/** Converts the server's registration options into what credentials.create() wants. */
 export function toCreationOptions(raw: unknown): CreationOptions {
   const source = unwrapOptions(raw)
   const user = (source.user ?? {}) as JSONObject
@@ -144,9 +130,8 @@ export function toCreationOptions(raw: unknown): CreationOptions {
     options.attestation = source.attestation as AttestationConveyancePreference
   }
   if (source.extensions) {
-    // The extensions this backend sends (credProps) carry no binary values. If
-    // prf or largeBlob are ever added, their inputs arrive base64url and would
-    // have to be decoded here.
+    // credProps carries no binary values. prf or largeBlob would arrive
+    // base64url and have to be decoded here.
     options.extensions = source.extensions as AuthenticationExtensionsClientInputs
   }
   if (Array.isArray(source.hints)) {
@@ -155,7 +140,6 @@ export function toCreationOptions(raw: unknown): CreationOptions {
   return options
 }
 
-/** Converts the server's assertion options into what credentials.get() wants. */
 export function toRequestOptions(raw: unknown): RequestOptions {
   const source = unwrapOptions(raw)
   const options: RequestOptions = { challenge: requireChallenge(source) }
@@ -207,9 +191,9 @@ export type AuthenticationCredentialJSON = {
   }
 }
 
-// Duck-typed rather than `instanceof AuthenticatorAttestationResponse`, so these
-// converters can be exercised with plain objects in a Node test run. The shape
-// check is the part that actually protects the casts below.
+// Duck-typed rather than `instanceof AuthenticatorAttestationResponse`, so the
+// converters can be exercised with plain objects under Node. The shape check is
+// what protects the casts below.
 type RawResponse = {
   clientDataJSON?: unknown
   attestationObject?: unknown
@@ -247,7 +231,6 @@ function credentialShell(credential: RawCredential) {
     : shell
 }
 
-/** Serializes a newly created credential for the register/finish endpoint. */
 export function registrationToJSON(credential: unknown): RegistrationCredentialJSON {
   const raw = credential as RawCredential
   const response = raw.response
@@ -262,8 +245,8 @@ export function registrationToJSON(credential: unknown): RegistrationCredentialJ
       attestationObject: bytesToBase64Url(response.attestationObject as ArrayBuffer),
     },
   }
-  // Transports are worth sending — the server persists them and uses them as
-  // hints later — but getTransports is absent on older Safari.
+  // The server persists transports and uses them as hints later, but
+  // getTransports is absent on older Safari.
   if (typeof response.getTransports === 'function') {
     const transports = response.getTransports()
     if (Array.isArray(transports) && transports.length > 0) {
@@ -271,13 +254,11 @@ export function registrationToJSON(credential: unknown): RegistrationCredentialJ
     }
   }
   // authenticatorData, publicKey and publicKeyAlgorithm are deliberately left
-  // out: go-webauthn recovers all three from the attestation object, and the
-  // getters for them throw on some older implementations. Do not "fix" this by
-  // adding them back.
+  // out: go-webauthn recovers all three from the attestation object, and their
+  // getters throw on some older implementations. Do not add them back.
   return out
 }
 
-/** Serializes an assertion for the login/finish endpoint. */
 export function assertionToJSON(credential: unknown): AuthenticationCredentialJSON {
   const raw = credential as RawCredential
   const response = raw.response
@@ -293,8 +274,8 @@ export function assertionToJSON(credential: unknown): AuthenticationCredentialJS
       signature: bytesToBase64Url(response.signature as ArrayBuffer),
     },
   }
-  // The user handle is how a discoverable login names the account, so it is sent
-  // when present and omitted rather than nulled when it is not.
+  // The user handle is how a discoverable login names the account; omitted
+  // rather than nulled when absent.
   if (response.userHandle) {
     out.response.userHandle = bytesToBase64Url(response.userHandle as ArrayBuffer)
   }
@@ -310,12 +291,9 @@ function hostnameIsIPAddress(hostname: string): boolean {
 }
 
 /**
- * True when a ceremony can actually run here: the API exists, the page is a
- * secure context, and the origin is not an IP address.
- *
- * The IP check is not pedantry — it is the single most common self-hosting
- * mistake. A passkey is bound to a registrable domain, so an IP literal can
- * never be a relying-party ID, and that holds even over HTTPS.
+ * The IP check is the common self-hosting mistake: a passkey is bound to a
+ * registrable domain, so an IP literal can never be a relying-party ID, even
+ * over HTTPS.
  */
 export function passkeysSupported(): boolean {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
@@ -387,9 +365,8 @@ export function isAbortError(err: unknown): boolean {
 }
 
 /**
- * Maps a ceremony failure to something worth reading, following the precedent of
- * oauthErrorMessage in auth.ts: the browser's DOMException names are accurate but
- * meaningless to the person looking at them.
+ * The browser's DOMException names are accurate but meaningless to the person
+ * reading them. Follows oauthErrorMessage in auth.ts.
  */
 export function passkeyErrorMessage(err: unknown, ceremony: PasskeyCeremony): string {
   const registering = ceremony === 'register'
@@ -454,10 +431,7 @@ function firstMatch(tokens: [RegExp, string][], value: string): string {
   return ''
 }
 
-/**
- * A guessed label for a new passkey, so the name field is never empty. Takes the
- * user agent as an argument purely so it can be tested.
- */
+/** A guessed label for a new passkey, so the name field is never empty. */
 export function defaultPasskeyName(userAgent?: string): string {
   const ua = userAgent ?? (typeof navigator === 'undefined' ? '' : navigator.userAgent)
   if (!ua) {

@@ -13,43 +13,35 @@ import (
 	"lemmary/backend/internal/models"
 )
 
-// stopReason lands in the job's error field, so a stopped job says why it is
-// sitting in Activity's "Recently cancelled" group instead of showing nothing.
+// stopReason lands in the job's error field, so a stopped job says why it is in
+// Activity's "Recently cancelled" group instead of showing nothing.
 const stopReason = "Stopped from the Activity page before it ran."
 
 type stopQueueResult struct {
 	Stopped int `json:"stopped"`
-	// Running is what could not be stopped: the jobs already inside the
-	// pipeline, which run to the end. At most WORKER_CONCURRENCY of them, one
-	// by default -- but counted rather than assumed.
+	// Running is what could not be stopped: jobs already inside the pipeline,
+	// which run to the end. At most WORKER_CONCURRENCY of them, but counted.
 	Running int `json:"running"`
-	// Remaining is pending work a save error prevented us from cancelling.
+	// Remaining is pending work a save error prevented cancelling.
 	Remaining int `json:"remaining"`
 }
 
 type discardResult struct {
 	Deleted int `json:"deleted"`
-	// Kept is documents the sweep deliberately spared: queued, but already
-	// through the pipeline once. Separate from Remaining so the page can say
-	// "kept" rather than report protection as a failure.
+	// Kept is documents the sweep spared: queued, but already through the
+	// pipeline once. Separate from Remaining so protection is not a failure.
 	Kept int `json:"kept"`
 	// Remaining is what a delete error left behind, so the page can say the
-	// sweep was partial rather than report a clean number it did not achieve.
+	// sweep was partial.
 	Remaining int `json:"remaining"`
 }
 
-// handlePostStopQueue cancels every job of the caller's that has not started.
-//
-// It stops the queue, not the pipeline: runner.Run has no cancellation channel
-// to pull, so whatever is in flight runs to the end and drainPending then finds
-// nothing left to pick up. That is the whole of "stop" here, and it is enough
-// for the case it exists for -- an archive dropped in by mistake, where the
-// cost is the four hundred documents behind the current one, not the current
-// one. Raising WORKER_CONCURRENCY raises that cost from one document to N.
-//
-// Stopped jobs and documents are marked cancelled. This keeps deliberate user
-// action out of failure counts and gives the discard sweep an exact category
-// that cannot include a previously processed document whose reprocess failed.
+// handlePostStopQueue stops the queue, not the pipeline: runner.Run has no
+// cancellation channel, so whatever is in flight runs to the end and
+// drainPending then finds nothing to pick up. Enough for the case it exists
+// for, an archive dropped in by mistake. Stopped work is marked cancelled, so
+// deliberate user action stays out of failure counts and the discard sweep has
+// a category that cannot include a processed document whose reprocess failed.
 func handlePostStopQueue(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		ownerID, err := resolveOwnerUserID(app, e)
@@ -57,9 +49,8 @@ func handlePostStopQueue(app core.App) func(*core.RequestEvent) error {
 			return writeOwnerError(e, err)
 		}
 
-		// finished_at = '' as well as the status test, for the reason
-		// createProcessingJob gives: status alone does not mark the end of a
-		// job's life, finished_at does.
+		// finished_at = '' as well as the status test: status alone does not
+		// mark the end of a job's life, finished_at does.
 		jobs, err := app.FindRecordsByFilter(
 			"processing_jobs",
 			"finished_at = '' && document.user = {:owner}",
@@ -102,14 +93,10 @@ func handlePostStopQueue(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// stopJob settles one pending job and its document, reporting false when the
-// worker claimed it first.
-//
-// The re-read inside the transaction is that check: the drain loop claims a job
-// by flipping it to running in a transaction of its own, and without this a
-// stop that raced the claim would write "cancelled" over a job that is at that
-// moment running OCR -- which the pipeline would then overwrite again at the
-// end, leaving the Activity page contradicting itself in between.
+// stopJob reports false when the worker claimed the job first. The re-read
+// inside the transaction is that check: the drain loop claims a job in a
+// transaction of its own, and a stop that raced it would write "cancelled" over
+// a job that is at that moment running OCR.
 func stopJob(app core.App, job *core.Record) (bool, error) {
 	stopped := false
 	err := app.RunInTransaction(func(txApp core.App) error {
@@ -130,22 +117,19 @@ func stopJob(app core.App, job *core.Record) (bool, error) {
 
 		document, err := txApp.FindRecordById("documents", fresh.GetString("document"))
 		if errors.Is(err, sql.ErrNoRows) {
-			// The document went away under us -- a parallel discard. The job is
-			// already settled, and the cascade will take it.
+			// A parallel discard took the document. The job is already settled,
+			// and the cascade will take it.
 			stopped = true
 			return nil
 		}
 		if err != nil {
-			// Anything other than a gone document rolls the job write back. A
-			// lock or a timeout here must not leave a cancelled job sitting over
-			// a document the page still shows as queued.
+			// Anything but a gone document rolls the job write back: a lock or a
+			// timeout must not leave a cancelled job over a queued document.
 			return err
 		}
-		// Only a document that is itself still waiting becomes cancelled. A
-		// crash during embed re-pends a job whose document apply_metadata has
-		// already written "completed" (recoverStaleRunningJobs), and stamping
-		// cancelled over that would hand a processed document to the discard
-		// sweep below.
+		// Only a document still waiting becomes cancelled: recoverStaleRunningJobs
+		// re-pends jobs whose document is already "completed", and stamping
+		// cancelled over that would hand a processed document to the discard sweep.
 		if document.GetString("processing_status") == models.DocStatusPending {
 			document.Set("processing_status", models.DocStatusCancelled)
 			if err := txApp.Save(document); err != nil {
@@ -158,19 +142,12 @@ func stopJob(app core.App, job *core.Record) (bool, error) {
 	return stopped, err
 }
 
-// handlePostDiscardUnprocessed deletes the caller's documents that are still
-// queued or were deliberately cancelled, and have never been through the
-// pipeline.
-//
-// Status alone cannot decide that. Failed is excluded because a document can
-// have processed successfully before a later reprocess fails, and "pending" has
-// the same problem from the other side: reprocess.queueOne flips a completed
-// document back to pending before enqueueing it, so the queue holds library
-// documents as well as fresh uploads. wasProcessed is what tells them apart.
-//
-// Deleting the document is also what stops its job: processing_jobs.document
-// cascades, so a pending job disappears with the document rather than being
-// left to fail on a record that is gone.
+// handlePostDiscardUnprocessed deletes queued or cancelled documents that have
+// never been through the pipeline. Status alone cannot decide that: a failed
+// document may have processed before a later reprocess failed, and queueOne
+// flips a completed document back to pending, so wasProcessed tells them apart.
+// Deleting the document is also what stops its job, through the cascade on
+// processing_jobs.document.
 func handlePostDiscardUnprocessed(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		ownerID, err := resolveOwnerUserID(app, e)
@@ -260,17 +237,11 @@ func discardDocument(app core.App, documentID, ownerID string) (bool, error) {
 	return deleted, err
 }
 
-// wasProcessed reports whether the document has ever come out of the pipeline
-// with something to lose, and so must survive the discard sweep whatever its
-// current status says.
-//
-// Two signals, because neither covers the other. OCR text is the cheap one and
-// catches the common case -- a completed document requeued by reprocess, or one
-// whose extraction is retrying after OCR already succeeded, both of which sit at
-// "pending" with their text intact. A finished job is the backstop for the
-// document OCR legitimately found no words in: empty text, still processed,
-// still not ours to delete. Cancelled jobs do not count towards it -- stopping a
-// fresh import leaves exactly that, and those are what this sweep is for.
+// wasProcessed reports whether the document has come out of the pipeline with
+// something to lose, whatever its current status says. Two signals, because
+// neither covers the other: OCR text catches the requeued document, and a
+// finished job is the backstop for one OCR found no words in. Cancelled jobs do
+// not count, since stopping a fresh import leaves exactly those.
 func wasProcessed(app core.App, document *core.Record) (bool, error) {
 	if document.GetString("ocr_text") != "" {
 		return true, nil

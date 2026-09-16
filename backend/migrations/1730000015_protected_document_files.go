@@ -8,18 +8,13 @@ import (
 // Marks the documents file fields as protected.
 //
 // An unprotected FileField is served by PocketBase's /api/files route to any
-// client that presents the URL — collection API rules do not apply there, so
-// every uploaded document and preview was a bearer capability: unguessable,
-// but valid for anyone holding the link, surviving logout and session
-// revocation for as long as the record exists, and sitting in browser
-// history and proxy logs the whole time.
+// client that presents the URL: collection API rules do not apply there, so
+// every uploaded document and preview was a bearer capability that survived
+// logout and session revocation. Protected files are checked against the
+// collection's ViewRule with a short-lived file token instead.
 //
-// Protected files are checked against the collection's ViewRule with the
-// short-lived file token (?token=, minted at POST /api/files/token by an
-// authenticated user), so access becomes owner-or-superuser and expires with
-// the token. The paperless-ngx compatibility layer is unaffected: its
-// download and thumb handlers authenticate the request themselves and serve
-// the bytes directly rather than redirecting through /api/files.
+// The paperless-ngx compatibility layer is unaffected: its download and thumb
+// handlers authenticate the request themselves and serve the bytes directly.
 func init() {
 	m.Register(func(app core.App) error {
 		documents, err := app.FindCollectionByNameOrId("documents")

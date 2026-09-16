@@ -2,7 +2,9 @@ import { type SubmitEvent, useState } from 'react'
 
 import {
   createAIProvider,
+  defaultCatalog,
   deleteAIProvider,
+  MODEL_CATALOGS,
   requiresAPIKey,
   requiresSignIn,
   sdkAliasDefault,
@@ -32,16 +34,16 @@ type ProviderDraft = {
   alias: string
   base_url: string
   api_key: string
+  catalog: string
 }
 
 function emptyDraft(sdk: ProviderSDK = 'openai'): ProviderDraft {
-  return { sdk, alias: '', base_url: SDK_DEFAULT_BASE[sdk], api_key: '' }
+  return { sdk, alias: '', base_url: SDK_DEFAULT_BASE[sdk], api_key: '', catalog: defaultCatalog(sdk) }
 }
 
 /**
- * The endpoints the models are bound to. Its add/edit drawer is a form of its
- * own, saved against the providers API rather than the settings record, so it
- * reports success and failure back to the tab's dialog.
+ * The add/edit drawer is a form of its own, saved against the providers API
+ * rather than the settings record, so it reports back to the tab's dialog.
  */
 export function ProvidersBlock({
   providers,
@@ -72,6 +74,7 @@ export function ProvidersBlock({
           sdk: draft.sdk,
           alias: draft.alias.trim(),
           base_url: draft.base_url.trim(),
+          catalog: draft.catalog,
           ...(draft.api_key.trim() ? { api_key: draft.api_key.trim() } : {}),
         })
       } else {
@@ -80,6 +83,7 @@ export function ProvidersBlock({
           alias: draft.alias.trim() || sdkAliasDefault(draft.sdk),
           base_url: draft.base_url.trim(),
           api_key: draft.api_key.trim(),
+          catalog: draft.catalog,
         })
       }
       await onChanged()
@@ -129,9 +133,8 @@ export function ProvidersBlock({
                       : ' · missing key'
                     : ' · no key needed'}
               </p>
-              {/* The sign-in panel stands where the key field would, and on
-                  the saved row rather than in the add form: the flow needs
-                  a provider id to store the token against. */}
+              {/* On the saved row rather than in the add form: the flow needs a
+                  provider id to store the token against. */}
               {requiresSignIn(item.sdk) && <ChatGPTSignIn provider={item} onChange={onChanged} />}
             </div>
             <div className="flex gap-2">
@@ -146,6 +149,7 @@ export function ProvidersBlock({
                     alias: item.alias,
                     base_url: item.base_url,
                     api_key: '',
+                    catalog: item.catalog ?? defaultCatalog(item.sdk),
                   })
                 }}
               >
@@ -191,14 +195,18 @@ export function ProvidersBlock({
                     current.base_url === SDK_DEFAULT_BASE[current.sdk]
                       ? SDK_DEFAULT_BASE[sdk]
                       : current.base_url,
-                  // The key field is about to disappear; a value typed
-                  // before the switch would otherwise be posted invisibly.
+                  catalog:
+                    current.catalog === defaultCatalog(current.sdk)
+                      ? defaultCatalog(sdk)
+                      : current.catalog,
+                  // The key field is about to disappear; a value typed before
+                  // the switch would otherwise be posted invisibly.
                   api_key: requiresAPIKey(sdk) ? current.api_key : '',
                 }))
               }}
             >
-              {/* Offering an SDK the server will refuse is a dead end an
-                  admin cannot diagnose, so chatgpt appears only where
+              {/* Offering an SDK the server will refuse is a dead end an admin
+                  cannot diagnose, so chatgpt appears only where
                   AI_CHATGPT_LOGIN turned it on. */}
               {SDK_OPTIONS.filter(
                 (option) => option.value !== 'chatgpt' || chatgptLogin === true,
@@ -217,6 +225,23 @@ export function ProvidersBlock({
               placeholder={sdkAliasDefault(draft.sdk)}
               onChange={(event) => setDraft((current) => ({ ...current, alias: event.target.value }))}
             />
+          </label>
+          <label className={labelClassName}>
+            <span className={labelTextClassName}>Model catalogue</span>
+            <select
+              className={inputClassName}
+              value={draft.catalog}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, catalog: event.target.value }))
+              }
+            >
+              <option value="">None — no context window shown</option>
+              {MODEL_CATALOGS.map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </select>
           </label>
           {draft.sdk !== 'google_vision' && (
             <label className={`${labelClassName} sm:col-span-2`}>

@@ -24,8 +24,7 @@ func requestEvent(t *testing.T) (*core.RequestEvent, *httptest.ResponseRecorder)
 }
 
 // Hiding the SDK in Settings is a courtesy; these endpoints stay reachable with
-// any admin session, so the flag has to be enforced here or it is not enforced
-// at all. Same reasoning as refuseWhenManaged.
+// any admin session, so the flag has to be enforced here or not at all.
 func TestChatGPTEndpointsAreRefusedWhenTheFlagIsOff(t *testing.T) {
 	t.Parallel()
 	e, rec := requestEvent(t)
@@ -57,13 +56,10 @@ func TestChatGPTEndpointsAreServedWhenTheFlagIsOn(t *testing.T) {
 	}
 }
 
-// The authorization code a poll returns is single-use, so the poll-exchange-
-// save sequence has to run one at a time per provider: two overlapping polls
-// would both read the same pending login, and the second exchange would be
-// refused for a sign-in that had just succeeded.
-//
-// The handler itself is not exercised here -- it wants a live PocketBase, which
-// nothing in this tree stands up -- so this covers the lock the handler holds.
+// The authorization code a poll returns is single-use, so two overlapping polls
+// would both read the same pending login and the second exchange would be
+// refused for a sign-in that had just succeeded. The handler wants a live
+// PocketBase, so this covers the lock it holds rather than the handler.
 func TestLoginPollsAreSerializedPerProvider(t *testing.T) {
 	const id = "p-lock"
 	var inside, overlaps atomic.Int32

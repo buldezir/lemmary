@@ -11,22 +11,18 @@ import (
 
 const (
 	defaultAppName = "Lemmary"
-	// The oxblood the logo mark is drawn in. Same value as DEFAULT_ACCENT in
-	// the SPA: one built-in accent, whichever side has to fall back to it.
+	// Same value as DEFAULT_ACCENT in the SPA: one built-in accent,
+	// whichever side has to fall back to it.
 	defaultAccent = "#6e2620"
 
-	// What PocketBase seeds Meta with on a fresh install
-	// (core.newDefaultSettings). Both are treated as "not set yet": the name is
-	// baked into passkeys, emails, backup names and the admin UI, so leaving it
-	// would brand a Lemmary instance as Acme until someone renamed it, and the
-	// accent is PocketBase's own blue, which is nobody's brand but theirs.
+	// What PocketBase seeds Meta with on a fresh install. Both are treated as
+	// "not set yet": the name is baked into passkeys, emails, backup names and
+	// the admin UI, and the accent is PocketBase's own blue.
 	pocketBaseDefaultAppName = "Acme"
 	pocketBaseDefaultAccent  = "#1055c9"
 )
 
-// brandedDefaults replaces PocketBase's placeholder name and accent with
-// Lemmary's own, and reports whether it changed anything. A name or accent
-// someone chose is left alone.
+// brandedDefaults leaves a name or accent someone chose alone.
 func brandedDefaults(s *core.Settings) bool {
 	if s == nil {
 		return false
@@ -43,11 +39,9 @@ func brandedDefaults(s *core.Settings) bool {
 	return changed
 }
 
-// RegisterAppName seeds the branding PocketBase ships its own placeholders for.
-//
-// Before e.Next so a first-install ReloadSettings persists Lemmary instead of
-// Acme. After e.Next so an existing install that still has a placeholder is
-// rewritten on the next boot.
+// RegisterAppName runs before e.Next so a first-install ReloadSettings persists
+// Lemmary's branding, and after it so an existing install that still has a
+// placeholder is rewritten on the next boot.
 func RegisterAppName(app core.App) {
 	app.OnBootstrap().BindFunc(func(e *core.BootstrapEvent) error {
 		brandedDefaults(e.App.Settings())
@@ -93,14 +87,16 @@ func handleGetMeta(app core.App, rt *config.Runtime) func(*core.RequestEvent) er
 			// Public: the SPA needs both before anyone has signed in.
 			"passkeys":   passkeyLoginAvailable(app, e),
 			"ai_managed": rt.Managed(),
-			// Whether Settings offers the ChatGPT sign-in at all. Public for
-			// the same reason ai_managed is: the SPA reads meta before it can
-			// know whether the session is an admin's.
+			// Public for the same reason ai_managed is: the SPA reads meta
+			// before it can know whether the session is an admin's.
 			"chatgpt_login": rt.ChatGPTLogin(),
-			// Public because it shapes what a *regular* user sees -- which
-			// status the document list defaults to, and where an upload lands
-			// -- while only an admin can change it.
+			// Public because it shapes what a regular user sees, while only an
+			// admin can change it.
 			"always_require_review": rt.AlwaysRequireReview(),
+			// Whether a chat may offer the web toggle at all. Having the option
+			// is not having the answer: the tools still run only when a user
+			// asks for them on the turn.
+			"web_search": rt.WebSearchAvailable(),
 		})
 	}
 }

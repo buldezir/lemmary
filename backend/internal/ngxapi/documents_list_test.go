@@ -13,27 +13,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 
 	"lemmary/backend/internal/fulltext"
-	"lemmary/backend/internal/ngxid"
-
-	_ "lemmary/backend/migrations"
 )
-
-// bootSchemaTestApp is bootTestApp plus the Lemmary schema. Bootstrap runs only
-// PocketBase's system migrations, so documents, tags and the rest do not exist
-// until the app migrations run too.
-//
-// It binds ngxid.Register for the same reason appwire does: a record created
-// without it carries no client-facing id, and nothing in this package could
-// then address it.
-func bootSchemaTestApp(t *testing.T) *pocketbase.PocketBase {
-	t.Helper()
-	app := bootTestApp(t)
-	if err := app.RunAppMigrations(); err != nil {
-		t.Fatalf("run app migrations: %v", err)
-	}
-	ngxid.Register(app)
-	return app
-}
 
 // listFixture is one owner with two tags and three documents, plus a second
 // owner whose document must never appear.
@@ -131,8 +111,7 @@ type listResponse struct {
 	Results []map[string]any `json:"results"`
 }
 
-// list calls the handler directly, the way the rest of this package's handler
-// tests do: no router, no server.
+// list calls the handler directly: no router, no server.
 func (f listFixture) list(t *testing.T, query string) (int, listResponse) {
 	t.Helper()
 	e := &core.RequestEvent{}
@@ -211,9 +190,8 @@ func TestListDocumentsAppliesDateRange(t *testing.T) {
 	}
 }
 
-// TestListDocumentsCountMatchesTheFilteredPage is the invariant that made the
-// count and the page share one expression: a count taken from a different
-// query than the rows it counts sends the client paging into emptiness.
+// A count taken from a different query than the rows it counts sends the client
+// paging into emptiness.
 func TestListDocumentsCountMatchesTheFilteredPage(t *testing.T) {
 	f := newListFixture(t)
 
@@ -229,8 +207,7 @@ func TestListDocumentsCountMatchesTheFilteredPage(t *testing.T) {
 	}
 }
 
-// TestListDocumentsUnknownIDReturnsNothing pins the dangerous direction. Before
-// filters were parsed at all, every one of these returned the whole archive.
+// Before filters were parsed at all, every one of these returned the whole archive.
 func TestListDocumentsUnknownIDReturnsNothing(t *testing.T) {
 	f := newListFixture(t)
 
@@ -277,10 +254,8 @@ func TestListDocumentsRefusesUnsupportedFilter(t *testing.T) {
 	}
 }
 
-// TestListDocumentsPagesWithoutRepeatingRows pins the id tiebreaker: these
-// documents share a created timestamp, and without a total order SQLite may
-// return tied rows in a different order per page, showing one row twice and
-// another never.
+// These documents share a created timestamp; without the id tiebreaker SQLite
+// may return tied rows in a different order per page.
 func TestListDocumentsPagesWithoutRepeatingRows(t *testing.T) {
 	f := newListFixture(t)
 
@@ -301,8 +276,8 @@ func TestListDocumentsPagesWithoutRepeatingRows(t *testing.T) {
 	}
 }
 
-// TestListDocumentsTruncatesContentOnRequest: swift-paperless asks for this on
-// list views, where the full OCR text of every hit is most of the payload.
+// swift-paperless asks for this on list views, where the full OCR text of every
+// hit is most of the payload.
 func TestListDocumentsTruncatesContentOnRequest(t *testing.T) {
 	f := newListFixture(t)
 
@@ -368,8 +343,7 @@ func TestListDocumentsAppliesTaxonomyFilters(t *testing.T) {
 	}
 }
 
-// indexFixture puts the owner's documents into a real Bleve index, so the
-// search path can be exercised the way a client reaches it.
+// indexFixture puts the owner's documents into a real Bleve index.
 func (f listFixture) indexed(t *testing.T) *fulltext.Index {
 	t.Helper()
 	idx := fulltext.New()
@@ -416,10 +390,6 @@ func (f listFixture) search(t *testing.T, idx *fulltext.Index, query string) lis
 	return body
 }
 
-// TestListDocumentsIntersectsSearchWithFilters is the combination that has to
-// work for a client's search box and its filter chips to agree: the index
-// answers the words, the database answers everything else, and the page is the
-// intersection with a count that matches it.
 func TestListDocumentsIntersectsSearchWithFilters(t *testing.T) {
 	f := newListFixture(t)
 	idx := f.indexed(t)
@@ -448,9 +418,8 @@ func TestListDocumentsIntersectsSearchWithFilters(t *testing.T) {
 	}
 }
 
-// TestListDocumentsTitleContentSearchesTitleAndBody is what swift-paperless
-// sends from its default search mode, and what returned the whole archive
-// before the filter was read at all.
+// What swift-paperless sends from its default search mode, and what returned the
+// whole archive before the filter was read at all.
 func TestListDocumentsTitleContentSearchesTitleAndBody(t *testing.T) {
 	f := newListFixture(t)
 
@@ -481,10 +450,8 @@ func TestListDocumentsTitleContentSearchesTitleAndBody(t *testing.T) {
 	}
 }
 
-// TestListRendersStoredRelationIDs: the ids in a response have to be the ones
-// the client can send back. They come from the related rows now rather than
-// from a hash of a PocketBase id, so a document's tags, type and correspondent
-// must round-trip through the filters that resolve them.
+// The ids in a response have to be the ones the client can send back: they come
+// from the related rows, so they must round-trip through the filters.
 func TestListRendersStoredRelationIDs(t *testing.T) {
 	f := newListFixture(t)
 
@@ -526,9 +493,7 @@ func TestListRendersStoredRelationIDs(t *testing.T) {
 	}
 }
 
-// TestRenderingAPageBatchesRelationLookups is the cost of reading ids from
-// related rows instead of hashing them. Per field it would be one query per tag
-// per document -- the same per-row traffic the stored id was added to remove.
+// Per field and unbatched, this would be one query per tag per document.
 func TestRenderingAPageBatchesRelationLookups(t *testing.T) {
 	f := newListFixture(t)
 
@@ -550,9 +515,8 @@ func storedID(t *testing.T, app core.App, collection, pbID string) int {
 	return ngxIDOf(record)
 }
 
-// TestSearchOrderingByScoreKeepsRelevance: swift-paperless sends `score`
-// whenever a search is active, and treating any non-empty ordering as a
-// database sort threw the index's ranking away.
+// swift-paperless sends `score` whenever a search is active, and treating any
+// non-empty ordering as a database sort threw the index's ranking away.
 func TestSearchOrderingByScoreKeepsRelevance(t *testing.T) {
 	f := newListFixture(t)
 
@@ -579,8 +543,7 @@ func TestSearchOrderingByScoreKeepsRelevance(t *testing.T) {
 	}
 }
 
-// TestSearchWithNoSearchableTermsIsAnEmptyPage: a client re-querying per
-// keystroke sends a lone quote, which the handler used to turn into a 500.
+// A client re-querying per keystroke sends a lone quote, which used to be a 500.
 func TestSearchWithNoSearchableTermsIsAnEmptyPage(t *testing.T) {
 	f := newListFixture(t)
 	idx := f.indexed(t)
@@ -593,9 +556,8 @@ func TestSearchWithNoSearchableTermsIsAnEmptyPage(t *testing.T) {
 	}
 }
 
-// TestListAcceptsTheClientsOwnerAndFieldsParams: both used to be 400s. The
-// client swallows the one on its deletion-reconcile sweep, so remote deletions
-// quietly stopped reaching the device.
+// Both used to be 400s. The client swallows the one on its deletion-reconcile
+// sweep, so remote deletions quietly stopped reaching the device.
 func TestListAcceptsTheClientsOwnerAndFieldsParams(t *testing.T) {
 	f := newListFixture(t)
 
@@ -622,8 +584,7 @@ func TestListAcceptsTheClientsOwnerAndFieldsParams(t *testing.T) {
 	}
 }
 
-// TestListSortsByTheIDTheClientWasShown: ordering=id used to sort by the random
-// PocketBase string, which has nothing to do with the response.
+// ordering=id used to sort by the random PocketBase string.
 func TestListSortsByTheIDTheClientWasShown(t *testing.T) {
 	f := newListFixture(t)
 
@@ -640,8 +601,8 @@ func TestListSortsByTheIDTheClientWasShown(t *testing.T) {
 	}
 }
 
-// TestUndatedDocumentIsFoundByTheDateItShows: an upload with no extracted date
-// was missing from every created range, including one covering its own card.
+// An upload with no extracted date was missing from every created range,
+// including one covering its own card.
 func TestUndatedDocumentIsFoundByTheDateItShows(t *testing.T) {
 	f := newListFixture(t)
 

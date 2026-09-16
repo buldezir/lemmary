@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/security"
 )
@@ -58,16 +57,12 @@ func TestTokenGETReturns406ForUnsupportedAPIVersion(t *testing.T) {
 	}
 }
 
-// This flow is hand-rolled because the Paperless-compatible API answers in its
-// own shape, which means every policy PocketBase enforces on its own auth routes
-// has to be enforced again here or it is not enforced at all.
+// The Paperless-compatible API is hand-rolled, so every policy PocketBase
+// enforces on its own auth routes has to be enforced again here.
 //
-// MFA is the one that fails in the dangerous direction. With it on, PocketBase
-// answers a correct password with an mfaId and demands a second factor; without
-// this check /api/token and Basic auth would go on minting full auth tokens for
-// the password alone, so enabling MFA would secure the web UI and leave every
-// API client an unguarded way in. Under encryption at rest a password accepted
-// here is also, through enrollment, a key that unwraps the archive.
+// With MFA on, PocketBase answers a correct password with an mfaId and demands a
+// second factor; without this check /api/token and Basic auth would go on
+// minting full auth tokens for the password alone.
 func TestCollectionAuthPolicyRefusesPasswordOnlyWhenMFAIsOn(t *testing.T) {
 	c := core.NewAuthCollection("users")
 	c.PasswordAuth.Enabled = true
@@ -101,8 +96,8 @@ func TestCollectionAuthPolicyAllowsPlainPasswordAuth(t *testing.T) {
 	}
 }
 
-// Paperless-ngx tokens do not expire. Clients store POST /api/token/ and never
-// refresh. NewAuthToken() follows users.AuthToken.Duration (five days) and is
+// Paperless-ngx tokens do not expire and clients never refresh the one they
+// stored. NewAuthToken() follows users.AuthToken.Duration (five days), which is
 // why swift-paperless used to die until the server was re-added.
 func TestPaperlessAPITokenLastsYearsNotDays(t *testing.T) {
 	t.Parallel()
@@ -187,19 +182,6 @@ func assertUnauthorizedDetail(t *testing.T, e *core.RequestEvent, want string) {
 	if body.Detail != want {
 		t.Fatalf("detail = %q, want %q", body.Detail, want)
 	}
-}
-
-func bootTestApp(t *testing.T) *pocketbase.PocketBase {
-	t.Helper()
-	app := pocketbase.NewWithConfig(pocketbase.Config{
-		DefaultDataDir:  t.TempDir(),
-		HideStartBanner: true,
-	})
-	if err := app.Bootstrap(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = app.ResetBootstrapState() })
-	return app
 }
 
 func jwtExpUnix(v any) int64 {

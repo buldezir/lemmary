@@ -31,7 +31,7 @@ const (
 
 // maxEntryBytes matches the documents.file field limit, so an entry that cannot
 // be stored is reported at preview time instead of failing mid-restore.
-// A var so tests can shrink it instead of building 20 MB fixtures.
+// A var so tests can shrink it instead of building 47 MB fixtures.
 var maxEntryBytes = DefaultMaxEntryBytes
 
 // maxTotalScanBytes budgets the total decompression one scan may do, across
@@ -219,13 +219,11 @@ func restoredName(files map[string]*zip.File, group backup.Group, budget *scanBu
 // synchronous inflation inside a single request.
 type scanBudget struct{ remaining int64 }
 
-// spend draws n bytes and reports whether the budget held.
 func (b *scanBudget) spend(n int64) bool {
 	b.remaining -= n
 	return b.remaining >= 0
 }
 
-// fallbackName rebuilds a file name from the entry path alone.
 func fallbackName(group backup.Group) string {
 	base := path.Base(group.File)
 	ext := path.Ext(base)
@@ -266,13 +264,11 @@ func indexEntries(zr *zip.Reader) map[string]*zip.File {
 	return files
 }
 
-// maxSidecarBytes bounds an OCR or metadata sidecar.
-//
-// Well under models.MaxOCRTextRunes, which is what the collection allows in
-// ocr_text: a sidecar is text this instance wrote out of a document it already
-// held, and one larger than this is not a sidecar it could have written. The
-// two numbers are deliberately not equal -- this one bounds what a restore
-// reads into memory per entry, and only the column has to hold the result.
+// maxSidecarBytes bounds an OCR or metadata sidecar. Well under
+// models.MaxOCRTextRunes, which is what the collection allows in ocr_text: a
+// sidecar is text this instance wrote out of a document it already held. The two
+// are deliberately not equal, because this one bounds what a restore reads into
+// memory per entry.
 const maxSidecarBytes = 4 << 20
 
 // errEntryTooLarge marks an entry that cannot be stored as a document.
@@ -334,7 +330,6 @@ func (b *scanBudget) take(files map[string]*zip.File, name string, limit int64) 
 	return data, nil
 }
 
-// readMetadataBudgeted reads and parses one metadata sidecar.
 func readMetadataBudgeted(files map[string]*zip.File, name string, budget *scanBudget) (map[string]any, error) {
 	data, err := budget.take(files, name, maxSidecarBytes)
 	if err != nil {
@@ -347,7 +342,6 @@ func readMetadataBudgeted(files map[string]*zip.File, name string, budget *scanB
 	return meta, nil
 }
 
-// countingReader counts the bytes read through it.
 type countingReader struct {
 	r io.Reader
 	n int64

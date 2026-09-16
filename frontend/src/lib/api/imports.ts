@@ -34,11 +34,9 @@ export async function importFromNgx(
 }
 
 /**
- * Which zip entries the server counts as documents. An Amazon export is mostly
- * CSV reports and delivery photos, so that flow takes the invoice PDFs only; a
- * zip the user packed themselves takes every type the library can store. It is
- * the only difference between the two, and the staged upload remembers it, so
- * confirm and status are the same call either way.
+ * Which zip entries the server counts as documents: an Amazon export takes the
+ * invoice PDFs only, a user-packed zip every type the library can store. The
+ * only difference between the two flows.
  */
 export type ZipImportSource = 'amazon' | 'zip'
 

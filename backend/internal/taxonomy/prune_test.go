@@ -7,25 +7,15 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"lemmary/backend/internal/taxonomy"
-	// Blank import on purpose: RunAppMigrations only runs what this package
-	// registered, and the taxonomy package itself never imports it.
+	"lemmary/backend/internal/testpb"
+	// Blank import on purpose: the shared schema template only includes what
+	// this package registered, and the taxonomy package itself never imports it.
 	_ "lemmary/backend/migrations"
 )
 
 func bootTestApp(t *testing.T) *pocketbase.PocketBase {
 	t.Helper()
-	app := pocketbase.NewWithConfig(pocketbase.Config{
-		DefaultDataDir:  t.TempDir(),
-		HideStartBanner: true,
-	})
-	if err := app.Bootstrap(); err != nil {
-		t.Fatalf("bootstrap: %v", err)
-	}
-	t.Cleanup(func() { _ = app.ResetBootstrapState() })
-	if err := app.RunAppMigrations(); err != nil {
-		t.Fatalf("run app migrations: %v", err)
-	}
-	return app
+	return testpb.Open(t)
 }
 
 func createUser(t *testing.T, app core.App, email string) string {
@@ -59,8 +49,7 @@ func createNamed(t *testing.T, app core.App, collection, name, userID string) st
 	return record.Id
 }
 
-// An unused tag is the normal state of a tag its owner just created on the Tags
-// page. Pruning it would delete the vocabulary out from under them.
+// An unused tag is the normal state of a tag its owner just created.
 func TestPruneOrphansKeepsUnusedTags(t *testing.T) {
 	app := bootTestApp(t)
 	user := createUser(t, app, "owner@example.com")
@@ -81,7 +70,6 @@ func TestPruneOrphansKeepsUnusedTags(t *testing.T) {
 		t.Fatalf("unused tag was deleted: %v", err)
 	}
 
-	// The other two are extraction debris when unreferenced, and still go.
 	if result.Correspondents != 1 || result.DocumentTypes != 1 {
 		t.Fatalf("expected 1 correspondent and 1 document type removed, got %+v", result)
 	}

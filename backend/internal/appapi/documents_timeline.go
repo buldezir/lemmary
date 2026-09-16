@@ -8,37 +8,30 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// timelineMonth is one calendar month that holds documents.
 type timelineMonth struct {
 	// Month is "YYYY-MM".
 	Month string `json:"month"`
 	Count int    `json:"count"`
 }
 
-// documentsTimeline is the shape of the archive in time: how many documents sit
-// in each month, newest month first.
+// documentsTimeline is newest month first.
 type documentsTimeline struct {
 	Months []timelineMonth `json:"months"`
-	// Undated counts the documents with no document_date. No date range can
-	// reach them, so the sidebar shows them as a row of their own -- one that
-	// filters the list by ?undated=true rather than by a From/To.
+	// Undated counts the documents no date range can reach, which the sidebar
+	// shows as a row filtering by ?undated=true rather than by a From/To.
 	Undated int `json:"undated"`
 }
 
-// timelineRow is one GROUP BY bucket. The undated documents arrive as the empty
-// bucket, because substr('', 1, 7) is ''.
+// The undated documents arrive as the empty bucket, since the month substring
+// of an empty date is empty.
 type timelineRow struct {
 	Month string `db:"month"`
 	Count int    `db:"count"`
 }
 
-// handleDocumentsTimeline reports the caller's documents grouped by the month
-// on the document itself.
-//
-// The counts deliberately ignore the list's other filters: the sidebar is a map
-// of the whole archive, so it stays still while you narrow the list rather than
-// rearranging itself under the cursor. That also keeps it to one query, fetched
-// once per change to the library instead of once per keystroke.
+// handleDocumentsTimeline ignores the list's other filters: the sidebar is a
+// map of the whole archive, so it stays still while you narrow the list, and it
+// stays one query fetched per change to the library rather than per keystroke.
 func handleDocumentsTimeline(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		ownerID, err := resolveOwnerUserID(app, e)
@@ -47,16 +40,12 @@ func handleDocumentsTimeline(app core.App) func(*core.RequestEvent) error {
 		}
 
 		var rows []timelineRow
-		// substr rather than a date function: a PocketBase DateField column is
-		// TEXT and holds both the "YYYY-MM-DD" that NormalizeDocumentDate writes
-		// and the "YYYY-MM-DD HH:MM:SS.sssZ" PocketBase writes itself. The first
-		// seven characters are the month under either shape, and an empty date
-		// truncates to "", which is the undated bucket -- so one pass covers
-		// both.
+		// substr rather than a date function: a DateField column is TEXT and
+		// holds both "YYYY-MM-DD" and "YYYY-MM-DD HH:MM:SS.sssZ", and the first
+		// seven characters are the month under either shape.
 		//
-		// RecordQuery rather than a bare DB().NewQuery so this inherits
-		// PocketBase's lock-retry and query timeout, the same reasoning as
-		// limits.Measure.
+		// RecordQuery rather than a bare DB().NewQuery, so this inherits
+		// PocketBase's lock-retry and query timeout.
 		err = app.RecordQuery("documents").
 			Select("substr(COALESCE(document_date, ''), 1, 7) AS month", "COUNT(*) AS count").
 			AndWhere(dbx.HashExp{"user": ownerID}).
@@ -72,8 +61,7 @@ func handleDocumentsTimeline(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// buildTimeline splits the undated bucket out of the grouped rows, preserving
-// the query's newest-first order.
+// buildTimeline preserves the query's newest-first order.
 func buildTimeline(rows []timelineRow) documentsTimeline {
 	timeline := documentsTimeline{Months: []timelineMonth{}}
 	for _, row := range rows {

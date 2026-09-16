@@ -10,29 +10,22 @@ import (
 	"unicode/utf8"
 )
 
-// HashEmbedder is a deterministic stand-in for a real embedding provider: it
-// hashes a text's words and their character n-grams into a fixed number of
-// buckets and L2-normalises the result, so cosine similarity behaves the way it
-// does for a real model — related texts score higher than unrelated ones, and
-// the score is bounded.
-//
-// It is not a semantic model and cannot be: it will never link "car insurance"
-// to "Kfz-Versicherung". What it does give the tests is a dense signal that is
-// genuinely different from token-exact BM25 — the n-grams make it robust to
-// typos and to morphology — so the fusion code can be exercised end to end with
-// no provider, no API key, and no build tag.
+// HashEmbedder is a deterministic stand-in for a real embedding provider: word
+// and n-gram hashes, L2-normalised, so cosine behaves as it does for a real
+// model. Not a semantic model, and never will link "car insurance" to
+// "Kfz-Versicherung"; it only gives the tests a dense signal genuinely
+// different from token-exact BM25, with no provider and no API key.
 type HashEmbedder struct {
-	// Dim is the vector length; 0 means DefaultHashDim.
+	// 0 means DefaultHashDim.
 	Dim int
 }
 
-// DefaultHashDim is small enough to keep the eval fast and large enough that
-// unrelated texts do not collide into looking similar.
+// Small enough to keep the eval fast, large enough that unrelated texts do not
+// collide into looking similar.
 const DefaultHashDim = 256
 
-// NGramSize is the character n-gram width HashEmbedder adds on top of whole
-// words. Four is short enough to survive a German compound and long enough not
-// to match everything.
+// Four is short enough to survive a German compound and long enough not to
+// match everything.
 const NGramSize = 4
 
 func (h HashEmbedder) dim() int {
@@ -42,10 +35,8 @@ func (h HashEmbedder) dim() int {
 	return DefaultHashDim
 }
 
-// Dims reports the vector length this embedder produces.
 func (h HashEmbedder) Dims() int { return h.dim() }
 
-// Embed hashes each input into a unit vector.
 func (h HashEmbedder) Embed(_ context.Context, inputs []string) ([][]float32, error) {
 	out := make([][]float32, 0, len(inputs))
 	for _, input := range inputs {
@@ -93,9 +84,8 @@ func addHashed(vec []float32, token string, weight float32) {
 	vec[bucket] += sign * weight
 }
 
-// Cosine is the similarity two unit vectors of equal length have. Vectors of
-// different lengths score 0 rather than panicking: a dims mismatch is a
-// configuration bug, not a ranking question.
+// Vectors of different lengths score 0 rather than panicking: a dims mismatch
+// is a configuration bug, not a ranking question.
 func Cosine(a, b []float32) float64 {
 	if len(a) == 0 || len(a) != len(b) {
 		return 0
@@ -112,7 +102,6 @@ func Cosine(a, b []float32) float64 {
 	return dot / (math.Sqrt(na) * math.Sqrt(nb))
 }
 
-// MemoryChunk is one indexed chunk of the in-memory ChunkSearcher.
 type MemoryChunk struct {
 	DocumentID string
 	UserID     string
@@ -124,14 +113,12 @@ type MemoryChunk struct {
 	Vector     []float32
 }
 
-// MemoryChunks is a ChunkSearcher over a slice: cosine kNN for the vector,
-// term overlap for the text, fused with RRF when both are given — the same
-// shape as the real chunk index, without the index.
+// MemoryChunks is a ChunkSearcher over a slice: cosine kNN, term overlap, and
+// RRF when both are given, the same shape as the real chunk index.
 type MemoryChunks struct {
 	Chunks []MemoryChunk
 }
 
-// NewMemoryChunks embeds every chunk's text and returns a searcher over them.
 func NewMemoryChunks(ctx context.Context, embedder Embedder, chunks []MemoryChunk) (*MemoryChunks, error) {
 	texts := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
@@ -151,7 +138,6 @@ func NewMemoryChunks(ctx context.Context, embedder Embedder, chunks []MemoryChun
 	return &MemoryChunks{Chunks: stored}, nil
 }
 
-// SearchChunks implements ChunkSearcher.
 func (m *MemoryChunks) SearchChunks(_ context.Context, q ChunkQuery) ([]ChunkHit, error) {
 	if m == nil {
 		return nil, nil

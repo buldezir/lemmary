@@ -17,9 +17,8 @@ const (
 	settingsReloadHookID = "lemmaryConsoleLogOnSettingsReload"
 )
 
-// Register attaches the stdout tee immediately after PocketBase initLogger.
-// MaxInt priority makes this the last OnBootstrap handler in the chain so
-// Install runs before other hooks unwind and spawn goroutines that call Logger().
+// MaxInt priority makes this the last OnBootstrap handler, so the tee is
+// installed before other hooks unwind and spawn goroutines that call Logger().
 func Register(app core.App) {
 	app.OnBootstrap().Bind(&hook.Handler[*core.BootstrapEvent]{
 		Id:       bootstrapHookID,
@@ -34,9 +33,8 @@ func Register(app core.App) {
 	})
 }
 
-// Install tees app.Logger() to stdout at LOG_LEVEL without changing
-// PocketBase's logs-table min level. No-op when LOG_LEVEL is unset/invalid
-// or when the app is in --dev mode (PocketBase already prints to the console).
+// Install tees app.Logger() to stdout at LOG_LEVEL, leaving PocketBase's
+// logs-table min level alone. No-op in --dev, which already prints to console.
 func Install(app core.App) {
 	if app == nil || app.IsDev() {
 		return
@@ -59,9 +57,8 @@ func Install(app core.App) {
 	console := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 	next := slog.New(&teeHandler{console: console, inner: inner})
 	if !setAppLogger(app, next) {
-		// The reflection swap depends on PocketBase's private logger field; a
-		// PB upgrade can silently break it, and losing the stdout tee without
-		// a trace makes that miserable to diagnose.
+		// The reflection swap depends on PocketBase's private logger field, so
+		// a PB upgrade can break it; say so rather than lose the tee silently.
 		log.Printf("applog: could not install stdout log tee (PocketBase internals changed?); console logging disabled")
 		return
 	}

@@ -23,14 +23,10 @@ type AIEnv struct {
 	Providers aiprovider.Bootstrap
 
 	// ChatGPTLogin opens the chatgpt SDK, which bills an operator's ChatGPT
-	// subscription instead of a metered API key by talking to OpenAI's own
-	// Codex backend. Off unless asked for, because those endpoints are
-	// undocumented and reserved for OpenAI's clients: whether to point an
-	// account at them is the operator's decision, not a default.
-	//
-	// Refused together with Managed. The tenant of a managed instance is not
-	// the party whose account would be at risk, and the operator is already
-	// paying the AI bill they chose.
+	// subscription by talking to OpenAI's own Codex backend. Off unless asked for:
+	// those endpoints are undocumented and reserved for OpenAI's clients, so
+	// pointing an account at them is the operator's decision. Refused together
+	// with Managed, whose tenant is not the party whose account is at risk.
 	ChatGPTLogin bool
 
 	// Operator-owned in managed mode.
@@ -44,46 +40,53 @@ type AIEnv struct {
 	WorkerMaxRetries    int
 	DeepSearchLanguages string
 	ExtractionPromptVer string
+
+	// ModelCatalogURL is where a model's context window is looked up, so a
+	// research turn can be shown against it. Never blank as read from the
+	// environment: an empty AI_MODEL_CATALOG_URL falls back to the default, and
+	// the lookup is turned off by giving a provider no catalogue in Settings.
+	ModelCatalogURL string
 }
 
-// Environment variable names, in one place so the error messages and the
+// Environment variable names in one place, so the error messages and the
 // parsing cannot drift apart.
 const (
 	EnvManaged = "AI_MANAGED"
+
+	// EnvModelCatalogURL points the context-window lookup somewhere other than
+	// pi.dev. Empty falls back to that default rather than turning it off.
+	EnvModelCatalogURL = "AI_MODEL_CATALOG_URL"
 
 	EnvAISDK     = "AI_SDK"
 	EnvAIAPIKey  = "AI_API_KEY"
 	EnvAIBaseURL = "AI_BASE_URL"
 	EnvAIModel   = "AI_MODEL"
 
-	// EnvAIEmbeddingModel names the retrieval embedding model -- on the AI_SDK
+	// EnvAIEmbeddingModel names the retrieval embedding model: on the AI_SDK
 	// provider by default, or on the AI_EMBEDDING_SDK one when that is set.
 	EnvAIEmbeddingModel = "AI_EMBEDDING_MODEL"
 
-	// The embedding provider block. An earlier release had none, on the
-	// reasoning that a separate embedding endpoint was a rare Settings-only
-	// choice and three more variables would be three more ways to
-	// half-configure the feature. Running the embedding model yourself is the
-	// case that reasoning did not anticipate: a sidecar on the compose network
-	// is by definition a different endpoint from the language model, so without
-	// these an operator could not bring an instance up on it from .env at all,
-	// and a managed instance could not use one.
-	//
-	// Unset (the default) still means embeddings ride on the AI_SDK provider,
-	// which is exactly what they did before.
+	// The embedding provider block exists for a self-hosted embedding sidecar,
+	// which is by definition a different endpoint from the language model. Unset
+	// still means embeddings ride on the AI_SDK provider.
 	EnvAIEmbeddingSDK     = "AI_EMBEDDING_SDK"
 	EnvAIEmbeddingAPIKey  = "AI_EMBEDDING_API_KEY"
 	EnvAIEmbeddingBaseURL = "AI_EMBEDDING_BASE_URL"
 
 	// EnvAISearchHelperModel names the model on the AI_SDK provider that Deep
-	// Search hands bulk per-document work to. Same reasoning as the embedding
-	// model: one provider, a second model name; a separate endpoint is a
-	// Settings choice. Empty falls back to the search model.
+	// Search hands bulk per-document work to. Empty falls back to the search model.
 	EnvAISearchHelperModel = "AI_SEARCH_HELPER_MODEL"
 
 	// EnvChatGPTLogin opens the chatgpt SDK. See AIEnv.ChatGPTLogin and
 	// docs/chatgpt_login.md.
 	EnvChatGPTLogin = "AI_CHATGPT_LOGIN"
+
+	// The web-search block seeds the provider backing web_search and web_fetch.
+	// Unset means no web call is served. Its own SDK always: no SDK that chats
+	// or reads a document also searches the web.
+	EnvWebSearchSDK     = "WEB_SEARCH_SDK"
+	EnvWebSearchAPIKey  = "WEB_SEARCH_API_KEY"
+	EnvWebSearchBaseURL = "WEB_SEARCH_BASE_URL"
 
 	EnvOCRSDK     = "OCR_SDK"
 	EnvOCRAPIKey  = "OCR_API_KEY"
@@ -91,18 +94,16 @@ const (
 	EnvOCRModel   = "OCR_MODEL"
 )
 
-// AIEnvFromEnv parses the AI environment.
-//
-// Incomplete values error only in managed mode: the tenant cannot repair a
-// missing key from Settings. Off it, absence means the setup wizard will ask.
+// AIEnvFromEnv errors on incomplete values only in managed mode, where the
+// tenant cannot repair a missing key from Settings. Off it, absence means the
+// setup wizard will ask.
 func AIEnvFromEnv() (AIEnv, error) {
 	managed, err := strictBool(EnvManaged)
 	if err != nil {
 		return AIEnv{}, err
 	}
-	// Strict for the same reason AI_MANAGED is: a typo read as "off" would
-	// leave an operator staring at a Settings page with no sign-in button and
-	// nothing to explain why.
+	// Strict for the same reason AI_MANAGED is: a typo read as "off" leaves an
+	// operator staring at a Settings page with no sign-in button.
 	chatgptLogin, err := strictBool(EnvChatGPTLogin)
 	if err != nil {
 		return AIEnv{}, err
@@ -122,6 +123,7 @@ func AIEnvFromEnv() (AIEnv, error) {
 		WorkerMaxRetries:       envIntDefault("WORKER_MAX_RETRIES", 0, 0),
 		DeepSearchLanguages:    NormalizeLanguageList(os.Getenv("DEEP_SEARCH_LANGUAGES")),
 		ExtractionPromptVer:    getEnv("EXTRACTION_PROMPT_VERSION", "v1"),
+		ModelCatalogURL:        getEnv(EnvModelCatalogURL, aiprovider.DefaultCatalogURL),
 	}
 
 	llm, err := parseLLM()
@@ -136,7 +138,11 @@ func AIEnvFromEnv() (AIEnv, error) {
 	if err != nil {
 		return AIEnv{}, err
 	}
-	env.Providers = aiprovider.Bootstrap{LLM: llm, OCR: ocr, Embedding: embedding}
+	webSearch, err := parseWebSearch()
+	if err != nil {
+		return AIEnv{}, err
+	}
+	env.Providers = aiprovider.Bootstrap{LLM: llm, OCR: ocr, Embedding: embedding, WebSearch: webSearch}
 
 	if env.Managed {
 		if err := env.validateManaged(); err != nil {
@@ -146,9 +152,9 @@ func AIEnvFromEnv() (AIEnv, error) {
 	return env, nil
 }
 
-// strictBool refuses a value it cannot read, rather than falling back to off.
-// AI_MANAGED is the billing lock: a typo read as "off" would leave Settings
-// editable and the environment unapplied. Same spellings as the VAULT_* flags.
+// strictBool refuses a value it cannot read rather than falling back to off:
+// AI_MANAGED is the billing lock, and a typo read as "off" would leave
+// Settings editable and the environment unapplied.
 func strictBool(key string) (bool, error) {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
 	case "":
@@ -167,14 +173,12 @@ func strictBool(key string) (bool, error) {
 func parseLLM() (aiprovider.ProviderSpec, error) {
 	baseURL := aiprovider.NormalizeBaseURL(
 		strings.TrimSpace(getEnv(EnvAISDK, aiprovider.SDKOpenAI)), os.Getenv(EnvAIBaseURL))
-	// An OpenAI-compatible SDK aimed at OpenCode is the opencode SDK; see
-	// aiprovider.NormalizeOpenCodeSDK. Read before the checks below, so the
-	// capability questions are asked of the SDK that will actually serve.
+	// An OpenAI-compatible SDK aimed at OpenCode is the opencode SDK. Read before
+	// the checks below, so they ask about the SDK that will actually serve.
 	sdk := aiprovider.NormalizeOpenCodeSDK(
 		strings.TrimSpace(getEnv(EnvAISDK, aiprovider.SDKOpenAI)), baseURL)
 	// EnvLLMSDKs, not LLMSDKs: chatgpt chats, but its credential is minted by
-	// signing in rather than written down, so naming it here would seed a
-	// provider row that the file naming it can never complete.
+	// signing in, so naming it here would seed a row this file cannot complete.
 	if !aiprovider.IsLLM(sdk) || aiprovider.RequiresOAuth(sdk) {
 		return aiprovider.ProviderSpec{}, fmt.Errorf(
 			"%s=%q is not a language-model SDK that can be configured from the environment (want one of %s)",
@@ -192,22 +196,20 @@ func parseLLM() (aiprovider.ProviderSpec, error) {
 	return spec, nil
 }
 
-// parseOCR reads the optional second provider. Unset means OCR runs on the language model.
+// parseOCR reads the optional second provider. Unset runs OCR on the LLM.
 func parseOCR(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error) {
 	sdk := strings.TrimSpace(os.Getenv(EnvOCRSDK))
 	key := strings.TrimSpace(os.Getenv(EnvOCRAPIKey))
 	baseURL := strings.TrimSpace(os.Getenv(EnvOCRBaseURL))
 	model := strings.TrimSpace(os.Getenv(EnvOCRModel))
-	// Same reading as parseLLM, and before the SDK is compared with the
-	// language model's -- otherwise an OCR_SDK=openai on the same OpenCode
-	// endpoint would look like a second provider and be refused for having no
-	// key of its own.
+	// Before the SDK is compared with the language model, or an OCR_SDK=openai on
+	// the same OpenCode endpoint would look like a second provider with no key.
 	sdk = aiprovider.NormalizeOpenCodeSDK(sdk, strutil.FirstNonEmpty(baseURL, llm.BaseURL))
 
 	if sdk == "" {
 		if key != "" || baseURL != "" || model != "" {
-			// A key or model without an SDK is a half-written intention; folding
-			// it into the LLM provider would point OCR somewhere not asked for.
+			// A key or model without an SDK is a half-written intention; folding it into
+			// the LLM provider would point OCR somewhere not asked for.
 			return aiprovider.ProviderSpec{}, fmt.Errorf(
 				"%s, %s or %s is set without %s; name the OCR provider's SDK, or leave them all unset to run OCR on the %s provider",
 				EnvOCRAPIKey, EnvOCRBaseURL, EnvOCRModel, EnvOCRSDK, EnvAISDK)
@@ -220,24 +222,22 @@ func parseOCR(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error) {
 			EnvOCRSDK, sdk, strings.Join(aiprovider.ValidSDKs, ", "))
 	}
 	if !aiprovider.CanOCR(sdk) {
-		// Valid as an SDK, just not for this job. Caught here rather than on the
-		// first uploaded document.
+		// Valid as an SDK, just not for this job. Caught here rather than on the first
+		// uploaded document.
 		return aiprovider.ProviderSpec{}, fmt.Errorf(
 			"%s=%q cannot read a document (want one of %s)",
 			EnvOCRSDK, sdk, strings.Join(aiprovider.OCRSDKs(), ", "))
 	}
-	// EnvOCRSDKs, not OCRSDKs: chatgpt reads documents perfectly well, but its
-	// credential is minted by signing in rather than written down, so naming it
-	// here would seed a row the file naming it can never complete. Bind OCR to
-	// it from Settings instead, once it is signed in.
+	// EnvOCRSDKs, not OCRSDKs: chatgpt reads documents, but its credential is
+	// minted by signing in, so naming it here would seed a row this file can never
+	// complete. Bind OCR to it from Settings once it is signed in.
 	if aiprovider.RequiresOAuth(sdk) {
 		return aiprovider.ProviderSpec{}, fmt.Errorf(
 			"%s=%q cannot be configured from the environment: it is signed in to from Settings, not given a key (want one of %s)",
 			EnvOCRSDK, sdk, strings.Join(aiprovider.EnvOCRSDKs(), ", "))
 	}
 
-	// The same SDK is the same endpoint: reuse the language model's credential
-	// and address rather than making an operator write them out twice.
+	// The same SDK is the same endpoint, so reuse the language model credential.
 	if sdk == llm.SDK {
 		if key == "" {
 			key = llm.APIKey
@@ -246,11 +246,9 @@ func parseOCR(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error) {
 			baseURL = llm.BaseURL
 		}
 	} else if key == "" && aiprovider.RequiresAPIKey(sdk) {
-		// Rejected in both modes here: off managed, the environment seeds once
-		// and OCR would silently bind to the language model.
-		//
-		// A local sidecar is exempt because it has no key to give -- it is
-		// reached by URL alone, and NormalizeBaseURL below supplies the compose
+		// Rejected in both modes: off managed the environment seeds once, and OCR
+		// would silently bind to the language model. A local sidecar is exempt because
+		// it has no key to give, being reached by URL alone.
 		// default when OCR_BASE_URL was left empty.
 		return aiprovider.ProviderSpec{}, fmt.Errorf(
 			"%s=%q needs %s; it is a different endpoint from %s=%q and cannot borrow its key",
@@ -275,37 +273,28 @@ func parseOCR(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error) {
 }
 
 // parseEmbedding reads the optional third provider. Unset means embeddings run
-// on the language model, which is what they always did.
-//
-// It mirrors parseOCR, the existing precedent for "a second provider for one
-// job", with one rule of its own: naming an SDK without a model would create a
-// provider row with nothing bound to it, which reads as a configured feature
-// that never embeds anything.
+// on the language model. Naming an SDK without a model would create a provider
+// row with nothing bound to it, which reads as a feature that never embeds.
 func parseEmbedding(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error) {
 	sdk := strings.TrimSpace(os.Getenv(EnvAIEmbeddingSDK))
 	key := strings.TrimSpace(os.Getenv(EnvAIEmbeddingAPIKey))
 	baseURL := strings.TrimSpace(os.Getenv(EnvAIEmbeddingBaseURL))
 	model := strings.TrimSpace(os.Getenv(EnvAIEmbeddingModel))
-	// Same reading as parseLLM. It makes CanEmbed below refuse an
-	// AI_EMBEDDING_SDK=openai pointed at OpenCode, which is the honest answer:
-	// that endpoint has no /embeddings whatever the variable calls it.
+	// Same reading as parseLLM, so CanEmbed refuses an AI_EMBEDDING_SDK=openai
+	// pointed at OpenCode: that endpoint has no /embeddings whatever it is called.
 	sdk = aiprovider.NormalizeOpenCodeSDK(sdk, strutil.FirstNonEmpty(baseURL, llm.BaseURL))
 
 	if sdk == "" {
 		if key != "" || baseURL != "" {
-			// Same half-written intention parseOCR refuses: folding these into
-			// the language model would point embeddings somewhere not asked
-			// for. AI_EMBEDDING_MODEL alone is not in this list -- on its own it
-			// is the ordinary "embed on the AI_SDK provider" configuration.
+			// Same half-written intention parseOCR refuses. AI_EMBEDDING_MODEL alone is
+			// not in this list: on its own it means "embed on the AI_SDK provider".
 			return aiprovider.ProviderSpec{}, fmt.Errorf(
 				"%s or %s is set without %s; name the embedding provider's SDK, or leave them both unset to embed on the %s provider",
 				EnvAIEmbeddingAPIKey, EnvAIEmbeddingBaseURL, EnvAIEmbeddingSDK, EnvAISDK)
 		}
-		// ...unless the language model's SDK cannot embed. opencode is the case:
-		// it chats but serves no /embeddings, so the default of embedding on
-		// that provider is not available and there is nothing to fall back to.
-		// Caught here rather than at the first document, whose embed step would
-		// fail on every upload with the binding still reading as configured.
+		// ...unless the language model's SDK cannot embed: opencode chats but serves
+		// no /embeddings, so there is nothing to fall back to. Caught here rather than
+		// at the first upload, with the binding still reading as configured.
 		if model != "" && !aiprovider.CanEmbed(llm.SDK) {
 			return aiprovider.ProviderSpec{}, fmt.Errorf(
 				"%s is set but %s=%q cannot serve embeddings; name a %s (one of %s), or unset %s to search by keywords alone",
@@ -325,8 +314,7 @@ func parseEmbedding(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error
 			EnvAIEmbeddingSDK, sdk, EnvAIEmbeddingModel)
 	}
 
-	// The same SDK is the same endpoint: reuse the language model's credential
-	// and address rather than making an operator write them out twice.
+	// The same SDK is the same endpoint, so reuse the language model credential.
 	if sdk == llm.SDK {
 		if key == "" {
 			key = llm.APIKey
@@ -348,8 +336,44 @@ func parseEmbedding(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error
 	}, nil
 }
 
-// validateManaged refuses the configurations a managed instance cannot serve
-// and cannot be repaired out of.
+// parseWebSearch reads the optional web-search provider. Unset means no web
+// call is served -- Ask AI offers no web tools, and research declares them and
+// refuses -- which is the pre-flag behaviour and a working state.
+func parseWebSearch() (aiprovider.ProviderSpec, error) {
+	sdk := strings.TrimSpace(os.Getenv(EnvWebSearchSDK))
+	key := strings.TrimSpace(os.Getenv(EnvWebSearchAPIKey))
+	baseURL := strings.TrimSpace(os.Getenv(EnvWebSearchBaseURL))
+
+	if sdk == "" {
+		if key != "" || baseURL != "" {
+			// The same half-written intention parseOCR refuses. There is nothing
+			// to fold this into: no other provider can search the web.
+			return aiprovider.ProviderSpec{}, fmt.Errorf(
+				"%s or %s is set without %s; name the web-search provider's SDK (one of %s), or leave them both unset to run without web search",
+				EnvWebSearchAPIKey, EnvWebSearchBaseURL, EnvWebSearchSDK,
+				strings.Join(aiprovider.WebSearchSDKs(), ", "))
+		}
+		return aiprovider.ProviderSpec{}, nil
+	}
+	if !aiprovider.CanWebSearch(sdk) {
+		return aiprovider.ProviderSpec{}, fmt.Errorf(
+			"%s=%q cannot search the web (want one of %s)",
+			EnvWebSearchSDK, sdk, strings.Join(aiprovider.WebSearchSDKs(), ", "))
+	}
+	if key == "" {
+		return aiprovider.ProviderSpec{}, fmt.Errorf(
+			"%s=%q needs %s", EnvWebSearchSDK, sdk, EnvWebSearchAPIKey)
+	}
+
+	return aiprovider.ProviderSpec{
+		SDK:     sdk,
+		APIKey:  key,
+		BaseURL: aiprovider.NormalizeBaseURL(sdk, baseURL),
+	}, nil
+}
+
+// validateManaged refuses what a managed instance cannot serve and cannot be
+// repaired out of.
 func (e AIEnv) validateManaged() error {
 	if !e.Providers.LLM.Configured() {
 		return fmt.Errorf("%s=1 requires %s; a managed instance has no setup wizard to supply one",
@@ -358,11 +382,10 @@ func (e AIEnv) validateManaged() error {
 	if e.Providers.LLM.Model == "" {
 		return fmt.Errorf("%s=1 requires %s", EnvManaged, EnvAIModel)
 	}
-	// parseOCR already refuses a named OCR provider with no key. The keyless
-	// SDKs it lets through instead need an address, which NormalizeBaseURL
-	// always supplies from DefaultBaseURL -- so this can only fire if that
-	// default is ever removed, and it fires here rather than at the first
-	// upload because a managed instance has no Settings page to fix it in.
+	// parseOCR already refuses a named OCR provider with no key; the keyless SDKs
+	// need an address, which NormalizeBaseURL always supplies. So this only fires
+	// if that default is removed, and it fires here because a managed instance has
+	// no Settings page to fix it in.
 	ocr := e.Providers.OCR
 	if ocr.Requested() && aiprovider.RequiresBaseURL(ocr.SDK) && strings.TrimSpace(ocr.BaseURL) == "" {
 		return fmt.Errorf("%s=1 with %s=%q requires %s; a local OCR engine is reached by address alone",
@@ -372,7 +395,7 @@ func (e AIEnv) validateManaged() error {
 }
 
 // Defaults is the Config an install starts from, and the fallback when the
-// settings record cannot be read — so it must never return something unusable.
+// settings record cannot be read, so it must never return something unusable.
 func (e AIEnv) Defaults() Config {
 	return Config{
 		OCRModel:                      e.Providers.OCRModel(),

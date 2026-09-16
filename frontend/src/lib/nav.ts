@@ -1,12 +1,10 @@
 import type { LinkProps } from '@tanstack/react-router'
 
 /**
- * The header's link set, as data.
- *
- * The bar and the mobile panel render the same items in two very different
- * shapes, and a link added to only one of them is the failure mode that keeps
- * happening -- so the list lives here once and both walk it.
+ * The header's link set as data: the bar and the mobile panel render it in two
+ * shapes, and a link added to only one of them was the recurring failure.
  */
+
 /** Names a count the header hangs off a link -- the key, never the number. */
 export type NavBadgeKey = 'inbox' | 'activity'
 
@@ -41,21 +39,15 @@ export type ExternalNavItem = {
 export type NavItem = RouteNavItem | ExternalNavItem
 
 /**
- * The links that sit in the header bar itself on a wide viewport.
- *
- * A function, like secondaryNavItems, because the Inbox is conditional: it is
- * the landing place for a document that must be reviewed, so it is offered only
- * where the instance requires review of every document. Without that setting a
- * document reaches needs_review only by extracting doubtfully, which the status
- * filter on Documents already finds -- a permanent link to a list that is
- * almost always empty is a worse answer than no link.
+ * A function because the Inbox is conditional: without always_require_review a
+ * document reaches needs_review only by extracting doubtfully, and a permanent
+ * link to an almost always empty list is worse than no link.
  */
 export function primaryNavItems(reviewRequired: boolean): readonly NavItem[] {
   return [
     { kind: 'route', label: 'Documents', to: '/', exact: true },
     // A path rather than /?status=needs_review: a search-param link would be
-    // active whenever Documents was, since the empty search of / is a subset of
-    // every search.
+    // active whenever Documents was, / being a subset of every search.
     ...(reviewRequired
       ? [{ kind: 'route', label: 'Inbox', to: '/inbox', badgeKey: 'inbox' } as const]
       : []),
@@ -81,10 +73,7 @@ export function secondaryNavItems(pbAdminUrl: string): readonly NavItem[] {
   ]
 }
 
-/**
- * Drops the admin-only items for a regular user. The admin routes bounce
- * non-admins anyway; this is about not offering a dead end.
- */
+/** The admin routes bounce non-admins anyway; this avoids offering a dead end. */
 export function visibleNavItems(items: readonly NavItem[], admin: boolean): NavItem[] {
   return items.filter((item) => !item.admin || admin)
 }

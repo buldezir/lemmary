@@ -8,11 +8,9 @@ import (
 	"github.com/pocketbase/pocketbase/tools/router"
 )
 
-// TestAcknowledgeRoutesAreMounted is the half a handler test cannot cover: the
-// bug reported was POST /api/acknowledge_tasks/ answering 404, which is routing
-// rather than logic. Both paths are here because paperless-ngx moved the
-// endpoint in 2.14 and a client picks one from the version the server
-// advertises, never trying the other.
+// The reported bug was POST /api/acknowledge_tasks/ answering 404, which is
+// routing rather than logic. Both paths are here because paperless-ngx moved the
+// endpoint in 2.14 and a client picks one from the version the server advertises.
 func TestAcknowledgeRoutesAreMounted(t *testing.T) {
 	app := bootSchemaTestApp(t)
 	Register(app, nil)

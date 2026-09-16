@@ -23,8 +23,8 @@ func uploadFromBytes(t *testing.T, name string, data []byte) *filesystem.File {
 	if err != nil {
 		t.Fatalf("build upload: %v", err)
 	}
-	// NewFileFromBytes rewrites Name with a random suffix, keeping the extension.
-	// That only matters for the tests that assert the extension is *ignored*.
+	// NewFileFromBytes rewrites Name with a random suffix, keeping the extension,
+	// which matters only for the tests asserting the extension is ignored.
 	return file
 }
 
@@ -38,8 +38,7 @@ func TestPageCountOfUploadCountsPDFPages(t *testing.T) {
 	}
 }
 
-// Everything that is not a PDF is one document and one page, and must not cost
-// a temp file to find that out.
+// Nothing that is not a PDF may cost a temp file to count.
 func TestPageCountOfUploadNonPDFIsOnePage(t *testing.T) {
 	for _, name := range []string{
 		"receipt.png", "receipt.jpg", "receipt.webp",
@@ -53,9 +52,8 @@ func TestPageCountOfUploadNonPDFIsOnePage(t *testing.T) {
 	}
 }
 
-// The name is the client's word. Trusting it made every page limit bypassable
-// with `mv`: .txt, .csv and .docx are all accepted upload types, so a multi-page
-// PDF renamed to one of them was stored as the PDF it is and charged one page.
+// The name is the client's word: .txt, .csv and .docx are all accepted upload
+// types, so trusting it made every page limit bypassable with `mv`.
 func TestPageCountOfUploadIgnoresASpoofedExtension(t *testing.T) {
 	requirePoppler(t)
 	pdf := testpdf.Multipage(7)
@@ -70,8 +68,8 @@ func TestPageCountOfUploadIgnoresASpoofedExtension(t *testing.T) {
 	}
 }
 
-// The mirror image: something merely *named* .pdf is not charged for pages it
-// does not have, and never reaches pdfinfo.
+// Something merely named .pdf is not charged for pages it does not have, and
+// never reaches pdfinfo.
 func TestPageCountOfUploadIgnoresAPDFNameWithoutTheHeader(t *testing.T) {
 	file := uploadFromBytes(t, "invoice.pdf", []byte("this is plain text, not a PDF"))
 	if got := PageCountOfUpload(nil, file); got != SinglePage {
@@ -88,8 +86,8 @@ func TestHasPDFHeader(t *testing.T) {
 		{"real pdf", testpdf.Multipage(1), true},
 		{"header only", []byte("%PDF-1.7"), true},
 		{"plain text", []byte("hello there"), false},
-		// Shorter than the header, so io.ReadFull cannot fill it. (A wholly
-		// empty upload cannot be constructed, and PocketBase rejects one.)
+		// Shorter than the header, so io.ReadFull cannot fill it. A wholly empty
+		// upload cannot be constructed, and PocketBase rejects one.
 		{"truncated", []byte("%PDF"), false},
 		// A PDF header that is not at the very start is not one.
 		{"offset header", append([]byte("junk"), []byte("%PDF-1.7")...), false},
@@ -100,9 +98,8 @@ func TestHasPDFHeader(t *testing.T) {
 	}
 }
 
-// A file poppler cannot read must still be storable: refusing it here would turn
-// an unreadable PDF into data loss, when the processing pipeline is the thing
-// that should report it.
+// Refusing an unreadable PDF here would turn it into data loss; the processing
+// pipeline is the thing that should report it.
 func TestPageCountOfUploadUnreadablePDFIsOnePage(t *testing.T) {
 	requirePoppler(t)
 	file := uploadFromBytes(t, "broken.pdf", []byte("%PDF-1.4 but not really"))
@@ -117,7 +114,6 @@ func TestPageCountOfUploadNilFile(t *testing.T) {
 	}
 }
 
-// The temp copy a PDF needs must not outlive the call.
 func TestPageCountOfUploadRemovesItsTempFile(t *testing.T) {
 	requirePoppler(t)
 	dir := t.TempDir()

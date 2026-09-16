@@ -14,22 +14,19 @@ import (
 // Stores the integer id paperless-ngx clients address records by, instead of
 // deriving it from a hash of the PocketBase id on every request.
 //
-// The hash was one-way, so answering "which document is 944698583" meant
-// hashing every row the owner has. That is once per request, and the request
-// that dominates is a thumbnail: swift-paperless prefetches a preview for the
-// whole page it fetched -- 250 documents by default, all at once -- so opening
-// the app was 250 scans of the archive. As a column it is an index seek.
+// The hash was one-way, so answering "which document is 944698583" meant hashing
+// every row the owner has, once per request; swift-paperless prefetches a
+// preview for the whole page it fetched, 250 documents at a time. As a column it
+// is an index seek.
 //
-// Seeded from the same hash so no client-visible id changes: a paperless client
-// that cached document ids, or a thumbnail keyed on a URL containing one, is
-// still pointing at the same record after the upgrade. Where two of an owner's
-// rows hash alike the second one through takes the next free id -- which is a
-// fix, not a change: the shadowed row used to be unreachable through the
-// paperless API entirely, and an owner with 50k documents has roughly even odds
-// of holding such a pair.
+// Seeded from the same hash so no client-visible id changes. Where two of an
+// owner's rows hash alike the second one through takes the next free id, which
+// is a fix rather than a change: the shadowed row used to be unreachable through
+// the paperless API entirely.
+//
 // ngxIDsV22 is frozen rather than read from ngxid.Collections: a migration
-// describes one fixed transition, and a collection added to that list later
-// gets its own migration rather than silently changing what this one did.
+// describes one fixed transition, and a collection added to that list later gets
+// its own migration.
 var ngxIDsV22 = []string{"documents", "tags", "correspondents", "document_types"}
 
 func init() {
@@ -107,8 +104,7 @@ func addNgxIDField(app core.App, collection string) error {
 // backfillNgxIDs numbers the rows that predate the column.
 //
 // Ordered by PocketBase id, and colliding rows resolve forward, so the row that
-// used to win a collision -- the derived lookup broke ties toward the lowest
-// PocketBase id -- keeps the id it was already answering to.
+// used to win a collision keeps the id it was already answering to.
 //
 // Raw SQL rather than app.Save: saving a document fires the record hooks, which
 // would rebuild its search index entry and mark its embeddings stale once per

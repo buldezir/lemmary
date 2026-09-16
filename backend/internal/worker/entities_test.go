@@ -44,10 +44,8 @@ func TestListNamedEntityNamesEmptyUser(t *testing.T) {
 	}
 }
 
-// The tag list is the complete set of answers the model may give and apply
-// writes the result over the document, so a document with no owner -- whose
-// vocabulary cannot be read at all -- fails the step rather than being
-// extracted against an empty one and stripped of the tags it had.
+// Apply writes the result over the document, so a document whose owner cannot
+// be read fails the step rather than being stripped of the tags it had.
 func TestLoadExtractionCatalogEmptyUser(t *testing.T) {
 	catalog, err := loadExtractionCatalog(nil, "  ", slog.Default())
 	if err == nil {
@@ -101,10 +99,7 @@ func TestRequireOwnedRelationSkipsEmpty(t *testing.T) {
 
 // Only (user, name) is unique in the schema, so the normalized tier is unbacked
 // by an index: two pipelines extracting spelling variants of the same
-// correspondent at the same time would both miss, both insert, and no conflict
-// would fire for reuseNamedEntityAfterConflict to clean up. With several
-// documents in flight at once that is an everyday occurrence, not a race to
-// shrug at.
+// correspondent would both miss, both insert, and no conflict would fire.
 func TestEnsureNamedEntityConcurrentSpellingVariants(t *testing.T) {
 	app := bootAppForEnqueue(t)
 	userID := makeUserForDrain(t, app, "entities@example.test")
@@ -113,8 +108,7 @@ func TestEnsureNamedEntityConcurrentSpellingVariants(t *testing.T) {
 	ids := make([]string, len(names))
 	errs := make([]error, len(names))
 
-	// A barrier, so the goroutines are actually inside the lookup at the same
-	// moment rather than starting a comfortable distance apart.
+	// A barrier, so the goroutines are inside the lookup at the same moment.
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for i, name := range names {

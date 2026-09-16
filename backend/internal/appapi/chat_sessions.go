@@ -25,15 +25,18 @@ type chatSessionList struct {
 type chatSessionDetail struct {
 	Session  chat.SessionInfo   `json:"session"`
 	Messages []chat.MessageInfo `json:"messages"`
-	// Truncated says the transcript was longer than one response carries. No
-	// message pagination yet; the field is here so adding it later is not a
-	// breaking change.
+	// Truncated says the transcript was longer than one response carries.
+	// There is no message pagination yet.
 	Truncated bool `json:"truncated"`
-	// Running says a run is writing into this conversation right now. Nothing
-	// in the transcript can say that -- a turn is stored whole when the run
-	// ends -- so a chat opened mid-run reads as empty and finished unless the
-	// server says otherwise. See sessionRunning.
+	// Running says a run is writing into this conversation right now: a turn
+	// is stored whole when the run ends, so a chat opened mid-run otherwise
+	// reads as empty and finished.
 	Running bool `json:"running"`
+	// Unfinished says the last turn never reached an answer: a run that was
+	// cancelled, ran out of budget, was refused by the provider, or was cut off
+	// by a restart. Its work is stored and can be continued. Unlike Running,
+	// this is read from the transcript, so it survives the process that made it.
+	Unfinished bool `json:"unfinished"`
 }
 
 type chatSessionResponse struct {
@@ -44,22 +47,18 @@ type chatRenameRequest struct {
 	Title string `json:"title"`
 }
 
-// chatListPageSize is how many chats one response carries. It follows
-// MaxSessionsPerUser rather than the document list's 12, because the two lists
-// are not the same shape: documents are a grid the user pages through, and the
-// chat rail is a sidebar that scrolls. An account cannot hold more sessions
-// than this, so one request is always the whole list and a chat can never go
-// missing from the rail without a signal.
-//
-// The document-title lookup below is bounded by the same number. It only runs
-// for document chats, and both rails filter, so the worst case belongs to an
-// unfiltered listing rather than to either page.
+type chatForkRequest struct {
+	// Upto is the id of the last message the copy keeps. Empty copies the whole
+	// transcript, which is what the composer's fork does.
+	Upto string `json:"upto"`
+}
+
+// chatListPageSize follows MaxSessionsPerUser rather than the document list's
+// 12: the chat rail is a scrolling sidebar, and since an account cannot hold
+// more sessions than this, one request is always the whole list. It also bounds
+// the document-title lookup below.
 const chatListPageSize = chat.MaxSessionsPerUser
 
-// parseChatListQuery reads the list filters off a query string.
-//
-// Takes url.Values rather than the request event so it can be tested without
-// building one.
 func parseChatListQuery(values url.Values, ownerID string) (chat.SessionQuery, int, int, error) {
 	page := positiveIntValue(values, "page", 1)
 	perPage := positiveIntValue(values, "perPage", chatListPageSize)
@@ -118,8 +117,7 @@ func handleListChats(app core.App) func(*core.RequestEvent) error {
 		items := make([]chat.SessionInfo, 0, len(records))
 		for _, record := range records {
 			info := chat.ToSessionInfo(record)
-			// A document title is worth one primary-key lookup per row here --
-			// at most chatListPageSize of them, against a client that would
+			// One primary-key lookup per row, against a client that would
 			// otherwise make the same lookups over HTTP. Skipped on error: the
 			// document may be mid-cascade, or belong to another account.
 			if info.Document != "" {
@@ -161,15 +159,19 @@ func handleGetChat(app core.App) func(*core.RequestEvent) error {
 		}
 		truncated := len(records) > chat.MaxReplayMessages
 		if truncated {
-			// Drop the oldest, keep the live end: the extra row came off the
-			// head, and `truncated` is only honest if that is the side lost.
+			// Drop the oldest, keep the live end: `truncated` is only honest if
+			// that is the side lost.
 			records = records[len(records)-chat.MaxReplayMessages:]
 		}
 
-		messages := make([]chat.MessageInfo, 0, len(records))
-		for _, record := range records {
-			messages = append(messages, chat.ToMessageInfo(record))
-		}
+		// Whether the last turn is still open is read off the whole window,
+		// before the machinery is filtered out of it: an unfinished turn is one
+		// that ends on a tool result, which is exactly what is about to be
+		// dropped. Derived rather than asked of the run registry, which a
+		// restart empties.
+		unfinished := chat.Unfinished(records)
+
+		messages := chat.VisibleMessages(records)
 
 		info := chat.ToSessionInfo(session)
 		if info.Document != "" {
@@ -181,8 +183,9 @@ func handleGetChat(app core.App) func(*core.RequestEvent) error {
 		return writeJSON(e, http.StatusOK, chatSessionDetail{
 			Session:   info,
 			Messages:  messages,
-			Truncated: truncated,
-			Running:   sessionRunning(session.Id),
+			Truncated:  truncated,
+			Running:    sessionRunning(session.Id),
+			Unfinished: unfinished,
 		})
 	}
 }
@@ -205,6 +208,40 @@ func handlePatchChat(app core.App) func(*core.RequestEvent) error {
 		}
 
 		return writeJSON(e, http.StatusOK, chatSessionResponse{Session: chat.ToSessionInfo(session)})
+	}
+}
+
+// handlePostForkChat branches a conversation at one of its answers: the copy
+// keeps the transcript up to Upto and nothing after it, so a different line of
+// questions can start from an answer the chat has already moved past. It hands
+// back a copy to stand in and type the question there, which is the only way a
+// fork is made: the composer used to carry one on a turn request, and that was
+// this with the last answer picked for you.
+func handlePostForkChat(app core.App) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		session, err := ownedChatSession(app, e)
+		if err != nil {
+			return writeChatOwnerOrSessionError(e, app, err)
+		}
+
+		var req chatForkRequest
+		if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
+			return writeError(e, http.StatusBadRequest, "Invalid request body.")
+		}
+
+		forked, err := chat.ForkSession(app, session.GetString("user"), session, strings.TrimSpace(req.Upto))
+		if err != nil {
+			switch {
+			case errors.Is(err, chat.ErrTooManySessions):
+				return writeError(e, http.StatusConflict, tooManySessionsMessage)
+			case errors.Is(err, chat.ErrNotFound):
+				return writeError(e, http.StatusNotFound, "That answer is no longer in this chat.")
+			}
+			app.Logger().Error("fork chat failed", slog.Any("error", err))
+			return writeError(e, http.StatusInternalServerError, "Failed to fork the chat.")
+		}
+
+		return writeJSON(e, http.StatusOK, chatSessionResponse{Session: chat.ToSessionInfo(forked)})
 	}
 }
 

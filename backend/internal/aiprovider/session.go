@@ -22,8 +22,7 @@ var sessionNamespace = uuid.MustParse("6f1c9d1e-0b6a-4c4b-9d5a-2f3c8e7a41d0")
 
 type sessionKey struct{}
 
-// WithSession marks ctx as belonging to one conversation. Every provider
-// request made under it carries that id.
+// WithSession marks ctx as belonging to one conversation.
 func WithSession(ctx context.Context, id string) context.Context {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -32,7 +31,6 @@ func WithSession(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, sessionKey{}, id)
 }
 
-// SessionFrom returns the conversation id on ctx, or "" when there is none.
 func SessionFrom(ctx context.Context) string {
 	if ctx == nil {
 		return ""
@@ -42,9 +40,7 @@ func SessionFrom(ctx context.Context) string {
 }
 
 // EnsureSession keeps an id already on ctx and otherwise falls back to
-// SessionFor(purpose). Callers with a real conversation set it first, so this
-// only ever fills in for background work -- and a call site nobody wired still
-// sends a usable key rather than none.
+// SessionFor(purpose), so a call site nobody wired still sends a usable key.
 func EnsureSession(ctx context.Context, purpose string) context.Context {
 	if SessionFrom(ctx) != "" {
 		return ctx
@@ -61,8 +57,7 @@ var (
 
 // SessionFor is one stable id per purpose for the life of the process. The
 // system prompt behind "extract" or "ocr" is identical from one document to the
-// next, so grouping those requests is exactly what the header is for; a fresh
-// id per document would throw the cache away every time.
+// next, and a fresh id per document would throw the prompt cache away.
 func SessionFor(purpose string) string {
 	purpose = strings.TrimSpace(purpose)
 	if purpose == "" {
@@ -80,14 +75,9 @@ func SessionFor(purpose string) string {
 }
 
 // SessionMiddleware stamps the session id from the request context onto
-// outbound OpenCode requests. It sits in the SDK's middleware chain, which runs
-// per attempt on a request clone, so retries are stamped too.
-//
-// It stamps unconditionally: the caller installs it only on an SDKOpenCode
-// client. It used to be installed on every client and gate itself by sniffing
-// the request host for opencode.ai, which needed a second middleware
-// (RewriteHostMiddleware) so that a test could reach httptest with the gate
-// open, and left an operator's choice of provider implied by a URL.
+// outbound OpenCode requests. It runs per attempt on a request clone, so
+// retries are stamped too, and unconditionally: the caller installs it only on
+// an SDKOpenCode client.
 func SessionMiddleware() option.Middleware {
 	return func(req *http.Request, next option.MiddlewareNext) (*http.Response, error) {
 		if req != nil {

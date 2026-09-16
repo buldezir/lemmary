@@ -28,8 +28,7 @@ func makeProviderForOverrides(t *testing.T, app core.App, sdk, apiKey, baseURL s
 	return record.Id
 }
 
-// jobWithOverrides is a job record carrying overrides but never saved -- what
-// the create hook is handed before the write lands.
+// A job carrying overrides but never saved: what the create hook is handed.
 func jobWithOverrides(t *testing.T, app core.App, overrides config.Overrides) *core.Record {
 	t.Helper()
 	collection, err := app.FindCollectionByNameOrId("processing_jobs")
@@ -42,8 +41,7 @@ func jobWithOverrides(t *testing.T, app core.App, overrides config.Overrides) *c
 	return job
 }
 
-// A job queued with no picker touched must look exactly like one queued before
-// overrides existed: an unset column, not a stored "{}".
+// A job queued with no picker touched must leave the column unset, not "{}".
 func TestEnqueueLeavesOverridesUnsetWhenThereAreNone(t *testing.T) {
 	app := bootAppForEnqueue(t)
 	documentID := makeDocumentForEnqueue(t, app)
@@ -60,9 +58,8 @@ func TestEnqueueLeavesOverridesUnsetWhenThereAreNone(t *testing.T) {
 	}
 }
 
-// The choice has to survive the queue: the worker may not reach a job for
-// minutes, and a batch queued to try a different extractor must not quietly run
-// on whatever Settings holds by then.
+// The worker may not reach a job for minutes, and a batch queued to try a
+// different extractor must not run on whatever Settings holds by then.
 func TestEnqueueStoresOverridesOnTheJob(t *testing.T) {
 	app := bootAppForEnqueue(t)
 	documentID := makeDocumentForEnqueue(t, app)
@@ -74,8 +71,7 @@ func TestEnqueueStoresOverridesOnTheJob(t *testing.T) {
 		t.Fatalf("Enqueue: %v", err)
 	}
 
-	// Re-read rather than trusting the in-memory record: the round trip through
-	// the JSON column is the part that can lose the value.
+	// The round trip through the JSON column is the part that can lose it.
 	stored, err := app.FindRecordById("processing_jobs", job.Id)
 	if err != nil {
 		t.Fatalf("reload job: %v", err)
@@ -89,10 +85,8 @@ func TestEnqueueStoresOverridesOnTheJob(t *testing.T) {
 	}
 }
 
-// A job whose overrides column holds something unreadable still runs, on the
-// configured bindings -- the same answer parseForceSteps gives. The overrides
-// are a refinement of an otherwise runnable job, and stranding a document over
-// a malformed refinement is the worse failure.
+// Unreadable overrides still run on the configured bindings: stranding a
+// document over a malformed refinement is the worse failure.
 func TestParseJobOverridesToleratesGarbage(t *testing.T) {
 	app := bootAppForEnqueue(t)
 	job := jobWithOverrides(t, app, config.Overrides{})
@@ -103,9 +97,8 @@ func TestParseJobOverridesToleratesGarbage(t *testing.T) {
 	}
 }
 
-// The trust boundary. processing_jobs is writable by the document's owner --
-// the single-document reprocess form creates a job straight through the
-// collection API -- so a browser can name any provider row for any binding.
+// The trust boundary: processing_jobs is writable by the document's owner, so a
+// browser can name any provider row for any binding.
 func TestValidateJobOverridesRefusesABindingTheProviderCannotServe(t *testing.T) {
 	cases := map[string]struct {
 		sdk       string
@@ -176,9 +169,8 @@ func TestValidateJobOverridesPassesWithNoOverrides(t *testing.T) {
 	}
 }
 
-// The embedding guard, end to end through the hook's entry point: the same
-// model is a legitimate fix-up re-embed, a different one writes vectors the
-// chunk index will never read.
+// The same model is a legitimate fix-up re-embed; a different one writes
+// vectors the chunk index will never read.
 func TestValidateJobOverridesEmbeddingModelMustMatchTheIndex(t *testing.T) {
 	app := bootAppForEnqueue(t)
 	provider := makeProviderForOverrides(t, app, aiprovider.SDKOpenAI, "sk-test", "https://api.openai.com/v1")

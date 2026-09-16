@@ -22,8 +22,7 @@ func TestSpecFromNeedsAModelAndADimensionCount(t *testing.T) {
 		t.Fatalf("spec = %+v, ok = %v", spec, ok)
 	}
 
-	// Before the first provider response the dimension count is unknown, and a
-	// vector field cannot be built without one.
+	// A vector field cannot be built before the dimension count is known.
 	if _, ok := SpecFrom(config.Config{
 		EmbeddingProvider: provider,
 		EmbeddingModel:    "text-embedding-3-small",
@@ -31,7 +30,6 @@ func TestSpecFromNeedsAModelAndADimensionCount(t *testing.T) {
 		t.Fatal("a spec with no dimensions must not open an index")
 	}
 
-	// The binding cleared: the index is removed rather than left stale.
 	if _, ok := SpecFrom(config.Config{EmbeddingDims: 1536}); ok {
 		t.Fatal("no embedding binding must report off")
 	}
@@ -56,8 +54,7 @@ func TestChunkFromResolvesTextFromTheStoredOffsets(t *testing.T) {
 		t.Fatalf("offsets were not carried: %+v", body)
 	}
 
-	// Offsets from a chunking of an older revision: the vector is still valid,
-	// so the chunk is still indexed, but nothing is quoted from it.
+	// Offsets from an older revision: still indexed, but nothing quoted from it.
 	stale := chunkFrom(embedstore.Chunk{
 		DocumentID: "doc1",
 		StartByte:  9000,

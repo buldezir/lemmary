@@ -4,14 +4,11 @@
 //
 // The whole protocol, as used here, is three requests: POST a ScanSettings
 // document to {base}/ScanJobs and the scanner answers with a Location header
-// naming a job; GET {job}/NextDocument and it answers with a PDF, once per
-// sheet, until it has none left; DELETE {job} to let the device go. There is no
-// discovery, authentication or capability negotiation in that path -- see
-// discover.go for finding the device in the first place.
+// naming a job; GET {job}/NextDocument once per sheet until it has none left;
+// DELETE {job} to let the device go. See discover.go for finding the device.
 //
-// Everything is fixed at A4, 300 dpi, colour, PDF. A scanner will happily do
-// 1200 dpi, but a page of it is tens of megabytes and no better to read, and
-// the documents.file field stops at 20 MB either way.
+// Everything is fixed at A4, 300 dpi, colour, PDF: 1200 dpi is tens of megabytes
+// a page and no better to read, and documents.file stops at 47 MB either way.
 package escl
 
 import (
@@ -35,11 +32,10 @@ const (
 	a4Height   = 3508
 	resolution = 300
 
-	// createTimeout bounds the job POST. The scanner only has to accept the
-	// settings here; it does not scan yet.
+	// createTimeout bounds the job POST; the scanner does not scan yet.
 	createTimeout = 30 * time.Second
-	// pageTimeout bounds one NextDocument. This is where the scanner actually
-	// moves the head, so it is the long one.
+	// pageTimeout bounds one NextDocument, where the scanner moves the head, so
+	// it is the long one.
 	pageTimeout = 3 * time.Minute
 	// deleteTimeout bounds the job DELETE, which is best-effort anyway.
 	deleteTimeout = 10 * time.Second
@@ -107,14 +103,10 @@ const scanSettings = `<?xml version="1.0" encoding="UTF-8"?>
 </scan:ScanSettings>
 `
 
-// Scan runs one scan job and returns the PDFs it produced, in order.
-//
-// The glass gives one. A feeder gives one per sheet -- or, on some devices, one
-// PDF holding every sheet; both come back as a slice the caller merges, so the
-// difference does not matter downstream.
-//
-// maxBytes caps the total; the scan stops and reports rather than reading an
-// unbounded amount into memory.
+// Scan runs one scan job and returns the PDFs it produced, in order: one per
+// sheet, or on some devices one PDF holding every sheet, and the caller merges
+// either. maxBytes caps the total, so the scan stops and reports rather than
+// reading an unbounded amount into memory.
 func Scan(ctx context.Context, scanner string, source Source, maxBytes int64) ([][]byte, error) {
 	base, err := normalizeBase(scanner)
 	if err != nil {
@@ -200,10 +192,8 @@ func createJob(ctx context.Context, client *http.Client, base string, source Sou
 //
 // The host in an absolute one is not trusted, and not compared either: devices
 // put their mDNS name, "localhost" or an explicit :80 in there, none of which
-// match the address we dialed, and rejecting those rejects working scanners.
-// Only the path is taken and the scheme and host we already reached are kept --
-// which is what sane-airscan does, and is the stronger boundary besides: a
-// Location naming another host cannot pull us off the scanner at all.
+// match the address we dialed. Only the path is taken, which is what
+// sane-airscan does and is the stronger boundary besides.
 func resolveJobURL(base, location string) (string, error) {
 	// Against the ScanJobs URL rather than the resource root, so a bare
 	// "ScanJobs/id" resolves to {resource}/ScanJobs/id and not /ScanJobs/id.
@@ -221,10 +211,8 @@ func resolveJobURL(base, location string) (string, error) {
 }
 
 // nextDocument fetches one page. done is true once the scanner has no more.
-//
-// remaining is what is left of the caller's byte budget: the body is read
-// through a limit rather than whole, so a device answering with something
-// enormous cannot put it all on the heap before the caller notices.
+// The body is read through remaining, the caller's byte budget, so a device
+// answering with something enormous cannot put it all on the heap first.
 func nextDocument(ctx context.Context, client *http.Client, jobURL string, remaining int64) ([]byte, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, pageTimeout)
 	defer cancel()

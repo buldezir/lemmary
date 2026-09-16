@@ -18,8 +18,7 @@ type ChatTranscriptProps = {
   renderBefore?: (turn: ChatTurn) => ReactNode
   /**
    * Replaces the placeholder bubble while a reply is in flight, for a send that
-   * has something better to show than one label: research reports each step as
-   * it happens and streams the answer.
+   * has something better to show than one label.
    */
   renderSending?: () => ReactNode
 }
@@ -40,10 +39,9 @@ export function ChatTranscript({
   // whole length; only turns arriving afterwards are worth a smooth scroll.
   const settledRef = useRef(false)
 
-  // Per conversation, not per mount. This component stays mounted while the
-  // route swaps the session id, so a flag set by the first transcript would
-  // make every one after it animate — the exact scroll the flag exists to
-  // avoid, on every chat but the first.
+  // Per conversation, not per mount: this component stays mounted while the
+  // route swaps the session id, so a flag set by the first transcript would make
+  // every one after it animate.
   useEffect(() => {
     settledRef.current = false
   }, [conversationId])

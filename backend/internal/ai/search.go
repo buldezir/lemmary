@@ -19,9 +19,8 @@ import (
 
 const (
 	// maxSearchToolRounds is the whole of Search mode: expand the request into
-	// keywords, run the lookups, answer. Questions that need more than one pass
-	// belong in Research mode, which keeps going until the model is ready,
-	// stalls, or the provider rejects the request for exceeding its context.
+	// keywords, run the lookups, answer. Questions that need more belong in
+	// Research mode.
 	maxSearchToolRounds = 1
 )
 
@@ -39,12 +38,10 @@ type DocumentHit struct {
 	DocumentDate string `json:"document_date,omitempty"`
 	Summary      string `json:"summary,omitempty"`
 	// OCRSnippet is the first passage shortened for display. Kept filled even
-	// when Passages is set: it is what the stored turn and the result card
-	// show, and neither wants three paragraphs.
+	// when Passages is set: it is what the stored turn and the card show.
 	OCRSnippet string `json:"ocr_snippet,omitempty"`
 	// Passages are the verbatim pieces of the document that matched. One to
-	// three of them: enough that a hit is evidence rather than a filename,
-	// few enough that a result list is not a read.
+	// three: enough that a hit is evidence rather than a filename.
 	Passages      []Passage `json:"passages,omitempty"`
 	DocumentType  string    `json:"document_type,omitempty"`
 	Correspondent string    `json:"correspondent,omitempty"`
@@ -58,14 +55,14 @@ type SearchDocumentsArgs struct {
 	DocumentType  string   `json:"document_type,omitempty"`
 	Correspondent string   `json:"correspondent,omitempty"`
 	Tags          []string `json:"tags,omitempty"`
-	// Limit is still decoded: models emit it from the old "1-20" tool schema.
-	// The retriever ignores it.
+	// Limit is still decoded because models emit it from the old "1-20" tool
+	// schema, and ignored by the retriever.
 	Limit int `json:"limit,omitempty"`
 }
 
-// decodeSearchArgs parses tool-call arguments, coercing scalar-kind mismatches
-// (a numeric query, a stringified limit) instead of dropping the whole call —
-// models routinely get JSON scalar types wrong, especially via the DSML path.
+// decodeSearchArgs coerces scalar-kind mismatches (a numeric query, a
+// stringified limit) instead of dropping the whole call: models routinely get
+// JSON scalar types wrong, especially via the DSML path.
 func decodeSearchArgs(data string) (SearchDocumentsArgs, error) {
 	var args SearchDocumentsArgs
 	if err := json.Unmarshal([]byte(data), &args); err == nil {
@@ -134,21 +131,39 @@ func coerceInt(v any) int {
 // DocumentSearcher runs a user-scoped keyword search against the document archive.
 type DocumentSearcher func(ctx context.Context, args SearchDocumentsArgs) ([]DocumentHit, error)
 
-// SearchOptions is what the prompt needs to know about the retriever behind
-// the tools: the instructions differ with what a search can find.
+// SearchOptions is what the prompt needs to know about the retriever: the
+// instructions differ with what a search can find.
 type SearchOptions struct {
 	// DenseRetrieval is set when searches also match by meaning, across
 	// languages. The prompt then stops asking for one search per language.
 	DenseRetrieval bool
 }
 
-type SearchAgent interface {
+// Searcher answers from what a search turns up, in one round with no tools
+// beyond the search itself, and stores nothing between turns.
+type Searcher interface {
 	// Search finds documents and answers from their metadata and snippets.
 	Search(ctx context.Context, messages []ChatMessage, availableTags []string, search DocumentSearcher, opts SearchOptions) (reply string, hits []DocumentHit, err error)
+}
 
-	// Research reads the documents it finds and writes a cited answer,
-	// reporting each step through emit as it goes.
+// Researcher runs the agent loop: it reads what it finds, reports each step as
+// it goes, and keeps its conversation, so the next question builds on this
+// one's work rather than repeating it.
+//
+// Separate from Searcher because the two have stopped resembling each other.
+// One is a completion; the other is a thread with storage, a resume and a
+// context budget. One implementation still satisfies both.
+type Researcher interface {
 	Research(ctx context.Context, req ResearchRequest, emit func(ResearchEvent)) (ResearchResult, error)
+	// SystemPrompt is the instruction a new conversation opens with, so the
+	// caller that stores the thread can store it first and replay it after.
+	SystemPrompt(req ResearchRequest) string
+}
+
+// SearchAgent is both, which is what the provider binding builds.
+type SearchAgent interface {
+	Searcher
+	Researcher
 }
 
 type openAISearchAgent struct {
@@ -157,9 +172,22 @@ type openAISearchAgent struct {
 	resultLanguage string
 }
 
+// The shared AI timeout is sized for one extraction call. A search or research
+// round replays the whole thread to a reasoning model and comes back as one
+// blocking reply, so a legitimate late round outlives it. The run budget in
+// appapi is the backstop against a stuck provider, not this timeout.
+const minSearchTimeout = 10 * time.Minute
+
+func searchTimeout(shared time.Duration) time.Duration {
+	if shared < minSearchTimeout {
+		return minSearchTimeout
+	}
+	return shared
+}
+
 func NewSearchAgent(sdk, apiKey, model, baseURL string, timeout time.Duration, languages, resultLanguage string, logger *slog.Logger, extra ...option.RequestOption) SearchAgent {
 	return &openAISearchAgent{
-		client:         NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", timeout, logger, extra...),
+		client:         NewOpenAIClient(sdk, apiKey, model, baseURL, "", "", searchTimeout(timeout), logger, extra...),
 		languages:      strings.TrimSpace(languages),
 		resultLanguage: strings.TrimSpace(resultLanguage),
 	}
@@ -252,18 +280,18 @@ func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, 
 
 		hasToolCalls := len(nativeCalls) > 0 || len(dsmlCalls) > 0
 
-		// Final round, or model produced a plain answer: return user-facing text only.
+		// Final round, or a plain answer: return user-facing text only.
 		if !allowTools || !hasToolCalls {
 			a.client.logger.Info("search agent finalizing",
 				"allow_tools", allowTools,
-				"dsml", contentHasDSMLToolCalls(msg.Content),
+				"dsml", ContentHasDSMLToolCalls(msg.Content),
 				"content_chars", len(msg.Content),
 				"hits", len(allHits),
 			)
 			reply := finalizeSearchReply(msg.Content, allHits)
-			// If the model ignored "no tools" and emitted DSML again, force one more
-			// answer-only turn when we still have search hits to ground it.
-			if !allowTools && contentHasDSMLToolCalls(msg.Content) && round == maxRounds {
+			// If the model ignored "no tools" and emitted DSML again, force one
+			// more answer-only turn while we still have hits to ground it.
+			if !allowTools && ContentHasDSMLToolCalls(msg.Content) && round == maxRounds {
 				forced, forcedHits, err := a.forceFinalAnswer(ctx, apiMessages, allHits)
 				if err == nil && strings.TrimSpace(forced) != "" && !replyLooksLikeToolMarkup(forced) {
 					return forced, forcedHits, nil
@@ -282,7 +310,7 @@ func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, 
 				apiMessages = append(apiMessages, openai.ToolMessage(result.Content, call.ID))
 			}
 		} else {
-			// DSML models put tool calls in content; feed results back as a user message.
+			// DSML models put tool calls in content; results go back as a user message.
 			apiMessages = append(apiMessages, openai.AssistantMessage(msg.Content))
 			for _, call := range dsmlCalls {
 				result := a.executeToolCall(ctx, search, call.ID, call.Name, call.Arguments, &allHits, seenIDs)
@@ -329,10 +357,10 @@ If nothing relevant was found, say so clearly.`,
 func finalizeSearchReply(content string, hits []DocumentHit) string {
 	reply := stripDSMLMarkup(strings.TrimSpace(content))
 	// Defense in depth: drop any leftover DSML-looking markup.
-	if contentHasDSMLToolCalls(reply) {
+	if ContentHasDSMLToolCalls(reply) {
 		reply = stripDSMLMarkup(reply)
 	}
-	if contentHasDSMLToolCalls(reply) || replyLooksLikeToolMarkup(reply) {
+	if ContentHasDSMLToolCalls(reply) || replyLooksLikeToolMarkup(reply) {
 		reply = ""
 	}
 	if reply != "" {
@@ -422,7 +450,6 @@ func (a *openAISearchAgent) executeToolCall(
 		*allHits = append(*allHits, hit)
 	}
 
-	// The same encoder Research uses.
 	content, err := encodeSearchResults(hits)
 	if err != nil {
 		return toolExecResult{
@@ -458,16 +485,11 @@ When answering would need more of a document than the passages show, say what yo
 }
 
 // formatLanguagePrompt tells the agent how languages figure in a search.
-// Shared by Search and Research.
-//
-// With dense retrieval the same question phrased in three languages returns
-// the same fused list -- the embedding is what crosses the language line, and
-// it does so in one call -- so a search per language is a round spent on a
-// result the model already has. The list is still shown: a keyword hit on an
-// exact term (a name, a product code) is still spelled in the document's own
-// language. Without dense retrieval, translation is the only thing that
-// carries an English question to a German invoice, so the model is asked for
-// it.
+// With dense retrieval the same question in three languages returns the same
+// fused list, so a search per language is a wasted round; the list is still
+// shown, because a keyword hit on an exact term is spelled in the document's
+// own language. Without dense retrieval, translation is the only thing that
+// carries an English question to a German invoice.
 func formatLanguagePrompt(languages, resultLanguage string, dense bool) string {
 	if dense {
 		var b strings.Builder

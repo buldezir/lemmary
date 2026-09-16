@@ -49,7 +49,6 @@ describe('reviewReason', () => {
     expect(reviewReason({ confidence: 0.9 })).toBe('awaiting')
   })
 
-  // The case the setting creates, and the one the old code got wrong.
   test('says a confident document is merely awaiting review', () => {
     expect(reviewReason({ confidence: 0.98 })).toBe('awaiting')
   })

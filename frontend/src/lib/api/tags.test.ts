@@ -12,9 +12,8 @@ function notUnique(field: string) {
 }
 
 describe('duplicateNameError', () => {
-  // The message the user actually sees when they add a tag they already have.
-  // PocketBase's own is "Value must be unique.", which names neither the field
-  // nor the value.
+  // PocketBase's own message is "Value must be unique.", which names neither
+  // the field nor the value.
   it('names the tag behind a unique-index violation', () => {
     expect(duplicateNameError(notUnique('name'), 'Invoices').message).toBe(
       'You already have a tag called "Invoices".',

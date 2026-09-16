@@ -668,8 +668,7 @@ func TestVaultLockIsExclusive(t *testing.T) {
 	second.releaseLock()
 }
 
-// A disabled vault must be inert, so the application runs exactly as it does
-// today.
+// A disabled vault must be inert.
 func TestDisabledVaultIsInert(t *testing.T) {
 	v, err := New(Options{})
 	if err != nil {
@@ -753,17 +752,11 @@ func TestInitAndUnlockWithRealCredential(t *testing.T) {
 	}
 }
 
-// Regression: a rewrite that keeps the file length must still be captured.
-//
-// The unchanged-file cache keys on size and mtime, so two writes of equal length
-// that land on the same filesystem timestamp are indistinguishable and the flush
-// would go on persisting the stale blob — the working copy saying one thing and
-// the vault holding another, with no error anywhere. This reproduced on an
-// ordinary rewrite before the racily-clean guard existed.
-//
-// The collision is forced with Chtimes rather than left to timing, so the test
-// fails deterministically if the guard is ever removed, on any filesystem
-// granularity.
+// A rewrite that keeps the file length must still be captured: the
+// unchanged-file cache keys on size and mtime, so two writes of equal length on
+// the same filesystem tick would leave the vault persisting the stale blob with
+// no error anywhere. The collision is forced with Chtimes rather than left to
+// timing, so this fails deterministically on any filesystem granularity.
 func TestSameSizeRewriteOnAStaleTimestampIsCaptured(t *testing.T) {
 	h := newHarness(t)
 
@@ -811,8 +804,7 @@ func TestSameSizeRewriteOnAStaleTimestampIsCaptured(t *testing.T) {
 }
 
 // The cache still has to work, or a steady-state flush would re-read the whole
-// archive. Files whose mtime is comfortably older than the last capture are
-// taken on trust.
+// archive.
 func TestUnchangedFilesUseTheCache(t *testing.T) {
 	h := newHarness(t)
 	for i := 0; i < 4; i++ {
@@ -856,9 +848,8 @@ func TestUnchangedFilesUseTheCache(t *testing.T) {
 	}
 }
 
-// Decrypting into ordinary storage would write every document to the very disk
-// the vault exists to protect, while every other guarantee still appeared to
-// hold. That has to fail loudly rather than warn.
+// Decrypting into ordinary storage would write every document to the disk the
+// vault exists to protect, while every other guarantee still appeared to hold.
 func TestWorkDirMustBeMemoryBacked(t *testing.T) {
 	root := diskBackedTempDir(t)
 	vaultDir := filepath.Join(root, "vault")
@@ -994,9 +985,9 @@ func TestCloseKeepsTheWorkingDirectoryWhenTheFinalFlushFails(t *testing.T) {
 	}
 }
 
-// A keyring on disk is what marks an instance initialised, so one must never be
-// written for a vault that then fails to materialise: the next boot would demand
-// a password nobody deliberately set, against an otherwise empty volume.
+// A keyring on disk marks an instance initialised, so one must never be written
+// for a vault that then fails to materialise: the next boot would demand a
+// password nobody set, against an otherwise empty volume.
 func TestFailedInitDoesNotStrandTheVolume(t *testing.T) {
 	root := t.TempDir()
 	vaultDir := filepath.Join(root, "vault")
@@ -1028,15 +1019,11 @@ func TestFailedInitDoesNotStrandTheVolume(t *testing.T) {
 	}
 }
 
-// A flush that runs in a process which never opened the databases must not
-// commit, or the next unlock restores documents with no metadata at all.
-//
-// This is reachable without anything going wrong: the snapshotter is installed
-// from OnBootstrap, PocketBase skips bootstrap entirely for --help, --version
-// and any unknown command, and OnTerminate still fires for all of them. The
-// shrink guard does not catch it — dropping two database entries out of many is
-// nowhere near halving the archive — so the first flush would silently replace a
-// good generation with a metadata-free one.
+// A flush in a process that never opened the databases must not commit, or the
+// next unlock restores documents with no metadata. Reachable without anything
+// going wrong: PocketBase skips bootstrap for --help, --version and unknown
+// commands while OnTerminate still fires, and the shrink guard does not catch
+// two entries out of many.
 func TestFlushRefusesWithoutASnapshotterOnceDatabasesExist(t *testing.T) {
 	h := newHarness(t)
 	h.write("storage/a/one.pdf", "first document")
@@ -1082,11 +1069,10 @@ func TestFlushWithoutASnapshotterIsFineWhenNothingHadDatabases(t *testing.T) {
 	}
 }
 
-// Nesting the vault inside the working directory is unrecoverable: the working
-// directory is emptied on every unlock, so the wipe would delete the keyring,
-// every manifest and every blob at the one moment the master key existed only in
-// memory. Nothing downstream would notice — the restore succeeds against an
-// empty directory and the first flush commits that emptiness.
+// Nesting the vault inside the working directory is unrecoverable: the wipe on
+// unlock would delete the keyring, every manifest and every blob at the one
+// moment the master key existed only in memory, and the first flush would
+// commit the emptiness.
 func TestNewRefusesNestedDirectories(t *testing.T) {
 	root := t.TempDir()
 	cases := []struct {
@@ -1126,13 +1112,10 @@ func TestNewAcceptsSiblingDirectories(t *testing.T) {
 	v.releaseLock()
 }
 
-// put hashes a file and then re-reads it to seal. A file rewritten between the
-// two passes would otherwise be stored under the content address of bytes it
-// does not hold — and because the AEAD authenticates the blob against its id,
-// and the blob is internally consistent, nothing downstream could ever detect
-// it. The damage lands much later: some unrelated file whose content genuinely
-// hashes to that address is uploaded, dedupe reuses the blob, and that document
-// silently restores holding the wrong bytes.
+// A file rewritten between the hash pass and the seal pass would be stored
+// under the content address of bytes it does not hold, which nothing downstream
+// could detect: the damage lands later, when an unrelated file that genuinely
+// hashes to that address reuses the blob and restores the wrong bytes.
 func TestPutDetectsAFileRewrittenBetweenTheHashAndTheSeal(t *testing.T) {
 	h := newHarness(t)
 	store := h.v.store

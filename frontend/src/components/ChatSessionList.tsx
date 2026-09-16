@@ -171,13 +171,10 @@ export type ChatSessionListProps = {
 }
 
 /**
- * The saved-conversation rail.
- *
- * Rows are buttons rather than `Link`s and navigation happens in the caller:
- * TanStack types `to`/`params` against the route tree, and the two call sites
- * sit in different subtrees, so linking here would need the same `as never`
- * cast EditionMenuItem already carries. The trade is losing middle-click on a
- * row, which is a fair price for keeping every other Link in the app checked.
+ * Rows are buttons rather than `Link`s, and the caller navigates: TanStack types
+ * `to`/`params` against the route tree and the two call sites sit in different
+ * subtrees, so linking here would need an `as never` cast. The cost is
+ * middle-click on a row.
  */
 export function ChatSessionList({
   sessions,
@@ -208,9 +205,8 @@ export function ChatSessionList({
       {!loading && sessions.length === 0 && (
         <p className="text-sm text-ink-faint">No chats yet.</p>
       )}
-      {/* The rail is never paged — one request carries every chat an account can
-          hold — so the list scrolls in place instead of running off the bottom
-          of the page. */}
+      {/* The rail is never paged: one request carries every chat an account can
+          hold, so the list scrolls in place. */}
       {sessions.length > 0 && (
         <ul
           className={`flex flex-col gap-1.5 overflow-y-auto ${

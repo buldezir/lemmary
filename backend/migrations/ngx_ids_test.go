@@ -9,22 +9,12 @@ import (
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 
 	"lemmary/backend/internal/ngxid"
+	"lemmary/backend/internal/testpb"
 )
 
 func bootMigratedApp(t *testing.T) *pocketbase.PocketBase {
 	t.Helper()
-	app := pocketbase.NewWithConfig(pocketbase.Config{
-		DefaultDataDir:  t.TempDir(),
-		HideStartBanner: true,
-	})
-	if err := app.Bootstrap(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = app.ResetBootstrapState() })
-	if err := app.RunAppMigrations(); err != nil {
-		t.Fatalf("run app migrations: %v", err)
-	}
-	return app
+	return testpb.Open(t)
 }
 
 func makeUser(t *testing.T, app core.App, email string) string {
@@ -71,13 +61,10 @@ func storedNgxID(t *testing.T, app core.App, collection, pbID string) int {
 	return record.GetInt(ngxid.Field)
 }
 
-// TestBackfillNumbersRowsThatPredateTheColumn is the upgrade path. The rows an
-// existing install already has were created before anything stamped them, and
-// an unstamped row is invisible to every paperless client.
-//
-// The column is zeroed first because the migration has already run by the time
-// a test app is up: that is what an upgrading install actually looks like at
-// the moment the backfill starts.
+// The upgrade path: the rows an existing install already has were created
+// before anything stamped them, and an unstamped row is invisible to every
+// paperless client. The column is zeroed first because the migration has already
+// run by the time a test app is up.
 func TestBackfillNumbersRowsThatPredateTheColumn(t *testing.T) {
 	app := bootMigratedApp(t)
 	userID := makeUser(t, app, "upgrade@example.com")
@@ -96,14 +83,10 @@ func TestBackfillNumbersRowsThatPredateTheColumn(t *testing.T) {
 	}
 }
 
-// TestBackfillResolvesCollisionsForward: two of an owner's rows can hash alike,
-// and the row that used to win that tie -- the derived lookup broke ties toward
-// the lowest PocketBase id -- has to keep the id it was already answering to,
-// or the upgrade silently repoints a client's cached id at a different
-// document.
-//
-// The seed is forced rather than found: a real collision is a 31-bit birthday
-// event and cannot be built from a fixture.
+// Two of an owner's rows can hash alike, and the row that used to win that tie
+// has to keep the id it was already answering to, or the upgrade silently
+// repoints a client's cached id at a different document. The seed is forced
+// rather than found: a real collision is a 31-bit birthday event.
 func TestBackfillResolvesCollisionsForward(t *testing.T) {
 	app := bootMigratedApp(t)
 	userID := makeUser(t, app, "collide@example.com")

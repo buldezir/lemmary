@@ -23,11 +23,8 @@ var singleRelations = map[string]string{
 // ngxIDLens holds the client-facing ids of everything a response refers to by
 // PocketBase id.
 //
-// Client ids live in a column now rather than being derived from the record id,
-// so naming a document's tag means reading the tag's row. One query per related
-// collection per response, not one per field per row: a page of 250 documents
-// would otherwise be 500 point lookups, which is the traffic shape the stored
-// id exists to remove.
+// One query per related collection per response, not one per field per row: a
+// page of 250 documents would otherwise be 500 point lookups.
 type ngxIDLens struct {
 	byCollection map[string]map[string]int
 }
@@ -205,12 +202,11 @@ func mapTask(job *core.Record, doc *taskDocument) map[string]any {
 		fileName = doc.File
 	}
 
-	// Both date fields go through formatNgxDateTime. PocketBase stores a
-	// datetime as "2006-01-02 15:04:05.000Z", and paperless clients parse
-	// ISO8601 -- swift-paperless throws on the space, and a throw on one field
-	// fails the decode of the whole task array, so the task list renders empty
-	// with no error anywhere. date_done is null rather than "" while a job is
-	// still running, for the same reason.
+	// PocketBase stores a datetime as "2006-01-02 15:04:05.000Z" and paperless
+	// clients parse ISO8601: swift-paperless throws on the space, and a throw on
+	// one field fails the decode of the whole task array, so the task list
+	// renders empty with no error anywhere. date_done is null rather than ""
+	// while a job is still running, for the same reason.
 	var dateDone any
 	if finished := formatNgxDateTime(job.GetString("finished_at")); finished != "" {
 		dateDone = finished
@@ -220,8 +216,7 @@ func mapTask(job *core.Record, doc *taskDocument) map[string]any {
 		"id":             ngxIDOf(job),
 		"task_id":        taskUUID(job),
 		"task_file_name": fileName,
-		// Clients request the list by task name and paperless reports it back.
-		// Every Lemmary job is a file consumption, which is the only name a
+		// Every Lemmary job is a file consumption, which is the only task name a
 		// paperless client asks for.
 		"task_name":        "consume_file",
 		"date_created":     formatNgxDateTime(job.GetString("created")),
@@ -236,15 +231,11 @@ func mapTask(job *core.Record, doc *taskDocument) map[string]any {
 
 // taskUUID is the job's Celery-style task id.
 //
-// Clients type this field as a UUID and will not accept anything else -- one
-// value they cannot parse fails the decode of the entire task list, and a
-// decode failure is not an HTTP error, so the client shows an empty task list
-// and reports nothing.
-//
-// The worker stamps a real UUID when it picks a job up. Anything else -- an
-// unstarted job, or a task_id some other ingest path wrote -- is answered with
-// one derived from the job id, so it is stable across polls rather than looking
-// like a new task each time.
+// Clients type this field as a UUID: one value they cannot parse fails the
+// decode of the entire task list, and a decode failure is not an HTTP error, so
+// the client shows an empty task list and reports nothing. The worker stamps a
+// real UUID when it picks a job up; anything else is answered with one derived
+// from the job id, so it stays stable across polls.
 func taskUUID(job *core.Record) string {
 	stored := job.GetString("task_id")
 	if _, err := uuid.Parse(stored); err == nil {
@@ -262,7 +253,7 @@ func mapJobStatus(status string) string {
 	case "cancelled":
 		// Celery's word for work a user called off. Without it a stopped job
 		// falls through to PENDING and reads as queued for ever in a paperless
-		// client, which has no other way to learn the queue was emptied.
+		// client.
 		return "REVOKED"
 	case "running":
 		return "STARTED"

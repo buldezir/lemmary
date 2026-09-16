@@ -9,17 +9,10 @@ import {
 import { Button, fieldHintClassName } from './ui'
 
 /**
- * The sign-in panel for a chatgpt provider, in place of the API key field every
- * other SDK shows.
- *
- * It lives on the saved provider rather than in the add form because the flow
- * needs a provider id to store the token against: an operator creates the row
- * first, then signs in to it. That also makes signing in as a different account
- * the same two clicks as signing in the first time.
- *
- * The device-code flow is what makes this work on a server: the code is typed
- * into a browser on any machine, so nothing has to reach a loopback port on the
- * host Lemmary runs on.
+ * The sign-in panel for a chatgpt provider, in place of the API key field. It
+ * lives on the saved provider because the flow needs a provider id to store the
+ * token against. The device-code flow is what makes this work on a server:
+ * nothing has to reach a loopback port on the host Lemmary runs on.
  */
 export function ChatGPTSignIn({
   provider,
@@ -36,7 +29,7 @@ export function ChatGPTSignIn({
 
   // Held in a ref so the polling effect does not list it as a dependency: the
   // page passes a fresh closure on every render, and depending on it would tear
-  // the timer down and start a new interval several times a second.
+  // the timer down several times a second.
   const onChangeRef = useRef(onChange)
   useEffect(() => {
     onChangeRef.current = onChange
@@ -49,9 +42,8 @@ export function ChatGPTSignIn({
     // The server's own interval, not one of our choosing: polling faster than
     // OpenAI asks for is what earns a slow_down.
     const period = Math.max(login.interval_seconds, 1) * 1000
-    // One poll at a time. A round trip slower than the interval would otherwise
-    // have two in the air asking about the same single-use authorization code,
-    // and whichever settled last would decide what the operator sees.
+    // One poll at a time: a round trip slower than the interval would put two in
+    // the air over the same single-use authorization code.
     let inFlight = false
     const timer = setInterval(() => {
       if (inFlight) return

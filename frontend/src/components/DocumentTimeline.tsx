@@ -46,15 +46,10 @@ function rowStateClassName(isActive: boolean) {
 }
 
 /**
- * The archive's shape in time: every month that holds documents, grouped under
- * its year, with counts.
- *
  * Selecting a row writes the page's From/To date filters rather than keeping a
- * date filter of its own, so there is only one date filter to reason about and
- * the date inputs show what was picked. `active` is derived back out of those
- * inputs, which is why a hand-typed whole month lights its row up too. The one
- * row that is not a range, "No date", rides the same onSelect and becomes the
- * page's `undated` filter instead.
+ * date filter of its own, so there is one date filter to reason about. `active`
+ * is derived back out of those inputs, which is why a hand-typed whole month
+ * lights its row up too.
  */
 export function DocumentTimeline({
   timeline,
@@ -71,9 +66,8 @@ export function DocumentTimeline({
   if (years.length === 0 && timeline.undated === 0) return null
 
   // Only one year shows its months, or a long archive buries the grid under
-  // ninety rows. Which one is derived from the filter rather than stored, so
-  // clicking a year opens it as a side effect of filtering by it. A short
-  // archive fits in the column whole, and folds nothing.
+  // ninety rows. Derived from the filter rather than stored, so clicking a year
+  // opens it as a side effect of filtering by it.
   const folded = shouldFold(years)
   const open = folded ? openYear(active, years, dateFrom) : null
 
@@ -81,10 +75,9 @@ export function DocumentTimeline({
     onSelect(active === period ? null : period)
   }
 
-  // Collapsed, the sidebar is nothing but the rule that used to edge it, and
-  // that rule is the way back: a full-height hairline whose hit area is wide
-  // enough to actually hit. No landmark here on purpose — there is no content
-  // to land on, only the control that reveals it.
+  // Collapsed, the sidebar is a full-height hairline whose hit area is wide
+  // enough to actually hit. No landmark on purpose: there is no content to land
+  // on, only the control that reveals it.
   if (!expanded) {
     return (
       <button
@@ -156,9 +149,8 @@ export function DocumentTimeline({
           )
         })}
 
-        {/* Set apart by the rule above it: a document with no date sits
-            outside every date range, so this row filters by the absence of one
-            rather than by a period. */}
+        {/* A document with no date sits outside every date range, so this row
+            filters by the absence of one rather than by a period. */}
         {timeline.undated > 0 && (
           <div className="border-t border-line pt-2">
             <button

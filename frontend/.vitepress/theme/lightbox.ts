@@ -1,20 +1,12 @@
 /**
- * Click-to-enlarge for the screenshots in the docs.
+ * Click-to-enlarge for the docs screenshots.
  *
- * The images are 2800px wide captures of a 1400px viewport, and the docs
- * content column is about 700px, so inline they are a quarter of their real
- * size and none of the interface text in them is readable. Fitting one to the
- * viewport barely helps either: the tall ones (a full-page document detail is
- * ~4000px) are still shrunk to fit a laptop screen.
+ * Two states rather than one: the captures are 2800px wide in a ~700px column,
+ * and fitting one to the viewport still shrinks a ~4000px page detail past
+ * legibility, so the overlay also toggles to the capture's actual pixel size in
+ * a scrollable pane. Arrow keys walk the page's images.
  *
- * So the overlay has two states rather than one. It opens fitted to the
- * viewport, which is the "what am I looking at" view, and toggles to the
- * capture's actual pixel size in a scrollable pane, which is the "read the
- * text" view. Arrow keys walk the page's images, which is what makes a
- * 42-screenshot tour browsable without closing the overlay each time.
- *
- * No dependency: medium-zoom, the usual VitePress recipe, only does the
- * fit-to-viewport half.
+ * No dependency: medium-zoom, the usual recipe, only does the fitted half.
  */
 
 type Zoom = 'fit' | 'actual'
@@ -126,12 +118,9 @@ function setZoom(next: Zoom) {
 }
 
 /**
- * The size "full size" should use, in CSS pixels.
- *
  * The screenshots are captured at a device pixel ratio of 2, so half the
- * intrinsic size is the interface at the size it really has -- which is what a
- * reader means by full size. A smaller image is not a hidpi capture, so it is
- * shown at its own intrinsic size instead of being halved into illegibility.
+ * intrinsic size is the interface at the size it really has. A smaller image is
+ * not a hidpi capture and is shown at its own size rather than halved.
  */
 function fullSize(image: HTMLImageElement) {
   const width = image.naturalWidth || 0
@@ -142,10 +131,8 @@ function fullSize(image: HTMLImageElement) {
 }
 
 /**
- * Hides the zoom control when there is nothing behind it: on a screen roomy
- * enough for the capture at full size, the fitted view already *is* the full
- * size (nothing is ever upscaled), and a button that visibly does nothing reads
- * as broken.
+ * On a screen roomy enough for the capture, the fitted view already is full
+ * size (nothing is upscaled), and a button that does nothing reads as broken.
  */
 function updateZoomAffordance() {
   if (!overlay || !full) return

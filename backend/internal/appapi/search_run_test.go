@@ -6,9 +6,8 @@ import (
 	"time"
 )
 
-// The whole point of the detached run: the client's connection going away must
-// not stop it. This is the regression that lost finished answers -- a proxy
-// hangup cancelled the agent loop, and the turn was never stored.
+// The regression that lost finished answers: a proxy hangup cancelled the agent
+// loop and the turn was never stored.
 func TestSearchRunSurvivesTheRequestContext(t *testing.T) {
 	request, disconnect := context.WithCancel(context.Background())
 	ctx, stop := startDetachedRun(request, "owner", "run-1", "session-1")
@@ -23,8 +22,8 @@ func TestSearchRunSurvivesTheRequestContext(t *testing.T) {
 	}
 }
 
-// Values still cross: the provider cache key rides on the context, and losing
-// it would silently split one conversation across two caches.
+// The provider cache key rides on the context, and losing it would silently
+// split one conversation across two caches.
 func TestSearchRunKeepsContextValues(t *testing.T) {
 	type key struct{}
 	request := context.WithValue(context.Background(), key{}, "session-7")
@@ -51,8 +50,8 @@ func TestCancelSearchRunStopsIt(t *testing.T) {
 	}
 }
 
-// A run id is only meaningful within its owner. Without the scoping, one
-// account could stop another's research by guessing an id.
+// Without the scoping, one account could stop another's research by guessing
+// an id.
 func TestCancelSearchRunIsScopedToTheOwner(t *testing.T) {
 	ctx, stop := startDetachedRun(context.Background(), "owner", "run-1", "session-1")
 	defer stop()
@@ -67,8 +66,7 @@ func TestCancelSearchRunIsScopedToTheOwner(t *testing.T) {
 	}
 }
 
-// A cancel that arrives after the run finished is not an error: the client
-// pressed the button while the last event was already on the wire.
+// The client pressed the button while the last event was already on the wire.
 func TestCancelSearchRunAfterItFinished(t *testing.T) {
 	_, stop := startDetachedRun(context.Background(), "owner", "run-1", "session-1")
 	stop()
@@ -78,8 +76,8 @@ func TestCancelSearchRunAfterItFinished(t *testing.T) {
 	}
 }
 
-// A client that sends no id gets a run that is detached all the same. It simply
-// cannot be cancelled, which is the lesser loss.
+// Detached all the same; it simply cannot be cancelled, which is the lesser
+// loss.
 func TestSearchRunWithoutAnIDStillDetaches(t *testing.T) {
 	request, disconnect := context.WithCancel(context.Background())
 	ctx, stop := startDetachedRun(request, "owner", "", "session-1")
@@ -96,9 +94,8 @@ func TestSearchRunWithoutAnIDStillDetaches(t *testing.T) {
 	}
 }
 
-// Nothing in the transcript says a run is in flight -- the turn is stored whole
-// when it ends -- so a chat reopened mid-run looks empty and finished. This is
-// what tells the page otherwise.
+// The turn is stored whole when the run ends, so a chat reopened mid-run looks
+// empty and finished; this is what tells the page otherwise.
 func TestSessionRunningWhileARunIsInFlight(t *testing.T) {
 	if sessionRunning("session-9") {
 		t.Fatal("nothing is running yet")
@@ -115,9 +112,8 @@ func TestSessionRunningWhileARunIsInFlight(t *testing.T) {
 	}
 }
 
-// Two tabs can ask the same conversation at once. The first to finish must not
-// report the other's run as over, or the second page stops waiting for an
-// answer that is still coming.
+// The first of two tabs to finish must not report the other's run as over, or
+// the second page stops waiting for an answer that is still coming.
 func TestSessionRunningCountsConcurrentRuns(t *testing.T) {
 	_, stopFirst := startDetachedRun(context.Background(), "owner", "run-a", "session-8")
 	_, stopSecond := startDetachedRun(context.Background(), "owner", "run-b", "session-8")
@@ -134,8 +130,7 @@ func TestSessionRunningCountsConcurrentRuns(t *testing.T) {
 }
 
 // A page reloaded mid-run never saw the run id, so the conversation is all it
-// has to cancel with. Runs registered without an id, like a document chat's,
-// are reachable this way too.
+// has to cancel with. Runs registered without an id are reachable this way too.
 func TestCancelSessionRunsStopsEveryRunOnTheConversation(t *testing.T) {
 	first, stopFirst := startDetachedRun(context.Background(), "owner", "", "session-12")
 	defer stopFirst()

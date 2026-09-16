@@ -6,10 +6,8 @@ import (
 	"lemmary/backend/internal/models"
 )
 
-// The registry the runner dispatches on is built from a hand-written list of
-// steps, while jobs name the steps they want from models.FullPipelineSteps. The
-// two are separate declarations of the same pipeline, so a step added to one
-// and not the other is a job that fails on an unknown stage.
+// The registry and models.FullPipelineSteps are separate declarations of the
+// same pipeline, so a step added to one and not the other fails a job.
 func TestBuildRegistryIsExactlyTheFullPipeline(t *testing.T) {
 	t.Parallel()
 

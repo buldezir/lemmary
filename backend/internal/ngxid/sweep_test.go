@@ -8,6 +8,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"lemmary/backend/internal/ngxid"
+	"lemmary/backend/internal/testpb"
 	_ "lemmary/backend/migrations"
 )
 
@@ -16,18 +17,7 @@ import (
 
 func bootApp(t *testing.T) *pocketbase.PocketBase {
 	t.Helper()
-	app := pocketbase.NewWithConfig(pocketbase.Config{
-		DefaultDataDir:  t.TempDir(),
-		HideStartBanner: true,
-	})
-	if err := app.Bootstrap(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = app.ResetBootstrapState() })
-	if err := app.RunAppMigrations(); err != nil {
-		t.Fatalf("run app migrations: %v", err)
-	}
-	return app
+	return testpb.Open(t)
 }
 
 func makeUser(t *testing.T, app core.App) string {
@@ -81,9 +71,9 @@ func storedID(t *testing.T, app core.App, collection, pbID string) int {
 	return record.GetInt(ngxid.Field)
 }
 
-// TestSweepStampsRowsThatCarryNone is what the migration backfill cannot reach:
-// roll back to a build without these hooks, keep writing records, roll forward,
-// and the migration is already recorded as applied.
+// What the migration backfill cannot reach: roll back to a build without these
+// hooks, keep writing records, roll forward, and the migration is already
+// recorded as applied.
 func TestSweepStampsRowsThatCarryNone(t *testing.T) {
 	app := bootApp(t)
 	ngxid.Register(app)
@@ -106,7 +96,7 @@ func TestSweepStampsRowsThatCarryNone(t *testing.T) {
 	}
 }
 
-// TestUpdateRepairsAMissingID is the same repair without waiting for a restart.
+// The same repair without waiting for a restart.
 func TestUpdateRepairsAMissingID(t *testing.T) {
 	app := bootApp(t)
 	ngxid.Register(app)
@@ -128,8 +118,8 @@ func TestUpdateRepairsAMissingID(t *testing.T) {
 	}
 }
 
-// TestUpdateKeepsTheIDItWasIssued: an id is permanent, so a PATCH carrying a
-// different one must not repoint a client's cached id at another record.
+// An id is permanent, so a PATCH carrying a different one must not repoint a
+// client's cached id at another record.
 func TestUpdateKeepsTheIDItWasIssued(t *testing.T) {
 	app := bootApp(t)
 	ngxid.Register(app)
@@ -151,9 +141,8 @@ func TestUpdateKeepsTheIDItWasIssued(t *testing.T) {
 	}
 }
 
-// TestAssignSkipsACollectionWithoutTheColumn is why an upgrade from before the
-// column still boots: 1730000011 clones a tag per owner, and probing there
-// would query a column no migration has added yet.
+// Why an upgrade from before the column still boots: 1730000011 clones a tag per
+// owner, and probing there would query a column no migration has added yet.
 func TestAssignSkipsACollectionWithoutTheColumn(t *testing.T) {
 	app := bootApp(t)
 	dropNgxIDColumn(t, app, "tags")

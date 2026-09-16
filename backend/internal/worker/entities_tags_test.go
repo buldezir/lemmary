@@ -5,25 +5,13 @@ import (
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
+
+	"lemmary/backend/internal/testpb"
 )
 
-// bootTagTestApp is a bootstrapped PocketBase with the Lemmary schema applied.
-// Bootstrap alone runs only PocketBase's system migrations, so tags and users
-// do not exist until the app migrations run too.
 func bootTagTestApp(t *testing.T) *pocketbase.PocketBase {
 	t.Helper()
-	app := pocketbase.NewWithConfig(pocketbase.Config{
-		DefaultDataDir:  t.TempDir(),
-		HideStartBanner: true,
-	})
-	if err := app.Bootstrap(); err != nil {
-		t.Fatalf("bootstrap: %v", err)
-	}
-	t.Cleanup(func() { _ = app.ResetBootstrapState() })
-	if err := app.RunAppMigrations(); err != nil {
-		t.Fatalf("run app migrations: %v", err)
-	}
-	return app
+	return testpb.Open(t)
 }
 
 func createTagUser(t *testing.T, app core.App, email string) string {
@@ -97,7 +85,6 @@ func TestMatchTagsResolvesAndDrops(t *testing.T) {
 	}
 }
 
-// matchTags never creates: an unknown name leaves the tag table as it found it.
 func TestMatchTagsCreatesNothing(t *testing.T) {
 	app := bootTagTestApp(t)
 	owner := createTagUser(t, app, "owner@example.com")
@@ -134,9 +121,8 @@ func TestMatchTagsNoNamesIsANoOp(t *testing.T) {
 	}
 }
 
-// Apply writes the result over the document's tags, so a document whose owner
-// cannot be read has to fail the step rather than be answered "no tags" and
-// silently stripped.
+// Apply writes the result over the document's tags, so an unreadable owner has
+// to fail the step rather than silently strip them.
 func TestMatchTagsRequiresAUser(t *testing.T) {
 	if _, _, err := matchTags(nil, "  ", []string{"Invoices"}); err == nil {
 		t.Fatal("expected an error when the user id is empty")

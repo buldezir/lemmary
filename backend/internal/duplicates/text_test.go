@@ -110,7 +110,6 @@ func TestIsChecksumUniqueViolation(t *testing.T) {
 		t.Fatal("expected non-match")
 	}
 	if IsChecksumUniqueViolation(fmt.Errorf("wrap: %w", err)) {
-		// wrapped should still match via Unwrap
 	} else {
 		t.Fatal("expected wrapped unique checksum violation")
 	}

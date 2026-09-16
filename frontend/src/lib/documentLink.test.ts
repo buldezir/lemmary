@@ -6,9 +6,7 @@ describe('documentLinkTarget', () => {
     expect(documentLinkTarget('/document/abc123')).toBe('abc123')
   })
 
-  // The backend tolerates a page anchor on a citation, so the link has to keep
-  // navigating in-app rather than falling through to an external anchor that
-  // reloads the whole SPA.
+  // A citation carrying a page anchor still has to navigate in-app.
   it('tolerates a page anchor', () => {
     expect(documentLinkTarget('/document/abc123?page=7')).toBe('abc123')
   })

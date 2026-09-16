@@ -8,22 +8,17 @@ import (
 )
 
 // Binding names a provider row and a model, as a per-request or per-job
-// replacement for one of the configured bindings in app_settings.
-//
-// A zero Binding means "use what Settings says", which is what every caller
-// sent before overrides existed -- so an absent field and the old behaviour are
-// the same thing, at every layer down to the stored job.
+// replacement for one of the configured bindings in app_settings. A zero
+// Binding means "use what Settings says", which is what every caller sent
+// before overrides existed.
 type Binding struct {
 	ProviderID string `json:"provider_id"`
 	Model      string `json:"model"`
 }
 
-// Empty reports a binding that overrides nothing.
-//
-// Keyed on the provider id alone: a model with no provider is not half an
-// override, it is a request the resolver has to refuse. Treating it as empty
-// would silently run the configured model instead of the one that was asked
-// for, which is the one failure mode a picker must not have.
+// Empty is keyed on the provider id alone: a model with no provider is not
+// half an override, it is a request the resolver has to refuse. Treating it as
+// empty would silently run the configured model instead of the one asked for.
 func (b Binding) Empty() bool {
 	return strings.TrimSpace(b.ProviderID) == ""
 }
@@ -38,20 +33,15 @@ func (b Binding) Normalized() Binding {
 }
 
 // Resolve loads the row a binding names and refuses one that cannot serve
-// purpose. It returns a nil provider for an empty binding, which is not an
-// error -- that is the "use Settings" case every caller starts from.
+// purpose. A nil provider for an empty binding is the "use Settings" case, not
+// an error.
 //
-// This is the trust boundary: ProviderID arrives from a browser, on endpoints
-// any signed-in user may call, and it decides which of the operator's
-// credentials a request spends. Both halves are checked -- that the row is
-// configured, and that its SDK can do this job -- because either one wrong is
-// a request that fails deep inside a provider call with a message nobody can
-// act on.
-//
-// The model is not checked against the catalogue. Settings has always offered a
-// "Custom model id" field for exactly the model a provider added last week, so
-// a name absent from /v1/models is legitimate; a wrong one surfaces as a
-// provider error on the first call, as it does for the configured bindings.
+// This is the trust boundary: ProviderID arrives from a browser and decides
+// which of the operator's credentials a request spends. Both halves are
+// checked, that the row is configured and that its SDK can do this job. The
+// model is not checked against the catalogue: Settings has always allowed a
+// custom model id, and a wrong one surfaces as a provider error on the first
+// call.
 func Resolve(app core.App, b Binding, purpose ModelPurpose) (*Provider, string, error) {
 	b = b.Normalized()
 	if b.Empty() {
@@ -78,17 +68,10 @@ func Resolve(app core.App, b Binding, purpose ModelPurpose) (*Provider, string, 
 	return p, b.Model, nil
 }
 
-// needsModel reports whether a binding on this SDK has to name one.
-//
-// Almost always yes: a client built with an empty model sends an empty model,
-// and what comes back is a provider error naming a field the user never saw.
-// The configured model is not a sensible fallback either -- it belongs to a
-// different provider, which need not serve it at all.
-//
-// The exception is the OCR binding on the two SDKs that read a document without
-// being told a model: Google Vision has none to give, and for the local sidecar
-// the field names an optional OCR engine rather than a model. Blank there is
-// the correct configuration, which is what RequiresOCRModel already encodes.
+// needsModel: almost always yes, because a client built with an empty model
+// sends one, and what comes back is a provider error naming a field the user
+// never saw. The exception is OCR on the SDKs that read a document without
+// being told a model, which RequiresOCRModel encodes.
 func needsModel(sdk string, purpose ModelPurpose) bool {
 	if purpose == PurposeOCR {
 		return RequiresOCRModel(sdk)
@@ -96,11 +79,8 @@ func needsModel(sdk string, purpose ModelPurpose) bool {
 	return true
 }
 
-// ServesPurpose is the capability question the three predicates answer,
-// dispatched by purpose rather than asked by name.
-//
-// It exists so a caller holding a ModelPurpose -- the models endpoint, the
-// provider picker, Resolve -- does not switch on it itself. The frontend twin
+// ServesPurpose dispatches the three capability predicates by purpose, so a
+// caller holding a ModelPurpose does not switch on it itself. The frontend twin
 // is providerServesPurpose in lib/api/providers.ts.
 func ServesPurpose(sdk string, purpose ModelPurpose) bool {
 	switch purpose {

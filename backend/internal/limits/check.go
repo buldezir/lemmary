@@ -16,53 +16,42 @@ const (
 	NameFilePages       = "file_pages"
 	NameAdditionalUsers = "additional_users"
 
-	// NameOCRPages is not one of the six env limits. It identifies the built-in
+	// NameOCRPages is not one of the six env limits: it identifies the built-in
 	// ceiling below, which every install carries.
 	NameOCRPages = "ocr_pages"
 )
 
-// MaxOCRPages is the most pages a document may hold, on any install.
+// MaxOCRPages is a property of what this can extract, not an allowance a plan
+// sells: the OCR providers return a document's whole text in one string, which
+// has to fit models.MaxOCRTextRunes, and nothing else bounds it. So the page
+// count is the one measurement taken before any provider is called that says
+// whether the result could be stored.
 //
-// Not an allowance a plan sells -- a property of what this can extract. The OCR
-// providers here return a document's whole text in one string, and that string
-// has to fit models.MaxOCRTextRunes. Nothing else bounds it: Mistral is the only
-// provider that documents a page limit at all (1000 pages, 50 MB), and Google
-// Vision simply loops every page of the file five at a time and concatenates.
-// So the page count is the one measurement taken before any provider is called
-// that says whether the result could be stored.
-//
-// 1000 because that is Mistral's number, and because it is comfortably inside
-// the character ceiling: a full A4 page of 6pt text is around 15,000 characters,
-// so even 20,000 a page over 1000 pages stays under 20,971,520.
-//
-// LIMIT_FILE_PAGES can lower this and cannot raise it, the same way
-// LIMIT_FILE_BYTES relates to the 20 MB documents.file MaxSize.
+// A property of what this can extract, not an allowance a plan sells: OCR
+// providers return the whole text in one string that must fit
+// models.MaxOCRTextRunes, and the page count is the one measurement taken before
+// any provider is called. 1000 is Mistral's documented limit and is comfortably
+// inside the character ceiling: even 20,000 characters a page over 1000 pages
+// stays under 20,971,520. LIMIT_FILE_PAGES can lower this and cannot raise it.
 const MaxOCRPages int64 = 1000
 
-// ErrExceeded is a limit refusing something. It carries the numbers so a caller
-// can render "3 of 3 used" without measuring again.
+// ErrExceeded carries the numbers, so a caller can render "3 of 3 used" without
+// measuring again.
 type ErrExceeded struct {
-	// Name is one of the Name* constants.
-	Name string
-	// Allowed is the limit.
+	Name    string
 	Allowed int64
-	// Used is what was already in use when the check ran. For a per-file limit
-	// this is the value the file itself presented.
-	Used int64
-	// Message is the human-readable explanation.
+	// Used is what was in use when the check ran; for a per-file limit, the value
+	// the file itself presented.
+	Used    int64
 	Message string
 }
 
 func (e *ErrExceeded) Error() string { return e.Message }
 
-// Code implements router.SafeErrorItem, identifying which limit was hit.
-//
-// This is what makes the limit name survive the trip to the client. PocketBase
-// replaces any value in an ApiError's data map that does not implement
-// SafeErrorItem with a generic {"code": "validation_invalid_value"} -- which is
-// why the duplicate rejection next door has to parse its id back out of the
-// message text. Implementing the interface means a client can switch on the code
-// instead.
+// Code implements router.SafeErrorItem, which is what makes the limit name
+// survive the trip to the client: PocketBase replaces any value in an ApiError's
+// data map that does not implement it with a generic validation_invalid_value,
+// which is why the duplicate rejection next door parses its id out of the text.
 func (e *ErrExceeded) Code() string { return "limit_" + e.Name }
 
 // Params implements router.SafeErrorParamsResolver, carrying the numbers so a
@@ -75,23 +64,19 @@ func (e *ErrExceeded) Params() map[string]any {
 	}
 }
 
-// APIError renders the rejection for an HTTP client.
+// APIError answers 400, like the only other business rejection on this
+// collection: PocketBase's own file-size rejection is a 400 too, and the
+// paperless-ngx clients understand no quota status. Not 423 either, which is
+// what the vault's unlock gate answers and which makes the SPA reload.
 //
-// A 400, like the only other business rejection on this collection (duplicates).
-// Not 413 or 507: PocketBase's own file-size rejection on documents is already a
-// 400, so a different status for the same class of problem would be the odd one
-// out, and the paperless-ngx clients that also reach these paths understand no
-// quota status either. Not 423 either: the SPA reloads on that, because it is
-// what the vault's unlock gate answers while an encrypted instance is locked.
-//
-// The error is put under a "limit" key so the whole payload reads as
+// The error goes under a "limit" key, so the payload reads as
 // {"limit": {"code": "limit_documents", "params": {...}}}.
 func (e *ErrExceeded) APIError() *router.ApiError {
 	return router.NewBadRequestError(e.Message, map[string]any{"limit": e})
 }
 
-// AsExceeded returns the *ErrExceeded an error carries, if any. Mirrors the
-// shape duplicates uses so an ingest path can test for one type.
+// AsExceeded mirrors the shape duplicates uses, so an ingest path can test for
+// one type.
 func AsExceeded(err error) *ErrExceeded {
 	if err == nil {
 		return nil
@@ -102,16 +87,10 @@ func AsExceeded(err error) *ErrExceeded {
 	return nil
 }
 
-// CheckOCRPages refuses a file with more pages than its text could be stored
-// from.
-//
-// A method on nothing -- it is not one of the env limits and does not vary by
-// install -- but it returns the same *ErrExceeded so a client reads it exactly
-// like the allowances next to it, and so it renders as the same 400.
-//
-// Checked at upload rather than in the OCR step because the point is to spend
-// nothing on a file whose text has nowhere to go: the provider call is the
-// expensive part, and by the time it returns the money is gone.
+// CheckOCRPages returns the same *ErrExceeded as the env allowances, so a client
+// reads it the same way, though it varies by no install. Checked at upload
+// rather than in the OCR step so nothing is spent on a file whose text has
+// nowhere to go: by the time the provider call returns the money is gone.
 func CheckOCRPages(pageCount int64) error {
 	if pageCount <= MaxOCRPages {
 		return nil
@@ -151,10 +130,8 @@ func (l Limits) CheckFile(sizeBytes, pageCount int64) error {
 	return nil
 }
 
-// CheckRoom applies the three instance-wide document limits to what adding
-// documents worth of pages and bytes would bring the totals to.
-//
-// documents, pages and bytes are the additions, not the new totals.
+// CheckRoom takes documents, pages and bytes as the additions, not the new
+// totals.
 func (l Limits) CheckRoom(usage Usage, documents, pages, bytes int64) error {
 	if l.Documents.Exceeded(usage.Documents + documents) {
 		return &ErrExceeded{
@@ -199,12 +176,8 @@ func documentCountMessage(allowed, used, adding int64) string {
 		used, allowed, adding)
 }
 
-// CheckAdditionalUsers applies the account limit to a projected seat count --
-// what CountAdditionalUsers would report once the account in question exists.
-//
-// It takes the result rather than the current count so the caller owns the "one
-// account is free" arithmetic in one place, instead of this having to know
-// whether the caller already counted the new record.
+// CheckAdditionalUsers takes the projected seat count rather than the current
+// one, so the caller owns the "one account is free" arithmetic in one place.
 func (l Limits) CheckAdditionalUsers(projected int64) error {
 	if !l.AdditionalUsers.Exceeded(projected) {
 		return nil
@@ -224,9 +197,7 @@ func (l Limits) CheckAdditionalUsers(projected int64) error {
 	}
 }
 
-// formatBytes renders a byte count the way a person reads a file size. Binary
-// units, because that is what the existing size caps in this codebase are
-// expressed in.
+// formatBytes uses binary units, matching the existing size caps here.
 func formatBytes(n int64) string {
 	const unit = 1024
 	if n < unit {

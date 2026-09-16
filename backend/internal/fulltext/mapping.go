@@ -35,19 +35,11 @@ const (
 	FieldAll               = "all"
 )
 
-// newMapping builds the one analyzer every text field uses: unicode tokenizer,
-// lowercase, nothing else.
-//
-// No stemmer, and that is a decision rather than an omission. A field mapping
-// picks one analyzer for every document in the index, but a single document
-// here routinely mixes languages — a German invoice with an English summary,
-// Ukrainian OCR under bilingual metadata — so any stemmer would be wrong for
-// part of the text it was applied to. Bleve has no Ukrainian stemmer at all,
-// and a German one applied to Ukrainian does not degrade gracefully, it
-// conflates unrelated words. Morphology is instead covered from two other
-// directions: relaxed queries add one edit of slack for long terms
-// (fulltext.Query.Relaxed), and dense retrieval matches meaning rather than
-// surface form. Revisit only if per-language fields ever exist.
+// No stemmer, deliberately: one analyzer serves every document, and a document
+// here routinely mixes languages, so any stemmer would be wrong for part of the
+// text (Bleve has no Ukrainian stemmer, and a German one over Ukrainian
+// conflates unrelated words). Morphology is covered by Query.Relaxed and by
+// dense retrieval instead. Revisit only if per-language fields ever exist.
 func newMapping() (mapping.IndexMapping, error) {
 	im := bleve.NewIndexMapping()
 	im.DefaultAnalyzer = AnalyzerName
@@ -86,8 +78,7 @@ func newMapping() (mapping.IndexMapping, error) {
 	doc.AddFieldMappingsAt(FieldDocumentTypeName, textField(false, true))
 	doc.AddFieldMappingsAt(FieldCorrespondentName, textField(false, true))
 	doc.AddFieldMappingsAt(FieldPeople, textField(false, true))
-	// FieldAll is only the query-string DefaultField fallback; it is never
-	// highlighted, so term vectors would just double posting storage.
+	// Never highlighted, so term vectors would just double posting storage.
 	doc.AddFieldMappingsAt(FieldAll, textField(false, false))
 
 	im.DefaultMapping = doc

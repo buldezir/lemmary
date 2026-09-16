@@ -5,16 +5,12 @@ import (
 	"sync"
 )
 
-// What this process has learned about a model while talking to it. A provider
-// refusing a request the same way twice is worth remembering: the discovery
-// then costs a rejected request per model per process rather than one per call.
+// What this process has learned about a model while talking to it, so a
+// discovery costs one rejected request per model per process.
 //
-// Every note is keyed by endpoint as well as model. A model string means
-// nothing on its own -- an instance can bind several providers at once, each
-// with its own base URL (see internal/appapi/providers.go), and "gpt-5.6-luna"
-// behind OpenCode Zen is not the same endpoint as the same name at
-// api.openai.com. Keying on the name alone would let one gateway's quirk
-// follow the model onto another.
+// Every note is keyed by endpoint as well as model: an instance can bind
+// several providers at once, and "gpt-5.6-luna" behind OpenCode Zen is not the
+// same endpoint as the same name at api.openai.com.
 type modelNote struct {
 	baseURL string
 	model   string

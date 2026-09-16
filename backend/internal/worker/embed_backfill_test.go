@@ -8,8 +8,7 @@ import (
 	"lemmary/backend/internal/config"
 )
 
-// fixedClock hands out a controllable now, so the deadline rules can be
-// asserted without a test that actually waits half an hour.
+// A controllable now, so the deadline rules need no test that waits half an hour.
 type fixedClock struct {
 	now  time.Time
 	step time.Duration
@@ -47,9 +46,8 @@ func TestSweepLoopKeepsGoingUntilTheBacklogIsEmpty(t *testing.T) {
 	}
 }
 
-// The candidate query and the freshness check can disagree -- a document listed
-// as needing embedding that EmbedDocument then skips. Without this rule the
-// sweep would ask for the same batch until its deadline.
+// The candidate query and the freshness check can disagree; without this rule
+// the sweep asks for the same batch until its deadline.
 func TestSweepLoopStopsWhenABatchMovesNothing(t *testing.T) {
 	t.Parallel()
 	calls := 0
@@ -91,8 +89,7 @@ func TestSweepLoopStopsAtItsDeadline(t *testing.T) {
 	}
 }
 
-// A sweep that starts after its own deadline embeds nothing rather than one
-// batch: the budget is a ceiling, not a minimum.
+// The budget is a ceiling, not a minimum.
 func TestSweepLoopRunsNothingPastTheDeadline(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
@@ -127,18 +124,15 @@ func TestSweepLoopReportsABatchFailure(t *testing.T) {
 	if calls != 2 {
 		t.Fatalf("ran %d batches, want 2: a failing batch ends the sweep", calls)
 	}
-	// The work done before the failure is still reported, so the log line and
-	// the response are not a lie.
+	// Work done before the failure is still reported.
 	if summary.Embedded != 20 {
 		t.Fatalf("summary = %+v", summary)
 	}
 }
 
-// Two sweeps would pick the same candidates and pay for them twice.
 func TestStartSweepRefusesToOverlapItself(t *testing.T) {
 	t.Parallel()
-	// A nil app is the assertion: a second sweep that got past the guard would
-	// reach the database and panic instead of returning false.
+	// A nil app is the assertion: a second sweep past the guard would panic.
 	b := &Backfiller{rt: &config.Runtime{}}
 	b.sweeping.Store(true)
 
@@ -150,11 +144,9 @@ func TestStartSweepRefusesToOverlapItself(t *testing.T) {
 	}
 }
 
-// The cron shares the sweep's mutex, so a tick during a sweep has to give up
-// rather than embed the same batch alongside it.
+// A tick during a sweep has to give up rather than embed the same batch.
 func TestCronTickSkipsWhileASweepHoldsTheLock(t *testing.T) {
 	t.Parallel()
-	// Nil app again: a tick that took the lock would dereference it.
 	b := &Backfiller{}
 	b.running.Lock()
 	defer b.running.Unlock()
@@ -162,8 +154,8 @@ func TestCronTickSkipsWhileASweepHoldsTheLock(t *testing.T) {
 	b.tick()
 }
 
-// With no model bound there is nothing to embed, and the sweep must work that
-// out before it touches the app -- this is the state a fresh install is in.
+// With no model bound the sweep must work that out before it touches the app,
+// which is the state a fresh install is in.
 func TestSweepWithoutAnEmbedderTouchesNothing(t *testing.T) {
 	t.Parallel()
 	b := &Backfiller{rt: &config.Runtime{}}
@@ -192,8 +184,8 @@ func TestStartSweepClearsItsFlagWhenTheSweepEnds(t *testing.T) {
 	}
 }
 
-// EMBEDDING_BACKFILL_BATCH=0 is how an operator turns the schedule off. The
-// Management sweep is an explicit click, so it still has to have a batch size.
+// EMBEDDING_BACKFILL_BATCH=0 turns the schedule off; the Management sweep is an
+// explicit click, so it still needs a batch size.
 func TestSweepBatchSurvivesADisabledCron(t *testing.T) {
 	t.Parallel()
 	cases := map[int]int{0: defaultBackfillBatch, -5: defaultBackfillBatch, 7: 7}

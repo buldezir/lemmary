@@ -12,26 +12,22 @@ import (
 	"time"
 )
 
-// Job statuses reported by the status endpoints.
 const (
 	StatusRunning   = "running"
 	StatusCompleted = "completed"
 	StatusFailed    = "failed"
 )
 
-// DefaultRetention is how long a finished job stays readable before it is swept.
-// Without it the registry would grow for the process lifetime.
+// How long a finished job stays readable; without it the registry would grow
+// for the process lifetime.
 const DefaultRetention = time.Hour
 
-// MaxReportedErrors bounds the error list a job result carries back to the
-// client: a run that fails on every one of a few hundred items would otherwise
-// return a response nobody reads.
+// A run that fails on every one of a few hundred items would otherwise return
+// a response nobody reads.
 const MaxReportedErrors = 25
 
-// ErrBusy is returned when the owner already has an import running.
 var ErrBusy = errors.New("an import is already in progress")
 
-// AppendError appends msg to a result's error list unless the cap is reached.
 func AppendError(errs []string, msg string) []string {
 	if len(errs) >= MaxReportedErrors {
 		return errs
@@ -39,13 +35,11 @@ func AppendError(errs []string, msg string) []string {
 	return append(errs, msg)
 }
 
-// Progress is the coarse "done of total" counter a long run may report.
 type Progress struct {
 	Done  int `json:"done"`
 	Total int `json:"total"`
 }
 
-// Job is a snapshot of one import run.
 type Job[T any] struct {
 	ID          string    `json:"job_id"`
 	OwnerUserID string    `json:"-"`
@@ -56,7 +50,7 @@ type Job[T any] struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// Registry tracks jobs carrying result type T and allows one run per owner.
+// Registry allows one run per owner.
 type Registry[T any] struct {
 	retention time.Duration
 
@@ -65,7 +59,7 @@ type Registry[T any] struct {
 	busy map[string]struct{}
 }
 
-// NewRegistry returns an empty registry. A retention <= 0 uses DefaultRetention.
+// A retention <= 0 uses DefaultRetention.
 func NewRegistry[T any](retention time.Duration) *Registry[T] {
 	if retention <= 0 {
 		retention = DefaultRetention
@@ -77,8 +71,7 @@ func NewRegistry[T any](retention time.Duration) *Registry[T] {
 	}
 }
 
-// Acquire marks the owner busy so a second run cannot start. Callers that run
-// synchronously (without Start) must pair it with Release.
+// Callers that run synchronously (without Start) must pair this with Release.
 func (r *Registry[T]) Acquire(ownerUserID string) error {
 	if strings.TrimSpace(ownerUserID) == "" {
 		return fmt.Errorf("owner user id is required")
@@ -92,8 +85,7 @@ func (r *Registry[T]) Acquire(ownerUserID string) error {
 	return nil
 }
 
-// Busy reports whether the owner already has a run in flight, for a caller that
-// needs to tell "busy" apart from "gone" before Start would say so.
+// For a caller that needs to tell "busy" apart from "gone" before Start would.
 func (r *Registry[T]) Busy(ownerUserID string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -101,16 +93,15 @@ func (r *Registry[T]) Busy(ownerUserID string) bool {
 	return busy
 }
 
-// Release clears the owner's busy marker.
 func (r *Registry[T]) Release(ownerUserID string) {
 	r.mu.Lock()
 	delete(r.busy, ownerUserID)
 	r.mu.Unlock()
 }
 
-// Start runs fn in a background goroutine and returns the new job id.
-// fn receives a reporter it may call to publish progress; the reported result
-// is stored even when fn fails, so partial counts stay visible.
+// Start runs fn in a background goroutine and returns the new job id. fn gets a
+// reporter for progress; its result is stored even when it fails, so partial
+// counts stay visible.
 func (r *Registry[T]) Start(ownerUserID string, fn func(report func(done, total int)) (T, error)) (string, error) {
 	if err := r.Acquire(ownerUserID); err != nil {
 		return "", err
@@ -156,9 +147,8 @@ func (r *Registry[T]) Start(ownerUserID string, fn func(report func(done, total 
 	return id, nil
 }
 
-// runProtected invokes fn, converting a panic into a job failure: the Start
-// goroutine has no supervisor, so an unrecovered panic in an import would take
-// down the whole server (and every in-flight processing job with it).
+// Converts a panic into a job failure: the Start goroutine has no supervisor,
+// so an unrecovered panic would take the whole server down with it.
 func (r *Registry[T]) runProtected(job *Job[T], fn func(report func(done, total int)) (T, error)) (result T, err error) {
 	defer func() {
 		if p := recover(); p != nil {
@@ -173,7 +163,6 @@ func (r *Registry[T]) runProtected(job *Job[T], fn func(report func(done, total 
 	})
 }
 
-// Get returns a copy of the job, or false if unknown.
 func (r *Registry[T]) Get(id string) (Job[T], bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -189,7 +178,6 @@ func (r *Registry[T]) Get(id string) (Job[T], bool) {
 	return out, true
 }
 
-// pruneLocked drops finished jobs older than the retention window.
 // Callers must hold r.mu. Running jobs are never swept.
 func (r *Registry[T]) pruneLocked(now time.Time) {
 	for id, job := range r.jobs {

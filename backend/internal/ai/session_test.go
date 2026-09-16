@@ -33,9 +33,8 @@ func chatCompletionServer(t *testing.T, seen *string) *httptest.Server {
 	return srv
 }
 
-// TestChatSendsSessionHeaderToOpenCode is the production-client case the
-// middleware unit tests cannot cover: NewOpenAIClient itself must install
-// SessionMiddleware, and only for the opencode SDK.
+// The production-client case the middleware unit tests cannot cover:
+// NewOpenAIClient itself must install SessionMiddleware, and only for opencode.
 func TestChatSendsSessionHeaderToOpenCode(t *testing.T) {
 	var seen string
 	srv := chatCompletionServer(t, &seen)
@@ -43,7 +42,7 @@ func TestChatSendsSessionHeaderToOpenCode(t *testing.T) {
 	client := NewOpenAIClient(aiprovider.SDKOpenCode, "test-key", "test-model",
 		srv.URL+"/zen/go/v1", "", "", 5*time.Second, slog.Default())
 	ctx := aiprovider.WithSession(context.Background(), "conv123")
-	if _, err := client.Chat(ctx, "some ocr text", []ChatMessage{{Role: "user", Content: "hi"}}); err != nil {
+	if _, err := client.Chat(ctx, "some ocr text", []ChatMessage{{Role: "user", Content: "hi"}}, nil); err != nil {
 		t.Fatalf("chat: %v", err)
 	}
 	if seen != "conv123" {
@@ -51,18 +50,15 @@ func TestChatSendsSessionHeaderToOpenCode(t *testing.T) {
 	}
 }
 
-// TestChatSendsNoSessionHeaderToOtherProviders pins the gate on the client
-// every completion in the app goes through: a provider that is not OpenCode
-// sees the request it has always seen, session on the context or not -- and
-// now the same address as the case above, since the gate is the SDK rather
-// than the hostname.
+// The other half of the gate, on the client every completion goes through: a
+// provider that is not OpenCode sees the request it has always seen.
 func TestChatSendsNoSessionHeaderToOtherProviders(t *testing.T) {
 	var seen string
 	srv := chatCompletionServer(t, &seen)
 
 	client := NewOpenAIClient(aiprovider.SDKOpenAI, "test-key", "test-model", srv.URL, "", "", 5*time.Second, slog.Default())
 	ctx := aiprovider.WithSession(context.Background(), "conv123")
-	if _, err := client.Chat(ctx, "some ocr text", []ChatMessage{{Role: "user", Content: "hi"}}); err != nil {
+	if _, err := client.Chat(ctx, "some ocr text", []ChatMessage{{Role: "user", Content: "hi"}}, nil); err != nil {
 		t.Fatalf("chat: %v", err)
 	}
 	if seen != "" {

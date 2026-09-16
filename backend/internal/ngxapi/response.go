@@ -66,8 +66,6 @@ func saveError(e *core.RequestEvent, err error) error {
 	return internalError(e, err)
 }
 
-// internalError logs the cause and returns a generic 500 so upstream/database
-// details never reach the client.
 func internalError(e *core.RequestEvent, err error) error {
 	if e.App != nil {
 		e.App.Logger().Error("ngx api request failed",

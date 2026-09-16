@@ -24,8 +24,8 @@ type splitDetectRequest struct {
 	UploadID string `json:"upload_id"`
 }
 
-// handlePostSplitUpload stages a multi-document PDF so the user can mark the
-// cuts before any document is created.
+// handlePostSplitUpload stages a PDF so the user can mark the cuts before any
+// document is created.
 func handlePostSplitUpload(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		ownerID, err := resolveOwnerUserID(app, e)
@@ -56,7 +56,6 @@ func handlePostSplitUpload(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// handleDeleteSplitUpload drops a staged PDF the user did not split.
 func handleDeleteSplitUpload(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		ownerID, err := resolveOwnerUserID(app, e)
@@ -74,7 +73,6 @@ func handleDeleteSplitUpload(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// handleGetSplitPage serves the cached thumbnail of one page of a staged PDF.
 func handleGetSplitPage(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		ownerID, err := resolveOwnerUserID(app, e)
@@ -99,8 +97,7 @@ func handleGetSplitPage(app core.App) func(*core.RequestEvent) error {
 		}
 
 		e.Response.Header().Set("Content-Type", "image/png")
-		// Thumbnails never change and the upload expires anyway, so let the
-		// browser keep them for the life of the staged upload.
+		// Thumbnails never change and the upload expires anyway.
 		e.Response.Header().Set("Cache-Control", "private, max-age=1800")
 		e.Response.WriteHeader(http.StatusOK)
 		_, writeErr := e.Response.Write(data)
@@ -166,7 +163,6 @@ func handleGetSplitDetectStatus(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// handlePostSplit starts the confirmed split of a staged PDF.
 func handlePostSplit(app core.App, lim limits.Limits) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var req splitRequest
@@ -182,11 +178,10 @@ func handlePostSplit(app core.App, lim limits.Limits) func(*core.RequestEvent) e
 			return writeOwnerError(e, err)
 		}
 
-		// A split is the one bulk path whose page counts are known exactly
-		// before anything is created -- each part is a page range -- so both the
-		// per-file and the instance-wide page limits can be answered here rather
-		// than after some of the parts already exist. Bytes are not knowable
-		// until the parts are extracted, so those stay with the create hook.
+		// The one bulk path whose page counts are known exactly before anything
+		// is created, so both page limits are answered here rather than after
+		// some parts exist. Bytes are not knowable until the parts are
+		// extracted, so those stay with the create hook.
 		if len(req.Parts) > 0 {
 			var pages int64
 			for _, part := range req.Parts {
@@ -238,8 +233,7 @@ func handleGetSplitStatus(app core.App) func(*core.RequestEvent) error {
 	}
 }
 
-// jobPayload renders an in-memory job snapshot the way the polling client
-// expects it, omitting the fields that are only set once the run is over.
+// jobPayload omits the fields that are only set once the run is over.
 func jobPayload[T any](id, status string, progress importjob.Progress, jobErr string, result *T) map[string]any {
 	payload := map[string]any{
 		"job_id":   id,
@@ -255,8 +249,7 @@ func jobPayload[T any](id, status string, progress importjob.Progress, jobErr st
 	return payload
 }
 
-// splitUploadErrorDetail maps a rejected upload to a client-facing message,
-// or "" when the failure is not the caller's fault.
+// splitUploadErrorDetail returns "" when the failure is not the caller's fault.
 func splitUploadErrorDetail(err error) string {
 	switch {
 	case errors.Is(err, pdfsplit.ErrNotPDF):

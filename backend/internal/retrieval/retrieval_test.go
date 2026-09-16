@@ -8,7 +8,6 @@ import (
 )
 
 func TestRRFRanksByReciprocalRank(t *testing.T) {
-	// b is second in both lists; a is first in one and absent from the other.
 	// Agreement wins: 1/61+1/62 beats 1/61 alone.
 	fused := RRF(
 		[]Ranked{{ID: "a", Score: 9}, {ID: "b", Score: 8}},
@@ -25,8 +24,7 @@ func TestRRFRanksByReciprocalRank(t *testing.T) {
 		t.Fatalf("score = %v, want %v", fused[0].Score, want)
 	}
 
-	// a and c are each rank 1 of one list, so they tie on score. The tiebreak
-	// is the earlier list, which keeps the order total and reproducible.
+	// Ties break on the earlier list, keeping the order total and reproducible.
 	if fused[1].ID != "a" || fused[2].ID != "c" {
 		t.Fatalf("tie was not broken by list order: %v", fused)
 	}
@@ -119,9 +117,8 @@ func TestSelectPassagesQuotesTheBestChunks(t *testing.T) {
 	}
 }
 
-// Chunk offsets outlive the text they were cut from: a re-OCR replaces the text
-// and the stored boundaries then point at the wrong place, or past the end.
-// Quoting a clamped slice would be a quotation from nowhere.
+// A re-OCR replaces the text and stored boundaries then point past the end;
+// quoting a clamped slice would be a quotation from nowhere.
 func TestSelectPassagesDropsStaleOffsets(t *testing.T) {
 	ocr := "Short document."
 	got := SelectPassages(ocr, nil, []ChunkHit{
@@ -206,8 +203,7 @@ func TestWindowsCoverTheTextAndPreferStoredBoundaries(t *testing.T) {
 	if len(got) != 2 || got[0].Ord != 4 {
 		t.Fatalf("stored boundaries should be used in document order: %+v", got)
 	}
-	// Every stored boundary stale: fall back to deriving them rather than
-	// refusing to excerpt at all.
+	// Every stored boundary stale: derive rather than refuse to excerpt.
 	if got := Windows("short", []Window{{StartByte: 900, EndByte: 1000}}); len(got) != 1 || got[0].EndByte != 5 {
 		t.Fatalf("stale boundaries should fall back to derived windows: %+v", got)
 	}
@@ -289,13 +285,11 @@ func TestExcerptKeepsHeadTailAndMarksGaps(t *testing.T) {
 		t.Fatalf("nothing should have been omitted at this budget, got %d", omitted)
 	}
 
-	// A document that fits comes back whole, with no markers at all.
 	whole, omitted := Excerpt("short text", Windows("short text", nil), nil, 4000)
 	if whole != "short text" || omitted != 0 {
 		t.Fatalf("a short document was excerpted: %q %d", whole, omitted)
 	}
 
-	// A budget too small for every matching window reports what it left out.
 	_, omitted = Excerpt(text, windows, TermOverlap(text, windows, "nothing interest"), 2200)
 	if omitted == 0 {
 		t.Fatal("a tight budget should report omitted passages")

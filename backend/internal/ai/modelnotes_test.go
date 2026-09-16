@@ -2,9 +2,8 @@ package ai
 
 import "testing"
 
-// A model name means nothing on its own. An instance can bind several providers
-// at once, so what one gateway does with "gpt-5.6-luna" must not follow the
-// name onto another.
+// A model name means nothing on its own: what one gateway does with
+// "gpt-5.6-luna" must not follow the name onto another.
 func TestModelNotesAreScopedToTheirEndpoint(t *testing.T) {
 	resetModelNotes()
 	t.Cleanup(resetModelNotes)

@@ -51,7 +51,7 @@ export function DocumentDetailPage() {
   const [job, setJob] = useState<ProcessingJobRecord | null>(null)
   const [tagIds, setTagIds] = useState<string[]>([])
   // The whole vocabulary, loaded once: the picker needs every tag, not only the
-  // ones this document carries, and it is a short list by design.
+  // ones this document carries.
   const { data: vocabulary, error: vocabularyError } = useAsync(listTags, [])
   const [documentTypeInput, setDocumentTypeInput] = useState('')
   const [correspondentInput, setCorrespondentInput] = useState('')
@@ -63,23 +63,22 @@ export function DocumentDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [reprocessSteps, setReprocessSteps] = useState<ProcessingStep[]>([])
   const [reprocessOverrides, setReprocessOverrides] = useState<JobOverrides>({})
-  // null means "the reader has not said": the panel then opens itself for a job
-  // that failed, because a failure should not need a click to be read. Once
-  // they toggle it, their choice is a boolean and sticks.
+  // null means "the reader has not said", which lets the panel open itself for
+  // a failed job. Once they toggle it, their choice is a boolean and sticks.
   const [showProcessingJob, setShowProcessingJob] = useState<boolean | null>(null)
   const [showPreview, setShowPreview] = useStoredFlag('lemmary.showPreview', true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
-  // Mirrors `editing` for the load callback below: a background refresh (poll
-  // or realtime event) must not clobber the form while the user is typing.
+  // Mirrors `editing` for the load callback below: a background refresh must
+  // not clobber the form while the user is typing.
   const editingRef = useRef(editing)
   useEffect(() => {
     editingRef.current = editing
   }, [editing])
 
-  // Tracks which (document, has-OCR-text) pair the reprocess defaults were
-  // computed for, so background refreshes do not reset the user's selection.
+  // Which (document, has-OCR-text) pair the reprocess defaults were computed
+  // for, so background refreshes do not reset the user's selection.
   const reprocessDefaultsKey = useRef('')
 
   function applyLoadedDocument(doc: DocumentRecord) {
@@ -128,9 +127,8 @@ export function DocumentDetailPage() {
         setError('')
 
         // The job, not just the document: apply_metadata marks the document
-        // completed and saves it before embed runs, so watching the document
-        // alone stops the poll mid-pipeline and freezes the panel with embed
-        // reading 'running' and no duration that ever settles.
+        // completed before embed runs, so watching the document alone stops
+        // the poll mid-pipeline with embed stuck reading 'running'.
         const inFlight =
           doc.processing_status === 'processing' ||
           doc.processing_status === 'pending' ||
@@ -188,11 +186,9 @@ export function DocumentDetailPage() {
 
   const hasOcrText = Boolean(document?.ocr_text?.trim())
 
-  // The pane's premise is "beside the fields", which only holds from xl up.
-  // Narrower than that it would be a viewport-tall block above the form -- and
-  // a blank one on iOS Safari and Android Chrome, which do not render a framed
-  // PDF. Gated in JS rather than hidden by CSS so a phone does not download the
-  // file to lay out something it will never show.
+  // The pane only fits beside the fields from xl up, and iOS Safari and Android
+  // Chrome do not render a framed PDF at all. Gated in JS rather than by CSS so
+  // a phone does not download a file it will never show.
   const [wideEnough, setWideEnough] = useState(() => previewViewport().matches)
   useEffect(() => {
     const query = previewViewport()
@@ -201,39 +197,28 @@ export function DocumentDetailPage() {
     return () => query.removeEventListener('change', onChange)
   }, [])
 
-  // docx, xlsx and the plain-text types have nothing a browser can frame -- and
-  // for txt and csv the text is already in the OCR-text field below. Rather
-  // than reserve a column to say so, those documents simply have no pane and no
-  // toggle, and keep the full width for their fields.
+  // docx, xlsx and the plain-text types have nothing a browser can frame, so
+  // they get no pane and no toggle and keep the full width for their fields.
   const canPreview =
     wideEnough && Boolean(document?.file) && previewKind(document?.file ?? '') !== 'none'
 
-  // Latches on the first show, because hiding the pane must not unmount the
-  // viewer: a remount resets a PDF to page one and loses find-in-document,
-  // which is the opposite of what the button is for. Hiding it with CSS keeps
-  // the page it was on. Not mounted before the first show, so a reader who
-  // turned the pane off does not pay for a file they are not looking at.
+  // Latches on the first show: hiding the pane must not unmount the viewer,
+  // because a remount resets a PDF to page one and loses find-in-document.
+  // Not mounted before that, so a hidden pane downloads nothing.
   const [previewMounted, setPreviewMounted] = useState(showPreview)
 
   // The job as well as the document, for the reason the poll gate above gives:
-  // apply_metadata marks the document completed while embed is still running,
-  // so trusting the document alone re-enables this form mid-pipeline and
-  // invites a second job over a document the first one is still writing.
+  // trusting the document alone re-enables this form mid-pipeline and invites
+  // a second job over a document the first one is still writing.
   const canReprocess =
     document?.processing_status !== 'processing' &&
     document?.processing_status !== 'pending' &&
     !jobStillRunning(job)
 
-  // A clock for the durations that are still counting: the running step's
-  // elapsed, and the job total before the job has finished. Everything else is
-  // measured from the two timestamps the worker recorded and needs no clock at
-  // all.
-  //
-  // In state rather than read during render, which would be an impure read
-  // that advanced only when something else happened to re-render. The timer
-  // runs only while there is something unfinished on screen, so a settled job
-  // leaves nothing ticking -- and it is separate from the one-second document
-  // poll above, so the elapsed keeps time even if a refresh is slow.
+  // A clock for the durations still counting. In state rather than read during
+  // render, which would be an impure read that advanced only when something
+  // else re-rendered. Separate from the document poll, so the elapsed keeps
+  // time even if a refresh is slow.
   const [tick, setTick] = useState(() => Date.now())
   const stepRunning = (job?.step_runs ?? []).some((run) => run.status === 'running')
   const needsClock = jobStillRunning(job) || stepRunning
@@ -246,16 +231,13 @@ export function DocumentDetailPage() {
   const jobTotalMs = job ? jobDurationMs(job, tick) : null
   const summary = summarizeJob(job, tick)
   // Latched, not derived: a panel that opened itself to show a failure must not
-  // close again the moment Reprocess turns the tone back to 'running' -- that
-  // is exactly when the reader is watching it. Reset per document, since the
-  // route param can change without this component remounting.
-  //
-  // Warnings included: a soft-failed embed is the one failure the status badge
-  // will never mention, so it is the one most worth opening the panel for.
+  // close again the moment Reprocess turns the tone back to 'running'. Warnings
+  // count too, since a soft-failed embed is the one failure the status badge
+  // never mentions.
   const [autoOpened, setAutoOpened] = useState(false)
   // Both reset per document: the route param can change without this component
-  // remounting, and a reader who closed the panel on one document must not have
-  // that choice hide the next document's failure.
+  // remounting, and a panel closed on one document must not hide the next
+  // document's failure.
   const [panelDocumentId, setPanelDocumentId] = useState(documentId)
   if (panelDocumentId !== documentId) {
     setPanelDocumentId(documentId)
@@ -301,8 +283,8 @@ export function DocumentDetailPage() {
     }
 
     const stepLabels = reprocessSteps.map((step) => PROCESSING_STEP_LABELS[step]).join(', ')
-    // The same narrowing reprocessDocument does: a picker that was opened and
-    // then unticked must not name a model in the confirmation.
+    // The same narrowing reprocessDocument does, so a step that was unticked
+    // does not name a model in the confirmation.
     const overrides = describeJobOverrides(overridesForSteps(reprocessOverrides, reprocessSteps))
     const confirmed = window.confirm(
       `Re-run these steps?\n\n${stepLabels}\n` +
@@ -332,10 +314,9 @@ export function DocumentDetailPage() {
         reprocessOverrides,
       )
 
-      // Confirmed as soon as the job exists, before the refresh below. Queueing
-      // flips the document to pending, which wakes the realtime subscription,
-      // whose load() then autocancels the two requests here -- and the user is
-      // owed the confirmation whether or not this particular refresh survived.
+      // Confirmed as soon as the job exists: queueing wakes the realtime
+      // subscription, whose load() autocancels the two requests below, and the
+      // confirmation is owed either way.
       setMessage(
         `Document queued for reprocessing (${steps.map((step) => PROCESSING_STEP_LABELS[step]).join(', ')}).`,
       )
@@ -390,7 +371,6 @@ export function DocumentDetailPage() {
   }
 
   /**
-   * Clears the document out of the Inbox without going through the form.
    * Hidden while editing, because Save *is* this action in edit mode:
    * saveDocumentMetadata already turns needs_review into completed.
    */
@@ -497,7 +477,6 @@ export function DocumentDetailPage() {
           <p className="text-sm text-ink-soft">
             Status: {DOCUMENT_STATUS_LABELS[document.processing_status]}
           </p>
-          {/* The reason, without opening anything. */}
           <ProcessingStatus summary={summary} />
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -555,8 +534,8 @@ export function DocumentDetailPage() {
             {deleting ? 'Deleting...' : 'Delete'}
           </Button>
           {/* Always offered, job or no job: a document restored from an export
-              or added before the pipeline existed has no job record, and
-              hiding the panel was what left it with no way to be reprocessed. */}
+              has no job record, and hiding the panel leaves it with no way to
+              be reprocessed. */}
           <button
             type="button"
             onClick={() => setShowProcessingJob(!jobPanelOpen)}
@@ -588,9 +567,8 @@ export function DocumentDetailPage() {
         </div>
       </div>
 
-      {/* The pane sits left of the form, but after it in the DOM, so a keyboard
-          reaches the fields without tabbing through a PDF viewer's own
-          controls first. */}
+      {/* The pane sits left of the form but after it in the DOM, so a keyboard
+          reaches the fields without tabbing through the PDF viewer first. */}
       <div className="flex flex-col gap-5 xl:flex-row xl:items-start">
         <div className="flex min-w-0 flex-1 flex-col gap-5">
           {jobPanelOpen && (
@@ -602,9 +580,6 @@ export function DocumentDetailPage() {
                     <span className="bg-wash px-1.5 py-0.5 text-xs font-medium text-ink-muted">
                       {job.status}
                     </span>
-                    {/* current_step and the step list both dropped: the run
-                        list below shows which step is running and every step
-                        there is, in the same place. */}
                     {jobTotalMs !== null ? (
                       <span className="text-xs text-ink-soft">total: {formatDuration(jobTotalMs)}</span>
                     ) : null}
@@ -641,16 +616,13 @@ export function DocumentDetailPage() {
                     const checked = reprocessSteps.includes(step)
                     return (
                       // A div wrapping a label, not one label around
-                      // everything: the model picker below is itself a
-                      // checkbox and a combobox, and nesting those inside the
-                      // step's label would make a click on either of them
-                      // toggle the step.
+                      // everything: the model picker is itself a checkbox and
+                      // a combobox, and nesting those in the step's label
+                      // would make a click on either toggle the step.
                       <div
                         key={step}
-                        // A stable hook for the browser suite, which has to
-                        // assert that the model picker sits inside the block of
-                        // the step it belongs to. Same purpose as
-                        // data-timeline-period on the timeline rail.
+                        // A stable hook for the browser suite, which asserts
+                        // the model picker sits inside its own step's block.
                         data-reprocess-step={step}
                         className={`flex flex-col gap-2 rounded-xs border px-3 py-1.5 text-sm ${
                           selectable
@@ -680,10 +652,6 @@ export function DocumentDetailPage() {
                             </span>
                           </span>
                         </label>
-                        {/* Only for a step that is actually going to run:
-                            which model to use is not a question until you
-                            have said you are re-running the step that uses
-                            one. */}
                         {checked && (
                           <StepBindingOverride
                             step={step}
@@ -841,8 +809,8 @@ export function DocumentDetailPage() {
                 <Button
                   onClick={(event) => {
                     // Without preventDefault, React swaps this node into the
-                    // submit button before the browser applies the click's default
-                    // action, which would submit the form immediately.
+                    // submit button before the browser applies the click's
+                    // default action, submitting the form immediately.
                     event.preventDefault()
                     setEditing(true)
                   }}
@@ -871,19 +839,10 @@ export function DocumentDetailPage() {
 }
 
 /**
- * The document's tags, as chips plus a picker over the rest of the vocabulary.
- *
- * A text box used to sit here and every name typed into it became a tag, which
- * is how the archive filled up with near-duplicates nobody chose. Tags are now
- * created only on /tags, so this offers what exists and nothing more -- which
- * is also why an empty vocabulary sends the reader there rather than showing a
- * picker with no options.
- *
- * The chips do not wait for the vocabulary. The document's own expand already
- * carries the names it has, and the list cards show them; blanking this row
- * while a separate request is in flight -- or has failed -- would be the one
- * place in the app that pretends a tagged document has no tags. The vocabulary
- * is only needed to offer the rest.
+ * Tags are created only on /tags, so this offers what exists and nothing more,
+ * and an empty vocabulary sends the reader there. The chips do not wait for the
+ * vocabulary: the document's own expand carries the names it has, and a row
+ * blanked mid-request would pretend a tagged document has no tags.
  */
 function TagField({
   editing,
@@ -903,10 +862,9 @@ function TagField({
   onChange: (next: string[]) => void
 }) {
   const byId = new Map([...known, ...(vocabulary ?? [])].map((tag) => [tag.id, tag]))
-  // An id with no name behind it is a tag deleted from /tags since the document
-  // was loaded. Shown as a placeholder rather than dropped: saving writes
-  // `selected`, not what is on screen, so a chip silently missing from the row
-  // would still be written back -- and this one can be removed on purpose.
+  // An id with no name behind it is a tag deleted since the document loaded.
+  // Shown as a placeholder rather than dropped, because saving writes
+  // `selected`, so a silently missing chip would be written back anyway.
   const chosen = selected.map((id) => byId.get(id) ?? { id, name: 'Deleted tag' })
   const available = (vocabulary ?? []).filter((tag) => !selected.includes(tag.id))
 
@@ -985,8 +943,7 @@ function textareaClass(editing: boolean) {
   return `${fieldClass(editing)} min-h-48 resize-y`
 }
 
-// Tailwind's xl, as a media query: the width at which the pane can sit beside
-// the form rather than on top of it.
+// Tailwind's xl, as a media query.
 function previewViewport(): MediaQueryList {
   return window.matchMedia('(min-width: 80rem)')
 }

@@ -61,10 +61,9 @@ export type LoginMethods = {
 const fallbackLoginMethods: LoginMethods = { password: true, oauth: [], passkey: false }
 
 /**
- * Whether the server offers passkey sign-in. Read here rather than from
- * useAppMeta: that hook resolves once per RootLayout mount, which does not
- * remount on sign-out, so a user who enrolled then signed out would see a
- * stale answer.
+ * Read here rather than from useAppMeta: that hook resolves once per RootLayout
+ * mount, which does not remount on sign-out, so a user who enrolled and then
+ * signed out would see a stale answer.
  *
  * Raw fetch: apiClient imports ensureAuth from this module.
  */
@@ -82,9 +81,7 @@ async function getPasskeyOffered(): Promise<boolean> {
 }
 
 /**
- * Reads the sign-in methods enabled for the users collection in PocketBase, so
- * the login screen offers whatever the instance was configured with. The
- * endpoint is public, which is what lets this resolve before any session
+ * The endpoint is public, which is what lets this resolve before any session
  * exists. Never throws: an unreachable server falls back to the password form
  * rather than a login screen with no way in.
  */
@@ -120,10 +117,8 @@ const oauthPopupName = 'lemmary-oauth2-login'
 const oauthPopupFeatures = 'width=600,height=720,menubar=no,toolbar=no,resizable'
 
 /**
- * Opens the popup up front, while still inside the click handler's task. The
- * SDK opens its own popup only after awaiting the auth-methods request and the
- * realtime subscription, which browsers score as an unrequested popup and
- * block.
+ * Opened up front, inside the click handler's task: the SDK opens its own popup
+ * only after two awaits, which browsers block as unrequested.
  */
 function openOAuthPopup(): Window | null {
   if (typeof window === 'undefined' || !window.open) {
@@ -164,9 +159,9 @@ function watchOAuthPopup(popup: Window | null) {
 
 /**
  * PocketBase reports every sign-in failure past the token exchange as a bare
- * "Failed to authenticate.". In this app that is nearly always a first-time
- * OAuth2 account: the users collection has no create rule, so OAuth2 can sign
- * in accounts that already exist (matched on email) but cannot mint new ones.
+ * "Failed to authenticate.". Here that is nearly always a first-time OAuth2
+ * account: the users collection has no create rule, so OAuth2 matches existing
+ * accounts by email but cannot mint new ones.
  */
 function oauthErrorMessage(err: unknown): string {
   if (err instanceof ClientResponseError && err.message === 'Failed to authenticate.') {
@@ -178,7 +173,6 @@ function oauthErrorMessage(err: unknown): string {
   return 'Sign-in failed'
 }
 
-/** Signs in through one of the collection's OAuth2 providers. */
 export async function loginWithOAuth2(provider: string) {
   clearMeCache()
   const popup = openOAuthPopup()
@@ -242,10 +236,9 @@ type PasskeyBeginResponse = { session_id: string; options: unknown }
 type PasskeyAuthResponse = { token: string; record: RecordModel }
 
 /**
- * The two passkey login endpoints are called with a raw fetch rather than
- * apiFetch, matching the `ensure-user` and `getMe` calls below. Not a style
- * choice: apiClient.ts imports ensureAuth from this module, so importing it back
- * would close a cycle.
+ * Raw fetch rather than apiFetch, like `ensure-user` and `getMe` below:
+ * apiClient.ts imports ensureAuth from this module, so importing it back would
+ * close a cycle.
  */
 async function postPasskeyPublic<T>(path: string, body: unknown, fallback: string): Promise<T> {
   const response = await fetch(`${pbUrl}${path}`, {
@@ -274,9 +267,9 @@ function beginPasskeyLogin() {
 }
 
 /**
- * Adopts a token minted by the passkey endpoint. pb.authStore.save is what
- * authWithPassword does internally, so the gate, the meCache invalidation and
- * every later request behave identically no matter how the session was created.
+ * pb.authStore.save is what authWithPassword does internally, so the gate, the
+ * meCache invalidation and every later request behave identically however the
+ * session was created.
  */
 async function finishPasskeyLogin(sessionId: string, credential: Credential) {
   const data = await postPasskeyPublic<PasskeyAuthResponse>(
@@ -289,8 +282,8 @@ async function finishPasskeyLogin(sessionId: string, credential: Credential) {
 }
 
 /**
- * Signs in with a discoverable passkey. Usernameless: the authenticator picks the
- * account, so nothing is typed and no email is sent to the server first.
+ * Usernameless: the authenticator picks the account, so nothing is typed and no
+ * email is sent to the server first.
  */
 export async function loginWithPasskey() {
   if (!passkeysSupported()) {
@@ -325,11 +318,9 @@ export type ConditionalPasskeyLogin = {
 
 /**
  * Arms the browser's autofill so a passkey can be offered from the email field.
- *
- * Returns null — silently — when the browser cannot do this or the server will
- * not issue a challenge. A background offer the user never asked for must never
- * put an error on the login screen, so onError fires only for a failure *after*
- * they picked a credential.
+ * Returns null silently when it cannot: a background offer nobody asked for
+ * must not put an error on the login screen, so onError fires only for a
+ * failure after a credential was picked.
  */
 export async function startConditionalPasskeyLogin(handlers: {
   onSuccess: () => void
@@ -369,10 +360,9 @@ export async function startConditionalPasskeyLogin(handlers: {
   return {
     async cancel() {
       controller.abort()
-      // Awaiting is the load-bearing part: a second credentials.get() rejects
-      // while one is still outstanding, and abort() alone does not guarantee the
-      // browser has let go by the time the next call starts. The promise never
-      // rejects — every path above is caught.
+      // Awaiting is load-bearing: a second credentials.get() rejects while one
+      // is outstanding, and abort() alone does not guarantee the browser has
+      // let go. The promise never rejects, every path above is caught.
       await settled
     },
   }

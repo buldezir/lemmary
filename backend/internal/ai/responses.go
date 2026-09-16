@@ -18,21 +18,9 @@ import (
 // Some models are served only by the Responses API: OpenAI's gpt-5 family
 // refuses function tools alongside its server-side reasoning_effort on
 // /chat/completions, and OpenCode routes a quarter of its catalogue there
-// outright. Rather than teach forty call sites a second request shape, the
-// request stays chat-completions-shaped everywhere and is translated here.
-//
-// Everything below converts in one direction and back: ChatCompletionNewParams
-// to ResponseNewParams, and the Response to a *openai.ChatCompletion the
-// existing call sites already know how to read. No caller changes.
-//
-// Which models need it used to be inferred from the shape of a failed request
-// -- a 500 read as "possibly the wrong endpoint", believed on the second
-// occurrence. That existed because OpenCode's per-model routing was invisible
-// from an `openai` provider row; internal/opencode now carries the table, so
-// the guessing is gone and only the translation remains.
+// outright. The request stays chat-completions-shaped everywhere and is
+// translated here and back, so no call site changes.
 
-// CompleteViaResponses runs a chat-completions-shaped request through the
-// Responses API and hands back a chat completion.
 func CompleteViaResponses(
 	ctx context.Context,
 	client openai.Client,
@@ -67,9 +55,8 @@ func CompleteViaResponses(
 }
 
 // responseFailure turns a generation the provider gave up on into an error.
-// The Responses API reports that in the body with a 200, so the SDK hands it
-// back as a success; left alone it would reach the caller as an empty answer,
-// and would count as proof that the endpoint works.
+// The Responses API reports that in the body with a 200, so left alone it would
+// reach the caller as an empty answer.
 func responseFailure(resp *responses.Response) error {
 	if resp == nil {
 		return fmt.Errorf("responses: no response")
@@ -85,9 +72,8 @@ func responseFailure(resp *responses.Response) error {
 	return fmt.Errorf("responses: %s", resp.Status)
 }
 
-// completeStreamingViaResponses is the streaming twin: text deltas arrive as
-// response.output_text.delta events, and the usage totals ride on the final
-// response.completed event.
+// completeStreamingViaResponses: text deltas arrive as
+// response.output_text.delta events, usage on the final response.completed.
 func (c *OpenAIClient) completeStreamingViaResponses(
 	ctx context.Context,
 	params openai.ChatCompletionNewParams,
@@ -112,11 +98,10 @@ func (c *OpenAIClient) completeStreamingViaResponses(
 
 	var b strings.Builder
 	var usage Usage
-	// A stream can fail in-band. ssestream only raises an event as an error
+	// A stream can fail in-band. ssestream raises an event as an error only
 	// when it carries a nested "error" object, and a Responses error event puts
-	// its code and message at the top level instead -- so an exploded
-	// generation arrives here as an ordinary event and, unread, would look like
-	// a short but successful answer.
+	// its code and message at the top level, so an exploded generation would
+	// otherwise look like a short but successful answer.
 	var failed error
 	for stream.Next() {
 		event := stream.Current()
@@ -158,9 +143,8 @@ func streamEventMessage(event responses.ResponseStreamEventUnion) string {
 	return "the provider ended the stream with an error"
 }
 
-// responsesParamsFrom translates a chat completion request into a Responses
-// one. Only the fields this codebase actually sends are carried across; a field
-// nobody sets is a field that cannot silently mistranslate.
+// responsesParamsFrom carries across only the fields this codebase actually
+// sends; a field nobody sets cannot silently mistranslate.
 func responsesParamsFrom(params openai.ChatCompletionNewParams) (responses.ResponseNewParams, error) {
 	input, err := responsesInputFrom(params.Messages)
 	if err != nil {
@@ -169,10 +153,13 @@ func responsesParamsFrom(params openai.ChatCompletionNewParams) (responses.Respo
 	req := responses.ResponseNewParams{
 		Model: shared.ResponsesModel(params.Model),
 		Input: responses.ResponseNewParamsInputUnion{OfInputItemList: input},
-		// The archive keeps its own conversation state and replays the whole
-		// thread every round, so there is nothing to gain from the provider
-		// storing it -- and a stored copy is a copy we did not ask for.
+		// The archive replays the whole thread every round, so a stored copy is a
+		// copy we did not ask for.
 		Store: openai.Bool(false),
+		// The same grouping key /chat/completions carries. A gpt-5 model that
+		// was moved here by a refusal is still the same conversation, and would
+		// otherwise lose the cache on the way across.
+		PromptCacheKey: params.PromptCacheKey,
 	}
 	if params.Temperature.Valid() {
 		req.Temperature = params.Temperature
@@ -209,9 +196,9 @@ func responsesParamsFrom(params openai.ChatCompletionNewParams) (responses.Respo
 }
 
 // responsesInputFrom turns the chat message list into Responses input items.
-// The two shapes disagree about tool calls in particular: chat carries them on
-// the assistant message and answers them with a tool-role message, while
-// Responses makes each one a free-standing item.
+// The two shapes disagree about tool calls: chat carries them on the assistant
+// message and answers with a tool-role message, Responses makes each one a
+// free-standing item.
 func responsesInputFrom(messages []openai.ChatCompletionMessageParamUnion) (responses.ResponseInputParam, error) {
 	input := make(responses.ResponseInputParam, 0, len(messages))
 	for _, msg := range messages {
@@ -247,8 +234,6 @@ func responsesInputFrom(messages []openai.ChatCompletionMessageParamUnion) (resp
 	return input, nil
 }
 
-// responsesUserItem carries a user message across, including the image and file
-// parts LLM OCR sends.
 func responsesUserItem(msg openai.ChatCompletionUserMessageParam) (responses.ResponseInputItemUnionParam, error) {
 	if msg.Content.OfString.Valid() {
 		return responses.ResponseInputItemParamOfMessage(
@@ -283,9 +268,8 @@ func responsesUserItem(msg openai.ChatCompletionUserMessageParam) (responses.Res
 }
 
 // chatCompletionFrom folds a Response back into the one-choice chat completion
-// the call sites read. Reasoning items are dropped: they carry no text we can
-// show, and replaying them would mean threading provider-specific state through
-// every caller.
+// the call sites read. Reasoning items are dropped: replaying them would mean
+// threading provider-specific state through every caller.
 func chatCompletionFrom(resp *responses.Response) *openai.ChatCompletion {
 	if resp == nil {
 		return nil

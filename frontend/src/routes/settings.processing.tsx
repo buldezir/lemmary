@@ -17,8 +17,7 @@ import {
 
 /**
  * None of these is a provider or a model, so a managed tenant keeps them: the
- * environment seeds them on the first boot and never touches them again, in
- * either mode.
+ * environment seeds them on the first boot and never touches them again.
  */
 export function SettingsProcessingPage() {
   const { form, loading, error, success, saving, updateField, save, setError, closeResult } =
@@ -63,11 +62,8 @@ export function SettingsProcessingPage() {
     <form onSubmit={onSubmit}>
       <section className={sectionClassName}>
         <h2 className={sectionTitleClassName}>Processing</h2>
-        {/*
-          Above the timeouts, and in a panel of its own: it is the only setting
-          here that decides where a finished document goes, and it was the
-          easiest to miss at the foot of a two-column grid.
-        */}
+        {/* In a panel of its own: it is the only setting here that decides
+            where a finished document goes. */}
         <div className="mb-4 rounded-xs border border-line-strong bg-bright p-4">
           <label className="flex items-center gap-2.5 text-sm font-medium text-ink">
             <input
