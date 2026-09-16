@@ -480,30 +480,6 @@ export function DocumentDetailPage() {
           <ProcessingStatus summary={summary} />
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-          {document.processing_status === 'needs_review' && !editing && (
-            <Button
-              variant="secondary"
-              disabled={markingReviewed}
-              onClick={() => void onMarkReviewed()}
-            >
-              {markingReviewed ? 'Marking...' : 'Mark reviewed'}
-            </Button>
-          )}
-          <Link
-            to="/document/$documentId/ask"
-            params={{ documentId }}
-            aria-disabled={!hasOcrText}
-            title={
-              hasOcrText ? 'Ask questions about this document' : 'OCR text required before asking AI'
-            }
-            className={`rounded-xs border px-4 py-2 text-sm font-medium transition-colors ${
-              hasOcrText
-                ? 'border-ink bg-ink text-paper hover:bg-oxblood'
-                : 'pointer-events-none border-line bg-paper text-ink-faint'
-            }`}
-          >
-            Ask AI
-          </Link>
           {canPreview && (
             <button
               type="button"
@@ -530,9 +506,6 @@ export function DocumentDetailPage() {
               Open file
             </button>
           )}
-          <Button variant="danger" onClick={() => void onDelete()} disabled={deleting}>
-            {deleting ? 'Deleting...' : 'Delete'}
-          </Button>
           {/* Always offered, job or no job: a document restored from an export
               has no job record, and hiding the panel leaves it with no way to
               be reprocessed. */}
@@ -544,26 +517,57 @@ export function DocumentDetailPage() {
             }
             aria-pressed={jobPanelOpen}
             title={jobPanelOpen ? 'Hide processing job' : 'Show processing job'}
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xs border transition-colors ${
+            className={`flex shrink-0 items-center gap-1.5 rounded-xs border px-4 py-2 text-sm font-medium transition-colors ${
               jobPanelOpen
                 ? 'border-ink bg-ink text-paper hover:bg-oxblood'
-                : 'border-line-strong bg-surface text-ink-soft hover:bg-bright hover:text-ink-muted'
+                : 'border-line-strong bg-surface text-ink-muted hover:bg-bright hover:text-ink'
             }`}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 20 20"
-              fill="currentColor"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
               className="h-4 w-4"
               aria-hidden="true"
             >
-              <path
-                fillRule="evenodd"
-                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z"
-                clipRule="evenodd"
-              />
+              <circle cx="10" cy="10" r="5.3" />
+              <circle cx="10" cy="10" r="1.8" />
+              <path d="M15.30 10.00L17.90 10.00M13.75 13.75L15.59 15.59M10.00 15.30L10.00 17.90M6.25 13.75L4.41 15.59M4.70 10.00L2.10 10.00M6.25 6.25L4.41 4.41M10.00 4.70L10.00 2.10M13.75 6.25L15.59 4.41" />
             </svg>
+            Job
           </button>
+          <Link
+            to="/document/$documentId/ask"
+            params={{ documentId }}
+            aria-disabled={!hasOcrText}
+            title={
+              hasOcrText ? 'Ask questions about this document' : 'OCR text required before asking AI'
+            }
+            className={`rounded-xs border px-4 py-2 text-sm font-medium transition-colors ${
+              hasOcrText
+                ? 'border-ink bg-ink text-paper hover:bg-oxblood'
+                : 'pointer-events-none border-line bg-paper text-ink-faint'
+            }`}
+          >
+            Ask AI
+          </Link>
+          {document.processing_status === 'needs_review' && !editing && (
+            <Button
+              variant="secondary"
+              disabled={markingReviewed}
+              onClick={() => void onMarkReviewed()}
+            >
+              {markingReviewed ? 'Marking...' : 'Mark reviewed'}
+            </Button>
+          )}
+          <div className="ml-1 border-l border-line pl-3">
+            <Button variant="danger" onClick={() => void onDelete()} disabled={deleting}>
+              {deleting ? 'Deleting...' : 'Delete'}
+            </Button>
+          </div>
         </div>
       </div>
 

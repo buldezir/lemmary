@@ -44,11 +44,16 @@ export function ProcessingSteps({
   }
 
   const list = (
-    <ol className="space-y-0.5">
-      {runs.map((run) => {
+    <ol className="flex flex-wrap items-baseline gap-x-1.5 text-xs text-ink-muted">
+      {runs.map((run, index) => {
         const ms = stepDurationMs(run, now)
         return (
-          <li key={run.name} className="flex flex-wrap items-baseline gap-x-2 text-xs text-ink-muted">
+          <li key={run.name} className="flex items-baseline gap-x-1.5">
+            {index > 0 ? (
+              <span aria-hidden className="text-ink-faint">
+                →
+              </span>
+            ) : null}
             <span aria-hidden className={`font-mono ${markerClass(run)}`}>
               {markers[run.status] ?? '·'}
             </span>
@@ -70,14 +75,21 @@ export function ProcessingSteps({
             {run.attempts > 1 ? (
               <span className="text-ink-soft">attempt {run.attempts}</span>
             ) : null}
-            {run.error ? (
-              <span className={`w-full ${run.soft ? 'text-amber-800' : 'text-madder'}`}>{run.error}</span>
-            ) : null}
           </li>
         )
       })}
     </ol>
   )
+
+  // Out of the row: a provider message is a paragraph, and keeping it inline
+  // would break the chain of steps back into a list.
+  const stepErrors = runs
+    .filter((run) => run.error)
+    .map((run) => (
+      <p key={run.name} className={`mt-1 text-xs ${run.soft ? 'text-amber-800' : 'text-madder'}`}>
+        {stepLabel(run.name)}: {run.error}
+      </p>
+    ))
 
   // Only when no step is carrying it: a failure outside any step leaves
   // step_runs untouched and this is the only place its message can appear,
@@ -89,6 +101,7 @@ export function ProcessingSteps({
   const body = (
     <>
       {list}
+      {stepErrors}
       {unattributedError ? (
         <p className="mt-1 text-xs text-madder">{unattributedError}</p>
       ) : null}
