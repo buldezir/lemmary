@@ -5,7 +5,7 @@ import { Button } from '../components/ui'
 import { ChatPanel } from '../components/ChatPanel'
 import { ChatTranscript } from '../components/ChatTranscript'
 import { ChatComposer } from '../components/ChatComposer'
-import { ChatWorkspaceFrame, modeHints } from '../components/ChatWorkspaceFrame'
+import { ChatWorkspaceFrame } from '../components/ChatWorkspaceFrame'
 import { MarkdownContent } from '../components/MarkdownContent'
 import { BindingOverride } from '../components/BindingOverride'
 import { WebSearchToggle } from '../components/WebSearchToggle'
@@ -122,7 +122,6 @@ export function ResearchPage() {
     }
   }, [loadedMode, navigate, ws.sessionId])
 
-  const locked = Boolean(ws.sessionId) || chat.sending
   const inConversation = Boolean(ws.sessionId) || Boolean(chat.session)
   const shownBinding = inConversation ? chatSessionBinding(chat.session) : ws.binding
   // A fork exists to keep a transcript worth keeping, so there is nothing to
@@ -152,9 +151,8 @@ export function ResearchPage() {
 
   return (
     <ChatWorkspaceFrame
-      mode="research"
-      hint={modeHints.research}
-      locked={locked}
+      title="Deep Research"
+      hint="Read the documents and answer, with citations."
       rows={ws.rows}
       sessionId={ws.sessionId}
       sessionsLoading={ws.sessions.loading}

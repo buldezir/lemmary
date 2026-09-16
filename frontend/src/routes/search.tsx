@@ -4,7 +4,7 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { ChatPanel } from '../components/ChatPanel'
 import { ChatTranscript } from '../components/ChatTranscript'
 import { ChatComposer } from '../components/ChatComposer'
-import { ChatWorkspaceFrame, modeHints } from '../components/ChatWorkspaceFrame'
+import { ChatWorkspaceFrame } from '../components/ChatWorkspaceFrame'
 import { BindingOverride } from '../components/BindingOverride'
 import { useChatSession } from '../hooks/useChatSession'
 import { useChatWorkspace } from '../hooks/useChatWorkspace'
@@ -54,9 +54,6 @@ export function SearchPage() {
     })
   }, [loadedMode, navigate, ws.sessionId])
 
-  // Locked from the first turn, including the one in flight, whose request
-  // already carries the mode it was sent under.
-  const locked = Boolean(ws.sessionId) || chat.sending
   const inConversation = Boolean(ws.sessionId) || Boolean(chat.session)
   const shownBinding = inConversation ? chatSessionBinding(chat.session) : ws.binding
 
@@ -72,9 +69,8 @@ export function SearchPage() {
 
   return (
     <ChatWorkspaceFrame
-      mode="search"
-      hint={modeHints.search}
-      locked={locked}
+      title="AI assisted search"
+      hint="Find documents and list them."
       rows={ws.rows}
       sessionId={ws.sessionId}
       sessionsLoading={ws.sessions.loading}

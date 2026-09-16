@@ -45,7 +45,7 @@ describe('nav items', () => {
       'Inbox',
       'Upload',
       'Activity',
-      'Deep Search',
+      'Deep Research',
     ])
   })
 
@@ -56,7 +56,7 @@ describe('nav items', () => {
       'Documents',
       'Upload',
       'Activity',
-      'Deep Search',
+      'Deep Research',
     ])
   })
 
@@ -80,7 +80,7 @@ describe('nav items', () => {
   })
 
   // Only the document list is exact: every other link has children it should
-  // stay lit for (/upload/split, /rag/research, /import/ngx).
+  // stay lit for (/upload/split, /rag/research/<chat>, /import/ngx).
   test('marks only the document list as an exact match', () => {
     const exact = [...primaryNavItems(true), ...secondaryNavItems('/_/')].filter(
       (item) => item.kind === 'route' && item.exact,

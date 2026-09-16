@@ -46,12 +46,20 @@ export function IndexPage() {
           <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">Documents</h2>
           <p className="text-sm text-ink-soft">Upload, search, and review AI-extracted metadata.</p>
         </div>
-        <Link
-          to="/upload"
-          className="rounded-xs bg-ink px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-oxblood"
-        >
-          Upload document
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          <Link
+            to="/rag/search"
+            className="rounded-xs border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-ink transition-colors hover:border-ink hover:bg-bright"
+          >
+            AI assisted search
+          </Link>
+          <Link
+            to="/upload"
+            className="rounded-xs bg-ink px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-oxblood"
+          >
+            Upload document
+          </Link>
+        </div>
       </div>
 
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">

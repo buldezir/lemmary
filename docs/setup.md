@@ -381,10 +381,10 @@ Admins can force a rebuild from **Management → Rebuild search index** (`POST /
 
 ## Deep Search
 
-Deep Search uses a tool-calling agent over the Bleve full-text index, in two modes, one per path under `/rag`:
+Deep Search uses a tool-calling agent over the Bleve full-text index, in two modes, one per path under `/rag`. They are two pages with two ways in: **AI assisted search** sits beside **Upload document** on the document list, and **Deep Research** is the header entry.
 
-- **Search** (`/rag/search`) — one round of `search_documents`, answered from titles, summaries and short OCR snippets. Results are shown as document cards.
-- **Research** (`/rag/research`) — the agent searches, reads the documents it finds (`read_documents`), surveys many at once when the question spans a topic (`survey_documents`), counts when asked how many (`count_documents`), and writes a markdown answer citing each document it used, with the documents it drew on listed under the answer. Progress streams over `POST /api/app/search/stream` (server-sent events), so each search, read, survey and count appears as it happens.
+- **Search** (`/rag/search`, headed *AI assisted search*) — one round of `search_documents`, answered from titles, summaries and short OCR snippets. Results are shown as document cards.
+- **Research** (`/rag/research`, headed *Deep Research*) — the agent searches, reads the documents it finds (`read_documents`), surveys many at once when the question spans a topic (`survey_documents`), counts when asked how many (`count_documents`), and writes a markdown answer citing each document it used, with the documents it drew on listed under the answer. Progress streams over `POST /api/app/search/stream` (server-sent events), so each search, read, survey and count appears as it happens.
 
 Research has no round or document limit. It keeps searching and reading until it can answer, the model stops making progress, or a completion is rejected because the conversation exceeded the model's context window. Without a language-model provider, Deep Search returns a configuration error — see [AI providers and models](/ai_providers).
 
@@ -482,15 +482,15 @@ Models that emit tool calls in their content rather than natively (the DSML
 path) are told to answer after one round of tool results, so they cannot chain a
 count into a survey into a read; they get one tool round and the answer.
 
-Each mode is its own path — `/rag/search` and `/rag/research` — so the mode is carried by the URL and survives a reload, the back button, a bookmark and a shared link. They share the `/rag` parent, which is what lets one navigation entry cover both; `/rag` on its own redirects to Search.
+Each mode is its own path — `/rag/search` and `/rag/research` — so the mode is carried by the URL and survives a reload, the back button, a bookmark and a shared link. `/rag` on its own redirects to Search.
 
-The mode can only be chosen before a chat has a turn. A transcript is a sequence: its answers were produced by one mode, and the next turn replays them to the model as its own prior work, so switching underneath would answer a later question in a way the earlier ones do not support. Once a chat exists the switch shows which mode it is in and stops being a link — starting a new chat is the way to the other one. The server enforces this too: a turn sent under a mode the chat is not in is a 409, and opening `/rag/search/<research-chat>` redirects to the path that matches. A saved chat reopens on the path matching the mode it ran in.
+A chat stays in the mode it started in. A transcript is a sequence: its answers were produced by one mode, and the next turn replays them to the model as its own prior work, so switching underneath would answer a later question in a way the earlier ones do not support. There is no control that switches a chat between them; opening `/rag/search/<research-chat>` redirects to the path that matches, and a turn sent under a mode the chat is not in is a 409. A saved chat reopens on the path matching the mode it ran in.
 
 Configure **Search provider/model**, **Deep Search helper** and **Deep search languages** in [Settings](/ai_providers#binding-models-in-settings).
 
 ## Chat sessions
 
-Deep Search (`/rag/search`, `/rag/research`) and a document's **Ask AI** page (`/document/<id>/ask`) both save their conversations. Each page lists past chats in a sidebar, gives the open one its own URL (`/rag/search/<chatId>`, `/rag/research/<chatId>`, `/document/<id>/ask/<chatId>`), and lets you rename or delete a chat. One sidebar covers both Deep Search modes: a chat is listed whichever mode you are in, and opens on its own mode's path.
+Deep Search (`/rag/search`, `/rag/research`) and a document's **Ask AI** page (`/document/<id>/ask`) both save their conversations. Each page lists past chats in a sidebar, gives the open one its own URL (`/rag/search/<chatId>`, `/rag/research/<chatId>`, `/document/<id>/ask/<chatId>`), and lets you rename or delete a chat. One sidebar covers both Deep Search modes: a chat is listed on either page, and opens on its own mode's path.
 
 The server owns the transcript. A request carries a session id and one new message — `POST /api/app/search` with `{"session_id": "...", "content": "...", "mode": "search|research"}`, `POST /api/app/documents/<id>/chat` with `{"session_id": "...", "content": "..."}` — and the history is read back from the database rather than replayed by the browser. An omitted `session_id` starts a new chat, titled after its first message.
 

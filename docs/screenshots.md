@@ -193,18 +193,19 @@ being ignored.
 
 ## Deep Search
 
-Two modes on two paths. **Search** finds documents and lists them as cards.
+Two modes on two paths. **AI assisted search**, reached from the document
+list, finds documents and lists them as cards.
 
-![Deep Search, empty](./screenshots/deep-search-empty.png)
+![AI assisted search, empty](./screenshots/deep-search-empty.png)
 
-![Deep Search in Search mode](./screenshots/deep-search.png)
+![AI assisted search, with hits](./screenshots/deep-search.png)
 
-**Research** reads what it found, counts and totals across the archive, and
-writes an answer that links to its sources.
+**Deep Research**, the header entry, reads what it found, counts and totals
+across the archive, and writes an answer that links to its sources.
 
-![Deep Search, Research mode empty](./screenshots/deep-search-research-empty.png)
+![Deep Research, empty](./screenshots/deep-search-research-empty.png)
 
-![A cited answer in Research mode](./screenshots/deep-search-research.png)
+![A cited answer in Deep Research](./screenshots/deep-search-research.png)
 
 The steps it took stream in while the run is live and collapse behind a summary
 when it finishes, so a long run stays legible.
