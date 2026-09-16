@@ -41,7 +41,7 @@ export function InboxPage() {
             documents actually waiting for it, so a mixed page cannot mark a
             failed one reviewed. */}
         {!loading && documents.length > 0 && (
-          <DocumentGrid list={list} bulkMode="review" allowDelete statusAccent />
+          <DocumentGrid list={list} bulkMode="review" allowDelete />
         )}
       </div>
     </section>
