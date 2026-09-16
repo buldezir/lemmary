@@ -150,6 +150,7 @@ export function DocumentCard({
                   type="button"
                   aria-label={`Filter by ${tag.name}`}
                   className="relative z-10 pointer-events-auto border border-line px-1.5 py-0.5 text-[11px] text-ink-muted transition-colors hover:border-ink hover:text-ink"
+                  style={{ borderColor: tag.color || undefined }}
                   onClick={() => onFilterTag(tag.id)}
                 >
                   {tag.name}
@@ -158,6 +159,7 @@ export function DocumentCard({
                 <span
                   key={tag.id}
                   className="border border-line px-1.5 py-0.5 text-[11px] text-ink-muted"
+                  style={{ borderColor: tag.color || undefined }}
                 >
                   {tag.name}
                 </span>

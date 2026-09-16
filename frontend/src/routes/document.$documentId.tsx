@@ -915,7 +915,7 @@ function TagField({
   // An id with no name behind it is a tag deleted since the document loaded.
   // Shown as a placeholder rather than dropped, because saving writes
   // `selected`, so a silently missing chip would be written back anyway.
-  const chosen = selected.map((id) => byId.get(id) ?? { id, name: 'Deleted tag' })
+  const chosen: TagRecord[] = selected.map((id) => byId.get(id) ?? { id, name: 'Deleted tag' })
   const available = (vocabulary ?? []).filter((tag) => !selected.includes(tag.id))
 
   return (
@@ -928,6 +928,7 @@ function TagField({
             <li
               key={tag.id}
               className="flex items-center gap-1 rounded-xs border border-line-strong bg-wash px-2 py-1 text-xs font-normal text-ink"
+              style={{ borderColor: tag.color || undefined }}
             >
               {tag.name}
               {editing && (

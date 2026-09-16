@@ -22,6 +22,7 @@ export function TagFilter({
       <span
         key={id}
         className="flex max-w-full items-center gap-1 rounded-xs border border-line-strong bg-wash px-2 py-0.5 text-xs text-ink"
+        style={{ borderColor: byId.get(id)?.color || undefined }}
       >
         <span className="truncate">{name}</span>
         <button
