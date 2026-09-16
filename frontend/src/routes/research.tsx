@@ -14,7 +14,11 @@ import { useChatWorkspace } from '../hooks/useChatWorkspace'
 import { cancelSearchRun, type ResearchEvent } from '../lib/api/ai'
 import { chatSessionBinding, getChatSession } from '../lib/api/chats'
 import { applyStep, type ResearchStep } from '../lib/researchSteps'
-import { formatContextUsage, type ContextUsage } from '../lib/contextUsage'
+import {
+  contextOverflowWarning,
+  formatContextUsage,
+  type ContextUsage,
+} from '../lib/contextUsage'
 
 /**
  * Research: the agent loop, and the page that keeps its conversation. It shows
@@ -128,6 +132,11 @@ export function ResearchPage() {
   // branch before the conversation is saved.
   const canFork = Boolean(ws.sessionId)
 
+  // The last turn that reported one: only a model whose window the catalogue
+  // knows reports it at all, and nothing here knows it before the first answer.
+  const knownUsage = chat.turns.findLast((turn) => turn.usage)?.usage
+  const overflow = chat.sending ? '' : contextOverflowWarning(chat.input, knownUsage)
+
   function startNewChat() {
     ws.setRailOpen(false)
     ws.endRun()
@@ -229,6 +238,11 @@ export function ResearchPage() {
             there rather than the next one. */}
         {chat.unfinished && !chat.sending && (
           <UnfinishedNotice onContinue={continueTurn} disabled={chat.loading || ws.railBusy} />
+        )}
+        {overflow && (
+          <p className="border-t border-line bg-paper px-4 pt-3 text-xs text-amber-800">
+            {overflow}
+          </p>
         )}
         <ChatComposer
           value={chat.input}

@@ -83,10 +83,6 @@ const (
 	// so a rename is not forced into the derived length.
 	MaxTitleColumnRunes = 120
 
-	// MaxUserContentRunes is the largest message the API accepts. Rejected
-	// rather than truncated: silently sending the model half a question is
-	// worse than saying no.
-	MaxUserContentRunes = 8000
 	// MaxMessageRunes bounds the content column. An assistant reply longer
 	// than this is truncated on the way in, never rejected: the alternative is
 	// throwing away an answer the provider was already paid for.

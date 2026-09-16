@@ -409,7 +409,7 @@ The chat list is not paged: one request carries every chat an account can hold, 
 
 Limits:
 
-- A message may be at most 8,000 characters.
+- A message has no length cap of its own; the request body is capped at 2 MB. What a long question costs is the model's context window, and the research composer says so before it is sent when that window is known.
 - The model sees the transcript whole, up to the 500 most recent rows of one read. Nothing else trims it: the provider's context window is the only limit, and a conversation that outgrows it fails with the provider's own error rather than quietly losing its oldest turns. Research turns report what they used — see [AI providers → The model catalogue](/ai_providers#the-model-catalogue).
 - A **research** chat stores more than the conversation. Every turn's tool calls and everything the tools returned are stored as they happen and replayed with the next question, so a follow-up builds on what earlier turns found instead of reading the same documents again — and a run that is cancelled, refused or cut off by a restart keeps the work it had already done. Those rows are the machinery under a turn, not messages: the transcript shows the questions and answers, with the rest folded into the trail beneath them. A turn that never reached an answer says so, and offers to continue. Search and Ask AI store one question and one answer, as before.
 - One run at a time per research chat. A second question asked while one is still working is refused rather than interleaved into the stored conversation.

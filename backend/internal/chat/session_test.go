@@ -272,13 +272,8 @@ func TestDecodeHitsEmptyRecord(t *testing.T) {
 	}
 }
 
-// The column has to hold anything the API accepts, and a derived title has to
-// fit the column a rename also writes to.
+// A derived title has to fit the column a rename also writes to.
 func TestLimitsAreConsistent(t *testing.T) {
-	if chat.MaxUserContentRunes >= chat.MaxMessageRunes {
-		t.Fatalf("MaxUserContentRunes (%d) must fit inside MaxMessageRunes (%d)",
-			chat.MaxUserContentRunes, chat.MaxMessageRunes)
-	}
 	if chat.MaxTitleRunes >= chat.MaxTitleColumnRunes {
 		t.Fatalf("MaxTitleRunes (%d) must fit inside MaxTitleColumnRunes (%d)",
 			chat.MaxTitleRunes, chat.MaxTitleColumnRunes)
