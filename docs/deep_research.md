@@ -44,8 +44,9 @@ it completes. The same holds for the [MCP](/mcp) search, read and count tools.
 - **Meaning (kNN)** over `bleve/chunks`, a second index holding one entry per
   embedded passage with its vector, searched by cosine similarity to the
   embedded question. This half exists only when `AI_EMBEDDING_MODEL` is set and
-  documents have actually been embedded. The model can be a hosted one or [one
-  you run yourself](/local_embeddings).
+  documents have actually been embedded; only completed documents are, so a
+  document still pending or waiting for review takes no place in the vector
+  list. The model can be a hosted one or [one you run yourself](/local_embeddings).
 
 The two lists are fused by reciprocal rank fusion: a document scores the sum of
 `1/(60 + rank)` over the lists it appears in. Only positions are read, never
@@ -108,12 +109,16 @@ affordable, and the first also keeps a narrow one from missing a document.
   **read** then shows it the text of every *yes* and *maybe*: whole when it
   fits 16 KB, else the chunks that best match the question, marked with their
   numbers. What comes back to the research model is only the documents that
-  held something: notes, quotes and the chunk numbers to read. Cost per call is
-  about one kilobyte of helper input per candidate for the screen plus up to
-  16 KB per survivor for the read, in batched calls; a find over a thousand
-  candidates is a handful of screen calls and as many read calls as survivors
-  fill. The progress line shows both passes: *Screened 120 of 400 documents*,
-  then *Read 30 of 41 documents*.
+  held something: notes, quotes and the chunk numbers to read. A survivor the
+  reader gave no answer for — a helper outage, a dropped id — comes back
+  *unverified* rather than vanishing, and the model is told to read it before
+  citing or dismissing it. Candidates are one keyword page, the 500 best
+  matches, plus what the meaning search adds; `max_documents` can only narrow
+  that. Cost per call is about one kilobyte of helper input per candidate for
+  the screen plus up to 16 KB per survivor for the read, in batched calls; a
+  find over five hundred candidates is a handful of screen calls and as many
+  read calls as survivors fill. The progress line shows both passes:
+  *Screened 120 of 400 documents*, then *Read 30 of 41 documents*.
 - **Distilled reads.** When a `read_documents` call would put more than about
   32 KB of text, or more than five documents, into the conversation, the
   documents are read by the **General AI** model instead. The research

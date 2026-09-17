@@ -264,7 +264,12 @@ func (r *agentRetriever) searchChunks(ctx context.Context, ftQuery fulltext.Quer
 		case complete:
 			eligible = ids
 		default:
+			// Vectors of documents the filter excludes still take slots in
+			// the list that is filtered afterwards, so ask for more.
+			// ponytail: a flat 2x; carrying the filter fields on the chunk
+			// index is the upgrade if post-filtered searches come back short.
 			postFilter = true
+			k *= 2
 		}
 	}
 

@@ -283,6 +283,7 @@ func TestCandidatesCoversEveryReasonToReEmbed(t *testing.T) {
 	insertDocument(t, db, "doc-duplicate", "text", func(p dbx.Params) { p["duplicate_of"] = "doc-fresh" })
 	insertDocument(t, db, "doc-processing", "text", func(p dbx.Params) { p["processing_status"] = "processing" })
 	insertDocument(t, db, "doc-pending", "text", func(p dbx.Params) { p["processing_status"] = "pending" })
+	insertDocument(t, db, "doc-unreviewed", "text", func(p dbx.Params) { p["processing_status"] = "needs_review" })
 
 	write := func(id string, mutate func(*State)) {
 		state := sampleState(id)

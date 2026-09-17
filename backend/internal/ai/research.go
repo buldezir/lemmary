@@ -261,6 +261,13 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	// callers that store nothing.
 	if !startsWithSystem(thread) {
 		thread = append([]ThreadMessage{{Role: "system", Content: a.SystemPrompt(req)}}, thread...)
+	} else if legacyResearchPrompt(thread[0].Content) {
+		// A conversation opened before find_documents existed carries a
+		// prompt telling the model to call a tool the list no longer
+		// declares. It is replaced in flight, not in storage: the stored row
+		// still says what that turn was run with, and a caller's own prompt
+		// is left alone.
+		thread = append([]ThreadMessage{{Role: "system", Content: a.SystemPrompt(req)}}, thread[1:]...)
 	}
 	state.question = latestUserMessage(thread)
 	if state.question == "" {
@@ -898,6 +905,12 @@ func latestUserMessage(thread []ThreadMessage) string {
 		}
 	}
 	return ""
+}
+
+// legacyResearchPrompt recognises a system prompt this package generated
+// before find_documents replaced search_documents in the research tool list.
+func legacyResearchPrompt(content string) bool {
+	return strings.Contains(content, "search_documents") && !strings.Contains(content, "find_documents")
 }
 
 func startsWithSystem(thread []ThreadMessage) bool {

@@ -218,7 +218,7 @@ func buildDistillSystemPrompt(fields []SurveyField) string {
 Use only the text you are given. Never add outside knowledge and never guess at what a gap in an excerpt might contain.
 Documents are separated by lines of the form "=== document <id> ===". Answer for every document, by that id.
 
-Return one JSON object: {"documents": [{"id": "...", "relevant": true|false, "notes": "...", "quotes": ["..."], "values": {...}, "missing": ["..."]}]}.
+Return one JSON object: {"documents": [{"id": "...", "relevant": true|false, "notes": "...", "quotes": ["..."], "values": {...}, "missing": ["..."], "chunks": [12, 13]}]}.
 - relevant: whether the document bears on the question at all.
 - notes: what the document says about the question, in your words, at most a few sentences. Empty when not relevant.
 - quotes: up to three short verbatim passages that support the notes, copied exactly from the text.

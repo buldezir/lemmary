@@ -10,6 +10,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/fulltext"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/retrieval"
 	"lemmary/backend/internal/strutil"
@@ -42,9 +43,11 @@ func (r *agentRetriever) find(ctx context.Context, args ai.FindArgs, progress ai
 	if query == "" {
 		return ai.FindResult{}, fmt.Errorf("query is required")
 	}
+	// The keyword leg returns one page of at most MaxSearchLimit hits, so
+	// that is also how many candidates one find can check.
 	limit := args.MaxDocuments
-	if limit <= 0 || limit > ai.MaxSurveyDocuments {
-		limit = ai.MaxSurveyDocuments
+	if limit <= 0 || limit > fulltext.MaxSearchLimit {
+		limit = fulltext.MaxSearchLimit
 	}
 	if progress == nil {
 		progress = func(string, int, int) {}
@@ -144,28 +147,35 @@ func (r *agentRetriever) find(ctx context.Context, args ai.FindArgs, progress ai
 	progress("read", 0, len(docs))
 	rows, _ := r.distillAll(ctx, question, nil, docs, func(done int) { progress("read", done, len(docs)) })
 
+	// A survivor the helper did not answer for is kept unverified, the way a
+	// failed screen keeps its documents: a helper outage must not read as
+	// "nothing found".
 	for _, doc := range docs {
 		row, ok := rows[doc.ID]
-		if !ok || !row.Relevant {
+		if ok && !row.Relevant {
 			continue
 		}
 		hit := hits[doc.ID]
 		hit.Passages = nil
-		if row.Notes != "" {
-			hit.OCRSnippet = strutil.TruncateRunes(row.Notes, maxSnippetLen)
-		}
-		result.Hits = append(result.Hits, hit)
-		result.Documents = append(result.Documents, ai.FindHit{
+		found := ai.FindHit{
 			ID:            doc.ID,
 			Title:         doc.Title,
 			DocumentDate:  doc.DocumentDate,
 			DocumentType:  doc.DocumentType,
 			Correspondent: doc.Correspondent,
-			Notes:         row.Notes,
-			Quotes:        row.Quotes,
-			Chunks:        row.Chunks,
 			ChunkCount:    chunkCounts[doc.ID],
-		})
+		}
+		if ok {
+			found.Notes, found.Quotes, found.Chunks = row.Notes, row.Quotes, row.Chunks
+			if row.Notes != "" {
+				hit.OCRSnippet = strutil.TruncateRunes(row.Notes, maxSnippetLen)
+			}
+		} else {
+			found.Unverified = true
+			result.Failed++
+		}
+		result.Hits = append(result.Hits, hit)
+		result.Documents = append(result.Documents, found)
 	}
 
 	r.app.Logger().Info("deep search find",

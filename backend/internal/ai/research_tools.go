@@ -97,14 +97,19 @@ type FindHit struct {
 	Quotes        []string `json:"quotes,omitempty"`
 	Chunks        []int    `json:"chunks,omitempty"`
 	ChunkCount    int      `json:"chunk_count,omitempty"`
+	// Unverified marks a document the screen kept but the reader did not
+	// answer for: it may bear on the question and has to be read to know.
+	Unverified bool `json:"unverified,omitempty"`
 }
 
 type FindResult struct {
 	// Candidates is how many the search matched, Screened how many the
-	// helper judged from metadata, Read how many it then read.
+	// helper judged from metadata, Read how many it then read, Failed how
+	// many of those it gave no answer for.
 	Candidates int
 	Screened   int
 	Read       int
+	Failed     int
 	Documents  []FindHit
 	// Hits are the same documents as search hits, for the run's result list.
 	Hits []DocumentHit
@@ -204,6 +209,9 @@ const (
 	// conversation.
 	DefaultSurveyDocuments = 300
 	MaxSurveyDocuments     = 1000
+	// MaxFindDocuments is one keyword page: what the index returns for one
+	// query, and so the most candidates one find can check.
+	MaxFindDocuments = 500
 )
 
 // ValidGroupBy is the accepted group_by set, in the order the tool lists it.
@@ -293,7 +301,7 @@ func findDocumentsTool() openai.ChatCompletionToolUnionParam {
 				},
 				"max_documents": map[string]any{
 					"type":        "integer",
-					"description": fmt.Sprintf("Only to narrow: every candidate is checked by default, up to %d. Narrow the filters instead when the selection is large.", MaxSurveyDocuments),
+					"description": "Only to narrow: every candidate is checked by default, up to the 500 best keyword matches plus the meaning matches. Narrow the filters instead when the selection is large.",
 				},
 			},
 			"required": []string{"query"},
@@ -346,8 +354,8 @@ func (a *openAISearchAgent) runFindTool(
 	if args.Question == "" {
 		args.Question = strutilFirstNonEmpty(state.question, args.Query)
 	}
-	if args.MaxDocuments <= 0 || args.MaxDocuments > MaxSurveyDocuments {
-		args.MaxDocuments = MaxSurveyDocuments
+	if args.MaxDocuments <= 0 || args.MaxDocuments > MaxFindDocuments {
+		args.MaxDocuments = MaxFindDocuments
 	}
 	if repeat, ok := state.claimCall(name, args); !ok {
 		return toolExecResult{ID: callID, Name: name, Content: repeat}, false
@@ -391,6 +399,10 @@ func (a *openAISearchAgent) runFindTool(
 		"screened":   result.Screened,
 		"read":       result.Read,
 		"documents":  result.Documents,
+	}
+	if result.Failed > 0 {
+		payload["read_failed"] = result.Failed
+		payload["hint"] = "the reader gave no answer for some documents; they are listed as unverified and have to be read with read_chunks or read_documents before being cited or dismissed"
 	}
 	if len(result.Unresolved) > 0 {
 		payload["unresolved_filters"] = result.Unresolved

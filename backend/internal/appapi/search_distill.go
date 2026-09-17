@@ -90,8 +90,12 @@ func (r *agentRetriever) distillDocuments(ctx context.Context, question string, 
 		doc.Notes = row.Notes
 		doc.Quotes = row.Quotes
 		doc.Values = row.Values
-		doc.Chunks = row.Chunks
-		doc.ChunkCount = chunkCounts[doc.ID]
+		// Only text the helper saw with markers yields chunk numbers; on an
+		// offset-marked excerpt any integers it wrote point at nothing.
+		if count, marked := chunkCounts[doc.ID]; marked {
+			doc.Chunks = row.Chunks
+			doc.ChunkCount = count
+		}
 		out = append(out, doc)
 	}
 	return out

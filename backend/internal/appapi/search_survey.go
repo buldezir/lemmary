@@ -109,8 +109,9 @@ func (r *agentRetriever) survey(ctx context.Context, args ai.SurveyArgs, progres
 			Relevant:     row.Relevant,
 			Values:       row.Values,
 			Missing:      row.Missing,
-			Chunks:       row.Chunks,
-			ChunkCount:   chunkCounts[doc.ID],
+		}
+		if count, marked := chunkCounts[doc.ID]; marked {
+			out.Chunks, out.ChunkCount = row.Chunks, count
 		}
 		if row.Relevant {
 			out.Notes = row.Notes

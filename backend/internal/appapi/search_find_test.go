@@ -79,8 +79,13 @@ func TestFindDropsIrrelevantReadsAndReportsUnresolvedFilters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find: %v", err)
 	}
-	if result.Read != 2 || len(result.Documents) != 1 || result.Documents[0].ID != "lexical" {
-		t.Fatalf("a document the reader did not answer for is not found: %+v", result)
+	if result.Read != 2 || result.Failed != 1 || len(result.Documents) != 2 {
+		t.Fatalf("a document the reader did not answer for stays, unverified: %+v", result)
+	}
+	for _, doc := range result.Documents {
+		if doc.Unverified != (doc.ID == "dense") {
+			t.Fatalf("only the skipped document is unverified: %+v", doc)
+		}
 	}
 
 	result, err = r.find(context.Background(), ai.FindArgs{Query: "premium", Tags: []string{"nonexistent"}}, nil)
@@ -188,6 +193,55 @@ func TestDistilledReadsCarryTheHelpersChunks(t *testing.T) {
 		}
 		if doc.ID == "a" && (len(doc.Chunks) != 1 || doc.ChunkCount != 1) {
 			t.Fatalf("distilled content should carry the chunk pointers: %+v", doc)
+		}
+	}
+}
+
+// The read pass failing is the screen pass failing's twin: a helper outage
+// keeps the survivors, marked unverified, rather than reporting nothing found.
+func TestFindKeepsSurvivorsUnverifiedWhenTheReadFails(t *testing.T) {
+	r := hybridRetriever(t, nil)
+	r.helper = &fakeHelper{fail: true}
+	result, err := r.find(context.Background(), ai.FindArgs{Query: "insurance premium"}, nil)
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if result.Read != 2 || result.Failed != 2 || len(result.Documents) != 2 || len(result.Hits) != 2 {
+		t.Fatalf("a failed read must keep every survivor: %+v", result)
+	}
+	for _, doc := range result.Documents {
+		if !doc.Unverified || doc.Notes != "" || len(doc.Chunks) != 0 {
+			t.Fatalf("an unread survivor is unverified and carries no findings: %+v", doc)
+		}
+	}
+}
+
+// An excerpt the helper saw with offset markers yields no chunk numbers: the
+// integers it might write would point at the wrong bytes.
+func TestExcerptedHelperInputCarriesNoChunkPointers(t *testing.T) {
+	huge := strings.Repeat(lexicalText+"\n", helperInputBytes/len(lexicalText)+2)
+	helper := &fakeHelper{chunks: map[string][]int{"big": {3}, "lexical": {3}}}
+
+	r := &agentRetriever{app: distillApp(map[string]string{"big": huge}), userID: "me", helper: helper}
+	docs, err := r.read(context.Background(), ai.ReadRequest{IDs: []string{"big"}, Question: "premium"})
+	if err != nil || len(docs) != 1 || !docs[0].Distilled {
+		t.Fatalf("read: %v %+v", err, docs)
+	}
+	if len(docs[0].Chunks) != 0 || docs[0].ChunkCount != 0 {
+		t.Fatalf("a distilled excerpt must not carry chunk pointers: %+v", docs[0])
+	}
+
+	hr := hybridRetriever(t, nil)
+	hr.app.(stubRetrieverApp).recs["lexical"] = readableDocument("lexical", "u1", "Insurance letter", huge)
+	hr.chunks = nil
+	hr.helper = helper
+	result, err := hr.survey(context.Background(), ai.SurveyArgs{Query: "insurance premium", Question: "premium?"}, nil)
+	if err != nil {
+		t.Fatalf("survey: %v", err)
+	}
+	for _, row := range result.Rows {
+		if row.ID == "lexical" && (len(row.Chunks) != 0 || row.ChunkCount != 0) {
+			t.Fatalf("a surveyed excerpt must not carry chunk pointers: %+v", row)
 		}
 	}
 }

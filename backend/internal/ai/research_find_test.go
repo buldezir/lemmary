@@ -68,7 +68,7 @@ func TestFindToolVerifiesThroughTheFinderAndRegistersItsDocuments(t *testing.T) 
 		t.Fatalf("Research: %v", err)
 	}
 
-	if got.Query != "leak insurer" || got.Question != "what did the insurer write about the leak" || len(got.Tags) != 1 || got.MaxDocuments != MaxSurveyDocuments {
+	if got.Query != "leak insurer" || got.Question != "what did the insurer write about the leak" || len(got.Tags) != 1 || got.MaxDocuments != MaxFindDocuments {
 		t.Fatalf("finder args = %+v", got)
 	}
 	if len(read.IDs) != 1 || read.IDs[0] != "doc1" || len(read.Chunks) != 2 || read.Chunks[0] != 3 || read.Chunks[1] != 4 || read.Full {
@@ -269,5 +269,40 @@ func TestScreenPromptAndVerdictsAreLenient(t *testing.T) {
 	}
 	if got["a"] != VerdictYes || got["b"] != VerdictMaybe || got["c"] != VerdictNo || len(got) != 3 {
 		t.Fatalf("verdicts = %v", got)
+	}
+}
+
+// A conversation stored before find_documents existed opens on a prompt that
+// names search_documents. That prompt is swapped in flight for the current one
+// so the model is never told to call a tool it is not offered; a caller's own
+// prompt, which names neither, stays as stored.
+func TestLegacyResearchPromptIsRefreshedInFlight(t *testing.T) {
+	t.Parallel()
+	h, agent := newResearchAgent(t, scriptedTurn{content: "ready"}, scriptedTurn{content: "done"})
+	var recorded []ThreadMessage
+	if _, err := agent.Research(context.Background(), ResearchRequest{
+		Thread: []ThreadMessage{
+			{Role: "system", Content: "Use the search_documents tool to look up documents."},
+			{Role: "user", Content: "q"},
+		},
+		Record: func(msg ThreadMessage) { recorded = append(recorded, msg) },
+		Search: func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
+		Read:   func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil },
+	}, nil); err != nil {
+		t.Fatalf("Research: %v", err)
+	}
+	sent, _ := h.request(0)["messages"].([]any)
+	first, _ := sent[0].(map[string]any)
+	content, _ := first["content"].(string)
+	if !strings.Contains(content, "find_documents") || strings.Contains(content, "Use the search_documents tool") {
+		t.Fatalf("legacy prompt was not refreshed: %q", content)
+	}
+	for _, msg := range recorded {
+		if msg.Role == "system" {
+			t.Fatal("the refreshed prompt must not be written to storage")
+		}
+	}
+	if legacyResearchPrompt("you are researching the archive") {
+		t.Fatal("a caller's own prompt is not legacy")
 	}
 }
