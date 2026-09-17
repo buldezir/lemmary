@@ -7,81 +7,28 @@ import (
 	"lemmary/backend/internal/aiprovider"
 )
 
-func TestApplyBindingFallbacksChainsExtractToChatToSearch(t *testing.T) {
-	cfg := Config{
-		ExtractProviderID: "provider-extract",
-		ExtractModel:      "extract-model",
+// The stored fields stay as written, so Settings can show an empty research
+// binding; the fallback lives in the accessor the research loop reads.
+func TestResearchBindingFallsBackToGeneral(t *testing.T) {
+	general := Config{ExtractProviderID: "provider-extract", ExtractModel: "extract-model"}
+	if id, model := general.ResearchBinding(); id != "provider-extract" || model != "extract-model" {
+		t.Fatalf("research should fall back to the general model, got %q/%q", id, model)
+	}
+	if general.ResearchProviderID != "" || general.ResearchModel != "" {
+		t.Fatal("the stored research binding must stay empty")
 	}
 
-	applyBindingFallbacks(&cfg)
-
-	if cfg.ChatProviderID != "provider-extract" || cfg.ChatModel != "extract-model" {
-		t.Fatalf("chat should fall back to extract, got %q/%q", cfg.ChatProviderID, cfg.ChatModel)
-	}
-	if cfg.SearchProviderID != "provider-extract" || cfg.SearchModel != "extract-model" {
-		t.Fatalf("search should fall back through chat, got %q/%q", cfg.SearchProviderID, cfg.SearchModel)
-	}
-	if cfg.SearchHelperProviderID != "provider-extract" || cfg.SearchHelperModel != "extract-model" {
-		t.Fatalf("search helper should fall back through search, got %q/%q", cfg.SearchHelperProviderID, cfg.SearchHelperModel)
-	}
-}
-
-func TestApplyBindingFallbacksHelperFollowsSearch(t *testing.T) {
-	cfg := Config{
-		ExtractProviderID: "provider-extract",
-		ExtractModel:      "extract-model",
-		SearchProviderID:  "provider-search",
-		SearchModel:       "search-model",
-	}
-	applyBindingFallbacks(&cfg)
-	if cfg.SearchHelperProviderID != "provider-search" || cfg.SearchHelperModel != "search-model" {
-		t.Fatalf("helper should inherit search, got %q/%q", cfg.SearchHelperProviderID, cfg.SearchHelperModel)
+	explicit := general
+	explicit.ResearchProviderID, explicit.ResearchModel = "provider-research", "research-model"
+	if id, model := explicit.ResearchBinding(); id != "provider-research" || model != "research-model" {
+		t.Fatalf("explicit research binding was not used: %q/%q", id, model)
 	}
 
-	explicit := Config{
-		ExtractProviderID:      "provider-extract",
-		ExtractModel:           "extract-model",
-		SearchHelperProviderID: "provider-helper",
-		SearchHelperModel:      "helper-model",
-	}
-	applyBindingFallbacks(&explicit)
-	if explicit.SearchHelperProviderID != "provider-helper" || explicit.SearchHelperModel != "helper-model" {
-		t.Fatalf("explicit helper binding was overwritten: %q/%q", explicit.SearchHelperProviderID, explicit.SearchHelperModel)
-	}
-}
-
-func TestApplyBindingFallbacksKeepsExplicitValues(t *testing.T) {
-	cfg := Config{
-		ExtractProviderID: "provider-extract",
-		ExtractModel:      "extract-model",
-		ChatProviderID:    "provider-chat",
-		ChatModel:         "chat-model",
-		SearchProviderID:  "provider-search",
-		SearchModel:       "search-model",
-	}
-
-	applyBindingFallbacks(&cfg)
-
-	if cfg.ChatProviderID != "provider-chat" || cfg.ChatModel != "chat-model" {
-		t.Fatalf("explicit chat binding was overwritten: %q/%q", cfg.ChatProviderID, cfg.ChatModel)
-	}
-	if cfg.SearchProviderID != "provider-search" || cfg.SearchModel != "search-model" {
-		t.Fatalf("explicit search binding was overwritten: %q/%q", cfg.SearchProviderID, cfg.SearchModel)
-	}
-}
-
-func TestApplyBindingFallbacksSearchPrefersChat(t *testing.T) {
-	cfg := Config{
-		ExtractProviderID: "provider-extract",
-		ExtractModel:      "extract-model",
-		ChatProviderID:    "provider-chat",
-		ChatModel:         "chat-model",
-	}
-
-	applyBindingFallbacks(&cfg)
-
-	if cfg.SearchProviderID != "provider-chat" || cfg.SearchModel != "chat-model" {
-		t.Fatalf("search should inherit chat, got %q/%q", cfg.SearchProviderID, cfg.SearchModel)
+	// Half a binding is no binding: a provider with no model cannot be called.
+	half := general
+	half.ResearchProviderID = "provider-research"
+	if id, model := half.ResearchBinding(); id != "provider-extract" || model != "extract-model" {
+		t.Fatalf("a half-set research binding should fall back, got %q/%q", id, model)
 	}
 }
 
@@ -116,9 +63,6 @@ func TestHasLLM(t *testing.T) {
 	}
 	if !HasLLM(Config{ExtractProvider: openAI}) {
 		t.Fatal("expected an OpenAI extract provider to count")
-	}
-	if !HasLLM(Config{ChatProvider: openAI}) {
-		t.Fatal("expected the chat provider to be used as a fallback")
 	}
 }
 
@@ -211,8 +155,8 @@ func TestDefaultsShareOneModel(t *testing.T) {
 	}
 	cfg := env.Defaults()
 
-	if cfg.ExtractModel != "base-model" || cfg.ChatModel != "base-model" || cfg.SearchModel != "base-model" {
-		t.Fatalf("models=%q/%q/%q", cfg.ExtractModel, cfg.ChatModel, cfg.SearchModel)
+	if cfg.ExtractModel != "base-model" || cfg.ResearchModel != "" {
+		t.Fatalf("models=%q/%q", cfg.ExtractModel, cfg.ResearchModel)
 	}
 	if cfg.OCRModel != "base-model" {
 		t.Fatalf("ocr model=%q", cfg.OCRModel)

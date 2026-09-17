@@ -100,18 +100,13 @@ func handlePickableProviders(app core.App, rt *config.Runtime, fallback aiprovid
 	}
 }
 
-// preferredBinding takes name to break the tie the capability cannot: chat,
-// search and extraction are all language models, and telling Deep Search that
-// the chat model answers it would be wrong wherever the two were bound
-// separately. Unnamed, the LLM purpose answers with chat.
+// preferredBinding takes name to break the tie the capability cannot: research
+// and the general model are both language models, and telling Deep Research
+// that the general model answers it would be wrong wherever the two were bound
+// separately. Unnamed, the LLM purpose answers with the general model.
 func preferredBinding(cfg config.Config, purpose aiprovider.ModelPurpose, name string) (providerID, model string) {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "search":
-		return cfg.SearchProviderID, cfg.SearchModel
-	case "extract":
-		return cfg.ExtractProviderID, cfg.ExtractModel
-	case "chat":
-		return cfg.ChatProviderID, cfg.ChatModel
+	if strings.EqualFold(strings.TrimSpace(name), "research") {
+		return cfg.ResearchBinding()
 	}
 	switch purpose {
 	case aiprovider.PurposeOCR:
@@ -119,7 +114,7 @@ func preferredBinding(cfg config.Config, purpose aiprovider.ModelPurpose, name s
 	case aiprovider.PurposeEmbedding:
 		return cfg.EmbeddingProviderID, cfg.EmbeddingModel
 	default:
-		return cfg.ChatProviderID, cfg.ChatModel
+		return cfg.ExtractProviderID, cfg.ExtractModel
 	}
 }
 

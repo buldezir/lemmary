@@ -18,6 +18,8 @@ func settingsRecordForTest(t *testing.T) *core.Record {
 		&core.TextField{Name: "ocr_model", Max: 200},
 		&core.TextField{Name: "extract_provider_id", Max: 15},
 		&core.TextField{Name: "extract_model", Max: 200},
+		&core.TextField{Name: "research_provider_id", Max: 15},
+		&core.TextField{Name: "research_model", Max: 200},
 		&core.TextField{Name: "embedding_provider_id", Max: 15},
 		&core.TextField{Name: "embedding_model", Max: 200},
 		&core.NumberField{Name: "embedding_dims", OnlyInt: true},
@@ -112,6 +114,50 @@ func TestTouchesManagedCoversTheEmbeddingBinding(t *testing.T) {
 	// The tenant-owned fields still are not.
 	if (settingsPatchRequest{WorkerMaxRetries: new(int)}).touchesManaged() {
 		t.Fatal("worker_max_retries is tenant-owned")
+	}
+}
+
+// Research is the one LLM binding that may be empty: empty means the general
+// model does that work too. The general one cannot be, since everything else
+// runs on it.
+func TestPatchResearchBindingMayBeEmptyAndIsManaged(t *testing.T) {
+	t.Parallel()
+	record := settingsRecordForTest(t)
+	record.Set("extract_provider_id", "provider1")
+	record.Set("extract_model", "small-model")
+
+	err := applySettingsPatch(nil, record, settingsPatchRequest{
+		ResearchProviderID: strptr(""),
+		ResearchModel:      strptr(" big-model "),
+	})
+	if err != nil {
+		t.Fatalf("applySettingsPatch: %v", err)
+	}
+	if record.GetString("research_provider_id") != "" || record.GetString("research_model") != "big-model" {
+		t.Fatalf("research binding = %v / %v", record.Get("research_provider_id"), record.Get("research_model"))
+	}
+
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{ExtractModel: strptr("")}); err == nil {
+		t.Fatal("an empty general model must be refused")
+	}
+	// A provider with no model would read as bound and quietly run research on
+	// the general model. validateProviderID is skipped by a nil app only for an
+	// empty id, so the provider is set on the record directly.
+	record.Set("research_provider_id", "provider1")
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{ResearchModel: strptr("")}); err == nil {
+		t.Fatal("a research provider without a model must be refused")
+	}
+
+	if !(settingsPatchRequest{ResearchProviderID: strptr("provider1")}).touchesManaged() {
+		t.Fatal("research_provider_id must count as managed")
+	}
+	if !(settingsPatchRequest{ResearchModel: strptr("m")}).touchesManaged() {
+		t.Fatal("research_model must count as managed")
+	}
+
+	got := settingsResponseFromConfig(config.Config{ResearchProviderID: "provider1", ResearchModel: "big-model"})
+	if got.ResearchProviderID != "provider1" || got.ResearchModel != "big-model" {
+		t.Fatalf("response = %+v", got)
 	}
 }
 

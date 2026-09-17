@@ -127,12 +127,41 @@ func TestSharesEmbeddingProvider(t *testing.T) {
 func settingsRecordForTest() *core.Record {
 	collection := core.NewBaseCollection("app_settings")
 	collection.Fields.Add(
+		&core.TextField{Name: "research_provider_id", Max: 15},
+		&core.TextField{Name: "research_model", Max: 200},
 		&core.TextField{Name: "embedding_provider_id", Max: 15},
 		&core.TextField{Name: "embedding_model", Max: 200},
 		&core.NumberField{Name: "embedding_dims", OnlyInt: true},
 		&core.TextField{Name: "websearch_provider_id", Max: 15},
 	)
 	return core.NewRecord(collection)
+}
+
+// Removing AI_RESEARCH_MODEL from a managed instance has to put Deep Research
+// back on the general model, not leave the previous binding standing.
+func TestBindResearchClearsWhenTheModelIsRemoved(t *testing.T) {
+	t.Parallel()
+	record := settingsRecordForTest()
+
+	bindResearch(record, "provider1", " big-model ")
+	if record.GetString("research_provider_id") != "provider1" || record.GetString("research_model") != "big-model" {
+		t.Fatalf("binding = %v / %v", record.Get("research_provider_id"), record.Get("research_model"))
+	}
+
+	bindResearch(record, "provider1", "")
+	if record.GetString("research_provider_id") != "" || record.GetString("research_model") != "" {
+		t.Fatalf("binding survived removal: %v / %v", record.Get("research_provider_id"), record.Get("research_model"))
+	}
+}
+
+func TestReferencedBySettingsCoversTheResearchBinding(t *testing.T) {
+	t.Parallel()
+	record := settingsRecordForTest()
+	record.Set("research_provider_id", "provider1")
+
+	if !ReferencedBySettings(record, "provider1") {
+		t.Fatal("a provider bound to research should count as referenced")
+	}
 }
 
 // The dimension count is learned from the provider's first answer, so it resets

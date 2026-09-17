@@ -66,9 +66,9 @@ const (
 	EnvAIEmbeddingAPIKey  = "AI_EMBEDDING_API_KEY"
 	EnvAIEmbeddingBaseURL = "AI_EMBEDDING_BASE_URL"
 
-	// EnvAISearchHelperModel names the model on the AI_SDK provider that Deep
-	// Search hands bulk per-document work to. Empty falls back to the search model.
-	EnvAISearchHelperModel = "AI_SEARCH_HELPER_MODEL"
+	// EnvAIResearchModel names the model on the AI_SDK provider that drives the
+	// Deep Research reasoning loop. Empty falls back to AI_MODEL.
+	EnvAIResearchModel = "AI_RESEARCH_MODEL"
 
 	// The web-search block seeds the provider backing web_search and web_fetch.
 	// Unset means no web call is served. Its own SDK always: no SDK that chats
@@ -169,7 +169,7 @@ func parseLLM() (aiprovider.ProviderSpec, error) {
 		BaseURL:        baseURL,
 		Model:          strings.TrimSpace(getEnv(EnvAIModel, aiprovider.DefaultExtractModel)),
 		EmbeddingModel: strings.TrimSpace(os.Getenv(EnvAIEmbeddingModel)),
-		HelperModel:    strings.TrimSpace(os.Getenv(EnvAISearchHelperModel)),
+		ResearchModel:  strings.TrimSpace(os.Getenv(EnvAIResearchModel)),
 	}
 	return spec, nil
 }
@@ -378,9 +378,7 @@ func (e AIEnv) Defaults() Config {
 	return Config{
 		OCRModel:                      e.Providers.OCRModel(),
 		ExtractModel:                  e.Providers.LLM.Model,
-		ChatModel:                     e.Providers.LLM.Model,
-		SearchModel:                   e.Providers.LLM.Model,
-		SearchHelperModel:             e.Providers.LLM.HelperModel,
+		ResearchModel:                 e.Providers.LLM.ResearchModel,
 		EmbeddingModel:                e.Providers.LLM.EmbeddingModel,
 		OCRTimeout:                    e.OCRTimeout,
 		DeepSearchLanguages:           e.DeepSearchLanguages,

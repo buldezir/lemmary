@@ -22,21 +22,18 @@ const (
 )
 
 type Config struct {
-	OCRProviderID     string
-	OCRModel          string
+	OCRProviderID string
+	OCRModel      string
+	// ExtractProviderID/ExtractModel is the general model: extraction, split
+	// detection, Ask AI, AI search, and Deep Research's bulk per-document reads.
 	ExtractProviderID string
 	ExtractModel      string
-	ChatProviderID    string
-	ChatModel         string
-	SearchProviderID  string
-	SearchModel       string
 
-	// SearchHelperProviderID/SearchHelperModel bind the model Deep Search sends
-	// bulk per-document work to. Many cheap calls rather than a few expensive ones,
-	// so a smaller model than the search agent's is usually right. Unset falls
-	// back to the search binding.
-	SearchHelperProviderID string
-	SearchHelperModel      string
+	// ResearchProviderID/ResearchModel bind the model that drives the Deep
+	// Research reasoning loop: a few expensive calls where everything else is
+	// many cheap ones. Unset falls back to the general binding.
+	ResearchProviderID string
+	ResearchModel      string
 
 	// EmbeddingProviderID/EmbeddingModel bind the retrieval embedding model. Unset
 	// means dense retrieval is off and the archive is searched by keywords alone,
@@ -53,13 +50,10 @@ type Config struct {
 	// behaviour. No model: a web-search API has none.
 	WebSearchProviderID string
 
-	OCRProvider          *aiprovider.Provider
-	ExtractProvider      *aiprovider.Provider
-	ChatProvider         *aiprovider.Provider
-	SearchProvider       *aiprovider.Provider
-	SearchHelperProvider *aiprovider.Provider
-	EmbeddingProvider    *aiprovider.Provider
-	WebSearchProvider    *aiprovider.Provider
+	OCRProvider       *aiprovider.Provider
+	ExtractProvider   *aiprovider.Provider
+	EmbeddingProvider *aiprovider.Provider
+	WebSearchProvider *aiprovider.Provider
 
 	OCRTimeout               time.Duration
 	ProcessingResultLanguage string
@@ -235,12 +229,8 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 		OCRModel:                      strings.TrimSpace(record.GetString("ocr_model")),
 		ExtractProviderID:             strings.TrimSpace(record.GetString("extract_provider_id")),
 		ExtractModel:                  strings.TrimSpace(record.GetString("extract_model")),
-		ChatProviderID:                strings.TrimSpace(record.GetString("chat_provider_id")),
-		ChatModel:                     strings.TrimSpace(record.GetString("chat_model")),
-		SearchProviderID:              strings.TrimSpace(record.GetString("search_provider_id")),
-		SearchModel:                   strings.TrimSpace(record.GetString("search_model")),
-		SearchHelperProviderID:        strings.TrimSpace(record.GetString("search_helper_provider_id")),
-		SearchHelperModel:             strings.TrimSpace(record.GetString("search_helper_model")),
+		ResearchProviderID:            strings.TrimSpace(record.GetString("research_provider_id")),
+		ResearchModel:                 strings.TrimSpace(record.GetString("research_model")),
 		EmbeddingProviderID:           strings.TrimSpace(record.GetString("embedding_provider_id")),
 		EmbeddingModel:                strings.TrimSpace(record.GetString("embedding_model")),
 		EmbeddingDims:                 max(int(record.GetFloat("embedding_dims")), 0),
@@ -265,44 +255,26 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 	return cfg, nil
 }
 
-// chat falls back to extract, search to the resolved chat binding, and the
-// search helper to the resolved search binding. Embeddings are deliberately
-// not in the chain: an embedding endpoint cannot be guessed from a language
-// model, and a wrong guess would spend money on the whole archive before
-// failing. Unset means off.
-func applyBindingFallbacks(cfg *Config) {
-	if cfg.ChatProviderID == "" {
-		cfg.ChatProviderID = cfg.ExtractProviderID
+// ResearchBinding is the pair the Deep Research loop runs on: the research
+// binding when both halves are set, else the general one. Resolved on the way
+// out rather than into the stored fields, so Settings shows an empty research
+// binding as empty. Embeddings have no such fallback: an embedding endpoint
+// cannot be guessed from a language model, and a wrong guess would spend money
+// on the whole archive before failing. Unset means off.
+func (c Config) ResearchBinding() (providerID, model string) {
+	if c.ResearchProviderID != "" && c.ResearchModel != "" {
+		return c.ResearchProviderID, c.ResearchModel
 	}
-	if cfg.ChatModel == "" {
-		cfg.ChatModel = cfg.ExtractModel
-	}
-	if cfg.SearchProviderID == "" {
-		cfg.SearchProviderID = cfg.ChatProviderID
-	}
-	if cfg.SearchModel == "" {
-		cfg.SearchModel = cfg.ChatModel
-	}
-	if cfg.SearchHelperProviderID == "" {
-		cfg.SearchHelperProviderID = cfg.SearchProviderID
-	}
-	if cfg.SearchHelperModel == "" {
-		cfg.SearchHelperModel = cfg.SearchModel
-	}
+	return c.ExtractProviderID, c.ExtractModel
 }
 
 func resolveProviders(app core.App, cfg *Config) error {
-	applyBindingFallbacks(cfg)
-
 	for _, binding := range []struct {
 		id     string
 		target **aiprovider.Provider
 	}{
 		{cfg.OCRProviderID, &cfg.OCRProvider},
 		{cfg.ExtractProviderID, &cfg.ExtractProvider},
-		{cfg.ChatProviderID, &cfg.ChatProvider},
-		{cfg.SearchProviderID, &cfg.SearchProvider},
-		{cfg.SearchHelperProviderID, &cfg.SearchHelperProvider},
 		{cfg.EmbeddingProviderID, &cfg.EmbeddingProvider},
 		{cfg.WebSearchProviderID, &cfg.WebSearchProvider},
 	} {
@@ -331,12 +303,8 @@ func applyConfigToRecord(record *core.Record, cfg Config) {
 	record.Set("ocr_model", cfg.OCRModel)
 	record.Set("extract_provider_id", cfg.ExtractProviderID)
 	record.Set("extract_model", cfg.ExtractModel)
-	record.Set("chat_provider_id", cfg.ChatProviderID)
-	record.Set("chat_model", cfg.ChatModel)
-	record.Set("search_provider_id", cfg.SearchProviderID)
-	record.Set("search_model", cfg.SearchModel)
-	record.Set("search_helper_provider_id", cfg.SearchHelperProviderID)
-	record.Set("search_helper_model", cfg.SearchHelperModel)
+	record.Set("research_provider_id", cfg.ResearchProviderID)
+	record.Set("research_model", cfg.ResearchModel)
 	record.Set("embedding_provider_id", cfg.EmbeddingProviderID)
 	record.Set("embedding_model", cfg.EmbeddingModel)
 	record.Set("embedding_dims", max(cfg.EmbeddingDims, 0))
@@ -440,9 +408,6 @@ func NormalizeLanguageList(raw string) string {
 // instance stuck on the wizard with a working provider in front of it.
 func HasLLM(cfg Config) bool {
 	p := cfg.ExtractProvider
-	if p == nil {
-		p = cfg.ChatProvider
-	}
 	return p != nil && p.Configured() && aiprovider.IsLLM(p.SDK)
 }
 

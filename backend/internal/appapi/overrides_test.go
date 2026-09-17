@@ -76,10 +76,8 @@ func TestPreferredBinding(t *testing.T) {
 		OCRModel:            "ocr-model",
 		ExtractProviderID:   "extract",
 		ExtractModel:        "extract-model",
-		ChatProviderID:      "chat",
-		ChatModel:           "chat-model",
-		SearchProviderID:    "search",
-		SearchModel:         "search-model",
+		ResearchProviderID:  "research",
+		ResearchModel:       "research-model",
 		EmbeddingProviderID: "embedding",
 		EmbeddingModel:      "embedding-model",
 	}
@@ -90,17 +88,16 @@ func TestPreferredBinding(t *testing.T) {
 	}{
 		{aiprovider.PurposeOCR, "", [2]string{"ocr", "ocr-model"}},
 		{aiprovider.PurposeEmbedding, "", [2]string{"embedding", "embedding-model"}},
-		// Unnamed, the LLM purpose answers with chat: it is the only LLM picker
-		// a non-admin reaches without naming one.
-		{aiprovider.PurposeLLM, "", [2]string{"chat", "chat-model"}},
-		// Named, because the capability cannot tell three language-model
+		// Unnamed, the LLM purpose answers with the general model.
+		{aiprovider.PurposeLLM, "", [2]string{"extract", "extract-model"}},
+		// Named, because the capability cannot tell the two language-model
 		// bindings apart.
-		{aiprovider.PurposeLLM, "search", [2]string{"search", "search-model"}},
-		{aiprovider.PurposeLLM, "extract", [2]string{"extract", "extract-model"}},
-		{aiprovider.PurposeLLM, "chat", [2]string{"chat", "chat-model"}},
-		// An unrecognised name falls back to the purpose rather than answering
-		// with nothing.
-		{aiprovider.PurposeLLM, "sideways", [2]string{"chat", "chat-model"}},
+		{aiprovider.PurposeLLM, "research", [2]string{"research", "research-model"}},
+		{aiprovider.PurposeLLM, "Research", [2]string{"research", "research-model"}},
+		// Every other name, known or not, is the general model.
+		{aiprovider.PurposeLLM, "search", [2]string{"extract", "extract-model"}},
+		{aiprovider.PurposeLLM, "chat", [2]string{"extract", "extract-model"}},
+		{aiprovider.PurposeLLM, "sideways", [2]string{"extract", "extract-model"}},
 	}
 	for _, tc := range cases {
 		id, model := preferredBinding(cfg, tc.purpose, tc.name)
@@ -108,6 +105,24 @@ func TestPreferredBinding(t *testing.T) {
 			t.Fatalf("preferredBinding(%q, %q) = %q/%q, want %q/%q",
 				tc.purpose, tc.name, id, model, tc.want[0], tc.want[1])
 		}
+	}
+}
+
+// A research chat defaults to the research binding, a search to the general
+// one: the two are bound apart in Settings for exactly this split.
+func TestConfiguredSearchBindingFollowsTheMode(t *testing.T) {
+	t.Parallel()
+	cfg := config.Config{
+		ExtractProviderID:  "general",
+		ExtractModel:       "general-model",
+		ResearchProviderID: "research",
+		ResearchModel:      "research-model",
+	}
+	if id, model := configuredSearchBinding(cfg, chat.ModeResearch); id != "research" || model != "research-model" {
+		t.Fatalf("research default = %q/%q", id, model)
+	}
+	if id, model := configuredSearchBinding(cfg, chat.ModeSearch); id != "general" || model != "general-model" {
+		t.Fatalf("search default = %q/%q", id, model)
 	}
 }
 

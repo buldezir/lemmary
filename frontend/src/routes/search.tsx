@@ -132,7 +132,7 @@ export function SearchPage() {
           onChange={ws.setBinding}
           locked={inConversation || chat.sending || chat.turns.length > 0}
           lockedHint="Fixed for this chat. Start a new one to search with a different model."
-          help="Drives the search or research loop. The helper model that reads documents in bulk keeps its own binding in Settings."
+          help="Answers this search in place of the General AI model from Settings."
           showConfigured
         />
       </div>

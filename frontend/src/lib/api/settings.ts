@@ -5,19 +5,12 @@ import { invalidateAppMeta } from './meta'
 export type AppSettings = {
   ocr_provider_id: string
   ocr_model: string
+  /** The general model: everything but the Deep Research reasoning loop. */
   extract_provider_id: string
   extract_model: string
-  chat_provider_id: string
-  chat_model: string
-  search_provider_id: string
-  search_model: string
-  /**
-   * The Deep Search helper binding: the cheaper model that distils long reads
-   * into notes and surveys many documents for one question. Empty means the
-   * search model does that work itself.
-   */
-  search_helper_provider_id: string
-  search_helper_model: string
+  /** Drives the Deep Research reasoning loop. Empty means the general model does. */
+  research_provider_id: string
+  research_model: string
   /**
    * The retrieval embedding binding. Empty means Deep Search runs on keywords
    * alone, which is what every install did before this existed.

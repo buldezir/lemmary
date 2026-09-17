@@ -16,9 +16,7 @@ func providerBindingsForTest(t *testing.T) *core.Record {
 	collection.Fields.Add(
 		&core.TextField{Name: "ocr_provider_id", Max: 15},
 		&core.TextField{Name: "extract_provider_id", Max: 15},
-		&core.TextField{Name: "chat_provider_id", Max: 15},
-		&core.TextField{Name: "search_provider_id", Max: 15},
-		&core.TextField{Name: "search_helper_provider_id", Max: 15},
+		&core.TextField{Name: "research_provider_id", Max: 15},
 		&core.TextField{Name: "embedding_provider_id", Max: 15},
 	)
 	record := core.NewRecord(collection)
@@ -101,14 +99,14 @@ func TestProviderBoundToOCRMustKeepAnOCRSDK(t *testing.T) {
 	}
 }
 
-// applySettingsPatch refuses a non-LLM helper provider on write; without the
+// applySettingsPatch refuses a non-LLM research provider on write; without the
 // same guard here the binding could be broken from the other side.
-func TestSearchHelperBindingGuardsTheSDKSwitch(t *testing.T) {
+func TestResearchBindingGuardsTheSDKSwitch(t *testing.T) {
 	t.Parallel()
 	record := providerBindingsForTest(t)
-	record.Set("search_helper_provider_id", "provider1")
+	record.Set("research_provider_id", "provider1")
 	if !boundTo(record, "provider1", llmBindingFields...) {
-		t.Fatal("a bound Deep Search helper provider must stay an LLM SDK")
+		t.Fatal("a bound Deep Research provider must stay an LLM SDK")
 	}
 }
 

@@ -42,8 +42,6 @@ func MigrateLegacySettings(app core.App, settings *core.Record) error {
 
 	models := taskModels{
 		extract:    strutil.FirstNonEmpty(settings.GetString("openai_model"), DefaultExtractModel),
-		chat:       strings.TrimSpace(settings.GetString("openai_chat_model")),
-		search:     strings.TrimSpace(settings.GetString("openai_search_model")),
 		ocr:        strutil.FirstNonEmpty(settings.GetString("mistral_ocr_model"), "mistral-ocr-latest"),
 		ocrSDK:     strutil.FirstNonEmpty(settings.GetString("ocr_provider"), SDKGoogleVision),
 		mistralLLM: "mistral-small-latest",
@@ -82,8 +80,6 @@ func IsOpenCodeURL(baseURL string) bool {
 
 type taskModels struct {
 	extract    string
-	chat       string
-	search     string
 	ocr        string
 	ocrSDK     string
 	mistralLLM string
@@ -115,28 +111,15 @@ func bindFromIDs(settings *core.Record, openaiID, mistralID, googleID string, mo
 	}
 
 	if openaiID != "" {
-		bindLLM(settings, openaiID, models.extract, models.chat, models.search)
+		bindLLM(settings, openaiID, models.extract)
 	} else if mistralID != "" {
-		model := strutil.FirstNonEmpty(models.mistralLLM, "mistral-small-latest")
-		bindLLM(settings, mistralID, model, model, model)
+		bindLLM(settings, mistralID, strutil.FirstNonEmpty(models.mistralLLM, "mistral-small-latest"))
 	}
 }
 
-func bindLLM(settings *core.Record, providerID, extract, chat, search string) {
+func bindLLM(settings *core.Record, providerID, model string) {
 	settings.Set("extract_provider_id", providerID)
-	settings.Set("extract_model", extract)
-	chatModel := chat
-	if chatModel == "" {
-		chatModel = extract
-	}
-	settings.Set("chat_provider_id", providerID)
-	settings.Set("chat_model", chatModel)
-	searchModel := search
-	if searchModel == "" {
-		searchModel = chatModel
-	}
-	settings.Set("search_provider_id", providerID)
-	settings.Set("search_model", searchModel)
+	settings.Set("extract_model", model)
 }
 
 func alreadyBound(settings *core.Record) bool {
