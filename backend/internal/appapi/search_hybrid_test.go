@@ -46,20 +46,24 @@ func hybridIndex(t *testing.T) *fulltext.Index {
 	}
 	t.Cleanup(func() { _ = idx.Close() })
 
-	put := func(id, title, ocr string) {
+	put := func(id, title, ocr, status string) {
 		t.Helper()
 		err := idx.Put(id, map[string]any{
-			fulltext.FieldUser:    "u1",
-			fulltext.FieldTitle:   title,
-			fulltext.FieldOCRText: ocr,
-			fulltext.FieldAll:     title + " " + ocr,
+			fulltext.FieldUser:             "u1",
+			fulltext.FieldTitle:            title,
+			fulltext.FieldOCRText:          ocr,
+			fulltext.FieldAll:              title + " " + ocr,
+			fulltext.FieldProcessingStatus: status,
 		})
 		if err != nil {
 			t.Fatalf("put %s: %v", id, err)
 		}
 	}
-	put("lexical", "Insurance letter", lexicalText)
-	put("dense", "Versicherungsschreiben", denseText)
+	put("lexical", "Insurance letter", lexicalText, "completed")
+	put("dense", "Versicherungsschreiben", denseText, "completed")
+	// Same words as the lexical document, still being processed: no search,
+	// survey or count may return it.
+	put("pending", "Insurance letter (copy)", lexicalText, "pending")
 	return idx
 }
 
@@ -71,6 +75,7 @@ func hybridRetriever(t *testing.T, embeds *int) *agentRetriever {
 	chunks, err := retrieval.NewMemoryChunks(context.Background(), embedder, []retrieval.MemoryChunk{
 		{DocumentID: "lexical", UserID: "u1", Ord: 0, EndByte: len(lexicalText), Text: lexicalText},
 		{DocumentID: "dense", UserID: "u1", Ord: 0, EndByte: len(denseText), Text: denseText},
+		{DocumentID: "pending", UserID: "u1", Ord: 0, EndByte: len(lexicalText), Text: lexicalText},
 	})
 	if err != nil {
 		t.Fatalf("memory chunks: %v", err)
@@ -79,6 +84,7 @@ func hybridRetriever(t *testing.T, embeds *int) *agentRetriever {
 	app := stubRetrieverApp{stubDocuments{recs: map[string]*core.Record{
 		"lexical": readableDocument("lexical", "u1", "Insurance letter", lexicalText),
 		"dense":   readableDocument("dense", "u1", "Versicherungsschreiben", denseText),
+		"pending": readableDocument("pending", "u1", "Insurance letter (copy)", lexicalText),
 	}}}
 
 	return &agentRetriever{
@@ -257,5 +263,30 @@ func TestReadFocusRanksWithTheChunkIndex(t *testing.T) {
 	}
 	if !strings.Contains(docs[0].Text, "150 EUR") {
 		t.Fatalf("the focused excerpt missed the passage it was asked for:\n%s", docs[0].Text)
+	}
+}
+
+func TestSearchAndCountSkipDocumentsStillProcessing(t *testing.T) {
+	r := hybridRetriever(t, nil)
+	hits, err := r.search(context.Background(), ai.SearchDocumentsArgs{Query: "insurance premium"})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	for _, hit := range hits {
+		if hit.ID == "pending" {
+			t.Fatalf("a pending document was returned: %+v", hits)
+		}
+	}
+	if len(hits) == 0 {
+		t.Fatal("the completed twin should still be found")
+	}
+
+	r.app = countApp{stubRetrieverApp: r.app.(stubRetrieverApp), db: countDB(t)}
+	result, err := r.count(context.Background(), ai.CountArgs{Query: "insurance premium"})
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if result.Count != 1 {
+		t.Fatalf("count = %d, want only the completed document", result.Count)
 	}
 }

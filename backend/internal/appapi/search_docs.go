@@ -15,6 +15,7 @@ import (
 
 	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/retrieval"
 	"lemmary/backend/internal/strutil"
 )
@@ -141,6 +142,9 @@ func (r *agentRetriever) search(ctx context.Context, args ai.SearchDocumentsArgs
 	return hits, nil
 }
 
+// Only completed documents are searched: a pending or failed one has no
+// trustworthy text or metadata yet, and the chunk index embeds those too.
+//
 // unresolved lists the names that matched nothing, which callers treat as
 // "matches no document": a misspelt tag must not widen a search to the archive.
 func (r *agentRetriever) resolveFilters(args ai.SearchDocumentsArgs) (fulltext.Query, []string, error) {
@@ -151,10 +155,11 @@ func (r *agentRetriever) resolveFilters(args ai.SearchDocumentsArgs) (fulltext.Q
 		UserID: r.userID,
 		// The agent's query is a guess, not a filter the user typed, so this
 		// is the one caller that relaxes matching.
-		Relaxed:  true,
-		DateFrom: strings.TrimSpace(args.DateFrom),
-		DateTo:   strings.TrimSpace(args.DateTo),
-		Limit:    fulltext.MaxSearchLimit,
+		Relaxed:          true,
+		ProcessingStatus: models.DocStatusCompleted,
+		DateFrom:         strings.TrimSpace(args.DateFrom),
+		DateTo:           strings.TrimSpace(args.DateTo),
+		Limit:            fulltext.MaxSearchLimit,
 	}
 	var unresolved []string
 

@@ -878,6 +878,7 @@ func buildResearchSystemPrompt(languages, resultLanguage string, availableTags [
 	var b strings.Builder
 	b.WriteString(`You are researching the user's personal document archive to answer their question.
 Work in steps. First find candidate documents with search_documents, then read the promising ones with read_documents.
+Only documents that have finished processing are searched, surveyed and counted; one still pending, failed or awaiting review cannot be found.
 Expand the request into concrete keywords and filters. Search bilingual metadata (title/purpose/summary and their *_original fields) plus OCR text.
 Prefer precise date_from/date_to, document_type, correspondent, or tags filters when the query implies them.
 When filtering by tags, use exact names from the available archive tags list below — never invent tag names.

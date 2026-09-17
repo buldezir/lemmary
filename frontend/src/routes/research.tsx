@@ -162,7 +162,7 @@ export function ResearchPage() {
       title="Deep Research"
       hint={
         <>
-          Read the documents and answer, with citations.{' '}
+          Read the documents and answer, with citations. Only completed documents are searched.{' '}
           <DocsLink href="/docs/deep_research.html">How it works</DocsLink>.
         </>
       }

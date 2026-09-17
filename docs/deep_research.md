@@ -30,7 +30,10 @@ Deep Research has no round or document limit. It keeps searching and reading unt
 ## How it finds documents
 
 Both pages reach the archive through the same `search_documents` tool, and it
-runs up to two searches for every query.
+runs up to two searches for every query. Only documents with processing status
+`completed` are searched, surveyed or counted: one still pending, failed,
+cancelled or waiting in the Inbox for review is invisible to both pages until
+it completes. The same holds for the [MCP](/mcp) search, read and count tools.
 
 - **Keywords (BM25)** over the documents index, [relaxed in two
   rungs](/setup#full-text-search) rather than the strict AND the Documents page keeps:
