@@ -65,6 +65,9 @@ export function useChatWorkspace({
   // The chat hook's own claim, reached from inside a run. Assigned rather than
   // called directly because the run is defined before the hook that owns it.
   const adoptRef = useRef<(session: ChatSession) => void>(() => {})
+  const setAdopt = useCallback((adopt: (session: ChatSession) => void) => {
+    adoptRef.current = adopt
+  }, [])
 
   const sessions = useAsync(() => listChatSessions({ kind: 'search' }), [])
 
@@ -139,7 +142,6 @@ export function useChatWorkspace({
 
       // Collected outside React state as well: the finished turn is assembled
       // from these, and state updates are not readable synchronously.
-      let answer = ''
       let streamError = ''
       let incomplete = false
       // In a box rather than a plain `let`: TypeScript cannot see an assignment
@@ -179,11 +181,7 @@ export function useChatWorkspace({
                   onSessionSettled(event.session, true)
                 }
                 break
-              case 'delta':
-                answer += event.content
-                break
               case 'message':
-                answer = event.content
                 incomplete = event.incomplete ?? false
                 break
               case 'saved':
@@ -350,7 +348,7 @@ export function useChatWorkspace({
     forkError,
     binding,
     setBinding,
-    adoptRef,
+    setAdopt,
     endRun,
     runTurn,
     onSessionSettled,

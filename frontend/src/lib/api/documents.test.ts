@@ -27,7 +27,7 @@ describe('buildDocumentFilter', () => {
 
   it('filters on a status alone', () => {
     expect(buildDocumentFilter({ ...noFilters, status: 'needs_review' })).toBe(
-      "processing_status = 'needs_review'",
+      'processing_status = "needs_review"',
     )
   })
 
@@ -35,14 +35,14 @@ describe('buildDocumentFilter', () => {
   // documents are in there too.
   it('turns the Inbox filter into everything except completed', () => {
     expect(buildDocumentFilter({ ...noFilters, status: UNFINISHED_STATUS })).toBe(
-      "processing_status != 'completed'",
+      'processing_status != "completed"',
     )
   })
 
   // ALL, not any: a document has to carry every tag the reader picked.
   it('requires every chosen tag', () => {
     expect(buildDocumentFilter({ ...noFilters, tags: ['tag1', 'tag2'] })).toBe(
-      'tags ~ \'"tag1"\' && tags ~ \'"tag2"\'',
+      'tags ~ "\\"tag1\\"" && tags ~ "\\"tag2\\""',
     )
   })
 
@@ -53,7 +53,7 @@ describe('buildDocumentFilter', () => {
   // Without the quotes this is a bare LIKE '%a%', which keeps every document
   // whose tag ids merely contain the letter.
   it('quotes the id so a short one cannot match inside a longer one', () => {
-    expect(buildDocumentFilter({ ...noFilters, tags: ['a'] })).toBe('tags ~ \'"a"\'')
+    expect(buildDocumentFilter({ ...noFilters, tags: ['a'] })).toBe('tags ~ "\\"a\\""')
   })
 
   it('combines active filters with &&', () => {
@@ -65,7 +65,7 @@ describe('buildDocumentFilter', () => {
         dateTo: '2026-02-01',
       }),
     ).toBe(
-      "processing_status = 'failed' && document_date >= '2026-01-01' && document_date < '2026-02-02'",
+      'processing_status = "failed" && document_date >= "2026-01-01" && document_date < "2026-02-02"',
     )
   })
 
@@ -74,34 +74,34 @@ describe('buildDocumentFilter', () => {
     // the 31st, dropping the day a timeline month click selects.
     const stored = '2025-03-31 00:00:00.000Z'
     const filter = buildDocumentFilter({ ...noFilters, dateTo: '2025-03-31' })
-    expect(filter).toBe("document_date < '2025-04-01'")
+    expect(filter).toBe('document_date < "2025-04-01"')
     expect(stored <= '2025-03-31').toBe(false)
     expect(stored < '2025-04-01').toBe(true)
   })
 
   it('rolls dateTo over month and year ends, and across a leap day', () => {
     const to = (dateTo: string) => buildDocumentFilter({ ...noFilters, dateTo })
-    expect(to('2025-12-31')).toBe("document_date < '2026-01-01'")
-    expect(to('2024-02-29')).toBe("document_date < '2024-03-01'")
-    expect(to('2025-02-28')).toBe("document_date < '2025-03-01'")
+    expect(to('2025-12-31')).toBe('document_date < "2026-01-01"')
+    expect(to('2024-02-29')).toBe('document_date < "2024-03-01"')
+    expect(to('2025-02-28')).toBe('document_date < "2025-03-01"')
   })
 
   it('passes an unparseable dateTo through rather than inventing a bound', () => {
     expect(buildDocumentFilter({ ...noFilters, dateTo: 'garbage' })).toBe(
-      "document_date < 'garbage'",
+      'document_date < "garbage"',
     )
   })
 
   it('filters by taxonomy record ids', () => {
     expect(
       buildDocumentFilter({ ...noFilters, documentType: 'type123', correspondent: 'corr456' }),
-    ).toBe("document_type = 'type123' && correspondent = 'corr456'")
+    ).toBe('document_type = "type123" && correspondent = "corr456"')
   })
 
   it('escapes values instead of letting them terminate the filter expression', () => {
-    const filter = buildDocumentFilter({ ...noFilters, status: "x' || user != '" })
+    const filter = buildDocumentFilter({ ...noFilters, status: 'x" || user != "' })
     // The injected quote must arrive escaped, not as a live string terminator.
-    expect(filter).toBe("processing_status = 'x\\' || user != \\''")
+    expect(filter).toBe('processing_status = "x\\" || user != \\""')
   })
 })
 
