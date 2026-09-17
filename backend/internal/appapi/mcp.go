@@ -1,0 +1,199 @@
+package appapi
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/pocketbase/pocketbase/apis"
+	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/hook"
+	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/fulltext"
+)
+
+// EnvMCPEnabled switches on the MCP endpoint at /api/mcp. Unset means off, and
+// off is what every install had before this existed.
+const EnvMCPEnabled = "MCP_ENABLED"
+
+const mcpMaxBodyBytes = 1 << 20
+
+// RegisterMCP mounts a read-only Model Context Protocol server over the same
+// retrieval closures Deep Search uses, so an outside agent sees exactly what
+// the in-app agent sees for that token's user. Stateless: every request builds
+// its own server bound to the caller, which is what makes per-user scoping
+// fall out of the existing auth binder instead of session bookkeeping.
+func RegisterMCP(app core.App, rt *config.Runtime, idx *fulltext.Index) {
+	if !mcpEnabledFromEnv(app) {
+		return
+	}
+	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
+		Priority: 45,
+		Func: func(e *core.ServeEvent) error {
+			e.Router.POST("/api/mcp", bindAuth(handleMCP(app, rt, idx))).
+				Bind(apis.BodyLimit(mcpMaxBodyBytes))
+			return e.Next()
+		},
+	})
+}
+
+func mcpEnabledFromEnv(app core.App) bool {
+	raw := strings.TrimSpace(os.Getenv(EnvMCPEnabled))
+	if raw == "" {
+		return false
+	}
+	enabled, err := strconv.ParseBool(raw)
+	if err != nil {
+		app.Logger().Error("MCP endpoint disabled: unrecognised value", "env", EnvMCPEnabled, "value", raw)
+		return false
+	}
+	return enabled
+}
+
+func handleMCP(app core.App, rt *config.Runtime, idx *fulltext.Index) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		userID := ""
+		if !e.HasSuperuserAuth() {
+			userID = e.Auth.Id
+		}
+		tools, err := buildAgentTools(app, rt, idx, userID)
+		if err != nil {
+			return writeError(e, http.StatusInternalServerError, "Failed to prepare the document tools.")
+		}
+		server := newMCPServer(tools)
+		handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server },
+			&mcp.StreamableHTTPOptions{
+				Stateless:    true,
+				JSONResponse: true,
+				// The app usually sits behind a reverse proxy on a loopback
+				// listener with a public Host header, which the SDK's default
+				// check would refuse; the route is bearer-protected already.
+				DisableLocalhostProtection: true,
+			})
+		handler.ServeHTTP(e.Response, e.Request)
+		return nil
+	}
+}
+
+type mcpSearchArgs struct {
+	Query         string   `json:"query" jsonschema:"What to look for, as keywords or a short phrase. Matched against titles, summaries and OCR text; not every word has to occur, so describe the thing rather than guessing its exact wording."`
+	DateFrom      string   `json:"date_from,omitempty" jsonschema:"Inclusive lower bound for document_date (YYYY-MM-DD)."`
+	DateTo        string   `json:"date_to,omitempty" jsonschema:"Inclusive upper bound for document_date (YYYY-MM-DD)."`
+	DocumentType  string   `json:"document_type,omitempty" jsonschema:"Document type name filter (substring match)."`
+	Correspondent string   `json:"correspondent,omitempty" jsonschema:"Correspondent name filter (substring match)."`
+	Tags          []string `json:"tags,omitempty" jsonschema:"Exact tag names from list_tags; documents with any of them match."`
+}
+
+type mcpSearchResult struct {
+	Hits []ai.DocumentHit `json:"hits"`
+}
+
+type mcpReadArgs struct {
+	IDs   []string `json:"ids" jsonschema:"Document ids from earlier search_documents results."`
+	Focus string   `json:"focus,omitempty" jsonschema:"What you are looking for in these documents. A long document comes back as the passages about this, with … marking the gaps, instead of only its beginning."`
+}
+
+type mcpReadResult struct {
+	Documents []ai.DocumentContent `json:"documents"`
+}
+
+type mcpCountArgs struct {
+	Query         string   `json:"query,omitempty" jsonschema:"Keywords every counted document must contain."`
+	DateFrom      string   `json:"date_from,omitempty" jsonschema:"Inclusive lower bound on document_date, YYYY-MM-DD."`
+	DateTo        string   `json:"date_to,omitempty" jsonschema:"Inclusive upper bound on document_date, YYYY-MM-DD."`
+	DocumentType  string   `json:"document_type,omitempty" jsonschema:"Document type name filter."`
+	Correspondent string   `json:"correspondent,omitempty" jsonschema:"Correspondent name filter."`
+	Tags          []string `json:"tags,omitempty" jsonschema:"Exact tag names; documents with any of them match."`
+	GroupBy       string   `json:"group_by,omitempty" jsonschema:"Break the count down by one of: document_type, correspondent, year, month, tag."`
+}
+
+type mcpTagsResult struct {
+	Tags []string `json:"tags"`
+}
+
+func newMCPServer(tools agentTools) *mcp.Server {
+	server := mcp.NewServer(&mcp.Implementation{Name: "lemmary", Version: "1"}, nil)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "search_documents",
+		Description: "Search the user's document archive by meaning and by keywords, with optional filters. " +
+			"Returns matching documents with 1-3 verbatim passages from each.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args mcpSearchArgs) (*mcp.CallToolResult, mcpSearchResult, error) {
+		hits, err := tools.search(ctx, ai.SearchDocumentsArgs{
+			Query:         args.Query,
+			DateFrom:      args.DateFrom,
+			DateTo:        args.DateTo,
+			DocumentType:  args.DocumentType,
+			Correspondent: args.Correspondent,
+			Tags:          args.Tags,
+		})
+		if err != nil {
+			return nil, mcpSearchResult{}, err
+		}
+		if hits == nil {
+			hits = []ai.DocumentHit{}
+		}
+		return nil, mcpSearchResult{Hits: hits}, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "read_documents",
+		Description: "Read documents by id. Use this before making any claim about what a document says. " +
+			"Long documents come back as excerpts around the focus; " +
+			"reading many documents at once comes back as per-document notes and quotes rather than text.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args mcpReadArgs) (*mcp.CallToolResult, mcpReadResult, error) {
+		if len(args.IDs) == 0 {
+			return nil, mcpReadResult{}, fmt.Errorf("ids is required")
+		}
+		docs, err := tools.read(ctx, ai.ReadRequest{IDs: args.IDs, Focus: args.Focus})
+		if err != nil {
+			return nil, mcpReadResult{}, err
+		}
+		if docs == nil {
+			docs = []ai.DocumentContent{}
+		}
+		return nil, mcpReadResult{Documents: docs}, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "count_documents",
+		Description: "Count the documents matching filters, optionally grouped. " +
+			"Use this for how-many and distribution questions instead of counting search results: a search result is a capped page, not the archive. " +
+			"Grouping by document_type or correspondent is also how to discover which ones exist.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args mcpCountArgs) (*mcp.CallToolResult, ai.CountResult, error) {
+		if tools.count == nil {
+			return nil, ai.CountResult{}, fmt.Errorf("counting is unavailable")
+		}
+		result, err := tools.count(ctx, ai.CountArgs{
+			Query:         args.Query,
+			DateFrom:      args.DateFrom,
+			DateTo:        args.DateTo,
+			DocumentType:  args.DocumentType,
+			Correspondent: args.Correspondent,
+			Tags:          args.Tags,
+			GroupBy:       args.GroupBy,
+		})
+		if err != nil {
+			return nil, ai.CountResult{}, err
+		}
+		return nil, result, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_tags",
+		Description: "List the tag names in the user's archive, for the tags filter of search_documents and count_documents.",
+	}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, mcpTagsResult, error) {
+		tags := tools.tags
+		if tags == nil {
+			tags = []string{}
+		}
+		return nil, mcpTagsResult{Tags: tags}, nil
+	})
+
+	return server
+}
