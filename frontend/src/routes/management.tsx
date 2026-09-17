@@ -98,11 +98,21 @@ export function ManagementPage() {
 
   useEffect(() => {
     let active = true
+    let hadJobs = false
 
     async function refresh() {
       try {
         const counts = await getActiveJobCounts()
-        if (active) setActiveJobs(counts)
+        if (!active) return
+        setActiveJobs(counts)
+        // Jobs finishing move the failed count both ways; one more read after
+        // the queue drains picks up the last job's outcome.
+        const hasJobs = activeJobsTotal(counts) > 0
+        if (hasJobs || hadJobs) {
+          const failed = await countFailedDocuments().catch(() => null)
+          if (active && failed !== null) setFailedCount(failed)
+        }
+        hadJobs = hasJobs
       } catch {
         // An unknown count must not wedge the page: treat it as "cannot tell".
         if (active) setActiveJobs(null)
@@ -117,8 +127,6 @@ export function ManagementPage() {
     }
   }, [])
 
-  // Refreshed on load and after every batch rather than polled: batches are the
-  // only thing that moves it downward from this page.
   useEffect(() => {
     let active = true
     countFailedDocuments()
