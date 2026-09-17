@@ -507,6 +507,9 @@ func documentTagNames(app documentLookup, record *core.Record) []string {
 // large read is distilled to notes and quotes; a small read passes through as
 // excerpts, because for a needle question the exact wording is the point.
 func (r *agentRetriever) read(ctx context.Context, req ai.ReadRequest) ([]ai.DocumentContent, error) {
+	if req.Full || len(req.Chunks) > 0 {
+		return readExact(r.app, r.userID, req)
+	}
 	if r.helper == nil {
 		return readUserDocuments(r.app, r.userID, req, r.focusRanker(ctx), focusExcerptBytes)
 	}
@@ -519,6 +522,52 @@ func (r *agentRetriever) read(ctx context.Context, req ai.ReadRequest) ([]ai.Doc
 	}
 	question := strutil.FirstNonEmpty(strings.TrimSpace(req.Focus), strings.TrimSpace(req.Question))
 	return r.distillDocuments(ctx, question, nil, docs), nil
+}
+
+// readExact serves the two reads that bypass excerpting and distillation: the
+// named chunks of one document, or the whole of one document when it fits the
+// caller's budget. Neither touches the helper; both are what the model asked
+// for, verbatim.
+func readExact(app documentLookup, userID string, req ai.ReadRequest) ([]ai.DocumentContent, error) {
+	if len(req.IDs) != 1 {
+		return nil, fmt.Errorf("one document at a time")
+	}
+	record, err := app.FindRecordById("documents", req.IDs[0])
+	if err != nil || (userID != "" && record.GetString("user") != userID) {
+		return []ai.DocumentContent{}, nil
+	}
+	full := record.GetString("ocr_text")
+	doc := ai.DocumentContent{
+		ID:            record.Id,
+		Title:         strutil.FirstNonEmpty(record.GetString("title"), "Untitled document"),
+		DocumentDate:  truncateDate(record.GetString("document_date")),
+		DocumentType:  relatedName(app, "document_types", record.GetString("document_type")),
+		Correspondent: relatedName(app, "correspondents", record.GetString("correspondent")),
+		Tags:          documentTagNames(app, record),
+	}
+	if len(req.Chunks) > 0 {
+		text, total, unknown := sliceChunks(full, req.Chunks)
+		if text == "" {
+			return nil, fmt.Errorf("no such chunks: the document has %d (0-%d)", total, max(total-1, 0))
+		}
+		doc.Text = text
+		doc.Excerpted = true
+		doc.ChunkCount = total
+		doc.UnknownChunks = unknown
+		for _, ord := range req.Chunks {
+			if ord >= 0 && ord < total {
+				doc.Chunks = append(doc.Chunks, ord)
+			}
+		}
+		return []ai.DocumentContent{doc}, nil
+	}
+	if req.MaxBytes > 0 && len(full) > req.MaxBytes {
+		return nil, fmt.Errorf("document is %d KB in %d chunks and does not fit the remaining context; read_chunks the parts you need",
+			len(full)/1000, len(splitChunks(full)))
+	}
+	doc.Text = full
+	doc.ChunkCount = len(splitChunks(full))
+	return []ai.DocumentContent{doc}, nil
 }
 
 // trimToExcerpts brings documents read at the helper's cap back to the agent's

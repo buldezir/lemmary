@@ -57,11 +57,18 @@ type DocumentContent struct {
 	Notes    string            `json:"notes,omitempty"`
 	Quotes   []string          `json:"quotes,omitempty"`
 	Values   map[string]string `json:"values,omitempty"`
+	// Chunks are the ordinals the helper pointed at, for read_chunks; a
+	// chunk read reports the ordinals it returned. ChunkCount is how many the
+	// document has in all.
+	Chunks        []int `json:"chunks,omitempty"`
+	ChunkCount    int   `json:"chunk_count,omitempty"`
+	UnknownChunks []int `json:"unknown_chunks,omitempty"`
 }
 
-// ReadRequest is one read_documents call after validation. Focus is retrieval,
-// not rationing: a document read whole answers with its first pages, and on a
-// fifty-page statement the paragraph that matters is rarely there.
+// ReadRequest is one read_documents or read_chunks call after validation.
+// Focus is retrieval, not rationing: a document read whole answers with its
+// first pages, and on a fifty-page statement the paragraph that matters is
+// rarely there.
 type ReadRequest struct {
 	IDs   []string
 	Focus string
@@ -69,6 +76,13 @@ type ReadRequest struct {
 	// focus is excerpted around it, because "the beginning" is rarely where
 	// the answer is, and it is what a distilled read is distilled toward.
 	Question string
+	// Chunks asks for exactly these ordinals of the one document in IDs, as
+	// text, neither excerpted nor distilled.
+	Chunks []int
+	// Full asks for the one document in IDs whole. MaxBytes is what the
+	// caller can still fit; a longer document is refused, not cut.
+	Full     bool
+	MaxBytes int
 }
 
 // DocumentReader loads document text for ids the agent has already seen.
@@ -106,6 +120,10 @@ type ResearchRequest struct {
 	// refused.
 	Survey DocumentSurveyor
 	Count  DocumentCounter
+	// Find backs find_documents, the research loop's way into the archive:
+	// a search every match of which the helper verifies. Nil is refused like
+	// the others; the search page keeps search_documents.
+	Find DocumentFinder
 	// Web backs web_search and web_fetch. Nil unless an operator configured a
 	// web-search provider and the user asked for it on this turn. The tools are
 	// declared either way -- the list is part of what the provider cached, and
@@ -132,14 +150,16 @@ type ResearchResult struct {
 // "delta", "documents", "message", "usage", "error", "done".
 type ResearchEvent struct {
 	Type   string   `json:"type"`
-	Kind   string   `json:"kind,omitempty"`   // search | read | survey | count | answer
+	Kind   string   `json:"kind,omitempty"`   // find | search | read | survey | count | answer
 	Status string   `json:"status,omitempty"` // start | progress | done
 	Query  string   `json:"query,omitempty"`
 	Titles []string `json:"titles,omitempty"`
 	Count  int      `json:"count,omitempty"`
 	// Done is the running count of a step with progress: documents surveyed
-	// so far, out of Count.
-	Done int `json:"done,omitempty"`
+	// so far, out of Count. Phase names which pass of a find is counting,
+	// "screen" or "read".
+	Done  int    `json:"done,omitempty"`
+	Phase string `json:"phase,omitempty"`
 	// Distilled marks a read step whose documents the helper model read and
 	// summarised rather than being passed through whole.
 	Distilled  bool          `json:"distilled,omitempty"`
@@ -158,6 +178,9 @@ type ResearchEvent struct {
 type readDocumentsArgs struct {
 	IDs   []string `json:"ids"`
 	Focus string   `json:"focus"`
+	Full  bool     `json:"full"`
+	// Chunks is set by read_chunks, which names one document.
+	Chunks []int `json:"chunks"`
 }
 
 // researchState is everything the loop accumulates across rounds.
@@ -178,7 +201,29 @@ type researchState struct {
 	question string
 	// web is this run's remaining web-call allowance; see maxWebCalls.
 	web webBudget
+	// meter is the conversation's size so far, which is what bounds a full
+	// read: a document that does not fit is refused before it is loaded.
+	meter *contextMeter
 }
+
+// fullReadBudget is how many bytes of document a full read may add to the
+// conversation now: the window less what is in it, less room for the answer.
+// With no window known the fallback is fixed rather than unbounded.
+func (state *researchState) fullReadBudget() int {
+	if state.meter == nil || state.meter.usage.ContextWindow <= 0 {
+		return fullReadFallbackBytes
+	}
+	return state.meter.usage.ContextWindow*charsPerToken - state.meter.chars - answerReserveBytes
+}
+
+const (
+	fullReadFallbackBytes = 200_000
+	answerReserveBytes    = 32_000
+	// maxReadChunks bounds one read_chunks call; forty chunks is about the
+	// excerpt a focused read would have shown, and past that the model wants
+	// the document, which full is for.
+	maxReadChunks = 40
+)
 
 func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, emit func(ResearchEvent)) (ResearchResult, error) {
 	if a.client.apiKey == "" {
@@ -223,6 +268,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 
 	meter := newContextMeter(req.ContextWindow)
+	state.meter = meter
 	apiMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(thread))
 	for _, msg := range thread {
 		param, ok := msg.Param()
@@ -479,7 +525,9 @@ func (a *openAISearchAgent) runResearchTool(
 	switch name {
 	case "search_documents":
 		return a.runSearchTool(ctx, req, state, callID, name, argumentsJSON, emit)
-	case "read_documents":
+	case "find_documents":
+		return a.runFindTool(ctx, req, state, callID, name, argumentsJSON, emit)
+	case "read_documents", "read_chunks":
 		return a.runReadTool(ctx, req, state, callID, name, argumentsJSON, emit)
 	case "survey_documents":
 		return a.runSurveyTool(ctx, req, state, callID, name, argumentsJSON, emit)
@@ -612,6 +660,23 @@ func (a *openAISearchAgent) runReadTool(
 		return toolExecResult{ID: callID, Name: name, Content: `{"error":"invalid tool arguments"}`}, false
 	}
 	focus := strings.TrimSpace(args.Focus)
+	if name == "read_chunks" {
+		args.Full = false
+		focus = ""
+		switch {
+		case len(args.IDs) != 1:
+			return toolExecResult{ID: callID, Name: name, Content: `{"error":"read_chunks takes exactly one id"}`}, false
+		case len(args.Chunks) == 0:
+			return toolExecResult{ID: callID, Name: name, Content: `{"error":"chunks is required","hint":"pass the chunk numbers find_documents returned"}`}, false
+		case len(args.Chunks) > maxReadChunks:
+			return toolExecResult{ID: callID, Name: name, Content: fmt.Sprintf(`{"error":"at most %d chunks per call","hint":"read the document with full instead"}`, maxReadChunks)}, false
+		}
+	} else {
+		args.Chunks = nil
+	}
+	if args.Full && len(args.IDs) != 1 {
+		return toolExecResult{ID: callID, Name: name, Content: `{"error":"full reads one document at a time","hint":"pass a single id"}`}, false
+	}
 
 	// Only ids the agent has seen -- in this run or in an earlier turn of the
 	// same conversation -- are readable. Ownership is re-checked by the reader
@@ -626,18 +691,27 @@ func (a *openAISearchAgent) runReadTool(
 		wanted = append(wanted, id)
 	}
 	if len(wanted) == 0 {
-		return toolExecResult{ID: callID, Name: name, Content: `{"error":"no readable ids","hint":"pass ids returned by search_documents in this conversation"}`}, false
+		return toolExecResult{ID: callID, Name: name, Content: `{"error":"no readable ids","hint":"pass ids returned by find_documents in this conversation"}`}, false
 	}
 	// Focus is part of the call's identity: re-reading the same document with
-	// a different question is new work rather than a repeat.
-	claim := readClaim{IDs: wanted, Focus: focus}
+	// a different question is new work rather than a repeat. So are the
+	// chunks asked for, and whether the whole document was.
+	claim := readClaim{IDs: wanted, Focus: focus, Chunks: args.Chunks, Full: args.Full}
 	if repeat, ok := state.claimCall(name, claim); !ok {
 		return toolExecResult{ID: callID, Name: name, Content: repeat}, false
 	}
 
+	request := ReadRequest{IDs: wanted, Focus: focus, Question: state.question, Chunks: args.Chunks, Full: args.Full}
+	if args.Full {
+		request.MaxBytes = state.fullReadBudget()
+		if request.MaxBytes <= 0 {
+			return toolExecResult{ID: callID, Name: name, Content: `{"error":"no room left in the context for a full read","hint":"read_chunks the parts you need"}`}, false
+		}
+	}
+
 	emit(ResearchEvent{Type: "step", Kind: "read", Status: "start", Titles: state.titlesFor(wanted), Count: len(wanted)})
 
-	docs, err := req.Read(ctx, ReadRequest{IDs: wanted, Focus: focus, Question: state.question})
+	docs, err := req.Read(ctx, request)
 	if err != nil {
 		emit(ResearchEvent{Type: "step", Kind: "read", Status: "done"})
 		return toolExecResult{ID: callID, Name: name, Content: fmt.Sprintf(`{"error":%q}`, err.Error())}, false
@@ -648,7 +722,7 @@ func (a *openAISearchAgent) runReadTool(
 	for _, doc := range docs {
 		state.read[doc.ID] = struct{}{}
 		distilled = distilled || doc.Distilled
-		key := doc.ID + "\x00" + focus
+		key := doc.ID + "\x00" + focus + "\x00" + fmt.Sprint(args.Chunks, args.Full)
 		if _, ok := state.readParts[key]; ok {
 			continue
 		}
@@ -681,8 +755,10 @@ func (a *openAISearchAgent) runReadTool(
 // readClaim identifies one read: the same ids asked a different question are
 // different reads.
 type readClaim struct {
-	IDs   []string `json:"ids"`
-	Focus string   `json:"focus,omitempty"`
+	IDs    []string `json:"ids"`
+	Focus  string   `json:"focus,omitempty"`
+	Chunks []int    `json:"chunks,omitempty"`
+	Full   bool     `json:"full,omitempty"`
 }
 
 // seedPrior makes the documents of earlier turns readable without searching
@@ -769,6 +845,7 @@ func decodeReadArgs(data string) (readDocumentsArgs, error) {
 	var args readDocumentsArgs
 	if err := json.Unmarshal([]byte(data), &args); err == nil && len(args.IDs) > 0 {
 		args.IDs = normalizeIDs(args.IDs)
+		args.Chunks = coerceIntSlice(anySlice(args.Chunks))
 		return args, nil
 	}
 	var raw map[string]any
@@ -788,9 +865,22 @@ func decodeReadArgs(data string) (readDocumentsArgs, error) {
 		return readDocumentsArgs{}, fmt.Errorf("no ids")
 	}
 	return readDocumentsArgs{
-		IDs:   normalizeIDs(ids),
-		Focus: coerceString(raw["focus"]),
+		IDs:    normalizeIDs(ids),
+		Focus:  coerceString(raw["focus"]),
+		Full:   coerceBool(raw["full"]),
+		Chunks: coerceIntSlice(raw["chunks"]),
 	}, nil
+}
+
+func anySlice(ints []int) []any {
+	if len(ints) == 0 {
+		return nil
+	}
+	out := make([]any, 0, len(ints))
+	for _, n := range ints {
+		out = append(out, float64(n))
+	}
+	return out
 }
 
 // latestUserMessage is the question the run is answering: the last user turn.
@@ -877,16 +967,16 @@ Cite a claim taken from the web as [Page title](https://...), with the URL the t
 func buildResearchSystemPrompt(languages, resultLanguage string, availableTags []string, dense bool) string {
 	var b strings.Builder
 	b.WriteString(`You are researching the user's personal document archive to answer their question.
-Work in steps. First find candidate documents with search_documents, then read the promising ones with read_documents.
-Only documents that have finished processing are searched, surveyed and counted; one still pending, failed or awaiting review cannot be found.
-Expand the request into concrete keywords and filters. Search bilingual metadata (title/purpose/summary and their *_original fields) plus OCR text.
+Work in steps. First locate evidence with find_documents: a deep search over keywords and meaning whose every match a reader model checks against the document itself, returning only the documents that hold something about your question, with notes, quotes and the chunk numbers where the evidence sits. Then read what you need: read_chunks for the chunks it named (add neighbouring numbers for context), read_documents with full when you need the whole document and it fits.
+Only documents that have finished processing are found, surveyed and counted; one still pending, failed or awaiting review cannot be found.
+Expand the request into concrete keywords and filters, and say in question what the reader should check for. The search covers bilingual metadata (title/purpose/summary and their *_original fields) plus OCR text.
 Prefer precise date_from/date_to, document_type, correspondent, or tags filters when the query implies them.
 When filtering by tags, use exact names from the available archive tags list below — never invent tag names.
 
-Never state what a document contains without reading it first. Search results carry a few verbatim passages; a passage is a reason to read the document, not the whole of what it says.
-A long document is returned as an excerpt around a focus, with gaps marked by …; without a focus of your own the user's question is used. Pass focus to steer the excerpt toward what you need.
-A read of many documents, or of a lot of text, comes back distilled: for each document, notes on what it says about the focus and verbatim quotes, instead of the text itself. Cite distilled documents as you would any other.
-Documents cited earlier in this conversation can be read by id straight away; you do not have to search for them again.
+Never state what a document contains without reading it first. The reader's notes and quotes are a reason to read the chunks, not the whole of what a document says; for a figure, a date or a wording, read the chunks and quote them.
+A read_documents call without full returns a long document as an excerpt around a focus, with gaps marked by …; without a focus of your own the user's question is used. A read of many documents, or of a lot of text, comes back distilled: notes and quotes instead of text, with the chunk numbers to read. Cite distilled documents as you would any other.
+A full read is refused when the document would not fit the remaining context; read its chunks instead.
+Documents cited earlier in this conversation can be read by id straight away; you do not have to find them again.
 For a question about many documents at once -- a topic, everything from one correspondent, a total over a year -- use survey_documents once with the question and the fields you need instead of reading documents one by one. Its rows and totals are evidence you may cite.
 For how-many or distribution questions call count_documents with the filters instead of counting search results: a search result is a capped page, not the archive.
 There is no limit on how many searches or reads you may make. Stop gathering and write the answer once you have enough evidence.
@@ -901,35 +991,69 @@ Web calls are limited and billed; make them count.
 `)
 
 	b.WriteString(formatAvailableTagsPrompt(availableTags))
-	b.WriteString(formatLanguagePrompt(languages, resultLanguage, dense))
+	// The language guidance is shared with the search page, whose tool is
+	// search_documents; research's is find_documents.
+	b.WriteString(strings.ReplaceAll(formatLanguagePrompt(languages, resultLanguage, dense), "search_documents", "find_documents"))
 
 	return b.String()
 }
 
+// researchTools is the archive half of the research tool list. search_documents
+// is deliberately absent: research reaches the archive through find_documents,
+// whose every match the helper has checked. The search page keeps
+// searchDocumentsTools, and an old transcript that replays a search_documents
+// call is still dispatched.
 func researchTools() []openai.ChatCompletionToolUnionParam {
-	tools := searchDocumentsTools()
-	return append(tools, openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
-		Name: "read_documents",
-		Description: openai.String("Read documents already seen in this conversation. " +
-			"Use this before making any claim about what a document says. " +
-			"Long documents come back as excerpts around the focus (or the user's question); " +
-			"reading many documents at once comes back as per-document notes and quotes rather than text."),
-		Parameters: shared.FunctionParameters{
-			"type": "object",
-			"properties": map[string]any{
-				"ids": map[string]any{
-					"type":        "array",
-					"items":       map[string]any{"type": "string"},
-					"description": "Document ids from earlier search_documents results, or cited earlier in this conversation.",
+	return []openai.ChatCompletionToolUnionParam{
+		findDocumentsTool(),
+		openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+			Name: "read_documents",
+			Description: openai.String("Read documents already seen in this conversation. " +
+				"Use this before making any claim about what a document says. " +
+				"By default a long document comes back as an excerpt around the focus (or the user's question), and " +
+				"reading many documents at once comes back as per-document notes and quotes rather than text. " +
+				"Set full to read one document whole; it is refused when the text would not fit the remaining context, and read_chunks is the way to the parts you need."),
+			Parameters: shared.FunctionParameters{
+				"type": "object",
+				"properties": map[string]any{
+					"ids": map[string]any{
+						"type":        "array",
+						"items":       map[string]any{"type": "string"},
+						"description": "Document ids from earlier find_documents results, or cited earlier in this conversation.",
+					},
+					"focus": map[string]any{
+						"type": "string",
+						"description": "What you are looking for in these documents. " +
+							"For a long document the passages about this are returned instead of only the beginning, with … marking the gaps. " +
+							"Defaults to the user's question.",
+					},
+					"full": map[string]any{
+						"type":        "boolean",
+						"description": "Read the one document in ids whole, with nothing left out. Only when the excerpt or the chunks are not enough.",
+					},
 				},
-				"focus": map[string]any{
-					"type": "string",
-					"description": "What you are looking for in these documents. " +
-						"For a long document the passages about this are returned instead of only the beginning, with … marking the gaps. " +
-						"Defaults to the user's question.",
-				},
+				"required": []string{"ids"},
 			},
-			"required": []string{"ids"},
-		},
-	}))
+		}),
+		openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+			Name: "read_chunks",
+			Description: openai.String("Read exact chunks of one document by number: the chunks find_documents or a read pointed at. " +
+				"Consecutive numbers come back as one passage. Text is verbatim, never summarised."),
+			Parameters: shared.FunctionParameters{
+				"type": "object",
+				"properties": map[string]any{
+					"id": map[string]any{
+						"type":        "string",
+						"description": "The document id.",
+					},
+					"chunks": map[string]any{
+						"type":        "array",
+						"items":       map[string]any{"type": "integer"},
+						"description": fmt.Sprintf("Chunk numbers to read, at most %d per call. Neighbouring numbers give the context around a chunk.", maxReadChunks),
+					},
+				},
+				"required": []string{"id", "chunks"},
+			},
+		}),
+	}
 }

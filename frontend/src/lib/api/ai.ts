@@ -80,6 +80,7 @@ export async function chatWithDocument(input: {
 }
 
 export type ResearchStepKind =
+  | 'find'
   | 'search'
   | 'read'
   | 'survey'
@@ -96,13 +97,15 @@ export type ResearchEvent =
   | {
       type: 'step'
       kind: ResearchStepKind
-      /** `progress` is a survey's running count; only surveys emit it. */
+      /** `progress` is a running count; surveys and finds emit it. */
       status: 'start' | 'progress' | 'done'
       query?: string
       titles?: string[]
       count?: number
       /** Documents finished so far, out of `count`, on a progress event. */
       done?: number
+      /** Which pass of a find is counting: `screen` (catalogue) or `read` (text). */
+      phase?: 'screen' | 'read'
       /** A read the helper model summarised instead of passing text through. */
       distilled?: boolean
     }

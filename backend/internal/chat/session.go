@@ -268,6 +268,7 @@ type StoredStep struct {
 	Titles    []string `json:"titles,omitempty"`
 	Count     int      `json:"count,omitempty"`
 	Done      int      `json:"done,omitempty"`
+	Phase     string   `json:"phase,omitempty"`
 	Distilled bool     `json:"distilled,omitempty"`
 }
 
@@ -281,6 +282,7 @@ func StepFromEvent(ev ai.ResearchEvent) StoredStep {
 		Titles:    ev.Titles,
 		Count:     ev.Count,
 		Done:      ev.Done,
+		Phase:     ev.Phase,
 		Distilled: ev.Distilled,
 	}
 }

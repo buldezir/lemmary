@@ -57,7 +57,66 @@ type SurveyRow struct {
 	Quote        string            `json:"quote,omitempty"`
 	Values       map[string]string `json:"values,omitempty"`
 	Missing      []string          `json:"missing,omitempty"`
+	// Chunks are the ordinals the helper pointed at; read_chunks takes them.
+	Chunks     []int `json:"chunks,omitempty"`
+	ChunkCount int   `json:"chunk_count,omitempty"`
 }
+
+// FindArgs is one find_documents call after validation: a search, verified
+// by the helper against every candidate before the model sees any of them.
+type FindArgs struct {
+	Query         string   `json:"query"`
+	Question      string   `json:"question,omitempty"`
+	DateFrom      string   `json:"date_from,omitempty"`
+	DateTo        string   `json:"date_to,omitempty"`
+	DocumentType  string   `json:"document_type,omitempty"`
+	Correspondent string   `json:"correspondent,omitempty"`
+	Tags          []string `json:"tags,omitempty"`
+	MaxDocuments  int      `json:"max_documents,omitempty"`
+}
+
+func (a FindArgs) SearchArgs() SearchDocumentsArgs {
+	return SearchDocumentsArgs{
+		Query:         a.Query,
+		DateFrom:      a.DateFrom,
+		DateTo:        a.DateTo,
+		DocumentType:  a.DocumentType,
+		Correspondent: a.Correspondent,
+		Tags:          a.Tags,
+	}
+}
+
+// FindHit is one verified document: what the helper found in it and where.
+type FindHit struct {
+	ID            string   `json:"id"`
+	Title         string   `json:"title"`
+	DocumentDate  string   `json:"document_date,omitempty"`
+	DocumentType  string   `json:"document_type,omitempty"`
+	Correspondent string   `json:"correspondent,omitempty"`
+	Notes         string   `json:"notes,omitempty"`
+	Quotes        []string `json:"quotes,omitempty"`
+	Chunks        []int    `json:"chunks,omitempty"`
+	ChunkCount    int      `json:"chunk_count,omitempty"`
+}
+
+type FindResult struct {
+	// Candidates is how many the search matched, Screened how many the
+	// helper judged from metadata, Read how many it then read.
+	Candidates int
+	Screened   int
+	Read       int
+	Documents  []FindHit
+	// Hits are the same documents as search hits, for the run's result list.
+	Hits []DocumentHit
+	// Unresolved names filters that matched no type, correspondent or tag.
+	Unresolved []string
+}
+
+// FindProgress reports one pass of a find. phase is "screen" or "read".
+type FindProgress func(phase string, done, total int)
+
+// DocumentFinder runs a find_documents call.
+type DocumentFinder func(ctx context.Context, args FindArgs, progress FindProgress) (FindResult, error)
 
 // SurveyTotal is the server's arithmetic over one number field, per currency
 // when the helper reported one. The model is told to report these rather
@@ -166,7 +225,7 @@ func surveyDocumentsTool() openai.ChatCompletionToolUnionParam {
 				},
 				"query": map[string]any{
 					"type":        "string",
-					"description": "Search terms selecting the documents to survey, with the same filters as search_documents. Either query or ids is required.",
+					"description": "Search terms selecting the documents to survey, with the same filters as find_documents. Either query or ids is required.",
 				},
 				"ids": map[string]any{
 					"type":        "array",
@@ -203,6 +262,150 @@ func surveyDocumentsTool() openai.ChatCompletionToolUnionParam {
 			"required": []string{"question"},
 		},
 	})
+}
+
+func findDocumentsTool() openai.ChatCompletionToolUnionParam {
+	return openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+		Name: "find_documents",
+		Description: openai.String("Find the documents that bear on a question. Every search match is checked by a reader model: " +
+			"first from its catalogue entry, then by reading the likely ones. " +
+			"You get back only the documents that hold something about the question, each with notes, quotes and the chunk numbers to read. " +
+			"Use this to locate evidence; then read_chunks the chunks it names, or read_documents with full when you need the whole document."),
+		Parameters: shared.FunctionParameters{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "Search terms selecting candidates: keywords, names, amounts. Required.",
+				},
+				"question": map[string]any{
+					"type":        "string",
+					"description": "What the reader should check each candidate for. Defaults to the query.",
+				},
+				"date_from":     map[string]any{"type": "string", "description": "Inclusive lower bound on document_date, YYYY-MM-DD."},
+				"date_to":       map[string]any{"type": "string", "description": "Inclusive upper bound on document_date, YYYY-MM-DD."},
+				"document_type": map[string]any{"type": "string", "description": "Document type name filter."},
+				"correspondent": map[string]any{"type": "string", "description": "Correspondent name filter."},
+				"tags": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "Exact tag names; documents with any of them match.",
+				},
+				"max_documents": map[string]any{
+					"type":        "integer",
+					"description": fmt.Sprintf("Only to narrow: every candidate is checked by default, up to %d. Narrow the filters instead when the selection is large.", MaxSurveyDocuments),
+				},
+			},
+			"required": []string{"query"},
+		},
+	})
+}
+
+func decodeFindArgs(data string) (FindArgs, error) {
+	var args FindArgs
+	if err := json.Unmarshal([]byte(data), &args); err == nil && strings.TrimSpace(args.Query) != "" {
+		return args, nil
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(data), &raw); err != nil {
+		return FindArgs{}, err
+	}
+	return FindArgs{
+		Query:         coerceString(raw["query"]),
+		Question:      coerceString(raw["question"]),
+		DateFrom:      coerceString(raw["date_from"]),
+		DateTo:        coerceString(raw["date_to"]),
+		DocumentType:  coerceString(raw["document_type"]),
+		Correspondent: coerceString(raw["correspondent"]),
+		Tags:          coerceStringSlice(raw["tags"]),
+		MaxDocuments:  coerceInt(raw["max_documents"]),
+	}, nil
+}
+
+// runFindTool dispatches find_documents. Verified documents become readable
+// and citable and join the run's results.
+func (a *openAISearchAgent) runFindTool(
+	ctx context.Context,
+	req ResearchRequest,
+	state *researchState,
+	callID, name, argumentsJSON string,
+	emit func(ResearchEvent),
+) (toolExecResult, bool) {
+	if req.Find == nil {
+		return toolExecResult{ID: callID, Name: name, Content: `{"error":"find_documents is not available"}`}, false
+	}
+	args, err := decodeFindArgs(argumentsJSON)
+	if err != nil {
+		return toolExecResult{ID: callID, Name: name, Content: `{"error":"invalid tool arguments"}`}, false
+	}
+	args.Query = strings.TrimSpace(args.Query)
+	args.Question = strings.TrimSpace(args.Question)
+	if args.Query == "" {
+		return toolExecResult{ID: callID, Name: name, Content: `{"error":"query is required"}`}, false
+	}
+	if args.Question == "" {
+		args.Question = strutilFirstNonEmpty(state.question, args.Query)
+	}
+	if args.MaxDocuments <= 0 || args.MaxDocuments > MaxSurveyDocuments {
+		args.MaxDocuments = MaxSurveyDocuments
+	}
+	if repeat, ok := state.claimCall(name, args); !ok {
+		return toolExecResult{ID: callID, Name: name, Content: repeat}, false
+	}
+
+	emit(ResearchEvent{Type: "step", Kind: "find", Status: "start", Query: args.Query})
+	result, err := req.Find(ctx, args, func(phase string, done, total int) {
+		emit(ResearchEvent{Type: "step", Kind: "find", Status: "progress", Query: args.Query, Phase: phase, Done: done, Count: total})
+	})
+	if err != nil {
+		emit(ResearchEvent{Type: "step", Kind: "find", Status: "done", Query: args.Query})
+		return toolExecResult{ID: callID, Name: name, Content: fmt.Sprintf(`{"error":%q}`, err.Error())}, false
+	}
+
+	newDocs := 0
+	inHits := make(map[string]struct{}, len(state.hits))
+	for _, hit := range state.hits {
+		inHits[hit.ID] = struct{}{}
+	}
+	for _, hit := range result.Hits {
+		if hit.ID == "" {
+			continue
+		}
+		state.titles[hit.ID] = hit.Title
+		if _, seen := state.seenIDs[hit.ID]; !seen {
+			state.seenIDs[hit.ID] = struct{}{}
+			newDocs++
+		}
+		if _, ok := inHits[hit.ID]; ok {
+			continue
+		}
+		inHits[hit.ID] = struct{}{}
+		state.hits = append(state.hits, hit)
+	}
+
+	emit(ResearchEvent{Type: "step", Kind: "find", Status: "done", Query: args.Query, Count: len(result.Documents)})
+
+	payload := map[string]any{
+		"question":   args.Question,
+		"candidates": result.Candidates,
+		"screened":   result.Screened,
+		"read":       result.Read,
+		"documents":  result.Documents,
+	}
+	if len(result.Unresolved) > 0 {
+		payload["unresolved_filters"] = result.Unresolved
+		payload["hint"] = "a filter named a type, correspondent or tag that does not exist; nothing was searched"
+	}
+	if len(result.Documents) == 0 && len(result.Unresolved) == 0 {
+		payload["hint"] = "no candidate held anything about the question; try other terms or drop a filter"
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return toolExecResult{ID: callID, Name: name, Content: `{"error":"failed to encode find"}`}, false
+	}
+	// A find that verified anything is progress, even when the documents were
+	// already known: the notes and chunks are new evidence.
+	return toolExecResult{ID: callID, Name: name, Content: string(encoded)}, len(result.Documents) > 0 || newDocs > 0
 }
 
 func countDocumentsTool() openai.ChatCompletionToolUnionParam {
@@ -337,7 +540,7 @@ func (a *openAISearchAgent) runSurveyTool(
 		}
 		args.IDs = wanted
 		if len(wanted) == 0 {
-			return toolExecResult{ID: callID, Name: name, Content: `{"error":"no surveyable ids","hint":"pass ids returned by search_documents in this conversation, or a query"}`}, false
+			return toolExecResult{ID: callID, Name: name, Content: `{"error":"no surveyable ids","hint":"pass ids returned by find_documents in this conversation, or a query"}`}, false
 		}
 	} else if args.Query == "" {
 		return toolExecResult{ID: callID, Name: name, Content: `{"error":"query or ids is required"}`}, false

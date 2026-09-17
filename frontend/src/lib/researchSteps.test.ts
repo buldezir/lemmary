@@ -31,6 +31,28 @@ describe('foldSteps', () => {
   })
 })
 
+describe('find steps', () => {
+  it('shows the screen and read passes, then the documents found', () => {
+    const steps: ResearchStep[] = []
+    applyStep(steps, { kind: 'find', status: 'start', query: 'leak' })
+    expect(steps[0].label).toBe('Finding documents about “leak”')
+    applyStep(steps, { kind: 'find', status: 'progress', query: 'leak', phase: 'screen', done: 12, count: 40 })
+    expect(steps[0].label).toBe('Screened 12 of 40 documents')
+    applyStep(steps, { kind: 'find', status: 'progress', query: 'leak', phase: 'read', done: 3, count: 9 })
+    expect(steps[0].label).toBe('Read 3 of 9 documents')
+    applyStep(steps, { kind: 'find', status: 'done', query: 'leak', count: 2 })
+    expect(steps).toEqual([{ kind: 'find', label: '“leak” — 2 documents found', done: true }])
+  })
+
+  it('never labels an unknown kind as the answer', () => {
+    const steps: ResearchStep[] = []
+    applyStep(steps, { kind: 'verify' as never, status: 'start' })
+    applyStep(steps, { kind: 'verify' as never, status: 'done' })
+    expect(steps[0].label).not.toMatch(/answer/i)
+    expect(steps[0].done).toBe(true)
+  })
+})
+
 describe('web steps', () => {
   it('labels a web search by its query and its result count', () => {
     const steps: ResearchStep[] = []

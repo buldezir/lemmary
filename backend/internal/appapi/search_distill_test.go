@@ -23,10 +23,37 @@ type fakeHelper struct {
 	skip map[string]bool
 	// values are returned per document, for survey totals.
 	values map[string]map[string]string
+	// screened records every screen batch; verdicts answers the screen per
+	// document, maybe when absent. screenFail fails the screen only.
+	screened   [][]ai.ScreenDoc
+	verdicts   map[string]string
+	screenFail bool
+	// chunks are returned per document, as the helper's pointers.
+	chunks map[string][]int
+	// inputs keeps the text each document was shown with.
+	inputs map[string]string
 }
 
 func (f *fakeHelper) Name() string  { return "fake" }
 func (f *fakeHelper) Model() string { return "fake-model" }
+
+func (f *fakeHelper) Screen(_ context.Context, req ai.ScreenRequest) (ai.ScreenResult, error) {
+	f.mu.Lock()
+	f.screened = append(f.screened, req.Docs)
+	f.mu.Unlock()
+	if f.screenFail {
+		return ai.ScreenResult{}, errors.New("screen down")
+	}
+	rows := make([]ai.ScreenRow, 0, len(req.Docs))
+	for _, d := range req.Docs {
+		verdict, ok := f.verdicts[d.ID]
+		if !ok {
+			continue
+		}
+		rows = append(rows, ai.ScreenRow{ID: d.ID, Verdict: verdict})
+	}
+	return ai.ScreenResult{Rows: rows}, nil
+}
 
 func (f *fakeHelper) Distill(_ context.Context, req ai.DistillRequest) (ai.DistillResult, error) {
 	ids := make([]string, 0, len(req.Docs))
@@ -35,6 +62,12 @@ func (f *fakeHelper) Distill(_ context.Context, req ai.DistillRequest) (ai.Disti
 	}
 	f.mu.Lock()
 	f.batches = append(f.batches, ids)
+	if f.inputs == nil {
+		f.inputs = map[string]string{}
+	}
+	for _, d := range req.Docs {
+		f.inputs[d.ID] = d.Text
+	}
 	f.mu.Unlock()
 	if f.fail {
 		return ai.DistillResult{}, errors.New("helper down")
@@ -50,6 +83,7 @@ func (f *fakeHelper) Distill(_ context.Context, req ai.DistillRequest) (ai.Disti
 			Notes:    "note for " + d.ID + " about " + req.Question,
 			Quotes:   []string{"quote from " + d.ID},
 			Values:   f.values[d.ID],
+			Chunks:   f.chunks[d.ID],
 		}
 		rows = append(rows, row)
 	}

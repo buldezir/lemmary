@@ -18,6 +18,7 @@ export type StoredResearchStep = {
   titles?: string[]
   count?: number
   done?: number
+  phase?: 'screen' | 'read'
   distilled?: boolean
 }
 
@@ -63,6 +64,8 @@ function plural(n: number, noun: string) {
 
 function startLabel(event: StoredResearchStep) {
   switch (event.kind) {
+    case 'find':
+      return event.query ? `Finding documents about “${event.query}”` : 'Finding documents'
     case 'search':
       return event.query ? `Searching “${event.query}”` : 'Searching'
     case 'read':
@@ -75,19 +78,30 @@ function startLabel(event: StoredResearchStep) {
       return event.query ? `Searching the web for “${event.query}”` : 'Searching the web'
     case 'web_fetch':
       return `Reading ${plural(event.count ?? 0, 'page')}`
-    default:
+    case 'answer':
       return 'Writing answer'
+    default:
+      return `${capitalize(event.kind)} in progress`
   }
 }
 
 function progressLabel(event: StoredResearchStep) {
   const total = event.count ?? 0
   const done = event.done ?? 0
+  if (event.kind === 'find') {
+    const verb = event.phase === 'read' ? 'Read' : 'Screened'
+    return total > 0 ? `${verb} ${done} of ${plural(total, 'document')}` : 'Finding documents'
+  }
   return total > 0 ? `Surveyed ${done} of ${plural(total, 'document')}` : 'Surveying documents'
+}
+
+function capitalize(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ')
 }
 
 function doneLabel(event: StoredResearchStep, fallback?: string) {
   switch (event.kind) {
+    case 'find':
     case 'search': {
       const found = `${event.count ?? 0} document${event.count === 1 ? '' : 's'} found`
       return event.query ? `“${event.query}” — ${found}` : found
@@ -119,7 +133,9 @@ function doneLabel(event: StoredResearchStep, fallback?: string) {
       const rest = hosts.length > 3 ? `, and ${hosts.length - 3} more` : ''
       return hosts.length > 0 ? `Read ${shown}${rest}` : (fallback ?? 'Read web pages')
     }
-    default:
+    case 'answer':
       return 'Answer written'
+    default:
+      return fallback ?? `${capitalize(event.kind)} done`
   }
 }

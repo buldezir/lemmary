@@ -30,7 +30,7 @@ func researchWithWeb(t *testing.T, req ResearchRequest, turns ...scriptedTurn) (
 func TestTheWebToolsAreDeclaredWhicheverWayTheToggleIs(t *testing.T) {
 	t.Parallel()
 
-	want := []string{"search_documents", "read_documents", "web_search", "web_fetch"}
+	want := []string{"find_documents", "read_documents", "read_chunks", "web_search", "web_fetch"}
 
 	h, _ := researchWithWeb(t, ResearchRequest{},
 		scriptedTurn{content: "ready"}, scriptedTurn{content: "Nothing."})
