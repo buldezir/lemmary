@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"slices"
 	"testing"
 
@@ -145,5 +147,42 @@ func TestMCPListTagsReturnsTheBoundNames(t *testing.T) {
 	}
 	if !slices.Equal(out.Tags, []string{"invoice", "plumbing"}) {
 		t.Fatalf("tags = %v", out.Tags)
+	}
+}
+
+func TestMCPReadRefusesMoreThanTheCap(t *testing.T) {
+	session := connectMCP(t, agentTools{
+		read: func(context.Context, ai.ReadRequest) ([]ai.DocumentContent, error) {
+			t.Fatal("read must not run past the cap")
+			return nil, nil
+		},
+	})
+	ids := make([]string, mcpMaxReadIDs+1)
+	for i := range ids {
+		ids[i] = "doc"
+	}
+	res, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "read_documents",
+		Arguments: map[string]any{"ids": ids},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected IsError, got %#v", res)
+	}
+}
+
+func TestMCPEnabledFromEnv(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cases := map[string]bool{
+		"": false, "1": true, "true": true, "yes": true, "ON": true,
+		"0": false, "false": false, "off": false, "maybe": false,
+	}
+	for value, want := range cases {
+		t.Setenv(EnvMCPEnabled, value)
+		if got := mcpEnabledFromEnv(log); got != want {
+			t.Fatalf("%s=%q: got %v, want %v", EnvMCPEnabled, value, got, want)
+		}
 	}
 }

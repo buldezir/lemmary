@@ -3,9 +3,9 @@ package appapi
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -21,7 +21,12 @@ import (
 // off is what every install had before this existed.
 const EnvMCPEnabled = "MCP_ENABLED"
 
-const mcpMaxBodyBytes = 1 << 20
+const (
+	mcpMaxBodyBytes = 1 << 20
+	// mcpMaxReadIDs bounds one read_documents call. The in-app agent is held
+	// to a handful by its model; an outside agent is held to it here.
+	mcpMaxReadIDs = 10
+)
 
 // RegisterMCP mounts a read-only Model Context Protocol server over the same
 // retrieval closures Deep Search uses, so an outside agent sees exactly what
@@ -29,7 +34,7 @@ const mcpMaxBodyBytes = 1 << 20
 // its own server bound to the caller, which is what makes per-user scoping
 // fall out of the existing auth binder instead of session bookkeeping.
 func RegisterMCP(app core.App, rt *config.Runtime, idx *fulltext.Index) {
-	if !mcpEnabledFromEnv(app) {
+	if !mcpEnabledFromEnv(app.Logger()) {
 		return
 	}
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
@@ -42,17 +47,20 @@ func RegisterMCP(app core.App, rt *config.Runtime, idx *fulltext.Index) {
 	})
 }
 
-func mcpEnabledFromEnv(app core.App) bool {
+func mcpEnabledFromEnv(log *slog.Logger) bool {
 	raw := strings.TrimSpace(os.Getenv(EnvMCPEnabled))
 	if raw == "" {
 		return false
 	}
-	enabled, err := strconv.ParseBool(raw)
-	if err != nil {
-		app.Logger().Error("MCP endpoint disabled: unrecognised value", "env", EnvMCPEnabled, "value", raw)
+	switch strings.ToLower(raw) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
 		return false
 	}
-	return enabled
+	log.Error("MCP endpoint disabled: not a boolean; use 1/true/yes/on or 0/false/no/off",
+		"env", EnvMCPEnabled, "value", raw)
+	return false
 }
 
 func handleMCP(app core.App, rt *config.Runtime, idx *fulltext.Index) func(*core.RequestEvent) error {
@@ -61,7 +69,8 @@ func handleMCP(app core.App, rt *config.Runtime, idx *fulltext.Index) func(*core
 		if !e.HasSuperuserAuth() {
 			userID = e.Auth.Id
 		}
-		tools, err := buildAgentTools(app, rt, idx, userID)
+		// No distillation: a read is excerpted text, never a billed summary.
+		tools, err := buildAgentTools(app, rt, idx, userID, false)
 		if err != nil {
 			return writeError(e, http.StatusInternalServerError, "Failed to prepare the document tools.")
 		}
@@ -94,7 +103,7 @@ type mcpSearchResult struct {
 }
 
 type mcpReadArgs struct {
-	IDs   []string `json:"ids" jsonschema:"Document ids from earlier search_documents results."`
+	IDs   []string `json:"ids" jsonschema:"Document ids from earlier search_documents results, at most 10 per call."`
 	Focus string   `json:"focus,omitempty" jsonschema:"What you are looking for in these documents. A long document comes back as the passages about this, with … marking the gaps, instead of only its beginning."`
 }
 
@@ -149,6 +158,9 @@ func newMCPServer(tools agentTools) *mcp.Server {
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args mcpReadArgs) (*mcp.CallToolResult, mcpReadResult, error) {
 		if len(args.IDs) == 0 {
 			return nil, mcpReadResult{}, fmt.Errorf("ids is required")
+		}
+		if len(args.IDs) > mcpMaxReadIDs {
+			return nil, mcpReadResult{}, fmt.Errorf("at most %d ids per call", mcpMaxReadIDs)
 		}
 		docs, err := tools.read(ctx, ai.ReadRequest{IDs: args.IDs, Focus: args.Focus})
 		if err != nil {

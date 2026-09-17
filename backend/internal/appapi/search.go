@@ -108,13 +108,19 @@ type agentTools struct {
 // buildAgentTools binds one retriever per request, shared by both closures so
 // per-turn work is done once. The dense half is attached only when both an
 // embedder and a chunk index exist; either one missing leaves keywords alone.
-func buildAgentTools(app core.App, rt *config.Runtime, idx *fulltext.Index, userID string) (agentTools, error) {
+// distill hands the retriever the helper model, so a large read comes back as
+// notes and a survey is offered; without it every read is excerpted text and
+// no call reaches a language model.
+func buildAgentTools(app core.App, rt *config.Runtime, idx *fulltext.Index, userID string, distill bool) (agentTools, error) {
 	tags, err := listAvailableTagNames(app, userID)
 	if err != nil {
 		return agentTools{}, err
 	}
 	snap := rt.Snapshot()
-	retriever := &agentRetriever{app: app, idx: idx, userID: userID, helper: snap.SearchHelper}
+	retriever := &agentRetriever{app: app, idx: idx, userID: userID}
+	if distill {
+		retriever.helper = snap.SearchHelper
+	}
 	if embedder := snap.Embedder; embedder != nil && idx != nil && idx.ChunksReady() {
 		retriever.embedQuery = embedQueryFunc(embedder)
 		retriever.chunks = idx
@@ -225,7 +231,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		return searchTurn{}, true, writeError(e, http.StatusServiceUnavailable, "AI search is not configured; update Settings.")
 	}
 
-	tools, err := buildAgentTools(app, rt, idx, searchUserID)
+	tools, err := buildAgentTools(app, rt, idx, searchUserID, true)
 	if err != nil {
 		app.Logger().Error("search list tags failed", slog.Any("error", err))
 		return searchTurn{}, true, writeError(e, http.StatusInternalServerError, "Search is unavailable.")

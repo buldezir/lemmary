@@ -51,7 +51,7 @@ Claude Desktop, Cursor and most other clients take the same thing as JSON:
 | Tool | What it does |
 | --- | --- |
 | `search_documents` | Search by meaning and keywords with optional date, type, correspondent and tag filters. Returns matching documents with one to three verbatim passages each. |
-| `read_documents` | Read documents by id. Long documents come back as excerpts around the `focus` you give. |
+| `read_documents` | Read up to ten documents by id. A long document comes back as excerpts around the `focus` you give, never as a model-written summary. |
 | `count_documents` | Count documents matching filters, optionally grouped by `document_type`, `correspondent`, `year`, `month` or `tag`. Grouping is also how an agent discovers which types and correspondents exist. |
 | `list_tags` | The tag names in the archive, for the tag filters above. |
 
@@ -59,4 +59,4 @@ Uploading, tagging and editing are not exposed. Use the [paperless-ngx API](/pap
 
 ## What it costs
 
-Each `search_documents` call is one Deep Search retrieval: a full-text query plus, when embeddings are configured, one embedding request to your provider for the query text. An agent in a loop pays per call, on your key. Nothing is spent while the flag is unset.
+Each `search_documents` call is one Deep Search retrieval: a full-text query plus, when embeddings are configured, one embedding request to your provider for the query text. A `read_documents` call with a `focus` embeds the focus the same way. Nothing here calls a language model, so no chat tokens are spent. An agent in a loop still pays per call, on your key. Nothing is spent while the flag is unset.
