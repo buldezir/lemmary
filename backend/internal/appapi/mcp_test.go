@@ -6,11 +6,13 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/ai"
 )
 
@@ -227,10 +229,101 @@ func TestMCPPlainAccessListsFiltersAndReadsDocuments(t *testing.T) {
 		t.Fatal("another user's document was readable")
 	}
 
+	// truncated means more follows: false on the last page and past the end,
+	// so a paging loop terminates.
+	got, err = docs.get(ctx, mcpGetArgs{ID: newer.Id, Offset: 595, MaxChars: 5})
+	if err != nil || got.Text != "ewer " || got.Truncated {
+		t.Fatalf("last page = %#v err=%v", got, err)
+	}
+	got, err = docs.get(ctx, mcpGetArgs{ID: newer.Id, Offset: 700, MaxChars: 5})
+	if err != nil || got.Text != "" || got.Truncated {
+		t.Fatalf("past the end = %#v err=%v", got, err)
+	}
+	got, err = docs.get(ctx, mcpGetArgs{ID: newer.Id, Offset: 1, MaxChars: math.MaxInt})
+	if err != nil || len(got.Text) != 599 || got.Truncated {
+		t.Fatalf("max int page = len %d truncated %v err=%v", len(got.Text), got.Truncated, err)
+	}
+	huge := makeQueueDocument(t, app, owner, "completed", strings.Repeat("a", mcpMaxTextChars+1))
+	got, err = docs.get(ctx, mcpGetArgs{ID: huge.Id})
+	if err != nil || len(got.Text) != mcpDefaultTextChars || !got.Truncated {
+		t.Fatalf("default page = len %d truncated %v err=%v", len(got.Text), got.Truncated, err)
+	}
+	got, err = docs.get(ctx, mcpGetArgs{ID: huge.Id, MaxChars: 1 << 40})
+	if err != nil || len(got.Text) != mcpMaxTextChars || !got.Truncated || got.TextChars != mcpMaxTextChars+1 {
+		t.Fatalf("clamped page = len %d truncated %v err=%v", len(got.Text), got.Truncated, err)
+	}
+
+	// Status: unknown values are refused, unfinished is the Inbox's set.
+	if _, err := docs.list(ctx, mcpListArgs{Status: "done"}); err == nil {
+		t.Fatal("expected an unknown status to be refused")
+	}
+	list, err = docs.list(ctx, mcpListArgs{Status: "unfinished"})
+	if err != nil || list.Total != 1 || list.Documents[0].ID != pending.Id {
+		t.Fatalf("unfinished = %#v err=%v", list, err)
+	}
+
+	// Paging is a partition even when two documents share a date.
+	twin := makeQueueDocument(t, app, owner, "completed", "twin")
+	twin.Set("document_date", "2024-01-05")
+	if err := app.Save(twin); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]int{}
+	for offset := 0; ; offset++ {
+		page, err := docs.list(ctx, mcpListArgs{Limit: 1, Offset: offset})
+		if err != nil {
+			t.Fatalf("page %d: %v", offset, err)
+		}
+		if len(page.Documents) == 0 {
+			break
+		}
+		seen[page.Documents[0].ID]++
+	}
+	for _, id := range []string{pending.Id, newer.Id, older.Id, twin.Id, huge.Id} {
+		if seen[id] != 1 {
+			t.Fatalf("document %s listed %d times across pages: %v", id, seen[id], seen)
+		}
+	}
+	if len(seen) != 5 {
+		t.Fatalf("pages covered %d documents: %v", len(seen), seen)
+	}
+
+	// The listing hydrates relations for the page in one go, and the
+	// taxonomy reports a cut list rather than pretending it is whole.
+	for _, name := range []string{"invoice", "plumbing"} {
+		tag := makeQueueTag(t, app, owner, name)
+		newer.Set("tags", append(newer.GetStringSlice("tags"), tag.Id))
+	}
+	if err := app.Save(newer); err != nil {
+		t.Fatal(err)
+	}
+	list, err = docs.list(ctx, mcpListArgs{DateFrom: "2024-03-01", DateTo: "2024-03-01"})
+	if err != nil || len(list.Documents) != 1 || !slices.Equal(list.Documents[0].Tags, []string{"invoice", "plumbing"}) {
+		t.Fatalf("hydrated = %#v err=%v", list, err)
+	}
 	tax, err := docs.taxonomy(ctx)
-	if err != nil || len(tax.Tags) != 0 {
+	if err != nil || !slices.Equal(tax.Tags, []string{"invoice", "plumbing"}) || tax.Truncated {
 		t.Fatalf("taxonomy = %#v err=%v", tax, err)
 	}
+	names, truncated, err := taxonomyNames(app, "tags", owner, 1)
+	if err != nil || !slices.Equal(names, []string{"invoice"}) || !truncated {
+		t.Fatalf("cut taxonomy = %v truncated %v err=%v", names, truncated, err)
+	}
+}
+
+func makeQueueTag(t *testing.T, app core.App, ownerID, name string) *core.Record {
+	t.Helper()
+	tags, err := app.FindCollectionByNameOrId("tags")
+	if err != nil {
+		t.Fatalf("tags collection: %v", err)
+	}
+	tag := core.NewRecord(tags)
+	tag.Set("user", ownerID)
+	tag.Set("name", name)
+	if err := app.Save(tag); err != nil {
+		t.Fatalf("save tag: %v", err)
+	}
+	return tag
 }
 
 func TestMCPReadRefusesMoreThanTheCap(t *testing.T) {

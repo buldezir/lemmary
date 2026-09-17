@@ -3,11 +3,13 @@ package appapi
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/strutil"
 )
 
@@ -15,8 +17,14 @@ const (
 	mcpDefaultListLimit = 50
 	mcpMaxListLimit     = 200
 	// mcpDefaultTextChars is how much of a document one get_document call
-	// returns when the caller does not say; the rest is paged by offset.
+	// returns when the caller does not say; mcpMaxTextChars is the most it may
+	// ask for. The rest is paged by offset.
 	mcpDefaultTextChars = 100_000
+	mcpMaxTextChars     = 200_000
+	// mcpMaxTaxonomyNames bounds one list_taxonomy answer per collection. Ten
+	// times the in-app agent's prompt budget, because an agent filtering by
+	// name needs the whole vocabulary, not a representative slice.
+	mcpMaxTaxonomyNames = 5000
 )
 
 // mcpDocument is the metadata an agent gets for one document, with or
@@ -42,7 +50,7 @@ type mcpListArgs struct {
 	DocumentType  string   `json:"document_type,omitempty" jsonschema:"Document type name filter (substring match)."`
 	Correspondent string   `json:"correspondent,omitempty" jsonschema:"Correspondent name filter (substring match)."`
 	Tags          []string `json:"tags,omitempty" jsonschema:"Exact tag names; documents with any of them match."`
-	Status        string   `json:"status,omitempty" jsonschema:"processing_status filter: pending, processing, completed, failed, cancelled or needs_review."`
+	Status        string   `json:"status,omitempty" jsonschema:"processing_status filter: pending, processing, completed, failed, cancelled, needs_review, or unfinished for everything but completed."`
 	Sort          string   `json:"sort,omitempty" jsonschema:"One of date_desc (default), date_asc, added_desc, added_asc."`
 	Limit         int      `json:"limit,omitempty" jsonschema:"Page size, 1-200, default 50."`
 	Offset        int      `json:"offset,omitempty" jsonschema:"Documents to skip, for paging."`
@@ -60,7 +68,7 @@ type mcpListResult struct {
 type mcpGetArgs struct {
 	ID       string `json:"id" jsonschema:"Document id."`
 	Offset   int    `json:"offset,omitempty" jsonschema:"Characters of text to skip, for paging through a long document."`
-	MaxChars int    `json:"max_chars,omitempty" jsonschema:"Most characters of text to return, default 100000."`
+	MaxChars int    `json:"max_chars,omitempty" jsonschema:"Most characters of text to return: default 100000, at most 200000."`
 }
 
 type mcpGetResult struct {
@@ -68,7 +76,8 @@ type mcpGetResult struct {
 	Text string `json:"text"`
 	// TextChars is the whole document's length, so a caller can tell a
 	// complete read from a page of one.
-	TextChars int  `json:"text_chars"`
+	TextChars int `json:"text_chars"`
+	// Truncated means text remains after this page.
 	Truncated bool `json:"truncated,omitempty"`
 }
 
@@ -76,6 +85,8 @@ type mcpTaxonomyResult struct {
 	Tags           []string `json:"tags"`
 	DocumentTypes  []string `json:"document_types"`
 	Correspondents []string `json:"correspondents"`
+	// Truncated marks a list cut at the per-collection cap.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // mcpDocs is plain access to the archive: no ranking, no excerpting, just the
@@ -97,20 +108,64 @@ func newMCPDocs(app core.App, userID string) mcpDocs {
 		},
 		taxonomy: func(context.Context) (mcpTaxonomyResult, error) {
 			out := mcpTaxonomyResult{}
-			var err error
-			if out.Tags, err = listNames(app, "tags", userID); err != nil {
-				return out, err
+			for _, part := range []struct {
+				collection string
+				into       *[]string
+			}{
+				{"tags", &out.Tags},
+				{"document_types", &out.DocumentTypes},
+				{"correspondents", &out.Correspondents},
+			} {
+				names, truncated, err := taxonomyNames(app, part.collection, userID, mcpMaxTaxonomyNames)
+				if err != nil {
+					return out, err
+				}
+				*part.into = names
+				out.Truncated = out.Truncated || truncated
 			}
-			if out.DocumentTypes, err = listNames(app, "document_types", userID); err != nil {
-				return out, err
-			}
-			out.Correspondents, err = listNames(app, "correspondents", userID)
-			return out, err
+			return out, nil
 		},
 	}
 }
 
+// taxonomyNames asks for one more than limit, which is how it can tell a
+// full list from one that was cut there.
+func taxonomyNames(app core.App, collection, userID string, limit int) ([]string, bool, error) {
+	names, err := listNames(app, collection, userID, limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(names) > limit {
+		return names[:limit], true, nil
+	}
+	return names, false, nil
+}
+
+// mcpStatuses maps the status filter to the set of statuses it means. An
+// unknown one is refused rather than matched against nothing.
+func mcpStatuses(status string) ([]string, error) {
+	status = strings.ToLower(strings.TrimSpace(status))
+	switch status {
+	case "":
+		return nil, nil
+	case models.StatusFilterUnfinished:
+		return models.UnfinishedDocStatuses, nil
+	case models.DocStatusPending, models.DocStatusProcessing, models.DocStatusCompleted,
+		models.DocStatusFailed, models.DocStatusCancelled, models.DocStatusNeedsReview:
+		return []string{status}, nil
+	}
+	return nil, fmt.Errorf("unknown status %q; use pending, processing, completed, failed, cancelled, needs_review or unfinished", status)
+}
+
 func listMCPDocuments(ctx context.Context, app core.App, retriever *agentRetriever, args mcpListArgs) (mcpListResult, error) {
+	order, err := mcpListOrder(args.Sort)
+	if err != nil {
+		return mcpListResult{}, err
+	}
+	statuses, err := mcpStatuses(args.Status)
+	if err != nil {
+		return mcpListResult{}, err
+	}
 	ftQuery, unresolved, err := retriever.resolveFilters(ai.SearchDocumentsArgs{
 		DateFrom:      args.DateFrom,
 		DateTo:        args.DateTo,
@@ -124,10 +179,6 @@ func listMCPDocuments(ctx context.Context, app core.App, retriever *agentRetriev
 	result := mcpListResult{Documents: []mcpDocument{}, Unresolved: unresolved}
 	if len(unresolved) > 0 {
 		return result, nil
-	}
-	order, err := mcpListOrder(args.Sort)
-	if err != nil {
-		return mcpListResult{}, err
 	}
 	limit := args.Limit
 	if limit <= 0 {
@@ -143,7 +194,7 @@ func listMCPDocuments(ctx context.Context, app core.App, retriever *agentRetriev
 		tagIDs:           ftQuery.TagIDs,
 		dateFrom:         ftQuery.DateFrom,
 		dateTo:           ftQuery.DateTo,
-		status:           strings.ToLower(strings.TrimSpace(args.Status)),
+		statuses:         statuses,
 	}
 	where, params := documentConditions(spec)
 	sql := `FROM documents d`
@@ -159,34 +210,47 @@ func listMCPDocuments(ctx context.Context, app core.App, retriever *agentRetriev
 	}
 	result.Total = total.Count
 	var ids []string
-	err = db.NewQuery(`SELECT d.id ` + sql + ` ORDER BY ` + order + ` LIMIT ` + fmt.Sprint(limit) + ` OFFSET ` + fmt.Sprint(max(args.Offset, 0))).
+	err = db.NewQuery(`SELECT d.id `+sql+` ORDER BY `+order+` LIMIT `+fmt.Sprint(limit)+` OFFSET `+fmt.Sprint(max(args.Offset, 0))).
 		Bind(params).WithContext(ctx).Column(&ids)
 	if err != nil {
 		return mcpListResult{}, fmt.Errorf("list documents: %w", err)
 	}
+	if len(ids) == 0 {
+		return result, nil
+	}
+	records, err := app.FindRecordsByIds("documents", ids)
+	if err != nil {
+		return mcpListResult{}, fmt.Errorf("load documents: %w", err)
+	}
+	// One page, one fetch per relation: the query's order is kept and a row
+	// deleted between the two statements is simply absent.
+	expandMCPDocuments(app, records)
+	byID := make(map[string]*core.Record, len(records))
+	for _, record := range records {
+		byID[record.Id] = record
+	}
 	for _, id := range ids {
-		record, err := app.FindRecordById("documents", id)
-		if err != nil {
-			continue
+		if record := byID[id]; record != nil {
+			result.Documents = append(result.Documents, mcpDocumentOf(record))
 		}
-		result.Documents = append(result.Documents, mcpDocumentOf(app, record))
 	}
 	return result, nil
 }
 
 // mcpListOrder maps the sort name to SQL. An undated document sorts by the
-// day it was added, which is the date the app shows for it.
+// day it was added, which is the date the app shows for it. The id is the
+// tiebreaker that makes paging a partition when timestamps collide.
 func mcpListOrder(sort string) (string, error) {
 	const date = `COALESCE(NULLIF(substr(d.document_date, 1, 10), ''), substr(d.created, 1, 10))`
 	switch strings.ToLower(strings.TrimSpace(sort)) {
 	case "", "date_desc":
-		return date + ` DESC, d.created DESC`, nil
+		return date + ` DESC, d.created DESC, d.id DESC`, nil
 	case "date_asc":
-		return date + ` ASC, d.created ASC`, nil
+		return date + ` ASC, d.created ASC, d.id ASC`, nil
 	case "added_desc":
-		return `d.created DESC`, nil
+		return `d.created DESC, d.id DESC`, nil
 	case "added_asc":
-		return `d.created ASC`, nil
+		return `d.created ASC, d.id ASC`, nil
 	}
 	return "", fmt.Errorf("unknown sort %q; use date_desc, date_asc, added_desc or added_asc", sort)
 }
@@ -200,28 +264,60 @@ func getMCPDocument(app core.App, userID string, args mcpGetArgs) (mcpGetResult,
 	if err != nil || (userID != "" && record.GetString("user") != userID) {
 		return mcpGetResult{}, fmt.Errorf("no document %s", id)
 	}
+	expandMCPDocuments(app, []*core.Record{record})
 	text := record.GetString("ocr_text")
-	out := mcpGetResult{mcpDocument: mcpDocumentOf(app, record), TextChars: utf8.RuneCountInString(text)}
+	out := mcpGetResult{mcpDocument: mcpDocumentOf(record), TextChars: utf8.RuneCountInString(text)}
 	maxChars := args.MaxChars
 	if maxChars <= 0 {
 		maxChars = mcpDefaultTextChars
 	}
-	runes := []rune(text)
-	start := min(max(args.Offset, 0), len(runes))
-	end := min(start+maxChars, len(runes))
-	out.Text = string(runes[start:end])
-	out.Truncated = start > 0 || end < len(runes)
+	if maxChars > mcpMaxTextChars {
+		maxChars = mcpMaxTextChars
+	}
+	out.Text, out.Truncated = runePage(text, max(args.Offset, 0), maxChars)
 	return out, nil
 }
 
-func mcpDocumentOf(app core.App, record *core.Record) mcpDocument {
+// runePage is text[offset:offset+count] in runes, and whether any text
+// follows the page. One pass over the bytes, no rune slice of the whole
+// document for a page of it. count is bounded by the caller, so the sum
+// cannot wrap.
+func runePage(text string, offset, count int) (string, bool) {
+	start := len(text)
+	n := 0
+	for i := range text {
+		if n == offset {
+			start = i
+		}
+		if n == offset+count {
+			return text[start:i], true
+		}
+		n++
+	}
+	return text[start:], false
+}
+
+func expandMCPDocuments(app core.App, records []*core.Record) {
+	_ = app.ExpandRecords(records, []string{"tags", "document_type", "correspondent"}, nil)
+}
+
+// mcpDocumentOf reads an expanded record; relations that failed to expand
+// come back empty rather than as ids.
+func mcpDocumentOf(record *core.Record) mcpDocument {
+	tags := []string{}
+	for _, tag := range record.ExpandedAll("tags") {
+		if name := strings.TrimSpace(tag.GetString("name")); name != "" {
+			tags = append(tags, name)
+		}
+	}
+	slices.Sort(tags)
 	return mcpDocument{
 		ID:               record.Id,
 		Title:            strutil.FirstNonEmpty(record.GetString("title"), "Untitled document"),
 		DocumentDate:     truncateDate(record.GetString("document_date")),
-		DocumentType:     relatedName(app, "document_types", record.GetString("document_type")),
-		Correspondent:    relatedName(app, "correspondents", record.GetString("correspondent")),
-		Tags:             documentTagNames(app, record),
+		DocumentType:     expandedName(record, "document_type"),
+		Correspondent:    expandedName(record, "correspondent"),
+		Tags:             tags,
 		Summary:          record.GetString("summary"),
 		ProcessingStatus: record.GetString("processing_status"),
 		PageCount:        record.GetInt("page_count"),
@@ -229,4 +325,11 @@ func mcpDocumentOf(app core.App, record *core.Record) mcpDocument {
 		Created:          record.GetString("created"),
 		Updated:          record.GetString("updated"),
 	}
+}
+
+func expandedName(record *core.Record, field string) string {
+	if related := record.ExpandedOne(field); related != nil {
+		return related.GetString("name")
+	}
+	return ""
 }

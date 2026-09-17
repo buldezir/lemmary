@@ -32,7 +32,8 @@ const (
 // retrieval closures Deep Search uses, so an outside agent sees exactly what
 // the in-app agent sees for that token's user. Stateless: every request builds
 // its own server bound to the caller, which is what makes per-user scoping
-// fall out of the existing auth binder instead of session bookkeeping.
+// fall out of the existing auth binder instead of session bookkeeping. Every
+// token, superuser or not, is scoped to one users account.
 func RegisterMCP(app core.App, rt *config.Runtime, idx *fulltext.Index) {
 	if !mcpEnabledFromEnv(app.Logger()) {
 		return
@@ -65,9 +66,13 @@ func mcpEnabledFromEnv(log *slog.Logger) bool {
 
 func handleMCP(app core.App, rt *config.Runtime, idx *fulltext.Index) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		userID := ""
-		if !e.HasSuperuserAuth() {
-			userID = e.Auth.Id
+		// Always one account's view. A superuser token resolves to its paired
+		// users record rather than to every account: the admin is also an
+		// ordinary user here, and an agent holding its token gets that
+		// user's archive, not everyone's.
+		userID, err := resolveOwnerUserID(app, e)
+		if err != nil {
+			return writeOwnerError(e, err)
 		}
 		// No distillation: a read is excerpted text, never a billed summary.
 		tools, err := buildAgentTools(app, rt, idx, userID, false)
@@ -171,8 +176,7 @@ func newMCPServer(tools agentTools, docs mcpDocs) *mcp.Server {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "count_documents",
 		Description: "Count the documents matching filters, optionally grouped. " +
-			"Use this for how-many and distribution questions instead of counting search results: a search result is a capped page, not the archive. " +
-			"Grouping by document_type or correspondent is also how to discover which ones exist.",
+			"Use this for how-many and distribution questions instead of counting search results: a search result is a capped page, not the archive.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args mcpCountArgs) (*mcp.CallToolResult, ai.CountResult, error) {
 		if tools.count == nil {
 			return nil, ai.CountResult{}, fmt.Errorf("counting is unavailable")
@@ -207,7 +211,7 @@ func newMCPServer(tools agentTools, docs mcpDocs) *mcp.Server {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "get_document",
 		Description: "One document's metadata and its full extracted text, unranked and unabridged. " +
-			"Text is paged by offset and max_chars; text_chars is the whole length.",
+			"Text is paged by offset and max_chars (at most 200000); text_chars is the whole length and truncated means more follows this page.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args mcpGetArgs) (*mcp.CallToolResult, mcpGetResult, error) {
 		result, err := docs.get(ctx, args)
 		if err != nil {
@@ -217,8 +221,9 @@ func newMCPServer(tools agentTools, docs mcpDocs) *mcp.Server {
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_taxonomy",
-		Description: "The tag, document type and correspondent names in the archive, for the filters of the other tools.",
+		Name: "list_taxonomy",
+		Description: "The tag, document type and correspondent names in the archive, for the filters of the other tools. " +
+			"Each list is cut at 5000 names, and truncated says when that happened.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, mcpTaxonomyResult, error) {
 		result, err := docs.taxonomy(ctx)
 		if err != nil {

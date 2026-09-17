@@ -19,11 +19,11 @@ TOKEN=$(curl -s -X POST https://lemmary.example.com/api/token/ \
   -d username=you@example.com -d password=… | jq -r .token)
 ```
 
-A superuser (PocketBase admin) token searches every account. A regular user token is scoped to that user's documents.
+Every token is scoped to one account's documents. An admin's token maps to the admin's own `users` account (the one created alongside it at setup), not to every account on the instance.
 
 ## Connect
 
-The server speaks Streamable HTTP at `/api/mcp` and expects `Authorization: Bearer <token>`.
+The server speaks Streamable HTTP at `POST /api/mcp` and expects `Authorization: Bearer <token>`. As the protocol requires, requests carry `Accept: application/json, text/event-stream`; MCP clients do this themselves, a hand-rolled `curl` has to.
 
 Claude Code:
 
@@ -54,10 +54,10 @@ Two kinds: search over the index, and plain access to the rows. The intelligence
 | --- | --- |
 | `search_documents` | Hybrid search by meaning and keywords over the full-text and vector index, with optional date, type, correspondent and tag filters. Returns matching documents with one to three verbatim passages each. |
 | `read_documents` | The parts of up to ten documents that matter for a `focus`, ranked by the same index. Long documents come back as passages with gaps marked. |
-| `list_documents` | Plain listing by metadata: date range, document type, correspondent, tags, processing status; sorted by date or by when it was added; paged with `limit` and `offset`. Returns metadata and the total, no text. |
-| `get_document` | One document's metadata and its whole extracted text, unranked and unabridged. Page through a long one with `offset` and `max_chars`. |
+| `list_documents` | Plain listing by metadata: date range, document type, correspondent, tags, processing status (`unfinished` means everything but completed); sorted by date or by when it was added; paged with `limit` and `offset`. Returns metadata and the total, no text. |
+| `get_document` | One document's metadata and its extracted text, unranked and unabridged. A call returns up to 200,000 characters; page through a longer one with `offset` and `max_chars`, and `truncated` says when more follows. |
 | `count_documents` | Count documents matching filters, optionally grouped by `document_type`, `correspondent`, `year`, `month` or `tag`. |
-| `list_taxonomy` | The tag, document type and correspondent names in the archive, for the filters above. |
+| `list_taxonomy` | The tag, document type and correspondent names in the archive, for the filters above. Each list stops at 5,000 names and says so with `truncated`. |
 
 Uploading, tagging and editing are not exposed. Use the [paperless-ngx API](/paperless_ngx) for that.
 
