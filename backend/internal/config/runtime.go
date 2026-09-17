@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/v3/option"
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/aiprovider"
@@ -74,8 +74,8 @@ func NewRuntime(env AIEnv) *Runtime {
 	// header: see aiprovider.SetManaged.
 	aiprovider.SetManaged(env.Managed)
 	return &Runtime{
-		snap:    Snapshot{Cfg: env.Defaults()},
-		env:     env,
+		snap: Snapshot{Cfg: env.Defaults()},
+		env:  env,
 		// slog's default rather than app.Logger(): this is built before the app
 		// exists, and swapping the logger in later would race every lookup.
 		catalog: aiprovider.NewCatalog(env.ModelCatalogURL, slog.Default().With("component", "ai")),

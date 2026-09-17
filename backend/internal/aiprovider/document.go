@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/v3/option"
 	"github.com/pocketbase/pocketbase/core"
 )
 

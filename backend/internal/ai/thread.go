@@ -3,7 +3,7 @@ package ai
 import (
 	"strings"
 
-	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/v3"
 )
 
 // ToolCall is one call an assistant turn made, in the shape the stored thread
@@ -62,11 +62,13 @@ func (m ThreadMessage) Param() (openai.ChatCompletionMessageParamUnion, bool) {
 			assistant.Content.OfString = openai.String(m.Content)
 		}
 		for _, call := range m.Calls {
-			assistant.ToolCalls = append(assistant.ToolCalls, openai.ChatCompletionMessageToolCallParam{
-				ID: call.ID,
-				Function: openai.ChatCompletionMessageToolCallFunctionParam{
-					Name:      call.Name,
-					Arguments: call.Arguments,
+			assistant.ToolCalls = append(assistant.ToolCalls, openai.ChatCompletionMessageToolCallUnionParam{
+				OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
+					ID: call.ID,
+					Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
+						Name:      call.Name,
+						Arguments: call.Arguments,
+					},
 				},
 			})
 		}

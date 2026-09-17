@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/v3"
 
 	"lemmary/backend/internal/strutil"
 )

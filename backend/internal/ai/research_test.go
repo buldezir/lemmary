@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openai/openai-go/shared"
+	"github.com/openai/openai-go/v3/shared"
 )
 
 // scriptedTurn is one canned model response: either tool calls, or the prose
@@ -994,8 +994,8 @@ func TestResearchPromptExplainsFocus(t *testing.T) {
 	tools := researchTools()
 	var read *shared.FunctionDefinitionParam
 	for i := range tools {
-		if tools[i].Function.Name == "read_documents" {
-			read = &tools[i].Function
+		if def := tools[i].GetFunction(); def != nil && def.Name == "read_documents" {
+			read = def
 		}
 	}
 	if read == nil {
@@ -1066,7 +1066,7 @@ func TestSearchPromptAnswersFromPassages(t *testing.T) {
 			t.Fatalf("search prompt missing %q: %s", want, prompt)
 		}
 	}
-	if desc := searchDocumentsTools()[0].Function.Description.Value; !strings.Contains(desc, "verbatim passages") {
+	if desc := searchDocumentsTools()[0].GetFunction().Description.Value; !strings.Contains(desc, "verbatim passages") {
 		t.Fatalf("search_documents description does not promise passages: %q", desc)
 	}
 }

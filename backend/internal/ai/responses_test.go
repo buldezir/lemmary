@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/responses"
-	"github.com/openai/openai-go/shared"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 
 	"lemmary/backend/internal/aiprovider"
 )
@@ -259,23 +259,23 @@ func TestResponsesRequestShape(t *testing.T) {
 			openai.SystemMessage("you are an archivist"),
 			openai.UserMessage("find my insurance"),
 			{OfAssistant: &openai.ChatCompletionAssistantMessageParam{
-				ToolCalls: []openai.ChatCompletionMessageToolCallParam{{
-					ID: "call_7",
-					Function: openai.ChatCompletionMessageToolCallFunctionParam{
-						Name: "search_documents", Arguments: `{"query":"insurance"}`,
+				ToolCalls: []openai.ChatCompletionMessageToolCallUnionParam{{
+					OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
+						ID: "call_7",
+						Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
+							Name: "search_documents", Arguments: `{"query":"insurance"}`,
+						},
 					},
 				}},
 			}},
 			openai.ToolMessage("1 hit", "call_7"),
 		},
 		Temperature: openai.Float(0.2),
-		Tools: []openai.ChatCompletionToolParam{{
-			Function: shared.FunctionDefinitionParam{
-				Name:        "search_documents",
-				Description: openai.String("Search the archive"),
-				Parameters:  shared.FunctionParameters{"type": "object"},
-			},
-		}},
+		Tools: []openai.ChatCompletionToolUnionParam{openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+			Name:        "search_documents",
+			Description: openai.String("Search the archive"),
+			Parameters:  shared.FunctionParameters{"type": "object"},
+		})},
 		ToolChoice: openai.ChatCompletionToolChoiceOptionUnionParam{OfAuto: openai.String("auto")},
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONObject: &shared.ResponseFormatJSONObjectParam{},
@@ -379,6 +379,87 @@ func TestChatCompletionFromResponse(t *testing.T) {
 	}
 	if u := usageOf(got); u.Prompt != 11 || u.Completion != 5 || u.Cached != 4 {
 		t.Fatalf("usage = %+v", u)
+	}
+}
+
+// The invariant behind the whole tool loop: a call the Responses API reported
+// must come back on the next request as a function_call and a matching
+// function_call_output, with the call id intact through both translations.
+func TestAResponsesToolCallSurvivesBeingReplayed(t *testing.T) {
+	t.Parallel()
+	var resp responses.Response
+	raw := `{"id":"resp_1","model":"m","status":"completed","output":[
+	  {"id":"fc_1","type":"function_call","call_id":"call_9","name":"search_documents","arguments":"{\"query\":\"x\"}"}]}`
+	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	replay := []openai.ChatCompletionMessageParamUnion{
+		openai.UserMessage("find it"),
+		chatCompletionFrom(&resp).Choices[0].Message.ToParam(),
+		openai.ToolMessage("1 hit", "call_9"),
+	}
+	input, err := responsesInputFrom(replay)
+	if err != nil {
+		t.Fatalf("responsesInputFrom: %v", err)
+	}
+	body, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var items []map[string]any
+	if err := json.Unmarshal(body, &items); err != nil {
+		t.Fatalf("unmarshal items: %v", err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("items = %s; the call or its output was dropped", body)
+	}
+	if items[1]["type"] != "function_call" || items[1]["call_id"] != "call_9" {
+		t.Fatalf("call item = %+v", items[1])
+	}
+	if items[2]["type"] != "function_call_output" || items[2]["call_id"] != "call_9" {
+		t.Fatalf("output item = %+v", items[2])
+	}
+}
+
+// openai-go v3 replays only a tool call whose "type" it recognises, and a
+// gateway is free to omit that field. Left alone the call marshals as a literal
+// null and the provider rejects the next request.
+func TestAToolCallWithoutATypeIsStillReplayable(t *testing.T) {
+	t.Parallel()
+	var resp openai.ChatCompletion
+	raw := `{"id":"c1","model":"m","choices":[{"index":0,"finish_reason":"tool_calls",
+	  "message":{"role":"assistant","content":"","tool_calls":[
+	    {"id":"call_9","function":{"name":"search_documents","arguments":"{}"}}]}}]}`
+	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got := resp.Choices[0].Message.ToolCalls[0].Type; got != "" {
+		t.Fatalf("type = %q; the fixture is meant to leave it off", got)
+	}
+
+	body, err := json.Marshal(nameToolCallVariants(&resp).Choices[0].Message.ToParam())
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(body), "null") {
+		t.Fatalf("replayed assistant message = %s", body)
+	}
+	var msg struct {
+		ToolCalls []struct {
+			ID       string `json:"id"`
+			Type     string `json:"type"`
+			Function struct {
+				Name string `json:"name"`
+			} `json:"function"`
+		} `json:"tool_calls"`
+	}
+	if err := json.Unmarshal(body, &msg); err != nil {
+		t.Fatalf("unmarshal replay: %v", err)
+	}
+	if len(msg.ToolCalls) != 1 || msg.ToolCalls[0].ID != "call_9" ||
+		msg.ToolCalls[0].Type != "function" || msg.ToolCalls[0].Function.Name != "search_documents" {
+		t.Fatalf("replayed tool calls = %s", body)
 	}
 }
 
@@ -562,7 +643,7 @@ func TestTheChatGPTSDKNeverTranslatesToResponsesItself(t *testing.T) {
 	_, err := client.Complete(context.Background(), openai.ChatCompletionNewParams{
 		Model:    shared.ChatModel(model),
 		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("hi")},
-		Tools:    []openai.ChatCompletionToolParam{{Function: shared.FunctionDefinitionParam{Name: "search_documents"}}},
+		Tools:    []openai.ChatCompletionToolUnionParam{openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{Name: "search_documents"})},
 	})
 	if err == nil {
 		t.Fatal("the refusal was swallowed by a fallback that cannot carry the Codex headers")

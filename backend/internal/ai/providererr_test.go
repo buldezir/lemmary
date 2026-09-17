@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/v3"
 )
 
 func apiError(status int, message string) error {

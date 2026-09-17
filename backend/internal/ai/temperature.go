@@ -4,8 +4,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/packages/param"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/packages/param"
 	"lemmary/backend/internal/aiprovider"
 )
 
