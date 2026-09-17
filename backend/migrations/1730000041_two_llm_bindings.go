@@ -1,6 +1,10 @@
 package migrations
 
 import (
+	"database/sql"
+	"errors"
+	"strings"
+
 	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
 )
@@ -67,19 +71,28 @@ func collapseLLMBindings(app core.App) error {
 
 // carrySearchBindingToResearch runs while the old columns still exist. The
 // singleton is seeded at boot, not by a migration, so a fresh install has no
-// record here and nothing to carry.
+// record here and nothing to carry. Only a whole pair is carried: the old
+// schema let a provider stand with no model and filled it in at runtime, and
+// the new validator refuses that shape on the next save.
 func carrySearchBindingToResearch(app core.App) error {
 	record, err := app.FindRecordById("app_settings", "appsettings0001")
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
 	if err != nil {
+		return err
+	}
+	providerID := strings.TrimSpace(record.GetString("search_provider_id"))
+	model := strings.TrimSpace(record.GetString("search_model"))
+	if providerID == "" || model == "" {
 		return nil
 	}
-	general := record.GetString("extract_provider_id") + "|" + record.GetString("extract_model")
-	search := record.GetString("search_provider_id") + "|" + record.GetString("search_model")
-	if search == "|" || search == general {
+	general := strings.TrimSpace(record.GetString("extract_provider_id")) + "|" + strings.TrimSpace(record.GetString("extract_model"))
+	if providerID+"|"+model == general {
 		return nil
 	}
-	record.Set("research_provider_id", record.GetString("search_provider_id"))
-	record.Set("research_model", record.GetString("search_model"))
+	record.Set("research_provider_id", providerID)
+	record.Set("research_model", model)
 	return app.Save(record)
 }
 

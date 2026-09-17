@@ -218,11 +218,14 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 
 	// After the session, so a continued conversation runs on the binding stored
 	// with it rather than on whatever the request echoed back. Research runs on
-	// its own binding; search is one round on the general model.
+	// its own binding; search is one round on the general model. Resolved after
+	// the session too: a conversation that stored nothing means "follow
+	// Settings", and the snapshot agent it would otherwise get is the general
+	// model, not the research one.
 	cfg := rt.Snapshot().Cfg
 	requested := aiprovider.Binding{ProviderID: req.ProviderID, Model: req.Model}
 	defaultProviderID, defaultModel := configuredSearchBinding(cfg, mode)
-	binding := conversationBinding(session, recordedBinding(requested, defaultProviderID, defaultModel))
+	binding := recordedBinding(conversationBinding(session, requested), defaultProviderID, defaultModel)
 	snap, err := conversationSnapshot(app, rt, config.Overrides{Search: binding}, session, requested)
 	if err != nil {
 		return searchTurn{}, true, writeError(e, http.StatusBadRequest, err.Error())

@@ -22,9 +22,8 @@ type Snapshot struct {
 	AI          ai.Extractor
 	Chatter     ai.Chatter
 	SearchAgent ai.SearchAgent
-	// SearchHelper does Deep Search's bulk per-document work. Nil only when the
-	// search agent itself is unavailable; otherwise set on the helper binding or,
-	// through the fallback chain, on the search model.
+	// SearchHelper does Deep Search's bulk per-document work on the general
+	// model. Nil only when no language model is bound at all.
 	SearchHelper ai.Helper
 	// Shares the extraction provider: both reason over document text.
 	Splitter ai.Splitter

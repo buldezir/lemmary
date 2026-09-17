@@ -128,14 +128,19 @@ func TestPatchResearchBindingMayBeEmptyAndIsManaged(t *testing.T) {
 
 	err := applySettingsPatch(nil, record, settingsPatchRequest{
 		ResearchProviderID: strptr(""),
-		ResearchModel:      strptr(" big-model "),
+		ResearchModel:      strptr(""),
 	})
 	if err != nil {
 		t.Fatalf("applySettingsPatch: %v", err)
 	}
-	if record.GetString("research_provider_id") != "" || record.GetString("research_model") != "big-model" {
+	if record.GetString("research_provider_id") != "" || record.GetString("research_model") != "" {
 		t.Fatalf("research binding = %v / %v", record.Get("research_provider_id"), record.Get("research_model"))
 	}
+	// A model with no provider never runs, and Settings would still show it.
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{ResearchModel: strptr("big-model")}); err == nil {
+		t.Fatal("a research model without a provider must be refused")
+	}
+	record.Set("research_model", "")
 
 	if err := applySettingsPatch(nil, record, settingsPatchRequest{ExtractModel: strptr("")}); err == nil {
 		t.Fatal("an empty general model must be refused")

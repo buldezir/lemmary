@@ -360,12 +360,15 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 			return errInvalid("extract_model is required")
 		}
 	}
-	if researchID := strings.TrimSpace(record.GetString("research_provider_id")); researchID != "" {
-		// Half a binding would read as bound in Settings and quietly run research
-		// on the general model.
-		if strings.TrimSpace(record.GetString("research_model")) == "" {
-			return errInvalid("research_model is required when a research provider is set")
-		}
+	// Both halves or neither: half a binding would read as bound in Settings and
+	// quietly run research on the general model.
+	researchID := strings.TrimSpace(record.GetString("research_provider_id"))
+	researchModel := strings.TrimSpace(record.GetString("research_model"))
+	if researchID != "" && researchModel == "" {
+		return errInvalid("research_model is required when a research provider is set")
+	}
+	if researchID == "" && researchModel != "" {
+		return errInvalid("research_provider_id is required when a research model is set")
 	}
 
 	embeddingID := strings.TrimSpace(record.GetString("embedding_provider_id"))

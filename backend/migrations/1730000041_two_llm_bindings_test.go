@@ -55,13 +55,17 @@ func TestResearchBindingRoundTripsAndFallsBackToGeneral(t *testing.T) {
 // binding, which reads as "same as general" in Settings.
 func TestCollapseCarriesADistinctSearchBindingIntoResearch(t *testing.T) {
 	for _, tc := range []struct {
-		name         string
-		searchModel  string
-		wantResearch string
+		name           string
+		searchProvider string
+		searchModel    string
+		wantResearch   string
 	}{
-		{"distinct search model", "search-model", "search-model"},
-		{"same as extraction", "general-model", ""},
-		{"unbound search", "", ""},
+		{"distinct search model", "prov", "search-model", "search-model"},
+		{"same as extraction", "prov", "general-model", ""},
+		{"unbound search", "", "", ""},
+		// The old schema let a provider stand alone and filled the model in at
+		// runtime; carried as is, the new validator would refuse every later save.
+		{"provider without a model", "prov", "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			app := bootMigratedApp(t)
@@ -77,10 +81,8 @@ func TestCollapseCarriesADistinctSearchBindingIntoResearch(t *testing.T) {
 			settings.MarkAsNew()
 			settings.Set("extract_provider_id", "prov")
 			settings.Set("extract_model", "general-model")
-			if tc.searchModel != "" {
-				settings.Set("search_provider_id", "prov")
-				settings.Set("search_model", tc.searchModel)
-			}
+			settings.Set("search_provider_id", tc.searchProvider)
+			settings.Set("search_model", tc.searchModel)
 			settings.Set("search_helper_model", "cheap-model")
 			if err := app.Save(settings); err != nil {
 				t.Fatalf("save legacy settings: %v", err)
