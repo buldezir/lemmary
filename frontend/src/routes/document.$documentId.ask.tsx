@@ -14,7 +14,7 @@ import { RunInFlightError } from '../lib/apiClient'
 import {
   deleteChatSession,
   getChatSession,
-  isRetryableFailure,
+  mayStillBeRunning,
   listChatSessions,
   mergeChatSession,
   renameChatSession,
@@ -108,7 +108,7 @@ export function DocumentAskPage() {
         // ponytail: a first prompt cannot be recovered on the page until the
         // session id is on the wire before the completion, as search does with
         // its `session` frame; convert this endpoint to SSE when that matters.
-        if (!id && isRetryableFailure(err)) {
+        if (!id && mayStillBeRunning(err)) {
           void sessions.reload()
           throw new RunInFlightError(err)
         }

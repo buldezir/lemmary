@@ -1,9 +1,11 @@
 package ai
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 
@@ -56,11 +58,7 @@ func ProviderErrorMessage(err error) string {
 
 	var apiErr *openai.Error
 	if errors.As(err, &apiErr) {
-		detail := redactProviderSecrets(apiErr.Message)
-		if detail == "" {
-			detail = redactProviderSecrets(apiErr.Error())
-		}
-		return providerErrorf(apiErr.StatusCode, detail)
+		return providerErrorf(apiErr.StatusCode, redactProviderSecrets(openaiErrorDetail(apiErr)))
 	}
 
 	return "Provider error: " + redactProviderSecrets(err.Error())
@@ -71,6 +69,58 @@ func providerErrorf(status int, detail string) string {
 		return fmt.Sprintf("Provider error (%d): %s", status, detail)
 	}
 	return "Provider error: " + detail
+}
+
+// openaiErrorDetail finds the sentence in an OpenAI-compatible failure. The SDK
+// keeps only the "error" object of the body, so a backend that answers
+// {"detail":"The usage limit has been reached"} leaves Message empty and
+// Error() reading as a bare request line. The body itself is still on the
+// response, and that is where the sentence is read from.
+func openaiErrorDetail(err *openai.Error) string {
+	if msg := strings.TrimSpace(err.Message); msg != "" {
+		return msg
+	}
+	if err.Response != nil && err.Response.Body != nil {
+		body, readErr := io.ReadAll(err.Response.Body)
+		err.Response.Body = io.NopCloser(bytes.NewReader(body))
+		if readErr == nil {
+			if detail := bodyDetail(body); detail != "" {
+				return detail
+			}
+		}
+	}
+	return err.Error()
+}
+
+// bodyDetail reads the first human sentence out of an error body, in the shapes
+// providers use: {"detail":…}, {"error":{"message":…}}, {"message":…},
+// {"error":"…"}. Short non-JSON text is returned as it is.
+func bodyDetail(body []byte) string {
+	var envelope map[string]any
+	if json.Unmarshal(body, &envelope) != nil {
+		text := strings.TrimSpace(string(body))
+		if text != "" && !strings.HasPrefix(text, "<") && len(text) <= maxProviderErrorRunes {
+			return text
+		}
+		return ""
+	}
+	if detail, ok := envelope["detail"].(string); ok && strings.TrimSpace(detail) != "" {
+		return detail
+	}
+	switch e := envelope["error"].(type) {
+	case map[string]any:
+		if msg, ok := e["message"].(string); ok && strings.TrimSpace(msg) != "" {
+			return msg
+		}
+	case string:
+		if strings.TrimSpace(e) != "" {
+			return e
+		}
+	}
+	if msg, ok := envelope["message"].(string); ok && strings.TrimSpace(msg) != "" {
+		return msg
+	}
+	return ""
 }
 
 // messagesErrorDetail digs the sentence out of an Anthropic failure. That SDK
