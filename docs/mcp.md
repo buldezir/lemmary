@@ -48,12 +48,16 @@ Claude Desktop, Cursor and most other clients take the same thing as JSON:
 
 ## Tools
 
+Two kinds: search over the index, and plain access to the rows. The intelligence lives in your agent, so nothing here calls a language model.
+
 | Tool | What it does |
 | --- | --- |
-| `search_documents` | Search by meaning and keywords with optional date, type, correspondent and tag filters. Returns matching documents with one to three verbatim passages each. |
-| `read_documents` | Read up to ten documents by id. A long document comes back as excerpts around the `focus` you give, never as a model-written summary. |
-| `count_documents` | Count documents matching filters, optionally grouped by `document_type`, `correspondent`, `year`, `month` or `tag`. Grouping is also how an agent discovers which types and correspondents exist. |
-| `list_tags` | The tag names in the archive, for the tag filters above. |
+| `search_documents` | Hybrid search by meaning and keywords over the full-text and vector index, with optional date, type, correspondent and tag filters. Returns matching documents with one to three verbatim passages each. |
+| `read_documents` | The parts of up to ten documents that matter for a `focus`, ranked by the same index. Long documents come back as passages with gaps marked. |
+| `list_documents` | Plain listing by metadata: date range, document type, correspondent, tags, processing status; sorted by date or by when it was added; paged with `limit` and `offset`. Returns metadata and the total, no text. |
+| `get_document` | One document's metadata and its whole extracted text, unranked and unabridged. Page through a long one with `offset` and `max_chars`. |
+| `count_documents` | Count documents matching filters, optionally grouped by `document_type`, `correspondent`, `year`, `month` or `tag`. |
+| `list_taxonomy` | The tag, document type and correspondent names in the archive, for the filters above. |
 
 Uploading, tagging and editing are not exposed. Use the [paperless-ngx API](/paperless_ngx) for that.
 

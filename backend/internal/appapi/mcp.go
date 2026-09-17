@@ -74,7 +74,7 @@ func handleMCP(app core.App, rt *config.Runtime, idx *fulltext.Index) func(*core
 		if err != nil {
 			return writeError(e, http.StatusInternalServerError, "Failed to prepare the document tools.")
 		}
-		server := newMCPServer(tools)
+		server := newMCPServer(tools, newMCPDocs(app, userID))
 		handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server },
 			&mcp.StreamableHTTPOptions{
 				Stateless:    true,
@@ -95,7 +95,7 @@ type mcpSearchArgs struct {
 	DateTo        string   `json:"date_to,omitempty" jsonschema:"Inclusive upper bound for document_date (YYYY-MM-DD)."`
 	DocumentType  string   `json:"document_type,omitempty" jsonschema:"Document type name filter (substring match)."`
 	Correspondent string   `json:"correspondent,omitempty" jsonschema:"Correspondent name filter (substring match)."`
-	Tags          []string `json:"tags,omitempty" jsonschema:"Exact tag names from list_tags; documents with any of them match."`
+	Tags          []string `json:"tags,omitempty" jsonschema:"Exact tag names from list_taxonomy; documents with any of them match."`
 }
 
 type mcpSearchResult struct {
@@ -121,17 +121,13 @@ type mcpCountArgs struct {
 	GroupBy       string   `json:"group_by,omitempty" jsonschema:"Break the count down by one of: document_type, correspondent, year, month, tag."`
 }
 
-type mcpTagsResult struct {
-	Tags []string `json:"tags"`
-}
-
-func newMCPServer(tools agentTools) *mcp.Server {
+func newMCPServer(tools agentTools, docs mcpDocs) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "lemmary", Version: "1"}, nil)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "search_documents",
-		Description: "Search the user's document archive by meaning and by keywords, with optional filters. " +
-			"Returns matching documents with 1-3 verbatim passages from each.",
+		Description: "Search the archive by meaning and by keywords (hybrid full-text and vector index), with optional filters. " +
+			"Returns matching documents with 1-3 verbatim passages from each. For a plain filtered listing use list_documents.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args mcpSearchArgs) (*mcp.CallToolResult, mcpSearchResult, error) {
 		hits, err := tools.search(ctx, ai.SearchDocumentsArgs{
 			Query:         args.Query,
@@ -152,9 +148,9 @@ func newMCPServer(tools agentTools) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "read_documents",
-		Description: "Read documents by id. Use this before making any claim about what a document says. " +
-			"Long documents come back as excerpts around the focus; " +
-			"reading many documents at once comes back as per-document notes and quotes rather than text.",
+		Description: "Read the parts of up to 10 documents that matter for a focus: a long document comes back as " +
+			"the passages ranked against the focus by the same index search_documents uses, with … marking the gaps. " +
+			"For the whole text of one document use get_document.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args mcpReadArgs) (*mcp.CallToolResult, mcpReadResult, error) {
 		if len(args.IDs) == 0 {
 			return nil, mcpReadResult{}, fmt.Errorf("ids is required")
@@ -197,14 +193,43 @@ func newMCPServer(tools agentTools) *mcp.Server {
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_tags",
-		Description: "List the tag names in the user's archive, for the tags filter of search_documents and count_documents.",
-	}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, mcpTagsResult, error) {
-		tags := tools.tags
-		if tags == nil {
-			tags = []string{}
+		Name: "list_documents",
+		Description: "List documents by metadata, newest first by default, with paging. No text search: " +
+			"filter by date range, document type, correspondent, tags and processing status. Returns metadata only; get_document returns the text.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args mcpListArgs) (*mcp.CallToolResult, mcpListResult, error) {
+		result, err := docs.list(ctx, args)
+		if err != nil {
+			return nil, mcpListResult{}, err
 		}
-		return nil, mcpTagsResult{Tags: tags}, nil
+		return nil, result, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "get_document",
+		Description: "One document's metadata and its full extracted text, unranked and unabridged. " +
+			"Text is paged by offset and max_chars; text_chars is the whole length.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args mcpGetArgs) (*mcp.CallToolResult, mcpGetResult, error) {
+		result, err := docs.get(ctx, args)
+		if err != nil {
+			return nil, mcpGetResult{}, err
+		}
+		return nil, result, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_taxonomy",
+		Description: "The tag, document type and correspondent names in the archive, for the filters of the other tools.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, mcpTaxonomyResult, error) {
+		result, err := docs.taxonomy(ctx)
+		if err != nil {
+			return nil, mcpTaxonomyResult{}, err
+		}
+		for _, names := range []*[]string{&result.Tags, &result.DocumentTypes, &result.Correspondents} {
+			if *names == nil {
+				*names = []string{}
+			}
+		}
+		return nil, result, nil
 	})
 
 	return server

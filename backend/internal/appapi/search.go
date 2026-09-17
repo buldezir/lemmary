@@ -571,15 +571,20 @@ func handleSearchCancel(app core.App) func(*core.RequestEvent) error {
 
 // userID scopes the list to that owner; empty lists every tag (superusers).
 func listAvailableTagNames(app core.App, userID string) ([]string, error) {
+	return listNames(app, "tags", userID)
+}
+
+// listNames returns the names in a user-owned taxonomy collection, sorted.
+func listNames(app core.App, collection, userID string) ([]string, error) {
 	filter := ""
 	var params []dbx.Params
 	if userID != "" {
 		filter = "user = {:userId}"
 		params = append(params, dbx.Params{"userId": userID})
 	}
-	records, err := app.FindRecordsByFilter("tags", filter, "name", maxAvailableTagNames, 0, params...)
+	records, err := app.FindRecordsByFilter(collection, filter, "name", maxAvailableTagNames, 0, params...)
 	if err != nil {
-		return nil, fmt.Errorf("list tags: %w", err)
+		return nil, fmt.Errorf("list %s: %w", collection, err)
 	}
 	names := make([]string, 0, len(records))
 	for _, record := range records {
