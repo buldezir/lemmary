@@ -273,7 +273,11 @@ func TestAnAnthropicModelThatRefusesTemperatureIsRetriedWithoutIt(t *testing.T) 
 }
 
 // The Fable family refuses to have thinking disabled at all, where every other
-// Claude requires it here. One ladder covers both.
+// Claude requires it here. One ladder covers both -- and this is also the test
+// that pins the known hole: what the ladder leaves is a request with thinking
+// on, whose blocks this build cannot carry, so single-turn work on such a model
+// is fine and a tool loop is refused on its second turn. See prepareMessages.
+// If carrying thinking blocks is ever implemented, this expectation changes.
 func TestAnAnthropicModelThatRefusesDisabledThinkingIsRetriedWithoutIt(t *testing.T) {
 	t.Cleanup(resetModelNotes)
 	resetModelNotes()

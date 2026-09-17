@@ -61,9 +61,20 @@ func (c *OpenAIClient) usesMessagesAPI(model string) bool {
 //     refused -- so leaving thinking on would break Deep Research, search and
 //     chat on their second request.
 //
-// ponytail: thinking off rather than carried. Carrying it means a side channel
-// for opaque blocks through an intermediate shape with no room for them; if
-// answers get worse for want of reasoning, that is the work to do.
+// ponytail: thinking off rather than carried, which leaves a hole this does not
+// close. A model that will not have thinking disabled -- the Fable family keeps
+// it on and answers {"type":"disabled"} with a 400 -- has the field dropped by
+// the ladder below and is then in exactly the state the second bullet warns
+// about: single-turn work (extraction, OCR, split, the Deep Search helper) is
+// fine, and the tool loops behind chat, search and Deep Research are refused on
+// their second turn. Every current Opus, Sonnet and Haiku takes the disable, so
+// this is the cost of binding a Fable id rather than of using the SDK.
+//
+// The fix is to carry the blocks: a side channel for opaque content through an
+// intermediate shape with no room for it, which is real work and worth doing
+// when someone wants those models, or if answers on the others get worse for
+// want of reasoning. Until then completeMessages says so in the log, because
+// the 400 that follows names a thinking block the operator never asked for.
 func (c *OpenAIClient) prepareMessages(params *openai.ChatCompletionNewParams) messages.Options {
 	if c.sdk != aiprovider.SDKAnthropic {
 		return messages.Options{}
@@ -157,8 +168,7 @@ func (c *OpenAIClient) completeMessages(ctx context.Context, params openai.ChatC
 		if field == "" {
 			return nil, err
 		}
-		c.logger.Warn("the Messages API refused a request field; retrying without it",
-			"model", params.Model, "field", field)
+		c.warnFieldDropped(params, field)
 		dropped = append(dropped, field)
 		extra = append(extra, "dropped", field)
 	}
@@ -184,10 +194,24 @@ func (c *OpenAIClient) completeStreamingMessages(ctx context.Context, params ope
 		if field == "" {
 			return text, usage, err
 		}
-		c.logger.Warn("the Messages API refused a request field; retrying without it",
-			"model", params.Model, "field", field)
+		c.warnFieldDropped(params, field)
 		dropped = append(dropped, field)
 		extra = append(extra, "dropped", field)
+	}
+}
+
+// warnFieldDropped says what came off the request, and -- for the one drop that
+// leaves a request this build cannot finish -- what that will cost. A model that
+// keeps thinking on returns thinking blocks that chatCompletionFrom has nowhere
+// to put, so the next turn of a tool loop replays an assistant message without
+// the block it was generated with and is refused. The 400 names a block the
+// operator never asked for, so it is worth naming here first.
+func (c *OpenAIClient) warnFieldDropped(params openai.ChatCompletionNewParams, field string) {
+	c.logger.Warn("the Messages API refused a request field; retrying without it",
+		"model", params.Model, "field", field)
+	if field == fieldThinking && len(params.Tools) > 0 {
+		c.logger.Warn("this model will not have thinking disabled, and its thinking blocks cannot be replayed here; the next turn of this tool loop will be refused. Bind a model that takes thinking:disabled for chat, search and Deep Research",
+			"model", params.Model)
 	}
 }
 

@@ -70,7 +70,12 @@ The alternatives are worth naming:
   a model takes — and whether it takes a `temperature` at all, which Claude
   removed after Opus 4.6 — depends on its generation, so each is sent hopefully
   and dropped on refusal: the first request to a model may cost a retry, and
-  the answer is then remembered. Its SDK value is `anthropic`.
+  the answer is then remembered. One limit worth knowing before you bind a
+  model: a Claude that refuses to have thinking turned off — the Fable family
+  keeps it on — can serve extraction, OCR and the Deep Search helper, but not
+  chat, search or Deep Research, whose tool loops are refused on their second
+  turn because the thinking blocks cannot be carried across. Every current
+  Opus, Sonnet and Haiku is unaffected. Its SDK value is `anthropic`.
 - **`openrouter`** — one key across many vendors, and the only provider that
   filters its catalogue server-side (`input_modalities=file` for OCR,
   `output_modalities=embeddings` for embeddings), so both pickers are accurate.
