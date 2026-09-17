@@ -303,7 +303,7 @@ function AgentsSection() {
       <p className={`${fieldHintClassName} mb-4`}>
         Let Claude Code, Cursor or another agent search and read this archive directly over MCP.
         The agent sees only your documents.{' '}
-        <DocsLink href="/docs/mcp">Read about the tools it gets.</DocsLink>
+        <DocsLink href="/docs/mcp.html">Read about the tools it gets.</DocsLink>
       </p>
 
       {loadError && <p className="mb-3 text-sm text-madder">{loadError}</p>}
