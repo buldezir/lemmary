@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/shared"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/shared"
 )
 
 const (
@@ -394,7 +394,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 func (a *openAISearchAgent) answerResearch(
 	ctx context.Context,
 	apiMessages []openai.ChatCompletionMessageParamUnion,
-	tools []openai.ChatCompletionToolParam,
+	tools []openai.ChatCompletionToolUnionParam,
 	web bool,
 	meter *contextMeter,
 	emit func(ResearchEvent),
@@ -905,32 +905,30 @@ Web calls are limited and billed; make them count.
 	return b.String()
 }
 
-func researchTools() []openai.ChatCompletionToolParam {
+func researchTools() []openai.ChatCompletionToolUnionParam {
 	tools := searchDocumentsTools()
-	return append(tools, openai.ChatCompletionToolParam{
-		Function: shared.FunctionDefinitionParam{
-			Name: "read_documents",
-			Description: openai.String("Read documents already seen in this conversation. " +
-				"Use this before making any claim about what a document says. " +
-				"Long documents come back as excerpts around the focus (or the user's question); " +
-				"reading many documents at once comes back as per-document notes and quotes rather than text."),
-			Parameters: shared.FunctionParameters{
-				"type": "object",
-				"properties": map[string]any{
-					"ids": map[string]any{
-						"type":        "array",
-						"items":       map[string]any{"type": "string"},
-						"description": "Document ids from earlier search_documents results, or cited earlier in this conversation.",
-					},
-					"focus": map[string]any{
-						"type": "string",
-						"description": "What you are looking for in these documents. " +
-							"For a long document the passages about this are returned instead of only the beginning, with … marking the gaps. " +
-							"Defaults to the user's question.",
-					},
+	return append(tools, openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+		Name: "read_documents",
+		Description: openai.String("Read documents already seen in this conversation. " +
+			"Use this before making any claim about what a document says. " +
+			"Long documents come back as excerpts around the focus (or the user's question); " +
+			"reading many documents at once comes back as per-document notes and quotes rather than text."),
+		Parameters: shared.FunctionParameters{
+			"type": "object",
+			"properties": map[string]any{
+				"ids": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "Document ids from earlier search_documents results, or cited earlier in this conversation.",
 				},
-				"required": []string{"ids"},
+				"focus": map[string]any{
+					"type": "string",
+					"description": "What you are looking for in these documents. " +
+						"For a long document the passages about this are returned instead of only the beginning, with … marking the gaps. " +
+						"Defaults to the user's question.",
+				},
 			},
+			"required": []string{"ids"},
 		},
-	})
+	}))
 }

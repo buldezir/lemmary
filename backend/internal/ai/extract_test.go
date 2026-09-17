@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/v3"
 )
 
 const extractTestJSON = `{

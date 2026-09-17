@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/shared"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/shared"
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
 	"lemmary/backend/internal/models"

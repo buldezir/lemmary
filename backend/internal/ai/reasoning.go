@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/v3"
 )
 
 // reasoningEffortNone is the only value some gpt-5-family models accept for

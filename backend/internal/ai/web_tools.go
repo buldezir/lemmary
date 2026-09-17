@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/shared"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/shared"
 
 	"lemmary/backend/internal/strutil"
 	"lemmary/backend/internal/websearch"
@@ -53,51 +53,47 @@ type webFetchArgs struct {
 	URLs []string `json:"urls"`
 }
 
-func webSearchTool() openai.ChatCompletionToolParam {
-	return openai.ChatCompletionToolParam{
-		Function: shared.FunctionDefinitionParam{
-			Name: "web_search",
-			Description: openai.String("Search the public web and get back ranked results with a title, a URL and a short snippet. " +
-				"Use it for facts the archive cannot hold -- current prices, rates and rules, a company's present details, anything that changed after the documents were written. " +
-				"A snippet is a reason to fetch the page, not the whole of what it says; use web_fetch to read one."),
-			Parameters: shared.FunctionParameters{
-				"type": "object",
-				"properties": map[string]any{
-					"query": map[string]any{
-						"type":        "string",
-						"description": "What to search for. Required.",
-					},
-					"max_results": map[string]any{
-						"type":        "integer",
-						"description": fmt.Sprintf("How many results to return; default %d, at most %d.", DefaultWebResults, MaxWebResults),
-					},
+func webSearchTool() openai.ChatCompletionToolUnionParam {
+	return openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+		Name: "web_search",
+		Description: openai.String("Search the public web and get back ranked results with a title, a URL and a short snippet. " +
+			"Use it for facts the archive cannot hold -- current prices, rates and rules, a company's present details, anything that changed after the documents were written. " +
+			"A snippet is a reason to fetch the page, not the whole of what it says; use web_fetch to read one."),
+		Parameters: shared.FunctionParameters{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "What to search for. Required.",
 				},
-				"required": []string{"query"},
+				"max_results": map[string]any{
+					"type":        "integer",
+					"description": fmt.Sprintf("How many results to return; default %d, at most %d.", DefaultWebResults, MaxWebResults),
+				},
 			},
+			"required": []string{"query"},
 		},
-	}
+	})
 }
 
-func webFetchTool() openai.ChatCompletionToolParam {
-	return openai.ChatCompletionToolParam{
-		Function: shared.FunctionDefinitionParam{
-			Name: "web_fetch",
-			Description: openai.String("Read web pages as markdown. " +
-				"Pass URLs from web_search results or ones the user gave you. " +
-				"Long pages are truncated, so fetch the specific page that answers the question rather than a site's front page."),
-			Parameters: shared.FunctionParameters{
-				"type": "object",
-				"properties": map[string]any{
-					"urls": map[string]any{
-						"type":        "array",
-						"items":       map[string]any{"type": "string"},
-						"description": fmt.Sprintf("The http or https URLs to read; at most %d per call.", MaxWebFetchURLs),
-					},
+func webFetchTool() openai.ChatCompletionToolUnionParam {
+	return openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+		Name: "web_fetch",
+		Description: openai.String("Read web pages as markdown. " +
+			"Pass URLs from web_search results or ones the user gave you. " +
+			"Long pages are truncated, so fetch the specific page that answers the question rather than a site's front page."),
+		Parameters: shared.FunctionParameters{
+			"type": "object",
+			"properties": map[string]any{
+				"urls": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": fmt.Sprintf("The http or https URLs to read; at most %d per call.", MaxWebFetchURLs),
 				},
-				"required": []string{"urls"},
 			},
+			"required": []string{"urls"},
 		},
-	}
+	})
 }
 
 func decodeWebSearchArgs(data string) (webSearchArgs, error) {

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/shared"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/shared"
 
 	"lemmary/backend/internal/aiprovider"
 )
@@ -163,26 +163,26 @@ func TestToolCallsRoundTripThroughContentBlocks(t *testing.T) {
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage("find the rent"),
 			{OfAssistant: &openai.ChatCompletionAssistantMessageParam{
-				ToolCalls: []openai.ChatCompletionMessageToolCallParam{{
-					ID: "call_1",
-					Function: openai.ChatCompletionMessageToolCallFunctionParam{
-						Name: "search", Arguments: `{"q":"rent"}`,
+				ToolCalls: []openai.ChatCompletionMessageToolCallUnionParam{{
+					OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
+						ID: "call_1",
+						Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
+							Name: "search", Arguments: `{"q":"rent"}`,
+						},
 					},
 				}},
 			}},
 			openai.ToolMessage("two hits", "call_1"),
 		},
-		Tools: []openai.ChatCompletionToolParam{{
-			Function: shared.FunctionDefinitionParam{
-				Name:        "search",
-				Description: openai.String("search the archive"),
-				Parameters: map[string]any{
-					"type":       "object",
-					"properties": map[string]any{"q": map[string]any{"type": "string"}},
-					"required":   []string{"q"},
-				},
+		Tools: []openai.ChatCompletionToolUnionParam{openai.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+			Name:        "search",
+			Description: openai.String("search the archive"),
+			Parameters: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"q": map[string]any{"type": "string"}},
+				"required":   []string{"q"},
 			},
-		}},
+		})},
 	})
 	if err != nil {
 		t.Fatalf("CompleteViaMessages: %v", err)
@@ -405,11 +405,13 @@ func TestParallelToolResultsLandInOneUserTurn(t *testing.T) {
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.UserMessage("how much did I pay?"),
 			{OfAssistant: &openai.ChatCompletionAssistantMessageParam{
-				ToolCalls: []openai.ChatCompletionMessageToolCallParam{
-					{ID: "call_1", Function: openai.ChatCompletionMessageToolCallFunctionParam{
-						Name: "search_documents", Arguments: `{"q":"rent"}`}},
-					{ID: "call_2", Function: openai.ChatCompletionMessageToolCallFunctionParam{
-						Name: "read_documents", Arguments: `{"ids":["doc1"]}`}},
+				ToolCalls: []openai.ChatCompletionMessageToolCallUnionParam{
+					{OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
+						ID: "call_1", Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
+							Name: "search_documents", Arguments: `{"q":"rent"}`}}},
+					{OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
+						ID: "call_2", Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
+							Name: "read_documents", Arguments: `{"ids":["doc1"]}`}}},
 				},
 			}},
 			openai.ToolMessage("two hits", "call_1"),
