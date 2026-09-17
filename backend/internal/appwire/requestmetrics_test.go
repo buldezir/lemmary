@@ -92,6 +92,29 @@ func TestRouteOf(t *testing.T) {
 	}
 }
 
+// A stream answers 200 before any of the work and then stays open, so its
+// sample is the stream's lifetime under a success label; both event streams,
+// PocketBase's realtime and the search stream, set this Content-Type.
+func TestIsEventStream(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]bool{
+		"text/event-stream":                true,
+		"text/event-stream; charset=utf-8": true,
+		"application/json":                 false,
+		"":                                 false,
+	}
+	for contentType, want := range cases {
+		h := http.Header{}
+		if contentType != "" {
+			h.Set("Content-Type", contentType)
+		}
+		if got := isEventStream(h); got != want {
+			t.Errorf("isEventStream(%q) = %v, want %v", contentType, got, want)
+		}
+	}
+}
+
 type errPlain struct{}
 
 func (errPlain) Error() string { return "something went wrong" }

@@ -56,13 +56,17 @@ func (r *PipelineRunner) Run(ctx context.Context, jobID string) error {
 	if job.GetString("status") != models.JobStatusRunning {
 		return nil
 	}
-	// The status is the only thing that knows how a run ended:
+	// The stored status is the only thing that knows how a run ended:
 	// handleStepFailure returns nil when it re-pends the job, so a nil error
-	// covers both "done" and "will try again". Every exit below sets it on
-	// this record before saving, so it is read from here rather than back
-	// from the database.
+	// covers both "done" and "will try again". Read back from the database
+	// rather than from this record, because a final save that fails leaves
+	// the record saying completed while the row still says running.
 	defer func() {
-		metrics.Job(jobOutcome(job.GetString("status")), time.Since(jobStart))
+		status := ""
+		if stored, err := r.App.FindRecordById("processing_jobs", jobID); err == nil {
+			status = stored.GetString("status")
+		}
+		metrics.Job(jobOutcome(status), time.Since(jobStart))
 	}()
 
 	documentID := job.GetString("document")

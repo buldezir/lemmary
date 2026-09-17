@@ -30,9 +30,12 @@ import (
 // What a hook on the chain does have is the error, so the status can be
 // derived from it with the same mapping ErrorHandler is about to apply.
 //
-// PocketBase's own realtime route is skipped: that handler holds the
-// connection open for the life of the SSE stream, so each one would land a
-// sample of minutes in a histogram whose top bucket is ten seconds.
+// Event streams are not recorded: PocketBase's realtime route and the app's
+// search stream both write 200 up front and then hold the connection for the
+// life of the stream, so each one would land a sample of minutes, labelled a
+// success, in a histogram whose top bucket is ten seconds. They are told apart
+// by the Content-Type they set rather than by route, so a new stream is not a
+// new special case.
 func registerRequestMetrics(app core.App) {
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: -9999,
@@ -52,11 +55,11 @@ func registerRequestMetrics(app core.App) {
 }
 
 func recordRequest(e *core.RequestEvent) error {
-	if e.Request.Pattern == realtimePattern {
-		return e.Next()
-	}
 	start := time.Now()
 	err := e.Next()
+	if isEventStream(e.Response.Header()) {
+		return err
+	}
 	metrics.HTTPRequest(
 		e.Request.Method,
 		routeOf(e.Request),
@@ -66,7 +69,9 @@ func recordRequest(e *core.RequestEvent) error {
 	return err
 }
 
-const realtimePattern = "GET /api/realtime"
+func isEventStream(h http.Header) bool {
+	return strings.HasPrefix(h.Get("Content-Type"), "text/event-stream")
+}
 
 // responseStatus is the status the client will see.
 //
