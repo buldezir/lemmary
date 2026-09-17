@@ -287,9 +287,13 @@ export function useDocumentList({
     }
   }, [])
 
-  // The jobs behind the page's documents, in one request. Separate from the
+  // Only failed documents need their job: it says which step broke and why.
+  // Every other status is self-explanatory on the badge. Separate from the
   // load above because a job that cannot be read must not fail the list.
-  const documentIds = documents.map((document) => document.id).join(',')
+  const documentIds = documents
+    .filter((document) => document.processing_status === 'failed')
+    .map((document) => document.id)
+    .join(',')
   useEffect(() => {
     let active = true
     // Called even for an empty page: getLatestJobsFor short-circuits without a

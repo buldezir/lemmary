@@ -16,9 +16,8 @@ type Props = {
   onFilterTag?: (tagId: string) => void
   markingReviewed?: boolean
   /**
-   * The document's newest processing job, when the list fetched one. It says
-   * what the status badge cannot: which step is running, why one failed, and
-   * that a "completed" document is missing its search vectors.
+   * The newest processing job of a failed document, when the list fetched one.
+   * It says what the status badge cannot: which step failed and why.
    */
   job?: ProcessingJobRecord
 }
