@@ -12,7 +12,9 @@ Unset means there is no route at all. Restart after changing it; the flag is rea
 
 ## Get a token
 
-Any Lemmary auth token works. For an agent that runs unattended, the long-lived token from the paperless-compatible endpoint is the convenient one:
+The Account page has an **Agents** section: one click mints a long-lived token for your account and shows the ready-to-paste configuration for Claude Code, Codex CLI, Gemini CLI, Cursor, VS Code, Windsurf, OpenCode and Claude Desktop (as a command where the agent has one, else its config file).
+
+Any Lemmary auth token works too. From a script, the long-lived token from the paperless-compatible endpoint is the convenient one:
 
 ```bash
 TOKEN=$(curl -s -X POST https://lemmary.example.com/api/token/ \
