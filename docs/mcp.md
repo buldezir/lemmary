@@ -2,13 +2,15 @@
 
 Lemmary can serve its archive over the [Model Context Protocol](https://modelcontextprotocol.io), so an agent — Claude Code, Claude Desktop, Cursor, or one you wrote — searches and reads your documents directly instead of through the browser. The endpoint is read-only and uses the same retrieval as Deep Search: a token sees exactly what its user sees in the app, and nothing else.
 
-## Enable it
+## It is on by default
+
+The endpoint answers only to a bearer token and costs nothing until an agent calls it, so it is on unless an operator turns it off:
 
 ```env
-MCP_ENABLED=1
+MCP_ENABLED=0
 ```
 
-Unset means there is no route at all. Restart after changing it; the flag is read once at startup.
+Off means there is no route at all. Restart after changing it; the flag is read once at startup.
 
 ## Get a token
 

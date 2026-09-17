@@ -352,7 +352,7 @@ func TestMCPReadRefusesMoreThanTheCap(t *testing.T) {
 func TestMCPEnabledFromEnv(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cases := map[string]bool{
-		"": false, "1": true, "true": true, "yes": true, "ON": true,
+		"": true, "1": true, "true": true, "yes": true, "ON": true,
 		"0": false, "false": false, "off": false, "maybe": false,
 	}
 	for value, want := range cases {

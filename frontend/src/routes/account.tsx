@@ -309,8 +309,8 @@ function AgentsSection() {
       {loadError && <p className="mb-3 text-sm text-madder">{loadError}</p>}
       {status && !status.enabled && (
         <p className="text-sm text-ink-soft">
-          The MCP endpoint is off on this instance. An admin turns it on with{' '}
-          <code>MCP_ENABLED=1</code> in the environment.
+          The MCP endpoint is switched off on this instance (<code>MCP_ENABLED=0</code>). An
+          admin can turn it back on.
         </p>
       )}
 

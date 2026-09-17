@@ -18,8 +18,10 @@ import (
 	"lemmary/backend/internal/fulltext"
 )
 
-// EnvMCPEnabled switches on the MCP endpoint at /api/mcp. Unset means off, and
-// off is what every install had before this existed.
+// EnvMCPEnabled switches the MCP endpoint at /api/mcp. Unset means on: the
+// endpoint answers only to a bearer token and costs nothing until an agent
+// calls it, so there is nothing to protect an install from by default. Set it
+// to 0 to take the route away.
 const EnvMCPEnabled = "MCP_ENABLED"
 
 const (
@@ -63,7 +65,7 @@ func RegisterMCP(app core.App, rt *config.Runtime, idx *fulltext.Index) {
 func mcpEnabledFromEnv(log *slog.Logger) bool {
 	raw := strings.TrimSpace(os.Getenv(EnvMCPEnabled))
 	if raw == "" {
-		return false
+		return true
 	}
 	switch strings.ToLower(raw) {
 	case "1", "true", "yes", "on":
@@ -71,6 +73,8 @@ func mcpEnabledFromEnv(log *slog.Logger) bool {
 	case "0", "false", "no", "off":
 		return false
 	}
+	// Refused rather than guessed, and refused towards off: an operator who
+	// wrote something here meant to change the default.
 	log.Error("MCP endpoint disabled: not a boolean; use 1/true/yes/on or 0/false/no/off",
 		"env", EnvMCPEnabled, "value", raw)
 	return false
