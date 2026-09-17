@@ -112,8 +112,8 @@ func TestResearchSurveyRequiresASelection(t *testing.T) {
 	called := false
 	_, err := agent.Research(context.Background(), ResearchRequest{
 		Thread: []ThreadMessage{{Role: "user", Content: "q"}},
-		Search:   func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
-		Read:     func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil },
+		Search: func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
+		Read:   func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil },
 		Survey: func(context.Context, SurveyArgs, func(int, int)) (SurveyResult, error) {
 			called = true
 			return SurveyResult{}, nil
@@ -201,8 +201,8 @@ func TestResearchRejectsAnUnknownGroupBy(t *testing.T) {
 	)
 	_, err := agent.Research(context.Background(), ResearchRequest{
 		Thread: []ThreadMessage{{Role: "user", Content: "q"}},
-		Search:   func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
-		Read:     func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil },
+		Search: func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
+		Read:   func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil },
 		Count: func(context.Context, CountArgs) (CountResult, error) {
 			t.Fatal("an invalid group_by reached the counter")
 			return CountResult{}, nil

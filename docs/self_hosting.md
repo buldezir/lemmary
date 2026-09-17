@@ -128,7 +128,7 @@ different proxy can get wrong:
   through — there is no `client_max_body_size` to raise. If you add a
   `buffering` middleware, set its `maxRequestBodyBytes` past
   `IMPORT_STAGING_MAX_BYTES` or archive uploads start failing.
-- **Deep Search keeps streaming.** `POST /api/app/search/stream` is
+- **Deep Research keeps streaming.** `POST /api/app/search/stream` is
   server-sent events, and Traefik streams responses rather than buffering them,
   so each search, read and survey still appears as it happens. Do not put a
   `compress` middleware in front of it without excluding `text/event-stream`,
@@ -233,7 +233,7 @@ there is no operator override.
 
 ## Local embeddings
 
-Deep Search can find documents by meaning rather than only by keyword, which
+Deep Research can find documents by meaning rather than only by keyword, which
 needs an embedding model. Two more overlays run one on this host instead of
 sending every passage of every document to a hosted provider:
 

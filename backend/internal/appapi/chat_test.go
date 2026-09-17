@@ -1,9 +1,9 @@
 package appapi
 
 import (
-	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"lemmary/backend/internal/chat"
 )
@@ -26,21 +26,17 @@ func TestValidateChatContentRejectsBlank(t *testing.T) {
 	}
 }
 
-// The message says the number so the user knows how much to cut.
-func TestValidateChatContentRejectsOversized(t *testing.T) {
-	_, err := validateChatContent(strings.Repeat("x", chat.MaxUserContentRunes+1))
-	if err == nil {
-		t.Fatal("expected an error")
-	}
-	if !strings.Contains(err.Error(), strconv.Itoa(chat.MaxUserContentRunes)) {
-		t.Fatalf("error should name the limit: %v", err)
-	}
-}
-
-// The cap counts runes, not bytes: a multi-byte message at the limit is fine.
-func TestValidateChatContentCountsRunes(t *testing.T) {
-	if _, err := validateChatContent(strings.Repeat("щ", chat.MaxUserContentRunes)); err != nil {
+// There is no length cap: what a long question costs is the model's context,
+// which the composer warns about, not a refusal here.
+func TestValidateChatContentAcceptsLong(t *testing.T) {
+	long := strings.Repeat("щ", 200000)
+	got, err := validateChatContent(long)
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != long {
+		t.Fatalf("content was altered: %d runes in, %d out",
+			utf8.RuneCountInString(long), utf8.RuneCountInString(got))
 	}
 }
 

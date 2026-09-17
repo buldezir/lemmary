@@ -18,7 +18,6 @@ import (
 	"lemmary/backend/internal/worker"
 
 	"github.com/pocketbase/pocketbase"
-	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
 )
@@ -94,7 +93,7 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Func: func(e *core.ServeEvent) error {
 			if !e.Router.HasRoute(http.MethodGet, "/{path...}") {
-				e.Router.GET("/{path...}", apis.Static(os.DirFS(publicDir), indexFallback))
+				e.Router.GET("/{path...}", staticWithCacheControl(os.DirFS(publicDir), indexFallback))
 			}
 			return e.Next()
 		},

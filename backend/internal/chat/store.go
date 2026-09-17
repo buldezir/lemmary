@@ -654,16 +654,18 @@ func saveMessage(app core.App, sessionID string, seq int, msg storedMessage) err
 
 // fitContent sizes a row's text by what it is. Prose is truncated rather than
 // rejected -- the answer is already paid for, and a validation error here would
-// discard it -- but a tool result is replaced whole rather than cut.
+// discard it -- but a tool result is replaced whole rather than cut. A question
+// gets the whole column: it is the one text a person typed, and cutting it
+// would rewrite what they asked.
 func fitContent(role, content string) string {
-	if role == RoleTool || role == RoleSystem {
+	switch role {
+	case RoleTool:
 		if utf8.RuneCountInString(content) > MaxThreadContentRunes {
-			if role == RoleTool {
-				return toolResultTooLarge
-			}
-			return FitColumn(content, MaxThreadContentRunes)
+			return toolResultTooLarge
 		}
 		return content
+	case RoleSystem, RoleUser:
+		return FitColumn(content, MaxThreadContentRunes)
 	}
 	return FitColumn(content, MaxMessageRunes)
 }

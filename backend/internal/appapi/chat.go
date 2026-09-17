@@ -18,8 +18,10 @@ import (
 )
 
 // chatMaxBodyBytes caps a chat request: the body is one message plus a session
-// id, where PocketBase's route default is 32MB.
-const chatMaxBodyBytes = 64 << 10
+// id, where PocketBase's route default is 32MB. Sized above what the content
+// column can hold, so the question is what the model does with a long message
+// rather than whether it may be sent.
+const chatMaxBodyBytes = 2 << 20
 
 const tooManySessionsMessage = "You have reached the maximum number of saved chats. Delete some to start a new one."
 
@@ -105,9 +107,6 @@ func validateChatContent(raw string) (string, error) {
 	content := strings.TrimSpace(raw)
 	if content == "" {
 		return "", errors.New("A message is required.")
-	}
-	if utf8.RuneCountInString(content) > chat.MaxUserContentRunes {
-		return "", fmt.Errorf("A message may be at most %d characters.", chat.MaxUserContentRunes)
 	}
 	return content, nil
 }

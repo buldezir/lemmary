@@ -118,9 +118,9 @@ func TestResearchEmitsWebSteps(t *testing.T) {
 	var kinds []string
 	_, err := agent.Research(context.Background(), ResearchRequest{
 		Thread: []ThreadMessage{{Role: "user", Content: "q"}},
-		Search:   func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
-		Read:     func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil },
-		Web:      web,
+		Search: func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
+		Read:   func(context.Context, ReadRequest) ([]DocumentContent, error) { return nil, nil },
+		Web:    web,
 	}, func(ev ResearchEvent) {
 		if ev.Type == "step" && ev.Status == "done" {
 			kinds = append(kinds, ev.Kind)

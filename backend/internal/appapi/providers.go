@@ -52,22 +52,10 @@ func catalogOrDefault(requested *string, sdk string) (string, bool) {
 // form cannot produce.
 const invalidCatalogMessage = "catalog must be one of the known model catalogues, or empty."
 
-// invalidSDKMessage is built from the list rather than written out, and takes
-// the runtime because one SDK is conditional: naming chatgpt on an instance
-// that will refuse it sends an admin hunting a typo in a value that cannot work.
-func invalidSDKMessage(rt *config.Runtime) string {
-	return "sdk must be one of " + strings.Join(availableSDKs(rt), ", ") + "."
-}
-
-func availableSDKs(rt *config.Runtime) []string {
-	out := make([]string, 0, len(aiprovider.ValidSDKs))
-	for _, sdk := range aiprovider.ValidSDKs {
-		if sdk == aiprovider.SDKChatGPT && !rt.ChatGPTLogin() {
-			continue
-		}
-		out = append(out, sdk)
-	}
-	return out
+// invalidSDKMessage is built from the list rather than written out, so a new
+// SDK cannot drift out of the sentence that names them.
+func invalidSDKMessage() string {
+	return "sdk must be one of " + strings.Join(aiprovider.ValidSDKs, ", ") + "."
 }
 
 func providerJSON(p aiprovider.Provider) providerResponse {
@@ -134,12 +122,7 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 			sdk = strings.TrimSpace(*req.SDK)
 		}
 		if !aiprovider.ValidSDK(sdk) {
-			return writeError(e, http.StatusBadRequest, invalidSDKMessage(rt))
-		}
-		if sdk == aiprovider.SDKChatGPT {
-			if refused, err := refuseWhenChatGPTDisabled(e, rt); refused {
-				return err
-			}
+			return writeError(e, http.StatusBadRequest, invalidSDKMessage())
 		}
 		alias := ""
 		if req.Alias != nil {
@@ -243,12 +226,7 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 		if req.SDK != nil {
 			sdk = strings.TrimSpace(*req.SDK)
 			if !aiprovider.ValidSDK(sdk) {
-				return writeError(e, http.StatusBadRequest, invalidSDKMessage(rt))
-			}
-			if sdk == aiprovider.SDKChatGPT {
-				if refused, err := refuseWhenChatGPTDisabled(e, rt); refused {
-					return err
-				}
+				return writeError(e, http.StatusBadRequest, invalidSDKMessage())
 			}
 			if !aiprovider.IsLLM(sdk) || !aiprovider.CanEmbed(sdk) || !aiprovider.CanOCR(sdk) || !aiprovider.CanWebSearch(sdk) {
 				// A failed settings lookup must not skip these guards: a bound

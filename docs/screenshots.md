@@ -5,7 +5,7 @@ A tour of every screen in Lemmary, in the order you would meet them.
 The library shown throughout is a demo archive of invented documents — invoices,
 payslips, contracts, statements and receipts addressed to a fictional
 "Robin Marsh". Every name, amount, address and reference number in these images
-is made up; the metadata, OCR text and Deep Search answers around them are real
+is made up; the metadata, OCR text and Deep Research answers around them are real
 output from the pipeline reading those files.
 
 Every image on this page opens on click. The captures are taken at twice the
@@ -53,48 +53,28 @@ down the left side counts documents per year and month.
 
 ![Documents list](./screenshots/documents.png)
 
-The whole page, pager included:
-
-![Documents list, full page](./screenshots/documents-full.png)
-
 Full-text search runs over titles, OCR text, tags, purposes and summaries
 through a Bleve index.
 
 ![Searching the library](./screenshots/documents-search.png)
 
 Document type and correspondent are typeahead filters built from the taxonomy
-the extraction step created.
+the extraction step created; tags narrow the same list and stack, and picking a
+period in the timeline writes the date range. Every filter lives in the query
+string, so a filtered list survives a reload and can be linked to.
 
 ![Document type filter open](./screenshots/documents-filter-type.png)
-
-![Documents filtered to one type](./screenshots/documents-filtered.png)
-
-Tags narrow the same list, and stack: picking two leaves the documents carrying
-both.
-
-![Documents narrowed to one tag](./screenshots/documents-tags.png)
-
-Picking a period in the timeline writes the date range, so the highlight and
-the filtered list are the same piece of state — and both survive a reload,
-because they live in the query string.
-
-![Documents filtered to one month by the timeline](./screenshots/documents-timeline.png)
 
 Filtering to failed documents turns the cards into a selection, so a batch can
 be queued for another attempt.
 
 ![Failed documents selected for reprocessing](./screenshots/documents-failed.png)
 
-Everything reflows to one column on a narrow screen, with the header links
-stacked behind the menu button.
+Everything reflows to one column on a narrow screen, with the header links —
+and the less-travelled pages behind the gear menu — stacked behind the menu
+button.
 
 ![Documents list on a phone](./screenshots/documents-mobile.png)
-
-![Navigation panel on a phone](./screenshots/mobile-nav.png)
-
-The less-travelled pages sit behind the header's gear menu.
-
-![The More menu](./screenshots/nav-more.png)
 
 ## Tags
 
@@ -129,14 +109,11 @@ reads in English without losing what it actually said.
 
 ![Document detail](./screenshots/document-detail.png)
 
-![Document detail, top of the page](./screenshots/document-detail-top.png)
-
-Corrections are saved back onto the document, and the taxonomy follows: a new
-type or correspondent typed here is created and reused from then on. Tags are
-different -- they are picked from a list you keep under **Tags**, so the editor
-offers what exists rather than creating one from whatever you type.
-
-![Editing a document's metadata](./screenshots/document-detail-edit.png)
+**Unlock editing** turns those fields into a form. Corrections are saved back
+onto the document, and the taxonomy follows: a new type or correspondent typed
+here is created and reused from then on. Tags are different -- they are picked
+from a list you keep under **Tags**, so the editor offers what exists rather
+than creating one from whatever you type.
 
 Every run is recorded step by step — preview, OCR, duplicate detection,
 extraction, apply, embed — with the provider and model each step used.
@@ -158,8 +135,6 @@ context. The chat is saved.
 PDFs, images, plain text, CSV, Word and Excel. Text formats are read locally and
 skip OCR entirely.
 
-![Upload page](./screenshots/upload-files.png)
-
 ![Files staged for upload](./screenshots/upload-staged.png)
 
 A network scanner is a source of its own: the page speaks eSCL to the device
@@ -170,14 +145,10 @@ over the LAN, so nothing is installed and no computer sits in between.
 A zip you packed yourself is read before anything is created, folders inside it
 kept as a name prefix.
 
-![Zip import, empty](./screenshots/upload-zip-empty.png)
-
 ![A zip archive previewed](./screenshots/upload-zip.png)
 
 A scanner that produced one PDF from a stack of unrelated paper can be cut back
 apart — by hand, or with the cuts the model proposes.
-
-![Split documents, empty](./screenshots/upload-split-empty.png)
 
 ![A four-page scan cut into three documents](./screenshots/upload-split.png)
 
@@ -185,26 +156,19 @@ An Amazon "Your Orders" export is previewed before anything is created: how many
 invoice PDFs it holds, how many are new, and how many of its other files are
 being ignored.
 
-![Amazon order import, empty](./screenshots/upload-amazon-empty.png)
-
 ![Amazon order export previewed](./screenshots/upload-amazon.png)
 
-![Amazon order export imported](./screenshots/upload-amazon-done.png)
+## AI search and research
 
-## Deep Search
+Two pages, two ways in. **AI assisted search**, reached from the document
+list, finds documents and lists them as cards.
 
-Two modes on two paths. **Search** finds documents and lists them as cards.
+![AI assisted search, with hits](./screenshots/deep-search.png)
 
-![Deep Search, empty](./screenshots/deep-search-empty.png)
+**Deep Research**, the header entry, reads what it found, counts and totals
+across the archive, and writes an answer that links to its sources.
 
-![Deep Search in Search mode](./screenshots/deep-search.png)
-
-**Research** reads what it found, counts and totals across the archive, and
-writes an answer that links to its sources.
-
-![Deep Search, Research mode empty](./screenshots/deep-search-research-empty.png)
-
-![A cited answer in Research mode](./screenshots/deep-search-research.png)
+![A cited answer in Deep Research](./screenshots/deep-search-research.png)
 
 The steps it took stream in while the run is live and collapse behind a summary
 when it finishes, so a long run stays legible.
@@ -212,13 +176,10 @@ when it finishes, so a long run stays legible.
 ![Research steps expanded](./screenshots/deep-search-steps.png)
 
 An answer worth keeping can be branched: the fork copies the chat up to that
-answer and carries on there, leaving the original as it was.
+answer and carries on there, leaving the original as it was. Chats are saved,
+listed in the sidebar and resumable by URL.
 
 ![A research chat forked at one of its answers](./screenshots/deep-search-fork.png)
-
-Chats are saved, listed in a sidebar and resumable by URL.
-
-![Saved chats in the sidebar](./screenshots/deep-search-sessions.png)
 
 ## Backup, restore and migration
 
@@ -227,13 +188,9 @@ The whole library — original files, OCR text, metadata, thumbnails and taxonom
 
 ![Export page](./screenshots/export.png)
 
-![Archive download started](./screenshots/export-started.png)
-
 That zip restores into this instance or another one. It is previewed first, and
 documents already present are skipped, so restoring twice is safe. Restoring
 "as it was" sends nothing to OCR or the AI provider.
-
-![Import page](./screenshots/import-archive.png)
 
 ![A Lemmary archive previewed before restoring](./screenshots/import-archive-preview.png)
 
@@ -252,8 +209,6 @@ the accent the whole interface takes.
 
 AI holds the providers and which model does what. API keys are write-only: the
 page reports that a key is set, never what it is.
-
-![Settings, providers and models](./screenshots/settings-top.png)
 
 ![Settings, the AI tab in full](./screenshots/settings.png)
 

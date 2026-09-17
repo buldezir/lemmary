@@ -148,12 +148,16 @@ func mapDocument(lens *ngxIDLens, record *core.Record, truncate bool) map[string
 
 func mapTag(record *core.Record) map[string]any {
 	name := record.GetString("name")
+	color := record.GetString("color")
+	if color == "" {
+		color = "#a6cee3"
+	}
 	return map[string]any{
 		"id":                 ngxIDOf(record),
 		"is_inbox_tag":       false,
 		"name":               name,
 		"slug":               slugify(name),
-		"color":              "#a6cee3",
+		"color":              color,
 		"text_color":         "#000000",
 		"match":              "",
 		"matching_algorithm": 1,

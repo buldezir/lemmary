@@ -47,13 +47,11 @@ function emptyDraft(sdk: ProviderSDK = 'openai'): ProviderDraft {
  */
 export function ProvidersBlock({
   providers,
-  chatgptLogin,
   onChanged,
   onError,
   onSuccess,
 }: {
   providers: AIProvider[]
-  chatgptLogin: boolean | undefined
   /** Re-reads the list after a create, update, delete or sign-in. */
   onChanged: () => void | Promise<unknown>
   onError: (message: string) => void
@@ -205,12 +203,7 @@ export function ProvidersBlock({
                 }))
               }}
             >
-              {/* Offering an SDK the server will refuse is a dead end an admin
-                  cannot diagnose, so chatgpt appears only where
-                  AI_CHATGPT_LOGIN turned it on. */}
-              {SDK_OPTIONS.filter(
-                (option) => option.value !== 'chatgpt' || chatgptLogin === true,
-              ).map((option) => (
+              {SDK_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>

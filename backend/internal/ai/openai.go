@@ -8,11 +8,12 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/packages/param"
-	"github.com/openai/openai-go/shared"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/shared"
 	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/messages"
 	"lemmary/backend/internal/metrics"
 	"lemmary/backend/internal/opencode"
 )
@@ -30,8 +31,8 @@ type OpenAIClient struct {
 	client          openai.Client
 	logger          *slog.Logger
 
-	// messages is the Anthropic client the opencode SDK needs for the third of
-	// its catalogue served on /messages. Never used for any other SDK.
+	// messages is the Anthropic client: the whole of the anthropic SDK, and the
+	// third of opencode's catalogue served on /messages. Nil for the rest.
 	messages anthropic.Client
 }
 
@@ -73,8 +74,8 @@ func NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage stri
 		client:         openai.NewClient(opts...),
 		logger:         logger,
 	}
-	if sdk == aiprovider.SDKOpenCode {
-		c.messages = opencode.NewMessages(apiKey, baseURL, timeout)
+	if sdk == aiprovider.SDKOpenCode || sdk == aiprovider.SDKAnthropic {
+		c.messages = messages.NewClient(sdk, apiKey, baseURL, timeout)
 	}
 	return c
 }
@@ -90,8 +91,8 @@ func (c *OpenAIClient) Model() string {
 // Complete sends a chat completion, and gives a provider that refuses it a
 // second chance rather than treating the model as broken.
 //
-// opencode.Endpoint decides first whether this model is served somewhere other
-// than /chat/completions. Everything after that is degradation on the endpoint
+// usesMessagesAPI and opencode.Endpoint decide first whether this model is
+// served somewhere other than /chat/completions. Everything after that is degradation on the endpoint
 // the model does live on: JSON mode dropped if response_format is rejected,
 // reasoning_effort pinned to "none" if the model will not take tools alongside
 // it, temperature back to the API default. The reasoning_effort case prefers
@@ -101,14 +102,20 @@ func (c *OpenAIClient) Complete(ctx context.Context, params openai.ChatCompletio
 	// One measurement per call the caller made, not per HTTP request: the
 	// endpoint discovery and the degradation retries below are all time it waited.
 	defer metrics.TimeAICall(ctx, "chat", c.sdk, string(params.Model))(&err)
+	resp, err = c.complete(ctx, params, extra...)
+	return nameToolCallVariants(resp), err
+}
+
+func (c *OpenAIClient) complete(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
 	c.markPromptCache(ctx, &params)
-	switch opencode.Endpoint(c.sdk, string(params.Model)) {
-	case opencode.EndpointMessages:
-		resp, err := opencode.CompleteViaMessages(ctx, c.messages, c.logger, c.baseURL, params, extra...)
+	if c.usesMessagesAPI(string(params.Model)) {
+		resp, err := c.completeMessages(ctx, params, extra...)
 		if err == nil {
 			logUsage(c.logger, string(params.Model), usageOf(resp), extra...)
 		}
 		return resp, err
+	}
+	switch opencode.Endpoint(c.sdk, string(params.Model)) {
 	case opencode.EndpointResponses:
 		resp, err := CompleteViaResponses(ctx, c.client, c.logger, c.sdk, c.baseURL, params, extra...)
 		if err == nil {
@@ -117,6 +124,27 @@ func (c *OpenAIClient) Complete(ctx context.Context, params openai.ChatCompletio
 		return resp, err
 	}
 	return c.completeChat(ctx, params, extra...)
+}
+
+// nameToolCallVariants fills in the tool call variant a provider left off.
+// ToParam replays only a call it can classify, and classification is the "type"
+// field alone, so a gateway that omits it -- the SDK made it optional in v3 --
+// turns the whole call into a literal null in the next request's tool_calls.
+// The openai-go v1 this codebase pinned until recently copied the function
+// across regardless, so this is where that leniency now lives.
+func nameToolCallVariants(resp *openai.ChatCompletion) *openai.ChatCompletion {
+	if resp == nil {
+		return nil
+	}
+	for i := range resp.Choices {
+		calls := resp.Choices[i].Message.ToolCalls
+		for j := range calls {
+			if calls[j].Type == "" && calls[j].Function.Name != "" {
+				calls[j].Type = "function"
+			}
+		}
+	}
+	return resp
 }
 
 func (c *OpenAIClient) completeChat(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
@@ -182,9 +210,6 @@ func (c *OpenAIClient) completeChat(ctx context.Context, params openai.ChatCompl
 	// refuse the request because function tools are present. The two ways out
 	// are not equal: /responses keeps the tools and the reasoning, while
 	// reasoning_effort=none keeps the tools by turning the reasoning off.
-	// refuse the request because function tools are present. The refusal names
-	// two ways out, and they are not equal: /responses keeps the tools and the
-	// reasoning, while reasoning_effort=none keeps the tools by turning the
 	if viaResponses && len(params.Tools) > 0 && isReasoningEffortToolConflictError(err) {
 		logger.Warn("model rejected reasoning_effort with function tools; retrying on the Responses API",
 			"model", params.Model,
@@ -298,14 +323,15 @@ func (c *OpenAIClient) completeStreaming(
 ) (_ string, _ Usage, err error) {
 	defer metrics.TimeAICall(ctx, "chat", c.sdk, string(params.Model))(&err)
 	c.markPromptCache(ctx, &params)
-	switch opencode.Endpoint(c.sdk, string(params.Model)) {
-	case opencode.EndpointMessages:
-		text, u, err := opencode.CompleteStreamingViaMessages(ctx, c.messages, c.logger, c.baseURL, params, onDelta, extra...)
+	if c.usesMessagesAPI(string(params.Model)) {
+		text, u, err := c.completeStreamingMessages(ctx, params, onDelta, extra...)
 		usage := usageFrom(u)
 		if err == nil {
 			logUsage(c.logger, string(params.Model), usage, append(extra, "stream", true, "api", "messages")...)
 		}
 		return text, usage, err
+	}
+	switch opencode.Endpoint(c.sdk, string(params.Model)) {
 	case opencode.EndpointResponses:
 		return c.completeStreamingViaResponses(ctx, params, onDelta, extra...)
 	}

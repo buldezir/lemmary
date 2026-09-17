@@ -2,11 +2,12 @@
 
 Lemmary can run its language-model work on a **ChatGPT Plus, Pro or Business
 subscription** instead of a metered API key. You sign in once with a device
-code, bind chat, extraction, Deep Search and OCR to it, and those calls come out
+code, bind chat, extraction, Deep Research and OCR to it, and those calls come out
 of the seat you already pay for rather than out of API credits.
 
-It is off unless you turn it on, and there are good reasons for that. Read the
-whole page before you do.
+The SDK is offered on every self-hosted instance, but nothing runs on it until
+you add the provider and sign in — and there are good reasons to read the whole
+page before you do.
 
 ## What it can and cannot do
 
@@ -14,7 +15,7 @@ whole page before you do.
 | --- | --- |
 | Document chat | ✅ |
 | Metadata extraction | ✅ |
-| Deep Search (and its per-document helper) | ✅ |
+| Deep Research (and its per-document helper) | ✅ |
 | OCR | ✅ — a PDF or an image, up to 10 MB, read by the bound model |
 | Embeddings | ❌ — keep a keyed provider or the sidecar bound |
 
@@ -24,7 +25,7 @@ run on the subscription — which means an instance whose only AI credential is 
 ChatGPT seat is a complete install, with no API key anywhere.
 
 Embeddings are the exception, and not a matter of degree: the endpoint has no
-`/embeddings` at all, so Settings refuses that binding. Deep Search still works
+`/embeddings` at all, so Settings refuses that binding. Deep Research still works
 without them — it falls back to keyword matching — but its dense half needs a
 keyed provider or the [local embeddings sidecar](/local_embeddings).
 
@@ -51,7 +52,7 @@ Three consequences worth being clear about:
   refusing these requests. The failure shows up as a provider error on the next
   document, not as a silent fallback to a billed provider.
 - **Quota is a window, not a meter.** A subscription's allowance refills over
-  five-hour and weekly windows. Deep Search fans out across documents and can
+  five-hour and weekly windows. Deep Research fans out across documents and can
   spend a window quickly; if that becomes a problem, move the **Deep Search
   helper** binding back to a keyed provider first — it does the bulk reading.
 
@@ -72,20 +73,7 @@ sign-in from any browser, which is the only way this works on a server.
 
 If you skip this, Lemmary's sign-in fails with a message naming the setting.
 
-### 2. Set the flag
-
-```bash
-AI_CHATGPT_LOGIN=1
-```
-
-Absent means off. A value it cannot read — `AI_CHATGPT_LOGIN=ture` — is an error
-rather than a silent off, the same as `AI_MANAGED`. Setting it together with
-`AI_MANAGED=1` refuses to start.
-
-Restart the app. **Settings → Providers** now offers a **ChatGPT subscription**
-SDK.
-
-### 3. Add the provider and sign in
+### 2. Add the provider and sign in
 
 1. **Settings → Providers → Add provider**, SDK **ChatGPT subscription**. There
    is no API key field. Save it.
@@ -95,9 +83,9 @@ SDK.
    code, approve. The code is good for about fifteen minutes.
 4. The row reads **signed in**, with the account and plan beside it.
 
-### 4. Bind the models
+### 3. Bind the models
 
-Under **Settings → Models**, point **Chat**, **Extraction**, **Deep Search**,
+Under **Settings → Models**, point **Chat**, **Extraction**, **Search**,
 the **Deep Search helper** or **OCR** at the new provider and pick a model. The
 picker is served locally — the endpoint publishes no catalogue — and the
 **Custom model id** box takes anything the list does not name. Which models the
@@ -112,8 +100,8 @@ Leave **Embeddings** where it is.
 
 ### Setting up a fresh instance this way
 
-The setup wizard offers **ChatGPT subscription** too, once `AI_CHATGPT_LOGIN=1`
-is set, so a first-boot instance can be configured with no API key at all.
+The setup wizard offers **ChatGPT subscription** too, so a first-boot instance
+can be configured with no API key at all.
 Choosing it saves the provider row and then holds the step open for the
 sign-in — the token needs a row to be stored against — and setup carries on to
 the model bindings once you have approved the code.
@@ -149,7 +137,7 @@ with ChatGPT** again for a new one.
 not covering the bound model. Try the default model, or a smaller one.
 
 **Requests start failing for everyone at once** — most likely the quota window,
-or a change on OpenAI's side. Rebind chat and Deep Search to a keyed provider
+or a change on OpenAI's side. Rebind chat and Deep Research to a keyed provider
 while you work out which.
 
 **OCR returns empty or invented text** — the model was handed the file but
@@ -164,4 +152,4 @@ Google Vision or the Docling sidecar.
 **Extraction results got worse after switching** — extraction asks for JSON, and
 a backend that will not honour the request is answered in plain text and parsed
 leniently. If the metadata is thinner than it was, put **Extraction** back on a
-keyed provider and leave chat and Deep Search on the subscription.
+keyed provider and leave chat and Deep Research on the subscription.

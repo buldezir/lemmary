@@ -23,13 +23,17 @@ type Props = {
   job?: ProcessingJobRecord
 }
 
-const statusStyles: Record<DocumentStatus, string> = {
-  pending: 'text-amber-800 ring-amber-800/40',
-  processing: 'text-sky-900 ring-sky-900/40',
-  completed: 'text-forest ring-forest/40',
-  failed: 'text-madder ring-madder/50',
-  cancelled: 'text-ink-muted ring-ink-muted/40',
-  needs_review: 'text-amber-800 ring-amber-800/40',
+/** Filled badge and a card edged to match, except for the resting state. */
+const statusStyles: Record<DocumentStatus, { badge: string; border: string }> = {
+  pending: { badge: 'bg-amber-800 text-paper', border: 'border-amber-800' },
+  processing: { badge: 'bg-sky-900 text-paper', border: 'border-sky-900' },
+  completed: {
+    badge: 'text-forest ring-1 ring-inset ring-forest/40',
+    border: 'border-line hover:border-ink/50',
+  },
+  failed: { badge: 'bg-madder text-paper', border: 'border-madder' },
+  cancelled: { badge: 'bg-ink-muted text-paper', border: 'border-ink-muted' },
+  needs_review: { badge: 'bg-amber-800 text-paper', border: 'border-amber-800' },
 }
 
 function CardDescription({ document }: { document: DocumentRecord }) {
@@ -85,12 +89,13 @@ export function DocumentCard({
   const documentType = document.expand?.document_type?.name
   const title = document.title || 'Untitled document'
   const canMarkReviewed = Boolean(onMarkReviewed) && document.processing_status === 'needs_review'
+  const status = statusStyles[document.processing_status]
 
   return (
     <article
       data-document-id={document.id}
-      className={`relative flex flex-col border bg-surface p-4 transition-colors hover:border-ink/50 hover:bg-bright hover:shadow-sm hover:shadow-ink/10 ${
-        selected ? 'border-oxblood ring-1 ring-oxblood' : 'border-line'
+      className={`relative flex flex-col border bg-surface p-4 transition-colors hover:bg-bright hover:shadow-sm hover:shadow-ink/10 ${
+        selected ? 'border-oxblood ring-1 ring-oxblood' : status.border
       }`}
     >
       <Link
@@ -113,7 +118,7 @@ export function DocumentCard({
               />
             )}
             <span
-              className={`inline-flex px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ring-1 ring-inset ${statusStyles[document.processing_status]}`}
+              className={`inline-flex px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${status.badge}`}
             >
               {DOCUMENT_STATUS_LABELS[document.processing_status]}
             </span>
@@ -145,6 +150,7 @@ export function DocumentCard({
                   type="button"
                   aria-label={`Filter by ${tag.name}`}
                   className="relative z-10 pointer-events-auto border border-line px-1.5 py-0.5 text-[11px] text-ink-muted transition-colors hover:border-ink hover:text-ink"
+                  style={{ borderColor: tag.color || undefined }}
                   onClick={() => onFilterTag(tag.id)}
                 >
                   {tag.name}
@@ -153,6 +159,7 @@ export function DocumentCard({
                 <span
                   key={tag.id}
                   className="border border-line px-1.5 py-0.5 text-[11px] text-ink-muted"
+                  style={{ borderColor: tag.color || undefined }}
                 >
                   {tag.name}
                 </span>

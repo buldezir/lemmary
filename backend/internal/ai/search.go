@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/shared"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/shared"
 )
 
 const (
@@ -546,9 +546,9 @@ Available archive tags (pass exact names via the tags filter when relevant): %s.
 `, strings.Join(cleaned, ", "))
 }
 
-func searchDocumentsTools() []openai.ChatCompletionToolParam {
-	return []openai.ChatCompletionToolParam{{
-		Function: shared.FunctionDefinitionParam{
+func searchDocumentsTools() []openai.ChatCompletionToolUnionParam {
+	return []openai.ChatCompletionToolUnionParam{openai.ChatCompletionFunctionTool(
+		shared.FunctionDefinitionParam{
 			Name: "search_documents",
 			Description: openai.String("Search the user's document archive by meaning and by keywords, with optional filters. " +
 				"Returns matching documents with 1-3 verbatim passages from each."),
@@ -585,5 +585,5 @@ func searchDocumentsTools() []openai.ChatCompletionToolParam {
 				"required": []string{"query"},
 			},
 		},
-	}}
+	)}
 }

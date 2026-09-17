@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/shared"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/shared"
 
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
@@ -116,7 +116,7 @@ func (c *OpenAIClient) chatWithWeb(
 	apiMessages []openai.ChatCompletionMessageParamUnion,
 	web *websearch.Tavily,
 ) (string, error) {
-	tools := []openai.ChatCompletionToolParam{webSearchTool(), webFetchTool()}
+	tools := []openai.ChatCompletionToolUnionParam{webSearchTool(), webFetchTool()}
 	budget := &webBudget{}
 
 	for round := 0; round < maxChatToolRounds; round++ {
@@ -167,7 +167,7 @@ func (c *OpenAIClient) chatWithWeb(
 func (c *OpenAIClient) completeChatTurn(
 	ctx context.Context,
 	apiMessages []openai.ChatCompletionMessageParamUnion,
-	tools []openai.ChatCompletionToolParam,
+	tools []openai.ChatCompletionToolUnionParam,
 	round int,
 ) (*openai.ChatCompletion, error) {
 	params := openai.ChatCompletionNewParams{

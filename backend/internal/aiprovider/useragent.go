@@ -3,7 +3,7 @@ package aiprovider
 import (
 	"strings"
 
-	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/v3/option"
 )
 
 // UserAgent names us on every provider call we make ourselves, so a provider

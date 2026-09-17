@@ -55,6 +55,8 @@ func DefaultCatalog(sdk string) string {
 	switch strings.TrimSpace(sdk) {
 	case SDKOpenAI:
 		return "openai"
+	case SDKAnthropic:
+		return "anthropic"
 	case SDKOpenRouter:
 		return "openrouter"
 	case SDKMistral:

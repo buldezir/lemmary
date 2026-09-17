@@ -71,7 +71,7 @@ func TestSearchDocumentsToolsDoesNotAdvertiseAResultCap(t *testing.T) {
 	if len(tools) != 1 {
 		t.Fatalf("tools = %d, want 1", len(tools))
 	}
-	props, _ := tools[0].Function.Parameters["properties"].(map[string]any)
+	props, _ := tools[0].GetFunction().Parameters["properties"].(map[string]any)
 	if _, ok := props["limit"]; ok {
 		t.Fatal("search_documents still advertises limit; models then cap themselves at 10-20")
 	}

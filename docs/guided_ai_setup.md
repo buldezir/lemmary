@@ -2,7 +2,7 @@
 
 The short path to a working instance: **Mistral** for OCR and embeddings on its
 free tier, **Opencode Go** for the language model. Two keys, five minutes, and
-the whole pipeline works — extraction, chat, Deep Search and meaning-based
+the whole pipeline works — extraction, chat, Deep Research and meaning-based
 retrieval.
 
 Get the two keys (steps 1 and 2), then paste them into the **setup wizard** a
@@ -59,7 +59,7 @@ it already knows which of Opencode's three endpoints each model is served on.
 
 | | Model | Why |
 | --- | --- | --- |
-| **Recommended** | `gpt-5.6-luna` | Lemmary's default extraction model. Strongest of the three at pulling structured metadata out of a messy scan and at Deep Search's multi-step reading. |
+| **Recommended** | `gpt-5.6-luna` | Lemmary's default extraction model. Strongest of the three at pulling structured metadata out of a messy scan and at Deep Research's multi-step reading. |
 | Backup | `deepseek-v4-flash` | Fast and cheap on the same subscription. A good **Deep Search helper** model even when Luna does the answering. |
 | Backup | `qwen3.8-flash` | The other fast option; try it if DeepSeek is rate-limited or refuses your result language. |
 
@@ -75,7 +75,7 @@ better choice for the OCR binding:
   50 MB and 1000 pages, just past the 47 MB Lemmary accepts per upload — where a chat
   model's context is the ceiling, and long scans get truncated or refused.
 - **You need the Mistral key anyway.** Opencode serves no `/embeddings`
-  endpoint at all, so meaning-based Deep Search has to run on Mistral. Since
+  endpoint at all, so meaning-based Deep Research has to run on Mistral. Since
   the key is already there, binding OCR to it costs nothing extra.
 
 ---
@@ -113,9 +113,9 @@ filled from the keys above; **Settings → Models** has the same fields.
 | Extraction | Opencode Go | `gpt-5.6-luna` |
 | Embeddings *(optional)* | Mistral | `mistral-embed` |
 
-Chat and Deep Search follow the extraction binding unless you set them
+Chat and Deep Research follow the extraction binding unless you set them
 separately, so those three fields are the whole of a working install. Set the
-embeddings provider to **None** to leave Deep Search on keywords alone — it is
+embeddings provider to **None** to leave Deep Research on keywords alone — it is
 the one binding nothing else depends on. If a model you want is not in a picker,
 type it into **Custom model id**. **Finish setup** and the first upload will be
 OCR'd, tagged and searchable.
@@ -140,7 +140,7 @@ is a managed instance, `AI_MANAGED=1`, where the environment wins on every
 boot — see [Two modes, one build](/ai_providers#two-modes-one-build).)
 
 ```dotenv
-# language model — extraction, chat, Deep Search
+# language model — extraction, chat, Deep Research
 AI_SDK=opencode
 AI_API_KEY=sk-your-opencode-key
 AI_MODEL=gpt-5.6-luna
@@ -150,7 +150,7 @@ OCR_SDK=mistral
 OCR_API_KEY=your-mistral-key
 OCR_MODEL=mistral-ocr-latest
 
-# embeddings — meaning-based Deep Search, same Mistral key
+# embeddings — meaning-based Deep Research, same Mistral key
 AI_EMBEDDING_SDK=mistral
 AI_EMBEDDING_API_KEY=your-mistral-key
 AI_EMBEDDING_MODEL=mistral-embed

@@ -19,7 +19,7 @@ The API has been tested with the [swift-paperless](https://github.com/paulgessin
 - OCR text extraction (native text extraction for TXT/CSV/DOCX/XLSX)
 - AI metadata extraction: title, purpose, date, type, tags, summary
 - Document list with full-text search and status filters
-- Deep Search chat in two modes, one per path: **Search** (`/rag/search`) finds documents and lists them as cards; **Research** (`/rag/research`) searches, reads the documents it finds, surveys hundreds at once through a helper model, counts and totals, and answers with links to its sources — streaming each step as it works; a run that outgrows the model's context window fails with the provider's error; chats are saved, listed in a sidebar, and resumable by URL
+- Two search pages, one per path: **AI assisted search** (`/rag/search`) finds documents and lists them as cards; **Deep Research** (`/rag/research`) searches, reads the documents it finds, surveys hundreds at once through a helper model, counts and totals, and answers with links to its sources — streaming each step as it works; a run that outgrows the model's context window fails with the provider's error; chats are saved, listed in a sidebar, and resumable by URL
 - Detail page for reviewing OCR text and correcting metadata
 - Review **Inbox** with a count in the header, holding everything that is waiting on you — a low-confidence extraction, a possible duplicate, or every new document if you turn on **Always require review**; clear one by saving corrections, or mark a whole page reviewed at once. With the setting on, uploads land in the Inbox and **Documents** becomes the archive you have already read
 - Passkey sign-in: register a passkey per device and sign in with a fingerprint, face, or device PIN — no password typed, alongside the existing password and OAuth2 options
@@ -43,15 +43,14 @@ under the translation:
 
 ![Document detail](docs/screenshots/document-detail.png)
 
-Deep Search in **Search** mode — a natural-language query, and the documents it
-matched:
+**AI assisted search** — a natural-language query, and the documents it matched:
 
-![Deep Search](docs/screenshots/deep-search.png)
+![AI assisted search](docs/screenshots/deep-search.png)
 
-Deep Search in **Research** mode — the same archive read rather than listed,
-answered with links to the documents each figure came from:
+**Deep Research** — the same archive read rather than listed, answered with links
+to the documents each figure came from:
 
-![Deep Search, Research mode](docs/screenshots/deep-search-research.png)
+![Deep Research](docs/screenshots/deep-search-research.png)
 
 Split a scanner's multi-document PDF back into one document per part, by hand or
 with the cuts the model proposes:
@@ -60,16 +59,16 @@ with the cuts the model proposes:
 
 Admin Settings: providers, models and worker timeouts as runtime configuration:
 
-![Settings](docs/screenshots/settings-top.png)
+![Settings](docs/screenshots/settings.png)
 
 ## Stack
 
 - **Backend:** Go, [PocketBase as a framework](https://pocketbase.io/docs/use-as-framework/)
 - **Frontend:** React, TanStack Router, PocketBase JS SDK
-- **OCR:** Mistral Document OCR (`mistral`), Google Cloud Vision (`google_vision`), a file-capable OpenAI/OpenRouter model, or Docling (`docling`) — a keyless sidecar on your own host running PaddleOCR's PP-OCR models, so scans never leave the machine; see [docs/local_ocr.md](docs/local_ocr.md). Configured in Settings
-- **AI:** Opencode Go (`opencode`), Mistral, OpenAI, OpenRouter, or a ChatGPT subscription (`chatgpt`), via the official OpenAI and Anthropic Go SDKs — Opencode serves a third of its catalogue on Anthropic's Messages API, so the `opencode` SDK wraps both — see [docs/ai_providers.md](docs/ai_providers.md)
+- **OCR:** Mistral Document OCR (`mistral`), Google Cloud Vision (`google_vision`), a file-capable OpenAI/OpenRouter/Anthropic model, or Docling (`docling`) — a keyless sidecar on your own host running PaddleOCR's PP-OCR models, so scans never leave the machine; see [docs/local_ocr.md](docs/local_ocr.md). Configured in Settings
+- **AI:** Opencode Go (`opencode`), Mistral, OpenAI, Anthropic (`anthropic`), OpenRouter, or a ChatGPT subscription (`chatgpt`), via the official OpenAI and Anthropic Go SDKs — Claude is reached on its own Messages API, and Opencode serves a third of its catalogue there too — see [docs/ai_providers.md](docs/ai_providers.md)
 - **Search:** [Bleve](https://github.com/blevesearch/bleve) full-text index (token AND for the search box, relaxed to most-terms for the agent, BM25 ranking) over titles, OCR, tags, and metadata
-- **Deep Search:** natural-language archive search via a tool-calling agent over that index (hybrid keyword and embedding retrieval; keyword expansion across configured languages when no embedding model is set), in two modes — **Search** lists matching documents, **Research** reads them, surveys and counts across the archive with a cheaper helper model, and writes a cited answer
+- **Deep Research:** natural-language archive search via a tool-calling agent over that index (hybrid keyword and embedding retrieval; keyword expansion across configured languages when no embedding model is set), on two pages — **AI assisted search** lists matching documents, **Deep Research** reads them, surveys and counts across the archive with a cheaper helper model, and writes a cited answer
 
 ## Project layout
 

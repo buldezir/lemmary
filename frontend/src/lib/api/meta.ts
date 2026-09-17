@@ -14,20 +14,14 @@ export type AppMeta = {
    */
   aiManaged?: boolean
   /**
-   * AI_CHATGPT_LOGIN. Unknown reads as off, the opposite default to aiManaged
-   * and for the same reason, to offer less: an SDK the server refuses is a dead
-   * end an admin cannot diagnose.
-   */
-  chatgptLogin?: boolean
-  /**
    * Whether every AI-extracted document waits in the review Inbox. Unknown
    * reads as off, which is the behaviour before the flag existed.
    */
   alwaysRequireReview?: boolean
   /**
    * Whether a web-search provider is bound, which is what lets a chat offer the
-   * web toggle at all. Unknown reads as off, like chatgptLogin: a toggle that
-   * cannot work is a dead end, and the tools are metered.
+   * web toggle at all. Unknown reads as off: a toggle that cannot work is a dead
+   * end, and the tools are metered.
    */
   webSearch?: boolean
 }
@@ -74,7 +68,6 @@ async function fetchAppMeta(): Promise<AppMeta> {
       app_name?: string
       accent?: string
       ai_managed?: boolean
-      chatgpt_login?: boolean
       always_require_review?: boolean
       web_search?: boolean
     }>('/api/app/meta', {
@@ -88,7 +81,6 @@ async function fetchAppMeta(): Promise<AppMeta> {
       appName: appName || DEFAULT_APP_NAME,
       accent: accent || DEFAULT_ACCENT,
       aiManaged: data.ai_managed === true,
-      chatgptLogin: data.chatgpt_login === true,
       alwaysRequireReview: data.always_require_review === true,
       webSearch: data.web_search === true,
     }

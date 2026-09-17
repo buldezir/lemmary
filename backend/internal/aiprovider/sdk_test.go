@@ -54,6 +54,7 @@ func TestSDKCapabilities(t *testing.T) {
 		alias       string
 	}{
 		{SDKOpenAI, true, false, true, false, "https://api.openai.com/v1", "OpenAI"},
+		{SDKAnthropic, true, false, true, false, "https://api.anthropic.com/v1", "Anthropic"},
 		{SDKOpenRouter, true, false, true, false, "https://openrouter.ai/api/v1", "OpenRouter"},
 		{SDKMistral, true, false, true, false, "https://api.mistral.ai/v1", "Mistral"},
 		{SDKGoogleVision, true, false, false, false, "", "Google Cloud Vision"},
@@ -162,7 +163,7 @@ func TestLocalSDKEmbedsWithoutChatting(t *testing.T) {
 func TestCanOCR(t *testing.T) {
 	t.Parallel()
 	// docling belongs in this list as much as google_vision does.
-	for _, sdk := range []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKGoogleVision, SDKDocling} {
+	for _, sdk := range []string{SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKMistral, SDKGoogleVision, SDKDocling} {
 		if !CanOCR(sdk) {
 			t.Fatalf("CanOCR(%q) = false", sdk)
 		}
@@ -184,7 +185,7 @@ func TestCanWebSearch(t *testing.T) {
 	if !CanWebSearch(SDKTavily) {
 		t.Fatal("CanWebSearch(tavily) = false")
 	}
-	for _, sdk := range []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKOpenCode, SDKChatGPT, SDKGoogleVision, SDKDocling, SDKLocalEmbeddings, "unknown", ""} {
+	for _, sdk := range []string{SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKMistral, SDKOpenCode, SDKChatGPT, SDKGoogleVision, SDKDocling, SDKLocalEmbeddings, "unknown", ""} {
 		if CanWebSearch(sdk) {
 			t.Errorf("CanWebSearch(%q) = true", sdk)
 		}
@@ -202,13 +203,13 @@ func TestSDKListsMatchTheirPredicates(t *testing.T) {
 		got  []string
 		want []string
 	}{
-		"llm":       {LLMSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKOpenCode, SDKChatGPT}},
+		"llm":       {LLMSDKs(), []string{SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKMistral, SDKOpenCode, SDKChatGPT}},
 		"embedding": {EmbeddingSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKLocalEmbeddings}},
-		"ocr":       {OCRSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKChatGPT, SDKDocling}},
+		"ocr":       {OCRSDKs(), []string{SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKChatGPT, SDKDocling}},
 		// The environment lists are the same minus chatgpt, whose credential
 		// is minted by signing in and so cannot be seeded from a file.
-		"env llm":    {EnvLLMSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKOpenCode}},
-		"env ocr":    {EnvOCRSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKDocling}},
+		"env llm":    {EnvLLMSDKs(), []string{SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKMistral, SDKOpenCode}},
+		"env ocr":    {EnvOCRSDKs(), []string{SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKDocling}},
 		"web search": {WebSearchSDKs(), []string{SDKTavily}},
 	}
 	for name, tc := range cases {
@@ -237,9 +238,9 @@ func TestCanEmbed(t *testing.T) {
 	if CanEmbed(SDKGoogleVision) || CanEmbed("unknown") || CanEmbed("") {
 		t.Fatal("google_vision, an unknown SDK and an empty SDK cannot embed")
 	}
-	// The two that chat without embedding: neither catalogue has an embedding
-	// model, and neither endpoint serves /embeddings.
-	for _, sdk := range []string{SDKOpenCode, SDKChatGPT} {
+	// The three that chat without embedding: no catalogue among them has an
+	// embedding model, and none of the endpoints serves /embeddings.
+	for _, sdk := range []string{SDKAnthropic, SDKOpenCode, SDKChatGPT} {
 		if !IsLLM(sdk) {
 			t.Errorf("IsLLM(%q) = false; this case is only interesting for an LLM SDK", sdk)
 		}
@@ -259,7 +260,7 @@ func TestRequiresAPIKey(t *testing.T) {
 			t.Fatalf("RequiresAPIKey(%q) = true; a sidecar has no account behind it", sdk)
 		}
 	}
-	for _, sdk := range []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKGoogleVision, SDKTavily} {
+	for _, sdk := range []string{SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKMistral, SDKGoogleVision, SDKTavily} {
 		if !RequiresAPIKey(sdk) {
 			t.Fatalf("RequiresAPIKey(%q) = false", sdk)
 		}

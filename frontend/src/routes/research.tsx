@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 
-import { Button } from '../components/ui'
+import { Button, DocsLink } from '../components/ui'
 import { ChatPanel } from '../components/ChatPanel'
 import { ChatTranscript } from '../components/ChatTranscript'
 import { ChatComposer } from '../components/ChatComposer'
-import { ChatWorkspaceFrame, modeHints } from '../components/ChatWorkspaceFrame'
+import { ChatWorkspaceFrame } from '../components/ChatWorkspaceFrame'
 import { MarkdownContent } from '../components/MarkdownContent'
 import { BindingOverride } from '../components/BindingOverride'
 import { WebSearchToggle } from '../components/WebSearchToggle'
@@ -14,7 +14,11 @@ import { useChatWorkspace } from '../hooks/useChatWorkspace'
 import { cancelSearchRun, type ResearchEvent } from '../lib/api/ai'
 import { chatSessionBinding, getChatSession } from '../lib/api/chats'
 import { applyStep, type ResearchStep } from '../lib/researchSteps'
-import { formatContextUsage, type ContextUsage } from '../lib/contextUsage'
+import {
+  contextOverflowWarning,
+  formatContextUsage,
+  type ContextUsage,
+} from '../lib/contextUsage'
 
 /**
  * Research: the agent loop, and the page that keeps its conversation. It shows
@@ -122,12 +126,16 @@ export function ResearchPage() {
     }
   }, [loadedMode, navigate, ws.sessionId])
 
-  const locked = Boolean(ws.sessionId) || chat.sending
   const inConversation = Boolean(ws.sessionId) || Boolean(chat.session)
   const shownBinding = inConversation ? chatSessionBinding(chat.session) : ws.binding
   // A fork exists to keep a transcript worth keeping, so there is nothing to
   // branch before the conversation is saved.
   const canFork = Boolean(ws.sessionId)
+
+  // The last turn that reported one: only a model whose window the catalogue
+  // knows reports it at all, and nothing here knows it before the first answer.
+  const knownUsage = chat.turns.findLast((turn) => turn.usage)?.usage
+  const overflow = chat.sending ? '' : contextOverflowWarning(chat.input, knownUsage)
 
   function startNewChat() {
     ws.setRailOpen(false)
@@ -152,9 +160,13 @@ export function ResearchPage() {
 
   return (
     <ChatWorkspaceFrame
-      mode="research"
-      hint={modeHints.research}
-      locked={locked}
+      title="Deep Research"
+      hint={
+        <>
+          Read the documents and answer, with citations.{' '}
+          <DocsLink href="/docs/deep_research.html">How it works</DocsLink>.
+        </>
+      }
       rows={ws.rows}
       sessionId={ws.sessionId}
       sessionsLoading={ws.sessions.loading}
@@ -226,6 +238,11 @@ export function ResearchPage() {
             there rather than the next one. */}
         {chat.unfinished && !chat.sending && (
           <UnfinishedNotice onContinue={continueTurn} disabled={chat.loading || ws.railBusy} />
+        )}
+        {overflow && (
+          <p className="border-t border-line bg-paper px-4 pt-3 text-xs text-amber-800">
+            {overflow}
+          </p>
         )}
         <ChatComposer
           value={chat.input}

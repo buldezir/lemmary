@@ -3,6 +3,7 @@ import { ConnectionLostError, HttpError } from '../apiClient'
 import {
   chatSessionDateLabel,
   chatSessionTitle,
+  chatSessionsInMode,
   mergeChatSession,
   storedAnswerForRun,
   toChatTurn,
@@ -73,6 +74,24 @@ describe('mergeChatSession', () => {
     const bumped = { ...older, last_message_at: '2026-01-04 10:00:00.000Z' }
     const merged = mergeChatSession([newer, older], bumped)
     expect(merged[0].id).toBe('older')
+  })
+})
+
+describe('chatSessionsInMode', () => {
+  const research = session({ id: 'research', mode: 'research' })
+  const search = session({ id: 'search', mode: 'search' })
+  const legacy = session({ id: 'legacy' })
+
+  it('keeps only the sessions of that mode', () => {
+    const rows = chatSessionsInMode([research, search, legacy], 'research')
+    expect(rows.map((item) => item.id)).toEqual(['research'])
+  })
+
+  it('reads a session with no mode as search', () => {
+    expect(chatSessionsInMode([research, search, legacy], 'search').map((item) => item.id)).toEqual([
+      'search',
+      'legacy',
+    ])
   })
 })
 

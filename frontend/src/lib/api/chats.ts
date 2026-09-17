@@ -322,6 +322,14 @@ export function mergeChatSession(
   return next
 }
 
+/** Search and Research share a kind and differ only by mode; each rail lists its own. */
+export function chatSessionsInMode(
+  sessions: ChatSession[],
+  mode: 'search' | 'research',
+): ChatSession[] {
+  return sessions.filter((session) => (session.mode ?? 'search') === mode)
+}
+
 /**
  * `fallbackDocuments` covers the send response, where the hits ride alongside
  * the message rather than inside it. Empty stays `undefined` rather than `[]`

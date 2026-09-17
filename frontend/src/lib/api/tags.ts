@@ -7,6 +7,8 @@ import { notifyDocumentsChanged } from '../documentEvents'
 export type TagRecord = {
   id: string
   name: string
+  /** `#rrggbb`, or empty for the neutral border every tag had before colours. */
+  color?: string
   user?: string
 }
 
@@ -40,6 +42,11 @@ export async function renameTag(id: string, name: string): Promise<TagRecord> {
   } catch (err) {
     throw duplicateNameError(err, name)
   }
+}
+
+export async function setTagColor(id: string, color: string): Promise<TagRecord> {
+  await ensureAuth()
+  return pb.collection('tags').update<TagRecord>(id, { color })
 }
 
 export async function deleteTag(id: string): Promise<void> {

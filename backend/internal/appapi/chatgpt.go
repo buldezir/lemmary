@@ -14,19 +14,6 @@ import (
 	"lemmary/backend/internal/config"
 )
 
-// Shown when the chatgpt SDK is used on an instance that has not opted in.
-const chatgptDisabledMessage = "Signing in with a ChatGPT subscription is not enabled on this instance. Set AI_CHATGPT_LOGIN=1 to turn it on."
-
-// refuseWhenChatGPTDisabled is the twin of refuseWhenManaged: hiding the SDK in
-// Settings is a courtesy, and these endpoints stay reachable with any admin
-// session.
-func refuseWhenChatGPTDisabled(e *core.RequestEvent, rt *config.Runtime) (bool, error) {
-	if rt.ChatGPTLogin() {
-		return false, nil
-	}
-	return true, writeError(e, http.StatusForbidden, chatgptDisabledMessage)
-}
-
 // pendingLogins is never sent to the client: the device auth id is the half
 // that completes a sign-in, so handing it out would let anyone who saw one
 // finish somebody else's login. A restart drops them, which is fine for a code
@@ -69,9 +56,6 @@ func handleChatGPTDeviceStart(app core.App, rt *config.Runtime) func(*core.Reque
 		if refused, err := refuseWhenManaged(e, rt); refused {
 			return err
 		}
-		if refused, err := refuseWhenChatGPTDisabled(e, rt); refused {
-			return err
-		}
 		record, err := chatgptProvider(app, e)
 		if record == nil {
 			return err
@@ -98,9 +82,6 @@ func handleChatGPTDeviceStart(app core.App, rt *config.Runtime) func(*core.Reque
 func handleChatGPTDevicePoll(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		if refused, err := refuseWhenManaged(e, rt); refused {
-			return err
-		}
-		if refused, err := refuseWhenChatGPTDisabled(e, rt); refused {
 			return err
 		}
 		record, err := chatgptProvider(app, e)
@@ -162,9 +143,7 @@ func handleChatGPTDevicePoll(app core.App, rt *config.Runtime) func(*core.Reques
 	}
 }
 
-// handleChatGPTSignOut clears the token but keeps the provider row. Deliberately
-// not behind refuseWhenChatGPTDisabled: turning the flag off is when an operator
-// most wants the stored token gone.
+// handleChatGPTSignOut clears the token but keeps the provider row.
 func handleChatGPTSignOut(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		if refused, err := refuseWhenManaged(e, rt); refused {

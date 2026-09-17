@@ -46,6 +46,18 @@ func TestNewFromAIProviderRequirements(t *testing.T) {
 			wantErr:  "OCR model is required",
 		},
 		{
+			// A different wire protocol underneath, but the same multimodal
+			// request: what differs lives inside the client NewLLMProvider
+			// builds, not in this switch.
+			name: "anthropic reads a document like the other LLM SDKs",
+			provider: aiprovider.Provider{
+				SDK: aiprovider.SDKAnthropic, Alias: "Anthropic", APIKey: "sk-ant-test",
+				BaseURL: aiprovider.DefaultBaseURL(aiprovider.SDKAnthropic),
+			},
+			model:    "claude-opus-5",
+			wantName: aiprovider.SDKAnthropic,
+		},
+		{
 			// The credential is a minted token, which config.providerCredential
 			// substitutes for the key. Demanding an api_key here would refuse
 			// a provider that is signed in and working.
