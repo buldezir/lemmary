@@ -36,12 +36,16 @@ describe('SDK capabilities', () => {
     }
     expect(isLLMProvider('opencode')).toBe(true)
     expect(canEmbedProvider('opencode')).toBe(false)
+    // anthropic chats and reads documents; api.anthropic.com serves no
+    // /embeddings at all.
+    expect(isLLMProvider('anthropic')).toBe(true)
+    expect(canEmbedProvider('anthropic')).toBe(false)
   })
 
   it('asks for a key everywhere but the two sidecars', () => {
     expect(requiresAPIKey('local')).toBe(false)
     expect(requiresAPIKey('docling')).toBe(false)
-    for (const sdk of ['openai', 'openrouter', 'mistral', 'opencode', 'google_vision']) {
+    for (const sdk of ['openai', 'anthropic', 'openrouter', 'mistral', 'opencode', 'google_vision']) {
       expect(requiresAPIKey(sdk)).toBe(true)
     }
     expect(requiresAPIKey(undefined)).toBe(true)
@@ -83,6 +87,9 @@ describe('the local SDK is offered and addressed', () => {
     // Keep in step with aiprovider.DefaultBaseURL and the service name in
     // docker-compose.embeddings.yml, or the overlay comes up unconfigured.
     expect(SDK_DEFAULT_BASE.local).toBe('http://embeddings:80/v1')
+    // Must stay identical to aiprovider.DefaultBaseURL; internal/messages
+    // strips the /v1 back off, because the SDK appends v1/messages itself.
+    expect(SDK_DEFAULT_BASE.anthropic).toBe('https://api.anthropic.com/v1')
   })
 })
 

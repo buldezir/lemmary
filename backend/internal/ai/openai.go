@@ -13,6 +13,7 @@ import (
 	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/shared"
 	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/messages"
 	"lemmary/backend/internal/opencode"
 )
 
@@ -29,8 +30,8 @@ type OpenAIClient struct {
 	client          openai.Client
 	logger          *slog.Logger
 
-	// messages is the Anthropic client the opencode SDK needs for the third of
-	// its catalogue served on /messages. Never used for any other SDK.
+	// messages is the Anthropic client: the whole of the anthropic SDK, and the
+	// third of opencode's catalogue served on /messages. Nil for the rest.
 	messages anthropic.Client
 }
 
@@ -72,8 +73,8 @@ func NewOpenAIClient(sdk, apiKey, model, baseURL, promptVer, resultLanguage stri
 		client:         openai.NewClient(opts...),
 		logger:         logger,
 	}
-	if sdk == aiprovider.SDKOpenCode {
-		c.messages = opencode.NewMessages(apiKey, baseURL, timeout)
+	if sdk == aiprovider.SDKOpenCode || sdk == aiprovider.SDKAnthropic {
+		c.messages = messages.NewClient(sdk, apiKey, baseURL, timeout)
 	}
 	return c
 }
@@ -89,8 +90,8 @@ func (c *OpenAIClient) Model() string {
 // Complete sends a chat completion, and gives a provider that refuses it a
 // second chance rather than treating the model as broken.
 //
-// opencode.Endpoint decides first whether this model is served somewhere other
-// than /chat/completions. Everything after that is degradation on the endpoint
+// usesMessagesAPI and opencode.Endpoint decide first whether this model is
+// served somewhere other than /chat/completions. Everything after that is degradation on the endpoint
 // the model does live on: JSON mode dropped if response_format is rejected,
 // reasoning_effort pinned to "none" if the model will not take tools alongside
 // it, temperature back to the API default. The reasoning_effort case prefers
@@ -103,13 +104,14 @@ func (c *OpenAIClient) Complete(ctx context.Context, params openai.ChatCompletio
 
 func (c *OpenAIClient) complete(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
 	c.markPromptCache(ctx, &params)
-	switch opencode.Endpoint(c.sdk, string(params.Model)) {
-	case opencode.EndpointMessages:
-		resp, err := opencode.CompleteViaMessages(ctx, c.messages, c.logger, c.baseURL, params, extra...)
+	if c.usesMessagesAPI(string(params.Model)) {
+		resp, err := c.completeMessages(ctx, params, extra...)
 		if err == nil {
 			logUsage(c.logger, string(params.Model), usageOf(resp), extra...)
 		}
 		return resp, err
+	}
+	switch opencode.Endpoint(c.sdk, string(params.Model)) {
 	case opencode.EndpointResponses:
 		resp, err := CompleteViaResponses(ctx, c.client, c.logger, c.sdk, c.baseURL, params, extra...)
 		if err == nil {
@@ -312,14 +314,15 @@ func (c *OpenAIClient) completeStreaming(
 	extra ...any,
 ) (string, Usage, error) {
 	c.markPromptCache(ctx, &params)
-	switch opencode.Endpoint(c.sdk, string(params.Model)) {
-	case opencode.EndpointMessages:
-		text, u, err := opencode.CompleteStreamingViaMessages(ctx, c.messages, c.logger, c.baseURL, params, onDelta, extra...)
+	if c.usesMessagesAPI(string(params.Model)) {
+		text, u, err := c.completeStreamingMessages(ctx, params, onDelta, extra...)
 		usage := usageFrom(u)
 		if err == nil {
 			logUsage(c.logger, string(params.Model), usage, append(extra, "stream", true, "api", "messages")...)
 		}
 		return text, usage, err
+	}
+	switch opencode.Endpoint(c.sdk, string(params.Model)) {
 	case opencode.EndpointResponses:
 		return c.completeStreamingViaResponses(ctx, params, onDelta, extra...)
 	}

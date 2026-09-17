@@ -1,4 +1,16 @@
-package opencode
+// Package messages speaks Anthropic's Messages API, converting to and from the
+// openai.ChatCompletion shapes the rest of this codebase passes around so that
+// no call site has to know which wire protocol answered.
+//
+// Two SDKs reach it: aiprovider.SDKAnthropic, which is api.anthropic.com
+// itself, and the part of OpenCode Go's catalogue served on /messages rather
+// than /chat/completions. They differ in two places only -- the session header,
+// which is OpenCode's, and output_config.effort, which is Anthropic's -- so the
+// sdk travels with every call.
+//
+// It is a leaf package: it may use aiprovider, but internal/ai does the routing
+// and so imports this, never the other way round.
+package messages
 
 import (
 	"context"
@@ -18,10 +30,24 @@ import (
 	"lemmary/backend/internal/aiprovider"
 )
 
-// The models on EndpointMessages speak Anthropic's Messages API. Everything
-// below converts openai.ChatCompletionNewParams to anthropic.MessageNewParams
-// and the reply back, so no call site changes. Only the fields this codebase
-// actually sends are carried across.
+// Only the fields this codebase actually sends are carried across.
+
+// Options are the request fields that have no counterpart in
+// openai.ChatCompletionNewParams. internal/ai owns them because it owns the
+// ladder that drops one when a model refuses it: the zero value sends neither,
+// which is what every retry eventually falls back to.
+type Options struct {
+	// Effort is output_config.effort. Empty leaves the field off.
+	Effort string
+	// DisableThinking sends thinking:{"type":"disabled"}.
+	//
+	// On by default for the anthropic SDK, and not a cost decision: this
+	// package converts each reply to an openai.ChatCompletion, which has
+	// nowhere to keep a thinking block, so a tool loop cannot replay one -- and
+	// a replayed assistant turn that is missing the thinking block it was
+	// generated with is refused. See internal/ai.messagesOptions.
+	DisableThinking bool
+}
 
 // defaultMaxTokens caps a Messages reply. The parameter is required there and
 // optional on /chat/completions, so no caller sets one and it has to be
@@ -33,11 +59,14 @@ import (
 // responsesParamsFrom already honours and this already prefers.
 const defaultMaxTokens = 32768
 
-// NewMessages builds the Anthropic client for an OpenCode base URL. Both
-// credentials are sent: x-api-key, which @ai-sdk/anthropic presents, and an
-// Authorization bearer, which OpenCode's other endpoints take. The docs
-// specify neither and one header costs nothing.
-func NewMessages(apiKey, baseURL string, timeout time.Duration) anthropic.Client {
+// NewClient builds the Anthropic client for one provider row.
+//
+// x-api-key is how this API authenticates and both SDKs get it. The
+// Authorization bearer is OpenCode's: its other endpoints take one, its docs
+// specify neither header for /messages, and one more header costs nothing
+// there. Anthropic is not sent it -- a bearer beside the key is how an OAuth
+// request is shaped, and this is not one.
+func NewClient(sdk, apiKey, baseURL string, timeout time.Duration) anthropic.Client {
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
@@ -48,13 +77,19 @@ func NewMessages(apiKey, baseURL string, timeout time.Duration) anthropic.Client
 		// contribute to these requests.
 		anthropicoption.WithoutEnvironmentDefaults(),
 		anthropicoption.WithAPIKey(apiKey),
-		anthropicoption.WithAuthToken(apiKey),
-		anthropicoption.WithBaseURL(MessagesBaseURL(baseURL)),
+		anthropicoption.WithBaseURL(BaseURL(sdk, baseURL)),
 		anthropicoption.WithHTTPClient(&http.Client{Timeout: timeout}),
 		anthropicoption.WithRequestTimeout(timeout),
 		anthropicoption.WithMaxRetries(0),
 		anthropicoption.WithHeader("User-Agent", aiprovider.UserAgent),
-		anthropicoption.WithMiddleware(sessionMiddleware()),
+	}
+	// The session header is OpenCode's routing key and means nothing to
+	// Anthropic, which would only see an unknown header on every request.
+	if strings.TrimSpace(sdk) == aiprovider.SDKOpenCode {
+		opts = append(opts,
+			anthropicoption.WithAuthToken(apiKey),
+			anthropicoption.WithMiddleware(sessionMiddleware()),
+		)
 	}
 	if aiprovider.Managed() {
 		opts = append(opts, anthropicoption.WithMiddleware(documentMiddleware))
@@ -83,45 +118,47 @@ func sessionMiddleware() anthropicoption.Middleware {
 	}
 }
 
-// MessagesBaseURL is the base URL to build the Anthropic client with.
-// anthropic-sdk-go appends "v1/messages" itself, so the /v1 every other
-// endpoint's base URL carries has to come off first, or the request goes to
+// BaseURL is the base URL to build the Anthropic client with.
+// anthropic-sdk-go appends "v1/messages" itself, so the /v1 both SDKs' base
+// URLs carry has to come off first, or the request goes to
 // /zen/go/v1/v1/messages.
-func MessagesBaseURL(baseURL string) string {
+func BaseURL(sdk, baseURL string) string {
 	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if base == "" {
-		base = strings.TrimRight(aiprovider.DefaultBaseURL(aiprovider.SDKOpenCode), "/")
+		base = strings.TrimRight(aiprovider.DefaultBaseURL(sdk), "/")
 	}
 	return strings.TrimSuffix(base, "/v1") + "/"
 }
 
-// MessagesURL is the /messages endpoint for an OpenCode base URL. It exists
-// for the outbound request log: the SDK builds the real URL itself, and a log
-// line that guessed a different one would be worse than none.
-func MessagesURL(baseURL string) string {
-	return MessagesBaseURL(baseURL) + "v1/messages"
+// URL is the /messages endpoint a row resolves to. It exists for the outbound
+// request log: the SDK builds the real URL itself, and a log line that guessed
+// a different one would be worse than none.
+func URL(sdk, baseURL string) string {
+	return BaseURL(sdk, baseURL) + "v1/messages"
 }
 
-func CompleteViaMessages(
+func Complete(
 	ctx context.Context,
 	client anthropic.Client,
 	logger *slog.Logger,
+	sdk string,
 	baseURL string,
+	opts Options,
 	params openai.ChatCompletionNewParams,
 	extra ...any,
 ) (*openai.ChatCompletion, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	req, err := messagesParamsFrom(params)
+	req, err := messagesParamsFrom(sdk, opts, params)
 	if err != nil {
 		return nil, err
 	}
 	aiprovider.LogRequest(
 		logger,
-		aiprovider.SDKOpenCode,
+		sdk,
 		http.MethodPost,
-		MessagesURL(baseURL),
+		URL(sdk, baseURL),
 		string(params.Model),
 		append(extra, "api", "messages")...,
 	)
@@ -132,13 +169,15 @@ func CompleteViaMessages(
 	return chatCompletionFrom(msg), nil
 }
 
-// CompleteStreamingViaMessages returns openai.CompletionUsage rather than
-// internal/ai's Usage because this package is a leaf that internal/ai imports.
-func CompleteStreamingViaMessages(
+// CompleteStreaming returns openai.CompletionUsage rather than internal/ai's
+// Usage because this package is a leaf that internal/ai imports.
+func CompleteStreaming(
 	ctx context.Context,
 	client anthropic.Client,
 	logger *slog.Logger,
+	sdk string,
 	baseURL string,
+	opts Options,
 	params openai.ChatCompletionNewParams,
 	onDelta func(string),
 	extra ...any,
@@ -147,15 +186,15 @@ func CompleteStreamingViaMessages(
 		logger = slog.Default()
 	}
 	var usage openai.CompletionUsage
-	req, err := messagesParamsFrom(params)
+	req, err := messagesParamsFrom(sdk, opts, params)
 	if err != nil {
 		return "", usage, err
 	}
 	aiprovider.LogRequest(
 		logger,
-		aiprovider.SDKOpenCode,
+		sdk,
 		http.MethodPost,
-		MessagesURL(baseURL),
+		URL(sdk, baseURL),
 		string(params.Model),
 		append(extra, "stream", true, "api", "messages")...,
 	)
@@ -196,7 +235,7 @@ func CompleteStreamingViaMessages(
 	return b.String(), usage, stream.Err()
 }
 
-func messagesParamsFrom(params openai.ChatCompletionNewParams) (anthropic.MessageNewParams, error) {
+func messagesParamsFrom(sdk string, opts Options, params openai.ChatCompletionNewParams) (anthropic.MessageNewParams, error) {
 	system, messages, err := messagesFrom(params.Messages)
 	if err != nil {
 		return anthropic.MessageNewParams{}, err
@@ -214,6 +253,14 @@ func messagesParamsFrom(params openai.ChatCompletionNewParams) (anthropic.Messag
 		// The two APIs scale it differently: chat completions takes 0-2,
 		// Messages takes 0-1.
 		req.Temperature = anthropic.Float(min(params.Temperature.Value, 1))
+	}
+	if strings.TrimSpace(opts.Effort) != "" {
+		req.OutputConfig = anthropic.OutputConfigParam{Effort: effortFrom(opts.Effort)}
+	}
+	if opts.DisableThinking {
+		req.Thinking = anthropic.ThinkingConfigParamUnion{
+			OfDisabled: &anthropic.ThinkingConfigDisabledParam{},
+		}
 	}
 	// params.ResponseFormat is deliberately dropped: the Messages API has no bare
 	// "give me JSON" mode, and every caller here already asks for JSON in its own
@@ -244,6 +291,21 @@ func messagesParamsFrom(params openai.ChatCompletionNewParams) (anthropic.Messag
 	}
 	markCacheBreakpoints(&req)
 	return req, nil
+}
+
+// effortFrom maps the reasoning_effort this codebase speaks onto Claude's
+// output_config.effort, which is the same dial under another name. "none" has
+// no counterpart there -- low is as little as Claude thinks -- and so falls in
+// with low, as does anything unrecognised.
+func effortFrom(effort string) anthropic.OutputConfigEffort {
+	switch strings.ToLower(strings.TrimSpace(effort)) {
+	case "medium":
+		return anthropic.OutputConfigEffortMedium
+	case "high":
+		return anthropic.OutputConfigEffortHigh
+	default:
+		return anthropic.OutputConfigEffortLow
+	}
 }
 
 // markCacheBreakpoints says which part of the request the model may reuse from

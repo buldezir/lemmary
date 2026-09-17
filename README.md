@@ -65,8 +65,8 @@ Admin Settings: providers, models and worker timeouts as runtime configuration:
 
 - **Backend:** Go, [PocketBase as a framework](https://pocketbase.io/docs/use-as-framework/)
 - **Frontend:** React, TanStack Router, PocketBase JS SDK
-- **OCR:** Mistral Document OCR (`mistral`), Google Cloud Vision (`google_vision`), a file-capable OpenAI/OpenRouter model, or Docling (`docling`) — a keyless sidecar on your own host running PaddleOCR's PP-OCR models, so scans never leave the machine; see [docs/local_ocr.md](docs/local_ocr.md). Configured in Settings
-- **AI:** Opencode Go (`opencode`), Mistral, OpenAI, OpenRouter, or a ChatGPT subscription (`chatgpt`), via the official OpenAI and Anthropic Go SDKs — Opencode serves a third of its catalogue on Anthropic's Messages API, so the `opencode` SDK wraps both — see [docs/ai_providers.md](docs/ai_providers.md)
+- **OCR:** Mistral Document OCR (`mistral`), Google Cloud Vision (`google_vision`), a file-capable OpenAI/OpenRouter/Anthropic model, or Docling (`docling`) — a keyless sidecar on your own host running PaddleOCR's PP-OCR models, so scans never leave the machine; see [docs/local_ocr.md](docs/local_ocr.md). Configured in Settings
+- **AI:** Opencode Go (`opencode`), Mistral, OpenAI, Anthropic (`anthropic`), OpenRouter, or a ChatGPT subscription (`chatgpt`), via the official OpenAI and Anthropic Go SDKs — Claude is reached on its own Messages API, and Opencode serves a third of its catalogue there too — see [docs/ai_providers.md](docs/ai_providers.md)
 - **Search:** [Bleve](https://github.com/blevesearch/bleve) full-text index (token AND for the search box, relaxed to most-terms for the agent, BM25 ranking) over titles, OCR, tags, and metadata
 - **Deep Research:** natural-language archive search via a tool-calling agent over that index (hybrid keyword and embedding retrieval; keyword expansion across configured languages when no embedding model is set), on two pages — **AI assisted search** lists matching documents, **Deep Research** reads them, surveys and counts across the archive with a cheaper helper model, and writes a cited answer
 

@@ -567,3 +567,39 @@ func TestListModelsLocalReadsInfoWithoutAKey(t *testing.T) {
 		}
 	}
 }
+
+// Anthropic authenticates with x-api-key and dates its API in a header. A
+// request carrying the bearer as well is read as an OAuth one and refused, so
+// the two must not both be sent.
+func TestListModelsSignsAnthropicWithItsOwnHeaders(t *testing.T) {
+	t.Parallel()
+	var key, bearer, version string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key = r.Header.Get("x-api-key")
+		bearer = r.Header.Get("Authorization")
+		version = r.Header.Get("anthropic-version")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"type":"model","id":"claude-opus-5","display_name":"Claude Opus 5","max_input_tokens":1000000}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	p := Provider{SDK: SDKAnthropic, BaseURL: srv.URL + "/v1", APIKey: "sk-ant-test"}
+	models, err := ListModels(t.Context(), p, PurposeLLM, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key != "sk-ant-test" {
+		t.Errorf("x-api-key = %q, want the provider's key", key)
+	}
+	if bearer != "" {
+		t.Errorf("Authorization = %q, want nothing beside x-api-key", bearer)
+	}
+	if version != AnthropicVersion {
+		t.Errorf("anthropic-version = %q, want %q", version, AnthropicVersion)
+	}
+	// display_name is the only readable name Anthropic gives, and
+	// max_input_tokens the only context window.
+	if len(models) != 1 || models[0].Name != "Claude Opus 5" || models[0].ContextWindow != 1000000 {
+		t.Fatalf("models = %+v", models)
+	}
+}
