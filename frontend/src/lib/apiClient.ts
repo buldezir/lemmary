@@ -56,15 +56,23 @@ export class ConnectionLostError extends Error {
 
 /**
  * A response the server answered with a failure status. Carries the status so
- * a poll can tell a 5xx worth retrying from a 4xx that ends the wait.
+ * a poll can tell a 5xx worth retrying from a 4xx that ends the wait, and
+ * `answered`, which says the body was the app's own `{"detail"}`: the handler
+ * ran and finished, as opposed to a proxy giving up on a server still working.
  */
 export class HttpError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  answered: boolean
+  constructor(status: number, message: string, answered = false) {
     super(message)
     this.name = 'HttpError'
     this.status = status
+    this.answered = answered
   }
+}
+
+function hasDetail(data: unknown): boolean {
+  return typeof (data as { detail?: unknown } | null)?.detail === 'string'
 }
 
 /**
@@ -129,7 +137,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions): Promi
 
   const data = await readJson(response)
   if (!response.ok) {
-    throw new HttpError(response.status, errorDetail(data, fallbackError))
+    throw new HttpError(response.status, errorDetail(data, fallbackError), hasDetail(data))
   }
   return data as T
 }
@@ -193,7 +201,8 @@ export async function apiStream<TEvent>(path: string, options: ApiStreamOptions<
   }
 
   if (!response.ok) {
-    throw new HttpError(response.status, errorDetail(await readJson(response), options.fallbackError))
+    const data = await readJson(response)
+    throw new HttpError(response.status, errorDetail(data, options.fallbackError), hasDetail(data))
   }
   if (!response.body) {
     throw new Error(options.fallbackError)

@@ -155,6 +155,16 @@ export function isRetryableFailure(err: unknown): boolean {
   return err instanceof ConnectionLostError || (err instanceof HttpError && err.status >= 500)
 }
 
+/**
+ * Whether the run behind a failed send may still be going. Only a failure the
+ * app never answered can hide one: the wire, or a proxy's 5xx. A 5xx carrying
+ * the app's own detail -- a provider refusal reported as 502 -- is a handler
+ * that ran and finished, and nothing is coming.
+ */
+export function mayStillBeRunning(err: unknown): boolean {
+  return isRetryableFailure(err) && !(err instanceof HttpError && err.answered)
+}
+
 type PollAttempt<T> = { done: false } | { done: true; value: T | null }
 
 /**

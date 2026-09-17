@@ -4,6 +4,7 @@ import {
   chatSessionDateLabel,
   chatSessionTitle,
   chatSessionsInMode,
+  mayStillBeRunning,
   mergeChatSession,
   storedAnswerForRun,
   toChatTurn,
@@ -331,5 +332,24 @@ describe('waitWhileRunning', () => {
       load: async () => ({ session: session(), messages: [], running: true }),
     })
     expect(result).toBeNull()
+  })
+})
+
+describe('mayStillBeRunning', () => {
+  it('suspects a run behind a failure the app never answered', () => {
+    expect(mayStillBeRunning(new ConnectionLostError(new TypeError('Failed to fetch')))).toBe(true)
+    expect(mayStillBeRunning(new HttpError(502, 'Bad Gateway'))).toBe(true)
+  })
+
+  it("takes a 5xx carrying the app's own detail as final", () => {
+    expect(
+      mayStillBeRunning(
+        new HttpError(502, 'Provider error (429): The usage limit has been reached', true),
+      ),
+    ).toBe(false)
+  })
+
+  it('never suspects a 4xx', () => {
+    expect(mayStillBeRunning(new HttpError(400, 'A message is required.', true))).toBe(false)
   })
 })

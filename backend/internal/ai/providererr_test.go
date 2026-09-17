@@ -3,7 +3,9 @@ package ai
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -17,6 +19,50 @@ func apiError(status int, message string) error {
 		Message:    message,
 		Request:    &http.Request{},
 		Response:   &http.Response{StatusCode: status},
+	}
+}
+
+// bodyOnlyError is what openai-go hands back for a body without an "error"
+// object: no Message, no RawJSON, only the response the body is still on.
+func bodyOnlyError(status int, body string) error {
+	var reader io.ReadCloser
+	if body != "" {
+		reader = io.NopCloser(strings.NewReader(body))
+	}
+	return &openai.Error{
+		StatusCode: status,
+		Request:    &http.Request{Method: http.MethodPost, URL: &url.URL{Scheme: "https", Host: "chatgpt.example.com", Path: "/backend-api/codex/responses"}},
+		Response:   &http.Response{StatusCode: status, Body: reader},
+	}
+}
+
+func TestProviderErrorMessageReadsABodyTheSDKDidNotParse(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		`{"detail":"The usage limit has been reached"}`:      "The usage limit has been reached",
+		`{"error":"quota_exceeded"}`:                         "quota_exceeded",
+		`{"message":"Too many requests, slow down."}`:        "Too many requests, slow down.",
+		`{"error":{"message":"Nested, as OpenAI sends it"}}`: "Nested, as OpenAI sends it",
+		`usage limit reached`:                                "usage limit reached",
+	}
+	for body, want := range cases {
+		got := ProviderErrorMessage(bodyOnlyError(429, body))
+		if !strings.Contains(got, "429") || !strings.Contains(got, want) {
+			t.Fatalf("body %s rendered as %q, want the sentence %q", body, got, want)
+		}
+		if strings.Contains(got, "Too Many Requests") || strings.Contains(got, "POST") {
+			t.Fatalf("body %s fell back to the request line: %q", body, got)
+		}
+	}
+}
+
+func TestProviderErrorMessageWithoutABodyStillNamesTheStatus(t *testing.T) {
+	t.Parallel()
+	for _, body := range []string{"", "<html>gateway</html>", "{}"} {
+		got := ProviderErrorMessage(bodyOnlyError(502, body))
+		if !strings.Contains(got, "502") {
+			t.Fatalf("body %q lost the status: %q", body, got)
+		}
 	}
 }
 
