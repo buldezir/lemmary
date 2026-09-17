@@ -104,7 +104,10 @@ type countSpec struct {
 	correspondentIDs []string
 	tagIDs           []string
 	dateFrom, dateTo string
-	groupBy          string
+	// statuses, when set, keeps only documents in one of these
+	// processing_status values.
+	statuses []string
+	groupBy  string
 	// ids, when set, restricts the count to these documents.
 	ids []string
 }
@@ -126,32 +129,7 @@ func countDocuments(ctx context.Context, db dbx.Builder, spec countSpec) ([]coun
 	if db == nil {
 		return nil, 0, fmt.Errorf("no database")
 	}
-	where := []string{}
-	params := dbx.Params{}
-	if spec.userID != "" {
-		where = append(where, `d.user = {:user}`)
-		params["user"] = spec.userID
-	}
-	if in := inClause("dt", spec.documentTypeIDs, params); in != "" {
-		where = append(where, `d.document_type IN `+in)
-	}
-	if in := inClause("co", spec.correspondentIDs, params); in != "" {
-		where = append(where, `d.correspondent IN `+in)
-	}
-	if in := inClause("tg", spec.tagIDs, params); in != "" {
-		where = append(where, `(json_valid(d.tags) AND EXISTS (SELECT 1 FROM json_each(d.tags) t WHERE t.value IN `+in+`))`)
-	}
-	if spec.dateFrom != "" || spec.dateTo != "" {
-		where = append(where, `COALESCE(d.document_date, '') != ''`)
-		if spec.dateFrom != "" {
-			where = append(where, `substr(d.document_date, 1, 10) >= {:date_from}`)
-			params["date_from"] = spec.dateFrom
-		}
-		if spec.dateTo != "" {
-			where = append(where, `substr(d.document_date, 1, 10) <= {:date_to}`)
-			params["date_to"] = spec.dateTo
-		}
-	}
+	where, params := documentConditions(spec)
 
 	key := `''`
 	from := `documents d`
@@ -234,6 +212,40 @@ func countDocuments(ctx context.Context, db dbx.Builder, spec countSpec) ([]coun
 		rows = mergeCountRows(rows)
 	}
 	return rows, total, nil
+}
+
+// documentConditions is the WHERE of every filtered documents query, aliased d.
+func documentConditions(spec countSpec) ([]string, dbx.Params) {
+	where := []string{}
+	params := dbx.Params{}
+	if spec.userID != "" {
+		where = append(where, `d.user = {:user}`)
+		params["user"] = spec.userID
+	}
+	if in := inClause("dt", spec.documentTypeIDs, params); in != "" {
+		where = append(where, `d.document_type IN `+in)
+	}
+	if in := inClause("co", spec.correspondentIDs, params); in != "" {
+		where = append(where, `d.correspondent IN `+in)
+	}
+	if in := inClause("tg", spec.tagIDs, params); in != "" {
+		where = append(where, `(json_valid(d.tags) AND EXISTS (SELECT 1 FROM json_each(d.tags) t WHERE t.value IN `+in+`))`)
+	}
+	if in := inClause("st", spec.statuses, params); in != "" {
+		where = append(where, `d.processing_status IN `+in)
+	}
+	if spec.dateFrom != "" || spec.dateTo != "" {
+		where = append(where, `COALESCE(d.document_date, '') != ''`)
+		if spec.dateFrom != "" {
+			where = append(where, `substr(d.document_date, 1, 10) >= {:date_from}`)
+			params["date_from"] = spec.dateFrom
+		}
+		if spec.dateTo != "" {
+			where = append(where, `substr(d.document_date, 1, 10) <= {:date_to}`)
+			params["date_to"] = spec.dateTo
+		}
+	}
+	return where, params
 }
 
 // inClause registers the parameters under prefix. Empty for no ids.

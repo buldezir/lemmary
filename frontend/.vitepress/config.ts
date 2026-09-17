@@ -53,6 +53,7 @@ export default defineConfig({
           { text: 'Storage', link: '/storage' },
           { text: 'AI providers and models', link: '/ai_providers' },
           { text: 'Paperless-ngx API', link: '/paperless_ngx' },
+          { text: 'MCP for agents', link: '/mcp' },
           { text: 'Scanning', link: '/scanning' },
           { text: 'Local OCR', link: '/local_ocr' },
           { text: 'Local embeddings', link: '/local_embeddings' },

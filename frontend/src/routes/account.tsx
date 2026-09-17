@@ -9,15 +9,19 @@ import {
   type Passkey,
 } from '../lib/api/passkeys'
 import { defaultPasskeyName, passkeysSupported, passkeyUnavailableHint } from '../lib/webauthn'
+import { createMCPToken, getMCPStatus } from '../lib/api/mcp'
+import { mcpSnippets } from '../lib/mcpSnippets'
 import { useAsync } from '../hooks/useAsync'
 import {
   Button,
+  DocsLink,
   fieldHintClassName,
   inputClassName,
   labelClassName,
   labelTextClassName,
   sectionClassName,
   sectionTitleClassName,
+  selectClassName,
 } from '../components/ui'
 
 function SignedInSection() {
@@ -255,14 +259,127 @@ function PasskeysSection() {
   )
 }
 
+const tokenPlaceholder = '<token>'
+
+function AgentsSection() {
+  const { data: status, error: loadError } = useAsync(getMCPStatus, [])
+  const [token, setToken] = useState('')
+  const [agent, setAgent] = useState('claude-code')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
+
+  const snippets = status?.enabled ? mcpSnippets(status.url, token || tokenPlaceholder) : []
+  const current = snippets.find((snippet) => snippet.id === agent) ?? snippets[0]
+
+  async function onCreateToken() {
+    setBusy(true)
+    setError('')
+    setCopied(false)
+    try {
+      setToken(await createMCPToken())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create a token')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onCopy() {
+    if (!current) {
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(current.text)
+      setCopied(true)
+    } catch {
+      setError('Could not copy; select the text and copy it yourself.')
+    }
+  }
+
+  return (
+    <section className={sectionClassName}>
+      <h2 className={sectionTitleClassName}>Agents</h2>
+      <p className={`${fieldHintClassName} mb-4`}>
+        Let Claude Code, Cursor or another agent search and read this archive directly over MCP.
+        The agent sees only your documents.{' '}
+        <DocsLink href="/docs/mcp">Read about the tools it gets.</DocsLink>
+      </p>
+
+      {loadError && <p className="mb-3 text-sm text-madder">{loadError}</p>}
+      {status && !status.enabled && (
+        <p className="text-sm text-ink-soft">
+          The MCP endpoint is switched off on this instance (<code>MCP_ENABLED=0</code>). An
+          admin can turn it back on.
+        </p>
+      )}
+
+      {status?.enabled && current && (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={onCreateToken} disabled={busy}>
+              {token ? 'Create another token' : 'Create token'}
+            </Button>
+            <span className={fieldHintClassName}>
+              {token
+                ? 'Valid for ten years. Shown once: changing your password revokes it.'
+                : 'Mints a long-lived token for your account and fills it into the snippet below.'}
+            </span>
+          </div>
+          {error && <p className="text-sm text-madder">{error}</p>}
+
+          <label className={labelClassName}>
+            <span className={labelTextClassName}>Agent</span>
+            <select
+              value={current.id}
+              onChange={(event) => {
+                setAgent(event.target.value)
+                setCopied(false)
+              }}
+              className={`${selectClassName} max-w-xs`}
+            >
+              {snippets.map((snippet) => (
+                <option key={snippet.id} value={snippet.id}>
+                  {snippet.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div>
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+              <span className={fieldHintClassName}>{current.where}</span>
+              <Button size="xs" variant="secondary" onClick={onCopy}>
+                {copied ? 'Copied' : 'Copy'}
+              </Button>
+            </div>
+            <pre
+              data-testid="mcp-snippet"
+              className="overflow-x-auto rounded-xs border border-line bg-bright p-3 text-xs text-ink"
+            >
+              {current.text}
+            </pre>
+            {!token && (
+              <p className={`${fieldHintClassName} mt-1`}>
+                Replace <code>{tokenPlaceholder}</code> with a token, or create one above.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
 export function AccountPage() {
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5">
       <div>
         <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">Account</h1>
-        <p className="mt-1 text-sm text-ink-soft">How you sign in to this archive.</p>
+        <p className="mt-1 text-sm text-ink-soft">How you and your agents sign in to this archive.</p>
       </div>
       <SignedInSection />
+      <AgentsSection />
       <PasskeysSection />
     </div>
   )

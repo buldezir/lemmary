@@ -68,6 +68,7 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	// After config.RegisterHooks, so the settings singleton and env-seeded
 	// providers exist by the time an account is minted.
 	appapi.RegisterAdminBootstrap(app)
+	appapi.RegisterMCP(app, rt, ft)
 	ngxapi.Register(app, ft)
 	worker.Register(app, rt, backfill, config.WorkerConcurrencyFromEnv())
 
