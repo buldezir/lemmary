@@ -143,8 +143,8 @@ func (r *Runtime) WithOverrides(app core.App, o Overrides) (Snapshot, error) {
 	}
 	if !o.Search.Empty() {
 		p, model := resolve(o.Search, aiprovider.PurposeLLM)
-		// SearchHelper stays put. It is a separate binding because it does many cheap
-		// per-document calls where the research model does a few expensive ones, and
+		// SearchHelper stays put: it does many cheap per-document calls on the
+		// general model where the research loop does a few expensive ones, and
 		// moving bulk work onto the conversation model is not what picking it asked for.
 		snap.SearchAgent = buildSearchAgent(app, snap.Cfg, p, model, aiLogger)
 	}

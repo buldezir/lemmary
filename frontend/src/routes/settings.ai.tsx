@@ -1,4 +1,4 @@
-import { type SubmitEvent, useState } from 'react'
+import { type SubmitEvent } from 'react'
 
 import { listAIProviders } from '../lib/api/providers'
 import { getEmbeddingStats, type EmbeddingStats } from '../lib/api/settings'
@@ -13,56 +13,19 @@ import {
 import { useAppMeta } from '../hooks/useAppMeta'
 import { useAsync } from '../hooks/useAsync'
 import { useSettingsForm } from '../hooks/useSettingsForm'
-import {
-  Button,
-  fieldHintClassName,
-  sectionClassName,
-  sectionTitleClassName,
-} from '../components/ui'
+import { fieldHintClassName, sectionClassName, sectionTitleClassName } from '../components/ui'
 
 type Bindings = {
   ocr_provider_id: string
   ocr_model: string
   extract_provider_id: string
   extract_model: string
-  chat_provider_id: string
-  chat_model: string
-  search_provider_id: string
-  search_model: string
-  search_helper_provider_id: string
-  search_helper_model: string
+  research_provider_id: string
+  research_model: string
   embedding_provider_id: string
   embedding_model: string
   // No model beside it: a web-search API takes none.
   websearch_provider_id: string
-}
-
-// The four LLM bindings the simple view collapses into one "general" model. An
-// empty Deep Search helper still fits: it means the search model does that work.
-function fitsOneGeneralModel(form: Bindings): boolean {
-  const general = `${form.extract_provider_id}|${form.extract_model}`
-  const helper = `${form.search_helper_provider_id}|${form.search_helper_model}`
-  return (
-    `${form.chat_provider_id}|${form.chat_model}` === general &&
-    `${form.search_provider_id}|${form.search_model}` === general &&
-    (helper === general || helper === '|')
-  )
-}
-
-/** The simple view has one LLM binding; the other three follow it. */
-function setGeneralModel(providerId: string, model: string): Partial<Bindings> {
-  return {
-    extract_provider_id: providerId,
-    extract_model: model,
-    chat_provider_id: providerId,
-    chat_model: model,
-    search_provider_id: providerId,
-    search_model: model,
-    // Named rather than left empty: empty means the same thing here, but a
-    // model spelled out is what Advanced setup then shows.
-    search_helper_provider_id: providerId,
-    search_helper_model: model,
-  }
 }
 
 // Without this, switching the embedding model looks instantaneous while the
@@ -82,7 +45,6 @@ function EmbeddingStatsLine({ stats }: { stats: EmbeddingStats | null }) {
 export function SettingsAIPage() {
   // unknown/failed meta counts as managed; see AppMeta.aiManaged
   const { aiManaged, metaLoaded } = useAppMeta()
-  const [advancedModels, setAdvancedModels] = useState(false)
   const { data: providers, reload: reloadProviders } = useAsync(listAIProviders, [])
   // Allowed to fail, and loaded apart from the settings: it scans two tables,
   // and a slow or broken count must not keep the form off the screen.
@@ -97,7 +59,6 @@ export function SettingsAIPage() {
     success,
     saving,
     updateField,
-    updateFields,
     save,
     setError,
     setSuccess,
@@ -107,12 +68,8 @@ export function SettingsAIPage() {
     ocr_model: settings.ocr_model,
     extract_provider_id: settings.extract_provider_id,
     extract_model: settings.extract_model,
-    chat_provider_id: settings.chat_provider_id,
-    chat_model: settings.chat_model,
-    search_provider_id: settings.search_provider_id,
-    search_model: settings.search_model,
-    search_helper_provider_id: settings.search_helper_provider_id,
-    search_helper_model: settings.search_helper_model,
+    research_provider_id: settings.research_provider_id,
+    research_model: settings.research_model,
     embedding_provider_id: settings.embedding_provider_id,
     embedding_model: settings.embedding_model,
     websearch_provider_id: settings.websearch_provider_id,
@@ -144,31 +101,6 @@ export function SettingsAIPage() {
       <form onSubmit={onSubmit}>
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>Models</h2>
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <p className={fieldHintClassName}>
-              {advancedModels
-                ? 'Every job has its own model.'
-                : fitsOneGeneralModel(form)
-                  ? 'One model does extraction, chat and search.'
-                  : 'Extraction, chat and search are on different models: open Advanced setup to see them. Picking a model here puts all three on it.'}
-            </p>
-            <Button
-              variant="secondary"
-              size="xs"
-              onClick={() => {
-                // Collapsing on the way in, not on save: the simple view shows
-                // one model, so the three it hides must already agree.
-                if (advancedModels) {
-                  updateFields((current) =>
-                    setGeneralModel(current.extract_provider_id, current.extract_model),
-                  )
-                }
-                setAdvancedModels(!advancedModels)
-              }}
-            >
-              {advancedModels ? 'Simple setup' : 'Advanced setup'}
-            </Button>
-          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <ProviderModelFields
               label="OCR"
@@ -180,70 +112,27 @@ export function SettingsAIPage() {
               onProviderChange={(id) => updateField('ocr_provider_id', id)}
               onModelChange={(value) => updateField('ocr_model', value)}
             />
-            {!advancedModels && (
-              <ProviderModelFields
-                label="General AI"
-                help="Reads documents into metadata, answers questions on Ask AI, and runs Deep Search. Advanced setup splits this into one model per job."
-                providers={providers ?? []}
-                providerId={form.extract_provider_id}
-                model={form.extract_model}
-                purpose="llm"
-                onProviderChange={(id) =>
-                  updateFields((current) => setGeneralModel(id, current.extract_model))
-                }
-                onModelChange={(value) =>
-                  updateFields((current) => setGeneralModel(current.extract_provider_id, value))
-                }
-              />
-            )}
-
-            {advancedModels && (
-              <>
-                <ProviderModelFields
-                  label="Extraction"
-                  help="Turns a document's text into its title, date, type, correspondent, tags and summary. Also proposes the cuts for Detect automatically when splitting a PDF."
-                  providers={providers ?? []}
-                  providerId={form.extract_provider_id}
-                  model={form.extract_model}
-                  purpose="llm"
-                  onProviderChange={(id) => updateField('extract_provider_id', id)}
-                  onModelChange={(value) => updateField('extract_model', value)}
-                />
-                <ProviderModelFields
-                  label="Chat"
-                  help="Answers questions about a single document on its Ask AI page. Leave the provider empty to turn the feature off."
-                  providers={providers ?? []}
-                  providerId={form.chat_provider_id}
-                  model={form.chat_model}
-                  purpose="llm"
-                  allowEmpty
-                  onProviderChange={(id) => updateField('chat_provider_id', id)}
-                  onModelChange={(value) => updateField('chat_model', value)}
-                />
-                <ProviderModelFields
-                  label="Search"
-                  help="Answers natural-language queries on AI assisted search and Deep Research. Leave the provider empty to turn the feature off."
-                  providers={providers ?? []}
-                  providerId={form.search_provider_id}
-                  model={form.search_model}
-                  purpose="llm"
-                  allowEmpty
-                  onProviderChange={(id) => updateField('search_provider_id', id)}
-                  onModelChange={(value) => updateField('search_model', value)}
-                />
-                <ProviderModelFields
-                  label="Deep Search helper"
-                  help="Cheaper model Deep Search uses to read and extract from many documents at once: it turns long reads into notes and surveys whole topics one document at a time. Leave empty to have the Search model do this work itself."
-                  providers={providers ?? []}
-                  providerId={form.search_helper_provider_id}
-                  model={form.search_helper_model}
-                  purpose="llm"
-                  allowEmpty
-                  onProviderChange={(id) => updateField('search_helper_provider_id', id)}
-                  onModelChange={(value) => updateField('search_helper_model', value)}
-                />
-              </>
-            )}
+            <ProviderModelFields
+              label="General AI"
+              help="Reads documents into metadata, answers questions on Ask AI, runs AI assisted search, and does Deep Research's document reads."
+              providers={providers ?? []}
+              providerId={form.extract_provider_id}
+              model={form.extract_model}
+              purpose="llm"
+              onProviderChange={(id) => updateField('extract_provider_id', id)}
+              onModelChange={(value) => updateField('extract_model', value)}
+            />
+            <ProviderModelFields
+              label="Advanced"
+              help="The Advanced model drives the Deep Research reasoning loop: a few expensive calls per question where everything else is many cheap ones. Leave empty to run it on General AI."
+              providers={providers ?? []}
+              providerId={form.research_provider_id}
+              model={form.research_model}
+              purpose="llm"
+              allowEmpty
+              onProviderChange={(id) => updateField('research_provider_id', id)}
+              onModelChange={(value) => updateField('research_model', value)}
+            />
 
             <ProviderModelFields
               label="Embeddings"

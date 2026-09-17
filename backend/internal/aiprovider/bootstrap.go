@@ -26,10 +26,9 @@ type ProviderSpec struct {
 	// what moves it onto its own. Empty means dense retrieval is off.
 	EmbeddingModel string
 
-	// HelperModel is the Deep Search helper on this same endpoint, the model
-	// that distils and surveys documents in bulk. Empty means the search
-	// model does that work itself.
-	HelperModel string
+	// ResearchModel drives the Deep Research reasoning loop on this same
+	// endpoint. Empty means Model does that work too.
+	ResearchModel string
 }
 
 // Configured is whether this spec names a provider the app can actually reach:
@@ -157,8 +156,8 @@ func Apply(app core.App, settings *core.Record, b Bootstrap) error {
 		if model == "" {
 			model = DefaultExtractModel
 		}
-		bindLLM(settings, llmID, model, model, model)
-		bindHelper(settings, llmID, b.LLM.HelperModel)
+		bindLLM(settings, llmID, model)
+		bindResearch(settings, llmID, b.LLM.ResearchModel)
 	}
 	// Outside the llmID block: a local embedding endpoint is a complete
 	// configuration on its own, and an instance whose language model is still
@@ -178,18 +177,18 @@ func bindWebSearch(settings *core.Record, providerID string) {
 	settings.Set("websearch_provider_id", strings.TrimSpace(providerID))
 }
 
-// bindHelper points the Deep Search helper binding at the language model's
-// provider. An empty model clears the binding so the fallback to the search
+// bindResearch points the Deep Research binding at the language model's
+// provider. An empty model clears the binding so the fallback to the general
 // model takes over.
-func bindHelper(settings *core.Record, providerID, model string) {
+func bindResearch(settings *core.Record, providerID, model string) {
 	model = strings.TrimSpace(model)
 	if model == "" {
-		settings.Set("search_helper_provider_id", "")
-		settings.Set("search_helper_model", "")
+		settings.Set("research_provider_id", "")
+		settings.Set("research_model", "")
 		return
 	}
-	settings.Set("search_helper_provider_id", providerID)
-	settings.Set("search_helper_model", model)
+	settings.Set("research_provider_id", providerID)
+	settings.Set("research_model", model)
 }
 
 // bindEmbedding points the retrieval embedding binding at the language model's

@@ -60,7 +60,7 @@ it already knows which of Opencode's three endpoints each model is served on.
 | | Model | Why |
 | --- | --- | --- |
 | **Recommended** | `gpt-5.6-luna` | Lemmary's default extraction model. Strongest of the three at pulling structured metadata out of a messy scan and at Deep Research's multi-step reading. |
-| Backup | `deepseek-v4-flash` | Fast and cheap on the same subscription. A good **Deep Search helper** model even when Luna does the answering. |
+| Backup | `deepseek-v4-flash` | Fast and cheap on the same subscription. A good **General AI** model with Luna as the **Advanced model** for Deep Research. |
 | Backup | `qwen3.8-flash` | The other fast option; try it if DeepSeek is rate-limited or refuses your result language. |
 
 ### Why not run OCR on Opencode too
@@ -110,11 +110,12 @@ filled from the keys above; **Settings → Models** has the same fields.
 | Binding | Provider | Model |
 | --- | --- | --- |
 | OCR | Mistral | `mistral-ocr-latest` |
-| Extraction | Opencode Go | `gpt-5.6-luna` |
+| General AI | Opencode Go | `gpt-5.6-luna` |
 | Embeddings *(optional)* | Mistral | `mistral-embed` |
 
-Chat and Deep Research follow the extraction binding unless you set them
-separately, so those three fields are the whole of a working install. Set the
+General AI does everything a language model does here, so those three fields
+are the whole of a working install. **Settings → Models** adds an optional
+**Advanced model** that drives only the Deep Research reasoning loop. Set the
 embeddings provider to **None** to leave Deep Research on keywords alone — it is
 the one binding nothing else depends on. If a model you want is not in a picker,
 type it into **Custom model id**. **Finish setup** and the first upload will be
@@ -140,7 +141,7 @@ is a managed instance, `AI_MANAGED=1`, where the environment wins on every
 boot — see [Two modes, one build](/ai_providers#two-modes-one-build).)
 
 ```dotenv
-# language model — extraction, chat, Deep Research
+# General AI — extraction, Ask AI, search, Deep Research
 AI_SDK=opencode
 AI_API_KEY=sk-your-opencode-key
 AI_MODEL=gpt-5.6-luna

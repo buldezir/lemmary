@@ -217,11 +217,15 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 	}
 
 	// After the session, so a continued conversation runs on the binding stored
-	// with it rather than on whatever the request echoed back. The search
-	// binding, not the chat one: an instance that bound them separately meant it.
+	// with it rather than on whatever the request echoed back. Research runs on
+	// its own binding; search is one round on the general model. Resolved after
+	// the session too: a conversation that stored nothing means "follow
+	// Settings", and the snapshot agent it would otherwise get is the general
+	// model, not the research one.
 	cfg := rt.Snapshot().Cfg
 	requested := aiprovider.Binding{ProviderID: req.ProviderID, Model: req.Model}
-	binding := conversationBinding(session, recordedBinding(requested, cfg.SearchProviderID, cfg.SearchModel))
+	defaultProviderID, defaultModel := configuredSearchBinding(cfg, mode)
+	binding := recordedBinding(conversationBinding(session, requested), defaultProviderID, defaultModel)
 	snap, err := conversationSnapshot(app, rt, config.Overrides{Search: binding}, session, requested)
 	if err != nil {
 		return searchTurn{}, true, writeError(e, http.StatusBadRequest, err.Error())
@@ -306,13 +310,22 @@ func contextWindowFor(ctx context.Context, app core.App, rt *config.Runtime, cfg
 	}
 	providerID, model := binding.ProviderID, binding.Model
 	if providerID == "" || model == "" {
-		providerID, model = cfg.SearchProviderID, cfg.SearchModel
+		providerID, model = configuredSearchBinding(cfg, mode)
 	}
 	provider, err := aiprovider.FindByID(app, providerID)
 	if err != nil || provider == nil {
 		return 0
 	}
 	return rt.ModelCatalog().ContextWindow(ctx, provider.Catalog, model)
+}
+
+// configuredSearchBinding is the pair a turn runs on when nothing was picked:
+// the research binding for a research chat, the general one for search.
+func configuredSearchBinding(cfg config.Config, mode string) (providerID, model string) {
+	if mode == chat.ModeResearch {
+		return cfg.ResearchBinding()
+	}
+	return cfg.ExtractProviderID, cfg.ExtractModel
 }
 
 // persistSearchTurn writes the pair a search turn is: one question, one answer,

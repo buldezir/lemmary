@@ -177,10 +177,9 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 
 // llmBindingFields are the bindings only an LLM SDK can serve. OCR is absent:
 // it is the binding google_vision exists for. So is embedding, which the local
-// SDK serves without chatting. search_helper_provider_id is here so a bound
-// helper cannot be switched to an SDK that cannot do Deep Search's bulk reads.
+// SDK serves without chatting.
 var llmBindingFields = []string{
-	"extract_provider_id", "chat_provider_id", "search_provider_id", "search_helper_provider_id",
+	"extract_provider_id", "research_provider_id",
 }
 
 // embeddingBindingField is checked against CanEmbed rather than IsLLM: an SDK
@@ -237,7 +236,7 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 					return writeError(e, http.StatusInternalServerError, "Failed to verify provider usage.")
 				}
 				if !aiprovider.IsLLM(sdk) && boundTo(settings, record.Id, llmBindingFields...) {
-					return writeError(e, http.StatusConflict, "Provider is bound to extraction, chat, or search and must stay an LLM SDK ("+strings.Join(aiprovider.LLMSDKs(), ", ")+").")
+					return writeError(e, http.StatusConflict, "Provider is bound to extraction or research and must stay an LLM SDK ("+strings.Join(aiprovider.LLMSDKs(), ", ")+").")
 				}
 				if !aiprovider.CanEmbed(sdk) && boundTo(settings, record.Id, embeddingBindingField) {
 					return writeError(e, http.StatusConflict, "Provider is bound to embeddings and must stay an SDK that can embed ("+strings.Join(aiprovider.EmbeddingSDKs(), ", ")+").")

@@ -322,17 +322,13 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       if (embeddingProviderId && !embeddingModel.trim()) {
         throw new Error('Choose an embedding model, or set the embedding provider to None.')
       }
-      // First-launch setup asks for one LLM binding: chat and search start out
-      // pointing at extraction and can be split later in Settings.
+      // First-launch setup asks for one LLM binding; Deep Research's own model
+      // can be set later in Settings.
       await updateAppSettings({
         ocr_provider_id: ocrProviderId,
         ocr_model: ocrModel,
         extract_provider_id: extractProviderId,
         extract_model: extractModel,
-        chat_provider_id: extractProviderId,
-        chat_model: extractModel,
-        search_provider_id: extractProviderId,
-        search_model: extractModel,
         // Optional, unlike the two above: empty clears the binding and Deep
         // Search runs on keywords alone.
         embedding_provider_id: embeddingProviderId,

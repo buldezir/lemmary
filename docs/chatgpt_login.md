@@ -85,8 +85,8 @@ If you skip this, Lemmary's sign-in fails with a message naming the setting.
 
 ### 3. Bind the models
 
-Under **Settings → Models**, point **Chat**, **Extraction**, **Search**,
-the **Deep Search helper** or **OCR** at the new provider and pick a model. The
+Under **Settings → Models**, point **General AI**, the **Advanced model** or
+**OCR** at the new provider and pick a model. The
 picker is served locally — the endpoint publishes no catalogue — and the
 **Custom model id** box takes anything the list does not name. Which models the
 account may actually use depends on its plan; one it may not use fails on the
@@ -137,8 +137,8 @@ with ChatGPT** again for a new one.
 not covering the bound model. Try the default model, or a smaller one.
 
 **Requests start failing for everyone at once** — most likely the quota window,
-or a change on OpenAI's side. Rebind chat and Deep Research to a keyed provider
-while you work out which.
+or a change on OpenAI's side. Rebind General AI to a keyed provider while you
+work out which.
 
 **OCR returns empty or invented text** — the model was handed the file but
 could not read it, or was a `mini` model on a poor scan. Try a larger model
@@ -151,5 +151,5 @@ Google Vision or the Docling sidecar.
 
 **Extraction results got worse after switching** — extraction asks for JSON, and
 a backend that will not honour the request is answered in plain text and parsed
-leniently. If the metadata is thinner than it was, put **Extraction** back on a
-keyed provider and leave chat and Deep Research on the subscription.
+leniently. If the metadata is thinner than it was, put **General AI** back on a
+keyed provider and leave the **Advanced model** on the subscription.

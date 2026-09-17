@@ -12,7 +12,7 @@ import (
 func clearAIEnv(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
-		EnvManaged, EnvAISDK, EnvAIAPIKey, EnvAIBaseURL, EnvAIModel, EnvAIEmbeddingModel,
+		EnvManaged, EnvAISDK, EnvAIAPIKey, EnvAIBaseURL, EnvAIModel, EnvAIResearchModel, EnvAIEmbeddingModel,
 		EnvAIEmbeddingSDK, EnvAIEmbeddingAPIKey, EnvAIEmbeddingBaseURL,
 		EnvOCRSDK, EnvOCRAPIKey, EnvOCRBaseURL, EnvOCRModel,
 		EnvWebSearchSDK, EnvWebSearchAPIKey, EnvWebSearchBaseURL,
@@ -486,5 +486,34 @@ func TestAnthropicIsRefusedForEmbeddings(t *testing.T) {
 
 	if _, err := AIEnvFromEnv(); err == nil {
 		t.Fatal("anthropic was accepted as an embedding provider")
+	}
+}
+
+// AI_RESEARCH_MODEL is the only way a managed instance gets a Deep Research
+// model of its own; unset, research seeds as empty and resolves to AI_MODEL.
+func TestResearchModelRidesOnTheLLMProvider(t *testing.T) {
+	clearAIEnv(t)
+	t.Setenv(EnvAIAPIKey, "sk-test")
+	t.Setenv(EnvAIModel, "small-model")
+
+	env, err := AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("AIEnvFromEnv: %v", err)
+	}
+	if env.Providers.LLM.ResearchModel != "" || env.Defaults().ResearchModel != "" {
+		t.Fatalf("unset research model should stay empty, got %q", env.Providers.LLM.ResearchModel)
+	}
+
+	t.Setenv(EnvAIResearchModel, " big-model ")
+	env, err = AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("AIEnvFromEnv: %v", err)
+	}
+	if env.Providers.LLM.ResearchModel != "big-model" {
+		t.Fatalf("research model = %q", env.Providers.LLM.ResearchModel)
+	}
+	cfg := env.Defaults()
+	if cfg.ExtractModel != "small-model" || cfg.ResearchModel != "big-model" {
+		t.Fatalf("defaults = %q/%q", cfg.ExtractModel, cfg.ResearchModel)
 	}
 }

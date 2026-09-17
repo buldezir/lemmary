@@ -136,7 +136,7 @@ On a fresh install the SPA hard-gates until setup is complete:
 1. **Create admin** — email + password. Creates a PocketBase `_superusers` account **and** a matching `users` account (same credentials) so the admin can own documents. Replaces PocketBase’s browser installer UI.
 2. **Passkey** *(optional)* — offer to add a [passkey](/passkeys) for the account just created. Skipping it changes nothing and the offer does not come back; a passkey can be added later from **More → Account**. The step is hidden on an address where a passkey cannot be created (an IP address, or plain HTTP outside `localhost`).
 3. **Providers** — the guided form of [Guided AI provider setup](/guided_ai_setup): a Mistral key (OCR and embeddings) and one other language-model provider, both created in a single submit. Either half may be left blank; **Add a provider manually instead** falls back to the one-at-a-time form, which is the way to a ChatGPT sign-in, a `google_vision` key, or `docling`/`local`, the keyless sidecars.
-4. **Models** — pick provider → model for OCR and metadata extraction (chat/search inherit extraction), and optionally for embeddings. All three arrive prefilled when the providers came from the guided form; embeddings can be set to **None**, and setup is complete without them.
+4. **Models** — pick provider → model for OCR and General AI (everything a language model does), and optionally for embeddings. All three arrive prefilled when the providers came from the guided form; embeddings can be set to **None**, and setup is complete without them.
 
 Steps 3 and 4 are skipped when `.env` already carries the keys — see
 [AI providers and models](/ai_providers). The admin can likewise come from the
@@ -150,7 +150,7 @@ configuration.
 ## Settings (admin UI)
 
 1. Sign in with the **admin** email/password (login prefers the `users` account; legacy `_superusers`-only installs are linked automatically via `/api/app/ensure-user`, which sets a hidden `is_app_admin` flag on the paired `users` record).
-2. Open **Settings** in the nav (shown when `/api/app/me` reports `is_admin`). It has one tab per section, each on its own path and each saving only its own fields: **Appearance** (`/settings`), **AI** (`/settings/ai`), **Processing** (`/settings/processing`), **Worker** (`/settings/worker`) and **Duplicates** (`/settings/duplicates`). On the AI tab, add providers, then bind OCR / extraction / chat / search to a provider and model — see [Binding models in Settings](/ai_providers#binding-models-in-settings). Changes hot-reload the in-process clients (no restart).
+2. Open **Settings** in the nav (shown when `/api/app/me` reports `is_admin`). It has one tab per section, each on its own path and each saving only its own fields: **Appearance** (`/settings`), **AI** (`/settings/ai`), **Processing** (`/settings/processing`), **Worker** (`/settings/worker`) and **Duplicates** (`/settings/duplicates`). On the AI tab, add providers, then bind OCR, General AI and optionally the Advanced model to a provider and model — see [Binding models in Settings](/ai_providers#binding-models-in-settings). Changes hot-reload the in-process clients (no restart).
 
 `WORKER_CRON_EXPR` is not editable there; change `.env` and restart, or use PocketBase Admin → Settings → Crons.
 

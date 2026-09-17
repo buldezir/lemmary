@@ -266,13 +266,14 @@ export function ResearchPage() {
           <WebSearchToggle checked={web} onChange={setWeb} disabled={chat.sending} />
         </div>
         <BindingOverride
-          label="Search"
+          label="Research"
           purpose="llm"
+          bindingName="research"
           value={shownBinding}
           onChange={ws.setBinding}
           locked={inConversation || chat.sending || chat.turns.length > 0}
           lockedHint="Fixed for this chat. Start a new one to research with a different model."
-          help="Drives the search or research loop. The helper model that reads documents in bulk keeps its own binding in Settings."
+          help="Drives the research loop. Documents read in bulk stay on the General AI model from Settings."
           showConfigured
         />
       </div>

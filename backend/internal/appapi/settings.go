@@ -14,19 +14,17 @@ import (
 )
 
 type settingsResponse struct {
-	OCRProviderID     string `json:"ocr_provider_id"`
-	OCRModel          string `json:"ocr_model"`
+	OCRProviderID string `json:"ocr_provider_id"`
+	OCRModel      string `json:"ocr_model"`
+	// The general model: everything a language model does here but the Deep
+	// Research reasoning loop.
 	ExtractProviderID string `json:"extract_provider_id"`
 	ExtractModel      string `json:"extract_model"`
-	ChatProviderID    string `json:"chat_provider_id"`
-	ChatModel         string `json:"chat_model"`
-	SearchProviderID  string `json:"search_provider_id"`
-	SearchModel       string `json:"search_model"`
-	// Empty means the search model does the bulk per-document work itself.
-	SearchHelperProviderID string `json:"search_helper_provider_id"`
-	SearchHelperModel      string `json:"search_helper_model"`
-	EmbeddingProviderID    string `json:"embedding_provider_id"`
-	EmbeddingModel         string `json:"embedding_model"`
+	// Empty means Deep Research runs on the general model.
+	ResearchProviderID  string `json:"research_provider_id"`
+	ResearchModel       string `json:"research_model"`
+	EmbeddingProviderID string `json:"embedding_provider_id"`
+	EmbeddingModel      string `json:"embedding_model"`
 	// Empty means no web call is served: Ask AI offers no web tools at all, and
 	// research declares the schemas but refuses every call. No model: a
 	// web-search API takes none.
@@ -57,12 +55,8 @@ type settingsPatchRequest struct {
 	OCRModel                      *string  `json:"ocr_model"`
 	ExtractProviderID             *string  `json:"extract_provider_id"`
 	ExtractModel                  *string  `json:"extract_model"`
-	ChatProviderID                *string  `json:"chat_provider_id"`
-	ChatModel                     *string  `json:"chat_model"`
-	SearchProviderID              *string  `json:"search_provider_id"`
-	SearchModel                   *string  `json:"search_model"`
-	SearchHelperProviderID        *string  `json:"search_helper_provider_id"`
-	SearchHelperModel             *string  `json:"search_helper_model"`
+	ResearchProviderID            *string  `json:"research_provider_id"`
+	ResearchModel                 *string  `json:"research_model"`
 	EmbeddingProviderID           *string  `json:"embedding_provider_id"`
 	EmbeddingModel                *string  `json:"embedding_model"`
 	WebSearchProviderID           *string  `json:"websearch_provider_id"`
@@ -89,12 +83,8 @@ func (r settingsPatchRequest) touchesManaged() bool {
 		r.OCRModel != nil ||
 		r.ExtractProviderID != nil ||
 		r.ExtractModel != nil ||
-		r.ChatProviderID != nil ||
-		r.ChatModel != nil ||
-		r.SearchProviderID != nil ||
-		r.SearchModel != nil ||
-		r.SearchHelperProviderID != nil ||
-		r.SearchHelperModel != nil ||
+		r.ResearchProviderID != nil ||
+		r.ResearchModel != nil ||
 		r.EmbeddingProviderID != nil ||
 		r.EmbeddingModel != nil ||
 		r.WebSearchProviderID != nil ||
@@ -228,12 +218,8 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 		OCRModel:                      cfg.OCRModel,
 		ExtractProviderID:             cfg.ExtractProviderID,
 		ExtractModel:                  cfg.ExtractModel,
-		ChatProviderID:                cfg.ChatProviderID,
-		ChatModel:                     cfg.ChatModel,
-		SearchProviderID:              cfg.SearchProviderID,
-		SearchModel:                   cfg.SearchModel,
-		SearchHelperProviderID:        cfg.SearchHelperProviderID,
-		SearchHelperModel:             cfg.SearchHelperModel,
+		ResearchProviderID:            cfg.ResearchProviderID,
+		ResearchModel:                 cfg.ResearchModel,
 		EmbeddingProviderID:           cfg.EmbeddingProviderID,
 		EmbeddingModel:                cfg.EmbeddingModel,
 		EmbeddingDims:                 cfg.EmbeddingDims,
@@ -273,35 +259,15 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	if req.ExtractModel != nil {
 		record.Set("extract_model", strings.TrimSpace(*req.ExtractModel))
 	}
-	if req.ChatProviderID != nil {
-		id := strings.TrimSpace(*req.ChatProviderID)
+	if req.ResearchProviderID != nil {
+		id := strings.TrimSpace(*req.ResearchProviderID)
 		if err := validateProviderID(app, id, needLLM); err != nil {
 			return err
 		}
-		record.Set("chat_provider_id", id)
+		record.Set("research_provider_id", id)
 	}
-	if req.ChatModel != nil {
-		record.Set("chat_model", strings.TrimSpace(*req.ChatModel))
-	}
-	if req.SearchProviderID != nil {
-		id := strings.TrimSpace(*req.SearchProviderID)
-		if err := validateProviderID(app, id, needLLM); err != nil {
-			return err
-		}
-		record.Set("search_provider_id", id)
-	}
-	if req.SearchModel != nil {
-		record.Set("search_model", strings.TrimSpace(*req.SearchModel))
-	}
-	if req.SearchHelperProviderID != nil {
-		id := strings.TrimSpace(*req.SearchHelperProviderID)
-		if err := validateProviderID(app, id, needLLM); err != nil {
-			return err
-		}
-		record.Set("search_helper_provider_id", id)
-	}
-	if req.SearchHelperModel != nil {
-		record.Set("search_helper_model", strings.TrimSpace(*req.SearchHelperModel))
+	if req.ResearchModel != nil {
+		record.Set("research_model", strings.TrimSpace(*req.ResearchModel))
 	}
 	// Read before the write so a change can be detected: switching model or
 	// endpoint invalidates the recorded vector length and every stored vector.
@@ -394,6 +360,16 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 			return errInvalid("extract_model is required")
 		}
 	}
+	// Both halves or neither: half a binding would read as bound in Settings and
+	// quietly run research on the general model.
+	researchID := strings.TrimSpace(record.GetString("research_provider_id"))
+	researchModel := strings.TrimSpace(record.GetString("research_model"))
+	if researchID != "" && researchModel == "" {
+		return errInvalid("research_model is required when a research provider is set")
+	}
+	if researchID == "" && researchModel != "" {
+		return errInvalid("research_provider_id is required when a research model is set")
+	}
 
 	embeddingID := strings.TrimSpace(record.GetString("embedding_provider_id"))
 	embeddingModel := strings.TrimSpace(record.GetString("embedding_model"))
@@ -438,7 +414,7 @@ func providerServes(p aiprovider.Provider, need providerNeed) error {
 	switch need {
 	case needLLM:
 		if !aiprovider.IsLLM(p.SDK) {
-			return errInvalid("extraction, chat, and search require " + oneOf(aiprovider.LLMSDKs()) + " provider")
+			return errInvalid("extraction and research require " + oneOf(aiprovider.LLMSDKs()) + " provider")
 		}
 	case needEmbedding:
 		if !aiprovider.CanEmbed(p.SDK) {

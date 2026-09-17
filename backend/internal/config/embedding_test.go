@@ -56,22 +56,6 @@ func TestManagedDoesNotRequireAnEmbeddingModel(t *testing.T) {
 	}
 }
 
-// Guessing an embedding endpoint from a chat binding would spend money on every
-// document in the archive before failing.
-func TestApplyBindingFallbacksNeverInventsAnEmbeddingBinding(t *testing.T) {
-	t.Parallel()
-	cfg := Config{
-		ExtractProviderID: "provider-extract",
-		ExtractModel:      "extract-model",
-	}
-
-	applyBindingFallbacks(&cfg)
-
-	if cfg.EmbeddingProviderID != "" || cfg.EmbeddingModel != "" {
-		t.Fatalf("embedding binding was invented: %q / %q", cfg.EmbeddingProviderID, cfg.EmbeddingModel)
-	}
-}
-
 func TestHasEmbedding(t *testing.T) {
 	t.Parallel()
 	provider := &aiprovider.Provider{SDK: aiprovider.SDKOpenAI, APIKey: "sk"}

@@ -72,9 +72,10 @@ The alternatives are worth naming:
   and dropped on refusal: the first request to a model may cost a retry, and
   the answer is then remembered. One limit worth knowing before you bind a
   model: a Claude that refuses to have thinking turned off — the Fable family
-  keeps it on — can serve extraction, OCR and the Deep Search helper, but not
-  chat, search or Deep Research, whose tool loops are refused on their second
-  turn because the thinking blocks cannot be carried across. Every current
+  keeps it on — can serve extraction and OCR, but not Ask AI, search or Deep
+  Research, whose tool loops are refused on their second turn because the
+  thinking blocks cannot be carried across, so it is not a General AI model
+  for an install that uses those. Every current
   Opus, Sonnet and Haiku is unaffected. Its SDK value is `anthropic`.
 - **`openrouter`** — one key across many vendors, and the only provider that
   filters its catalogue server-side (`input_modalities=file` for OCR,
@@ -152,14 +153,14 @@ after that.
 | `AI_MANAGED` | `0` | Whether the operator owns AI configuration. See the table above. |
 | `AI_SDK` | `openai` | The language model's SDK: `opencode`, `openai`, `anthropic`, `openrouter` or `mistral`. `google_vision`, `docling` (Local OCR) and `local` (Local Embeddings) are refused — none of them can serve extraction. `chatgpt` too: it has no key to seed from the environment. |
 | `AI_API_KEY` | empty | Its credential. **One key is usually the whole configuration**: with this and nothing else the app creates one provider and routes extraction, chat, Deep Research *and* OCR to it. |
-| `AI_MODEL` | `gpt-5.6-luna` | The model for extraction, chat and Deep Research. Be sure it supports the result language set in **Settings**. |
+| `AI_MODEL` | `gpt-5.6-luna` | The **General AI** model: extraction, Ask AI, AI assisted search, and Deep Research's bulk document reads. Be sure it supports the result language set in **Settings**. |
 | `AI_BASE_URL` | the SDK's own endpoint | An OpenAI-compatible base URL, for a gateway or a self-hosted endpoint. Leave it unset for `opencode`, whose own endpoint is `https://opencode.ai/zen/go/v1`. |
 | `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `opencode`, `openai`, `anthropic`, `openrouter`, `mistral`, `google_vision` or `docling` (Local OCR). `local` (Local Embeddings) is refused — it serves embeddings only. `chatgpt` reads documents but is refused here too: it is signed in to from Settings rather than given a key, so the environment has nothing to seed it with. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
 | `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK` — except Local OCR (`docling`), which has no account behind it. Optional there, and only if you started the sidecar with `DOCLING_SERVE_API_KEY`. |
 | `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. For Local OCR (`docling`) the default is the compose service name, `http://docling:5001`, so `OCR_SDK=docling` alone is a complete configuration under the overlay. |
 | `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Not required for `google_vision` or Local OCR (`docling`), which read a document without one; for Local OCR it optionally names the OCR engine instead. See [Choosing an engine](/local_ocr#choosing-an-engine). |
 | `AI_EMBEDDING_MODEL` | unset (Deep Research matches keywords only) | An embedding model — on the `AI_SDK` provider, or on the `AI_EMBEDDING_SDK` one when that is set — so Deep Research can also find documents by meaning. Under `AI_SDK=opencode` or `AI_SDK=anthropic` it requires `AI_EMBEDDING_SDK`: neither serves `/embeddings`, so there is no provider to fall back to, and naming a model without one is refused at boot. Operator-owned under `AI_MANAGED=1`; removing it there turns the feature off. See [what embeddings cost](#what-embeddings-cost). |
-| `AI_SEARCH_HELPER_MODEL` | unset (the Search model does this work) | A cheaper model on the `AI_SDK` provider for Deep Research's bulk per-document work: distilling long reads into notes and surveying many documents for one question. Operator-owned under `AI_MANAGED=1`. See [How Research covers a topic](/deep_research#how-research-covers-a-topic). |
+| `AI_RESEARCH_MODEL` | unset (Deep Research runs on `AI_MODEL`) | The **Advanced model**, on the `AI_SDK` provider: drives the Deep Research reasoning loop, a few expensive calls per question where everything else is many cheap ones. Bulk document reads stay on `AI_MODEL`. Operator-owned under `AI_MANAGED=1`; removing it there puts research back on the general model. See [How Research covers a topic](/deep_research#how-research-covers-a-topic). |
 
 ### The embedding provider
 
@@ -239,7 +240,7 @@ afterwards, in both modes.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `OCR_TIMEOUT_SEC` | `40` | OCR request timeout. Far too low for [Local OCR](/local_ocr), which needs seconds to tens of seconds a page |
-| `AI_TIMEOUT_SEC` | `60` | Extraction, chat, search and split-detection request timeout |
+| `AI_TIMEOUT_SEC` | `60` | Language-model request timeout: extraction, Ask AI, search, research and split detection |
 | `WORKER_TIMEOUT_SEC` | `300` | Per-job processing timeout |
 | `WORKER_MAX_RETRIES` | `0` | Max step retry attempts before a job fails |
 | `DEEP_SEARCH_LANGUAGES` | empty | Comma-separated ISO 639-1 codes (e.g. `de,en,uk`) for keyword expansion on both search pages. Only drives per-language searches when no embedding model is set; with one, a single search already crosses languages |
@@ -273,9 +274,12 @@ user writes, so they are already in the language that user chose.
    `/api/app/me` reports `is_admin`).
 2. Add a provider — SDK, API key, optional base URL, and the **model
    catalogue** its context windows are read from (see below).
-3. Under **Models**, bind a provider and model to OCR and to metadata
-   extraction; chat and search inherit extraction unless bound separately.
-   **Deep Search helper** and **Deep search languages** live here too.
+3. Under **Models**, bind a provider and model to **OCR** and to **General
+   AI**, which does everything else: extraction, Ask AI, AI assisted search and
+   Deep Research's document reads. **Advanced model** is optional and drives
+   the Deep Research reasoning loop; left empty, General AI does that too.
+   **Embeddings**, **Web search** and **Deep search languages** live here as
+   well.
 
 ### The model catalogue
 
@@ -309,10 +313,10 @@ Nothing is asked of the others: an unknown field is a rejected request, not a
 missed saving.
 
 A research turn declares every tool schema on every call, whatever is behind
-them — the web tools with the toggle off, `survey_documents` with no helper
+them — the web tools with the toggle off, `survey_documents` with no language
 model bound, `count_documents` either way — and refuses the call when there is
 nothing to serve it. The tool list is part of what was cached, so a list that
-followed the toggle, or that changed the moment an admin bound a helper, would
+followed the toggle, or that changed the moment an admin bound a provider, would
 throw the whole transcript away; a few hundred tokens of schema on every call
 is the cheaper side of that trade. Ask AI is unaffected: it has no stored
 thread to lose, and still offers the web tools only when they work.
@@ -340,16 +344,18 @@ the providers an admin has already configured, so it can spend the operator's
 credentials but never add a new one.
 
 - **Ask AI**, **AI assisted search** and **Deep Research** offer *Use a
-  different chat/search model* under the composer, which also names the model in
-  use when nothing is overridden. The choice is fixed for the conversation, like
-  the page it was started on: the transcript replayed on each turn was produced
-  by one model, and answering the next question with another reads that work
-  back as if it were its own. Start a new chat to switch. Deep Research's
-  **helper** model is not moved by this — it is a separate binding because it does many cheap
-  per-document calls where the search model does a few expensive ones.
+  different model* under the composer, which also names the model in use when
+  nothing is overridden: the General AI model for the first two, the Advanced
+  model for research. The choice is fixed for the conversation, like the page
+  it was started on: the transcript replayed on each turn was produced by one
+  model, and answering the next question with another reads that work back as
+  if it were its own. Start a new chat to switch. Deep Research's bulk document
+  reads are not moved by this — they stay on the General AI model, because that
+  work is many cheap per-document calls where the research loop is a few
+  expensive ones.
 
   **A conversation records the model it opened on, whether or not anyone picked
-  it.** So changing the chat or search binding in Settings applies to new chats
+  it.** So changing a binding in Settings applies to new chats
   and leaves existing ones where they are, rather than moving every open
   transcript onto a model that did not write it. Conversations from before this
   shipped have nothing recorded and do still follow Settings. If the provider a

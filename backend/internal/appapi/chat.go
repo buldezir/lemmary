@@ -251,7 +251,7 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 		// binding is what decides, not the request's.
 		cfg := rt.Snapshot().Cfg
 		requested := aiprovider.Binding{ProviderID: req.ProviderID, Model: req.Model}
-		binding := conversationBinding(session, recordedBinding(requested, cfg.ChatProviderID, cfg.ChatModel))
+		binding := conversationBinding(session, recordedBinding(requested, cfg.ExtractProviderID, cfg.ExtractModel))
 		snap, err := conversationSnapshot(app, rt, config.Overrides{Chat: binding}, session, requested)
 		if err != nil {
 			return writeError(e, http.StatusBadRequest, err.Error())

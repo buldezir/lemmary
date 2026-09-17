@@ -22,9 +22,8 @@ type Snapshot struct {
 	AI          ai.Extractor
 	Chatter     ai.Chatter
 	SearchAgent ai.SearchAgent
-	// SearchHelper does Deep Search's bulk per-document work. Nil only when the
-	// search agent itself is unavailable; otherwise set on the helper binding or,
-	// through the fallback chain, on the search model.
+	// SearchHelper does Deep Search's bulk per-document work on the general
+	// model. Nil only when no language model is bound at all.
 	SearchHelper ai.Helper
 	// Shares the extraction provider: both reason over document text.
 	Splitter ai.Splitter
@@ -172,10 +171,12 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		ocrProvider = nil
 	}
 	extractor, splitter := buildExtractPair(app, cfg, cfg.ExtractProvider, cfg.ExtractModel, aiLogger)
-	chatter := buildChatter(app, cfg, cfg.ChatProvider, cfg.ChatModel, aiLogger)
+	chatter := buildChatter(app, cfg, cfg.ExtractProvider, cfg.ExtractModel, aiLogger)
 	embedder := buildEmbedder(app, cfg, cfg.EmbeddingProvider, cfg.EmbeddingModel, aiLogger)
-	searchAgent := buildSearchAgent(app, cfg, cfg.SearchProvider, cfg.SearchModel, aiLogger)
-	searchHelper := buildHelper(app, cfg, cfg.SearchHelperProvider, cfg.SearchHelperModel, aiLogger)
+	// The general binding. A research turn rebuilds this on the research binding
+	// through WithOverrides; see appapi/search.go.
+	searchAgent := buildSearchAgent(app, cfg, cfg.ExtractProvider, cfg.ExtractModel, aiLogger)
+	searchHelper := buildHelper(app, cfg, cfg.ExtractProvider, cfg.ExtractModel, aiLogger)
 	webSearch := buildWebSearch(app, cfg, cfg.WebSearchProvider, aiLogger)
 
 	snap := Snapshot{
@@ -219,9 +220,7 @@ func (r *Runtime) apply(app core.App, cfg Config) {
 		"ocr_model", cfg.OCRModel,
 		"ai", aiName,
 		"model", aiModel,
-		"chat_model", cfg.ChatModel,
-		"search_model", cfg.SearchModel,
-		"search_helper_model", cfg.SearchHelperModel,
+		"research_model", cfg.ResearchModel,
 		"embedding_model", cfg.EmbeddingModel,
 		"embedding_dims", cfg.EmbeddingDims,
 		"deep_search_languages", cfg.DeepSearchLanguages,

@@ -87,11 +87,11 @@ affordable.
 
 - **Distilled reads.** When a `read_documents` call would put more than about
   32 KB of text, or more than five documents, into the conversation, the
-  documents are read by the **Deep Search helper** model instead. The research
+  documents are read by the **General AI** model instead. The research
   model gets, per document, notes on what it says about the focus, verbatim
   quotes to cite, and any requested values — never the text. Smaller reads pass
   through as excerpts, because on a needle question the exact wording is the
-  point. The helper is shown each document whole, up to 400 KB, and several
+  point. The reader is shown each document whole, up to 400 KB, and several
   short documents share one call.
 - **`survey_documents`.** For "everything about X" or "the total of Y over the
   year": the same retrieval as a search, kept to 300 documents by default and
@@ -108,11 +108,12 @@ affordable.
   correspondent or tag that does not exist counts zero and says which name did
   not resolve, rather than matching everything.
 
-The helper is a separate binding (`AI_SEARCH_HELPER_MODEL`, or **Deep Search
-helper** in Settings) because this work is many cheap calls where the research
-loop is a few expensive ones; unset, it falls back to the Search model and the
-same features run at the Search model's price. Helpers that reject JSON mode are
-retried in plain text and parsed leniently. Every completion logs its token usage
+The reasoning loop itself runs on the **Advanced model** (`AI_RESEARCH_MODEL`,
+or **Advanced model** in Settings) while the bulk reads above stay on **General
+AI**, because that work is many cheap calls where the loop is a few expensive
+ones; with no Advanced model bound, the whole of research runs on General AI at
+its price. A General AI model that rejects JSON mode is retried in plain text
+and parsed leniently. Every completion logs its token usage
 (`ai completion usage prompt_tokens=… cached_tokens=… completion_tokens=…`) and a
 research run logs its total, which is where to look when checking what a question
 cost.
@@ -127,6 +128,6 @@ Each page is its own path — `/rag/search` and `/rag/research` — so which one
 
 A chat stays on the page it started on. A transcript is a sequence: its answers were produced by one of the two, and the next turn replays them to the model as its own prior work, so switching underneath would answer a later question in a way the earlier ones do not support. There is no control that moves a chat across; opening `/rag/search/<research-chat>` redirects to the path that matches, and a turn sent to the page a chat does not belong to is a 409. A saved chat reopens on the path it ran on.
 
-Configure **Search provider/model**, **Deep Search helper** and **Deep search languages** in [Settings](/ai_providers#binding-models-in-settings).
+Configure **General AI**, the **Advanced model** and **Deep search languages** in [Settings](/ai_providers#binding-models-in-settings).
 
 How a chat is stored, resumed and cancelled is in [Chat sessions](/setup#chat-sessions).
