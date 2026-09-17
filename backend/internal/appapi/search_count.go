@@ -9,6 +9,7 @@ import (
 	"github.com/pocketbase/dbx"
 
 	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/models"
 )
 
 // maxCountIDs is the most documents a grouped count over a text query
@@ -52,6 +53,7 @@ func (r *agentRetriever) count(ctx context.Context, args ai.CountArgs) (ai.Count
 		tagIDs:           ftQuery.TagIDs,
 		dateFrom:         ftQuery.DateFrom,
 		dateTo:           ftQuery.DateTo,
+		statuses:         []string{models.DocStatusCompleted},
 		groupBy:          groupBy,
 	}
 

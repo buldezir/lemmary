@@ -399,7 +399,7 @@ func TestResearchOpensOnTheCallersSystemPrompt(t *testing.T) {
 		scriptedTurn{content: "An answer."},
 	)
 
-	if prompt := agent.SystemPrompt(ResearchRequest{}); !strings.Contains(prompt, "search_documents") {
+	if prompt := agent.SystemPrompt(ResearchRequest{}); !strings.Contains(prompt, "find_documents") {
 		t.Fatalf("SystemPrompt is not the research one: %q", prompt)
 	}
 
@@ -974,11 +974,13 @@ func TestResearchPromptExplainsFocus(t *testing.T) {
 	t.Parallel()
 	prompt := buildResearchSystemPrompt("en,de", "en", []string{"invoice"}, false)
 	for _, want := range []string{
-		"Pass focus to steer the excerpt",
+		"find_documents",
+		"read_chunks for the chunks it named",
+		"A full read is refused",
 		"survey_documents once",
 		"count_documents with the filters",
 		"cited earlier in this conversation can be read by id",
-		"verbatim passages",
+		"notes and quotes",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("research prompt missing %q: %s", want, prompt)

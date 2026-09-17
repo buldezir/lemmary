@@ -96,6 +96,8 @@ type agentTools struct {
 	// survey, no database for a count.
 	survey ai.DocumentSurveyor
 	count  ai.DocumentCounter
+	// find is research's verified search; nil without a helper model.
+	find ai.DocumentFinder
 	// dense is set when the retriever has an embedding leg; the prompt is
 	// worded differently for a search that crosses languages by itself.
 	dense bool
@@ -134,6 +136,7 @@ func buildAgentTools(app core.App, rt *config.Runtime, idx *fulltext.Index, user
 	}
 	if retriever.helper != nil {
 		tools.survey = retriever.survey
+		tools.find = retriever.find
 	}
 	return tools, nil
 }

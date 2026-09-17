@@ -466,6 +466,7 @@ func buildSearchSystemPrompt(languages, resultLanguage string, availableTags []s
 	b.WriteString(`You help the user find documents in their personal archive.
 The user may ask in broad natural language that keyword search alone cannot handle.
 Use the search_documents tool to look up documents. Expand the request into concrete keywords and filters.
+Only documents that have finished processing are searched; one still pending, failed or awaiting review cannot be found.
 Search bilingual metadata (title/purpose/summary and their *_original fields) plus OCR text.
 Prefer precise date_from/date_to, document_type, correspondent, or tags filters when the query implies them.
 When filtering by tags, use exact names from the available archive tags list below — never invent tag names.

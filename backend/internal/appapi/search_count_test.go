@@ -21,7 +21,7 @@ func countDB(t *testing.T) dbx.Builder {
 	t.Cleanup(func() { _ = db.Close() })
 	_, err = db.NewQuery(`CREATE TABLE documents (
 		id TEXT PRIMARY KEY, user TEXT, title TEXT, document_date TEXT,
-		document_type TEXT, correspondent TEXT, tags TEXT, ocr_text TEXT)`).Execute()
+		document_type TEXT, correspondent TEXT, tags TEXT, ocr_text TEXT, processing_status TEXT DEFAULT 'completed')`).Execute()
 	if err != nil {
 		t.Fatalf("create table: %v", err)
 	}

@@ -69,7 +69,7 @@ export function SearchPage() {
   return (
     <ChatWorkspaceFrame
       title="AI assisted search"
-      hint="Find documents and list them."
+      hint="Find documents and list them. Only completed documents are searched."
       rows={ws.rows}
       sessionId={ws.sessionId}
       sessionsLoading={ws.sessions.loading}

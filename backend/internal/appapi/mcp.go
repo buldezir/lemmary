@@ -170,7 +170,7 @@ func newMCPServer(tools agentTools, docs mcpDocs) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "search_documents",
-		Description: "Search the archive by meaning and by keywords (hybrid full-text and vector index), with optional filters. " +
+		Description: "Search the archive by meaning and by keywords (hybrid full-text and vector index), with optional filters. Only documents that have finished processing (status completed) are searched. " +
 			"Returns matching documents with 1-3 verbatim passages from each. For a plain filtered listing use list_documents.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args mcpSearchArgs) (*mcp.CallToolResult, mcpSearchResult, error) {
 		hits, err := tools.search(ctx, ai.SearchDocumentsArgs{

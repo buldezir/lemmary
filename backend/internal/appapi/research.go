@@ -116,6 +116,7 @@ func runResearchTurn(app core.App, turn searchTurn, ctx context.Context, recorde
 		DenseRetrieval: turn.tools.dense,
 		Survey:         turn.tools.survey,
 		Count:          turn.tools.count,
+		Find:           turn.tools.find,
 		Web:            turn.tools.web,
 		ContextWindow:  turn.contextWindow,
 	}, func(event ai.ResearchEvent) {

@@ -52,7 +52,7 @@ Claude Desktop, Cursor and most other clients take the same thing as JSON:
 
 ## Tools
 
-Two kinds: search over the index, and plain access to the rows. The intelligence lives in your agent, so nothing here calls a language model.
+Two kinds: search over the index, and plain access to the rows. The intelligence lives in your agent, so nothing here calls a language model. `search_documents`, `read_documents` and `count_documents` see only documents with processing status `completed`, like the search pages; `list_documents` and `get_document` reach every status.
 
 | Tool | What it does |
 | --- | --- |

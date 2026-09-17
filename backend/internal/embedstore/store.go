@@ -304,15 +304,18 @@ func CountChunks(db dbx.Builder, model string, dims int) (int, error) {
 const hasOCRText = "trim(d.ocr_text, '" + " \t\r\n\v\f" + "') <> ''"
 
 // Shared by Candidates and Stats so the queue length and the queue cannot
-// disagree. Pending and processing documents are excluded because their OCR
-// text is about to be rewritten, duplicates because they are never results.
+// disagree. Only completed documents are embedded: search reaches vectors of
+// completed documents alone, so a vector for a pending, failed or unreviewed
+// one would only take a top-k slot from a document that can be shown. A
+// document embeds once it completes, having no row until then. Duplicates are
+// excluded because they are never results.
 //
 // A failed row is governed by its backoff alone: folding the freshness tests in
 // would make a document that failed against a since-changed model retry
 // immediately and keep failing.
 const candidateWhere = `
 	d.duplicate_of = '' AND ` + hasOCRText + `
-	AND d.processing_status NOT IN ('pending', 'processing')
+	AND d.processing_status = 'completed'
 	AND (
 		e.document_id IS NULL
 		OR (e.status = {:failed} AND (e.next_attempt_at = '' OR e.next_attempt_at <= {:now}))
@@ -404,7 +407,7 @@ func LoadStats(db dbx.Builder, model string, dims, chunkerVersion int, now time.
 	}{
 		{&out.Total, `SELECT COUNT(*) FROM documents d
 			WHERE d.duplicate_of = '' AND ` + hasOCRText + `
-			AND d.processing_status NOT IN ('pending', 'processing')`, nil},
+			AND d.processing_status = 'completed'`, nil},
 		{&out.Embedded, `SELECT COUNT(*) FROM ` + tableEmbeddings + `
 			WHERE status = {:ok} AND stale = 0 AND model = {:model}
 			AND ({:dims} = 0 OR dims = {:dims}) AND chunker_version = {:version}`,

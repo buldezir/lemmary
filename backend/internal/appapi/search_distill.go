@@ -47,14 +47,22 @@ func shouldDistill(docs []ai.DocumentContent) bool {
 // size, so a helper outage costs the saving and not the read.
 func (r *agentRetriever) distillDocuments(ctx context.Context, question string, fields []ai.SurveyField, docs []ai.DocumentContent) []ai.DocumentContent {
 	inputs := make([]ai.DistillDoc, 0, len(docs))
+	chunkCounts := make(map[string]int, len(docs))
 	for _, doc := range docs {
+		// Markers only on text read whole: an excerpt's offsets are not the
+		// document's, so its chunk numbers would point at the wrong bytes.
+		text := doc.Text
+		if !doc.Excerpted {
+			text = markChunks(doc.Text)
+			chunkCounts[doc.ID] = len(splitChunks(doc.Text))
+		}
 		inputs = append(inputs, ai.DistillDoc{
 			ID:            doc.ID,
 			Title:         doc.Title,
 			DocumentDate:  doc.DocumentDate,
 			DocumentType:  doc.DocumentType,
 			Correspondent: doc.Correspondent,
-			Text:          doc.Text,
+			Text:          text,
 			Excerpted:     doc.Excerpted,
 		})
 	}
@@ -82,6 +90,12 @@ func (r *agentRetriever) distillDocuments(ctx context.Context, question string, 
 		doc.Notes = row.Notes
 		doc.Quotes = row.Quotes
 		doc.Values = row.Values
+		// Only text the helper saw with markers yields chunk numbers; on an
+		// offset-marked excerpt any integers it wrote point at nothing.
+		if count, marked := chunkCounts[doc.ID]; marked {
+			doc.Chunks = row.Chunks
+			doc.ChunkCount = count
+		}
 		out = append(out, doc)
 	}
 	return out

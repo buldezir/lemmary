@@ -2,6 +2,7 @@ package appapi
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"lemmary/backend/internal/ai"
@@ -96,6 +97,27 @@ func TestSurveyReadsEveryCandidateAndReturnsRows(t *testing.T) {
 	}
 	if len(progress) == 0 || progress[len(progress)-1] != [2]int{2, 2} {
 		t.Fatalf("progress = %v, want to end at 2 of 2", progress)
+	}
+}
+
+func TestSurveyMarksChunksForTheHelperAndCarriesItsPointers(t *testing.T) {
+	r := hybridRetriever(t, nil)
+	helper := &fakeHelper{chunks: map[string][]int{"lexical": {0}}}
+	r.helper = helper
+	result, err := r.survey(context.Background(), ai.SurveyArgs{Query: "insurance premium", Question: "premium?"}, nil)
+	if err != nil {
+		t.Fatalf("survey: %v", err)
+	}
+	if !strings.HasPrefix(helper.inputs["lexical"], "[chunk 0]\n") {
+		t.Fatalf("helper input should be chunk-marked: %q", helper.inputs["lexical"])
+	}
+	for _, row := range result.Rows {
+		if row.ChunkCount != 1 {
+			t.Fatalf("row should know its chunk count: %+v", row)
+		}
+		if row.ID == "lexical" && (len(row.Chunks) != 1 || row.Chunks[0] != 0) {
+			t.Fatalf("row should carry the helper's chunks: %+v", row)
+		}
 	}
 }
 

@@ -46,6 +46,7 @@ func (r *agentRetriever) survey(ctx context.Context, args ai.SurveyArgs, progres
 	// past it. Hits are built at the same time for the rows and the list.
 	docs := make([]ai.DistillDoc, 0, len(ids))
 	hits := make(map[string]ai.DocumentHit, len(ids))
+	chunkCounts := make(map[string]int, len(ids))
 	rank := r.focusRanker(ctx)
 	for _, id := range ids {
 		record, err := r.app.FindRecordById("documents", id)
@@ -62,11 +63,13 @@ func (r *agentRetriever) survey(ctx context.Context, args ai.SurveyArgs, progres
 			DocumentDate:  truncateDate(record.GetString("document_date")),
 			DocumentType:  relatedName(r.app, "document_types", record.GetString("document_type")),
 			Correspondent: relatedName(r.app, "correspondents", record.GetString("correspondent")),
-			Text:          full,
+			Text:          markChunks(full),
 		}
+		chunkCounts[record.Id] = len(splitChunks(full))
 		if len(full) > helperInputBytes {
 			doc.Text, _ = excerptDocument(record.Id, full, question, rank, helperInputBytes)
 			doc.Excerpted = true
+			delete(chunkCounts, record.Id)
 		}
 		docs = append(docs, doc)
 		hits[record.Id] = ai.DocumentHit{
@@ -106,6 +109,9 @@ func (r *agentRetriever) survey(ctx context.Context, args ai.SurveyArgs, progres
 			Relevant:     row.Relevant,
 			Values:       row.Values,
 			Missing:      row.Missing,
+		}
+		if count, marked := chunkCounts[doc.ID]; marked {
+			out.Chunks, out.ChunkCount = row.Chunks, count
 		}
 		if row.Relevant {
 			out.Notes = row.Notes

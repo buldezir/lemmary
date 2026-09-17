@@ -162,7 +162,7 @@ export function ResearchPage() {
       title="Deep Research"
       hint={
         <>
-          Read the documents and answer, with citations.{' '}
+          Read the documents and answer, with citations. Only completed documents are searched.{' '}
           <DocsLink href="/docs/deep_research.html">How it works</DocsLink>.
         </>
       }
@@ -273,7 +273,7 @@ export function ResearchPage() {
           onChange={ws.setBinding}
           locked={inConversation || chat.sending || chat.turns.length > 0}
           lockedHint="Fixed for this chat. Start a new one to research with a different model."
-          help="Drives the research loop. Documents read in bulk stay on the General AI model from Settings."
+          help="Drives the research loop. Finding, checking and bulk-reading documents stays on the General AI model from Settings."
           showConfigured
         />
       </div>

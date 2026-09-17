@@ -29,6 +29,51 @@ type Helper interface {
 	// Distill answers one question against each of the given documents and
 	// extracts the requested fields, using nothing but the documents' text.
 	Distill(ctx context.Context, req DistillRequest) (DistillResult, error)
+	// Screen judges from metadata and matched passages alone whether each
+	// document could bear on the question. It is the cheap first pass over
+	// every candidate; Distill is the read that follows for the survivors.
+	Screen(ctx context.Context, req ScreenRequest) (ScreenResult, error)
+}
+
+// ScreenDoc is one candidate as the screen sees it: everything the archive
+// knows about the document short of its text, plus the passages the search
+// matched.
+type ScreenDoc struct {
+	ID            string
+	Title         string
+	TitleOriginal string
+	DocumentDate  string
+	DocumentType  string
+	Correspondent string
+	Tags          []string
+	People        []string
+	Purpose       string
+	Summary       string
+	PageCount     int
+	Passages      []string
+}
+
+type ScreenRequest struct {
+	Question string
+	Docs     []ScreenDoc
+}
+
+// Screen verdicts. A document the helper did not mention is treated as
+// VerdictMaybe by the caller: silence never drops a candidate.
+const (
+	VerdictYes   = "yes"
+	VerdictMaybe = "maybe"
+	VerdictNo    = "no"
+)
+
+type ScreenRow struct {
+	ID      string `json:"id"`
+	Verdict string `json:"verdict"`
+}
+
+type ScreenResult struct {
+	Rows  []ScreenRow
+	Usage Usage
 }
 
 // SurveyField is one value the caller wants pulled out of every document.
@@ -78,6 +123,9 @@ type DistillRow struct {
 	// are listed in Missing rather than given as empty strings.
 	Values  map[string]string `json:"values,omitempty"`
 	Missing []string          `json:"missing,omitempty"`
+	// Chunks are the ordinals of the [chunk N] markers whose text backs the
+	// notes, when the text carried markers. They are what read_chunks takes.
+	Chunks []int `json:"chunks,omitempty"`
 }
 
 type DistillResult struct {
@@ -170,12 +218,13 @@ func buildDistillSystemPrompt(fields []SurveyField) string {
 Use only the text you are given. Never add outside knowledge and never guess at what a gap in an excerpt might contain.
 Documents are separated by lines of the form "=== document <id> ===". Answer for every document, by that id.
 
-Return one JSON object: {"documents": [{"id": "...", "relevant": true|false, "notes": "...", "quotes": ["..."], "values": {...}, "missing": ["..."]}]}.
+Return one JSON object: {"documents": [{"id": "...", "relevant": true|false, "notes": "...", "quotes": ["..."], "values": {...}, "missing": ["..."], "chunks": [12, 13]}]}.
 - relevant: whether the document bears on the question at all.
 - notes: what the document says about the question, in your words, at most a few sentences. Empty when not relevant.
 - quotes: up to three short verbatim passages that support the notes, copied exactly from the text.
 - values: the requested fields, by name, as strings. Omit a field you cannot find and list its name in missing instead. Do not invent values.
 - missing: names of requested fields the document does not contain.
+- chunks: when the text carries "[chunk N]" markers, the numbers N of the chunks whose text supports the notes, as integers. Empty when not relevant or when there are no markers.
 `)
 	if len(fields) > 0 {
 		b.WriteString("\nRequested fields:\n")
@@ -274,6 +323,7 @@ func parseDistillRows(content string, req DistillRequest) ([]DistillRow, error) 
 			Notes:    strings.TrimSpace(coerceString(item["notes"])),
 			Quotes:   coerceStringSlice(item["quotes"]),
 			Missing:  coerceStringSlice(item["missing"]),
+			Chunks:   coerceIntSlice(item["chunks"]),
 		}
 		if values, ok := item["values"].(map[string]any); ok && len(values) > 0 {
 			row.Values = make(map[string]string, len(values))
@@ -321,4 +371,194 @@ func coerceBool(v any) bool {
 	default:
 		return false
 	}
+}
+
+// coerceIntSlice reads a list of integers the model may have written as
+// numbers, numeric strings or a single scalar; duplicates and non-numbers are
+// dropped and the result is sorted.
+func coerceIntSlice(v any) []int {
+	var items []any
+	switch t := v.(type) {
+	case []any:
+		items = t
+	case nil:
+		return nil
+	default:
+		items = []any{t}
+	}
+	seen := map[int]struct{}{}
+	out := make([]int, 0, len(items))
+	for _, item := range items {
+		var n int
+		switch x := item.(type) {
+		case float64:
+			n = int(x)
+		case string:
+			parsed, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(x), "chunk ")))
+			if err != nil {
+				continue
+			}
+			n = parsed
+		default:
+			continue
+		}
+		if n < 0 {
+			continue
+		}
+		if _, dup := seen[n]; dup {
+			continue
+		}
+		seen[n] = struct{}{}
+		out = append(out, n)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	sort.Ints(out)
+	return out
+}
+
+func (h *openAIHelper) Screen(ctx context.Context, req ScreenRequest) (ScreenResult, error) {
+	if h.client.apiKey == "" {
+		return ScreenResult{}, fmt.Errorf("AI API key is not configured")
+	}
+	if len(req.Docs) == 0 {
+		return ScreenResult{}, nil
+	}
+	ctx = aiprovider.EnsureSession(ctx, "screen")
+	question := strings.TrimSpace(req.Question)
+	if question == "" {
+		return ScreenResult{}, fmt.Errorf("screen needs a question")
+	}
+
+	requestStart := time.Now()
+	resp, err := h.client.Complete(ctx, openai.ChatCompletionNewParams{
+		Model: shared.ChatModel(h.client.model),
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage(screenSystemPrompt),
+			openai.UserMessage(buildScreenUserMessage(question, req.Docs)),
+		},
+		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONObject: &shared.ResponseFormatJSONObjectParam{},
+		},
+		Temperature: CompletionTemperature(h.client.model, 0),
+	}, "purpose", "screen", "documents", len(req.Docs))
+	if err != nil {
+		return ScreenResult{}, fmt.Errorf("helper screen: %w", err)
+	}
+	if len(resp.Choices) == 0 {
+		return ScreenResult{}, fmt.Errorf("helper returned no choices")
+	}
+	rows, err := parseScreenRows(resp.Choices[0].Message.Content, req)
+	if err != nil {
+		h.client.logger.Warn("helper screen parse failed",
+			"documents", len(req.Docs),
+			"content_chars", len(resp.Choices[0].Message.Content),
+			slog.Any("error", err),
+		)
+		return ScreenResult{Usage: usageOf(resp)}, err
+	}
+	h.client.logger.Info("helper screen complete",
+		"documents", len(req.Docs),
+		"rows", len(rows),
+		logfmt.Duration("duration", time.Since(requestStart)),
+	)
+	return ScreenResult{Rows: rows, Usage: usageOf(resp)}, nil
+}
+
+// The screen sees no text, so it is told to err toward keeping: what it drops
+// is never read, what it keeps costs one more helper read.
+const screenSystemPrompt = `You triage documents for a researcher. For each document you see only its catalogue entry: title, date, type, correspondent, tags, people, purpose, summary, and a few passages a search matched.
+Decide whether the document could contain something about the researcher's question.
+Documents are separated by lines of the form "--- document <id> ---". Answer for every document, by that id.
+
+Return one JSON object: {"documents": [{"id": "...", "verdict": "yes" | "maybe" | "no"}]}.
+- yes: the entry shows the document is about the question or plainly contains what is asked.
+- maybe: the document could hold something about it; the entry does not settle it.
+- no: only when the document is clearly unrelated -- a different subject, party or period that cannot bear on the question.
+When in doubt, say maybe. A document you leave out is treated as maybe.
+`
+
+func buildScreenUserMessage(question string, docs []ScreenDoc) string {
+	var b strings.Builder
+	b.WriteString("Question: ")
+	b.WriteString(question)
+	b.WriteString("\n")
+	write := func(label, value string) {
+		if value = strings.TrimSpace(value); value != "" {
+			b.WriteString(label + ": " + value + "\n")
+		}
+	}
+	for _, doc := range docs {
+		b.WriteString("\n--- document ")
+		b.WriteString(doc.ID)
+		b.WriteString(" ---\n")
+		write("Title", doc.Title)
+		if doc.TitleOriginal != doc.Title {
+			write("Original title", doc.TitleOriginal)
+		}
+		write("Date", doc.DocumentDate)
+		write("Type", doc.DocumentType)
+		write("Correspondent", doc.Correspondent)
+		write("Tags", strings.Join(doc.Tags, ", "))
+		write("People", strings.Join(doc.People, ", "))
+		if doc.PageCount > 0 {
+			write("Pages", strconv.Itoa(doc.PageCount))
+		}
+		write("Purpose", doc.Purpose)
+		write("Summary", doc.Summary)
+		for _, passage := range doc.Passages {
+			write("Passage", passage)
+		}
+	}
+	return b.String()
+}
+
+// parseScreenRows keeps one verdict per asked-about document; anything but a
+// clear yes or no reads as maybe.
+func parseScreenRows(content string, req ScreenRequest) ([]ScreenRow, error) {
+	raw := models.NormalizeJSONObject(content)
+	var payload struct {
+		Documents []map[string]any `json:"documents"`
+	}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return nil, fmt.Errorf("decode helper response: %w", err)
+	}
+	wanted := make(map[string]struct{}, len(req.Docs))
+	for _, doc := range req.Docs {
+		wanted[doc.ID] = struct{}{}
+	}
+	rows := make([]ScreenRow, 0, len(payload.Documents))
+	seen := map[string]struct{}{}
+	for _, item := range payload.Documents {
+		id := strings.TrimSpace(coerceString(item["id"]))
+		if _, ok := wanted[id]; !ok {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		rows = append(rows, ScreenRow{ID: id, Verdict: normalizeVerdict(item["verdict"], item["relevant"])})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
+	return rows, nil
+}
+
+func normalizeVerdict(verdict, relevant any) string {
+	switch strings.ToLower(strings.TrimSpace(coerceString(verdict))) {
+	case VerdictYes, "true", "relevant":
+		return VerdictYes
+	case VerdictNo, "false", "irrelevant":
+		return VerdictNo
+	case VerdictMaybe:
+		return VerdictMaybe
+	}
+	if b, ok := relevant.(bool); ok {
+		if b {
+			return VerdictYes
+		}
+		return VerdictNo
+	}
+	return VerdictMaybe
 }
