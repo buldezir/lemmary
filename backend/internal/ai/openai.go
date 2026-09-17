@@ -14,6 +14,7 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/messages"
+	"lemmary/backend/internal/metrics"
 	"lemmary/backend/internal/opencode"
 )
 
@@ -97,8 +98,11 @@ func (c *OpenAIClient) Model() string {
 // it, temperature back to the API default. The reasoning_effort case prefers
 // the Responses API, which keeps both, and is remembered per model and
 // endpoint.
-func (c *OpenAIClient) Complete(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
-	resp, err := c.complete(ctx, params, extra...)
+func (c *OpenAIClient) Complete(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (resp *openai.ChatCompletion, err error) {
+	// One measurement per call the caller made, not per HTTP request: the
+	// endpoint discovery and the degradation retries below are all time it waited.
+	defer metrics.TimeAICall(ctx, "chat", c.sdk, string(params.Model))(&err)
+	resp, err = c.complete(ctx, params, extra...)
 	return nameToolCallVariants(resp), err
 }
 
@@ -301,18 +305,23 @@ func logUsage(logger *slog.Logger, model string, u Usage, extra ...any) {
 		"completion_tokens", u.Completion,
 	}
 	logger.Info("ai completion usage", append(args, extra...)...)
+	metrics.AITokens(model, int64(u.Prompt), int64(u.Cached), int64(u.Completion))
 }
 
 // completeStreaming hands each content delta to onDelta as it arrives and
 // returns the accumulated text with what it cost. Errors come back with
 // whatever text arrived before them, so the caller can keep a partial answer.
 // Usage arrives in a final chunk with no choices, and only when asked for.
+//
+// Only the error return is named, and only so the deferred timer can read it;
+// the body already has a `usage` of its own.
 func (c *OpenAIClient) completeStreaming(
 	ctx context.Context,
 	params openai.ChatCompletionNewParams,
 	onDelta func(string),
 	extra ...any,
-) (string, Usage, error) {
+) (_ string, _ Usage, err error) {
+	defer metrics.TimeAICall(ctx, "chat", c.sdk, string(params.Model))(&err)
 	c.markPromptCache(ctx, &params)
 	if c.usesMessagesAPI(string(params.Model)) {
 		text, u, err := c.completeStreamingMessages(ctx, params, onDelta, extra...)
@@ -370,7 +379,7 @@ func (c *OpenAIClient) completeStreaming(
 			onDelta(delta)
 		}
 	}
-	err := stream.Err()
+	err = stream.Err()
 	if err == nil {
 		logUsage(c.logger, string(params.Model), usage, append(extra, "stream", true)...)
 	}

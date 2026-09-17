@@ -8,7 +8,9 @@
 #
 # FAISS_REF below is the single source of truth for the pin. It is the commit
 # named for our bleve version in bleve's own docs/vectors.md compatibility
-# table (the same commit covers v2.5.5 through v2.5.7). BUMP IT ONLY TOGETHER
+# table. bleve v2.6.1 has no row there and its go-faiss v1.1.5 needs C entry
+# points (faiss_real_to_binary) newer than the v2.6.0 row, so the pin is the
+# fork's `bleve` branch head at the v2.6.1 release. BUMP IT ONLY TOGETHER
 # WITH A BLEVE BUMP, taking the new value from that table -- a mismatched pair
 # either fails to link or, worse, links and reads indexes wrongly.
 #
@@ -26,7 +28,7 @@
 set -euo pipefail
 
 FAISS_REPO="https://github.com/blevesearch/faiss.git"
-FAISS_REF="8a59a0c552fa2d14fa871f6b6bc793de1d277f5e"
+FAISS_REF="e000703a7b850693443577f38593214248f397b1"
 
 PREFIX=""
 TARGET_ARCH=""

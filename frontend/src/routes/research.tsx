@@ -108,9 +108,8 @@ export function ResearchPage() {
     },
     onSessionSettled: ws.onSessionSettled,
   })
-  useEffect(() => {
-    ws.adoptRef.current = chat.adoptSession
-  }, [chat.adoptSession, ws.adoptRef])
+  const { setAdopt } = ws
+  useEffect(() => setAdopt(chat.adoptSession), [chat.adoptSession, setAdopt])
 
   const loadedMode = chat.session?.mode
   useEffect(() => {

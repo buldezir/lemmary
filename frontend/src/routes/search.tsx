@@ -36,9 +36,8 @@ export function SearchPage() {
       ws.runTurn({ sessionId: id, content, binding: ws.binding }),
     onSessionSettled: ws.onSessionSettled,
   })
-  useEffect(() => {
-    ws.adoptRef.current = chat.adoptSession
-  }, [chat.adoptSession, ws.adoptRef])
+  const { setAdopt } = ws
+  useEffect(() => setAdopt(chat.adoptSession), [chat.adoptSession, setAdopt])
 
   // A chat's stored mode wins over the path, which a hand-edited or stale URL
   // can contradict, so the next turn is not sent under a mode the server refuses.

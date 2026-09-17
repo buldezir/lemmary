@@ -440,8 +440,12 @@ export function DocumentDetailPage() {
 
       setEditing(false)
       editingRef.current = false
+      // requestKey null: the PATCH wakes the realtime subscription, whose
+      // load() would otherwise autocancel this refresh and the confirmation
+      // with it, then wipe the abort error, leaving no word that it saved.
       const refreshed = await pb.collection('documents').getOne<DocumentRecord>(document.id, {
         expand: 'tags,document_type,correspondent,duplicate_of',
+        requestKey: null,
       })
       applyLoadedDocument(refreshed)
       setMessage('Metadata saved.')

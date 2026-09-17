@@ -13,6 +13,7 @@ import (
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/logfmt"
+	"lemmary/backend/internal/metrics"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/ocr"
 	"lemmary/backend/internal/strutil"
@@ -55,6 +56,18 @@ func (r *PipelineRunner) Run(ctx context.Context, jobID string) error {
 	if job.GetString("status") != models.JobStatusRunning {
 		return nil
 	}
+	// The stored status is the only thing that knows how a run ended:
+	// handleStepFailure returns nil when it re-pends the job, so a nil error
+	// covers both "done" and "will try again". Read back from the database
+	// rather than from this record, because a final save that fails leaves
+	// the record saying completed while the row still says running.
+	defer func() {
+		status := ""
+		if stored, err := r.App.FindRecordById("processing_jobs", jobID); err == nil {
+			status = stored.GetString("status")
+		}
+		metrics.Job(jobOutcome(status), time.Since(jobStart))
+	}()
 
 	documentID := job.GetString("document")
 	steps, err := parseSteps(job)
