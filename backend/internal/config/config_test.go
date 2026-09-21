@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pocketbase/pocketbase/core"
+
 	"lemmary/backend/internal/aiprovider"
 )
 
@@ -139,6 +141,21 @@ func TestDefaultsUsesCodeDefaults(t *testing.T) {
 	}
 	if env.Managed {
 		t.Fatal("expected managed mode off by default")
+	}
+}
+
+// A zero interval would make the consume folder scan every tick, so the seed
+// writes the default rather than the zero value.
+func TestApplyConfigToRecordDefaultsIngestInterval(t *testing.T) {
+	collection := core.NewBaseCollection(CollectionName)
+	collection.Fields.Add(
+		&core.NumberField{Name: "ingest_dir_interval_min", OnlyInt: true},
+		&core.BoolField{Name: "ingest_dir_delete_original"},
+	)
+	record := core.NewRecord(collection)
+	applyConfigToRecord(record, Config{})
+	if got := record.GetInt("ingest_dir_interval_min"); got != DefaultIngestDirIntervalMin {
+		t.Fatalf("ingest_dir_interval_min = %d, want %d", got, DefaultIngestDirIntervalMin)
 	}
 }
 

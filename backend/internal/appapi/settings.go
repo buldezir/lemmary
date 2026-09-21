@@ -44,6 +44,10 @@ type settingsResponse struct {
 	NearDuplicateDetectionEnabled bool    `json:"near_duplicate_detection_enabled"`
 	NearDuplicateThreshold        float64 `json:"near_duplicate_threshold"`
 	AlwaysRequireReview           bool    `json:"always_require_review"`
+	// The consume folder. Owner empty means the first admin's paired account.
+	IngestDirOwner          string `json:"ingest_dir_owner"`
+	IngestDirIntervalMin    int    `json:"ingest_dir_interval_min"`
+	IngestDirDeleteOriginal bool   `json:"ingest_dir_delete_original"`
 	// Branding lives in PocketBase's own settings, not the app_settings record:
 	// the name is what passkeys, emails and backups are stamped with.
 	AppName string `json:"app_name"`
@@ -71,6 +75,9 @@ type settingsPatchRequest struct {
 	NearDuplicateDetectionEnabled *bool    `json:"near_duplicate_detection_enabled"`
 	NearDuplicateThreshold        *float64 `json:"near_duplicate_threshold"`
 	AlwaysRequireReview           *bool    `json:"always_require_review"`
+	IngestDirOwner                *string  `json:"ingest_dir_owner"`
+	IngestDirIntervalMin          *int     `json:"ingest_dir_interval_min"`
+	IngestDirDeleteOriginal       *bool    `json:"ingest_dir_delete_original"`
 	AppName                       *string  `json:"app_name"`
 	Accent                        *string  `json:"accent"`
 }
@@ -235,6 +242,9 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 		NearDuplicateDetectionEnabled: cfg.NearDuplicateDetectionEnabled,
 		NearDuplicateThreshold:        threshold,
 		AlwaysRequireReview:           cfg.AlwaysRequireReview,
+		IngestDirOwner:                cfg.IngestDirOwner,
+		IngestDirIntervalMin:          cfg.IngestDirIntervalMin,
+		IngestDirDeleteOriginal:       cfg.IngestDirDeleteOriginal,
 	}
 }
 
@@ -337,6 +347,24 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	}
 	if req.AlwaysRequireReview != nil {
 		record.Set("always_require_review", *req.AlwaysRequireReview)
+	}
+	if req.IngestDirOwner != nil {
+		id := strings.TrimSpace(*req.IngestDirOwner)
+		if id != "" && app != nil {
+			if _, err := app.FindRecordById("users", id); err != nil {
+				return errInvalid("ingest_dir_owner is not a known user")
+			}
+		}
+		record.Set("ingest_dir_owner", id)
+	}
+	if req.IngestDirIntervalMin != nil {
+		if *req.IngestDirIntervalMin < 1 {
+			return errInvalid("ingest_dir_interval_min must be at least 1")
+		}
+		record.Set("ingest_dir_interval_min", *req.IngestDirIntervalMin)
+	}
+	if req.IngestDirDeleteOriginal != nil {
+		record.Set("ingest_dir_delete_original", *req.IngestDirDeleteOriginal)
 	}
 	if req.NearDuplicateThreshold != nil {
 		if *req.NearDuplicateThreshold <= 0 || *req.NearDuplicateThreshold > 1 {

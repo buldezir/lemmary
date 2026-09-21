@@ -10,7 +10,7 @@ import { tabClassName } from '../components/ui'
  */
 export function SettingsPage() {
   // unknown/failed meta counts as managed; see AppMeta.aiManaged
-  const { aiManaged } = useAppMeta()
+  const { aiManaged, ingestDir } = useAppMeta()
   const aiEditable = aiManaged === false
 
   return (
@@ -50,6 +50,12 @@ export function SettingsPage() {
         {aiEditable && (
           <Link to="/settings/duplicates" className={tabClassName}>
             Duplicates
+          </Link>
+        )}
+        {/* Only with INGEST_DIR set: without a folder there is nothing to configure. */}
+        {ingestDir && (
+          <Link to="/settings/ingest" className={tabClassName}>
+            Ingest
           </Link>
         )}
       </nav>
