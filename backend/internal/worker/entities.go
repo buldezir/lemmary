@@ -338,24 +338,27 @@ func matchTags(app core.App, userID string, names []string) (matched []string, d
 
 // First writer wins, so two tags that normalize alike resolve to the older one
 // instead of flipping with page order.
-const maxTagSuggestions = 3
+const (
+	maxTagSuggestions     = 3
+	maxTagSuggestionRunes = 100 // tags.name max length
+)
 
-// pendingTagSuggestions keeps the proposed names that are not already tags:
-// an existing name belongs in tags, where matchTags resolves it.
-func pendingTagSuggestions(app core.App, userID string, names []string) ([]string, error) {
-	index, err := tagIndexByKey(app, userID)
-	if err != nil {
-		return nil, err
-	}
+// pendingTagSuggestions turns the names matchTags could not resolve into the
+// proposals kept for the reviewer: control characters gone, trimmed, deduped
+// on the vocabulary's key, capped, and never longer than a tag name may be,
+// since each one is handed to the tags collection unchanged on accept.
+func pendingTagSuggestions(dropped []string) []string {
 	kept := make([]string, 0, maxTagSuggestions)
 	seen := map[string]struct{}{}
-	for _, raw := range names {
-		name := strings.TrimSpace(raw)
+	for _, raw := range dropped {
+		name := strings.TrimSpace(strings.Map(func(r rune) rune {
+			if unicode.IsControl(r) {
+				return -1
+			}
+			return r
+		}, raw))
 		key := normalizeNamedEntityKey(name)
-		if key == "" {
-			continue
-		}
-		if _, exists := index[key]; exists {
+		if key == "" || len([]rune(name)) > maxTagSuggestionRunes {
 			continue
 		}
 		if _, dup := seen[key]; dup {
@@ -367,7 +370,7 @@ func pendingTagSuggestions(app core.App, userID string, names []string) ([]strin
 			break
 		}
 	}
-	return kept, nil
+	return kept
 }
 
 func tagIndexByKey(app core.App, userID string) (map[string]string, error) {

@@ -91,6 +91,7 @@ export function useDocumentList({
   const [reprocessOverrides, setReprocessOverrides] = useState<JobOverrides>({})
   const [reprocessing, setReprocessing] = useState(false)
   const [markingReviewed, setMarkingReviewed] = useState(false)
+  const [acceptingSuggestionFor, setAcceptingSuggestionFor] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [libraryVersion, setLibraryVersion] = useState(0)
 
@@ -363,15 +364,21 @@ export function useDocumentList({
   }
 
   // The list reloads itself through notifyDocumentsChanged, so the accepted
-  // chip turns into a real tag on the card without a manual refresh.
-  async function onAcceptSuggestedTag(id: string, name: string, currentTagIds: string[]) {
+  // chip turns into a real tag on the card without a manual refresh. One
+  // accept per document at a time: a second click before the first settles
+  // would race it on the tag create.
+  async function onAcceptSuggestedTag(id: string, name: string) {
+    if (acceptingSuggestionFor) return
     try {
+      setAcceptingSuggestionFor(id)
       setError('')
       setMessage('')
-      await acceptSuggestedTag(id, name, currentTagIds)
+      await acceptSuggestedTag(id, name)
       setMessage(`Added tag "${name}".`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add the tag')
+    } finally {
+      setAcceptingSuggestionFor('')
     }
   }
 
@@ -465,6 +472,7 @@ export function useDocumentList({
     onReprocessSelected,
     onMarkReviewed,
     onAcceptSuggestedTag,
+    acceptingSuggestionFor,
     onDeleteSelected,
   }
 }

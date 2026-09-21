@@ -39,19 +39,14 @@ export async function createTag(name: string): Promise<TagRecord> {
 /**
  * The one place a tag is created outside /tags: accepting an AI suggestion on
  * a document awaiting review. Reuses a tag of the same name if one exists, then
- * adds it to the document. The status is left alone; "Mark reviewed" is still
- * the reviewer's call.
+ * appends it to the document with the `tags+` modifier, so a stale client copy
+ * of the relation is never written back over tags added meanwhile. The status
+ * is left alone; "Mark reviewed" is still the reviewer's call.
  */
-export async function acceptSuggestedTag(
-  documentId: string,
-  name: string,
-  currentTagIds: string[],
-): Promise<TagRecord> {
+export async function acceptSuggestedTag(documentId: string, name: string): Promise<TagRecord> {
   const key = tagKey(name)
   const tag = (await listTags()).find((t) => tagKey(t.name) === key) ?? (await createTag(name))
-  await pb.collection('documents').update(documentId, {
-    tags: [...new Set([...currentTagIds, tag.id])],
-  })
+  await pb.collection('documents').update(documentId, { 'tags+': tag.id })
   notifyDocumentsChanged()
   return tag
 }

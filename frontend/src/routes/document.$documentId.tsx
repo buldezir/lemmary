@@ -61,6 +61,7 @@ export function DocumentDetailPage() {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [markingReviewed, setMarkingReviewed] = useState(false)
+  const [acceptingSuggestion, setAcceptingSuggestion] = useState(false)
   const [reprocessing, setReprocessing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [reprocessSteps, setReprocessSteps] = useState<ProcessingStep[]>([])
@@ -402,21 +403,30 @@ export function DocumentDetailPage() {
     }
   }
 
-  // Hidden while editing too, since the picker then owns the tag list and a
-  // background write would fight the unsaved form.
+  // The chips hide while editing, but a click can still be in flight when the
+  // form unlocks. Then, like load(), the server copy must not replace the
+  // half-edited form; only the picker's selection learns about the new tag, so
+  // the eventual Save does not write the pre-accept list back over it.
   async function onAcceptSuggestedTag(name: string) {
-    if (!document) return
+    if (!document || acceptingSuggestion) return
     try {
+      setAcceptingSuggestion(true)
       setMessage('')
       setError('')
-      await acceptSuggestedTag(document.id, name, document.tags ?? [])
+      const tag = await acceptSuggestedTag(document.id, name)
       const refreshed = await pb.collection('documents').getOne<DocumentRecord>(document.id, {
         expand: 'tags,document_type,correspondent,duplicate_of',
       })
-      applyLoadedDocument(refreshed)
+      if (editingRef.current) {
+        setTagIds((current) => (current.includes(tag.id) ? current : [...current, tag.id]))
+      } else {
+        applyLoadedDocument(refreshed)
+      }
       setMessage(`Added tag "${name}".`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add the tag')
+    } finally {
+      setAcceptingSuggestion(false)
     }
   }
 
@@ -845,6 +855,7 @@ export function DocumentDetailPage() {
                     : []
                 }
                 onAcceptSuggestion={(name) => void onAcceptSuggestedTag(name)}
+                acceptingSuggestion={acceptingSuggestion}
               />
             </div>
 
@@ -938,6 +949,7 @@ function TagField({
   onChange,
   suggestions,
   onAcceptSuggestion,
+  acceptingSuggestion,
 }: {
   editing: boolean
   /** null until the vocabulary loads, and if it fails. */
@@ -949,6 +961,7 @@ function TagField({
   onChange: (next: string[]) => void
   suggestions: string[]
   onAcceptSuggestion: (name: string) => void
+  acceptingSuggestion: boolean
 }) {
   const byId = new Map([...known, ...(vocabulary ?? [])].map((tag) => [tag.id, tag]))
   // An id with no name behind it is a tag deleted since the document loaded.
@@ -985,7 +998,7 @@ function TagField({
         </ul>
       )}
 
-      <SuggestedTags names={suggestions} onAccept={onAcceptSuggestion} />
+      <SuggestedTags names={suggestions} disabled={acceptingSuggestion} onAccept={onAcceptSuggestion} />
 
       {editing && vocabularyError && (
         <p className="text-sm font-normal text-madder">

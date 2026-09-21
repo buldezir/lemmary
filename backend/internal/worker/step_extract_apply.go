@@ -213,7 +213,14 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 		state.Document.Set("document_date", metadata.DocumentDate)
 	}
 
-	tagIDs, droppedTags, err := matchTags(state.App, state.Document.GetString("user"), metadata.Tags)
+	// In review mode the proposals join the closed list: a proposal naming an
+	// existing tag is that tag, and an invented name the model put in tags is
+	// still a proposal. Off, nobody would accept one, so they are discarded.
+	tagNames := metadata.Tags
+	if state.Cfg.AlwaysRequireReview {
+		tagNames = append(append([]string{}, metadata.Tags...), metadata.SuggestedTags...)
+	}
+	tagIDs, droppedTags, err := matchTags(state.App, state.Document.GetString("user"), tagNames)
 	if err != nil {
 		return fmt.Errorf("tags: %w", err)
 	}
@@ -222,13 +229,11 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 	// absent name is the archive telling its owner which tag to create.
 	state.Logger.Info("tags applied", "count", len(tagIDs), "dropped", droppedTags)
 
-	if len(metadata.SuggestedTags) > 0 {
-		metadata.SuggestedTags, err = pendingTagSuggestions(state.App, state.Document.GetString("user"), metadata.SuggestedTags)
-		if err != nil {
-			return fmt.Errorf("suggested tags: %w", err)
-		}
-		saveMetadataJSON(state.Job, metadata)
+	metadata.SuggestedTags = nil
+	if state.Cfg.AlwaysRequireReview {
+		metadata.SuggestedTags = pendingTagSuggestions(droppedTags)
 	}
+	saveMetadataJSON(state.Job, metadata)
 
 	lowConfidence := metadata.Confidence < minExtractionConfidence
 

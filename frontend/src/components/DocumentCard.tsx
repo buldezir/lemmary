@@ -24,7 +24,9 @@ type Props = {
    */
   job?: ProcessingJobRecord
   /** Omit to hide the AI's tag suggestions. */
-  onAcceptSuggestedTag?: (id: string, name: string, currentTagIds: string[]) => void
+  onAcceptSuggestedTag?: (id: string, name: string) => void
+  /** An accept is in flight for this document; its chips wait for it. */
+  acceptingSuggestion?: boolean
 }
 
 /** Filled badge and a card edged to match, except for the resting state. */
@@ -88,6 +90,7 @@ export function DocumentCard({
   onFilterTag,
   job,
   onAcceptSuggestedTag,
+  acceptingSuggestion,
 }: Props) {
   const tags = document.expand?.tags ?? []
   const suggestions =
@@ -180,9 +183,9 @@ export function DocumentCard({
         {/* Above the full-bleed link, like the tag filter chips. */}
         <SuggestedTags
           names={suggestions}
-          disabled={markingReviewed}
+          disabled={markingReviewed || acceptingSuggestion}
           className="relative z-10 pointer-events-auto"
-          onAccept={(name) => onAcceptSuggestedTag?.(document.id, name, document.tags ?? [])}
+          onAccept={(name) => onAcceptSuggestedTag?.(document.id, name)}
         />
 
         {canMarkReviewed && (

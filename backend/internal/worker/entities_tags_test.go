@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/pocketbase/pocketbase"
@@ -129,22 +130,16 @@ func TestMatchTagsRequiresAUser(t *testing.T) {
 	}
 }
 
-func TestPendingTagSuggestionsDropsExistingAndDuplicates(t *testing.T) {
-	app := bootTagTestApp(t)
-	owner := createTagUser(t, app, "owner@example.com")
-	createTag(t, app, "Invoices", owner)
-
-	kept, err := pendingTagSuggestions(app, owner, []string{
-		"invoices", // exists already, belongs in tags
+func TestPendingTagSuggestionsCleansAndCaps(t *testing.T) {
+	kept := pendingTagSuggestions([]string{
 		"Warranty",
 		" warranty ", // same suggestion twice
 		"  ",
-		"Garden", "Car", "Boat", // past the cap of three
+		"Hea\x00ting\n",          // control characters stripped
+		strings.Repeat("x", 101), // longer than a tag name may be
+		"Garden", "Boat",         // Boat is past the cap of three
 	})
-	if err != nil {
-		t.Fatalf("pendingTagSuggestions: %v", err)
-	}
-	want := []string{"Warranty", "Garden", "Car"}
+	want := []string{"Warranty", "Heating", "Garden"}
 	if len(kept) != len(want) {
 		t.Fatalf("kept = %v, want %v", kept, want)
 	}
