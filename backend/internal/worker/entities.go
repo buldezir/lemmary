@@ -338,6 +338,38 @@ func matchTags(app core.App, userID string, names []string) (matched []string, d
 
 // First writer wins, so two tags that normalize alike resolve to the older one
 // instead of flipping with page order.
+const maxTagSuggestions = 3
+
+// pendingTagSuggestions keeps the proposed names that are not already tags:
+// an existing name belongs in tags, where matchTags resolves it.
+func pendingTagSuggestions(app core.App, userID string, names []string) ([]string, error) {
+	index, err := tagIndexByKey(app, userID)
+	if err != nil {
+		return nil, err
+	}
+	kept := make([]string, 0, maxTagSuggestions)
+	seen := map[string]struct{}{}
+	for _, raw := range names {
+		name := strings.TrimSpace(raw)
+		key := normalizeNamedEntityKey(name)
+		if key == "" {
+			continue
+		}
+		if _, exists := index[key]; exists {
+			continue
+		}
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		kept = append(kept, name)
+		if len(kept) == maxTagSuggestions {
+			break
+		}
+	}
+	return kept, nil
+}
+
 func tagIndexByKey(app core.App, userID string) (map[string]string, error) {
 	index := map[string]string{}
 	offset := 0

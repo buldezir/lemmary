@@ -129,6 +129,32 @@ func TestMatchTagsRequiresAUser(t *testing.T) {
 	}
 }
 
+func TestPendingTagSuggestionsDropsExistingAndDuplicates(t *testing.T) {
+	app := bootTagTestApp(t)
+	owner := createTagUser(t, app, "owner@example.com")
+	createTag(t, app, "Invoices", owner)
+
+	kept, err := pendingTagSuggestions(app, owner, []string{
+		"invoices", // exists already, belongs in tags
+		"Warranty",
+		" warranty ", // same suggestion twice
+		"  ",
+		"Garden", "Car", "Boat", // past the cap of three
+	})
+	if err != nil {
+		t.Fatalf("pendingTagSuggestions: %v", err)
+	}
+	want := []string{"Warranty", "Garden", "Car"}
+	if len(kept) != len(want) {
+		t.Fatalf("kept = %v, want %v", kept, want)
+	}
+	for i := range want {
+		if kept[i] != want[i] {
+			t.Fatalf("kept[%d] = %q, want %q", i, kept[i], want[i])
+		}
+	}
+}
+
 func TestListTagNamesEmptyUser(t *testing.T) {
 	names, err := listTagNames(nil, "  ")
 	if err != nil {

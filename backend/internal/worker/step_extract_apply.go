@@ -73,6 +73,7 @@ func (s *ExtractMetadataStep) Run(ctx context.Context, state *StepState) error {
 	if err != nil {
 		return err
 	}
+	catalog.SuggestNewTags = state.Cfg.AlwaysRequireReview
 
 	state.Logger.Info("starting AI extraction",
 		"provider", s.Extractor.Name(),
@@ -220,6 +221,14 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 	// The model ignoring its catalog: a document that keeps proposing the same
 	// absent name is the archive telling its owner which tag to create.
 	state.Logger.Info("tags applied", "count", len(tagIDs), "dropped", droppedTags)
+
+	if len(metadata.SuggestedTags) > 0 {
+		metadata.SuggestedTags, err = pendingTagSuggestions(state.App, state.Document.GetString("user"), metadata.SuggestedTags)
+		if err != nil {
+			return fmt.Errorf("suggested tags: %w", err)
+		}
+		saveMetadataJSON(state.Job, metadata)
+	}
 
 	lowConfidence := metadata.Confidence < minExtractionConfidence
 

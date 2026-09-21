@@ -135,6 +135,16 @@ func TestParseExtractedMetadataDropsUnusableDate(t *testing.T) {
 	}
 }
 
+func TestParseExtractedMetadataSuggestedTags(t *testing.T) {
+	metadata, err := models.ParseExtractedMetadata(`{"title": "Boiler warranty", "suggested_tags": ["warranty", "heating"], "confidence": 0.9}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(metadata.SuggestedTags) != 2 || metadata.SuggestedTags[0] != "warranty" {
+		t.Fatalf("suggested_tags = %v", metadata.SuggestedTags)
+	}
+}
+
 func TestParseExtractedMetadataValidDateReportsNoNotes(t *testing.T) {
 	raw := `{"title":"Invoice 001","document_date":"2024-03-15","confidence":0.9}`
 

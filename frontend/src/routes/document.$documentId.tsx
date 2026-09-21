@@ -13,7 +13,9 @@ import {
   type DocumentRecord,
   type JobOverrides,
 } from '../lib/api/documents'
-import { listTags, type TagRecord } from '../lib/api/tags'
+import { acceptSuggestedTag, listTags, type TagRecord } from '../lib/api/tags'
+import { pendingTagSuggestions } from '../lib/tagSuggestions'
+import { SuggestedTags } from '../components/SuggestedTags'
 import { StepBindingOverride } from '../components/BindingOverride'
 import { Combobox } from '../components/Combobox'
 import { useAsync } from '../hooks/useAsync'
@@ -397,6 +399,24 @@ export function DocumentDetailPage() {
       setError(err instanceof Error ? err.message : 'Could not mark as reviewed')
     } finally {
       setMarkingReviewed(false)
+    }
+  }
+
+  // Hidden while editing too, since the picker then owns the tag list and a
+  // background write would fight the unsaved form.
+  async function onAcceptSuggestedTag(name: string) {
+    if (!document) return
+    try {
+      setMessage('')
+      setError('')
+      await acceptSuggestedTag(document.id, name, document.tags ?? [])
+      const refreshed = await pb.collection('documents').getOne<DocumentRecord>(document.id, {
+        expand: 'tags,document_type,correspondent,duplicate_of',
+      })
+      applyLoadedDocument(refreshed)
+      setMessage(`Added tag "${name}".`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add the tag')
     }
   }
 
@@ -816,6 +836,15 @@ export function DocumentDetailPage() {
                 known={document.expand?.tags ?? []}
                 selected={tagIds}
                 onChange={setTagIds}
+                suggestions={
+                  !editing && document.processing_status === 'needs_review'
+                    ? pendingTagSuggestions(
+                        job,
+                        (document.expand?.tags ?? []).map((tag) => tag.name),
+                      )
+                    : []
+                }
+                onAcceptSuggestion={(name) => void onAcceptSuggestedTag(name)}
               />
             </div>
 
@@ -894,7 +923,9 @@ export function DocumentDetailPage() {
 
 /**
  * Tags are created only on /tags, so this offers what exists and nothing more,
- * and an empty vocabulary sends the reader there. The chips do not wait for the
+ * and an empty vocabulary sends the reader there. The one exception is the
+ * AI's suggestions on a document awaiting review: accepting one creates the
+ * tag. The chips do not wait for the
  * vocabulary: the document's own expand carries the names it has, and a row
  * blanked mid-request would pretend a tagged document has no tags.
  */
@@ -905,6 +936,8 @@ function TagField({
   known,
   selected,
   onChange,
+  suggestions,
+  onAcceptSuggestion,
 }: {
   editing: boolean
   /** null until the vocabulary loads, and if it fails. */
@@ -914,6 +947,8 @@ function TagField({
   known: TagRecord[]
   selected: string[]
   onChange: (next: string[]) => void
+  suggestions: string[]
+  onAcceptSuggestion: (name: string) => void
 }) {
   const byId = new Map([...known, ...(vocabulary ?? [])].map((tag) => [tag.id, tag]))
   // An id with no name behind it is a tag deleted since the document loaded.
@@ -949,6 +984,8 @@ function TagField({
           ))}
         </ul>
       )}
+
+      <SuggestedTags names={suggestions} onAccept={onAcceptSuggestion} />
 
       {editing && vocabularyError && (
         <p className="text-sm font-normal text-madder">

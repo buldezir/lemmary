@@ -3,6 +3,7 @@ import { pb } from '../pb'
 import { ensureAuth } from '../auth'
 import { apiFetch, pollJob } from '../apiClient'
 import { notifyDocumentsChanged } from '../documentEvents'
+import { tagKey } from '../tagSuggestions'
 
 export type TagRecord = {
   id: string
@@ -33,6 +34,26 @@ export async function createTag(name: string): Promise<TagRecord> {
   } catch (err) {
     throw duplicateNameError(err, name)
   }
+}
+
+/**
+ * The one place a tag is created outside /tags: accepting an AI suggestion on
+ * a document awaiting review. Reuses a tag of the same name if one exists, then
+ * adds it to the document. The status is left alone; "Mark reviewed" is still
+ * the reviewer's call.
+ */
+export async function acceptSuggestedTag(
+  documentId: string,
+  name: string,
+  currentTagIds: string[],
+): Promise<TagRecord> {
+  const key = tagKey(name)
+  const tag = (await listTags()).find((t) => tagKey(t.name) === key) ?? (await createTag(name))
+  await pb.collection('documents').update(documentId, {
+    tags: [...new Set([...currentTagIds, tag.id])],
+  })
+  notifyDocumentsChanged()
+  return tag
 }
 
 export async function renameTag(id: string, name: string): Promise<TagRecord> {

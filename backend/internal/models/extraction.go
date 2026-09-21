@@ -21,10 +21,13 @@ type ExtractedMetadata struct {
 	Correspondent           string   `json:"correspondent"`
 	CorrespondentTranslated string   `json:"correspondent_translated"`
 	Tags                    []string `json:"tags"`
-	PeopleOrOrganizations   []string `json:"people_or_organizations"`
-	Summary                 string   `json:"summary"`
-	SummaryTranslated       string   `json:"summary_translated"`
-	Confidence              float64  `json:"confidence"`
+	// New tag names the model proposes, asked for only in review mode. Never
+	// applied to the document; the reviewer accepts them one by one.
+	SuggestedTags         []string `json:"suggested_tags,omitempty"`
+	PeopleOrOrganizations []string `json:"people_or_organizations"`
+	Summary               string   `json:"summary"`
+	SummaryTranslated     string   `json:"summary_translated"`
+	Confidence            float64  `json:"confidence"`
 }
 
 func (m *ExtractedMetadata) Populated() bool {

@@ -366,6 +366,29 @@ func TestExtractMetadataSendsAdminRules(t *testing.T) {
 	}
 }
 
+// suggested_tags is asked for only in review mode: without a reviewer nobody
+// would ever accept a proposal, and the closed tags array stays closed either way.
+func TestBuildExtractionSystemPromptSuggestsNewTagsOnlyOnRequest(t *testing.T) {
+	t.Parallel()
+	catalog := ExtractionCatalog{Tags: []string{"Invoices"}}
+
+	if prompt := buildExtractionSystemPrompt("", "", catalog); strings.Contains(prompt, "suggested_tags") {
+		t.Fatalf("suggested_tags asked for without SuggestNewTags:\n%s", prompt)
+	}
+
+	catalog.SuggestNewTags = true
+	prompt := buildExtractionSystemPrompt("", "", catalog)
+	for _, want := range []string{
+		"suggested_tags (array of strings)",
+		"NOT in the existing tags list",
+		"Keep tags itself restricted to the list above",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("expected %q in the review-mode prompt, got:\n%s", want, prompt)
+		}
+	}
+}
+
 func TestExtractMetadataCoercesPartialDocumentDate(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
