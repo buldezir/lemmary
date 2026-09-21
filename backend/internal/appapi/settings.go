@@ -358,8 +358,8 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 		record.Set("ingest_dir_owner", id)
 	}
 	if req.IngestDirIntervalMin != nil {
-		if *req.IngestDirIntervalMin < 1 {
-			return errInvalid("ingest_dir_interval_min must be at least 1")
+		if !config.ValidIngestInterval(*req.IngestDirIntervalMin) {
+			return errInvalid("ingest_dir_interval_min must be 1-59 minutes or whole hours up to 1440")
 		}
 		record.Set("ingest_dir_interval_min", *req.IngestDirIntervalMin)
 	}

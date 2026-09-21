@@ -80,7 +80,19 @@ type Config struct {
 
 const DefaultNearDuplicateThreshold = 0.92
 
-const DefaultIngestDirIntervalMin = 5
+const (
+	DefaultIngestDirIntervalMin = 5
+	MaxIngestDirIntervalMin     = 24 * 60
+)
+
+// ValidIngestInterval is what a cron expression can say: any number of minutes
+// under an hour, whole hours up to a day.
+func ValidIngestInterval(minutes int) bool {
+	if minutes < 1 || minutes > MaxIngestDirIntervalMin {
+		return false
+	}
+	return minutes < 60 || minutes%60 == 0
+}
 
 func WorkerCronFromEnv() string {
 	return getEnv("WORKER_CRON_EXPR", "* * * * *")

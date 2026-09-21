@@ -33,8 +33,9 @@ export function SettingsIngestPage() {
     if (!form) return
 
     const interval = Number(form.ingest_dir_interval_min)
-    if (!Number.isInteger(interval) || interval < 1) {
-      setError('Scan interval must be a whole number of minutes, at least 1')
+    // Mirrors config.ValidIngestInterval: what a cron expression can say.
+    if (!Number.isInteger(interval) || interval < 1 || interval > 1440 || (interval >= 60 && interval % 60 !== 0)) {
+      setError('Scan interval must be 1-59 minutes, or whole hours (60, 120, … 1440)')
       return
     }
 
@@ -96,6 +97,7 @@ export function SettingsIngestPage() {
               <input
                 type="number"
                 min={1}
+                max={1440}
                 step={1}
                 className={inputClassName}
                 value={form.ingest_dir_interval_min}
@@ -103,8 +105,8 @@ export function SettingsIngestPage() {
               />
             </label>
             <p className={fieldHintClassName}>
-              Files changed in the last 30 seconds wait for the next scan, so nothing is picked up
-              half-written.
+              1&ndash;59 minutes, or whole hours up to 1440 (once a day). Files changed in the
+              last 30 seconds wait for the next scan, so nothing is picked up half-written.
             </p>
           </div>
         </div>

@@ -4,13 +4,17 @@
 package dirimport
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -51,6 +55,8 @@ type Scanner struct {
 	// Files already known to be duplicates or refused, so keep mode does not
 	// reopen and rehash them every scan. Only the scan goroutine touches it.
 	seen map[string]fileStamp
+	// seenKey is the owner and delete flag seen was built under.
+	seenKey string
 }
 
 const cronJob = "dir_ingest"
@@ -73,15 +79,18 @@ func Register(app core.App, rt *config.Runtime, dir string) {
 	app.Logger().Info("consume folder registered", "dir", dir)
 }
 
-// cronExpr is every N minutes up to an hour, then every N/60 hours.
+// cronExpr renders an interval config.ValidIngestInterval accepted: every N
+// minutes under an hour, every N/60 hours under a day, once a day at 1440.
 func cronExpr(minutes int) string {
 	switch {
 	case minutes <= 1:
 		return "* * * * *"
 	case minutes < 60:
 		return fmt.Sprintf("*/%d * * * *", minutes)
+	case minutes < config.MaxIngestDirIntervalMin:
+		return fmt.Sprintf("0 */%d * * *", minutes/60)
 	default:
-		return fmt.Sprintf("0 */%d * * *", min(minutes/60, 23))
+		return "0 0 * * *"
 	}
 }
 
@@ -109,6 +118,13 @@ func (s *Scanner) Scan(cfg config.Config, now time.Time) Result {
 	ownerID := resolveOwner(s.app, cfg.IngestDirOwner)
 	if ownerID == "" {
 		return res
+	}
+	// What was skipped for one owner or in keep mode is a decision for that
+	// configuration only: a new owner has none of these files, and delete mode
+	// still owes the folder a clean-up.
+	if key := fmt.Sprintf("%s|%t", ownerID, cfg.IngestDirDeleteOriginal); key != s.seenKey {
+		s.seen = map[string]fileStamp{}
+		s.seenKey = key
 	}
 	tags, err := loadTagKeys(s.app, ownerID)
 	if err != nil {
@@ -154,9 +170,17 @@ func (s *Scanner) Scan(cfg config.Config, now time.Time) Result {
 			return nil
 		}
 
-		checksum, err := hashFile(path)
+		data, err := readRegular(path)
 		if err != nil {
-			logger.Warn("consume folder: hash failed", "path", path, "error", err)
+			if errors.Is(err, errTooLarge) {
+				res.Failed++
+				s.seen[path] = stamp
+			}
+			logger.Warn("consume folder: read failed", "path", path, "error", err)
+			return nil
+		}
+		checksum, err := duplicates.SHA256Reader(bytes.NewReader(data))
+		if err != nil {
 			return nil
 		}
 		existing, err := duplicates.FindByChecksum(s.app, ownerID, checksum, "")
@@ -176,7 +200,7 @@ func (s *Scanner) Scan(cfg config.Config, now time.Time) Result {
 			logger.Warn("consume folder: tag lookup failed", "path", path, "error", err)
 			return nil
 		}
-		err = createDocument(s.app, ownerID, path, checksum, tagIDs)
+		err = createDocument(s.app, ownerID, filepath.Base(path), data, checksum, tagIDs)
 		var dup *duplicates.ErrDuplicate
 		switch {
 		case err == nil:
@@ -192,7 +216,12 @@ func (s *Scanner) Scan(cfg config.Config, now time.Time) Result {
 			return stop
 		default:
 			res.Failed++
-			s.seen[path] = stamp
+			// A validation refusal (wrong content for the extension, over a
+			// per-file limit) is about the file and stays refused; anything else
+			// may be transient and is retried next scan.
+			if rejected(err) {
+				s.seen[path] = stamp
+			}
 			logger.Warn("consume folder: import failed", "path", path, "error", err)
 		}
 		return nil
@@ -258,25 +287,36 @@ func (s *Scanner) tagsFor(ownerID, path string, keys map[string]string) ([]strin
 	return ids, nil
 }
 
-func hashFile(path string) (string, error) {
-	f, err := os.Open(path)
+var errTooLarge = errors.New("file exceeds the document size limit")
+
+// readRegular reads the file the walk saw, and only that: the entry is opened
+// without following a symlink swapped in after the walk, checked to still be a
+// regular file, and refused above the documents.file cap before a byte is read.
+func readRegular(path string) ([]byte, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer f.Close()
-	return duplicates.SHA256Reader(f)
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("not a regular file")
+	}
+	if info.Size() > models.MaxFileBytes {
+		return nil, errTooLarge
+	}
+	return io.ReadAll(f)
 }
 
-func createDocument(app core.App, ownerID, path, checksum string, tagIDs []string) error {
+func createDocument(app core.App, ownerID, name string, data []byte, checksum string, tagIDs []string) error {
 	collection, err := app.FindCollectionByNameOrId("documents")
 	if err != nil {
 		return err
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	fsFile, err := filesystem.NewFileFromBytes(data, filepath.Base(path))
+	fsFile, err := filesystem.NewFileFromBytes(data, name)
 	if err != nil {
 		return err
 	}
@@ -298,7 +338,10 @@ func roomExhausted(err error) bool {
 	if !errors.As(err, &apiErr) {
 		return false
 	}
-	exceeded, ok := apiErr.Data["limit"].(*limits.ErrExceeded)
+	// Data is the client-safe rendering; the *ErrExceeded survives only in the
+	// raw map the limits hook handed to NewBadRequestError.
+	raw, _ := apiErr.RawData().(map[string]any)
+	exceeded, ok := raw["limit"].(*limits.ErrExceeded)
 	if !ok {
 		return false
 	}
@@ -307,4 +350,11 @@ func roomExhausted(err error) bool {
 		return true
 	}
 	return false
+}
+
+// rejected is a 400 from the create hooks or PocketBase's field validation:
+// the file itself was refused, so retrying it changes nothing.
+func rejected(err error) bool {
+	var apiErr *router.ApiError
+	return errors.As(err, &apiErr) && apiErr.Status == http.StatusBadRequest
 }
