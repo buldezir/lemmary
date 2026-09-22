@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
-
-	"lemmary/backend/internal/inflight"
 )
 
 // ErrNotLoaded reports a flush attempted before the vault was materialised.
@@ -157,7 +155,9 @@ func (v *Vault) flush(reason string, fail failPoint) error {
 	v.mu.Unlock()
 	v.dirty.reset()
 	v.flushes.add(1)
-	inflight.Sealed(started)
+	if v.seal != nil {
+		v.seal.Sealed(started)
+	}
 
 	collected, gcErr := v.collectGarbage()
 	if gcErr != nil {

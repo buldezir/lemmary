@@ -46,7 +46,6 @@ type Scanner struct {
 	rt      *config.Runtime
 	dir     string
 	running atomic.Bool
-	durable func(time.Time) bool
 	// Files this process already decided about, by size and mtime, so neither
 	// mode reopens them every scan. Only the scan goroutine touches these maps.
 	seen map[string]string
@@ -60,7 +59,7 @@ type Scanner struct {
 }
 
 func newScanner(app core.App, rt *config.Runtime, dir string) *Scanner {
-	return &Scanner{app: app, rt: rt, dir: dir, durable: inflight.Durable, seen: map[string]string{},
+	return &Scanner{app: app, rt: rt, dir: dir, seen: map[string]string{},
 		pending: map[string]time.Time{}, warned: map[string]bool{}}
 }
 
@@ -270,6 +269,11 @@ func (s *Scanner) removeSealed() {
 			s.app.Logger().Warn("consume folder: delete original failed; keeping files", "path", path, "error", err)
 		}
 	}
+}
+
+func (s *Scanner) durable(saved time.Time) bool {
+	seal, ok := s.app.Store().Get(inflight.SealStoreKey).(*inflight.Seal)
+	return !ok || seal.Durable(saved)
 }
 
 func (s *Scanner) warnOnce(key, msg string, args ...any) {

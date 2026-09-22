@@ -14,6 +14,7 @@ import (
 
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/duplicates"
+	"lemmary/backend/internal/inflight"
 	"lemmary/backend/internal/limits"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/testpb"
@@ -321,8 +322,12 @@ func TestKeepModeLedgerOutlivesTheProcessAndTheDocument(t *testing.T) {
 // vault has sealed the new document, so delete mode waits for that.
 func TestDeleteModeWaitsUntilTheDocumentIsSealed(t *testing.T) {
 	s, _ := scannerWithAdmin(t)
-	sealed := false
-	s.durable = func(time.Time) bool { return sealed }
+	seal := inflight.NewSeal()
+	s.app.Store().Set(inflight.SealStoreKey, seal)
+	s.app.OnRecordAfterCreateSuccess().BindFunc(func(e *core.RecordEvent) error {
+		seal.Wrote()
+		return e.Next()
+	})
 	path := drop(t, s.dir, "a.txt", "only copy")
 
 	cfg := config.Config{IngestDirDeleteOriginal: true}
@@ -332,7 +337,7 @@ func TestDeleteModeWaitsUntilTheDocumentIsSealed(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("original removed before its document was sealed: %v", err)
 	}
-	sealed = true
+	seal.Sealed(time.Now().UnixNano())
 	if res := s.Scan(cfg, time.Now()); res != (Result{}) {
 		t.Fatalf("second scan = %+v, want the pending original not re-imported", res)
 	}
