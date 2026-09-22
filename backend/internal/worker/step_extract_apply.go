@@ -234,6 +234,9 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 		metadata.SuggestedTags = pendingTagSuggestions(droppedTags)
 	}
 	saveMetadataJSON(state.Job, metadata)
+	if err := state.App.Save(state.Job); err != nil {
+		return fmt.Errorf("save metadata snapshot: %w", err)
+	}
 
 	lowConfidence := metadata.Confidence < minExtractionConfidence
 

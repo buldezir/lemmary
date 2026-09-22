@@ -44,11 +44,23 @@ export async function createTag(name: string): Promise<TagRecord> {
  * is left alone; "Mark reviewed" is still the reviewer's call.
  */
 export async function acceptSuggestedTag(documentId: string, name: string): Promise<TagRecord> {
-  const key = tagKey(name)
-  const tag = (await listTags()).find((t) => tagKey(t.name) === key) ?? (await createTag(name))
+  let tag = await findTagByKey(name)
+  if (!tag) {
+    try {
+      tag = await createTag(name)
+    } catch (err) {
+      tag = await findTagByKey(name)
+      if (!tag) throw err
+    }
+  }
   await pb.collection('documents').update(documentId, { 'tags+': tag.id })
   notifyDocumentsChanged()
   return tag
+}
+
+async function findTagByKey(name: string): Promise<TagRecord | undefined> {
+  const key = tagKey(name)
+  return (await listTags()).find((t) => tagKey(t.name) === key)
 }
 
 export async function renameTag(id: string, name: string): Promise<TagRecord> {

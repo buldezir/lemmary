@@ -25,7 +25,7 @@ type Props = {
   job?: ProcessingJobRecord
   /** Omit to hide the AI's tag suggestions. */
   onAcceptSuggestedTag?: (id: string, name: string) => void
-  /** An accept is in flight for this document; its chips wait for it. */
+  /** An accept is in flight; the chips wait for it. */
   acceptingSuggestion?: boolean
 }
 
@@ -149,7 +149,7 @@ export function DocumentCard({
 
         <CardDescription document={document} />
 
-        <ProcessingStatus summary={summarizeJob(job)} />
+        <ProcessingStatus summary={summarizeJob(document.processing_status === 'failed' ? job : null)} />
 
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">

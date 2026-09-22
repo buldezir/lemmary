@@ -23,11 +23,25 @@ type ExtractedMetadata struct {
 	Tags                    []string `json:"tags"`
 	// New tag names the model proposes, asked for only in review mode. Never
 	// applied to the document; the reviewer accepts them one by one.
-	SuggestedTags         []string `json:"suggested_tags,omitempty"`
-	PeopleOrOrganizations []string `json:"people_or_organizations"`
-	Summary               string   `json:"summary"`
-	SummaryTranslated     string   `json:"summary_translated"`
-	Confidence            float64  `json:"confidence"`
+	SuggestedTags         lenientStrings `json:"suggested_tags,omitempty"`
+	PeopleOrOrganizations []string       `json:"people_or_organizations"`
+	Summary               string         `json:"summary"`
+	SummaryTranslated     string         `json:"summary_translated"`
+	Confidence            float64        `json:"confidence"`
+}
+
+type lenientStrings []string
+
+func (s *lenientStrings) UnmarshalJSON(data []byte) error {
+	*s = nil
+	var items []any
+	_ = json.Unmarshal(data, &items)
+	for _, item := range items {
+		if name, ok := item.(string); ok {
+			*s = append(*s, name)
+		}
+	}
+	return nil
 }
 
 func (m *ExtractedMetadata) Populated() bool {

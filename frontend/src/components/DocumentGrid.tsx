@@ -35,7 +35,7 @@ export function DocumentGrid({
     onReprocessSelected,
     onMarkReviewed,
     onAcceptSuggestedTag,
-    acceptingSuggestionFor,
+    acceptingSuggestion,
     onDeleteSelected,
     filterByTag,
     page,
@@ -76,7 +76,7 @@ export function DocumentGrid({
             markingReviewed={markingReviewed}
             onFilterTag={filterByTag}
             onAcceptSuggestedTag={(id, name) => void onAcceptSuggestedTag(id, name)}
-            acceptingSuggestion={acceptingSuggestionFor === document.id}
+            acceptingSuggestion={acceptingSuggestion}
           />
         ))}
       </div>

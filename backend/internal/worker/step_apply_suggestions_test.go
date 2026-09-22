@@ -62,7 +62,11 @@ func TestApplyMetadataRoutesSuggestedTags(t *testing.T) {
 		if err := (&ApplyMetadataStep{}).Run(context.Background(), state); err != nil {
 			t.Fatalf("apply: %v", err)
 		}
-		saved, err := loadMetadataJSON(job)
+		stored, err := app.FindRecordById("processing_jobs", job.Id)
+		if err != nil {
+			t.Fatalf("the job must be saved before the document wakes the reviewer's page: %v", err)
+		}
+		saved, err := loadMetadataJSON(stored)
 		if err != nil {
 			t.Fatal(err)
 		}

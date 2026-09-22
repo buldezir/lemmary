@@ -405,8 +405,9 @@ export function DocumentDetailPage() {
 
   // The chips hide while editing, but a click can still be in flight when the
   // form unlocks. Then, like load(), the server copy must not replace the
-  // half-edited form; only the picker's selection learns about the new tag, so
-  // the eventual Save does not write the pre-accept list back over it.
+  // half-edited form; only the picker's selection and its known tags learn
+  // about the new one, so the chip has a name and the eventual Save does not
+  // write the pre-accept list back over it.
   async function onAcceptSuggestedTag(name: string) {
     if (!document || acceptingSuggestion) return
     try {
@@ -414,10 +415,16 @@ export function DocumentDetailPage() {
       setMessage('')
       setError('')
       const tag = await acceptSuggestedTag(document.id, name)
+      // requestKey null, as in onSave: the PATCH wakes the realtime load().
       const refreshed = await pb.collection('documents').getOne<DocumentRecord>(document.id, {
         expand: 'tags,document_type,correspondent,duplicate_of',
+        requestKey: null,
       })
       if (editingRef.current) {
+        loadedRef.current = refreshed
+        setDocument((current) =>
+          current && { ...current, expand: { ...current.expand, tags: refreshed.expand?.tags ?? [] } },
+        )
         setTagIds((current) => (current.includes(tag.id) ? current : [...current, tag.id]))
       } else {
         applyLoadedDocument(refreshed)
