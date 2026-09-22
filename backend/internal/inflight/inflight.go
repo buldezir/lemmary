@@ -16,6 +16,8 @@ package inflight
 import (
 	"context"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 // Tracker counts active units of work. The zero value is ready to use.
@@ -85,3 +87,35 @@ func Begin() (done func()) { return std.Begin() }
 func Wait(ctx context.Context) error { return std.Wait(ctx) }
 
 func Active() int { return std.Active() }
+
+// With encryption at rest a saved record is only on the volume once a flush
+// that began after the save has committed; until then a hard kill loses it.
+// Work that destroys the only other copy (a consumed original) waits for that.
+var (
+	sealing   atomic.Bool
+	sealedAt  atomic.Int64
+	lastWrite atomic.Int64
+)
+
+// RequireSeal is called by the vault when it is enabled. Everything already in
+// the working directory came out of the vault, so it counts as sealed.
+func RequireSeal() {
+	sealedAt.Store(time.Now().UnixNano())
+	sealing.Store(true)
+}
+
+// Wrote records a committed write the vault has yet to seal.
+func Wrote() { lastWrite.Store(time.Now().UnixNano()) }
+
+// Sealed records a committed flush that began at startedUnixNano.
+func Sealed(startedUnixNano int64) { sealedAt.Store(startedUnixNano) }
+
+// Durable reports whether a write finished at t survives a hard kill: a flush
+// began after it, or nothing was written since the last flush began.
+func Durable(t time.Time) bool {
+	if !sealing.Load() {
+		return true
+	}
+	sealed := sealedAt.Load()
+	return t.UnixNano() < sealed || lastWrite.Load() < sealed
+}

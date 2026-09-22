@@ -283,12 +283,12 @@ func TestPatchIngestDirFields(t *testing.T) {
 	t.Parallel()
 	record := settingsRecordForTest(t)
 
-	for _, bad := range []int{0, 90, 1441} {
+	for _, bad := range []int{0, 45, 90, 420, 1441} {
 		if err := applySettingsPatch(nil, record, settingsPatchRequest{IngestDirIntervalMin: intptr(bad)}); err == nil {
-			t.Fatalf("expected interval %d to be refused: not expressible as a cron schedule", bad)
+			t.Fatalf("expected interval %d to be refused: a cron step cannot space it evenly", bad)
 		}
 	}
-	for _, good := range []int{1, 59, 60, 180, 1440} {
+	for _, good := range []int{1, 30, 60, 180, 1440} {
 		if err := applySettingsPatch(nil, record, settingsPatchRequest{IngestDirIntervalMin: intptr(good)}); err != nil {
 			t.Fatalf("interval %d: %v", good, err)
 		}

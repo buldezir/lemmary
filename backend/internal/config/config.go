@@ -85,13 +85,16 @@ const (
 	MaxIngestDirIntervalMin     = 24 * 60
 )
 
-// ValidIngestInterval is what a cron expression can say: any number of minutes
-// under an hour, whole hours up to a day.
+// ValidIngestInterval is what a cron step can space evenly: minutes that
+// divide an hour, hours that divide a day.
 func ValidIngestInterval(minutes int) bool {
 	if minutes < 1 || minutes > MaxIngestDirIntervalMin {
 		return false
 	}
-	return minutes < 60 || minutes%60 == 0
+	if minutes < 60 {
+		return 60%minutes == 0
+	}
+	return minutes%60 == 0 && 24%(minutes/60) == 0
 }
 
 func WorkerCronFromEnv() string {

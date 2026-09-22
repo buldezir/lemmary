@@ -4,7 +4,6 @@
 package dirimport
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -42,21 +41,27 @@ type Result struct {
 	Failed  int
 }
 
-type fileStamp struct {
-	size  int64
-	mtime time.Time
-}
-
 type Scanner struct {
 	app     core.App
 	rt      *config.Runtime
 	dir     string
 	running atomic.Bool
-	// Files already known to be duplicates or refused, so keep mode does not
-	// reopen and rehash them every scan. Only the scan goroutine touches it.
-	seen map[string]fileStamp
+	durable func(time.Time) bool
+	// Files this process already decided about, by size and mtime, so neither
+	// mode reopens them every scan. Only the scan goroutine touches these maps.
+	seen map[string]string
 	// seenKey is the owner and delete flag seen was built under.
 	seenKey string
+	// Delete mode: consumed originals waiting for encryption at rest to seal
+	// their document, by when it was saved.
+	pending map[string]time.Time
+	// Failures already logged, so a file that keeps failing warns once.
+	warned map[string]bool
+}
+
+func newScanner(app core.App, rt *config.Runtime, dir string) *Scanner {
+	return &Scanner{app: app, rt: rt, dir: dir, durable: inflight.Durable, seen: map[string]string{},
+		pending: map[string]time.Time{}, warned: map[string]bool{}}
 }
 
 const cronJob = "dir_ingest"
@@ -69,7 +74,7 @@ func Register(app core.App, rt *config.Runtime, dir string) {
 	if dir == "" {
 		return
 	}
-	s := &Scanner{app: app, rt: rt, dir: dir, seen: map[string]fileStamp{}}
+	s := newScanner(app, rt, dir)
 	app.Cron().MustAdd(cronJob, cronExpr(config.DefaultIngestDirIntervalMin), s.tick)
 	rt.OnReload(func(_ core.App, snap config.Snapshot) {
 		expr := cronExpr(snap.Cfg.IngestDirIntervalMin)
@@ -115,44 +120,67 @@ func (s *Scanner) Scan(cfg config.Config, now time.Time) Result {
 	var res Result
 	logger := s.app.Logger()
 
-	ownerID := resolveOwner(s.app, cfg.IngestDirOwner)
+	ownerID := s.resolveOwner(cfg.IngestDirOwner)
 	if ownerID == "" {
 		return res
 	}
+	keep := !cfg.IngestDirDeleteOriginal
 	// What was skipped for one owner or in keep mode is a decision for that
 	// configuration only: a new owner has none of these files, and delete mode
 	// still owes the folder a clean-up.
-	if key := fmt.Sprintf("%s|%t", ownerID, cfg.IngestDirDeleteOriginal); key != s.seenKey {
-		s.seen = map[string]fileStamp{}
+	if key := fmt.Sprintf("%s|%t", ownerID, keep); key != s.seenKey {
+		s.seen = map[string]string{}
+		s.pending = map[string]time.Time{}
+		s.warned = map[string]bool{}
 		s.seenKey = key
+	}
+	defer s.removeSealed()
+
+	// WalkDir does not descend into a root that is itself a symlink.
+	root, err := filepath.EvalSymlinks(s.dir)
+	if err != nil {
+		logger.Warn("consume folder: unreadable", "dir", s.dir, "error", err)
+		return res
+	}
+	collection, err := s.app.FindCollectionByNameOrId("documents")
+	if err != nil {
+		logger.Warn("consume folder: documents collection", "error", err)
+		return res
 	}
 	tags, err := loadTagKeys(s.app, ownerID)
 	if err != nil {
 		logger.Warn("consume folder: load tags failed", "error", err)
 		return res
 	}
+	var ledger map[string]string
+	if keep {
+		if ledger, err = loadLedger(s.app, ownerID); err != nil {
+			logger.Warn("consume folder: load ledger failed", "error", err)
+			return res
+		}
+	}
 
-	removeFailed := false
-	remove := func(path string) {
-		if !cfg.IngestDirDeleteOriginal {
+	consumed := func(path, rel, stamp string) {
+		s.seen[path] = stamp
+		if !keep {
+			s.pending[path] = time.Now()
 			return
 		}
-		if err := os.Remove(path); err != nil && !removeFailed {
-			removeFailed = true
-			logger.Warn("consume folder: delete original failed; keeping files", "path", path, "error", err)
+		if err := recordLedger(s.app, ownerID, rel, stamp); err != nil {
+			logger.Warn("consume folder: ledger write failed", "path", path, "error", err)
 		}
 	}
 
 	stop := errors.New("stop")
-	walkErr := filepath.WalkDir(s.dir, func(path string, d fs.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			if path == s.dir {
+			if path == root {
 				return err
 			}
-			logger.Warn("consume folder: unreadable entry", "path", path, "error", err)
+			s.warnOnce(path, "consume folder: unreadable entry", "path", path, "error", err)
 			return nil
 		}
-		if path != s.dir && strings.HasPrefix(d.Name(), ".") {
+		if path != root && strings.HasPrefix(d.Name(), ".") {
 			if d.IsDir() {
 				return fs.SkipDir
 			}
@@ -165,52 +193,48 @@ func (s *Scanner) Scan(cfg config.Config, now time.Time) Result {
 		if err != nil || info.Size() == 0 || now.Sub(info.ModTime()) < settleAge {
 			return nil
 		}
-		stamp := fileStamp{size: info.Size(), mtime: info.ModTime()}
+		stamp := fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())
 		if s.seen[path] == stamp {
 			return nil
 		}
-
-		data, err := readRegular(path)
-		if err != nil {
-			if errors.Is(err, errTooLarge) {
-				res.Failed++
-				s.seen[path] = stamp
-			}
-			logger.Warn("consume folder: read failed", "path", path, "error", err)
-			return nil
-		}
-		checksum, err := duplicates.SHA256Reader(bytes.NewReader(data))
+		rel, err := filepath.Rel(root, path)
 		if err != nil {
 			return nil
 		}
-		existing, err := duplicates.FindByChecksum(s.app, ownerID, checksum, "")
-		if err != nil {
-			logger.Warn("consume folder: duplicate lookup failed", "path", path, "error", err)
-			return nil
-		}
-		if existing != nil {
-			res.Skipped++
+		if ledger[rel] == stamp {
 			s.seen[path] = stamp
-			remove(path)
 			return nil
 		}
+		if info.Size() > models.MaxFileBytes {
+			res.Failed++
+			s.seen[path] = stamp
+			logger.Warn("consume folder: file exceeds the document size limit", "path", path, "size", info.Size())
+			return nil
+		}
+		file, err := filesystem.NewFileFromPath(path)
+		if err != nil {
+			s.warnOnce(path+"|"+stamp, "consume folder: read failed", "path", path, "error", err)
+			return nil
+		}
+		file.Reader = regularFile(path)
 
-		tagIDs, err := s.tagsFor(ownerID, path, tags)
+		tagIDs, created, err := s.tagsFor(ownerID, rel, tags)
 		if err != nil {
 			logger.Warn("consume folder: tag lookup failed", "path", path, "error", err)
 			return nil
 		}
-		err = createDocument(s.app, ownerID, filepath.Base(path), data, checksum, tagIDs)
+		err = zipimport.CreateDocument(s.app, collection, ownerID, file, tagIDs)
+		if err != nil {
+			s.dropTags(created, tags)
+		}
 		var dup *duplicates.ErrDuplicate
 		switch {
 		case err == nil:
 			res.Created++
-			delete(s.seen, path)
-			remove(path)
+			consumed(path, rel, stamp)
 		case errors.As(err, &dup):
 			res.Skipped++
-			s.seen[path] = stamp
-			remove(path)
+			consumed(path, rel, stamp)
 		case roomExhausted(err):
 			logger.Warn("consume folder: limit reached, stopping this scan", "error", err)
 			return stop
@@ -222,7 +246,7 @@ func (s *Scanner) Scan(cfg config.Config, now time.Time) Result {
 			if rejected(err) {
 				s.seen[path] = stamp
 			}
-			logger.Warn("consume folder: import failed", "path", path, "error", err)
+			s.warnOnce(path+"|"+stamp, "consume folder: import failed", "path", path, "error", err)
 		}
 		return nil
 	})
@@ -232,16 +256,40 @@ func (s *Scanner) Scan(cfg config.Config, now time.Time) Result {
 	return res
 }
 
+// removeSealed deletes the originals whose documents a hard kill can no longer
+// lose. Without encryption at rest that is all of them, straight away.
+func (s *Scanner) removeSealed() {
+	failed := false
+	for path, saved := range s.pending {
+		if !s.durable(saved) {
+			continue
+		}
+		delete(s.pending, path)
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) && !failed {
+			failed = true
+			s.app.Logger().Warn("consume folder: delete original failed; keeping files", "path", path, "error", err)
+		}
+	}
+}
+
+func (s *Scanner) warnOnce(key, msg string, args ...any) {
+	if s.warned[key] {
+		return
+	}
+	s.warned[key] = true
+	s.app.Logger().Warn(msg, args...)
+}
+
 // resolveOwner is the configured account, else the oldest admin's paired users
 // row. Empty before setup has run, which is not an error.
-func resolveOwner(app core.App, configured string) string {
+func (s *Scanner) resolveOwner(configured string) string {
 	if configured != "" {
-		if _, err := app.FindRecordById("users", configured); err == nil {
+		if _, err := s.app.FindRecordById("users", configured); err == nil {
 			return configured
 		}
-		app.Logger().Warn("consume folder: configured owner not found; using the first admin", "owner", configured)
+		s.warnOnce("owner|"+configured, "consume folder: configured owner not found; using the first admin", "owner", configured)
 	}
-	admins, err := app.FindRecordsByFilter("users", "is_app_admin = true", "created", 1, 0)
+	admins, err := s.app.FindRecordsByFilter("users", "is_app_admin = true", "created", 1, 0)
 	if err != nil || len(admins) == 0 {
 		return ""
 	}
@@ -261,74 +309,99 @@ func loadTagKeys(app core.App, ownerID string) (map[string]string, error) {
 }
 
 // tagsFor maps the file's folders under the root to tag ids, creating the ones
-// the owner does not have yet. Matched on the pipeline's normalized key, so
-// Taxes/ and taxes/ are one tag.
-func (s *Scanner) tagsFor(ownerID, path string, keys map[string]string) ([]string, error) {
-	rel, err := filepath.Rel(s.dir, filepath.Dir(path))
-	if err != nil || rel == "." {
-		return nil, err
+// the owner does not have yet; created lists the keys of those. Matched on the
+// pipeline's normalized key, so Taxes/ and taxes/ are one tag.
+func (s *Scanner) tagsFor(ownerID, rel string, keys map[string]string) (ids, created []string, err error) {
+	dir := filepath.Dir(rel)
+	if dir == "." {
+		return nil, nil, nil
 	}
-	var ids []string
-	for _, name := range strings.Split(rel, string(filepath.Separator)) {
+	for _, name := range strings.Split(dir, string(filepath.Separator)) {
 		key := worker.NormalizeTagKey(name)
 		if key == "" {
 			continue
 		}
 		id, ok := keys[key]
 		if !ok {
-			id, _, err = worker.EnsureTag(s.app, ownerID, name)
+			var isNew bool
+			id, isNew, err = worker.EnsureTag(s.app, ownerID, name)
 			if err != nil {
-				return nil, err
+				s.dropTags(created, keys)
+				return nil, nil, err
 			}
 			keys[key] = id
+			if isNew {
+				created = append(created, key)
+			}
 		}
 		ids = append(ids, id)
 	}
-	return ids, nil
+	return ids, created, nil
 }
 
-var errTooLarge = errors.New("file exceeds the document size limit")
+// dropTags removes tags tagsFor made for a document that was never created.
+func (s *Scanner) dropTags(created []string, keys map[string]string) {
+	for _, key := range created {
+		if tag, err := s.app.FindRecordById("tags", keys[key]); err == nil {
+			if err := s.app.Delete(tag); err != nil {
+				s.app.Logger().Warn("consume folder: remove unused tag failed", "tag", tag.Id, "error", err)
+			}
+		}
+		delete(keys, key)
+	}
+}
 
-// readRegular reads the file the walk saw, and only that: the entry is opened
-// without following a symlink swapped in after the walk, checked to still be a
-// regular file, and refused above the documents.file cap before a byte is read.
-func readRegular(path string) ([]byte, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+const ledgerCollection = "ingest_files"
+
+// loadLedger is what keep mode already consumed for ownerID: path under the
+// root to the size and mtime it had.
+func loadLedger(app core.App, ownerID string) (map[string]string, error) {
+	records, err := app.FindRecordsByFilter(ledgerCollection, "user = {:user}", "", 0, 0, map[string]any{"user": ownerID})
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	ledger := make(map[string]string, len(records))
+	for _, record := range records {
+		ledger[record.GetString("path")] = record.GetString("stamp")
+	}
+	return ledger, nil
+}
+
+func recordLedger(app core.App, ownerID, rel, stamp string) error {
+	record, err := app.FindFirstRecordByFilter(ledgerCollection, "user = {:user} && path = {:path}",
+		map[string]any{"user": ownerID, "path": rel})
+	if err != nil {
+		collection, err := app.FindCollectionByNameOrId(ledgerCollection)
+		if err != nil {
+			return err
+		}
+		record = core.NewRecord(collection)
+		record.Set("user", ownerID)
+		record.Set("path", rel)
+	}
+	record.Set("stamp", stamp)
+	return app.Save(record)
+}
+
+// regularFile opens the file the walk saw, and only that: a symlink swapped in
+// after the walk is not followed, and whatever is no longer a regular file
+// within the documents.file cap is refused.
+type regularFile string
+
+func (p regularFile) Open() (io.ReadSeekCloser, error) {
+	f, err := os.OpenFile(string(p), os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, err
+	}
 	info, err := f.Stat()
+	if err == nil && (!info.Mode().IsRegular() || info.Size() > models.MaxFileBytes) {
+		err = errors.New("no longer a regular file within the document size limit")
+	}
 	if err != nil {
+		f.Close()
 		return nil, err
 	}
-	if !info.Mode().IsRegular() {
-		return nil, errors.New("not a regular file")
-	}
-	if info.Size() > models.MaxFileBytes {
-		return nil, errTooLarge
-	}
-	return io.ReadAll(f)
-}
-
-func createDocument(app core.App, ownerID, name string, data []byte, checksum string, tagIDs []string) error {
-	collection, err := app.FindCollectionByNameOrId("documents")
-	if err != nil {
-		return err
-	}
-	fsFile, err := filesystem.NewFileFromBytes(data, name)
-	if err != nil {
-		return err
-	}
-	record := core.NewRecord(collection)
-	record.Set("user", ownerID)
-	record.Set("file", fsFile)
-	record.Set("checksum", checksum)
-	record.Set("processing_status", models.DocStatusPending)
-	if len(tagIDs) > 0 {
-		record.Set("tags", tagIDs)
-	}
-	return duplicates.NormalizeSaveError(app, record, app.Save(record))
+	return f, nil
 }
 
 // roomExhausted is a limit every later file would hit too, as opposed to one

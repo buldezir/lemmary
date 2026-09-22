@@ -38,6 +38,7 @@ func Register(app *pocketbase.PocketBase, v *Vault) {
 		return
 	}
 	f := &flusher{v: v}
+	inflight.RequireSeal()
 
 	app.OnBootstrap().Bind(&hook.Handler[*core.BootstrapEvent]{
 		Func: func(e *core.BootstrapEvent) error {
@@ -86,6 +87,7 @@ func (f *flusher) run(reason string) {
 }
 
 func (f *flusher) touch() {
+	inflight.Wrote()
 	pending := f.v.MarkDirty()
 
 	f.mu.Lock()

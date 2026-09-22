@@ -208,3 +208,16 @@ func TestGetEnvFloatRejectsOutOfRange(t *testing.T) {
 		t.Fatalf("getEnvFloat=%v", got)
 	}
 }
+
+func TestValidIngestIntervalSpacesEvenly(t *testing.T) {
+	for _, minutes := range []int{1, 5, 15, 30, 60, 120, 180, 360, 720, 1440} {
+		if !ValidIngestInterval(minutes) {
+			t.Errorf("ValidIngestInterval(%d) = false, want true", minutes)
+		}
+	}
+	for _, minutes := range []int{0, 7, 45, 59, 90, 300, 420, 1380, 2880} {
+		if ValidIngestInterval(minutes) {
+			t.Errorf("ValidIngestInterval(%d) = true, want false", minutes)
+		}
+	}
+}

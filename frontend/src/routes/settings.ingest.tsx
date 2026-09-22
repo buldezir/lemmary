@@ -10,7 +10,6 @@ import {
 } from '../components/settings/SettingsFeedback'
 import {
   fieldHintClassName,
-  inputClassName,
   labelClassName,
   labelTextClassName,
   sectionClassName,
@@ -18,9 +17,18 @@ import {
   selectClassName,
 } from '../components/ui'
 
+// config.ValidIngestInterval: the steps a cron schedule spaces evenly.
+const SCAN_INTERVALS = [1, 2, 5, 10, 15, 30, 60, 120, 180, 360, 720, 1440]
+
+function intervalLabel(minutes: number) {
+  if (minutes === 1440) return 'day'
+  if (minutes >= 60) return minutes === 60 ? 'hour' : `${minutes / 60} hours`
+  return minutes === 1 ? 'minute' : `${minutes} minutes`
+}
+
 /** The consume folder. Only reachable when INGEST_DIR is set; see the settings tabs. */
 export function SettingsIngestPage() {
-  const { form, loading, error, success, saving, updateField, save, setError, closeResult } =
+  const { form, loading, error, success, saving, updateField, save, closeResult } =
     useSettingsForm((settings) => ({
       ingest_dir_owner: settings.ingest_dir_owner,
       ingest_dir_interval_min: String(settings.ingest_dir_interval_min),
@@ -32,16 +40,9 @@ export function SettingsIngestPage() {
     event.preventDefault()
     if (!form) return
 
-    const interval = Number(form.ingest_dir_interval_min)
-    // Mirrors config.ValidIngestInterval: what a cron expression can say.
-    if (!Number.isInteger(interval) || interval < 1 || interval > 1440 || (interval >= 60 && interval % 60 !== 0)) {
-      setError('Scan interval must be 1-59 minutes, or whole hours (60, 120, … 1440)')
-      return
-    }
-
     await save({
       ingest_dir_owner: form.ingest_dir_owner,
-      ingest_dir_interval_min: interval,
+      ingest_dir_interval_min: Number(form.ingest_dir_interval_min),
       ingest_dir_delete_original: form.ingest_dir_delete_original,
     })
   }
@@ -67,8 +68,8 @@ export function SettingsIngestPage() {
             Delete the original file after it is consumed
           </label>
           <p className={`${fieldHintClassName} mt-2`}>
-            Off, files stay where they are; a file whose content is already in the library is
-            recognised by its checksum and not imported twice. On, the file is removed once its
+            Off, files stay where they are and each is imported once, even if its document is
+            deleted later; changing the file imports it again. On, the file is removed once its
             document exists, and a duplicate is removed too.
           </p>
         </div>
@@ -93,20 +94,22 @@ export function SettingsIngestPage() {
           </div>
           <div className={labelClassName}>
             <label className={labelClassName}>
-              <span className={labelTextClassName}>Scan every (minutes)</span>
-              <input
-                type="number"
-                min={1}
-                max={1440}
-                step={1}
-                className={inputClassName}
+              <span className={labelTextClassName}>Scan every</span>
+              <select
+                className={selectClassName}
                 value={form.ingest_dir_interval_min}
                 onChange={(e) => updateField('ingest_dir_interval_min', e.target.value)}
-              />
+              >
+                {SCAN_INTERVALS.map((minutes) => (
+                  <option key={minutes} value={String(minutes)}>
+                    {intervalLabel(minutes)}
+                  </option>
+                ))}
+              </select>
             </label>
             <p className={fieldHintClassName}>
-              1&ndash;59 minutes, or whole hours up to 1440 (once a day). Files changed in the
-              last 30 seconds wait for the next scan, so nothing is picked up half-written.
+              Files changed in the last 30 seconds wait for the next scan, so nothing is picked up
+              half-written.
             </p>
           </div>
         </div>

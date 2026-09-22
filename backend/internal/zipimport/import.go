@@ -175,11 +175,18 @@ func importOneEntry(app core.App, collection *core.Collection, ownerUserID strin
 	if err != nil {
 		return fmt.Errorf("prepare file: %w", err)
 	}
+	return CreateDocument(app, collection, ownerUserID, fsFile, nil)
+}
 
+// CreateDocument saves file as a pending document through the same create
+// hooks as an upload, which hash it and refuse a duplicate as *ErrDuplicate.
+func CreateDocument(app core.App, collection *core.Collection, ownerUserID string, file *filesystem.File, tagIDs []string) error {
 	record := core.NewRecord(collection)
 	record.Set("user", ownerUserID)
-	record.Set("file", fsFile)
+	record.Set("file", file)
 	record.Set("processing_status", models.DocStatusPending)
-
+	if len(tagIDs) > 0 {
+		record.Set("tags", tagIDs)
+	}
 	return duplicates.NormalizeSaveError(app, record, app.Save(record))
 }

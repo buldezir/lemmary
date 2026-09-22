@@ -82,8 +82,6 @@ func resolvedAccent(app core.App) string {
 func handleGetMeta(app core.App, rt *config.Runtime, ingestDirEnabled bool) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		return writeJSON(e, http.StatusOK, map[string]any{
-			// Whether INGEST_DIR is set, so Settings shows the Ingest tab only
-			// where there is a folder to configure.
 			"ingest_dir": ingestDirEnabled,
 			"app_name":   resolvedAppName(app),
 			"accent":     resolvedAccent(app),

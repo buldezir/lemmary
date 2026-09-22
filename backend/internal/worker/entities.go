@@ -7,6 +7,7 @@ import (
 	"unicode"
 
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/list"
 	"golang.org/x/text/unicode/norm"
 
 	"lemmary/backend/internal/ai"
@@ -333,6 +334,17 @@ func matchTags(app core.App, userID string, names []string) (matched []string, d
 		seen[id] = struct{}{}
 		matched = append(matched, id)
 	}
+	return matched, dropped, nil
+}
+
+// addMatchedTags adds the model's tags to the ones the document already has,
+// which the uploader, the consume folder or the owner set.
+func addMatchedTags(app core.App, document *core.Record, names []string) (matched, dropped []string, err error) {
+	matched, dropped, err = matchTags(app, document.GetString("user"), names)
+	if err != nil {
+		return nil, nil, err
+	}
+	document.Set("tags", list.ToUniqueStringSlice(append(document.GetStringSlice("tags"), matched...)))
 	return matched, dropped, nil
 }
 

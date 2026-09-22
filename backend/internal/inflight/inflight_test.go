@@ -101,3 +101,27 @@ func TestConcurrentWorkAndWaiters(t *testing.T) {
 		t.Fatalf("Active = %d, want 0", tr.Active())
 	}
 }
+
+func TestDurableWaitsForAFlushThatBeganAfterTheWrite(t *testing.T) {
+	t.Cleanup(func() { sealing.Store(false); sealedAt.Store(0); lastWrite.Store(0) })
+	if !Durable(time.Now()) {
+		t.Fatal("without encryption at rest a write is durable at once")
+	}
+	RequireSeal()
+	if !Durable(time.Now()) {
+		t.Fatal("nothing written since boot, yet not durable")
+	}
+	Wrote()
+	write := time.Now()
+	if Durable(write) {
+		t.Fatal("durable before any flush")
+	}
+	Sealed(write.Add(-time.Second).UnixNano())
+	if Durable(write) {
+		t.Fatal("durable after a flush that began before the write")
+	}
+	Sealed(write.Add(time.Nanosecond).UnixNano())
+	if !Durable(write) {
+		t.Fatal("not durable after a flush that began after the write")
+	}
+}

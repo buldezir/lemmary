@@ -52,7 +52,6 @@ export function SettingsPage() {
             Duplicates
           </Link>
         )}
-        {/* Only with INGEST_DIR set: without a folder there is nothing to configure. */}
         {ingestDir && (
           <Link to="/settings/ingest" className={tabClassName}>
             Ingest
