@@ -85,6 +85,9 @@ type Config struct {
 	IMAPFolder       string
 	IMAPAfterConsume string
 	IMAPMoveFolder   string
+	// IMAPSince is when the mailbox was last pointed somewhere new; mail
+	// received before it is left to a Management backfill. Zero reads all.
+	IMAPSince time.Time
 }
 
 const DefaultNearDuplicateThreshold = 0.92
@@ -324,6 +327,7 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 		IMAPFolder:                    strutil.FirstNonEmpty(record.GetString("imap_folder"), DefaultIMAPFolder),
 		IMAPAfterConsume:              strutil.FirstNonEmpty(record.GetString("imap_after_consume"), IMAPKeep),
 		IMAPMoveFolder:                strings.TrimSpace(record.GetString("imap_move_folder")),
+		IMAPSince:                     record.GetDateTime("imap_since").Time(),
 	}
 
 	if err := resolveProviders(app, &cfg); err != nil {

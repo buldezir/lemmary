@@ -47,6 +47,7 @@ export function SettingsIngestPage() {
       imap_folder: settings.imap_folder,
       imap_after_consume: settings.imap_after_consume,
       imap_move_folder: settings.imap_move_folder,
+      imap_since: settings.imap_since,
     }))
   const { data: users } = useAsync(listUsers, [])
 
@@ -161,8 +162,11 @@ export function SettingsIngestPage() {
           <>
             <h3 className={subTitleClassName}>Mailbox</h3>
             <p className={`${fieldHintClassName} mb-4`}>
-              Every PDF, image or office attachment in the folder becomes a document on the next scan.
+              Every PDF, image or office attachment in mail arriving in the folder becomes a document
+              on the next scan.
               Mail without one is left alone. Leave the server empty to turn this off.
+              {form.imap_since &&
+                ` Mail received before ${new Date(form.imap_since).toLocaleString()} is not scanned; Management backfills it by date.`}
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className={labelClassName}>

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 
@@ -35,6 +36,7 @@ func settingsRecordForTest(t *testing.T) *core.Record {
 		&core.TextField{Name: "imap_folder"},
 		&core.TextField{Name: "imap_after_consume"},
 		&core.TextField{Name: "imap_move_folder"},
+		&core.DateField{Name: "imap_since"},
 	)
 	record := core.NewRecord(collection)
 	record.Id = config.SingletonID
@@ -376,6 +378,49 @@ func TestPatchIMAPFields(t *testing.T) {
 	}
 	if (settingsPatchRequest{IMAPHost: strptr("x")}).touchesManaged() {
 		t.Fatal("imap fields are tenant-owned; a hosted tenant must be able to set them")
+	}
+}
+
+// Pointing at a mailbox imports what arrives from then on; a new password or
+// after-import action must not skip the mail that came in meanwhile.
+func TestIMAPSinceMovesOnlyWhenTheMailboxChanges(t *testing.T) {
+	t.Parallel()
+	record := settingsRecordForTest(t)
+	since := func() time.Time { return record.GetDateTime("imap_since").Time() }
+
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{IMAPUsername: strptr("docs")}); err != nil {
+		t.Fatal(err)
+	}
+	if !since().IsZero() {
+		t.Fatal("imap_since set without a server")
+	}
+	before := time.Now().Add(-time.Second)
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{IMAPHost: strptr("imap.example.com")}); err != nil {
+		t.Fatal(err)
+	}
+	first := since()
+	if first.Before(before) {
+		t.Fatalf("imap_since = %v, want now", first)
+	}
+
+	record.Set("imap_since", first.Add(-time.Hour))
+	for _, same := range []settingsPatchRequest{
+		{IMAPPassword: strptr("new")},
+		{IMAPAfterConsume: strptr("delete")},
+		{IMAPHost: strptr("imap.example.com"), IMAPFolder: strptr("INBOX")},
+	} {
+		if err := applySettingsPatch(nil, record, same); err != nil {
+			t.Fatal(err)
+		}
+		if !since().Equal(first.Add(-time.Hour)) {
+			t.Fatalf("%+v moved imap_since", same)
+		}
+	}
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{IMAPFolder: strptr("Scans")}); err != nil {
+		t.Fatal(err)
+	}
+	if !since().After(first.Add(-time.Hour)) {
+		t.Fatal("a new folder must move imap_since")
 	}
 }
 

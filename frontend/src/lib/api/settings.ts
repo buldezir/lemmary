@@ -63,6 +63,8 @@ export type AppSettings = {
   imap_folder: string
   imap_after_consume: 'keep' | 'delete' | 'move'
   imap_move_folder: string
+  /** Read-only, RFC 3339 or empty: moved to now whenever the mailbox changes. */
+  imap_since: string
   /** Instance name, shown in the header and stamped on emails and passkeys. */
   app_name: string
   /** Accent color as #rrggbb. Empty means the built-in accent. */

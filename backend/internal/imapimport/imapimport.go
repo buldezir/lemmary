@@ -63,21 +63,26 @@ type Scanner struct {
 	warned  map[string]bool
 }
 
-func newScanner(app core.App, rt *config.Runtime) *Scanner {
+var (
+	ErrBusy          = errors.New("a mailbox scan is already running")
+	ErrNotConfigured = errors.New("no mailbox is configured")
+	ErrNoOwner       = errors.New("no account to own the documents yet")
+)
+
+func New(app core.App, rt *config.Runtime) *Scanner {
 	return &Scanner{app: app, rt: rt, dial: dial, seen: map[imap.UID]bool{},
 		pending: map[imap.UID]time.Time{}, warned: map[string]bool{}}
 }
 
 // Register schedules the scan on the consume folder's interval, re-added with
 // a new expression on every settings reload.
-func Register(app core.App, rt *config.Runtime) {
-	s := newScanner(app, rt)
-	app.Cron().MustAdd(cronJob, config.IngestCronExpr(config.DefaultIngestDirIntervalMin), s.tick)
-	rt.OnReload(func(_ core.App, snap config.Snapshot) {
-		app.Cron().Remove(cronJob)
-		app.Cron().MustAdd(cronJob, config.IngestCronExpr(snap.Cfg.IngestDirIntervalMin), s.tick)
+func (s *Scanner) Register() {
+	s.app.Cron().MustAdd(cronJob, config.IngestCronExpr(config.DefaultIngestDirIntervalMin), s.tick)
+	s.rt.OnReload(func(_ core.App, snap config.Snapshot) {
+		s.app.Cron().Remove(cronJob)
+		s.app.Cron().MustAdd(cronJob, config.IngestCronExpr(snap.Cfg.IngestDirIntervalMin), s.tick)
 	})
-	app.Logger().Info("imap ingest registered")
+	s.app.Logger().Info("imap ingest registered")
 }
 
 func (s *Scanner) tick() {
@@ -137,37 +142,21 @@ func (s *Scanner) Scan(cfg config.Config) Result {
 	if cfg.IMAPHost == "" || cfg.IMAPUsername == "" {
 		return res
 	}
-	ownerID, missing := dirimport.ResolveOwner(s.app, cfg.IngestDirOwner)
-	if missing {
-		s.warnOnce("owner|"+cfg.IngestDirOwner, "imap ingest: configured owner not found; using the first admin", "owner", cfg.IngestDirOwner)
-	}
+	ownerID := s.owner(cfg)
 	if ownerID == "" {
 		return res
 	}
 	mode := cfg.IMAPAfterConsume
 
-	c, err := s.dial(cfg)
+	c, sel, done, err := s.connect(cfg, mode == config.IMAPKeep)
 	if err != nil {
-		s.warnOnce("dial|"+err.Error(), "imap ingest: connect failed", "host", cfg.IMAPHost, "error", err)
+		s.warnOnce("connect|"+err.Error(), "imap ingest: "+err.Error())
 		return res
 	}
-	defer c.Close()
-	timer := time.AfterFunc(sessionTimeout, func() { c.Close() })
-	defer timer.Stop()
-
-	if err := c.Login(cfg.IMAPUsername, cfg.IMAPPassword).Wait(); err != nil {
-		s.warnOnce("login|"+err.Error(), "imap ingest: login failed", "host", cfg.IMAPHost, "user", cfg.IMAPUsername, "error", err)
-		return res
-	}
-	defer c.Logout()
+	defer done()
 	if mode == config.IMAPMove {
 		// Already existing is the usual answer, and a real failure shows on the move.
 		_ = c.Create(cfg.IMAPMoveFolder, nil).Wait()
-	}
-	sel, err := c.Select(cfg.IMAPFolder, &imap.SelectOptions{ReadOnly: mode == config.IMAPKeep}).Wait()
-	if err != nil {
-		s.warnOnce("select|"+cfg.IMAPFolder, "imap ingest: open folder failed", "folder", cfg.IMAPFolder, "error", err)
-		return res
 	}
 	mailbox := fmt.Sprintf("imap://%s@%s/%s", cfg.IMAPUsername, cfg.IMAPHost, cfg.IMAPFolder)
 	if key := fmt.Sprintf("%s|%s|%s|%d", ownerID, mode, mailbox, sel.UIDValidity); key != s.seenKey {
@@ -194,7 +183,8 @@ func (s *Scanner) Scan(cfg config.Config) Result {
 			}
 		}()
 	}
-	found, err := c.UIDSearch(&imap.SearchCriteria{}, nil).Wait()
+	// SINCE is a date; the exact cut is the INTERNALDATE check below.
+	found, err := c.UIDSearch(&imap.SearchCriteria{Since: cfg.IMAPSince}, nil).Wait()
 	if err != nil {
 		logger.Warn("imap ingest: search failed", "folder", cfg.IMAPFolder, "error", err)
 		return res
@@ -205,25 +195,17 @@ func (s *Scanner) Scan(cfg config.Config) Result {
 			uids = append(uids, uid)
 		}
 	}
-	if len(uids) == 0 {
-		return res
-	}
-	msgs, err := c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{
-		UID:           true,
-		BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
-	}).Collect()
+	msgs, collection, err := s.structures(c, uids)
 	if err != nil {
-		logger.Warn("imap ingest: fetch failed", "folder", cfg.IMAPFolder, "error", err)
-		return res
-	}
-	slices.SortFunc(msgs, func(a, b *imapclient.FetchMessageBuffer) int { return int(a.UID) - int(b.UID) })
-
-	collection, err := s.app.FindCollectionByNameOrId("documents")
-	if err != nil {
-		logger.Warn("imap ingest: documents collection", "error", err)
+		logger.Warn("imap ingest: "+err.Error(), "folder", cfg.IMAPFolder)
 		return res
 	}
 	for _, msg := range msgs {
+		if msg.InternalDate.Before(cfg.IMAPSince) {
+			s.seen[msg.UID] = true
+			last = max(last, msg.UID)
+			continue
+		}
 		parts := attachments(msg.BodyStructure)
 		got := consumed
 		if len(parts) > 0 {
@@ -241,6 +223,100 @@ func (s *Scanner) Scan(cfg config.Config) Result {
 		}
 	}
 	return res
+}
+
+// ScanRange imports the attachments of mail received from from up to, not
+// including, to. It is a backfill: the since point, the ledger and the
+// after-import action do not apply, and the checksum check skips what the
+// library already has.
+func (s *Scanner) ScanRange(cfg config.Config, from, to time.Time) (Result, error) {
+	var res Result
+	if cfg.IMAPHost == "" || cfg.IMAPUsername == "" {
+		return res, ErrNotConfigured
+	}
+	if !s.running.CompareAndSwap(false, true) {
+		return res, ErrBusy
+	}
+	defer s.running.Store(false)
+	defer inflight.Begin()()
+
+	ownerID := s.owner(cfg)
+	if ownerID == "" {
+		return res, ErrNoOwner
+	}
+	c, _, done, err := s.connect(cfg, true)
+	if err != nil {
+		return res, err
+	}
+	defer done()
+	found, err := c.UIDSearch(&imap.SearchCriteria{Since: from, Before: to}, nil).Wait()
+	if err != nil {
+		return res, fmt.Errorf("search %s: %w", cfg.IMAPFolder, err)
+	}
+	msgs, collection, err := s.structures(c, found.AllUIDs())
+	if err != nil {
+		return res, err
+	}
+	for _, msg := range msgs {
+		parts := attachments(msg.BodyStructure)
+		if len(parts) > 0 && s.consume(c, collection, ownerID, msg.UID, parts, &res) == retry {
+			return res, errors.New("stopped at an instance limit or an error; see the logs")
+		}
+	}
+	return res, nil
+}
+
+func (s *Scanner) owner(cfg config.Config) string {
+	ownerID, missing := dirimport.ResolveOwner(s.app, cfg.IngestDirOwner)
+	if missing {
+		s.warnOnce("owner|"+cfg.IngestDirOwner, "imap ingest: configured owner not found; using the first admin", "owner", cfg.IngestDirOwner)
+	}
+	return ownerID
+}
+
+// connect logs in and opens the folder; done ends the session.
+func (s *Scanner) connect(cfg config.Config, readOnly bool) (*imapclient.Client, *imap.SelectData, func(), error) {
+	c, err := s.dial(cfg)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("connect to %s: %w", cfg.IMAPHost, err)
+	}
+	timer := time.AfterFunc(sessionTimeout, func() { c.Close() })
+	done := func() {
+		timer.Stop()
+		c.Logout()
+		c.Close()
+	}
+	if err := c.Login(cfg.IMAPUsername, cfg.IMAPPassword).Wait(); err != nil {
+		done()
+		return nil, nil, nil, fmt.Errorf("log in to %s as %s: %w", cfg.IMAPHost, cfg.IMAPUsername, err)
+	}
+	sel, err := c.Select(cfg.IMAPFolder, &imap.SelectOptions{ReadOnly: readOnly}).Wait()
+	if err != nil {
+		done()
+		return nil, nil, nil, fmt.Errorf("open folder %s: %w", cfg.IMAPFolder, err)
+	}
+	return c, sel, done, nil
+}
+
+// structures fetches what a scan decides on for uids, oldest first.
+func (s *Scanner) structures(c *imapclient.Client, uids []imap.UID) ([]*imapclient.FetchMessageBuffer, *core.Collection, error) {
+	if len(uids) == 0 {
+		return nil, nil, nil
+	}
+	msgs, err := c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{
+		UID:           true,
+		InternalDate:  true,
+		BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
+	}).Collect()
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetch: %w", err)
+	}
+	slices.SortFunc(msgs, func(a, b *imapclient.FetchMessageBuffer) int { return int(a.UID) - int(b.UID) })
+	collection, err := s.app.FindCollectionByNameOrId("documents")
+	if err != nil {
+		return nil, nil, fmt.Errorf("documents collection: %w", err)
+	}
+	return msgs, collection, nil
 }
 
 func (s *Scanner) consume(c *imapclient.Client, collection *core.Collection, ownerID string, uid imap.UID, parts []part, res *Result) outcome {

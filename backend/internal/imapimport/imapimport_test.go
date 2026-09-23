@@ -3,6 +3,7 @@ package imapimport
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -77,12 +78,18 @@ func startServer(t *testing.T) *mailbox {
 }
 
 func (m *mailbox) scanner(app core.App) *Scanner {
-	s := newScanner(app, nil)
+	s := New(app, nil)
 	s.dial = func(config.Config) (*imapclient.Client, error) { return imapclient.DialInsecure(m.addr, nil) }
 	return s
 }
 
 func (m *mailbox) deliver(t *testing.T, folder string, parts ...string) {
+	t.Helper()
+	m.deliverAt(t, folder, time.Time{}, parts...)
+}
+
+// deliverAt stamps the INTERNALDATE; zero is now.
+func (m *mailbox) deliverAt(t *testing.T, folder string, received time.Time, parts ...string) {
 	t.Helper()
 	var b strings.Builder
 	b.WriteString("From: sender@example.com\nTo: docs@example.com\nSubject: scan\nMIME-Version: 1.0\n")
@@ -92,7 +99,7 @@ func (m *mailbox) deliver(t *testing.T, folder string, parts ...string) {
 	}
 	b.WriteString("--b--\n")
 	raw := []byte(strings.ReplaceAll(b.String(), "\n", "\r\n"))
-	if _, err := m.user.Append(folder, bytes.NewReader(raw), &imap.AppendOptions{}); err != nil {
+	if _, err := m.user.Append(folder, bytes.NewReader(raw), &imap.AppendOptions{Time: received}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -280,7 +287,7 @@ func TestDeleteModeWaitsUntilTheDocumentIsSealed(t *testing.T) {
 
 func TestScanDoesNothingWithoutAHost(t *testing.T) {
 	app := openApp(t, limits.Limits{})
-	s := newScanner(app, nil)
+	s := New(app, nil)
 	s.dial = func(config.Config) (*imapclient.Client, error) {
 		t.Fatal("dialled without a configured host")
 		return nil, nil
@@ -318,4 +325,57 @@ func uidValidity(t *testing.T, m *mailbox) uint32 {
 		t.Fatal(err)
 	}
 	return status.UIDValidity
+}
+
+func TestScanSkipsMailReceivedBeforeTheSincePoint(t *testing.T) {
+	app := openApp(t, limits.Limits{})
+	m := startServer(t)
+	m.deliverAt(t, "INBOX", time.Now().Add(-48*time.Hour), base64Part("old.txt", "already in the mailbox"))
+	m.deliverAt(t, "INBOX", time.Now().Add(-30*time.Minute), base64Part("same-day.txt", "before the save"))
+	m.deliver(t, "INBOX", base64Part("new.txt", "arrived after the save"))
+
+	c := cfg(config.IMAPDelete)
+	c.IMAPSince = time.Now().Add(-10 * time.Minute)
+	s := m.scanner(app)
+	if res := s.Scan(c); res != (Result{Created: 1}) {
+		t.Fatalf("scan = %+v, want only the mail after the since point", res)
+	}
+	if got := m.count(t, "INBOX"); got != 2 {
+		t.Fatalf("INBOX holds %d, want the two older mails untouched", got)
+	}
+	if res := s.Scan(c); res != (Result{}) {
+		t.Fatalf("second scan = %+v", res)
+	}
+}
+
+func TestScanRangeBackfillsWithoutMovingOrDeleting(t *testing.T) {
+	app := openApp(t, limits.Limits{})
+	m := startServer(t)
+	m.deliverAt(t, "INBOX", time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC), base64Part("jan.txt", "january"))
+	m.deliverAt(t, "INBOX", time.Date(2026, 2, 28, 23, 0, 0, 0, time.UTC), base64Part("feb.txt", "february"))
+	m.deliverAt(t, "INBOX", time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC), base64Part("mar.txt", "march"))
+
+	c := cfg(config.IMAPDelete)
+	c.IMAPSince = time.Now()
+	s := m.scanner(app)
+	from, to := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	res, err := s.ScanRange(c, from, to)
+	if err != nil || res != (Result{Created: 2}) {
+		t.Fatalf("range scan = %+v, %v; want January and February", res, err)
+	}
+	if got := m.count(t, "INBOX"); got != 3 {
+		t.Fatalf("INBOX holds %d; a backfill must not delete", got)
+	}
+	if res, err := s.ScanRange(c, from, to); err != nil || res != (Result{Skipped: 2}) {
+		t.Fatalf("second range scan = %+v, %v; want both skipped as duplicates", res, err)
+	}
+
+	s.running.Store(true)
+	if _, err := s.ScanRange(c, from, to); !errors.Is(err, ErrBusy) {
+		t.Fatalf("range scan during a scan = %v, want ErrBusy", err)
+	}
+	s.running.Store(false)
+	if _, err := s.ScanRange(config.Config{}, from, to); !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("range scan without a mailbox = %v", err)
+	}
 }

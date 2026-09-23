@@ -68,8 +68,11 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	// would each think they had the backlog to themselves.
 	backfill := worker.NewBackfiller(app, rt)
 	ingestDir := strings.TrimSpace(os.Getenv(dirimport.EnvDir))
-	ingestIMAP := config.IngestIMAPEnabledFromEnv()
-	appapi.Register(app, rt, ft, lim, badLimitKeys, backfill, ingestDir != "", ingestIMAP)
+	var imapScanner *imapimport.Scanner
+	if config.IngestIMAPEnabledFromEnv() {
+		imapScanner = imapimport.New(app, rt)
+	}
+	appapi.Register(app, rt, ft, lim, badLimitKeys, backfill, ingestDir != "", imapScanner)
 	// After config.RegisterHooks, so the settings singleton and env-seeded
 	// providers exist by the time an account is minted.
 	appapi.RegisterAdminBootstrap(app)
@@ -79,8 +82,8 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	// After worker.Register: the documents it creates go through the same
 	// create hooks as an upload, which is what hashes and queues them.
 	dirimport.Register(app, rt, ingestDir)
-	if ingestIMAP {
-		imapimport.Register(app, rt)
+	if imapScanner != nil {
+		imapScanner.Register()
 	}
 
 	// After worker.Register, which declares the queue gauge. Order is not

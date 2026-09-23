@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/aiprovider"
@@ -58,6 +59,8 @@ type settingsResponse struct {
 	IMAPFolder       string `json:"imap_folder"`
 	IMAPAfterConsume string `json:"imap_after_consume"`
 	IMAPMoveFolder   string `json:"imap_move_folder"`
+	// Read-only: set whenever the mailbox changes; older mail is not scanned.
+	IMAPSince string `json:"imap_since"`
 	// Branding lives in PocketBase's own settings, not the app_settings record:
 	// the name is what passkeys, emails and backups are stamped with.
 	AppName string `json:"app_name"`
@@ -269,6 +272,7 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 		IMAPFolder:                    cfg.IMAPFolder,
 		IMAPAfterConsume:              cfg.IMAPAfterConsume,
 		IMAPMoveFolder:                cfg.IMAPMoveFolder,
+		IMAPSince:                     formatSince(cfg.IMAPSince),
 	}
 }
 
@@ -511,7 +515,22 @@ func (e settingsError) Error() string { return string(e) }
 
 func errInvalid(msg string) error { return settingsError(msg) }
 
+func formatSince(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
+// imapMailbox is what identifies the mailbox: pointing at another one moves
+// imap_since, a new password or after-import action does not.
+func imapMailbox(record *core.Record) string {
+	return record.GetString("imap_host") + "|" + record.GetString("imap_username") + "|" +
+		strutil.FirstNonEmpty(record.GetString("imap_folder"), config.DefaultIMAPFolder)
+}
+
 func applyIMAPPatch(record *core.Record, req settingsPatchRequest) error {
+	before := imapMailbox(record)
 	for field, value := range map[string]*string{
 		"imap_host":        req.IMAPHost,
 		"imap_username":    req.IMAPUsername,
@@ -550,6 +569,9 @@ func applyIMAPPatch(record *core.Record, req settingsPatchRequest) error {
 		case strings.EqualFold(target, folder):
 			return errInvalid("imap_move_folder must differ from imap_folder")
 		}
+	}
+	if record.GetString("imap_host") != "" && imapMailbox(record) != before {
+		record.Set("imap_since", time.Now().UTC())
 	}
 	return nil
 }

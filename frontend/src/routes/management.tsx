@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
+import { useAppMeta } from '../hooks/useAppMeta'
 import {
   countFailedDocuments,
   describeJobOverrides,
@@ -13,6 +14,7 @@ import {
   pruneStaleTaxonomy,
   reindexSearch,
   scanDuplicates,
+  scanIMAPRange,
   startEmbeddingBackfill,
   type ActiveJobCounts,
   type DuplicateScanResult,
@@ -21,6 +23,7 @@ import {
 } from '../lib/api/maintenance'
 import { getLimits, type InstanceLimits } from '../lib/api/limits'
 import { LimitsUsage } from '../components/LimitsUsage'
+import { ResultDialog } from '../components/settings/SettingsFeedback'
 import { REPROCESS_MODE_LABELS, countLabel, type ReprocessMode } from '../lib/processing'
 import { Button, labelTextClassName, sectionClassName, sectionTitleClassName } from '../components/ui'
 
@@ -75,8 +78,16 @@ export function ManagementPage() {
   const [embedding, setEmbedding] = useState<EmbeddingBackfillState | null>(null)
   const [embeddingLoaded, setEmbeddingLoaded] = useState(false)
   const [embeddingStarting, setEmbeddingStarting] = useState(false)
+  const { ingestImap } = useAppMeta()
+  const [mailFrom, setMailFrom] = useState('')
+  const [mailTo, setMailTo] = useState('')
+  const [mailScanning, setMailScanning] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const closeResult = useCallback(() => {
+    setError('')
+    setSuccess('')
+  }, [])
 
   // Declared above the effect that polls on it: a sweep runs in the background
   // on the server, so this flag is what turns the poll on and off.
@@ -261,6 +272,22 @@ export function ManagementPage() {
     }
   }
 
+  async function onScanMailbox() {
+    try {
+      setMailScanning(true)
+      setError('')
+      setSuccess('')
+      const result = await scanIMAPRange(mailFrom, mailTo)
+      setSuccess(
+        `Mailbox scan finished: ${result.created} imported, ${result.skipped} already in the library, ${result.failed} failed.`,
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Mailbox scan failed')
+    } finally {
+      setMailScanning(false)
+    }
+  }
+
   async function onReindexSearch() {
     try {
       setReindexing(true)
@@ -393,6 +420,47 @@ export function ManagementPage() {
           </div>
         </section>
 
+        {ingestImap && (
+          <section className={sectionClassName}>
+            <h2 className={sectionTitleClassName}>Mailbox</h2>
+            <p className="text-xs text-ink-soft">
+              The mailbox scan imports only mail received after it was set up in Settings → Ingest.
+              This imports the attachments of older mail received between two days, inclusive.
+              Messages are never moved or deleted, and attachments already in the library are
+              skipped.
+            </p>
+            <div className="mt-4 flex flex-wrap items-end gap-3">
+              <label className="flex flex-col gap-1">
+                <span className={labelTextClassName}>Received from</span>
+                <input
+                  type="date"
+                  className={selectClassName}
+                  value={mailFrom}
+                  max={mailTo || undefined}
+                  onChange={(event) => setMailFrom(event.target.value)}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className={labelTextClassName}>Received to</span>
+                <input
+                  type="date"
+                  className={selectClassName}
+                  value={mailTo}
+                  min={mailFrom || undefined}
+                  onChange={(event) => setMailTo(event.target.value)}
+                />
+              </label>
+              <Button
+                variant="secondary"
+                disabled={mailScanning || !mailFrom || !mailTo}
+                onClick={() => void onScanMailbox()}
+              >
+                {mailScanning ? 'Scanning...' : 'Scan mailbox'}
+              </Button>
+            </div>
+          </section>
+        )}
+
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>Stale data</h2>
           <p className="text-xs text-ink-soft">
@@ -509,9 +577,9 @@ export function ManagementPage() {
           )}
         </section>
 
-        {error && <p className="text-sm text-madder">{error}</p>}
-        {success && <p className="text-sm text-forest">{success}</p>}
       </div>
+
+      <ResultDialog error={error} success={success} onClose={closeResult} />
     </div>
   )
 }

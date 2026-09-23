@@ -18,6 +18,21 @@ export function scanDuplicates() {
   })
 }
 
+export type IMAPScanResult = {
+  created: number
+  skipped: number
+  failed: number
+}
+
+/** Imports the attachments of mail received on from..to (inclusive days); never moves or deletes. */
+export function scanIMAPRange(from: string, to: string) {
+  return apiFetch<IMAPScanResult>('/api/app/ingest/imap/scan', {
+    method: 'POST',
+    body: { from, to },
+    fallbackError: 'Mailbox scan failed',
+  })
+}
+
 export type SearchReindexResult = {
   indexed: number
 }

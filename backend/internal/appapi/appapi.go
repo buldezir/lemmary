@@ -7,6 +7,7 @@ import (
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/imapimport"
 	"lemmary/backend/internal/limits"
 	"lemmary/backend/internal/pdfsplit"
 	"lemmary/backend/internal/zipimport"
@@ -21,14 +22,16 @@ func Register(
 	lim limits.Limits,
 	badLimitKeys []string,
 	sweeper EmbeddingSweeper,
-	ingestDirEnabled, ingestIMAPEnabled bool,
+	ingestDirEnabled bool,
+	// Nil when INGEST_IMAP_ENABLED is off.
+	imapScanner *imapimport.Scanner,
 ) {
 	RegisterAppName(app)
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: 45,
 		Func: func(e *core.ServeEvent) error {
 			g := e.Router.Group("/api/app")
-			g.GET("/meta", handleGetMeta(app, rt, ingestDirEnabled, ingestIMAPEnabled))
+			g.GET("/meta", handleGetMeta(app, rt, ingestDirEnabled, imapScanner != nil))
 			g.GET("/me", handleGetMe(app))
 			g.GET("/limits", bindAuth(handleGetLimits(app, lim, badLimitKeys)))
 			g.GET("/setup/status", handleGetSetupStatus(app, rt))
@@ -98,6 +101,9 @@ func Register(
 			g.POST("/providers/{id}/chatgpt/device/poll", bindAdmin(handleChatGPTDevicePoll(app, rt)))
 			g.DELETE("/providers/{id}/chatgpt", bindAdmin(handleChatGPTSignOut(app, rt)))
 			g.POST("/duplicates/scan", bindAdmin(handlePostDuplicatesScan(app, rt)))
+			if imapScanner != nil {
+				g.POST("/ingest/imap/scan", bindAdmin(handleIMAPScan(app, rt, imapScanner)))
+			}
 			g.POST("/taxonomy/prune", bindAdmin(handlePostTaxonomyPrune(app)))
 			// Auth rather than admin: tags are user-owned, and a run spends
 			// only on the caller's own documents.
