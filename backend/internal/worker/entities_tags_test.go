@@ -159,3 +159,29 @@ func TestListTagNamesEmptyUser(t *testing.T) {
 		t.Fatalf("expected no names, got %v", names)
 	}
 }
+
+// Extraction adds to the tags a document arrived with; the consume folder's
+// folder tags and an ngx upload's tags must survive it.
+func TestAddMatchedTagsKeepsTheDocumentsTags(t *testing.T) {
+	app := bootTagTestApp(t)
+	owner := createTagUser(t, app, "owner@example.com")
+	folder := createTag(t, app, "Taxes", owner)
+	invoices := createTag(t, app, "Invoices", owner)
+
+	docs := core.NewBaseCollection("documents")
+	docs.Fields.Add(&core.TextField{Name: "user"}, &core.JSONField{Name: "tags"})
+	doc := core.NewRecord(docs)
+	doc.Set("user", owner)
+	doc.Set("tags", []string{folder})
+
+	matched, _, err := addMatchedTags(app, doc, []string{"Invoices", "Taxes"})
+	if err != nil {
+		t.Fatalf("addMatchedTags: %v", err)
+	}
+	if len(matched) != 2 {
+		t.Fatalf("matched = %v, want both", matched)
+	}
+	if got := doc.GetStringSlice("tags"); len(got) != 2 || got[0] != folder || got[1] != invoices {
+		t.Fatalf("tags = %v, want [%s %s]", got, folder, invoices)
+	}
+}

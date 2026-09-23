@@ -103,6 +103,11 @@ func (s Source) accepts(f *zip.File) bool {
 	return storable[ext]
 }
 
+// Storable reports whether a file extension (with the dot, any case) is one the
+// documents collection accepts. Shared with the consume folder, which is the
+// same pre-filter over a directory instead of an archive.
+func Storable(ext string) bool { return storable[strings.ToLower(ext)] }
+
 // Entry is one importable file found in the archive.
 type Entry struct {
 	// Path is the entry path inside the zip; it identifies the entry on import.

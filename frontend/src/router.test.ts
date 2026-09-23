@@ -26,6 +26,7 @@ describe('route tree', () => {
       '/settings/processing',
       '/settings/worker',
       '/settings/duplicates',
+      '/settings/ingest',
       '/management',
       '/import',
       '/import/ngx',

@@ -24,6 +24,8 @@ export type AppMeta = {
    * end, and the tools are metered.
    */
   webSearch?: boolean
+  /** Whether INGEST_DIR is set, which is what makes the Settings Ingest tab worth showing. */
+  ingestDir?: boolean
 }
 
 // One request per page load, shared by three components and the auth gate --
@@ -70,6 +72,7 @@ async function fetchAppMeta(): Promise<AppMeta> {
       ai_managed?: boolean
       always_require_review?: boolean
       web_search?: boolean
+      ingest_dir?: boolean
     }>('/api/app/meta', {
       public: true,
       fallbackError: 'Failed to load app meta',
@@ -83,6 +86,7 @@ async function fetchAppMeta(): Promise<AppMeta> {
       aiManaged: data.ai_managed === true,
       alwaysRequireReview: data.always_require_review === true,
       webSearch: data.web_search === true,
+      ingestDir: data.ingest_dir === true,
     }
   } catch {
     // A name and accent have safe defaults; who owns AI configuration does not.

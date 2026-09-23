@@ -33,6 +33,7 @@ import { SettingsAIPage } from './routes/settings.ai'
 import { SettingsProcessingPage } from './routes/settings.processing'
 import { SettingsWorkerPage } from './routes/settings.worker'
 import { SettingsDuplicatesPage } from './routes/settings.duplicates'
+import { SettingsIngestPage } from './routes/settings.ingest'
 import { ManagementPage } from './routes/management'
 import { ImportPage } from './routes/import'
 import { ImportNgxPage } from './routes/import.ngx'
@@ -216,6 +217,12 @@ const settingsDuplicatesRoute = createRoute({
   component: SettingsDuplicatesPage,
 })
 
+const settingsIngestRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'ingest',
+  component: SettingsIngestPage,
+})
+
 const managementRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/management',
@@ -309,6 +316,7 @@ const routeTree = rootRoute.addChildren([
     settingsProcessingRoute,
     settingsWorkerRoute,
     settingsDuplicatesRoute,
+    settingsIngestRoute,
   ]),
   managementRoute,
   importRoute.addChildren([importArchiveRoute, importNgxRoute, importArchiveAliasRoute]),

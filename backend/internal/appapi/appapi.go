@@ -21,13 +21,14 @@ func Register(
 	lim limits.Limits,
 	badLimitKeys []string,
 	sweeper EmbeddingSweeper,
+	ingestDirEnabled bool,
 ) {
 	RegisterAppName(app)
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: 45,
 		Func: func(e *core.ServeEvent) error {
 			g := e.Router.Group("/api/app")
-			g.GET("/meta", handleGetMeta(app, rt))
+			g.GET("/meta", handleGetMeta(app, rt, ingestDirEnabled))
 			g.GET("/me", handleGetMe(app))
 			g.GET("/limits", bindAuth(handleGetLimits(app, lim, badLimitKeys)))
 			g.GET("/setup/status", handleGetSetupStatus(app, rt))
@@ -78,6 +79,7 @@ func Register(
 			// check can reject it.
 			g.POST("/ocr/test", bindAuth(handleOCRTest(app, rt))).
 				Bind(apis.BodyLimit(ocrTestMaxFileBytes + (1 << 20)))
+			g.GET("/users", bindAdmin(handleListUsers(app)))
 			g.GET("/settings", bindAdmin(handleGetSettings(app, rt)))
 			g.PATCH("/settings", bindAdmin(handlePatchSettings(app, rt)))
 			g.GET("/settings/embeddings", bindAdmin(handleGetEmbeddingStats(app, rt)))

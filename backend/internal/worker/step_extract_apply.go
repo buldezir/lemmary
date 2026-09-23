@@ -220,11 +220,10 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 	if state.Cfg.AlwaysRequireReview {
 		tagNames = append(append([]string{}, metadata.Tags...), metadata.SuggestedTags...)
 	}
-	tagIDs, droppedTags, err := matchTags(state.App, state.Document.GetString("user"), tagNames)
+	tagIDs, droppedTags, err := addMatchedTags(state.App, state.Document, tagNames)
 	if err != nil {
 		return fmt.Errorf("tags: %w", err)
 	}
-	state.Document.Set("tags", tagIDs)
 	// The model ignoring its catalog: a document that keeps proposing the same
 	// absent name is the archive telling its owner which tag to create.
 	state.Logger.Info("tags applied", "count", len(tagIDs), "dropped", droppedTags)

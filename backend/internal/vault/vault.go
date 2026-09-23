@@ -138,6 +138,8 @@ type Vault struct {
 
 	dirty   atomicCounter
 	flushes atomicCounter
+	// Set by Register, so the consume folder knows what a flush has sealed.
+	seal *inflight.Seal
 }
 
 func (v *Vault) Enabled() bool { return v != nil && v.opts.Enabled }

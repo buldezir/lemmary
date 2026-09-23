@@ -11,6 +11,8 @@ services:
       - "8090:${PORT:-80}"
     volumes:
       - app_data:/app/pb_data
+      # Consume folder: uncomment together with INGEST_DIR=/consume in .env.
+      # - ./consume:/consume
 
 volumes:
   app_data:

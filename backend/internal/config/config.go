@@ -71,9 +71,31 @@ type Config struct {
 	// AlwaysRequireReview finishes every extracted document on needs_review, so
 	// nothing reaches completed except by a person saying so.
 	AlwaysRequireReview bool
+	// The consume folder (INGEST_DIR). Owner is a users id; empty means the
+	// first admin's paired account.
+	IngestDirOwner          string
+	IngestDirIntervalMin    int
+	IngestDirDeleteOriginal bool
 }
 
 const DefaultNearDuplicateThreshold = 0.92
+
+const (
+	DefaultIngestDirIntervalMin = 5
+	MaxIngestDirIntervalMin     = 24 * 60
+)
+
+// ValidIngestInterval is what a cron step can space evenly: minutes that
+// divide an hour, hours that divide a day.
+func ValidIngestInterval(minutes int) bool {
+	if minutes < 1 || minutes > MaxIngestDirIntervalMin {
+		return false
+	}
+	if minutes < 60 {
+		return 60%minutes == 0
+	}
+	return minutes%60 == 0 && 24%(minutes/60) == 0
+}
 
 func WorkerCronFromEnv() string {
 	return getEnv("WORKER_CRON_EXPR", "* * * * *")
@@ -210,6 +232,10 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 	if ocrTimeoutSec <= 0 {
 		ocrTimeoutSec = 40
 	}
+	ingestInterval := int(record.GetFloat("ingest_dir_interval_min"))
+	if ingestInterval <= 0 {
+		ingestInterval = DefaultIngestDirIntervalMin
+	}
 	openAITimeoutSec := int(record.GetFloat("openai_timeout_sec"))
 	if openAITimeoutSec <= 0 {
 		openAITimeoutSec = 60
@@ -247,6 +273,9 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 		NearDuplicateDetectionEnabled: record.GetBool("near_duplicate_detection_enabled"),
 		NearDuplicateThreshold:        threshold,
 		AlwaysRequireReview:           record.GetBool("always_require_review"),
+		IngestDirOwner:                strings.TrimSpace(record.GetString("ingest_dir_owner")),
+		IngestDirIntervalMin:          ingestInterval,
+		IngestDirDeleteOriginal:       record.GetBool("ingest_dir_delete_original"),
 	}
 
 	if err := resolveProviders(app, &cfg); err != nil {
@@ -324,6 +353,13 @@ func applyConfigToRecord(record *core.Record, cfg Config) {
 	}
 	record.Set("near_duplicate_threshold", threshold)
 	record.Set("always_require_review", cfg.AlwaysRequireReview)
+	record.Set("ingest_dir_owner", cfg.IngestDirOwner)
+	interval := cfg.IngestDirIntervalMin
+	if interval <= 0 {
+		interval = DefaultIngestDirIntervalMin
+	}
+	record.Set("ingest_dir_interval_min", interval)
+	record.Set("ingest_dir_delete_original", cfg.IngestDirDeleteOriginal)
 }
 
 func getEnv(key, fallback string) string {
