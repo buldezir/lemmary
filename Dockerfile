@@ -157,6 +157,8 @@ ENV OPENBLAS_NUM_THREADS=1 \
 # largest buffer freed so far, after which those buffers come from the arenas
 # and freeing them never reaches the OS. A fixed threshold keeps large buffers
 # on mmap, and two arenas stop per-thread arenas each holding their own hoard.
+# Setting GLIBC_TUNABLES on the container replaces this whole string, so carry
+# these two over when adding a tunable of your own.
 ENV GLIBC_TUNABLES=glibc.malloc.arena_max=2:glibc.malloc.mmap_threshold=131072
 ENV PORT=80
 EXPOSE ${PORT}
