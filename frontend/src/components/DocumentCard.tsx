@@ -2,7 +2,9 @@ import { Link } from '@tanstack/react-router'
 import type { DocumentRecord } from '../lib/api/documents'
 import { DOCUMENT_STATUS_LABELS, reviewReason, type DocumentStatus } from '../lib/documentStatus'
 import { summarizeJob, type ProcessingJobRecord } from '../lib/processing'
+import { pendingTagSuggestions } from '../lib/tagSuggestions'
 import { ProcessingStatus } from './ProcessingStatus'
+import { SuggestedTags } from './SuggestedTags'
 import { Button } from './ui'
 
 type Props = {
@@ -16,10 +18,15 @@ type Props = {
   onFilterTag?: (tagId: string) => void
   markingReviewed?: boolean
   /**
-   * The newest processing job of a failed document, when the list fetched one.
-   * It says what the status badge cannot: which step failed and why.
+   * The newest processing job of a failed or waiting document, when the list
+   * fetched one. It says what the status badge cannot: which step failed and
+   * why, or which tags the AI proposed for the reviewer.
    */
   job?: ProcessingJobRecord
+  /** Omit to hide the AI's tag suggestions. */
+  onAcceptSuggestedTag?: (id: string, name: string) => void
+  /** An accept is in flight; the chips wait for it. */
+  acceptingSuggestion?: boolean
 }
 
 /** Filled badge and a card edged to match, except for the resting state. */
@@ -82,8 +89,14 @@ export function DocumentCard({
   markingReviewed,
   onFilterTag,
   job,
+  onAcceptSuggestedTag,
+  acceptingSuggestion,
 }: Props) {
   const tags = document.expand?.tags ?? []
+  const suggestions =
+    onAcceptSuggestedTag && document.processing_status === 'needs_review'
+      ? pendingTagSuggestions(job, tags.map((tag) => tag.name))
+      : []
   const correspondent = document.expand?.correspondent?.name
   const documentType = document.expand?.document_type?.name
   const title = document.title || 'Untitled document'
@@ -136,7 +149,7 @@ export function DocumentCard({
 
         <CardDescription document={document} />
 
-        <ProcessingStatus summary={summarizeJob(job)} />
+        <ProcessingStatus summary={summarizeJob(document.processing_status === 'failed' ? job : null)} />
 
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
@@ -166,6 +179,14 @@ export function DocumentCard({
             )}
           </div>
         )}
+
+        {/* Above the full-bleed link, like the tag filter chips. */}
+        <SuggestedTags
+          names={suggestions}
+          disabled={markingReviewed || acceptingSuggestion}
+          className="relative z-10 pointer-events-auto"
+          onAccept={(name) => onAcceptSuggestedTag?.(document.id, name)}
+        />
 
         {canMarkReviewed && (
           <div className="flex justify-end">

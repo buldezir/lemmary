@@ -73,6 +73,7 @@ func (s *ExtractMetadataStep) Run(ctx context.Context, state *StepState) error {
 	if err != nil {
 		return err
 	}
+	catalog.SuggestNewTags = state.Cfg.AlwaysRequireReview
 
 	state.Logger.Info("starting AI extraction",
 		"provider", s.Extractor.Name(),
@@ -212,13 +213,29 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 		state.Document.Set("document_date", metadata.DocumentDate)
 	}
 
-	tagIDs, droppedTags, err := addMatchedTags(state.App, state.Document, metadata.Tags)
+	// In review mode the proposals join the closed list: a proposal naming an
+	// existing tag is that tag, and an invented name the model put in tags is
+	// still a proposal. Off, nobody would accept one, so they are discarded.
+	tagNames := metadata.Tags
+	if state.Cfg.AlwaysRequireReview {
+		tagNames = append(append([]string{}, metadata.Tags...), metadata.SuggestedTags...)
+	}
+	tagIDs, droppedTags, err := addMatchedTags(state.App, state.Document, tagNames)
 	if err != nil {
 		return fmt.Errorf("tags: %w", err)
 	}
 	// The model ignoring its catalog: a document that keeps proposing the same
 	// absent name is the archive telling its owner which tag to create.
 	state.Logger.Info("tags applied", "count", len(tagIDs), "dropped", droppedTags)
+
+	metadata.SuggestedTags = nil
+	if state.Cfg.AlwaysRequireReview {
+		metadata.SuggestedTags = pendingTagSuggestions(droppedTags)
+	}
+	saveMetadataJSON(state.Job, metadata)
+	if err := state.App.Save(state.Job); err != nil {
+		return fmt.Errorf("save metadata snapshot: %w", err)
+	}
 
 	lowConfidence := metadata.Confidence < minExtractionConfidence
 

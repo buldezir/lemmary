@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/pocketbase/pocketbase"
@@ -126,6 +127,26 @@ func TestMatchTagsNoNamesIsANoOp(t *testing.T) {
 func TestMatchTagsRequiresAUser(t *testing.T) {
 	if _, _, err := matchTags(nil, "  ", []string{"Invoices"}); err == nil {
 		t.Fatal("expected an error when the user id is empty")
+	}
+}
+
+func TestPendingTagSuggestionsCleansAndCaps(t *testing.T) {
+	kept := pendingTagSuggestions([]string{
+		"Warranty",
+		" warranty ", // same suggestion twice
+		"  ",
+		"Hea\x00ting\n",          // control characters stripped
+		strings.Repeat("x", 101), // longer than a tag name may be
+		"Garden", "Boat",         // Boat is past the cap of three
+	})
+	want := []string{"Warranty", "Heating", "Garden"}
+	if len(kept) != len(want) {
+		t.Fatalf("kept = %v, want %v", kept, want)
+	}
+	for i := range want {
+		if kept[i] != want[i] {
+			t.Fatalf("kept[%d] = %q, want %q", i, kept[i], want[i])
+		}
 	}
 }
 

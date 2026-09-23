@@ -36,6 +36,8 @@ export type ProcessingJobRecord = {
    * Mirrors the field failJob writes in backend/internal/worker/pipeline.go.
    */
   error?: string
+  /** The extraction snapshot; only suggested_tags is read on the client. */
+  metadata_json?: { suggested_tags?: string[] } | null
   started_at: string
   finished_at: string
   /** When the next attempt of a backed-off job becomes due. */

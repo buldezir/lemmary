@@ -350,6 +350,41 @@ func addMatchedTags(app core.App, document *core.Record, names []string) (matche
 
 // First writer wins, so two tags that normalize alike resolve to the older one
 // instead of flipping with page order.
+const (
+	maxTagSuggestions     = 3
+	maxTagSuggestionRunes = 100 // tags.name max length
+)
+
+// pendingTagSuggestions turns the names matchTags could not resolve into the
+// proposals kept for the reviewer: control characters gone, trimmed, deduped
+// on the vocabulary's key, capped, and never longer than a tag name may be,
+// since each one is handed to the tags collection unchanged on accept.
+func pendingTagSuggestions(dropped []string) []string {
+	kept := make([]string, 0, maxTagSuggestions)
+	seen := map[string]struct{}{}
+	for _, raw := range dropped {
+		name := strings.TrimSpace(strings.Map(func(r rune) rune {
+			if unicode.IsControl(r) {
+				return -1
+			}
+			return r
+		}, raw))
+		key := normalizeNamedEntityKey(name)
+		if key == "" || len([]rune(name)) > maxTagSuggestionRunes {
+			continue
+		}
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		kept = append(kept, name)
+		if len(kept) == maxTagSuggestions {
+			break
+		}
+	}
+	return kept
+}
+
 func tagIndexByKey(app core.App, userID string) (map[string]string, error) {
 	index := map[string]string{}
 	offset := 0

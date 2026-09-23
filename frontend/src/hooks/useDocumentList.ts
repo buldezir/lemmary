@@ -14,7 +14,7 @@ import {
   type DocumentTypeRecord,
   type JobOverrides,
 } from '../lib/api/documents'
-import { listTags } from '../lib/api/tags'
+import { acceptSuggestedTag, listTags } from '../lib/api/tags'
 import { getLatestJobsFor } from '../lib/api/jobs'
 import {
   defaultDocumentQuery,
@@ -91,6 +91,7 @@ export function useDocumentList({
   const [reprocessOverrides, setReprocessOverrides] = useState<JobOverrides>({})
   const [reprocessing, setReprocessing] = useState(false)
   const [markingReviewed, setMarkingReviewed] = useState(false)
+  const [acceptingSuggestion, setAcceptingSuggestion] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [libraryVersion, setLibraryVersion] = useState(0)
 
@@ -287,11 +288,15 @@ export function useDocumentList({
     }
   }, [])
 
-  // Only failed documents need their job: it says which step broke and why.
-  // Every other status is self-explanatory on the badge. Separate from the
-  // load above because a job that cannot be read must not fail the list.
+  // Only failed and waiting documents need their job: it says which step broke
+  // and why, or which tags the AI proposed. Every other status is
+  // self-explanatory on the badge. Separate from the load above because a job
+  // that cannot be read must not fail the list.
   const documentIds = documents
-    .filter((document) => document.processing_status === 'failed')
+    .filter(
+      (document) =>
+        document.processing_status === 'failed' || document.processing_status === 'needs_review',
+    )
     .map((document) => document.id)
     .join(',')
   useEffect(() => {
@@ -355,6 +360,24 @@ export function useDocumentList({
       setError(err instanceof Error ? err.message : 'Reprocess failed')
     } finally {
       setReprocessing(false)
+    }
+  }
+
+  // The list reloads itself through notifyDocumentsChanged, so the accepted
+  // chip turns into a real tag on the card without a manual refresh. One
+  // accept at a time, and every card's chips wait for it.
+  async function onAcceptSuggestedTag(id: string, name: string) {
+    if (acceptingSuggestion) return
+    try {
+      setAcceptingSuggestion(true)
+      setError('')
+      setMessage('')
+      await acceptSuggestedTag(id, name)
+      setMessage(`Added tag "${name}".`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add the tag')
+    } finally {
+      setAcceptingSuggestion(false)
     }
   }
 
@@ -447,6 +470,8 @@ export function useDocumentList({
     deleting,
     onReprocessSelected,
     onMarkReviewed,
+    onAcceptSuggestedTag,
+    acceptingSuggestion,
     onDeleteSelected,
   }
 }

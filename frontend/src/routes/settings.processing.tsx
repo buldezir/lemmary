@@ -78,7 +78,8 @@ export function SettingsProcessingPage() {
             Every document the AI extracts metadata for waits in the Inbox, however confident
             the extraction was &mdash; reprocessed documents included. Nothing completes but by
             your saying so. Off, only low-confidence extractions and possible duplicates land
-            there.
+            there. While a document waits, the AI may also suggest new tags for it; accepting
+            one creates the tag.
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">

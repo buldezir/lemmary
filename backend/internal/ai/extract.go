@@ -36,6 +36,10 @@ type ExtractionCatalog struct {
 	// Tags is a closed set, unlike the other two: the model picks from it or
 	// returns nothing. Tags are created by hand on the Tags page.
 	Tags []string
+	// SuggestNewTags asks for a separate suggested_tags array of names absent
+	// from Tags. Only set when a human reviews every document, so the
+	// suggestions have someone to accept them.
+	SuggestNewTags bool
 }
 
 type Extractor interface {
@@ -73,6 +77,11 @@ Also include these fields translated into %s:
 	prompt += formatExistingCorrespondentsPrompt(catalog.Correspondents)
 	prompt += formatExistingDocumentTypesPrompt(catalog.DocumentTypes)
 	prompt += formatAllowedTagsPrompt(catalog.Tags)
+	if catalog.SuggestNewTags {
+		prompt += `
+
+Also return suggested_tags (array of strings): up to 3 short new tag names that fit this document and are NOT in the existing tags list, in the language of the existing tags. Keep tags itself restricted to the list above; return an empty suggested_tags array when the existing tags already cover the document.`
+	}
 	prompt += formatExtractionRulesPrompt(rules)
 
 	// Last on purpose: the rules above are the admin's, but the JSON contract
