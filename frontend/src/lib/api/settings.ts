@@ -54,13 +54,27 @@ export type AppSettings = {
   ingest_dir_owner: string
   ingest_dir_interval_min: number
   ingest_dir_delete_original: boolean
+  /** IMAP ingest (INGEST_IMAP_ENABLED); shares the owner and interval above. */
+  imap_host: string
+  imap_security: 'tls' | 'starttls'
+  imap_username: string
+  /** The password itself is write-only. */
+  imap_password_set: boolean
+  imap_folder: string
+  imap_after_consume: 'keep' | 'delete' | 'move'
+  imap_move_folder: string
   /** Instance name, shown in the header and stamped on emails and passkeys. */
   app_name: string
   /** Accent color as #rrggbb. Empty means the built-in accent. */
   accent: string
 }
 
-export type AppSettingsPatch = Partial<Omit<AppSettings, 'embedding_dims'>>
+export type AppSettingsPatch = Partial<
+  Omit<AppSettings, 'embedding_dims' | 'imap_password_set'> & {
+    /** Blank keeps the stored password. */
+    imap_password: string
+  }
+>
 
 /** How much of the archive has been embedded. See GET /api/app/settings/embeddings. */
 export type EmbeddingStats = {

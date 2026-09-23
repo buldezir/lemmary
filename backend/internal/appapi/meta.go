@@ -79,12 +79,13 @@ func resolvedAccent(app core.App) string {
 	return defaultAccent
 }
 
-func handleGetMeta(app core.App, rt *config.Runtime, ingestDirEnabled bool) func(*core.RequestEvent) error {
+func handleGetMeta(app core.App, rt *config.Runtime, ingestDirEnabled, ingestIMAPEnabled bool) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		return writeJSON(e, http.StatusOK, map[string]any{
-			"ingest_dir": ingestDirEnabled,
-			"app_name":   resolvedAppName(app),
-			"accent":     resolvedAccent(app),
+			"ingest_dir":  ingestDirEnabled,
+			"ingest_imap": ingestIMAPEnabled,
+			"app_name":    resolvedAppName(app),
+			"accent":      resolvedAccent(app),
 			// Public: the SPA needs both before anyone has signed in.
 			"passkeys":   passkeyLoginAvailable(app, e),
 			"ai_managed": rt.Managed(),

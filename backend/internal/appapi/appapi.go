@@ -21,14 +21,14 @@ func Register(
 	lim limits.Limits,
 	badLimitKeys []string,
 	sweeper EmbeddingSweeper,
-	ingestDirEnabled bool,
+	ingestDirEnabled, ingestIMAPEnabled bool,
 ) {
 	RegisterAppName(app)
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: 45,
 		Func: func(e *core.ServeEvent) error {
 			g := e.Router.Group("/api/app")
-			g.GET("/meta", handleGetMeta(app, rt, ingestDirEnabled))
+			g.GET("/meta", handleGetMeta(app, rt, ingestDirEnabled, ingestIMAPEnabled))
 			g.GET("/me", handleGetMe(app))
 			g.GET("/limits", bindAuth(handleGetLimits(app, lim, badLimitKeys)))
 			g.GET("/setup/status", handleGetSetupStatus(app, rt))

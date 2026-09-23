@@ -164,17 +164,6 @@ func TestScanDeletesOriginalsWhenAsked(t *testing.T) {
 	}
 }
 
-func TestCronExprFollowsTheInterval(t *testing.T) {
-	for minutes, want := range map[int]string{
-		0: "* * * * *", 1: "* * * * *", 5: "*/5 * * * *", 30: "*/30 * * * *",
-		60: "0 */1 * * *", 180: "0 */3 * * *", 720: "0 */12 * * *", 1440: "0 0 * * *",
-	} {
-		if got := cronExpr(minutes); got != want {
-			t.Errorf("cronExpr(%d) = %q, want %q", minutes, got, want)
-		}
-	}
-}
-
 // A documents cap is room every later file would also lack, so the scan stops
 // rather than burning through the folder; the file is not remembered as refused,
 // because it is not the file that was wrong.

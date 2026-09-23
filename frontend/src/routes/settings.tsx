@@ -10,7 +10,7 @@ import { tabClassName } from '../components/ui'
  */
 export function SettingsPage() {
   // unknown/failed meta counts as managed; see AppMeta.aiManaged
-  const { aiManaged, ingestDir } = useAppMeta()
+  const { aiManaged, ingestDir, ingestImap } = useAppMeta()
   const aiEditable = aiManaged === false
 
   return (
@@ -52,7 +52,7 @@ export function SettingsPage() {
             Duplicates
           </Link>
         )}
-        {ingestDir && (
+        {(ingestDir || ingestImap) && (
           <Link to="/settings/ingest" className={tabClassName}>
             Ingest
           </Link>

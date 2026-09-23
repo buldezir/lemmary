@@ -11,6 +11,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/strutil"
 )
 
 type settingsResponse struct {
@@ -48,6 +49,15 @@ type settingsResponse struct {
 	IngestDirOwner          string `json:"ingest_dir_owner"`
 	IngestDirIntervalMin    int    `json:"ingest_dir_interval_min"`
 	IngestDirDeleteOriginal bool   `json:"ingest_dir_delete_original"`
+	// The IMAP mailbox, sharing the owner and interval above. The password is
+	// write-only: a GET reports only whether one is stored.
+	IMAPHost         string `json:"imap_host"`
+	IMAPSecurity     string `json:"imap_security"`
+	IMAPUsername     string `json:"imap_username"`
+	IMAPPasswordSet  bool   `json:"imap_password_set"`
+	IMAPFolder       string `json:"imap_folder"`
+	IMAPAfterConsume string `json:"imap_after_consume"`
+	IMAPMoveFolder   string `json:"imap_move_folder"`
 	// Branding lives in PocketBase's own settings, not the app_settings record:
 	// the name is what passkeys, emails and backups are stamped with.
 	AppName string `json:"app_name"`
@@ -78,6 +88,13 @@ type settingsPatchRequest struct {
 	IngestDirOwner                *string  `json:"ingest_dir_owner"`
 	IngestDirIntervalMin          *int     `json:"ingest_dir_interval_min"`
 	IngestDirDeleteOriginal       *bool    `json:"ingest_dir_delete_original"`
+	IMAPHost                      *string  `json:"imap_host"`
+	IMAPSecurity                  *string  `json:"imap_security"`
+	IMAPUsername                  *string  `json:"imap_username"`
+	IMAPPassword                  *string  `json:"imap_password"`
+	IMAPFolder                    *string  `json:"imap_folder"`
+	IMAPAfterConsume              *string  `json:"imap_after_consume"`
+	IMAPMoveFolder                *string  `json:"imap_move_folder"`
 	AppName                       *string  `json:"app_name"`
 	Accent                        *string  `json:"accent"`
 }
@@ -245,6 +262,13 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 		IngestDirOwner:                cfg.IngestDirOwner,
 		IngestDirIntervalMin:          cfg.IngestDirIntervalMin,
 		IngestDirDeleteOriginal:       cfg.IngestDirDeleteOriginal,
+		IMAPHost:                      cfg.IMAPHost,
+		IMAPSecurity:                  cfg.IMAPSecurity,
+		IMAPUsername:                  cfg.IMAPUsername,
+		IMAPPasswordSet:               cfg.IMAPPassword != "",
+		IMAPFolder:                    cfg.IMAPFolder,
+		IMAPAfterConsume:              cfg.IMAPAfterConsume,
+		IMAPMoveFolder:                cfg.IMAPMoveFolder,
 	}
 }
 
@@ -366,6 +390,9 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	if req.IngestDirDeleteOriginal != nil {
 		record.Set("ingest_dir_delete_original", *req.IngestDirDeleteOriginal)
 	}
+	if err := applyIMAPPatch(record, req); err != nil {
+		return err
+	}
 	if req.NearDuplicateThreshold != nil {
 		if *req.NearDuplicateThreshold <= 0 || *req.NearDuplicateThreshold > 1 {
 			return errInvalid("near_duplicate_threshold must be between 0 and 1")
@@ -483,3 +510,46 @@ type settingsError string
 func (e settingsError) Error() string { return string(e) }
 
 func errInvalid(msg string) error { return settingsError(msg) }
+
+func applyIMAPPatch(record *core.Record, req settingsPatchRequest) error {
+	for field, value := range map[string]*string{
+		"imap_host":        req.IMAPHost,
+		"imap_username":    req.IMAPUsername,
+		"imap_folder":      req.IMAPFolder,
+		"imap_move_folder": req.IMAPMoveFolder,
+	} {
+		if value != nil {
+			record.Set(field, strings.TrimSpace(*value))
+		}
+	}
+	// Blank keeps the stored password, as the provider api_key does.
+	if req.IMAPPassword != nil && *req.IMAPPassword != "" {
+		record.Set("imap_password", *req.IMAPPassword)
+	}
+	if req.IMAPSecurity != nil {
+		switch v := strings.TrimSpace(*req.IMAPSecurity); v {
+		case config.IMAPSecurityTLS, config.IMAPSecuritySTARTTLS:
+			record.Set("imap_security", v)
+		default:
+			return errInvalid("imap_security must be tls or starttls")
+		}
+	}
+	if req.IMAPAfterConsume != nil {
+		switch v := strings.TrimSpace(*req.IMAPAfterConsume); v {
+		case config.IMAPKeep, config.IMAPDelete, config.IMAPMove:
+			record.Set("imap_after_consume", v)
+		default:
+			return errInvalid("imap_after_consume must be keep, delete or move")
+		}
+	}
+	if record.GetString("imap_after_consume") == config.IMAPMove {
+		folder := strutil.FirstNonEmpty(record.GetString("imap_folder"), config.DefaultIMAPFolder)
+		switch target := record.GetString("imap_move_folder"); {
+		case target == "":
+			return errInvalid("imap_move_folder is required to move consumed messages")
+		case strings.EqualFold(target, folder):
+			return errInvalid("imap_move_folder must differ from imap_folder")
+		}
+	}
+	return nil
+}

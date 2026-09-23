@@ -12,6 +12,7 @@ import (
 	"lemmary/backend/internal/embed"
 	"lemmary/backend/internal/embedstore"
 	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/imapimport"
 	"lemmary/backend/internal/limits"
 	"lemmary/backend/internal/mailsink"
 	"lemmary/backend/internal/metrics"
@@ -67,7 +68,8 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	// would each think they had the backlog to themselves.
 	backfill := worker.NewBackfiller(app, rt)
 	ingestDir := strings.TrimSpace(os.Getenv(dirimport.EnvDir))
-	appapi.Register(app, rt, ft, lim, badLimitKeys, backfill, ingestDir != "")
+	ingestIMAP := config.IngestIMAPEnabledFromEnv()
+	appapi.Register(app, rt, ft, lim, badLimitKeys, backfill, ingestDir != "", ingestIMAP)
 	// After config.RegisterHooks, so the settings singleton and env-seeded
 	// providers exist by the time an account is minted.
 	appapi.RegisterAdminBootstrap(app)
@@ -77,6 +79,9 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	// After worker.Register: the documents it creates go through the same
 	// create hooks as an upload, which is what hashes and queues them.
 	dirimport.Register(app, rt, ingestDir)
+	if ingestIMAP {
+		imapimport.Register(app, rt)
+	}
 
 	// After worker.Register, which declares the queue gauge. Order is not
 	// actually load-bearing -- OpenTelemetry's global meter hands every

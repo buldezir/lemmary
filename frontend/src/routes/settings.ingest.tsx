@@ -1,8 +1,10 @@
-import { type SubmitEvent } from 'react'
+import { type ChangeEvent, type SubmitEvent } from 'react'
 
+import { useAppMeta } from '../hooks/useAppMeta'
 import { useSettingsForm } from '../hooks/useSettingsForm'
 import { useAsync } from '../hooks/useAsync'
 import { listUsers } from '../lib/api/users'
+import type { AppSettings, AppSettingsPatch } from '../lib/api/settings'
 import {
   ResultDialog,
   SaveSettingsButton,
@@ -10,6 +12,7 @@ import {
 } from '../components/settings/SettingsFeedback'
 import {
   fieldHintClassName,
+  inputClassName,
   labelClassName,
   labelTextClassName,
   sectionClassName,
@@ -20,19 +23,30 @@ import {
 // config.ValidIngestInterval: the steps a cron schedule spaces evenly.
 const SCAN_INTERVALS = [1, 2, 5, 10, 15, 30, 60, 120, 180, 360, 720, 1440]
 
+const subTitleClassName = 'mb-3 mt-6 text-sm font-semibold text-ink'
+
 function intervalLabel(minutes: number) {
   if (minutes === 1440) return 'day'
   if (minutes >= 60) return minutes === 60 ? 'hour' : `${minutes / 60} hours`
   return minutes === 1 ? 'minute' : `${minutes} minutes`
 }
 
-/** The consume folder. Only reachable when INGEST_DIR is set; see the settings tabs. */
+/** The consume folder and the IMAP mailbox. Reachable when INGEST_DIR or INGEST_IMAP_ENABLED is set. */
 export function SettingsIngestPage() {
+  const { ingestDir, ingestImap } = useAppMeta()
   const { form, loading, error, success, saving, updateField, save, closeResult } =
     useSettingsForm((settings) => ({
       ingest_dir_owner: settings.ingest_dir_owner,
       ingest_dir_interval_min: String(settings.ingest_dir_interval_min),
       ingest_dir_delete_original: settings.ingest_dir_delete_original,
+      imap_host: settings.imap_host,
+      imap_security: settings.imap_security,
+      imap_username: settings.imap_username,
+      imap_password: '',
+      imap_password_set: settings.imap_password_set,
+      imap_folder: settings.imap_folder,
+      imap_after_consume: settings.imap_after_consume,
+      imap_move_folder: settings.imap_move_folder,
     }))
   const { data: users } = useAsync(listUsers, [])
 
@@ -40,39 +54,40 @@ export function SettingsIngestPage() {
     event.preventDefault()
     if (!form) return
 
-    await save({
+    const patch: AppSettingsPatch = {
       ingest_dir_owner: form.ingest_dir_owner,
       ingest_dir_interval_min: Number(form.ingest_dir_interval_min),
-      ingest_dir_delete_original: form.ingest_dir_delete_original,
-    })
+    }
+    if (ingestDir) patch.ingest_dir_delete_original = form.ingest_dir_delete_original
+    if (ingestImap) {
+      Object.assign(patch, {
+        imap_host: form.imap_host,
+        imap_security: form.imap_security,
+        imap_username: form.imap_username,
+        imap_password: form.imap_password,
+        imap_folder: form.imap_folder,
+        imap_after_consume: form.imap_after_consume,
+        imap_move_folder: form.imap_move_folder,
+      })
+    }
+    await save(patch)
   }
 
   if (loading || !form) return <SettingsLoading error={error} />
 
+  const text = (
+    key: 'imap_host' | 'imap_username' | 'imap_password' | 'imap_folder' | 'imap_move_folder',
+  ) => ({
+    className: inputClassName,
+    value: form[key],
+    onChange: (e: ChangeEvent<HTMLInputElement>) => updateField(key, e.target.value),
+    autoComplete: 'off',
+  })
+
   return (
     <form onSubmit={onSubmit}>
       <section className={sectionClassName}>
-        <h2 className={sectionTitleClassName}>Ingest folder</h2>
-        <p className={`${fieldHintClassName} mb-4`}>
-          Files dropped into the mounted folder become documents on the next scan. Subfolders
-          become tags, so <code>Taxes/2024/invoice.pdf</code> arrives tagged Taxes and 2024.
-        </p>
-        <div className="mb-4 rounded-xs border border-line-strong bg-bright p-4">
-          <label className="flex items-center gap-2.5 text-sm font-medium text-ink">
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-oxblood"
-              checked={form.ingest_dir_delete_original}
-              onChange={(e) => updateField('ingest_dir_delete_original', e.target.checked)}
-            />
-            Delete the original file after it is consumed
-          </label>
-          <p className={`${fieldHintClassName} mt-2`}>
-            Off, files stay where they are and each is imported once, even if its document is
-            deleted later; changing the file imports it again. On, the file is removed once its
-            document exists, and a duplicate is removed too.
-          </p>
-        </div>
+        <h2 className={sectionTitleClassName}>Ingest</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className={labelClassName}>
             <label className={labelClassName}>
@@ -90,7 +105,7 @@ export function SettingsIngestPage() {
                 ))}
               </select>
             </label>
-            <p className={fieldHintClassName}>The account that owns every document the folder yields.</p>
+            <p className={fieldHintClassName}>The account that owns every ingested document.</p>
           </div>
           <div className={labelClassName}>
             <label className={labelClassName}>
@@ -107,12 +122,108 @@ export function SettingsIngestPage() {
                 ))}
               </select>
             </label>
-            <p className={fieldHintClassName}>
-              Files changed in the last 30 seconds wait for the next scan, so nothing is picked up
-              half-written.
-            </p>
+            {ingestDir && (
+              <p className={fieldHintClassName}>
+                Files changed in the last 30 seconds wait for the next scan, so nothing is picked
+                up half-written.
+              </p>
+            )}
           </div>
         </div>
+
+        {ingestDir && (
+          <>
+            <h3 className={subTitleClassName}>Folder</h3>
+            <p className={`${fieldHintClassName} mb-4`}>
+              Files dropped into the mounted folder become documents on the next scan. Subfolders
+              become tags, so <code>Taxes/2024/invoice.pdf</code> arrives tagged Taxes and 2024.
+            </p>
+            <div className="rounded-xs border border-line-strong bg-bright p-4">
+              <label className="flex items-center gap-2.5 text-sm font-medium text-ink">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-oxblood"
+                  checked={form.ingest_dir_delete_original}
+                  onChange={(e) => updateField('ingest_dir_delete_original', e.target.checked)}
+                />
+                Delete the original file after it is consumed
+              </label>
+              <p className={`${fieldHintClassName} mt-2`}>
+                Off, files stay where they are and each is imported once, even if its document is
+                deleted later; changing the file imports it again. On, the file is removed once
+                its document exists, and a duplicate is removed too.
+              </p>
+            </div>
+          </>
+        )}
+
+        {ingestImap && (
+          <>
+            <h3 className={subTitleClassName}>Mailbox</h3>
+            <p className={`${fieldHintClassName} mb-4`}>
+              Every PDF, image or office attachment in the folder becomes a document on the next scan.
+              Mail without one is left alone. Leave the server empty to turn this off.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className={labelClassName}>
+                <span className={labelTextClassName}>IMAP server</span>
+                <input {...text('imap_host')} placeholder="imap.example.com" />
+              </label>
+              <label className={labelClassName}>
+                <span className={labelTextClassName}>Security</span>
+                <select
+                  className={selectClassName}
+                  value={form.imap_security}
+                  onChange={(e) => updateField('imap_security', e.target.value as AppSettings['imap_security'])}
+                >
+                  <option value="tls">TLS (port 993)</option>
+                  <option value="starttls">STARTTLS (port 143)</option>
+                </select>
+              </label>
+              <label className={labelClassName}>
+                <span className={labelTextClassName}>Username</span>
+                <input {...text('imap_username')} />
+              </label>
+              <label className={labelClassName}>
+                <span className={labelTextClassName}>Password</span>
+                <input
+                  {...text('imap_password')}
+                  type="password"
+                  placeholder={form.imap_password_set ? 'Unchanged' : ''}
+                />
+              </label>
+              <label className={labelClassName}>
+                <span className={labelTextClassName}>Folder</span>
+                <input {...text('imap_folder')} placeholder="INBOX" />
+              </label>
+              <label className={labelClassName}>
+                <span className={labelTextClassName}>After import</span>
+                <select
+                  className={selectClassName}
+                  value={form.imap_after_consume}
+                  onChange={(e) =>
+                    updateField('imap_after_consume', e.target.value as AppSettings['imap_after_consume'])
+                  }
+                >
+                  <option value="keep">Keep the message</option>
+                  <option value="move">Move the message to another folder</option>
+                  <option value="delete">Delete the message</option>
+                </select>
+              </label>
+              {form.imap_after_consume === 'move' && (
+                <label className={labelClassName}>
+                  <span className={labelTextClassName}>Move to folder</span>
+                  <input {...text('imap_move_folder')} placeholder="Lemmary/Done" required />
+                </label>
+              )}
+            </div>
+            <p className={`${fieldHintClassName} mt-2`}>
+              Kept messages are imported once, even if their documents are deleted later. A message
+              whose attachment is refused is never moved or deleted.
+            </p>
+          </>
+        )}
+
         <div className="mt-4">
           <SaveSettingsButton saving={saving} />
         </div>

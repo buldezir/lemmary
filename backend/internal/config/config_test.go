@@ -221,3 +221,14 @@ func TestValidIngestIntervalSpacesEvenly(t *testing.T) {
 		}
 	}
 }
+
+func TestCronExprFollowsTheInterval(t *testing.T) {
+	for minutes, want := range map[int]string{
+		0: "* * * * *", 1: "* * * * *", 5: "*/5 * * * *", 30: "*/30 * * * *",
+		60: "0 */1 * * *", 180: "0 */3 * * *", 720: "0 */12 * * *", 1440: "0 0 * * *",
+	} {
+		if got := IngestCronExpr(minutes); got != want {
+			t.Errorf("IngestCronExpr(%d) = %q, want %q", minutes, got, want)
+		}
+	}
+}
