@@ -155,6 +155,9 @@ func (v *Vault) flush(reason string, fail failPoint) error {
 	v.mu.Unlock()
 	v.dirty.reset()
 	v.flushes.add(1)
+	if v.seal != nil {
+		v.seal.Sealed(started)
+	}
 
 	collected, gcErr := v.collectGarbage()
 	if gcErr != nil {

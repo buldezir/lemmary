@@ -16,6 +16,8 @@ package inflight
 import (
 	"context"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 // Tracker counts active units of work. The zero value is ready to use.
@@ -85,3 +87,37 @@ func Begin() (done func()) { return std.Begin() }
 func Wait(ctx context.Context) error { return std.Wait(ctx) }
 
 func Active() int { return std.Active() }
+
+// SealStoreKey is where the vault leaves its Seal in the app store; no Seal
+// there means no encryption at rest, and every write is durable at once.
+const SealStoreKey = "inflight.seal"
+
+// Seal tracks what encryption at rest has put on the volume. A saved record is
+// only there once a flush that began after the save has committed; until then a
+// hard kill loses it. Work that destroys the only other copy (a consumed
+// original) waits for that.
+type Seal struct {
+	sealedAt  atomic.Int64
+	lastWrite atomic.Int64
+}
+
+// NewSeal starts sealed: everything already in the working directory came out
+// of the vault.
+func NewSeal() *Seal {
+	s := &Seal{}
+	s.sealedAt.Store(time.Now().UnixNano())
+	return s
+}
+
+// Wrote records a committed write the vault has yet to seal.
+func (s *Seal) Wrote() { s.lastWrite.Store(time.Now().UnixNano()) }
+
+// Sealed records a committed flush that began at startedUnixNano.
+func (s *Seal) Sealed(startedUnixNano int64) { s.sealedAt.Store(startedUnixNano) }
+
+// Durable reports whether a write finished at t survives a hard kill: a flush
+// began after it, or nothing was written since the last flush began.
+func (s *Seal) Durable(t time.Time) bool {
+	sealed := s.sealedAt.Load()
+	return t.UnixNano() < sealed || s.lastWrite.Load() < sealed
+}

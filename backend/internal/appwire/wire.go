@@ -3,10 +3,12 @@ package appwire
 import (
 	"net/http"
 	"os"
+	"strings"
 
 	"lemmary/backend/internal/appapi"
 	"lemmary/backend/internal/authguard"
 	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/dirimport"
 	"lemmary/backend/internal/embed"
 	"lemmary/backend/internal/embedstore"
 	"lemmary/backend/internal/fulltext"
@@ -64,13 +66,17 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	// One backfiller for the worker cron and the manual API sweep: two instances
 	// would each think they had the backlog to themselves.
 	backfill := worker.NewBackfiller(app, rt)
-	appapi.Register(app, rt, ft, lim, badLimitKeys, backfill)
+	ingestDir := strings.TrimSpace(os.Getenv(dirimport.EnvDir))
+	appapi.Register(app, rt, ft, lim, badLimitKeys, backfill, ingestDir != "")
 	// After config.RegisterHooks, so the settings singleton and env-seeded
 	// providers exist by the time an account is minted.
 	appapi.RegisterAdminBootstrap(app)
 	appapi.RegisterMCP(app, rt, ft)
 	ngxapi.Register(app, ft)
 	worker.Register(app, rt, backfill, config.WorkerConcurrencyFromEnv())
+	// After worker.Register: the documents it creates go through the same
+	// create hooks as an upload, which is what hashes and queues them.
+	dirimport.Register(app, rt, ingestDir)
 
 	// After worker.Register, which declares the queue gauge. Order is not
 	// actually load-bearing -- OpenTelemetry's global meter hands every

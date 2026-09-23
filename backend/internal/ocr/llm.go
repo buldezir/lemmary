@@ -3,8 +3,10 @@ package ocr
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,9 +18,12 @@ import (
 	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
+	"lemmary/backend/internal/pdftool"
 )
 
 const llmOCRMaxFileBytes = 10 * 1024 * 1024
+
+const llmOCRPageEdge = 2000
 
 const llmOCRPrompt = "Extract all text from this document. Return plain text only, preserving reading order. Do not add commentary."
 
@@ -71,15 +76,12 @@ func (p *LLMProvider) ExtractText(ctx context.Context, filePath string, mimeType
 		"bytes", len(data),
 	)
 
-	ocrParams := openai.ChatCompletionNewParams{
-		Model: shared.ChatModel(p.model),
-		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage("You transcribe documents for an archive. Return only the extracted text."),
-			openai.UserMessage(parts),
-		},
-		Temperature: ai.CompletionTemperature(p.model, 0),
+	chatResp, err := p.complete(ctx, parts)
+	if err != nil && effectiveMime == "application/pdf" && filePartRefused(err) {
+		p.logger.Warn("llm ocr: file part refused, retrying with rendered pages",
+			"model", p.model, "file", filepath.Base(filePath), slog.Any("error", err))
+		chatResp, err = p.completeRendered(ctx, filePath)
 	}
-	chatResp, err := p.llm.Complete(ctx, ocrParams, "purpose", "ocr", "messages", 2)
 	if err != nil {
 		p.logger.Error("llm ocr failed",
 			"file", filepath.Base(filePath),
@@ -102,6 +104,54 @@ func (p *LLMProvider) ExtractText(ctx context.Context, filePath string, mimeType
 		logfmt.Duration("duration", time.Since(start)),
 	)
 	return text, nil
+}
+
+func (p *LLMProvider) complete(ctx context.Context, parts []openai.ChatCompletionContentPartUnionParam) (*openai.ChatCompletion, error) {
+	return p.llm.Complete(ctx, openai.ChatCompletionNewParams{
+		Model: shared.ChatModel(p.model),
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage("You transcribe documents for an archive. Return only the extracted text."),
+			openai.UserMessage(parts),
+		},
+		Temperature: ai.CompletionTemperature(p.model, 0),
+	}, "purpose", "ocr", "messages", 2)
+}
+
+// A gateway in front of a model that reads images but not PDF file parts
+// (OpenCode Go's chat models) refuses the part with a 400 naming it.
+func filePartRefused(err error) bool {
+	var apiErr *openai.Error
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusBadRequest &&
+		strings.Contains(strings.ToLower(apiErr.RawJSON()), "file")
+}
+
+// ponytail: every page in one request; split into per-page calls if a long PDF
+// outgrows a model's image limit.
+func (p *LLMProvider) completeRendered(ctx context.Context, pdfPath string) (*openai.ChatCompletion, error) {
+	pages, err := pdftool.PageCount(ctx, pdfPath)
+	if err != nil {
+		return nil, err
+	}
+	dir, err := os.MkdirTemp("", "llm-ocr-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	paths, err := pdftool.RenderPages(ctx, pdfPath, dir, llmOCRPageEdge, pages)
+	if err != nil {
+		return nil, err
+	}
+	parts := []openai.ChatCompletionContentPartUnionParam{openai.TextContentPart(llmOCRPrompt)}
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		parts = append(parts, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{
+			URL: "data:image/png;base64," + base64.StdEncoding.EncodeToString(data),
+		}))
+	}
+	return p.complete(ctx, parts)
 }
 
 func LLMUserContentParts(filename, mimeType string, data []byte) ([]openai.ChatCompletionContentPartUnionParam, error) {

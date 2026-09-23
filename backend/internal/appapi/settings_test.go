@@ -24,6 +24,9 @@ func settingsRecordForTest(t *testing.T) *core.Record {
 		&core.TextField{Name: "embedding_model", Max: 200},
 		&core.NumberField{Name: "embedding_dims", OnlyInt: true},
 		&core.BoolField{Name: "always_require_review"},
+		&core.TextField{Name: "ingest_dir_owner", Max: 15},
+		&core.NumberField{Name: "ingest_dir_interval_min", OnlyInt: true},
+		&core.BoolField{Name: "ingest_dir_delete_original"},
 	)
 	record := core.NewRecord(collection)
 	record.Id = config.SingletonID
@@ -273,6 +276,44 @@ func TestAlwaysRequireReviewIsNotAManagedSetting(t *testing.T) {
 }
 
 func boolptr(b bool) *bool { return &b }
+
+func intptr(i int) *int { return &i }
+
+func TestPatchIngestDirFields(t *testing.T) {
+	t.Parallel()
+	record := settingsRecordForTest(t)
+
+	for _, bad := range []int{0, 45, 90, 420, 1441} {
+		if err := applySettingsPatch(nil, record, settingsPatchRequest{IngestDirIntervalMin: intptr(bad)}); err == nil {
+			t.Fatalf("expected interval %d to be refused: a cron step cannot space it evenly", bad)
+		}
+	}
+	for _, good := range []int{1, 30, 60, 180, 1440} {
+		if err := applySettingsPatch(nil, record, settingsPatchRequest{IngestDirIntervalMin: intptr(good)}); err != nil {
+			t.Fatalf("interval %d: %v", good, err)
+		}
+	}
+	err := applySettingsPatch(nil, record, settingsPatchRequest{
+		IngestDirOwner:          strptr("  user00000000001 "),
+		IngestDirIntervalMin:    intptr(15),
+		IngestDirDeleteOriginal: boolptr(true),
+	})
+	if err != nil {
+		t.Fatalf("applySettingsPatch: %v", err)
+	}
+	if got := record.GetString("ingest_dir_owner"); got != "user00000000001" {
+		t.Fatalf("ingest_dir_owner = %q", got)
+	}
+	if got := record.GetInt("ingest_dir_interval_min"); got != 15 {
+		t.Fatalf("ingest_dir_interval_min = %d", got)
+	}
+	if !record.GetBool("ingest_dir_delete_original") {
+		t.Fatal("ingest_dir_delete_original not stored")
+	}
+	if (settingsPatchRequest{IngestDirDeleteOriginal: boolptr(true)}).touchesManaged() {
+		t.Fatal("ingest_dir fields are tenant-owned; a hosted tenant must be able to set them")
+	}
+}
 
 func TestPatchStoresTrimmedExtractionRules(t *testing.T) {
 	t.Parallel()

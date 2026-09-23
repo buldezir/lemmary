@@ -212,11 +212,10 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 		state.Document.Set("document_date", metadata.DocumentDate)
 	}
 
-	tagIDs, droppedTags, err := matchTags(state.App, state.Document.GetString("user"), metadata.Tags)
+	tagIDs, droppedTags, err := addMatchedTags(state.App, state.Document, metadata.Tags)
 	if err != nil {
 		return fmt.Errorf("tags: %w", err)
 	}
-	state.Document.Set("tags", tagIDs)
 	// The model ignoring its catalog: a document that keeps proposing the same
 	// absent name is the archive telling its owner which tag to create.
 	state.Logger.Info("tags applied", "count", len(tagIDs), "dropped", droppedTags)

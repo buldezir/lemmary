@@ -50,6 +50,10 @@ export type AppSettings = {
   always_require_review: boolean
   near_duplicate_detection_enabled: boolean
   near_duplicate_threshold: number
+  /** Consume folder (INGEST_DIR). Owner is a users id; empty means the first admin. */
+  ingest_dir_owner: string
+  ingest_dir_interval_min: number
+  ingest_dir_delete_original: boolean
   /** Instance name, shown in the header and stamped on emails and passkeys. */
   app_name: string
   /** Accent color as #rrggbb. Empty means the built-in accent. */

@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pocketbase/pocketbase/core"
+
 	"lemmary/backend/internal/aiprovider"
 )
 
@@ -142,6 +144,21 @@ func TestDefaultsUsesCodeDefaults(t *testing.T) {
 	}
 }
 
+// A zero interval would make the consume folder scan every tick, so the seed
+// writes the default rather than the zero value.
+func TestApplyConfigToRecordDefaultsIngestInterval(t *testing.T) {
+	collection := core.NewBaseCollection(CollectionName)
+	collection.Fields.Add(
+		&core.NumberField{Name: "ingest_dir_interval_min", OnlyInt: true},
+		&core.BoolField{Name: "ingest_dir_delete_original"},
+	)
+	record := core.NewRecord(collection)
+	applyConfigToRecord(record, Config{})
+	if got := record.GetInt("ingest_dir_interval_min"); got != DefaultIngestDirIntervalMin {
+		t.Fatalf("ingest_dir_interval_min = %d, want %d", got, DefaultIngestDirIntervalMin)
+	}
+}
+
 func TestDefaultsShareOneModel(t *testing.T) {
 	t.Setenv("AI_API_KEY", "key")
 	t.Setenv("AI_MODEL", "base-model")
@@ -189,5 +206,18 @@ func TestGetEnvFloatRejectsOutOfRange(t *testing.T) {
 	t.Setenv("LEMMARY_TEST_FLOAT", "0.75")
 	if got := getEnvFloat("LEMMARY_TEST_FLOAT", 0.9); got != 0.75 {
 		t.Fatalf("getEnvFloat=%v", got)
+	}
+}
+
+func TestValidIngestIntervalSpacesEvenly(t *testing.T) {
+	for _, minutes := range []int{1, 5, 15, 30, 60, 120, 180, 360, 720, 1440} {
+		if !ValidIngestInterval(minutes) {
+			t.Errorf("ValidIngestInterval(%d) = false, want true", minutes)
+		}
+	}
+	for _, minutes := range []int{0, 7, 45, 59, 90, 300, 420, 1380, 2880} {
+		if ValidIngestInterval(minutes) {
+			t.Errorf("ValidIngestInterval(%d) = true, want false", minutes)
+		}
 	}
 }
