@@ -93,8 +93,8 @@ account may actually use depends on its plan; one it may not use fails on the
 first request with the backend's own message.
 
 The same list is offered for OCR as for chat, because the Codex catalogue says
-nothing about which models read a file. Pick a full model rather than a `mini`
-one if the scans are poor.
+nothing about which models read a file. Pick a larger model if the scans are
+poor.
 
 Leave **Embeddings** where it is.
 
@@ -141,7 +141,7 @@ or a change on OpenAI's side. Rebind General AI to a keyed provider while you
 work out which.
 
 **OCR returns empty or invented text** — the model was handed the file but
-could not read it, or was a `mini` model on a poor scan. Try a larger model
+could not read it, or was a small model on a poor scan. Try a larger model
 first. `OCR_SDK=chatgpt` is refused in `.env`, by the way: the environment can
 carry a key but not a sign-in, so OCR is bound to this provider from Settings.
 
