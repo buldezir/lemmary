@@ -152,6 +152,12 @@ RUN chmod +x /app/docker-entrypoint.sh
 # vector search from stalling the rest of the server on a small machine.
 ENV OPENBLAS_NUM_THREADS=1 \
     OMP_NUM_THREADS=1
+
+# FAISS allocates through glibc, whose dynamic mmap threshold climbs to the
+# largest buffer freed so far, after which those buffers come from the arenas
+# and freeing them never reaches the OS. A fixed threshold keeps large buffers
+# on mmap, and two arenas stop per-thread arenas each holding their own hoard.
+ENV GLIBC_TUNABLES=glibc.malloc.arena_max=2:glibc.malloc.mmap_threshold=131072
 ENV PORT=80
 EXPOSE ${PORT}
 # start-period is generous because first boot is the slow one: migrations, and
