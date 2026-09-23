@@ -78,6 +78,7 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	// but reading it in wiring order is worth more than saving a line.
 	metrics.Register(app)
 
+	registerSQLiteShrink(app)
 	registerCOOPHeader(app)
 
 	// Prefer the in-app setup wizard over PocketBase's browser installer UI.
