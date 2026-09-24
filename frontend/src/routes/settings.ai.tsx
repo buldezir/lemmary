@@ -13,7 +13,7 @@ import {
 import { useAppMeta } from '../hooks/useAppMeta'
 import { useAsync } from '../hooks/useAsync'
 import { useSettingsForm } from '../hooks/useSettingsForm'
-import { fieldHintClassName, sectionClassName, sectionTitleClassName } from '../components/ui'
+import { DocsLink, fieldHintClassName, sectionClassName, sectionTitleClassName } from '../components/ui'
 
 type Bindings = {
   ocr_provider_id: string
@@ -101,10 +101,23 @@ export function SettingsAIPage() {
       <form onSubmit={onSubmit}>
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>Models</h2>
+          <p className={`${fieldHintClassName} mb-4`}>
+            Which provider and model each job runs on. See{' '}
+            <DocsLink href="/docs/ai_providers.html#binding-models-in-settings">
+              binding models in Settings
+            </DocsLink>
+            .
+          </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <ProviderModelFields
               label="OCR"
-              help="Reads the text out of uploaded PDFs, images and scans. Plain text, CSV, Word and Excel files are read locally and skip this step."
+              help={
+                <>
+                  Reads the text out of uploaded PDFs, images and scans. Plain text, CSV, Word and
+                  Excel files are read locally and skip this step.{' '}
+                  <DocsLink href="/docs/ai_providers.html#ocr-per-provider">OCR, per provider.</DocsLink>
+                </>
+              }
               providers={providers ?? []}
               providerId={form.ocr_provider_id}
               model={form.ocr_model}
@@ -124,7 +137,14 @@ export function SettingsAIPage() {
             />
             <ProviderModelFields
               label="Advanced"
-              help="The Advanced model drives the Deep Research reasoning loop: a few expensive calls per question where everything else is many cheap ones. Leave empty to run it on General AI."
+              help={
+                <>
+                  The Advanced model drives the Deep Research reasoning loop: a few expensive calls
+                  per question where everything else is many cheap ones. Leave empty to run it on
+                  General AI.{' '}
+                  <DocsLink href="/docs/deep_research.html">How Deep Research works.</DocsLink>
+                </>
+              }
               providers={providers ?? []}
               providerId={form.research_provider_id}
               model={form.research_model}
@@ -136,7 +156,17 @@ export function SettingsAIPage() {
 
             <ProviderModelFields
               label="Embeddings"
-              help="Lets Deep Search find documents by meaning as well as by keyword, which is what makes a question phrased in one language reach a document written in another. Leave the provider empty to search by keyword only."
+              help={
+                <>
+                  Lets Deep Search find documents by meaning as well as by keyword, which is what
+                  makes a question phrased in one language reach a document written in another.
+                  Leave the provider empty to search by keyword only.{' '}
+                  <DocsLink href="/docs/ai_providers.html#what-embeddings-cost">
+                    What embeddings cost
+                  </DocsLink>
+                  , or <DocsLink href="/docs/local_embeddings.html">run them locally</DocsLink>.
+                </>
+              }
               providers={providers ?? []}
               providerId={form.embedding_provider_id}
               model={form.embedding_model}
@@ -151,7 +181,17 @@ export function SettingsAIPage() {
 
             <ProviderModelFields
               label="Web search"
-              help="Lets Deep Research and Ask AI look things up online when the archive cannot answer -- a rate that changed, a company's present details. Off unless a provider is bound here, and then still off in a chat until the reader turns it on. Every lookup is billed by the provider."
+              help={
+                <>
+                  Lets Deep Research and Ask AI look things up online when the archive cannot
+                  answer -- a rate that changed, a company&apos;s present details. Off unless a
+                  provider is bound here, and then still off in a chat until the reader turns it
+                  on. Every lookup is billed by the provider.{' '}
+                  <DocsLink href="/docs/ai_providers.html#the-web-search-provider">
+                    The web-search provider.
+                  </DocsLink>
+                </>
+              }
               providers={providers ?? []}
               providerId={form.websearch_provider_id}
               model=""

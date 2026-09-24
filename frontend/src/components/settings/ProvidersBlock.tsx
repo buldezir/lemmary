@@ -10,7 +10,7 @@ import {
   sdkAliasDefault,
   sdkLabel,
   updateAIProvider,
-  keylessProviderDocs,
+  providerDocs,
   keylessProviderHint,
   SDK_DEFAULT_BASE,
   SDK_OPTIONS,
@@ -60,7 +60,8 @@ export function ProvidersBlock({
   const [draft, setDraft] = useState<ProviderDraft>(emptyDraft())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
-  const keylessDocs = keylessProviderDocs(draft.sdk)
+  const docs = providerDocs(draft.sdk)
+  const docsLink = <DocsLink href={docs.href}>Read the {docs.label} guide.</DocsLink>
 
   async function onSaveProvider(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -109,6 +110,13 @@ export function ProvidersBlock({
   return (
     <section className={`${sectionClassName} mb-5`}>
       <h2 className={sectionTitleClassName}>Providers</h2>
+      <p className={`${fieldHintClassName} mb-4`}>
+        An account or endpoint the models below run on. Which provider can do which job, and
+        what each costs, is in{' '}
+        <DocsLink href="/docs/ai_providers.html">AI providers and models</DocsLink>; the{' '}
+        <DocsLink href="/docs/guided_ai_setup.html">guided setup</DocsLink> gets one working
+        for free.
+      </p>
       <ul className="mb-4 flex flex-col gap-2">
         {providers.length === 0 && <li className="text-sm text-ink-soft">No providers yet.</li>}
         {providers.map((item) => (
@@ -263,19 +271,17 @@ export function ProvidersBlock({
                   setDraft((current) => ({ ...current, api_key: event.target.value }))
                 }
               />
+              <span className={fieldHintClassName}>{docsLink}</span>
             </label>
           ) : requiresSignIn(draft.sdk) ? (
             <p className={`${fieldHintClassName} sm:col-span-2`}>
               Save the provider first, then sign in to it from the list above. Chat,
               extraction and Deep Search can run on the subscription; embeddings and OCR
-              cannot, and keep whichever provider they have.
+              cannot, and keep whichever provider they have. {docsLink}
             </p>
           ) : (
             <p className={`${fieldHintClassName} sm:col-span-2`}>
-              {keylessProviderHint(draft.sdk)}{' '}
-              {keylessDocs && (
-                <DocsLink href={keylessDocs.href}>Read the {keylessDocs.label} guide.</DocsLink>
-              )}
+              {keylessProviderHint(draft.sdk)} {docsLink}
             </p>
           )}
           <div className="flex gap-2 sm:col-span-2">

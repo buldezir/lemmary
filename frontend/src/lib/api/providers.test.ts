@@ -4,7 +4,7 @@ import {
   canEmbedProvider,
   canWebSearchProvider,
   isLLMProvider,
-  keylessProviderDocs,
+  providerDocs,
   keylessProviderHint,
   eligibleProviders,
   providerConfigured,
@@ -94,33 +94,30 @@ describe('the local SDK is offered and addressed', () => {
   })
 })
 
-// The hint is the only place the setup instructions are reachable from the
-// form, so every SDK that shows one needs somewhere to send the operator.
-describe('keylessProviderDocs', () => {
-  it('covers every SDK that shows the keyless hint', () => {
+// The form's link is the only place the setup instructions are reachable
+// from, so every SDK needs somewhere to send the operator.
+describe('providerDocs', () => {
+  it('covers every SDK', () => {
     for (const { value } of SDK_OPTIONS) {
-      // The hint's own condition, not just `no API key`: chatgpt needs no key
-      // and shows no hint, and has no sidecar to document.
-      if (requiresAPIKey(value) || requiresSignIn(value)) continue
-      expect(keylessProviderDocs(value)?.href).toBeTruthy()
+      expect(providerDocs(value).href).toMatch(/^\/docs\/[a-z_]+\.html(#[a-z-]+)?$/)
     }
   })
 
-  // The SDK skipped above must genuinely show no hint, or the exemption would
-  // hide a missing link.
-  it('is not needed for the SDK that signs in', () => {
+  it('shows no keyless hint for the SDK that signs in', () => {
     expect(keylessProviderHint('chatgpt')).toBe('')
-    expect(keylessProviderDocs('chatgpt')).toBeNull()
+    expect(providerDocs('chatgpt').href).toBe('/docs/chatgpt_login.html')
   })
 
-  it('points each sidecar at its own guide', () => {
-    expect(keylessProviderDocs('local')?.href).toBe('/docs/local_embeddings.html')
-    expect(keylessProviderDocs('docling')?.href).toBe('/docs/local_ocr.html')
+  it('points each SDK with its own guide there', () => {
+    expect(providerDocs('local').href).toBe('/docs/local_embeddings.html')
+    expect(providerDocs('docling').href).toBe('/docs/local_ocr.html')
+    expect(providerDocs('google_vision').href).toBe('/docs/google_vision.html')
+    expect(providerDocs('mistral').href).toBe('/docs/guided_ai_setup.html')
   })
 
-  it('has nothing to say about the hosted SDKs', () => {
-    expect(keylessProviderDocs('openai')).toBeNull()
-    expect(keylessProviderDocs(undefined)).toBeNull()
+  it('falls back to the provider overview', () => {
+    expect(providerDocs('openai').href).toBe('/docs/ai_providers.html#choosing-a-provider')
+    expect(providerDocs(undefined).href).toBe('/docs/ai_providers.html#choosing-a-provider')
   })
 })
 

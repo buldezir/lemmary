@@ -14,7 +14,7 @@ import {
   requiresSignIn,
   sdkAliasDefault,
   usesOCRModel,
-  keylessProviderDocs,
+  providerDocs,
   keylessProviderHint,
   SDK_DEFAULT_BASE,
   SDK_OPTIONS,
@@ -362,7 +362,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
             : 'Ready'
 
   const llmProviders = providers.filter((item) => isLLMProvider(item.sdk))
-  const keylessDocs = keylessProviderDocs(sdk)
+  const keylessDocs = providerDocs(sdk)
 
   return (
     <div className="flex min-h-screen flex-col bg-paper">
@@ -647,9 +647,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
               ) : (
                 <p className={fieldHintClassName}>
                   {keylessProviderHint(sdk)}{' '}
-                  {keylessDocs && (
-                    <DocsLink href={keylessDocs.href}>Read the {keylessDocs.label} guide.</DocsLink>
-                  )}
+                  <DocsLink href={keylessDocs.href}>Read the {keylessDocs.label} guide.</DocsLink>
                 </p>
               )}
               {error && <p className="text-sm text-madder">{error}</p>}
