@@ -44,6 +44,8 @@ type Query struct {
 	// TagIDs keeps documents carrying any of them; AllTagIDs, every one.
 	TagIDs    []string
 	AllTagIDs []string
+	// Untagged keeps only documents with no tags; with a tag id it is nothing.
+	Untagged bool
 	DateFrom  string
 	DateTo    string
 	// Undated keeps only documents with no document_date. Asking for both this
@@ -461,6 +463,9 @@ func filterConjuncts(q Query) []query.Query {
 		conjuncts = append(conjuncts, idQuery)
 	}
 	conjuncts = append(conjuncts, termQueries(FieldTags, q.AllTagIDs)...)
+	if q.Untagged {
+		conjuncts = append(conjuncts, untaggedQuery())
+	}
 	if dateQuery := dateRangeQuery(q.DateFrom, q.DateTo); dateQuery != nil {
 		conjuncts = append(conjuncts, dateQuery)
 	}
@@ -774,6 +779,14 @@ func undatedQuery() query.Query {
 	dq.SetField(FieldDocumentDate)
 	bq := bleve.NewBooleanQuery()
 	bq.AddMustNot(dq)
+	return bq
+}
+
+func untaggedQuery() query.Query {
+	anyTag := bleve.NewWildcardQuery("*")
+	anyTag.SetField(FieldTags)
+	bq := bleve.NewBooleanQuery()
+	bq.AddMustNot(anyTag)
 	return bq
 }
 

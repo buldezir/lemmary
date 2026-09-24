@@ -35,7 +35,7 @@ export function DocumentFilters({
   // Nothing to offer and nothing chosen is no filter at all. Decided here
   // rather than inside TagFilter because the search box shares the row and
   // has to know whether it is sharing it.
-  const showTags = tags.length > 0 || chosenTags.length > 0
+  const showTags = tags.length > 0 || chosenTags.length > 0 || query.untagged
 
   return (
     <div className="flex flex-col gap-3">
@@ -58,8 +58,9 @@ export function DocumentFilters({
         {showTags && (
           <TagFilter
             value={chosenTags}
+            untagged={query.untagged}
             options={tags}
-            onChange={(next) => updateQuery({ tags: next.join(',') })}
+            onChange={(next, untagged) => updateQuery({ tags: next.join(','), untagged })}
           />
         )}
         {status !== undefined && (

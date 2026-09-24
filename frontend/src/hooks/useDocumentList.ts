@@ -71,6 +71,7 @@ export function useDocumentList({
     type: documentTypeFilter,
     correspondent: correspondentFilter,
     tags: tagFilter,
+    untagged,
     page,
   } = query
   const statusFilter = fixedStatus ?? query.status
@@ -156,6 +157,7 @@ export function useDocumentList({
           documentType: documentTypeFilter,
           correspondent: correspondentFilter,
           tags: tagIds(tagFilter),
+          untagged,
         })
         const result = text
           ? await searchDocuments({
@@ -169,6 +171,7 @@ export function useDocumentList({
               dateTo,
               undated,
               tags: tagIds(tagFilter),
+              untagged,
             })
           : await pb.collection('documents').getList<DocumentRecord>(page, DOCUMENT_PAGE_SIZE, {
               sort: '-created',
@@ -249,6 +252,7 @@ export function useDocumentList({
     documentTypeFilter,
     correspondentFilter,
     tagFilter,
+    untagged,
     debouncedSearch,
     updateQuery,
   ])
@@ -443,7 +447,10 @@ export function useDocumentList({
     // stripped straight back out by inboxQuerySearch, so the chip stays text.
     filterByTag: filters
       ? (tagId: string) =>
-          updateQuery({ tags: [...new Set([...tagIds(tagFilter), tagId])].join(',') })
+          updateQuery({
+            tags: [...new Set([...tagIds(tagFilter), tagId])].join(','),
+            untagged: false,
+          })
       : undefined,
     search,
     setSearch,

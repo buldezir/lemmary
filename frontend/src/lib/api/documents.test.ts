@@ -25,6 +25,10 @@ describe('buildDocumentFilter', () => {
     expect(buildDocumentFilter({ ...noFilters, undated: true })).toBe("document_date = ''")
   })
 
+  it('filters on the absence of tags', () => {
+    expect(buildDocumentFilter({ ...noFilters, untagged: true })).toBe('tags:length = 0')
+  })
+
   it('filters on a status alone', () => {
     expect(buildDocumentFilter({ ...noFilters, status: 'needs_review' })).toBe(
       'processing_status = "needs_review"',

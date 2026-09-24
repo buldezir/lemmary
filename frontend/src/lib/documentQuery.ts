@@ -33,6 +33,8 @@ export type DocumentQuery = {
   correspondent: string
   /** Comma-joined tags ids a document must carry all of; empty means any. */
   tags: string
+  /** Only the documents with no tags. */
+  untagged: boolean
   /** 1-based. */
   page: number
 }
@@ -52,6 +54,7 @@ export const defaultDocumentQuery: DocumentQuery = {
   type: 'all',
   correspondent: 'all',
   tags: '',
+  untagged: false,
   page: 1,
 }
 
@@ -100,6 +103,7 @@ export function parseDocumentQuery(raw: DocumentQueryInput): DocumentQuery {
     type: id(raw.type),
     correspondent: id(raw.correspondent),
     tags: tagIds(raw.tags).join(','),
+    untagged: raw.untagged === true || raw.untagged === 'true',
     page: pageNumber(raw.page),
   }
 }

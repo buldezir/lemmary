@@ -906,6 +906,32 @@ func TestSearchUndatedFilter(t *testing.T) {
 	}
 }
 
+func TestSearchUntaggedFilter(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "tagged", map[string]any{
+		FieldUser:  "u1",
+		FieldTags:  []string{"tag1"},
+		FieldTitle: "Tagged invoice",
+		FieldAll:   "Tagged invoice",
+	})
+	mustPut(t, idx, "untagged", map[string]any{
+		FieldUser:  "u1",
+		FieldTags:  []string{},
+		FieldTitle: "Untagged invoice",
+		FieldAll:   "Untagged invoice",
+	})
+
+	ids := searchIDs(t, idx, Query{Text: "invoice", UserID: "u1", Untagged: true})
+	if !containsID(ids, "untagged") || containsID(ids, "tagged") {
+		t.Fatalf("untagged filter: %v", ids)
+	}
+
+	both := searchIDs(t, idx, Query{Text: "invoice", UserID: "u1"})
+	if !containsID(both, "untagged") || !containsID(both, "tagged") {
+		t.Fatalf("unfiltered: %v", both)
+	}
+}
+
 // A half-spelled word must reach the word it starts. Strict mode, because the
 // Documents page never relaxes.
 func TestSearchMatchesWordPrefix(t *testing.T) {
