@@ -5,11 +5,14 @@ package imapimport
 
 import (
 	"bytes"
+	"cmp"
+	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime/quotedprintable"
 	"net"
 	"path/filepath"
@@ -29,6 +32,7 @@ import (
 	"lemmary/backend/internal/dirimport"
 	"lemmary/backend/internal/duplicates"
 	"lemmary/backend/internal/inflight"
+	"lemmary/backend/internal/logfmt"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/zipimport"
 )
@@ -113,16 +117,34 @@ func (s *Scanner) Register() {
 }
 
 func (s *Scanner) tick() {
+	logger := s.app.Logger()
 	if !s.running.CompareAndSwap(false, true) {
+		logger.Info("imap ingest scan skipped: a scan or backfill is still running")
 		return
 	}
 	defer s.running.Store(false)
 	defer inflight.Begin()()
 
-	res := s.Scan(s.rt.Snapshot().Cfg)
-	if res.Created+res.Skipped+res.Failed > 0 {
-		s.app.Logger().Info("imap ingest scanned", "created", res.Created, "skipped", res.Skipped, "failed", res.Failed)
+	cfg := s.rt.Snapshot().Cfg
+	started := time.Now()
+	logger.Info("imap ingest scan started", "host", cfg.IMAPHost, "folder", cfg.IMAPFolder, "mode", cfg.IMAPAfterConsume)
+	res, sum := s.scan(cfg)
+	level := slog.LevelInfo
+	if sum.stopped != "" || res.Failed > 0 {
+		level = slog.LevelWarn
 	}
+	logger.Log(context.Background(), level, "imap ingest scan finished",
+		"host", cfg.IMAPHost, "folder", cfg.IMAPFolder,
+		"outcome", cmp.Or(sum.stopped, "completed"), "messages", sum.messages,
+		"created", res.Created, "skipped", res.Skipped, "failed", res.Failed,
+		"pending_settle", len(s.pending), logfmt.Duration("duration", time.Since(started)))
+}
+
+// summary is what a scan's log line reports beside its Result.
+type summary struct {
+	// stopped is why the scan ended early, empty when it read every new message.
+	stopped  string
+	messages int
 }
 
 func address(cfg config.Config) string {
@@ -160,20 +182,30 @@ const (
 	refused
 	// retry: a transient error on this message; maxAttempts bounds it.
 	retry
-	// stop: an instance limit every later message would hit too.
-	stop
+	// stopScan: an instance limit every later message would hit too.
+	stopScan
 )
 
 // Scan reads the mailbox once.
 func (s *Scanner) Scan(cfg config.Config) Result {
+	res, _ := s.scan(cfg)
+	return res
+}
+
+func (s *Scanner) scan(cfg config.Config) (Result, summary) {
 	var res Result
+	var sum summary
+	stop := func(why string) (Result, summary) {
+		sum.stopped = why
+		return res, sum
+	}
 	logger := s.app.Logger()
 	if cfg.IMAPHost == "" || cfg.IMAPUsername == "" {
-		return res
+		return stop("no mailbox configured")
 	}
 	ownerID := s.owner(cfg)
 	if ownerID == "" {
-		return res
+		return stop("no account to own the documents yet")
 	}
 	mode := cfg.IMAPAfterConsume
 	skip := skipExts(cfg)
@@ -181,7 +213,7 @@ func (s *Scanner) Scan(cfg config.Config) Result {
 	c, sel, done, err := s.connect(cfg, mode == config.IMAPKeep)
 	if err != nil {
 		s.warnOnce("connect|"+err.Error(), "imap ingest: "+err.Error())
-		return res
+		return stop("connect failed: " + err.Error())
 	}
 	defer done()
 	if mode == config.IMAPMove {
@@ -222,7 +254,7 @@ func (s *Scanner) Scan(cfg config.Config) Result {
 	found, err := c.UIDSearch(liveMail(imap.SearchCriteria{Since: since}), nil).Wait()
 	if err != nil {
 		logger.Warn("imap ingest: search failed", "folder", cfg.IMAPFolder, "error", err)
-		return res
+		return stop("search failed")
 	}
 	var uids []imap.UID
 	for _, uid := range found.AllUIDs() {
@@ -230,11 +262,12 @@ func (s *Scanner) Scan(cfg config.Config) Result {
 			uids = append(uids, uid)
 		}
 	}
+	sum.messages = len(uids)
 	for batch := range slices.Chunk(uids, fetchBatch) {
 		msgs, collection, err := s.structures(c, batch)
 		if err != nil {
 			logger.Warn("imap ingest: "+err.Error(), "folder", cfg.IMAPFolder)
-			return res
+			return stop("fetch failed")
 		}
 		for _, msg := range msgs {
 			var parts []part
@@ -248,14 +281,14 @@ func (s *Scanner) Scan(cfg config.Config) Result {
 			}
 			if got == retry {
 				if s.attempts[msg.UID]++; s.attempts[msg.UID] < maxAttempts {
-					return res
+					return stop(fmt.Sprintf("message %d failed; retrying next scan", msg.UID))
 				}
 				logger.Error("imap ingest: giving up on a message; Management -> Mailbox can import it later",
 					"uid", msg.UID, "attempts", maxAttempts)
 				got = refused
 			}
-			if got == stop {
-				return res
+			if got == stopScan {
+				return stop("instance limit reached")
 			}
 			delete(s.attempts, msg.UID)
 			s.seen[msg.UID] = true
@@ -265,7 +298,7 @@ func (s *Scanner) Scan(cfg config.Config) Result {
 			}
 		}
 	}
-	return res
+	return res, sum
 }
 
 // liveMail leaves out what a mail client has already deleted but not yet
@@ -291,7 +324,13 @@ func (s *Scanner) StartBackfill(cfg config.Config, from, to time.Time) error {
 	go func() {
 		defer s.running.Store(false)
 		defer inflight.Begin()()
+		started := time.Now()
+		s.app.Logger().Info("imap ingest backfill started", "host", cfg.IMAPHost, "folder", cfg.IMAPFolder,
+			"from", from.Format(time.DateOnly), "to", to.AddDate(0, 0, -1).Format(time.DateOnly))
 		res, err := s.scanRange(cfg, from, to)
+		s.app.Logger().Info("imap ingest backfill finished", "host", cfg.IMAPHost, "folder", cfg.IMAPFolder,
+			"created", res.Created, "skipped", res.Skipped, "failed", res.Failed,
+			logfmt.Duration("duration", time.Since(started)))
 		state := s.BackfillStatus()
 		state.Running, state.Result = false, res
 		if err != nil {
@@ -340,7 +379,7 @@ func (s *Scanner) scanRange(cfg config.Config, from, to time.Time) (Result, erro
 		}
 		for _, msg := range msgs {
 			parts, _ := attachments(msg.BodyStructure, skip)
-			if len(parts) > 0 && s.consume(c, collection, ownerID, msg.UID, parts, &res) == stop {
+			if len(parts) > 0 && s.consume(c, collection, ownerID, msg.UID, parts, &res) == stopScan {
 				return res, errors.New("stopped at an instance limit")
 			}
 		}
@@ -451,7 +490,7 @@ func (s *Scanner) consume(c *imapclient.Client, collection *core.Collection, own
 			res.Skipped++
 		case dirimport.RoomExhausted(err):
 			logger.Warn("imap ingest: limit reached, stopping this scan", "error", err)
-			return stop
+			return stopScan
 		case dirimport.Rejected(err):
 			res.Failed++
 			got = refused

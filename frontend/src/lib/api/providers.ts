@@ -161,8 +161,8 @@ export const SDK_OPTIONS: { value: ProviderSDK; label: string }[] = [
   { value: 'opencode', label: 'Opencode Go' },
   { value: 'google_vision', label: 'Google Cloud Vision' },
   { value: 'chatgpt', label: 'ChatGPT subscription' },
-  { value: 'local', label: 'Local Embeddings (huggingface/text-embeddings-inference)' },
-  { value: 'docling', label: 'Local OCR (Docling)' },
+  { value: 'local', label: 'Local Embeddings' },
+  { value: 'docling', label: 'Local OCR' },
   { value: 'tavily', label: 'Tavily' },
 ]
 
@@ -297,21 +297,31 @@ export function keylessProviderHint(sdk?: string) {
 }
 
 /**
- * The guide behind a keyless provider's hint; neither sidecar answers until its
- * compose overlay is up. Null for the hosted SDKs.
+ * The guide for setting up an SDK: its own page where one exists, else the
+ * provider overview. Neither sidecar answers until its compose overlay is up.
  *
  * The `.html` is load-bearing: VitePress has no cleanUrls and the static
  * handler in appwire/wire.go never tries an .html suffix, so a bare
  * /docs/local_ocr falls through to the SPA.
  */
-export function keylessProviderDocs(sdk?: string) {
-  if (sdk === 'local') {
-    return { href: '/docs/local_embeddings.html', label: 'Local embeddings' }
+export function providerDocs(sdk?: string) {
+  switch (sdk) {
+    case 'local':
+      return { href: '/docs/local_embeddings.html', label: 'Local embeddings' }
+    case 'docling':
+      return { href: '/docs/local_ocr.html', label: 'Local OCR' }
+    case 'google_vision':
+      return { href: '/docs/google_vision.html', label: 'Google Vision API key' }
+    case 'chatgpt':
+      return { href: '/docs/chatgpt_login.html', label: 'ChatGPT sign-in' }
+    case 'mistral':
+    case 'opencode':
+      return { href: '/docs/guided_ai_setup.html', label: 'guided AI provider setup' }
+    case 'tavily':
+      return { href: '/docs/ai_providers.html#the-web-search-provider', label: 'web-search provider' }
+    default:
+      return { href: '/docs/ai_providers.html#choosing-a-provider', label: 'AI providers' }
   }
-  if (sdk === 'docling') {
-    return { href: '/docs/local_ocr.html', label: 'Local OCR' }
-  }
-  return null
 }
 
 /**
@@ -328,12 +338,13 @@ export function recommendedModel(sdk: string | undefined, purpose: ModelPurpose)
   // Mirrors aiprovider.DefaultExtractModel.
   if (sdk === 'opencode' && purpose === 'llm') return 'gpt-5.6-luna'
   if (sdk === 'anthropic' && purpose !== 'embedding') return 'claude-opus-5'
+  if (sdk === 'local' && purpose === 'embedding') return 'BAAI/bge-m3'
   return ''
 }
 
 export function providerOptionLabel(item: Pick<AIProvider, 'alias' | 'sdk'>) {
   const sdk = sdkLabel(item.sdk)
-  return item.alias === sdk ? item.alias : `${item.alias} (${sdk})`
+  return item.alias.toLowerCase() === sdk.toLowerCase() ? item.alias : `${item.alias} (${sdk})`
 }
 
 export function modelOptionLabel(item: CatalogModel) {

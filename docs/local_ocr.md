@@ -81,8 +81,8 @@ and a one-page 150 dpi scan **4 s** — against tens of milliseconds for a hoste
 API. Real scans are denser than a test fixture, so treat those as a floor and
 measure your own.
 
-**The setting people miss.** `OCR_TIMEOUT_SEC` defaults to 40 seconds. That
-survives a small scan on a fast host and nothing else — a dense multi-page
+**The setting people miss.** `OCR_TIMEOUT_SEC` defaults to 90 seconds. That
+survives a few pages on a fast host and little else — a dense multi-page
 document, a busy machine, or the first request after a restart will all exceed
 it:
 
@@ -143,6 +143,9 @@ Docling publishes CUDA images: `docling-serve-cu128` and `docling-serve-cu130`.
 Swap the `image:` line in the overlay, add a `deploy.resources.reservations.devices`
 block for the GPU, and per-page time drops by an order of magnitude. The app
 needs no change — it is the same HTTP API.
+
+On an Apple Silicon Mac, Docker has no access to the GPU; run docling natively
+instead, as in [Local OCR and embeddings on a Mac](/local_ai_macos).
 
 ## Troubleshooting
 

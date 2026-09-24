@@ -117,10 +117,10 @@ func TestDefaultsUsesCodeDefaults(t *testing.T) {
 	}
 	cfg := env.Defaults()
 
-	if cfg.OCRTimeout != 40*time.Second {
+	if cfg.OCRTimeout != 90*time.Second {
 		t.Fatalf("ocr timeout=%s", cfg.OCRTimeout)
 	}
-	if cfg.OpenAITimeout != 60*time.Second {
+	if cfg.OpenAITimeout != 90*time.Second {
 		t.Fatalf("ai timeout=%s", cfg.OpenAITimeout)
 	}
 	if cfg.WorkerTimeout != 300*time.Second {
@@ -132,9 +132,9 @@ func TestDefaultsUsesCodeDefaults(t *testing.T) {
 	if cfg.NearDuplicateDetectionEnabled {
 		t.Fatal("expected near-duplicate detection off by default")
 	}
-	// Off is the pre-Inbox behaviour, so upgrading changes nothing until asked.
-	if cfg.AlwaysRequireReview {
-		t.Fatal("expected always-require-review off by default")
+	// Seeds a new instance only: an existing singleton keeps its stored value.
+	if !cfg.AlwaysRequireReview {
+		t.Fatal("expected always-require-review on by default")
 	}
 	if cfg.WorkerCronExpr != "* * * * *" {
 		t.Fatalf("cron=%q", cfg.WorkerCronExpr)

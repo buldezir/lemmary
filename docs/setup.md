@@ -357,7 +357,7 @@ A document lands there for one of three reasons:
 
 - **Low extraction confidence** — the model scored its own answer below 0.5.
 - **A possible duplicate** — see [duplicate detection](#duplicate-detection) below; the card and the detail page link to the document it may duplicate.
-- **Because you asked for all of them** — Settings → **Always require review for new documents** (off by default). With it on, every document the AI extracted metadata for waits in the Inbox however confident the extraction was, reprocessed documents included: nothing reaches `completed` except by your saying so. This is the setting for the workflow of uploading as things arrive and correcting a month's worth in one sitting.
+- **Because you asked for all of them** — Settings → **Always require review for new documents** (on for a new instance; an upgraded one keeps its setting). With it on, every document the AI extracted metadata for waits in the Inbox however confident the extraction was, reprocessed documents included: nothing reaches `completed` except by your saying so. This is the setting for the workflow of uploading as things arrive and correcting a month's worth in one sitting.
 
   It does not apply to paperless-ngx imports in preserve mode. Those run no AI extraction — the metadata is the one curated in paperless — so there is nothing for a review to check, and a migrated archive is not emptied into the Inbox.
 

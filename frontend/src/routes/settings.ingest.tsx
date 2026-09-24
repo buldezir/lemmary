@@ -41,7 +41,7 @@ const imapFileTypes: [ImapFileType, string][] = [
 /** The consume folder and the IMAP mailbox. Reachable when INGEST_DIR or INGEST_IMAP_ENABLED is set. */
 export function SettingsIngestPage() {
   const { ingestDir, ingestImap } = useAppMeta()
-  const { form, loading, error, success, saving, updateField, save, closeResult } =
+  const { form, loading, error, success, saving, updateField, updateFields, save, closeResult } =
     useSettingsForm((settings) => ({
       ingest_dir_owner: settings.ingest_dir_owner,
       ingest_dir_interval_min: String(settings.ingest_dir_interval_min),
@@ -83,6 +83,21 @@ export function SettingsIngestPage() {
     await save(patch)
   }
 
+  function onOwnerChange(owner: string) {
+    const email = users?.find((user) => user.id === owner)?.email ?? ''
+    updateFields((current) => ({
+      ingest_dir_owner: owner,
+      ...(ingestImap &&
+        /@(gmail|googlemail)\.com$/i.test(email) &&
+        !current.imap_host &&
+        !current.imap_username && {
+          imap_host: 'imap.gmail.com',
+          imap_username: email,
+          imap_folder: current.imap_folder || 'INBOX',
+        }),
+    }))
+  }
+
   if (loading || !form) return <SettingsLoading error={error} />
 
   const text = (
@@ -105,7 +120,7 @@ export function SettingsIngestPage() {
               <select
                 className={selectClassName}
                 value={form.ingest_dir_owner}
-                onChange={(e) => updateField('ingest_dir_owner', e.target.value)}
+                onChange={(e) => onOwnerChange(e.target.value)}
               >
                 <option value="">Default (first admin account)</option>
                 {(users ?? []).map((user) => (

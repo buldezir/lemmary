@@ -35,6 +35,7 @@ describe('parseDocumentQuery', () => {
       type: 'abc123',
       correspondent: 'def456',
       tags: 'tag1,tag2',
+      untagged: false,
       undated: true,
       page: 3,
     })
@@ -97,6 +98,7 @@ describe('documentQuerySearch', () => {
       type: 'typ1',
       correspondent: 'cor1',
       tags: 'tag1,tag2',
+      untagged: false,
       undated: false,
       page: 4,
     }
@@ -148,6 +150,25 @@ describe('the undated filter', () => {
     expect(documentQuerySearch({ ...defaultDocumentQuery, undated: true })).toEqual({
       undated: true,
     })
+  })
+})
+
+describe('the untagged filter', () => {
+  test('survives the URL as a string and stays out of it when off', () => {
+    expect(parseDocumentQuery({ untagged: 'true' }).untagged).toBe(true)
+    expect(parseDocumentQuery({ untagged: 'yes' }).untagged).toBe(false)
+    expect(documentQuerySearch({ ...defaultDocumentQuery, untagged: false })).toEqual({})
+    expect(documentQuerySearch({ ...defaultDocumentQuery, untagged: true })).toEqual({
+      untagged: true,
+    })
+    expect(hasActiveFilters({ ...defaultDocumentQuery, untagged: true })).toBe(true)
+  })
+})
+
+test('untagged drops tags it could never match', () => {
+  expect(parseDocumentQuery({ tags: 'tag1', untagged: 'true' })).toMatchObject({
+    tags: '',
+    untagged: true,
   })
 })
 

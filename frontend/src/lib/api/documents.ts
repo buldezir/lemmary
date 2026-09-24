@@ -158,6 +158,7 @@ export type DocumentListFilters = {
   undated?: boolean
   /** tags ids a document must carry all of. */
   tags?: string[]
+  untagged?: boolean
 }
 
 /**
@@ -207,6 +208,9 @@ export function buildDocumentFilter(filters: DocumentListFilters): string | unde
   // onto a Go endpoint (ngxapi's tagsExpr) if this stops paying.
   for (const tag of filters.tags ?? []) {
     parts.push(pb.filter('tags ~ {:id}', { id: `"${tag}"` }))
+  }
+  if (filters.untagged) {
+    parts.push('tags:length = 0')
   }
 
   return parts.length > 0 ? parts.join(' && ') : undefined
@@ -430,6 +434,7 @@ export async function searchDocuments(opts: {
   dateTo?: string
   undated?: boolean
   tags?: string[]
+  untagged?: boolean
 }): Promise<DocumentSearchList> {
   const params = new URLSearchParams()
   params.set('q', opts.q)
@@ -455,6 +460,9 @@ export async function searchDocuments(opts: {
   }
   if (opts.tags?.length) {
     params.set('tags', opts.tags.join(','))
+  }
+  if (opts.untagged) {
+    params.set('untagged', 'true')
   }
 
   const data = await apiFetch<Partial<DocumentSearchList>>(

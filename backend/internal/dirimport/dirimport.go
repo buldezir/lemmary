@@ -4,10 +4,13 @@
 package dirimport
 
 import (
+	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,6 +27,7 @@ import (
 	"lemmary/backend/internal/duplicates"
 	"lemmary/backend/internal/inflight"
 	"lemmary/backend/internal/limits"
+	"lemmary/backend/internal/logfmt"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/worker"
 	"lemmary/backend/internal/zipimport"
@@ -84,7 +88,9 @@ func Register(app core.App, rt *config.Runtime, dir string) {
 }
 
 func (s *Scanner) tick() {
+	logger := s.app.Logger()
 	if !s.running.CompareAndSwap(false, true) {
+		logger.Info("consume folder scan skipped: the previous one is still running", "dir", s.dir)
 		return
 	}
 	defer s.running.Store(false)
@@ -92,21 +98,33 @@ func (s *Scanner) tick() {
 	// the flusher knows to wait for it.
 	defer inflight.Begin()()
 
-	res := s.Scan(s.rt.Snapshot().Cfg, time.Now())
-	if res.Created+res.Skipped+res.Failed > 0 {
-		s.app.Logger().Info("consume folder scanned", "dir", s.dir,
-			"created", res.Created, "skipped", res.Skipped, "failed", res.Failed)
+	started := time.Now()
+	logger.Info("consume folder scan started", "dir", s.dir)
+	res, stopped := s.scan(s.rt.Snapshot().Cfg, started)
+	level := slog.LevelInfo
+	if stopped != "" || res.Failed > 0 {
+		level = slog.LevelWarn
 	}
+	logger.Log(context.Background(), level, "consume folder scan finished", "dir", s.dir,
+		"outcome", cmp.Or(stopped, "completed"),
+		"created", res.Created, "skipped", res.Skipped, "failed", res.Failed,
+		"pending_delete", len(s.pending), logfmt.Duration("duration", time.Since(started)))
 }
 
 // Scan walks the folder once. now is what the settle check reads.
 func (s *Scanner) Scan(cfg config.Config, now time.Time) Result {
+	res, _ := s.scan(cfg, now)
+	return res
+}
+
+// scan is Scan plus why it stopped early, empty when it walked the whole folder.
+func (s *Scanner) scan(cfg config.Config, now time.Time) (Result, string) {
 	var res Result
 	logger := s.app.Logger()
 
 	ownerID := s.resolveOwner(cfg.IngestDirOwner)
 	if ownerID == "" {
-		return res
+		return res, "no account to own the documents yet"
 	}
 	keep := !cfg.IngestDirDeleteOriginal
 	// What was skipped for one owner or in keep mode is a decision for that
@@ -124,23 +142,23 @@ func (s *Scanner) Scan(cfg config.Config, now time.Time) Result {
 	root, err := filepath.EvalSymlinks(s.dir)
 	if err != nil {
 		logger.Warn("consume folder: unreadable", "dir", s.dir, "error", err)
-		return res
+		return res, "folder unreadable"
 	}
 	collection, err := s.app.FindCollectionByNameOrId("documents")
 	if err != nil {
 		logger.Warn("consume folder: documents collection", "error", err)
-		return res
+		return res, "documents collection missing"
 	}
 	tags, err := loadTagKeys(s.app, ownerID)
 	if err != nil {
 		logger.Warn("consume folder: load tags failed", "error", err)
-		return res
+		return res, "loading tags failed"
 	}
 	var ledger map[string]string
 	if keep {
 		if ledger, err = loadLedger(s.app, ownerID); err != nil {
 			logger.Warn("consume folder: load ledger failed", "error", err)
-			return res
+			return res, "loading the ledger failed"
 		}
 	}
 
@@ -234,10 +252,14 @@ func (s *Scanner) Scan(cfg config.Config, now time.Time) Result {
 		}
 		return nil
 	})
-	if walkErr != nil && !errors.Is(walkErr, stop) {
+	switch {
+	case errors.Is(walkErr, stop):
+		return res, "instance limit reached"
+	case walkErr != nil:
 		logger.Warn("consume folder: walk failed", "dir", s.dir, "error", walkErr)
+		return res, "walk failed"
 	}
-	return res
+	return res, ""
 }
 
 // removeSealed deletes the originals whose documents a hard kill can no longer

@@ -95,8 +95,8 @@ func AIEnvFromEnv() (AIEnv, error) {
 		Managed:                managed,
 		NearDuplicateEnabled:   getEnvBool("NEAR_DUPLICATE_DETECTION_ENABLED", false),
 		NearDuplicateThreshold: getEnvFloat("NEAR_DUPLICATE_THRESHOLD", DefaultNearDuplicateThreshold),
-		OCRTimeout:             time.Duration(envIntDefault("OCR_TIMEOUT_SEC", 40, 1)) * time.Second,
-		AITimeout:              time.Duration(envIntDefault("AI_TIMEOUT_SEC", 60, 1)) * time.Second,
+		OCRTimeout:             time.Duration(envIntDefault("OCR_TIMEOUT_SEC", 90, 1)) * time.Second,
+		AITimeout:              time.Duration(envIntDefault("AI_TIMEOUT_SEC", 90, 1)) * time.Second,
 		WorkerTimeout:          time.Duration(envIntDefault("WORKER_TIMEOUT_SEC", 300, 1)) * time.Second,
 		WorkerMaxRetries:       envIntDefault("WORKER_MAX_RETRIES", 0, 0),
 		DeepSearchLanguages:    NormalizeLanguageList(os.Getenv("DEEP_SEARCH_LANGUAGES")),
@@ -389,5 +389,6 @@ func (e AIEnv) Defaults() Config {
 		ExtractionPromptVer:           e.ExtractionPromptVer,
 		NearDuplicateDetectionEnabled: e.NearDuplicateEnabled,
 		NearDuplicateThreshold:        e.NearDuplicateThreshold,
+		AlwaysRequireReview:           true,
 	}
 }

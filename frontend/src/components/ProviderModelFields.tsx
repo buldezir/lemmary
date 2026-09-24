@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { type ReactNode, useId, useState } from 'react'
 import {
   listProviderModels,
   modelOptionLabel,
@@ -105,7 +105,7 @@ export function ModelSelect({
 type ProviderModelFieldsProps = {
   label: string
   /** Short explanation of what this provider/model pair is used for. */
-  help?: string
+  help?: ReactNode
   providers: AIProvider[]
   providerId: string
   model: string

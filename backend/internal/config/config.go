@@ -284,7 +284,7 @@ func FindSettingsRecord(app core.App, env AIEnv) (*core.Record, error) {
 func configFromRecord(app core.App, record *core.Record) (Config, error) {
 	ocrTimeoutSec := int(record.GetFloat("ocr_timeout_sec"))
 	if ocrTimeoutSec <= 0 {
-		ocrTimeoutSec = 40
+		ocrTimeoutSec = 90
 	}
 	ingestInterval := int(record.GetFloat("ingest_dir_interval_min"))
 	if ingestInterval <= 0 {
@@ -292,7 +292,7 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 	}
 	openAITimeoutSec := int(record.GetFloat("openai_timeout_sec"))
 	if openAITimeoutSec <= 0 {
-		openAITimeoutSec = 60
+		openAITimeoutSec = 90
 	}
 	workerTimeoutSec := int(record.GetFloat("worker_timeout_sec"))
 	if workerTimeoutSec <= 0 {

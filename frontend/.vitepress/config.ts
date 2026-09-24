@@ -57,6 +57,7 @@ export default defineConfig({
           { text: 'Scanning', link: '/scanning' },
           { text: 'Local OCR', link: '/local_ocr' },
           { text: 'Local embeddings', link: '/local_embeddings' },
+          { text: 'Local AI on a Mac', link: '/local_ai_macos' },
           { text: 'Google Vision', link: '/google_vision' },
           { text: 'ChatGPT sign-in', link: '/chatgpt_login' },
           { text: 'OAuth2', link: '/oauth' },
