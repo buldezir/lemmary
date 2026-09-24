@@ -132,9 +132,9 @@ func TestDefaultsUsesCodeDefaults(t *testing.T) {
 	if cfg.NearDuplicateDetectionEnabled {
 		t.Fatal("expected near-duplicate detection off by default")
 	}
-	// Off is the pre-Inbox behaviour, so upgrading changes nothing until asked.
-	if cfg.AlwaysRequireReview {
-		t.Fatal("expected always-require-review off by default")
+	// Seeds a new instance only: an existing singleton keeps its stored value.
+	if !cfg.AlwaysRequireReview {
+		t.Fatal("expected always-require-review on by default")
 	}
 	if cfg.WorkerCronExpr != "* * * * *" {
 		t.Fatalf("cron=%q", cfg.WorkerCronExpr)

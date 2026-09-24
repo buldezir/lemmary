@@ -389,5 +389,6 @@ func (e AIEnv) Defaults() Config {
 		ExtractionPromptVer:           e.ExtractionPromptVer,
 		NearDuplicateDetectionEnabled: e.NearDuplicateEnabled,
 		NearDuplicateThreshold:        e.NearDuplicateThreshold,
+		AlwaysRequireReview:           true,
 	}
 }
