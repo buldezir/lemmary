@@ -276,7 +276,7 @@ export function ProvidersBlock({
           ) : requiresSignIn(draft.sdk) ? (
             <p className={`${fieldHintClassName} sm:col-span-2`}>
               Save the provider first, then sign in to it from the list above. Chat,
-              extraction and Deep Search can run on the subscription; embeddings and OCR
+              extraction, Deep Search and OCR can run on the subscription; embeddings
               cannot, and keep whichever provider they have. {docsLink}
             </p>
           ) : (

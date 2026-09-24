@@ -24,7 +24,6 @@ describe('parseDocumentQuery', () => {
         type: 'abc123',
         correspondent: 'def456',
         tags: 'tag1,tag2',
-        untagged: 'true',
         undated: 'true',
         page: '3',
       }),
@@ -36,7 +35,7 @@ describe('parseDocumentQuery', () => {
       type: 'abc123',
       correspondent: 'def456',
       tags: 'tag1,tag2',
-      untagged: true,
+      untagged: false,
       undated: true,
       page: 3,
     })
@@ -159,7 +158,17 @@ describe('the untagged filter', () => {
     expect(parseDocumentQuery({ untagged: 'true' }).untagged).toBe(true)
     expect(parseDocumentQuery({ untagged: 'yes' }).untagged).toBe(false)
     expect(documentQuerySearch({ ...defaultDocumentQuery, untagged: false })).toEqual({})
+    expect(documentQuerySearch({ ...defaultDocumentQuery, untagged: true })).toEqual({
+      untagged: true,
+    })
     expect(hasActiveFilters({ ...defaultDocumentQuery, untagged: true })).toBe(true)
+  })
+})
+
+test('untagged drops tags it could never match', () => {
+  expect(parseDocumentQuery({ tags: 'tag1', untagged: 'true' })).toMatchObject({
+    tags: '',
+    untagged: true,
   })
 })
 

@@ -51,7 +51,7 @@ export function TagFilter({
   ))
 
   const choices = [
-    ...(chosen.length > 0 ? [] : [{ value: NO_TAGS, label: 'No tags', pinned: true }]),
+    ...(chosen.length > 0 ? [] : [{ value: NO_TAGS, label: 'No tags' }]),
     ...available.map((tag) => ({ value: tag.id, label: tag.name })),
   ]
 
@@ -59,7 +59,7 @@ export function TagFilter({
     <Combobox
       value=""
       options={choices}
-      placeholder={value.length > 0 ? 'Add a tag...' : 'All tags'}
+      placeholder={untagged ? 'Or pick a tag...' : value.length > 0 ? 'Add a tag...' : 'All tags'}
       ariaLabel="Filter by tag"
       bgClassName="bg-surface"
       className="w-full min-w-0 sm:flex-1"

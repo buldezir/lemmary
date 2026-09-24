@@ -91,6 +91,7 @@ function pageNumber(value: unknown): number {
 /** Reads a URL's query string into filters, defaulting anything unusable. */
 export function parseDocumentQuery(raw: DocumentQueryInput): DocumentQuery {
   const status = text(raw.status)
+  const untagged = raw.untagged === true || raw.untagged === 'true'
   return {
     q: typeof raw.q === 'string' ? searchableTerm(raw.q) : '',
     // 'all' is the absence of a status filter, so it is not in
@@ -102,8 +103,9 @@ export function parseDocumentQuery(raw: DocumentQueryInput): DocumentQuery {
     undated: raw.undated === true || raw.undated === 'true',
     type: id(raw.type),
     correspondent: id(raw.correspondent),
-    tags: tagIds(raw.tags).join(','),
-    untagged: raw.untagged === true || raw.untagged === 'true',
+    // Together they match nothing, and the control can only show one.
+    tags: untagged ? '' : tagIds(raw.tags).join(','),
+    untagged,
     page: pageNumber(raw.page),
   }
 }

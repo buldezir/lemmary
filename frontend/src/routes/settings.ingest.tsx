@@ -88,9 +88,11 @@ export function SettingsIngestPage() {
     updateFields((current) => ({
       ingest_dir_owner: owner,
       ...(ingestImap &&
-        email.toLowerCase().endsWith('@gmail.com') && {
-          imap_host: current.imap_host || 'imap.gmail.com',
-          imap_username: current.imap_username || email,
+        /@(gmail|googlemail)\.com$/i.test(email) &&
+        !current.imap_host &&
+        !current.imap_username && {
+          imap_host: 'imap.gmail.com',
+          imap_username: email,
           imap_folder: current.imap_folder || 'INBOX',
         }),
     }))

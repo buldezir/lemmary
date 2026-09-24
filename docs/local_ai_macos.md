@@ -335,6 +335,7 @@ launchctl kickstart -k gui/$(id -u)/com.example.llama-embeddings
 launchctl kickstart -k gui/$(id -u)/com.example.docling-serve
 
 # stop / remove
+launchctl bootout gui/$(id -u)/com.example.llama-embeddings
 launchctl bootout gui/$(id -u)/com.example.docling-serve
 
 # logs
