@@ -3,7 +3,6 @@ package appapi
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -35,8 +34,9 @@ func scanWindow(req imapScanRequest) (from, to time.Time, err error) {
 	return from, last.AddDate(0, 0, 1), nil
 }
 
-// Synchronous like the duplicate scan: the admin waits for the counts.
-func handleIMAPScan(app core.App, rt *config.Runtime, scanner *imapimport.Scanner) func(*core.RequestEvent) error {
+// A backfill can run far longer than a request should stay open, so the POST
+// starts it and the Management page polls the GET, as the embedding sweep does.
+func handleStartIMAPBackfill(rt *config.Runtime, scanner *imapimport.Scanner) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var req imapScanRequest
 		if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
@@ -46,19 +46,18 @@ func handleIMAPScan(app core.App, rt *config.Runtime, scanner *imapimport.Scanne
 		if err != nil {
 			return writeError(e, http.StatusBadRequest, err.Error())
 		}
-		res, err := scanner.ScanRange(rt.Snapshot().Cfg, from, to)
-		switch {
+		switch err := scanner.StartBackfill(rt.Snapshot().Cfg, from, to); {
 		case errors.Is(err, imapimport.ErrBusy):
 			return writeError(e, http.StatusConflict, "A mailbox scan is already running. Try again shortly.")
-		case errors.Is(err, imapimport.ErrNotConfigured), errors.Is(err, imapimport.ErrNoOwner):
-			return writeError(e, http.StatusBadRequest, err.Error())
 		case err != nil:
-			app.Logger().Warn("imap range scan failed", "error", err)
-			return writeError(e, http.StatusBadGateway, fmt.Sprintf("%v (created %d, skipped %d, failed %d before stopping)",
-				err, res.Created, res.Skipped, res.Failed))
+			return writeError(e, http.StatusBadRequest, err.Error())
 		}
-		return writeJSON(e, http.StatusOK, map[string]any{
-			"created": res.Created, "skipped": res.Skipped, "failed": res.Failed,
-		})
+		return writeJSON(e, http.StatusAccepted, scanner.BackfillStatus())
+	}
+}
+
+func handleGetIMAPBackfill(scanner *imapimport.Scanner) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		return writeJSON(e, http.StatusOK, scanner.BackfillStatus())
 	}
 }

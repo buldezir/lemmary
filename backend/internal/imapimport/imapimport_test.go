@@ -15,6 +15,7 @@ import (
 	"github.com/emersion/go-imap/v2/imapserver"
 	"github.com/emersion/go-imap/v2/imapserver/imapmemserver"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/filesystem"
 
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/duplicates"
@@ -53,8 +54,16 @@ type mailbox struct {
 	addr string
 }
 
-func startServer(t *testing.T) *mailbox {
+// startServer speaks IMAP4rev2 (MOVE, UIDPLUS) unless caps names others.
+func startServer(t *testing.T, caps ...imap.Cap) *mailbox {
 	t.Helper()
+	capSet := imap.CapSet{imap.CapIMAP4rev1: {}, imap.CapIMAP4rev2: {}}
+	if len(caps) > 0 {
+		capSet = imap.CapSet{}
+		for _, c := range caps {
+			capSet[c] = struct{}{}
+		}
+	}
 	mem := imapmemserver.New()
 	user := imapmemserver.NewUser("docs", "pw")
 	if err := user.Create("INBOX", nil); err != nil {
@@ -66,7 +75,7 @@ func startServer(t *testing.T) *mailbox {
 			return mem.NewSession(), nil, nil
 		},
 		InsecureAuth: true,
-		Caps:         imap.CapSet{imap.CapIMAP4rev1: {}, imap.CapIMAP4rev2: {}},
+		Caps:         capSet,
 	})
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -91,6 +100,11 @@ func (m *mailbox) deliver(t *testing.T, folder string, parts ...string) {
 // deliverAt stamps the INTERNALDATE; zero is now.
 func (m *mailbox) deliverAt(t *testing.T, folder string, received time.Time, parts ...string) {
 	t.Helper()
+	m.append(t, folder, &imap.AppendOptions{Time: received}, parts...)
+}
+
+func (m *mailbox) append(t *testing.T, folder string, opts *imap.AppendOptions, parts ...string) {
+	t.Helper()
 	var b strings.Builder
 	b.WriteString("From: sender@example.com\nTo: docs@example.com\nSubject: scan\nMIME-Version: 1.0\n")
 	b.WriteString("Content-Type: multipart/mixed; boundary=\"b\"\n\n--b\nContent-Type: text/plain\n\nsee attached\n")
@@ -99,7 +113,7 @@ func (m *mailbox) deliverAt(t *testing.T, folder string, received time.Time, par
 	}
 	b.WriteString("--b--\n")
 	raw := []byte(strings.ReplaceAll(b.String(), "\n", "\r\n"))
-	if _, err := m.user.Append(folder, bytes.NewReader(raw), &imap.AppendOptions{Time: received}); err != nil {
+	if _, err := m.user.Append(folder, bytes.NewReader(raw), opts); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -359,23 +373,121 @@ func TestScanRangeBackfillsWithoutMovingOrDeleting(t *testing.T) {
 	c.IMAPSince = time.Now()
 	s := m.scanner(app)
 	from, to := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
-	res, err := s.ScanRange(c, from, to)
+	res, err := s.scanRange(c, from, to)
 	if err != nil || res != (Result{Created: 2}) {
 		t.Fatalf("range scan = %+v, %v; want January and February", res, err)
 	}
 	if got := m.count(t, "INBOX"); got != 3 {
 		t.Fatalf("INBOX holds %d; a backfill must not delete", got)
 	}
-	if res, err := s.ScanRange(c, from, to); err != nil || res != (Result{Skipped: 2}) {
-		t.Fatalf("second range scan = %+v, %v; want both skipped as duplicates", res, err)
-	}
 
-	s.running.Store(true)
-	if _, err := s.ScanRange(c, from, to); !errors.Is(err, ErrBusy) {
-		t.Fatalf("range scan during a scan = %v, want ErrBusy", err)
+	// The Management route starts it in the background and polls.
+	if err := s.StartBackfill(c, from, to); err != nil {
+		t.Fatal(err)
 	}
-	s.running.Store(false)
-	if _, err := s.ScanRange(config.Config{}, from, to); !errors.Is(err, ErrNotConfigured) {
-		t.Fatalf("range scan without a mailbox = %v", err)
+	if err := s.StartBackfill(c, from, to); !errors.Is(err, ErrBusy) {
+		t.Fatalf("second start while running = %v, want ErrBusy", err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for s.BackfillStatus().Running && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	got := s.BackfillStatus()
+	if got.Running || got.Error != "" || got.Result != (Result{Skipped: 2}) || got.From != "2026-01-01" || got.To != "2026-02-28" {
+		t.Fatalf("backfill status = %+v, want both skipped as duplicates over Jan 1 - Feb 28", got)
+	}
+	if err := s.StartBackfill(config.Config{}, from, to); !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("backfill without a mailbox = %v", err)
+	}
+}
+
+// Without UIDPLUS the only expunge there is purges every \\Deleted message in
+// the folder, including ones a mail client flagged and has not expunged yet.
+func TestNoUIDPlusFlagsInsteadOfExpungingTheFolder(t *testing.T) {
+	for _, after := range []string{config.IMAPDelete, config.IMAPMove} {
+		t.Run(after, func(t *testing.T) {
+			app := openApp(t, limits.Limits{})
+			m := startServer(t, imap.CapIMAP4rev1)
+			m.append(t, "INBOX", &imap.AppendOptions{Flags: []imap.Flag{imap.FlagDeleted}}, base64Part("trash.txt", "deleted in a mail client"))
+			m.deliver(t, "INBOX", base64Part("a.txt", "consumed"))
+
+			s := m.scanner(app)
+			if res := s.Scan(cfg(after)); res != (Result{Created: 1}) {
+				t.Fatalf("scan = %+v, want only the live message", res)
+			}
+			if got := m.count(t, "INBOX"); got != 2 {
+				t.Fatalf("INBOX holds %d; nothing may be expunged without UIDPLUS", got)
+			}
+			if after == config.IMAPMove && m.count(t, "Done") != 1 {
+				t.Fatal("the consumed message was not copied to the target")
+			}
+			if res := m.scanner(app).Scan(cfg(after)); res != (Result{}) {
+				t.Fatalf("scan after a restart = %+v; a flagged message must not come back", res)
+			}
+		})
+	}
+}
+
+func TestForwardedMessageAttachmentsAreImported(t *testing.T) {
+	app := openApp(t, limits.Limits{})
+	m := startServer(t)
+	forwarded := "Content-Type: message/rfc822\n\n" +
+		"From: a@example.com\nSubject: invoice\nMIME-Version: 1.0\n" +
+		"Content-Type: multipart/mixed; boundary=\"inner\"\n\n" +
+		"--inner\nContent-Type: text/plain\n\nhere it is\n" +
+		"--inner\n" + base64Part("invoice.txt", "inside a forward") +
+		"--inner--\n"
+	m.deliver(t, "INBOX", forwarded)
+
+	if res := m.scanner(app).Scan(cfg(config.IMAPKeep)); res != (Result{Created: 1}) {
+		t.Fatalf("scan = %+v, want the attachment inside the forward", res)
+	}
+}
+
+// One message that keeps failing is retried, then given up on, so the mail
+// behind it is not held back for good.
+func TestAFailingMessageIsGivenUpOnAfterMaxAttempts(t *testing.T) {
+	app := openApp(t, limits.Limits{})
+	app.OnRecordCreate("documents").BindFunc(func(e *core.RecordEvent) error {
+		if f, ok := e.Record.Get("file").(*filesystem.File); ok && strings.HasPrefix(f.OriginalName, "stuck") {
+			return errors.New("disk full")
+		}
+		return e.Next()
+	})
+	m := startServer(t)
+	m.deliver(t, "INBOX", base64Part("stuck.txt", "never stored"))
+	m.deliver(t, "INBOX", base64Part("behind.txt", "waits its turn"))
+
+	s := m.scanner(app)
+	for attempt := 1; attempt < maxAttempts; attempt++ {
+		if res := s.Scan(cfg(config.IMAPKeep)); res != (Result{Failed: 1}) {
+			t.Fatalf("scan %d = %+v, want the failure retried before anything behind it", attempt, res)
+		}
+	}
+	if res := s.Scan(cfg(config.IMAPKeep)); res != (Result{Created: 1, Failed: 1}) {
+		t.Fatalf("scan %d = %+v, want the stuck message given up on and the next imported", maxAttempts, res)
+	}
+}
+
+func TestSinceToleratesAServerClockBehind(t *testing.T) {
+	app := openApp(t, limits.Limits{})
+	m := startServer(t)
+	m.deliverAt(t, "INBOX", time.Now().Add(-2*time.Minute), base64Part("new.txt", "stamped by a slow clock"))
+
+	c := cfg(config.IMAPKeep)
+	c.IMAPSince = time.Now()
+	if res := m.scanner(app).Scan(c); res != (Result{Created: 1}) {
+		t.Fatalf("scan = %+v, want mail within the clock tolerance imported", res)
+	}
+}
+
+func TestFetchesInBatches(t *testing.T) {
+	app := openApp(t, limits.Limits{})
+	m := startServer(t)
+	for i := range fetchBatch + 3 {
+		m.deliver(t, "INBOX", base64Part(fmt.Sprintf("doc%d.txt", i), fmt.Sprintf("document %d", i)))
+	}
+	if res := m.scanner(app).Scan(cfg(config.IMAPKeep)); res.Created != fetchBatch+3 {
+		t.Fatalf("scan = %+v, want every message across batches", res)
 	}
 }

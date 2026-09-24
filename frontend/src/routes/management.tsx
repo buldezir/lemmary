@@ -14,11 +14,13 @@ import {
   pruneStaleTaxonomy,
   reindexSearch,
   scanDuplicates,
-  scanIMAPRange,
+  getIMAPBackfill,
+  startIMAPBackfill,
   startEmbeddingBackfill,
   type ActiveJobCounts,
   type DuplicateScanResult,
   type EmbeddingBackfillState,
+  type IMAPBackfillState,
   type TaxonomyPruneResult,
 } from '../lib/api/maintenance'
 import { getLimits, type InstanceLimits } from '../lib/api/limits'
@@ -81,7 +83,8 @@ export function ManagementPage() {
   const { ingestImap } = useAppMeta()
   const [mailFrom, setMailFrom] = useState('')
   const [mailTo, setMailTo] = useState('')
-  const [mailScanning, setMailScanning] = useState(false)
+  const [mailStarting, setMailStarting] = useState(false)
+  const [mailBackfill, setMailBackfill] = useState<IMAPBackfillState | null>(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const closeResult = useCallback(() => {
@@ -272,19 +275,53 @@ export function ManagementPage() {
     }
   }
 
+  const mailRunning = mailBackfill?.running ?? false
+
+  // Picks up a backfill still running from before a reload.
+  useEffect(() => {
+    if (!ingestImap) return
+    let active = true
+    getIMAPBackfill()
+      .then((next) => {
+        if (active) setMailBackfill(next)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [ingestImap])
+
+  useEffect(() => {
+    if (!mailRunning) return
+    let active = true
+    const timer = setInterval(() => {
+      getIMAPBackfill()
+        .then((next) => {
+          if (!active) return
+          setMailBackfill(next)
+          if (next.running) return
+          const counts = `${next.created} imported, ${next.skipped} already in the library, ${next.failed} failed`
+          if (next.error) setError(`Mailbox scan stopped: ${next.error} (${counts}).`)
+          else setSuccess(`Mailbox scan finished: ${counts}.`)
+        })
+        .catch(() => {})
+    }, embeddingPollMs)
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [mailRunning])
+
   async function onScanMailbox() {
     try {
-      setMailScanning(true)
+      setMailStarting(true)
       setError('')
       setSuccess('')
-      const result = await scanIMAPRange(mailFrom, mailTo)
-      setSuccess(
-        `Mailbox scan finished: ${result.created} imported, ${result.skipped} already in the library, ${result.failed} failed.`,
-      )
+      setMailBackfill(await startIMAPBackfill(mailFrom, mailTo))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Mailbox scan failed')
     } finally {
-      setMailScanning(false)
+      setMailStarting(false)
     }
   }
 
@@ -452,12 +489,18 @@ export function ManagementPage() {
               </label>
               <Button
                 variant="secondary"
-                disabled={mailScanning || !mailFrom || !mailTo}
+                disabled={mailStarting || mailRunning || !mailFrom || !mailTo}
                 onClick={() => void onScanMailbox()}
               >
-                {mailScanning ? 'Scanning...' : 'Scan mailbox'}
+                {mailStarting || mailRunning ? 'Scanning...' : 'Scan mailbox'}
               </Button>
             </div>
+            {mailBackfill?.running && (
+              <p className="mt-3 text-xs text-ink-soft">
+                Scanning mail received {mailBackfill.from} to {mailBackfill.to} in the background.
+                It keeps running if you leave this page.
+              </p>
+            )}
           </section>
         )}
 

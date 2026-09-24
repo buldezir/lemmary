@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -41,11 +42,32 @@ const sessionTimeout = 15 * time.Minute
 // above this cannot decode within the document cap, so it is never fetched.
 const maxEncodedBytes = models.MaxFileBytes/3*4 + models.MaxFileBytes/38 + 1024
 
+// Messages are fetched this many at a time: a long UID list is one command
+// line, which some servers cap.
+const fetchBatch = 200
+
+// A message failing this many scans in a row is given up on, so it cannot hold
+// back the mail behind it; Management's backfill can still import it.
+const maxAttempts = 3
+
+// The since point is this host's clock and INTERNALDATE the server's; mail
+// arriving just after a save must not be lost to a server running behind.
+const clockSkew = 10 * time.Minute
+
 type Result struct {
-	Created int
+	Created int `json:"created"`
 	// Skipped attachments are already in the library (same checksum).
-	Skipped int
-	Failed  int
+	Skipped int `json:"skipped"`
+	Failed  int `json:"failed"`
+}
+
+// Backfill is the last Management range scan, as the page polls it.
+type Backfill struct {
+	Running bool   `json:"running"`
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Result
+	Error string `json:"error"`
 }
 
 type Scanner struct {
@@ -60,7 +82,12 @@ type Scanner struct {
 	// Delete and move mode: consumed messages waiting for encryption at rest to
 	// seal their documents, by when the last one was saved.
 	pending map[imap.UID]time.Time
-	warned  map[string]bool
+	// Scans in a row that failed on a message, for maxAttempts.
+	attempts map[imap.UID]int
+	warned   map[string]bool
+
+	mu       sync.Mutex
+	backfill Backfill
 }
 
 var (
@@ -71,7 +98,7 @@ var (
 
 func New(app core.App, rt *config.Runtime) *Scanner {
 	return &Scanner{app: app, rt: rt, dial: dial, seen: map[imap.UID]bool{},
-		pending: map[imap.UID]time.Time{}, warned: map[string]bool{}}
+		pending: map[imap.UID]time.Time{}, attempts: map[imap.UID]int{}, warned: map[string]bool{}}
 }
 
 // Register schedules the scan on the consume folder's interval, re-added with
@@ -131,8 +158,10 @@ const (
 	consumed outcome = iota
 	// refused: some attachment was rejected; the message stays in the mailbox.
 	refused
-	// retry: a limit or a transient error; nothing after it is read this scan.
+	// retry: a transient error on this message; maxAttempts bounds it.
 	retry
+	// stop: an instance limit every later message would hit too.
+	stop
 )
 
 // Scan reads the mailbox once.
@@ -162,6 +191,7 @@ func (s *Scanner) Scan(cfg config.Config) Result {
 	if key := fmt.Sprintf("%s|%s|%s|%d", ownerID, mode, mailbox, sel.UIDValidity); key != s.seenKey {
 		s.seen = map[imap.UID]bool{}
 		s.pending = map[imap.UID]time.Time{}
+		s.attempts = map[imap.UID]int{}
 		s.warned = map[string]bool{}
 		s.seenKey = key
 	}
@@ -183,8 +213,12 @@ func (s *Scanner) Scan(cfg config.Config) Result {
 			}
 		}()
 	}
+	since := cfg.IMAPSince
+	if !since.IsZero() {
+		since = since.Add(-clockSkew)
+	}
 	// SINCE is a date; the exact cut is the INTERNALDATE check below.
-	found, err := c.UIDSearch(&imap.SearchCriteria{Since: cfg.IMAPSince}, nil).Wait()
+	found, err := c.UIDSearch(liveMail(imap.SearchCriteria{Since: since}), nil).Wait()
 	if err != nil {
 		logger.Warn("imap ingest: search failed", "folder", cfg.IMAPFolder, "error", err)
 		return res
@@ -195,51 +229,94 @@ func (s *Scanner) Scan(cfg config.Config) Result {
 			uids = append(uids, uid)
 		}
 	}
-	msgs, collection, err := s.structures(c, uids)
-	if err != nil {
-		logger.Warn("imap ingest: "+err.Error(), "folder", cfg.IMAPFolder)
-		return res
-	}
-	for _, msg := range msgs {
-		if msg.InternalDate.Before(cfg.IMAPSince) {
+	for batch := range slices.Chunk(uids, fetchBatch) {
+		msgs, collection, err := s.structures(c, batch)
+		if err != nil {
+			logger.Warn("imap ingest: "+err.Error(), "folder", cfg.IMAPFolder)
+			return res
+		}
+		for _, msg := range msgs {
+			var parts []part
+			if !msg.InternalDate.Before(since) {
+				parts = attachments(msg.BodyStructure)
+			}
+			got := consumed
+			if len(parts) > 0 {
+				got = s.consume(c, collection, ownerID, msg.UID, parts, &res)
+			}
+			if got == retry {
+				if s.attempts[msg.UID]++; s.attempts[msg.UID] < maxAttempts {
+					return res
+				}
+				logger.Error("imap ingest: giving up on a message; Management -> Mailbox can import it later",
+					"uid", msg.UID, "attempts", maxAttempts)
+				got = refused
+			}
+			if got == stop {
+				return res
+			}
+			delete(s.attempts, msg.UID)
 			s.seen[msg.UID] = true
 			last = max(last, msg.UID)
-			continue
-		}
-		parts := attachments(msg.BodyStructure)
-		got := consumed
-		if len(parts) > 0 {
-			got = s.consume(c, collection, ownerID, msg.UID, parts, &res)
-		}
-		if got == retry {
-			// ponytail: one transient failure holds every later message until it
-			// clears; per-message ledger rows if a stuck message ever blocks a mailbox.
-			break
-		}
-		s.seen[msg.UID] = true
-		last = max(last, msg.UID)
-		if mode != config.IMAPKeep && got == consumed && len(parts) > 0 {
-			s.pending[msg.UID] = time.Now()
+			if mode != config.IMAPKeep && got == consumed && len(parts) > 0 {
+				s.pending[msg.UID] = time.Now()
+			}
 		}
 	}
 	return res
 }
 
-// ScanRange imports the attachments of mail received from from up to, not
-// including, to. It is a backfill: the since point, the ledger and the
-// after-import action do not apply, and the checksum check skips what the
-// library already has.
-func (s *Scanner) ScanRange(cfg config.Config, from, to time.Time) (Result, error) {
-	var res Result
+// liveMail leaves out what a mail client has already deleted but not yet
+// expunged, and what a server without UIDPLUS keeps flagged after a move.
+func liveMail(criteria imap.SearchCriteria) *imap.SearchCriteria {
+	criteria.NotFlag = []imap.Flag{imap.FlagDeleted}
+	return &criteria
+}
+
+// StartBackfill imports, in the background, the attachments of mail received
+// from from up to, not including, to; BackfillStatus reports on it. The since
+// point, the ledger and the after-import action do not apply, and the checksum
+// check skips what the library already has. It holds the scan lock, so a
+// scheduled scan cannot move or delete in the folder it is reading.
+func (s *Scanner) StartBackfill(cfg config.Config, from, to time.Time) error {
 	if cfg.IMAPHost == "" || cfg.IMAPUsername == "" {
-		return res, ErrNotConfigured
+		return ErrNotConfigured
 	}
 	if !s.running.CompareAndSwap(false, true) {
-		return res, ErrBusy
+		return ErrBusy
 	}
-	defer s.running.Store(false)
-	defer inflight.Begin()()
+	s.setBackfill(Backfill{Running: true, From: from.Format(time.DateOnly), To: to.AddDate(0, 0, -1).Format(time.DateOnly)})
+	go func() {
+		defer s.running.Store(false)
+		defer inflight.Begin()()
+		res, err := s.scanRange(cfg, from, to)
+		state := s.BackfillStatus()
+		state.Running, state.Result = false, res
+		if err != nil {
+			state.Error = err.Error()
+			s.app.Logger().Warn("imap ingest: backfill failed", "error", err)
+		}
+		s.setBackfill(state)
+	}()
+	return nil
+}
 
+func (s *Scanner) BackfillStatus() Backfill {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.backfill
+}
+
+func (s *Scanner) setBackfill(state Backfill) {
+	s.mu.Lock()
+	s.backfill = state
+	s.mu.Unlock()
+}
+
+// scanRange is StartBackfill's work, run under the scan lock. A message that
+// fails is counted and passed over; only an instance limit stops it.
+func (s *Scanner) scanRange(cfg config.Config, from, to time.Time) (Result, error) {
+	var res Result
 	ownerID := s.owner(cfg)
 	if ownerID == "" {
 		return res, ErrNoOwner
@@ -249,18 +326,20 @@ func (s *Scanner) ScanRange(cfg config.Config, from, to time.Time) (Result, erro
 		return res, err
 	}
 	defer done()
-	found, err := c.UIDSearch(&imap.SearchCriteria{Since: from, Before: to}, nil).Wait()
+	found, err := c.UIDSearch(liveMail(imap.SearchCriteria{Since: from, Before: to}), nil).Wait()
 	if err != nil {
 		return res, fmt.Errorf("search %s: %w", cfg.IMAPFolder, err)
 	}
-	msgs, collection, err := s.structures(c, found.AllUIDs())
-	if err != nil {
-		return res, err
-	}
-	for _, msg := range msgs {
-		parts := attachments(msg.BodyStructure)
-		if len(parts) > 0 && s.consume(c, collection, ownerID, msg.UID, parts, &res) == retry {
-			return res, errors.New("stopped at an instance limit or an error; see the logs")
+	for batch := range slices.Chunk(found.AllUIDs(), fetchBatch) {
+		msgs, collection, err := s.structures(c, batch)
+		if err != nil {
+			return res, err
+		}
+		for _, msg := range msgs {
+			parts := attachments(msg.BodyStructure)
+			if len(parts) > 0 && s.consume(c, collection, ownerID, msg.UID, parts, &res) == stop {
+				return res, errors.New("stopped at an instance limit")
+			}
 		}
 	}
 	return res, nil
@@ -283,7 +362,7 @@ func (s *Scanner) connect(cfg config.Config, readOnly bool) (*imapclient.Client,
 	timer := time.AfterFunc(sessionTimeout, func() { c.Close() })
 	done := func() {
 		timer.Stop()
-		c.Logout()
+		_ = c.Logout().Wait()
 		c.Close()
 	}
 	if err := c.Login(cfg.IMAPUsername, cfg.IMAPPassword).Wait(); err != nil {
@@ -339,6 +418,7 @@ func (s *Scanner) consume(c *imapclient.Client, collection *core.Collection, own
 	}
 	msgs, err := c.Fetch(imap.UIDSetNum(uid), &imap.FetchOptions{UID: true, BodySection: sections}).Collect()
 	if err != nil || len(msgs) == 0 {
+		res.Failed++
 		s.warnOnce(fmt.Sprintf("fetch|%d", uid), "imap ingest: fetch attachments failed", "uid", uid, "error", err)
 		return retry
 	}
@@ -368,7 +448,7 @@ func (s *Scanner) consume(c *imapclient.Client, collection *core.Collection, own
 			res.Skipped++
 		case dirimport.RoomExhausted(err):
 			logger.Warn("imap ingest: limit reached, stopping this scan", "error", err)
-			return retry
+			return stop
 		case dirimport.Rejected(err):
 			res.Failed++
 			got = refused
@@ -383,24 +463,37 @@ func (s *Scanner) consume(c *imapclient.Client, collection *core.Collection, own
 }
 
 // attachments are the single parts with a filename the documents collection
-// can store; a mail body without one is not a document.
+// can store, including those inside a forwarded message; a mail body without
+// one is not a document.
 func attachments(bs imap.BodyStructure) []part {
-	if bs == nil {
-		return nil
+	return collect(bs, nil, nil)
+}
+
+// collect walks by IMAP section number. imap.BodyStructure.Walk stops at a
+// message/rfc822 part, whose own parts are numbered under it (2.1, 2.2, or
+// 2.1 for a single-part message).
+func collect(bs imap.BodyStructure, path []int, out []part) []part {
+	switch node := bs.(type) {
+	case *imap.BodyStructureMultiPart:
+		for i, child := range node.Children {
+			out = collect(child, append(slices.Clone(path), i+1), out)
+		}
+	case *imap.BodyStructureSinglePart:
+		if len(path) == 0 {
+			path = []int{1}
+		}
+		if name := node.Filename(); name != "" && zipimport.Storable(filepath.Ext(name)) {
+			return append(out, part{path: path, name: name, encoding: node.Encoding, size: node.Size})
+		}
+		if node.MessageRFC822 == nil || node.MessageRFC822.BodyStructure == nil {
+			return out
+		}
+		inner := node.MessageRFC822.BodyStructure
+		if _, multi := inner.(*imap.BodyStructureMultiPart); multi {
+			return collect(inner, path, out)
+		}
+		return collect(inner, append(slices.Clone(path), 1), out)
 	}
-	var out []part
-	bs.Walk(func(path []int, node imap.BodyStructure) bool {
-		single, ok := node.(*imap.BodyStructureSinglePart)
-		if !ok {
-			return true
-		}
-		name := single.Filename()
-		if name == "" || !zipimport.Storable(filepath.Ext(name)) {
-			return true
-		}
-		out = append(out, part{path: slices.Clone(path), name: name, encoding: single.Encoding, size: single.Size})
-		return false
-	})
 	return out
 }
 
@@ -428,16 +521,29 @@ func (s *Scanner) settle(c *imapclient.Client, cfg config.Config) {
 		return
 	}
 	set := imap.UIDSetNum(uids...)
+	caps := c.Caps()
+	flag := func() error {
+		return c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close()
+	}
 	var err error
-	if cfg.IMAPAfterConsume == config.IMAPMove {
+	switch {
+	case cfg.IMAPAfterConsume == config.IMAPMove && (caps.Has(imap.CapMove) || caps.Has(imap.CapUIDPlus)):
 		_, err = c.Move(set, cfg.IMAPMoveFolder).Wait()
-	} else {
-		err = c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close()
-		if err == nil && c.Caps().Has(imap.CapUIDPlus) {
-			err = c.UIDExpunge(set).Close()
-		} else if err == nil {
-			err = c.Expunge().Close()
+	case cfg.IMAPAfterConsume == config.IMAPMove:
+		// Without MOVE or UIDPLUS, go-imap's fallback is a bare EXPUNGE, which
+		// also purges whatever a mail client flagged \Deleted. Copy and flag
+		// instead; the next expunge the user's client runs finishes the move.
+		if _, err = c.Copy(set, cfg.IMAPMoveFolder).Wait(); err == nil {
+			err = flag()
 		}
+		s.warnOnce("nouidplus", "imap ingest: server lacks MOVE and UIDPLUS; moved messages stay flagged \\Deleted in the source folder")
+	case caps.Has(imap.CapUIDPlus):
+		if err = flag(); err == nil {
+			err = c.UIDExpunge(set).Close()
+		}
+	default:
+		err = flag()
+		s.warnOnce("nouidplus", "imap ingest: server lacks UIDPLUS; consumed messages are flagged \\Deleted, not expunged")
 	}
 	if err != nil {
 		s.warnOnce("settle|"+err.Error(), "imap ingest: removing consumed messages failed", "mode", cfg.IMAPAfterConsume, "error", err)

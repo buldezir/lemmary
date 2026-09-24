@@ -102,7 +102,8 @@ func Register(
 			g.DELETE("/providers/{id}/chatgpt", bindAdmin(handleChatGPTSignOut(app, rt)))
 			g.POST("/duplicates/scan", bindAdmin(handlePostDuplicatesScan(app, rt)))
 			if imapScanner != nil {
-				g.POST("/ingest/imap/scan", bindAdmin(handleIMAPScan(app, rt, imapScanner)))
+				g.GET("/ingest/imap/scan", bindAdmin(handleGetIMAPBackfill(imapScanner)))
+				g.POST("/ingest/imap/scan", bindAdmin(handleStartIMAPBackfill(rt, imapScanner)))
 			}
 			g.POST("/taxonomy/prune", bindAdmin(handlePostTaxonomyPrune(app)))
 			// Auth rather than admin: tags are user-owned, and a run spends
