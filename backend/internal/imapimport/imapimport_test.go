@@ -22,6 +22,7 @@ import (
 	"lemmary/backend/internal/inflight"
 	"lemmary/backend/internal/limits"
 	"lemmary/backend/internal/testpb"
+	"lemmary/backend/internal/zipimport"
 	_ "lemmary/backend/migrations"
 )
 
@@ -489,5 +490,58 @@ func TestFetchesInBatches(t *testing.T) {
 	}
 	if res := m.scanner(app).Scan(cfg(config.IMAPKeep)); res.Created != fetchBatch+3 {
 		t.Fatalf("scan = %+v, want every message across batches", res)
+	}
+}
+
+const onePixelPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+func imagePart(disposition, name, b64 string) string {
+	return fmt.Sprintf("Content-Type: image/png; name=%q\nContent-ID: <%s>\nContent-Disposition: %s; filename=%q\nContent-Transfer-Encoding: base64\n\n%s\n",
+		name, name, disposition, name, b64)
+}
+
+func htmlWithLogo() string {
+	return "Content-Type: multipart/related; boundary=\"rel\"\n\n" +
+		"--rel\nContent-Type: text/html\n\n<img src=\"cid:logo.png\">\n" +
+		"--rel\n" + imagePart("inline", "logo.png", base64.StdEncoding.EncodeToString([]byte("not fetched"))) +
+		"--rel--\n"
+}
+
+func TestInlineImagesAreNeverImported(t *testing.T) {
+	app := openApp(t, limits.Limits{})
+	m := startServer(t)
+	m.deliver(t, "INBOX", htmlWithLogo(), base64Part("a.txt", "the document"), imagePart("attachment", "scan.png", onePixelPNG))
+	m.deliver(t, "INBOX", htmlWithLogo())
+
+	if res := m.scanner(app).Scan(cfg(config.IMAPDelete)); res != (Result{Created: 2}) {
+		t.Fatalf("scan = %+v, want the text and the attached image, not the logos", res)
+	}
+	if got := m.count(t, "INBOX"); got != 1 {
+		t.Fatalf("INBOX holds %d, want only the mail with nothing but a logo", got)
+	}
+}
+
+func TestSkippedFileTypesStayInTheMailbox(t *testing.T) {
+	app := openApp(t, limits.Limits{})
+	m := startServer(t)
+	m.deliver(t, "INBOX", base64Part("a.txt", "plain text"))
+
+	c := cfg(config.IMAPDelete)
+	c.IMAPSkipTypes = []string{"text", "image"}
+	if res := m.scanner(app).Scan(c); res != (Result{}) {
+		t.Fatalf("scan = %+v, want the text attachment skipped", res)
+	}
+	if got := m.count(t, "INBOX"); got != 1 {
+		t.Fatalf("a message with only skipped attachments was removed (INBOX %d)", got)
+	}
+}
+
+func TestEveryFileTypeExtensionIsStorable(t *testing.T) {
+	for name, exts := range config.IMAPFileTypes {
+		for _, ext := range exts {
+			if !zipimport.Storable(ext) {
+				t.Errorf("%s (%s) is not storable", ext, name)
+			}
+		}
 	}
 }

@@ -85,6 +85,8 @@ type Config struct {
 	IMAPFolder       string
 	IMAPAfterConsume string
 	IMAPMoveFolder   string
+	// IMAPSkipTypes are IMAPFileTypes keys whose attachments are not imported.
+	IMAPSkipTypes []string
 	// IMAPSince is when the mailbox was last pointed somewhere new; mail
 	// received before it is left to a Management backfill. Zero reads all.
 	IMAPSince time.Time
@@ -140,6 +142,14 @@ const (
 
 	DefaultIMAPFolder = "INBOX"
 )
+
+// IMAPFileTypes groups the storable extensions for the mailbox's type filter.
+var IMAPFileTypes = map[string][]string{
+	"pdf":    {".pdf"},
+	"office": {".docx", ".xlsx"},
+	"image":  {".jpg", ".jpeg", ".png", ".webp"},
+	"text":   {".txt", ".csv"},
+}
 
 func WorkerCronFromEnv() string {
 	return getEnv("WORKER_CRON_EXPR", "* * * * *")
@@ -327,6 +337,7 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 		IMAPFolder:                    strutil.FirstNonEmpty(record.GetString("imap_folder"), DefaultIMAPFolder),
 		IMAPAfterConsume:              strutil.FirstNonEmpty(record.GetString("imap_after_consume"), IMAPKeep),
 		IMAPMoveFolder:                strings.TrimSpace(record.GetString("imap_move_folder")),
+		IMAPSkipTypes:                 record.GetStringSlice("imap_skip_types"),
 		IMAPSince:                     record.GetDateTime("imap_since").Time(),
 	}
 

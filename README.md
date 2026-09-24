@@ -15,7 +15,7 @@ The API has been tested with the [swift-paperless](https://github.com/paulgessin
 - Optional encryption at rest: the volume holds only ciphertext, the instance boots locked until someone signs in, and nobody but your own accounts can unlock it — see [docs/encryption.md](docs/encryption.md)
 - Scan straight from a network scanner (**Upload → Scan**): eSCL/AirScan over the LAN, no driver, found by mDNS or by sweeping the subnet, several pages merged into one document — see [docs/scanning.md](docs/scanning.md)
 - Drop files into a watched folder (`INGEST_DIR`, a bind mount in Docker): scanned on a schedule, subfolders become tags, and the original is kept or deleted as you choose — see [docs/setup.md](docs/setup.md#ingest-folder)
-- Read attachments from an IMAP mailbox (`INGEST_IMAP_ENABLED`): each storable attachment becomes a document, and the message is kept, moved or deleted as you choose — see [docs/setup.md](docs/setup.md#ingest-from-imap)
+- Read attachments from an IMAP mailbox (`INGEST_IMAP_ENABLED`): each storable attachment of the types you pick becomes a document (images embedded in the mail body are skipped), and the message is kept, moved or deleted as you choose — see [docs/setup.md](docs/setup.md#ingest-from-imap)
 - Import a zip of documents (**Upload → Zip archive**) or the invoice PDFs from an Amazon "Your Orders" data export (**Upload → Amazon orders**); either way the archive is previewed and only imported after you confirm the file count, duplicates are skipped
 - Async processing jobs with status tracking
 - OCR text extraction (native text extraction for TXT/CSV/DOCX/XLSX)

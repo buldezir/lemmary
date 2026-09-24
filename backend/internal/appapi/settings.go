@@ -52,13 +52,14 @@ type settingsResponse struct {
 	IngestDirDeleteOriginal bool   `json:"ingest_dir_delete_original"`
 	// The IMAP mailbox, sharing the owner and interval above. The password is
 	// write-only: a GET reports only whether one is stored.
-	IMAPHost         string `json:"imap_host"`
-	IMAPSecurity     string `json:"imap_security"`
-	IMAPUsername     string `json:"imap_username"`
-	IMAPPasswordSet  bool   `json:"imap_password_set"`
-	IMAPFolder       string `json:"imap_folder"`
-	IMAPAfterConsume string `json:"imap_after_consume"`
-	IMAPMoveFolder   string `json:"imap_move_folder"`
+	IMAPHost         string   `json:"imap_host"`
+	IMAPSecurity     string   `json:"imap_security"`
+	IMAPUsername     string   `json:"imap_username"`
+	IMAPPasswordSet  bool     `json:"imap_password_set"`
+	IMAPFolder       string   `json:"imap_folder"`
+	IMAPAfterConsume string   `json:"imap_after_consume"`
+	IMAPMoveFolder   string   `json:"imap_move_folder"`
+	IMAPSkipTypes    []string `json:"imap_skip_types"`
 	// Read-only: set whenever the mailbox changes; older mail is not scanned.
 	IMAPSince string `json:"imap_since"`
 	// Branding lives in PocketBase's own settings, not the app_settings record:
@@ -68,38 +69,39 @@ type settingsResponse struct {
 }
 
 type settingsPatchRequest struct {
-	OCRProviderID                 *string  `json:"ocr_provider_id"`
-	OCRModel                      *string  `json:"ocr_model"`
-	ExtractProviderID             *string  `json:"extract_provider_id"`
-	ExtractModel                  *string  `json:"extract_model"`
-	ResearchProviderID            *string  `json:"research_provider_id"`
-	ResearchModel                 *string  `json:"research_model"`
-	EmbeddingProviderID           *string  `json:"embedding_provider_id"`
-	EmbeddingModel                *string  `json:"embedding_model"`
-	WebSearchProviderID           *string  `json:"websearch_provider_id"`
-	OCRTimeoutSec                 *int     `json:"ocr_timeout_sec"`
-	ProcessingResultLanguage      *string  `json:"processing_result_language"`
-	DeepSearchLanguages           *string  `json:"deep_search_languages"`
-	OpenAITimeoutSec              *int     `json:"openai_timeout_sec"`
-	WorkerTimeoutSec              *int     `json:"worker_timeout_sec"`
-	WorkerMaxRetries              *int     `json:"worker_max_retries"`
-	ExtractionPromptVersion       *string  `json:"extraction_prompt_version"`
-	ExtractionRules               *string  `json:"extraction_rules"`
-	NearDuplicateDetectionEnabled *bool    `json:"near_duplicate_detection_enabled"`
-	NearDuplicateThreshold        *float64 `json:"near_duplicate_threshold"`
-	AlwaysRequireReview           *bool    `json:"always_require_review"`
-	IngestDirOwner                *string  `json:"ingest_dir_owner"`
-	IngestDirIntervalMin          *int     `json:"ingest_dir_interval_min"`
-	IngestDirDeleteOriginal       *bool    `json:"ingest_dir_delete_original"`
-	IMAPHost                      *string  `json:"imap_host"`
-	IMAPSecurity                  *string  `json:"imap_security"`
-	IMAPUsername                  *string  `json:"imap_username"`
-	IMAPPassword                  *string  `json:"imap_password"`
-	IMAPFolder                    *string  `json:"imap_folder"`
-	IMAPAfterConsume              *string  `json:"imap_after_consume"`
-	IMAPMoveFolder                *string  `json:"imap_move_folder"`
-	AppName                       *string  `json:"app_name"`
-	Accent                        *string  `json:"accent"`
+	OCRProviderID                 *string   `json:"ocr_provider_id"`
+	OCRModel                      *string   `json:"ocr_model"`
+	ExtractProviderID             *string   `json:"extract_provider_id"`
+	ExtractModel                  *string   `json:"extract_model"`
+	ResearchProviderID            *string   `json:"research_provider_id"`
+	ResearchModel                 *string   `json:"research_model"`
+	EmbeddingProviderID           *string   `json:"embedding_provider_id"`
+	EmbeddingModel                *string   `json:"embedding_model"`
+	WebSearchProviderID           *string   `json:"websearch_provider_id"`
+	OCRTimeoutSec                 *int      `json:"ocr_timeout_sec"`
+	ProcessingResultLanguage      *string   `json:"processing_result_language"`
+	DeepSearchLanguages           *string   `json:"deep_search_languages"`
+	OpenAITimeoutSec              *int      `json:"openai_timeout_sec"`
+	WorkerTimeoutSec              *int      `json:"worker_timeout_sec"`
+	WorkerMaxRetries              *int      `json:"worker_max_retries"`
+	ExtractionPromptVersion       *string   `json:"extraction_prompt_version"`
+	ExtractionRules               *string   `json:"extraction_rules"`
+	NearDuplicateDetectionEnabled *bool     `json:"near_duplicate_detection_enabled"`
+	NearDuplicateThreshold        *float64  `json:"near_duplicate_threshold"`
+	AlwaysRequireReview           *bool     `json:"always_require_review"`
+	IngestDirOwner                *string   `json:"ingest_dir_owner"`
+	IngestDirIntervalMin          *int      `json:"ingest_dir_interval_min"`
+	IngestDirDeleteOriginal       *bool     `json:"ingest_dir_delete_original"`
+	IMAPHost                      *string   `json:"imap_host"`
+	IMAPSecurity                  *string   `json:"imap_security"`
+	IMAPUsername                  *string   `json:"imap_username"`
+	IMAPPassword                  *string   `json:"imap_password"`
+	IMAPFolder                    *string   `json:"imap_folder"`
+	IMAPAfterConsume              *string   `json:"imap_after_consume"`
+	IMAPMoveFolder                *string   `json:"imap_move_folder"`
+	IMAPSkipTypes                 *[]string `json:"imap_skip_types"`
+	AppName                       *string   `json:"app_name"`
+	Accent                        *string   `json:"accent"`
 }
 
 // touchesManaged is true for the same fields ApplyManaged rewrites. Timeouts,
@@ -272,6 +274,7 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 		IMAPFolder:                    cfg.IMAPFolder,
 		IMAPAfterConsume:              cfg.IMAPAfterConsume,
 		IMAPMoveFolder:                cfg.IMAPMoveFolder,
+		IMAPSkipTypes:                 append([]string{}, cfg.IMAPSkipTypes...),
 		IMAPSince:                     formatSince(cfg.IMAPSince),
 	}
 }
@@ -560,6 +563,19 @@ func applyIMAPPatch(record *core.Record, req settingsPatchRequest) error {
 		default:
 			return errInvalid("imap_after_consume must be keep, delete or move")
 		}
+	}
+	if req.IMAPSkipTypes != nil {
+		skip := map[string]bool{}
+		for _, v := range *req.IMAPSkipTypes {
+			if _, ok := config.IMAPFileTypes[v]; !ok {
+				return errInvalid("imap_skip_types must be pdf, office, image or text")
+			}
+			skip[v] = true
+		}
+		if len(skip) == len(config.IMAPFileTypes) {
+			return errInvalid("imap_skip_types cannot skip every file type")
+		}
+		record.Set("imap_skip_types", *req.IMAPSkipTypes)
 	}
 	if record.GetString("imap_after_consume") == config.IMAPMove {
 		folder := strutil.FirstNonEmpty(record.GetString("imap_folder"), config.DefaultIMAPFolder)
