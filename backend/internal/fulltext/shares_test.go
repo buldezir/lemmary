@@ -41,9 +41,8 @@ func TestSearchFindsADocumentForEveryIndexedReader(t *testing.T) {
 	}
 }
 
-// The "shared" marker is a filter, not a tag record, so the index is what has
-// to tell a borrowed document from an owned one.
-func TestSharedOnlyKeepsWhatSomebodyElseOwns(t *testing.T) {
+// The index is what has to tell a borrowed document from an owned one.
+func TestOwnerFilterSplitsMineFromShared(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "shared", map[string]any{
 		FieldUser:    []string{"owner", "recipient"},
@@ -58,15 +57,18 @@ func TestSharedOnlyKeepsWhatSomebodyElseOwns(t *testing.T) {
 		FieldOCRText: "quarterly invoice",
 	})
 
-	ids := searchIDs(t, idx, Query{Text: "invoice", UserID: "recipient", SharedOnly: true})
+	ids := searchIDs(t, idx, Query{Text: "invoice", UserID: "recipient", Owner: OwnerShared})
 	if len(ids) != 1 || ids[0] != "shared" {
 		t.Fatalf("shared-only search returned %v, want [shared]", ids)
 	}
 	if ids := searchIDs(t, idx, Query{Text: "invoice", UserID: "recipient"}); len(ids) != 2 {
 		t.Fatalf("unfiltered search returned %v, want both", ids)
 	}
-	if ids := searchIDs(t, idx, Query{Text: "invoice", UserID: "owner", SharedOnly: true}); len(ids) != 0 {
+	if ids := searchIDs(t, idx, Query{Text: "invoice", UserID: "owner", Owner: OwnerShared}); len(ids) != 0 {
 		t.Fatalf("the owner found their own document as shared: %v", ids)
+	}
+	if ids := searchIDs(t, idx, Query{Text: "invoice", UserID: "recipient", Owner: OwnerMine}); len(ids) != 1 || ids[0] != "mine" {
+		t.Fatalf("mine-only search returned %v, want [mine]", ids)
 	}
 }
 

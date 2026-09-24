@@ -57,7 +57,7 @@ func handleDocumentSearch(app core.App, idx *fulltext.Index) func(*core.RequestE
 			DateTo:           strings.TrimSpace(e.Request.URL.Query().Get("date_to")),
 			Undated:          e.Request.URL.Query().Get("undated") == "true",
 			Untagged:         e.Request.URL.Query().Get("untagged") == "true",
-			SharedOnly:       e.Request.URL.Query().Get("shared") == "true",
+			Owner:            e.Request.URL.Query().Get("owner"),
 			Offset:           (page - 1) * perPage,
 			Limit:            perPage,
 		}

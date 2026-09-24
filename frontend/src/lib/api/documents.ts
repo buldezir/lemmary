@@ -11,6 +11,7 @@ import type { TimelineMonth } from '../timeline'
 // Re-exported from ./tags because a document's expand carries them.
 export type { TagRecord } from './tags'
 import type { TagRecord } from './tags'
+import type { DocumentOwner } from '../documentQuery'
 
 export type DocumentTypeRecord = {
   id: string
@@ -149,13 +150,6 @@ export function parseDuplicateOfId(message: string): string | null {
   return match?.[1] ?? null
 }
 
-/**
- * ponytail: the "shared" marker travels as a tag id so it needs no second
- * control, but it is not a tag record -- it cannot be applied, renamed or put
- * on a document. Give every account a real tag of its own if it ever has to
- * combine with the others rather than sit beside them.
- */
-export const SHARED_TAG_ID = '__shared'
 export const SHARED_TAG_NAME = 'shared'
 
 export type DocumentListFilters = {
@@ -168,8 +162,7 @@ export type DocumentListFilters = {
   /** tags ids a document must carry all of. */
   tags?: string[]
   untagged?: boolean
-  /** Drops documents other accounts shared with the caller. */
-  ownerOnly?: boolean
+  owner?: DocumentOwner
 }
 
 /**
@@ -218,16 +211,15 @@ export function buildDocumentFilter(filters: DocumentListFilters): string | unde
   // the id so it cannot match inside a longer one. Move the unsearched list
   // onto a Go endpoint (ngxapi's tagsExpr) if this stops paying.
   for (const tag of filters.tags ?? []) {
-    if (tag === SHARED_TAG_ID) continue
     parts.push(pb.filter('tags ~ {:id}', { id: `"${tag}"` }))
   }
   if (filters.untagged) {
     parts.push('tags:length = 0')
   }
   const me = pb.authStore.record?.id ?? ''
-  if (filters.ownerOnly && me) {
+  if (filters.owner === 'mine' && me) {
     parts.push(pb.filter('user = {:me}', { me }))
-  } else if (filters.tags?.includes(SHARED_TAG_ID) && me) {
+  } else if (filters.owner === 'shared' && me) {
     parts.push(pb.filter('user != {:me}', { me }))
   }
 
@@ -273,7 +265,7 @@ export async function countDocumentsWithStatus(
       dateFrom: '',
       dateTo: '',
       // Counts the same set the Inbox lists, which is the caller's own work.
-      ownerOnly: true,
+      owner: 'mine',
     }) ?? ''
 
   const result = await pb.collection('documents').getList(1, 1, { filter, requestKey: null })
@@ -455,6 +447,7 @@ export async function searchDocuments(opts: {
   undated?: boolean
   tags?: string[]
   untagged?: boolean
+  owner?: DocumentOwner
 }): Promise<DocumentSearchList> {
   const params = new URLSearchParams()
   params.set('q', opts.q)
@@ -478,12 +471,11 @@ export async function searchDocuments(opts: {
   if (opts.undated) {
     params.set('undated', 'true')
   }
-  const tags = opts.tags?.filter((tag) => tag !== SHARED_TAG_ID) ?? []
-  if (tags.length) {
-    params.set('tags', tags.join(','))
+  if (opts.tags?.length) {
+    params.set('tags', opts.tags.join(','))
   }
-  if (opts.tags?.includes(SHARED_TAG_ID)) {
-    params.set('shared', 'true')
+  if (opts.owner && opts.owner !== 'all') {
+    params.set('owner', opts.owner)
   }
   if (opts.untagged) {
     params.set('untagged', 'true')

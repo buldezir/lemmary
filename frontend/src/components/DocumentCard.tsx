@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { SHARED_TAG_ID, SHARED_TAG_NAME, type DocumentRecord } from '../lib/api/documents'
+import { SHARED_TAG_NAME, type DocumentRecord } from '../lib/api/documents'
 import { pb } from '../lib/pb'
 import { DOCUMENT_STATUS_LABELS, reviewReason, type DocumentStatus } from '../lib/documentStatus'
 import { summarizeJob, type ProcessingJobRecord } from '../lib/processing'
@@ -43,25 +43,12 @@ const statusStyles: Record<DocumentStatus, { badge: string; border: string }> = 
   needs_review: { badge: 'bg-amber-800 text-paper', border: 'border-amber-800' },
 }
 
-/**
- * Reads as a tag and filters as one, but is not a tag record: it says the
- * document belongs to another account. See SHARED_TAG_ID.
- */
-function SharedChip({ onFilter }: { onFilter?: (tagId: string) => void }) {
-  const className =
-    'border border-oxblood/40 bg-oxblood/5 px-1.5 py-0.5 text-[11px] font-medium text-oxblood'
-  if (!onFilter) {
-    return <span className={className}>{SHARED_TAG_NAME}</span>
-  }
+/** Reads as a tag but is not one: it says the document belongs to another account. */
+function SharedChip() {
   return (
-    <button
-      type="button"
-      aria-label="Filter by shared"
-      className={`relative z-10 pointer-events-auto transition-colors hover:border-oxblood ${className}`}
-      onClick={() => onFilter(SHARED_TAG_ID)}
-    >
+    <span className="border border-oxblood/40 bg-oxblood/5 px-1.5 py-0.5 text-[11px] font-medium text-oxblood">
       {SHARED_TAG_NAME}
-    </button>
+    </span>
   )
 }
 
@@ -180,7 +167,7 @@ export function DocumentCard({
 
         {(shared || tags.length > 0) && (
           <div className="flex flex-wrap gap-1.5">
-            {shared && <SharedChip onFilter={onFilterTag} />}
+            {shared && <SharedChip />}
             {tags.map((tag) =>
               onFilterTag ? (
                 // Above the full-bleed link, like the checkbox, so a click

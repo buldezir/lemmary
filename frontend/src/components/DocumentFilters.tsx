@@ -1,6 +1,6 @@
 import { DOCUMENT_STATUSES, DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
 import type { CorrespondentRecord, DocumentTypeRecord } from '../lib/api/documents'
-import { MIN_SEARCH_LENGTH, tagIds, type DocumentQuery } from '../lib/documentQuery'
+import { MIN_SEARCH_LENGTH, tagIds, type DocumentOwner, type DocumentQuery } from '../lib/documentQuery'
 import type { TagRecord } from '../lib/api/tags'
 import { FilterCombobox } from './FilterCombobox'
 import { TagFilter } from './TagFilter'
@@ -32,6 +32,10 @@ export function DocumentFilters({
 }) {
   const tooShort = search.trim().length > 0 && search.trim().length < MIN_SEARCH_LENGTH
   const chosenTags = tagIds(query.tags)
+  // Nothing to offer and nothing chosen is no filter at all. Decided here
+  // rather than inside TagFilter because the search box shares the row and
+  // has to know whether it is sharing it.
+  const showTags = tags.length > 0 || chosenTags.length > 0 || query.untagged
 
   return (
     <div className="flex flex-col gap-3">
@@ -51,13 +55,14 @@ export function DocumentFilters({
             </p>
           )}
         </div>
-        {/* Always shown: "shared" is on offer even with no tags of your own. */}
-        <TagFilter
-          value={chosenTags}
-          untagged={query.untagged}
-          options={tags}
-          onChange={(next, untagged) => updateQuery({ tags: next.join(','), untagged })}
-        />
+        {showTags && (
+          <TagFilter
+            value={chosenTags}
+            untagged={query.untagged}
+            options={tags}
+            onChange={(next, untagged) => updateQuery({ tags: next.join(','), untagged })}
+          />
+        )}
         {status !== undefined && (
           <select
             value={status}
@@ -75,7 +80,7 @@ export function DocumentFilters({
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.3fr)_minmax(0,1.3fr)]">
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-ink-soft">From date</span>
           <input
@@ -96,6 +101,18 @@ export function DocumentFilters({
             onChange={(event) => updateQuery({ to: event.target.value, undated: false }, true)}
             className={selectClassName}
           />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-ink-soft">Owner</span>
+          <select
+            value={query.owner}
+            onChange={(event) => updateQuery({ owner: event.target.value as DocumentOwner })}
+            className={selectClassName}
+          >
+            <option value="all">All</option>
+            <option value="mine">Only mine</option>
+            <option value="shared">Only shared</option>
+          </select>
         </label>
         <FilterCombobox
           label="Document type"

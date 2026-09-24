@@ -81,6 +81,7 @@ export function useDocumentList({
     page,
   } = query
   const statusFilter = fixedStatus ?? query.status
+  const ownerFilter = ownerOnly ? 'mine' : query.owner
 
   const [documents, setDocuments] = useState<DocumentRecord[]>([])
   const [jobs, setJobs] = useState<Map<string, ProcessingJobRecord>>(new Map())
@@ -164,7 +165,7 @@ export function useDocumentList({
           correspondent: correspondentFilter,
           tags: tagIds(tagFilter),
           untagged,
-          ownerOnly,
+          owner: ownerFilter,
         })
         const result = text
           ? await searchDocuments({
@@ -179,6 +180,7 @@ export function useDocumentList({
               undated,
               tags: tagIds(tagFilter),
               untagged,
+              owner: ownerFilter,
             })
           : await pb.collection('documents').getList<DocumentRecord>(page, DOCUMENT_PAGE_SIZE, {
               sort: '-created',
@@ -261,7 +263,7 @@ export function useDocumentList({
     tagFilter,
     untagged,
     debouncedSearch,
-    ownerOnly,
+    ownerFilter,
     updateQuery,
   ])
 

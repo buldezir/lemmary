@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  SHARED_TAG_ID,
   buildDocumentFilter,
   fileUrlWithToken,
   parseDuplicateOfId,
@@ -183,9 +182,7 @@ describe('uploadErrorMessage', () => {
   })
 })
 
-// The "shared" marker travels as a tag id but is not a tag: it must never
-// produce a `tags ~` clause, because no document carries it.
-describe('the shared marker', () => {
+describe('the owner filter', () => {
   const me = 'user_me_00000001'
 
   function asUser(id: string | null) {
@@ -201,26 +198,27 @@ describe('the shared marker', () => {
 
   it('filters on somebody else owning the document', () => {
     asUser(me)
-    expect(buildDocumentFilter({ ...noFilters, tags: [SHARED_TAG_ID] })).toBe(`user != "${me}"`)
+    expect(buildDocumentFilter({ ...noFilters, owner: 'shared' })).toBe(`user != "${me}"`)
   })
 
-  it('combines with a real tag without becoming one', () => {
+  it('combines with a tag', () => {
     asUser(me)
-    expect(buildDocumentFilter({ ...noFilters, tags: ['tag1', SHARED_TAG_ID] })).toBe(
+    expect(buildDocumentFilter({ ...noFilters, tags: ['tag1'], owner: 'shared' })).toBe(
       `tags ~ "\\"tag1\\"" && user != "${me}"`,
     )
   })
 
-  it('keeps shared documents out of an owner-only list', () => {
+  it('keeps shared documents out of a mine-only list', () => {
     asUser(me)
-    expect(buildDocumentFilter({ ...noFilters, ownerOnly: true })).toBe(`user = "${me}"`)
+    expect(buildDocumentFilter({ ...noFilters, owner: 'mine' })).toBe(`user = "${me}"`)
+    expect(buildDocumentFilter({ ...noFilters, owner: 'all' })).toBeUndefined()
   })
 
   // Signed out there is no "me" to compare against, and a half-built clause
   // would filter on the empty string.
   it('builds no clause with nobody signed in', () => {
     asUser(null)
-    expect(buildDocumentFilter({ ...noFilters, tags: [SHARED_TAG_ID] })).toBeUndefined()
-    expect(buildDocumentFilter({ ...noFilters, ownerOnly: true })).toBeUndefined()
+    expect(buildDocumentFilter({ ...noFilters, owner: 'shared' })).toBeUndefined()
+    expect(buildDocumentFilter({ ...noFilters, owner: 'mine' })).toBeUndefined()
   })
 })

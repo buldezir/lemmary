@@ -9,6 +9,13 @@
 
 import { isDocumentStatus } from './documentStatus'
 
+export const DOCUMENT_OWNERS = ['all', 'mine', 'shared'] as const
+export type DocumentOwner = (typeof DOCUMENT_OWNERS)[number]
+
+function owner(value: unknown): DocumentOwner {
+  return DOCUMENT_OWNERS.find((known) => known === value) ?? 'all'
+}
+
 /** Matches the index's prefix floor, fulltext.minPrefixLen. */
 export const MIN_SEARCH_LENGTH = 3
 
@@ -35,6 +42,8 @@ export type DocumentQuery = {
   tags: string
   /** Only the documents with no tags. */
   untagged: boolean
+  /** Whose documents: the caller's own, those shared with them, or 'all'. */
+  owner: DocumentOwner
   /** 1-based. */
   page: number
 }
@@ -55,6 +64,7 @@ export const defaultDocumentQuery: DocumentQuery = {
   correspondent: 'all',
   tags: '',
   untagged: false,
+  owner: 'all',
   page: 1,
 }
 
@@ -106,6 +116,7 @@ export function parseDocumentQuery(raw: DocumentQueryInput): DocumentQuery {
     // Together they match nothing, and the control can only show one.
     tags: untagged ? '' : tagIds(raw.tags).join(','),
     untagged,
+    owner: owner(raw.owner),
     page: pageNumber(raw.page),
   }
 }
