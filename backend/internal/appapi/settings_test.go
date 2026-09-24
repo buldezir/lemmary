@@ -2,6 +2,7 @@ package appapi
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +38,7 @@ func settingsRecordForTest(t *testing.T) *core.Record {
 		&core.TextField{Name: "imap_after_consume"},
 		&core.TextField{Name: "imap_move_folder"},
 		&core.DateField{Name: "imap_since"},
+		&core.SelectField{Name: "imap_skip_types", Values: []string{"pdf", "office", "image", "text"}, MaxSelect: 4},
 	)
 	record := core.NewRecord(collection)
 	record.Id = config.SingletonID
@@ -366,6 +368,22 @@ func TestPatchIMAPFields(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("move with a target: %v", err)
+	}
+
+	skip := []string{"image", "text"}
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{IMAPSkipTypes: &skip}); err != nil {
+		t.Fatalf("skip types: %v", err)
+	}
+	if got := record.GetStringSlice("imap_skip_types"); !slices.Equal(got, skip) {
+		t.Fatalf("imap_skip_types = %v", got)
+	}
+	for _, bad := range [][]string{{"exe"}, {"pdf", "office", "image", "text"}} {
+		if err := applySettingsPatch(nil, record, settingsPatchRequest{IMAPSkipTypes: &bad}); err == nil {
+			t.Fatalf("expected skip types %v to be refused", bad)
+		}
+	}
+	if body, _ := json.Marshal(settingsResponseFromConfig(config.Config{})); !strings.Contains(string(body), `"imap_skip_types":[]`) {
+		t.Fatalf("no skip types must read as an empty list: %s", body)
 	}
 
 	cfg := config.Config{IMAPPassword: "s3cret"}

@@ -22,6 +22,7 @@ import (
 	"lemmary/backend/internal/inflight"
 	"lemmary/backend/internal/limits"
 	"lemmary/backend/internal/testpb"
+	"lemmary/backend/internal/zipimport"
 	_ "lemmary/backend/migrations"
 )
 
@@ -489,5 +490,84 @@ func TestFetchesInBatches(t *testing.T) {
 	}
 	if res := m.scanner(app).Scan(cfg(config.IMAPKeep)); res.Created != fetchBatch+3 {
 		t.Fatalf("scan = %+v, want every message across batches", res)
+	}
+}
+
+const (
+	onePixelPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+	twoPixelPNG = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADklEQVR4nGP4zwAE/xkACP8B/0AhLC4AAAAASUVORK5CYII="
+)
+
+func imagePart(disposition, name, b64 string) string {
+	return fmt.Sprintf("Content-Type: image/png; name=%q\nContent-ID: <%s>\nContent-Disposition: %s; filename=%q\nContent-Transfer-Encoding: base64\n\n%s\n",
+		name, name, disposition, name, b64)
+}
+
+func htmlWithLogo() string {
+	return "Content-Type: multipart/related; boundary=\"rel\"\n\n" +
+		"--rel\nContent-Type: text/html\n\n<img src=\"cid:logo.png\">\n" +
+		"--rel\n" + imagePart("inline", "logo.png", base64.StdEncoding.EncodeToString([]byte("not fetched"))) +
+		"--rel--\n"
+}
+
+func TestInlineImagesAreNeverImported(t *testing.T) {
+	app := openApp(t, limits.Limits{})
+	m := startServer(t)
+	m.deliver(t, "INBOX", htmlWithLogo(), base64Part("a.txt", "the document"), imagePart("attachment", "scan.png", onePixelPNG))
+	m.deliver(t, "INBOX", htmlWithLogo())
+	// Outlook's shape: the logo sits under an alternative nested in the related.
+	m.deliver(t, "INBOX", "Content-Type: multipart/related; boundary=\"rel\"\n\n"+
+		"--rel\nContent-Type: multipart/alternative; boundary=\"alt\"\n\n"+
+		"--alt\nContent-Type: text/plain\n\nhello\n"+
+		"--alt\n"+imagePart("inline", "icon.png", base64.StdEncoding.EncodeToString([]byte("not fetched")))+
+		"--alt--\n--rel--\n")
+
+	if res := m.scanner(app).Scan(cfg(config.IMAPDelete)); res != (Result{Created: 2}) {
+		t.Fatalf("scan = %+v, want the text and the attached image, not the logos", res)
+	}
+	if got := m.count(t, "INBOX"); got != 2 {
+		t.Fatalf("INBOX holds %d, want the two mails with nothing but a logo", got)
+	}
+}
+
+func TestARelatedImageMarkedAsAttachmentIsImported(t *testing.T) {
+	app := openApp(t, limits.Limits{})
+	m := startServer(t)
+	m.deliver(t, "INBOX", "Content-Type: multipart/related; boundary=\"rel\"\n\n"+
+		"--rel\nContent-Type: text/html\n\n<p>photo</p>\n"+
+		"--rel\n"+imagePart("attachment", "photo.png", twoPixelPNG)+
+		"--rel--\n")
+
+	if res := m.scanner(app).Scan(cfg(config.IMAPKeep)); res != (Result{Created: 1}) {
+		t.Fatalf("scan = %+v, want the explicitly attached image", res)
+	}
+}
+
+// A type left unchecked holds the message like a refusal, so delete cannot
+// take an attachment the user never imported; an inline logo does not.
+func TestSkippedFileTypesKeepTheMessage(t *testing.T) {
+	app := openApp(t, limits.Limits{})
+	m := startServer(t)
+	m.deliver(t, "INBOX", base64Part("a.txt", "kept beside a photo"), imagePart("attachment", "scan.png", onePixelPNG))
+	m.deliver(t, "INBOX", htmlWithLogo(), base64Part("b.txt", "beside a logo only"))
+	m.deliver(t, "INBOX", imagePart("attachment", "only.png", twoPixelPNG))
+
+	c := cfg(config.IMAPDelete)
+	c.IMAPSkipTypes = []string{"image"}
+	if res := m.scanner(app).Scan(c); res != (Result{Created: 2}) {
+		t.Fatalf("scan = %+v, want both texts and no image", res)
+	}
+	if got := m.count(t, "INBOX"); got != 2 {
+		t.Fatalf("INBOX holds %d, want the two messages with a skipped image", got)
+	}
+}
+
+func TestEveryFileTypeExtensionIsStorable(t *testing.T) {
+	for name, exts := range config.IMAPFileTypes {
+		for _, ext := range exts {
+			if !zipimport.Storable(ext) {
+				t.Errorf("%s (%s) is not storable", ext, name)
+			}
+		}
 	}
 }

@@ -2,6 +2,8 @@ import { apiFetch } from '../apiClient'
 import { setAlwaysRequireReview } from '../reviewPolicy'
 import { invalidateAppMeta } from './meta'
 
+export type ImapFileType = 'pdf' | 'office' | 'image' | 'text'
+
 export type AppSettings = {
   ocr_provider_id: string
   ocr_model: string
@@ -63,6 +65,7 @@ export type AppSettings = {
   imap_folder: string
   imap_after_consume: 'keep' | 'delete' | 'move'
   imap_move_folder: string
+  imap_skip_types: ImapFileType[]
   /** Read-only, RFC 3339 or empty: moved to now whenever the mailbox changes. */
   imap_since: string
   /** Instance name, shown in the header and stamped on emails and passkeys. */

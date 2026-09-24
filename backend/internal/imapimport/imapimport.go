@@ -1,6 +1,6 @@
 // Package imapimport turns an IMAP mailbox (INGEST_IMAP_ENABLED) into
 // documents: a cron reads the configured folder, and every storable attachment
-// becomes a document owned by the consume folder's owner.
+// of a type not skipped becomes a document owned by the consume folder's owner.
 package imapimport
 
 import (
@@ -176,6 +176,7 @@ func (s *Scanner) Scan(cfg config.Config) Result {
 		return res
 	}
 	mode := cfg.IMAPAfterConsume
+	skip := skipExts(cfg)
 
 	c, sel, done, err := s.connect(cfg, mode == config.IMAPKeep)
 	if err != nil {
@@ -237,8 +238,9 @@ func (s *Scanner) Scan(cfg config.Config) Result {
 		}
 		for _, msg := range msgs {
 			var parts []part
+			var held bool
 			if !msg.InternalDate.Before(since) {
-				parts = attachments(msg.BodyStructure)
+				parts, held = attachments(msg.BodyStructure, skip)
 			}
 			got := consumed
 			if len(parts) > 0 {
@@ -258,7 +260,7 @@ func (s *Scanner) Scan(cfg config.Config) Result {
 			delete(s.attempts, msg.UID)
 			s.seen[msg.UID] = true
 			last = max(last, msg.UID)
-			if mode != config.IMAPKeep && got == consumed && len(parts) > 0 {
+			if mode != config.IMAPKeep && got == consumed && len(parts) > 0 && !held {
 				s.pending[msg.UID] = time.Now()
 			}
 		}
@@ -330,13 +332,14 @@ func (s *Scanner) scanRange(cfg config.Config, from, to time.Time) (Result, erro
 	if err != nil {
 		return res, fmt.Errorf("search %s: %w", cfg.IMAPFolder, err)
 	}
+	skip := skipExts(cfg)
 	for batch := range slices.Chunk(found.AllUIDs(), fetchBatch) {
 		msgs, collection, err := s.structures(c, batch)
 		if err != nil {
 			return res, err
 		}
 		for _, msg := range msgs {
-			parts := attachments(msg.BodyStructure)
+			parts, _ := attachments(msg.BodyStructure, skip)
 			if len(parts) > 0 && s.consume(c, collection, ownerID, msg.UID, parts, &res) == stop {
 				return res, errors.New("stopped at an instance limit")
 			}
@@ -462,39 +465,72 @@ func (s *Scanner) consume(c *imapclient.Client, collection *core.Collection, own
 	return got
 }
 
+func skipExts(cfg config.Config) map[string]bool {
+	skip := map[string]bool{}
+	for _, t := range cfg.IMAPSkipTypes {
+		for _, ext := range config.IMAPFileTypes[t] {
+			skip[ext] = true
+		}
+	}
+	return skip
+}
+
 // attachments are the single parts with a filename the documents collection
-// can store, including those inside a forwarded message; a mail body without
-// one is not a document.
-func attachments(bs imap.BodyStructure) []part {
-	return collect(bs, nil, nil)
+// can store and skip does not name, including those inside a forwarded
+// message; a mail body without one is not a document. Images anywhere under a
+// multipart/related are the HTML body's own (logos, icons) and never count,
+// unless the sender marked them Content-Disposition: attachment. held reports
+// an attachment left out only by skip, which keeps the message in the mailbox.
+func attachments(bs imap.BodyStructure, skip map[string]bool) (parts []part, held bool) {
+	w := walk{skip: skip}
+	w.collect(bs, nil, false)
+	return w.parts, w.held
+}
+
+type walk struct {
+	skip  map[string]bool
+	parts []part
+	held  bool
 }
 
 // collect walks by IMAP section number. imap.BodyStructure.Walk stops at a
 // message/rfc822 part, whose own parts are numbered under it (2.1, 2.2, or
 // 2.1 for a single-part message).
-func collect(bs imap.BodyStructure, path []int, out []part) []part {
+func (w *walk) collect(bs imap.BodyStructure, path []int, related bool) {
 	switch node := bs.(type) {
 	case *imap.BodyStructureMultiPart:
+		related = related || strings.EqualFold(node.Subtype, "related")
 		for i, child := range node.Children {
-			out = collect(child, append(slices.Clone(path), i+1), out)
+			w.collect(child, append(slices.Clone(path), i+1), related)
 		}
 	case *imap.BodyStructureSinglePart:
 		if len(path) == 0 {
 			path = []int{1}
 		}
-		if name := node.Filename(); name != "" && zipimport.Storable(filepath.Ext(name)) {
-			return append(out, part{path: path, name: name, encoding: node.Encoding, size: node.Size})
+		if name := node.Filename(); name != "" {
+			ext := strings.ToLower(filepath.Ext(name))
+			disp := node.Disposition()
+			attached := disp != nil && strings.EqualFold(disp.Value, "attachment")
+			switch {
+			case !zipimport.Storable(ext), related && !attached && strings.EqualFold(node.Type, "image"):
+			case w.skip[ext]:
+				w.held = true
+				return
+			default:
+				w.parts = append(w.parts, part{path: path, name: name, encoding: node.Encoding, size: node.Size})
+				return
+			}
 		}
 		if node.MessageRFC822 == nil || node.MessageRFC822.BodyStructure == nil {
-			return out
+			return
 		}
 		inner := node.MessageRFC822.BodyStructure
 		if _, multi := inner.(*imap.BodyStructureMultiPart); multi {
-			return collect(inner, path, out)
+			w.collect(inner, path, false)
+			return
 		}
-		return collect(inner, append(slices.Clone(path), 1), out)
+		w.collect(inner, append(slices.Clone(path), 1), false)
 	}
-	return out
 }
 
 func decode(raw []byte, encoding string) ([]byte, error) {

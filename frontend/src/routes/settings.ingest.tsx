@@ -4,7 +4,7 @@ import { useAppMeta } from '../hooks/useAppMeta'
 import { useSettingsForm } from '../hooks/useSettingsForm'
 import { useAsync } from '../hooks/useAsync'
 import { listUsers } from '../lib/api/users'
-import type { AppSettings, AppSettingsPatch } from '../lib/api/settings'
+import type { AppSettings, AppSettingsPatch, ImapFileType } from '../lib/api/settings'
 import {
   ResultDialog,
   SaveSettingsButton,
@@ -31,6 +31,13 @@ function intervalLabel(minutes: number) {
   return minutes === 1 ? 'minute' : `${minutes} minutes`
 }
 
+const imapFileTypes: [ImapFileType, string][] = [
+  ['pdf', 'PDF'],
+  ['office', 'Office (DOCX, XLSX)'],
+  ['image', 'Images'],
+  ['text', 'Text (TXT, CSV)'],
+]
+
 /** The consume folder and the IMAP mailbox. Reachable when INGEST_DIR or INGEST_IMAP_ENABLED is set. */
 export function SettingsIngestPage() {
   const { ingestDir, ingestImap } = useAppMeta()
@@ -47,6 +54,7 @@ export function SettingsIngestPage() {
       imap_folder: settings.imap_folder,
       imap_after_consume: settings.imap_after_consume,
       imap_move_folder: settings.imap_move_folder,
+      imap_skip_types: settings.imap_skip_types,
       imap_since: settings.imap_since,
     }))
   const { data: users } = useAsync(listUsers, [])
@@ -69,6 +77,7 @@ export function SettingsIngestPage() {
         imap_folder: form.imap_folder,
         imap_after_consume: form.imap_after_consume,
         imap_move_folder: form.imap_move_folder,
+        imap_skip_types: form.imap_skip_types,
       })
     }
     await save(patch)
@@ -162,9 +171,9 @@ export function SettingsIngestPage() {
           <>
             <h3 className={subTitleClassName}>Mailbox</h3>
             <p className={`${fieldHintClassName} mb-4`}>
-              Every PDF, image or office attachment in mail arriving in the folder becomes a document
-              on the next scan.
-              Mail without one is left alone. Leave the server empty to turn this off.
+              Every attachment of a type chosen below in mail arriving in the folder becomes a
+              document on the next scan. Images the mail body embeds, such as logos and icons, never
+              do. Mail without one is left alone. Leave the server empty to turn this off.
               {form.imap_since &&
                 ` Mail received before ${new Date(form.imap_since).toLocaleString()} is not scanned; Management backfills it by date.`}
             </p>
@@ -221,9 +230,37 @@ export function SettingsIngestPage() {
                 </label>
               )}
             </div>
+            <fieldset className="mt-4">
+              <legend className={labelTextClassName}>Import</legend>
+              <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
+                {imapFileTypes.map(([type, label]) => (
+                  <label key={type} className="flex items-center gap-2.5 text-sm font-medium text-ink">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-oxblood"
+                      checked={!form.imap_skip_types.includes(type)}
+                      disabled={
+                        !form.imap_skip_types.includes(type) &&
+                        form.imap_skip_types.length === imapFileTypes.length - 1
+                      }
+                      onChange={(e) =>
+                        updateField(
+                          'imap_skip_types',
+                          e.target.checked
+                            ? form.imap_skip_types.filter((t) => t !== type)
+                            : [...form.imap_skip_types, type],
+                        )
+                      }
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <p className={`${fieldHintClassName} mt-2`}>
               Kept messages are imported once, even if their documents are deleted later. A message
-              whose attachment is refused is never moved or deleted.
+              with an attachment that is refused, or of a type left unchecked, is never moved or
+              deleted.
             </p>
           </>
         )}
