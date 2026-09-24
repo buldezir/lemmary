@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { Link, Outlet, useMatchRoute } from '@tanstack/react-router'
 import { pb, pbAdminUrl } from '../lib/pb'
 import { ensureAuth, getUserDisplayName, isAdmin, logout } from '../lib/auth'
@@ -12,6 +12,7 @@ import {
   visibleNavItems,
   NAV_BADGE_DESCRIPTIONS,
   type NavBadgeKey,
+  type NavIconKey,
   type NavItem,
 } from '../lib/nav'
 import { AppFooter } from './AppFooter'
@@ -129,15 +130,32 @@ function AdminIcon() {
   )
 }
 
-// The shield stays decorative: these items only render for admins, so "admin
-// only" in the accessible name would add nothing.
-function AdminMenuLabel({ children }: { children: string }) {
+function PocketBaseIcon() {
   return (
-    <>
-      <AdminIcon />
-      <span>{children}</span>
-    </>
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 40 40"
+      fill="none"
+      className="h-3.5 w-3.5 shrink-0"
+      aria-hidden="true"
+    >
+      <path
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2.5"
+        d="M26 14h10.8a1.2 1.2 0 0 1 1.2 1.2v21.6a1.2 1.2 0 0 1-1.2 1.2H15.2a1.2 1.2 0 0 1-1.2-1.2V26M26 14V3.2A1.2 1.2 0 0 0 24.8 2H3.2A1.2 1.2 0 0 0 2 3.2v21.6A1.2 1.2 0 0 0 3.2 26H14"
+      />
+      <path
+        fill="currentColor"
+        d="M10 20a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h3.753a9 9 0 0 1 2.037.22q.967.199 1.667.697.72.48 1.131 1.296.412.798.412 1.974 0 1.137-.432 1.974a3.760 3.760 0 0 1-1.132 1.376 4.9 4.9 0 0 1-1.666.797 7.6 7.6 0 0 1-2.017.26h-.728a1 1 0 0 0-1 1V19a1 1 0 0 1-1 1zm2.025-7.740a1 1 0 0 0 1 1h.543q2.469 0 2.469-2.073 0-1.017-.638-1.435-.617-.42-1.831-.42h-.543a1 1 0 0 0-1 1zM22 33a1 1 0 0 1-1-1V21a1 1 0 0 1 1-1h3.488q1.044 0 1.926.16.902.139 1.557.518.657.378 1.025.997.39.618.39 1.555 0 .44-.144.877a2.4 2.4 0 0 1-.41.818q-.287.378-.717.678a2.9 2.9 0 0 1-.987.43.05.05 0 0 0-.038.047.05.05 0 0 0 .04.049q1.405.261 2.132.99.738.736.738 2.053 0 .996-.39 1.715a3.4 3.4 0 0 1-1.085 1.196 5.4 5.4 0 0 1-1.640.698 8.7 8.7 0 0 1-2.008.219zm2.012-8.776a1 1 0 0 0 1 1h.332q1.106 0 1.599-.419.49-.418.491-1.176 0-.719-.512-1.017-.492-.32-1.557-.32h-.353a1 1 0 0 0-1 1zm0 5.483a1 1 0 0 0 1 1h.62q2.417 0 2.417-1.755 0-.857-.594-1.236-.574-.379-1.824-.379h-.619a1 1 0 0 0-1 1z"
+      />
+    </svg>
   )
+}
+
+const NAV_ICONS: Record<NavIconKey, () => ReactElement> = {
+  pocketbase: PocketBaseIcon,
 }
 
 type NavBadges = Record<NavBadgeKey, number | null>
@@ -181,9 +199,14 @@ function NavItemLink({
   onNavigate?: () => void
   badge?: number | null
 }) {
+  const Icon = item.icon && NAV_ICONS[item.icon]
+  // The shield stays decorative: these items only render for admins, so "admin
+  // only" in the accessible name would add nothing.
   const label = (
     <>
-      {item.admin ? <AdminMenuLabel>{item.label}</AdminMenuLabel> : item.label}
+      {item.admin && <AdminIcon />}
+      {Icon && <Icon />}
+      <span>{item.label}</span>
       {typeof badge === 'number' && badge > 0 && item.kind === 'route' && item.badgeKey && (
         <NavBadge count={badge} description={NAV_BADGE_DESCRIPTIONS[item.badgeKey]} />
       )}
