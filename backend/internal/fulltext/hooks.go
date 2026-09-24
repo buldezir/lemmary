@@ -14,6 +14,10 @@ const (
 	collectionTags           = "tags"
 	collectionCorrespondents = "correspondents"
 	collectionDocumentTypes  = "document_types"
+
+	// CollectionShares is the read-only grants table; a row appearing or going
+	// away changes who the document is indexed for.
+	CollectionShares = "document_shares"
 )
 
 // Register opens the index after app migrations (outer bootstrap).
@@ -92,6 +96,16 @@ func registerRecordHooks(app core.App, idx *Index) {
 	app.OnRecordAfterDeleteSuccess(collectionCorrespondents).BindFunc(reindexNamed(collectionCorrespondents, FieldCorrespondent))
 	app.OnRecordAfterUpdateSuccess(collectionDocumentTypes).BindFunc(reindexNamed(collectionDocumentTypes, FieldDocumentType))
 	app.OnRecordAfterDeleteSuccess(collectionDocumentTypes).BindFunc(reindexNamed(collectionDocumentTypes, FieldDocumentType))
+
+	reindexShared := func(e *core.RecordEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
+		idx.EnqueueUpsert(e.App, e.Record.GetString("document"))
+		return nil
+	}
+	app.OnRecordAfterCreateSuccess(CollectionShares).BindFunc(reindexShared)
+	app.OnRecordAfterDeleteSuccess(CollectionShares).BindFunc(reindexShared)
 }
 
 func reindexDocumentsForEntity(app core.App, idx *Index, collection, field, entityID string) {
@@ -120,6 +134,7 @@ func reindexDocumentsForEntity(app core.App, idx *Index, collection, field, enti
 	}
 
 	names := newNameCache(app)
+	names.preloadReaders()
 	for id := range ids {
 		rec, err := app.FindRecordById(collectionDocuments, id)
 		if err != nil {

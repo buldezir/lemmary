@@ -1,11 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
+  SHARED_TAG_ID,
   buildDocumentFilter,
   fileUrlWithToken,
   parseDuplicateOfId,
   uploadErrorMessage,
 } from './documents'
 import { UNFINISHED_STATUS } from '../documentStatus'
+import { pb } from '../pb'
 
 const noFilters = {
   status: 'all',
@@ -178,5 +180,47 @@ describe('uploadErrorMessage', () => {
     expect(uploadErrorMessage({ response: { message: generic, data: {} } })).toBe(generic)
     expect(uploadErrorMessage(new Error('boom'))).toBe('boom')
     expect(uploadErrorMessage(undefined)).toBe('Upload failed')
+  })
+})
+
+// The "shared" marker travels as a tag id but is not a tag: it must never
+// produce a `tags ~` clause, because no document carries it.
+describe('the shared marker', () => {
+  const me = 'user_me_00000001'
+
+  function asUser(id: string | null) {
+    if (!id) {
+      pb.authStore.clear()
+      return
+    }
+    pb.authStore.save('test-token', { id, collectionId: 'users', collectionName: 'users' })
+  }
+
+  // The store is module state shared with every other test in this file.
+  afterEach(() => pb.authStore.clear())
+
+  it('filters on somebody else owning the document', () => {
+    asUser(me)
+    expect(buildDocumentFilter({ ...noFilters, tags: [SHARED_TAG_ID] })).toBe(`user != "${me}"`)
+  })
+
+  it('combines with a real tag without becoming one', () => {
+    asUser(me)
+    expect(buildDocumentFilter({ ...noFilters, tags: ['tag1', SHARED_TAG_ID] })).toBe(
+      `tags ~ "\\"tag1\\"" && user != "${me}"`,
+    )
+  })
+
+  it('keeps shared documents out of an owner-only list', () => {
+    asUser(me)
+    expect(buildDocumentFilter({ ...noFilters, ownerOnly: true })).toBe(`user = "${me}"`)
+  })
+
+  // Signed out there is no "me" to compare against, and a half-built clause
+  // would filter on the empty string.
+  it('builds no clause with nobody signed in', () => {
+    asUser(null)
+    expect(buildDocumentFilter({ ...noFilters, tags: [SHARED_TAG_ID] })).toBeUndefined()
+    expect(buildDocumentFilter({ ...noFilters, ownerOnly: true })).toBeUndefined()
   })
 })

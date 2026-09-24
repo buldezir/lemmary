@@ -38,6 +38,7 @@ import {
 import { ProcessingStatus } from '../components/ProcessingStatus'
 import { ProcessingSteps } from '../components/ProcessingSteps'
 import { Button } from '../components/ui'
+import { ShareDialog } from '../components/ShareDialog'
 import { DocumentPreview } from '../components/DocumentPreview'
 import { useStoredFlag } from '../hooks/useStoredFlag'
 import { previewKind } from '../lib/documentPreview'
@@ -194,6 +195,10 @@ export function DocumentDetailPage() {
   }, [documentId])
 
   const hasOcrText = Boolean(document?.ocr_text?.trim())
+  // A document another account shared is read-only: the rules refuse every
+  // write, so offering the controls would only produce 403s.
+  const owned = Boolean(document) && document?.user === pb.authStore.record?.id
+  const [sharing, setSharing] = useState(false)
 
   // The pane only fits beside the fields from xl up, and iOS Safari and Android
   // Chrome do not render a framed PDF at all. Gated in JS rather than by CSS so
@@ -220,6 +225,7 @@ export function DocumentDetailPage() {
   // trusting the document alone re-enables this form mid-pipeline and invites
   // a second job over a document the first one is still writing.
   const canReprocess =
+    owned &&
     document?.processing_status !== 'processing' &&
     document?.processing_status !== 'pending' &&
     !jobStillRunning(job)
@@ -596,6 +602,7 @@ export function DocumentDetailPage() {
             </svg>
             Job
           </button>
+          {owned && (
           <button
             type="button"
             onClick={toggleEditing}
@@ -625,7 +632,8 @@ export function DocumentDetailPage() {
               <path d={editing ? 'M7 9V6a3 3 0 0 1 6 0' : 'M7 9V6a3 3 0 0 1 6 0v3'} />
             </svg>
           </button>
-          {document.processing_status === 'needs_review' && (
+          )}
+          {owned && document.processing_status === 'needs_review' && (
             <Button
               variant="secondary"
               disabled={markingReviewed || editing}
@@ -633,6 +641,11 @@ export function DocumentDetailPage() {
               onClick={() => void onMarkReviewed()}
             >
               {markingReviewed ? 'Marking...' : 'Mark reviewed'}
+            </Button>
+          )}
+          {owned && (
+            <Button variant="secondary" onClick={() => setSharing(true)}>
+              Share
             </Button>
           )}
           <Link
@@ -650,13 +663,17 @@ export function DocumentDetailPage() {
           >
             Ask AI
           </Link>
-          <div className="ml-1 border-l border-line pl-3">
-            <Button variant="danger" onClick={() => void onDelete()} disabled={deleting}>
-              {deleting ? 'Deleting...' : 'Delete'}
-            </Button>
-          </div>
+          {owned && (
+            <div className="ml-1 border-l border-line pl-3">
+              <Button variant="danger" onClick={() => void onDelete()} disabled={deleting}>
+                {deleting ? 'Deleting...' : 'Delete'}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
+
+      <ShareDialog documentId={documentId} open={sharing} onClose={() => setSharing(false)} />
 
       {/* The pane sits left of the form but after it in the DOM, so a keyboard
           reaches the fields without tabbing through the PDF viewer first. */}
@@ -902,7 +919,11 @@ export function DocumentDetailPage() {
             </label>
 
             <div className="flex items-center gap-4 sm:col-span-2">
-              {editing ? (
+              {!owned ? (
+                <p className="text-sm text-ink-soft">
+                  Shared with you, read-only. Only its owner can correct it.
+                </p>
+              ) : editing ? (
                 <Button type="submit" disabled={saving}>
                   {saving ? 'Saving...' : 'Save corrections'}
                 </Button>

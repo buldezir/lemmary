@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
-import type { DocumentRecord } from '../lib/api/documents'
+import { SHARED_TAG_ID, SHARED_TAG_NAME, type DocumentRecord } from '../lib/api/documents'
+import { pb } from '../lib/pb'
 import { DOCUMENT_STATUS_LABELS, reviewReason, type DocumentStatus } from '../lib/documentStatus'
 import { summarizeJob, type ProcessingJobRecord } from '../lib/processing'
 import { pendingTagSuggestions } from '../lib/tagSuggestions'
@@ -40,6 +41,28 @@ const statusStyles: Record<DocumentStatus, { badge: string; border: string }> = 
   failed: { badge: 'bg-madder text-paper', border: 'border-madder' },
   cancelled: { badge: 'bg-ink-muted text-paper', border: 'border-ink-muted' },
   needs_review: { badge: 'bg-amber-800 text-paper', border: 'border-amber-800' },
+}
+
+/**
+ * Reads as a tag and filters as one, but is not a tag record: it says the
+ * document belongs to another account. See SHARED_TAG_ID.
+ */
+function SharedChip({ onFilter }: { onFilter?: (tagId: string) => void }) {
+  const className =
+    'border border-oxblood/40 bg-oxblood/5 px-1.5 py-0.5 text-[11px] font-medium text-oxblood'
+  if (!onFilter) {
+    return <span className={className}>{SHARED_TAG_NAME}</span>
+  }
+  return (
+    <button
+      type="button"
+      aria-label="Filter by shared"
+      className={`relative z-10 pointer-events-auto transition-colors hover:border-oxblood ${className}`}
+      onClick={() => onFilter(SHARED_TAG_ID)}
+    >
+      {SHARED_TAG_NAME}
+    </button>
+  )
 }
 
 function CardDescription({ document }: { document: DocumentRecord }) {
@@ -100,7 +123,11 @@ export function DocumentCard({
   const correspondent = document.expand?.correspondent?.name
   const documentType = document.expand?.document_type?.name
   const title = document.title || 'Untitled document'
-  const canMarkReviewed = Boolean(onMarkReviewed) && document.processing_status === 'needs_review'
+  const shared = Boolean(pb.authStore.record?.id) && document.user !== pb.authStore.record?.id
+  // A shared document is read-only, so its own owner's review is not the
+  // reader's to clear.
+  const canMarkReviewed =
+    Boolean(onMarkReviewed) && !shared && document.processing_status === 'needs_review'
   const status = statusStyles[document.processing_status]
 
   return (
@@ -151,8 +178,9 @@ export function DocumentCard({
 
         <ProcessingStatus summary={summarizeJob(document.processing_status === 'failed' ? job : null)} />
 
-        {tags.length > 0 && (
+        {(shared || tags.length > 0) && (
           <div className="flex flex-wrap gap-1.5">
+            {shared && <SharedChip onFilter={onFilterTag} />}
             {tags.map((tag) =>
               onFilterTag ? (
                 // Above the full-bleed link, like the checkbox, so a click

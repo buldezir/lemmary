@@ -38,7 +38,7 @@ func handleListDocuments(idx *fulltext.Index) func(*core.RequestEvent) error {
 		// Kept apart because the search path needs to know whether the database
 		// has anything to say beyond the owner scope the index already applied.
 		filterExprs := documentFilterExprs(filters)
-		exprs := append([]dbx.Expression{dbx.HashExp{"user": e.Auth.Id}}, filterExprs...)
+		exprs := append([]dbx.Expression{readableDocuments(e.Auth.Id)}, filterExprs...)
 		ordering := strings.TrimSpace(query.Get("ordering"))
 
 		if filters.hasText() {
@@ -64,7 +64,7 @@ func handleListDocuments(idx *fulltext.Index) func(*core.RequestEvent) error {
 			return internalError(e, err)
 		}
 
-		results, err := mapDocuments(e.App, records, filters.truncateContent)
+		results, err := mapDocuments(e.App, records, e.Auth.Id, filters.truncateContent)
 		if err != nil {
 			return internalError(e, err)
 		}
@@ -150,7 +150,7 @@ func listDocumentsByText(
 	}
 	records := inOrder(found, wanted)
 
-	results, err := mapDocuments(e.App, records, filters.truncateContent)
+	results, err := mapDocuments(e.App, records, e.Auth.Id, filters.truncateContent)
 	if err != nil {
 		return internalError(e, err)
 	}
@@ -254,32 +254,32 @@ func filteredDocumentIDs(
 	return ids, nil
 }
 
-func mapDocuments(app core.App, records []*core.Record, truncate bool) ([]any, error) {
+func mapDocuments(app core.App, records []*core.Record, callerID string, truncate bool) ([]any, error) {
 	lens, err := newNgxIDLens(app, records)
 	if err != nil {
 		return nil, err
 	}
 	results := make([]any, 0, len(records))
 	for _, record := range records {
-		results = append(results, mapDocument(lens, record, truncate))
+		results = append(results, mapDocument(lens, record, callerID, truncate))
 	}
 	return results, nil
 }
 
-func mapOneDocument(app core.App, record *core.Record) (map[string]any, error) {
+func mapOneDocument(app core.App, record *core.Record, callerID string) (map[string]any, error) {
 	lens, err := newNgxIDLens(app, []*core.Record{record})
 	if err != nil {
 		return nil, err
 	}
-	return mapDocument(lens, record, false), nil
+	return mapDocument(lens, record, callerID, false), nil
 }
 
 func handleGetDocument(e *core.RequestEvent) error {
-	record, err := findOwnedDocument(e.App, e.Auth.Id, e.Request.PathValue("id"))
+	record, err := findReadableDocument(e.App, e.Auth.Id, e.Request.PathValue("id"))
 	if err != nil {
 		return notFound(e, "Not found.")
 	}
-	mapped, err := mapOneDocument(e.App, record)
+	mapped, err := mapOneDocument(e.App, record, e.Auth.Id)
 	if err != nil {
 		return internalError(e, err)
 	}
@@ -340,7 +340,7 @@ func handlePatchDocument(e *core.RequestEvent) error {
 		return saveError(e, err)
 	}
 
-	mapped, err := mapOneDocument(e.App, record)
+	mapped, err := mapOneDocument(e.App, record, e.Auth.Id)
 	if err != nil {
 		return internalError(e, err)
 	}
@@ -416,7 +416,7 @@ func handlePostDocument(e *core.RequestEvent) error {
 }
 
 func handleDownloadDocument(e *core.RequestEvent) error {
-	record, err := findOwnedDocument(e.App, e.Auth.Id, e.Request.PathValue("id"))
+	record, err := findReadableDocument(e.App, e.Auth.Id, e.Request.PathValue("id"))
 	if err != nil {
 		return notFound(e, "Not found.")
 	}
@@ -437,7 +437,7 @@ func handleDownloadDocument(e *core.RequestEvent) error {
 }
 
 func handleDocumentThumb(e *core.RequestEvent) error {
-	record, err := findOwnedDocument(e.App, e.Auth.Id, e.Request.PathValue("id"))
+	record, err := findReadableDocument(e.App, e.Auth.Id, e.Request.PathValue("id"))
 	if err != nil {
 		return notFound(e, "Not found.")
 	}

@@ -51,6 +51,8 @@ type Query struct {
 	// Undated keeps only documents with no document_date. Asking for both this
 	// and a date range is asking for nothing, which the conjunction answers.
 	Undated bool
+	// SharedOnly keeps only documents another account shared with the caller.
+	SharedOnly bool
 	// Fields narrows the text match to named index fields; empty means every
 	// field. The paperless-ngx layer uses it for title-only/content-only.
 	Fields []string
@@ -444,7 +446,16 @@ func buildSearchPlan(q Query, text string) (searchPlan, error) {
 func filterConjuncts(q Query) []query.Query {
 	conjuncts := make([]query.Query, 0, 6)
 	if userID := strings.TrimSpace(q.UserID); userID != "" {
-		conjuncts = append(conjuncts, termQuery(FieldUser, userID))
+		if q.SharedOnly {
+			// Readable by me and owned by somebody else. Expressed as one
+			// boolean because a lone MustNot matches nothing in bleve.
+			shared := bleve.NewBooleanQuery()
+			shared.AddMust(termQuery(FieldUser, userID))
+			shared.AddMustNot(termQuery(FieldOwner, userID))
+			conjuncts = append(conjuncts, shared)
+		} else {
+			conjuncts = append(conjuncts, termQuery(FieldUser, userID))
+		}
 	}
 	if status := strings.TrimSpace(q.ProcessingStatus); status != "" && status != "all" {
 		if status == models.StatusFilterUnfinished {

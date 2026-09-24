@@ -149,6 +149,15 @@ export function parseDuplicateOfId(message: string): string | null {
   return match?.[1] ?? null
 }
 
+/**
+ * ponytail: the "shared" marker travels as a tag id so it needs no second
+ * control, but it is not a tag record -- it cannot be applied, renamed or put
+ * on a document. Give every account a real tag of its own if it ever has to
+ * combine with the others rather than sit beside them.
+ */
+export const SHARED_TAG_ID = '__shared'
+export const SHARED_TAG_NAME = 'shared'
+
 export type DocumentListFilters = {
   status: string
   documentType: string
@@ -159,6 +168,8 @@ export type DocumentListFilters = {
   /** tags ids a document must carry all of. */
   tags?: string[]
   untagged?: boolean
+  /** Drops documents other accounts shared with the caller. */
+  ownerOnly?: boolean
 }
 
 /**
@@ -207,10 +218,17 @@ export function buildDocumentFilter(filters: DocumentListFilters): string | unde
   // the id so it cannot match inside a longer one. Move the unsearched list
   // onto a Go endpoint (ngxapi's tagsExpr) if this stops paying.
   for (const tag of filters.tags ?? []) {
+    if (tag === SHARED_TAG_ID) continue
     parts.push(pb.filter('tags ~ {:id}', { id: `"${tag}"` }))
   }
   if (filters.untagged) {
     parts.push('tags:length = 0')
+  }
+  const me = pb.authStore.record?.id ?? ''
+  if (filters.ownerOnly && me) {
+    parts.push(pb.filter('user = {:me}', { me }))
+  } else if (filters.tags?.includes(SHARED_TAG_ID) && me) {
+    parts.push(pb.filter('user != {:me}', { me }))
   }
 
   return parts.length > 0 ? parts.join(' && ') : undefined
@@ -254,6 +272,8 @@ export async function countDocumentsWithStatus(
       correspondent: 'all',
       dateFrom: '',
       dateTo: '',
+      // Counts the same set the Inbox lists, which is the caller's own work.
+      ownerOnly: true,
     }) ?? ''
 
   const result = await pb.collection('documents').getList(1, 1, { filter, requestKey: null })
@@ -458,8 +478,12 @@ export async function searchDocuments(opts: {
   if (opts.undated) {
     params.set('undated', 'true')
   }
-  if (opts.tags?.length) {
-    params.set('tags', opts.tags.join(','))
+  const tags = opts.tags?.filter((tag) => tag !== SHARED_TAG_ID) ?? []
+  if (tags.length) {
+    params.set('tags', tags.join(','))
+  }
+  if (opts.tags?.includes(SHARED_TAG_ID)) {
+    params.set('shared', 'true')
   }
   if (opts.untagged) {
     params.set('untagged', 'true')

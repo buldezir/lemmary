@@ -48,7 +48,7 @@ func handleDocumentsTimeline(app core.App) func(*core.RequestEvent) error {
 		// PocketBase's lock-retry and query timeout.
 		err = app.RecordQuery("documents").
 			Select("substr(COALESCE(document_date, ''), 1, 7) AS month", "COUNT(*) AS count").
-			AndWhere(dbx.HashExp{"user": ownerID}).
+			AndWhere(dbx.NewExp(ReadableDocumentsSQL("documents", "owner"), dbx.Params{"owner": ownerID})).
 			GroupBy("month").
 			OrderBy("month DESC").
 			All(&rows)

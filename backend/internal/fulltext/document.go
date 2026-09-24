@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
 	"lemmary/backend/internal/models"
@@ -14,14 +15,56 @@ func Build(app core.App, rec *core.Record) map[string]any {
 }
 
 // nameCache memoizes named-entity lookups: a full rebuild otherwise looks the
-// same handful of entities up thousands of times.
+// same handful of entities up thousands of times. It also holds the readers of
+// each document, for the same reason.
 type nameCache struct {
-	app   core.App
-	names map[string]string
+	app     core.App
+	names   map[string]string
+	readers map[string][]string
 }
 
 func newNameCache(app core.App) *nameCache {
 	return &nameCache{app: app, names: map[string]string{}}
+}
+
+// preloadReaders reads every share once, for the callers that walk the whole
+// documents table. Without it each document costs its own query.
+func (c *nameCache) preloadReaders() {
+	if c == nil || c.app == nil || c.readers != nil {
+		return
+	}
+	c.readers = map[string][]string{}
+	shares, err := c.app.FindAllRecords(CollectionShares)
+	if err != nil {
+		// A missing or unreadable share table means no shares, not no index.
+		return
+	}
+	for _, share := range shares {
+		docID := share.GetString("document")
+		c.readers[docID] = append(c.readers[docID], share.GetString("user"))
+	}
+}
+
+// readersOf is the owner plus everyone the document is shared with. Indexing
+// them all in one field is what lets every search keep its single term filter.
+func (c *nameCache) readersOf(rec *core.Record) []string {
+	owner := rec.GetString("user")
+	if c == nil || c.app == nil {
+		return []string{owner}
+	}
+	if c.readers != nil {
+		return append([]string{owner}, c.readers[rec.Id]...)
+	}
+	shares, err := c.app.FindAllRecords(CollectionShares, dbx.HashExp{"document": rec.Id})
+	if err != nil {
+		return []string{owner}
+	}
+	readers := make([]string, 0, len(shares)+1)
+	readers = append(readers, owner)
+	for _, share := range shares {
+		readers = append(readers, share.GetString("user"))
+	}
+	return readers
 }
 
 func (c *nameCache) lookup(collection, id string) string {
@@ -69,7 +112,8 @@ func buildWith(names *nameCache, rec *core.Record) map[string]any {
 	}
 
 	doc := map[string]any{
-		FieldUser:              rec.GetString("user"),
+		FieldUser:              names.readersOf(rec),
+		FieldOwner:             rec.GetString("user"),
 		FieldProcessingStatus:  rec.GetString("processing_status"),
 		FieldDocumentType:      typeID,
 		FieldCorrespondent:     corrID,

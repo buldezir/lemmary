@@ -82,7 +82,7 @@ func Register(
 			// check can reject it.
 			g.POST("/ocr/test", bindAuth(handleOCRTest(app, rt))).
 				Bind(apis.BodyLimit(ocrTestMaxFileBytes + (1 << 20)))
-			g.GET("/users", bindAdmin(handleListUsers(app)))
+			g.GET("/users", bindAuth(handleListUsers(app)))
 			g.GET("/settings", bindAdmin(handleGetSettings(app, rt)))
 			g.PATCH("/settings", bindAdmin(handlePatchSettings(app, rt)))
 			g.GET("/settings/embeddings", bindAdmin(handleGetEmbeddingStats(app, rt)))

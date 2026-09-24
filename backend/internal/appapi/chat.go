@@ -214,7 +214,7 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 		}
 		// Superusers bypass ownership, matching the PocketBase collection rules.
 		// This answers document access; session ownership is resolved below.
-		if !e.HasSuperuserAuth() && document.GetString("user") != e.Auth.Id {
+		if !e.HasSuperuserAuth() && !CanReadDocument(app, document, e.Auth.Id) {
 			return writeError(e, http.StatusForbidden, "You do not have access to this document.")
 		}
 

@@ -41,6 +41,7 @@ export function useDocumentList({
   route,
   status: fixedStatus,
   filters = true,
+  ownerOnly = false,
 }: {
   route: DocumentListRoute
   /**
@@ -56,6 +57,11 @@ export function useDocumentList({
    * query and quietly emptied a list with no search box to explain it.
    */
   filters?: boolean
+  /**
+   * Keeps documents other accounts shared with the caller out of this list.
+   * The Inbox is one: somebody else's review queue is not yours to clear.
+   */
+  ownerOnly?: boolean
 }) {
   // The filters are the URL, not state, so the page is reproducible and Back
   // steps through it. The URL only carries the filters that are set, so the
@@ -158,6 +164,7 @@ export function useDocumentList({
           correspondent: correspondentFilter,
           tags: tagIds(tagFilter),
           untagged,
+          ownerOnly,
         })
         const result = text
           ? await searchDocuments({
@@ -254,6 +261,7 @@ export function useDocumentList({
     tagFilter,
     untagged,
     debouncedSearch,
+    ownerOnly,
     updateQuery,
   ])
 

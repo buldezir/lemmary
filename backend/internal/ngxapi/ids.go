@@ -31,12 +31,14 @@ func parseNgxID(raw string) (int, error) {
 
 // findRecordByNgxID resolves one client-facing id inside an owner's scope, in
 // one seek on the unique (user, ngx_id) index.
+var errNotFound = errors.New("not found")
+
 func findRecordByNgxID(app core.App, collection string, ngxID int, ownerUserID string) (*core.Record, error) {
 	// 0 is not an id this server ever issues, and it is what the column holds
 	// for a row no create hook stamped. Matching it would hand a client a
 	// record by asking for nothing.
 	if ngxID <= 0 {
-		return nil, errors.New("not found")
+		return nil, errNotFound
 	}
 
 	// The literal "ngx_id > 0" is not redundant with the guard above: the

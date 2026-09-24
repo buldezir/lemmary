@@ -387,7 +387,7 @@ func (r *agentRetriever) hydrate(
 	if err != nil {
 		return ai.DocumentHit{}, false
 	}
-	if r.userID != "" && record.GetString("user") != r.userID {
+	if !CanReadDocument(r.app, record, r.userID) {
 		return ai.DocumentHit{}, false
 	}
 
@@ -609,8 +609,8 @@ func readUserDocuments(app documentLookup, userID string, req ai.ReadRequest, ra
 		if err != nil {
 			continue
 		}
-		// Re-check ownership per record: this is the boundary that has to hold.
-		if userID != "" && record.GetString("user") != userID {
+		// Re-check access per record: this is the boundary that has to hold.
+		if !CanReadDocument(app, record, userID) {
 			continue
 		}
 

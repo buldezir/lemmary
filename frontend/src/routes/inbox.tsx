@@ -12,6 +12,7 @@ export function InboxPage() {
     route: '/inbox',
     status: UNFINISHED_STATUS,
     filters: false,
+    ownerOnly: true,
   })
   const { documents, loading, error } = list
 

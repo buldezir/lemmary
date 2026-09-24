@@ -32,10 +32,6 @@ export function DocumentFilters({
 }) {
   const tooShort = search.trim().length > 0 && search.trim().length < MIN_SEARCH_LENGTH
   const chosenTags = tagIds(query.tags)
-  // Nothing to offer and nothing chosen is no filter at all. Decided here
-  // rather than inside TagFilter because the search box shares the row and
-  // has to know whether it is sharing it.
-  const showTags = tags.length > 0 || chosenTags.length > 0 || query.untagged
 
   return (
     <div className="flex flex-col gap-3">
@@ -55,14 +51,13 @@ export function DocumentFilters({
             </p>
           )}
         </div>
-        {showTags && (
-          <TagFilter
-            value={chosenTags}
-            untagged={query.untagged}
-            options={tags}
-            onChange={(next, untagged) => updateQuery({ tags: next.join(','), untagged })}
-          />
-        )}
+        {/* Always shown: "shared" is on offer even with no tags of your own. */}
+        <TagFilter
+          value={chosenTags}
+          untagged={query.untagged}
+          options={tags}
+          onChange={(next, untagged) => updateQuery({ tags: next.join(','), untagged })}
+        />
         {status !== undefined && (
           <select
             value={status}

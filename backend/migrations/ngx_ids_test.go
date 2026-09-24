@@ -127,24 +127,29 @@ func clearNgxIDs(t *testing.T, app core.App) {
 	}
 }
 
-// TestBackfillKeepsOwnersApart: uniqueness is per owner, so two owners hashing
-// alike is not a collision and must not renumber either of them.
-func TestBackfillKeepsOwnersApart(t *testing.T) {
+// TestBackfillSeparatesOwnersThatHashAlike: uniqueness stopped being per owner
+// in 1730000047, because a shared document is read by someone who also has rows
+// of their own. Two owners hashing alike is now a collision like any other, and
+// the older row keeps the contested value.
+func TestBackfillSeparatesOwnersThatHashAlike(t *testing.T) {
 	app := bootMigratedApp(t)
 	mine := makeUser(t, app, "mine@example.com")
 	theirs := makeUser(t, app, "theirs@example.com")
 	myDoc := makeDocument(t, app, mine, "Mine")
 	theirDoc := makeDocument(t, app, theirs, "Theirs")
+	if myDoc > theirDoc {
+		myDoc, theirDoc = theirDoc, myDoc
+	}
 
 	clearNgxIDs(t, app)
-	if err := backfillNgxIDsSeeded(app, "documents", "user", func(string) int { return 4242 }); err != nil {
+	if err := backfillNgxIDsSeeded(app, "documents", "", func(string) int { return 4242 }); err != nil {
 		t.Fatalf("backfill: %v", err)
 	}
 
 	if got := storedNgxID(t, app, "documents", myDoc); got != 4242 {
-		t.Fatalf("my document took %d, want 4242", got)
+		t.Fatalf("the older document lost the contested value: got %d, want 4242", got)
 	}
-	if got := storedNgxID(t, app, "documents", theirDoc); got != 4242 {
-		t.Fatalf("the other owner's document took %d, want the same 4242", got)
+	if got := storedNgxID(t, app, "documents", theirDoc); got != 4243 {
+		t.Fatalf("the other owner's document took %d, want the next free 4243", got)
 	}
 }

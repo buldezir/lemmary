@@ -25,6 +25,11 @@ func countDB(t *testing.T) dbx.Builder {
 	if err != nil {
 		t.Fatalf("create table: %v", err)
 	}
+	_, err = db.NewQuery(`CREATE TABLE document_shares (
+		id TEXT PRIMARY KEY, document TEXT, user TEXT)`).Execute()
+	if err != nil {
+		t.Fatalf("create shares table: %v", err)
+	}
 	rows := []struct {
 		id, user, date, typ, corr, tags string
 	}{
@@ -206,5 +211,39 @@ func TestCountToolWithoutADatabaseIsRefused(t *testing.T) {
 	r := hybridRetriever(t, nil)
 	if _, err := r.count(context.Background(), ai.CountArgs{}); err == nil {
 		t.Fatal("counting needs a database")
+	}
+}
+
+func share(t *testing.T, db dbx.Builder, documentID, userID string) {
+	t.Helper()
+	_, err := db.NewQuery(`INSERT INTO document_shares (id, document, user)
+		VALUES ({:id}, {:document}, {:user})`).Bind(dbx.Params{
+		"id": documentID + "-" + userID, "document": documentID, "user": userID,
+	}).Execute()
+	if err != nil {
+		t.Fatalf("insert share: %v", err)
+	}
+}
+
+// The count sits above the list, so it has to agree with it: a document shared
+// with me is one I can see.
+func TestCountDocumentsIncludesSharedDocuments(t *testing.T) {
+	db := countDB(t)
+	share(t, db, "d6", "me")
+
+	_, total, err := countDocuments(context.Background(), db, countSpec{userID: "me"})
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if total != 6 {
+		t.Fatalf("total with one shared document = %d, want 6", total)
+	}
+
+	_, total, err = countDocuments(context.Background(), db, countSpec{userID: "you"})
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("sharing a document changed the owner's total: %d, want 1", total)
 	}
 }

@@ -35,14 +35,17 @@ type Collection struct {
 // Collections are those collections. Users are absent deliberately: a client
 // reads a user id and never sends it back, so it is still derived from the hash
 // and needs no column.
+//
+// Every one of them is unique across the install rather than per owner, for the
+// reason the jobs entry always was: the API scopes reads by the caller, and
+// since a document can be shared the caller's reads reach past their own rows.
+// Two owners holding one id would make a shared document resolve to the reader's
+// own instead, silently.
 var Collections = []Collection{
-	{Name: "documents", Owner: "user"},
-	{Name: "tags", Owner: "user"},
-	{Name: "correspondents", Owner: "user"},
-	{Name: "document_types", Owner: "user"},
-	// A job belongs to an account only through its document, so its ids are
-	// unique across the install rather than per owner. Reads are still scoped
-	// to the caller, by joining that document.
+	{Name: "documents", Owner: ""},
+	{Name: "tags", Owner: ""},
+	{Name: "correspondents", Owner: ""},
+	{Name: "document_types", Owner: ""},
 	{Name: "processing_jobs", Owner: ""},
 }
 
