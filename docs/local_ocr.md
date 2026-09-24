@@ -144,6 +144,9 @@ Swap the `image:` line in the overlay, add a `deploy.resources.reservations.devi
 block for the GPU, and per-page time drops by an order of magnitude. The app
 needs no change — it is the same HTTP API.
 
+On an Apple Silicon Mac, Docker has no access to the GPU; run docling natively
+instead, as in [Local OCR and embeddings on a Mac](/local_ai_macos).
+
 ## Troubleshooting
 
 - **Documents fail with a timeout.** Raise `OCR_TIMEOUT_SEC` in **Settings**,

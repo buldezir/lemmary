@@ -15,6 +15,7 @@ Setup and operation guides for Lemmary.
 - [Scanning from a network scanner](/scanning) — scan over eSCL/AirScan, and how the LAN search finds the device
 - [Local OCR](/local_ocr) — run the OCR engine yourself, so scans never leave the host
 - [Local embeddings](/local_embeddings) — run the embedding model yourself, so Deep Research costs no tokens
+- [Local OCR and embeddings on a Mac](/local_ai_macos) — both on an M-series Mac's GPU, natively rather than in Docker
 - [Google Vision API key](/google_vision) — obtain a Cloud Vision API key for OCR
 - [ChatGPT sign-in](/chatgpt_login) — run chat, extraction and Deep Research on a ChatGPT subscription instead of a metered key
 - [OAuth2 / SSO sign-in](/oauth) — enable provider sign-in on the app login screen
