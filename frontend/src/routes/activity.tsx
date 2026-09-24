@@ -18,7 +18,7 @@ import { ProcessingSteps } from '../components/ProcessingSteps'
 import { Button, sectionClassName, sectionTitleClassName } from '../components/ui'
 
 // Realtime is optional everywhere in this app, so the queue also refreshes on a
-// timer, at the Management page's interval for the same counts.
+// timer, at the Maintenance page's interval for the same counts.
 const pollMs = 5_000
 const realtimeDebounceMs = 300
 
@@ -84,7 +84,7 @@ export function ActivityPage() {
   const cancelled = jobs.filter((job) => job.finished_at && job.status === 'cancelled')
   const failed = jobs.filter((job) => job.finished_at && job.status !== 'cancelled')
 
-  // Both live here rather than on admin-only Management: the person who has just
+  // Both live here rather than on admin-only Maintenance: the person who has just
   // dropped four hundred documents in by accident is watching this page.
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState('')

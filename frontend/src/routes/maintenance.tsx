@@ -64,7 +64,7 @@ function pruneSummary(result: TaxonomyPruneResult) {
 }
 
 // Admin access is enforced by the route's beforeLoad guard.
-export function ManagementPage() {
+export function MaintenancePage() {
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState<DuplicateScanResult | null>(null)
   const [reindexing, setReindexing] = useState(false)
@@ -370,7 +370,7 @@ export function ManagementPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-6">
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">Management</h1>
+        <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">Maintenance</h1>
         <p className="mt-1 text-sm text-ink-soft">
           Maintenance tasks that run over the whole library. Admin only.
         </p>

@@ -22,7 +22,7 @@ import (
 
 // Bounds one backfill tick. 0 disables the cron entirely, for an operator who
 // wants embeddings for new uploads without paying to embed a whole archive on
-// the next restart. It does not disable the manual sweep from Management.
+// the next restart. It does not disable the manual sweep from Maintenance.
 const EnvEmbeddingBackfillBatch = "EMBEDDING_BACKFILL_BATCH"
 
 const defaultBackfillBatch = 20
@@ -57,7 +57,7 @@ func BackfillBatchFromEnv(logger *slog.Logger) int {
 // predates the model binding, a restored backup, a model or dimension switch, a
 // chunker version bump, a soft-failed embed step, a stale edit.
 //
-// It runs from a cron tick and from a sweep the admin starts in Management.
+// It runs from a cron tick and from a sweep the admin starts in Maintenance.
 // They share one mutex, so the two never embed the same candidate twice.
 type Backfiller struct {
 	app   core.App
@@ -66,7 +66,7 @@ type Backfiller struct {
 
 	running sync.Mutex
 	// The mutex cannot answer "is a sweep in progress?" without taking it, and
-	// the Management page asks on every poll.
+	// the Maintenance page asks on every poll.
 	sweeping atomic.Bool
 }
 
@@ -82,7 +82,7 @@ func registerEmbeddingBackfill(app core.App, b *Backfiller) {
 		return
 	}
 	if b.batch == 0 {
-		app.Logger().Info("embedding backfill cron disabled; the Management sweep still runs",
+		app.Logger().Info("embedding backfill cron disabled; the Maintenance sweep still runs",
 			"env", EnvEmbeddingBackfillBatch)
 		return
 	}

@@ -34,7 +34,7 @@ import { SettingsProcessingPage } from './routes/settings.processing'
 import { SettingsWorkerPage } from './routes/settings.worker'
 import { SettingsDuplicatesPage } from './routes/settings.duplicates'
 import { SettingsIngestPage } from './routes/settings.ingest'
-import { ManagementPage } from './routes/management'
+import { MaintenancePage } from './routes/maintenance'
 import { ImportPage } from './routes/import'
 import { ImportNgxPage } from './routes/import.ngx'
 import { ImportArchivePage } from './routes/import.archive'
@@ -80,7 +80,7 @@ const inboxRoute = createRoute({
   component: InboxPage,
 })
 
-// Not behind Management: the collection's list rule scopes it to the caller's
+// Not behind Maintenance: the collection's list rule scopes it to the caller's
 // own documents, so it is not an admin view.
 const activityRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -223,11 +223,11 @@ const settingsIngestRoute = createRoute({
   component: SettingsIngestPage,
 })
 
-const managementRoute = createRoute({
+const maintenanceRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/management',
+  path: '/maintenance',
   beforeLoad: requireAdmin,
-  component: ManagementPage,
+  component: MaintenancePage,
 })
 
 const importRoute = createRoute({
@@ -259,7 +259,7 @@ const importArchiveAliasRoute = createRoute({
 })
 
 // No beforeLoad guard on purpose: RootLayout's gate already requires a session,
-// and unlike /settings and /management this page has to work for non-admins.
+// and unlike /settings and /maintenance this page has to work for non-admins.
 const accountRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/account',
@@ -318,7 +318,7 @@ const routeTree = rootRoute.addChildren([
     settingsDuplicatesRoute,
     settingsIngestRoute,
   ]),
-  managementRoute,
+  maintenanceRoute,
   importRoute.addChildren([importArchiveRoute, importNgxRoute, importArchiveAliasRoute]),
   exportRoute,
   accountRoute,

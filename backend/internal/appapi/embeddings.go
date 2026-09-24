@@ -46,7 +46,7 @@ func loadEmbeddingStats(app core.App, cfg config.Config) (embedstore.Stats, erro
 
 // handlePostEmbeddingBackfill answers immediately rather than waiting for the
 // sweep, which over an existing archive runs far longer than a request should
-// hold a connection open. The Management page polls the status route.
+// hold a connection open. The Maintenance page polls the status route.
 func handlePostEmbeddingBackfill(app core.App, rt *config.Runtime, sweeper EmbeddingSweeper) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		cfg := rt.Snapshot().Cfg

@@ -51,7 +51,7 @@ const maxEncodedBytes = models.MaxFileBytes/3*4 + models.MaxFileBytes/38 + 1024
 const fetchBatch = 200
 
 // A message failing this many scans in a row is given up on, so it cannot hold
-// back the mail behind it; Management's backfill can still import it.
+// back the mail behind it; Maintenance's backfill can still import it.
 const maxAttempts = 3
 
 // The since point is this host's clock and INTERNALDATE the server's; mail
@@ -65,7 +65,7 @@ type Result struct {
 	Failed  int `json:"failed"`
 }
 
-// Backfill is the last Management range scan, as the page polls it.
+// Backfill is the last Maintenance range scan, as the page polls it.
 type Backfill struct {
 	Running bool   `json:"running"`
 	From    string `json:"from"`
@@ -283,7 +283,7 @@ func (s *Scanner) scan(cfg config.Config) (Result, summary) {
 				if s.attempts[msg.UID]++; s.attempts[msg.UID] < maxAttempts {
 					return stop(fmt.Sprintf("message %d failed; retrying next scan", msg.UID))
 				}
-				logger.Error("imap ingest: giving up on a message; Management -> Mailbox can import it later",
+				logger.Error("imap ingest: giving up on a message; Maintenance -> Mailbox can import it later",
 					"uid", msg.UID, "attempts", maxAttempts)
 				got = refused
 			}

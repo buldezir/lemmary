@@ -184,7 +184,7 @@ func TestStartSweepClearsItsFlagWhenTheSweepEnds(t *testing.T) {
 	}
 }
 
-// EMBEDDING_BACKFILL_BATCH=0 turns the schedule off; the Management sweep is an
+// EMBEDDING_BACKFILL_BATCH=0 turns the schedule off; the Maintenance sweep is an
 // explicit click, so it still needs a batch size.
 func TestSweepBatchSurvivesADisabledCron(t *testing.T) {
 	t.Parallel()

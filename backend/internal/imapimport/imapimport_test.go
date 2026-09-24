@@ -382,7 +382,7 @@ func TestScanRangeBackfillsWithoutMovingOrDeleting(t *testing.T) {
 		t.Fatalf("INBOX holds %d; a backfill must not delete", got)
 	}
 
-	// The Management route starts it in the background and polls.
+	// The Maintenance route starts it in the background and polls.
 	if err := s.StartBackfill(c, from, to); err != nil {
 		t.Fatal(err)
 	}

@@ -35,7 +35,7 @@ func scanWindow(req imapScanRequest) (from, to time.Time, err error) {
 }
 
 // A backfill can run far longer than a request should stay open, so the POST
-// starts it and the Management page polls the GET, as the embedding sweep does.
+// starts it and the Maintenance page polls the GET, as the embedding sweep does.
 func handleStartIMAPBackfill(rt *config.Runtime, scanner *imapimport.Scanner) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var req imapScanRequest

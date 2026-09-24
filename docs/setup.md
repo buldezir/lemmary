@@ -59,7 +59,7 @@ with a new value.
   single-account instance.
 - A value that cannot be read — a typo, a negative, a decimal — falls back to
   unlimited and is logged at `ERROR`, and the variable is named in
-  `GET /api/app/limits` for an admin session and on the **Management** page. The
+  `GET /api/app/limits` for an admin session and on the **Maintenance** page. The
   fallback direction is deliberate: a stray character in an orchestrator's
   environment should grant room rather than lock an owner out of their own archive,
   and being told loudly is what keeps that from going unnoticed.
@@ -174,7 +174,7 @@ The **Ingest** tab (`/settings/ingest`) holds the three settings, all tenant-own
 
 With `INGEST_IMAP_ENABLED` set, the **Ingest** tab also offers a mailbox, and a cron (`imap_ingest`, on the same interval as the folder) reads its folder: every attachment whose name has a storable extension of a chosen type becomes a document owned by the same account, through the same hooks as an upload. The message body is never a document, nor is an image anywhere under a `multipart/related` part — the logos and icons an HTML body embeds by `cid:` — unless the sender marked it `Content-Disposition: attachment`; an image sent as a real attachment still counts. An inline image outside `multipart/related` is imported, since that is how iPhone Mail sends attached photos. Mail without such an attachment is left untouched. Leaving the server empty turns it off.
 
-Only mail received after the mailbox was set up is scanned: saving a new server, username or folder records that moment (`imap_since`, shown under the Mailbox fields), and anything the folder already held is left alone, whatever the after-import action. A new password or after-import action keeps the moment, so nothing that arrived meanwhile is skipped. Older mail is a backfill: **Management → Mailbox** takes two days, inclusive, and imports the attachments of everything received between them (IMAP `SINCE`/`BEFORE`, by the server's received date). The backfill opens the folder read-only, never moves or deletes a message, does not touch the keep-mode ledger, and relies on the checksum check to skip attachments already in the library, so running it twice is harmless. It runs in the background and holds the same lock as the scheduled scan, so neither starts while the other runs — a delete or move scan never works on the folder a backfill is reading. A message that fails is counted and passed over; only an instance limit stops it early.
+Only mail received after the mailbox was set up is scanned: saving a new server, username or folder records that moment (`imap_since`, shown under the Mailbox fields), and anything the folder already held is left alone, whatever the after-import action. A new password or after-import action keeps the moment, so nothing that arrived meanwhile is skipped. Older mail is a backfill: **Maintenance → Mailbox** takes two days, inclusive, and imports the attachments of everything received between them (IMAP `SINCE`/`BEFORE`, by the server's received date). The backfill opens the folder read-only, never moves or deletes a message, does not touch the keep-mode ledger, and relies on the checksum check to skip attachments already in the library, so running it twice is harmless. It runs in the background and holds the same lock as the scheduled scan, so neither starts while the other runs — a delete or move scan never works on the folder a backfill is reading. A message that fails is counted and passed over; only an instance limit stops it early.
 
 Messages are fetched 200 at a time. Attachments inside a forwarded message (`message/rfc822`) count too. Messages already flagged `\Deleted` are ignored. A message whose import keeps failing for another reason than a refusal (a hook error, a full disk) is retried on the next two scans and then given up on with an error in the log, so it cannot hold back the mail behind it; the backfill can import it later. The since cut allows 10 minutes for a server clock running behind this host's.
 
@@ -188,9 +188,9 @@ Delete and move rely on UIDPLUS (or IMAP4rev2) to expunge only the messages Lemm
 
 A message whose attachment is refused (empty, over the 47 MB cap, wrong content for its extension) is never moved or deleted; it is logged and skipped. Reaching an instance-wide limit, or any other error, stops the scan and the message is retried next interval.
 
-## Management (admin UI)
+## Maintenance (admin UI)
 
-**Management** in the nav (admin only, next to Settings) holds maintenance actions that run over the whole library, not per document:
+**Maintenance** in the nav (admin only, next to Settings) holds maintenance actions that run over the whole library, not per document:
 
 - **Scan for duplicates** — `POST /api/app/duplicates/scan`, see [Duplicate detection](#duplicate-detection).
 - **Scan mailbox** (only with `INGEST_IMAP_ENABLED`) — `POST /api/app/ingest/imap/scan` with `{ "from": "YYYY-MM-DD", "to": "YYYY-MM-DD" }` starts a backfill of older mail in the background, see [Ingest from IMAP](#ingest-from-imap), and answers `202` with the status; `GET` on the same path returns `{ "running", "from", "to", "created", "skipped", "failed", "error" }` for the last one, which the page polls every 3s. `409` while any mailbox scan runs, `400` for bad dates or no mailbox.
@@ -321,7 +321,7 @@ Two modes:
 - **Restore the archive as it was** (`restore`, the default): recreates titles, tags, correspondents, document types, dates, OCR text and thumbnails, and restores the taxonomy first so records nothing references still land. Restored documents get **no processing job at all** — everything a pipeline would derive is already in the archive — so a restore makes **no OCR or LLM calls** and cannot overwrite what it just restored. A document the archive holds no `.metadata.json` for has nothing to restore, so it takes the ordinary upload path instead; only pre-manifest `originals` archives contain those.
 - **Import the files only and reprocess** (`reprocess`): ignores every sidecar and queues the full OCR + AI pipeline, as for a new upload.
 
-Because a restore does not run the pipeline, near-duplicate detection does not re-run over the restored documents. Exact duplicates are still rejected on create by checksum, and `duplicate_of` / `text_fingerprint` come back from the archive; **Management → Scan for duplicates** re-derives near-duplicate links across the whole library when you want them recomputed. A restored document also keeps whatever thumbnail the archive carried — an older archive without `.preview.png` sidecars leaves those documents without one until they are reprocessed.
+Because a restore does not run the pipeline, near-duplicate detection does not re-run over the restored documents. Exact duplicates are still rejected on create by checksum, and `duplicate_of` / `text_fingerprint` come back from the archive; **Maintenance → Scan for duplicates** re-derives near-duplicate links across the whole library when you want them recomputed. A restored document also keeps whatever thumbnail the archive carried — an older archive without `.preview.png` sidecars leaves those documents without one until they are reprocessed.
 
 What a restore does *not* preserve: **document ids**. Restored documents get fresh ids, and `duplicate_of` is remapped to the restored copy when the original is in the same archive (dropped when it is not). `created` and `updated` are written back after the save, so the library comes back in its original order. Documents whose file checksum is already in your library are skipped, which makes restoring the same archive twice safe.
 
@@ -381,7 +381,7 @@ A document marked reviewed while `duplicate_of` is set keeps that link: the rela
 
 - **Exact duplicates** — on create, the uploaded file is hashed (SHA-256) into `documents.checksum`. A second upload with the same checksum for the same user is **rejected**, with an error pointing at the existing document id. Uniqueness is enforced with a per-user unique index on non-empty checksums so concurrent uploads cannot both succeed.
 - **Near-duplicates (optional)** — after OCR, a `detect_duplicates` step can compare normalized OCR text (SimHash + Jaccard). This is controlled by Settings → **Enable near-duplicate detection after OCR** (off by default). Matches are marked `needs_review` with `duplicate_of` set to the earlier document (never a newer one), so they show up in the [Inbox](#review-inbox); AI extract/apply steps are skipped.
-- **Bulk scan** — Management → **Scan for duplicates** (admin) backfills missing checksums/fingerprints and marks exact (and, if enabled, near) duplicates among existing documents.
+- **Bulk scan** — Maintenance → **Scan for duplicates** (admin) backfills missing checksums/fingerprints and marks exact (and, if enabled, near) duplicates among existing documents.
 
 Text extraction:
 
@@ -412,7 +412,7 @@ it is versioned by model *and* dimension count, so changing either wipes and
 refills that index alone while keyword search keeps serving. Clearing the
 embedding binding deletes the directory.
 
-Admins can force a rebuild from **Management → Rebuild search index** (`POST /api/app/search/reindex`). It rebuilds both indexes.
+Admins can force a rebuild from **Maintenance → Rebuild search index** (`POST /api/app/search/reindex`). It rebuilds both indexes.
 
 ## Deep Research
 
@@ -458,4 +458,4 @@ Deleting a document deletes its Ask AI chats, and deleting an account deletes al
 - **Upload succeeds but stays pending:** ensure the backend server is running; the worker starts with `serve`.
 - **Settings page missing:** log in with the admin email (the account created at setup / `superuser upsert`). Regular non-admin users do not see Settings.
 - **Auth errors in frontend:** delete the PocketBase data dir (`backend/pb_data`) and restart to recreate collections, then reload the app. This also deletes the Bleve index (rebuilt on next boot).
-- **Search misses a document:** wait for processing to finish, then retry. Admins can use **Management → Rebuild search index**, or delete `backend/pb_data/bleve` and restart.
+- **Search misses a document:** wait for processing to finish, then retry. Admins can use **Maintenance → Rebuild search index**, or delete `backend/pb_data/bleve` and restart.
