@@ -1,8 +1,10 @@
 package appapi
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 
@@ -27,6 +29,14 @@ func settingsRecordForTest(t *testing.T) *core.Record {
 		&core.TextField{Name: "ingest_dir_owner", Max: 15},
 		&core.NumberField{Name: "ingest_dir_interval_min", OnlyInt: true},
 		&core.BoolField{Name: "ingest_dir_delete_original"},
+		&core.TextField{Name: "imap_host"},
+		&core.TextField{Name: "imap_security"},
+		&core.TextField{Name: "imap_username"},
+		&core.TextField{Name: "imap_password"},
+		&core.TextField{Name: "imap_folder"},
+		&core.TextField{Name: "imap_after_consume"},
+		&core.TextField{Name: "imap_move_folder"},
+		&core.DateField{Name: "imap_since"},
 	)
 	record := core.NewRecord(collection)
 	record.Id = config.SingletonID
@@ -312,6 +322,105 @@ func TestPatchIngestDirFields(t *testing.T) {
 	}
 	if (settingsPatchRequest{IngestDirDeleteOriginal: boolptr(true)}).touchesManaged() {
 		t.Fatal("ingest_dir fields are tenant-owned; a hosted tenant must be able to set them")
+	}
+}
+
+func TestPatchIMAPFields(t *testing.T) {
+	t.Parallel()
+	record := settingsRecordForTest(t)
+
+	err := applySettingsPatch(nil, record, settingsPatchRequest{
+		IMAPHost:     strptr(" imap.example.com "),
+		IMAPSecurity: strptr("starttls"),
+		IMAPUsername: strptr("docs@example.com"),
+		IMAPPassword: strptr("s3cret"),
+	})
+	if err != nil {
+		t.Fatalf("applySettingsPatch: %v", err)
+	}
+	if got := record.GetString("imap_host"); got != "imap.example.com" {
+		t.Fatalf("imap_host = %q", got)
+	}
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{IMAPPassword: strptr("")}); err != nil {
+		t.Fatalf("blank password: %v", err)
+	}
+	if got := record.GetString("imap_password"); got != "s3cret" {
+		t.Fatalf("a blank password must keep the stored one, got %q", got)
+	}
+
+	for _, bad := range []settingsPatchRequest{
+		{IMAPSecurity: strptr("none")},
+		{IMAPAfterConsume: strptr("archive")},
+		{IMAPAfterConsume: strptr("move")},
+		{IMAPAfterConsume: strptr("move"), IMAPMoveFolder: strptr("inbox")},
+	} {
+		if err := applySettingsPatch(nil, record, bad); err == nil {
+			t.Fatalf("expected %+v to be refused", bad)
+		}
+		record.Set("imap_after_consume", "")
+		record.Set("imap_move_folder", "")
+	}
+	err = applySettingsPatch(nil, record, settingsPatchRequest{
+		IMAPAfterConsume: strptr("move"),
+		IMAPMoveFolder:   strptr("Lemmary/Done"),
+	})
+	if err != nil {
+		t.Fatalf("move with a target: %v", err)
+	}
+
+	cfg := config.Config{IMAPPassword: "s3cret"}
+	if !settingsResponseFromConfig(cfg).IMAPPasswordSet {
+		t.Fatal("imap_password_set should report a stored password")
+	}
+	body, _ := json.Marshal(settingsResponseFromConfig(cfg))
+	if strings.Contains(string(body), "s3cret") {
+		t.Fatalf("the password must never be returned: %s", body)
+	}
+	if (settingsPatchRequest{IMAPHost: strptr("x")}).touchesManaged() {
+		t.Fatal("imap fields are tenant-owned; a hosted tenant must be able to set them")
+	}
+}
+
+// Pointing at a mailbox imports what arrives from then on; a new password or
+// after-import action must not skip the mail that came in meanwhile.
+func TestIMAPSinceMovesOnlyWhenTheMailboxChanges(t *testing.T) {
+	t.Parallel()
+	record := settingsRecordForTest(t)
+	since := func() time.Time { return record.GetDateTime("imap_since").Time() }
+
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{IMAPUsername: strptr("docs")}); err != nil {
+		t.Fatal(err)
+	}
+	if !since().IsZero() {
+		t.Fatal("imap_since set without a server")
+	}
+	before := time.Now().Add(-time.Second)
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{IMAPHost: strptr("imap.example.com")}); err != nil {
+		t.Fatal(err)
+	}
+	first := since()
+	if first.Before(before) {
+		t.Fatalf("imap_since = %v, want now", first)
+	}
+
+	record.Set("imap_since", first.Add(-time.Hour))
+	for _, same := range []settingsPatchRequest{
+		{IMAPPassword: strptr("new")},
+		{IMAPAfterConsume: strptr("delete")},
+		{IMAPHost: strptr("imap.example.com"), IMAPFolder: strptr("INBOX")},
+	} {
+		if err := applySettingsPatch(nil, record, same); err != nil {
+			t.Fatal(err)
+		}
+		if !since().Equal(first.Add(-time.Hour)) {
+			t.Fatalf("%+v moved imap_since", same)
+		}
+	}
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{IMAPFolder: strptr("Scans")}); err != nil {
+		t.Fatal(err)
+	}
+	if !since().After(first.Add(-time.Hour)) {
+		t.Fatal("a new folder must move imap_since")
 	}
 }
 

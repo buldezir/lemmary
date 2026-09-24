@@ -18,6 +18,36 @@ export function scanDuplicates() {
   })
 }
 
+/** The last mailbox backfill. From and to are the inclusive days it covers. */
+export type IMAPBackfillState = {
+  running: boolean
+  from: string
+  to: string
+  created: number
+  skipped: number
+  failed: number
+  /** Why it stopped early; empty when it finished. */
+  error: string
+}
+
+/**
+ * Starts importing the attachments of mail received on from..to (inclusive
+ * days) in the background; never moves or deletes. Poll getIMAPBackfill.
+ */
+export function startIMAPBackfill(from: string, to: string) {
+  return apiFetch<IMAPBackfillState>('/api/app/ingest/imap/scan', {
+    method: 'POST',
+    body: { from, to },
+    fallbackError: 'Mailbox scan failed',
+  })
+}
+
+export function getIMAPBackfill() {
+  return apiFetch<IMAPBackfillState>('/api/app/ingest/imap/scan', {
+    fallbackError: 'Failed to load the mailbox scan',
+  })
+}
+
 export type SearchReindexResult = {
   indexed: number
 }

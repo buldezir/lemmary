@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
+import { useAppMeta } from '../hooks/useAppMeta'
 import {
   countFailedDocuments,
   describeJobOverrides,
@@ -13,14 +14,18 @@ import {
   pruneStaleTaxonomy,
   reindexSearch,
   scanDuplicates,
+  getIMAPBackfill,
+  startIMAPBackfill,
   startEmbeddingBackfill,
   type ActiveJobCounts,
   type DuplicateScanResult,
   type EmbeddingBackfillState,
+  type IMAPBackfillState,
   type TaxonomyPruneResult,
 } from '../lib/api/maintenance'
 import { getLimits, type InstanceLimits } from '../lib/api/limits'
 import { LimitsUsage } from '../components/LimitsUsage'
+import { ResultDialog } from '../components/settings/SettingsFeedback'
 import { REPROCESS_MODE_LABELS, countLabel, type ReprocessMode } from '../lib/processing'
 import { Button, labelTextClassName, sectionClassName, sectionTitleClassName } from '../components/ui'
 
@@ -75,8 +80,17 @@ export function ManagementPage() {
   const [embedding, setEmbedding] = useState<EmbeddingBackfillState | null>(null)
   const [embeddingLoaded, setEmbeddingLoaded] = useState(false)
   const [embeddingStarting, setEmbeddingStarting] = useState(false)
+  const { ingestImap } = useAppMeta()
+  const [mailFrom, setMailFrom] = useState('')
+  const [mailTo, setMailTo] = useState('')
+  const [mailStarting, setMailStarting] = useState(false)
+  const [mailBackfill, setMailBackfill] = useState<IMAPBackfillState | null>(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const closeResult = useCallback(() => {
+    setError('')
+    setSuccess('')
+  }, [])
 
   // Declared above the effect that polls on it: a sweep runs in the background
   // on the server, so this flag is what turns the poll on and off.
@@ -261,6 +275,56 @@ export function ManagementPage() {
     }
   }
 
+  const mailRunning = mailBackfill?.running ?? false
+
+  // Picks up a backfill still running from before a reload.
+  useEffect(() => {
+    if (!ingestImap) return
+    let active = true
+    getIMAPBackfill()
+      .then((next) => {
+        if (active) setMailBackfill(next)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [ingestImap])
+
+  useEffect(() => {
+    if (!mailRunning) return
+    let active = true
+    const timer = setInterval(() => {
+      getIMAPBackfill()
+        .then((next) => {
+          if (!active) return
+          setMailBackfill(next)
+          if (next.running) return
+          const counts = `${next.created} imported, ${next.skipped} already in the library, ${next.failed} failed`
+          if (next.error) setError(`Mailbox scan stopped: ${next.error} (${counts}).`)
+          else setSuccess(`Mailbox scan finished: ${counts}.`)
+        })
+        .catch(() => {})
+    }, embeddingPollMs)
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [mailRunning])
+
+  async function onScanMailbox() {
+    try {
+      setMailStarting(true)
+      setError('')
+      setSuccess('')
+      setMailBackfill(await startIMAPBackfill(mailFrom, mailTo))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Mailbox scan failed')
+    } finally {
+      setMailStarting(false)
+    }
+  }
+
   async function onReindexSearch() {
     try {
       setReindexing(true)
@@ -393,6 +457,53 @@ export function ManagementPage() {
           </div>
         </section>
 
+        {ingestImap && (
+          <section className={sectionClassName}>
+            <h2 className={sectionTitleClassName}>Mailbox</h2>
+            <p className="text-xs text-ink-soft">
+              The mailbox scan imports only mail received after it was set up in Settings → Ingest.
+              This imports the attachments of older mail received between two days, inclusive.
+              Messages are never moved or deleted, and attachments already in the library are
+              skipped.
+            </p>
+            <div className="mt-4 flex flex-wrap items-end gap-3">
+              <label className="flex flex-col gap-1">
+                <span className={labelTextClassName}>Received from</span>
+                <input
+                  type="date"
+                  className={selectClassName}
+                  value={mailFrom}
+                  max={mailTo || undefined}
+                  onChange={(event) => setMailFrom(event.target.value)}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className={labelTextClassName}>Received to</span>
+                <input
+                  type="date"
+                  className={selectClassName}
+                  value={mailTo}
+                  min={mailFrom || undefined}
+                  onChange={(event) => setMailTo(event.target.value)}
+                />
+              </label>
+              <Button
+                variant="secondary"
+                disabled={mailStarting || mailRunning || !mailFrom || !mailTo}
+                onClick={() => void onScanMailbox()}
+              >
+                {mailStarting || mailRunning ? 'Scanning...' : 'Scan mailbox'}
+              </Button>
+            </div>
+            {mailBackfill?.running && (
+              <p className="mt-3 text-xs text-ink-soft">
+                Scanning mail received {mailBackfill.from} to {mailBackfill.to} in the background.
+                It keeps running if you leave this page.
+              </p>
+            )}
+          </section>
+        )}
+
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>Stale data</h2>
           <p className="text-xs text-ink-soft">
@@ -509,9 +620,9 @@ export function ManagementPage() {
           )}
         </section>
 
-        {error && <p className="text-sm text-madder">{error}</p>}
-        {success && <p className="text-sm text-forest">{success}</p>}
       </div>
+
+      <ResultDialog error={error} success={success} onClose={closeResult} />
     </div>
   )
 }

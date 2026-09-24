@@ -76,6 +76,18 @@ type Config struct {
 	IngestDirOwner          string
 	IngestDirIntervalMin    int
 	IngestDirDeleteOriginal bool
+	// The IMAP mailbox (INGEST_IMAP_ENABLED). It shares the owner and interval
+	// above; Host empty means off.
+	IMAPHost         string
+	IMAPSecurity     string
+	IMAPUsername     string
+	IMAPPassword     string
+	IMAPFolder       string
+	IMAPAfterConsume string
+	IMAPMoveFolder   string
+	// IMAPSince is when the mailbox was last pointed somewhere new; mail
+	// received before it is left to a Management backfill. Zero reads all.
+	IMAPSince time.Time
 }
 
 const DefaultNearDuplicateThreshold = 0.92
@@ -96,6 +108,38 @@ func ValidIngestInterval(minutes int) bool {
 	}
 	return minutes%60 == 0 && 24%(minutes/60) == 0
 }
+
+// IngestCronExpr renders an interval ValidIngestInterval accepted: every N
+// minutes under an hour, every N/60 hours under a day, once a day at 1440.
+func IngestCronExpr(minutes int) string {
+	switch {
+	case minutes <= 1:
+		return "* * * * *"
+	case minutes < 60:
+		return fmt.Sprintf("*/%d * * * *", minutes)
+	case minutes < MaxIngestDirIntervalMin:
+		return fmt.Sprintf("0 */%d * * *", minutes/60)
+	default:
+		return "0 0 * * *"
+	}
+}
+
+const EnvIngestIMAP = "INGEST_IMAP_ENABLED"
+
+func IngestIMAPEnabledFromEnv() bool {
+	return getEnvBool(EnvIngestIMAP, false)
+}
+
+const (
+	IMAPSecurityTLS      = "tls"
+	IMAPSecuritySTARTTLS = "starttls"
+
+	IMAPKeep   = "keep"
+	IMAPDelete = "delete"
+	IMAPMove   = "move"
+
+	DefaultIMAPFolder = "INBOX"
+)
 
 func WorkerCronFromEnv() string {
 	return getEnv("WORKER_CRON_EXPR", "* * * * *")
@@ -276,6 +320,14 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 		IngestDirOwner:                strings.TrimSpace(record.GetString("ingest_dir_owner")),
 		IngestDirIntervalMin:          ingestInterval,
 		IngestDirDeleteOriginal:       record.GetBool("ingest_dir_delete_original"),
+		IMAPHost:                      strings.TrimSpace(record.GetString("imap_host")),
+		IMAPSecurity:                  strutil.FirstNonEmpty(record.GetString("imap_security"), IMAPSecurityTLS),
+		IMAPUsername:                  strings.TrimSpace(record.GetString("imap_username")),
+		IMAPPassword:                  record.GetString("imap_password"),
+		IMAPFolder:                    strutil.FirstNonEmpty(record.GetString("imap_folder"), DefaultIMAPFolder),
+		IMAPAfterConsume:              strutil.FirstNonEmpty(record.GetString("imap_after_consume"), IMAPKeep),
+		IMAPMoveFolder:                strings.TrimSpace(record.GetString("imap_move_folder")),
+		IMAPSince:                     record.GetDateTime("imap_since").Time(),
 	}
 
 	if err := resolveProviders(app, &cfg); err != nil {

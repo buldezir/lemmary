@@ -74,28 +74,13 @@ func Register(app core.App, rt *config.Runtime, dir string) {
 		return
 	}
 	s := newScanner(app, rt, dir)
-	app.Cron().MustAdd(cronJob, cronExpr(config.DefaultIngestDirIntervalMin), s.tick)
+	app.Cron().MustAdd(cronJob, config.IngestCronExpr(config.DefaultIngestDirIntervalMin), s.tick)
 	rt.OnReload(func(_ core.App, snap config.Snapshot) {
-		expr := cronExpr(snap.Cfg.IngestDirIntervalMin)
+		expr := config.IngestCronExpr(snap.Cfg.IngestDirIntervalMin)
 		app.Cron().Remove(cronJob)
 		app.Cron().MustAdd(cronJob, expr, s.tick)
 	})
 	app.Logger().Info("consume folder registered", "dir", dir)
-}
-
-// cronExpr renders an interval config.ValidIngestInterval accepted: every N
-// minutes under an hour, every N/60 hours under a day, once a day at 1440.
-func cronExpr(minutes int) string {
-	switch {
-	case minutes <= 1:
-		return "* * * * *"
-	case minutes < 60:
-		return fmt.Sprintf("*/%d * * * *", minutes)
-	case minutes < config.MaxIngestDirIntervalMin:
-		return fmt.Sprintf("0 */%d * * *", minutes/60)
-	default:
-		return "0 0 * * *"
-	}
 }
 
 func (s *Scanner) tick() {
@@ -165,7 +150,7 @@ func (s *Scanner) Scan(cfg config.Config, now time.Time) Result {
 			s.pending[path] = time.Now()
 			return
 		}
-		if err := recordLedger(s.app, ownerID, rel, stamp); err != nil {
+		if err := RecordLedger(s.app, ownerID, rel, stamp); err != nil {
 			logger.Warn("consume folder: ledger write failed", "path", path, "error", err)
 		}
 	}
@@ -234,7 +219,7 @@ func (s *Scanner) Scan(cfg config.Config, now time.Time) Result {
 		case errors.As(err, &dup):
 			res.Skipped++
 			consumed(path, rel, stamp)
-		case roomExhausted(err):
+		case RoomExhausted(err):
 			logger.Warn("consume folder: limit reached, stopping this scan", "error", err)
 			return stop
 		default:
@@ -242,7 +227,7 @@ func (s *Scanner) Scan(cfg config.Config, now time.Time) Result {
 			// A validation refusal (wrong content for the extension, over a
 			// per-file limit) is about the file and stays refused; anything else
 			// may be transient and is retried next scan.
-			if rejected(err) {
+			if Rejected(err) {
 				s.seen[path] = stamp
 			}
 			s.warnOnce(path+"|"+stamp, "consume folder: import failed", "path", path, "error", err)
@@ -260,7 +245,7 @@ func (s *Scanner) Scan(cfg config.Config, now time.Time) Result {
 func (s *Scanner) removeSealed() {
 	failed := false
 	for path, saved := range s.pending {
-		if !s.durable(saved) {
+		if !Durable(s.app, saved) {
 			continue
 		}
 		delete(s.pending, path)
@@ -271,8 +256,10 @@ func (s *Scanner) removeSealed() {
 	}
 }
 
-func (s *Scanner) durable(saved time.Time) bool {
-	seal, ok := s.app.Store().Get(inflight.SealStoreKey).(*inflight.Seal)
+// Durable reports whether a document saved at saved survives a hard kill, so
+// the only other copy of its file may go.
+func Durable(app core.App, saved time.Time) bool {
+	seal, ok := app.Store().Get(inflight.SealStoreKey).(*inflight.Seal)
 	return !ok || seal.Durable(saved)
 }
 
@@ -284,20 +271,29 @@ func (s *Scanner) warnOnce(key, msg string, args ...any) {
 	s.app.Logger().Warn(msg, args...)
 }
 
-// resolveOwner is the configured account, else the oldest admin's paired users
-// row. Empty before setup has run, which is not an error.
 func (s *Scanner) resolveOwner(configured string) string {
-	if configured != "" {
-		if _, err := s.app.FindRecordById("users", configured); err == nil {
-			return configured
-		}
+	id, missing := ResolveOwner(s.app, configured)
+	if missing {
 		s.warnOnce("owner|"+configured, "consume folder: configured owner not found; using the first admin", "owner", configured)
 	}
-	admins, err := s.app.FindRecordsByFilter("users", "is_app_admin = true", "created", 1, 0)
-	if err != nil || len(admins) == 0 {
-		return ""
+	return id
+}
+
+// ResolveOwner is the configured account, else the oldest admin's paired users
+// row; missing reports a configured account that no longer exists. Empty before
+// setup has run, which is not an error.
+func ResolveOwner(app core.App, configured string) (id string, missing bool) {
+	if configured != "" {
+		if _, err := app.FindRecordById("users", configured); err == nil {
+			return configured, false
+		}
+		missing = true
 	}
-	return admins[0].Id
+	admins, err := app.FindRecordsByFilter("users", "is_app_admin = true", "created", 1, 0)
+	if err != nil || len(admins) == 0 {
+		return "", missing
+	}
+	return admins[0].Id, missing
 }
 
 func loadTagKeys(app core.App, ownerID string) (map[string]string, error) {
@@ -355,12 +351,12 @@ func (s *Scanner) dropTags(created []string, keys map[string]string) {
 	}
 }
 
-const ledgerCollection = "ingest_files"
+const LedgerCollection = "ingest_files"
 
 // loadLedger is what keep mode already consumed for ownerID: path under the
 // root to the size and mtime it had.
 func loadLedger(app core.App, ownerID string) (map[string]string, error) {
-	records, err := app.FindRecordsByFilter(ledgerCollection, "user = {:user}", "", 0, 0, map[string]any{"user": ownerID})
+	records, err := app.FindRecordsByFilter(LedgerCollection, "user = {:user}", "", 0, 0, map[string]any{"user": ownerID})
 	if err != nil {
 		return nil, err
 	}
@@ -371,11 +367,12 @@ func loadLedger(app core.App, ownerID string) (map[string]string, error) {
 	return ledger, nil
 }
 
-func recordLedger(app core.App, ownerID, rel, stamp string) error {
-	record, err := app.FindFirstRecordByFilter(ledgerCollection, "user = {:user} && path = {:path}",
+// RecordLedger remembers rel under ownerID with stamp, replacing what it had.
+func RecordLedger(app core.App, ownerID, rel, stamp string) error {
+	record, err := app.FindFirstRecordByFilter(LedgerCollection, "user = {:user} && path = {:path}",
 		map[string]any{"user": ownerID, "path": rel})
 	if err != nil {
-		collection, err := app.FindCollectionByNameOrId(ledgerCollection)
+		collection, err := app.FindCollectionByNameOrId(LedgerCollection)
 		if err != nil {
 			return err
 		}
@@ -408,9 +405,9 @@ func (p regularFile) Open() (io.ReadSeekCloser, error) {
 	return f, nil
 }
 
-// roomExhausted is a limit every later file would hit too, as opposed to one
+// RoomExhausted is a limit every later file would hit too, as opposed to one
 // this file alone exceeds.
-func roomExhausted(err error) bool {
+func RoomExhausted(err error) bool {
 	var apiErr *router.ApiError
 	if !errors.As(err, &apiErr) {
 		return false
@@ -429,9 +426,9 @@ func roomExhausted(err error) bool {
 	return false
 }
 
-// rejected is a 400 from the create hooks or PocketBase's field validation:
+// Rejected is a 400 from the create hooks or PocketBase's field validation:
 // the file itself was refused, so retrying it changes nothing.
-func rejected(err error) bool {
+func Rejected(err error) bool {
 	var apiErr *router.ApiError
 	return errors.As(err, &apiErr) && apiErr.Status == http.StatusBadRequest
 }

@@ -26,6 +26,8 @@ export type AppMeta = {
   webSearch?: boolean
   /** Whether INGEST_DIR is set, which is what makes the Settings Ingest tab worth showing. */
   ingestDir?: boolean
+  /** Whether INGEST_IMAP_ENABLED is set; shows the mailbox half of the Ingest tab. */
+  ingestImap?: boolean
 }
 
 // One request per page load, shared by three components and the auth gate --
@@ -73,6 +75,7 @@ async function fetchAppMeta(): Promise<AppMeta> {
       always_require_review?: boolean
       web_search?: boolean
       ingest_dir?: boolean
+      ingest_imap?: boolean
     }>('/api/app/meta', {
       public: true,
       fallbackError: 'Failed to load app meta',
@@ -87,6 +90,7 @@ async function fetchAppMeta(): Promise<AppMeta> {
       alwaysRequireReview: data.always_require_review === true,
       webSearch: data.web_search === true,
       ingestDir: data.ingest_dir === true,
+      ingestImap: data.ingest_imap === true,
     }
   } catch {
     // A name and accent have safe defaults; who owns AI configuration does not.
