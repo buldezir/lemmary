@@ -8,6 +8,7 @@ import {
   keylessProviderHint,
   eligibleProviders,
   providerConfigured,
+  providerOptionLabel,
   providerServesPurpose,
   recommendedModel,
   requiresAPIKey,
@@ -194,6 +195,11 @@ describe('recommendedModel', () => {
     expect(recommendedModel('opencode', 'llm')).toBe('gpt-5.6-luna')
   })
 
+  it('names the embedding model the local sidecar serves by default', () => {
+    expect(recommendedModel('local', 'embedding')).toBe('BAAI/bge-m3')
+    expect(recommendedModel('local', 'ocr')).toBe('')
+  })
+
   // A guess in the wrong box would be saved as a binding to a model the
   // provider does not serve.
   it('suggests nothing for a job an SDK has no known id for', () => {
@@ -243,5 +249,12 @@ describe('tavily', () => {
     expect(SDK_OPTIONS.some((option) => option.value === 'tavily')).toBe(true)
     expect(SDK_DEFAULT_BASE.tavily).toBe('https://api.tavily.com')
     expect(requiresAPIKey('tavily')).toBe(true)
+  })
+})
+
+describe('providerOptionLabel', () => {
+  it('shows the SDK only when the alias does not already name it', () => {
+    expect(providerOptionLabel({ alias: 'Docling', sdk: 'docling' })).toBe('Docling (Local OCR)')
+    expect(providerOptionLabel({ alias: 'Local embeddings', sdk: 'local' })).toBe('Local embeddings')
   })
 })

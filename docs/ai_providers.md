@@ -19,8 +19,8 @@ to use.
 | `openrouter` | ✅ many vendors on one key | ✅ models advertising `file` input | ✅ | ❌ |
 | `google_vision` | ❌ | ✅ | ❌ | ❌ |
 | **ChatGPT subscription** — `chatgpt` | ✅ **on a ChatGPT subscription** | ✅ **on the same seat** | ❌ | ❌ |
-| **Local OCR (Docling)** — `docling` | ❌ | ✅ **on your own host** | ❌ | ❌ |
-| **Local Embeddings (huggingface/text-embeddings-inference)** — `local` | ❌ | ❌ | ✅ **on your own hardware** | ❌ |
+| **Local OCR** — `docling` | ❌ | ✅ **on your own host** | ❌ | ❌ |
+| **Local Embeddings** — `local` | ❌ | ❌ | ✅ **on your own hardware** | ❌ |
 | **Tavily** — `tavily` | ❌ | ❌ | ❌ | ✅ **the only SDK that does** |
 
 The names in bold are what Settings shows. The shorter code values remain the
@@ -94,7 +94,7 @@ The alternatives are worth naming:
   risk. Its SDK value is `chatgpt`, though
   it is not an `AI_SDK` or `OCR_SDK` value: a sign-in cannot be written into
   `.env`. See [ChatGPT sign-in](/chatgpt_login).
-- **Local OCR (Docling)** — OCR only, and the only provider that reads a
+- **Local OCR** — OCR only, and the only provider that reads a
   document without sending it anywhere: a sidecar container beside the app,
   with no port published and **no API key at all** — the base URL is the whole
   configuration. Reach for it when the archive is confidential enough that a
@@ -104,7 +104,7 @@ The alternatives are worth naming:
   models, so there is no separate PaddleOCR provider to choose. The price is
   real: a multi-gigabyte image, and seconds rather than milliseconds a page.
   Its SDK value is `docling`. See [Local OCR](/local_ocr).
-- **Local Embeddings (huggingface/text-embeddings-inference)** — embeddings
+- **Local Embeddings** — embeddings
   only, using a model you run yourself. Like Local OCR it takes no API key: the
   base URL is the whole configuration. It is the mirror image of
   `google_vision` — a single job, done off the network. Its SDK value is
@@ -467,7 +467,7 @@ Uses the official [Go client library](https://docs.cloud.google.com/vision/docs/
 
 See [Google Vision API key](/google_vision) for obtaining a key.
 
-### Local OCR (Docling)
+### Local OCR
 
 A container beside the app rather than an API. It speaks docling-serve's
 `POST /v1/convert/file` and gets markdown back, reading PDFs, images and office

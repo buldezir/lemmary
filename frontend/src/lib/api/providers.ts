@@ -161,8 +161,8 @@ export const SDK_OPTIONS: { value: ProviderSDK; label: string }[] = [
   { value: 'opencode', label: 'Opencode Go' },
   { value: 'google_vision', label: 'Google Cloud Vision' },
   { value: 'chatgpt', label: 'ChatGPT subscription' },
-  { value: 'local', label: 'Local Embeddings (huggingface/text-embeddings-inference)' },
-  { value: 'docling', label: 'Local OCR (Docling)' },
+  { value: 'local', label: 'Local Embeddings' },
+  { value: 'docling', label: 'Local OCR' },
   { value: 'tavily', label: 'Tavily' },
 ]
 
@@ -328,12 +328,13 @@ export function recommendedModel(sdk: string | undefined, purpose: ModelPurpose)
   // Mirrors aiprovider.DefaultExtractModel.
   if (sdk === 'opencode' && purpose === 'llm') return 'gpt-5.6-luna'
   if (sdk === 'anthropic' && purpose !== 'embedding') return 'claude-opus-5'
+  if (sdk === 'local' && purpose === 'embedding') return 'BAAI/bge-m3'
   return ''
 }
 
 export function providerOptionLabel(item: Pick<AIProvider, 'alias' | 'sdk'>) {
   const sdk = sdkLabel(item.sdk)
-  return item.alias === sdk ? item.alias : `${item.alias} (${sdk})`
+  return item.alias.toLowerCase() === sdk.toLowerCase() ? item.alias : `${item.alias} (${sdk})`
 }
 
 export function modelOptionLabel(item: CatalogModel) {
