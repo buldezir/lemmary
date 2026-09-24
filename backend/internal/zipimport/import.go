@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
@@ -182,6 +183,7 @@ func importOneEntry(app core.App, collection *core.Collection, ownerUserID strin
 // hooks as an upload, which hash it and refuse a duplicate as *ErrDuplicate.
 func CreateDocument(app core.App, collection *core.Collection, ownerUserID string, file *filesystem.File, tagIDs []string) error {
 	record := core.NewRecord(collection)
+	file.OriginalName = strings.ToValidUTF8(file.OriginalName[:min(len(file.OriginalName), 255)], "")
 	record.Set("user", ownerUserID)
 	record.Set("file", file)
 	record.Set("processing_status", models.DocStatusPending)
