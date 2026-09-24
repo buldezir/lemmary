@@ -548,6 +548,7 @@ func indexAllDocumentsFromApp(app core.App, idx bleve.Index) (int, error) {
 
 	// One cache for the whole rebuild, not one per document.
 	names := newNameCache(app)
+	names.preloadReaders()
 	batch := idx.NewBatch()
 	n := 0
 	offset := 0

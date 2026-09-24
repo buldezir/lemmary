@@ -11,6 +11,9 @@ import (
 
 type stubDocuments struct {
 	recs map[string]*core.Record
+	// shares is keyed "documentID/userID"; absent means the document is not
+	// shared with that user.
+	shares map[string]bool
 }
 
 func (s stubDocuments) FindRecordById(_ any, recordId string, _ ...func(*dbx.SelectQuery) error) (*core.Record, error) {
@@ -19,6 +22,18 @@ func (s stubDocuments) FindRecordById(_ any, recordId string, _ ...func(*dbx.Sel
 		return nil, fmt.Errorf("not found")
 	}
 	return rec, nil
+}
+
+func (s stubDocuments) FindFirstRecordByFilter(_ any, _ string, params ...dbx.Params) (*core.Record, error) {
+	if len(params) == 0 {
+		return nil, fmt.Errorf("not found")
+	}
+	document, _ := params[0]["document"].(string)
+	user, _ := params[0]["user"].(string)
+	if s.shares[document+"/"+user] {
+		return core.NewRecord(core.NewBaseCollection("document_shares")), nil
+	}
+	return nil, fmt.Errorf("not found")
 }
 
 func (s stubDocuments) ExpandRecord(*core.Record, []string, core.ExpandFetchFunc) map[string]error {

@@ -11,6 +11,7 @@ import type { TimelineMonth } from '../timeline'
 // Re-exported from ./tags because a document's expand carries them.
 export type { TagRecord } from './tags'
 import type { TagRecord } from './tags'
+import type { DocumentOwner } from '../documentQuery'
 
 export type DocumentTypeRecord = {
   id: string
@@ -149,6 +150,8 @@ export function parseDuplicateOfId(message: string): string | null {
   return match?.[1] ?? null
 }
 
+export const SHARED_TAG_NAME = 'shared'
+
 export type DocumentListFilters = {
   status: string
   documentType: string
@@ -159,6 +162,7 @@ export type DocumentListFilters = {
   /** tags ids a document must carry all of. */
   tags?: string[]
   untagged?: boolean
+  owner?: DocumentOwner
 }
 
 /**
@@ -212,6 +216,12 @@ export function buildDocumentFilter(filters: DocumentListFilters): string | unde
   if (filters.untagged) {
     parts.push('tags:length = 0')
   }
+  const me = pb.authStore.record?.id ?? ''
+  if (filters.owner === 'mine' && me) {
+    parts.push(pb.filter('user = {:me}', { me }))
+  } else if (filters.owner === 'shared' && me) {
+    parts.push(pb.filter('user != {:me}', { me }))
+  }
 
   return parts.length > 0 ? parts.join(' && ') : undefined
 }
@@ -254,6 +264,8 @@ export async function countDocumentsWithStatus(
       correspondent: 'all',
       dateFrom: '',
       dateTo: '',
+      // Counts the same set the Inbox lists, which is the caller's own work.
+      owner: 'mine',
     }) ?? ''
 
   const result = await pb.collection('documents').getList(1, 1, { filter, requestKey: null })
@@ -435,6 +447,7 @@ export async function searchDocuments(opts: {
   undated?: boolean
   tags?: string[]
   untagged?: boolean
+  owner?: DocumentOwner
 }): Promise<DocumentSearchList> {
   const params = new URLSearchParams()
   params.set('q', opts.q)
@@ -460,6 +473,9 @@ export async function searchDocuments(opts: {
   }
   if (opts.tags?.length) {
     params.set('tags', opts.tags.join(','))
+  }
+  if (opts.owner && opts.owner !== 'all') {
+    params.set('owner', opts.owner)
   }
   if (opts.untagged) {
     params.set('untagged', 'true')

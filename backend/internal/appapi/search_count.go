@@ -219,7 +219,7 @@ func documentConditions(spec countSpec) ([]string, dbx.Params) {
 	where := []string{}
 	params := dbx.Params{}
 	if spec.userID != "" {
-		where = append(where, `d.user = {:user}`)
+		where = append(where, ReadableDocumentsSQL("d", "user"))
 		params["user"] = spec.userID
 	}
 	if in := inClause("dt", spec.documentTypeIDs, params); in != "" {

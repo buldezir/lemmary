@@ -88,7 +88,7 @@ type Config struct {
 	// IMAPSkipTypes are IMAPFileTypes keys whose attachments are not imported.
 	IMAPSkipTypes []string
 	// IMAPSince is when the mailbox was last pointed somewhere new; mail
-	// received before it is left to a Management backfill. Zero reads all.
+	// received before it is left to a Maintenance backfill. Zero reads all.
 	IMAPSince time.Time
 }
 

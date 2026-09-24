@@ -241,7 +241,7 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 
 	// The job and the document part ways for the setting, not for confidence:
 	// job status is read as a processing outcome (ngxapi.mapTaskStatus,
-	// Management's counts), and an extraction awaiting a human worked fine.
+	// Maintenance's counts), and an extraction awaiting a human worked fine.
 	jobStatus := models.JobStatusCompleted
 	if lowConfidence {
 		jobStatus = models.JobStatusNeedsReview

@@ -35,6 +35,11 @@ const (
 // A sentinel so a caller can answer with an empty page rather than a 500.
 var ErrNoSearchableTerms = errors.New("query has no searchable terms")
 
+const (
+	OwnerMine   = "mine"
+	OwnerShared = "shared"
+)
+
 type Query struct {
 	Text             string
 	UserID           string
@@ -51,6 +56,9 @@ type Query struct {
 	// Undated keeps only documents with no document_date. Asking for both this
 	// and a date range is asking for nothing, which the conjunction answers.
 	Undated bool
+	// Owner narrows by who owns a readable document: OwnerMine, OwnerShared
+	// (another account shared it with the caller), or empty for both.
+	Owner string
 	// Fields narrows the text match to named index fields; empty means every
 	// field. The paperless-ngx layer uses it for title-only/content-only.
 	Fields []string
@@ -444,7 +452,19 @@ func buildSearchPlan(q Query, text string) (searchPlan, error) {
 func filterConjuncts(q Query) []query.Query {
 	conjuncts := make([]query.Query, 0, 6)
 	if userID := strings.TrimSpace(q.UserID); userID != "" {
-		conjuncts = append(conjuncts, termQuery(FieldUser, userID))
+		switch q.Owner {
+		case OwnerMine:
+			conjuncts = append(conjuncts, termQuery(FieldOwner, userID))
+		case OwnerShared:
+			// Readable by me and owned by somebody else. Expressed as one
+			// boolean because a lone MustNot matches nothing in bleve.
+			shared := bleve.NewBooleanQuery()
+			shared.AddMust(termQuery(FieldUser, userID))
+			shared.AddMustNot(termQuery(FieldOwner, userID))
+			conjuncts = append(conjuncts, shared)
+		default:
+			conjuncts = append(conjuncts, termQuery(FieldUser, userID))
+		}
 	}
 	if status := strings.TrimSpace(q.ProcessingStatus); status != "" && status != "all" {
 		if status == models.StatusFilterUnfinished {

@@ -41,6 +41,7 @@ export function useDocumentList({
   route,
   status: fixedStatus,
   filters = true,
+  ownerOnly = false,
 }: {
   route: DocumentListRoute
   /**
@@ -56,6 +57,11 @@ export function useDocumentList({
    * query and quietly emptied a list with no search box to explain it.
    */
   filters?: boolean
+  /**
+   * Keeps documents other accounts shared with the caller out of this list.
+   * The Inbox is one: somebody else's review queue is not yours to clear.
+   */
+  ownerOnly?: boolean
 }) {
   // The filters are the URL, not state, so the page is reproducible and Back
   // steps through it. The URL only carries the filters that are set, so the
@@ -75,6 +81,7 @@ export function useDocumentList({
     page,
   } = query
   const statusFilter = fixedStatus ?? query.status
+  const ownerFilter = ownerOnly ? 'mine' : query.owner
 
   const [documents, setDocuments] = useState<DocumentRecord[]>([])
   const [jobs, setJobs] = useState<Map<string, ProcessingJobRecord>>(new Map())
@@ -158,6 +165,7 @@ export function useDocumentList({
           correspondent: correspondentFilter,
           tags: tagIds(tagFilter),
           untagged,
+          owner: ownerFilter,
         })
         const result = text
           ? await searchDocuments({
@@ -172,6 +180,7 @@ export function useDocumentList({
               undated,
               tags: tagIds(tagFilter),
               untagged,
+              owner: ownerFilter,
             })
           : await pb.collection('documents').getList<DocumentRecord>(page, DOCUMENT_PAGE_SIZE, {
               sort: '-created',
@@ -254,6 +263,7 @@ export function useDocumentList({
     tagFilter,
     untagged,
     debouncedSearch,
+    ownerFilter,
     updateQuery,
   ])
 
@@ -320,9 +330,13 @@ export function useDocumentList({
     }
   }, [documentIds, jobsVersion])
 
+  // Only the caller's own documents take a bulk action: a shared one is
+  // read-only, and one refused write would fail a whole mixed batch.
+  const me = pb.authStore.record?.id
+  const ownDocuments = documents.filter((document) => document.user === me)
   // Every action goes through selectedOnPage, never selectedIds, so ids left
   // over from another page or filter can neither be counted nor submitted.
-  const selectedOnPage = documents.filter((document) => selectedIds.has(document.id))
+  const selectedOnPage = ownDocuments.filter((document) => selectedIds.has(document.id))
 
   function toggleSelected(id: string) {
     setSelectedIds((current) => {
@@ -466,7 +480,7 @@ export function useDocumentList({
     selectedIds,
     selectedOnPage,
     toggleSelected,
-    selectAll: () => setSelectedIds(new Set(documents.map((document) => document.id))),
+    selectAll: () => setSelectedIds(new Set(ownDocuments.map((document) => document.id))),
     clearSelection: () => setSelectedIds(new Set()),
     reprocessMode,
     setReprocessMode,

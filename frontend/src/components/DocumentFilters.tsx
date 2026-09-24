@@ -1,6 +1,6 @@
 import { DOCUMENT_STATUSES, DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
 import type { CorrespondentRecord, DocumentTypeRecord } from '../lib/api/documents'
-import { MIN_SEARCH_LENGTH, tagIds, type DocumentQuery } from '../lib/documentQuery'
+import { MIN_SEARCH_LENGTH, tagIds, type DocumentOwner, type DocumentQuery } from '../lib/documentQuery'
 import type { TagRecord } from '../lib/api/tags'
 import { FilterCombobox } from './FilterCombobox'
 import { TagFilter } from './TagFilter'
@@ -80,7 +80,7 @@ export function DocumentFilters({
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.3fr)_minmax(0,1.3fr)]">
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-ink-soft">From date</span>
           <input
@@ -101,6 +101,18 @@ export function DocumentFilters({
             onChange={(event) => updateQuery({ to: event.target.value, undated: false }, true)}
             className={selectClassName}
           />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-ink-soft">Owner</span>
+          <select
+            value={query.owner}
+            onChange={(event) => updateQuery({ owner: event.target.value as DocumentOwner })}
+            className={selectClassName}
+          >
+            <option value="all">All</option>
+            <option value="mine">Only mine</option>
+            <option value="shared">Only shared</option>
+          </select>
         </label>
         <FilterCombobox
           label="Document type"

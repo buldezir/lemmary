@@ -12,8 +12,9 @@ type userSummary struct {
 	Name  string `json:"name"`
 }
 
-// The users collection's list rule shows a session only itself, so the Settings
-// owner picker needs an admin-only view of every account.
+// The users collection's list rule shows a session only itself, so this is the
+// directory for the Settings owner picker and the share picker: any signed-in
+// account can read every other account's address.
 func handleListUsers(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		users, err := listUsers(app)

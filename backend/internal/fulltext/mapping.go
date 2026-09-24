@@ -11,11 +11,16 @@ import (
 
 const (
 	// MappingVersion is bumped when the Bleve mapping changes so Open wipes and rebuilds.
-	MappingVersion = "2"
+	// 3 added FieldOwner, which an index built at 2 does not carry.
+	MappingVersion = "3"
 
 	AnalyzerName = "archive"
 
+	// FieldUser is every account that may read the document: its owner first,
+	// then everyone it is shared with. FieldOwner is the owner alone, which is
+	// what tells the two apart.
 	FieldUser              = "user"
+	FieldOwner             = "owner"
 	FieldProcessingStatus  = "processing_status"
 	FieldDocumentType      = "document_type"
 	FieldCorrespondent     = "correspondent"
@@ -61,6 +66,7 @@ func newMapping() (mapping.IndexMapping, error) {
 	doc.Dynamic = false
 
 	doc.AddFieldMappingsAt(FieldUser, keywordField())
+	doc.AddFieldMappingsAt(FieldOwner, keywordField())
 	doc.AddFieldMappingsAt(FieldProcessingStatus, keywordField())
 	doc.AddFieldMappingsAt(FieldDocumentType, keywordField())
 	doc.AddFieldMappingsAt(FieldCorrespondent, keywordField())

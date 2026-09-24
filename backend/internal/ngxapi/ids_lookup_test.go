@@ -270,9 +270,10 @@ func TestCollidingHashTakesTheNextFreeID(t *testing.T) {
 	}
 }
 
-// Uniqueness is per owner, matching how every lookup is scoped: two owners
-// sharing an id was always reachable and must stay so.
-func TestOwnersDoNotCollideWithEachOther(t *testing.T) {
+// Uniqueness stopped being per owner once a document could be shared: a reader
+// resolves ids across owners now, so two owners holding one id would silently
+// hand them their own record instead of the shared one. The database refuses it.
+func TestOwnersCannotShareOneClientFacingID(t *testing.T) {
 	app := bootSchemaTestApp(t)
 	mine := createUser(t, app, "mine@example.com")
 	theirs := createUser(t, app, "theirs@example.com")
@@ -280,19 +281,26 @@ func TestOwnersDoNotCollideWithEachOther(t *testing.T) {
 	myTag := createNamed(t, app, "tags", "shared", mine)
 	theirTag := createNamed(t, app, "tags", "shared", theirs)
 
-	shared := ngxIDOf(mustFind(t, app, "tags", myTag))
+	taken := ngxIDOf(mustFind(t, app, "tags", myTag))
 	if _, err := app.DB().NewQuery("UPDATE {{tags}} SET [[ngx_id]] = {:v} WHERE [[id]] = {:id}").
-		Bind(dbx.Params{"v": shared, "id": theirTag}).Execute(); err != nil {
-		t.Fatalf("share the id across owners: %v", err)
+		Bind(dbx.Params{"v": taken, "id": theirTag}).Execute(); err == nil {
+		t.Fatal("two owners were allowed to hold one client-facing id")
 	}
 
-	for _, tc := range []struct{ owner, want string }{{mine, myTag}, {theirs, theirTag}} {
-		found, err := findRecordByNgxID(app, "tags", shared, tc.owner)
-		if err != nil {
-			t.Fatalf("lookup for %s: %v", tc.owner, err)
+	// And the id keeps resolving to its one record, whoever asks.
+	for _, owner := range []string{mine, theirs, ""} {
+		found, err := findRecordByNgxID(app, "tags", taken, owner)
+		if owner == theirs {
+			if err == nil {
+				t.Fatalf("an owner-scoped lookup reached another owner's tag: %s", found.Id)
+			}
+			continue
 		}
-		if found.Id != tc.want {
-			t.Fatalf("resolved to %s, want %s", found.Id, tc.want)
+		if err != nil {
+			t.Fatalf("lookup for %q: %v", owner, err)
+		}
+		if found.Id != myTag {
+			t.Fatalf("resolved to %s, want %s", found.Id, myTag)
 		}
 	}
 }

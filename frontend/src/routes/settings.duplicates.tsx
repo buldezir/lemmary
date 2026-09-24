@@ -76,8 +76,8 @@ export function SettingsDuplicatesPage() {
         <p className="mt-3 text-xs text-ink-soft">
           Exact file duplicates (same checksum) are always rejected on upload. Near-duplicate
           matching compares OCR text and is off by default. Scan existing documents from{' '}
-          <Link to="/management" className="underline hover:text-oxblood">
-            Management
+          <Link to="/maintenance" className="underline hover:text-oxblood">
+            Maintenance
           </Link>
           .
         </p>

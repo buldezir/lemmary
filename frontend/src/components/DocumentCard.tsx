@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
-import type { DocumentRecord } from '../lib/api/documents'
+import { SHARED_TAG_NAME, type DocumentRecord } from '../lib/api/documents'
+import { pb } from '../lib/pb'
 import { DOCUMENT_STATUS_LABELS, reviewReason, type DocumentStatus } from '../lib/documentStatus'
 import { summarizeJob, type ProcessingJobRecord } from '../lib/processing'
 import { pendingTagSuggestions } from '../lib/tagSuggestions'
@@ -40,6 +41,15 @@ const statusStyles: Record<DocumentStatus, { badge: string; border: string }> = 
   failed: { badge: 'bg-madder text-paper', border: 'border-madder' },
   cancelled: { badge: 'bg-ink-muted text-paper', border: 'border-ink-muted' },
   needs_review: { badge: 'bg-amber-800 text-paper', border: 'border-amber-800' },
+}
+
+/** Reads as a tag but is not one: it says the document belongs to another account. */
+function SharedChip() {
+  return (
+    <span className="border border-oxblood/40 bg-oxblood/5 px-1.5 py-0.5 text-[11px] font-medium text-oxblood">
+      {SHARED_TAG_NAME}
+    </span>
+  )
 }
 
 function CardDescription({ document }: { document: DocumentRecord }) {
@@ -100,7 +110,11 @@ export function DocumentCard({
   const correspondent = document.expand?.correspondent?.name
   const documentType = document.expand?.document_type?.name
   const title = document.title || 'Untitled document'
-  const canMarkReviewed = Boolean(onMarkReviewed) && document.processing_status === 'needs_review'
+  const shared = Boolean(pb.authStore.record?.id) && document.user !== pb.authStore.record?.id
+  // A shared document is read-only, so its own owner's review is not the
+  // reader's to clear.
+  const canMarkReviewed =
+    Boolean(onMarkReviewed) && !shared && document.processing_status === 'needs_review'
   const status = statusStyles[document.processing_status]
 
   return (
@@ -120,7 +134,7 @@ export function DocumentCard({
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             {/* Sits above the full-bleed link so ticking it does not navigate. */}
-            {selectable && (
+            {selectable && !shared && (
               <input
                 type="checkbox"
                 checked={Boolean(selected)}
@@ -151,8 +165,9 @@ export function DocumentCard({
 
         <ProcessingStatus summary={summarizeJob(document.processing_status === 'failed' ? job : null)} />
 
-        {tags.length > 0 && (
+        {(shared || tags.length > 0) && (
           <div className="flex flex-wrap gap-1.5">
+            {shared && <SharedChip />}
             {tags.map((tag) =>
               onFilterTag ? (
                 // Above the full-bleed link, like the checkbox, so a click

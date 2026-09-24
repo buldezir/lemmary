@@ -190,7 +190,7 @@ export function SettingsIngestPage() {
               document on the next scan. Images the mail body embeds, such as logos and icons, never
               do. Mail without one is left alone. Leave the server empty to turn this off.
               {form.imap_since &&
-                ` Mail received before ${new Date(form.imap_since).toLocaleString()} is not scanned; Management backfills it by date.`}
+                ` Mail received before ${new Date(form.imap_since).toLocaleString()} is not scanned; Maintenance backfills it by date.`}
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className={labelClassName}>

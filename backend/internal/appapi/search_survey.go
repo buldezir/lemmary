@@ -52,7 +52,7 @@ func (r *agentRetriever) survey(ctx context.Context, args ai.SurveyArgs, progres
 		if err != nil {
 			continue
 		}
-		if r.userID != "" && record.GetString("user") != r.userID {
+		if !CanReadDocument(r.app, record, r.userID) {
 			continue
 		}
 		full := record.GetString("ocr_text")

@@ -17,7 +17,7 @@ const (
 const prunePageSize = 500
 
 // PruneResult counts the records a prune removed, per collection. Tags is
-// always 0 and stays in the shape because the API response and the Management
+// always 0 and stays in the shape because the API response and the Maintenance
 // page have read it since before tags became a hand-curated vocabulary.
 type PruneResult struct {
 	Tags           int `json:"tags"`

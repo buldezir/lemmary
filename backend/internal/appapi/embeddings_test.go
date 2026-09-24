@@ -23,7 +23,7 @@ func (s *stubSweeper) StartSweep() bool {
 
 func (s *stubSweeper) SweepRunning() bool { return s.running }
 
-// The admin has to be told where the binding is made: Management has no model
+// The admin has to be told where the binding is made: Maintenance has no model
 // picker of its own.
 func TestEmbeddingBackfillRefusesWithNoModelBound(t *testing.T) {
 	t.Parallel()

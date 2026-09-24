@@ -36,6 +36,7 @@ describe('parseDocumentQuery', () => {
       correspondent: 'def456',
       tags: 'tag1,tag2',
       untagged: false,
+      owner: 'all',
       undated: true,
       page: 3,
     })
@@ -99,6 +100,7 @@ describe('documentQuerySearch', () => {
       correspondent: 'cor1',
       tags: 'tag1,tag2',
       untagged: false,
+      owner: 'shared' as const,
       undated: false,
       page: 4,
     }
@@ -163,6 +165,14 @@ describe('the untagged filter', () => {
     })
     expect(hasActiveFilters({ ...defaultDocumentQuery, untagged: true })).toBe(true)
   })
+})
+
+test('owner keeps a known value and defaults anything else', () => {
+  expect(parseDocumentQuery({ owner: 'shared' }).owner).toBe('shared')
+  expect(parseDocumentQuery({ owner: 'mine' }).owner).toBe('mine')
+  expect(parseDocumentQuery({ owner: 'theirs' }).owner).toBe('all')
+  expect(documentQuerySearch({ ...defaultDocumentQuery, owner: 'all' })).toEqual({})
+  expect(hasActiveFilters({ ...defaultDocumentQuery, owner: 'mine' })).toBe(true)
 })
 
 test('untagged drops tags it could never match', () => {

@@ -229,6 +229,26 @@ func TestMCPPlainAccessListsFiltersAndReadsDocuments(t *testing.T) {
 		t.Fatal("another user's document was readable")
 	}
 
+	shares, err := app.FindCollectionByNameOrId(CollectionShares)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := core.NewRecord(shares)
+	grant.Set("document", foreign.Id)
+	grant.Set("user", owner)
+	if err := app.Save(grant); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := docs.get(ctx, mcpGetArgs{ID: foreign.Id}); err != nil || got.Text != "not yours" {
+		t.Fatalf("shared document = %#v err=%v", got, err)
+	}
+	if list, err := docs.list(ctx, mcpListArgs{}); err != nil || list.Total != 4 {
+		t.Fatalf("shared document not listed: %#v err=%v", list, err)
+	}
+	if err := app.Delete(grant); err != nil {
+		t.Fatal(err)
+	}
+
 	// truncated means more follows: false on the last page and past the end,
 	// so a paging loop terminates.
 	got, err = docs.get(ctx, mcpGetArgs{ID: newer.Id, Offset: 595, MaxChars: 5})

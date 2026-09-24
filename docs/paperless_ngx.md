@@ -32,7 +32,7 @@ Filters combine, and `count` always matches the filtered set, so paging through 
 Two of those groups need a word on granularity and scope:
 
 - **`added__{gt,gte,lt,lte}` compare the whole instant**, so `added__gt=2025-06-15T10:00:00Z` returns uploads from later that same morning. The `added__date__` forms compare the day, as does every `created` comparator: a document's own date carries no time of day. A document with no date of its own answers on the day it was uploaded, which is the date the client is shown for it.
-- **Owner filters are answered, not applied.** Every document this API can return belongs to the caller, so naming them narrows nothing and naming anybody else matches nothing.
+- **Owner filters are answered, not applied.** Every document this API can return is one the caller owns or one another account has shared with them read-only, so naming them narrows nothing and naming anybody else matches nothing. A shared document is listed, fetched, downloaded and searched like your own, carries its owner's tags, correspondent and type, and refuses `PATCH` and `DELETE` with a `404`.
 
 Three things behave differently from paperless-ngx, deliberately:
 

@@ -27,6 +27,7 @@ describe('nav items', () => {
       'Import',
       'Settings',
       'Management',
+      'Maintenance',
       'Admin',
     ])
   })
@@ -34,7 +35,7 @@ describe('nav items', () => {
   test('points the admin entry at the PocketBase dashboard', () => {
     const admin = secondaryNavItems('http://pb.test/_/').find((item) => item.label === 'Admin')
 
-    expect(admin).toEqual({ kind: 'external', label: 'Admin', href: 'http://pb.test/_/', admin: true })
+    expect(admin).toEqual({ kind: 'external', label: 'Admin', href: 'http://pb.test/_/', admin: true, icon: 'pocketbase' })
   })
 
   test('keeps the primary links open to everyone', () => {

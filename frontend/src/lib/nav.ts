@@ -17,23 +17,28 @@ export const NAV_BADGE_DESCRIPTIONS: Record<NavBadgeKey, string> = {
   activity: 'processing',
 }
 
-export type RouteNavItem = {
-  kind: 'route'
+/** Names an icon the header draws before a label -- the key, never the SVG. */
+export type NavIconKey = 'pocketbase'
+
+type NavItemBase = {
   label: string
+  /** Rendered for admins only, and labelled with a shield. */
+  admin?: boolean
+  icon?: NavIconKey
+}
+
+export type RouteNavItem = NavItemBase & {
+  kind: 'route'
   to: LinkProps['to']
   /** Marks the link active only on an exact path match. */
   exact?: boolean
-  /** Rendered for admins only, and labelled with a shield. */
-  admin?: boolean
   /** Which count to show beside the label, if any. */
   badgeKey?: NavBadgeKey
 }
 
-export type ExternalNavItem = {
+export type ExternalNavItem = NavItemBase & {
   kind: 'external'
-  label: string
   href: string
-  admin?: boolean
 }
 
 export type NavItem = RouteNavItem | ExternalNavItem
@@ -67,7 +72,8 @@ export function secondaryNavItems(pbAdminUrl: string): readonly NavItem[] {
     { kind: 'route', label: 'Import', to: '/import' },
     { kind: 'route', label: 'Settings', to: '/settings', admin: true },
     { kind: 'route', label: 'Management', to: '/management', admin: true },
-    { kind: 'external', label: 'Admin', href: pbAdminUrl, admin: true },
+    { kind: 'route', label: 'Maintenance', to: '/maintenance', admin: true },
+    { kind: 'external', label: 'Admin', href: pbAdminUrl, admin: true, icon: 'pocketbase' },
   ]
 }
 

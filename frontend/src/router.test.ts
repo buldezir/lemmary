@@ -28,6 +28,7 @@ describe('route tree', () => {
       '/settings/duplicates',
       '/settings/ingest',
       '/management',
+      '/maintenance',
       '/import',
       '/import/ngx',
       '/import/archive',

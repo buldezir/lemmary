@@ -234,7 +234,7 @@ Library-wide maintenance: reprocess failed documents in batches, scan for
 duplicates, delete taxonomy nothing points at any more, rebuild the search
 index, and embed whatever is missing a vector.
 
-![Management page](./screenshots/management.png)
+![Maintenance page](./screenshots/maintenance.png)
 
 A scratch page for checking a provider and model against one file, without
 creating a document.

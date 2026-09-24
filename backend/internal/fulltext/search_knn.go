@@ -154,7 +154,11 @@ func chunkTextQuery(text string) query.Query {
 func chunkFilter(q retrieval.ChunkQuery) query.Query {
 	conjuncts := make([]query.Query, 0, 2)
 	if user := strings.TrimSpace(q.UserID); user != "" {
-		conjuncts = append(conjuncts, termQuery(FieldChunkUser, user))
+		readable := query.Query(termQuery(FieldChunkUser, user))
+		if shared := anyTermQuery(FieldChunkDocumentID, q.SharedDocumentIDs); shared != nil {
+			readable = bleve.NewDisjunctionQuery(readable, shared)
+		}
+		conjuncts = append(conjuncts, readable)
 	}
 	if ids := anyTermQuery(FieldChunkDocumentID, q.DocumentIDs); ids != nil {
 		conjuncts = append(conjuncts, ids)

@@ -34,7 +34,9 @@ import { SettingsProcessingPage } from './routes/settings.processing'
 import { SettingsWorkerPage } from './routes/settings.worker'
 import { SettingsDuplicatesPage } from './routes/settings.duplicates'
 import { SettingsIngestPage } from './routes/settings.ingest'
+import { MaintenancePage } from './routes/maintenance'
 import { ManagementPage } from './routes/management'
+import { ManagementUsersPage } from './routes/management.users'
 import { ImportPage } from './routes/import'
 import { ImportNgxPage } from './routes/import.ngx'
 import { ImportArchivePage } from './routes/import.archive'
@@ -80,7 +82,7 @@ const inboxRoute = createRoute({
   component: InboxPage,
 })
 
-// Not behind Management: the collection's list rule scopes it to the caller's
+// Not behind Maintenance: the collection's list rule scopes it to the caller's
 // own documents, so it is not an admin view.
 const activityRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -230,6 +232,20 @@ const managementRoute = createRoute({
   component: ManagementPage,
 })
 
+// Users is the first tab, so it sits on /management itself.
+const managementUsersRoute = createRoute({
+  getParentRoute: () => managementRoute,
+  path: '/',
+  component: ManagementUsersPage,
+})
+
+const maintenanceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/maintenance',
+  beforeLoad: requireAdmin,
+  component: MaintenancePage,
+})
+
 const importRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/import',
@@ -259,7 +275,7 @@ const importArchiveAliasRoute = createRoute({
 })
 
 // No beforeLoad guard on purpose: RootLayout's gate already requires a session,
-// and unlike /settings and /management this page has to work for non-admins.
+// and unlike /settings and /maintenance this page has to work for non-admins.
 const accountRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/account',
@@ -318,7 +334,8 @@ const routeTree = rootRoute.addChildren([
     settingsDuplicatesRoute,
     settingsIngestRoute,
   ]),
-  managementRoute,
+  managementRoute.addChildren([managementUsersRoute]),
+  maintenanceRoute,
   importRoute.addChildren([importArchiveRoute, importNgxRoute, importArchiveAliasRoute]),
   exportRoute,
   accountRoute,

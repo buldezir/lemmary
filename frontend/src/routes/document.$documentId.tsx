@@ -20,7 +20,6 @@ import { StepBindingOverride } from '../components/BindingOverride'
 import { Combobox } from '../components/Combobox'
 import { useAsync } from '../hooks/useAsync'
 import { DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
-import { documentsLanding } from '../lib/reviewPolicy'
 import {
   defaultReprocessSteps,
   forceStepsForReprocess,
@@ -38,12 +37,21 @@ import {
 import { ProcessingStatus } from '../components/ProcessingStatus'
 import { ProcessingSteps } from '../components/ProcessingSteps'
 import { Button } from '../components/ui'
+import { ShareDialog, ShareSummary } from '../components/ShareDialog'
 import { DocumentPreview } from '../components/DocumentPreview'
 import { useStoredFlag } from '../hooks/useStoredFlag'
 import { previewKind } from '../lib/documentPreview'
 
-function backLabel() {
-  return documentsLanding() === '/inbox' ? 'Back to the Inbox' : 'Back to documents'
+/**
+ * Only a document still waiting for its owner's review came from the Inbox; a
+ * shared one is never in it, because the Inbox lists only the caller's own.
+ */
+function backTarget(document: DocumentRecord | null, owned: boolean): '/' | '/inbox' {
+  return owned && document?.processing_status === 'needs_review' ? '/inbox' : '/'
+}
+
+function backLabel(to: '/' | '/inbox') {
+  return to === '/inbox' ? 'Back to the Inbox' : 'Back to Documents'
 }
 
 export function DocumentDetailPage() {
@@ -194,6 +202,12 @@ export function DocumentDetailPage() {
   }, [documentId])
 
   const hasOcrText = Boolean(document?.ocr_text?.trim())
+  // A document another account shared is read-only: the rules refuse every
+  // write, so offering the controls would only produce 403s.
+  const owned = Boolean(document) && document?.user === pb.authStore.record?.id
+  const [sharing, setSharing] = useState(false)
+  const [shareVersion, setShareVersion] = useState(0)
+  const back = backTarget(document, owned)
 
   // The pane only fits beside the fields from xl up, and iOS Safari and Android
   // Chrome do not render a framed PDF at all. Gated in JS rather than by CSS so
@@ -220,6 +234,7 @@ export function DocumentDetailPage() {
   // trusting the document alone re-enables this form mid-pipeline and invites
   // a second job over a document the first one is still writing.
   const canReprocess =
+    owned &&
     document?.processing_status !== 'processing' &&
     document?.processing_status !== 'pending' &&
     !jobStillRunning(job)
@@ -256,7 +271,7 @@ export function DocumentDetailPage() {
   if (!autoOpened && (summary?.tone === 'error' || summary?.tone === 'warning')) {
     setAutoOpened(true)
   }
-  const jobPanelOpen = showProcessingJob ?? autoOpened
+  const jobPanelOpen = owned && (showProcessingJob ?? autoOpened)
 
   function toggleReprocessStep(step: ProcessingStep) {
     setReprocessSteps((current) => {
@@ -376,7 +391,7 @@ export function DocumentDetailPage() {
       return
     }
 
-    await navigate({ to: documentsLanding() })
+    await navigate({ to: back })
   }
 
   /**
@@ -501,8 +516,8 @@ export function DocumentDetailPage() {
     return (
       <section className="flex flex-col gap-3">
         <p className="text-sm text-madder">{error || 'Document not found.'}</p>
-        <Link to={documentsLanding()} className="text-sm font-medium text-oxblood underline">
-          {backLabel()}
+        <Link to={back} className="text-sm font-medium text-oxblood underline">
+          {backLabel(back)}
         </Link>
       </section>
     )
@@ -530,8 +545,8 @@ export function DocumentDetailPage() {
       )}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <Link to={documentsLanding()} className="text-sm text-ink-soft hover:text-oxblood">
-            &larr; {backLabel()}
+          <Link to={back} className="text-sm text-ink-soft hover:text-oxblood">
+            &larr; {backLabel(back)}
           </Link>
           <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight text-ink">
             {document.title || 'Untitled document'}
@@ -539,6 +554,12 @@ export function DocumentDetailPage() {
           <p className="text-sm text-ink-soft">
             Status: {DOCUMENT_STATUS_LABELS[document.processing_status]}
           </p>
+          <ShareSummary
+            documentId={documentId}
+            ownerId={document.user}
+            owned={owned}
+            version={shareVersion}
+          />
           <ProcessingStatus summary={summary} />
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -568,9 +589,10 @@ export function DocumentDetailPage() {
               Open file
             </button>
           )}
-          {/* Always offered, job or no job: a document restored from an export
-              has no job record, and hiding the panel leaves it with no way to
-              be reprocessed. */}
+          {/* Always offered to the owner, job or no job: a document restored from
+              an export has no job record, and hiding the panel leaves it with no
+              way to be reprocessed. A reader cannot list the owner's jobs. */}
+          {owned && (
           <button
             type="button"
             onClick={() => setShowProcessingJob(!jobPanelOpen)}
@@ -596,6 +618,8 @@ export function DocumentDetailPage() {
             </svg>
             Job
           </button>
+          )}
+          {owned && (
           <button
             type="button"
             onClick={toggleEditing}
@@ -625,7 +649,8 @@ export function DocumentDetailPage() {
               <path d={editing ? 'M7 9V6a3 3 0 0 1 6 0' : 'M7 9V6a3 3 0 0 1 6 0v3'} />
             </svg>
           </button>
-          {document.processing_status === 'needs_review' && (
+          )}
+          {owned && document.processing_status === 'needs_review' && (
             <Button
               variant="secondary"
               disabled={markingReviewed || editing}
@@ -633,6 +658,11 @@ export function DocumentDetailPage() {
               onClick={() => void onMarkReviewed()}
             >
               {markingReviewed ? 'Marking...' : 'Mark reviewed'}
+            </Button>
+          )}
+          {owned && (
+            <Button variant="secondary" onClick={() => setSharing(true)}>
+              Share
             </Button>
           )}
           <Link
@@ -650,13 +680,24 @@ export function DocumentDetailPage() {
           >
             Ask AI
           </Link>
-          <div className="ml-1 border-l border-line pl-3">
-            <Button variant="danger" onClick={() => void onDelete()} disabled={deleting}>
-              {deleting ? 'Deleting...' : 'Delete'}
-            </Button>
-          </div>
+          {owned && (
+            <div className="ml-1 border-l border-line pl-3">
+              <Button variant="danger" onClick={() => void onDelete()} disabled={deleting}>
+                {deleting ? 'Deleting...' : 'Delete'}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
+
+      <ShareDialog
+        documentId={documentId}
+        open={sharing}
+        onClose={() => {
+          setSharing(false)
+          setShareVersion((version) => version + 1)
+        }}
+      />
 
       {/* The pane sits left of the form but after it in the DOM, so a keyboard
           reaches the fields without tabbing through the PDF viewer first. */}
@@ -902,7 +943,11 @@ export function DocumentDetailPage() {
             </label>
 
             <div className="flex items-center gap-4 sm:col-span-2">
-              {editing ? (
+              {!owned ? (
+                <p className="text-sm text-ink-soft">
+                  Shared with you, read-only. Only its owner can correct it.
+                </p>
+              ) : editing ? (
                 <Button type="submit" disabled={saving}>
                   {saving ? 'Saving...' : 'Save corrections'}
                 </Button>

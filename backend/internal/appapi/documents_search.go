@@ -57,6 +57,7 @@ func handleDocumentSearch(app core.App, idx *fulltext.Index) func(*core.RequestE
 			DateTo:           strings.TrimSpace(e.Request.URL.Query().Get("date_to")),
 			Undated:          e.Request.URL.Query().Get("undated") == "true",
 			Untagged:         e.Request.URL.Query().Get("untagged") == "true",
+			Owner:            e.Request.URL.Query().Get("owner"),
 			Offset:           (page - 1) * perPage,
 			Limit:            perPage,
 		}
@@ -110,6 +111,7 @@ func handleSearchReindex(app core.App, idx *fulltext.Index) func(*core.RequestEv
 
 type documentLookup interface {
 	FindRecordById(collectionNameOrId any, recordId string, optFilters ...func(*dbx.SelectQuery) error) (*core.Record, error)
+	FindFirstRecordByFilter(collectionModelOrIdentifier any, filter string, params ...dbx.Params) (*core.Record, error)
 	ExpandRecord(record *core.Record, expands []string, optFetchFunc core.ExpandFetchFunc) map[string]error
 }
 
@@ -120,7 +122,7 @@ func hydrateDocumentExports(app documentLookup, hits []fulltext.Hit, userID stri
 		if err != nil {
 			continue
 		}
-		if userID != "" && rec.GetString("user") != userID {
+		if !CanReadDocument(app, rec, userID) {
 			continue
 		}
 		_ = app.ExpandRecord(rec, []string{"tags", "document_type", "correspondent", "duplicate_of"}, nil)

@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
 	"lemmary/backend/internal/strutil"
@@ -140,21 +139,27 @@ type recordMapper func(*core.Record) map[string]any
 func listNamedRecords(e *core.RequestEvent, collection string, mapper recordMapper, ownerUserID string) error {
 	page, pageSize := paginationParams(e)
 
-	filter, params := ownerScope(ownerUserID)
-	total, err := e.App.CountRecords(collection, dbx.HashExp{"user": ownerUserID})
+	// Includes what documents shared with the caller carry, so a shared
+	// document's tags render as names rather than unknown ids.
+	scope, err := readableEntities(e.App, collection, ownerUserID)
+	if err != nil {
+		return internalError(e, err)
+	}
+	total, err := e.App.CountRecords(collection, scope)
 	if err != nil {
 		return internalError(e, err)
 	}
 
 	offset := (page - 1) * pageSize
-	records, err := e.App.FindRecordsByFilter(collection, filter, "name", pageSize, offset, params)
-	if err != nil {
+	records := []*core.Record{}
+	q := e.App.RecordQuery(collection).AndWhere(scope).AndOrderBy("name ASC")
+	if err := q.Limit(int64(pageSize)).Offset(int64(offset)).All(&records); err != nil {
 		return internalError(e, err)
 	}
 
 	results := make([]any, 0, len(records))
 	for _, record := range records {
-		results = append(results, mapper(record))
+		results = append(results, mapReadable(mapper, record, ownerUserID))
 	}
 
 	return paginatedList(e, total, page, pageSize, results)
@@ -165,11 +170,20 @@ func getNamedRecord(e *core.RequestEvent, collection string, mapper recordMapper
 	if err != nil {
 		return notFound(e, "Not found.")
 	}
-	record, err := findRecordByNgxID(e.App, collection, ngxID, ownerUserID)
+	record, err := findReadableNamedRecord(e.App, collection, ngxID, ownerUserID)
 	if err != nil {
 		return notFound(e, "Not found.")
 	}
-	return writeJSON(e, http.StatusOK, mapper(record))
+	return writeJSON(e, http.StatusOK, mapReadable(mapper, record, ownerUserID))
+}
+
+// mapReadable tells a client which entries it may edit: the list also carries
+// the entities on documents shared with the caller, which stay their owner's,
+// and a PATCH or DELETE of one is a 404.
+func mapReadable(mapper recordMapper, record *core.Record, callerID string) map[string]any {
+	out := mapper(record)
+	out["user_can_change"] = record.GetString("user") == callerID
+	return out
 }
 
 func deleteNamedRecord(e *core.RequestEvent, collection, ownerUserID string) error {

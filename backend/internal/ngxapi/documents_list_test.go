@@ -626,3 +626,23 @@ func TestUndatedDocumentIsFoundByTheDateItShows(t *testing.T) {
 		t.Fatalf("a range covering the date on the card matched %v, want [None]", got)
 	}
 }
+
+// A revoke reindexes the document on a worker; until it lands, or if it fails,
+// the index still names the old reader. The database has the last word.
+func TestSearchIgnoresAStaleReaderInTheIndex(t *testing.T) {
+	f := newListFixture(t)
+	idx := f.indexed(t)
+	record, err := f.app.FindRecordById("documents", f.docTheir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := fulltext.Build(f.app, record)
+	doc[fulltext.FieldUser] = []string{f.otherID, f.userID}
+	if err := idx.Put(record.Id, doc); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := f.search(t, idx, "query=Theirs"); len(got.Results) != 0 {
+		t.Fatalf("search returned %v through a share that no longer exists", f.titles(got.Results))
+	}
+}

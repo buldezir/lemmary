@@ -98,7 +98,9 @@ func (l *ngxIDLens) relation(record *core.Record, field string) any {
 // mapDocument renders one document in paperless-ngx's shape. truncate is the
 // client's truncate_content flag: list responses over a large archive are
 // mostly OCR text, and a client that will only show a preview line says so.
-func mapDocument(lens *ngxIDLens, record *core.Record, truncate bool) map[string]any {
+// callerID is whose view this is: a document shared read-only refuses every
+// write, so a client told otherwise would offer an edit that 404s.
+func mapDocument(lens *ngxIDLens, record *core.Record, callerID string, truncate bool) map[string]any {
 	created := record.GetString("created")
 	updated := record.GetString("updated")
 	docDate := record.GetString("document_date")
@@ -140,7 +142,7 @@ func mapDocument(lens *ngxIDLens, record *core.Record, truncate bool) map[string
 		"checksum":              record.GetString("checksum"),
 		"archive_checksum":      nil,
 		"owner":                 owner,
-		"user_can_change":       true,
+		"user_can_change":       record.GetString("user") == callerID,
 		"notes":                 []any{},
 		"custom_fields":         []any{},
 	}

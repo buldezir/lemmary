@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   buildDocumentFilter,
   fileUrlWithToken,
@@ -6,6 +6,7 @@ import {
   uploadErrorMessage,
 } from './documents'
 import { UNFINISHED_STATUS } from '../documentStatus'
+import { pb } from '../pb'
 
 const noFilters = {
   status: 'all',
@@ -178,5 +179,46 @@ describe('uploadErrorMessage', () => {
     expect(uploadErrorMessage({ response: { message: generic, data: {} } })).toBe(generic)
     expect(uploadErrorMessage(new Error('boom'))).toBe('boom')
     expect(uploadErrorMessage(undefined)).toBe('Upload failed')
+  })
+})
+
+describe('the owner filter', () => {
+  const me = 'user_me_00000001'
+
+  function asUser(id: string | null) {
+    if (!id) {
+      pb.authStore.clear()
+      return
+    }
+    pb.authStore.save('test-token', { id, collectionId: 'users', collectionName: 'users' })
+  }
+
+  // The store is module state shared with every other test in this file.
+  afterEach(() => pb.authStore.clear())
+
+  it('filters on somebody else owning the document', () => {
+    asUser(me)
+    expect(buildDocumentFilter({ ...noFilters, owner: 'shared' })).toBe(`user != "${me}"`)
+  })
+
+  it('combines with a tag', () => {
+    asUser(me)
+    expect(buildDocumentFilter({ ...noFilters, tags: ['tag1'], owner: 'shared' })).toBe(
+      `tags ~ "\\"tag1\\"" && user != "${me}"`,
+    )
+  })
+
+  it('keeps shared documents out of a mine-only list', () => {
+    asUser(me)
+    expect(buildDocumentFilter({ ...noFilters, owner: 'mine' })).toBe(`user = "${me}"`)
+    expect(buildDocumentFilter({ ...noFilters, owner: 'all' })).toBeUndefined()
+  })
+
+  // Signed out there is no "me" to compare against, and a half-built clause
+  // would filter on the empty string.
+  it('builds no clause with nobody signed in', () => {
+    asUser(null)
+    expect(buildDocumentFilter({ ...noFilters, owner: 'shared' })).toBeUndefined()
+    expect(buildDocumentFilter({ ...noFilters, owner: 'mine' })).toBeUndefined()
   })
 })

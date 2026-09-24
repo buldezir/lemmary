@@ -260,7 +260,7 @@ paces spending rather than describing the instance:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `EMBEDDING_BACKFILL_BATCH` | `20` | Documents one backfill tick embeds, on `WORKER_CRON_EXPR`. `0` disables the scheduled backfill, so only newly processed documents are embedded and an existing archive is left alone — **Management → Embeddings** still embeds it on demand. |
+| `EMBEDDING_BACKFILL_BATCH` | `20` | Documents one backfill tick embeds, on `WORKER_CRON_EXPR`. `0` disables the scheduled backfill, so only newly processed documents are embedded and an existing archive is left alone — **Maintenance → Embeddings** still embeds it on demand. |
 
 The **result language** has no variable at all. It decides what language a
 document's title, summary, type and correspondent are stored in, which is a
@@ -363,7 +363,7 @@ credentials but never add a new one.
   turn falls back to the binding in Settings, so rotating a provider does not
   leave open chats stuck.
 - **Reprocess** — on a document's own page, on the document list's bulk bar, and
-  in **Management → Failed processing** — offers OCR, extraction and embedding.
+  in **Maintenance → Failed processing** — offers OCR, extraction and embedding.
   The choice is stored on each queued job, so a batch queued to try a different
   extractor runs on it however long the queue takes, rather than on whatever
   Settings holds by the time the worker gets there. The step history
@@ -412,7 +412,7 @@ Embeddings](/local_embeddings).
 
 The backfill drains at `EMBEDDING_BACKFILL_BATCH` documents a tick and logs what
 it embedded, what failed, and how many are left; **Settings → Models** shows the
-same counts, and **Management → Embeddings** both shows them and runs the whole
+same counts, and **Maintenance → Embeddings** both shows them and runs the whole
 backlog on demand rather than waiting a tick a minute. A provider failure is
 soft: the document keeps its text, its metadata and its place in keyword search,
 and is retried later with a backoff.
