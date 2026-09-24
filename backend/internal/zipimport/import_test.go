@@ -1,6 +1,7 @@
 package zipimport
 
 import (
+	"strings"
 	"testing"
 	"unicode/utf8"
 
@@ -11,9 +12,10 @@ import (
 	_ "lemmary/backend/migrations"
 )
 
-// Windows zips carry entry names in the DOS code page, e.g. "Lämmäry" as
-// "L\x84mm\x84ry", which the storage layer refuses as metadata.
-func TestCreateDocumentStripsInvalidUTF8FromTheName(t *testing.T) {
+// The storage layer refuses non-UTF-8 metadata. Windows zips carry names in the
+// DOS code page ("Lämmäry" as "L\x84mm\x84ry"), and PocketBase cuts a long
+// name at 255 bytes, which can split a rune.
+func TestCreateDocumentKeepsTheOriginalNameStorable(t *testing.T) {
 	app := testpb.Open(t)
 	users, err := app.FindCollectionByNameOrId("users")
 	if err != nil {
@@ -30,14 +32,21 @@ func TestCreateDocumentStripsInvalidUTF8FromTheName(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	file, err := filesystem.NewFileFromBytes([]byte("hello"), "L\x84mm\x84ry.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := CreateDocument(app, collection, user.Id, file, nil); err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	if file.OriginalName != "Lmmry.txt" || !utf8.ValidString(file.OriginalName) {
-		t.Fatalf("original name = %q", file.OriginalName)
+	long := strings.Repeat("ä", 200) + ".txt"
+	for name, want := range map[string]string{
+		"L\x84mm\x84ry.txt": "Lmmry.txt",
+		"Lämmäry.txt":       "Lämmäry.txt",
+		long:                long[:254],
+	} {
+		file, err := filesystem.NewFileFromBytes([]byte("hello "+name), name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := CreateDocument(app, collection, user.Id, file, nil); err != nil {
+			t.Fatalf("create %q: %v", name, err)
+		}
+		if file.OriginalName != want || !utf8.ValidString(file.OriginalName) {
+			t.Fatalf("original name of %q = %q, want %q", name, file.OriginalName, want)
+		}
 	}
 }
