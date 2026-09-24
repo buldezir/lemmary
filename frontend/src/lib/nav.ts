@@ -71,6 +71,7 @@ export function secondaryNavItems(pbAdminUrl: string): readonly NavItem[] {
     { kind: 'route', label: 'Export', to: '/export' },
     { kind: 'route', label: 'Import', to: '/import' },
     { kind: 'route', label: 'Settings', to: '/settings', admin: true },
+    { kind: 'route', label: 'Management', to: '/management', admin: true },
     { kind: 'route', label: 'Maintenance', to: '/maintenance', admin: true },
     { kind: 'external', label: 'Admin', href: pbAdminUrl, admin: true, icon: 'pocketbase' },
   ]

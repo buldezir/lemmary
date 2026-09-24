@@ -35,6 +35,8 @@ import { SettingsWorkerPage } from './routes/settings.worker'
 import { SettingsDuplicatesPage } from './routes/settings.duplicates'
 import { SettingsIngestPage } from './routes/settings.ingest'
 import { MaintenancePage } from './routes/maintenance'
+import { ManagementPage } from './routes/management'
+import { ManagementUsersPage } from './routes/management.users'
 import { ImportPage } from './routes/import'
 import { ImportNgxPage } from './routes/import.ngx'
 import { ImportArchivePage } from './routes/import.archive'
@@ -223,6 +225,20 @@ const settingsIngestRoute = createRoute({
   component: SettingsIngestPage,
 })
 
+const managementRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/management',
+  beforeLoad: requireAdmin,
+  component: ManagementPage,
+})
+
+// Users is the first tab, so it sits on /management itself.
+const managementUsersRoute = createRoute({
+  getParentRoute: () => managementRoute,
+  path: '/',
+  component: ManagementUsersPage,
+})
+
 const maintenanceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/maintenance',
@@ -318,6 +334,7 @@ const routeTree = rootRoute.addChildren([
     settingsDuplicatesRoute,
     settingsIngestRoute,
   ]),
+  managementRoute.addChildren([managementUsersRoute]),
   maintenanceRoute,
   importRoute.addChildren([importArchiveRoute, importNgxRoute, importArchiveAliasRoute]),
   exportRoute,

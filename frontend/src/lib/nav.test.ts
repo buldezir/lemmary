@@ -26,6 +26,7 @@ describe('nav items', () => {
       'Export',
       'Import',
       'Settings',
+      'Management',
       'Maintenance',
       'Admin',
     ])

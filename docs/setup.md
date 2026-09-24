@@ -188,6 +188,10 @@ Delete and move rely on UIDPLUS (or IMAP4rev2) to expunge only the messages Lemm
 
 A message whose attachment is refused (empty, over the 47 MB cap, wrong content for its extension) is never moved or deleted; it is logged and skipped. Reaching an instance-wide limit, or any other error, stops the scan and the message is retried next interval.
 
+## Management (admin UI)
+
+**Management** in the nav (admin only, below Settings) manages the accounts on the instance. Its **Users** tab lists every `users` account, adds one (email, optional name, password; created verified, so it can sign in at once), edits a regular account's email, name or password, and deletes one. Deleting an account also deletes its documents, tags, shares and passkeys. Admin accounts (`is_app_admin`) are listed but read-only here; manage them in the PocketBase dashboard. The routes are `GET`/`POST /api/app/admin/users` and `PATCH`/`DELETE /api/app/admin/users/{id}`, admin only, and `403` on an admin account. A new account counts against `LIMIT_ADDITIONAL_USERS`, and with the vault on its password gets its own key wrap, as with any other account.
+
 ## Maintenance (admin UI)
 
 **Maintenance** in the nav (admin only, next to Settings) holds maintenance actions that run over the whole library, not per document:

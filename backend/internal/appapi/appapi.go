@@ -83,6 +83,10 @@ func Register(
 			g.POST("/ocr/test", bindAuth(handleOCRTest(app, rt))).
 				Bind(apis.BodyLimit(ocrTestMaxFileBytes + (1 << 20)))
 			g.GET("/users", bindAuth(handleListUsers(app)))
+			g.GET("/admin/users", bindAdmin(handleListManagedUsers(app)))
+			g.POST("/admin/users", bindAdmin(handleCreateManagedUser(app)))
+			g.PATCH("/admin/users/{id}", bindAdmin(handlePatchManagedUser(app)))
+			g.DELETE("/admin/users/{id}", bindAdmin(handleDeleteManagedUser(app)))
 			g.GET("/settings", bindAdmin(handleGetSettings(app, rt)))
 			g.PATCH("/settings", bindAdmin(handlePatchSettings(app, rt)))
 			g.GET("/settings/embeddings", bindAdmin(handleGetEmbeddingStats(app, rt)))
