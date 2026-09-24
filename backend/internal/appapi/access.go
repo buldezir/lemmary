@@ -39,3 +39,28 @@ func ReadableDocumentsSQL(alias, param string) string {
 	return "(" + alias + ".user = " + ref + " OR EXISTS (SELECT 1 FROM " + CollectionShares +
 		" s WHERE s.document = " + alias + ".id AND s.user = " + ref + "))"
 }
+
+// SharedWith lists the documents other accounts shared with userID, and those
+// accounts. The chunk index stores only a document's owner, so retrieval widens
+// its owner filter by these rather than reindexing chunks on every share change.
+func SharedWith(app interface {
+	FindRecordsByFilter(any, string, string, int, int, ...dbx.Params) ([]*core.Record, error)
+}, userID string) (documentIDs, ownerIDs []string, err error) {
+	if userID == "" {
+		return nil, nil, nil
+	}
+	docs, err := app.FindRecordsByFilter("documents",
+		"document_shares_via_document.user ?= {:user}", "", 0, 0, dbx.Params{"user": userID})
+	if err != nil {
+		return nil, nil, err
+	}
+	seen := map[string]bool{}
+	for _, doc := range docs {
+		documentIDs = append(documentIDs, doc.Id)
+		if owner := doc.GetString("user"); !seen[owner] {
+			seen[owner] = true
+			ownerIDs = append(ownerIDs, owner)
+		}
+	}
+	return documentIDs, ownerIDs, nil
+}

@@ -271,7 +271,7 @@ export function DocumentDetailPage() {
   if (!autoOpened && (summary?.tone === 'error' || summary?.tone === 'warning')) {
     setAutoOpened(true)
   }
-  const jobPanelOpen = showProcessingJob ?? autoOpened
+  const jobPanelOpen = owned && (showProcessingJob ?? autoOpened)
 
   function toggleReprocessStep(step: ProcessingStep) {
     setReprocessSteps((current) => {
@@ -589,9 +589,10 @@ export function DocumentDetailPage() {
               Open file
             </button>
           )}
-          {/* Always offered, job or no job: a document restored from an export
-              has no job record, and hiding the panel leaves it with no way to
-              be reprocessed. */}
+          {/* Always offered to the owner, job or no job: a document restored from
+              an export has no job record, and hiding the panel leaves it with no
+              way to be reprocessed. A reader cannot list the owner's jobs. */}
+          {owned && (
           <button
             type="button"
             onClick={() => setShowProcessingJob(!jobPanelOpen)}
@@ -617,6 +618,7 @@ export function DocumentDetailPage() {
             </svg>
             Job
           </button>
+          )}
           {owned && (
           <button
             type="button"

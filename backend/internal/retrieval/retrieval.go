@@ -22,11 +22,14 @@ type ChunkHit struct {
 }
 
 type ChunkQuery struct {
-	Vector      []float32
-	Text        string
-	UserID      string
-	DocumentIDs []string
-	K           int
+	Vector []float32
+	Text   string
+	UserID string
+	// SharedDocumentIDs pass the UserID filter too: a chunk carries its owner,
+	// and these documents were shared with that user by someone else.
+	SharedDocumentIDs []string
+	DocumentIDs       []string
+	K                 int
 }
 
 // Nil is a valid ChunkSearcher everywhere one is held: the dense path is

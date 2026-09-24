@@ -146,6 +146,10 @@ func (m *MemoryChunks) SearchChunks(_ context.Context, q ChunkQuery) ([]ChunkHit
 	for _, id := range q.DocumentIDs {
 		eligible[id] = struct{}{}
 	}
+	shared := map[string]struct{}{}
+	for _, id := range q.SharedDocumentIDs {
+		shared[id] = struct{}{}
+	}
 
 	byKey := map[string]ChunkHit{}
 	dense := make([]Ranked, 0)
@@ -153,7 +157,7 @@ func (m *MemoryChunks) SearchChunks(_ context.Context, q ChunkQuery) ([]ChunkHit
 	terms := focusTerms(q.Text)
 
 	for _, chunk := range m.Chunks {
-		if q.UserID != "" && chunk.UserID != q.UserID {
+		if _, ok := shared[chunk.DocumentID]; q.UserID != "" && chunk.UserID != q.UserID && !ok {
 			continue
 		}
 		if len(eligible) > 0 {

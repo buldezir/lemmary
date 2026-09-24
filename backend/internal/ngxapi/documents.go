@@ -143,8 +143,14 @@ func listDocumentsByText(
 
 	// One query for the page, not a point lookup per row: a page is 250
 	// documents by default.
+	// Re-checked against the shares table: the index's reader list is updated
+	// by an async reindex, so after a revoke it can still name the old reader.
 	wanted := ordered[offset:end]
-	found, err := e.App.FindRecordsByIds("documents", wanted)
+	found := []*core.Record{}
+	err = e.App.RecordQuery("documents").
+		AndWhere(readableDocuments(e.Auth.Id)).
+		AndWhere(dbx.In("documents.id", anyValues(wanted)...)).
+		All(&found)
 	if err != nil {
 		return internalError(e, err)
 	}

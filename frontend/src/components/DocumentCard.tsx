@@ -134,7 +134,7 @@ export function DocumentCard({
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             {/* Sits above the full-bleed link so ticking it does not navigate. */}
-            {selectable && (
+            {selectable && !shared && (
               <input
                 type="checkbox"
                 checked={Boolean(selected)}

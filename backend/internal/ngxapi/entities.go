@@ -159,7 +159,7 @@ func listNamedRecords(e *core.RequestEvent, collection string, mapper recordMapp
 
 	results := make([]any, 0, len(records))
 	for _, record := range records {
-		results = append(results, mapper(record))
+		results = append(results, mapReadable(mapper, record, ownerUserID))
 	}
 
 	return paginatedList(e, total, page, pageSize, results)
@@ -174,7 +174,16 @@ func getNamedRecord(e *core.RequestEvent, collection string, mapper recordMapper
 	if err != nil {
 		return notFound(e, "Not found.")
 	}
-	return writeJSON(e, http.StatusOK, mapper(record))
+	return writeJSON(e, http.StatusOK, mapReadable(mapper, record, ownerUserID))
+}
+
+// mapReadable tells a client which entries it may edit: the list also carries
+// the entities on documents shared with the caller, which stay their owner's,
+// and a PATCH or DELETE of one is a 404.
+func mapReadable(mapper recordMapper, record *core.Record, callerID string) map[string]any {
+	out := mapper(record)
+	out["user_can_change"] = record.GetString("user") == callerID
+	return out
 }
 
 func deleteNamedRecord(e *core.RequestEvent, collection, ownerUserID string) error {

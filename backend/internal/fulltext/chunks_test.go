@@ -221,6 +221,31 @@ func TestChunkSearchIsolatesUsers(t *testing.T) {
 	}
 }
 
+// A chunk carries only its owner, so a document shared with the caller is let
+// through by id -- and nothing else of that owner's is.
+func TestChunkSearchReachesDocumentsSharedWithTheCaller(t *testing.T) {
+	src := &fakeChunkSource{spec: testChunkSpec(), chunks: []Chunk{
+		chunkOf("mine", "u1", 0, 0, "the rent is 900 EUR a month"),
+		chunkOf("shared", "u2", 0, 0, "the rent is 700 EUR a month"),
+		chunkOf("private", "u2", 0, 0, "the rent is 800 EUR a month"),
+	}}
+	idx := testChunkIndex(t, src)
+	mustRebuildChunks(t, idx)
+
+	for name, q := range map[string]retrieval.ChunkQuery{
+		"kNN":  {Vector: unit(4, 0), UserID: "u1", SharedDocumentIDs: []string{"shared"}, K: 10},
+		"text": {Text: "rent", UserID: "u1", SharedDocumentIDs: []string{"shared"}, K: 10},
+	} {
+		got := map[string]bool{}
+		for _, hit := range searchChunks(t, idx, q) {
+			got[hit.DocumentID] = true
+		}
+		if !got["mine"] || !got["shared"] || got["private"] || len(got) != 2 {
+			t.Fatalf("%s: documents = %v, want mine and shared only", name, got)
+		}
+	}
+}
+
 func TestChunkSearchReturnsStoredFields(t *testing.T) {
 	chunk := chunkOf("doc1", "u1", 7, 0, "Die monatliche Kaltmiete beträgt 1234 EUR.")
 	src := &fakeChunkSource{spec: testChunkSpec(), chunks: []Chunk{chunk}}

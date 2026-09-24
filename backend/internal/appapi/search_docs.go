@@ -41,8 +41,42 @@ type agentRetriever struct {
 
 	// vectors memoizes this turn's query embeddings: a run repeats the same
 	// phrase across searches and reads.
-	mu      sync.Mutex
-	vectors map[string][]float32
+	mu           sync.Mutex
+	vectors      map[string][]float32
+	sharedDocs   []string
+	sharedOwners []string
+	sharedLoaded bool
+}
+
+// loadShares runs once per retriever: a run issues many chunk queries and the
+// shares do not change meaningfully within one.
+func (r *agentRetriever) loadShares() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.sharedLoaded {
+		return
+	}
+	docs, owners, err := SharedWith(r.app, r.userID)
+	if err != nil {
+		r.app.Logger().Warn("deep search shared documents lookup failed", slog.Any("error", err))
+	}
+	r.sharedDocs, r.sharedOwners, r.sharedLoaded = docs, owners, true
+}
+
+func (r *agentRetriever) sharedIDs() []string {
+	r.loadShares()
+	return r.sharedDocs
+}
+
+// nameScope is whose tags, types and correspondents a filter name may resolve
+// to: the caller's, and those of accounts sharing documents with them, which
+// is whose entities a shared document carries. Nil is unscoped.
+func (r *agentRetriever) nameScope() []string {
+	if r.userID == "" {
+		return nil
+	}
+	r.loadShares()
+	return append([]string{r.userID}, r.sharedOwners...)
 }
 
 type retrieverApp interface {
@@ -159,7 +193,7 @@ func (r *agentRetriever) resolveFilters(args ai.SearchDocumentsArgs) (fulltext.Q
 	var unresolved []string
 
 	if typeName := strings.TrimSpace(args.DocumentType); typeName != "" {
-		typeIDs, err := findNamedEntityIDs(r.app, "document_types", typeName, r.userID)
+		typeIDs, err := findNamedEntityIDs(r.app, "document_types", typeName, r.nameScope())
 		if err != nil {
 			return ftQuery, nil, err
 		}
@@ -170,7 +204,7 @@ func (r *agentRetriever) resolveFilters(args ai.SearchDocumentsArgs) (fulltext.Q
 	}
 
 	if corrName := strings.TrimSpace(args.Correspondent); corrName != "" {
-		corrIDs, err := findNamedEntityIDs(r.app, "correspondents", corrName, r.userID)
+		corrIDs, err := findNamedEntityIDs(r.app, "correspondents", corrName, r.nameScope())
 		if err != nil {
 			return ftQuery, nil, err
 		}
@@ -181,7 +215,7 @@ func (r *agentRetriever) resolveFilters(args ai.SearchDocumentsArgs) (fulltext.Q
 	}
 
 	if tagNames := normalizeTagNames(args.Tags); len(tagNames) > 0 {
-		tagIDs, err := findTagIDsByNames(r.app, tagNames, r.userID)
+		tagIDs, err := findTagIDsByNames(r.app, tagNames, r.nameScope())
 		if err != nil {
 			return ftQuery, nil, err
 		}
@@ -264,11 +298,12 @@ func (r *agentRetriever) searchChunks(ctx context.Context, ftQuery fulltext.Quer
 	}
 
 	hits, err := r.chunks.SearchChunks(ctx, retrieval.ChunkQuery{
-		Vector:      vector,
-		Text:        query,
-		UserID:      r.userID,
-		DocumentIDs: eligible,
-		K:           k,
+		Vector:            vector,
+		Text:              query,
+		UserID:            r.userID,
+		SharedDocumentIDs: r.sharedIDs(),
+		DocumentIDs:       eligible,
+		K:                 k,
 	})
 	if err != nil {
 		r.logChunkFailure(err)
@@ -291,10 +326,11 @@ func (r *agentRetriever) chunkTextHits(ctx context.Context, query string, ids []
 		ids = ids[:max]
 	}
 	hits, err := r.chunks.SearchChunks(ctx, retrieval.ChunkQuery{
-		Text:        query,
-		UserID:      r.userID,
-		DocumentIDs: ids,
-		K:           len(ids) * retrieval.MaxPassagesPerDocument,
+		Text:              query,
+		UserID:            r.userID,
+		SharedDocumentIDs: r.sharedIDs(),
+		DocumentIDs:       ids,
+		K:                 len(ids) * retrieval.MaxPassagesPerDocument,
 	})
 	if err != nil {
 		r.logChunkFailure(err)
@@ -551,11 +587,12 @@ func (r *agentRetriever) focusRanker(ctx context.Context) focusRanker {
 		// keyword search, still better than windows cut by byte count.
 		vector, _ := r.queryVector(ctx, focus)
 		hits, err := r.chunks.SearchChunks(ctx, retrieval.ChunkQuery{
-			Vector:      vector,
-			Text:        focus,
-			UserID:      r.userID,
-			DocumentIDs: []string{documentID},
-			K:           focusChunkK,
+			Vector:            vector,
+			Text:              focus,
+			UserID:            r.userID,
+			SharedDocumentIDs: r.sharedIDs(),
+			DocumentIDs:       []string{documentID},
+			K:                 focusChunkK,
 		})
 		if err != nil {
 			r.logChunkFailure(err)
@@ -659,17 +696,13 @@ func excerptDocument(documentID, full, focus string, rank focusRanker, budget in
 	return retrieval.Excerpt(full, windows, ranked, budget)
 }
 
-func findNamedEntityIDs(app retrieverApp, collection, name, userID string) ([]string, error) {
+func findNamedEntityIDs(app retrieverApp, collection, name string, userIDs []string) ([]string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, nil
 	}
-	filter := "name ~ {:name} || name_original ~ {:name}"
 	params := dbx.Params{"name": name}
-	if userID != "" {
-		filter = "user = {:userId} && (" + filter + ")"
-		params["userId"] = userID
-	}
+	filter := scopeToUsers("name ~ {:name} || name_original ~ {:name}", params, userIDs)
 	records, err := app.FindRecordsByFilter(
 		collection,
 		filter,
@@ -688,8 +721,8 @@ func findNamedEntityIDs(app retrieverApp, collection, name, userID string) ([]st
 	return ids, nil
 }
 
-// findTagIDsByNames scopes to userID; empty means unscoped, for superusers.
-func findTagIDsByNames(app retrieverApp, names []string, userID string) ([]string, error) {
+// findTagIDsByNames scopes to userIDs; empty means unscoped, for superusers.
+func findTagIDsByNames(app retrieverApp, names []string, userIDs []string) ([]string, error) {
 	ids := make([]string, 0, len(names))
 	seen := map[string]struct{}{}
 	for _, name := range names {
@@ -697,13 +730,13 @@ func findTagIDsByNames(app retrieverApp, names []string, userID string) ([]strin
 		if name == "" {
 			continue
 		}
-		records, err := findTagsByNameFilter(app, "name = {:name}", name, userID)
+		records, err := findTagsByNameFilter(app, "name = {:name}", name, userIDs)
 		if err != nil {
 			return nil, err
 		}
 		if len(records) == 0 {
 			// Substring match, so near-exact agent inputs still work.
-			records, err = findTagsByNameFilter(app, "name ~ {:name}", name, userID)
+			records, err = findTagsByNameFilter(app, "name ~ {:name}", name, userIDs)
 			if err != nil {
 				return nil, err
 			}
@@ -719,17 +752,29 @@ func findTagIDsByNames(app retrieverApp, names []string, userID string) ([]strin
 	return ids, nil
 }
 
-func findTagsByNameFilter(app retrieverApp, filter, name, userID string) ([]*core.Record, error) {
+func findTagsByNameFilter(app retrieverApp, filter, name string, userIDs []string) ([]*core.Record, error) {
 	params := dbx.Params{"name": name}
-	if userID != "" {
-		filter = "user = {:userId} && (" + filter + ")"
-		params["userId"] = userID
-	}
+	filter = scopeToUsers(filter, params, userIDs)
 	records, err := app.FindRecordsByFilter("tags", filter, "name", 5, 0, params)
 	if err != nil {
 		return nil, fmt.Errorf("lookup tags: %w", err)
 	}
 	return records, nil
+}
+
+// scopeToUsers narrows filter to rows owned by one of userIDs, binding each
+// into params; no ids leaves it unscoped.
+func scopeToUsers(filter string, params dbx.Params, userIDs []string) string {
+	if len(userIDs) == 0 {
+		return filter
+	}
+	owners := make([]string, len(userIDs))
+	for i, id := range userIDs {
+		key := fmt.Sprintf("scopeUser%d", i)
+		owners[i] = "user = {:" + key + "}"
+		params[key] = id
+	}
+	return "(" + strings.Join(owners, " || ") + ") && (" + filter + ")"
 }
 
 func normalizeTagNames(names []string) []string {

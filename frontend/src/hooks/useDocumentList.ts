@@ -330,9 +330,13 @@ export function useDocumentList({
     }
   }, [documentIds, jobsVersion])
 
+  // Only the caller's own documents take a bulk action: a shared one is
+  // read-only, and one refused write would fail a whole mixed batch.
+  const me = pb.authStore.record?.id
+  const ownDocuments = documents.filter((document) => document.user === me)
   // Every action goes through selectedOnPage, never selectedIds, so ids left
   // over from another page or filter can neither be counted nor submitted.
-  const selectedOnPage = documents.filter((document) => selectedIds.has(document.id))
+  const selectedOnPage = ownDocuments.filter((document) => selectedIds.has(document.id))
 
   function toggleSelected(id: string) {
     setSelectedIds((current) => {
@@ -476,7 +480,7 @@ export function useDocumentList({
     selectedIds,
     selectedOnPage,
     toggleSelected,
-    selectAll: () => setSelectedIds(new Set(documents.map((document) => document.id))),
+    selectAll: () => setSelectedIds(new Set(ownDocuments.map((document) => document.id))),
     clearSelection: () => setSelectedIds(new Set()),
     reprocessMode,
     setReprocessMode,
