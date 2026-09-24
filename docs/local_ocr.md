@@ -81,8 +81,8 @@ and a one-page 150 dpi scan **4 s** — against tens of milliseconds for a hoste
 API. Real scans are denser than a test fixture, so treat those as a floor and
 measure your own.
 
-**The setting people miss.** `OCR_TIMEOUT_SEC` defaults to 40 seconds. That
-survives a small scan on a fast host and nothing else — a dense multi-page
+**The setting people miss.** `OCR_TIMEOUT_SEC` defaults to 90 seconds. That
+survives a few pages on a fast host and little else — a dense multi-page
 document, a busy machine, or the first request after a restart will all exceed
 it:
 

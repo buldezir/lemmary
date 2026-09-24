@@ -241,7 +241,7 @@ On an instance that has already booted, the AI settings in `.env` are ignored
   means docling's `auto` engine and therefore `ocrmac`. Setting `ocrmac`
   explicitly also works.
 
-**Timeouts:** raise `OCR_TIMEOUT_SEC` from its default of 40 to about 120.
+**Timeouts:** raise `OCR_TIMEOUT_SEC` from its default of 90 to about 120.
 A warm photo page takes 4–8 s, but a long document, or the first request after
 a restart, takes longer. Keep it below `DOCLING_SERVE_MAX_SYNC_WAIT` (900).
 

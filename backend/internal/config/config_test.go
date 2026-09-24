@@ -117,10 +117,10 @@ func TestDefaultsUsesCodeDefaults(t *testing.T) {
 	}
 	cfg := env.Defaults()
 
-	if cfg.OCRTimeout != 40*time.Second {
+	if cfg.OCRTimeout != 90*time.Second {
 		t.Fatalf("ocr timeout=%s", cfg.OCRTimeout)
 	}
-	if cfg.OpenAITimeout != 60*time.Second {
+	if cfg.OpenAITimeout != 90*time.Second {
 		t.Fatalf("ai timeout=%s", cfg.OpenAITimeout)
 	}
 	if cfg.WorkerTimeout != 300*time.Second {

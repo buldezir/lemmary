@@ -239,8 +239,8 @@ afterwards, in both modes.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `OCR_TIMEOUT_SEC` | `40` | OCR request timeout. Far too low for [Local OCR](/local_ocr), which needs seconds to tens of seconds a page |
-| `AI_TIMEOUT_SEC` | `60` | Language-model request timeout: extraction, Ask AI, search, research and split detection |
+| `OCR_TIMEOUT_SEC` | `90` | OCR request timeout. Too low for [Local OCR](/local_ocr), which needs seconds to tens of seconds a page |
+| `AI_TIMEOUT_SEC` | `90` | Language-model request timeout: extraction, Ask AI, search, research and split detection |
 | `WORKER_TIMEOUT_SEC` | `300` | Per-job processing timeout |
 | `WORKER_MAX_RETRIES` | `0` | Max step retry attempts before a job fails |
 | `DEEP_SEARCH_LANGUAGES` | empty | Comma-separated ISO 639-1 codes (e.g. `de,en,uk`) for keyword expansion on both search pages. Only drives per-language searches when no embedding model is set; with one, a single search already crosses languages |

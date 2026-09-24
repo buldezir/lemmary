@@ -33,7 +33,7 @@ const (
 // liveTimeout is generous on purpose. A local engine reads a page in seconds to
 // tens of seconds, and the first request after a container start also loads the
 // models -- the same reason docs/local_ocr.md tells operators to raise
-// OCR_TIMEOUT_SEC well past its 40 second default.
+// OCR_TIMEOUT_SEC well past its 90 second default.
 const liveTimeout = 5 * time.Minute
 
 func liveURL(t *testing.T, key string) string {
