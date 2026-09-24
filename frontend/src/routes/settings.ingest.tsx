@@ -172,8 +172,8 @@ export function SettingsIngestPage() {
             <h3 className={subTitleClassName}>Mailbox</h3>
             <p className={`${fieldHintClassName} mb-4`}>
               Every attachment of a type chosen below in mail arriving in the folder becomes a
-              document on the next scan. Images embedded in the mail body, such as logos and icons,
-              never do. Mail without one is left alone. Leave the server empty to turn this off.
+              document on the next scan. Images the mail body embeds, such as logos and icons, never
+              do. Mail without one is left alone. Leave the server empty to turn this off.
               {form.imap_since &&
                 ` Mail received before ${new Date(form.imap_since).toLocaleString()} is not scanned; Management backfills it by date.`}
             </p>
@@ -259,7 +259,8 @@ export function SettingsIngestPage() {
             </fieldset>
             <p className={`${fieldHintClassName} mt-2`}>
               Kept messages are imported once, even if their documents are deleted later. A message
-              whose attachment is refused is never moved or deleted.
+              with an attachment that is refused, or of a type left unchecked, is never moved or
+              deleted.
             </p>
           </>
         )}
