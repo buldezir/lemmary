@@ -20,7 +20,6 @@ import { StepBindingOverride } from '../components/BindingOverride'
 import { Combobox } from '../components/Combobox'
 import { useAsync } from '../hooks/useAsync'
 import { DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
-import { documentsLanding } from '../lib/reviewPolicy'
 import {
   defaultReprocessSteps,
   forceStepsForReprocess,
@@ -38,13 +37,21 @@ import {
 import { ProcessingStatus } from '../components/ProcessingStatus'
 import { ProcessingSteps } from '../components/ProcessingSteps'
 import { Button } from '../components/ui'
-import { ShareDialog } from '../components/ShareDialog'
+import { ShareDialog, ShareSummary } from '../components/ShareDialog'
 import { DocumentPreview } from '../components/DocumentPreview'
 import { useStoredFlag } from '../hooks/useStoredFlag'
 import { previewKind } from '../lib/documentPreview'
 
-function backLabel() {
-  return documentsLanding() === '/inbox' ? 'Back to the Inbox' : 'Back to documents'
+/**
+ * Only a document still waiting for its owner's review came from the Inbox; a
+ * shared one is never in it, because the Inbox lists only the caller's own.
+ */
+function backTarget(document: DocumentRecord | null, owned: boolean): '/' | '/inbox' {
+  return owned && document?.processing_status === 'needs_review' ? '/inbox' : '/'
+}
+
+function backLabel(to: '/' | '/inbox') {
+  return to === '/inbox' ? 'Back to the Inbox' : 'Back to Documents'
 }
 
 export function DocumentDetailPage() {
@@ -199,6 +206,8 @@ export function DocumentDetailPage() {
   // write, so offering the controls would only produce 403s.
   const owned = Boolean(document) && document?.user === pb.authStore.record?.id
   const [sharing, setSharing] = useState(false)
+  const [shareVersion, setShareVersion] = useState(0)
+  const back = backTarget(document, owned)
 
   // The pane only fits beside the fields from xl up, and iOS Safari and Android
   // Chrome do not render a framed PDF at all. Gated in JS rather than by CSS so
@@ -382,7 +391,7 @@ export function DocumentDetailPage() {
       return
     }
 
-    await navigate({ to: documentsLanding() })
+    await navigate({ to: back })
   }
 
   /**
@@ -507,8 +516,8 @@ export function DocumentDetailPage() {
     return (
       <section className="flex flex-col gap-3">
         <p className="text-sm text-madder">{error || 'Document not found.'}</p>
-        <Link to={documentsLanding()} className="text-sm font-medium text-oxblood underline">
-          {backLabel()}
+        <Link to={back} className="text-sm font-medium text-oxblood underline">
+          {backLabel(back)}
         </Link>
       </section>
     )
@@ -536,8 +545,8 @@ export function DocumentDetailPage() {
       )}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <Link to={documentsLanding()} className="text-sm text-ink-soft hover:text-oxblood">
-            &larr; {backLabel()}
+          <Link to={back} className="text-sm text-ink-soft hover:text-oxblood">
+            &larr; {backLabel(back)}
           </Link>
           <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight text-ink">
             {document.title || 'Untitled document'}
@@ -545,6 +554,12 @@ export function DocumentDetailPage() {
           <p className="text-sm text-ink-soft">
             Status: {DOCUMENT_STATUS_LABELS[document.processing_status]}
           </p>
+          <ShareSummary
+            documentId={documentId}
+            ownerId={document.user}
+            owned={owned}
+            version={shareVersion}
+          />
           <ProcessingStatus summary={summary} />
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -673,7 +688,14 @@ export function DocumentDetailPage() {
         </div>
       </div>
 
-      <ShareDialog documentId={documentId} open={sharing} onClose={() => setSharing(false)} />
+      <ShareDialog
+        documentId={documentId}
+        open={sharing}
+        onClose={() => {
+          setSharing(false)
+          setShareVersion((version) => version + 1)
+        }}
+      />
 
       {/* The pane sits left of the form but after it in the DOM, so a keyboard
           reaches the fields without tabbing through the PDF viewer first. */}

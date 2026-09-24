@@ -7,11 +7,44 @@ import {
   type DirectoryUser,
   type ShareRecord,
 } from '../lib/api/shares'
+import { listUsers } from '../lib/api/users'
+import { useAsync } from '../hooks/useAsync'
 import { Combobox } from './Combobox'
 import { Button } from './ui'
 
 function label(user: Pick<DirectoryUser, 'email' | 'name'>): string {
   return user.name ? `${user.name} (${user.email})` : user.email
+}
+
+/**
+ * Who else reads this document: its owner, for a reader, or its readers, for
+ * the owner. `version` reloads it after the dialog changed the list.
+ */
+export function ShareSummary({
+  documentId,
+  ownerId,
+  owned,
+  version,
+}: {
+  documentId: string
+  ownerId: string
+  owned: boolean
+  version: number
+}) {
+  const { data } = useAsync(async () => {
+    const users = new Map((await listUsers()).map((user) => [user.id, user]))
+    const name = (id: string) => {
+      const user = users.get(id)
+      return user ? label(user) : 'an unknown account'
+    }
+    if (!owned) {
+      return `Shared with you by ${name(ownerId)}`
+    }
+    const shares = await listDocumentShares(documentId)
+    return shares.length > 0 ? `Shared with ${shares.map((share) => name(share.user)).join(', ')}` : ''
+  }, [documentId, ownerId, owned, version])
+
+  return data ? <p className="text-sm text-ink-soft">{data}</p> : null
 }
 
 /**
