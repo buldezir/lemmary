@@ -307,8 +307,8 @@ func TestScanDoesNothingWithoutAHost(t *testing.T) {
 		t.Fatal("dialled without a configured host")
 		return nil, nil
 	}
-	if res := s.Scan(config.Config{}); res != (Result{}) {
-		t.Fatalf("scan = %+v", res)
+	if res, sum := s.scan(config.Config{}); res != (Result{}) || sum.stopped != "no mailbox configured" {
+		t.Fatalf("scan = %+v, %+v", res, sum)
 	}
 }
 
