@@ -129,18 +129,7 @@ func handleGetImportStatus(app core.App) func(*core.RequestEvent) error {
 		if !ok || job.OwnerUserID != ownerID {
 			return writeError(e, http.StatusNotFound, "Import job not found.")
 		}
-		payload := map[string]any{
-			"job_id":   job.ID,
-			"status":   job.Status,
-			"progress": job.Progress,
-		}
-		if job.Error != "" {
-			payload["error"] = job.Error
-		}
-		if job.Result != nil {
-			payload["result"] = job.Result
-		}
-		return writeJSON(e, http.StatusOK, payload)
+		return writeJSON(e, http.StatusOK, jobPayload(job.ID, job.Status, job.Progress, job.Error, job.Result))
 	}
 }
 

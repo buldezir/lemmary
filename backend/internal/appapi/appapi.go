@@ -4,6 +4,7 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
+	"github.com/pocketbase/pocketbase/tools/router"
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/fulltext"
@@ -119,45 +120,57 @@ func Register(
 			g.GET("/tags/assign", bindAuth(handleGetTagAssignPreview(app)))
 			g.POST("/tags/assign", bindAuth(handlePostTagAssign(app, rt)))
 			g.GET("/tags/assign/status", bindAuth(handleGetTagAssignStatus(app)))
-			g.POST("/import/ngx", bindAuth(handlePostImportNgx(app)))
-			g.GET("/import/ngx/status", bindAuth(handleGetImportNgxStatus(app)))
-			// Two path families over one implementation: only the upload route
-			// says which source it is, and the staged upload remembers.
-			g.POST("/import/amazon/upload", bindAuth(handlePostImportUpload(app, lim, zipimport.SourceAmazon))).
-				Bind(apis.BodyLimit(config.StagingMaxBytesFromEnv()))
-			g.DELETE("/import/amazon/upload", bindAuth(handleDeleteImportUpload(app)))
-			g.POST("/import/amazon", bindAuth(handlePostImport(app)))
-			g.GET("/import/amazon/status", bindAuth(handleGetImportStatus(app)))
-			g.POST("/import/zip/upload", bindAuth(handlePostImportUpload(app, lim, zipimport.SourceFiles))).
-				Bind(apis.BodyLimit(config.StagingMaxBytesFromEnv()))
-			g.DELETE("/import/zip/upload", bindAuth(handleDeleteImportUpload(app)))
-			g.POST("/import/zip", bindAuth(handlePostImport(app)))
-			g.GET("/import/zip/status", bindAuth(handleGetImportStatus(app)))
-			g.POST("/import/archive/upload", bindAuth(handlePostImportArchiveUpload(app, lim))).
-				Bind(apis.BodyLimit(config.StagingMaxBytesFromEnv()))
-			g.DELETE("/import/archive/upload", bindAuth(handleDeleteImportArchiveUpload(app)))
-			g.POST("/import/archive", bindAuth(handlePostImportArchive(app)))
-			g.GET("/import/archive/status", bindAuth(handleGetImportArchiveStatus(app)))
-			// The extra megabyte is headroom for the multipart framing, so a PDF
-			// at the cap reaches the handler and gets the message that explains
-			// the limit instead of a bare 413.
-			g.POST("/split/upload", bindAuth(handlePostSplitUpload(app))).
-				Bind(apis.BodyLimit(pdfsplit.MaxPDFBytes + (1 << 20)))
-			g.DELETE("/split/upload", bindAuth(handleDeleteSplitUpload(app)))
-			g.GET("/split/page", bindAuth(handleGetSplitPage(app)))
-			g.POST("/split/detect", bindAuth(handlePostSplitDetect(app, rt)))
-			g.GET("/split/detect/status", bindAuth(handleGetSplitDetectStatus(app)))
-			g.POST("/split", bindAuth(handlePostSplit(app, lim)))
-			g.GET("/split/status", bindAuth(handleGetSplitStatus(app)))
-			// A scan is a job rather than a synchronous call: a feeder run is
-			// minutes long, and a proxy's read timeout would cut it in half.
-			g.GET("/scan/discover", bindAuth(handleGetScanDiscover(app)))
-			g.POST("/scan", bindAuth(handlePostScan(app, lim)))
-			g.GET("/scan/status", bindAuth(handleGetScanStatus(app)))
-			g.GET("/scan/pdf", bindAuth(handleGetScanPDF(app)))
-			g.DELETE("/scan", bindAuth(handleDeleteScan(app)))
-			g.POST("/scan/document", bindAuth(handlePostScanDocument(app)))
+			registerImportRoutes(g, app, lim)
+			registerSplitRoutes(g, app, rt, lim)
+			registerScanRoutes(g, app, lim)
 			return e.Next()
 		},
 	})
+}
+
+func registerImportRoutes(g *router.RouterGroup[*core.RequestEvent], app core.App, lim limits.Limits) {
+	g.POST("/import/ngx", bindAuth(handlePostImportNgx(app)))
+	g.GET("/import/ngx/status", bindAuth(handleGetImportNgxStatus(app)))
+	// Two path families over one implementation: only the upload route
+	// says which source it is, and the staged upload remembers.
+	g.POST("/import/amazon/upload", bindAuth(handlePostImportUpload(app, lim, zipimport.SourceAmazon))).
+		Bind(apis.BodyLimit(config.StagingMaxBytesFromEnv()))
+	g.DELETE("/import/amazon/upload", bindAuth(handleDeleteImportUpload(app)))
+	g.POST("/import/amazon", bindAuth(handlePostImport(app)))
+	g.GET("/import/amazon/status", bindAuth(handleGetImportStatus(app)))
+	g.POST("/import/zip/upload", bindAuth(handlePostImportUpload(app, lim, zipimport.SourceFiles))).
+		Bind(apis.BodyLimit(config.StagingMaxBytesFromEnv()))
+	g.DELETE("/import/zip/upload", bindAuth(handleDeleteImportUpload(app)))
+	g.POST("/import/zip", bindAuth(handlePostImport(app)))
+	g.GET("/import/zip/status", bindAuth(handleGetImportStatus(app)))
+	g.POST("/import/archive/upload", bindAuth(handlePostImportArchiveUpload(app, lim))).
+		Bind(apis.BodyLimit(config.StagingMaxBytesFromEnv()))
+	g.DELETE("/import/archive/upload", bindAuth(handleDeleteImportArchiveUpload(app)))
+	g.POST("/import/archive", bindAuth(handlePostImportArchive(app)))
+	g.GET("/import/archive/status", bindAuth(handleGetImportArchiveStatus(app)))
+}
+
+func registerSplitRoutes(g *router.RouterGroup[*core.RequestEvent], app core.App, rt *config.Runtime, lim limits.Limits) {
+	// The extra megabyte is headroom for the multipart framing, so a PDF
+	// at the cap reaches the handler and gets the message that explains
+	// the limit instead of a bare 413.
+	g.POST("/split/upload", bindAuth(handlePostSplitUpload(app))).
+		Bind(apis.BodyLimit(pdfsplit.MaxPDFBytes + (1 << 20)))
+	g.DELETE("/split/upload", bindAuth(handleDeleteSplitUpload(app)))
+	g.GET("/split/page", bindAuth(handleGetSplitPage(app)))
+	g.POST("/split/detect", bindAuth(handlePostSplitDetect(app, rt)))
+	g.GET("/split/detect/status", bindAuth(handleGetSplitDetectStatus(app)))
+	g.POST("/split", bindAuth(handlePostSplit(app, lim)))
+	g.GET("/split/status", bindAuth(handleGetSplitStatus(app)))
+}
+
+func registerScanRoutes(g *router.RouterGroup[*core.RequestEvent], app core.App, lim limits.Limits) {
+	// A scan is a job rather than a synchronous call: a feeder run is
+	// minutes long, and a proxy's read timeout would cut it in half.
+	g.GET("/scan/discover", bindAuth(handleGetScanDiscover(app)))
+	g.POST("/scan", bindAuth(handlePostScan(app, lim)))
+	g.GET("/scan/status", bindAuth(handleGetScanStatus(app)))
+	g.GET("/scan/pdf", bindAuth(handleGetScanPDF(app)))
+	g.DELETE("/scan", bindAuth(handleDeleteScan(app)))
+	g.POST("/scan/document", bindAuth(handlePostScanDocument(app)))
 }

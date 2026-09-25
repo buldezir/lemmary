@@ -51,27 +51,13 @@ linters:
         linters: [dupl, funlen, gocognit, nestif]
       # Structural debt that predates the gate: new offenders fail, these don't.
       # Delete an entry once its function is refactored; warn-unused flags stale ones.
-      - {linters: [dupl], path: '^internal/appapi/import_archive\.go$'}
-      - {linters: [dupl], path: '^internal/appapi/import_zip\.go$'}
-      - {linters: [funlen], path: '^internal/appapi/chat\.go$', text: "'handleDocumentChat'"}
-      - {linters: [funlen], path: '^internal/appapi/settings\.go$', text: "'applySettingsPatch'"}
       - {linters: [funlen], path: '^internal/ngxapi/filters\.go$', text: "'parseDocumentFiltersWith'"}
       - {linters: [funlen], path: '^internal/worker/pipeline\.go$', text: "'Run'"}
-      - {linters: [funlen], path: '^internal/appapi/appapi\.go$', text: "'Register'"}
-      - {linters: [funlen], path: '^internal/appapi/mcp\.go$', text: "'newMCPServer'"}
-      - {linters: [funlen], path: '^internal/appapi/search\.go$', text: "'prepareSearchTurn'"}
-      - {linters: [funlen], path: '^internal/appapi/search_survey\.go$', text: "'survey'"}
       - {linters: [funlen], path: '^internal/vault/flush\.go$', text: "'flush'"}
-      - {linters: [gocognit], path: '^internal/appapi/chat\.go$', text: '`handleDocumentChat`'}
-      - {linters: [gocognit], path: '^internal/appapi/providers\.go$', text: '`handlePatchProvider`'}
-      - {linters: [gocognit], path: '^internal/appapi/search_count\.go$', text: '`\(\*agentRetriever\)\.nameGroups`'}
-      - {linters: [gocognit], path: '^internal/appapi/settings\.go$', text: '`applySettingsPatch`'}
       - {linters: [gocognit], path: '^internal/ngxapi/filters\.go$', text: '`parseDocumentFiltersWith`'}
       - {linters: [gocognit], path: '^internal/retrieval/fake_embedder\.go$', text: '`\(\*MemoryChunks\)\.SearchChunks`'}
       - {linters: [gocognit], path: '^internal/vault/flush\.go$', text: '`\(\*Vault\)\.collect`'}
       - {linters: [gocognit], path: '^internal/worker/pipeline\.go$', text: '`\(\*PipelineRunner\)\.Run`'}
-      - {linters: [nestif], path: '^internal/appapi/providers\.go$', text: '`if req\.SDK != nil`'}
-      - {linters: [nestif], path: '^internal/appapi/search_count\.go$', text: '`if query != ""`'}
       - {linters: [nestif], path: '^internal/ngxapi/documents\.go$', text: '`if form != nil`'}
 
 issues:

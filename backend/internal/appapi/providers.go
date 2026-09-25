@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
+
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/chatgpt"
 	"lemmary/backend/internal/config"
@@ -224,29 +225,8 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 		sdk := record.GetString("sdk")
 		if req.SDK != nil {
 			sdk = strings.TrimSpace(*req.SDK)
-			if !aiprovider.ValidSDK(sdk) {
-				return writeError(e, http.StatusBadRequest, invalidSDKMessage())
-			}
-			if !aiprovider.IsLLM(sdk) || !aiprovider.CanEmbed(sdk) || !aiprovider.CanOCR(sdk) || !aiprovider.CanWebSearch(sdk) {
-				// A failed settings lookup must not skip these guards: a bound
-				// provider could become an SDK that cannot serve the binding.
-				settings, err := config.FindSettingsRecord(app, rt.Env())
-				if err != nil {
-					app.Logger().Error("provider patch: settings lookup failed", "error", err)
-					return writeError(e, http.StatusInternalServerError, "Failed to verify provider usage.")
-				}
-				if !aiprovider.IsLLM(sdk) && boundTo(settings, record.Id, llmBindingFields...) {
-					return writeError(e, http.StatusConflict, "Provider is bound to extraction or research and must stay an LLM SDK ("+strings.Join(aiprovider.LLMSDKs(), ", ")+").")
-				}
-				if !aiprovider.CanEmbed(sdk) && boundTo(settings, record.Id, embeddingBindingField) {
-					return writeError(e, http.StatusConflict, "Provider is bound to embeddings and must stay an SDK that can embed ("+strings.Join(aiprovider.EmbeddingSDKs(), ", ")+").")
-				}
-				if !aiprovider.CanOCR(sdk) && boundTo(settings, record.Id, ocrBindingField) {
-					return writeError(e, http.StatusConflict, "Provider is bound to OCR and must stay an SDK that can read a document ("+strings.Join(aiprovider.OCRSDKs(), ", ")+").")
-				}
-				if !aiprovider.CanWebSearch(sdk) && boundTo(settings, record.Id, webSearchBindingField) {
-					return writeError(e, http.StatusConflict, "Provider is bound to web search and must stay an SDK that can search the web ("+strings.Join(aiprovider.WebSearchSDKs(), ", ")+").")
-				}
+			if refused, err := refuseProviderSDKSwitch(e, app, rt, record.Id, sdk); refused {
+				return err
 			}
 			record.Set("sdk", sdk)
 		}
@@ -266,22 +246,58 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 		if req.APIKey != nil && strings.TrimSpace(*req.APIKey) != "" {
 			record.Set("api_key", strings.TrimSpace(*req.APIKey))
 		}
-		// An explicit choice wins; otherwise an SDK change only fills a row that
-		// never had a catalogue. Re-defaulting a row that has one would undo a
-		// deliberate pick -- the form sends the new default itself when the
-		// admin switches SDK and had not overridden it.
-		if req.Catalog != nil || (req.SDK != nil && record.GetString("catalog") == "") {
-			catalog, ok := catalogOrDefault(req.Catalog, sdk)
-			if !ok {
-				return writeError(e, http.StatusBadRequest, invalidCatalogMessage)
-			}
-			record.Set("catalog", catalog)
+		if !patchProviderCatalog(record, req, sdk) {
+			return writeError(e, http.StatusBadRequest, invalidCatalogMessage)
 		}
 		if err := app.Save(record); err != nil {
 			return writeError(e, http.StatusBadRequest, "Failed to update provider: "+err.Error())
 		}
 		return writeJSON(e, http.StatusOK, providerJSON(aiprovider.FromRecord(record)))
 	}
+}
+
+func refuseProviderSDKSwitch(e *core.RequestEvent, app core.App, rt *config.Runtime, providerID, sdk string) (bool, error) {
+	if !aiprovider.ValidSDK(sdk) {
+		return true, writeError(e, http.StatusBadRequest, invalidSDKMessage())
+	}
+	if aiprovider.IsLLM(sdk) && aiprovider.CanEmbed(sdk) && aiprovider.CanOCR(sdk) && aiprovider.CanWebSearch(sdk) {
+		return false, nil
+	}
+	// A failed settings lookup must not skip these guards: a bound provider could
+	// become an SDK that cannot serve the binding.
+	settings, err := config.FindSettingsRecord(app, rt.Env())
+	if err != nil {
+		app.Logger().Error("provider patch: settings lookup failed", "error", err)
+		return true, writeError(e, http.StatusInternalServerError, "Failed to verify provider usage.")
+	}
+	if !aiprovider.IsLLM(sdk) && boundTo(settings, providerID, llmBindingFields...) {
+		return true, writeError(e, http.StatusConflict, "Provider is bound to extraction or research and must stay an LLM SDK ("+strings.Join(aiprovider.LLMSDKs(), ", ")+").")
+	}
+	if !aiprovider.CanEmbed(sdk) && boundTo(settings, providerID, embeddingBindingField) {
+		return true, writeError(e, http.StatusConflict, "Provider is bound to embeddings and must stay an SDK that can embed ("+strings.Join(aiprovider.EmbeddingSDKs(), ", ")+").")
+	}
+	if !aiprovider.CanOCR(sdk) && boundTo(settings, providerID, ocrBindingField) {
+		return true, writeError(e, http.StatusConflict, "Provider is bound to OCR and must stay an SDK that can read a document ("+strings.Join(aiprovider.OCRSDKs(), ", ")+").")
+	}
+	if !aiprovider.CanWebSearch(sdk) && boundTo(settings, providerID, webSearchBindingField) {
+		return true, writeError(e, http.StatusConflict, "Provider is bound to web search and must stay an SDK that can search the web ("+strings.Join(aiprovider.WebSearchSDKs(), ", ")+").")
+	}
+	return false, nil
+}
+
+// An explicit choice wins; otherwise an SDK change only fills a row that never
+// had a catalogue. Re-defaulting a row that has one would undo a deliberate pick
+// -- the form sends the new default itself when the admin switches SDK and had
+// not overridden it.
+func patchProviderCatalog(record *core.Record, req providerWriteRequest, sdk string) bool {
+	if req.Catalog != nil || (req.SDK != nil && record.GetString("catalog") == "") {
+		catalog, ok := catalogOrDefault(req.Catalog, sdk)
+		if !ok {
+			return false
+		}
+		record.Set("catalog", catalog)
+	}
+	return true
 }
 
 func handleDeleteProvider(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {

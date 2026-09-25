@@ -167,7 +167,12 @@ type mcpCountArgs struct {
 
 func newMCPServer(tools agentTools, docs mcpDocs) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "lemmary", Version: "1"}, nil)
+	addMCPRetrievalTools(server, tools)
+	addMCPDocsTools(server, docs)
+	return server
+}
 
+func addMCPRetrievalTools(server *mcp.Server, tools agentTools) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "search_documents",
 		Description: "Search the archive by meaning and by keywords (hybrid full-text and vector index), with optional filters. " +
@@ -234,7 +239,9 @@ func newMCPServer(tools agentTools, docs mcpDocs) *mcp.Server {
 		}
 		return nil, result, nil
 	})
+}
 
+func addMCPDocsTools(server *mcp.Server, docs mcpDocs) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "list_documents",
 		Description: "List documents by metadata, newest first by default, with paging. No text search: " +
@@ -275,6 +282,4 @@ func newMCPServer(tools agentTools, docs mcpDocs) *mcp.Server {
 		}
 		return nil, result, nil
 	})
-
-	return server
 }

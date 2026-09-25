@@ -201,37 +201,57 @@ func latestAssistantMessage(app core.App, sessionID, runID, reply string, hits [
 	return unsavedMessage(reply, hits)
 }
 
+// loadChatDocument finds the document and the OCR text the chat is about. On
+// failure it writes the response itself and reports handled.
+func loadChatDocument(app core.App, e *core.RequestEvent) (*core.Record, string, bool, error) {
+	documentID := strings.TrimSpace(e.Request.PathValue("documentId"))
+	if documentID == "" {
+		return nil, "", true, writeError(e, http.StatusBadRequest, "Document id is required.")
+	}
+
+	document, err := app.FindRecordById("documents", documentID)
+	if err != nil {
+		return nil, "", true, writeError(e, http.StatusNotFound, "Document not found.")
+	}
+	// Superusers bypass ownership, matching the PocketBase collection rules.
+	// This answers document access; session ownership is resolved later.
+	if !e.HasSuperuserAuth() && !CanReadDocument(app, document, e.Auth.Id) {
+		return nil, "", true, writeError(e, http.StatusForbidden, "You do not have access to this document.")
+	}
+
+	ocrText := strings.TrimSpace(document.GetString("ocr_text"))
+	if ocrText == "" {
+		return nil, "", true, writeError(e, http.StatusBadRequest, "Document has no OCR text yet.")
+	}
+	return document, ocrText, false, nil
+}
+
+// The error is the message the 400 carries.
+func decodeChatRequest(e *core.RequestEvent) (chatRequest, string, string, error) {
+	var req chatRequest
+	if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
+		return req, "", "", errors.New("Invalid request body.")
+	}
+	content, err := validateChatContent(req.Content)
+	if err != nil {
+		return req, "", "", err
+	}
+	runID, err := validateRunID(req.RunID)
+	if err != nil {
+		return req, "", "", err
+	}
+	return req, content, runID, nil
+}
+
 func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		documentID := strings.TrimSpace(e.Request.PathValue("documentId"))
-		if documentID == "" {
-			return writeError(e, http.StatusBadRequest, "Document id is required.")
+		document, ocrText, handled, err := loadChatDocument(app, e)
+		if handled {
+			return err
 		}
+		documentID := document.Id
 
-		document, err := app.FindRecordById("documents", documentID)
-		if err != nil {
-			return writeError(e, http.StatusNotFound, "Document not found.")
-		}
-		// Superusers bypass ownership, matching the PocketBase collection rules.
-		// This answers document access; session ownership is resolved below.
-		if !e.HasSuperuserAuth() && !CanReadDocument(app, document, e.Auth.Id) {
-			return writeError(e, http.StatusForbidden, "You do not have access to this document.")
-		}
-
-		ocrText := strings.TrimSpace(document.GetString("ocr_text"))
-		if ocrText == "" {
-			return writeError(e, http.StatusBadRequest, "Document has no OCR text yet.")
-		}
-
-		var req chatRequest
-		if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
-			return writeError(e, http.StatusBadRequest, "Invalid request body.")
-		}
-		content, err := validateChatContent(req.Content)
-		if err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
-		}
-		requestID, err := validateRunID(req.RunID)
+		req, content, requestID, err := decodeChatRequest(e)
 		if err != nil {
 			return writeError(e, http.StatusBadRequest, err.Error())
 		}
