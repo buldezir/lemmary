@@ -405,13 +405,24 @@ Query behavior:
 - Search covers bilingual title/purpose/summary, OCR text, tag/type/correspondent names, and `people_or_organizations`.
 - The homepage search box calls `GET /api/app/documents/search` once three characters are typed — below that it says so and leaves the list unfiltered, since a one- or two-letter prefix would match most of the archive. An empty search box still lists via PocketBase (sort by created).
 - The `search_documents` tool behind both [search pages](/deep_research) and paperless-ngx `GET /api/documents/?query=` use the same index. Deep Research’s `read_documents` reads `ocr_text` straight from the database, not the index.
-- **The agent’s searches relax that AND; the search box does not.** The prompts ask the model to expand a question into keywords, and requiring every one of them returned nothing for archives that held a document per keyword. So `search_documents` asks for most of the terms (all of 2, n−1 up to 5, then 70%), and if *that* matches nothing at all it retries for any one of them — with one edit of slack on words of five letters or more that carry no digits — capping the retry at 10 hits. A quoted phrase stays mandatory in both attempts. The search box keeps strict AND on purpose: there the query is a filter over documents the user knows, and a hit that dropped a word reads as a bug.
+- **The agent’s searches relax that AND; the search box does not** (with an embedding model it adds documents close in meaning, below). The prompts ask the model to expand a question into keywords, and requiring every one of them returned nothing for archives that held a document per keyword. So `search_documents` asks for most of the terms (all of 2, n−1 up to 5, then 70%), and if *that* matches nothing at all it retries for any one of them — with one edit of slack on words of five letters or more that carry no digits — capping the retry at 10 hits. A quoted phrase stays mandatory in both attempts. The search box keeps strict AND on purpose: there the query is a filter over documents the user knows, and a hit that dropped a word reads as a bug.
 - PocketBase collection filters (`field ~ "..."`) remain available to API clients; the UI no longer uses them for the search box.
 
 With an embedding model bound there is a second index beside it, at
 `{dataDir}/bleve/chunks`: one entry per embedded passage, carrying the passage's
-text and its vector. Only the search agent queries it. It is derived data like
-the first — rebuilt from `data.db` with no calls to the embedding provider — and
+text and its vector. The search agent queries it, and so does the search box:
+there every strict keyword match is ranked together with up to 20 documents
+whose passages stand out from the rest by meaning (reciprocal rank fusion, the
+list's filters applied to both), so a paraphrase or a word in another language
+still finds its document. Meaning reorders the keyword matches but never
+outranks them: documents found only by meaning follow the last one that has
+the words. A nearest neighbour is not enough: a document counts
+when its similarity clears the query's median document by 15% of the headroom
+above that median, or, on `bge-m3`, when it reaches 0.48 — the one model with a
+measured floor, and the only way "invoice" finds an archive of German invoices
+that all score alike. An unrelated query lists nothing. Each search
+box query costs one embedding request. It is derived data like the first —
+rebuilt from `data.db` with no calls to the embedding provider — and
 it is versioned by model *and* dimension count, so changing either wipes and
 refills that index alone while keyword search keeps serving. Clearing the
 embedding binding deletes the directory.

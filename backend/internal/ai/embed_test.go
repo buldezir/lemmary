@@ -105,7 +105,7 @@ func newTestEmbedder(t *testing.T, baseURL string, dims int) *openAIEmbedder {
 		t.Fatal("NewEmbedder did not return the OpenAI implementation")
 	}
 	// No real backoff in tests: the schedule is asserted separately.
-	e.sleep = func(time.Duration) {}
+	e.sleep = func(context.Context, time.Duration) {}
 	return e
 }
 
@@ -321,7 +321,7 @@ func TestEmbedBackoffGrowsFourfold(t *testing.T) {
 	e := newTestEmbedder(t, ts.URL, 0)
 
 	var slept []time.Duration
-	e.sleep = func(d time.Duration) { slept = append(slept, d) }
+	e.sleep = func(_ context.Context, d time.Duration) { slept = append(slept, d) }
 
 	_, _ = e.Embed(t.Context(), inputs(1, "hello"))
 
@@ -333,6 +333,19 @@ func TestEmbedBackoffGrowsFourfold(t *testing.T) {
 		if slept[i] != want[i] {
 			t.Fatalf("backoff %d = %v, want %v", i, slept[i], want[i])
 		}
+	}
+}
+
+// A caller that gave up must not sit out a 16-second backoff: the search box
+// embeds on every keystroke and falls back to keywords on its own deadline.
+func TestBackoffEndsWithTheCallersContext(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	start := time.Now()
+	sleepCtx(ctx, time.Hour)
+	if waited := time.Since(start); waited > time.Second {
+		t.Fatalf("slept %v after the context ended", waited)
 	}
 }
 
@@ -434,7 +447,7 @@ func TestEmbedSendsSessionHeaderToOpenCode(t *testing.T) {
 	if !ok {
 		t.Fatal("NewEmbedder did not return the OpenAI implementation")
 	}
-	e.sleep = func(time.Duration) {}
+	e.sleep = func(context.Context, time.Duration) {}
 
 	ctx := aiprovider.WithSession(context.Background(), "conv123")
 	if _, err := e.Embed(ctx, []string{"hello"}); err != nil {
@@ -452,7 +465,7 @@ func TestEmbedSendsSessionHeaderToOpenCode(t *testing.T) {
 	plain, _ := NewEmbedder(aiprovider.SDKOpenAI, "test-key", "test-embed",
 		srv.URL+"/v1", 0, 5*time.Second, slog.Default(),
 	).(*openAIEmbedder)
-	plain.sleep = func(time.Duration) {}
+	plain.sleep = func(context.Context, time.Duration) {}
 	if _, err := plain.Embed(ctx, []string{"hello"}); err != nil {
 		t.Fatalf("embed: %v", err)
 	}

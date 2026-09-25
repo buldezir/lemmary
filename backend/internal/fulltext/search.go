@@ -517,12 +517,13 @@ func filterQuery(q Query) query.Query {
 	}
 }
 
-// Whether q restricts by anything but its owner, i.e. by filters the chunk
-// index cannot apply itself.
+// Whether q restricts by anything the chunk index cannot apply itself. That
+// index knows only readable-by-UserID, so owner=mine/shared counts too.
 func HasDocumentFilters(q Query) bool {
 	bare := q
 	bare.UserID = ""
-	return len(filterConjuncts(bare)) > 0
+	ownerFilter := q.UserID != "" && (q.Owner == OwnerMine || q.Owner == OwnerShared)
+	return ownerFilter || len(filterConjuncts(bare)) > 0
 }
 
 // What a relaxed query is allowed to drop: everything but a closed phrase.

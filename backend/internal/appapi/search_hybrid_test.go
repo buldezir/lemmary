@@ -2,10 +2,13 @@ package appapi
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -257,5 +260,154 @@ func TestReadFocusRanksWithTheChunkIndex(t *testing.T) {
 	}
 	if !strings.Contains(docs[0].Text, "150 EUR") {
 		t.Fatalf("the focused excerpt missed the passage it was asked for:\n%s", docs[0].Text)
+	}
+}
+
+type fixedChunks []retrieval.ChunkHit
+
+func (f fixedChunks) SearchChunks(_ context.Context, q retrieval.ChunkQuery) ([]retrieval.ChunkHit, error) {
+	if len(q.DocumentIDs) == 0 {
+		return f, nil
+	}
+	var kept fixedChunks
+	for _, hit := range f {
+		if slices.Contains(q.DocumentIDs, hit.DocumentID) {
+			kept = append(kept, hit)
+		}
+	}
+	return kept, nil
+}
+
+// neighbours scores "dense" at top and pads the list with background documents
+// the way bge-m3 does, so the only thing deciding a standout is top.
+func neighbours(top float64) fixedChunks {
+	hits := fixedChunks{{DocumentID: "dense", Score: top}}
+	for i, score := range []float64{0.347, 0.346, 0.341, 0.33, 0.32, 0.317, 0.31, 0.30, 0.29} {
+		hits = append(hits, retrieval.ChunkHit{DocumentID: fmt.Sprintf("background%d", i), Score: score})
+	}
+	return hits
+}
+
+func TestFusedDocumentPageAddsDenseMatchesUnderTheListsFilters(t *testing.T) {
+	r := hybridRetriever(t, nil)
+	floor := similarityFloor("BAAI/bge-m3")
+	page := func(q fulltext.Query) fulltext.Result {
+		t.Helper()
+		q.UserID = "u1"
+		if q.Limit == 0 {
+			q.Limit = 10
+		}
+		result, ok, err := r.fusedDocumentPage(context.Background(), q, floor)
+		if err != nil || !ok {
+			t.Fatalf("fused page: ok = %v, err = %v", ok, err)
+		}
+		return result
+	}
+
+	// "invoice" over an archive of German invoices: nothing stands out, and
+	// every document at the floor answers it.
+	r.chunks = fixedChunks{
+		{DocumentID: "rechnung1", Score: 0.53}, {DocumentID: "rechnung2", Score: 0.51},
+		{DocumentID: "rechnung3", Score: 0.49}, {DocumentID: "rechnung4", Score: 0.478},
+	}
+	if broad := page(fulltext.Query{Text: "invoice"}); broad.Total != 3 {
+		t.Fatalf("want the three invoices at the floor: %#v", broad)
+	}
+	floor = similarityFloor("text-embedding-3-small")
+	if unmeasured := page(fulltext.Query{Text: "invoice"}); unmeasured.Total != 0 {
+		t.Fatalf("a model with no measured floor must fall back to standing out: %#v", unmeasured)
+	}
+	floor = similarityFloor("BAAI/bge-m3")
+
+	r.chunks = neighbours(0.357)
+	if unrelated := page(fulltext.Query{Text: "zebracrossing"}); unrelated.Total != 0 {
+		t.Fatalf("nearest neighbours of an unrelated query were listed: %#v", unrelated)
+	}
+
+	r.chunks = neighbours(0.521)
+	byMeaning := page(fulltext.Query{Text: "Versicherungspraemien"})
+	if byMeaning.Total != 1 || byMeaning.Hits[0].ID != "dense" {
+		t.Fatalf("want only the document that stands out: %#v", byMeaning)
+	}
+
+	both := page(fulltext.Query{Text: "insurance premium"})
+	if both.Total != 2 || both.Hits[0].ID != "lexical" {
+		t.Fatalf("the keyword match should lead the fused list of both: %#v", both)
+	}
+	second := page(fulltext.Query{Text: "insurance premium", Offset: 1, Limit: 1})
+	if second.Total != 2 || len(second.Hits) != 1 || second.Hits[0].ID != both.Hits[1].ID {
+		t.Fatalf("paging the fused list: %#v", second)
+	}
+
+	filtered := page(fulltext.Query{Text: "Versicherungspraemien", ProcessingStatus: "completed"})
+	if filtered.Total != 0 || len(filtered.Hits) != 0 {
+		t.Fatalf("a filter no document passes let the dense leg through: %#v", filtered)
+	}
+}
+
+// A provider that is configured but down must cost the search box its
+// matches by meaning, never its keyword matches or a keystroke's worth of wait.
+func TestFusedDocumentPageKeepsKeywordsWhenTheProviderIsDown(t *testing.T) {
+	r := hybridRetriever(t, nil)
+	r.embedQuery = func(ctx context.Context, _ string) ([]float32, error) {
+		if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > maxDenseWait {
+			t.Errorf("the query embedding is not bounded: deadline %v, set %v", deadline, ok)
+		}
+		return nil, io.ErrUnexpectedEOF
+	}
+	q := fulltext.Query{Text: "insurance premium", UserID: "u1", Limit: 10}
+	result, ok, err := r.fusedDocumentPage(context.Background(), q, similarityFloor("BAAI/bge-m3"))
+	if err != nil || !ok || result.Total != 1 || result.Hits[0].ID != "lexical" {
+		t.Fatalf("keyword results were lost with the provider: ok = %v, err = %v, %#v", ok, err, result)
+	}
+}
+
+// Both fixtures say "240 EUR"; "outsider" shares no word with the query and is
+// the closest by meaning, so it is the hit that would jump the queue.
+func TestFusedDocumentPageNeverRanksMeaningAboveKeywords(t *testing.T) {
+	r := hybridRetriever(t, nil)
+	r.chunks = append(fixedChunks{{DocumentID: "outsider", Score: 0.60}, {DocumentID: "dense", Score: 0.55}}, neighbours(0.3)[1:]...)
+	page := func(text string) fulltext.Result {
+		t.Helper()
+		result, ok, err := r.fusedDocumentPage(context.Background(),
+			fulltext.Query{Text: text, UserID: "u1", Limit: 10}, similarityFloor("BAAI/bge-m3"))
+		if err != nil || !ok {
+			t.Fatalf("fused page: ok = %v, err = %v", ok, err)
+		}
+		return result
+	}
+
+	both := page("240 EUR")
+	if both.Total != 3 || both.Hits[2].ID != "outsider" {
+		t.Fatalf("a meaning-only hit must follow every keyword match: %#v", both)
+	}
+
+	// A strict miss widens to prefixes, as it does with embeddings off.
+	if prefix := page("insur"); prefix.Total != 3 || prefix.Hits[0].ID != "lexical" {
+		t.Fatalf("the prefix match should lead: %#v", prefix)
+	}
+}
+
+// The chunk index knows readable, not owned, so a shared document close in
+// meaning has to be kept off a mine-only list such as the Inbox here.
+func TestFusedDocumentPageKeepsSharedDocumentsOffMine(t *testing.T) {
+	r := hybridRetriever(t, nil)
+	for id, owner := range map[string]string{"dense": "u1", "theirs": "u2"} {
+		err := r.idx.Put(id, map[string]any{
+			fulltext.FieldUser:  []string{"u1", owner},
+			fulltext.FieldOwner: owner,
+			fulltext.FieldTitle: id,
+			fulltext.FieldAll:   id,
+		})
+		if err != nil {
+			t.Fatalf("put %s: %v", id, err)
+		}
+	}
+	r.chunks = fixedChunks{{DocumentID: "theirs", Score: 0.60}, {DocumentID: "dense", Score: 0.55}}
+
+	q := fulltext.Query{Text: "Versicherungspraemien", UserID: "u1", Owner: fulltext.OwnerMine, Limit: 10}
+	result, ok, err := r.fusedDocumentPage(context.Background(), q, similarityFloor("BAAI/bge-m3"))
+	if err != nil || !ok || result.Total != 1 || result.Hits[0].ID != "dense" {
+		t.Fatalf("want only the caller's own document: ok = %v, err = %v, %#v", ok, err, result)
 	}
 }

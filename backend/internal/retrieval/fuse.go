@@ -1,6 +1,9 @@
 package retrieval
 
-import "sort"
+import (
+	"math"
+	"sort"
+)
 
 // The k of reciprocal rank fusion. 60 is the original paper's value: large
 // enough that the top of a list cannot dominate, small enough that rank 1
@@ -124,6 +127,32 @@ func GroupChunks(hits []ChunkHit, perDoc int) ([]Ranked, map[string][]ChunkHit) 
 		docs = append(docs, Ranked{ID: id, Score: best[id]})
 	}
 	return docs, byDoc
+}
+
+// Standouts keeps the head of a best-first similarity list that either reaches
+// floor or clears the list's median by minGap of the headroom above it. kNN
+// returns neighbours whether or not anything is related, so one of the two has
+// to vouch for each: the floor for a query most documents answer, which stands
+// out from nothing, and the median for a model with no measured floor (0).
+//
+// ponytail: the median of the neighbours returned, not of the archive, so on
+// a large archive it runs high and the cut is strict. Sample wider if matches
+// by meaning go missing there.
+func Standouts(ranked []Ranked, floor, minGap float64) []Ranked {
+	cut := math.Inf(1)
+	if floor > 0 {
+		cut = floor
+	}
+	if len(ranked) >= 2 {
+		if median := ranked[len(ranked)/2].Score; median < 1 {
+			cut = min(cut, median+minGap*(1-median))
+		}
+	}
+	n := 0
+	for n < len(ranked) && ranked[n].Score >= cut {
+		n++
+	}
+	return ranked[:n]
 }
 
 func Rank(ids []string) []Ranked {
