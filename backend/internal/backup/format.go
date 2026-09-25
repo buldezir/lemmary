@@ -6,12 +6,13 @@
 // folder, one group per document:
 //
 //	lemmary-export/manifest.json
-//	lemmary-export/[<id>] <title><ext>
-//	lemmary-export/[<id>] <title>.ocr.txt
-//	lemmary-export/[<id>] <title>.metadata.json
-//	lemmary-export/[<id>] <title>.preview.png
+//	lemmary-export/<date> [<id>] <title><ext>
+//	lemmary-export/<date> [<id>] <title>.ocr.txt
+//	lemmary-export/<date> [<id>] <title>.metadata.json
+//	lemmary-export/<date> [<id>] <title>.preview.png
 //
-// Flat keeps the archive browsable by hand. The manifest names every entry
+// <date> is the document's own YYYY-MM-DD, left out when it has none. Flat
+// keeps the archive browsable by hand, and the date sorts it chronologically. The manifest names every entry
 // explicitly, so the importer never has to guess whether "[id] Notes.ocr.txt"
 // is a sidecar or a document whose own file happens to be a .txt.
 package backup

@@ -1,7 +1,13 @@
+import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { fetchDocumentTimeline } from '../lib/api/documents'
+import {
+  fetchDocumentTimeline,
+  fetchDocumentsArchive,
+  listMatchingDocumentIds,
+} from '../lib/api/documents'
+import { saveBlob } from '../lib/download'
 import { UNDATED_PERIOD, activePeriod, periodRange } from '../lib/timeline'
-import { hasActiveFilters } from '../lib/documentQuery'
+import { hasActiveFilters, tagIds } from '../lib/documentQuery'
 import { useAsync } from '../hooks/useAsync'
 import { useDocumentFilterOptions, useDocumentList } from '../hooks/useDocumentList'
 import { useStoredFlag } from '../hooks/useStoredFlag'
@@ -39,6 +45,32 @@ export function IndexPage() {
     updateQuery({ from: range.from, to: range.to, undated: period === UNDATED_PERIOD })
   }
 
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState('')
+
+  async function onExportFiltered() {
+    try {
+      setExporting(true)
+      setExportError('')
+      const ids = await listMatchingDocumentIds(query.q, {
+        status: statusFilter,
+        documentType: query.type,
+        correspondent: query.correspondent,
+        dateFrom: query.from,
+        dateTo: query.to,
+        undated: query.undated,
+        tags: tagIds(query.tags),
+        untagged: query.untagged,
+        owner: query.owner,
+      })
+      saveBlob(await fetchDocumentsArchive(ids), 'lemmary-filtered-export.zip')
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : 'Export failed')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-end justify-between gap-4">
@@ -46,12 +78,38 @@ export function IndexPage() {
           <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">Documents</h2>
           <p className="text-sm text-ink-soft">Upload, search, and review AI-extracted metadata.</p>
         </div>
-        <Link
-          to="/rag/search"
-          className="shrink-0 rounded-xs border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-ink transition-colors hover:border-ink hover:bg-bright"
-        >
-          AI assisted search
-        </Link>
+        <div className="flex shrink-0 gap-2">
+          {hasActiveFilters(query) && list.totalItems > 0 && (
+            <button
+              type="button"
+              onClick={() => void onExportFiltered()}
+              disabled={exporting}
+              aria-label="Export filtered documents"
+              title="Export filtered documents"
+              className="flex items-center justify-center rounded-xs border border-line-strong bg-surface px-2.5 py-2 text-ink-muted transition-colors hover:bg-bright hover:text-ink disabled:opacity-50"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5"
+                aria-hidden="true"
+              >
+                <path d="M10 3v10M6 9l4 4 4-4M4 16h12" />
+              </svg>
+            </button>
+          )}
+          <Link
+            to="/rag/search"
+            className="rounded-xs border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-ink transition-colors hover:border-ink hover:bg-bright"
+          >
+            AI assisted search
+          </Link>
+        </div>
       </div>
 
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
@@ -90,6 +148,7 @@ export function IndexPage() {
               {error || filterOptions.error || timeline.error}
             </p>
           )}
+          {exportError && <p className="text-sm text-madder">{exportError}</p>}
 
           {!loading && documents.length === 0 && (
             <div className="rounded-none border border-line bg-surface py-10 text-center">

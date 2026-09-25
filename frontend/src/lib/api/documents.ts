@@ -513,6 +513,33 @@ export async function searchDocuments(opts: {
   }
 }
 
+/** Every id the list's filters match, across all of its pages. */
+export async function listMatchingDocumentIds(
+  q: string,
+  filters: DocumentListFilters,
+): Promise<string[]> {
+  if (!q) {
+    await ensureAuth()
+    const filter = buildDocumentFilter(filters)
+    const records = await pb.collection('documents').getFullList<{ id: string }>({
+      fields: 'id',
+      // A unique order, or the batches past the first are an unordered OFFSET.
+      sort: 'id',
+      // requestKey: null -- the list's own getList shares the default key, so
+      // either would auto-cancel the other.
+      requestKey: null,
+      ...(filter ? { filter } : {}),
+    })
+    return records.map((record) => record.id)
+  }
+  const ids: string[] = []
+  for (let page = 1; ; page++) {
+    const result = await searchDocuments({ ...filters, q, page, perPage: 100 })
+    ids.push(...result.items.map((document) => document.id))
+    if (page >= result.totalPages) return ids
+  }
+}
+
 export type DocumentTimeline = {
   months: TimelineMonth[]
   /** Only the undated filter reaches these. */
@@ -633,12 +660,18 @@ export async function translateOcrText(documentId: string, force = false): Promi
 /**
  * The backup archive as a blob: every document with its OCR text, metadata and
  * thumbnail plus the taxonomy, as Import -> Lemmary archive restores from.
+ * Given ids, only those of them the caller can read.
  */
-export async function fetchDocumentsArchive(): Promise<Blob> {
+export async function fetchDocumentsArchive(ids?: string[]): Promise<Blob> {
   await ensureAuth()
 
   const response = await fetch(`${pbUrl}/api/app/documents/export`, {
-    headers: { Authorization: pb.authStore.token },
+    method: 'POST',
+    headers: {
+      Authorization: pb.authStore.token,
+      ...(ids ? { 'Content-Type': 'application/json' } : {}),
+    },
+    ...(ids ? { body: JSON.stringify({ ids }) } : {}),
   })
 
   if (!response.ok) {

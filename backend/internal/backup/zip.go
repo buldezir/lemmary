@@ -16,8 +16,10 @@ import (
 // of being held in memory — a library of a few hundred PDFs would not fit
 // otherwise.
 type Document struct {
-	ID               string
-	Title            string
+	ID    string
+	Title string
+	// Date is the document's own "YYYY-MM-DD", empty when it has none.
+	Date             string
 	OriginalFilename string
 	// OpenFile returns the original upload. An error skips the whole document.
 	OpenFile func() (io.ReadCloser, error)
@@ -93,7 +95,7 @@ func writeDocument(zw *zip.Writer, doc Document) (ManifestDocument, bool, error)
 	}
 
 	ext := filepath.Ext(path.Base(doc.OriginalFilename))
-	base := EntryBase(doc.ID, doc.Title)
+	base := EntryBase(doc.ID, doc.Title, doc.Date)
 	entry := ManifestDocument{ID: doc.ID, File: path.Join(Root, base+ext)}
 
 	copyErr := writeZipFile(zw, entry.File, reader)

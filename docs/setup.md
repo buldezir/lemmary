@@ -291,23 +291,25 @@ The page texts go to the extraction provider and model in one request asking for
 
 ## Backup and restore
 
-Any signed-in user can download their whole library as one zip and restore it — into this instance or another one. Export is per user: it contains the caller's documents and taxonomy, never anyone else's, and never the instance's settings or API keys. Saved AI chats are not included: an export carries the archive, not the conversations about it.
+Any signed-in user can download their whole library as one zip and restore it — into this instance or another one. A full backup is per user: it contains the caller's documents and taxonomy, never anyone else's, and never the instance's settings or API keys. Saved AI chats are not included: an export carries the archive, not the conversations about it.
 
 ### Exporting
 
-**More → Export → Download backup**, or `GET /api/app/documents/export`. The response streams a zip named `lemmary-export.zip`; there are no options.
+**More → Export → Download backup**, or `POST /api/app/documents/export` with no body. The response streams a zip named `lemmary-export.zip`.
+
+To export only part of the library, filter the Documents list and use the download icon next to **AI assisted search**. That sends `{"ids": [...]}`, and the archive holds just those documents the caller can read, shared ones included, plus only the tags, correspondents and document types they carry.
 
 Every entry lives flat under `lemmary-export/`, so the archive stays browsable by hand:
 
 ```text
 lemmary-export/manifest.json
-lemmary-export/[<id>] <title><ext>              the original upload
-lemmary-export/[<id>] <title>.ocr.txt           extracted text (omitted when empty)
-lemmary-export/[<id>] <title>.metadata.json     titles, tags, dates, checksum, timestamps
-lemmary-export/[<id>] <title>.preview.png       generated thumbnail (omitted when there is none)
+lemmary-export/<date> [<id>] <title><ext>              the original upload
+lemmary-export/<date> [<id>] <title>.ocr.txt           extracted text (omitted when empty)
+lemmary-export/<date> [<id>] <title>.metadata.json     titles, tags, dates, checksum, timestamps
+lemmary-export/<date> [<id>] <title>.preview.png       generated thumbnail (omitted when there is none)
 ```
 
-`<title>` is sanitized and truncated so the longest name stays under the 255-byte limit filesystems put on one path element. Relations are written as **names**, not ids, because ids mean nothing in the instance the archive is restored into.
+`<date>` is the document's own date as `YYYY-MM-DD`, so sorting the files by name sorts them by date. It is left out for an undated document, whose entries sort after the dated ones. Archives from before the date prefix restore the same way. `<title>` is sanitized and truncated so the longest name stays under the 255-byte limit filesystems put on one path element. Relations are written as **names**, not ids, because ids mean nothing in the instance the archive is restored into.
 
 `manifest.json` is the table of contents: `format`, `version`, `exported_at`, `document_count`, the full `taxonomy`, and the exact entry paths of each document. Two things depend on it:
 
