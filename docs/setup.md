@@ -414,7 +414,9 @@ text and its vector. The search agent queries it, and so does the search box:
 there every strict keyword match is ranked together with up to 20 documents
 whose passages stand out from the rest by meaning (reciprocal rank fusion, the
 list's filters applied to both), so a paraphrase or a word in another language
-still finds its document. A nearest neighbour is not enough: a document counts
+still finds its document. Meaning reorders the keyword matches but never
+outranks them: documents found only by meaning follow the last one that has
+the words. A nearest neighbour is not enough: a document counts
 when its similarity clears the query's median document by 15% of the headroom
 above that median, or, on `bge-m3`, when it reaches 0.48 — the one model with a
 measured floor, and the only way "invoice" finds an archive of German invoices

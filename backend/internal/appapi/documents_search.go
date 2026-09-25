@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -19,8 +20,8 @@ const (
 	defaultListPageSize   = 12
 	maxListPageSize       = 100
 	maxDenseListDocuments = 20
-	// Measured on bge-m3: unrelated queries top out at 0.12, cross-language
-	// product matches start at 0.155.
+	// Of (score - median) / (1 - median), measured on bge-m3: unrelated
+	// queries top out at 0.12, cross-language product matches start at 0.155.
 	minMeaningGap = 0.15
 	// ponytail: past this many keyword matches the list falls back to keyword
 	// ranking alone; page the fusion if archives outgrow it.
@@ -131,7 +132,9 @@ func handleDocumentSearch(app core.App, rt *config.Runtime, idx *fulltext.Index)
 
 // fusedDocumentPage ranks every keyword match together with the documents the
 // chunk index finds by meaning, the way the agent's search does, then cuts the
-// page. ok is false when there are too many keyword matches to rank here.
+// page. Meaning reorders the keyword matches but never outranks them: the box
+// is a filter, and a hit without the words above one with them reads as a bug.
+// ok is false when there are too many keyword matches to rank here.
 func (r *agentRetriever) fusedDocumentPage(ctx context.Context, q fulltext.Query, floor float64) (fulltext.Result, bool, error) {
 	ids, _, complete, err := r.idx.MatchingIDs(q, maxFusedKeywordMatches)
 	if err != nil || !complete {
@@ -145,7 +148,13 @@ func (r *agentRetriever) fusedDocumentPage(ctx context.Context, q fulltext.Query
 		dense = retrieval.Standouts(dense, floor, minMeaningGap)
 		dense = dense[:min(len(dense), maxDenseListDocuments)]
 	}
-	fused := retrieval.IDs(retrieval.RRF(retrieval.Rank(ids), dense))
+	ranked := retrieval.RRF(retrieval.Rank(ids), dense)
+	keyword := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		keyword[id] = true
+	}
+	sort.SliceStable(ranked, func(i, j int) bool { return keyword[ranked[i].ID] && !keyword[ranked[j].ID] })
+	fused := retrieval.IDs(ranked)
 
 	start := min(max(q.Offset, 0), len(fused))
 	end := min(start+q.Limit, len(fused))

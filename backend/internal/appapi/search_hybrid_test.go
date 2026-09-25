@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -264,8 +265,17 @@ func TestReadFocusRanksWithTheChunkIndex(t *testing.T) {
 
 type fixedChunks []retrieval.ChunkHit
 
-func (f fixedChunks) SearchChunks(context.Context, retrieval.ChunkQuery) ([]retrieval.ChunkHit, error) {
-	return f, nil
+func (f fixedChunks) SearchChunks(_ context.Context, q retrieval.ChunkQuery) ([]retrieval.ChunkHit, error) {
+	if len(q.DocumentIDs) == 0 {
+		return f, nil
+	}
+	var kept fixedChunks
+	for _, hit := range f {
+		if slices.Contains(q.DocumentIDs, hit.DocumentID) {
+			kept = append(kept, hit)
+		}
+	}
+	return kept, nil
 }
 
 // neighbours scores "dense" at top and pads the list with background documents
@@ -349,5 +359,55 @@ func TestFusedDocumentPageKeepsKeywordsWhenTheProviderIsDown(t *testing.T) {
 	result, ok, err := r.fusedDocumentPage(context.Background(), q, similarityFloor("BAAI/bge-m3"))
 	if err != nil || !ok || result.Total != 1 || result.Hits[0].ID != "lexical" {
 		t.Fatalf("keyword results were lost with the provider: ok = %v, err = %v, %#v", ok, err, result)
+	}
+}
+
+// Both fixtures say "240 EUR"; "outsider" shares no word with the query and is
+// the closest by meaning, so it is the hit that would jump the queue.
+func TestFusedDocumentPageNeverRanksMeaningAboveKeywords(t *testing.T) {
+	r := hybridRetriever(t, nil)
+	r.chunks = append(fixedChunks{{DocumentID: "outsider", Score: 0.60}, {DocumentID: "dense", Score: 0.55}}, neighbours(0.3)[1:]...)
+	page := func(text string) fulltext.Result {
+		t.Helper()
+		result, ok, err := r.fusedDocumentPage(context.Background(),
+			fulltext.Query{Text: text, UserID: "u1", Limit: 10}, similarityFloor("BAAI/bge-m3"))
+		if err != nil || !ok {
+			t.Fatalf("fused page: ok = %v, err = %v", ok, err)
+		}
+		return result
+	}
+
+	both := page("240 EUR")
+	if both.Total != 3 || both.Hits[2].ID != "outsider" {
+		t.Fatalf("a meaning-only hit must follow every keyword match: %#v", both)
+	}
+
+	// A strict miss widens to prefixes, as it does with embeddings off.
+	if prefix := page("insur"); prefix.Total != 3 || prefix.Hits[0].ID != "lexical" {
+		t.Fatalf("the prefix match should lead: %#v", prefix)
+	}
+}
+
+// The chunk index knows readable, not owned, so a shared document close in
+// meaning has to be kept off a mine-only list such as the Inbox here.
+func TestFusedDocumentPageKeepsSharedDocumentsOffMine(t *testing.T) {
+	r := hybridRetriever(t, nil)
+	for id, owner := range map[string]string{"dense": "u1", "theirs": "u2"} {
+		err := r.idx.Put(id, map[string]any{
+			fulltext.FieldUser:  []string{"u1", owner},
+			fulltext.FieldOwner: owner,
+			fulltext.FieldTitle: id,
+			fulltext.FieldAll:   id,
+		})
+		if err != nil {
+			t.Fatalf("put %s: %v", id, err)
+		}
+	}
+	r.chunks = fixedChunks{{DocumentID: "theirs", Score: 0.60}, {DocumentID: "dense", Score: 0.55}}
+
+	q := fulltext.Query{Text: "Versicherungspraemien", UserID: "u1", Owner: fulltext.OwnerMine, Limit: 10}
+	result, ok, err := r.fusedDocumentPage(context.Background(), q, similarityFloor("BAAI/bge-m3"))
+	if err != nil || !ok || result.Total != 1 || result.Hits[0].ID != "dense" {
+		t.Fatalf("want only the caller's own document: ok = %v, err = %v, %#v", ok, err, result)
 	}
 }
