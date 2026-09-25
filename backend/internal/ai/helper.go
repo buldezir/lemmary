@@ -273,28 +273,8 @@ func parseDistillRows(content string, req DistillRequest) ([]DistillRow, error) 
 			Relevant: coerceBool(item["relevant"]),
 			Notes:    strings.TrimSpace(coerceString(item["notes"])),
 			Quotes:   coerceStringSlice(item["quotes"]),
+			Values:   distillValues(item["values"], fieldNames),
 			Missing:  coerceStringSlice(item["missing"]),
-		}
-		if values, ok := item["values"].(map[string]any); ok && len(values) > 0 {
-			row.Values = make(map[string]string, len(values))
-			for k, v := range values {
-				k = strings.TrimSpace(k)
-				s := strings.TrimSpace(coerceString(v))
-				if k == "" || s == "" {
-					continue
-				}
-				// Only requested fields and their currency companions; a
-				// helper that volunteers extra columns is not wrong, but
-				// the caller's totals would be.
-				base := strings.TrimSuffix(k, "_currency")
-				if _, ok := fieldNames[base]; !ok && len(fieldNames) > 0 {
-					continue
-				}
-				row.Values[k] = s
-			}
-			if len(row.Values) == 0 {
-				row.Values = nil
-			}
 		}
 		// A note with no relevance flag is still a note: models drop the
 		// boolean more often than they write false with content.
@@ -307,6 +287,33 @@ func parseDistillRows(content string, req DistillRequest) ([]DistillRow, error) 
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
 	return rows, nil
+}
+
+func distillValues(raw any, fieldNames map[string]struct{}) map[string]string {
+	values, ok := raw.(map[string]any)
+	if !ok || len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(values))
+	for k, v := range values {
+		k = strings.TrimSpace(k)
+		s := strings.TrimSpace(coerceString(v))
+		if k == "" || s == "" {
+			continue
+		}
+		// Only requested fields and their currency companions; a
+		// helper that volunteers extra columns is not wrong, but
+		// the caller's totals would be.
+		base := strings.TrimSuffix(k, "_currency")
+		if _, ok := fieldNames[base]; !ok && len(fieldNames) > 0 {
+			continue
+		}
+		out[k] = s
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func coerceBool(v any) bool {

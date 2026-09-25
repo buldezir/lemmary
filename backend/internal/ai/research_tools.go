@@ -326,18 +326,10 @@ func (a *openAISearchAgent) runSurveyTool(
 
 	// Ids are checked the way read_documents checks them: only documents
 	// this conversation has seen.
-	unknown := make([]string, 0)
+	var unknown []string
 	if len(args.IDs) > 0 {
-		wanted := make([]string, 0, len(args.IDs))
-		for _, id := range args.IDs {
-			if _, ok := state.seenIDs[id]; ok {
-				wanted = append(wanted, id)
-			} else {
-				unknown = append(unknown, id)
-			}
-		}
-		args.IDs = wanted
-		if len(wanted) == 0 {
+		args.IDs, unknown = state.splitSeen(args.IDs)
+		if len(args.IDs) == 0 {
 			return toolExecResult{ID: callID, Name: name, Content: `{"error":"no surveyable ids","hint":"pass ids returned by search_documents in this conversation, or a query"}`}, false
 		}
 	} else if args.Query == "" {
@@ -370,6 +362,21 @@ func (a *openAISearchAgent) runSurveyTool(
 		return toolExecResult{ID: callID, Name: name, Content: fmt.Sprintf(`{"error":%q}`, err.Error())}, false
 	}
 
+	newDocs := state.adoptSurvey(result)
+
+	emit(ResearchEvent{Type: "step", Kind: "survey", Status: "done", Query: label, Count: result.Surveyed})
+
+	encoded, err := json.Marshal(surveyPayload(args.Question, result, unknown))
+	if err != nil {
+		return toolExecResult{ID: callID, Name: name, Content: `{"error":"failed to encode survey"}`}, false
+	}
+	// A survey is progress when it read anything at all: even a re-survey of
+	// known documents with a new question is new evidence.
+	return toolExecResult{ID: callID, Name: name, Content: string(encoded)}, result.Surveyed > 0 || newDocs > 0
+}
+
+// adoptSurvey returns how many of the surveyed documents the run had not seen.
+func (state *researchState) adoptSurvey(result SurveyResult) int {
 	newDocs := 0
 	for _, row := range result.Rows {
 		if row.ID == "" {
@@ -395,11 +402,12 @@ func (a *openAISearchAgent) runSurveyTool(
 	for _, row := range result.Rows {
 		state.read[row.ID] = struct{}{}
 	}
+	return newDocs
+}
 
-	emit(ResearchEvent{Type: "step", Kind: "survey", Status: "done", Query: label, Count: result.Surveyed})
-
+func surveyPayload(question string, result SurveyResult, unknown []string) map[string]any {
 	payload := map[string]any{
-		"question":       args.Question,
+		"question":       question,
 		"candidates":     result.Candidates,
 		"surveyed":       result.Surveyed,
 		"count_relevant": countRelevant(result.Rows),
@@ -421,13 +429,7 @@ func (a *openAISearchAgent) runSurveyTool(
 	if len(unknown) > 0 {
 		payload["skipped_unknown_ids"] = unknown
 	}
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return toolExecResult{ID: callID, Name: name, Content: `{"error":"failed to encode survey"}`}, false
-	}
-	// A survey is progress when it read anything at all: even a re-survey of
-	// known documents with a new question is new evidence.
-	return toolExecResult{ID: callID, Name: name, Content: string(encoded)}, result.Surveyed > 0 || newDocs > 0
+	return payload
 }
 
 func countRelevant(rows []SurveyRow) int {

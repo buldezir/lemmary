@@ -53,9 +53,6 @@ linters:
       # Delete an entry once its function is refactored; warn-unused flags stale ones.
       - {linters: [dupl], path: '^internal/appapi/import_archive\.go$'}
       - {linters: [dupl], path: '^internal/appapi/import_zip\.go$'}
-      - {linters: [funlen], path: '^internal/ai/research\.go$', text: "'Research'"}
-      - {linters: [funlen], path: '^internal/ai/research_tools\.go$', text: "'runSurveyTool'"}
-      - {linters: [funlen], path: '^internal/ai/search\.go$', text: "'Search'"}
       - {linters: [funlen], path: '^internal/appapi/chat\.go$', text: "'handleDocumentChat'"}
       - {linters: [funlen], path: '^internal/appapi/settings\.go$', text: "'applySettingsPatch'"}
       - {linters: [funlen], path: '^internal/ngxapi/filters\.go$', text: "'parseDocumentFiltersWith'"}
@@ -65,17 +62,10 @@ linters:
       - {linters: [funlen], path: '^internal/appapi/search\.go$', text: "'prepareSearchTurn'"}
       - {linters: [funlen], path: '^internal/appapi/search_survey\.go$', text: "'survey'"}
       - {linters: [funlen], path: '^internal/vault/flush\.go$', text: "'flush'"}
-      - {linters: [gocognit], path: '^internal/ai/helper\.go$', text: '`parseDistillRows`'}
-      - {linters: [gocognit], path: '^internal/ai/research\.go$', text: '`\(\*openAISearchAgent\)\.Research`'}
-      - {linters: [gocognit], path: '^internal/ai/research_tools\.go$', text: '`\(\*openAISearchAgent\)\.runSurveyTool`'}
-      - {linters: [gocognit], path: '^internal/ai/search\.go$', text: '`\(\*openAISearchAgent\)\.Search`'}
       - {linters: [gocognit], path: '^internal/appapi/chat\.go$', text: '`handleDocumentChat`'}
       - {linters: [gocognit], path: '^internal/appapi/providers\.go$', text: '`handlePatchProvider`'}
       - {linters: [gocognit], path: '^internal/appapi/search_count\.go$', text: '`\(\*agentRetriever\)\.nameGroups`'}
       - {linters: [gocognit], path: '^internal/appapi/settings\.go$', text: '`applySettingsPatch`'}
-      - {linters: [gocognit], path: '^internal/chat/store\.go$', text: '`ForkSession`'}
-      - {linters: [gocognit], path: '^internal/chatgpt/transport\.go$', text: '`toResponsesRequest`'}
-      - {linters: [gocognit], path: '^internal/chatgpt/transport\.go$', text: '`streamingResponse`'}
       - {linters: [gocognit], path: '^internal/ngxapi/filters\.go$', text: '`parseDocumentFiltersWith`'}
       - {linters: [gocognit], path: '^internal/retrieval/fake_embedder\.go$', text: '`\(\*MemoryChunks\)\.SearchChunks`'}
       - {linters: [gocognit], path: '^internal/vault/flush\.go$', text: '`\(\*Vault\)\.collect`'}

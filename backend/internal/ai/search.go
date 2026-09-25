@@ -204,25 +204,9 @@ func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, 
 
 	maxRounds := maxSearchToolRounds
 
-	apiMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages)+1+maxRounds*4)
-	apiMessages = append(apiMessages, openai.SystemMessage(buildSearchSystemPrompt(a.languages, a.resultLanguage, availableTags, opts.DenseRetrieval)))
-	for _, msg := range messages {
-		role := strings.TrimSpace(msg.Role)
-		content := strings.TrimSpace(msg.Content)
-		if role == "" || content == "" {
-			continue
-		}
-		if role != "user" && role != "assistant" {
-			return "", nil, fmt.Errorf("invalid message role: %s", role)
-		}
-		if role == "user" {
-			apiMessages = append(apiMessages, openai.UserMessage(content))
-		} else {
-			apiMessages = append(apiMessages, openai.AssistantMessage(content))
-		}
-	}
-	if len(apiMessages) < 2 {
-		return "", nil, fmt.Errorf("at least one user message is required")
+	apiMessages, err := searchConversation(buildSearchSystemPrompt(a.languages, a.resultLanguage, availableTags, opts.DenseRetrieval), messages)
+	if err != nil {
+		return "", nil, err
 	}
 
 	tools := searchDocumentsTools()
@@ -231,87 +215,30 @@ func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, 
 
 	for round := 0; round <= maxRounds; round++ {
 		allowTools := round < maxRounds
-		params := openai.ChatCompletionNewParams{
-			Model:       shared.ChatModel(a.client.model),
-			Messages:    apiMessages,
-			Temperature: CompletionTemperature(a.client.model, 0.2),
-		}
-		// Tools stay declared on every round: OpenAI-compatible endpoints reject
-		// a bare tool_choice with no tools array, which would 400 the final round.
-		params.Tools = tools
-		if allowTools {
-			params.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{
-				OfAuto: openai.String("auto"),
-			}
-		} else {
-			params.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{
-				OfAuto: openai.String("none"),
-			}
-		}
-
-		requestStart := time.Now()
-		chatResp, err := a.client.Complete(ctx, params,
-			"purpose", "search",
-			"round", round,
-			"allow_tools", allowTools,
-			"messages", len(apiMessages),
-		)
+		msg, err := a.completeSearchRound(ctx, apiMessages, tools, round, allowTools)
 		if err != nil {
-			a.client.logger.Error("search agent request failed",
-				logfmt.Duration("duration", time.Since(requestStart)),
-				slog.Any("error", err),
-			)
-			return "", nil, fmt.Errorf("openai search completion: %w", err)
-		}
-		a.client.logger.Info("search agent response",
-			"choices", len(chatResp.Choices),
-			logfmt.Duration("duration", time.Since(requestStart)),
-		)
-		if len(chatResp.Choices) == 0 {
-			return "", nil, fmt.Errorf("openai returned no choices")
+			return "", nil, err
 		}
 
-		msg := chatResp.Choices[0].Message
-		nativeCalls := msg.ToolCalls
-		dsmlCalls := []parsedToolCall(nil)
-		if len(nativeCalls) == 0 {
-			dsmlCalls = parseDSMLToolCalls(msg.Content)
-		}
-
-		hasToolCalls := len(nativeCalls) > 0 || len(dsmlCalls) > 0
+		dsmlCalls := contentToolCalls(msg)
+		hasToolCalls := len(msg.ToolCalls) > 0 || len(dsmlCalls) > 0
 
 		// Final round, or a plain answer: return user-facing text only.
 		if !allowTools || !hasToolCalls {
-			a.client.logger.Info("search agent finalizing",
-				"allow_tools", allowTools,
-				"dsml", ContentHasDSMLToolCalls(msg.Content),
-				"content_chars", len(msg.Content),
-				"hits", len(allHits),
-			)
-			reply := finalizeSearchReply(msg.Content, allHits)
-			// If the model ignored "no tools" and emitted DSML again, force one
-			// more answer-only turn while we still have hits to ground it.
-			if !allowTools && ContentHasDSMLToolCalls(msg.Content) && round == maxRounds {
-				forced, forcedHits, err := a.forceFinalAnswer(ctx, apiMessages, allHits)
-				if err == nil && strings.TrimSpace(forced) != "" && !replyLooksLikeToolMarkup(forced) {
-					return forced, forcedHits, nil
-				}
-			}
-			return reply, allHits, nil
+			reply, hits := a.finishSearch(ctx, msg.Content, apiMessages, allHits, allowTools)
+			return reply, hits, nil
 		}
 
-		results := make([]toolExecResult, 0)
-
-		if len(nativeCalls) > 0 {
+		if len(msg.ToolCalls) > 0 {
 			apiMessages = append(apiMessages, msg.ToParam())
-			for _, call := range nativeCalls {
+			for _, call := range msg.ToolCalls {
 				result := a.executeToolCall(ctx, search, call.ID, call.Function.Name, call.Function.Arguments, &allHits, seenIDs)
-				results = append(results, result)
 				apiMessages = append(apiMessages, openai.ToolMessage(result.Content, call.ID))
 			}
 		} else {
 			// DSML models put tool calls in content; results go back as a user message.
 			apiMessages = append(apiMessages, openai.AssistantMessage(msg.Content))
+			results := make([]toolExecResult, 0)
 			for _, call := range dsmlCalls {
 				result := a.executeToolCall(ctx, search, call.ID, call.Name, call.Arguments, &allHits, seenIDs)
 				results = append(results, result)
@@ -321,6 +248,104 @@ func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, 
 	}
 
 	return finalizeSearchReply("", allHits), allHits, nil
+}
+
+func searchConversation(systemPrompt string, messages []ChatMessage) ([]openai.ChatCompletionMessageParamUnion, error) {
+	apiMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages)+1+maxSearchToolRounds*4)
+	apiMessages = append(apiMessages, openai.SystemMessage(systemPrompt))
+	for _, msg := range messages {
+		role := strings.TrimSpace(msg.Role)
+		content := strings.TrimSpace(msg.Content)
+		if role == "" || content == "" {
+			continue
+		}
+		if role != "user" && role != "assistant" {
+			return nil, fmt.Errorf("invalid message role: %s", role)
+		}
+		if role == "user" {
+			apiMessages = append(apiMessages, openai.UserMessage(content))
+		} else {
+			apiMessages = append(apiMessages, openai.AssistantMessage(content))
+		}
+	}
+	if len(apiMessages) < 2 {
+		return nil, fmt.Errorf("at least one user message is required")
+	}
+	return apiMessages, nil
+}
+
+func (a *openAISearchAgent) completeSearchRound(
+	ctx context.Context,
+	apiMessages []openai.ChatCompletionMessageParamUnion,
+	tools []openai.ChatCompletionToolUnionParam,
+	round int,
+	allowTools bool,
+) (openai.ChatCompletionMessage, error) {
+	params := openai.ChatCompletionNewParams{
+		Model:       shared.ChatModel(a.client.model),
+		Messages:    apiMessages,
+		Temperature: CompletionTemperature(a.client.model, 0.2),
+	}
+	// Tools stay declared on every round: OpenAI-compatible endpoints reject
+	// a bare tool_choice with no tools array, which would 400 the final round.
+	params.Tools = tools
+	if allowTools {
+		params.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{
+			OfAuto: openai.String("auto"),
+		}
+	} else {
+		params.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{
+			OfAuto: openai.String("none"),
+		}
+	}
+
+	requestStart := time.Now()
+	chatResp, err := a.client.Complete(ctx, params,
+		"purpose", "search",
+		"round", round,
+		"allow_tools", allowTools,
+		"messages", len(apiMessages),
+	)
+	if err != nil {
+		a.client.logger.Error("search agent request failed",
+			logfmt.Duration("duration", time.Since(requestStart)),
+			slog.Any("error", err),
+		)
+		return openai.ChatCompletionMessage{}, fmt.Errorf("openai search completion: %w", err)
+	}
+	a.client.logger.Info("search agent response",
+		"choices", len(chatResp.Choices),
+		logfmt.Duration("duration", time.Since(requestStart)),
+	)
+	if len(chatResp.Choices) == 0 {
+		return openai.ChatCompletionMessage{}, fmt.Errorf("openai returned no choices")
+	}
+	return chatResp.Choices[0].Message, nil
+}
+
+func (a *openAISearchAgent) finishSearch(
+	ctx context.Context,
+	content string,
+	apiMessages []openai.ChatCompletionMessageParamUnion,
+	hits []DocumentHit,
+	allowTools bool,
+) (string, []DocumentHit) {
+	a.client.logger.Info("search agent finalizing",
+		"allow_tools", allowTools,
+		"dsml", ContentHasDSMLToolCalls(content),
+		"content_chars", len(content),
+		"hits", len(hits),
+	)
+	reply := finalizeSearchReply(content, hits)
+	// If the model ignored "no tools" and emitted DSML again, force one
+	// more answer-only turn while we still have hits to ground it.
+	if !allowTools && ContentHasDSMLToolCalls(content) {
+		forced, forcedHits, err := a.forceFinalAnswer(ctx, apiMessages, hits)
+		if err == nil && strings.TrimSpace(forced) != "" && !replyLooksLikeToolMarkup(forced) {
+			return forced, forcedHits
+		}
+	}
+	return reply, hits
 }
 
 func (a *openAISearchAgent) forceFinalAnswer(

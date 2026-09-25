@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/openai/openai-go/v3/option"
+
 	"lemmary/backend/internal/aiprovider"
 )
 
@@ -236,84 +237,14 @@ func readChatRequest(req *http.Request) (chatRequest, error) {
 // not what signing in asked for. temperature has nowhere to go here, and the
 // Codex models refuse a custom value anyway.
 func toResponsesRequest(in chatRequest) responsesRequest {
+	input, instructions := inputItems(in.Messages)
 	out := responsesRequest{
-		Model:  in.Model,
-		Stream: true,
-		Store:  false,
-		Input:  make([]responsesItem, 0, len(in.Messages)),
-	}
-
-	instructions := []string{codexInstructions}
-	for _, msg := range in.Messages {
-		role := strings.ToLower(strings.TrimSpace(msg.Role))
-
-		// The two shapes that are not a message come first: a tool result is an
-		// item of its own, and an assistant message that only asked for a tool
-		// has no content at all.
-		if role == "tool" {
-			if id := strings.TrimSpace(msg.ToolCallID); id != "" {
-				out.Input = append(out.Input, responsesItem{
-					Type: "function_call_output", CallID: id, Output: messageText(msg.Content),
-				})
-			}
-			continue
-		}
-		if role == "assistant" && len(msg.ToolCalls) > 0 {
-			// Some models say something before calling a tool. Keep it: it is
-			// part of the conversation the next round replays.
-			if content := messageContent(msg.Content, "assistant"); len(content) > 0 {
-				out.Input = append(out.Input, responsesItem{
-					Type: "message", Role: "assistant", Content: content,
-				})
-			}
-			for _, call := range msg.ToolCalls {
-				out.Input = append(out.Input, responsesItem{
-					Type:      "function_call",
-					CallID:    call.ID,
-					Name:      call.Function.Name,
-					Arguments: call.Function.Arguments,
-				})
-			}
-			continue
-		}
-
-		// The Responses API has no system message: the role's content is the
-		// instructions field, where the backend also looks for the preamble.
-		if role == "system" || role == "developer" {
-			if text := messageText(msg.Content); strings.TrimSpace(text) != "" {
-				instructions = append(instructions, text)
-			}
-			continue
-		}
-
-		itemRole := "user"
-		if role == "assistant" {
-			itemRole = "assistant"
-		}
-		content := messageContent(msg.Content, itemRole)
-		if len(content) == 0 {
-			continue
-		}
-		out.Input = append(out.Input, responsesItem{
-			Type: "message", Role: itemRole, Content: content,
-		})
-	}
-	out.Instructions = strings.Join(instructions, "\n\n")
-
-	for _, tool := range in.Tools {
-		name := strings.TrimSpace(tool.Function.Name)
-		if name == "" {
-			continue
-		}
-		out.Tools = append(out.Tools, responsesTool{
-			Type:        "function",
-			Name:        name,
-			Description: tool.Function.Description,
-			Parameters:  tool.Function.Parameters,
-			// Matching ai.responsesParamsFrom: the archive's schemas are guidance
-			// rather than contracts, and strict mode rejects several outright.
-			Strict: false,
-		})
+		Model:        in.Model,
+		Instructions: strings.Join(instructions, "\n\n"),
+		Input:        input,
+		Stream:       true,
+		Store:        false,
+		Tools:        responsesTools(in.Tools),
 	}
 	if len(out.Tools) > 0 {
 		out.ToolChoice = in.ToolChoice
@@ -336,6 +267,92 @@ func toResponsesRequest(in chatRequest) responsesRequest {
 				Content: []responsesContent{{Type: "input_text", Text: "Respond with a JSON object."}},
 			})
 		}
+	}
+	return out
+}
+
+func inputItems(messages []chatMessage) ([]responsesItem, []string) {
+	items := make([]responsesItem, 0, len(messages))
+	instructions := []string{codexInstructions}
+	for _, msg := range messages {
+		role := strings.ToLower(strings.TrimSpace(msg.Role))
+
+		// The two shapes that are not a message come first: a tool result is an
+		// item of its own, and an assistant message that only asked for a tool
+		// has no content at all.
+		if role == "tool" {
+			if id := strings.TrimSpace(msg.ToolCallID); id != "" {
+				items = append(items, responsesItem{
+					Type: "function_call_output", CallID: id, Output: messageText(msg.Content),
+				})
+			}
+			continue
+		}
+		if role == "assistant" && len(msg.ToolCalls) > 0 {
+			items = append(items, toolCallItems(msg)...)
+			continue
+		}
+
+		// The Responses API has no system message: the role's content is the
+		// instructions field, where the backend also looks for the preamble.
+		if role == "system" || role == "developer" {
+			if text := messageText(msg.Content); strings.TrimSpace(text) != "" {
+				instructions = append(instructions, text)
+			}
+			continue
+		}
+
+		itemRole := "user"
+		if role == "assistant" {
+			itemRole = "assistant"
+		}
+		content := messageContent(msg.Content, itemRole)
+		if len(content) == 0 {
+			continue
+		}
+		items = append(items, responsesItem{
+			Type: "message", Role: itemRole, Content: content,
+		})
+	}
+	return items, instructions
+}
+
+func toolCallItems(msg chatMessage) []responsesItem {
+	var items []responsesItem
+	// Some models say something before calling a tool. Keep it: it is
+	// part of the conversation the next round replays.
+	if content := messageContent(msg.Content, "assistant"); len(content) > 0 {
+		items = append(items, responsesItem{
+			Type: "message", Role: "assistant", Content: content,
+		})
+	}
+	for _, call := range msg.ToolCalls {
+		items = append(items, responsesItem{
+			Type:      "function_call",
+			CallID:    call.ID,
+			Name:      call.Function.Name,
+			Arguments: call.Function.Arguments,
+		})
+	}
+	return items
+}
+
+func responsesTools(tools []chatTool) []responsesTool {
+	var out []responsesTool
+	for _, tool := range tools {
+		name := strings.TrimSpace(tool.Function.Name)
+		if name == "" {
+			continue
+		}
+		out = append(out, responsesTool{
+			Type:        "function",
+			Name:        name,
+			Description: tool.Function.Description,
+			Parameters:  tool.Function.Parameters,
+			// Matching ai.responsesParamsFrom: the archive's schemas are guidance
+			// rather than contracts, and strict mode rejects several outright.
+			Strict: false,
+		})
 	}
 	return out
 }
@@ -674,85 +691,7 @@ func streamingResponse(resp *http.Response, model string) *http.Response {
 
 	go func() {
 		defer resp.Body.Close()
-
-		id := completionID()
-		created := time.Now().Unix()
-		writeChunk := func(chunk chatChunk) error {
-			payload, err := json.Marshal(chunk)
-			if err != nil {
-				return err
-			}
-			_, err = fmt.Fprintf(pw, "data: %s\n\n", payload)
-			return err
-		}
-
-		var usage chatUsage
-		var failure error
-		// Tool calls are emitted whole, one chunk each. No caller streams a
-		// tool-bearing request today, but a middleware that dropped them here
-		// would be lossy, and silently.
-		toolIndex := 0
-		err := scanSSE(resp.Body, func(event responsesEvent) error {
-			switch event.Type {
-			case "response.output_text.delta":
-				if event.Delta == "" {
-					return nil
-				}
-				return writeChunk(chatChunk{
-					ID: id, Object: "chat.completion.chunk", Created: created, Model: model,
-					Choices: []chunkChoice{{Delta: chunkDelta{Content: event.Delta}}},
-				})
-			case "response.output_item.done":
-				if event.Item == nil {
-					return nil
-				}
-				call, ok := event.Item.toolCall()
-				if !ok {
-					return nil
-				}
-				index := toolIndex
-				toolIndex++
-				return writeChunk(chatChunk{
-					ID: id, Object: "chat.completion.chunk", Created: created, Model: model,
-					Choices: []chunkChoice{{Delta: chunkDelta{ToolCalls: []chunkToolCall{{
-						Index:    index,
-						ID:       call.ID,
-						Type:     call.Type,
-						Function: call.Function,
-					}}}}},
-				})
-			case "response.completed":
-				usage = event.usage()
-			case "response.failed", "response.incomplete", "error":
-				failure = event.failure()
-			}
-			return nil
-		})
-		if err == nil && failure != nil {
-			err = failure
-		}
-		if err != nil {
-			pw.CloseWithError(err)
-			return
-		}
-
-		stop := "stop"
-		if toolIndex > 0 {
-			stop = "tool_calls"
-		}
-		final := chatChunk{
-			ID: id, Object: "chat.completion.chunk", Created: created, Model: model,
-			Choices: []chunkChoice{{Delta: chunkDelta{}, FinishReason: &stop}},
-		}
-		// Usage rides the final chunk, which is where stream_options puts it and
-		if usage.PromptTokens > 0 || usage.CompletionTokens > 0 {
-			final.Usage = &usage
-		}
-		if err := writeChunk(final); err != nil {
-			pw.CloseWithError(err)
-			return
-		}
-		if _, err := io.WriteString(pw, "data: [DONE]\n\n"); err != nil {
+		if err := relayChunks(resp.Body, pw, model); err != nil {
 			pw.CloseWithError(err)
 			return
 		}
@@ -760,6 +699,87 @@ func streamingResponse(resp *http.Response, model string) *http.Response {
 	}()
 
 	return out
+}
+
+func relayChunks(body io.Reader, w io.Writer, model string) error {
+	id := completionID()
+	created := time.Now().Unix()
+
+	var usage chatUsage
+	var failure error
+	// Tool calls are emitted whole, one chunk each. No caller streams a
+	// tool-bearing request today, but a middleware that dropped them here
+	// would be lossy, and silently.
+	toolIndex := 0
+	err := scanSSE(body, func(event responsesEvent) error {
+		switch event.Type {
+		case "response.output_text.delta":
+			if event.Delta == "" {
+				return nil
+			}
+			return writeChunk(w, chatChunk{
+				ID: id, Object: "chat.completion.chunk", Created: created, Model: model,
+				Choices: []chunkChoice{{Delta: chunkDelta{Content: event.Delta}}},
+			})
+		case "response.output_item.done":
+			if event.Item == nil {
+				return nil
+			}
+			call, ok := event.Item.toolCall()
+			if !ok {
+				return nil
+			}
+			index := toolIndex
+			toolIndex++
+			return writeChunk(w, chatChunk{
+				ID: id, Object: "chat.completion.chunk", Created: created, Model: model,
+				Choices: []chunkChoice{{Delta: chunkDelta{ToolCalls: []chunkToolCall{{
+					Index:    index,
+					ID:       call.ID,
+					Type:     call.Type,
+					Function: call.Function,
+				}}}}},
+			})
+		case "response.completed":
+			usage = event.usage()
+		case "response.failed", "response.incomplete", "error":
+			failure = event.failure()
+		}
+		return nil
+	})
+	if err == nil && failure != nil {
+		err = failure
+	}
+	if err != nil {
+		return err
+	}
+
+	stop := "stop"
+	if toolIndex > 0 {
+		stop = "tool_calls"
+	}
+	final := chatChunk{
+		ID: id, Object: "chat.completion.chunk", Created: created, Model: model,
+		Choices: []chunkChoice{{Delta: chunkDelta{}, FinishReason: &stop}},
+	}
+	// Usage rides the final chunk, which is where stream_options puts it and
+	if usage.PromptTokens > 0 || usage.CompletionTokens > 0 {
+		final.Usage = &usage
+	}
+	if err := writeChunk(w, final); err != nil {
+		return err
+	}
+	_, err = io.WriteString(w, "data: [DONE]\n\n")
+	return err
+}
+
+func writeChunk(w io.Writer, chunk chatChunk) error {
+	payload, err := json.Marshal(chunk)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "data: %s\n\n", payload)
+	return err
 }
 
 // cloneResponseHead copies everything but the body, so the SDK still sees the
