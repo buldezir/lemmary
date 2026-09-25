@@ -291,11 +291,13 @@ The page texts go to the extraction provider and model in one request asking for
 
 ## Backup and restore
 
-Any signed-in user can download their whole library as one zip and restore it — into this instance or another one. Export is per user: it contains the caller's documents and taxonomy, never anyone else's, and never the instance's settings or API keys. Saved AI chats are not included: an export carries the archive, not the conversations about it.
+Any signed-in user can download their whole library as one zip and restore it — into this instance or another one. A full backup is per user: it contains the caller's documents and taxonomy, never anyone else's, and never the instance's settings or API keys. Saved AI chats are not included: an export carries the archive, not the conversations about it.
 
 ### Exporting
 
-**More → Export → Download backup**, or `GET /api/app/documents/export`. The response streams a zip named `lemmary-export.zip`; there are no options.
+**More → Export → Download backup**, or `POST /api/app/documents/export` with no body. The response streams a zip named `lemmary-export.zip`.
+
+To export only part of the library, filter the Documents list and use the download icon next to **AI assisted search**. That sends `{"ids": [...]}`, and the archive holds just those documents the caller can read, shared ones included, plus only the tags, correspondents and document types they carry.
 
 Every entry lives flat under `lemmary-export/`, so the archive stays browsable by hand:
 

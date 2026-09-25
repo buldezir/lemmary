@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildDocumentFilter,
   fileUrlWithToken,
+  listMatchingDocumentIds,
   parseDuplicateOfId,
   uploadErrorMessage,
 } from './documents'
@@ -220,5 +221,27 @@ describe('the owner filter', () => {
     asUser(null)
     expect(buildDocumentFilter({ ...noFilters, owner: 'shared' })).toBeUndefined()
     expect(buildDocumentFilter({ ...noFilters, owner: 'mine' })).toBeUndefined()
+  })
+})
+
+describe('listMatchingDocumentIds', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    pb.authStore.clear()
+  })
+
+  // The export takes every match, not the page on screen.
+  it('walks every page of a search', async () => {
+    const payload = btoa(JSON.stringify({ exp: 4102444800 }))
+    pb.authStore.save(`h.${payload}.s`, { id: 'me', collectionId: 'users', collectionName: 'users' })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const page = Number(new URL(url).searchParams.get('page'))
+        return Response.json({ page, totalPages: 3, items: [{ id: `doc${page}` }] })
+      }),
+    )
+
+    expect(await listMatchingDocumentIds('invoice', noFilters)).toEqual(['doc1', 'doc2', 'doc3'])
   })
 })

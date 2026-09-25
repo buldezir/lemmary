@@ -1,9 +1,12 @@
 package appapi
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/pocketbase/dbx"
@@ -17,8 +20,13 @@ import (
 
 const exportPageSize = 100
 
+type exportRequest struct {
+	IDs []string `json:"ids"`
+}
+
 // handleExportDocuments writes the archive POST /api/app/import/archive
-// restores from.
+// restores from: the caller's whole library, or given ids, those of them the
+// caller can read.
 func handleExportDocuments(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		// Superuser sessions export their paired user's archive; e.Auth.Id is
@@ -27,12 +35,28 @@ func handleExportDocuments(app core.App) func(*core.RequestEvent) error {
 		if err != nil {
 			return writeOwnerError(e, err)
 		}
-		records, err := listOwnedDocuments(app, userID)
+		var req exportRequest
+		if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			return writeError(e, http.StatusBadRequest, "Invalid request body.")
+		}
+
+		var records []*core.Record
+		if req.IDs == nil {
+			records, err = listOwnedDocuments(app, userID)
+		} else {
+			records, err = listReadableDocuments(app, userID, req.IDs)
+		}
 		if err != nil {
 			app.Logger().Error("export list documents failed", "error", err)
 			return writeError(e, http.StatusInternalServerError, "Failed to list documents.")
 		}
-		taxonomy, index, err := listOwnedTaxonomy(app, userID)
+		var taxonomy backup.Taxonomy
+		var index taxonomyIndex
+		if req.IDs == nil {
+			taxonomy, index, err = listOwnedTaxonomy(app, userID)
+		} else {
+			taxonomy, index, err = listReferencedTaxonomy(app, records)
+		}
 		if err != nil {
 			app.Logger().Error("export list taxonomy failed", "error", err)
 			return writeError(e, http.StatusInternalServerError, "Failed to list tags.")
@@ -96,6 +120,28 @@ func listOwnedDocuments(app core.App, userID string) ([]*core.Record, error) {
 	return listOwnedRecords(app, "documents", userID, "-created")
 }
 
+func listReadableDocuments(app core.App, userID string, ids []string) ([]*core.Record, error) {
+	readable := dbx.NewExp(ReadableDocumentsSQL("documents", "reader"), dbx.Params{"reader": userID})
+	return findRecordsByIDs(app, "documents", ids, func(q *dbx.SelectQuery) error {
+		q.AndWhere(readable)
+		return nil
+	})
+}
+
+// findRecordsByIDs asks in chunks so a long list stays under SQLite's
+// bound-parameter limit.
+func findRecordsByIDs(app core.App, collection string, ids []string, filters ...func(*dbx.SelectQuery) error) ([]*core.Record, error) {
+	var all []*core.Record
+	for chunk := range slices.Chunk(slices.Compact(slices.Sorted(slices.Values(ids))), exportPageSize) {
+		records, err := app.FindRecordsByIds(collection, chunk, filters...)
+		if err != nil {
+			return nil, fmt.Errorf("list %s: %w", collection, err)
+		}
+		all = append(all, records...)
+	}
+	return all, nil
+}
+
 func listOwnedRecords(app core.App, collection, userID, sort string) ([]*core.Record, error) {
 	var all []*core.Record
 	page := 1
@@ -132,6 +178,28 @@ type taxonomyIndex struct {
 // exist only here, and a restore that dropped them would lose part of the
 // library.
 func listOwnedTaxonomy(app core.App, userID string) (backup.Taxonomy, taxonomyIndex, error) {
+	return collectTaxonomy(func(collection string) ([]*core.Record, error) {
+		return listOwnedRecords(app, collection, userID, "name")
+	})
+}
+
+// listReferencedTaxonomy takes whatever the documents carry, whoever owns it: a
+// shared document's tags are its owner's.
+func listReferencedTaxonomy(app core.App, documents []*core.Record) (backup.Taxonomy, taxonomyIndex, error) {
+	ids := map[string][]string{}
+	for _, doc := range documents {
+		ids["tags"] = append(ids["tags"], doc.GetStringSlice("tags")...)
+		ids["correspondents"] = append(ids["correspondents"], doc.GetString("correspondent"))
+		ids["document_types"] = append(ids["document_types"], doc.GetString("document_type"))
+	}
+	return collectTaxonomy(func(collection string) ([]*core.Record, error) {
+		return findRecordsByIDs(app, collection, ids[collection])
+	})
+}
+
+// collectTaxonomy lists each name once, since two owners can each have an
+// "invoice" tag.
+func collectTaxonomy(list func(collection string) ([]*core.Record, error)) (backup.Taxonomy, taxonomyIndex, error) {
 	index := taxonomyIndex{
 		tags:           map[string]string{},
 		correspondents: map[string]string{},
@@ -143,17 +211,21 @@ func listOwnedTaxonomy(app core.App, userID string) (backup.Taxonomy, taxonomyIn
 		DocumentTypes:  []backup.NamedEntity{},
 	}
 
-	tags, err := listOwnedRecords(app, "tags", userID, "name")
+	tags, err := list("tags")
 	if err != nil {
 		return taxonomy, index, err
 	}
+	seen := map[string]bool{}
 	for _, tag := range tags {
 		name := strings.TrimSpace(tag.GetString("name"))
 		if name == "" {
 			continue
 		}
 		index.tags[tag.Id] = name
-		taxonomy.Tags = append(taxonomy.Tags, name)
+		if !seen[name] {
+			seen[name] = true
+			taxonomy.Tags = append(taxonomy.Tags, name)
+		}
 	}
 
 	for _, group := range []struct {
@@ -164,16 +236,21 @@ func listOwnedTaxonomy(app core.App, userID string) (backup.Taxonomy, taxonomyIn
 		{"correspondents", index.correspondents, &taxonomy.Correspondents},
 		{"document_types", index.documentTypes, &taxonomy.DocumentTypes},
 	} {
-		records, err := listOwnedRecords(app, group.collection, userID, "name")
+		records, err := list(group.collection)
 		if err != nil {
 			return taxonomy, index, err
 		}
+		seen := map[string]bool{}
 		for _, record := range records {
 			name := strings.TrimSpace(record.GetString("name"))
 			if name == "" {
 				continue
 			}
 			group.index[record.Id] = name
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
 			*group.into = append(*group.into, backup.NamedEntity{
 				Name:         name,
 				NameOriginal: strings.TrimSpace(record.GetString("name_original")),
