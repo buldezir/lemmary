@@ -55,7 +55,7 @@ func handleExportDocuments(app core.App) func(*core.RequestEvent) error {
 		if req.IDs == nil {
 			taxonomy, index, err = listOwnedTaxonomy(app, userID)
 		} else {
-			taxonomy, index, err = listReferencedTaxonomy(app, records)
+			taxonomy, index, err = listReferencedTaxonomy(app, userID, records)
 		}
 		if err != nil {
 			app.Logger().Error("export list taxonomy failed", "error", err)
@@ -184,16 +184,27 @@ func listOwnedTaxonomy(app core.App, userID string) (backup.Taxonomy, taxonomyIn
 }
 
 // listReferencedTaxonomy takes whatever the documents carry, whoever owns it: a
-// shared document's tags are its owner's.
-func listReferencedTaxonomy(app core.App, documents []*core.Record) (backup.Taxonomy, taxonomyIndex, error) {
+// shared document's tags are its owner's. The caller's own records come first,
+// so on a name both owners use, theirs is the one the archive keeps.
+func listReferencedTaxonomy(app core.App, userID string, documents []*core.Record) (backup.Taxonomy, taxonomyIndex, error) {
 	ids := map[string][]string{}
 	for _, doc := range documents {
 		ids["tags"] = append(ids["tags"], doc.GetStringSlice("tags")...)
 		ids["correspondents"] = append(ids["correspondents"], doc.GetString("correspondent"))
 		ids["document_types"] = append(ids["document_types"], doc.GetString("document_type"))
 	}
+	ownFirst := func(record *core.Record) string {
+		if record.GetString("user") == userID {
+			return "0" + record.Id
+		}
+		return "1" + record.Id
+	}
 	return collectTaxonomy(func(collection string) ([]*core.Record, error) {
-		return findRecordsByIDs(app, collection, ids[collection])
+		records, err := findRecordsByIDs(app, collection, ids[collection])
+		slices.SortFunc(records, func(a, b *core.Record) int {
+			return strings.Compare(ownFirst(a), ownFirst(b))
+		})
+		return records, err
 	})
 }
 

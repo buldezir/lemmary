@@ -523,6 +523,11 @@ export async function listMatchingDocumentIds(
     const filter = buildDocumentFilter(filters)
     const records = await pb.collection('documents').getFullList<{ id: string }>({
       fields: 'id',
+      // A unique order, or the batches past the first are an unordered OFFSET.
+      sort: 'id',
+      // requestKey: null -- the list's own getList shares the default key, so
+      // either would auto-cancel the other.
+      requestKey: null,
       ...(filter ? { filter } : {}),
     })
     return records.map((record) => record.id)

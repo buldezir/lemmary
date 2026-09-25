@@ -230,10 +230,32 @@ describe('listMatchingDocumentIds', () => {
     pb.authStore.clear()
   })
 
-  // The export takes every match, not the page on screen.
-  it('walks every page of a search', async () => {
+  function signIn() {
     const payload = btoa(JSON.stringify({ exp: 4102444800 }))
     pb.authStore.save(`h.${payload}.s`, { id: 'me', collectionId: 'users', collectionName: 'users' })
+  }
+
+  // Unsorted, the batches past the first are an unordered OFFSET that can skip rows.
+  it('lists a plain filter in a unique order', async () => {
+    signIn()
+    const urls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url)
+        return Response.json({ page: 1, perPage: 1000, items: [{ id: 'a' }, { id: 'b' }] })
+      }),
+    )
+
+    expect(await listMatchingDocumentIds('', { ...noFilters, status: 'failed' })).toEqual(['a', 'b'])
+    const params = new URL(urls[0]).searchParams
+    expect(params.get('sort')).toBe('id')
+    expect(params.get('filter')).toBe('processing_status = "failed"')
+  })
+
+  // The export takes every match, not the page on screen.
+  it('walks every page of a search', async () => {
+    signIn()
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {

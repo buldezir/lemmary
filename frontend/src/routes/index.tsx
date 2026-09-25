@@ -143,11 +143,12 @@ export function IndexPage() {
           />
 
           {loading && <p className="text-sm text-ink-soft">Loading documents...</p>}
-          {(error || filterOptions.error || timeline.error || exportError) && (
+          {(error || filterOptions.error || timeline.error) && (
             <p className="text-sm text-madder">
-              {error || filterOptions.error || timeline.error || exportError}
+              {error || filterOptions.error || timeline.error}
             </p>
           )}
+          {exportError && <p className="text-sm text-madder">{exportError}</p>}
 
           {!loading && documents.length === 0 && (
             <div className="rounded-none border border-line bg-surface py-10 text-center">
