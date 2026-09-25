@@ -58,8 +58,6 @@ linters:
       - {linters: [funlen], path: '^internal/ai/search\.go$', text: "'Search'"}
       - {linters: [funlen], path: '^internal/appapi/chat\.go$', text: "'handleDocumentChat'"}
       - {linters: [funlen], path: '^internal/appapi/settings\.go$', text: "'applySettingsPatch'"}
-      - {linters: [funlen], path: '^internal/dirimport/dirimport\.go$', text: "'scan'"}
-      - {linters: [funlen], path: '^internal/imapimport/imapimport\.go$', text: "'scan'"}
       - {linters: [funlen], path: '^internal/ngxapi/filters\.go$', text: "'parseDocumentFiltersWith'"}
       - {linters: [funlen], path: '^internal/worker/pipeline\.go$', text: "'Run'"}
       - {linters: [funlen], path: '^internal/appapi/appapi\.go$', text: "'Register'"}
@@ -78,21 +76,13 @@ linters:
       - {linters: [gocognit], path: '^internal/chat/store\.go$', text: '`ForkSession`'}
       - {linters: [gocognit], path: '^internal/chatgpt/transport\.go$', text: '`toResponsesRequest`'}
       - {linters: [gocognit], path: '^internal/chatgpt/transport\.go$', text: '`streamingResponse`'}
-      - {linters: [gocognit], path: '^internal/dirimport/dirimport\.go$', text: '`\(\*Scanner\)\.scan`'}
-      - {linters: [gocognit], path: '^internal/duplicates/scan\.go$', text: '`backfillChecksum`'}
-      - {linters: [gocognit], path: '^internal/duplicates/scan\.go$', text: '`markNearDuplicates`'}
-      - {linters: [gocognit], path: '^internal/imapimport/imapimport\.go$', text: '`\(\*Scanner\)\.scan`'}
       - {linters: [gocognit], path: '^internal/ngxapi/filters\.go$', text: '`parseDocumentFiltersWith`'}
-      - {linters: [gocognit], path: '^internal/ngximport/import\.go$', text: '`importOneDocument`'}
       - {linters: [gocognit], path: '^internal/retrieval/fake_embedder\.go$', text: '`\(\*MemoryChunks\)\.SearchChunks`'}
       - {linters: [gocognit], path: '^internal/vault/flush\.go$', text: '`\(\*Vault\)\.collect`'}
       - {linters: [gocognit], path: '^internal/worker/pipeline\.go$', text: '`\(\*PipelineRunner\)\.Run`'}
       - {linters: [nestif], path: '^internal/appapi/providers\.go$', text: '`if req\.SDK != nil`'}
       - {linters: [nestif], path: '^internal/appapi/search_count\.go$', text: '`if query != ""`'}
-      - {linters: [nestif], path: '^internal/archiveimport/import\.go$', text: '`if mode == ModeRestore && entry\.metadataPath != ""`'}
-      - {linters: [nestif], path: '^internal/duplicates/scan\.go$', text: '`if existing != nil`'}
       - {linters: [nestif], path: '^internal/ngxapi/documents\.go$', text: '`if form != nil`'}
-      - {linters: [nestif], path: '^internal/ngximport/import\.go$', text: '`if mode == ModePreserve`'}
 
 issues:
   max-issues-per-linter: 0

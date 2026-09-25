@@ -169,41 +169,7 @@ func backfillChecksum(app core.App, record *core.Record, result *ScanResult) err
 		return err
 	}
 	if existing != nil {
-		original, duplicate := earlierRecord(existing, record), laterRecord(existing, record)
-		if original.Id == record.Id {
-			// The older document takes ownership. One transaction, so a failure
-			// between the two saves cannot leave the checksum on neither.
-			err := app.RunInTransaction(func(txApp core.App) error {
-				if existing.GetString("checksum") != "" {
-					existing.Set("checksum", "")
-					if err := txApp.Save(existing); err != nil {
-						return err
-					}
-				}
-				record.Set("checksum", checksum)
-				return txApp.Save(record)
-			})
-			if err != nil {
-				return err
-			}
-			result.ChecksumBackfilled++
-			marked, err := MarkAsDuplicate(app, duplicate, original)
-			if err != nil {
-				return err
-			}
-			if marked {
-				result.ExactMarked++
-			}
-			return nil
-		}
-		marked, err := MarkAsDuplicate(app, record, existing)
-		if err != nil {
-			return err
-		}
-		if marked {
-			result.ExactMarked++
-		}
-		return nil
+		return resolveChecksumOwner(app, record, existing, checksum, result)
 	}
 
 	record.Set("checksum", checksum)
@@ -218,16 +184,44 @@ func backfillChecksum(app core.App, record *core.Record, result *ScanResult) err
 		if existing == nil {
 			return err
 		}
-		marked, markErr := MarkAsDuplicate(app, record, existing)
-		if markErr != nil {
-			return markErr
-		}
-		if marked {
-			result.ExactMarked++
-		}
-		return nil
+		return markExactDuplicate(app, record, existing, result)
 	}
 	result.ChecksumBackfilled++
+	return nil
+}
+
+func resolveChecksumOwner(app core.App, record, existing *core.Record, checksum string, result *ScanResult) error {
+	original, duplicate := earlierRecord(existing, record), laterRecord(existing, record)
+	if original.Id != record.Id {
+		return markExactDuplicate(app, record, existing, result)
+	}
+	// The older document takes ownership. One transaction, so a failure
+	// between the two saves cannot leave the checksum on neither.
+	err := app.RunInTransaction(func(txApp core.App) error {
+		if existing.GetString("checksum") != "" {
+			existing.Set("checksum", "")
+			if err := txApp.Save(existing); err != nil {
+				return err
+			}
+		}
+		record.Set("checksum", checksum)
+		return txApp.Save(record)
+	})
+	if err != nil {
+		return err
+	}
+	result.ChecksumBackfilled++
+	return markExactDuplicate(app, duplicate, original, result)
+}
+
+func markExactDuplicate(app core.App, document, original *core.Record, result *ScanResult) error {
+	marked, err := MarkAsDuplicate(app, document, original)
+	if err != nil {
+		return err
+	}
+	if marked {
+		result.ExactMarked++
+	}
 	return nil
 }
 
@@ -281,56 +275,62 @@ func markNearDuplicates(app core.App, threshold float64, result *ScanResult) err
 	marked := map[string]struct{}{}
 	for _, group := range byUser {
 		for i := range group {
-			a := group[i]
-			if a.DuplicateOf != "" || isMarked(marked, a.ID) {
-				continue
+			if err := markNearDuplicatesOf(app, group[i], group[i+1:], threshold, marked, result); err != nil {
+				return err
 			}
-			fa, ok := ParseFingerprintHex(a.Fingerprint)
-			if !ok {
-				continue
-			}
+		}
+	}
+	return nil
+}
 
-			var (
-				aRecord *core.Record
-				aText   string
-			)
-			for j := i + 1; j < len(group); j++ {
-				b := group[j]
-				if b.DuplicateOf != "" || isMarked(marked, b.ID) {
-					continue
-				}
-				fb, ok := ParseFingerprintHex(b.Fingerprint)
-				if !ok {
-					continue
-				}
-				if HammingDistance(fa, fb) > MaxHammingDistance {
-					continue
-				}
+func markNearDuplicatesOf(app core.App, a scanRow, later []scanRow, threshold float64, marked map[string]struct{}, result *ScanResult) error {
+	if a.DuplicateOf != "" || isMarked(marked, a.ID) {
+		return nil
+	}
+	fa, ok := ParseFingerprintHex(a.Fingerprint)
+	if !ok {
+		return nil
+	}
 
-				if aRecord == nil {
-					aRecord, err = app.FindRecordById("documents", a.ID)
-					if err != nil {
-						return err
-					}
-					aText = aRecord.GetString("ocr_text")
-				}
-				bRecord, err := app.FindRecordById("documents", b.ID)
-				if err != nil {
-					return err
-				}
-				if TextSimilarity(aText, bRecord.GetString("ocr_text")) < threshold {
-					continue
-				}
-				// The older is the original; the group is sorted ascending.
-				linked, err := MarkAsDuplicate(app, bRecord, aRecord)
-				if err != nil {
-					return err
-				}
-				marked[b.ID] = struct{}{}
-				if linked {
-					result.NearMarked++
-				}
+	var (
+		aRecord *core.Record
+		aText   string
+		err     error
+	)
+	for _, b := range later {
+		if b.DuplicateOf != "" || isMarked(marked, b.ID) {
+			continue
+		}
+		fb, ok := ParseFingerprintHex(b.Fingerprint)
+		if !ok {
+			continue
+		}
+		if HammingDistance(fa, fb) > MaxHammingDistance {
+			continue
+		}
+
+		if aRecord == nil {
+			aRecord, err = app.FindRecordById("documents", a.ID)
+			if err != nil {
+				return err
 			}
+			aText = aRecord.GetString("ocr_text")
+		}
+		bRecord, err := app.FindRecordById("documents", b.ID)
+		if err != nil {
+			return err
+		}
+		if TextSimilarity(aText, bRecord.GetString("ocr_text")) < threshold {
+			continue
+		}
+		// The older is the original; the group is sorted ascending.
+		linked, err := MarkAsDuplicate(app, bRecord, aRecord)
+		if err != nil {
+			return err
+		}
+		marked[b.ID] = struct{}{}
+		if linked {
+			result.NearMarked++
 		}
 	}
 	return nil

@@ -246,28 +246,8 @@ func restoreOne(
 	// takes the ordinary upload path -- which is also what a pre-manifest
 	// "originals" archive holds.
 	if mode == ModeRestore && entry.metadataPath != "" {
-		meta, err := readMetadataBudgeted(files, entry.metadataPath, budget)
-		if err != nil {
+		if err := restoreSidecars(record, &doc, entry, files, resolver, budget); err != nil {
 			return nil, err
-		}
-		if err := applyMetadata(record, meta, resolver); err != nil {
-			return nil, err
-		}
-		doc.DuplicateOfExported = stringField(meta, "duplicate_of")
-		doc.Created, _ = parseTimestamp(stringField(meta, "created"))
-		doc.Updated, _ = parseTimestamp(stringField(meta, "updated"))
-
-		if entry.ocrPath != "" {
-			raw, err := budget.take(files, entry.ocrPath, maxSidecarBytes)
-			if err != nil {
-				return nil, err
-			}
-			if text := string(raw); strings.TrimSpace(text) != "" {
-				record.Set("ocr_text", text)
-			}
-		}
-		if previewFile := restorePreview(files, entry.previewPath, budget); previewFile != nil {
-			record.Set("preview", previewFile)
 		}
 
 		// No processing job at all. Everything a pipeline would derive is
@@ -283,6 +263,40 @@ func restoreOne(
 	}
 	doc.NewID = record.Id
 	return &doc, nil
+}
+
+func restoreSidecars(
+	record *core.Record,
+	doc *restoredDocument,
+	entry Entry,
+	files map[string]*zip.File,
+	resolver *taxonomyResolver,
+	budget *scanBudget,
+) error {
+	meta, err := readMetadataBudgeted(files, entry.metadataPath, budget)
+	if err != nil {
+		return err
+	}
+	if err := applyMetadata(record, meta, resolver); err != nil {
+		return err
+	}
+	doc.DuplicateOfExported = stringField(meta, "duplicate_of")
+	doc.Created, _ = parseTimestamp(stringField(meta, "created"))
+	doc.Updated, _ = parseTimestamp(stringField(meta, "updated"))
+
+	if entry.ocrPath != "" {
+		raw, err := budget.take(files, entry.ocrPath, maxSidecarBytes)
+		if err != nil {
+			return err
+		}
+		if text := string(raw); strings.TrimSpace(text) != "" {
+			record.Set("ocr_text", text)
+		}
+	}
+	if previewFile := restorePreview(files, entry.previewPath, budget); previewFile != nil {
+		record.Set("preview", previewFile)
+	}
+	return nil
 }
 
 // pngMagic is the PNG signature. The preview field only accepts image/png, and
