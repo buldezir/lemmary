@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -10,6 +11,10 @@ import (
 
 	"lemmary/backend/internal/aiprovider"
 )
+
+// ErrTranslationTruncated is a reply the model stopped early, usually at its
+// output limit: storing it would serve half a document as the translation.
+var ErrTranslationTruncated = errors.New("translation was cut off before the end of the document")
 
 func buildTranslateSystemPrompt(language string) string {
 	return fmt.Sprintf("You translate OCR text of a scanned document into the language with ISO 639-1 code %q. "+
@@ -42,5 +47,13 @@ func (c *OpenAIClient) Translate(ctx context.Context, ocrText string) (string, e
 	if len(resp.Choices) == 0 {
 		return "", fmt.Errorf("openai returned no choices")
 	}
-	return strings.TrimSpace(resp.Choices[0].Message.Content), nil
+	choice := resp.Choices[0]
+	if choice.FinishReason == "length" || choice.FinishReason == "content_filter" {
+		return "", fmt.Errorf("%w (finish_reason %s)", ErrTranslationTruncated, choice.FinishReason)
+	}
+	text := strings.TrimSpace(choice.Message.Content)
+	if text == "" {
+		return "", fmt.Errorf("model returned an empty translation")
+	}
+	return text, nil
 }

@@ -316,14 +316,17 @@ export function DocumentDetailPage() {
   // count too, since a soft-failed embed is the one failure the status badge
   // never mentions.
   const [autoOpened, setAutoOpened] = useState(false)
-  // Both reset per document: the route param can change without this component
+  // Reset per document: the route param can change without this component
   // remounting, and a panel closed on one document must not hide the next
-  // document's failure.
+  // document's failure. The OCR view resets in the same render, before the
+  // translation loader's effect can commit, so opening a document never starts
+  // a translation.
   const [panelDocumentId, setPanelDocumentId] = useState(documentId)
   if (panelDocumentId !== documentId) {
     setPanelDocumentId(documentId)
     setShowProcessingJob(null)
     setAutoOpened(false)
+    setOcrView('original')
   }
   if (!autoOpened && (summary?.tone === 'error' || summary?.tone === 'warning')) {
     setAutoOpened(true)

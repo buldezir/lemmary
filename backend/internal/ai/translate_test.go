@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -41,5 +42,19 @@ func TestTranslateSendsTheWholeTextInOneCall(t *testing.T) {
 	}
 	if !strings.Contains(body, `\"de\"`) {
 		t.Fatalf("system prompt should name the result language, got %s", body)
+	}
+}
+
+func TestTranslateRefusesAReplyCutOffAtTheOutputLimit(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"x","object":"chat.completion","created":1,"model":"test","choices":[{"index":0,"finish_reason":"length","message":{"role":"assistant","content":"half a transl"}}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	client := NewOpenAIClient("openai", "test-key", "mistral-small-latest", srv.URL, "v1", "de", 5*time.Second, slog.Default())
+	if _, err := client.Translate(context.Background(), "Invoice"); !errors.Is(err, ErrTranslationTruncated) {
+		t.Fatalf("err = %v, want ErrTranslationTruncated", err)
 	}
 }

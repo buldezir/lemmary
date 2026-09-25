@@ -14,7 +14,11 @@ import (
 	"lemmary/backend/internal/models"
 )
 
-type fakeTranslator struct{ calls int }
+type fakeTranslator struct {
+	calls int
+	// during runs while the model is "answering", to stage a concurrent edit.
+	during func()
+}
 
 func (f *fakeTranslator) Name() string  { return "fake" }
 func (f *fakeTranslator) Model() string { return "fake-model" }
@@ -23,6 +27,9 @@ func (f *fakeTranslator) ExtractMetadata(context.Context, string, ai.ExtractionC
 }
 func (f *fakeTranslator) Translate(_ context.Context, text string) (string, error) {
 	f.calls++
+	if f.during != nil {
+		f.during()
+	}
 	return "DE: " + text, nil
 }
 
@@ -83,5 +90,34 @@ func TestDocumentTranslationStoresAndReusesTheTranslation(t *testing.T) {
 	}
 	if _, text := callTranslation(t, app, tr, owner, doc.Id, ""); text != "DE: Mahnung" {
 		t.Fatalf("after edit = %q", text)
+	}
+}
+
+func TestDocumentTranslationKeepsAnEditMadeWhileTranslating(t *testing.T) {
+	app := bootQueueApp(t)
+	app.OnRecordUpdate("documents").BindFunc(clearStaleTranslation)
+	owner := makeQueueUser(t, app, "owner@example.com")
+	doc := makeQueueDocument(t, app, owner, "completed", "Rechnung")
+	tr := &fakeTranslator{during: func() {
+		edited, err := app.FindRecordById("documents", doc.Id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		edited.Set("ocr_text", "Rechnung korrigiert")
+		if err := app.Save(edited); err != nil {
+			t.Fatal(err)
+		}
+	}}
+
+	if code, _ := callTranslation(t, app, tr, owner, doc.Id, ""); code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", code)
+	}
+	fresh, err := app.FindRecordById("documents", doc.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fresh.GetString("ocr_text") != "Rechnung korrigiert" || fresh.GetString("ocr_text_translated") != "" {
+		t.Fatalf("edit lost or stale translation stored: ocr_text=%q translated=%q",
+			fresh.GetString("ocr_text"), fresh.GetString("ocr_text_translated"))
 	}
 }
