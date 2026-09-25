@@ -239,6 +239,13 @@ func decodeSurveyArgs(data string) (SurveyArgs, error) {
 	var args SurveyArgs
 	if err := json.Unmarshal([]byte(data), &args); err == nil {
 		args.IDs = normalizeIDs(args.IDs)
+		fields := args.Fields[:0]
+		for _, f := range args.Fields {
+			if f.Name = strings.TrimSpace(f.Name); f.Name != "" {
+				fields = append(fields, f)
+			}
+		}
+		args.Fields = fields
 		return args, nil
 	}
 	var raw map[string]any
@@ -343,7 +350,6 @@ func (a *openAISearchAgent) runSurveyTool(
 		args.MaxDocuments = MaxSurveyDocuments
 	}
 	for i := range args.Fields {
-		args.Fields[i].Name = strings.TrimSpace(args.Fields[i].Name)
 		args.Fields[i].Type = strings.ToLower(strings.TrimSpace(args.Fields[i].Type))
 	}
 
@@ -383,6 +389,7 @@ func (state *researchState) adoptSurvey(result SurveyResult) int {
 			continue
 		}
 		state.titles[row.ID] = row.Title
+		state.read[row.ID] = struct{}{}
 		if _, seen := state.seenIDs[row.ID]; !seen {
 			state.seenIDs[row.ID] = struct{}{}
 			newDocs++
@@ -398,9 +405,6 @@ func (state *researchState) adoptSurvey(result SurveyResult) int {
 		}
 		inHits[hit.ID] = struct{}{}
 		state.hits = append(state.hits, hit)
-	}
-	for _, row := range result.Rows {
-		state.read[row.ID] = struct{}{}
 	}
 	return newDocs
 }

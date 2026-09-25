@@ -117,7 +117,7 @@ func ScanAll(app core.App, cfg config.Config) (ScanResult, error) {
 
 	page := 1
 	for {
-		records, err := app.FindRecordsByFilter("documents", "id != ''", "created", 100, (page-1)*100, nil)
+		records, err := app.FindRecordsByFilter("documents", "id != ''", "created,id", 100, (page-1)*100, nil)
 		if err != nil {
 			return result, err
 		}
@@ -174,6 +174,9 @@ func backfillChecksum(app core.App, record *core.Record, result *ScanResult) err
 
 	record.Set("checksum", checksum)
 	if err := app.Save(record); err != nil {
+		// Left in memory, the unsaved checksum rides along on every later save
+		// of record: the ownership check below and the fingerprint backfill.
+		record.Set("checksum", "")
 		if !IsChecksumUniqueViolation(err) {
 			return err
 		}
@@ -184,7 +187,7 @@ func backfillChecksum(app core.App, record *core.Record, result *ScanResult) err
 		if existing == nil {
 			return err
 		}
-		return markExactDuplicate(app, record, existing, result)
+		return resolveChecksumOwner(app, record, existing, checksum, result)
 	}
 	result.ChecksumBackfilled++
 	return nil
@@ -208,6 +211,7 @@ func resolveChecksumOwner(app core.App, record, existing *core.Record, checksum 
 		return txApp.Save(record)
 	})
 	if err != nil {
+		record.Set("checksum", "")
 		return err
 	}
 	result.ChecksumBackfilled++

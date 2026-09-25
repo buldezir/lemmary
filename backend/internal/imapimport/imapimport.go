@@ -449,7 +449,7 @@ func (s *Scanner) structures(c *imapclient.Client, uids []imap.UID) ([]*imapclie
 	if err != nil {
 		return nil, nil, fmt.Errorf("fetch: %w", err)
 	}
-	slices.SortFunc(msgs, func(a, b *imapclient.FetchMessageBuffer) int { return int(a.UID) - int(b.UID) })
+	slices.SortFunc(msgs, func(a, b *imapclient.FetchMessageBuffer) int { return cmp.Compare(a.UID, b.UID) })
 	collection, err := s.app.FindCollectionByNameOrId("documents")
 	if err != nil {
 		return nil, nil, fmt.Errorf("documents collection: %w", err)

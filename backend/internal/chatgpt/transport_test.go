@@ -542,6 +542,39 @@ func TestAToolRoundReplaysAsFreeStandingItems(t *testing.T) {
 	}
 }
 
+// A result without a tool_call_id cannot become an output item, and the
+// backend refuses a function_call nothing answers.
+func TestACallWhoseResultHasNoIDIsNotSent(t *testing.T) {
+	t.Parallel()
+	messages := []map[string]any{
+		{"role": "user", "content": "What did the landlord send in May?"},
+		{
+			"role":    "assistant",
+			"content": "Let me look.",
+			"tool_calls": []map[string]any{
+				{"id": "call_7", "type": "function", "function": map[string]any{"name": "search_documents", "arguments": `{"query":"landlord"}`}},
+				{"id": "call_8", "type": "function", "function": map[string]any{"name": "search_documents", "arguments": `{"query":"rent"}`}},
+			},
+		},
+		{"role": "tool", "tool_call_id": "call_7", "content": "1 hit: rent increase notice"},
+		{"role": "tool", "tool_call_id": "", "content": "2 hits"},
+	}
+	sent := sentInputFor(t, Middleware(signedInSource(t, "t26"), nil), toolRequestFor(t, "auto", messages))
+
+	if len(sent.Input) != 4 {
+		t.Fatalf("input = %+v, want the user turn, the lead-in, call_7 and its result", sent.Input)
+	}
+	if lead := sent.Input[1]; lead.Type != "message" || lead.Role != "assistant" || lead.Content[0].Text != "Let me look." {
+		t.Errorf("lead-in = %+v", lead)
+	}
+	if call := sent.Input[2]; call.Type != "function_call" || call.CallID != "call_7" || call.Arguments != `{"query":"landlord"}` {
+		t.Errorf("call = %+v", call)
+	}
+	if result := sent.Input[3]; result.Type != "function_call_output" || result.CallID != "call_7" || result.Output != "1 hit: rent increase notice" {
+		t.Errorf("result = %+v", result)
+	}
+}
+
 // A function_call the model produced has to come back as message.tool_calls,
 // the only thing the search and research loops look at.
 func TestAFunctionCallComesBackAsAToolCall(t *testing.T) {

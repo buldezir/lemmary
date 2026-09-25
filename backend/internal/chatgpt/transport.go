@@ -42,8 +42,6 @@ const PlaceholderKey = "chatgpt-oauth"
 // chatCompletionsSuffix is the path openai-go builds from any base URL.
 // Matching on it rather than the whole URL lets the middleware sit under a
 // client whose base URL a test has repointed at httptest.
-// on it rather than on the whole URL is what lets the middleware sit under a
-// client whose base URL a test has repointed at httptest.
 const chatCompletionsSuffix = "/chat/completions"
 
 // Middleware makes the Codex backend answer Chat Completions requests, in
@@ -314,7 +312,27 @@ func inputItems(messages []chatMessage) ([]responsesItem, []string) {
 			Type: "message", Role: itemRole, Content: content,
 		})
 	}
-	return items, instructions
+	return answeredCalls(items), instructions
+}
+
+// answeredCalls drops the function_call items no function_call_output answers.
+// Chat Completions answers every call before the next request, so a call left
+// without one had an answer that could not be sent, and the backend refuses a
+// function_call with no output.
+func answeredCalls(items []responsesItem) []responsesItem {
+	answered := map[string]struct{}{}
+	for _, item := range items {
+		if item.Type == "function_call_output" {
+			answered[item.CallID] = struct{}{}
+		}
+	}
+	kept := items[:0]
+	for _, item := range items {
+		if _, ok := answered[item.CallID]; ok || item.Type != "function_call" {
+			kept = append(kept, item)
+		}
+	}
+	return kept
 }
 
 func toolCallItems(msg chatMessage) []responsesItem {
@@ -645,6 +663,7 @@ func bufferedResponse(resp *http.Response, model string, logger *slog.Logger) (*
 	}
 
 	// A model that asked for a tool has not finished answering, and the search
+	// agents take another round: Chat Completions reports that as "tool_calls".
 	finish := "stop"
 	if len(toolCalls) > 0 {
 		finish = "tool_calls"
@@ -683,6 +702,7 @@ func streamingResponse(resp *http.Response, model string) *http.Response {
 	pr, pw := io.Pipe()
 
 	// Cloned before the goroutine starts, so nothing reads the upstream
+	// response once the goroutine owns it.
 	out := cloneResponseHead(resp)
 	out.Header.Set("Content-Type", "text/event-stream")
 	out.Header.Del("Content-Length")
@@ -763,6 +783,7 @@ func relayChunks(body io.Reader, w io.Writer, model string) error {
 		Choices: []chunkChoice{{Delta: chunkDelta{}, FinishReason: &stop}},
 	}
 	// Usage rides the final chunk, which is where stream_options puts it and
+	// where the streaming caller looks for it.
 	if usage.PromptTokens > 0 || usage.CompletionTokens > 0 {
 		final.Usage = &usage
 	}
@@ -783,6 +804,7 @@ func writeChunk(w io.Writer, chunk chatChunk) error {
 }
 
 // cloneResponseHead copies everything but the body, so the SDK still sees the
+// upstream status and headers, in a header map the caller is free to rewrite.
 func cloneResponseHead(resp *http.Response) *http.Response {
 	out := *resp
 	out.Header = resp.Header.Clone()
@@ -798,6 +820,7 @@ func cloneResponseHead(resp *http.Response) *http.Response {
 func scanSSE(r io.Reader, onEvent func(responsesEvent) error) error {
 	scanner := bufio.NewScanner(r)
 	// Deltas are small, but a single completed event carries the whole response
+	// and outgrows the scanner's default 64 KiB line limit.
 	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
 
 	for scanner.Scan() {
