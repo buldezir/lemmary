@@ -172,10 +172,7 @@ func (p *GoogleVisionProvider) extractFileText(ctx context.Context, content []by
 	)
 
 	for start := visionMaxFilePagesPerRequest + 1; start <= totalPages; start += visionMaxFilePagesPerRequest {
-		end := start + visionMaxFilePagesPerRequest - 1
-		if end > totalPages {
-			end = totalPages
-		}
+		end := min(start+visionMaxFilePagesPerRequest-1, totalPages)
 
 		pages := make([]int32, 0, end-start+1)
 		for page := start; page <= end; page++ {

@@ -1,0 +1,56 @@
+version: "2"
+
+run:
+  build-tags: [vectors]
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - copyloopvar
+    - errcheck
+    - errorlint
+    - gocritic
+    - govet
+    - ineffassign
+    - intrange
+    - modernize
+    - staticcheck
+    - unparam
+    - unused
+    - usestdlibvars
+    - wastedassign
+
+    - dupl
+    - funlen
+    - gocognit
+    - nestif
+
+  settings:
+    gocritic:
+      disabled-checks: [mapKey]
+    staticcheck:
+      checks: [all, -ST1000, -ST1003, -ST1005, -ST1016, -ST1020, -ST1021, -ST1022]
+    dupl:
+      threshold: 150
+    funlen:
+      lines: 100
+      statements: 60
+    gocognit:
+      min-complexity: 30
+    nestif:
+      min-complexity: 6
+
+  exclusions:
+    warn-unused: true
+    presets: [std-error-handling]
+    rules:
+      - path: _test\.go
+        linters: [bodyclose, dupl, errcheck, funlen, gocognit, nestif, unparam]
+      - path: ^migrations/
+        linters: [dupl, funlen, gocognit, nestif]
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  uniq-by-line: false

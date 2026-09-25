@@ -193,27 +193,19 @@ func (s *Scanner) Scan(cfg config.Config) Result {
 }
 
 func (s *Scanner) scan(cfg config.Config) (Result, summary) {
-	var res Result
-	var sum summary
-	stop := func(why string) (Result, summary) {
-		sum.stopped = why
-		return res, sum
-	}
-	logger := s.app.Logger()
 	if cfg.IMAPHost == "" || cfg.IMAPUsername == "" {
-		return stop("no mailbox configured")
+		return Result{}, summary{stopped: "no mailbox configured"}
 	}
 	ownerID := s.owner(cfg)
 	if ownerID == "" {
-		return stop("no account to own the documents yet")
+		return Result{}, summary{stopped: "no account to own the documents yet"}
 	}
 	mode := cfg.IMAPAfterConsume
-	skip := skipExts(cfg)
 
 	c, sel, done, err := s.connect(cfg, mode == config.IMAPKeep)
 	if err != nil {
 		s.warnOnce("connect|"+err.Error(), "imap ingest: "+err.Error())
-		return stop("connect failed: " + err.Error())
+		return Result{}, summary{stopped: "connect failed: " + err.Error()}
 	}
 	defer done()
 	if mode == config.IMAPMove {
@@ -232,73 +224,98 @@ func (s *Scanner) scan(cfg config.Config) (Result, summary) {
 		defer s.settle(c, cfg)
 	}
 
-	var last imap.UID
+	p := &pass{Scanner: s, c: c, cfg: cfg, ownerID: ownerID, skip: skipExts(cfg)}
 	if mode == config.IMAPKeep {
-		last = s.loadMark(ownerID, mailbox, sel.UIDValidity)
-		mark := last
-		defer func() {
-			if last == mark {
-				return
-			}
-			stamp := fmt.Sprintf("%d:%d", sel.UIDValidity, last)
-			if err := dirimport.RecordLedger(s.app, ownerID, mailbox, stamp); err != nil {
-				logger.Warn("imap ingest: ledger write failed", "error", err)
-			}
-		}()
+		p.last = s.loadMark(ownerID, mailbox, sel.UIDValidity)
+		defer p.saveMark(mailbox, sel.UIDValidity, p.last)
 	}
-	since := cfg.IMAPSince
-	if !since.IsZero() {
-		since = since.Add(-clockSkew)
+	p.sum.stopped = p.read()
+	return p.res, p.sum
+}
+
+type pass struct {
+	*Scanner
+	c       *imapclient.Client
+	cfg     config.Config
+	ownerID string
+	skip    map[string]bool
+	since   time.Time
+	last    imap.UID
+	res     Result
+	sum     summary
+}
+
+func (p *pass) saveMark(mailbox string, validity uint32, loaded imap.UID) {
+	if p.last == loaded {
+		return
 	}
-	// SINCE is a date; the exact cut is the INTERNALDATE check below.
-	found, err := c.UIDSearch(liveMail(imap.SearchCriteria{Since: since}), nil).Wait()
+	stamp := fmt.Sprintf("%d:%d", validity, p.last)
+	if err := dirimport.RecordLedger(p.app, p.ownerID, mailbox, stamp); err != nil {
+		p.app.Logger().Warn("imap ingest: ledger write failed", "error", err)
+	}
+}
+
+func (p *pass) read() string {
+	p.since = p.cfg.IMAPSince
+	if !p.since.IsZero() {
+		p.since = p.since.Add(-clockSkew)
+	}
+	// SINCE is a date; the exact cut is the INTERNALDATE check in importMessage.
+	found, err := p.c.UIDSearch(liveMail(imap.SearchCriteria{Since: p.since}), nil).Wait()
 	if err != nil {
-		logger.Warn("imap ingest: search failed", "folder", cfg.IMAPFolder, "error", err)
-		return stop("search failed")
+		p.app.Logger().Warn("imap ingest: search failed", "folder", p.cfg.IMAPFolder, "error", err)
+		return "search failed"
 	}
 	var uids []imap.UID
 	for _, uid := range found.AllUIDs() {
-		if uid > last && !s.seen[uid] {
+		if uid > p.last && !p.seen[uid] {
 			uids = append(uids, uid)
 		}
 	}
-	sum.messages = len(uids)
+	p.sum.messages = len(uids)
 	for batch := range slices.Chunk(uids, fetchBatch) {
-		msgs, collection, err := s.structures(c, batch)
+		msgs, collection, err := p.structures(p.c, batch)
 		if err != nil {
-			logger.Warn("imap ingest: "+err.Error(), "folder", cfg.IMAPFolder)
-			return stop("fetch failed")
+			p.app.Logger().Warn("imap ingest: "+err.Error(), "folder", p.cfg.IMAPFolder)
+			return "fetch failed"
 		}
 		for _, msg := range msgs {
-			var parts []part
-			var held bool
-			if !msg.InternalDate.Before(since) {
-				parts, held = attachments(msg.BodyStructure, skip)
-			}
-			got := consumed
-			if len(parts) > 0 {
-				got = s.consume(c, collection, ownerID, msg.UID, parts, &res)
-			}
-			if got == retry {
-				if s.attempts[msg.UID]++; s.attempts[msg.UID] < maxAttempts {
-					return stop(fmt.Sprintf("message %d failed; retrying next scan", msg.UID))
-				}
-				logger.Error("imap ingest: giving up on a message; Maintenance -> Mailbox can import it later",
-					"uid", msg.UID, "attempts", maxAttempts)
-				got = refused
-			}
-			if got == stopScan {
-				return stop("instance limit reached")
-			}
-			delete(s.attempts, msg.UID)
-			s.seen[msg.UID] = true
-			last = max(last, msg.UID)
-			if mode != config.IMAPKeep && got == consumed && len(parts) > 0 && !held {
-				s.pending[msg.UID] = time.Now()
+			if why := p.importMessage(collection, msg); why != "" {
+				return why
 			}
 		}
 	}
-	return res, sum
+	return ""
+}
+
+func (p *pass) importMessage(collection *core.Collection, msg *imapclient.FetchMessageBuffer) string {
+	var parts []part
+	var held bool
+	if !msg.InternalDate.Before(p.since) {
+		parts, held = attachments(msg.BodyStructure, p.skip)
+	}
+	got := consumed
+	if len(parts) > 0 {
+		got = p.consume(p.c, collection, p.ownerID, msg.UID, parts, &p.res)
+	}
+	if got == retry {
+		if p.attempts[msg.UID]++; p.attempts[msg.UID] < maxAttempts {
+			return fmt.Sprintf("message %d failed; retrying next scan", msg.UID)
+		}
+		p.app.Logger().Error("imap ingest: giving up on a message; Maintenance -> Mailbox can import it later",
+			"uid", msg.UID, "attempts", maxAttempts)
+		got = refused
+	}
+	if got == stopScan {
+		return "instance limit reached"
+	}
+	delete(p.attempts, msg.UID)
+	p.seen[msg.UID] = true
+	p.last = max(p.last, msg.UID)
+	if p.cfg.IMAPAfterConsume != config.IMAPKeep && got == consumed && len(parts) > 0 && !held {
+		p.pending[msg.UID] = time.Now()
+	}
+	return ""
 }
 
 // liveMail leaves out what a mail client has already deleted but not yet
@@ -432,7 +449,7 @@ func (s *Scanner) structures(c *imapclient.Client, uids []imap.UID) ([]*imapclie
 	if err != nil {
 		return nil, nil, fmt.Errorf("fetch: %w", err)
 	}
-	slices.SortFunc(msgs, func(a, b *imapclient.FetchMessageBuffer) int { return int(a.UID) - int(b.UID) })
+	slices.SortFunc(msgs, func(a, b *imapclient.FetchMessageBuffer) int { return cmp.Compare(a.UID, b.UID) })
 	collection, err := s.app.FindCollectionByNameOrId("documents")
 	if err != nil {
 		return nil, nil, fmt.Errorf("documents collection: %w", err)

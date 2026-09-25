@@ -20,8 +20,7 @@ func isUnsupportedTemperatureError(err error) bool {
 	if err == nil {
 		return false
 	}
-	var apiErr *openai.Error
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*openai.Error](err); ok {
 		if strings.EqualFold(strings.TrimSpace(apiErr.Param), "temperature") {
 			return true
 		}
@@ -41,8 +40,7 @@ func isUnsupportedResponseFormatError(err error) bool {
 	if err == nil {
 		return false
 	}
-	var apiErr *openai.Error
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*openai.Error](err); ok {
 		if strings.EqualFold(strings.TrimSpace(apiErr.Param), "response_format") {
 			return true
 		}

@@ -1,9 +1,19 @@
 package appapi
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/pocketbase/pocketbase/core"
+
+	"lemmary/backend/internal/ai"
 )
 
 // The regression that lost finished answers: a proxy hangup cancelled the agent
@@ -156,5 +166,43 @@ func TestCancelSessionRunsStopsEveryRunOnTheConversation(t *testing.T) {
 	}
 	if cancelSessionRuns("session-14") || cancelSessionRuns("") {
 		t.Fatal("an unknown session matched a run")
+	}
+}
+
+// Document chat and the non-streaming search and research all answer through
+// this, so a run that used up its budget never reads as the provider failing.
+func TestWriteRunErrorTellsTheBudgetFromTheProvider(t *testing.T) {
+	t.Parallel()
+	providerErr := errors.New("upstream refused")
+	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	for _, tc := range []struct {
+		name   string
+		ctx    context.Context
+		status int
+		body   string
+		log    string
+	}{
+		{"out of budget", expired, http.StatusGatewayTimeout, runTooLongMessage, "level=WARN msg=\"document chat ran out of budget\" budget=" + detachedRunBudget.String()},
+		{"provider failed", context.Background(), http.StatusBadGateway, ai.ProviderErrorMessage(providerErr), "level=ERROR msg=\"document chat failed\""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			rec := httptest.NewRecorder()
+			e := &core.RequestEvent{}
+			e.Response = rec
+			e.Request = httptest.NewRequest(http.MethodPost, "/api/app/documents/doc1/chat", nil)
+
+			if err := writeRunError(tc.ctx, e, slog.New(slog.NewTextHandler(&logs, nil)), "document chat", providerErr); err != nil {
+				t.Fatal(err)
+			}
+			if rec.Code != tc.status || !strings.Contains(rec.Body.String(), tc.body) {
+				t.Fatalf("response = %d %s, want %d %q", rec.Code, rec.Body, tc.status, tc.body)
+			}
+			if !strings.Contains(logs.String(), tc.log) {
+				t.Fatalf("log = %q, want %q", logs.String(), tc.log)
+			}
+		})
 	}
 }

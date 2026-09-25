@@ -154,12 +154,10 @@ func writeManagedUserLookupError(e *core.RequestEvent, err error) error {
 // The limits hook refuses an over-allowance account with an ApiError, and
 // record validation (duplicate email, short password) with validation.Errors.
 func writeManagedUserSaveError(app core.App, e *core.RequestEvent, err error) error {
-	var apiErr *router.ApiError
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*router.ApiError](err); ok {
 		return writeError(e, apiErr.Status, apiErr.Message)
 	}
-	var invalid validation.Errors
-	if errors.As(err, &invalid) {
+	if invalid, ok := errors.AsType[validation.Errors](err); ok {
 		return writeError(e, http.StatusBadRequest, invalid.Error())
 	}
 	app.Logger().Error("save managed user failed", "error", err)

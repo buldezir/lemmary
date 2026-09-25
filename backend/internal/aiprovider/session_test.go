@@ -28,7 +28,7 @@ func TestWithSessionIgnoresABlankID(t *testing.T) {
 	if got := SessionFrom(ctx); got != "" {
 		t.Errorf("SessionFrom = %q, want empty", got)
 	}
-	if got := SessionFrom(nil); got != "" {
+	if got := SessionFrom(nil); got != "" { //nolint:staticcheck // the nil guard is what this asserts
 		t.Errorf("SessionFrom(nil) = %q, want empty", got)
 	}
 	if got := SessionFrom(WithSession(context.Background(), " abc ")); got != "abc" {

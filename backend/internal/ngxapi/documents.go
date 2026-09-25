@@ -382,31 +382,8 @@ func handlePostDocument(e *core.RequestEvent) error {
 	record.Set("file", files[0])
 	record.Set("processing_status", models.DocStatusPending)
 
-	form := e.Request.MultipartForm
-	if form != nil {
-		if title := firstFormValue(form, "title"); title != "" {
-			record.Set("title", title)
-		}
-		if created := firstFormValue(form, "created"); created != "" {
-			record.Set("document_date", createdDateOnly(created))
-		}
-		if correspondent := firstFormValue(form, "correspondent"); correspondent != "" {
-			if pbID := resolvePBRelationID(e.App, "correspondents", correspondent, e.Auth.Id); pbID != "" {
-				record.Set("correspondent", pbID)
-			}
-		}
-		if docType := firstFormValue(form, "document_type"); docType != "" {
-			if pbID := resolvePBRelationID(e.App, "document_types", docType, e.Auth.Id); pbID != "" {
-				record.Set("document_type", pbID)
-			}
-		}
-		if rawTagIDs := parseTagIDs(form.Value); len(rawTagIDs) > 0 {
-			tagIDs, err := resolveTagPBIDs(e.App, rawTagIDs, e.Auth.Id)
-			if err != nil {
-				return badRequest(e, err.Error())
-			}
-			record.Set("tags", tagIDs)
-		}
+	if err := applyUploadFields(e.App, record, e.Request.MultipartForm, e.Auth.Id); err != nil {
+		return badRequest(e, err.Error())
 	}
 
 	if err := e.App.Save(record); err != nil {
@@ -419,6 +396,33 @@ func handlePostDocument(e *core.RequestEvent) error {
 	}
 
 	return writeJSON(e, http.StatusOK, taskID)
+}
+
+func applyUploadFields(app core.App, record *core.Record, form *multipart.Form, authID string) error {
+	if form == nil {
+		return nil
+	}
+	if title := firstFormValue(form, "title"); title != "" {
+		record.Set("title", title)
+	}
+	if created := firstFormValue(form, "created"); created != "" {
+		record.Set("document_date", createdDateOnly(created))
+	}
+	for _, field := range []string{"correspondent", "document_type"} {
+		if value := firstFormValue(form, field); value != "" {
+			if err := setRelationField(app, record, field, value, authID); err != nil {
+				return err
+			}
+		}
+	}
+	if rawTagIDs := parseTagIDs(form.Value); len(rawTagIDs) > 0 {
+		tagIDs, err := resolveTagPBIDs(app, rawTagIDs, authID)
+		if err != nil {
+			return err
+		}
+		record.Set("tags", tagIDs)
+	}
+	return nil
 }
 
 func handleDownloadDocument(e *core.RequestEvent) error {

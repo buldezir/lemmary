@@ -82,7 +82,7 @@ func TestSnapshotDoesNotBlockWriters(t *testing.T) {
 	aux := openTestDB(t, filepath.Join(dir, "auxsource.db"))
 
 	// Enough rows that the snapshot is not instantaneous.
-	for i := 0; i < 2000; i++ {
+	for range 2000 {
 		if _, err := data.NewQuery("INSERT INTO docs (body) VALUES ('padding padding padding padding')").Execute(); err != nil {
 			t.Fatalf("seed: %v", err)
 		}

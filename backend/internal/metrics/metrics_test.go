@@ -207,7 +207,7 @@ func unregister(reg metric.Registration) {
 func metricHasLe(page, metric, le string) bool {
 	prefix := metric + "{"
 	token := `le="` + le + `"`
-	for _, line := range strings.Split(page, "\n") {
+	for line := range strings.SplitSeq(page, "\n") {
 		if strings.HasPrefix(line, prefix) && strings.Contains(line, token) {
 			return true
 		}

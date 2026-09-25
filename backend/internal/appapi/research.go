@@ -191,7 +191,7 @@ func persistResearchAnswer(app core.App, t searchTurn, result ai.ResearchResult,
 	if err != nil {
 		app.Logger().Error("research answer persist failed", slog.Any("error", err))
 		return searchResponse{
-			Message:   unsavedMessage(chat.RoleAssistant, result.Reply, documents),
+			Message:   unsavedMessage(result.Reply, documents),
 			Documents: documents,
 			Saved:     false,
 			// The work is not lost, only this answer, and saying so is the

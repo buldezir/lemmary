@@ -2,7 +2,9 @@ package ngxapi
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -193,7 +195,7 @@ func parseDocumentFilters(app core.App, authID string, q url.Values) (documentFi
 func parseDocumentFiltersWith(ids *ngxIDs, ownerID int, q url.Values) (documentFilters, error) {
 	var f documentFilters
 
-	for name := range q {
+	for _, name := range slices.Sorted(maps.Keys(q)) {
 		if _, ok := handledParams[name]; !ok {
 			return f, fmt.Errorf("Unsupported filter %q.", name)
 		}
@@ -201,82 +203,14 @@ func parseDocumentFiltersWith(ids *ngxIDs, ownerID int, q url.Values) (documentF
 
 	f.text = parseTextCriteria(q)
 
-	// Positive id filters: an id that does not resolve makes the whole query
-	// impossible. Negative ones just have nothing to exclude, so they drop it.
-	for _, name := range []string{"tags__id", "tags__id__all"} {
-		resolved, ok, err := ids.resolveAll("tags", csvValues(q, name))
-		if err != nil {
-			return f, err
-		}
-		f.impossible = f.impossible || !ok
-		f.tagsAll = append(f.tagsAll, resolved...)
+	if err := parseTagIDFilters(&f, ids, q); err != nil {
+		return f, err
 	}
-	if raw := csvValues(q, "tags__id__in"); len(raw) > 0 {
-		resolved, _, err := ids.resolveAll("tags", raw)
-		if err != nil {
-			return f, err
-		}
-		// An "any of" list that resolved to nothing can match nothing.
-		f.impossible = f.impossible || len(resolved) == 0
-		f.tagsAny = resolved
+	if err := parseRelationFilters(&f, ids, q); err != nil {
+		return f, err
 	}
-	if raw := csvValues(q, "tags__id__none"); len(raw) > 0 {
-		resolved, _, err := ids.resolveAll("tags", raw)
-		if err != nil {
-			return f, err
-		}
-		f.tagsNone = resolved
-	}
-
-	// Destinations are paired with the specs here rather than stored in them,
-	// so the parameter names stay in the one table handledParams derives from.
-	for _, target := range []struct {
-		spec         relationSpec
-		dst, dstNone *[]string
-		unset        **bool
-	}{
-		{relationSpecs[0], &f.docTypes, &f.docTypesNone, &f.docTypeUnset},
-		{relationSpecs[1], &f.corrs, &f.corrsNone, &f.corrUnset},
-	} {
-		spec := target.spec
-		raw := append(csvValues(q, spec.single), csvValues(q, spec.in)...)
-		if len(raw) > 0 {
-			resolved, _, err := ids.resolveAll(spec.collection, raw)
-			if err != nil {
-				return f, err
-			}
-			f.impossible = f.impossible || len(resolved) == 0
-			*target.dst = resolved
-		}
-		if raw := csvValues(q, spec.none); len(raw) > 0 {
-			resolved, _, err := ids.resolveAll(spec.collection, raw)
-			if err != nil {
-				return f, err
-			}
-			*target.dstNone = resolved
-		}
-		v, err := boolParam(q, spec.isnull)
-		if err != nil {
-			return f, err
-		}
-		*target.unset = v
-	}
-
-	if raw := csvValues(q, "id"); len(raw) > 0 {
-		resolved, _, err := ids.resolveAll("documents", raw)
-		if err != nil {
-			return f, err
-		}
-		f.impossible = f.impossible || len(resolved) == 0
-		f.ids = resolved
-	}
-	if raw := csvValues(q, "id__in"); len(raw) > 0 {
-		resolved, _, err := ids.resolveAll("documents", raw)
-		if err != nil {
-			return f, err
-		}
-		f.impossible = f.impossible || len(resolved) == 0
-		f.ids = append(f.ids, resolved...)
+	if err := parseDocumentIDFilters(&f, ids, q); err != nil {
+		return f, err
 	}
 
 	if err := applyOwnerFilters(&f, ownerID, q); err != nil {
@@ -312,6 +246,105 @@ func parseDocumentFiltersWith(ids *ngxIDs, ownerID int, q url.Values) (documentF
 	f.truncateContent = truncate != nil && *truncate
 
 	return f, nil
+}
+
+func parseTagIDFilters(f *documentFilters, ids *ngxIDs, q url.Values) error {
+	// Positive id filters: an id that does not resolve makes the whole query
+	// impossible. Negative ones just have nothing to exclude, so they drop it.
+	for _, name := range []string{"tags__id", "tags__id__all"} {
+		resolved, ok, err := ids.resolveAll("tags", csvValues(q, name))
+		if err != nil {
+			return err
+		}
+		f.impossible = f.impossible || !ok
+		f.tagsAll = append(f.tagsAll, resolved...)
+	}
+	if raw := csvValues(q, "tags__id__in"); len(raw) > 0 {
+		resolved, _, err := ids.resolveAll("tags", raw)
+		if err != nil {
+			return err
+		}
+		// An "any of" list that resolved to nothing can match nothing.
+		f.impossible = f.impossible || len(resolved) == 0
+		f.tagsAny = resolved
+	}
+	if raw := csvValues(q, "tags__id__none"); len(raw) > 0 {
+		resolved, _, err := ids.resolveAll("tags", raw)
+		if err != nil {
+			return err
+		}
+		f.tagsNone = resolved
+	}
+	return nil
+}
+
+func parseRelationFilters(f *documentFilters, ids *ngxIDs, q url.Values) error {
+	// Destinations are paired with the specs here rather than stored in them,
+	// so the parameter names stay in the one table handledParams derives from.
+	for _, target := range []struct {
+		spec         relationSpec
+		dst, dstNone *[]string
+		unset        **bool
+	}{
+		{relationSpecs[0], &f.docTypes, &f.docTypesNone, &f.docTypeUnset},
+		{relationSpecs[1], &f.corrs, &f.corrsNone, &f.corrUnset},
+	} {
+		spec := target.spec
+		resolved, given, err := resolveEveryIDParam(ids, spec.collection, q, spec.single, spec.in)
+		if err != nil {
+			return err
+		}
+		if given {
+			f.impossible = f.impossible || len(resolved) == 0
+			*target.dst = resolved
+		}
+		if raw := csvValues(q, spec.none); len(raw) > 0 {
+			resolved, _, err := ids.resolveAll(spec.collection, raw)
+			if err != nil {
+				return err
+			}
+			*target.dstNone = resolved
+		}
+		v, err := boolParam(q, spec.isnull)
+		if err != nil {
+			return err
+		}
+		*target.unset = v
+	}
+	return nil
+}
+
+func parseDocumentIDFilters(f *documentFilters, ids *ngxIDs, q url.Values) error {
+	resolved, given, err := resolveEveryIDParam(ids, "documents", q, documentIDParams...)
+	if err != nil {
+		return err
+	}
+	if given {
+		f.impossible = f.impossible || len(resolved) == 0
+		f.ids = resolved
+	}
+	return nil
+}
+
+// resolveEveryIDParam resolves each of names that the query carries and keeps
+// the ids present in all of them: Django ANDs separate filter parameters, so
+// id=1&id__in=1,2 means 1, not both. given is false when none of them is set.
+func resolveEveryIDParam(ids *ngxIDs, collection string, q url.Values, names ...string) (resolved []string, given bool, err error) {
+	for _, name := range names {
+		raw := csvValues(q, name)
+		if len(raw) == 0 {
+			continue
+		}
+		these, _, err := ids.resolveAll(collection, raw)
+		if err != nil {
+			return nil, false, err
+		}
+		if given {
+			these = intersectKeepingOrder(resolved, these)
+		}
+		resolved, given = these, true
+	}
+	return resolved, given, nil
 }
 
 // applyOwnerFilters answers the owner pill from the one fact this endpoint
@@ -412,9 +445,7 @@ func (r *ngxIDs) resolve(collection string, ids []int) (map[int]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	for ngxID, pbID := range found {
-		known[ngxID] = pbID
-	}
+	maps.Copy(known, found)
 	return known, nil
 }
 
@@ -461,7 +492,7 @@ func (r *ngxIDs) resolveAll(collection string, raw []string) (resolved []string,
 func csvValues(q url.Values, name string) []string {
 	var out []string
 	for _, raw := range q[name] {
-		for _, part := range strings.Split(raw, ",") {
+		for part := range strings.SplitSeq(raw, ",") {
 			if part = strings.TrimSpace(part); part != "" {
 				out = append(out, part)
 			}

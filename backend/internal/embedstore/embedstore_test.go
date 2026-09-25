@@ -444,7 +444,7 @@ func TestCandidatesReturnsNothingWithoutAModel(t *testing.T) {
 func TestCandidatesRespectsTheLimit(t *testing.T) {
 	t.Parallel()
 	db := openTestDB(t)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		insertDocument(t, db, fmt.Sprintf("doc%d", i), "text")
 	}
 
@@ -618,11 +618,11 @@ func TestForEachChunkPagesThroughEverything(t *testing.T) {
 	db := openTestDB(t)
 
 	total := 0
-	for d := 0; d < 4; d++ {
+	for d := range 4 {
 		id := fmt.Sprintf("doc%d", d)
 		insertDocument(t, db, id, "text")
 		chunks := make([]Chunk, 0, 400)
-		for i := 0; i < 400; i++ {
+		for i := range 400 {
 			chunks = append(chunks, Chunk{DocumentID: id, Ordinal: i, Vector: vector(4, float32(i))})
 		}
 		if err := Replace(db, sampleState(id), chunks); err != nil {
@@ -763,7 +763,7 @@ func TestTextHashSeparatesFields(t *testing.T) {
 	if TextHash("ab", "c") == TextHash("a", "bc") {
 		t.Fatal("field boundaries must change the hash")
 	}
-	if TextHash("a", "b") != TextHash("a", "b") {
+	if a, b := TextHash("a", "b"), TextHash("a", "b"); a != b {
 		t.Fatal("TextHash is not stable")
 	}
 }

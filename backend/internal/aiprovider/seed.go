@@ -98,13 +98,14 @@ func bindFromIDs(settings *core.Record, openaiID, mistralID, googleID string, mo
 			settings.Set("ocr_model", models.extract)
 		}
 	default:
-		if googleID != "" {
+		switch {
+		case googleID != "":
 			settings.Set("ocr_provider_id", googleID)
 			settings.Set("ocr_model", "")
-		} else if mistralID != "" {
+		case mistralID != "":
 			settings.Set("ocr_provider_id", mistralID)
 			settings.Set("ocr_model", models.ocr)
-		} else if openaiID != "" {
+		case openaiID != "":
 			settings.Set("ocr_provider_id", openaiID)
 			settings.Set("ocr_model", models.extract)
 		}

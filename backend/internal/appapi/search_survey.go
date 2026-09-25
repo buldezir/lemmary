@@ -42,44 +42,7 @@ func (r *agentRetriever) survey(ctx context.Context, args ai.SurveyArgs, progres
 		return result, nil
 	}
 
-	// The whole text up to the helper's cap, an excerpt around the question
-	// past it. Hits are built at the same time for the rows and the list.
-	docs := make([]ai.DistillDoc, 0, len(ids))
-	hits := make(map[string]ai.DocumentHit, len(ids))
-	rank := r.focusRanker(ctx)
-	for _, id := range ids {
-		record, err := r.app.FindRecordById("documents", id)
-		if err != nil {
-			continue
-		}
-		if !CanReadDocument(r.app, record, r.userID) {
-			continue
-		}
-		full := record.GetString("ocr_text")
-		doc := ai.DistillDoc{
-			ID:            record.Id,
-			Title:         strutil.FirstNonEmpty(record.GetString("title"), "Untitled document"),
-			DocumentDate:  truncateDate(record.GetString("document_date")),
-			DocumentType:  relatedName(r.app, "document_types", record.GetString("document_type")),
-			Correspondent: relatedName(r.app, "correspondents", record.GetString("correspondent")),
-			Text:          full,
-		}
-		if len(full) > helperInputBytes {
-			doc.Text, _ = excerptDocument(record.Id, full, question, rank, helperInputBytes)
-			doc.Excerpted = true
-		}
-		docs = append(docs, doc)
-		hits[record.Id] = ai.DocumentHit{
-			ID:            record.Id,
-			Title:         doc.Title,
-			DocumentDate:  doc.DocumentDate,
-			Summary:       strutil.TruncateRunes(strutil.FirstNonEmpty(record.GetString("summary"), record.GetString("purpose")), maxSummaryLen),
-			OCRSnippet:    ocrSnippet(full, question),
-			DocumentType:  doc.DocumentType,
-			Correspondent: doc.Correspondent,
-			Tags:          documentTagNames(r.app, record),
-		}
-	}
+	docs, hits := r.surveyDocuments(ctx, ids, question)
 	if progress != nil {
 		progress(0, len(docs))
 	}
@@ -122,6 +85,48 @@ func (r *agentRetriever) survey(ctx context.Context, args ai.SurveyArgs, progres
 	ai.SortSurveyRows(result.Rows)
 	result.Totals, result.Missing = surveyTotals(args.Fields, result.Rows)
 	return result, nil
+}
+
+// The whole text up to the helper's cap, an excerpt around the question past
+// it. Hits are built at the same time for the rows and the list.
+func (r *agentRetriever) surveyDocuments(ctx context.Context, ids []string, question string) ([]ai.DistillDoc, map[string]ai.DocumentHit) {
+	docs := make([]ai.DistillDoc, 0, len(ids))
+	hits := make(map[string]ai.DocumentHit, len(ids))
+	rank := r.focusRanker(ctx)
+	for _, id := range ids {
+		record, err := r.app.FindRecordById("documents", id)
+		if err != nil {
+			continue
+		}
+		if !CanReadDocument(r.app, record, r.userID) {
+			continue
+		}
+		full := record.GetString("ocr_text")
+		doc := ai.DistillDoc{
+			ID:            record.Id,
+			Title:         strutil.FirstNonEmpty(record.GetString("title"), "Untitled document"),
+			DocumentDate:  truncateDate(record.GetString("document_date")),
+			DocumentType:  relatedName(r.app, "document_types", record.GetString("document_type")),
+			Correspondent: relatedName(r.app, "correspondents", record.GetString("correspondent")),
+			Text:          full,
+		}
+		if len(full) > helperInputBytes {
+			doc.Text, _ = excerptDocument(record.Id, full, question, rank, helperInputBytes)
+			doc.Excerpted = true
+		}
+		docs = append(docs, doc)
+		hits[record.Id] = ai.DocumentHit{
+			ID:            record.Id,
+			Title:         doc.Title,
+			DocumentDate:  doc.DocumentDate,
+			Summary:       strutil.TruncateRunes(strutil.FirstNonEmpty(record.GetString("summary"), record.GetString("purpose")), maxSummaryLen),
+			OCRSnippet:    ocrSnippet(full, question),
+			DocumentType:  doc.DocumentType,
+			Correspondent: doc.Correspondent,
+			Tags:          documentTagNames(r.app, record),
+		}
+	}
+	return docs, hits
 }
 
 // surveyCandidates takes the given ids, or the fused ranking for the query, cut

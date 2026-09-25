@@ -154,8 +154,7 @@ func applyEntry(app core.App, collection *core.Collection, ownerUserID string, e
 		return
 	}
 	if err := importOneEntry(app, collection, ownerUserID, entry, file); err != nil {
-		var dup *duplicates.ErrDuplicate
-		if errors.As(err, &dup) {
+		if _, ok := errors.AsType[*duplicates.ErrDuplicate](err); ok {
 			result.SkippedDuplicates++
 			return
 		}

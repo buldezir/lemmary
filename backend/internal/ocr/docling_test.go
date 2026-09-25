@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -54,9 +55,7 @@ func newDoclingServer(t *testing.T, status int, body string) (*httptest.Server, 
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		for name, values := range r.MultipartForm.Value {
-			capture.fields[name] = values
-		}
+		maps.Copy(capture.fields, r.MultipartForm.Value)
 		if parts := r.MultipartForm.File["files"]; len(parts) == 1 {
 			capture.fileName = parts[0].Filename
 			capture.fileMIME = parts[0].Header.Get("Content-Type")

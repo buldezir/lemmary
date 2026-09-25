@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/openai/openai-go/v3"
 )
 
 // DeepSeek V4 (and some proxies) emit tool calls as DSML markup in message
@@ -60,6 +62,13 @@ func parseDSMLToolCalls(content string) []parsedToolCall {
 		})
 	}
 	return calls
+}
+
+func contentToolCalls(msg openai.ChatCompletionMessage) []parsedToolCall {
+	if len(msg.ToolCalls) > 0 {
+		return nil
+	}
+	return parseDSMLToolCalls(msg.Content)
 }
 
 func parseDSMLParameters(body string) string {
@@ -120,7 +129,7 @@ func formatDSMLToolResults(results []toolExecResult) string {
 	var b strings.Builder
 	b.WriteString("Tool results are below. Now answer the user in natural language only. Do not call tools again. Do not output DSML.\n")
 	for _, r := range results {
-		b.WriteString(fmt.Sprintf("\n<tool_result name=%q id=%q>\n%s\n</tool_result>\n", r.Name, r.ID, r.Content))
+		fmt.Fprintf(&b, "\n<tool_result name=%q id=%q>\n%s\n</tool_result>\n", r.Name, r.ID, r.Content)
 	}
 	return b.String()
 }

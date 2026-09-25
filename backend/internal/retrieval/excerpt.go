@@ -129,10 +129,7 @@ func TermOverlap(ocrText string, windows []Window, focus string) []Ranked {
 			continue
 		}
 		// Covering more of the question beats repeating one word of it.
-		extra := occurrences - distinct
-		if extra > 10 {
-			extra = 10
-		}
+		extra := min(occurrences-distinct, 10)
 		scored = append(scored, Ranked{
 			ID:    strconv.Itoa(w.Ord),
 			Score: float64(distinct) + 0.05*float64(extra),
@@ -189,10 +186,7 @@ func Excerpt(ocrText string, windows []Window, ranked []Ranked, budgetBytes int)
 	// Backwards for the head, forwards for the tail: rune alignment then only
 	// shrinks a segment, so neither can overrun what was reserved.
 	headEnd := alignBack(ocrText, headLen)
-	tailStart := alignForward(ocrText, len(ocrText)-tailLen)
-	if tailStart < headEnd {
-		tailStart = headEnd
-	}
+	tailStart := max(alignForward(ocrText, len(ocrText)-tailLen), headEnd)
 
 	spans := []span{{0, headEnd}}
 	if tailStart < len(ocrText) {

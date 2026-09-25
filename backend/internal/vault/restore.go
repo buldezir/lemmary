@@ -127,5 +127,5 @@ func withinDir(root, path string) bool {
 		return false
 	}
 	return rel != ".." && !filepath.IsAbs(rel) &&
-		!(len(rel) >= 3 && rel[:3] == ".."+string(filepath.Separator))
+		(len(rel) < 3 || rel[:3] != ".."+string(filepath.Separator))
 }

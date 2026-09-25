@@ -3,7 +3,6 @@ package migrations
 import (
 	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
-	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 // Drop search_context_tokens. Research no longer estimates a context window
@@ -23,7 +22,7 @@ func init() {
 			return nil
 		}
 		if settings.Fields.GetByName("search_context_tokens") == nil {
-			settings.Fields.Add(&core.NumberField{Name: "search_context_tokens", OnlyInt: true, Min: types.Pointer(0.0)})
+			settings.Fields.Add(&core.NumberField{Name: "search_context_tokens", OnlyInt: true, Min: new(0.0)})
 		}
 		return app.Save(settings)
 	})

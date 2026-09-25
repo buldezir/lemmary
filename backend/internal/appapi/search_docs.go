@@ -143,10 +143,7 @@ func (r *agentRetriever) search(ctx context.Context, args ai.SearchDocumentsArgs
 	// Hydration drops documents deleted or changed hands since indexing, so
 	// the candidates are walked until maxSearchDocuments survive rather than
 	// cut to that many first: a stale entry would shorten the list.
-	want := maxSearchDocuments
-	if len(cands.fused) < want {
-		want = len(cands.fused)
-	}
+	want := min(len(cands.fused), maxSearchDocuments)
 	// One chunk-level search for the whole result list, so each hit can quote
 	// the passage that matched rather than the top of the document.
 	lexicalChunks := r.chunkTextHits(ctx, query, retrieval.IDs(cands.fused), 2*maxSearchDocuments)
@@ -814,17 +811,11 @@ func ocrSnippet(ocrText, query string) string {
 		return strutil.TruncateRunes(ocrText, maxSnippetLen)
 	}
 
-	start := idx - snippetContext
-	if start < 0 {
-		start = 0
-	}
+	start := max(idx-snippetContext, 0)
 	for start > 0 && !utf8.RuneStart(ocrText[start]) {
 		start--
 	}
-	end := idx + len(query) + snippetContext
-	if end > len(ocrText) {
-		end = len(ocrText)
-	}
+	end := min(idx+len(query)+snippetContext, len(ocrText))
 	for end < len(ocrText) && !utf8.RuneStart(ocrText[end]) {
 		end++
 	}

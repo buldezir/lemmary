@@ -119,12 +119,9 @@ func (s *Scanner) Scan(cfg config.Config, now time.Time) Result {
 
 // scan is Scan plus why it stopped early, empty when it walked the whole folder.
 func (s *Scanner) scan(cfg config.Config, now time.Time) (Result, string) {
-	var res Result
-	logger := s.app.Logger()
-
 	ownerID := s.resolveOwner(cfg.IngestDirOwner)
 	if ownerID == "" {
-		return res, "no account to own the documents yet"
+		return Result{}, "no account to own the documents yet"
 	}
 	keep := !cfg.IngestDirDeleteOriginal
 	// What was skipped for one owner or in keep mode is a decision for that
@@ -138,128 +135,155 @@ func (s *Scanner) scan(cfg config.Config, now time.Time) (Result, string) {
 	}
 	defer s.removeSealed()
 
+	w, stopped := s.newWalker(ownerID, keep, now)
+	if stopped != "" {
+		return Result{}, stopped
+	}
+	switch err := filepath.WalkDir(w.root, w.visit); {
+	case errors.Is(err, errStop):
+		return w.res, "instance limit reached"
+	case err != nil:
+		s.app.Logger().Warn("consume folder: walk failed", "dir", s.dir, "error", err)
+		return w.res, "walk failed"
+	}
+	return w.res, ""
+}
+
+var errStop = errors.New("stop")
+
+type walker struct {
+	*Scanner
+	ownerID    string
+	keep       bool
+	now        time.Time
+	root       string
+	collection *core.Collection
+	tags       map[string]string
+	ledger     map[string]string
+	res        Result
+}
+
+func (s *Scanner) newWalker(ownerID string, keep bool, now time.Time) (*walker, string) {
+	logger := s.app.Logger()
 	// WalkDir does not descend into a root that is itself a symlink.
 	root, err := filepath.EvalSymlinks(s.dir)
 	if err != nil {
 		logger.Warn("consume folder: unreadable", "dir", s.dir, "error", err)
-		return res, "folder unreadable"
+		return nil, "folder unreadable"
 	}
 	collection, err := s.app.FindCollectionByNameOrId("documents")
 	if err != nil {
 		logger.Warn("consume folder: documents collection", "error", err)
-		return res, "documents collection missing"
+		return nil, "documents collection missing"
 	}
 	tags, err := loadTagKeys(s.app, ownerID)
 	if err != nil {
 		logger.Warn("consume folder: load tags failed", "error", err)
-		return res, "loading tags failed"
+		return nil, "loading tags failed"
 	}
-	var ledger map[string]string
+	w := &walker{Scanner: s, ownerID: ownerID, keep: keep, now: now, root: root, collection: collection, tags: tags}
 	if keep {
-		if ledger, err = loadLedger(s.app, ownerID); err != nil {
+		if w.ledger, err = loadLedger(s.app, ownerID); err != nil {
 			logger.Warn("consume folder: load ledger failed", "error", err)
-			return res, "loading the ledger failed"
+			return nil, "loading the ledger failed"
 		}
 	}
+	return w, ""
+}
 
-	consumed := func(path, rel, stamp string) {
-		s.seen[path] = stamp
-		if !keep {
-			s.pending[path] = time.Now()
-			return
+func (w *walker) visit(path string, d fs.DirEntry, err error) error {
+	if err != nil {
+		if path == w.root {
+			return err
 		}
-		if err := RecordLedger(s.app, ownerID, rel, stamp); err != nil {
-			logger.Warn("consume folder: ledger write failed", "path", path, "error", err)
-		}
+		w.warnOnce(path, "consume folder: unreadable entry", "path", path, "error", err)
+		return nil
 	}
-
-	stop := errors.New("stop")
-	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if path == root {
-				return err
-			}
-			s.warnOnce(path, "consume folder: unreadable entry", "path", path, "error", err)
-			return nil
-		}
-		if path != root && strings.HasPrefix(d.Name(), ".") {
-			if d.IsDir() {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		if d.IsDir() || d.Type()&fs.ModeSymlink != 0 || !zipimport.Storable(filepath.Ext(d.Name())) {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil || info.Size() == 0 || now.Sub(info.ModTime()) < settleAge {
-			return nil
-		}
-		stamp := fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())
-		if s.seen[path] == stamp {
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return nil
-		}
-		if ledger[rel] == stamp {
-			s.seen[path] = stamp
-			return nil
-		}
-		if info.Size() > models.MaxFileBytes {
-			res.Failed++
-			s.seen[path] = stamp
-			logger.Warn("consume folder: file exceeds the document size limit", "path", path, "size", info.Size())
-			return nil
-		}
-		file, err := filesystem.NewFileFromPath(path)
-		if err != nil {
-			s.warnOnce(path+"|"+stamp, "consume folder: read failed", "path", path, "error", err)
-			return nil
-		}
-		file.Reader = regularFile(path)
-
-		tagIDs, created, err := s.tagsFor(ownerID, rel, tags)
-		if err != nil {
-			logger.Warn("consume folder: tag lookup failed", "path", path, "error", err)
-			return nil
-		}
-		err = zipimport.CreateDocument(s.app, collection, ownerID, file, tagIDs)
-		if err != nil {
-			s.dropTags(created, tags)
-		}
-		var dup *duplicates.ErrDuplicate
-		switch {
-		case err == nil:
-			res.Created++
-			consumed(path, rel, stamp)
-		case errors.As(err, &dup):
-			res.Skipped++
-			consumed(path, rel, stamp)
-		case RoomExhausted(err):
-			logger.Warn("consume folder: limit reached, stopping this scan", "error", err)
-			return stop
-		default:
-			res.Failed++
-			// A validation refusal (wrong content for the extension, over a
-			// per-file limit) is about the file and stays refused; anything else
-			// may be transient and is retried next scan.
-			if Rejected(err) {
-				s.seen[path] = stamp
-			}
-			s.warnOnce(path+"|"+stamp, "consume folder: import failed", "path", path, "error", err)
+	if path != w.root && strings.HasPrefix(d.Name(), ".") {
+		if d.IsDir() {
+			return fs.SkipDir
 		}
 		return nil
-	})
-	switch {
-	case errors.Is(walkErr, stop):
-		return res, "instance limit reached"
-	case walkErr != nil:
-		logger.Warn("consume folder: walk failed", "dir", s.dir, "error", walkErr)
-		return res, "walk failed"
 	}
-	return res, ""
+	if d.IsDir() || d.Type()&fs.ModeSymlink != 0 || !zipimport.Storable(filepath.Ext(d.Name())) {
+		return nil
+	}
+	info, err := d.Info()
+	if err != nil || info.Size() == 0 || w.now.Sub(info.ModTime()) < settleAge {
+		return nil
+	}
+	stamp := fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())
+	if w.seen[path] == stamp {
+		return nil
+	}
+	rel, err := filepath.Rel(w.root, path)
+	if err != nil {
+		return nil
+	}
+	if w.ledger[rel] == stamp {
+		w.seen[path] = stamp
+		return nil
+	}
+	if info.Size() > models.MaxFileBytes {
+		w.res.Failed++
+		w.seen[path] = stamp
+		w.app.Logger().Warn("consume folder: file exceeds the document size limit", "path", path, "size", info.Size())
+		return nil
+	}
+	return w.importFile(path, rel, stamp)
+}
+
+func (w *walker) importFile(path, rel, stamp string) error {
+	logger := w.app.Logger()
+	file, err := filesystem.NewFileFromPath(path)
+	if err != nil {
+		w.warnOnce(path+"|"+stamp, "consume folder: read failed", "path", path, "error", err)
+		return nil
+	}
+	file.Reader = regularFile(path)
+
+	tagIDs, created, err := w.tagsFor(w.ownerID, rel, w.tags)
+	if err != nil {
+		logger.Warn("consume folder: tag lookup failed", "path", path, "error", err)
+		return nil
+	}
+	err = zipimport.CreateDocument(w.app, w.collection, w.ownerID, file, tagIDs)
+	if err != nil {
+		w.dropTags(created, w.tags)
+	}
+	var dup *duplicates.ErrDuplicate
+	switch {
+	case err == nil:
+		w.res.Created++
+		w.consumed(path, rel, stamp)
+	case errors.As(err, &dup):
+		w.res.Skipped++
+		w.consumed(path, rel, stamp)
+	case RoomExhausted(err):
+		logger.Warn("consume folder: limit reached, stopping this scan", "error", err)
+		return errStop
+	default:
+		w.res.Failed++
+		// A validation refusal (wrong content for the extension, over a
+		// per-file limit) is about the file and stays refused; anything else
+		// may be transient and is retried next scan.
+		if Rejected(err) {
+			w.seen[path] = stamp
+		}
+		w.warnOnce(path+"|"+stamp, "consume folder: import failed", "path", path, "error", err)
+	}
+	return nil
+}
+
+func (w *walker) consumed(path, rel, stamp string) {
+	w.seen[path] = stamp
+	if !w.keep {
+		w.pending[path] = time.Now()
+		return
+	}
+	if err := RecordLedger(w.app, w.ownerID, rel, stamp); err != nil {
+		w.app.Logger().Warn("consume folder: ledger write failed", "path", path, "error", err)
+	}
 }
 
 // removeSealed deletes the originals whose documents a hard kill can no longer
@@ -338,7 +362,7 @@ func (s *Scanner) tagsFor(ownerID, rel string, keys map[string]string) (ids, cre
 	if dir == "." {
 		return nil, nil, nil
 	}
-	for _, name := range strings.Split(dir, string(filepath.Separator)) {
+	for name := range strings.SplitSeq(dir, string(filepath.Separator)) {
 		key := worker.NormalizeTagKey(name)
 		if key == "" {
 			continue

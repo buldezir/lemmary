@@ -51,8 +51,8 @@ type Query struct {
 	AllTagIDs []string
 	// Untagged keeps only documents with no tags; with a tag id it is nothing.
 	Untagged bool
-	DateFrom  string
-	DateTo    string
+	DateFrom string
+	DateTo   string
 	// Undated keeps only documents with no document_date. Asking for both this
 	// and a date range is asking for nothing, which the conjunction answers.
 	Undated bool
@@ -150,10 +150,7 @@ func (i *Index) Search(q Query) (Result, error) {
 	if limit > MaxSearchLimit {
 		limit = MaxSearchLimit
 	}
-	offset := q.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(q.Offset, 0)
 
 	plan, err := buildSearchPlan(q, text)
 	if err != nil {

@@ -93,17 +93,13 @@ func Discover(ctx context.Context, cidr string) ([]Scanner, error) {
 		}
 	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		collect(browse(ctx))
-	}()
+	})
 	if len(prefixes) > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			collect(sweep(ctx, prefixes))
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -200,9 +196,7 @@ func sweep(ctx context.Context, prefixes []netip.Prefix) []Scanner {
 	var found []Scanner
 	var wg sync.WaitGroup
 	for range probeWorkers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for addr := range addresses {
 				model, ok := probe(ctx, client, addr.String())
 				if !ok {
@@ -217,7 +211,7 @@ func sweep(ctx context.Context, prefixes []netip.Prefix) []Scanner {
 				})
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	return found
@@ -266,9 +260,7 @@ func browse(ctx context.Context) []Scanner {
 	for _, service := range []string{"_uscan._tcp", "_uscans._tcp"} {
 		entries := make(chan *mdns.ServiceEntry, 16)
 		var drained sync.WaitGroup
-		drained.Add(1)
-		go func() {
-			defer drained.Done()
+		drained.Go(func() {
 			for entry := range entries {
 				scanner, ok := scannerFromEntry(entry, service == "_uscans._tcp")
 				if !ok {
@@ -278,7 +270,7 @@ func browse(ctx context.Context) []Scanner {
 				found = append(found, scanner)
 				mu.Unlock()
 			}
-		}()
+		})
 
 		// No multicast route is the normal case inside a bridge-networked
 		// container, and not something the user can act on from here. The sweep

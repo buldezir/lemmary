@@ -72,7 +72,7 @@ func TestTheOpenCodeMigrationIsIdempotent(t *testing.T) {
 	app := bootMigratedApp(t)
 	record := saveProvider(t, app, aiprovider.SDKOpenAI, "Zen", "https://opencode.ai/zen/go/v1")
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if err := setProviderSDKValues(app, aiprovider.ValidSDKs); err != nil {
 			t.Fatalf("widen (pass %d): %v", i, err)
 		}

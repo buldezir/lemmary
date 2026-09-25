@@ -256,7 +256,7 @@ func TestScanDoesNotReadPastTheBudget(t *testing.T) {
 	SetAllowLoopback(true)
 	t.Cleanup(func() { SetAllowLoopback(false) })
 
-	var served int64
+	var served atomic.Int64
 	mux := http.NewServeMux()
 	mux.HandleFunc("/eSCL/ScanJobs", func(w http.ResponseWriter, r *http.Request) {
 		io.Copy(io.Discard, r.Body)
@@ -269,7 +269,7 @@ func TestScanDoesNotReadPastTheBudget(t *testing.T) {
 		page := make([]byte, 64<<10)
 		for range 1024 {
 			n, err := w.Write(page)
-			atomic.AddInt64(&served, int64(n))
+			served.Add(int64(n))
 			if err != nil {
 				return
 			}
@@ -284,7 +284,7 @@ func TestScanDoesNotReadPastTheBudget(t *testing.T) {
 	}
 	// The client stops reading a page past the budget, so the device gets no
 	// further than a socket buffer or two of the 64 MB it wanted to send.
-	if got := atomic.LoadInt64(&served); got > 4<<20 {
+	if got := served.Load(); got > 4<<20 {
 		t.Fatalf("the scanner got to send %d bytes against an 8 KB budget", got)
 	}
 }

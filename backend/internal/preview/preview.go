@@ -17,7 +17,7 @@ const (
 	pdftoppmTimeout = 30 * time.Second
 )
 
-func GenerateFirstPagePNG(pdfPath string) (*filesystem.File, error) {
+func GenerateFirstPagePNG(ctx context.Context, pdfPath string) (*filesystem.File, error) {
 	if err := pdftool.RequirePDF(pdfPath); err != nil {
 		return nil, fmt.Errorf("preview: not a PDF file")
 	}
@@ -29,7 +29,7 @@ func GenerateFirstPagePNG(pdfPath string) (*filesystem.File, error) {
 	defer os.RemoveAll(tmpDir)
 
 	previewPath := filepath.Join(tmpDir, "preview.png")
-	ctx, cancel := context.WithTimeout(context.Background(), pdftoppmTimeout)
+	ctx, cancel := context.WithTimeout(ctx, pdftoppmTimeout)
 	defer cancel()
 
 	if err := pdftool.RenderPage(ctx, pdfPath, previewPath, MaxEdge, 1); err != nil {

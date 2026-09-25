@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
@@ -180,6 +181,39 @@ type researchState struct {
 	web webBudget
 }
 
+func newResearchState(prior []DocumentHit) *researchState {
+	state := &researchState{
+		hits:      make([]DocumentHit, 0),
+		seenIDs:   map[string]struct{}{},
+		titles:    map[string]string{},
+		read:      map[string]struct{}{},
+		readParts: map[string]struct{}{},
+		ran:       map[string]struct{}{},
+		prior:     map[string]DocumentHit{},
+	}
+	state.seedPrior(prior)
+	return state
+}
+
+// researchRun is one Research call's conversation as its rounds grow it.
+type researchRun struct {
+	req      ResearchRequest
+	state    *researchState
+	emit     func(ResearchEvent)
+	record   func(ThreadMessage)
+	meter    *contextMeter
+	tools    []openai.ChatCompletionToolUnionParam
+	messages []openai.ChatCompletionMessageParamUnion
+	round    int
+	usage    Usage
+}
+
+func (run *researchRun) add(msg ThreadMessage, param openai.ChatCompletionMessageParamUnion) {
+	run.record(msg)
+	run.meter.grew(msg.Size())
+	run.messages = append(run.messages, param)
+}
+
 func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, emit func(ResearchEvent)) (ResearchResult, error) {
 	if a.client.apiKey == "" {
 		return ResearchResult{}, fmt.Errorf("AI API key is not configured")
@@ -196,16 +230,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 	ctx = aiprovider.EnsureSession(ctx, "research")
 
-	state := &researchState{
-		hits:      make([]DocumentHit, 0),
-		seenIDs:   map[string]struct{}{},
-		titles:    map[string]string{},
-		read:      map[string]struct{}{},
-		readParts: map[string]struct{}{},
-		ran:       map[string]struct{}{},
-		prior:     map[string]DocumentHit{},
-	}
-	state.seedPrior(req.PriorDocuments)
+	state := newResearchState(req.PriorDocuments)
 
 	thread := req.Thread
 	// A conversation keeps the prompt it was opened with, the way it already
@@ -223,152 +248,32 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	}
 
 	meter := newContextMeter(req.ContextWindow)
-	apiMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(thread))
-	for _, msg := range thread {
-		param, ok := msg.Param()
-		if !ok {
-			continue
-		}
-		meter.grew(msg.Size())
-		apiMessages = append(apiMessages, param)
+	run := &researchRun{
+		req:      req,
+		state:    state,
+		emit:     emit,
+		record:   record,
+		meter:    meter,
+		tools:    researchRunTools(),
+		messages: replayThread(thread, meter),
 	}
-
-	// Every schema, every turn, whatever is behind them. The tool list is part
-	// of what the provider cached, and what backs these three moves underneath
-	// a conversation: the web toggle is per question, and a helper or a counter
-	// can be bound or unbound between two of them. A list that followed would
-	// forfeit the whole transcript's prefix each time. A call with nothing
-	// behind it is refused instead -- see runWebTool, runSurveyTool and
-	// runCountTool -- which costs one round and no cache.
-	tools := append(researchTools(),
-		surveyDocumentsTool(),
-		countDocumentsTool(),
-		webSearchTool(),
-		webFetchTool(),
-	)
-	stalled := 0
-	round := 0
-	var usage Usage
-
-	// No round cap: the loop ends when the model is ready, when it stops making
-	// progress, or when a completion is rejected. Every iteration appends at
-	// least an assistant message and a tool result, so a run that keeps
-	// gathering is finite: the provider will refuse the next request.
-	for {
-		if err := ctx.Err(); err != nil {
-			return ResearchResult{}, err
-		}
-		if stalled >= maxStalledRounds {
-			a.client.logger.Info("research stalled; answering", "round", round, "documents", len(state.hits))
-			break
-		}
-
-		requestStart := time.Now()
-		chatResp, err := a.client.Complete(ctx, openai.ChatCompletionNewParams{
-			Model:       shared.ChatModel(a.client.model),
-			Messages:    apiMessages,
-			Temperature: CompletionTemperature(a.client.model, 0.2),
-			Tools:       tools,
-			ToolChoice: openai.ChatCompletionToolChoiceOptionUnionParam{
-				OfAuto: openai.String("auto"),
-			},
-		},
-			"purpose", "research",
-			"round", round,
-			"messages", len(apiMessages),
-		)
-		if err != nil {
-			a.client.logger.Error("research request failed",
-				"round", round,
-				logfmt.Duration("duration", time.Since(requestStart)),
-				slog.Any("error", err),
-			)
-			return ResearchResult{}, fmt.Errorf("openai research completion: %w", err)
-		}
-		if len(chatResp.Choices) == 0 {
-			return ResearchResult{}, fmt.Errorf("openai returned no choices")
-		}
-		usage.Add(usageOf(chatResp))
-		emit(usageEvent(meter.observe(usageOf(chatResp))))
-
-		msg := chatResp.Choices[0].Message
-		nativeCalls := msg.ToolCalls
-		dsmlCalls := []parsedToolCall(nil)
-		if len(nativeCalls) == 0 {
-			dsmlCalls = parseDSMLToolCalls(msg.Content)
-		}
-		if len(nativeCalls) == 0 && len(dsmlCalls) == 0 {
-			// The model has stopped gathering; it is ready to answer.
-			break
-		}
-
-		progressed := false
-		if len(nativeCalls) > 0 {
-			asked := ThreadMessage{Role: "assistant", Content: msg.Content}
-			for _, call := range nativeCalls {
-				asked.Calls = append(asked.Calls, ToolCall{
-					ID:        call.ID,
-					Name:      call.Function.Name,
-					Arguments: call.Function.Arguments,
-				})
-			}
-			// Recorded before the tools run, so a run that dies inside one still
-			// shows what it was doing.
-			record(asked)
-			apiMessages = append(apiMessages, msg.ToParam())
-			meter.grew(asked.Size())
-
-			for _, call := range nativeCalls {
-				result, advanced := a.runResearchTool(ctx, req, state, call.ID, call.Function.Name, call.Function.Arguments, emit)
-				progressed = progressed || advanced
-				answer := ThreadMessage{Role: "tool", Content: result.Content, CallID: call.ID}
-				record(answer)
-				meter.grew(answer.Size())
-				apiMessages = append(apiMessages, openai.ToolMessage(result.Content, call.ID))
-			}
-		} else {
-			// DSML models put tool calls in content; feed results back as a user message.
-			said := ThreadMessage{Role: "assistant", Content: msg.Content}
-			record(said)
-			apiMessages = append(apiMessages, openai.AssistantMessage(msg.Content))
-			meter.grew(said.Size())
-
-			results := make([]toolExecResult, 0, len(dsmlCalls))
-			for _, call := range dsmlCalls {
-				result, advanced := a.runResearchTool(ctx, req, state, call.ID, call.Name, call.Arguments, emit)
-				progressed = progressed || advanced
-				results = append(results, result)
-			}
-			formatted := formatDSMLToolResults(results)
-			// Stored as a tool row with no call id; ThreadMessage.Param turns
-			// it back into the user message this dialect expects.
-			fed := ThreadMessage{Role: "tool", Content: formatted}
-			record(fed)
-			meter.grew(fed.Size())
-			apiMessages = append(apiMessages, openai.UserMessage(formatted))
-		}
-
-		if progressed {
-			stalled = 0
-		} else {
-			stalled++
-		}
-		round++
+	if err := a.gatherResearch(ctx, run); err != nil {
+		return ResearchResult{}, err
 	}
 
 	emit(ResearchEvent{Type: "step", Kind: "answer", Status: "start"})
-	reply, incomplete, answerUsage, err := a.answerResearch(ctx, apiMessages, tools, req.Web != nil, meter, emit)
+	reply, incomplete, answerUsage, err := a.answerResearch(ctx, run.messages, run.tools, req.Web != nil, meter, emit)
 	if err != nil {
 		return ResearchResult{}, err
 	}
-	usage.Add(answerUsage)
+	run.usage.Add(answerUsage)
 	a.client.logger.Info("research run usage",
-		"rounds", round,
+		"rounds", run.round,
 		"documents", len(state.hits),
 		"read", len(state.read),
-		"prompt_tokens", usage.Prompt,
-		"cached_tokens", usage.Cached,
-		"completion_tokens", usage.Completion,
+		"prompt_tokens", run.usage.Prompt,
+		"cached_tokens", run.usage.Cached,
+		"completion_tokens", run.usage.Completion,
 	)
 
 	reply = validateCitations(reply, state.seenIDs)
@@ -382,6 +287,148 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 	emit(ResearchEvent{Type: "step", Kind: "answer", Status: "done", Count: len(state.read)})
 
 	return ResearchResult{Reply: reply, Documents: state.hits, Incomplete: incomplete, Usage: meter.usage}, nil
+}
+
+func replayThread(thread []ThreadMessage, meter *contextMeter) []openai.ChatCompletionMessageParamUnion {
+	apiMessages := make([]openai.ChatCompletionMessageParamUnion, 0, len(thread))
+	for _, msg := range thread {
+		param, ok := msg.Param()
+		if !ok {
+			continue
+		}
+		meter.grew(msg.Size())
+		apiMessages = append(apiMessages, param)
+	}
+	return apiMessages
+}
+
+// researchRunTools is every schema, every turn, whatever is behind them. The
+// tool list is part of what the provider cached, and what backs these three
+// moves underneath a conversation: the web toggle is per question, and a
+// helper or a counter can be bound or unbound between two of them. A list
+// that followed would forfeit the whole transcript's prefix each time. A call
+// with nothing behind it is refused instead -- see runWebTool, runSurveyTool
+// and runCountTool -- which costs one round and no cache.
+func researchRunTools() []openai.ChatCompletionToolUnionParam {
+	return append(researchTools(),
+		surveyDocumentsTool(),
+		countDocumentsTool(),
+		webSearchTool(),
+		webFetchTool(),
+	)
+}
+
+// gatherResearch is the first phase. No round cap: the loop ends when the
+// model is ready, when it stops making progress, or when a completion is
+// rejected. Every iteration appends at least an assistant message and a tool
+// result, so a run that keeps gathering is finite: the provider will refuse
+// the next request.
+func (a *openAISearchAgent) gatherResearch(ctx context.Context, run *researchRun) error {
+	stalled := 0
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if stalled >= maxStalledRounds {
+			a.client.logger.Info("research stalled; answering", "round", run.round, "documents", len(run.state.hits))
+			return nil
+		}
+
+		msg, err := a.completeResearchRound(ctx, run)
+		if err != nil {
+			return err
+		}
+
+		var progressed bool
+		dsmlCalls := contentToolCalls(msg)
+		switch {
+		case len(msg.ToolCalls) > 0:
+			progressed = a.runNativeResearchCalls(ctx, run, msg)
+		case len(dsmlCalls) > 0:
+			// DSML models put tool calls in content; feed results back as a user message.
+			progressed = a.runDSMLResearchCalls(ctx, run, msg.Content, dsmlCalls)
+		default:
+			// The model has stopped gathering; it is ready to answer.
+			return nil
+		}
+
+		if progressed {
+			stalled = 0
+		} else {
+			stalled++
+		}
+		run.round++
+	}
+}
+
+func (a *openAISearchAgent) completeResearchRound(ctx context.Context, run *researchRun) (openai.ChatCompletionMessage, error) {
+	requestStart := time.Now()
+	chatResp, err := a.client.Complete(ctx, openai.ChatCompletionNewParams{
+		Model:       shared.ChatModel(a.client.model),
+		Messages:    run.messages,
+		Temperature: CompletionTemperature(a.client.model, 0.2),
+		Tools:       run.tools,
+		ToolChoice: openai.ChatCompletionToolChoiceOptionUnionParam{
+			OfAuto: openai.String("auto"),
+		},
+	},
+		"purpose", "research",
+		"round", run.round,
+		"messages", len(run.messages),
+	)
+	if err != nil {
+		a.client.logger.Error("research request failed",
+			"round", run.round,
+			logfmt.Duration("duration", time.Since(requestStart)),
+			slog.Any("error", err),
+		)
+		return openai.ChatCompletionMessage{}, fmt.Errorf("openai research completion: %w", err)
+	}
+	if len(chatResp.Choices) == 0 {
+		return openai.ChatCompletionMessage{}, fmt.Errorf("openai returned no choices")
+	}
+	run.usage.Add(usageOf(chatResp))
+	run.emit(usageEvent(run.meter.observe(usageOf(chatResp))))
+	return chatResp.Choices[0].Message, nil
+}
+
+func (a *openAISearchAgent) runNativeResearchCalls(ctx context.Context, run *researchRun, msg openai.ChatCompletionMessage) bool {
+	asked := ThreadMessage{Role: "assistant", Content: msg.Content}
+	for _, call := range msg.ToolCalls {
+		asked.Calls = append(asked.Calls, ToolCall{
+			ID:        call.ID,
+			Name:      call.Function.Name,
+			Arguments: call.Function.Arguments,
+		})
+	}
+	// Recorded before the tools run, so a run that dies inside one still
+	// shows what it was doing.
+	run.add(asked, msg.ToParam())
+
+	progressed := false
+	for _, call := range msg.ToolCalls {
+		result, advanced := a.runResearchTool(ctx, run.req, run.state, call.ID, call.Function.Name, call.Function.Arguments, run.emit)
+		progressed = progressed || advanced
+		run.add(ThreadMessage{Role: "tool", Content: result.Content, CallID: call.ID}, openai.ToolMessage(result.Content, call.ID))
+	}
+	return progressed
+}
+
+func (a *openAISearchAgent) runDSMLResearchCalls(ctx context.Context, run *researchRun, content string, calls []parsedToolCall) bool {
+	run.add(ThreadMessage{Role: "assistant", Content: content}, openai.AssistantMessage(content))
+
+	progressed := false
+	results := make([]toolExecResult, 0, len(calls))
+	for _, call := range calls {
+		result, advanced := a.runResearchTool(ctx, run.req, run.state, call.ID, call.Name, call.Arguments, run.emit)
+		progressed = progressed || advanced
+		results = append(results, result)
+	}
+	formatted := formatDSMLToolResults(results)
+	// Stored as a tool row with no call id; ThreadMessage.Param turns
+	// it back into the user message this dialect expects.
+	run.add(ThreadMessage{Role: "tool", Content: formatted}, openai.UserMessage(formatted))
+	return progressed
 }
 
 // answerResearch is the second phase: one completion with the tools refused
@@ -566,17 +613,7 @@ type toolSearchHit struct {
 func toolSearchHits(hits []DocumentHit) []toolSearchHit {
 	out := make([]toolSearchHit, 0, len(hits))
 	for _, hit := range hits {
-		item := toolSearchHit{
-			ID:            hit.ID,
-			Title:         hit.Title,
-			DocumentDate:  hit.DocumentDate,
-			Summary:       hit.Summary,
-			OCRSnippet:    hit.OCRSnippet,
-			Passages:      hit.Passages,
-			DocumentType:  hit.DocumentType,
-			Correspondent: hit.Correspondent,
-			Tags:          hit.Tags,
-		}
+		item := toolSearchHit(hit)
 		if len(item.Passages) > 0 {
 			item.OCRSnippet = ""
 		}
@@ -616,15 +653,7 @@ func (a *openAISearchAgent) runReadTool(
 	// Only ids the agent has seen -- in this run or in an earlier turn of the
 	// same conversation -- are readable. Ownership is re-checked by the reader
 	// too; this keeps the model from fishing.
-	wanted := make([]string, 0, len(args.IDs))
-	unknown := make([]string, 0)
-	for _, id := range args.IDs {
-		if _, ok := state.seenIDs[id]; !ok {
-			unknown = append(unknown, id)
-			continue
-		}
-		wanted = append(wanted, id)
-	}
+	wanted, unknown := state.splitSeen(args.IDs)
 	if len(wanted) == 0 {
 		return toolExecResult{ID: callID, Name: name, Content: `{"error":"no readable ids","hint":"pass ids returned by search_documents in this conversation"}`}, false
 	}
@@ -749,6 +778,18 @@ func (state *researchState) claimCall(name string, args any) (string, bool) {
 	return "", true
 }
 
+func (state *researchState) splitSeen(ids []string) (seen, unknown []string) {
+	seen = make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := state.seenIDs[id]; !ok {
+			unknown = append(unknown, id)
+			continue
+		}
+		seen = append(seen, id)
+	}
+	return seen, unknown
+}
+
 func (state *researchState) titlesFor(ids []string) []string {
 	titles := make([]string, 0, len(ids))
 	for _, id := range ids {
@@ -799,11 +840,11 @@ func decodeReadArgs(data string) (readDocumentsArgs, error) {
 // so the loop talking to itself cannot be mistaken for the question -- which
 // would send every read off to focus on a JSON blob.
 func latestUserMessage(thread []ThreadMessage) string {
-	for i := len(thread) - 1; i >= 0; i-- {
-		if thread[i].Role != "user" {
+	for _, t := range slices.Backward(thread) {
+		if t.Role != "user" {
 			continue
 		}
-		if content := strings.TrimSpace(thread[i].Content); content != "" {
+		if content := strings.TrimSpace(t.Content); content != "" {
 			return content
 		}
 	}

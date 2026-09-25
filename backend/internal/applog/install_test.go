@@ -20,7 +20,7 @@ func bootTestApp(t *testing.T, dev bool) *pocketbase.PocketBase {
 	if err := app.Bootstrap(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = app.ResetBootstrapState() })
+	t.Cleanup(func() { _ = app.ClearBootstrap() })
 	return app
 }
 
@@ -137,7 +137,7 @@ func TestRegisterInstallsBeforeLowerPriorityBootstrapHooks(t *testing.T) {
 	if err := app.Bootstrap(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = app.ResetBootstrapState() })
+	t.Cleanup(func() { _ = app.ClearBootstrap() })
 
 	if !sawTee {
 		t.Fatal("expected stdout tee before priority-0 OnBootstrap unwind")

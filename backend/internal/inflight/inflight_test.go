@@ -72,7 +72,7 @@ func TestConcurrentWorkAndWaiters(t *testing.T) {
 
 	var started sync.WaitGroup
 	started.Add(n)
-	for i := 0; i < n; i++ {
+	for range n {
 		done := tr.Begin()
 		go func() {
 			started.Done()
@@ -86,14 +86,12 @@ func TestConcurrentWorkAndWaiters(t *testing.T) {
 	defer cancel()
 
 	var waiters sync.WaitGroup
-	for i := 0; i < 3; i++ {
-		waiters.Add(1)
-		go func() {
-			defer waiters.Done()
+	for range 3 {
+		waiters.Go(func() {
 			if err := tr.Wait(ctx); err != nil {
 				t.Errorf("Wait: %v", err)
 			}
-		}()
+		})
 	}
 	waiters.Wait()
 

@@ -9,7 +9,7 @@ import (
 func TestGenerateFirstPagePNGRejectsNonPDF(t *testing.T) {
 	t.Parallel()
 
-	_, err := GenerateFirstPagePNG("document.txt")
+	_, err := GenerateFirstPagePNG(t.Context(), "document.txt")
 	if err == nil {
 		t.Fatal("expected error for non-PDF input")
 	}
@@ -25,7 +25,7 @@ func TestGenerateFirstPagePNG(t *testing.T) {
 		t.Skip("set PREVIEW_TEST_PDF to run integration test")
 	}
 
-	file, err := GenerateFirstPagePNG(pdfPath)
+	file, err := GenerateFirstPagePNG(t.Context(), pdfPath)
 	if err != nil {
 		t.Fatalf("GenerateFirstPagePNG() error: %v", err)
 	}

@@ -83,7 +83,7 @@ func addNgxIDField(app core.App, collection string) error {
 	coll.Fields.Add(&core.NumberField{
 		Name:    ngxid.Field,
 		OnlyInt: true,
-		Min:     types.Pointer(1.0),
+		Min:     new(1.0),
 		Max:     types.Pointer(float64(ngxid.Max)),
 		// Hidden so an owner cannot rewrite it through the collection API. The
 		// rules on these collections let an owner patch their own rows, and a

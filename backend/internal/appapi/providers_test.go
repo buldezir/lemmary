@@ -1,6 +1,8 @@
 package appapi
 
 import (
+	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -134,5 +136,68 @@ func TestLocalOCRProviderIsBoundButNotToAnLLMFeature(t *testing.T) {
 	}
 	if !aiprovider.ReferencedBySettings(settings, "docling1") {
 		t.Error("an OCR binding must still block deletion")
+	}
+}
+
+// A switch has to meet what create demands of the new SDK: a keyless docling
+// row must not become an openai one nobody can call, nor keep docling's address.
+func TestPatchProviderSDKSwitchMeetsCreateRequirements(t *testing.T) {
+	app := bootQueueApp(t)
+	rt := &config.Runtime{}
+	rec := callManaged(t, handleCreateProvider(app, rt), http.MethodPost, "", `{"sdk":"docling"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create = %d %s", rec.Code, rec.Body)
+	}
+	var created providerResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+
+	rec = callManaged(t, handlePatchProvider(app, rt), http.MethodPatch, created.ID, `{"sdk":"openai"}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "api_key is required.") {
+		t.Fatalf("switch without a key = %d %s, want 400 api_key is required.", rec.Code, rec.Body)
+	}
+	stored, err := app.FindRecordById(aiprovider.CollectionName, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.GetString("sdk") != aiprovider.SDKDocling || stored.GetString("base_url") != created.BaseURL {
+		t.Fatalf("a refused switch changed the row: sdk=%q base_url=%q", stored.GetString("sdk"), stored.GetString("base_url"))
+	}
+
+	rec = callManaged(t, handlePatchProvider(app, rt), http.MethodPatch, created.ID, `{"sdk":"openai","api_key":"sk-test"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("switch with a key = %d %s", rec.Code, rec.Body)
+	}
+	var patched providerResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &patched); err != nil {
+		t.Fatal(err)
+	}
+	if patched.SDK != aiprovider.SDKOpenAI || !patched.APIKeySet {
+		t.Fatalf("patched = %+v", patched)
+	}
+	if want := aiprovider.NormalizeBaseURL(aiprovider.SDKOpenAI, ""); patched.BaseURL != want {
+		t.Fatalf("base_url = %q, want the openai default %q", patched.BaseURL, want)
+	}
+}
+
+// The form resends the current SDK on every edit, so a row stored before the
+// key rule must stay editable while its SDK does not change.
+func TestPatchProviderKeepsAnUnchangedSDKEditable(t *testing.T) {
+	app := bootQueueApp(t)
+	collection, err := aiprovider.EnsureCollection(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := core.NewRecord(collection)
+	record.Set("sdk", aiprovider.SDKOpenAI)
+	record.Set("alias", "Keyless")
+	if err := app.Save(record); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := callManaged(t, handlePatchProvider(app, &config.Runtime{}), http.MethodPatch, record.Id, `{"sdk":"openai","alias":"Renamed"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch = %d %s", rec.Code, rec.Body)
 	}
 }

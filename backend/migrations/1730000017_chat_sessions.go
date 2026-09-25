@@ -38,9 +38,7 @@ import (
 // create its own chat_messages record could write role="assistant" content that
 // the server then replays to the model as a prior answer.
 func init() {
-	m.Register(func(app core.App) error {
-		return chat.EnsureCollections(app)
-	}, func(app core.App) error {
+	m.Register(chat.EnsureCollections, func(app core.App) error {
 		// Messages first: their session relation is required, so dropping the
 		// sessions collection while they exist would strand them.
 		for _, name := range []string{chat.MessagesCollection, chat.SessionsCollection} {

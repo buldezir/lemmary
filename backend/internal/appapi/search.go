@@ -155,21 +155,7 @@ func embedQueryFunc(embedder ai.Embedder) func(context.Context, string) ([]float
 // writes the response itself and reports handled; it runs before anything is
 // streamed, so a failure here is still an ordinary HTTP error.
 func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e *core.RequestEvent) (searchTurn, bool, error) {
-	var req searchRequest
-	if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
-		return searchTurn{}, true, writeError(e, http.StatusBadRequest, "Invalid request body.")
-	}
-	content := ""
-	if !req.Resume {
-		validated, err := validateChatContent(req.Content)
-		content = validated
-		if err != nil {
-			return searchTurn{}, true, writeError(e, http.StatusBadRequest, err.Error())
-		}
-	} else if strings.TrimSpace(req.SessionID) == "" {
-		return searchTurn{}, true, writeError(e, http.StatusBadRequest, "A chat to resume is required.")
-	}
-	runID, err := validateRunID(req.RunID)
+	req, content, runID, err := decodeSearchRequest(e)
 	if err != nil {
 		return searchTurn{}, true, writeError(e, http.StatusBadRequest, err.Error())
 	}
@@ -246,16 +232,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		tools.web = snap.WebSearch
 	}
 
-	// A follow-up is usually about what the last answer cited, so carrying the
-	// hits saves the model guessing a query to rediscover them.
-	var priorDocuments []ai.DocumentHit
-	if session != nil {
-		priorDocuments, err = chat.PriorHits(app, session.Id)
-		if err != nil {
-			// Losing the carried evidence costs a search, not the answer.
-			app.Logger().Warn("search prior hits failed", slog.Any("error", err))
-		}
-	}
+	priorDocuments := searchPriorDocuments(app, session)
 
 	// Last, so a failure above cannot leave an empty conversation behind, and
 	// before the provider, so the agent loop runs inside the session it will be
@@ -294,6 +271,44 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		contextWindow:  contextWindowFor(e.Request.Context(), app, rt, snap.Cfg, binding, mode),
 		resume:         req.Resume,
 	}, false, nil
+}
+
+// The error is the message the 400 carries.
+func decodeSearchRequest(e *core.RequestEvent) (searchRequest, string, string, error) {
+	var req searchRequest
+	if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
+		return req, "", "", errors.New("Invalid request body.")
+	}
+	content := ""
+	if !req.Resume {
+		validated, err := validateChatContent(req.Content)
+		if err != nil {
+			return req, "", "", err
+		}
+		content = validated
+	} else if strings.TrimSpace(req.SessionID) == "" {
+		return req, "", "", errors.New("A chat to resume is required.")
+	}
+	runID, err := validateRunID(req.RunID)
+	if err != nil {
+		return req, "", "", err
+	}
+	return req, content, runID, nil
+}
+
+// searchPriorDocuments carries the earlier turns' hits: a follow-up is usually
+// about what the last answer cited, so carrying them saves the model guessing a
+// query to rediscover them.
+func searchPriorDocuments(app core.App, session *core.Record) []ai.DocumentHit {
+	if session == nil {
+		return nil
+	}
+	priorDocuments, err := chat.PriorHits(app, session.Id)
+	if err != nil {
+		// Losing the carried evidence costs a search, not the answer.
+		app.Logger().Warn("search prior hits failed", slog.Any("error", err))
+	}
+	return priorDocuments
 }
 
 // contextWindowFor resolves how much context the bound model has, through the
@@ -348,7 +363,7 @@ func persistSearchTurn(app core.App, t searchTurn, reply string, hits []ai.Docum
 		app.Logger().Error("search persist failed", slog.Any("error", err))
 		discardEmptySession(app, t.opened)
 		return searchResponse{
-			Message:   unsavedMessage(chat.RoleAssistant, reply, hits),
+			Message:   unsavedMessage(reply, hits),
 			Documents: hits,
 			Saved:     false,
 			Detail:    "This answer could not be saved, so the chat will not appear in your history.",
@@ -387,12 +402,7 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 			if researchErr != nil {
 				// Nothing is discarded: what the run got through is stored, and
 				// the turn reads as unfinished.
-				if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-					app.Logger().Warn("research ran out of budget", "budget", detachedRunBudget.String())
-					return writeError(e, http.StatusGatewayTimeout, runTooLongMessage)
-				}
-				app.Logger().Error("research failed", slog.Any("error", researchErr))
-				return writeError(e, http.StatusBadGateway, ai.ProviderErrorMessage(researchErr))
+				return writeRunError(ctx, e, app.Logger(), "research", researchErr)
 			}
 			documents := result.Documents
 			if documents == nil {
@@ -406,14 +416,7 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 		reply, hits, err := turn.agent.Search(turn.agentContext(ctx), turn.messages, turn.tools.tags, turn.tools.search, ai.SearchOptions{DenseRetrieval: turn.tools.dense})
 		if err != nil {
 			discardEmptySession(app, turn.opened)
-			// Running out of budget is not the provider failing, and saying so
-			// sends the caller to check an AI configuration that is fine.
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				app.Logger().Warn("deep search ran out of budget", "budget", detachedRunBudget.String())
-				return writeError(e, http.StatusGatewayTimeout, runTooLongMessage)
-			}
-			app.Logger().Error("deep search failed", slog.Any("error", err))
-			return writeError(e, http.StatusBadGateway, ai.ProviderErrorMessage(err))
+			return writeRunError(ctx, e, app.Logger(), "deep search", err)
 		}
 		if hits == nil {
 			hits = []ai.DocumentHit{}

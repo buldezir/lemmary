@@ -3,12 +3,14 @@ package appapi
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
 	"github.com/pocketbase/dbx"
 
 	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/fulltext"
 )
 
 // maxCountIDs is the most documents a grouped count over a text query
@@ -61,12 +63,7 @@ func (r *agentRetriever) count(ctx context.Context, args ai.CountArgs) (ai.Count
 			return ai.CountResult{}, fmt.Errorf("search index is not ready")
 		}
 		if groupBy == "" {
-			total, err := r.idx.CountMatching(ftQuery)
-			if err != nil {
-				return ai.CountResult{}, fmt.Errorf("count documents: %w", err)
-			}
-			result.Count = int(total)
-			return result, nil
+			return r.countTextMatches(ftQuery)
 		}
 		ids, total, complete, err := r.idx.MatchingIDs(ftQuery, maxCountIDs)
 		if err != nil {
@@ -96,6 +93,14 @@ func (r *agentRetriever) count(ctx context.Context, args ai.CountArgs) (ai.Count
 		result.Groups, result.Other = r.nameGroups(groupBy, rows)
 	}
 	return result, nil
+}
+
+func (r *agentRetriever) countTextMatches(ftQuery fulltext.Query) (ai.CountResult, error) {
+	total, err := r.idx.CountMatching(ftQuery)
+	if err != nil {
+		return ai.CountResult{}, fmt.Errorf("count documents: %w", err)
+	}
+	return ai.CountResult{Count: int(total)}, nil
 }
 
 type countSpec struct {
@@ -157,9 +162,7 @@ func countDocuments(ctx context.Context, db dbx.Builder, spec countSpec) ([]coun
 	run := func(ids []string) error {
 		conds := append([]string{}, where...)
 		p := dbx.Params{}
-		for k, v := range params {
-			p[k] = v
-		}
+		maps.Copy(p, params)
 		if ids != nil {
 			conds = append(conds, `d.id IN `+inClause("id", ids, p))
 		}
@@ -279,35 +282,7 @@ func mergeCountRows(rows []countRow) []countRow {
 func (r *agentRetriever) nameGroups(groupBy string, rows []countRow) ([]ai.CountGroup, int) {
 	groups := make([]ai.CountGroup, 0, len(rows))
 	for _, row := range rows {
-		key := row.Key
-		switch groupBy {
-		case "document_type":
-			if key != "" {
-				key = strings.TrimSpace(relatedName(r.app, "document_types", key))
-			}
-			if key == "" {
-				key = "(no type)"
-			}
-		case "correspondent":
-			if key != "" {
-				key = strings.TrimSpace(relatedName(r.app, "correspondents", key))
-			}
-			if key == "" {
-				key = "(no correspondent)"
-			}
-		case "tag":
-			if key != "" {
-				key = strings.TrimSpace(relatedName(r.app, "tags", key))
-			}
-			if key == "" {
-				key = "(untagged)"
-			}
-		default:
-			if key == "" {
-				key = "(undated)"
-			}
-		}
-		groups = append(groups, ai.CountGroup{Key: key, Count: row.Count})
+		groups = append(groups, ai.CountGroup{Key: r.countGroupName(groupBy, row.Key), Count: row.Count})
 	}
 	// Same name from two ids (a renamed tag, say) folds together.
 	merged := map[string]int{}
@@ -332,4 +307,23 @@ func (r *agentRetriever) nameGroups(groupBy string, rows []countRow) ([]ai.Count
 		groups = groups[:maxCountGroups]
 	}
 	return groups, other
+}
+
+func (r *agentRetriever) countGroupName(groupBy, key string) string {
+	collection, none := "", "(undated)"
+	switch groupBy {
+	case "document_type":
+		collection, none = "document_types", "(no type)"
+	case "correspondent":
+		collection, none = "correspondents", "(no correspondent)"
+	case "tag":
+		collection, none = "tags", "(untagged)"
+	}
+	if collection != "" && key != "" {
+		key = strings.TrimSpace(relatedName(r.app, collection, key))
+	}
+	if key == "" {
+		return none
+	}
+	return key
 }

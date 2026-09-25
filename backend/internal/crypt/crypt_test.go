@@ -122,7 +122,7 @@ func TestKeyIDIdentifiesTheUnderlyingKey(t *testing.T) {
 	if KeyID(dek) == "" {
 		t.Fatal("KeyID returned empty")
 	}
-	if KeyID(dek) != KeyID(dek) {
+	if a, b := KeyID(dek), KeyID(dek); a != b {
 		t.Fatal("KeyID is not stable")
 	}
 	if KeyID(dek) == KeyID(other) {
@@ -230,7 +230,7 @@ func TestUnwrapKeyRejectsTruncatedAndTamperedWraps(t *testing.T) {
 		}
 	}
 
-	for n := 0; n < len(raw); n++ {
+	for n := range raw {
 		blob := "lmwrap1:" + base64.RawURLEncoding.EncodeToString(raw[:n])
 		if _, err := UnwrapKey(kek, blob, "aad"); err == nil {
 			t.Fatalf("truncating the wrap to %d bytes still unwrapped", n)

@@ -400,7 +400,7 @@ func (v *Vault) checkWorkDirIsMemoryBacked() error {
 		// same outcome the doc comment refuses, silently and on every boot, so the
 		// unverifiable case is treated as the unsafe one.
 		return fmt.Errorf(
-			"vault: cannot verify that %s is memory-backed (%v), so there is no way from in here to tell whether decrypting into it would write every document to disk in the clear. Mount a tmpfs there (in compose: tmpfs: [\"%s:size=2g,mode=0700\"]), or set %s=1 to accept plaintext on disk",
+			"vault: cannot verify that %s is memory-backed (%w), so there is no way from in here to tell whether decrypting into it would write every document to disk in the clear. Mount a tmpfs there (in compose: tmpfs: [\"%s:size=2g,mode=0700\"]), or set %s=1 to accept plaintext on disk",
 			v.opts.WorkDir, err, v.opts.WorkDir, EnvAllowDiskWorkDir)
 	}
 	if !mem {

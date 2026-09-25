@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -33,7 +34,7 @@ func sseResponse(events ...string) *http.Response {
 		b.WriteString("event: x\ndata: " + e + "\n\n")
 	}
 	return &http.Response{
-		StatusCode: 200,
+		StatusCode: http.StatusOK,
 		Header:     http.Header{},
 		Body:       io.NopCloser(strings.NewReader(b.String())),
 	}
@@ -206,7 +207,7 @@ func TestAStreamedAnswerBecomesChatCompletionChunks(t *testing.T) {
 	var text strings.Builder
 	var sawStop bool
 	var usage *chatUsage
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if !strings.HasPrefix(line, "data:") || payload == "[DONE]" {
 			continue
@@ -248,7 +249,7 @@ func TestAnErrorResponsePassesThroughUntouched(t *testing.T) {
 
 	resp, err := mw(chatRequestFor(t, false), func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
-			StatusCode: 400,
+			StatusCode: http.StatusBadRequest,
 			Header:     http.Header{},
 			Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"nope"}}`)),
 		}, nil
@@ -256,7 +257,7 @@ func TestAnErrorResponsePassesThroughUntouched(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.StatusCode != 400 {
+	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}
 	raw, _ := io.ReadAll(resp.Body)
@@ -283,7 +284,7 @@ func TestOtherPathsAreNotRewritten(t *testing.T) {
 		if got.Header.Get("Authorization") != "" {
 			t.Error("a passed-through request was given a token")
 		}
-		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("{}"))}, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -331,7 +332,7 @@ func TestAnUnsignedProviderNeverReachesTheNetwork(t *testing.T) {
 	if _, err := mw(chatRequestFor(t, false), func(req *http.Request) (*http.Response, error) {
 		t.Fatal("an unsigned provider reached the transport")
 		return nil, nil
-	}); err != ErrNotSignedIn {
+	}); !errors.Is(err, ErrNotSignedIn) {
 		t.Fatalf("err = %v, want ErrNotSignedIn", err)
 	}
 }
@@ -538,6 +539,39 @@ func TestAToolRoundReplaysAsFreeStandingItems(t *testing.T) {
 	}
 	if result.Output != "1 hit: rent increase notice" {
 		t.Errorf("output = %q", result.Output)
+	}
+}
+
+// A result without a tool_call_id cannot become an output item, and the
+// backend refuses a function_call nothing answers.
+func TestACallWhoseResultHasNoIDIsNotSent(t *testing.T) {
+	t.Parallel()
+	messages := []map[string]any{
+		{"role": "user", "content": "What did the landlord send in May?"},
+		{
+			"role":    "assistant",
+			"content": "Let me look.",
+			"tool_calls": []map[string]any{
+				{"id": "call_7", "type": "function", "function": map[string]any{"name": "search_documents", "arguments": `{"query":"landlord"}`}},
+				{"id": "call_8", "type": "function", "function": map[string]any{"name": "search_documents", "arguments": `{"query":"rent"}`}},
+			},
+		},
+		{"role": "tool", "tool_call_id": "call_7", "content": "1 hit: rent increase notice"},
+		{"role": "tool", "tool_call_id": "", "content": "2 hits"},
+	}
+	sent := sentInputFor(t, Middleware(signedInSource(t, "t26"), nil), toolRequestFor(t, "auto", messages))
+
+	if len(sent.Input) != 4 {
+		t.Fatalf("input = %+v, want the user turn, the lead-in, call_7 and its result", sent.Input)
+	}
+	if lead := sent.Input[1]; lead.Type != "message" || lead.Role != "assistant" || lead.Content[0].Text != "Let me look." {
+		t.Errorf("lead-in = %+v", lead)
+	}
+	if call := sent.Input[2]; call.Type != "function_call" || call.CallID != "call_7" || call.Arguments != `{"query":"landlord"}` {
+		t.Errorf("call = %+v", call)
+	}
+	if result := sent.Input[3]; result.Type != "function_call_output" || result.CallID != "call_7" || result.Output != "1 hit: rent increase notice" {
+		t.Errorf("result = %+v", result)
 	}
 }
 

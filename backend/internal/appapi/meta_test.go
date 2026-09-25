@@ -21,7 +21,7 @@ func bootNamedApp(t *testing.T, dataDir string, register bool) *pocketbase.Pocke
 	if err := app.Bootstrap(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = app.ResetBootstrapState() })
+	t.Cleanup(func() { _ = app.ClearBootstrap() })
 	return app
 }
 
@@ -39,7 +39,7 @@ func TestRegisterAppNameLeavesACustomNameAlone(t *testing.T) {
 	if err := first.Save(first.Settings()); err != nil {
 		t.Fatal(err)
 	}
-	if err := first.ResetBootstrapState(); err != nil {
+	if err := first.ClearBootstrap(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -55,7 +55,7 @@ func TestRegisterAppNameRewritesStoredAcme(t *testing.T) {
 	if got := first.Settings().Meta.AppName; got != pocketBaseDefaultAppName {
 		t.Fatalf("PocketBase default AppName = %q, want %q", got, pocketBaseDefaultAppName)
 	}
-	if err := first.ResetBootstrapState(); err != nil {
+	if err := first.ClearBootstrap(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -103,7 +103,7 @@ func TestRegisterAppNameLeavesAChosenAccentAlone(t *testing.T) {
 	if err := first.Save(first.Settings()); err != nil {
 		t.Fatal(err)
 	}
-	if err := first.ResetBootstrapState(); err != nil {
+	if err := first.ClearBootstrap(); err != nil {
 		t.Fatal(err)
 	}
 

@@ -91,7 +91,7 @@ func TestConcurrentEnrollmentKeepsEveryWrap(t *testing.T) {
 
 	const users = 32
 	var wg sync.WaitGroup
-	for i := 0; i < users; i++ {
+	for i := range users {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -110,7 +110,7 @@ func TestConcurrentEnrollmentKeepsEveryWrap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload keyring: %v", err)
 	}
-	for i := 0; i < users; i++ {
+	for i := range users {
 		id := fmt.Sprintf("user%02d", i)
 		if !h.v.Keyring().HasWrapForUser(id) {
 			t.Errorf("in-memory keyring lost the wrap for %s", id)

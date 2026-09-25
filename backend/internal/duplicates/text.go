@@ -94,7 +94,7 @@ func SimHash64(normalized string) uint64 {
 		h := fnv.New64a()
 		_, _ = h.Write([]byte(shingle))
 		v := h.Sum64()
-		for i := 0; i < 64; i++ {
+		for i := range 64 {
 			if (v>>uint(i))&1 == 1 {
 				weights[i]++
 			} else {
@@ -103,7 +103,7 @@ func SimHash64(normalized string) uint64 {
 		}
 	}
 	var out uint64
-	for i := 0; i < 64; i++ {
+	for i := range 64 {
 		if weights[i] >= 0 {
 			out |= 1 << uint(i)
 		}
@@ -135,7 +135,7 @@ func ParseFingerprintHex(s string) (uint64, bool) {
 		return 0, false
 	}
 	var buf [8]byte
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		hi, ok1 := fromHex(s[i*2])
 		lo, ok2 := fromHex(s[i*2+1])
 		if !ok1 || !ok2 {

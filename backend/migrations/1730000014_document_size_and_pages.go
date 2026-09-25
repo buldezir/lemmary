@@ -3,7 +3,6 @@ package migrations
 import (
 	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
-	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 // Adds the two columns the instance limits are measured in. They are written by
@@ -31,7 +30,7 @@ func init() {
 		if documents.Fields.GetByName("page_count") == nil {
 			documents.Fields.Add(&core.NumberField{
 				Name:    "page_count",
-				Min:     types.Pointer(0.0),
+				Min:     new(0.0),
 				OnlyInt: true,
 				Hidden:  true,
 			})
@@ -39,7 +38,7 @@ func init() {
 		if documents.Fields.GetByName("size_bytes") == nil {
 			documents.Fields.Add(&core.NumberField{
 				Name:    "size_bytes",
-				Min:     types.Pointer(0.0),
+				Min:     new(0.0),
 				OnlyInt: true,
 				Hidden:  true,
 			})

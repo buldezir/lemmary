@@ -287,6 +287,26 @@ func TestDecodeSurveyArgsCoercesLooseShapes(t *testing.T) {
 	}
 }
 
+func TestDecodeSurveyArgsDropsBlankFieldNames(t *testing.T) {
+	t.Parallel()
+	args, err := decodeSurveyArgs(`{"question": "q", "fields": [{"name": " "}, {"name": " amount ", "type": "number"}, {"name": ""}]}`)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(args.Fields) != 1 || args.Fields[0].Name != "amount" || args.Fields[0].Type != "number" {
+		t.Fatalf("fields = %+v", args.Fields)
+	}
+}
+
+func TestASurveyRowWithNoIDIsNotCountedAsRead(t *testing.T) {
+	t.Parallel()
+	state := newResearchState(nil)
+	state.adoptSurvey(SurveyResult{Rows: []SurveyRow{{ID: "doc1", Title: "Invoice"}, {Title: "no id"}}})
+	if _, ok := state.read[""]; ok || len(state.read) != 1 {
+		t.Fatalf("read = %v", state.read)
+	}
+}
+
 // toolMessageContent finds the tool result the agent fed back for the named
 // tool in a recorded request.
 func toolMessageContent(t *testing.T, request map[string]any, tool string) string {

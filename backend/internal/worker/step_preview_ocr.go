@@ -38,7 +38,7 @@ func (s *PreviewStep) Run(ctx context.Context, state *StepState) error {
 		return nil
 	}
 
-	previewFile, err := preview.GenerateFirstPagePNG(state.TmpPath)
+	previewFile, err := preview.GenerateFirstPagePNG(ctx, state.TmpPath)
 	if err != nil {
 		return err
 	}

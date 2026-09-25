@@ -1,6 +1,7 @@
 package migrations
 
 import (
+	"slices"
 	"sort"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -147,10 +148,5 @@ func repointDocumentTags(app core.App, documents []*core.Record, clones map[stri
 }
 
 func containsString(values []string, target string) bool {
-	for _, v := range values {
-		if v == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, target)
 }

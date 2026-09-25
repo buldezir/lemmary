@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
+
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/strutil"
@@ -141,8 +142,8 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 		if rt.Managed() && req.touchesManaged() {
 			return writeError(e, http.StatusForbidden, managedMessage)
 		}
-		// Checked before the record is touched: branding is saved separately,
-		// so a name PocketBase would reject must not half-apply the patch.
+		// Checked before the record is touched, so a name PocketBase would reject
+		// reads as a validation error rather than a failed save.
 		appName, accent, err := brandingPatch(req)
 		if err != nil {
 			return writeError(e, http.StatusBadRequest, err.Error())
@@ -150,7 +151,8 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 
 		// Load + patch + save in one transaction: settings is a singleton saved
 		// whole, so two concurrent PATCHes would silently revert each other.
-		var patchErr error
+		// Branding is saved in it too, so a failure there rolls the rest back.
+		var patchErr, brandingErr error
 		err = app.RunInTransaction(func(txApp core.App) error {
 			record, err := config.FindSettingsRecord(txApp, rt.Env())
 			if err != nil {
@@ -160,31 +162,25 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 				patchErr = err
 				return err
 			}
-			return txApp.Save(record)
-		})
-		if err != nil {
-			if patchErr != nil {
-				return writeError(e, http.StatusBadRequest, patchErr.Error())
+			if err := txApp.Save(record); err != nil {
+				return err
 			}
+			brandingErr = saveBranding(txApp, appName, accent)
+			return brandingErr
+		})
+		switch {
+		case patchErr != nil:
+			return writeError(e, http.StatusBadRequest, patchErr.Error())
+		case brandingErr != nil:
+			app.Logger().Error("save branding failed", slog.Any("error", brandingErr))
+			return writeError(e, http.StatusBadRequest, "Failed to save the application name or accent color.")
+		case err != nil:
 			app.Logger().Error("save settings failed", slog.Any("error", err))
 			return writeError(e, http.StatusInternalServerError, "Failed to save settings.")
 		}
 
-		if appName != nil || accent != nil {
-			settings := app.Settings()
-			if appName != nil {
-				settings.Meta.AppName = *appName
-			}
-			if accent != nil {
-				settings.Meta.AccentColor = *accent
-			}
-			if err := app.Save(settings); err != nil {
-				app.Logger().Error("save branding failed", slog.Any("error", err))
-				return writeError(e, http.StatusBadRequest, "Failed to save the application name or accent color.")
-			}
-		}
-
-		// app.Save above fires OnRecordAfterUpdateSuccess, which reloads the runtime.
+		// The saves above fire their after-success hooks on commit: those reload
+		// the runtime and PocketBase's own settings.
 		return writeJSON(e, http.StatusOK, settingsResponseFor(app, rt.Snapshot().Cfg))
 	}
 }
@@ -223,6 +219,25 @@ func brandingPatch(req settingsPatchRequest) (appName *string, accent *string, e
 		accent = &value
 	}
 	return appName, accent, nil
+}
+
+// saveBranding saves a clone: the live settings must not change before the
+// transaction commits, and PocketBase reloads them from the row once it does.
+func saveBranding(app core.App, appName, accent *string) error {
+	if appName == nil && accent == nil {
+		return nil
+	}
+	settings, err := app.Settings().Clone()
+	if err != nil {
+		return err
+	}
+	if appName != nil {
+		settings.Meta.AppName = *appName
+	}
+	if accent != nil {
+		settings.Meta.AccentColor = *accent
+	}
+	return app.Save(settings)
 }
 
 var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
@@ -280,62 +295,64 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 }
 
 func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequest) error {
-	if req.OCRProviderID != nil {
-		id := strings.TrimSpace(*req.OCRProviderID)
-		if err := validateProviderID(app, id, needOCR); err != nil {
-			return err
-		}
-		record.Set("ocr_provider_id", id)
-	}
-	if req.OCRModel != nil {
-		record.Set("ocr_model", strings.TrimSpace(*req.OCRModel))
-	}
-	if req.ExtractProviderID != nil {
-		id := strings.TrimSpace(*req.ExtractProviderID)
-		if err := validateProviderID(app, id, needLLM); err != nil {
-			return err
-		}
-		record.Set("extract_provider_id", id)
-	}
-	if req.ExtractModel != nil {
-		record.Set("extract_model", strings.TrimSpace(*req.ExtractModel))
-	}
-	if req.ResearchProviderID != nil {
-		id := strings.TrimSpace(*req.ResearchProviderID)
-		if err := validateProviderID(app, id, needLLM); err != nil {
-			return err
-		}
-		record.Set("research_provider_id", id)
-	}
-	if req.ResearchModel != nil {
-		record.Set("research_model", strings.TrimSpace(*req.ResearchModel))
-	}
 	// Read before the write so a change can be detected: switching model or
 	// endpoint invalidates the recorded vector length and every stored vector.
-	embeddingBefore := strings.TrimSpace(record.GetString("embedding_provider_id")) + "|" +
+	embeddingBefore := embeddingBinding(record)
+	if err := applyBindingsPatch(app, record, req); err != nil {
+		return err
+	}
+	if err := applyProcessingPatch(record, req); err != nil {
+		return err
+	}
+	if err := applyIngestDirPatch(app, record, req); err != nil {
+		return err
+	}
+	if err := applyIMAPPatch(record, req); err != nil {
+		return err
+	}
+	if req.NearDuplicateThreshold != nil {
+		if *req.NearDuplicateThreshold <= 0 || *req.NearDuplicateThreshold > 1 {
+			return errInvalid("near_duplicate_threshold must be between 0 and 1")
+		}
+		record.Set("near_duplicate_threshold", *req.NearDuplicateThreshold)
+	}
+	if err := validateBindings(app, record); err != nil {
+		return err
+	}
+	if embeddingBinding(record) != embeddingBefore {
+		record.Set("embedding_dims", 0)
+	}
+	return nil
+}
+
+func embeddingBinding(record *core.Record) string {
+	return strings.TrimSpace(record.GetString("embedding_provider_id")) + "|" +
 		strings.TrimSpace(record.GetString("embedding_model"))
-	if req.EmbeddingProviderID != nil {
-		id := strings.TrimSpace(*req.EmbeddingProviderID)
-		if err := validateProviderID(app, id, needEmbedding); err != nil {
-			return err
-		}
-		record.Set("embedding_provider_id", id)
+}
+
+func applyBindingsPatch(app core.App, record *core.Record, req settingsPatchRequest) error {
+	if err := patchSettingsProviderID(app, record, "ocr_provider_id", req.OCRProviderID, needOCR); err != nil {
+		return err
 	}
-	if req.EmbeddingModel != nil {
-		record.Set("embedding_model", strings.TrimSpace(*req.EmbeddingModel))
+	patchSettingsText(record, "ocr_model", req.OCRModel)
+	if err := patchSettingsProviderID(app, record, "extract_provider_id", req.ExtractProviderID, needLLM); err != nil {
+		return err
 	}
-	if req.WebSearchProviderID != nil {
-		id := strings.TrimSpace(*req.WebSearchProviderID)
-		if err := validateProviderID(app, id, needWebSearch); err != nil {
-			return err
-		}
-		record.Set("websearch_provider_id", id)
+	patchSettingsText(record, "extract_model", req.ExtractModel)
+	if err := patchSettingsProviderID(app, record, "research_provider_id", req.ResearchProviderID, needLLM); err != nil {
+		return err
 	}
-	if req.OCRTimeoutSec != nil {
-		if *req.OCRTimeoutSec <= 0 {
-			return errInvalid("ocr_timeout_sec must be positive")
-		}
-		record.Set("ocr_timeout_sec", *req.OCRTimeoutSec)
+	patchSettingsText(record, "research_model", req.ResearchModel)
+	if err := patchSettingsProviderID(app, record, "embedding_provider_id", req.EmbeddingProviderID, needEmbedding); err != nil {
+		return err
+	}
+	patchSettingsText(record, "embedding_model", req.EmbeddingModel)
+	return patchSettingsProviderID(app, record, "websearch_provider_id", req.WebSearchProviderID, needWebSearch)
+}
+
+func applyProcessingPatch(record *core.Record, req settingsPatchRequest) error {
+	if err := patchSettingsPositive(record, "ocr_timeout_sec", req.OCRTimeoutSec); err != nil {
+		return err
 	}
 	if req.ProcessingResultLanguage != nil {
 		record.Set("processing_result_language", strings.ToLower(strings.TrimSpace(*req.ProcessingResultLanguage)))
@@ -343,17 +360,11 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	if req.DeepSearchLanguages != nil {
 		record.Set("deep_search_languages", config.NormalizeLanguageList(*req.DeepSearchLanguages))
 	}
-	if req.OpenAITimeoutSec != nil {
-		if *req.OpenAITimeoutSec <= 0 {
-			return errInvalid("openai_timeout_sec must be positive")
-		}
-		record.Set("openai_timeout_sec", *req.OpenAITimeoutSec)
+	if err := patchSettingsPositive(record, "openai_timeout_sec", req.OpenAITimeoutSec); err != nil {
+		return err
 	}
-	if req.WorkerTimeoutSec != nil {
-		if *req.WorkerTimeoutSec <= 0 {
-			return errInvalid("worker_timeout_sec must be positive")
-		}
-		record.Set("worker_timeout_sec", *req.WorkerTimeoutSec)
+	if err := patchSettingsPositive(record, "worker_timeout_sec", req.WorkerTimeoutSec); err != nil {
+		return err
 	}
 	if req.WorkerMaxRetries != nil {
 		if *req.WorkerMaxRetries < 0 {
@@ -361,9 +372,7 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 		}
 		record.Set("worker_max_retries", *req.WorkerMaxRetries)
 	}
-	if req.ExtractionPromptVersion != nil {
-		record.Set("extraction_prompt_version", strings.TrimSpace(*req.ExtractionPromptVersion))
-	}
+	patchSettingsText(record, "extraction_prompt_version", req.ExtractionPromptVersion)
 	if req.ExtractionRules != nil {
 		rules := strings.TrimSpace(*req.ExtractionRules)
 		// Checked here rather than left to the field's Max so the 400 carries a
@@ -379,6 +388,10 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	if req.AlwaysRequireReview != nil {
 		record.Set("always_require_review", *req.AlwaysRequireReview)
 	}
+	return nil
+}
+
+func applyIngestDirPatch(app core.App, record *core.Record, req settingsPatchRequest) error {
 	if req.IngestDirOwner != nil {
 		id := strings.TrimSpace(*req.IngestDirOwner)
 		if id != "" && app != nil {
@@ -397,16 +410,39 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	if req.IngestDirDeleteOriginal != nil {
 		record.Set("ingest_dir_delete_original", *req.IngestDirDeleteOriginal)
 	}
-	if err := applyIMAPPatch(record, req); err != nil {
+	return nil
+}
+
+func patchSettingsProviderID(app core.App, record *core.Record, field string, value *string, need providerNeed) error {
+	if value == nil {
+		return nil
+	}
+	id := strings.TrimSpace(*value)
+	if err := validateProviderID(app, id, need); err != nil {
 		return err
 	}
-	if req.NearDuplicateThreshold != nil {
-		if *req.NearDuplicateThreshold <= 0 || *req.NearDuplicateThreshold > 1 {
-			return errInvalid("near_duplicate_threshold must be between 0 and 1")
-		}
-		record.Set("near_duplicate_threshold", *req.NearDuplicateThreshold)
-	}
+	record.Set(field, id)
+	return nil
+}
 
+func patchSettingsText(record *core.Record, field string, value *string) {
+	if value != nil {
+		record.Set(field, strings.TrimSpace(*value))
+	}
+}
+
+func patchSettingsPositive(record *core.Record, field string, value *int) error {
+	if value == nil {
+		return nil
+	}
+	if *value <= 0 {
+		return errInvalid(field + " must be positive")
+	}
+	record.Set(field, *value)
+	return nil
+}
+
+func validateBindings(app core.App, record *core.Record) error {
 	ocrID := strings.TrimSpace(record.GetString("ocr_provider_id"))
 	if ocrID != "" {
 		p, err := aiprovider.FindByID(app, ocrID)
@@ -439,9 +475,6 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 		// Half a binding is worse than none: the feature would read as on and
 		// every document would fail its embed step.
 		return errInvalid("embedding_model is required when an embedding provider is set")
-	}
-	if embeddingBefore != embeddingID+"|"+embeddingModel {
-		record.Set("embedding_dims", 0)
 	}
 	return nil
 }

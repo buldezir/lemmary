@@ -3,7 +3,6 @@ package migrations
 import (
 	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
-	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 const pairedAdminField = "is_app_admin"
@@ -35,7 +34,7 @@ func init() {
 			return nil
 		}
 		// Restore PocketBase default (empty rule = anyone can create).
-		users.CreateRule = types.Pointer("")
+		users.CreateRule = new("")
 		if f := users.Fields.GetByName(pairedAdminField); f != nil {
 			users.Fields.RemoveById(f.GetId())
 		}

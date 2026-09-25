@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -47,12 +48,7 @@ func searchIDs(t *testing.T, idx *Index, q Query) []string {
 }
 
 func containsID(ids []string, want string) bool {
-	for _, id := range ids {
-		if id == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ids, want)
 }
 
 func TestSearchANDVsPhrase(t *testing.T) {
@@ -491,8 +487,8 @@ func TestConcurrentRebuildsSerialize(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make([]error, 2)
 	wg.Add(2)
-	for n := 0; n < 2; n++ {
-		n := n
+	for n := range 2 {
+
 		go func() {
 			defer wg.Done()
 			_, errs[n] = idx.Rebuild(nil)
@@ -580,17 +576,17 @@ func TestConcurrentEnqueueAndSearch(t *testing.T) {
 	// Regression: WaitIdle used to wg.Wait concurrently with wg.Add in the
 	// enqueue path, an illegal WaitGroup reuse that could panic under load.
 	var wg sync.WaitGroup
-	for n := 0; n < 8; n++ {
+	for range 8 {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			for k := 0; k < 50; k++ {
+			for range 50 {
 				idx.EnqueueDelete("ghost")
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			for k := 0; k < 50; k++ {
+			for range 50 {
 				if _, err := idx.Search(Query{Text: "racing", UserID: "u1"}); err != nil {
 					t.Errorf("search: %v", err)
 					return
@@ -608,7 +604,7 @@ func TestIDsByKeywordPaginates(t *testing.T) {
 	lookupPageSize = 2
 	t.Cleanup(func() { lookupPageSize = prev })
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		id := fmt.Sprintf("d%d", i)
 		mustPut(t, idx, id, map[string]any{
 			FieldUser:  "u1",
@@ -854,7 +850,7 @@ func TestRelaxedDoesNotEscalatePastEnd(t *testing.T) {
 func TestRelaxedFallbackLimit(t *testing.T) {
 	idx := testIndex(t)
 	terms := []string{"purchase", "order", "receipt", "invoice", "payment", "amount"}
-	for n := 0; n < 15; n++ {
+	for n := range 15 {
 		mustPut(t, idx, fmt.Sprintf("doc%02d", n), ocrDoc("Ledger", terms[n%len(terms)]))
 	}
 

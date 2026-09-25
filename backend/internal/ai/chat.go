@@ -119,7 +119,7 @@ func (c *OpenAIClient) chatWithWeb(
 	tools := []openai.ChatCompletionToolUnionParam{webSearchTool(), webFetchTool()}
 	budget := &webBudget{}
 
-	for round := 0; round < maxChatToolRounds; round++ {
+	for round := range maxChatToolRounds {
 		chatResp, err := c.completeChatTurn(ctx, apiMessages, tools, round)
 		if err != nil {
 			return "", err

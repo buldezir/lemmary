@@ -3,7 +3,6 @@ package migrations
 import (
 	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
-	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 const documentSharesCollection = "document_shares"
@@ -66,12 +65,12 @@ func createDocumentShares(app core.App) error {
 	}
 
 	ownerRule := "document.user = @request.auth.id"
-	shares.ListRule = types.Pointer(ownerRule + " || user = @request.auth.id")
-	shares.ViewRule = types.Pointer(ownerRule + " || user = @request.auth.id")
-	shares.CreateRule = types.Pointer(ownerRule)
+	shares.ListRule = new(ownerRule + " || user = @request.auth.id")
+	shares.ViewRule = new(ownerRule + " || user = @request.auth.id")
+	shares.CreateRule = new(ownerRule)
 	// Nothing on a share is mutable; regranting is a delete and a create.
 	shares.UpdateRule = nil
-	shares.DeleteRule = types.Pointer(ownerRule)
+	shares.DeleteRule = new(ownerRule)
 
 	if shares.Fields.GetByName("document") == nil {
 		shares.Fields.Add(&core.RelationField{
@@ -112,8 +111,8 @@ func setSharedReadRules(app core.App, shared bool) error {
 	if shared {
 		rule = documentReadRule
 	}
-	documents.ListRule = types.Pointer(rule)
-	documents.ViewRule = types.Pointer(rule)
+	documents.ListRule = new(rule)
+	documents.ViewRule = new(rule)
 	if err := app.Save(documents); err != nil {
 		return err
 	}
@@ -124,9 +123,9 @@ func setSharedReadRules(app core.App, shared bool) error {
 			return err
 		}
 		if shared {
-			coll.ViewRule = types.Pointer(sharedRule)
+			coll.ViewRule = new(sharedRule)
 		} else {
-			coll.ViewRule = types.Pointer(ownerRule)
+			coll.ViewRule = new(ownerRule)
 		}
 		if err := app.Save(coll); err != nil {
 			return err

@@ -20,7 +20,7 @@ func bootTestApp(t *testing.T) *pocketbase.PocketBase {
 	if err := app.Bootstrap(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = app.ResetBootstrapState() })
+	t.Cleanup(func() { _ = app.ClearBootstrap() })
 	return app
 }
 

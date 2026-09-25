@@ -282,7 +282,10 @@ func TestBuildExtractionSystemPromptClosesTheTagVocabulary(t *testing.T) {
 	}
 
 	// The reuse wording the other two catalogs end on invites invention.
-	tagBlock := prompt[strings.Index(prompt, "the archive's tags"):]
+	_, tagBlock, ok := strings.Cut(prompt, "the archive's tags")
+	if !ok {
+		t.Fatalf("expected a tag block, got:\n%s", prompt)
+	}
 	if strings.Contains(tagBlock, "only invent a new") {
 		t.Fatalf("the tag block reuses the invent-when-no-match wording:\n%s", tagBlock)
 	}

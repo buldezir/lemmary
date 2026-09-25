@@ -212,7 +212,7 @@ func TestOpenStreamDetectsBitFlipAnywhere(t *testing.T) {
 
 	encChunk := 24 + chunkSize + 16
 	offsets := map[int]bool{}
-	for i := 0; i < streamHeaderLen; i++ {
+	for i := range streamHeaderLen {
 		offsets[i] = true // magic, version, chunk size
 	}
 	for c := 0; c*encChunk+streamHeaderLen < len(sealed); c++ {
@@ -224,7 +224,7 @@ func TestOpenStreamDetectsBitFlipAnywhere(t *testing.T) {
 		}
 	}
 	rnd := rand.New(rand.NewSource(1))
-	for i := 0; i < 150; i++ {
+	for range 150 {
 		offsets[rnd.Intn(len(sealed))] = true
 	}
 

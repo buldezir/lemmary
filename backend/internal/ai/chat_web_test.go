@@ -147,7 +147,7 @@ func TestChatStopsAtTheRoundCapAndForcesAnAnswer(t *testing.T) {
 	web, _ := newWebServer(t, `{"results":[{"title":"t","url":"https://example.com/a","content":"c"}]}`, `{}`)
 
 	replies := make([]map[string]any, 0, maxChatToolRounds)
-	for i := 0; i < maxChatToolRounds; i++ {
+	for range maxChatToolRounds {
 		replies = append(replies, toolCall("call", "web_search", `{"query":"again"}`))
 	}
 	server, turns := scriptedChatServer(t, replies...)
@@ -185,7 +185,7 @@ func TestChatAnswersEvenWhenTheLastRoundIsStillToolMarkup(t *testing.T) {
 		`<｜DSML｜parameter name="query">again</｜DSML｜parameter>` +
 		`</｜DSML｜invoke>`
 	replies := make([]map[string]any, 0, maxChatToolRounds+1)
-	for i := 0; i < maxChatToolRounds; i++ {
+	for range maxChatToolRounds {
 		replies = append(replies, map[string]any{"role": "assistant", "content": markup})
 	}
 	// What the model sends on the answer turn: prose with leftover markup on it.

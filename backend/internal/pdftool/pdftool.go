@@ -94,7 +94,7 @@ func PageCount(ctx context.Context, pdfPath string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	for _, line := range strings.Split(string(output), "\n") {
+	for line := range strings.SplitSeq(string(output), "\n") {
 		rest, ok := strings.CutPrefix(line, "Pages:")
 		if !ok {
 			continue
@@ -299,17 +299,16 @@ func ExtractRange(ctx context.Context, pdfPath string, from, to int, outPath str
 		if err := movePDF(pages[0], outPath); err != nil {
 			return err
 		}
-		return canonicalizeFileID(outPath)
+		return canonicalizeFileID(ctx, outPath)
 	}
 
 	// pdfseparate names files by source page number, so sorting numerically
 	// keeps the parts in reading order before they are merged.
 	sortByPageNumber(pages)
-	args := append(pages, outPath)
-	if _, err := run(ctx, "pdfunite", args...); err != nil {
+	if _, err := run(ctx, "pdfunite", append(pages, outPath)...); err != nil {
 		return err
 	}
-	return canonicalizeFileID(outPath)
+	return canonicalizeFileID(ctx, outPath)
 }
 
 // Merge concatenates inputs into a single PDF at outPath.
@@ -348,7 +347,7 @@ func Merge(ctx context.Context, outPath string, inputs ...string) error {
 	}
 	// pdfunite stamps a fresh random trailer /ID, which would give the same
 	// pages a different checksum every run; see canonicalizeFileID.
-	return canonicalizeFileID(outPath)
+	return canonicalizeFileID(ctx, outPath)
 }
 
 // movePDF relocates src to dst, falling back to a copy across filesystems

@@ -51,13 +51,11 @@ func ProviderErrorMessage(err error) string {
 	// Asked before the OpenAI one because the Messages API is a different SDK
 	// with a different error type, and without this an Anthropic failure loses
 	// its status code and reads as a bare Go error.
-	var messagesErr *anthropic.Error
-	if errors.As(err, &messagesErr) {
+	if messagesErr, ok := errors.AsType[*anthropic.Error](err); ok {
 		return providerErrorf(messagesErr.StatusCode, messagesErrorDetail(messagesErr))
 	}
 
-	var apiErr *openai.Error
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*openai.Error](err); ok {
 		return providerErrorf(apiErr.StatusCode, redactProviderSecrets(openaiErrorDetail(apiErr)))
 	}
 

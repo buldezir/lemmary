@@ -45,6 +45,15 @@ func NewPipelineRunner(app core.App, cfg config.Config, ocrProvider ocr.Provider
 	}
 }
 
+type pipelineRun struct {
+	job      *core.Record
+	document *core.Record
+	steps    []string
+	runs     []models.StepRun
+	state    *StepState
+	logger   *slog.Logger
+}
+
 func (r *PipelineRunner) Run(ctx context.Context, jobID string) error {
 	jobStart := time.Now()
 	logger := r.App.Logger().With("job", jobID)
@@ -69,51 +78,13 @@ func (r *PipelineRunner) Run(ctx context.Context, jobID string) error {
 		metrics.Job(jobOutcome(status), time.Since(jobStart))
 	}()
 
-	documentID := job.GetString("document")
-	steps, err := parseSteps(job)
+	p, err := r.startRun(job, logger)
 	if err != nil {
-		return failJob(r.App, job, nil, err)
-	}
-	if len(steps) == 0 {
-		return failJob(r.App, job, nil, fmt.Errorf("job has no steps"))
-	}
-
-	document, err := r.App.FindRecordById("documents", documentID)
-	if err != nil {
-		return failJob(r.App, job, nil, fmt.Errorf("load document: %w", err))
-	}
-
-	logger = logger.With("document", documentID)
-	logger.Info("starting pipeline", "steps", steps)
-
-	runs, err := parseStepRuns(job)
-	if err != nil {
-		return failJob(r.App, job, document, err)
-	}
-	runs = syncStepRuns(steps, runs)
-	saveStepRuns(job, runs)
-
-	metadata, err := loadMetadataJSON(job)
-	if err != nil {
-		return failJob(r.App, job, document, err)
-	}
-
-	state := &StepState{
-		App:        r.App,
-		Cfg:        r.Cfg,
-		Job:        job,
-		Document:   document,
-		OCR:        r.OCR,
-		AI:         r.AI,
-		Embedder:   r.Embedder,
-		Metadata:   metadata,
-		MimeType:   ocr.GuessMimeType(document.GetString("file")),
-		ForceSteps: parseForceSteps(job),
-		Logger:     logger,
+		return err
 	}
 	defer func() {
-		if state.Cleanup != nil {
-			state.Cleanup()
+		if p.state.Cleanup != nil {
+			p.state.Cleanup()
 		}
 	}()
 
@@ -124,67 +95,132 @@ func (r *PipelineRunner) Run(ctx context.Context, jobID string) error {
 	//
 	// Split detection is deliberately not among them: it runs against a staged
 	// upload with no documents row yet to name, so its calls go out unnamed.
-	jobCtx = aiprovider.WithDocumentRecord(jobCtx, document)
+	jobCtx = aiprovider.WithDocumentRecord(jobCtx, p.document)
 
 	for {
-		idx := nextRunnableIndex(runs)
+		idx := nextRunnableIndex(p.runs)
 		if idx < 0 {
 			break
 		}
-
-		stepName := steps[idx]
-		step, ok := r.registry[stepName]
-		if !ok {
-			return r.failStep(job, document, runs, idx, fmt.Errorf("unknown step %q", stepName))
-		}
-
-		// Before booking an attempt: a skipped step must not show up in
-		// step_runs as attempted.
-		skipped, err := step.ShouldSkip(state)
-		if err != nil {
-			return r.failStep(job, document, runs, idx, err)
-		}
-		if skipped {
-			markStepCompleted(&runs[idx], true)
-			saveStepRuns(job, runs)
-			if err := r.App.Save(job); err != nil {
-				return err
-			}
-			logger.Info("step skipped", "step", stepName)
-			continue
-		}
-
-		markStepRunning(&runs[idx])
-		setStepRunExecutionDetails(&runs[idx], state)
-		job.Set("current_step", stepName)
-		saveStepRuns(job, runs)
-		if err := r.App.Save(job); err != nil {
+		if next, err := r.runStep(jobCtx, p, idx); !next {
 			return err
 		}
-
-		logger.Info("step running", "step", stepName, "attempt", runs[idx].Attempts)
-
-		if err := step.Run(jobCtx, state); err != nil {
-			if errors.Is(err, ErrStepSoft) {
-				markStepSoftFailed(&runs[idx], err)
-				saveStepRuns(job, runs)
-				if saveErr := r.App.Save(job); saveErr != nil {
-					return saveErr
-				}
-				logger.Warn("step failed softly; continuing", "step", stepName, slog.Any("error", err))
-				continue
-			}
-			return r.handleStepFailure(job, document, runs, idx, err)
-		}
-
-		markStepCompleted(&runs[idx], false)
-		saveStepRuns(job, runs)
-		if err := r.App.Save(job); err != nil {
-			return err
-		}
-		logger.Info("step completed", "step", stepName)
 	}
 
+	return r.finishRun(p, jobStart)
+}
+
+func (r *PipelineRunner) startRun(job *core.Record, logger *slog.Logger) (*pipelineRun, error) {
+	documentID := job.GetString("document")
+	steps, err := parseSteps(job)
+	if err != nil {
+		return nil, failJob(r.App, job, nil, err)
+	}
+	if len(steps) == 0 {
+		return nil, failJob(r.App, job, nil, fmt.Errorf("job has no steps"))
+	}
+
+	document, err := r.App.FindRecordById("documents", documentID)
+	if err != nil {
+		return nil, failJob(r.App, job, nil, fmt.Errorf("load document: %w", err))
+	}
+
+	logger = logger.With("document", documentID)
+	logger.Info("starting pipeline", "steps", steps)
+
+	runs, err := parseStepRuns(job)
+	if err != nil {
+		return nil, failJob(r.App, job, document, err)
+	}
+	runs = syncStepRuns(steps, runs)
+	saveStepRuns(job, runs)
+
+	metadata, err := loadMetadataJSON(job)
+	if err != nil {
+		return nil, failJob(r.App, job, document, err)
+	}
+
+	return &pipelineRun{
+		job:      job,
+		document: document,
+		steps:    steps,
+		runs:     runs,
+		logger:   logger,
+		state: &StepState{
+			App:        r.App,
+			Cfg:        r.Cfg,
+			Job:        job,
+			Document:   document,
+			OCR:        r.OCR,
+			AI:         r.AI,
+			Embedder:   r.Embedder,
+			Metadata:   metadata,
+			MimeType:   ocr.GuessMimeType(document.GetString("file")),
+			ForceSteps: parseForceSteps(job),
+			Logger:     logger,
+		},
+	}, nil
+}
+
+// False stops the job with err as Run's result, which is nil when the step
+// was re-pended for a retry.
+func (r *PipelineRunner) runStep(ctx context.Context, p *pipelineRun, idx int) (bool, error) {
+	stepName := p.steps[idx]
+	step, ok := r.registry[stepName]
+	if !ok {
+		return false, r.failStep(p.job, p.document, p.runs, idx, fmt.Errorf("unknown step %q", stepName))
+	}
+
+	// Before booking an attempt: a skipped step must not show up in
+	// step_runs as attempted.
+	skipped, err := step.ShouldSkip(p.state)
+	if err != nil {
+		return false, r.failStep(p.job, p.document, p.runs, idx, err)
+	}
+	if skipped {
+		markStepCompleted(&p.runs[idx], true)
+		saveStepRuns(p.job, p.runs)
+		if err := r.App.Save(p.job); err != nil {
+			return false, err
+		}
+		p.logger.Info("step skipped", "step", stepName)
+		return true, nil
+	}
+
+	markStepRunning(&p.runs[idx])
+	setStepRunExecutionDetails(&p.runs[idx], p.state)
+	p.job.Set("current_step", stepName)
+	saveStepRuns(p.job, p.runs)
+	if err := r.App.Save(p.job); err != nil {
+		return false, err
+	}
+
+	p.logger.Info("step running", "step", stepName, "attempt", p.runs[idx].Attempts)
+
+	if err := step.Run(ctx, p.state); err != nil {
+		if errors.Is(err, ErrStepSoft) {
+			markStepSoftFailed(&p.runs[idx], err)
+			saveStepRuns(p.job, p.runs)
+			if saveErr := r.App.Save(p.job); saveErr != nil {
+				return false, saveErr
+			}
+			p.logger.Warn("step failed softly; continuing", "step", stepName, slog.Any("error", err))
+			return true, nil
+		}
+		return false, r.handleStepFailure(p.job, p.document, p.runs, idx, err)
+	}
+
+	markStepCompleted(&p.runs[idx], false)
+	saveStepRuns(p.job, p.runs)
+	if err := r.App.Save(p.job); err != nil {
+		return false, err
+	}
+	p.logger.Info("step completed", "step", stepName)
+	return true, nil
+}
+
+func (r *PipelineRunner) finishRun(p *pipelineRun, jobStart time.Time) error {
+	job, document := p.job, p.document
 	if document.GetString("duplicate_of") != "" {
 		document.Set("processing_status", models.DocStatusNeedsReview)
 		if err := r.App.Save(document); err != nil {
@@ -199,11 +235,11 @@ func (r *PipelineRunner) Run(ctx context.Context, jobID string) error {
 	job.Set("finished_at", nowTimestamp())
 	job.Set("current_step", "")
 
-	if err := finalizeDocumentWithoutApply(r.App, document, steps); err != nil {
+	if err := finalizeDocumentWithoutApply(r.App, document, p.steps); err != nil {
 		return err
 	}
 
-	logger.Info("pipeline finished",
+	p.logger.Info("pipeline finished",
 		"status", job.GetString("status"),
 		logfmt.Duration("duration", time.Since(jobStart)),
 	)

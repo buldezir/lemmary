@@ -158,7 +158,7 @@ func TestCountDocumentsTagsFilterAndGroupSurviveInvalidJSON(t *testing.T) {
 func TestCountDocumentsOverAnIDSetChunks(t *testing.T) {
 	db := countDB(t)
 	ids := []string{"d1", "d2", "d6"}
-	for i := 0; i < 600; i++ {
+	for i := range 600 {
 		ids = append(ids, fmt.Sprintf("missing%d", i))
 	}
 	rows, total, err := countDocuments(context.Background(), db, countSpec{userID: "me", groupBy: "correspondent", ids: ids})

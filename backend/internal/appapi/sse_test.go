@@ -19,7 +19,7 @@ func TestSSEWriterFramesEvents(t *testing.T) {
 	rec := httptest.NewRecorder()
 	e := &core.RequestEvent{}
 	e.Response = rec
-	e.Request = httptest.NewRequest("POST", "/api/app/search/stream", nil)
+	e.Request = httptest.NewRequest(http.MethodPost, "/api/app/search/stream", nil)
 
 	stream := newSSEWriter(e)
 	stream.Send(ai.ResearchEvent{Type: "step", Kind: "search", Status: "start", Query: "car"})
@@ -61,7 +61,7 @@ func TestSSEWriterHeartbeatKeepsTheConnectionBusy(t *testing.T) {
 	rec := &syncRecorder{header: http.Header{}}
 	e := &core.RequestEvent{}
 	e.Response = rec
-	e.Request = httptest.NewRequest("POST", "/api/app/search/stream", nil)
+	e.Request = httptest.NewRequest(http.MethodPost, "/api/app/search/stream", nil)
 
 	stream := newSSEWriter(e)
 	stop := stream.heartbeatEvery(context.Background(), time.Millisecond)

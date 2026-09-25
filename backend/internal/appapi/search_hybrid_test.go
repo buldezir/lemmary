@@ -144,7 +144,7 @@ func TestSearchEmbedsOneQueryOnce(t *testing.T) {
 	embeds := 0
 	r := hybridRetriever(t, &embeds)
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if _, err := r.search(context.Background(), ai.SearchDocumentsArgs{Query: "insurance premium"}); err != nil {
 			t.Fatalf("search: %v", err)
 		}

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"lemmary/backend/internal/crypt"
 )
 
 // ErrNotLoaded reports a flush attempted before the vault was materialised.
@@ -128,26 +130,8 @@ func (v *Vault) flush(reason string, fail failPoint) error {
 	}
 	m := &Manifest{Version: manifestVersion, Gen: gen, Created: started, Entries: entries}
 
-	if fail == failBeforeManifest {
-		return fmt.Errorf(errInjectedFailPoint, fail)
-	}
-	if err := writeManifest(v.opts.Dir, m, mkey); err != nil {
+	if err := commitGeneration(v.opts.Dir, m, mkey, fail); err != nil {
 		return err
-	}
-	if fail == failAfterManifest {
-		return fmt.Errorf(errInjectedFailPoint, fail)
-	}
-
-	// Step 3: CURRENT advances last. Until this line lands, the previous generation
-	// is still the committed one.
-	if fail == failBeforeCurrent {
-		return fmt.Errorf(errInjectedFailPoint, fail)
-	}
-	if err := writeCurrent(v.opts.Dir, gen, mkey); err != nil {
-		return err
-	}
-	if fail == failAfterCurrent {
-		return fmt.Errorf(errInjectedFailPoint, fail)
 	}
 
 	v.mu.Lock()
@@ -168,6 +152,31 @@ func (v *Vault) flush(reason string, fail failPoint) error {
 
 	v.opts.Log("vault: flushed (%s) generation=%d entries=%d new=%d reused=%d gc=%d in %dms",
 		reason, gen, len(entries), written, reused, collected, (nowUnixNano()-started)/1e6)
+	return nil
+}
+
+func commitGeneration(dir string, m *Manifest, key crypt.Key, fail failPoint) error {
+	if fail == failBeforeManifest {
+		return fmt.Errorf(errInjectedFailPoint, fail)
+	}
+	if err := writeManifest(dir, m, key); err != nil {
+		return err
+	}
+	if fail == failAfterManifest {
+		return fmt.Errorf(errInjectedFailPoint, fail)
+	}
+
+	// Step 3: CURRENT advances last. Until this line lands, the previous generation
+	// is still the committed one.
+	if fail == failBeforeCurrent {
+		return fmt.Errorf(errInjectedFailPoint, fail)
+	}
+	if err := writeCurrent(dir, m.Gen, key); err != nil {
+		return err
+	}
+	if fail == failAfterCurrent {
+		return fmt.Errorf(errInjectedFailPoint, fail)
+	}
 	return nil
 }
 
@@ -226,7 +235,16 @@ func (v *Vault) collect(stage string, store *blobStore, prevIdx map[string]Entry
 	}
 
 	// Then everything else in the working directory.
-	err := filepath.Walk(v.opts.WorkDir, func(path string, info os.FileInfo, err error) error {
+	if err := walkWorkDir(v.opts.WorkDir, add); err != nil {
+		return nil, 0, 0, err
+	}
+
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
+	return entries, written, reused, nil
+}
+
+func walkWorkDir(workDir string, add func(root, rel string, info os.FileInfo) error) error {
+	return filepath.Walk(workDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			if os.IsNotExist(err) {
 				// A file deleted mid-walk is normal on a live system.
@@ -234,7 +252,7 @@ func (v *Vault) collect(stage string, store *blobStore, prevIdx map[string]Entry
 			}
 			return err
 		}
-		rel, err := filepath.Rel(v.opts.WorkDir, path)
+		rel, err := filepath.Rel(workDir, path)
 		if err != nil {
 			return err
 		}
@@ -250,7 +268,7 @@ func (v *Vault) collect(stage string, store *blobStore, prevIdx map[string]Entry
 		if !info.Mode().IsRegular() {
 			return nil
 		}
-		if addErr := add(v.opts.WorkDir, rel, info); addErr != nil {
+		if addErr := add(workDir, rel, info); addErr != nil {
 			if os.IsNotExist(errors.Unwrap(addErr)) || os.IsNotExist(addErr) {
 				return nil
 			}
@@ -258,12 +276,6 @@ func (v *Vault) collect(stage string, store *blobStore, prevIdx map[string]Entry
 		}
 		return nil
 	})
-	if err != nil {
-		return nil, 0, 0, err
-	}
-
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
-	return entries, written, reused, nil
 }
 
 // mtimeGranularityGuard is how far back from a capture an mtime must be before

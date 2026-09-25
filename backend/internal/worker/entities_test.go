@@ -76,7 +76,7 @@ func TestNormalizeNamedEntityKey(t *testing.T) {
 func TestAddUniqueCatalogNameCaps(t *testing.T) {
 	seen := map[string]struct{}{}
 	var names []string
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		names = addUniqueCatalogName(names, seen, fmt.Sprintf("Name %d", i), 3)
 	}
 	if len(names) != 3 {
@@ -112,12 +112,10 @@ func TestEnsureNamedEntityConcurrentSpellingVariants(t *testing.T) {
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for i, name := range names {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start
 			ids[i], _, errs[i] = EnsureNamedEntity(app, "correspondents", userID, name, name)
-		}()
+		})
 	}
 	close(start)
 	wg.Wait()

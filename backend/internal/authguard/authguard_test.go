@@ -1,6 +1,7 @@
 package authguard
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -76,7 +77,8 @@ func TestRequireCollectionRecordsAuthRejectsMissingAuth(t *testing.T) {
 		t.Fatal("requireCollectionRecordsAuth() error = nil, want 401")
 	}
 
-	apiErr, ok := err.(*router.ApiError)
+	apiErr := &router.ApiError{}
+	ok := errors.As(err, &apiErr)
 	if !ok {
 		t.Fatalf("error type = %T, want *router.ApiError", err)
 	}

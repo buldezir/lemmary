@@ -69,7 +69,7 @@ func buildTimeline(rows []timelineRow) documentsTimeline {
 			timeline.Undated += row.Count
 			continue
 		}
-		timeline.Months = append(timeline.Months, timelineMonth{Month: row.Month, Count: row.Count})
+		timeline.Months = append(timeline.Months, timelineMonth(row))
 	}
 	return timeline
 }

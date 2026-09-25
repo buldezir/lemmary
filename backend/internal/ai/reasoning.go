@@ -20,8 +20,7 @@ func isReasoningEffortToolConflictError(err error) bool {
 	if err == nil {
 		return false
 	}
-	var apiErr *openai.Error
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*openai.Error](err); ok {
 		// The param alone is enough; the wording of the message varies by
 		// provider, and OpenAI-compatible proxies often leave it out entirely.
 		if strings.EqualFold(strings.TrimSpace(apiErr.Param), "reasoning_effort") {

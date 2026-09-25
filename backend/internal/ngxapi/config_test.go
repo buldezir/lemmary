@@ -2,6 +2,7 @@ package ngxapi
 
 import (
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -12,7 +13,7 @@ func TestAppConfigReturnsArray(t *testing.T) {
 	t.Parallel()
 
 	e := &core.RequestEvent{}
-	e.Request = httptest.NewRequest("GET", "/api/config", nil)
+	e.Request = httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	e.Request.Header.Set("Accept", "application/json; version=9")
 	e.Response = httptest.NewRecorder()
 	e.Auth = &core.Record{}

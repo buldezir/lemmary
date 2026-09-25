@@ -292,8 +292,7 @@ func snapToAnswer(records []*core.Record) []*core.Record {
 // died, was cancelled, or is still going. Derived rather than stored, so it is
 // still true after a restart, which the in-process run registry is not.
 func Unfinished(records []*core.Record) bool {
-	for i := len(records) - 1; i >= 0; i-- {
-		record := records[i]
+	for _, record := range slices.Backward(records) {
 		role := record.GetString("role")
 		if role == RoleSystem {
 			continue
@@ -301,7 +300,7 @@ func Unfinished(records []*core.Record) bool {
 		// Finished means answered. A transcript that ends on a question, on a
 		// tool result, or on a call nothing answered is a turn that stopped
 		// somewhere in the middle.
-		return !(role == RoleAssistant && VisibleRecord(record))
+		return role != RoleAssistant || !VisibleRecord(record)
 	}
 	return false
 }
@@ -429,27 +428,10 @@ func ForkSession(app core.App, userID string, source *core.Record, upto string) 
 		if total >= MaxSessionsPerUser {
 			return ErrTooManySessions
 		}
-		messages, err := ListMessages(txApp, source.Id, 0)
+		messages, err := forkedMessages(txApp, source.Id, upto)
 		if err != nil {
 			return err
 		}
-		if upto != "" {
-			cut := -1
-			for i, message := range messages {
-				if message.Id == upto {
-					cut = i
-					break
-				}
-			}
-			if cut < 0 {
-				return ErrNotFound
-			}
-			messages = messages[:cut+1]
-		}
-		// A research transcript is the provider array, so a cut can land
-		// between a tool call and its result. Snapped back to the last finished
-		// answer: a fork is a conversation to continue, not a turn to resume.
-		messages = snapToAnswer(messages)
 		collection, err := txApp.FindCollectionByNameOrId(SessionsCollection)
 		if err != nil {
 			return err
@@ -474,35 +456,56 @@ func ForkSession(app core.App, userID string, source *core.Record, upto string) 
 		if err := txApp.Save(session); err != nil {
 			return err
 		}
-
-		// Renumbered from 1: seq is unique per session and only has to order
-		// this transcript, and the source's may start past 1 after a trim.
-		for i, message := range messages {
-			// Copied with the turn: the fork's transcript is the source's, and
-			// an answer that arrived near the model's limit still did.
-			usage := ai.TurnUsage{}
-			if stored := DecodeUsage(message); stored != nil {
-				usage = *stored
-			}
-			if err := saveMessage(txApp, session.Id, i+1, storedMessage{
-				Role:       message.GetString("role"),
-				Content:    message.GetString("content"),
-				Calls:      DecodeToolCalls(message),
-				CallID:     message.GetString("tool_call_id"),
-				Documents:  DecodeHits(message),
-				Steps:      DecodeSteps(message),
-				Usage:      usage,
-				Incomplete: message.GetBool("incomplete"),
-			}); err != nil {
-				return err
-			}
-		}
-		return nil
+		return copyMessages(txApp, session.Id, messages)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return session, nil
+}
+
+func forkedMessages(app core.App, sourceID, upto string) ([]*core.Record, error) {
+	messages, err := ListMessages(app, sourceID, 0)
+	if err != nil {
+		return nil, err
+	}
+	if upto != "" {
+		cut := slices.IndexFunc(messages, func(message *core.Record) bool { return message.Id == upto })
+		if cut < 0 {
+			return nil, ErrNotFound
+		}
+		messages = messages[:cut+1]
+	}
+	// A research transcript is the provider array, so a cut can land
+	// between a tool call and its result. Snapped back to the last finished
+	// answer: a fork is a conversation to continue, not a turn to resume.
+	return snapToAnswer(messages), nil
+}
+
+func copyMessages(app core.App, sessionID string, messages []*core.Record) error {
+	// Renumbered from 1: seq is unique per session and only has to order
+	// this transcript, and the source's may start past 1 after a trim.
+	for i, message := range messages {
+		// Copied with the turn: the fork's transcript is the source's, and
+		// an answer that arrived near the model's limit still did.
+		usage := ai.TurnUsage{}
+		if stored := DecodeUsage(message); stored != nil {
+			usage = *stored
+		}
+		if err := saveMessage(app, sessionID, i+1, storedMessage{
+			Role:       message.GetString("role"),
+			Content:    message.GetString("content"),
+			Calls:      DecodeToolCalls(message),
+			CallID:     message.GetString("tool_call_id"),
+			Documents:  DecodeHits(message),
+			Steps:      DecodeSteps(message),
+			Usage:      usage,
+			Incomplete: message.GetBool("incomplete"),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DiscardEmptySession removes a conversation that never got a turn. Guarded on

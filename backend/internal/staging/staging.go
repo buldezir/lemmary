@@ -185,7 +185,7 @@ func (r *Registry[T]) settle(item *Item[T], how settlement) {
 	r.mu.Unlock()
 
 	if remove {
-		r.cfg.Remove(item.Path)
+		_ = r.cfg.Remove(item.Path)
 	}
 }
 
@@ -228,7 +228,7 @@ func (r *Registry[T]) Sweep(root string, now time.Time) {
 	r.mu.Unlock()
 
 	for _, item := range expired {
-		r.cfg.Remove(item.Path)
+		_ = r.cfg.Remove(item.Path)
 	}
 
 	entries, err := os.ReadDir(root)
@@ -246,7 +246,7 @@ func (r *Registry[T]) Sweep(root string, now time.Time) {
 		if err != nil || now.Sub(info.ModTime()) <= r.cfg.TTL {
 			continue
 		}
-		r.cfg.Remove(filepath.Join(root, entry.Name()))
+		_ = r.cfg.Remove(filepath.Join(root, entry.Name()))
 	}
 }
 

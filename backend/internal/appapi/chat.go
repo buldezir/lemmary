@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -176,8 +177,8 @@ func writeChatSessionError(e *core.RequestEvent, app core.App, err error) error 
 }
 
 // unsavedMessage renders a reply that was produced but could not be stored.
-func unsavedMessage(role, content string, hits []ai.DocumentHit) chat.MessageInfo {
-	return chat.MessageInfo{Role: role, Content: content, Documents: hits}
+func unsavedMessage(content string, hits []ai.DocumentHit) chat.MessageInfo {
+	return chat.MessageInfo{Role: chat.RoleAssistant, Content: content, Documents: hits}
 }
 
 // latestAssistantMessage falls back to an id-less view rather than failing the
@@ -191,47 +192,66 @@ func latestAssistantMessage(app core.App, sessionID, runID, reply string, hits [
 		// calls, and the fold is what keeps one of those from being mistaken
 		// for the answer.
 		messages := chat.VisibleMessages(records)
-		for i := len(messages) - 1; i >= 0; i-- {
-			info := messages[i]
+		for _, info := range slices.Backward(messages) {
 			if info.Role == chat.RoleAssistant && (runID == "" || info.RunID == runID) {
 				return info
 			}
 		}
 	}
-	return unsavedMessage(chat.RoleAssistant, reply, hits)
+	return unsavedMessage(reply, hits)
+}
+
+// loadChatDocument finds the document and the OCR text the chat is about. On
+// failure it writes the response itself and reports handled.
+func loadChatDocument(app core.App, e *core.RequestEvent) (*core.Record, string, bool, error) {
+	documentID := strings.TrimSpace(e.Request.PathValue("documentId"))
+	if documentID == "" {
+		return nil, "", true, writeError(e, http.StatusBadRequest, "Document id is required.")
+	}
+
+	document, err := app.FindRecordById("documents", documentID)
+	if err != nil {
+		return nil, "", true, writeError(e, http.StatusNotFound, "Document not found.")
+	}
+	// Superusers bypass ownership, matching the PocketBase collection rules.
+	// This answers document access; session ownership is resolved later.
+	if !e.HasSuperuserAuth() && !CanReadDocument(app, document, e.Auth.Id) {
+		return nil, "", true, writeError(e, http.StatusForbidden, "You do not have access to this document.")
+	}
+
+	ocrText := strings.TrimSpace(document.GetString("ocr_text"))
+	if ocrText == "" {
+		return nil, "", true, writeError(e, http.StatusBadRequest, "Document has no OCR text yet.")
+	}
+	return document, ocrText, false, nil
+}
+
+// The error is the message the 400 carries.
+func decodeChatRequest(e *core.RequestEvent) (chatRequest, string, string, error) {
+	var req chatRequest
+	if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
+		return req, "", "", errors.New("Invalid request body.")
+	}
+	content, err := validateChatContent(req.Content)
+	if err != nil {
+		return req, "", "", err
+	}
+	runID, err := validateRunID(req.RunID)
+	if err != nil {
+		return req, "", "", err
+	}
+	return req, content, runID, nil
 }
 
 func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		documentID := strings.TrimSpace(e.Request.PathValue("documentId"))
-		if documentID == "" {
-			return writeError(e, http.StatusBadRequest, "Document id is required.")
+		document, ocrText, handled, err := loadChatDocument(app, e)
+		if handled {
+			return err
 		}
+		documentID := document.Id
 
-		document, err := app.FindRecordById("documents", documentID)
-		if err != nil {
-			return writeError(e, http.StatusNotFound, "Document not found.")
-		}
-		// Superusers bypass ownership, matching the PocketBase collection rules.
-		// This answers document access; session ownership is resolved below.
-		if !e.HasSuperuserAuth() && !CanReadDocument(app, document, e.Auth.Id) {
-			return writeError(e, http.StatusForbidden, "You do not have access to this document.")
-		}
-
-		ocrText := strings.TrimSpace(document.GetString("ocr_text"))
-		if ocrText == "" {
-			return writeError(e, http.StatusBadRequest, "Document has no OCR text yet.")
-		}
-
-		var req chatRequest
-		if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
-			return writeError(e, http.StatusBadRequest, "Invalid request body.")
-		}
-		content, err := validateChatContent(req.Content)
-		if err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
-		}
-		requestID, err := validateRunID(req.RunID)
+		req, content, requestID, err := decodeChatRequest(e)
 		if err != nil {
 			return writeError(e, http.StatusBadRequest, err.Error())
 		}
@@ -241,11 +261,11 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 			return writeOwnerError(e, err)
 		}
 
-		session, history, err := loadChatHistory(app, ownerID, req.SessionID, chat.KindDocument, documentID)
+		session, messages, err := loadChatHistory(app, ownerID, req.SessionID, chat.KindDocument, documentID)
 		if err != nil {
 			return writeChatSessionError(e, app, err)
 		}
-		messages := append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content})
+		messages = append(messages, ai.ChatMessage{Role: chat.RoleUser, Content: content})
 
 		// After the session is loaded, because a continued conversation's stored
 		// binding is what decides, not the request's.
@@ -299,9 +319,8 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 		}
 		reply, err := chatter.Chat(aiprovider.WithSession(chatCtx, session.Id), ocrText, messages, web)
 		if err != nil {
-			app.Logger().Error("document chat failed", "document", documentID, slog.Any("error", err))
 			discardEmptySession(app, opened)
-			return writeError(e, http.StatusBadGateway, ai.ProviderErrorMessage(err))
+			return writeRunError(runCtx, e, app.Logger().With("document", documentID), "document chat", err)
 		}
 
 		session, err = chat.AppendTurn(app, ownerID, session.Id, chat.Turn{
@@ -313,7 +332,7 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 			app.Logger().Error("document chat persist failed", "document", documentID, slog.Any("error", err))
 			discardEmptySession(app, opened)
 			return writeJSON(e, http.StatusOK, chatResponse{
-				Message: unsavedMessage(chat.RoleAssistant, reply, nil),
+				Message: unsavedMessage(reply, nil),
 				Saved:   false,
 			})
 		}

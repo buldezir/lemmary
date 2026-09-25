@@ -2,6 +2,7 @@ package migrations
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -146,10 +147,8 @@ func hasColumn(db dbx.Builder, table, column string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("inspect %s: %w", table, err)
 	}
-	for _, name := range names {
-		if name == column {
-			return true, nil
-		}
+	if slices.Contains(names, column) {
+		return true, nil
 	}
 	return false, nil
 }

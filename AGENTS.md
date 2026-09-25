@@ -47,6 +47,12 @@ Change production code and unit tests together (tests sit beside the code). Exte
 
 API and browser e2e live in the overlay; its `AGENTS.md` covers them.
 
+## Lint
+
+`test-all.sh` runs golangci-lint with `backend/.golangci.yml`, then `deadcode`, which fails on functions that nothing calls, not even a test. CI skips this stage, so your local run is the only check: a task is not done while it fails.
+
+Fix what it reports rather than excluding it. Delete dead code instead of adding a caller to keep it. A function over a complexity, length or duplication limit gets split along a real seam, not a `//nolint`.
+
 ## Feature flags
 
 One binary, one image. Optional behaviour is a runtime env flag, never a build tag. Absent means off, and off is the pre-flag behaviour. Pattern: `VAULT_ENABLED`, `LIMIT_*`.

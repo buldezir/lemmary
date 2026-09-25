@@ -127,8 +127,7 @@ func NormalizeSaveError(app core.App, record *core.Record, saveErr error) error 
 	if saveErr == nil {
 		return nil
 	}
-	var dup *ErrDuplicate
-	if errors.As(saveErr, &dup) {
+	if dup, ok := errors.AsType[*ErrDuplicate](saveErr); ok {
 		return dup
 	}
 	if dup := ErrDuplicateFromAPIError(saveErr); dup != nil {

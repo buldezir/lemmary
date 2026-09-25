@@ -29,7 +29,7 @@ func TestRetryDelayGrowsAndCaps(t *testing.T) {
 func TestRetryDelayNeverExceedsMax(t *testing.T) {
 	t.Parallel()
 
-	for attempts := 0; attempts < 64; attempts++ {
+	for attempts := range 64 {
 		if got := RetryDelay(attempts); got > retryBackoffMax {
 			t.Fatalf("RetryDelay(%d)=%s exceeds cap %s", attempts, got, retryBackoffMax)
 		}

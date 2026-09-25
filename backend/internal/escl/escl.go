@@ -121,7 +121,7 @@ func Scan(ctx context.Context, scanner string, source Source, maxBytes int64) ([
 	// Best-effort, and deliberately not tied to ctx: a scanner that keeps a
 	// finished job open refuses the next one, so it is worth telling the device
 	// we are done even when the caller has given up.
-	defer deleteJob(client, jobURL)
+	defer deleteJob(ctx, client, jobURL)
 
 	var pages [][]byte
 	var total int64
@@ -170,7 +170,7 @@ func createJob(ctx context.Context, client *http.Client, base string, source Sou
 		return "", fmt.Errorf("could not reach the scanner: %w", err)
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
 
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusCreated:
@@ -264,8 +264,8 @@ func nextDocument(ctx context.Context, client *http.Client, jobURL string, remai
 	}
 }
 
-func deleteJob(client *http.Client, jobURL string) {
-	ctx, cancel := context.WithTimeout(context.Background(), deleteTimeout)
+func deleteJob(ctx context.Context, client *http.Client, jobURL string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), deleteTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, jobURL, nil)
@@ -276,6 +276,6 @@ func deleteJob(client *http.Client, jobURL string) {
 	if err != nil {
 		return
 	}
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
 	resp.Body.Close()
 }

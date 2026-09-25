@@ -3,7 +3,6 @@ package migrations
 import (
 	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
-	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 // Research mode reads documents until the model's context window is spent, so
@@ -15,7 +14,7 @@ func init() {
 			return err
 		}
 		if collection.Fields.GetByName("search_context_tokens") == nil {
-			collection.Fields.Add(&core.NumberField{Name: "search_context_tokens", OnlyInt: true, Min: types.Pointer(0.0)})
+			collection.Fields.Add(&core.NumberField{Name: "search_context_tokens", OnlyInt: true, Min: new(0.0)})
 		}
 		return app.Save(collection)
 	}, func(app core.App) error {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
+
 	"lemmary/backend/internal/duplicates"
 	"lemmary/backend/internal/importjob"
 	"lemmary/backend/internal/models"
@@ -46,12 +47,8 @@ func ParseMode(raw string) (string, error) {
 	}
 }
 
-// Run allows only one import at a time per owner.
-func Run(app core.App, ownerUserID, baseURL, apiKey, mode string) (Result, error) {
-	return RunWithClient(app, ownerUserID, baseURL, apiKey, mode, nil)
-}
-
-// RunWithClient is like Run but accepts a prebuilt client (for tests).
+// RunWithClient allows only one import at a time per owner. A nil client is
+// built from baseURL and apiKey.
 func RunWithClient(app core.App, ownerUserID, baseURL, apiKey, mode string, client *Client) (Result, error) {
 	if err := registry.Acquire(ownerUserID); err != nil {
 		return Result{}, err
@@ -101,8 +98,7 @@ func runImport(app core.App, ownerUserID, baseURL, apiKey, mode string, client *
 	err = client.ForEachDocuments(func(docs []ngxDocument) error {
 		for _, doc := range docs {
 			if err := importOneDocument(app, client, ownerUserID, parsedMode, doc, tagMap, corrMap, typeMap); err != nil {
-				var dup *duplicates.ErrDuplicate
-				if errors.As(err, &dup) {
+				if _, ok := errors.AsType[*duplicates.ErrDuplicate](err); ok {
 					result.SkippedDuplicates++
 					continue
 				}
@@ -172,29 +168,10 @@ func importOneDocument(
 	if err != nil {
 		return err
 	}
-	filename := strings.TrimSpace(doc.OriginalFileName)
-	if filename == "" {
-		filename = strings.TrimSpace(doc.ArchivedFileName)
-	}
-	if filename == "" {
-		filename = file.Name
-	}
-	filename = pathBase(filename)
-	if filename == "" {
-		filename = fmt.Sprintf("document-%d.bin", doc.ID)
-	}
+	filename := documentFilename(doc, file)
 
-	checksum, err := duplicates.SHA256Reader(bytes.NewReader(file.Data))
-	if err != nil {
-		return fmt.Errorf("hash file: %w", err)
-	}
-	if existing, err := duplicates.FindByChecksum(app, ownerUserID, checksum, ""); err != nil {
+	if err := rejectKnownChecksum(app, ownerUserID, file.Data); err != nil {
 		return err
-	} else if existing != nil {
-		return &duplicates.ErrDuplicate{
-			ExistingID:    existing.Id,
-			ExistingTitle: existing.GetString("title"),
-		}
 	}
 
 	fsFile, err := filesystem.NewFileFromBytes(file.Data, filename)
@@ -213,53 +190,75 @@ func importOneDocument(
 	record.Set("processing_status", models.DocStatusPending)
 
 	if mode == ModePreserve {
-		if title := strings.TrimSpace(doc.Title); title != "" {
-			record.Set("title", title)
-		}
-		if ocr := strings.TrimSpace(doc.Content); ocr != "" {
-			record.Set("ocr_text", ocr)
-		}
-		if date := documentDate(doc); date != "" {
-			record.Set("document_date", date)
-		}
-		if doc.Correspondent != nil {
-			if id := corrMap[*doc.Correspondent]; id != "" {
-				record.Set("correspondent", id)
-			}
-		}
-		if doc.DocumentType != nil {
-			if id := typeMap[*doc.DocumentType]; id != "" {
-				record.Set("document_type", id)
-			}
-		}
-		if len(doc.Tags) > 0 {
-			tagIDs := make([]string, 0, len(doc.Tags))
-			for _, ngxTagID := range doc.Tags {
-				if id := tagMap[ngxTagID]; id != "" {
-					tagIDs = append(tagIDs, id)
-				}
-			}
-			if len(tagIDs) > 0 {
-				record.Set("tags", tagIDs)
-			}
-		}
+		applyPreservedMetadata(record, doc, tagMap, corrMap, typeMap)
 		worker.SetCreateSteps(record, models.ImportPreserveSteps)
 	}
 
-	if err := app.Save(record); err != nil {
-		var dup *duplicates.ErrDuplicate
-		if errors.As(err, &dup) {
-			return dup
-		}
-		if dup := duplicates.ErrDuplicateFromAPIError(err); dup != nil {
-			return dup
-		}
-		if dup := duplicates.ErrDuplicateFromSaveConflict(app, record, err); dup != nil {
-			return dup
-		}
+	return duplicates.NormalizeSaveError(app, record, app.Save(record))
+}
+
+func documentFilename(doc ngxDocument, file downloadedFile) string {
+	filename := strings.TrimSpace(doc.OriginalFileName)
+	if filename == "" {
+		filename = strings.TrimSpace(doc.ArchivedFileName)
+	}
+	if filename == "" {
+		filename = file.Name
+	}
+	filename = pathBase(filename)
+	if filename == "" {
+		filename = fmt.Sprintf("document-%d.bin", doc.ID)
+	}
+	return filename
+}
+
+func rejectKnownChecksum(app core.App, ownerUserID string, data []byte) error {
+	checksum, err := duplicates.SHA256Reader(bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("hash file: %w", err)
+	}
+	if existing, err := duplicates.FindByChecksum(app, ownerUserID, checksum, ""); err != nil {
 		return err
+	} else if existing != nil {
+		return &duplicates.ErrDuplicate{
+			ExistingID:    existing.Id,
+			ExistingTitle: existing.GetString("title"),
+		}
 	}
 	return nil
+}
+
+func applyPreservedMetadata(record *core.Record, doc ngxDocument, tagMap, corrMap, typeMap map[int]string) {
+	if title := strings.TrimSpace(doc.Title); title != "" {
+		record.Set("title", title)
+	}
+	if ocr := strings.TrimSpace(doc.Content); ocr != "" {
+		record.Set("ocr_text", ocr)
+	}
+	if date := documentDate(doc); date != "" {
+		record.Set("document_date", date)
+	}
+	if doc.Correspondent != nil {
+		if id := corrMap[*doc.Correspondent]; id != "" {
+			record.Set("correspondent", id)
+		}
+	}
+	if doc.DocumentType != nil {
+		if id := typeMap[*doc.DocumentType]; id != "" {
+			record.Set("document_type", id)
+		}
+	}
+	if len(doc.Tags) > 0 {
+		tagIDs := make([]string, 0, len(doc.Tags))
+		for _, ngxTagID := range doc.Tags {
+			if id := tagMap[ngxTagID]; id != "" {
+				tagIDs = append(tagIDs, id)
+			}
+		}
+		if len(tagIDs) > 0 {
+			record.Set("tags", tagIDs)
+		}
+	}
 }
 
 func documentDate(doc ngxDocument) string {

@@ -50,7 +50,7 @@ func TestAChatGPTProviderCanBeSavedAfterMigrating(t *testing.T) {
 func TestTheChatGPTMigrationIsIdempotent(t *testing.T) {
 	app := bootMigratedApp(t)
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if err := addProviderOAuthField(app); err != nil {
 			t.Fatalf("add the oauth field (pass %d): %v", i, err)
 		}

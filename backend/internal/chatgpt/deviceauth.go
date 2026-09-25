@@ -364,8 +364,7 @@ func (e *httpError) Error() string { return e.err.Error() }
 func (e *httpError) Unwrap() error { return e.err }
 
 func statusOf(err error) int {
-	var he *httpError
-	if errors.As(err, &he) {
+	if he, ok := errors.AsType[*httpError](err); ok {
 		return he.status
 	}
 	return 0

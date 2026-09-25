@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -308,10 +309,10 @@ func latestStepError(job *core.Record) string {
 	if err := json.Unmarshal(data, &runs); err != nil {
 		return ""
 	}
-	for i := len(runs) - 1; i >= 0; i-- {
-		if msg := strings.TrimSpace(runs[i].Error); msg != "" {
-			if runs[i].Name != "" {
-				return fmt.Sprintf("%s: %s", runs[i].Name, msg)
+	for _, run := range slices.Backward(runs) {
+		if msg := strings.TrimSpace(run.Error); msg != "" {
+			if run.Name != "" {
+				return fmt.Sprintf("%s: %s", run.Name, msg)
 			}
 			return msg
 		}
