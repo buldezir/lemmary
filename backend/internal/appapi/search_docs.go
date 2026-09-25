@@ -253,7 +253,7 @@ func (r *agentRetriever) candidates(ctx context.Context, ftQuery fulltext.Query,
 	// other languages. Nil until configured; fusion then has one list.
 	var dense []retrieval.Ranked
 	var denseChunks map[string][]retrieval.ChunkHit
-	if chunkHits := r.searchChunks(ctx, ftQuery, query, want*denseCandidateFactor); len(chunkHits) > 0 {
+	if chunkHits := r.searchChunks(ctx, ftQuery, query, query, want*denseCandidateFactor); len(chunkHits) > 0 {
 		dense, denseChunks = retrieval.GroupChunks(chunkHits, retrieval.MaxPassagesPerDocument)
 	}
 
@@ -265,9 +265,10 @@ func (r *agentRetriever) candidates(ctx context.Context, ftQuery fulltext.Query,
 	}, nil
 }
 
-// searchChunks runs the dense leg. Any failure returns nothing, and the caller
-// carries on with the lexical list alone.
-func (r *agentRetriever) searchChunks(ctx context.Context, ftQuery fulltext.Query, query string, k int) []retrieval.ChunkHit {
+// searchChunks runs the dense leg, fused with a passage keyword match on text
+// unless that is empty. Any failure returns nothing, and the caller carries on
+// with the lexical list alone.
+func (r *agentRetriever) searchChunks(ctx context.Context, ftQuery fulltext.Query, query, text string, k int) []retrieval.ChunkHit {
 	if r.chunks == nil || r.embedQuery == nil {
 		return nil
 	}
@@ -299,7 +300,7 @@ func (r *agentRetriever) searchChunks(ctx context.Context, ftQuery fulltext.Quer
 
 	hits, err := r.chunks.SearchChunks(ctx, retrieval.ChunkQuery{
 		Vector:            vector,
-		Text:              query,
+		Text:              text,
 		UserID:            r.userID,
 		SharedDocumentIDs: r.sharedIDs(),
 		DocumentIDs:       eligible,

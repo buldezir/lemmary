@@ -1,20 +1,43 @@
 package appapi
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/retrieval"
 )
 
 const (
-	defaultListPageSize = 12
-	maxListPageSize     = 100
+	defaultListPageSize   = 12
+	maxListPageSize       = 100
+	maxDenseListDocuments = 20
+	// Measured on bge-m3: unrelated queries top out at 0.12, cross-language
+	// product matches start at 0.155.
+	minMeaningGap = 0.15
+	// ponytail: past this many keyword matches the list falls back to keyword
+	// ranking alone; page the fusion if archives outgrow it.
+	maxFusedKeywordMatches = 5000
+	// A down provider otherwise holds every keystroke through its retries.
+	maxDenseWait = 2 * time.Second
 )
+
+// Similarities are only comparable within one model, so only a measured model
+// has a floor. On bge-m3 unrelated queries top out just under 0.48 and
+// "invoice" over German invoices starts there.
+func similarityFloor(model string) float64 {
+	if strings.Contains(strings.ToLower(model), "bge-m3") {
+		return 0.48
+	}
+	return 0
+}
 
 type documentSearchList struct {
 	Page       int              `json:"page"`
@@ -24,7 +47,7 @@ type documentSearchList struct {
 	Items      []map[string]any `json:"items"`
 }
 
-func handleDocumentSearch(app core.App, idx *fulltext.Index) func(*core.RequestEvent) error {
+func handleDocumentSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		q := strings.TrimSpace(e.Request.URL.Query().Get("q"))
 		if q == "" {
@@ -73,7 +96,18 @@ func handleDocumentSearch(app core.App, idx *fulltext.Index) func(*core.RequestE
 			}
 		}
 
-		result, err := idx.Search(query)
+		var (
+			result fulltext.Result
+			fused  bool
+			err    error
+		)
+		if embedder := rt.Snapshot().Embedder; embedder != nil && idx.ChunksReady() {
+			r := &agentRetriever{app: app, idx: idx, userID: userID, embedQuery: embedQueryFunc(embedder), chunks: idx}
+			result, fused, err = r.fusedDocumentPage(e.Request.Context(), query, similarityFloor(embedder.Model()))
+		}
+		if err == nil && !fused {
+			result, err = idx.Search(query)
+		}
 		if err != nil {
 			app.Logger().Error("document search failed", slog.Any("error", err))
 			return writeError(e, http.StatusInternalServerError, "Search failed.")
@@ -93,6 +127,33 @@ func handleDocumentSearch(app core.App, idx *fulltext.Index) func(*core.RequestE
 			Items:      items,
 		})
 	}
+}
+
+// fusedDocumentPage ranks every keyword match together with the documents the
+// chunk index finds by meaning, the way the agent's search does, then cuts the
+// page. ok is false when there are too many keyword matches to rank here.
+func (r *agentRetriever) fusedDocumentPage(ctx context.Context, q fulltext.Query, floor float64) (fulltext.Result, bool, error) {
+	ids, _, complete, err := r.idx.MatchingIDs(q, maxFusedKeywordMatches)
+	if err != nil || !complete {
+		return fulltext.Result{}, false, err
+	}
+	denseCtx, cancel := context.WithTimeout(ctx, maxDenseWait)
+	defer cancel()
+	var dense []retrieval.Ranked
+	if chunkHits := r.searchChunks(denseCtx, q, q.Text, "", maxDenseListDocuments*denseCandidateFactor); len(chunkHits) > 0 {
+		dense, _ = retrieval.GroupChunks(chunkHits, 1)
+		dense = retrieval.Standouts(dense, floor, minMeaningGap)
+		dense = dense[:min(len(dense), maxDenseListDocuments)]
+	}
+	fused := retrieval.IDs(retrieval.RRF(retrieval.Rank(ids), dense))
+
+	start := min(max(q.Offset, 0), len(fused))
+	end := min(start+q.Limit, len(fused))
+	hits := make([]fulltext.Hit, 0, end-start)
+	for _, id := range fused[start:end] {
+		hits = append(hits, fulltext.Hit{ID: id})
+	}
+	return fulltext.Result{Hits: hits, Total: uint64(len(fused))}, true, nil
 }
 
 func handleSearchReindex(app core.App, idx *fulltext.Index) func(*core.RequestEvent) error {

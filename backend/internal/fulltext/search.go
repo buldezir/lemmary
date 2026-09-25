@@ -522,7 +522,8 @@ func filterQuery(q Query) query.Query {
 func HasDocumentFilters(q Query) bool {
 	bare := q
 	bare.UserID = ""
-	return len(filterConjuncts(bare)) > 0
+	ownerFilter := q.UserID != "" && (q.Owner == OwnerMine || q.Owner == OwnerShared)
+	return ownerFilter || len(filterConjuncts(bare)) > 0
 }
 
 // What a relaxed query is allowed to drop: everything but a closed phrase.
