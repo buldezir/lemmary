@@ -21,6 +21,9 @@ func TestEligibleIDsResolvesFiltersWithoutText(t *testing.T) {
 	if HasDocumentFilters(Query{UserID: "u1"}) {
 		t.Fatal("ownership alone is not a document filter: the chunk index applies it itself")
 	}
+	if !HasDocumentFilters(Query{UserID: "u1", Owner: OwnerMine}) {
+		t.Fatal("mine-only is a document filter: the chunk index cannot tell owned from shared")
+	}
 
 	ids, complete, err := idx.EligibleIDs(q, 10)
 	if err != nil {

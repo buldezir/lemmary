@@ -2,7 +2,8 @@
 
 Lemmary needs two things from an AI provider: **OCR** for PDFs and images, and a
 **language model** for metadata extraction, document chat and Deep Research. An
-**embedding model** is optional and adds meaning-based retrieval to Deep Research.
+**embedding model** is optional and adds meaning-based retrieval to Deep Research
+and the Documents search box.
 
 One provider can serve all three. Configure them in the admin **Settings** page,
 or seed them from `.env` before the first boot so a fresh instance comes up ready
@@ -159,7 +160,7 @@ after that.
 | `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK` — except Local OCR (`docling`), which has no account behind it. Optional there, and only if you started the sidecar with `DOCLING_SERVE_API_KEY`. |
 | `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. For Local OCR (`docling`) the default is the compose service name, `http://docling:5001`, so `OCR_SDK=docling` alone is a complete configuration under the overlay. |
 | `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Not required for `google_vision` or Local OCR (`docling`), which read a document without one; for Local OCR it optionally names the OCR engine instead. See [Choosing an engine](/local_ocr#choosing-an-engine). |
-| `AI_EMBEDDING_MODEL` | unset (Deep Research matches keywords only) | An embedding model — on the `AI_SDK` provider, or on the `AI_EMBEDDING_SDK` one when that is set — so Deep Research can also find documents by meaning. Under `AI_SDK=opencode` or `AI_SDK=anthropic` it requires `AI_EMBEDDING_SDK`: neither serves `/embeddings`, so there is no provider to fall back to, and naming a model without one is refused at boot. Operator-owned under `AI_MANAGED=1`; removing it there turns the feature off. See [what embeddings cost](#what-embeddings-cost). |
+| `AI_EMBEDDING_MODEL` | unset (Deep Research and the search box match keywords only) | An embedding model — on the `AI_SDK` provider, or on the `AI_EMBEDDING_SDK` one when that is set — so Deep Research and the Documents search box can also find documents by meaning. Under `AI_SDK=opencode` or `AI_SDK=anthropic` it requires `AI_EMBEDDING_SDK`: neither serves `/embeddings`, so there is no provider to fall back to, and naming a model without one is refused at boot. Operator-owned under `AI_MANAGED=1`; removing it there turns the feature off. See [what embeddings cost](#what-embeddings-cost). |
 | `AI_RESEARCH_MODEL` | unset (Deep Research runs on `AI_MODEL`) | The **Advanced model**, on the `AI_SDK` provider: drives the Deep Research reasoning loop, a few expensive calls per question where everything else is many cheap ones. Bulk document reads stay on `AI_MODEL`. Operator-owned under `AI_MANAGED=1`; removing it there puts research back on the general model. See [How Research covers a topic](/deep_research#how-research-covers-a-topic). |
 
 ### The embedding provider
@@ -402,6 +403,8 @@ make it.
   `data.db`. With `VAULT_ENABLED=1` the archive is decrypted into a tmpfs, so
   that space is memory. A model with 1024 dimensions or fewer costs
   proportionally less of it. See [Encryption at rest](/encryption).
+- **Searching.** Every Documents search box query, and every page of its
+  results, embeds the query text: one short request each, a few tokens.
 
 Running the model yourself moves the first two costs rather than removing them:
 there is no token bill and no per-document price at all, but the same work

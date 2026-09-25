@@ -71,9 +71,18 @@ type openAIEmbedder struct {
 	mu   sync.RWMutex
 	dims int
 
-	// sleep is time.Sleep in production; tests replace it so the backoff
+	// sleep is sleepCtx in production; tests replace it so the backoff
 	// schedule can be asserted without waiting for it.
-	sleep func(time.Duration)
+	sleep func(context.Context, time.Duration)
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-ctx.Done():
+	}
 }
 
 // NewEmbedder builds an embedding client on the OpenAI-compatible /embeddings
@@ -121,7 +130,7 @@ func NewEmbedder(sdk, apiKey, model, baseURL string, dims int, timeout time.Dura
 		client:  openai.NewClient(opts...),
 		logger:  logger,
 		dims:    dims,
-		sleep:   time.Sleep,
+		sleep:   sleepCtx,
 	}
 }
 
@@ -210,7 +219,7 @@ func (e *openAIEmbedder) embedBatch(ctx context.Context, inputs []string) (_ [][
 			delay := embedRetryBase * time.Duration(1<<(2*(attempt-1))) // 1s, 4s, 16s
 			e.logger.Warn("retrying embeddings request",
 				"model", e.model, "attempt", attempt+1, logfmt.Duration("in", delay), slog.Any("error", lastErr))
-			e.sleep(delay)
+			e.sleep(ctx, delay)
 			if err := ctx.Err(); err != nil {
 				return nil, 0, err
 			}

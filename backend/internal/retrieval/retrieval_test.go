@@ -77,6 +77,47 @@ func TestGroupChunksOrdersDocumentsByBestChunk(t *testing.T) {
 	}
 }
 
+// Best-document similarities bge-m3 gave "zebracrossing", "fuel canister" and
+// "invoice" over sixteen German Amazon invoices, one of them for a Benzinkanister.
+func TestStandoutsKeepsOnlyWhatClearsTheBackground(t *testing.T) {
+	const floor, gap = 0.48, 0.15
+	ranked := func(scores ...float64) []Ranked {
+		out := make([]Ranked, len(scores))
+		for i, s := range scores {
+			out[i] = Ranked{ID: string(rune('a' + i)), Score: s}
+		}
+		return out
+	}
+
+	noise := ranked(0.357, 0.347, 0.346, 0.341, 0.33, 0.32, 0.317, 0.31, 0.30, 0.29, 0.272)
+	if got := Standouts(noise, floor, gap); len(got) != 0 {
+		t.Fatalf("an unrelated query kept %v", got)
+	}
+
+	match := ranked(0.521, 0.446, 0.418, 0.416, 0.40, 0.39, 0.378, 0.37, 0.36, 0.355, 0.349)
+	for _, f := range []float64{floor, 0} {
+		if got := Standouts(match, f, gap); len(got) != 1 || got[0].ID != "a" {
+			t.Fatalf("floor %v: want only the canister invoice, got %v", f, got)
+		}
+	}
+
+	broad := ranked(0.530, 0.529, 0.521, 0.517, 0.51, 0.505, 0.50, 0.497,
+		0.495, 0.49, 0.488, 0.485, 0.482, 0.481, 0.479, 0.478)
+	if got := Standouts(broad, floor, gap); len(got) != 14 {
+		t.Fatalf("every invoice at the floor answers \"invoice\", got %d", len(got))
+	}
+	if got := Standouts(broad, 0, gap); len(got) != 0 {
+		t.Fatalf("with no floor nothing stands out of an all-invoice archive, got %v", got)
+	}
+
+	if got := Standouts(ranked(0.9), 0, gap); len(got) != 0 {
+		t.Fatalf("one neighbour has no background to clear: %v", got)
+	}
+	if got := Standouts(ranked(0.5), floor, gap); len(got) != 1 {
+		t.Fatalf("the floor needs no background: %v", got)
+	}
+}
+
 func TestSelectPassagesQuotesTheBestChunks(t *testing.T) {
 	ocr := "Head of the document. " + strings.Repeat("filler ", 100) +
 		"The monthly rent is 1234 EUR. " + strings.Repeat("more filler ", 100) +
