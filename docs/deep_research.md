@@ -22,7 +22,7 @@ Chats are saved and each has its own URL.
 
 One tool-calling agent over the Bleve full-text index serves two pages, one per path under `/rag`, on the same model binding.
 
-- **AI assisted search** (`/rag/search`) sits beside **Upload document** on the document list — one round of `search_documents`, answered from titles, summaries and short OCR snippets. Results are shown as document cards.
+- **AI assisted search** (`/rag/search`) sits in the document list header — one round of `search_documents`, answered from titles, summaries and short OCR snippets. Results are shown as document cards.
 - **Deep Research** (`/rag/research`) is the header entry — the agent searches, reads the documents it finds (`read_documents`), surveys many at once when the question spans a topic (`survey_documents`), counts when asked how many (`count_documents`), and writes a markdown answer citing each document it used, with the documents it drew on listed under the answer. Progress streams over `POST /api/app/search/stream` (server-sent events), so each search, read, survey and count appears as it happens.
 
 Deep Research has no round or document limit. It keeps searching and reading until it can answer, the model stops making progress, or a completion is rejected because the conversation exceeded the model's context window. Without a language-model provider, both pages return a configuration error — see [AI providers and models](/ai_providers).

@@ -43,6 +43,7 @@ import { ImportArchivePage } from './routes/import.archive'
 import { ExportPage } from './routes/export'
 import { AccountPage } from './routes/account'
 import { TagsPage } from './routes/tags'
+import { BulkActionsPage } from './routes/bulk'
 
 // Admin-only routes bounce non-admins to the document list before the page
 // component mounts. RootLayout still runs the login and setup gates.
@@ -72,6 +73,13 @@ const indexRoute = createRoute({
   validateSearch: (search: DocumentQueryInput & SearchSchemaInput) =>
     documentQuerySearch(parseDocumentQuery(search)),
   component: IndexPage,
+})
+
+const bulkRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/bulk',
+  validateSearch: indexRoute.options.validateSearch,
+  component: BulkActionsPage,
 })
 
 // See lib/nav.ts for why this is a path and not /?status=needs_review.
@@ -340,6 +348,7 @@ const routeTree = rootRoute.addChildren([
   exportRoute,
   accountRoute,
   tagsRoute,
+  bulkRoute,
   documentRoute,
   documentAskRoute.addChildren([documentAskSessionRoute]),
 ])

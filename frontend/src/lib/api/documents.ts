@@ -309,15 +309,18 @@ export async function deleteDocuments(documentIds: string[]): Promise<void> {
  * still records that the model wrote the metadata. allSettled so one document
  * deleted in another tab does not discard the rest.
  */
-export async function markDocumentsReviewed(documentIds: string[]): Promise<void> {
+async function setDocumentsStatus(
+  documentIds: string[],
+  status: 'completed' | 'needs_review',
+  allFailed: string,
+  someFailed: (done: number, failed: number) => string,
+): Promise<void> {
   if (documentIds.length === 0) return
   await ensureAuth()
 
   const results = await Promise.allSettled(
     documentIds.map((id) =>
-      pb
-        .collection('documents')
-        .update(id, { processing_status: 'completed' }, { requestKey: null }),
+      pb.collection('documents').update(id, { processing_status: status }, { requestKey: null }),
     ),
   )
   notifyDocumentsChanged()
@@ -325,11 +328,27 @@ export async function markDocumentsReviewed(documentIds: string[]): Promise<void
   const failed = results.filter((result) => result.status === 'rejected').length
   if (failed > 0) {
     throw new Error(
-      failed === documentIds.length
-        ? 'Could not mark as reviewed.'
-        : `Marked ${documentIds.length - failed} reviewed; ${failed} failed.`,
+      failed === documentIds.length ? allFailed : someFailed(documentIds.length - failed, failed),
     )
   }
+}
+
+export function markDocumentsReviewed(documentIds: string[]): Promise<void> {
+  return setDocumentsStatus(
+    documentIds,
+    'completed',
+    'Could not mark as reviewed.',
+    (done, failed) => `Marked ${done} reviewed; ${failed} failed.`,
+  )
+}
+
+export function markDocumentsUnreviewed(documentIds: string[]): Promise<void> {
+  return setDocumentsStatus(
+    documentIds,
+    'needs_review',
+    'Could not mark unreviewed.',
+    (done, failed) => `Marked ${done} unreviewed; ${failed} failed.`,
+  )
 }
 
 export type ReprocessResult = {

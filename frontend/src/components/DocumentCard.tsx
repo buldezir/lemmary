@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { SHARED_TAG_NAME, type DocumentRecord } from '../lib/api/documents'
 import { pb } from '../lib/pb'
-import { DOCUMENT_STATUS_LABELS, reviewReason, type DocumentStatus } from '../lib/documentStatus'
+import { DOCUMENT_STATUS_LABELS, DOCUMENT_STATUS_STYLES, reviewReason } from '../lib/documentStatus'
 import { summarizeJob, type ProcessingJobRecord } from '../lib/processing'
 import { pendingTagSuggestions } from '../lib/tagSuggestions'
 import { ProcessingStatus } from './ProcessingStatus'
@@ -30,21 +30,8 @@ type Props = {
   acceptingSuggestion?: boolean
 }
 
-/** Filled badge and a card edged to match, except for the resting state. */
-const statusStyles: Record<DocumentStatus, { badge: string; border: string }> = {
-  pending: { badge: 'bg-amber-800 text-paper', border: 'border-amber-800' },
-  processing: { badge: 'bg-sky-900 text-paper', border: 'border-sky-900' },
-  completed: {
-    badge: 'text-forest ring-1 ring-inset ring-forest/40',
-    border: 'border-line hover:border-ink/50',
-  },
-  failed: { badge: 'bg-madder text-paper', border: 'border-madder' },
-  cancelled: { badge: 'bg-ink-muted text-paper', border: 'border-ink-muted' },
-  needs_review: { badge: 'bg-amber-800 text-paper', border: 'border-amber-800' },
-}
-
 /** Reads as a tag but is not one: it says the document belongs to another account. */
-function SharedChip() {
+export function SharedChip() {
   return (
     <span className="border border-oxblood/40 bg-oxblood/5 px-1.5 py-0.5 text-[11px] font-medium text-oxblood">
       {SHARED_TAG_NAME}
@@ -115,7 +102,7 @@ export function DocumentCard({
   // reader's to clear.
   const canMarkReviewed =
     Boolean(onMarkReviewed) && !shared && document.processing_status === 'needs_review'
-  const status = statusStyles[document.processing_status]
+  const status = DOCUMENT_STATUS_STYLES[document.processing_status]
 
   return (
     <article

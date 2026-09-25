@@ -44,23 +44,69 @@ export async function createTag(name: string): Promise<TagRecord> {
  * is left alone; "Mark reviewed" is still the reviewer's call.
  */
 export async function acceptSuggestedTag(documentId: string, name: string): Promise<TagRecord> {
-  let tag = await findTagByKey(name)
-  if (!tag) {
-    try {
-      tag = await createTag(name)
-    } catch (err) {
-      tag = await findTagByKey(name)
-      if (!tag) throw err
-    }
-  }
+  const tag = await findOrCreateTag(name)
   await pb.collection('documents').update(documentId, { 'tags+': tag.id })
   notifyDocumentsChanged()
   return tag
 }
 
+/** Reuses a tag whose name differs only in case or punctuation. */
+export async function findOrCreateTag(name: string): Promise<TagRecord> {
+  const existing = await findTagByKey(name)
+  if (existing) return existing
+  try {
+    return await createTag(name)
+  } catch (err) {
+    const raced = await findTagByKey(name)
+    if (!raced) throw err
+    return raced
+  }
+}
+
 async function findTagByKey(name: string): Promise<TagRecord | undefined> {
   const key = tagKey(name)
   return (await listTags()).find((t) => tagKey(t.name) === key)
+}
+
+/**
+ * `tags+` and `tags-` rather than the whole relation, so tags written meanwhile
+ * by another tab or the pipeline are kept.
+ */
+async function updateDocumentTags(
+  documentIds: string[],
+  patch: Record<string, string[]>,
+  allFailed: string,
+  someFailed: (done: number, failed: number) => string,
+): Promise<void> {
+  if (documentIds.length === 0) return
+  await ensureAuth()
+  const results = await Promise.allSettled(
+    documentIds.map((id) => pb.collection('documents').update(id, patch, { requestKey: null })),
+  )
+  notifyDocumentsChanged()
+
+  const failed = results.filter((result) => result.status === 'rejected').length
+  if (failed > 0) {
+    throw new Error(failed === documentIds.length ? allFailed : someFailed(documentIds.length - failed, failed))
+  }
+}
+
+export function addTagsToDocuments(documentIds: string[], tagIds: string[]): Promise<void> {
+  return updateDocumentTags(
+    tagIds.length > 0 ? documentIds : [],
+    { 'tags+': tagIds },
+    'Could not assign tags.',
+    (done, failed) => `Tagged ${done}; ${failed} failed.`,
+  )
+}
+
+export function removeTagsFromDocuments(documentIds: string[], tagIds: string[]): Promise<void> {
+  return updateDocumentTags(
+    tagIds.length > 0 ? documentIds : [],
+    { 'tags-': tagIds },
+    'Could not remove tags.',
+    (done, failed) => `Untagged ${done}; ${failed} failed.`,
+  )
 }
 
 export async function renameTag(id: string, name: string): Promise<TagRecord> {
