@@ -19,7 +19,7 @@ import { Pagination } from '../components/Pagination'
 import { Button, selectClassName } from '../components/ui'
 
 export function BulkActionsPage() {
-  const list = useDocumentList({ route: '/bulk' })
+  const list = useDocumentList({ route: '/bulk', ownerOnly: true })
   const filterOptions = useDocumentFilterOptions()
   const { query, statusFilter, updateQuery, documents, loading, error } = list
 
@@ -37,6 +37,7 @@ export function BulkActionsPage() {
           correspondents={filterOptions.correspondents}
           tags={filterOptions.tags}
           status={statusFilter}
+          owner={false}
         />
 
         {loading && <p className="text-sm text-ink-soft">Loading documents...</p>}

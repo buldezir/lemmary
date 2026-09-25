@@ -2,6 +2,7 @@ import { DOCUMENT_STATUSES, DOCUMENT_STATUS_LABELS } from '../lib/documentStatus
 import type { CorrespondentRecord, DocumentTypeRecord } from '../lib/api/documents'
 import { MIN_SEARCH_LENGTH, tagIds, type DocumentOwner, type DocumentQuery } from '../lib/documentQuery'
 import type { TagRecord } from '../lib/api/tags'
+import { Combobox } from './Combobox'
 import { FilterCombobox } from './FilterCombobox'
 import { TagFilter } from './TagFilter'
 import { selectClassName } from './ui'
@@ -19,6 +20,7 @@ export function DocumentFilters({
   correspondents,
   tags,
   status,
+  owner = true,
 }: {
   query: DocumentQuery
   search: string
@@ -29,6 +31,8 @@ export function DocumentFilters({
   tags: TagRecord[]
   /** Omit to hide the status dropdown. */
   status?: string
+  /** False for a list that already leaves shared documents out. */
+  owner?: boolean
 }) {
   const tooShort = search.trim().length > 0 && search.trim().length < MIN_SEARCH_LENGTH
   const chosenTags = tagIds(query.tags)
@@ -64,23 +68,28 @@ export function DocumentFilters({
           />
         )}
         {status !== undefined && (
-          <select
+          <Combobox
             value={status}
-            onChange={(event) => updateQuery({ status: event.target.value })}
-            aria-label="Processing status"
-            className={`${selectClassName} shrink-0 sm:w-48`}
-          >
-            <option value="all">All statuses</option>
-            {DOCUMENT_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {DOCUMENT_STATUS_LABELS[value]}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: 'all', label: 'All statuses' },
+              ...DOCUMENT_STATUSES.map((value) => ({ value, label: DOCUMENT_STATUS_LABELS[value] })),
+            ]}
+            placeholder="All statuses"
+            ariaLabel="Processing status"
+            bgClassName="bg-surface"
+            className="shrink-0 sm:w-48"
+            onChange={(next) => updateQuery({ status: next })}
+          />
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.3fr)_minmax(0,1.3fr)]">
+      <div
+        className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${
+          owner
+            ? 'lg:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.3fr)_minmax(0,1.3fr)]'
+            : 'lg:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.3fr)_minmax(0,1.3fr)]'
+        }`}
+      >
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-ink-soft">From date</span>
           <input
@@ -102,18 +111,18 @@ export function DocumentFilters({
             className={selectClassName}
           />
         </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-ink-soft">Owner</span>
-          <select
+        {owner && (
+          <FilterCombobox
+            label="Owner"
             value={query.owner}
-            onChange={(event) => updateQuery({ owner: event.target.value as DocumentOwner })}
-            className={selectClassName}
-          >
-            <option value="all">All</option>
-            <option value="mine">Only mine</option>
-            <option value="shared">Only shared</option>
-          </select>
-        </label>
+            allLabel="All"
+            options={[
+              { value: 'mine', label: 'Only mine' },
+              { value: 'shared', label: 'Only shared' },
+            ]}
+            onChange={(next) => updateQuery({ owner: next as DocumentOwner })}
+          />
+        )}
         <FilterCombobox
           label="Document type"
           value={query.type}
