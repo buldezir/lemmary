@@ -157,13 +157,8 @@ func (m *MemoryChunks) SearchChunks(_ context.Context, q ChunkQuery) ([]ChunkHit
 	terms := focusTerms(q.Text)
 
 	for _, chunk := range m.Chunks {
-		if _, ok := shared[chunk.DocumentID]; q.UserID != "" && chunk.UserID != q.UserID && !ok {
+		if !chunkVisible(chunk, q, shared, eligible) {
 			continue
-		}
-		if len(eligible) > 0 {
-			if _, ok := eligible[chunk.DocumentID]; !ok {
-				continue
-			}
 		}
 		key := chunk.DocumentID + "\x00" + strconv.Itoa(chunk.Ord)
 		byKey[key] = ChunkHit{
@@ -179,28 +174,11 @@ func (m *MemoryChunks) SearchChunks(_ context.Context, q ChunkQuery) ([]ChunkHit
 				dense = append(dense, Ranked{ID: key, Score: score})
 			}
 		}
-		if len(terms) > 0 {
-			lower := strings.ToLower(chunk.Text)
-			matched := 0
-			for _, term := range terms {
-				if strings.Contains(lower, term) {
-					matched++
-				}
-			}
-			if matched > 0 {
-				lexical = append(lexical, Ranked{ID: key, Score: float64(matched)})
-			}
+		if matched := matchedTerms(chunk.Text, terms); matched > 0 {
+			lexical = append(lexical, Ranked{ID: key, Score: float64(matched)})
 		}
 	}
 
-	sortRanked := func(list []Ranked) {
-		sort.SliceStable(list, func(i, j int) bool {
-			if list[i].Score != list[j].Score {
-				return list[i].Score > list[j].Score
-			}
-			return list[i].ID < list[j].ID
-		})
-	}
 	sortRanked(dense)
 	sortRanked(lexical)
 
@@ -225,4 +203,39 @@ func (m *MemoryChunks) SearchChunks(_ context.Context, q ChunkQuery) ([]ChunkHit
 		hits = append(hits, hit)
 	}
 	return hits, nil
+}
+
+func chunkVisible(chunk MemoryChunk, q ChunkQuery, shared, eligible map[string]struct{}) bool {
+	if _, ok := shared[chunk.DocumentID]; q.UserID != "" && chunk.UserID != q.UserID && !ok {
+		return false
+	}
+	if len(eligible) > 0 {
+		if _, ok := eligible[chunk.DocumentID]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func matchedTerms(text string, terms []string) int {
+	if len(terms) == 0 {
+		return 0
+	}
+	lower := strings.ToLower(text)
+	matched := 0
+	for _, term := range terms {
+		if strings.Contains(lower, term) {
+			matched++
+		}
+	}
+	return matched
+}
+
+func sortRanked(list []Ranked) {
+	sort.SliceStable(list, func(i, j int) bool {
+		if list[i].Score != list[j].Score {
+			return list[i].Score > list[j].Score
+		}
+		return list[i].ID < list[j].ID
+	})
 }

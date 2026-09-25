@@ -51,7 +51,7 @@ API and browser e2e live in the overlay; its `AGENTS.md` covers them.
 
 `test-all.sh` runs golangci-lint with `backend/.golangci.yml`, then `deadcode`, which fails on functions that nothing calls, not even a test. CI skips this stage, so your local run is the only check: a task is not done while it fails.
 
-Fix what it reports rather than excluding it. Delete dead code instead of adding a caller to keep it. The baseline list in `.golangci.yml` is old structural debt (complexity, length, duplication): only ever shrink it.
+Fix what it reports rather than excluding it. Delete dead code instead of adding a caller to keep it. A function over a complexity, length or duplication limit gets split along a real seam, not a `//nolint`.
 
 ## Feature flags
 

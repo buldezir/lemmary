@@ -49,16 +49,6 @@ linters:
         linters: [bodyclose, dupl, errcheck, funlen, gocognit, nestif, unparam]
       - path: ^migrations/
         linters: [dupl, funlen, gocognit, nestif]
-      # Structural debt that predates the gate: new offenders fail, these don't.
-      # Delete an entry once its function is refactored; warn-unused flags stale ones.
-      - {linters: [funlen], path: '^internal/ngxapi/filters\.go$', text: "'parseDocumentFiltersWith'"}
-      - {linters: [funlen], path: '^internal/worker/pipeline\.go$', text: "'Run'"}
-      - {linters: [funlen], path: '^internal/vault/flush\.go$', text: "'flush'"}
-      - {linters: [gocognit], path: '^internal/ngxapi/filters\.go$', text: '`parseDocumentFiltersWith`'}
-      - {linters: [gocognit], path: '^internal/retrieval/fake_embedder\.go$', text: '`\(\*MemoryChunks\)\.SearchChunks`'}
-      - {linters: [gocognit], path: '^internal/vault/flush\.go$', text: '`\(\*Vault\)\.collect`'}
-      - {linters: [gocognit], path: '^internal/worker/pipeline\.go$', text: '`\(\*PipelineRunner\)\.Run`'}
-      - {linters: [nestif], path: '^internal/ngxapi/documents\.go$', text: '`if form != nil`'}
 
 issues:
   max-issues-per-linter: 0

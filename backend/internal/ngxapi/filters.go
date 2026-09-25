@@ -202,82 +202,14 @@ func parseDocumentFiltersWith(ids *ngxIDs, ownerID int, q url.Values) (documentF
 
 	f.text = parseTextCriteria(q)
 
-	// Positive id filters: an id that does not resolve makes the whole query
-	// impossible. Negative ones just have nothing to exclude, so they drop it.
-	for _, name := range []string{"tags__id", "tags__id__all"} {
-		resolved, ok, err := ids.resolveAll("tags", csvValues(q, name))
-		if err != nil {
-			return f, err
-		}
-		f.impossible = f.impossible || !ok
-		f.tagsAll = append(f.tagsAll, resolved...)
+	if err := parseTagIDFilters(&f, ids, q); err != nil {
+		return f, err
 	}
-	if raw := csvValues(q, "tags__id__in"); len(raw) > 0 {
-		resolved, _, err := ids.resolveAll("tags", raw)
-		if err != nil {
-			return f, err
-		}
-		// An "any of" list that resolved to nothing can match nothing.
-		f.impossible = f.impossible || len(resolved) == 0
-		f.tagsAny = resolved
+	if err := parseRelationFilters(&f, ids, q); err != nil {
+		return f, err
 	}
-	if raw := csvValues(q, "tags__id__none"); len(raw) > 0 {
-		resolved, _, err := ids.resolveAll("tags", raw)
-		if err != nil {
-			return f, err
-		}
-		f.tagsNone = resolved
-	}
-
-	// Destinations are paired with the specs here rather than stored in them,
-	// so the parameter names stay in the one table handledParams derives from.
-	for _, target := range []struct {
-		spec         relationSpec
-		dst, dstNone *[]string
-		unset        **bool
-	}{
-		{relationSpecs[0], &f.docTypes, &f.docTypesNone, &f.docTypeUnset},
-		{relationSpecs[1], &f.corrs, &f.corrsNone, &f.corrUnset},
-	} {
-		spec := target.spec
-		raw := append(csvValues(q, spec.single), csvValues(q, spec.in)...)
-		if len(raw) > 0 {
-			resolved, _, err := ids.resolveAll(spec.collection, raw)
-			if err != nil {
-				return f, err
-			}
-			f.impossible = f.impossible || len(resolved) == 0
-			*target.dst = resolved
-		}
-		if raw := csvValues(q, spec.none); len(raw) > 0 {
-			resolved, _, err := ids.resolveAll(spec.collection, raw)
-			if err != nil {
-				return f, err
-			}
-			*target.dstNone = resolved
-		}
-		v, err := boolParam(q, spec.isnull)
-		if err != nil {
-			return f, err
-		}
-		*target.unset = v
-	}
-
-	if raw := csvValues(q, "id"); len(raw) > 0 {
-		resolved, _, err := ids.resolveAll("documents", raw)
-		if err != nil {
-			return f, err
-		}
-		f.impossible = f.impossible || len(resolved) == 0
-		f.ids = resolved
-	}
-	if raw := csvValues(q, "id__in"); len(raw) > 0 {
-		resolved, _, err := ids.resolveAll("documents", raw)
-		if err != nil {
-			return f, err
-		}
-		f.impossible = f.impossible || len(resolved) == 0
-		f.ids = append(f.ids, resolved...)
+	if err := parseDocumentIDFilters(&f, ids, q); err != nil {
+		return f, err
 	}
 
 	if err := applyOwnerFilters(&f, ownerID, q); err != nil {
@@ -313,6 +245,93 @@ func parseDocumentFiltersWith(ids *ngxIDs, ownerID int, q url.Values) (documentF
 	f.truncateContent = truncate != nil && *truncate
 
 	return f, nil
+}
+
+func parseTagIDFilters(f *documentFilters, ids *ngxIDs, q url.Values) error {
+	// Positive id filters: an id that does not resolve makes the whole query
+	// impossible. Negative ones just have nothing to exclude, so they drop it.
+	for _, name := range []string{"tags__id", "tags__id__all"} {
+		resolved, ok, err := ids.resolveAll("tags", csvValues(q, name))
+		if err != nil {
+			return err
+		}
+		f.impossible = f.impossible || !ok
+		f.tagsAll = append(f.tagsAll, resolved...)
+	}
+	if raw := csvValues(q, "tags__id__in"); len(raw) > 0 {
+		resolved, _, err := ids.resolveAll("tags", raw)
+		if err != nil {
+			return err
+		}
+		// An "any of" list that resolved to nothing can match nothing.
+		f.impossible = f.impossible || len(resolved) == 0
+		f.tagsAny = resolved
+	}
+	if raw := csvValues(q, "tags__id__none"); len(raw) > 0 {
+		resolved, _, err := ids.resolveAll("tags", raw)
+		if err != nil {
+			return err
+		}
+		f.tagsNone = resolved
+	}
+	return nil
+}
+
+func parseRelationFilters(f *documentFilters, ids *ngxIDs, q url.Values) error {
+	// Destinations are paired with the specs here rather than stored in them,
+	// so the parameter names stay in the one table handledParams derives from.
+	for _, target := range []struct {
+		spec         relationSpec
+		dst, dstNone *[]string
+		unset        **bool
+	}{
+		{relationSpecs[0], &f.docTypes, &f.docTypesNone, &f.docTypeUnset},
+		{relationSpecs[1], &f.corrs, &f.corrsNone, &f.corrUnset},
+	} {
+		spec := target.spec
+		raw := append(csvValues(q, spec.single), csvValues(q, spec.in)...)
+		if len(raw) > 0 {
+			resolved, _, err := ids.resolveAll(spec.collection, raw)
+			if err != nil {
+				return err
+			}
+			f.impossible = f.impossible || len(resolved) == 0
+			*target.dst = resolved
+		}
+		if raw := csvValues(q, spec.none); len(raw) > 0 {
+			resolved, _, err := ids.resolveAll(spec.collection, raw)
+			if err != nil {
+				return err
+			}
+			*target.dstNone = resolved
+		}
+		v, err := boolParam(q, spec.isnull)
+		if err != nil {
+			return err
+		}
+		*target.unset = v
+	}
+	return nil
+}
+
+func parseDocumentIDFilters(f *documentFilters, ids *ngxIDs, q url.Values) error {
+	if raw := csvValues(q, "id"); len(raw) > 0 {
+		resolved, _, err := ids.resolveAll("documents", raw)
+		if err != nil {
+			return err
+		}
+		f.impossible = f.impossible || len(resolved) == 0
+		f.ids = resolved
+	}
+	if raw := csvValues(q, "id__in"); len(raw) > 0 {
+		resolved, _, err := ids.resolveAll("documents", raw)
+		if err != nil {
+			return err
+		}
+		f.impossible = f.impossible || len(resolved) == 0
+		f.ids = append(f.ids, resolved...)
+	}
+	return nil
 }
 
 // applyOwnerFilters answers the owner pill from the one fact this endpoint
