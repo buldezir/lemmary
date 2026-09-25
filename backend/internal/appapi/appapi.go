@@ -27,6 +27,7 @@ func Register(
 	imapScanner *imapimport.Scanner,
 ) {
 	RegisterAppName(app)
+	app.OnRecordUpdate("documents").BindFunc(clearStaleTranslation)
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: 45,
 		Func: func(e *core.ServeEvent) error {
@@ -50,6 +51,7 @@ func Register(
 			g.DELETE("/passkeys/{id}", bindAuth(handleDeletePasskey(app)))
 			g.POST("/documents/{documentId}/chat", bindAuth(handleDocumentChat(app, rt))).
 				Bind(apis.BodyLimit(chatMaxBodyBytes))
+			g.POST("/documents/{documentId}/translation", bindAuth(handleDocumentTranslation(app, rt.Snapshot)))
 			g.GET("/documents/export", bindAuth(handleExportDocuments(app)))
 			g.GET("/documents/search", bindAuth(handleDocumentSearch(app, idx)))
 			g.GET("/documents/timeline", bindAuth(handleDocumentsTimeline(app)))

@@ -46,6 +46,7 @@ type Extractor interface {
 	Name() string
 	Model() string
 	ExtractMetadata(ctx context.Context, ocrText string, catalog ExtractionCatalog) (*models.ExtractedMetadata, error)
+	Translate(ctx context.Context, ocrText string) (string, error)
 }
 
 func buildExtractionSystemPrompt(resultLanguage, rules string, catalog ExtractionCatalog) string {

@@ -96,6 +96,8 @@ func handleGetMeta(app core.App, rt *config.Runtime, ingestDirEnabled, ingestIMA
 			// is not having the answer: the tools still run only when a user
 			// asks for them on the turn.
 			"web_search": rt.WebSearchAvailable(),
+			// Whether the document page offers a translated OCR text.
+			"result_language": rt.Snapshot().Cfg.ProcessingResultLanguage,
 		})
 	}
 }

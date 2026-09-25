@@ -24,6 +24,8 @@ export type AppMeta = {
    * end, and the tools are metered.
    */
   webSearch?: boolean
+  /** ISO 639-1 code the OCR text can be translated into; empty when no result language is set. */
+  resultLanguage?: string
   /** Whether INGEST_DIR is set, which is what makes the Settings Ingest tab worth showing. */
   ingestDir?: boolean
   /** Whether INGEST_IMAP_ENABLED is set; shows the mailbox half of the Ingest tab. */
@@ -76,6 +78,7 @@ async function fetchAppMeta(): Promise<AppMeta> {
       web_search?: boolean
       ingest_dir?: boolean
       ingest_imap?: boolean
+      result_language?: string
     }>('/api/app/meta', {
       public: true,
       fallbackError: 'Failed to load app meta',
@@ -91,6 +94,7 @@ async function fetchAppMeta(): Promise<AppMeta> {
       webSearch: data.web_search === true,
       ingestDir: data.ingest_dir === true,
       ingestImap: data.ingest_imap === true,
+      resultLanguage: typeof data.result_language === 'string' ? data.result_language : '',
     }
   } catch {
     // A name and accent have safe defaults; who owns AI configuration does not.

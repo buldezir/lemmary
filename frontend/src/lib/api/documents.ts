@@ -621,6 +621,15 @@ export async function saveDocumentMetadata(
   return saved
 }
 
+/** The OCR text in the result language: translated and stored on first request, or again with `force`. */
+export async function translateOcrText(documentId: string, force = false): Promise<string> {
+  const data = await apiFetch<{ text?: string }>(
+    `/api/app/documents/${encodeURIComponent(documentId)}/translation${force ? '?force=1' : ''}`,
+    { method: 'POST', fallbackError: 'Translation failed' },
+  )
+  return data.text ?? ''
+}
+
 /**
  * The backup archive as a blob: every document with its OCR text, metadata and
  * thumbnail plus the taxonomy, as Import -> Lemmary archive restores from.

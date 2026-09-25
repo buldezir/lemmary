@@ -10,6 +10,7 @@ import {
   overridesForSteps,
   reprocessDocument,
   saveDocumentMetadata,
+  translateOcrText,
   type DocumentRecord,
   type JobOverrides,
 } from '../lib/api/documents'
@@ -40,7 +41,16 @@ import { Button } from '../components/ui'
 import { ShareDialog, ShareSummary } from '../components/ShareDialog'
 import { DocumentPreview } from '../components/DocumentPreview'
 import { useStoredFlag } from '../hooks/useStoredFlag'
+import { useAppMeta } from '../hooks/useAppMeta'
 import { previewKind } from '../lib/documentPreview'
+
+type OcrView = 'original' | 'translated' | 'both'
+
+const OCR_VIEW_LABELS: Record<OcrView, string> = {
+  original: 'Original',
+  translated: 'Translated',
+  both: 'Side by side',
+}
 
 /**
  * Only a document still waiting for its owner's review came from the Inbox; a
@@ -209,6 +219,53 @@ export function DocumentDetailPage() {
   const [shareVersion, setShareVersion] = useState(0)
   const back = backTarget(document, owned)
 
+  const { resultLanguage } = useAppMeta()
+  const canTranslate = Boolean(resultLanguage) && hasOcrText && !editing
+  const [ocrView, setOcrView] = useState<OcrView>('original')
+  const translationWanted = canTranslate && ocrView !== 'original'
+  const ocrText = document?.ocr_text ?? ''
+  const forceTranslation = useRef(false)
+  const translation = useAsync(() => {
+    if (!translationWanted) {
+      return Promise.resolve(null)
+    }
+    const force = forceTranslation.current
+    forceTranslation.current = false
+    return translateOcrText(documentId, force)
+  }, [translationWanted, documentId, ocrText])
+  const [retranslating, setRetranslating] = useState(false)
+  const translating = translationWanted && (translation.loading || retranslating)
+  const sideBySide = translationWanted && ocrView === 'both'
+  const ocrTextareaClass = `min-h-[28.8rem] font-mono text-xs leading-relaxed ${sideBySide ? 'sm:h-[57.6rem]' : ''}`
+
+  const originalOcrRef = useRef<HTMLTextAreaElement>(null)
+  const translatedOcrRef = useRef<HTMLTextAreaElement>(null)
+  // Setting the other pane's scrollTop fires its scroll event in turn; that
+  // echo is skipped so the two panes do not fight over the position.
+  const scrollEcho = useRef<HTMLTextAreaElement | null>(null)
+  function syncOcrScroll(from: HTMLTextAreaElement | null, to: HTMLTextAreaElement | null) {
+    if (!sideBySide || !from || !to) {
+      return
+    }
+    if (scrollEcho.current === from) {
+      scrollEcho.current = null
+      return
+    }
+    const ratio = from.scrollTop / Math.max(1, from.scrollHeight - from.clientHeight)
+    const target = Math.round(ratio * (to.scrollHeight - to.clientHeight))
+    if (target !== to.scrollTop) {
+      scrollEcho.current = to
+      to.scrollTop = target
+    }
+  }
+
+  async function onRetranslate() {
+    forceTranslation.current = true
+    setRetranslating(true)
+    await translation.reload()
+    setRetranslating(false)
+  }
+
   // The pane only fits beside the fields from xl up, and iOS Safari and Android
   // Chrome do not render a framed PDF at all. Gated in JS rather than by CSS so
   // a phone does not download a file it will never show.
@@ -259,14 +316,17 @@ export function DocumentDetailPage() {
   // count too, since a soft-failed embed is the one failure the status badge
   // never mentions.
   const [autoOpened, setAutoOpened] = useState(false)
-  // Both reset per document: the route param can change without this component
+  // Reset per document: the route param can change without this component
   // remounting, and a panel closed on one document must not hide the next
-  // document's failure.
+  // document's failure. The OCR view resets in the same render, before the
+  // translation loader's effect can commit, so opening a document never starts
+  // a translation.
   const [panelDocumentId, setPanelDocumentId] = useState(documentId)
   if (panelDocumentId !== documentId) {
     setPanelDocumentId(documentId)
     setShowProcessingJob(null)
     setAutoOpened(false)
+    setOcrView('original')
   }
   if (!autoOpened && (summary?.tone === 'error' || summary?.tone === 'warning')) {
     setAutoOpened(true)
@@ -910,8 +970,8 @@ export function DocumentDetailPage() {
             <label className={`${labelClass} sm:col-span-2`}>
               Summary
               <textarea
-                rows={8}
-                className={textareaClass(editing)}
+                rows={4}
+                className={`${fieldClass(editing)} min-h-24 resize-y`}
                 readOnly={!editing}
                 value={document.summary ?? ''}
                 onChange={(event) => setDocument({ ...document, summary: event.target.value })}
@@ -923,15 +983,71 @@ export function DocumentDetailPage() {
               )}
             </label>
 
-            <label className={`${labelClass} sm:col-span-2`}>
-              OCR text
-              <textarea
-                rows={18}
-                readOnly={!editing}
-                className={`${textareaClass(editing)} min-h-96 font-mono text-xs leading-relaxed`}
-                value={document.ocr_text ?? ''}
-                onChange={(event) => setDocument({ ...document, ocr_text: event.target.value })}
-              />
+            <div className={`${labelClass} sm:col-span-2`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span id="ocr-text-label">OCR text</span>
+                {canTranslate && (
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {ocrView !== 'original' && (
+                      <button
+                        type="button"
+                        disabled={translating}
+                        onClick={() => void onRetranslate()}
+                        className="rounded-xs border border-line-strong bg-surface px-3 py-1 text-xs font-medium text-ink-muted transition-colors hover:bg-bright disabled:opacity-50"
+                      >
+                        Re-translate
+                      </button>
+                    )}
+                    <div role="group" aria-label="OCR text view" className="flex">
+                      {(Object.keys(OCR_VIEW_LABELS) as OcrView[]).map((view) => (
+                        <button
+                          key={view}
+                          type="button"
+                          aria-pressed={ocrView === view}
+                          onClick={() => setOcrView(view)}
+                          className={`-ml-px border px-3 py-1 text-xs font-medium transition-colors first:ml-0 first:rounded-l-xs last:rounded-r-xs ${
+                            ocrView === view
+                              ? 'relative border-ink bg-ink text-paper hover:bg-oxblood'
+                              : 'border-line-strong bg-surface text-ink-muted hover:bg-bright'
+                          }`}
+                        >
+                          {OCR_VIEW_LABELS[view]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div
+                className={sideBySide ? 'grid gap-3 sm:grid-cols-2' : 'flex'}
+              >
+                {!(translationWanted && ocrView === 'translated') && (
+                  <textarea
+                    ref={originalOcrRef}
+                    rows={22}
+                    readOnly={!editing}
+                    aria-labelledby="ocr-text-label"
+                    className={`${textareaClass(editing)} ${ocrTextareaClass}`}
+                    onScroll={() => syncOcrScroll(originalOcrRef.current, translatedOcrRef.current)}
+                    value={document.ocr_text ?? ''}
+                    onChange={(event) => setDocument({ ...document, ocr_text: event.target.value })}
+                  />
+                )}
+                {translationWanted && (
+                  <textarea
+                    ref={translatedOcrRef}
+                    rows={22}
+                    readOnly
+                    aria-label={`OCR text translated to ${resultLanguage}`}
+                    className={`${textareaClass(false)} ${ocrTextareaClass}`}
+                    onScroll={() => syncOcrScroll(translatedOcrRef.current, originalOcrRef.current)}
+                    value={translating ? 'Translating...' : (translation.data ?? '')}
+                  />
+                )}
+              </div>
+              {translationWanted && translation.error && !translating && (
+                <span className="text-xs font-normal text-madder">{translation.error}</span>
+              )}
               {editing && (
                 <span className="text-xs font-normal text-ink-soft">
                   Everything else is derived from this text, so a correction here is worth more
@@ -940,7 +1056,7 @@ export function DocumentDetailPage() {
                   below for that, which reads the corrected text rather than re-running OCR.
                 </span>
               )}
-            </label>
+            </div>
 
             <div className="flex items-center gap-4 sm:col-span-2">
               {!owned ? (
