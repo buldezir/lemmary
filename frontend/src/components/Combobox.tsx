@@ -30,6 +30,8 @@ type Props = {
   leading?: ReactNode
   /** Offers the typed text as a new option when nothing matches it exactly. */
   onCreate?: (text: string) => void
+  /** Overrides "nothing matches it exactly" for onCreate. */
+  canCreate?: (text: string) => boolean
 }
 
 const CREATE_VALUE = '\u0000create'
@@ -71,6 +73,7 @@ export function Combobox({
   bgClassName = 'bg-bright',
   leading,
   onCreate,
+  canCreate,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const highlightedRef = useRef<HTMLLIElement>(null)
@@ -93,9 +96,12 @@ export function Combobox({
         normalize(option.label).includes(needle) ||
         normalize(option.value).includes(needle),
     )
-    if (!onCreate || options.some((option) => normalize(option.label) === needle)) return matches
+    const creatable = canCreate
+      ? canCreate(query!.trim())
+      : !options.some((option) => normalize(option.label) === needle)
+    if (!onCreate || !creatable) return matches
     return [...matches, { value: CREATE_VALUE, label: `Create "${query!.trim()}"` }]
-  }, [options, query, onCreate])
+  }, [options, query, onCreate, canCreate])
 
   const lastIndex = Math.max(filteredOptions.length - 1, 0)
   const activeIndex = Math.min(highlightedIndex, lastIndex)

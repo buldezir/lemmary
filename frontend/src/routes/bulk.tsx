@@ -4,6 +4,7 @@ import { markDocumentsUnreviewed } from '../lib/api/documents'
 import { listShareRecipients, shareDocuments } from '../lib/api/shares'
 import { addTagsToDocuments, findOrCreateTag, removeTagsFromDocuments, type TagRecord } from '../lib/api/tags'
 import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
+import { tagKey } from '../lib/tagSuggestions'
 import { useAsync } from '../hooks/useAsync'
 import {
   DOCUMENT_PAGE_SIZE,
@@ -101,6 +102,8 @@ function TagPicker({
   placeholder: string
   onCreate?: (name: string) => void
 }) {
+  // The key findOrCreateTag matches on, over picked tags too.
+  const taken = new Set(options.map((tag) => tagKey(tag.name)))
   const byId = new Map(options.map((tag) => [tag.id, tag]))
   const pills = value.map((id) => {
     const tag = byId.get(id)
@@ -135,6 +138,7 @@ function TagPicker({
       leading={pills.length > 0 ? pills : undefined}
       onChange={(id) => onChange([...value, id])}
       onCreate={onCreate}
+      canCreate={(name) => tagKey(name) !== '' && !taken.has(tagKey(name))}
     />
   )
 }
@@ -153,7 +157,9 @@ function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }
 
   const busy = list.reprocessing || list.markingReviewed || list.deleting || list.runningAction
   const none = selectedOnPage.length === 0
-  const open = none ? null : panel
+  // However the selection empties, the next tick must not reopen an armed panel.
+  if (none && panel) setPanel(null)
+  const open = panel
   const ids = selectedOnPage.map((document) => document.id)
   const reviewable = selectedOnPage.filter((document) => document.processing_status === 'needs_review')
   const reviewed = selectedOnPage.filter((document) => document.processing_status === 'completed')
@@ -214,7 +220,7 @@ function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }
         </span>
         <div className="flex gap-2">
           <Button variant="secondary" size="xs" onClick={list.selectAll}>
-            Select all
+            Select all on page
           </Button>
           <Button variant="secondary" size="xs" disabled={none} onClick={list.clearSelection}>
             Unselect all
