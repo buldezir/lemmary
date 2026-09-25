@@ -28,7 +28,11 @@ type Props = {
    * border with it. For a multi-select whose chosen values sit in the control.
    */
   leading?: ReactNode
+  /** Offers the typed text as a new option when nothing matches it exactly. */
+  onCreate?: (text: string) => void
 }
+
+const CREATE_VALUE = '\u0000create'
 
 // max-h-56 on the listbox, in pixels. Read to decide which way the list opens,
 // so the two have to move together.
@@ -66,6 +70,7 @@ export function Combobox({
   className = '',
   bgClassName = 'bg-bright',
   leading,
+  onCreate,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const highlightedRef = useRef<HTMLLIElement>(null)
@@ -82,13 +87,15 @@ export function Combobox({
   const filteredOptions = useMemo(() => {
     const needle = normalize(query ?? '')
     if (!needle) return options
-    return options.filter(
+    const matches = options.filter(
       (option) =>
         option.pinned ||
         normalize(option.label).includes(needle) ||
         normalize(option.value).includes(needle),
     )
-  }, [options, query])
+    if (!onCreate || options.some((option) => normalize(option.label) === needle)) return matches
+    return [...matches, { value: CREATE_VALUE, label: `Create "${query!.trim()}"` }]
+  }, [options, query, onCreate])
 
   const lastIndex = Math.max(filteredOptions.length - 1, 0)
   const activeIndex = Math.min(highlightedIndex, lastIndex)
@@ -115,7 +122,11 @@ export function Combobox({
   }
 
   function selectOption(nextValue: string) {
-    onChange(nextValue)
+    if (nextValue === CREATE_VALUE) {
+      onCreate?.(query!.trim())
+    } else {
+      onChange(nextValue)
+    }
     close()
   }
 

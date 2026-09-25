@@ -31,7 +31,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 
 export const DOCUMENT_PAGE_SIZE = 12
 
-export type DocumentListRoute = '/' | '/inbox'
+export type DocumentListRoute = '/' | '/inbox' | '/bulk'
 
 /**
  * Shared so the documents list and the Inbox can be two pages rather than one
@@ -101,6 +101,7 @@ export function useDocumentList({
   const [markingReviewed, setMarkingReviewed] = useState(false)
   const [acceptingSuggestion, setAcceptingSuggestion] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [runningAction, setRunningAction] = useState(false)
   const [libraryVersion, setLibraryVersion] = useState(0)
 
   // URL -> box. Adjusted during render rather than in an effect, so the box
@@ -453,6 +454,23 @@ export function useDocumentList({
     }
   }
 
+  /** For actions the page brings itself: runs one, reports it, clears the selection. */
+  async function runBulkAction(action: () => Promise<string>, fallbackError: string) {
+    try {
+      setRunningAction(true)
+      setError('')
+      setMessage('')
+      setMessage(await action())
+      setSelectedIds(new Set())
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : fallbackError)
+      return false
+    } finally {
+      setRunningAction(false)
+    }
+  }
+
   return {
     query,
     statusFilter,
@@ -494,6 +512,8 @@ export function useDocumentList({
     onAcceptSuggestedTag,
     acceptingSuggestion,
     onDeleteSelected,
+    runBulkAction,
+    runningAction,
   }
 }
 

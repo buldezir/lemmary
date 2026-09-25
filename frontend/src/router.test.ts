@@ -34,6 +34,7 @@ describe('route tree', () => {
       '/import/archive',
       '/account',
       '/tags',
+      '/bulk',
       '/export',
       '/document/$documentId',
       '/document/$documentId/ask',
@@ -56,6 +57,18 @@ describe('document list search params', () => {
     // Whatever this returns becomes the URL, so filling in the defaults would
     // hang "?q=&status=all&page=1" off every plain link to "/".
     expect(validate?.({})).toEqual({})
+    expect(validate?.({ status: 'failed', page: 2, nonsense: 'x' })).toEqual({
+      status: 'failed',
+      page: 2,
+    })
+  })
+
+  test('are validated the same way on the Bulk Actions route', async () => {
+    const { router } = await import('./router')
+    const validate = router.routesById['/bulk'].options.validateSearch as
+      | ((search: Record<string, unknown>) => unknown)
+      | undefined
+
     expect(validate?.({ status: 'failed', page: 2, nonsense: 'x' })).toEqual({
       status: 'failed',
       page: 2,
