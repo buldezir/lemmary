@@ -17,7 +17,7 @@ func TestTokenGETReturns405ForSupportedAPIVersion(t *testing.T) {
 	t.Parallel()
 
 	e := &core.RequestEvent{}
-	e.Request = httptest.NewRequest("GET", "/api/token/", nil)
+	e.Request = httptest.NewRequest(http.MethodGet, "/api/token/", nil)
 	e.Request.Header.Set("Accept", "application/json; version=9")
 	e.Response = httptest.NewRecorder()
 
@@ -41,7 +41,7 @@ func TestTokenGETReturns406ForUnsupportedAPIVersion(t *testing.T) {
 	t.Parallel()
 
 	e := &core.RequestEvent{}
-	e.Request = httptest.NewRequest("GET", "/api/token/", nil)
+	e.Request = httptest.NewRequest(http.MethodGet, "/api/token/", nil)
 	e.Request.Header.Set("Accept", "application/json; version=3")
 	e.Response = httptest.NewRecorder()
 

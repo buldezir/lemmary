@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -33,7 +34,7 @@ func sseResponse(events ...string) *http.Response {
 		b.WriteString("event: x\ndata: " + e + "\n\n")
 	}
 	return &http.Response{
-		StatusCode: 200,
+		StatusCode: http.StatusOK,
 		Header:     http.Header{},
 		Body:       io.NopCloser(strings.NewReader(b.String())),
 	}
@@ -206,7 +207,7 @@ func TestAStreamedAnswerBecomesChatCompletionChunks(t *testing.T) {
 	var text strings.Builder
 	var sawStop bool
 	var usage *chatUsage
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if !strings.HasPrefix(line, "data:") || payload == "[DONE]" {
 			continue
@@ -248,7 +249,7 @@ func TestAnErrorResponsePassesThroughUntouched(t *testing.T) {
 
 	resp, err := mw(chatRequestFor(t, false), func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
-			StatusCode: 400,
+			StatusCode: http.StatusBadRequest,
 			Header:     http.Header{},
 			Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"nope"}}`)),
 		}, nil
@@ -256,7 +257,7 @@ func TestAnErrorResponsePassesThroughUntouched(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.StatusCode != 400 {
+	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}
 	raw, _ := io.ReadAll(resp.Body)
@@ -283,7 +284,7 @@ func TestOtherPathsAreNotRewritten(t *testing.T) {
 		if got.Header.Get("Authorization") != "" {
 			t.Error("a passed-through request was given a token")
 		}
-		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("{}"))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("{}"))}, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -331,7 +332,7 @@ func TestAnUnsignedProviderNeverReachesTheNetwork(t *testing.T) {
 	if _, err := mw(chatRequestFor(t, false), func(req *http.Request) (*http.Response, error) {
 		t.Fatal("an unsigned provider reached the transport")
 		return nil, nil
-	}); err != ErrNotSignedIn {
+	}); !errors.Is(err, ErrNotSignedIn) {
 		t.Fatalf("err = %v, want ErrNotSignedIn", err)
 	}
 }

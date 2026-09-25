@@ -76,10 +76,7 @@ func SelectPassages(ocrText string, dense, lexical []ChunkHit, budgetBytes int) 
 		return nil
 	}
 
-	per := budgetBytes / len(texts)
-	if per < minPassageBudget {
-		per = minPassageBudget
-	}
+	per := max(budgetBytes/len(texts), minPassageBudget)
 
 	passages := make([]Passage, 0, len(texts))
 	spent := 0
@@ -88,10 +85,7 @@ func SelectPassages(ocrText string, dense, lexical []ChunkHit, budgetBytes int) 
 		if left <= 0 {
 			break
 		}
-		limit := per
-		if limit > left {
-			limit = left
-		}
+		limit := min(per, left)
 		text := hit.Text
 		if len(text) > limit {
 			// The ellipsis is part of what is spent.
@@ -220,14 +214,8 @@ func narrowToMatch(ocrText string, w Window, terms []string) (int, int) {
 	if at < 0 {
 		return 0, 0
 	}
-	start := alignForward(ocrText, w.StartByte+at-snippetContextBytes)
-	if start < w.StartByte {
-		start = w.StartByte
-	}
-	end := alignForward(ocrText, w.StartByte+at+width+snippetContextBytes)
-	if end > w.EndByte {
-		end = w.EndByte
-	}
+	start := max(alignForward(ocrText, w.StartByte+at-snippetContextBytes), w.StartByte)
+	end := min(alignForward(ocrText, w.StartByte+at+width+snippetContextBytes), w.EndByte)
 	return start, end
 }
 
@@ -236,12 +224,5 @@ func PassageBudgetPerDoc(capBytes, docs int) int {
 	if docs <= 0 || capBytes <= 0 {
 		return 0
 	}
-	per := capBytes / docs
-	if per < minPassageBudget {
-		per = minPassageBudget
-	}
-	if per > maxPassageBudget {
-		per = maxPassageBudget
-	}
-	return per
+	return min(max(capBytes/docs, minPassageBudget), maxPassageBudget)
 }

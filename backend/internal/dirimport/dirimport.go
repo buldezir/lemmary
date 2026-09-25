@@ -338,7 +338,7 @@ func (s *Scanner) tagsFor(ownerID, rel string, keys map[string]string) (ids, cre
 	if dir == "." {
 		return nil, nil, nil
 	}
-	for _, name := range strings.Split(dir, string(filepath.Separator)) {
+	for name := range strings.SplitSeq(dir, string(filepath.Separator)) {
 		key := worker.NormalizeTagKey(name)
 		if key == "" {
 			continue

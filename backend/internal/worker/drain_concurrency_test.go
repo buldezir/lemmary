@@ -144,7 +144,7 @@ func TestDrainPendingRunsJobsConcurrently(t *testing.T) {
 	userID := makeUserForDrain(t, app, "drain@example.test")
 
 	ids := make([]string, 0, jobs)
-	for i := 0; i < jobs; i++ {
+	for i := range jobs {
 		documentID := makeImageDocument(t, app, userID, fmt.Sprintf("Drain %d", i))
 		ids = append(ids, makeOCRJob(t, app, documentID).Id)
 	}

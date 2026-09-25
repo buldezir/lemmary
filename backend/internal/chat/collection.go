@@ -9,7 +9,6 @@ import (
 	"fmt"
 
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 const (
@@ -96,7 +95,7 @@ func ensureSessions(app core.App) (*core.Collection, error) {
 		// Not Required: a NumberField's Required means non-zero, and a session
 		// legitimately holds 0 between its creation and its first turn inside
 		// AppendTurn's transaction.
-		&core.NumberField{Name: "message_count", OnlyInt: true, Min: types.Pointer(0.0)},
+		&core.NumberField{Name: "message_count", OnlyInt: true, Min: new(0.0)},
 		// Sidebar ordering. Deliberately not `updated`: renaming a chat must
 		// not shuffle it to the top of the list.
 		&core.DateField{Name: "last_message_at"},
@@ -132,7 +131,7 @@ func ensureMessages(app core.App, sessions *core.Collection) error {
 		},
 		// 1-based, because a NumberField's Required rejects 0. See the
 		// migration comment for why ordering cannot rest on `created`.
-		&core.NumberField{Name: "seq", Required: true, OnlyInt: true, Min: types.Pointer(1.0)},
+		&core.NumberField{Name: "seq", Required: true, OnlyInt: true, Min: new(1.0)},
 		&core.SelectField{
 			Name:      "role",
 			Required:  true,

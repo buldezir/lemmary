@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -127,13 +128,7 @@ func matchesFilters(doc testdata.Document, f testdata.Filters) bool {
 		return false
 	}
 	for _, want := range f.Tags {
-		found := false
-		for _, tag := range doc.Tags {
-			if tag == want {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(doc.Tags, want)
 		if !found {
 			return false
 		}

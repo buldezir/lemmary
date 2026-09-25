@@ -212,9 +212,7 @@ func ocrPages(
 	errs := make([]error, len(pages))
 
 	for range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for {
 				i := int(next.Add(1)) - 1
 				if i >= len(pages) || ctx.Err() != nil {
@@ -233,7 +231,7 @@ func ocrPages(
 				report(done, len(pages))
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

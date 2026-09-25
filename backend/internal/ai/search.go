@@ -383,14 +383,14 @@ func synthesizeSearchReply(hits []DocumentHit) string {
 	b.WriteString("Here are the documents I found:\n\n")
 	for i, hit := range hits {
 		if i >= 10 {
-			b.WriteString(fmt.Sprintf("\n…and %d more.", len(hits)-10))
+			fmt.Fprintf(&b, "\n…and %d more.", len(hits)-10)
 			break
 		}
 		title := strings.TrimSpace(hit.Title)
 		if title == "" {
 			title = "Untitled document"
 		}
-		b.WriteString(fmt.Sprintf("- **%s**", title))
+		fmt.Fprintf(&b, "- **%s**", title)
 		meta := make([]string, 0, 2)
 		if hit.DocumentDate != "" {
 			meta = append(meta, hit.DocumentDate)
@@ -496,7 +496,7 @@ func formatLanguagePrompt(languages, resultLanguage string, dense bool) string {
 		b.WriteString(`
 Search matches by meaning across languages: one search in the user's own wording covers documents written in any language`)
 		if languages != "" {
-			b.WriteString(fmt.Sprintf(` (the archive holds: %s)`, languages))
+			fmt.Fprintf(&b, ` (the archive holds: %s)`, languages)
 		}
 		b.WriteString(`.
 Do not repeat a search translated into another language. Search again only for a different concept, a synonym with a different meaning, or different filters.
@@ -514,7 +514,7 @@ Call search_documents multiple times when useful — once per language or synony
 	b.WriteString(`
 No fixed archive language list is configured. Expand keywords into the language of the user's query`)
 	if resultLanguage != "" {
-		b.WriteString(fmt.Sprintf(` and into %s`, resultLanguage))
+		fmt.Fprintf(&b, ` and into %s`, resultLanguage)
 	}
 	b.WriteString(`. Call search_documents multiple times when useful.
 `)

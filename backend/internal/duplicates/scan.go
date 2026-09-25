@@ -280,7 +280,7 @@ func markNearDuplicates(app core.App, threshold float64, result *ScanResult) err
 	// OCR text loads only for the pairs that pass the Hamming prefilter.
 	marked := map[string]struct{}{}
 	for _, group := range byUser {
-		for i := 0; i < len(group); i++ {
+		for i := range group {
 			a := group[i]
 			if a.DuplicateOf != "" || isMarked(marked, a.ID) {
 				continue

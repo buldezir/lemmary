@@ -97,14 +97,12 @@ func TestConcurrentCallersRefreshOnce(t *testing.T) {
 	}, nil)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 8 {
+		wg.Go(func() {
 			if _, err := src.AccessToken(context.Background()); err != nil {
 				t.Error(err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -143,7 +141,7 @@ func TestAnUnsignedProviderSaysSo(t *testing.T) {
 	Forget("p3")
 	defer Forget("p3")
 	src := SourceFor("p3", "", nil, nil)
-	if _, err := src.AccessToken(context.Background()); err != ErrNotSignedIn {
+	if _, err := src.AccessToken(context.Background()); !errors.Is(err, ErrNotSignedIn) {
 		t.Fatalf("err = %v, want ErrNotSignedIn", err)
 	}
 }

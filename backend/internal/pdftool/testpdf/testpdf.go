@@ -24,7 +24,7 @@ func Multipage(pageCount int, extraLines ...string) []byte {
 	objects := make([]string, 0, 3+2*pageCount)
 
 	kids := &bytes.Buffer{}
-	for i := 0; i < pageCount; i++ {
+	for i := range pageCount {
 		if i > 0 {
 			kids.WriteString(" ")
 		}
@@ -37,7 +37,7 @@ func Multipage(pageCount int, extraLines ...string) []byte {
 		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
 	)
 
-	for i := 0; i < pageCount; i++ {
+	for i := range pageCount {
 		pageObj := firstPageObj + 2*i
 		contentObj := pageObj + 1
 		objects = append(objects, fmt.Sprintf(
@@ -115,7 +115,7 @@ func Blank(pageCount int) []byte {
 
 	const firstPageObj = 3
 	kids := &bytes.Buffer{}
-	for i := 0; i < pageCount; i++ {
+	for i := range pageCount {
 		if i > 0 {
 			kids.WriteString(" ")
 		}
@@ -126,7 +126,7 @@ func Blank(pageCount int) []byte {
 		"<< /Type /Catalog /Pages 2 0 R >>",
 		fmt.Sprintf("<< /Type /Pages /Kids [%s] /Count %d >>", kids.String(), pageCount),
 	}
-	for i := 0; i < pageCount; i++ {
+	for i := range pageCount {
 		contentObj := firstPageObj + 2*i + 1
 		objects = append(objects, fmt.Sprintf(
 			"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << >> /Contents %d 0 R >>",
@@ -146,7 +146,7 @@ func MixedText(pageCount, textPages int) []byte {
 
 	const firstPageObj = 4
 	kids := &bytes.Buffer{}
-	for i := 0; i < pageCount; i++ {
+	for i := range pageCount {
 		if i > 0 {
 			kids.WriteString(" ")
 		}
@@ -158,7 +158,7 @@ func MixedText(pageCount, textPages int) []byte {
 		fmt.Sprintf("<< /Type /Pages /Kids [%s] /Count %d >>", kids.String(), pageCount),
 		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
 	}
-	for i := 0; i < pageCount; i++ {
+	for i := range pageCount {
 		contentObj := firstPageObj + 2*i + 1
 		objects = append(objects, fmt.Sprintf(
 			"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "+

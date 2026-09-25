@@ -214,7 +214,7 @@ func (e *openAIEmbedder) embedBatch(ctx context.Context, inputs []string) (_ [][
 	}
 
 	var lastErr error
-	for attempt := 0; attempt < embedMaxAttempts; attempt++ {
+	for attempt := range embedMaxAttempts {
 		if attempt > 0 {
 			delay := embedRetryBase * time.Duration(1<<(2*(attempt-1))) // 1s, 4s, 16s
 			e.logger.Warn("retrying embeddings request",
@@ -300,8 +300,7 @@ func (e *openAIEmbedder) checkDims(n int) error {
 // retryableEmbedError is true only for failures a second attempt could survive.
 // A 400 (input too long, unknown model) and a 401 are answers, not outages.
 func retryableEmbedError(err error) bool {
-	var apiErr *openai.Error
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*openai.Error](err); ok {
 		return apiErr.StatusCode == http.StatusTooManyRequests || apiErr.StatusCode >= 500
 	}
 	// Context cancellation is the caller giving up, not a transient fault.

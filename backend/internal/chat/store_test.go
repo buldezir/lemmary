@@ -483,7 +483,7 @@ func TestHistoryReplaysTheWholeTranscript(t *testing.T) {
 
 	const turns = 30
 	answer := strings.Repeat("a", 2000)
-	for i := 0; i < turns; i++ {
+	for i := range turns {
 		if _, err := chat.AppendTurn(app, userID, session.Id, chat.Turn{
 			UserContent:      fmt.Sprintf("question %d", i),
 			AssistantContent: answer,

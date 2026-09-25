@@ -97,7 +97,7 @@ func Free(start int, taken func(int) bool) int {
 		start = 1
 	}
 	id := start
-	for i := 0; i < maxProbes; i++ {
+	for range maxProbes {
 		if !taken(id) {
 			return id
 		}

@@ -97,16 +97,8 @@ func Forget(providerID string) {
 }
 
 // withEndpoints repoints the source's auth client. Tests only.
-func (s *TokenSource) withEndpoints(e Endpoints) *TokenSource {
+func (s *TokenSource) withEndpoints(e Endpoints) {
 	s.client = s.client.WithEndpoints(e)
-	return s
-}
-
-// Identity is what Settings shows about the signed-in account. Never the token.
-func (s *TokenSource) Identity() (accountID, plan, email string, signedIn bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.tok.AccountID, s.tok.Plan, s.tok.Email, s.tok.Valid()
 }
 
 func (s *TokenSource) AccessToken(ctx context.Context) (Token, error) {

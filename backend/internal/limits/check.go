@@ -1,6 +1,7 @@
 package limits
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/pocketbase/pocketbase/tools/router"
@@ -78,13 +79,8 @@ func (e *ErrExceeded) APIError() *router.ApiError {
 // AsExceeded mirrors the shape duplicates uses, so an ingest path can test for
 // one type.
 func AsExceeded(err error) *ErrExceeded {
-	if err == nil {
-		return nil
-	}
-	if exceeded, ok := err.(*ErrExceeded); ok {
-		return exceeded
-	}
-	return nil
+	exceeded, _ := errors.AsType[*ErrExceeded](err)
+	return exceeded
 }
 
 // CheckOCRPages returns the same *ErrExceeded as the env allowances, so a client

@@ -196,9 +196,9 @@ func TestEachResearchRunGetsItsOwnWebBudget(t *testing.T) {
 	t.Parallel()
 	web, calls := newWebServer(t, `{"results":[{"title":"t","url":"https://example.com/a","content":"c"}]}`, `{}`)
 
-	for run := 0; run < 2; run++ {
+	for range 2 {
 		state := &researchState{}
-		for i := 0; i < maxWebCalls+2; i++ {
+		for range maxWebCalls + 2 {
 			runWebTool(context.Background(), web, &state.web, "c1", "web_search", `{"query":"x"}`, nil)
 		}
 	}

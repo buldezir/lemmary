@@ -37,7 +37,7 @@ var canonicalID = []byte("[(AAAAAAAAAAAAAAAA) (AAAAAAAAAAAAAAAA)]")
 //
 // Falling back is logged rather than returned as an error: the file is still
 // usable, but it will not deduplicate against a later split of the same source.
-func canonicalizeFileID(path string) error {
+func canonicalizeFileID(ctx context.Context, path string) error {
 	original, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("pdftool: read for canonicalization: %w", err)
@@ -61,8 +61,8 @@ func canonicalizeFileID(path string) error {
 		return fmt.Errorf("pdftool: write canonicalized file: %w", err)
 	}
 
-	// A fresh context, not the caller's: see canonicalVerifyTimeout.
-	ctx, cancel := context.WithTimeout(context.Background(), canonicalVerifyTimeout)
+	// Detached from the caller's deadline: see canonicalVerifyTimeout.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), canonicalVerifyTimeout)
 	defer cancel()
 	if _, err := PageCount(ctx, path); err != nil {
 		slog.Default().Warn("canonicalized pdf did not verify, keeping the original",
@@ -110,11 +110,11 @@ func canonicalizeTrailerID(data []byte) ([]byte, bool) {
 // startxrefOffset reads the cross-reference offset the file's last startxref
 // names.
 func startxrefOffset(data []byte) (int, bool) {
-	at := bytes.LastIndex(data, []byte("startxref"))
-	if at < 0 {
+	_, after, ok := bytes.CutLast(data, []byte("startxref"))
+	if !ok {
 		return 0, false
 	}
-	rest := data[at+len("startxref"):]
+	rest := after
 	digits := bytes.TrimLeft(rest, " \r\n\t")
 	cut := 0
 	for cut < len(digits) && digits[cut] >= '0' && digits[cut] <= '9' {

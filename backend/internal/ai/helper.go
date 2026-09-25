@@ -184,7 +184,7 @@ Return one JSON object: {"documents": [{"id": "...", "relevant": true|false, "no
 			if typ == "" {
 				typ = "string"
 			}
-			b.WriteString(fmt.Sprintf("- %s (%s)", strings.TrimSpace(f.Name), typ))
+			fmt.Fprintf(&b, "- %s (%s)", strings.TrimSpace(f.Name), typ)
 			if d := strings.TrimSpace(f.Description); d != "" {
 				b.WriteString(": " + d)
 			}

@@ -3,6 +3,7 @@ package appapi
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
@@ -157,9 +158,7 @@ func countDocuments(ctx context.Context, db dbx.Builder, spec countSpec) ([]coun
 	run := func(ids []string) error {
 		conds := append([]string{}, where...)
 		p := dbx.Params{}
-		for k, v := range params {
-			p[k] = v
-		}
+		maps.Copy(p, params)
 		if ids != nil {
 			conds = append(conds, `d.id IN `+inClause("id", ids, p))
 		}

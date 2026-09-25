@@ -208,7 +208,7 @@ func TestStepFromEventCopiesTrailFields(t *testing.T) {
 
 func TestEncodeHitsCapsCount(t *testing.T) {
 	hits := make([]ai.DocumentHit, 0, chat.MaxHitsPerTurn+20)
-	for i := 0; i < chat.MaxHitsPerTurn+20; i++ {
+	for i := range chat.MaxHitsPerTurn + 20 {
 		hits = append(hits, ai.DocumentHit{ID: string(rune('a' + i%26)), Title: "t"})
 	}
 	var decoded []ai.DocumentHit
@@ -223,7 +223,7 @@ func TestEncodeHitsCapsCount(t *testing.T) {
 // Over budget, the long free-text fields go before any hit does.
 func TestEncodeHitsShedsSnippetsBeforeHits(t *testing.T) {
 	hits := make([]ai.DocumentHit, 0, chat.MaxHitsPerTurn)
-	for i := 0; i < chat.MaxHitsPerTurn; i++ {
+	for i := range chat.MaxHitsPerTurn {
 		hits = append(hits, ai.DocumentHit{
 			ID:         string(rune('a' + i%26)),
 			Title:      "Invoice",
@@ -333,9 +333,9 @@ func TestPriorHitsDedupesAndCaps(t *testing.T) {
 
 	// The cap holds, and it keeps the newest evidence.
 	many := make([]*core.Record, 0, 4)
-	for turn := 0; turn < 4; turn++ {
+	for turn := range 4 {
 		hits := make([]ai.DocumentHit, 0, 40)
-		for i := 0; i < 40; i++ {
+		for i := range 40 {
 			hits = append(hits, ai.DocumentHit{ID: fmt.Sprintf("t%d-%d", turn, i), Title: "T"})
 		}
 		many = append(many, messageRecord(t, chat.RoleAssistant, hits))
@@ -353,7 +353,7 @@ func TestPriorHitsDedupesAndCaps(t *testing.T) {
 // best of them, so they are the first thing given up.
 func TestEncodeHitsShedsPassagesFirst(t *testing.T) {
 	hits := make([]ai.DocumentHit, 0, 20)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		hits = append(hits, ai.DocumentHit{
 			ID:         fmt.Sprintf("d%d", i),
 			Title:      "Invoice",

@@ -117,13 +117,10 @@ func (c *OpenAIClient) DetectSplitPoints(ctx context.Context, pages []PageText) 
 }
 
 func buildSplitUserMessage(pages []PageText) string {
-	budget := splitPromptTotalChars / len(pages)
-	if budget < splitPromptMinPageChars {
-		budget = splitPromptMinPageChars
-	}
+	budget := max(splitPromptTotalChars/len(pages), splitPromptMinPageChars)
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("The file has %d pages.\n", len(pages)))
+	fmt.Fprintf(&b, "The file has %d pages.\n", len(pages))
 	for _, page := range pages {
 		text := strings.TrimSpace(page.Text)
 		if text == "" {

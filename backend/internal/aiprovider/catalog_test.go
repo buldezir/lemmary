@@ -80,7 +80,7 @@ func TestCatalogCachesOneFetchPerProvider(t *testing.T) {
 	srv, calls := catalogServer(t, oneModel)
 	catalog := NewCatalog(srv.URL, quietLogger())
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if got := catalog.ContextWindow(context.Background(), "openai", "gpt-4o"); got != 128000 {
 			t.Fatalf("window = %d on lookup %d", got, i)
 		}
@@ -103,20 +103,20 @@ func TestCatalogCachesOneFetchPerProvider(t *testing.T) {
 // is cached for a while.
 func TestCatalogDoesNotRetryAFailedFetchImmediately(t *testing.T) {
 	t.Parallel()
-	var calls int32
+	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	t.Cleanup(srv.Close)
 
 	catalog := NewCatalog(srv.URL, quietLogger())
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if got := catalog.ContextWindow(context.Background(), "openai", "gpt-4o"); got != 0 {
 			t.Fatalf("window = %d, want 0 when the catalogue is down", got)
 		}
 	}
-	if got := atomic.LoadInt32(&calls); got != 1 {
+	if got := calls.Load(); got != 1 {
 		t.Fatalf("requests = %d, want 1: a failure is cached too", got)
 	}
 }

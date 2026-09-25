@@ -173,7 +173,7 @@ func TestAppendErrorIsCapped(t *testing.T) {
 	t.Parallel()
 
 	var errs []string
-	for i := 0; i < MaxReportedErrors+10; i++ {
+	for range MaxReportedErrors + 10 {
 		errs = AppendError(errs, "boom")
 	}
 	if len(errs) != MaxReportedErrors {

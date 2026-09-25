@@ -54,8 +54,7 @@ func (e *ownerClientError) Error() string {
 }
 
 func writeOwnerError(e *core.RequestEvent, err error) error {
-	var clientErr *ownerClientError
-	if errors.As(err, &clientErr) {
+	if clientErr, ok := errors.AsType[*ownerClientError](err); ok {
 		return writeError(e, http.StatusBadRequest, clientErr.Error())
 	}
 	return writeError(e, http.StatusInternalServerError, "Failed to resolve document owner.")

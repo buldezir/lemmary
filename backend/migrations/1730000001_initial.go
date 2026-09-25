@@ -3,7 +3,6 @@ package migrations
 import (
 	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
-	"github.com/pocketbase/pocketbase/tools/types"
 
 	"lemmary/backend/internal/models"
 )
@@ -13,11 +12,11 @@ func init() {
 		authRule := "@request.auth.id != ''"
 
 		tags := core.NewBaseCollection("tags")
-		tags.ListRule = types.Pointer(authRule)
-		tags.ViewRule = types.Pointer(authRule)
-		tags.CreateRule = types.Pointer(authRule)
-		tags.UpdateRule = types.Pointer(authRule)
-		tags.DeleteRule = types.Pointer(authRule)
+		tags.ListRule = new(authRule)
+		tags.ViewRule = new(authRule)
+		tags.CreateRule = new(authRule)
+		tags.UpdateRule = new(authRule)
+		tags.DeleteRule = new(authRule)
 		tags.Fields.Add(
 			&core.TextField{Name: "name", Required: true, Max: 100},
 			&core.AutodateField{Name: "created", OnCreate: true},
@@ -29,11 +28,11 @@ func init() {
 		}
 
 		correspondents := core.NewBaseCollection("correspondents")
-		correspondents.ListRule = types.Pointer(authRule)
-		correspondents.ViewRule = types.Pointer(authRule)
-		correspondents.CreateRule = types.Pointer(authRule)
-		correspondents.UpdateRule = types.Pointer(authRule)
-		correspondents.DeleteRule = types.Pointer(authRule)
+		correspondents.ListRule = new(authRule)
+		correspondents.ViewRule = new(authRule)
+		correspondents.CreateRule = new(authRule)
+		correspondents.UpdateRule = new(authRule)
+		correspondents.DeleteRule = new(authRule)
 		correspondents.Fields.Add(
 			&core.TextField{Name: "name", Required: true, Max: 255},
 			&core.TextField{Name: "name_original", Max: 255},
@@ -46,11 +45,11 @@ func init() {
 		}
 
 		documentTypes := core.NewBaseCollection("document_types")
-		documentTypes.ListRule = types.Pointer(authRule)
-		documentTypes.ViewRule = types.Pointer(authRule)
-		documentTypes.CreateRule = types.Pointer(authRule)
-		documentTypes.UpdateRule = types.Pointer(authRule)
-		documentTypes.DeleteRule = types.Pointer(authRule)
+		documentTypes.ListRule = new(authRule)
+		documentTypes.ViewRule = new(authRule)
+		documentTypes.CreateRule = new(authRule)
+		documentTypes.UpdateRule = new(authRule)
+		documentTypes.DeleteRule = new(authRule)
 		documentTypes.Fields.Add(
 			&core.TextField{Name: "name", Required: true, Max: 255},
 			&core.TextField{Name: "name_original", Max: 255},
@@ -64,11 +63,11 @@ func init() {
 
 		ownerRule := "user = @request.auth.id"
 		documents := core.NewBaseCollection("documents")
-		documents.ListRule = types.Pointer(ownerRule)
-		documents.ViewRule = types.Pointer(ownerRule)
-		documents.CreateRule = types.Pointer(ownerRule)
-		documents.UpdateRule = types.Pointer(ownerRule)
-		documents.DeleteRule = types.Pointer(ownerRule)
+		documents.ListRule = new(ownerRule)
+		documents.ViewRule = new(ownerRule)
+		documents.CreateRule = new(ownerRule)
+		documents.UpdateRule = new(ownerRule)
+		documents.DeleteRule = new(ownerRule)
 		documents.Fields.Add(
 			&core.FileField{
 				Name:      "file",
@@ -112,7 +111,7 @@ func init() {
 				Values: []string{"pending", "processing", "completed", "failed", "cancelled", "needs_review"},
 			},
 			&core.TextField{Name: "metadata_source", Max: 200},
-			&core.NumberField{Name: "confidence", Min: types.Pointer(0.0), Max: types.Pointer(1.0)},
+			&core.NumberField{Name: "confidence", Min: new(0.0), Max: new(1.0)},
 			&core.JSONField{Name: "people_or_organizations"},
 			&core.RelationField{
 				Name:         "tags",
@@ -136,9 +135,9 @@ func init() {
 		}
 
 		jobs := core.NewBaseCollection("processing_jobs")
-		jobs.ListRule = types.Pointer("document.user = @request.auth.id")
-		jobs.ViewRule = types.Pointer("document.user = @request.auth.id")
-		jobs.CreateRule = types.Pointer(`document.user = @request.auth.id && status = "pending"`)
+		jobs.ListRule = new("document.user = @request.auth.id")
+		jobs.ViewRule = new("document.user = @request.auth.id")
+		jobs.CreateRule = new(`document.user = @request.auth.id && status = "pending"`)
 		jobs.UpdateRule = nil
 		jobs.DeleteRule = nil
 		jobs.Fields.Add(

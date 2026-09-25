@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
@@ -566,17 +567,7 @@ type toolSearchHit struct {
 func toolSearchHits(hits []DocumentHit) []toolSearchHit {
 	out := make([]toolSearchHit, 0, len(hits))
 	for _, hit := range hits {
-		item := toolSearchHit{
-			ID:            hit.ID,
-			Title:         hit.Title,
-			DocumentDate:  hit.DocumentDate,
-			Summary:       hit.Summary,
-			OCRSnippet:    hit.OCRSnippet,
-			Passages:      hit.Passages,
-			DocumentType:  hit.DocumentType,
-			Correspondent: hit.Correspondent,
-			Tags:          hit.Tags,
-		}
+		item := toolSearchHit(hit)
 		if len(item.Passages) > 0 {
 			item.OCRSnippet = ""
 		}
@@ -799,11 +790,11 @@ func decodeReadArgs(data string) (readDocumentsArgs, error) {
 // so the loop talking to itself cannot be mistaken for the question -- which
 // would send every read off to focus on a JSON blob.
 func latestUserMessage(thread []ThreadMessage) string {
-	for i := len(thread) - 1; i >= 0; i-- {
-		if thread[i].Role != "user" {
+	for _, t := range slices.Backward(thread) {
+		if t.Role != "user" {
 			continue
 		}
-		if content := strings.TrimSpace(thread[i].Content); content != "" {
+		if content := strings.TrimSpace(t.Content); content != "" {
 			return content
 		}
 	}

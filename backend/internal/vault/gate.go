@@ -109,7 +109,7 @@ func (v *Vault) Gate(ctx context.Context, addr string, insecure bool) (GateResul
 
 	// Hand the port back: Shutdown waits for the response to reach the browser,
 	// then closes the listener before PocketBase tries to bind it.
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		_ = srv.Close()

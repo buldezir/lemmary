@@ -1,11 +1,13 @@
 package ngxapi
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/pocketbase/pocketbase/core"
 	"lemmary/backend/internal/fulltext"
+
+	"github.com/pocketbase/pocketbase/core"
 )
 
 func TestClampSearchPageSize(t *testing.T) {
@@ -19,7 +21,7 @@ func TestClampSearchPageSize(t *testing.T) {
 
 func TestPaginationParamsThenClampForSearch(t *testing.T) {
 	e := &core.RequestEvent{}
-	e.Request = httptest.NewRequest("GET", "/api/documents/?query=invoice&page=2&page_size=1000", nil)
+	e.Request = httptest.NewRequest(http.MethodGet, "/api/documents/?query=invoice&page=2&page_size=1000", nil)
 
 	page, pageSize := paginationParams(e)
 	pageSize = clampSearchPageSize(pageSize)

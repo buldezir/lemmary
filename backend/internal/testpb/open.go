@@ -34,7 +34,7 @@ func Open(t testing.TB) *pocketbase.PocketBase {
 	if err := app.Bootstrap(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = app.ResetBootstrapState() })
+	t.Cleanup(func() { _ = app.ClearBootstrap() })
 	return app
 }
 
@@ -60,11 +60,11 @@ func schemaTemplate() (string, error) {
 			return
 		}
 		if err := app.RunAppMigrations(); err != nil {
-			_ = app.ResetBootstrapState()
+			_ = app.ClearBootstrap()
 			schemaErr = err
 			return
 		}
-		schemaErr = app.ResetBootstrapState()
+		schemaErr = app.ClearBootstrap()
 		schemaDir = dir
 	})
 	return schemaDir, schemaErr

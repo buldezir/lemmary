@@ -292,8 +292,7 @@ func snapToAnswer(records []*core.Record) []*core.Record {
 // died, was cancelled, or is still going. Derived rather than stored, so it is
 // still true after a restart, which the in-process run registry is not.
 func Unfinished(records []*core.Record) bool {
-	for i := len(records) - 1; i >= 0; i-- {
-		record := records[i]
+	for _, record := range slices.Backward(records) {
 		role := record.GetString("role")
 		if role == RoleSystem {
 			continue
@@ -301,7 +300,7 @@ func Unfinished(records []*core.Record) bool {
 		// Finished means answered. A transcript that ends on a question, on a
 		// tool result, or on a call nothing answered is a turn that stopped
 		// somewhere in the middle.
-		return !(role == RoleAssistant && VisibleRecord(record))
+		return role != RoleAssistant || !VisibleRecord(record)
 	}
 	return false
 }

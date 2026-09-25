@@ -2,6 +2,7 @@ package ngxapi
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
 	"strconv"
 	"strings"
@@ -412,9 +413,7 @@ func (r *ngxIDs) resolve(collection string, ids []int) (map[int]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	for ngxID, pbID := range found {
-		known[ngxID] = pbID
-	}
+	maps.Copy(known, found)
 	return known, nil
 }
 
@@ -461,7 +460,7 @@ func (r *ngxIDs) resolveAll(collection string, raw []string) (resolved []string,
 func csvValues(q url.Values, name string) []string {
 	var out []string
 	for _, raw := range q[name] {
-		for _, part := range strings.Split(raw, ",") {
+		for part := range strings.SplitSeq(raw, ",") {
 			if part = strings.TrimSpace(part); part != "" {
 				out = append(out, part)
 			}

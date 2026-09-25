@@ -243,7 +243,7 @@ func TestWebFetchBoundsOneCallsURLList(t *testing.T) {
 	web := websearch.NewTavily("k", server.URL, 5*time.Second, nil)
 
 	urls := make([]string, 0, MaxWebFetchURLs+3)
-	for i := 0; i < MaxWebFetchURLs+3; i++ {
+	for i := range MaxWebFetchURLs + 3 {
 		urls = append(urls, "https://example.com/"+string(rune('a'+i)))
 	}
 	encoded, err := json.Marshal(webFetchArgs{URLs: urls})
@@ -263,7 +263,7 @@ func TestTheRunsWebBudgetIsSpentOnceAndThenRefused(t *testing.T) {
 	web, calls := newWebServer(t, `{"results":[{"title":"t","url":"https://example.com/a","content":"c"}]}`, `{}`)
 	budget := &webBudget{}
 
-	for i := 0; i < maxWebCalls; i++ {
+	for i := range maxWebCalls {
 		if _, refused := decodeToolContent(t, mustContent(t, web, budget))["error"]; refused {
 			t.Fatalf("call %d was refused while the budget still had room", i)
 		}
@@ -318,4 +318,3 @@ func TestAnUnknownWebToolNameIsReportedBack(t *testing.T) {
 		t.Errorf("error = %q, want it to name the tool", message)
 	}
 }
-

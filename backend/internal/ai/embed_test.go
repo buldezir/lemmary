@@ -76,7 +76,7 @@ func writeEmbeddings(w http.ResponseWriter, count, dims int, reversed bool) {
 		Embedding []float64 `json:"embedding"`
 	}
 	items := make([]item, 0, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		vec := make([]float64, dims)
 		for d := range vec {
 			// The value encodes the index, so a misassembled batch is visible.

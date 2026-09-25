@@ -1,0 +1,100 @@
+version: "2"
+
+run:
+  build-tags: [vectors]
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - copyloopvar
+    - errcheck
+    - errorlint
+    - gocritic
+    - govet
+    - ineffassign
+    - intrange
+    - modernize
+    - staticcheck
+    - unparam
+    - unused
+    - usestdlibvars
+    - wastedassign
+
+    - dupl
+    - funlen
+    - gocognit
+    - nestif
+
+  settings:
+    gocritic:
+      disabled-checks: [mapKey]
+    staticcheck:
+      checks: [all, -ST1000, -ST1003, -ST1005, -ST1016, -ST1020, -ST1021, -ST1022]
+    dupl:
+      threshold: 150
+    funlen:
+      lines: 100
+      statements: 60
+    gocognit:
+      min-complexity: 30
+    nestif:
+      min-complexity: 6
+
+  exclusions:
+    warn-unused: true
+    presets: [std-error-handling]
+    rules:
+      - path: _test\.go
+        linters: [bodyclose, dupl, errcheck, funlen, gocognit, nestif, unparam]
+      - path: ^migrations/
+        linters: [dupl, funlen, gocognit, nestif]
+      # Structural debt that predates the gate: new offenders fail, these don't.
+      # Delete an entry once its function is refactored; warn-unused flags stale ones.
+      - {linters: [dupl], path: '^internal/appapi/import_archive\.go$'}
+      - {linters: [dupl], path: '^internal/appapi/import_zip\.go$'}
+      - {linters: [funlen], path: '^internal/ai/research\.go$', text: "'Research'"}
+      - {linters: [funlen], path: '^internal/ai/research_tools\.go$', text: "'runSurveyTool'"}
+      - {linters: [funlen], path: '^internal/ai/search\.go$', text: "'Search'"}
+      - {linters: [funlen], path: '^internal/appapi/chat\.go$', text: "'handleDocumentChat'"}
+      - {linters: [funlen], path: '^internal/appapi/settings\.go$', text: "'applySettingsPatch'"}
+      - {linters: [funlen], path: '^internal/dirimport/dirimport\.go$', text: "'scan'"}
+      - {linters: [funlen], path: '^internal/imapimport/imapimport\.go$', text: "'scan'"}
+      - {linters: [funlen], path: '^internal/ngxapi/filters\.go$', text: "'parseDocumentFiltersWith'"}
+      - {linters: [funlen], path: '^internal/worker/pipeline\.go$', text: "'Run'"}
+      - {linters: [funlen], path: '^internal/appapi/appapi\.go$', text: "'Register'"}
+      - {linters: [funlen], path: '^internal/appapi/mcp\.go$', text: "'newMCPServer'"}
+      - {linters: [funlen], path: '^internal/appapi/search\.go$', text: "'prepareSearchTurn'"}
+      - {linters: [funlen], path: '^internal/appapi/search_survey\.go$', text: "'survey'"}
+      - {linters: [funlen], path: '^internal/vault/flush\.go$', text: "'flush'"}
+      - {linters: [gocognit], path: '^internal/ai/helper\.go$', text: '`parseDistillRows`'}
+      - {linters: [gocognit], path: '^internal/ai/research\.go$', text: '`\(\*openAISearchAgent\)\.Research`'}
+      - {linters: [gocognit], path: '^internal/ai/research_tools\.go$', text: '`\(\*openAISearchAgent\)\.runSurveyTool`'}
+      - {linters: [gocognit], path: '^internal/ai/search\.go$', text: '`\(\*openAISearchAgent\)\.Search`'}
+      - {linters: [gocognit], path: '^internal/appapi/chat\.go$', text: '`handleDocumentChat`'}
+      - {linters: [gocognit], path: '^internal/appapi/providers\.go$', text: '`handlePatchProvider`'}
+      - {linters: [gocognit], path: '^internal/appapi/search_count\.go$', text: '`\(\*agentRetriever\)\.nameGroups`'}
+      - {linters: [gocognit], path: '^internal/appapi/settings\.go$', text: '`applySettingsPatch`'}
+      - {linters: [gocognit], path: '^internal/chat/store\.go$', text: '`ForkSession`'}
+      - {linters: [gocognit], path: '^internal/chatgpt/transport\.go$', text: '`toResponsesRequest`'}
+      - {linters: [gocognit], path: '^internal/chatgpt/transport\.go$', text: '`streamingResponse`'}
+      - {linters: [gocognit], path: '^internal/dirimport/dirimport\.go$', text: '`\(\*Scanner\)\.scan`'}
+      - {linters: [gocognit], path: '^internal/duplicates/scan\.go$', text: '`backfillChecksum`'}
+      - {linters: [gocognit], path: '^internal/duplicates/scan\.go$', text: '`markNearDuplicates`'}
+      - {linters: [gocognit], path: '^internal/imapimport/imapimport\.go$', text: '`\(\*Scanner\)\.scan`'}
+      - {linters: [gocognit], path: '^internal/ngxapi/filters\.go$', text: '`parseDocumentFiltersWith`'}
+      - {linters: [gocognit], path: '^internal/ngximport/import\.go$', text: '`importOneDocument`'}
+      - {linters: [gocognit], path: '^internal/retrieval/fake_embedder\.go$', text: '`\(\*MemoryChunks\)\.SearchChunks`'}
+      - {linters: [gocognit], path: '^internal/vault/flush\.go$', text: '`\(\*Vault\)\.collect`'}
+      - {linters: [gocognit], path: '^internal/worker/pipeline\.go$', text: '`\(\*PipelineRunner\)\.Run`'}
+      - {linters: [nestif], path: '^internal/appapi/providers\.go$', text: '`if req\.SDK != nil`'}
+      - {linters: [nestif], path: '^internal/appapi/search_count\.go$', text: '`if query != ""`'}
+      - {linters: [nestif], path: '^internal/archiveimport/import\.go$', text: '`if mode == ModeRestore && entry\.metadataPath != ""`'}
+      - {linters: [nestif], path: '^internal/duplicates/scan\.go$', text: '`if existing != nil`'}
+      - {linters: [nestif], path: '^internal/ngxapi/documents\.go$', text: '`if form != nil`'}
+      - {linters: [nestif], path: '^internal/ngximport/import\.go$', text: '`if mode == ModePreserve`'}
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  uniq-by-line: false

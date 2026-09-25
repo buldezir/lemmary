@@ -3,7 +3,6 @@ package migrations
 import (
 	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
-	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 func init() {
@@ -124,11 +123,11 @@ func lockNamedEntityOwnership(app core.App, collectionName, oldIndex, newIndex s
 	}
 
 	ownerRule := "user = @request.auth.id"
-	coll.ListRule = types.Pointer(ownerRule)
-	coll.ViewRule = types.Pointer(ownerRule)
-	coll.CreateRule = types.Pointer(ownerRule)
-	coll.UpdateRule = types.Pointer(ownerRule)
-	coll.DeleteRule = types.Pointer(ownerRule)
+	coll.ListRule = new(ownerRule)
+	coll.ViewRule = new(ownerRule)
+	coll.CreateRule = new(ownerRule)
+	coll.UpdateRule = new(ownerRule)
+	coll.DeleteRule = new(ownerRule)
 
 	coll.RemoveIndex(oldIndex)
 	coll.AddIndex(newIndex, true, "user, name", "")
@@ -142,11 +141,11 @@ func unlockNamedEntityOwnership(app core.App, collectionName, oldIndex, newIndex
 	}
 
 	authRule := "@request.auth.id != ''"
-	coll.ListRule = types.Pointer(authRule)
-	coll.ViewRule = types.Pointer(authRule)
-	coll.CreateRule = types.Pointer(authRule)
-	coll.UpdateRule = types.Pointer(authRule)
-	coll.DeleteRule = types.Pointer(authRule)
+	coll.ListRule = new(authRule)
+	coll.ViewRule = new(authRule)
+	coll.CreateRule = new(authRule)
+	coll.UpdateRule = new(authRule)
+	coll.DeleteRule = new(authRule)
 
 	if f := coll.Fields.GetByName("user"); f != nil {
 		coll.Fields.RemoveById(f.GetId())

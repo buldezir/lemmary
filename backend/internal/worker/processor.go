@@ -52,11 +52,7 @@ func Register(app core.App, rt *config.Runtime, backfill *Backfiller, concurrenc
 	p.registerHooks()
 
 	cronExpr := config.WorkerCronFromEnv()
-	app.Cron().MustAdd("process_pending_jobs", cronExpr, func() {
-		if err := p.processNextPending(); err != nil {
-			app.Logger().Error("cron error", slog.Any("error", err))
-		}
-	})
+	app.Cron().MustAdd("process_pending_jobs", cronExpr, p.fanOut)
 
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 		p.recoverStaleRunningJobs()
@@ -127,8 +123,7 @@ func (p *Processor) registerHooks() {
 			record.Set("processing_status", models.DocStatusPending)
 		}
 		if err := duplicates.AssignChecksumFromUpload(e.App, record); err != nil {
-			var dupErr *duplicates.ErrDuplicate
-			if errors.As(err, &dupErr) {
+			if dupErr, ok := errors.AsType[*duplicates.ErrDuplicate](err); ok {
 				return router.NewBadRequestError(dupErr.Error(), map[string]any{
 					"duplicate_of": dupErr.ExistingID,
 				})
@@ -278,12 +273,10 @@ func (p *Processor) releaseJob(jobID string) {
 // single drain would work through serially.
 func (p *Processor) fanOut() {
 	var wg sync.WaitGroup
-	for i := 0; i < p.limit; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range p.limit {
+		wg.Go(func() {
 			p.drainPending()
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -429,11 +422,6 @@ func providersReady(snap config.Snapshot) error {
 	if snap.AI == nil {
 		return fmt.Errorf("AI extractor is not configured; update Settings")
 	}
-	return nil
-}
-
-func (p *Processor) processNextPending() error {
-	p.fanOut()
 	return nil
 }
 

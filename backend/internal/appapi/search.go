@@ -348,7 +348,7 @@ func persistSearchTurn(app core.App, t searchTurn, reply string, hits []ai.Docum
 		app.Logger().Error("search persist failed", slog.Any("error", err))
 		discardEmptySession(app, t.opened)
 		return searchResponse{
-			Message:   unsavedMessage(chat.RoleAssistant, reply, hits),
+			Message:   unsavedMessage(reply, hits),
 			Documents: hits,
 			Saved:     false,
 			Detail:    "This answer could not be saved, so the chat will not appear in your history.",

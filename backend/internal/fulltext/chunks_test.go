@@ -7,7 +7,6 @@ import (
 	"errors"
 	"math"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -415,7 +414,7 @@ func TestVectorSpecChangeWipesOnlyTheChunkIndex(t *testing.T) {
 	}
 
 	mustRebuildChunks(t, idx)
-	version, err := os.ReadFile(filepath.Join(idx.chunkVersionPath))
+	version, err := os.ReadFile(idx.chunkVersionPath)
 	if err != nil {
 		t.Fatalf("version file: %v", err)
 	}

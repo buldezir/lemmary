@@ -45,8 +45,6 @@ func settingsRecordForTest(t *testing.T) *core.Record {
 	return record
 }
 
-func strptr(s string) *string { return &s }
-
 // Changing the model or its length makes the recorded length a lie, and a
 // vector index sized from it would silently drop everything.
 func TestPatchResetsDimensionsWhenTheBindingChanges(t *testing.T) {
@@ -56,7 +54,7 @@ func TestPatchResetsDimensionsWhenTheBindingChanges(t *testing.T) {
 	record.Set("embedding_dims", 1536)
 
 	err := applySettingsPatch(nil, record, settingsPatchRequest{
-		EmbeddingModel: strptr("text-embedding-3-large"),
+		EmbeddingModel: new("text-embedding-3-large"),
 	})
 	if err != nil {
 		t.Fatalf("applySettingsPatch: %v", err)
@@ -73,7 +71,7 @@ func TestPatchKeepsDimensionsWhenTheBindingIsUnchanged(t *testing.T) {
 	record.Set("embedding_dims", 1536)
 
 	err := applySettingsPatch(nil, record, settingsPatchRequest{
-		EmbeddingModel: strptr("text-embedding-3-small"),
+		EmbeddingModel: new("text-embedding-3-small"),
 	})
 	if err != nil {
 		t.Fatalf("applySettingsPatch: %v", err)
@@ -90,7 +88,7 @@ func TestPatchRefusesAnEmbeddingProviderWithoutAModel(t *testing.T) {
 	record.Set("embedding_provider_id", "provider1")
 	record.Set("embedding_model", "text-embedding-3-small")
 
-	err := applySettingsPatch(nil, record, settingsPatchRequest{EmbeddingModel: strptr("  ")})
+	err := applySettingsPatch(nil, record, settingsPatchRequest{EmbeddingModel: new("  ")})
 	if err == nil {
 		t.Fatal("clearing the model while a provider is bound should be refused")
 	}
@@ -104,8 +102,8 @@ func TestPatchAllowsClearingTheWholeEmbeddingBinding(t *testing.T) {
 	record.Set("embedding_dims", 1536)
 
 	err := applySettingsPatch(nil, record, settingsPatchRequest{
-		EmbeddingProviderID: strptr(""),
-		EmbeddingModel:      strptr(""),
+		EmbeddingProviderID: new(""),
+		EmbeddingModel:      new(""),
 	})
 	if err != nil {
 		t.Fatalf("applySettingsPatch: %v", err)
@@ -120,10 +118,10 @@ func TestPatchAllowsClearingTheWholeEmbeddingBinding(t *testing.T) {
 func TestTouchesManagedCoversTheEmbeddingBinding(t *testing.T) {
 	t.Parallel()
 
-	if !(settingsPatchRequest{EmbeddingProviderID: strptr("provider1")}).touchesManaged() {
+	if !(settingsPatchRequest{EmbeddingProviderID: new("provider1")}).touchesManaged() {
 		t.Fatal("embedding_provider_id must count as managed")
 	}
-	if !(settingsPatchRequest{EmbeddingModel: strptr("m")}).touchesManaged() {
+	if !(settingsPatchRequest{EmbeddingModel: new("m")}).touchesManaged() {
 		t.Fatal("embedding_model must count as managed")
 	}
 	// The tenant-owned fields still are not.
@@ -142,8 +140,8 @@ func TestPatchResearchBindingMayBeEmptyAndIsManaged(t *testing.T) {
 	record.Set("extract_model", "small-model")
 
 	err := applySettingsPatch(nil, record, settingsPatchRequest{
-		ResearchProviderID: strptr(""),
-		ResearchModel:      strptr(""),
+		ResearchProviderID: new(""),
+		ResearchModel:      new(""),
 	})
 	if err != nil {
 		t.Fatalf("applySettingsPatch: %v", err)
@@ -152,26 +150,26 @@ func TestPatchResearchBindingMayBeEmptyAndIsManaged(t *testing.T) {
 		t.Fatalf("research binding = %v / %v", record.Get("research_provider_id"), record.Get("research_model"))
 	}
 	// A model with no provider never runs, and Settings would still show it.
-	if err := applySettingsPatch(nil, record, settingsPatchRequest{ResearchModel: strptr("big-model")}); err == nil {
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{ResearchModel: new("big-model")}); err == nil {
 		t.Fatal("a research model without a provider must be refused")
 	}
 	record.Set("research_model", "")
 
-	if err := applySettingsPatch(nil, record, settingsPatchRequest{ExtractModel: strptr("")}); err == nil {
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{ExtractModel: new("")}); err == nil {
 		t.Fatal("an empty general model must be refused")
 	}
 	// A provider with no model would read as bound and quietly run research on
 	// the general model. validateProviderID is skipped by a nil app only for an
 	// empty id, so the provider is set on the record directly.
 	record.Set("research_provider_id", "provider1")
-	if err := applySettingsPatch(nil, record, settingsPatchRequest{ResearchModel: strptr("")}); err == nil {
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{ResearchModel: new("")}); err == nil {
 		t.Fatal("a research provider without a model must be refused")
 	}
 
-	if !(settingsPatchRequest{ResearchProviderID: strptr("provider1")}).touchesManaged() {
+	if !(settingsPatchRequest{ResearchProviderID: new("provider1")}).touchesManaged() {
 		t.Fatal("research_provider_id must count as managed")
 	}
-	if !(settingsPatchRequest{ResearchModel: strptr("m")}).touchesManaged() {
+	if !(settingsPatchRequest{ResearchModel: new("m")}).touchesManaged() {
 		t.Fatal("research_model must count as managed")
 	}
 
@@ -260,7 +258,7 @@ func TestPatchTurnsAlwaysRequireReviewOnAndOff(t *testing.T) {
 	record := settingsRecordForTest(t)
 
 	if err := applySettingsPatch(nil, record, settingsPatchRequest{
-		AlwaysRequireReview: boolptr(true),
+		AlwaysRequireReview: new(true),
 	}); err != nil {
 		t.Fatalf("applySettingsPatch: %v", err)
 	}
@@ -269,7 +267,7 @@ func TestPatchTurnsAlwaysRequireReviewOnAndOff(t *testing.T) {
 	}
 
 	if err := applySettingsPatch(nil, record, settingsPatchRequest{
-		AlwaysRequireReview: boolptr(false),
+		AlwaysRequireReview: new(false),
 	}); err != nil {
 		t.Fatalf("applySettingsPatch: %v", err)
 	}
@@ -282,33 +280,29 @@ func TestPatchTurnsAlwaysRequireReviewOnAndOff(t *testing.T) {
 // managed field fails the whole PATCH with a 403.
 func TestAlwaysRequireReviewIsNotAManagedSetting(t *testing.T) {
 	t.Parallel()
-	if (settingsPatchRequest{AlwaysRequireReview: boolptr(true)}).touchesManaged() {
+	if (settingsPatchRequest{AlwaysRequireReview: new(true)}).touchesManaged() {
 		t.Fatal("always_require_review counts as managed; a hosted tenant could not set it")
 	}
 }
-
-func boolptr(b bool) *bool { return &b }
-
-func intptr(i int) *int { return &i }
 
 func TestPatchIngestDirFields(t *testing.T) {
 	t.Parallel()
 	record := settingsRecordForTest(t)
 
 	for _, bad := range []int{0, 45, 90, 420, 1441} {
-		if err := applySettingsPatch(nil, record, settingsPatchRequest{IngestDirIntervalMin: intptr(bad)}); err == nil {
+		if err := applySettingsPatch(nil, record, settingsPatchRequest{IngestDirIntervalMin: new(bad)}); err == nil {
 			t.Fatalf("expected interval %d to be refused: a cron step cannot space it evenly", bad)
 		}
 	}
 	for _, good := range []int{1, 30, 60, 180, 1440} {
-		if err := applySettingsPatch(nil, record, settingsPatchRequest{IngestDirIntervalMin: intptr(good)}); err != nil {
+		if err := applySettingsPatch(nil, record, settingsPatchRequest{IngestDirIntervalMin: new(good)}); err != nil {
 			t.Fatalf("interval %d: %v", good, err)
 		}
 	}
 	err := applySettingsPatch(nil, record, settingsPatchRequest{
-		IngestDirOwner:          strptr("  user00000000001 "),
-		IngestDirIntervalMin:    intptr(15),
-		IngestDirDeleteOriginal: boolptr(true),
+		IngestDirOwner:          new("  user00000000001 "),
+		IngestDirIntervalMin:    new(15),
+		IngestDirDeleteOriginal: new(true),
 	})
 	if err != nil {
 		t.Fatalf("applySettingsPatch: %v", err)
@@ -322,7 +316,7 @@ func TestPatchIngestDirFields(t *testing.T) {
 	if !record.GetBool("ingest_dir_delete_original") {
 		t.Fatal("ingest_dir_delete_original not stored")
 	}
-	if (settingsPatchRequest{IngestDirDeleteOriginal: boolptr(true)}).touchesManaged() {
+	if (settingsPatchRequest{IngestDirDeleteOriginal: new(true)}).touchesManaged() {
 		t.Fatal("ingest_dir fields are tenant-owned; a hosted tenant must be able to set them")
 	}
 }
@@ -332,10 +326,10 @@ func TestPatchIMAPFields(t *testing.T) {
 	record := settingsRecordForTest(t)
 
 	err := applySettingsPatch(nil, record, settingsPatchRequest{
-		IMAPHost:     strptr(" imap.example.com "),
-		IMAPSecurity: strptr("starttls"),
-		IMAPUsername: strptr("docs@example.com"),
-		IMAPPassword: strptr("s3cret"),
+		IMAPHost:     new(" imap.example.com "),
+		IMAPSecurity: new("starttls"),
+		IMAPUsername: new("docs@example.com"),
+		IMAPPassword: new("s3cret"),
 	})
 	if err != nil {
 		t.Fatalf("applySettingsPatch: %v", err)
@@ -343,7 +337,7 @@ func TestPatchIMAPFields(t *testing.T) {
 	if got := record.GetString("imap_host"); got != "imap.example.com" {
 		t.Fatalf("imap_host = %q", got)
 	}
-	if err := applySettingsPatch(nil, record, settingsPatchRequest{IMAPPassword: strptr("")}); err != nil {
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{IMAPPassword: new("")}); err != nil {
 		t.Fatalf("blank password: %v", err)
 	}
 	if got := record.GetString("imap_password"); got != "s3cret" {
@@ -351,10 +345,10 @@ func TestPatchIMAPFields(t *testing.T) {
 	}
 
 	for _, bad := range []settingsPatchRequest{
-		{IMAPSecurity: strptr("none")},
-		{IMAPAfterConsume: strptr("archive")},
-		{IMAPAfterConsume: strptr("move")},
-		{IMAPAfterConsume: strptr("move"), IMAPMoveFolder: strptr("inbox")},
+		{IMAPSecurity: new("none")},
+		{IMAPAfterConsume: new("archive")},
+		{IMAPAfterConsume: new("move")},
+		{IMAPAfterConsume: new("move"), IMAPMoveFolder: new("inbox")},
 	} {
 		if err := applySettingsPatch(nil, record, bad); err == nil {
 			t.Fatalf("expected %+v to be refused", bad)
@@ -363,8 +357,8 @@ func TestPatchIMAPFields(t *testing.T) {
 		record.Set("imap_move_folder", "")
 	}
 	err = applySettingsPatch(nil, record, settingsPatchRequest{
-		IMAPAfterConsume: strptr("move"),
-		IMAPMoveFolder:   strptr("Lemmary/Done"),
+		IMAPAfterConsume: new("move"),
+		IMAPMoveFolder:   new("Lemmary/Done"),
 	})
 	if err != nil {
 		t.Fatalf("move with a target: %v", err)
@@ -394,7 +388,7 @@ func TestPatchIMAPFields(t *testing.T) {
 	if strings.Contains(string(body), "s3cret") {
 		t.Fatalf("the password must never be returned: %s", body)
 	}
-	if (settingsPatchRequest{IMAPHost: strptr("x")}).touchesManaged() {
+	if (settingsPatchRequest{IMAPHost: new("x")}).touchesManaged() {
 		t.Fatal("imap fields are tenant-owned; a hosted tenant must be able to set them")
 	}
 }
@@ -406,14 +400,14 @@ func TestIMAPSinceMovesOnlyWhenTheMailboxChanges(t *testing.T) {
 	record := settingsRecordForTest(t)
 	since := func() time.Time { return record.GetDateTime("imap_since").Time() }
 
-	if err := applySettingsPatch(nil, record, settingsPatchRequest{IMAPUsername: strptr("docs")}); err != nil {
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{IMAPUsername: new("docs")}); err != nil {
 		t.Fatal(err)
 	}
 	if !since().IsZero() {
 		t.Fatal("imap_since set without a server")
 	}
 	before := time.Now().Add(-time.Second)
-	if err := applySettingsPatch(nil, record, settingsPatchRequest{IMAPHost: strptr("imap.example.com")}); err != nil {
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{IMAPHost: new("imap.example.com")}); err != nil {
 		t.Fatal(err)
 	}
 	first := since()
@@ -423,9 +417,9 @@ func TestIMAPSinceMovesOnlyWhenTheMailboxChanges(t *testing.T) {
 
 	record.Set("imap_since", first.Add(-time.Hour))
 	for _, same := range []settingsPatchRequest{
-		{IMAPPassword: strptr("new")},
-		{IMAPAfterConsume: strptr("delete")},
-		{IMAPHost: strptr("imap.example.com"), IMAPFolder: strptr("INBOX")},
+		{IMAPPassword: new("new")},
+		{IMAPAfterConsume: new("delete")},
+		{IMAPHost: new("imap.example.com"), IMAPFolder: new("INBOX")},
 	} {
 		if err := applySettingsPatch(nil, record, same); err != nil {
 			t.Fatal(err)
@@ -434,7 +428,7 @@ func TestIMAPSinceMovesOnlyWhenTheMailboxChanges(t *testing.T) {
 			t.Fatalf("%+v moved imap_since", same)
 		}
 	}
-	if err := applySettingsPatch(nil, record, settingsPatchRequest{IMAPFolder: strptr("Scans")}); err != nil {
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{IMAPFolder: new("Scans")}); err != nil {
 		t.Fatal(err)
 	}
 	if !since().After(first.Add(-time.Hour)) {
@@ -509,8 +503,8 @@ func TestBrandingPatchValidatesNameAndAccent(t *testing.T) {
 	t.Parallel()
 
 	name, accent, err := brandingPatch(settingsPatchRequest{
-		AppName: strptr("  Archive  "),
-		Accent:  strptr("#6E2620"),
+		AppName: new("  Archive  "),
+		Accent:  new("#6E2620"),
 	})
 	if err != nil {
 		t.Fatalf("valid branding rejected: %v", err)
@@ -528,15 +522,15 @@ func TestBrandingPatchValidatesNameAndAccent(t *testing.T) {
 	}
 
 	// Empty clears the accent back to the built-in one.
-	if _, accent, err = brandingPatch(settingsPatchRequest{Accent: strptr(" ")}); err != nil || accent == nil || *accent != "" {
+	if _, accent, err = brandingPatch(settingsPatchRequest{Accent: new(" ")}); err != nil || accent == nil || *accent != "" {
 		t.Fatalf("blank accent = %v (%v), want cleared", accent, err)
 	}
 
-	if _, _, err = brandingPatch(settingsPatchRequest{AppName: strptr("   ")}); err == nil {
+	if _, _, err = brandingPatch(settingsPatchRequest{AppName: new("   ")}); err == nil {
 		t.Fatal("empty app_name must be refused: PocketBase requires one")
 	}
 	for _, bad := range []string{"6e2620", "#6e262", "#ggmmbb", "rebeccapurple"} {
-		if _, _, err = brandingPatch(settingsPatchRequest{Accent: strptr(bad)}); err == nil {
+		if _, _, err = brandingPatch(settingsPatchRequest{Accent: new(bad)}); err == nil {
 			t.Fatalf("accent %q must be refused", bad)
 		}
 	}
@@ -545,7 +539,7 @@ func TestBrandingPatchValidatesNameAndAccent(t *testing.T) {
 // Branding is tenant-owned: a managed instance sets the models, not the name.
 func TestBrandingIsNotAManagedSetting(t *testing.T) {
 	t.Parallel()
-	if (settingsPatchRequest{AppName: strptr("Archive"), Accent: strptr("#000000")}).touchesManaged() {
+	if (settingsPatchRequest{AppName: new("Archive"), Accent: new("#000000")}).touchesManaged() {
 		t.Fatal("app_name and accent are tenant-owned")
 	}
 }

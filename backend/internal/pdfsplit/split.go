@@ -211,8 +211,7 @@ func applyPart(
 	record.Set("processing_status", models.DocStatusPending)
 
 	if err := duplicates.NormalizeSaveError(app, record, app.Save(record)); err != nil {
-		var dup *duplicates.ErrDuplicate
-		if errors.As(err, &dup) {
+		if _, ok := errors.AsType[*duplicates.ErrDuplicate](err); ok {
 			// Already in the library — re-splitting the same scan is a normal
 			// thing to do, so it is not a failure.
 			result.SkippedDuplicates++

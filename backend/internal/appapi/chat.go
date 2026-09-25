@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -176,8 +177,8 @@ func writeChatSessionError(e *core.RequestEvent, app core.App, err error) error 
 }
 
 // unsavedMessage renders a reply that was produced but could not be stored.
-func unsavedMessage(role, content string, hits []ai.DocumentHit) chat.MessageInfo {
-	return chat.MessageInfo{Role: role, Content: content, Documents: hits}
+func unsavedMessage(content string, hits []ai.DocumentHit) chat.MessageInfo {
+	return chat.MessageInfo{Role: chat.RoleAssistant, Content: content, Documents: hits}
 }
 
 // latestAssistantMessage falls back to an id-less view rather than failing the
@@ -191,14 +192,13 @@ func latestAssistantMessage(app core.App, sessionID, runID, reply string, hits [
 		// calls, and the fold is what keeps one of those from being mistaken
 		// for the answer.
 		messages := chat.VisibleMessages(records)
-		for i := len(messages) - 1; i >= 0; i-- {
-			info := messages[i]
+		for _, info := range slices.Backward(messages) {
 			if info.Role == chat.RoleAssistant && (runID == "" || info.RunID == runID) {
 				return info
 			}
 		}
 	}
-	return unsavedMessage(chat.RoleAssistant, reply, hits)
+	return unsavedMessage(reply, hits)
 }
 
 func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {
@@ -241,11 +241,11 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 			return writeOwnerError(e, err)
 		}
 
-		session, history, err := loadChatHistory(app, ownerID, req.SessionID, chat.KindDocument, documentID)
+		session, messages, err := loadChatHistory(app, ownerID, req.SessionID, chat.KindDocument, documentID)
 		if err != nil {
 			return writeChatSessionError(e, app, err)
 		}
-		messages := append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content})
+		messages = append(messages, ai.ChatMessage{Role: chat.RoleUser, Content: content})
 
 		// After the session is loaded, because a continued conversation's stored
 		// binding is what decides, not the request's.
@@ -313,7 +313,7 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 			app.Logger().Error("document chat persist failed", "document", documentID, slog.Any("error", err))
 			discardEmptySession(app, opened)
 			return writeJSON(e, http.StatusOK, chatResponse{
-				Message: unsavedMessage(chat.RoleAssistant, reply, nil),
+				Message: unsavedMessage(reply, nil),
 				Saved:   false,
 			})
 		}

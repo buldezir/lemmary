@@ -61,10 +61,7 @@ const chatListPageSize = chat.MaxSessionsPerUser
 
 func parseChatListQuery(values url.Values, ownerID string) (chat.SessionQuery, int, int, error) {
 	page := positiveIntValue(values, "page", 1)
-	perPage := positiveIntValue(values, "perPage", chatListPageSize)
-	if perPage > chatListPageSize {
-		perPage = chatListPageSize
-	}
+	perPage := min(positiveIntValue(values, "perPage", chatListPageSize), chatListPageSize)
 
 	q := chat.SessionQuery{
 		UserID:     ownerID,
@@ -181,8 +178,8 @@ func handleGetChat(app core.App) func(*core.RequestEvent) error {
 		}
 
 		return writeJSON(e, http.StatusOK, chatSessionDetail{
-			Session:   info,
-			Messages:  messages,
+			Session:    info,
+			Messages:   messages,
 			Truncated:  truncated,
 			Running:    sessionRunning(session.Id),
 			Unfinished: unfinished,
@@ -276,8 +273,7 @@ func ownedChatSession(app core.App, e *core.RequestEvent) (*core.Record, error) 
 // writeChatOwnerOrSessionError keeps the owner-resolution failures separate
 // from the not-found ones when both can reach the same handler.
 func writeChatOwnerOrSessionError(e *core.RequestEvent, app core.App, err error) error {
-	var clientErr *ownerClientError
-	if errors.As(err, &clientErr) {
+	if _, ok := errors.AsType[*ownerClientError](err); ok {
 		return writeOwnerError(e, err)
 	}
 	return writeChatSessionError(e, app, err)

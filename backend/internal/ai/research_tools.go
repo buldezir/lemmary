@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -481,12 +482,7 @@ func (a *openAISearchAgent) runCountTool(
 }
 
 func validGroupBy(v string) bool {
-	for _, g := range ValidGroupBy {
-		if g == v {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ValidGroupBy, v)
 }
 
 func strutilFirstNonEmpty(values ...string) string {

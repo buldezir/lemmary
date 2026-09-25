@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -84,10 +85,8 @@ func (m *Manifest) hasDatabases() bool {
 		return false
 	}
 	for _, e := range m.Entries {
-		for _, db := range databaseFiles {
-			if e.Path == db {
-				return true
-			}
+		if slices.Contains(databaseFiles, e.Path) {
+			return true
 		}
 	}
 	return false
@@ -191,7 +190,7 @@ func readCurrent(dir string, key crypt.Key) (uint64, bool) {
 	}
 	var gen uint64
 	var mac string
-	for _, line := range strings.Split(string(b), "\n") {
+	for line := range strings.SplitSeq(string(b), "\n") {
 		k, v, ok := strings.Cut(strings.TrimSpace(line), "=")
 		if !ok {
 			continue

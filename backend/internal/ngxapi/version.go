@@ -41,10 +41,10 @@ func checkAPIVersion(e *core.RequestEvent) error {
 }
 
 func parseAcceptVersion(accept string) int {
-	for _, part := range strings.Split(accept, ";") {
+	for part := range strings.SplitSeq(accept, ";") {
 		part = strings.TrimSpace(part)
-		if strings.HasPrefix(part, "version=") {
-			v, _ := strconv.Atoi(strings.TrimPrefix(part, "version="))
+		if after, ok := strings.CutPrefix(part, "version="); ok {
+			v, _ := strconv.Atoi(after)
 			return v
 		}
 	}

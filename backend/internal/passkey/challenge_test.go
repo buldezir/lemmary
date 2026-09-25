@@ -1,6 +1,7 @@
 package passkey
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -47,7 +48,7 @@ func TestChallengeIsSingleUse(t *testing.T) {
 	}
 	// Replaying a captured finish request must not find the challenge still
 	// sitting in the map.
-	if _, err := store.Consume(handle); err != ErrUnknownSession {
+	if _, err := store.Consume(handle); !errors.Is(err, ErrUnknownSession) {
 		t.Fatalf("second Consume error = %v, want ErrUnknownSession", err)
 	}
 }
@@ -56,7 +57,7 @@ func TestChallengeHandlesAreDistinct(t *testing.T) {
 	t.Parallel()
 	store := NewChallengeStore()
 	seen := map[string]bool{}
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		handle, err := store.Issue(testSession("abc"))
 		if err != nil {
 			t.Fatalf("Issue: %v", err)
@@ -71,10 +72,10 @@ func TestChallengeHandlesAreDistinct(t *testing.T) {
 func TestConsumeRejectsUnknownAndEmptyHandles(t *testing.T) {
 	t.Parallel()
 	store := NewChallengeStore()
-	if _, err := store.Consume(""); err != ErrUnknownSession {
+	if _, err := store.Consume(""); !errors.Is(err, ErrUnknownSession) {
 		t.Fatalf("empty handle error = %v, want ErrUnknownSession", err)
 	}
-	if _, err := store.Consume("not-a-real-handle"); err != ErrUnknownSession {
+	if _, err := store.Consume("not-a-real-handle"); !errors.Is(err, ErrUnknownSession) {
 		t.Fatalf("unknown handle error = %v, want ErrUnknownSession", err)
 	}
 }
@@ -94,7 +95,7 @@ func TestExpiredChallengeIsRejected(t *testing.T) {
 	store.entries[handle] = entry
 	store.mu.Unlock()
 
-	if _, err := store.Consume(handle); err != ErrUnknownSession {
+	if _, err := store.Consume(handle); !errors.Is(err, ErrUnknownSession) {
 		t.Fatalf("Consume error = %v, want ErrUnknownSession", err)
 	}
 }
@@ -124,12 +125,12 @@ func TestExpiredChallengesArePrunedOnIssue(t *testing.T) {
 func TestStoreIsCappedSoUnauthenticatedCallersCannotGrowItForever(t *testing.T) {
 	t.Parallel()
 	store := NewChallengeStore()
-	for i := 0; i < maxChallenges; i++ {
+	for i := range maxChallenges {
 		if _, err := store.Issue(testSession("abc")); err != nil {
 			t.Fatalf("Issue %d: %v", i, err)
 		}
 	}
-	if _, err := store.Issue(testSession("one too many")); err != ErrTooManyChallenges {
+	if _, err := store.Issue(testSession("one too many")); !errors.Is(err, ErrTooManyChallenges) {
 		t.Fatalf("error = %v, want ErrTooManyChallenges", err)
 	}
 	if got := store.Len(); got > maxChallenges {
@@ -147,8 +148,8 @@ func TestFloodCannotInvalidateACeremonyAlreadyUnderWay(t *testing.T) {
 		t.Fatalf("Issue: %v", err)
 	}
 	refused := 0
-	for i := 0; i < maxChallenges*2; i++ {
-		if _, err := store.Issue(testSession("flood")); err == ErrTooManyChallenges {
+	for range maxChallenges * 2 {
+		if _, err := store.Issue(testSession("flood")); errors.Is(err, ErrTooManyChallenges) {
 			refused++
 		}
 	}
@@ -171,12 +172,12 @@ func TestFloodCannotInvalidateACeremonyAlreadyUnderWay(t *testing.T) {
 func TestCapacityIsReleasedAsChallengesExpire(t *testing.T) {
 	t.Parallel()
 	store := NewChallengeStore()
-	for i := 0; i < maxChallenges; i++ {
+	for range maxChallenges {
 		if _, err := store.Issue(testSession("filler")); err != nil {
 			t.Fatalf("Issue: %v", err)
 		}
 	}
-	if _, err := store.Issue(testSession("blocked")); err != ErrTooManyChallenges {
+	if _, err := store.Issue(testSession("blocked")); !errors.Is(err, ErrTooManyChallenges) {
 		t.Fatalf("error = %v, want ErrTooManyChallenges", err)
 	}
 

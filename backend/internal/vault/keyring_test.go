@@ -214,7 +214,7 @@ func TestAddingAWrapDoesNotInvalidateOthers(t *testing.T) {
 	kr, mk, code := newTestKeyring(t, "user1", "hunter2")
 	cheapen(t, kr, mk, "user1", "hunter2")
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if err := kr.AddPassword(mk, "extra", "pw"); err != nil {
 			t.Fatalf("AddPassword: %v", err)
 		}

@@ -204,8 +204,7 @@ func applyEntry(
 
 	doc, err := restoreOne(app, collection, ownerUserID, mode, entry, files, resolver, budget)
 	if err != nil {
-		var dup *duplicates.ErrDuplicate
-		if errors.As(err, &dup) {
+		if _, ok := errors.AsType[*duplicates.ErrDuplicate](err); ok {
 			result.SkippedDuplicates++
 			return nil
 		}

@@ -362,7 +362,7 @@ func TestCrashAfterCurrentKeepsTheNewGeneration(t *testing.T) {
 // what keeps the flush interval independent of archive size.
 func TestFlushIsIncremental(t *testing.T) {
 	h := newHarness(t)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		h.write(fmt.Sprintf("storage/doc%d.pdf", i), fmt.Sprintf("%%PDF document number %d", i))
 	}
 	if err := h.v.Flush("first"); err != nil {
@@ -465,7 +465,7 @@ func TestFlushRefusedBeforeLoad(t *testing.T) {
 // than a genuine deletion.
 func TestShrinkGuard(t *testing.T) {
 	h := newHarness(t)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		h.write(fmt.Sprintf("storage/doc%d.pdf", i), fmt.Sprintf("%%PDF %d", i))
 	}
 	if err := h.v.Flush("baseline"); err != nil {
@@ -474,7 +474,7 @@ func TestShrinkGuard(t *testing.T) {
 	baseGen := h.v.Generation()
 
 	// Removing 6 of 12 entries leaves exactly half, which is allowed.
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		os.Remove(filepath.Join(h.workDir, fmt.Sprintf("storage/doc%d.pdf", i)))
 	}
 	if err := h.v.Flush("half"); err != nil {
@@ -807,7 +807,7 @@ func TestSameSizeRewriteOnAStaleTimestampIsCaptured(t *testing.T) {
 // archive.
 func TestUnchangedFilesUseTheCache(t *testing.T) {
 	h := newHarness(t)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		h.write(fmt.Sprintf("storage/doc%d.pdf", i), fmt.Sprintf("%%PDF body %d", i))
 	}
 	if err := h.v.Flush("first"); err != nil {
@@ -817,7 +817,7 @@ func TestUnchangedFilesUseTheCache(t *testing.T) {
 	// Backdate well beyond the granularity guard, as real files would be by the
 	// time of the next flush.
 	old := time.Now().Add(-time.Hour)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		p := filepath.Join(h.workDir, fmt.Sprintf("storage/doc%d.pdf", i))
 		if err := os.Chtimes(p, old, old); err != nil {
 			t.Fatalf("Chtimes: %v", err)

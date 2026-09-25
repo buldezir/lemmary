@@ -115,8 +115,7 @@ func (c *OpenAIClient) complete(ctx context.Context, params openai.ChatCompletio
 		}
 		return resp, err
 	}
-	switch opencode.Endpoint(c.sdk, string(params.Model)) {
-	case opencode.EndpointResponses:
+	if opencode.Endpoint(c.sdk, string(params.Model)) == opencode.EndpointResponses {
 		resp, err := CompleteViaResponses(ctx, c.client, c.logger, c.sdk, c.baseURL, params, extra...)
 		if err == nil {
 			logUsage(c.logger, string(params.Model), usageOf(resp), extra...)
@@ -331,8 +330,7 @@ func (c *OpenAIClient) completeStreaming(
 		}
 		return text, usage, err
 	}
-	switch opencode.Endpoint(c.sdk, string(params.Model)) {
-	case opencode.EndpointResponses:
+	if opencode.Endpoint(c.sdk, string(params.Model)) == opencode.EndpointResponses {
 		return c.completeStreamingViaResponses(ctx, params, onDelta, extra...)
 	}
 	// See Complete: the chatgpt SDK reaches /responses through its own

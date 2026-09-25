@@ -217,7 +217,7 @@ func retryDelay(attempts int) time.Duration {
 		attempts = 0
 	}
 	delay := retryBase
-	for i := 0; i < attempts; i++ {
+	for range attempts {
 		delay *= 2
 		if delay >= retryMax {
 			return retryMax

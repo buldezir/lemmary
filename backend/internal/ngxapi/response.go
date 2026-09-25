@@ -55,8 +55,7 @@ func notFound(e *core.RequestEvent, detail string) error {
 // validation problems stay 400s with their message, anything else (driver,
 // filesystem) becomes a logged generic 500 so internals never reach the client.
 func saveError(e *core.RequestEvent, err error) error {
-	var vErrs validation.Errors
-	if errors.As(err, &vErrs) {
+	if vErrs, ok := errors.AsType[validation.Errors](err); ok {
 		return badRequest(e, vErrs.Error())
 	}
 	var apiErr *router.ApiError

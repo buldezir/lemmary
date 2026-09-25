@@ -253,7 +253,7 @@ func TestResearchIsNotCappedAtFourRounds(t *testing.T) {
 	t.Parallel()
 	// A research run that keeps finding new documents must not stop early.
 	turns := make([]scriptedTurn, 0, 9)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		turns = append(turns, scriptedTurn{toolCalls: []scriptedToolCall{
 			{name: "search_documents", args: fmt.Sprintf(`{"query":"term %d"}`, i)},
 		}})
@@ -549,7 +549,7 @@ func TestResearchEstimatesWhenTheProviderCountsNothing(t *testing.T) {
 func TestResearchSuppressesRepeatedIdenticalCalls(t *testing.T) {
 	t.Parallel()
 	turns := make([]scriptedTurn, 0, 6)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		turns = append(turns, scriptedTurn{toolCalls: []scriptedToolCall{
 			{name: "search_documents", args: `{"query":"same"}`},
 		}})
@@ -579,7 +579,7 @@ func TestResearchStopsAfterStalledRounds(t *testing.T) {
 	t.Parallel()
 	// Distinct queries that surface nothing: the stall detector ends this.
 	turns := make([]scriptedTurn, 0, 30)
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		turns = append(turns, scriptedTurn{toolCalls: []scriptedToolCall{
 			{name: "search_documents", args: fmt.Sprintf(`{"query":"nothing %d"}`, i)},
 		}})
@@ -800,7 +800,7 @@ func assertValidJSON(t *testing.T, content string) map[string]any {
 
 func hitsWithPassages(n int, passageRunes int) []DocumentHit {
 	hits := make([]DocumentHit, 0, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		id := fmt.Sprintf("doc%d", i)
 		hit := DocumentHit{
 			ID:         id,
@@ -808,7 +808,7 @@ func hitsWithPassages(n int, passageRunes int) []DocumentHit {
 			Summary:    strings.Repeat("s", 200),
 			OCRSnippet: "…snippet…",
 		}
-		for p := 0; p < 3; p++ {
+		for range 3 {
 			hit.Passages = append(hit.Passages, Passage{Text: strings.Repeat("p", passageRunes)})
 		}
 		hits = append(hits, hit)

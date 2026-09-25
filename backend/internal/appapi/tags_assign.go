@@ -177,7 +177,7 @@ func tagAssignFields(names []string) ([]ai.SurveyField, error) {
 func resolveAssignedTags(answer string, byKey map[string]string) []string {
 	var ids []string
 	seen := map[string]struct{}{}
-	for _, raw := range strings.Split(answer, ",") {
+	for raw := range strings.SplitSeq(answer, ",") {
 		id, ok := byKey[worker.NormalizeTagKey(raw)]
 		if !ok {
 			continue
@@ -315,7 +315,7 @@ func assignTagsToDocument(app core.App, documentID string, tagIDs []string) (boo
 // tagIDsFromQuery reads the comma-separated tag_ids both assign routes take.
 func tagIDsFromQuery(e *core.RequestEvent) []string {
 	var ids []string
-	for _, raw := range strings.Split(e.Request.URL.Query().Get("tag_ids"), ",") {
+	for raw := range strings.SplitSeq(e.Request.URL.Query().Get("tag_ids"), ",") {
 		if id := strings.TrimSpace(raw); id != "" {
 			ids = append(ids, id)
 		}

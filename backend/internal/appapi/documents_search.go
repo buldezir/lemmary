@@ -59,10 +59,7 @@ func handleDocumentSearch(app core.App, rt *config.Runtime, idx *fulltext.Index)
 		}
 
 		page := queryPositiveInt(e, "page", 1)
-		perPage := queryPositiveInt(e, "perPage", defaultListPageSize)
-		if perPage > maxListPageSize {
-			perPage = maxListPageSize
-		}
+		perPage := min(queryPositiveInt(e, "perPage", defaultListPageSize), maxListPageSize)
 
 		userID := ""
 		if !e.HasSuperuserAuth() {
@@ -91,7 +88,7 @@ func handleDocumentSearch(app core.App, rt *config.Runtime, idx *fulltext.Index)
 		if corrID != "" && corrID != "all" {
 			query.CorrespondentIDs = []string{corrID}
 		}
-		for _, tagID := range strings.Split(e.Request.URL.Query().Get("tags"), ",") {
+		for tagID := range strings.SplitSeq(e.Request.URL.Query().Get("tags"), ",") {
 			if tagID = strings.TrimSpace(tagID); tagID != "" && tagID != "all" {
 				query.AllTagIDs = append(query.AllTagIDs, tagID)
 			}

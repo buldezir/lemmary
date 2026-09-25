@@ -150,7 +150,7 @@ func TestSelectPassagesQuotesTheBestChunks(t *testing.T) {
 
 	// At most three, however many chunks matched.
 	many := make([]ChunkHit, 0, 10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		many = append(many, ChunkHit{DocumentID: "d", Ord: i, Score: 1, Text: "passage " + strconv.Itoa(i)})
 	}
 	if got := SelectPassages(ocr, nil, many, 600); len(got) != MaxPassagesPerDocument {

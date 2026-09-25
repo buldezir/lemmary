@@ -41,10 +41,6 @@ func (i *Index) SearchChunks(ctx context.Context, q retrieval.ChunkQuery) ([]ret
 	if dims := i.VectorSpec().Dims; len(q.Vector) > 0 && len(q.Vector) != dims {
 		return nil, fmt.Errorf("%w: query has %d, index has %d", ErrVectorDims, len(q.Vector), dims)
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
 	k := q.K
 	if k <= 0 {
 		k = defaultChunkK

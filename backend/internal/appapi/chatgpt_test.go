@@ -17,9 +17,7 @@ func TestLoginPollsAreSerializedPerProvider(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			unlock := lockLogin(id)
 			defer unlock()
 			if inside.Add(1) > 1 {
@@ -28,7 +26,7 @@ func TestLoginPollsAreSerializedPerProvider(t *testing.T) {
 			// Long enough that an unserialized run overlaps reliably.
 			time.Sleep(2 * time.Millisecond)
 			inside.Add(-1)
-		}()
+		})
 	}
 	wg.Wait()
 

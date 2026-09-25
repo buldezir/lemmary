@@ -121,7 +121,7 @@ func ResolveRelyingParty(caller Caller, displayName string) (RelyingParty, error
 	}
 
 	if originsOverride != "" {
-		for _, origin := range strings.Split(originsOverride, ",") {
+		for origin := range strings.SplitSeq(originsOverride, ",") {
 			if origin = strings.TrimSpace(origin); origin != "" {
 				rp.Origins = append(rp.Origins, origin)
 			}

@@ -120,7 +120,7 @@ func formatDSMLToolResults(results []toolExecResult) string {
 	var b strings.Builder
 	b.WriteString("Tool results are below. Now answer the user in natural language only. Do not call tools again. Do not output DSML.\n")
 	for _, r := range results {
-		b.WriteString(fmt.Sprintf("\n<tool_result name=%q id=%q>\n%s\n</tool_result>\n", r.Name, r.ID, r.Content))
+		fmt.Fprintf(&b, "\n<tool_result name=%q id=%q>\n%s\n</tool_result>\n", r.Name, r.ID, r.Content)
 	}
 	return b.String()
 }

@@ -3,7 +3,6 @@ package migrations
 import (
 	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
-	"github.com/pocketbase/pocketbase/tools/types"
 
 	"lemmary/backend/internal/embedstore"
 )
@@ -31,7 +30,7 @@ func init() {
 			collection.Fields.Add(&core.TextField{Name: "embedding_model", Max: 200})
 		}
 		if collection.Fields.GetByName("embedding_dims") == nil {
-			collection.Fields.Add(&core.NumberField{Name: "embedding_dims", OnlyInt: true, Min: types.Pointer(0.0)})
+			collection.Fields.Add(&core.NumberField{Name: "embedding_dims", OnlyInt: true, Min: new(0.0)})
 		}
 		if err := app.Save(collection); err != nil {
 			return err

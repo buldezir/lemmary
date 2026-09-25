@@ -46,12 +46,8 @@ func ParseMode(raw string) (string, error) {
 	}
 }
 
-// Run allows only one import at a time per owner.
-func Run(app core.App, ownerUserID, baseURL, apiKey, mode string) (Result, error) {
-	return RunWithClient(app, ownerUserID, baseURL, apiKey, mode, nil)
-}
-
-// RunWithClient is like Run but accepts a prebuilt client (for tests).
+// RunWithClient allows only one import at a time per owner. A nil client is
+// built from baseURL and apiKey.
 func RunWithClient(app core.App, ownerUserID, baseURL, apiKey, mode string, client *Client) (Result, error) {
 	if err := registry.Acquire(ownerUserID); err != nil {
 		return Result{}, err
@@ -101,8 +97,7 @@ func runImport(app core.App, ownerUserID, baseURL, apiKey, mode string, client *
 	err = client.ForEachDocuments(func(docs []ngxDocument) error {
 		for _, doc := range docs {
 			if err := importOneDocument(app, client, ownerUserID, parsedMode, doc, tagMap, corrMap, typeMap); err != nil {
-				var dup *duplicates.ErrDuplicate
-				if errors.As(err, &dup) {
+				if _, ok := errors.AsType[*duplicates.ErrDuplicate](err); ok {
 					result.SkippedDuplicates++
 					continue
 				}
@@ -247,8 +242,7 @@ func importOneDocument(
 	}
 
 	if err := app.Save(record); err != nil {
-		var dup *duplicates.ErrDuplicate
-		if errors.As(err, &dup) {
+		if dup, ok := errors.AsType[*duplicates.ErrDuplicate](err); ok {
 			return dup
 		}
 		if dup := duplicates.ErrDuplicateFromAPIError(err); dup != nil {

@@ -150,7 +150,7 @@ func Complete(
 	if logger == nil {
 		logger = slog.Default()
 	}
-	req, err := messagesParamsFrom(sdk, opts, params)
+	req, err := messagesParamsFrom(opts, params)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +186,7 @@ func CompleteStreaming(
 		logger = slog.Default()
 	}
 	var usage openai.CompletionUsage
-	req, err := messagesParamsFrom(sdk, opts, params)
+	req, err := messagesParamsFrom(opts, params)
 	if err != nil {
 		return "", usage, err
 	}
@@ -235,7 +235,7 @@ func CompleteStreaming(
 	return b.String(), usage, stream.Err()
 }
 
-func messagesParamsFrom(sdk string, opts Options, params openai.ChatCompletionNewParams) (anthropic.MessageNewParams, error) {
+func messagesParamsFrom(opts Options, params openai.ChatCompletionNewParams) (anthropic.MessageNewParams, error) {
 	system, messages, err := messagesFrom(params.Messages)
 	if err != nil {
 		return anthropic.MessageNewParams{}, err

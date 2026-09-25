@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -39,12 +40,7 @@ func ValidCatalog(id string) bool {
 	if id == "" {
 		return true
 	}
-	for _, known := range CatalogProviders {
-		if known == id {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(CatalogProviders, id)
 }
 
 // DefaultCatalog is the catalogue an SDK is most likely served by. Only a

@@ -2,6 +2,7 @@ package passkey
 
 import (
 	"crypto/tls"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -38,7 +39,7 @@ func TestRPIDFromHost(t *testing.T) {
 			t.Parallel()
 			got, err := rpIDFromHost(tc.host)
 			if tc.wantErr != nil {
-				if err != tc.wantErr {
+				if !errors.Is(err, tc.wantErr) {
 					t.Fatalf("rpIDFromHost(%q) error = %v, want %v", tc.host, err, tc.wantErr)
 				}
 				return
@@ -177,7 +178,7 @@ func TestPlainHTTPOnARealHostnameIsRejected(t *testing.T) {
 	// http://lemmary.lan is not a secure context, so the browser would refuse the
 	// ceremony. Catching it here is the difference between an explanation and an
 	// unexplained NotAllowedError in the console.
-	if _, err := ResolveRelyingParty(Caller{Scheme: "http", Host: "lemmary.lan:8090"}, "Lemmary"); err != ErrInsecureContext {
+	if _, err := ResolveRelyingParty(Caller{Scheme: "http", Host: "lemmary.lan:8090"}, "Lemmary"); !errors.Is(err, ErrInsecureContext) {
 		t.Fatalf("error = %v, want ErrInsecureContext", err)
 	}
 }
