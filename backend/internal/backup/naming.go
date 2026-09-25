@@ -2,25 +2,38 @@ package backup
 
 import (
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
 
 // maxTitleBytes caps the sanitized title portion of an entry name, keeping
-// "[id] title.metadata.json" — the longest name a document produces — under the
-// 255-byte limit most filesystems impose on a single path element.
+// "date [id] title.metadata.json" — the longest name a document produces —
+// under the 255-byte limit most filesystems impose on a single path element.
 const maxTitleBytes = 120
 
-// EntryBase returns "[id] title" with a filesystem-safe title. Every entry a
-// document owns is this base plus a suffix, which is what groups them.
-func EntryBase(id, title string) string {
-	return "[" + id + "] " + SanitizeTitle(title)
+// EntryBase returns "YYYY-MM-DD [id] title" with a filesystem-safe title, or
+// "[id] title" for an undated document, so sorting the files by name sorts
+// them by date. Every entry a document owns is this base plus a suffix, which
+// is what groups them.
+func EntryBase(id, title, date string) string {
+	base := "[" + id + "] " + SanitizeTitle(title)
+	if date == "" {
+		return base
+	}
+	return date + " " + base
 }
 
-// ParseEntryBase splits "[id] title" back into its parts. It reports false for
-// a name that was not produced by EntryBase, so a stray entry in the archive is
+// ParseEntryBase splits an EntryBase back into id and title, with or without
+// the date, since archives from before it carry none. It reports false for a
+// name that was not produced by EntryBase, so a stray entry in the archive is
 // ignored rather than imported as a document with a nonsense id.
 func ParseEntryBase(base string) (id, title string, ok bool) {
+	if date, rest, found := strings.Cut(base, " "); found {
+		if _, err := time.Parse(time.DateOnly, date); err == nil {
+			base = rest
+		}
+	}
 	if !strings.HasPrefix(base, "[") {
 		return "", "", false
 	}

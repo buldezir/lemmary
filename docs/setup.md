@@ -303,13 +303,13 @@ Every entry lives flat under `lemmary-export/`, so the archive stays browsable b
 
 ```text
 lemmary-export/manifest.json
-lemmary-export/[<id>] <title><ext>              the original upload
-lemmary-export/[<id>] <title>.ocr.txt           extracted text (omitted when empty)
-lemmary-export/[<id>] <title>.metadata.json     titles, tags, dates, checksum, timestamps
-lemmary-export/[<id>] <title>.preview.png       generated thumbnail (omitted when there is none)
+lemmary-export/<date> [<id>] <title><ext>              the original upload
+lemmary-export/<date> [<id>] <title>.ocr.txt           extracted text (omitted when empty)
+lemmary-export/<date> [<id>] <title>.metadata.json     titles, tags, dates, checksum, timestamps
+lemmary-export/<date> [<id>] <title>.preview.png       generated thumbnail (omitted when there is none)
 ```
 
-`<title>` is sanitized and truncated so the longest name stays under the 255-byte limit filesystems put on one path element. Relations are written as **names**, not ids, because ids mean nothing in the instance the archive is restored into.
+`<date>` is the document's own date as `YYYY-MM-DD`, so sorting the files by name sorts them by date. It is left out for an undated document, whose entries sort after the dated ones. Archives from before the date prefix restore the same way. `<title>` is sanitized and truncated so the longest name stays under the 255-byte limit filesystems put on one path element. Relations are written as **names**, not ids, because ids mean nothing in the instance the archive is restored into.
 
 `manifest.json` is the table of contents: `format`, `version`, `exported_at`, `document_count`, the full `taxonomy`, and the exact entry paths of each document. Two things depend on it:
 

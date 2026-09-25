@@ -79,6 +79,7 @@ func handleExportDocuments(app core.App) func(*core.RequestEvent) error {
 			doc := backup.Document{
 				ID:               rec.Id,
 				Title:            strutil.FirstNonEmpty(rec.GetString("title"), rec.GetString("title_original"), "Untitled"),
+				Date:             truncateDate(rec.GetString("document_date")),
 				OriginalFilename: fileName,
 				OpenFile:         openStoredFile(app, fsys, rec, fileName),
 				OCRText:          rec.GetString("ocr_text"),

@@ -140,21 +140,27 @@ func TestWriteSkipsUnreadablePreviewOnly(t *testing.T) {
 }
 
 func TestEntryBaseRoundTrip(t *testing.T) {
-	if got := EntryBase("abc", "Invoice / Q1"); got != "[abc] Invoice Q1" {
+	if got := EntryBase("abc", "Invoice / Q1", ""); got != "[abc] Invoice Q1" {
 		t.Fatalf("got %q", got)
 	}
-	if got := EntryBase("abc", "  "); got != "[abc] Untitled" {
+	if got := EntryBase("abc", "  ", ""); got != "[abc] Untitled" {
+		t.Fatalf("got %q", got)
+	}
+	if got := EntryBase("abc", "Invoice Q1", "2024-07-15"); got != "2024-07-15 [abc] Invoice Q1" {
 		t.Fatalf("got %q", got)
 	}
 	if got := SanitizeTitle(`bad:name*?<>|`); got != "badname" {
 		t.Fatalf("got %q", got)
 	}
 
-	id, title, ok := ParseEntryBase(EntryBase("abc123", "Invoice Q1"))
-	if !ok || id != "abc123" || title != "Invoice Q1" {
-		t.Fatalf("id=%q title=%q ok=%v", id, title, ok)
+	// Dated and undated both parse: archives exported before the date carry none.
+	for _, date := range []string{"2024-07-15", ""} {
+		id, title, ok := ParseEntryBase(EntryBase("abc123", "Invoice Q1", date))
+		if !ok || id != "abc123" || title != "Invoice Q1" {
+			t.Fatalf("date %q: id=%q title=%q ok=%v", date, id, title, ok)
+		}
 	}
-	for _, bad := range []string{"", "no prefix", "[unclosed", "[] empty"} {
+	for _, bad := range []string{"", "no prefix", "[unclosed", "[] empty", "2024-07-15 no id", "2024-13-45 [abc] bad date"} {
 		if _, _, ok := ParseEntryBase(bad); ok {
 			t.Fatalf("ParseEntryBase(%q) should not parse", bad)
 		}
@@ -182,7 +188,7 @@ func TestSanitizeTitleTruncates(t *testing.T) {
 	}
 
 	// Entry with the longest sidecar suffix stays under 255 bytes.
-	metaName := EntryBase(strings.Repeat("x", 15), strings.Repeat("t", 300)) + MetadataSuffix
+	metaName := EntryBase(strings.Repeat("x", 15), strings.Repeat("t", 300), "2024-07-15") + MetadataSuffix
 	if len(metaName) > 255 {
 		t.Fatalf("metadata entry name len=%d exceeds 255: %q", len(metaName), metaName)
 	}
