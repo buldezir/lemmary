@@ -2,6 +2,8 @@ package appapi
 
 import (
 	"encoding/json"
+	"errors"
+	"net/http"
 	"slices"
 	"strings"
 	"testing"
@@ -498,7 +500,7 @@ func TestOneOfReadsAsASentence(t *testing.T) {
 }
 
 // Validated before the record is touched, so a value PocketBase would reject
-// cannot leave the rest of the patch applied.
+// is refused with a message an admin can read.
 func TestBrandingPatchValidatesNameAndAccent(t *testing.T) {
 	t.Parallel()
 
@@ -533,6 +535,58 @@ func TestBrandingPatchValidatesNameAndAccent(t *testing.T) {
 		if _, _, err = brandingPatch(settingsPatchRequest{Accent: new(bad)}); err == nil {
 			t.Fatalf("accent %q must be refused", bad)
 		}
+	}
+}
+
+func TestPatchSettingsSavesBrandingWithTheRest(t *testing.T) {
+	app := bootQueueApp(t)
+	rt := &config.Runtime{}
+
+	rec := callManaged(t, handlePatchSettings(app, rt), http.MethodPatch, "",
+		`{"worker_max_retries":7,"app_name":"Archive","accent":"#6e2620"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch = %d %s", rec.Code, rec.Body)
+	}
+	record, err := config.FindSettingsRecord(app, rt.Env())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := record.GetInt("worker_max_retries"); got != 7 {
+		t.Fatalf("worker_max_retries = %d, want 7", got)
+	}
+	if meta := app.Settings().Meta; meta.AppName != "Archive" || meta.AccentColor != "#6e2620" {
+		t.Fatalf("live branding = %q %q, want it applied once the request returns", meta.AppName, meta.AccentColor)
+	}
+}
+
+// A branding save that fails must take the settings half down with it: the
+// client is told the PATCH failed.
+func TestPatchSettingsRollsBackWhenBrandingFails(t *testing.T) {
+	app := bootQueueApp(t)
+	rt := &config.Runtime{}
+	before, err := config.FindSettingsRecord(app, rt.Env())
+	if err != nil {
+		t.Fatal(err)
+	}
+	nameBefore := app.Settings().Meta.AppName
+	app.OnModelUpdate(app.Settings().TableName()).BindFunc(func(*core.ModelEvent) error {
+		return errors.New("settings refused")
+	})
+
+	rec := callManaged(t, handlePatchSettings(app, rt), http.MethodPatch, "",
+		`{"worker_max_retries":7,"app_name":"Archive"}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "Failed to save the application name or accent color.") {
+		t.Fatalf("patch = %d %s, want the branding 400", rec.Code, rec.Body)
+	}
+	after, err := config.FindSettingsRecord(app, rt.Env())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := after.GetInt("worker_max_retries"), before.GetInt("worker_max_retries"); got != want {
+		t.Fatalf("worker_max_retries = %d, want %d: the settings half was committed", got, want)
+	}
+	if got := app.Settings().Meta.AppName; got != nameBefore {
+		t.Fatalf("live app name = %q, want %q after a failed save", got, nameBefore)
 	}
 }
 

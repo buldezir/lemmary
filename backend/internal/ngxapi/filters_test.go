@@ -3,6 +3,7 @@ package ngxapi
 import (
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -31,9 +32,9 @@ func seededIDs(byCollection map[string]map[int]string) *ngxIDs {
 func tagIDs() *ngxIDs {
 	return seededIDs(map[string]map[int]string{
 		"tags":           {11: "tagone", 22: "tagtwo"},
-		"document_types": {33: "typeone"},
-		"correspondents": {44: "corrone"},
-		"documents":      {55: "docone"},
+		"document_types": {33: "typeone", 34: "typetwo"},
+		"correspondents": {44: "corrone", 45: "corrtwo"},
+		"documents":      {55: "docone", 66: "doctwo"},
 	})
 }
 
@@ -66,6 +67,18 @@ func TestUnsupportedParamIsRefused(t *testing.T) {
 	}
 }
 
+// The error names one parameter, and which one must not depend on map order.
+func TestUnsupportedParamNamedIsTheFirstInOrder(t *testing.T) {
+	t.Parallel()
+	q := url.Values{"storage_path__id": {"3"}, "archive_serial_number": {"1"}, "custom_field_query": {"x"}}
+	for range 100 {
+		_, err := parseDocumentFiltersWith(tagIDs(), testOwnerID, q)
+		if err == nil || !strings.Contains(err.Error(), `"archive_serial_number"`) {
+			t.Fatalf("error = %v, want it to name archive_serial_number", err)
+		}
+	}
+}
+
 func TestPagingParamsAreNotFilters(t *testing.T) {
 	t.Parallel()
 	if _, err := parseDocumentFiltersWith(tagIDs(), testOwnerID, url.Values{
@@ -90,6 +103,35 @@ func TestUnresolvableIDInPositiveFilterIsImpossible(t *testing.T) {
 	} {
 		if f := mustParse(t, query); !f.impossible {
 			t.Fatalf("%s: impossible = false, want true", query)
+		}
+	}
+}
+
+// Django ANDs separate filter parameters, so the single and __in spellings of
+// one filter narrow each other rather than adding up.
+func TestSingleAndInIDFiltersIntersect(t *testing.T) {
+	t.Parallel()
+	docs := func(f documentFilters) []string { return f.ids }
+	types := func(f documentFilters) []string { return f.docTypes }
+	corrs := func(f documentFilters) []string { return f.corrs }
+	for _, c := range []struct {
+		query string
+		got   func(documentFilters) []string
+		want  []string // nil: nothing can match
+	}{
+		{"id=55&id__in=66", docs, nil},
+		{"id=55&id__in=55,66", docs, []string{"docone"}},
+		{"document_type__id=33&document_type__id__in=34", types, nil},
+		{"document_type__id=33&document_type__id__in=33,34", types, []string{"typeone"}},
+		{"correspondent__id=44&correspondent__id__in=45", corrs, nil},
+		{"correspondent__id=44&correspondent__id__in=44,45", corrs, []string{"corrone"}},
+	} {
+		f := mustParse(t, c.query)
+		if f.impossible != (c.want == nil) {
+			t.Fatalf("%s: impossible = %v, want %v", c.query, f.impossible, c.want == nil)
+		}
+		if c.want != nil && !slices.Equal(c.got(f), c.want) {
+			t.Fatalf("%s: ids = %v, want %v", c.query, c.got(f), c.want)
 		}
 	}
 }

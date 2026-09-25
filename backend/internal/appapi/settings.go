@@ -142,8 +142,8 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 		if rt.Managed() && req.touchesManaged() {
 			return writeError(e, http.StatusForbidden, managedMessage)
 		}
-		// Checked before the record is touched: branding is saved separately,
-		// so a name PocketBase would reject must not half-apply the patch.
+		// Checked before the record is touched, so a name PocketBase would reject
+		// reads as a validation error rather than a failed save.
 		appName, accent, err := brandingPatch(req)
 		if err != nil {
 			return writeError(e, http.StatusBadRequest, err.Error())
@@ -151,7 +151,8 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 
 		// Load + patch + save in one transaction: settings is a singleton saved
 		// whole, so two concurrent PATCHes would silently revert each other.
-		var patchErr error
+		// Branding is saved in it too, so a failure there rolls the rest back.
+		var patchErr, brandingErr error
 		err = app.RunInTransaction(func(txApp core.App) error {
 			record, err := config.FindSettingsRecord(txApp, rt.Env())
 			if err != nil {
@@ -161,31 +162,25 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 				patchErr = err
 				return err
 			}
-			return txApp.Save(record)
-		})
-		if err != nil {
-			if patchErr != nil {
-				return writeError(e, http.StatusBadRequest, patchErr.Error())
+			if err := txApp.Save(record); err != nil {
+				return err
 			}
+			brandingErr = saveBranding(txApp, appName, accent)
+			return brandingErr
+		})
+		switch {
+		case patchErr != nil:
+			return writeError(e, http.StatusBadRequest, patchErr.Error())
+		case brandingErr != nil:
+			app.Logger().Error("save branding failed", slog.Any("error", brandingErr))
+			return writeError(e, http.StatusBadRequest, "Failed to save the application name or accent color.")
+		case err != nil:
 			app.Logger().Error("save settings failed", slog.Any("error", err))
 			return writeError(e, http.StatusInternalServerError, "Failed to save settings.")
 		}
 
-		if appName != nil || accent != nil {
-			settings := app.Settings()
-			if appName != nil {
-				settings.Meta.AppName = *appName
-			}
-			if accent != nil {
-				settings.Meta.AccentColor = *accent
-			}
-			if err := app.Save(settings); err != nil {
-				app.Logger().Error("save branding failed", slog.Any("error", err))
-				return writeError(e, http.StatusBadRequest, "Failed to save the application name or accent color.")
-			}
-		}
-
-		// app.Save above fires OnRecordAfterUpdateSuccess, which reloads the runtime.
+		// The saves above fire their after-success hooks on commit: those reload
+		// the runtime and PocketBase's own settings.
 		return writeJSON(e, http.StatusOK, settingsResponseFor(app, rt.Snapshot().Cfg))
 	}
 }
@@ -224,6 +219,25 @@ func brandingPatch(req settingsPatchRequest) (appName *string, accent *string, e
 		accent = &value
 	}
 	return appName, accent, nil
+}
+
+// saveBranding saves a clone: the live settings must not change before the
+// transaction commits, and PocketBase reloads them from the row once it does.
+func saveBranding(app core.App, appName, accent *string) error {
+	if appName == nil && accent == nil {
+		return nil
+	}
+	settings, err := app.Settings().Clone()
+	if err != nil {
+		return err
+	}
+	if appName != nil {
+		settings.Meta.AppName = *appName
+	}
+	if accent != nil {
+		settings.Meta.AccentColor = *accent
+	}
+	return app.Save(settings)
 }
 
 var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)

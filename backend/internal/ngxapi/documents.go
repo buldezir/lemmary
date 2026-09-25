@@ -408,14 +408,11 @@ func applyUploadFields(app core.App, record *core.Record, form *multipart.Form, 
 	if created := firstFormValue(form, "created"); created != "" {
 		record.Set("document_date", createdDateOnly(created))
 	}
-	if correspondent := firstFormValue(form, "correspondent"); correspondent != "" {
-		if pbID := resolvePBRelationID(app, "correspondents", correspondent, authID); pbID != "" {
-			record.Set("correspondent", pbID)
-		}
-	}
-	if docType := firstFormValue(form, "document_type"); docType != "" {
-		if pbID := resolvePBRelationID(app, "document_types", docType, authID); pbID != "" {
-			record.Set("document_type", pbID)
+	for _, field := range []string{"correspondent", "document_type"} {
+		if value := firstFormValue(form, field); value != "" {
+			if err := setRelationField(app, record, field, value, authID); err != nil {
+				return err
+			}
 		}
 	}
 	if rawTagIDs := parseTagIDs(form.Value); len(rawTagIDs) > 0 {

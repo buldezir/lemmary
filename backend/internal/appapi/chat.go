@@ -319,9 +319,8 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 		}
 		reply, err := chatter.Chat(aiprovider.WithSession(chatCtx, session.Id), ocrText, messages, web)
 		if err != nil {
-			app.Logger().Error("document chat failed", "document", documentID, slog.Any("error", err))
 			discardEmptySession(app, opened)
-			return writeError(e, http.StatusBadGateway, ai.ProviderErrorMessage(err))
+			return writeRunError(runCtx, e, app.Logger().With("document", documentID), "document chat", err)
 		}
 
 		session, err = chat.AppendTurn(app, ownerID, session.Id, chat.Turn{

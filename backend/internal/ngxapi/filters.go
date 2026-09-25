@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -194,7 +195,7 @@ func parseDocumentFilters(app core.App, authID string, q url.Values) (documentFi
 func parseDocumentFiltersWith(ids *ngxIDs, ownerID int, q url.Values) (documentFilters, error) {
 	var f documentFilters
 
-	for name := range q {
+	for _, name := range slices.Sorted(maps.Keys(q)) {
 		if _, ok := handledParams[name]; !ok {
 			return f, fmt.Errorf("Unsupported filter %q.", name)
 		}
@@ -289,12 +290,11 @@ func parseRelationFilters(f *documentFilters, ids *ngxIDs, q url.Values) error {
 		{relationSpecs[1], &f.corrs, &f.corrsNone, &f.corrUnset},
 	} {
 		spec := target.spec
-		raw := append(csvValues(q, spec.single), csvValues(q, spec.in)...)
-		if len(raw) > 0 {
-			resolved, _, err := ids.resolveAll(spec.collection, raw)
-			if err != nil {
-				return err
-			}
+		resolved, given, err := resolveEveryIDParam(ids, spec.collection, q, spec.single, spec.in)
+		if err != nil {
+			return err
+		}
+		if given {
 			f.impossible = f.impossible || len(resolved) == 0
 			*target.dst = resolved
 		}
@@ -315,23 +315,36 @@ func parseRelationFilters(f *documentFilters, ids *ngxIDs, q url.Values) error {
 }
 
 func parseDocumentIDFilters(f *documentFilters, ids *ngxIDs, q url.Values) error {
-	if raw := csvValues(q, "id"); len(raw) > 0 {
-		resolved, _, err := ids.resolveAll("documents", raw)
-		if err != nil {
-			return err
-		}
+	resolved, given, err := resolveEveryIDParam(ids, "documents", q, documentIDParams...)
+	if err != nil {
+		return err
+	}
+	if given {
 		f.impossible = f.impossible || len(resolved) == 0
 		f.ids = resolved
 	}
-	if raw := csvValues(q, "id__in"); len(raw) > 0 {
-		resolved, _, err := ids.resolveAll("documents", raw)
-		if err != nil {
-			return err
-		}
-		f.impossible = f.impossible || len(resolved) == 0
-		f.ids = append(f.ids, resolved...)
-	}
 	return nil
+}
+
+// resolveEveryIDParam resolves each of names that the query carries and keeps
+// the ids present in all of them: Django ANDs separate filter parameters, so
+// id=1&id__in=1,2 means 1, not both. given is false when none of them is set.
+func resolveEveryIDParam(ids *ngxIDs, collection string, q url.Values, names ...string) (resolved []string, given bool, err error) {
+	for _, name := range names {
+		raw := csvValues(q, name)
+		if len(raw) == 0 {
+			continue
+		}
+		these, _, err := ids.resolveAll(collection, raw)
+		if err != nil {
+			return nil, false, err
+		}
+		if given {
+			these = intersectKeepingOrder(resolved, these)
+		}
+		resolved, given = these, true
+	}
+	return resolved, given, nil
 }
 
 // applyOwnerFilters answers the owner pill from the one fact this endpoint

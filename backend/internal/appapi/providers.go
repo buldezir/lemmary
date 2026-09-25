@@ -139,18 +139,12 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 		if req.APIKey != nil {
 			apiKey = strings.TrimSpace(*req.APIKey)
 		}
-		if apiKey == "" && aiprovider.RequiresAPIKey(sdk) {
-			return writeError(e, http.StatusBadRequest, "api_key is required.")
-		}
 		baseURL := ""
 		if req.BaseURL != nil {
 			baseURL = strings.TrimSpace(*req.BaseURL)
 		}
-		// A local OCR engine carries an address where a hosted one carries a
-		// credential, with no public endpoint to fall back on. NormalizeBaseURL
-		// fills in the compose default, so this only fires if one was blanked.
-		if aiprovider.RequiresBaseURL(sdk) && aiprovider.NormalizeBaseURL(sdk, baseURL) == "" {
-			return writeError(e, http.StatusBadRequest, "base_url is required for a local OCR provider.")
+		if missing := missingProviderField(sdk, apiKey, baseURL); missing != "" {
+			return writeError(e, http.StatusBadRequest, missing)
 		}
 
 		catalog, ok := catalogOrDefault(req.Catalog, sdk)
@@ -174,6 +168,20 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 		p := aiprovider.FromRecord(record)
 		return writeJSON(e, http.StatusCreated, providerJSON(p))
 	}
+}
+
+// missingProviderField is the 400 message for what an SDK cannot run without,
+// or empty. A local OCR engine carries an address where a hosted one carries a
+// credential, with no public endpoint to fall back on. NormalizeBaseURL fills in
+// the compose default, so the address only goes missing if one was blanked.
+func missingProviderField(sdk, apiKey, baseURL string) string {
+	if apiKey == "" && aiprovider.RequiresAPIKey(sdk) {
+		return "api_key is required."
+	}
+	if aiprovider.RequiresBaseURL(sdk) && aiprovider.NormalizeBaseURL(sdk, baseURL) == "" {
+		return "base_url is required for a local OCR provider."
+	}
+	return ""
 }
 
 // llmBindingFields are the bindings only an LLM SDK can serve. OCR is absent:
@@ -223,11 +231,13 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 			return writeError(e, http.StatusBadRequest, "Invalid request body.")
 		}
 		sdk := record.GetString("sdk")
+		switched := false
 		if req.SDK != nil {
 			sdk = strings.TrimSpace(*req.SDK)
 			if refused, err := refuseProviderSDKSwitch(e, app, rt, record.Id, sdk); refused {
 				return err
 			}
+			switched = sdk != record.GetString("sdk")
 			record.Set("sdk", sdk)
 		}
 		if req.Alias != nil {
@@ -240,14 +250,16 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 			}
 			record.Set("alias", alias)
 		}
-		if req.BaseURL != nil {
-			record.Set("base_url", aiprovider.NormalizeBaseURL(sdk, *req.BaseURL))
-		}
+		patchProviderBaseURL(record, req, sdk, switched)
 		if req.APIKey != nil && strings.TrimSpace(*req.APIKey) != "" {
 			record.Set("api_key", strings.TrimSpace(*req.APIKey))
 		}
 		if !patchProviderCatalog(record, req, sdk) {
 			return writeError(e, http.StatusBadRequest, invalidCatalogMessage)
+		}
+		// Only on a switch: a row stored before these rules must stay editable.
+		if missing := missingProviderField(sdk, record.GetString("api_key"), record.GetString("base_url")); switched && missing != "" {
+			return writeError(e, http.StatusBadRequest, missing)
 		}
 		if err := app.Save(record); err != nil {
 			return writeError(e, http.StatusBadRequest, "Failed to update provider: "+err.Error())
@@ -283,6 +295,17 @@ func refuseProviderSDKSwitch(e *core.RequestEvent, app core.App, rt *config.Runt
 		return true, writeError(e, http.StatusConflict, "Provider is bound to web search and must stay an SDK that can search the web ("+strings.Join(aiprovider.WebSearchSDKs(), ", ")+").")
 	}
 	return false, nil
+}
+
+// A URL belongs to the SDK it was entered for, so a switch that names none
+// starts from the new SDK's default.
+func patchProviderBaseURL(record *core.Record, req providerWriteRequest, sdk string, switched bool) {
+	switch {
+	case req.BaseURL != nil:
+		record.Set("base_url", aiprovider.NormalizeBaseURL(sdk, *req.BaseURL))
+	case switched:
+		record.Set("base_url", aiprovider.NormalizeBaseURL(sdk, ""))
+	}
 }
 
 // An explicit choice wins; otherwise an SDK change only fills a row that never

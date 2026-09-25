@@ -2,8 +2,15 @@ package appapi
 
 import (
 	"context"
+	"errors"
+	"log/slog"
+	"net/http"
 	"sync"
 	"time"
+
+	"github.com/pocketbase/pocketbase/core"
+
+	"lemmary/backend/internal/ai"
 )
 
 // detachedRunBudget is what ends a run, since the client going away no longer
@@ -15,6 +22,18 @@ const detachedRunBudget = 20 * time.Minute
 // runTooLongMessage names no provider: the provider is usually fine, and
 // pointing at it sends people to re-check a configuration that was never it.
 const runTooLongMessage = "This run took too long and was stopped."
+
+// writeRunError answers for a detached run that failed; what names the run in
+// the log. Running out of budget is not the provider failing, and saying so
+// sends the caller to check an AI configuration that is fine.
+func writeRunError(ctx context.Context, e *core.RequestEvent, logger *slog.Logger, what string, err error) error {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		logger.Warn(what+" ran out of budget", "budget", detachedRunBudget.String())
+		return writeError(e, http.StatusGatewayTimeout, runTooLongMessage)
+	}
+	logger.Error(what+" failed", slog.Any("error", err))
+	return writeError(e, http.StatusBadGateway, ai.ProviderErrorMessage(err))
+}
 
 // searchRuns holds the cancel func of every run in flight, also grouped per
 // conversation. It exists because a dropped connection and a pressed Cancel

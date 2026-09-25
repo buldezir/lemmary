@@ -402,12 +402,7 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 			if researchErr != nil {
 				// Nothing is discarded: what the run got through is stored, and
 				// the turn reads as unfinished.
-				if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-					app.Logger().Warn("research ran out of budget", "budget", detachedRunBudget.String())
-					return writeError(e, http.StatusGatewayTimeout, runTooLongMessage)
-				}
-				app.Logger().Error("research failed", slog.Any("error", researchErr))
-				return writeError(e, http.StatusBadGateway, ai.ProviderErrorMessage(researchErr))
+				return writeRunError(ctx, e, app.Logger(), "research", researchErr)
 			}
 			documents := result.Documents
 			if documents == nil {
@@ -421,14 +416,7 @@ func handleDeepSearch(app core.App, rt *config.Runtime, idx *fulltext.Index) fun
 		reply, hits, err := turn.agent.Search(turn.agentContext(ctx), turn.messages, turn.tools.tags, turn.tools.search, ai.SearchOptions{DenseRetrieval: turn.tools.dense})
 		if err != nil {
 			discardEmptySession(app, turn.opened)
-			// Running out of budget is not the provider failing, and saying so
-			// sends the caller to check an AI configuration that is fine.
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				app.Logger().Warn("deep search ran out of budget", "budget", detachedRunBudget.String())
-				return writeError(e, http.StatusGatewayTimeout, runTooLongMessage)
-			}
-			app.Logger().Error("deep search failed", slog.Any("error", err))
-			return writeError(e, http.StatusBadGateway, ai.ProviderErrorMessage(err))
+			return writeRunError(ctx, e, app.Logger(), "deep search", err)
 		}
 		if hits == nil {
 			hits = []ai.DocumentHit{}
