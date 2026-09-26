@@ -603,7 +603,7 @@ export function DocumentDetailPage() {
             : 'Reviewed; both were kept.'}
         </div>
       )}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <Link to={back} className="text-sm text-ink-soft hover:text-oxblood">
             &larr; {backLabel(back)}
@@ -622,7 +622,7 @@ export function DocumentDetailPage() {
           />
           <ProcessingStatus summary={summary} />
         </div>
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+        <div className="flex flex-wrap items-center gap-2 lg:shrink-0 lg:justify-end">
           {canPreview && (
             <button
               type="button"
@@ -987,17 +987,34 @@ export function DocumentDetailPage() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span id="ocr-text-label">OCR text</span>
                 {canTranslate && (
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    {ocrView !== 'original' && (
-                      <button
-                        type="button"
-                        disabled={translating}
-                        onClick={() => void onRetranslate()}
-                        className="rounded-xs border border-line-strong bg-surface px-3 py-1 text-xs font-medium text-ink-muted transition-colors hover:bg-bright disabled:opacity-50"
+                  <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                    {/* Kept in the layout while hidden, so on a narrow row its
+                        appearing cannot wrap the toggle onto another line. */}
+                    <button
+                      type="button"
+                      disabled={translating}
+                      onClick={() => void onRetranslate()}
+                      aria-label="Re-translate"
+                      title="Re-translate"
+                      className={`rounded-xs border border-line-strong bg-surface px-1.5 py-1 text-ink-muted transition-colors hover:bg-bright hover:text-ink disabled:opacity-50 ${
+                        ocrView === 'original' ? 'invisible' : ''
+                      }`}
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.75"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="h-4 w-4"
+                        aria-hidden="true"
                       >
-                        Re-translate
-                      </button>
-                    )}
+                        <polyline points="23 4 23 10 17 10" />
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                      </svg>
+                    </button>
                     <div role="group" aria-label="OCR text view" className="flex">
                       {(Object.keys(OCR_VIEW_LABELS) as OcrView[]).map((view) => (
                         <button
@@ -1006,6 +1023,8 @@ export function DocumentDetailPage() {
                           aria-pressed={ocrView === view}
                           onClick={() => setOcrView(view)}
                           className={`-ml-px border px-3 py-1 text-xs font-medium transition-colors first:ml-0 first:rounded-l-xs last:rounded-r-xs ${
+                            view === 'both' ? 'max-sm:hidden' : ''
+                          } ${view === 'translated' ? 'max-sm:rounded-r-xs' : ''} ${
                             ocrView === view
                               ? 'relative border-ink bg-ink text-paper hover:bg-oxblood'
                               : 'border-line-strong bg-surface text-ink-muted hover:bg-bright'

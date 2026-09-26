@@ -86,3 +86,16 @@ html {
     font-size: 16px;
   }
 }
+
+/*
+ * Mobile Safari draws date fields as its own control, which ignores the
+ * field's width and runs past narrow containers. Without that appearance the
+ * field is a plain box that honours width, and Tailwind's preflight keeps an
+ * empty one at full height. Only iOS supports -webkit-touch-callout, so desktop
+ * browsers keep their calendar button.
+ */
+@supports (-webkit-touch-callout: none) {
+  input[type='date'] {
+    appearance: none;
+  }
+}
