@@ -603,7 +603,7 @@ export function DocumentDetailPage() {
             : 'Reviewed; both were kept.'}
         </div>
       )}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <Link to={back} className="text-sm text-ink-soft hover:text-oxblood">
             &larr; {backLabel(back)}
@@ -622,7 +622,7 @@ export function DocumentDetailPage() {
           />
           <ProcessingStatus summary={summary} />
         </div>
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+        <div className="flex flex-wrap items-center gap-2 lg:shrink-0 lg:justify-end">
           {canPreview && (
             <button
               type="button"
