@@ -988,17 +988,32 @@ export function DocumentDetailPage() {
                 <span id="ocr-text-label">OCR text</span>
                 {canTranslate && (
                   <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-                    {/* Kept in the layout while hidden: on a phone the row only just
-                        fits, and a button appearing would wrap the toggle. */}
+                    {/* Kept in the layout while hidden, so on a narrow row its
+                        appearing cannot wrap the toggle onto another line. */}
                     <button
                       type="button"
                       disabled={translating}
                       onClick={() => void onRetranslate()}
-                      className={`rounded-xs border border-line-strong bg-surface px-3 py-1 text-xs font-medium text-ink-muted transition-colors hover:bg-bright disabled:opacity-50 ${
+                      aria-label="Re-translate"
+                      title="Re-translate"
+                      className={`rounded-xs border border-line-strong bg-surface px-1.5 py-1 text-ink-muted transition-colors hover:bg-bright hover:text-ink disabled:opacity-50 ${
                         ocrView === 'original' ? 'invisible' : ''
                       }`}
                     >
-                      Re-translate
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.75"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="h-4 w-4"
+                        aria-hidden="true"
+                      >
+                        <polyline points="23 4 23 10 17 10" />
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                      </svg>
                     </button>
                     <div role="group" aria-label="OCR text view" className="flex">
                       {(Object.keys(OCR_VIEW_LABELS) as OcrView[]).map((view) => (
