@@ -987,17 +987,19 @@ export function DocumentDetailPage() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span id="ocr-text-label">OCR text</span>
                 {canTranslate && (
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    {ocrView !== 'original' && (
-                      <button
-                        type="button"
-                        disabled={translating}
-                        onClick={() => void onRetranslate()}
-                        className="rounded-xs border border-line-strong bg-surface px-3 py-1 text-xs font-medium text-ink-muted transition-colors hover:bg-bright disabled:opacity-50"
-                      >
-                        Re-translate
-                      </button>
-                    )}
+                  <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                    {/* Kept in the layout while hidden: on a phone the row only just
+                        fits, and a button appearing would wrap the toggle. */}
+                    <button
+                      type="button"
+                      disabled={translating}
+                      onClick={() => void onRetranslate()}
+                      className={`rounded-xs border border-line-strong bg-surface px-3 py-1 text-xs font-medium text-ink-muted transition-colors hover:bg-bright disabled:opacity-50 ${
+                        ocrView === 'original' ? 'invisible' : ''
+                      }`}
+                    >
+                      Re-translate
+                    </button>
                     <div role="group" aria-label="OCR text view" className="flex">
                       {(Object.keys(OCR_VIEW_LABELS) as OcrView[]).map((view) => (
                         <button
