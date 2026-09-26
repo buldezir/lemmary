@@ -1006,6 +1006,8 @@ export function DocumentDetailPage() {
                           aria-pressed={ocrView === view}
                           onClick={() => setOcrView(view)}
                           className={`-ml-px border px-3 py-1 text-xs font-medium transition-colors first:ml-0 first:rounded-l-xs last:rounded-r-xs ${
+                            view === 'both' ? 'max-sm:hidden' : ''
+                          } ${view === 'translated' ? 'max-sm:rounded-r-xs' : ''} ${
                             ocrView === view
                               ? 'relative border-ink bg-ink text-paper hover:bg-oxblood'
                               : 'border-line-strong bg-surface text-ink-muted hover:bg-bright'
