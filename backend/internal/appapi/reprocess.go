@@ -34,7 +34,7 @@ func handlePostReprocessFailed(app core.App, rt *config.Runtime) func(*core.Requ
 
 		mode, err := reprocess.ParseMode(req.Mode)
 		if err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		}
 
 		// Refused rather than dropped, so a client sending a binding the
@@ -47,7 +47,7 @@ func handlePostReprocessFailed(app core.App, rt *config.Runtime) func(*core.Requ
 		// one job, so a bad provider id would otherwise surface only after the
 		// rest of the batch was queued.
 		if err := req.Overrides.Validate(app, rt.Snapshot().Cfg); err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		}
 
 		ownerID, err := resolveOwnerUserID(app, e)

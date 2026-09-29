@@ -1,3 +1,4 @@
+import { lang, t } from '../../i18n'
 import { apiFetch } from '../apiClient'
 
 /** One allowance and what is used against it. `limit` is absent when unlimited. */
@@ -31,7 +32,7 @@ export type LimitName =
 
 export function getLimits() {
   return apiFetch<InstanceLimits>('/api/app/limits', {
-    fallbackError: 'Failed to load instance limits',
+    fallbackError: t('limits.loadFailed'),
   })
 }
 
@@ -100,17 +101,17 @@ export function isExhausted(status: LimitStatus): boolean {
 export function boundedLimits(
   limits: InstanceLimits,
 ): Array<{ name: LimitName; label: string; status: LimitStatus; format: (n: number) => string }> {
-  const asCount = (n: number) => n.toLocaleString()
+  const asCount = (n: number) => n.toLocaleString(lang)
   const rows: Array<{
     name: LimitName
     label: string
     status: LimitStatus
     format: (n: number) => string
   }> = [
-    { name: 'documents', label: 'Documents', status: limits.documents, format: asCount },
-    { name: 'document_pages', label: 'Pages', status: limits.document_pages, format: asCount },
-    { name: 'storage_bytes', label: 'Storage', status: limits.storage_bytes, format: formatBytes },
-    { name: 'additional_users', label: 'Additional users', status: limits.additional_users, format: asCount },
+    { name: 'documents', label: t('limits.documents'), status: limits.documents, format: asCount },
+    { name: 'document_pages', label: t('limits.pages'), status: limits.document_pages, format: asCount },
+    { name: 'storage_bytes', label: t('limits.storage'), status: limits.storage_bytes, format: formatBytes },
+    { name: 'additional_users', label: t('limits.additionalUsers'), status: limits.additional_users, format: asCount },
   ]
   return rows.filter((row) => !row.status.unlimited)
 }

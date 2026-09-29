@@ -96,7 +96,7 @@ func handlePostEnsureUser(app core.App) func(*core.RequestEvent) error {
 
 		record, err := UpsertPairedUser(app, email, req.Password)
 		if err != nil {
-			return writeError(e, http.StatusBadRequest, "Failed to ensure user account: "+err.Error())
+			return writeErrorf(e, http.StatusBadRequest, "Failed to ensure user account: %v", err)
 		}
 
 		return writeJSON(e, http.StatusOK, map[string]string{

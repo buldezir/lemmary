@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 export type AsyncResult<T> = {
@@ -40,7 +41,7 @@ export function useAsync<T>(load: () => Promise<T>, deps: readonly unknown[]): A
       if (generation.current !== current) {
         return
       }
-      setError(err instanceof Error ? err.message : 'Failed to load')
+      setError(err instanceof Error ? err.message : t('useAsync.loadFailed'))
     } finally {
       if (generation.current === current && !isReload) {
         setLoading(false)

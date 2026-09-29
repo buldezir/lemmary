@@ -1,4 +1,5 @@
 import { useAppMeta } from '../hooks/useAppMeta'
+import { t } from '../i18n'
 
 /**
  * Lets one chat reach the public web. Renders nothing unless an operator has
@@ -30,11 +31,8 @@ export function WebSearchToggle({
         className="mt-0.5 cursor-pointer disabled:cursor-not-allowed"
       />
       <span>
-        Search the web
-        <span className="ml-2 text-xs text-ink-muted">
-          Looks things up online when your archive cannot answer. Costs a web-search credit
-          per lookup. Applies to this question only — the next one starts with it off again.
-        </span>
+        {t('webSearchToggle.label')}
+        <span className="ml-2 text-xs text-ink-muted">{t('webSearchToggle.hint')}</span>
       </span>
     </label>
   )

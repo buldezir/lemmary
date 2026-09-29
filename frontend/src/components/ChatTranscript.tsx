@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef } from 'react'
+import { t } from '../i18n'
 import { MarkdownContent } from './MarkdownContent'
 import type { ChatTurn } from '../lib/api/chats'
 
@@ -63,10 +64,10 @@ export function ChatTranscript({
     <div
       ref={scrollRef}
       role="log"
-      aria-label="Chat transcript"
+      aria-label={t('chatTranscript.label')}
       className="flex-1 space-y-4 overflow-y-auto p-4"
     >
-      {loading && <p className="text-sm text-ink-soft">Loading chat...</p>}
+      {loading && <p className="text-sm text-ink-soft">{t('chatTranscript.loading')}</p>}
       {!loading && turns.length === 0 && <p className="text-sm text-ink-faint">{emptyHint}</p>}
       {turns.map((turn) => (
         <div key={turn.id} className="space-y-3">

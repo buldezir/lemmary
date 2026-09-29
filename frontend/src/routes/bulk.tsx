@@ -17,6 +17,7 @@ import { DocumentFilters } from '../components/DocumentFilters'
 import { BulkDocumentCard } from '../components/BulkDocumentCard'
 import { Pagination } from '../components/Pagination'
 import { Button, selectClassName } from '../components/ui'
+import { lang, t } from '../i18n'
 
 export function BulkActionsPage() {
   const list = useDocumentList({ route: '/bulk', ownerOnly: true })
@@ -25,7 +26,7 @@ export function BulkActionsPage() {
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">Bulk Actions</h2>
+      <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{t('bulk.title')}</h2>
 
       <div className="flex flex-col gap-4">
         <DocumentFilters
@@ -40,7 +41,7 @@ export function BulkActionsPage() {
           owner={false}
         />
 
-        {loading && <p className="text-sm text-ink-soft">Loading documents...</p>}
+        {loading && <p className="text-sm text-ink-soft">{t('index.loading')}</p>}
         {(error || filterOptions.error) && (
           <p className="text-sm text-madder">{error || filterOptions.error}</p>
         )}
@@ -48,7 +49,7 @@ export function BulkActionsPage() {
         {!loading && documents.length === 0 && (
           <div className="rounded-none border border-line bg-surface py-10 text-center">
             <p className="text-sm text-ink-soft">
-              {hasActiveFilters(query) ? 'No documents match your filters.' : 'No documents yet.'}
+              {hasActiveFilters(query) ? t('index.noMatches') : t('index.empty')}
             </p>
           </div>
         )}
@@ -82,10 +83,6 @@ export function BulkActionsPage() {
   )
 }
 
-function plural(count: number) {
-  return count === 1 ? '1 document' : `${count} documents`
-}
-
 type Panel = 'tags' | 'untag' | 'share' | 'reprocess'
 
 function TagPicker({
@@ -108,7 +105,7 @@ function TagPicker({
   const byId = new Map(options.map((tag) => [tag.id, tag]))
   const pills = value.map((id) => {
     const tag = byId.get(id)
-    const name = tag?.name ?? 'Unknown tag'
+    const name = tag?.name ?? t('bulk.unknownTag')
     return (
       <span
         key={id}
@@ -118,7 +115,7 @@ function TagPicker({
         <span className="truncate">{name}</span>
         <button
           type="button"
-          aria-label={`Remove ${name}`}
+          aria-label={t('bulk.removeTag', { name })}
           className="shrink-0 text-ink-faint transition-colors hover:text-madder"
           onClick={() => onChange(value.filter((other) => other !== id))}
         >
@@ -132,7 +129,7 @@ function TagPicker({
     <Combobox
       value=""
       options={options.filter((tag) => !value.includes(tag.id)).map((tag) => ({ value: tag.id, label: tag.name }))}
-      placeholder={value.length > 0 ? 'Add a tag...' : placeholder}
+      placeholder={value.length > 0 ? t('bulk.addTag') : placeholder}
       ariaLabel={ariaLabel}
       bgClassName="bg-surface"
       className="w-full min-w-0 sm:w-80"
@@ -185,14 +182,14 @@ function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }
 
   const cancel = (
     <Button variant="secondary" size="sm" onClick={() => setPanel(null)}>
-      Cancel
+      {t('common.cancel')}
     </Button>
   )
 
   const allTags = [...tags, ...createdTags.filter((created) => !tags.some((tag) => tag.id === created.id))]
   const carriedTags = [
     ...new Map(selectedOnPage.flatMap((document) => document.expand?.tags ?? []).map((tag) => [tag.id, tag])).values(),
-  ].sort((a, b) => a.name.localeCompare(b.name))
+  ].sort((a, b) => a.name.localeCompare(b.name, lang))
   const untagPicked = untagIds.filter((id) => carriedTags.some((tag) => tag.id === id))
   const untagging = selectedOnPage.filter((document) =>
     (document.expand?.tags ?? []).some((tag) => untagPicked.includes(tag.id)),
@@ -205,38 +202,38 @@ function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }
       setCreatedTags((current) => [...current, tag])
       setTagIds((current) => (current.includes(tag.id) ? current : [...current, tag.id]))
     } catch (err) {
-      setTagError(err instanceof Error ? err.message : 'Could not create the tag')
+      setTagError(err instanceof Error ? err.message : t('bulk.createTagError'))
     }
   }
 
   return (
     <div
       role="toolbar"
-      aria-label="Bulk actions"
+      aria-label={t('bulk.toolbar')}
       className="sticky top-0 z-10 flex flex-col rounded-none border border-line bg-surface shadow-sm"
     >
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2">
         <span className="text-sm font-medium text-ink">
-          {none ? 'Select documents to act on them.' : `${selectedOnPage.length} selected`}
+          {none ? t('bulk.selectPrompt') : t('bulk.selected', { count: selectedOnPage.length })}
         </span>
         <div className="flex gap-2">
           <Button variant="secondary" size="xs" onClick={list.selectAll}>
-            Select all on page
+            {t('bulk.selectAll')}
           </Button>
           <Button variant="secondary" size="xs" disabled={none} onClick={list.clearSelection}>
-            Unselect all
+            {t('bulk.unselectAll')}
           </Button>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3">
-        <div role="group" aria-label="Review" className={groupClassName}>
+        <div role="group" aria-label={t('bulk.groupReview')} className={groupClassName}>
           <Button
             size="sm"
             disabled={busy || reviewable.length === 0}
             onClick={() => void list.onMarkReviewed(reviewable.map((document) => document.id))}
           >
-            Mark reviewed
+            {t('bulk.markReviewed')}
           </Button>
           <Button
             variant="secondary"
@@ -245,22 +242,22 @@ function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }
             onClick={() =>
               void run(async () => {
                 await markDocumentsUnreviewed(reviewed.map((document) => document.id))
-                return `Marked ${plural(reviewed.length)} unreviewed.`
-              }, 'Could not mark unreviewed')
+                return t('bulk.markedUnreviewed', { count: reviewed.length })
+              }, t('bulk.markUnreviewedError'))
             }
           >
-            Mark unreviewed
+            {t('bulk.markUnreviewed')}
           </Button>
         </div>
 
-        <div role="group" aria-label="Organize" className={groupClassName}>
-          {panelToggle('tags', 'Assign tags…')}
-          {panelToggle('untag', 'Unassign tags…', carriedTags.length === 0)}
-          {panelToggle('share', 'Share…')}
+        <div role="group" aria-label={t('bulk.groupOrganize')} className={groupClassName}>
+          {panelToggle('tags', t('bulk.assignTagsPanel'))}
+          {panelToggle('untag', t('bulk.unassignTagsPanel'), carriedTags.length === 0)}
+          {panelToggle('share', t('bulk.sharePanel'))}
         </div>
 
-        <div role="group" aria-label="Processing" className={groupClassName}>
-          {panelToggle('reprocess', 'Reprocess…')}
+        <div role="group" aria-label={t('bulk.groupProcessing')} className={groupClassName}>
+          {panelToggle('reprocess', t('bulk.reprocessPanel'))}
         </div>
 
         <Button
@@ -270,7 +267,7 @@ function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }
           disabled={busy || none}
           onClick={() => void list.onDeleteSelected()}
         >
-          Delete
+          {t('common.delete')}
         </Button>
       </div>
 
@@ -282,8 +279,8 @@ function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }
                 options={allTags}
                 value={tagIds}
                 onChange={setTagIds}
-                ariaLabel="Tags to assign"
-                placeholder="Pick or create tags..."
+                ariaLabel={t('bulk.tagsToAssign')}
+                placeholder={t('bulk.pickOrCreateTags')}
                 onCreate={(name) => void createAndPick(name)}
               />
               <Button
@@ -293,11 +290,11 @@ function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }
                   void run(async () => {
                     await addTagsToDocuments(ids, tagIds)
                     setTagIds([])
-                    return `Tagged ${plural(ids.length)}.`
-                  }, 'Could not assign tags')
+                    return t('bulk.tagged', { count: ids.length })
+                  }, t('bulk.assignError'))
                 }
               >
-                Assign
+                {t('bulk.assign')}
               </Button>
               {cancel}
               {tagError && <p className="w-full text-sm text-madder">{tagError}</p>}
@@ -310,8 +307,8 @@ function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }
                 options={carriedTags}
                 value={untagPicked}
                 onChange={setUntagIds}
-                ariaLabel="Tags to unassign"
-                placeholder="Pick tags to remove..."
+                ariaLabel={t('bulk.tagsToUnassign')}
+                placeholder={t('bulk.pickTagsToRemove')}
               />
               <Button
                 size="sm"
@@ -323,11 +320,11 @@ function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }
                       untagPicked,
                     )
                     setUntagIds([])
-                    return `Removed tags from ${plural(untagging.length)}.`
-                  }, 'Could not remove tags')
+                    return t('bulk.untagged', { count: untagging.length })
+                  }, t('bulk.unassignError'))
                 }
               >
-                Unassign
+                {t('bulk.unassign')}
               </Button>
               {cancel}
             </>
@@ -341,8 +338,8 @@ function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }
                   value: user.id,
                   label: user.name ? `${user.name} (${user.email})` : user.email,
                 }))}
-                placeholder={recipients.data?.length === 0 ? 'No other accounts' : 'Share with...'}
-                ariaLabel="Share with"
+                placeholder={recipients.data?.length === 0 ? t('bulk.noRecipients') : t('bulk.shareWithPlaceholder')}
+                ariaLabel={t('bulk.shareWith')}
                 bgClassName="bg-surface"
                 className="w-full min-w-0 sm:w-80"
                 loading={recipients.loading}
@@ -356,12 +353,12 @@ function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }
                   void run(async () => {
                     const shared = await shareDocuments(ids, recipient)
                     return shared === ids.length
-                      ? `Shared ${plural(shared)}.`
-                      : `Shared ${plural(shared)}; ${ids.length - shared} already were.`
-                  }, 'Could not share')
+                      ? t('bulk.shared', { count: shared })
+                      : t('bulk.sharedSome', { count: shared, already: ids.length - shared })
+                  }, t('bulk.shareError'))
                 }
               >
-                Share
+                {t('bulk.share')}
               </Button>
               {cancel}
               {recipients.error && <p className="w-full text-sm text-madder">{recipients.error}</p>}
@@ -373,7 +370,7 @@ function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }
               <select
                 value={list.reprocessMode}
                 onChange={(event) => list.setReprocessMode(event.target.value as ReprocessMode)}
-                aria-label="Reprocess steps"
+                aria-label={t('bulk.reprocessSteps')}
                 className={selectClassName}
               >
                 {Object.entries(REPROCESS_MODE_LABELS).map(([value, label]) => (
@@ -383,7 +380,7 @@ function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }
                 ))}
               </select>
               <Button size="sm" disabled={busy} onClick={() => void list.onReprocessSelected()}>
-                Reprocess
+                {t('activity.reprocess')}
               </Button>
               {cancel}
             </>

@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import { boundedLimits, isExhausted, type InstanceLimits, type LimitStatus } from '../lib/api/limits'
 
 function ratio(status: LimitStatus): number {
@@ -32,7 +33,7 @@ function LimitRow({
       <div className="flex items-baseline justify-between gap-3 text-xs">
         <span className="font-semibold uppercase tracking-[0.12em] text-ink-soft">{label}</span>
         <span className={over ? 'text-madder' : 'text-ink-soft'}>
-          {format(status.used)} of {format(limit)}
+          {t('limitsUsage.usedOf', { used: format(status.used), limit: format(limit) })}
         </span>
       </div>
       <div

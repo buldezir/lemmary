@@ -10,21 +10,20 @@ import {
   type ArchivePreview,
 } from '../lib/api/imports'
 import { Button, labelTextClassName } from '../components/ui'
+import { t, tNode } from '../i18n'
 
 const ACCEPT_ATTR = '.zip,application/zip,application/x-zip-compressed'
 
 const modeOptions: { value: ArchiveImportMode; label: string; description: string }[] = [
   {
     value: 'restore',
-    label: 'Restore the archive as it was',
-    description:
-      'Bring back titles, tags, correspondents, document types, dates, OCR text and thumbnails exactly as the archive holds them. Restored documents are not processed at all, so nothing is sent to OCR or the AI provider.',
+    label: t('importArchive.restoreLabel'),
+    description: t('importArchive.restoreDescription'),
   },
   {
     value: 'reprocess',
-    label: 'Import the files only and reprocess',
-    description:
-      'Ignore the metadata in the archive and run the full OCR and AI pipeline, as if each file had just been uploaded.',
+    label: t('importArchive.reprocessLabel'),
+    description: t('importArchive.reprocessDescription'),
   },
 ]
 
@@ -34,25 +33,14 @@ function formatBytes(size: number) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function plural(count: number, word: string) {
-  return `${count} ${word}${count === 1 ? '' : 's'}`
-}
-
-/** Pluralising a three-noun phrase needs more than a trailing "s". */
-function taxonomyLabel(count: number) {
-  return count === 1
-    ? '1 tag, correspondent or document type'
-    : `${count} tags, correspondents and document types`
-}
-
 function importableFiles(preview: ArchivePreview) {
   return preview.files.filter((file) => !file.duplicate && !file.oversized && !file.missing)
 }
 
 function entryStatus(file: ArchivePreview['files'][number]) {
-  if (file.missing) return 'Missing'
-  if (file.oversized) return 'Too large'
-  if (file.duplicate) return 'Duplicate'
+  if (file.missing) return t('importArchive.statusMissing')
+  if (file.oversized) return t('importArchive.statusTooLarge')
+  if (file.duplicate) return t('importArchive.statusDuplicate')
   return formatBytes(file.size)
 }
 
@@ -96,7 +84,7 @@ export function ImportArchivePage() {
       setPreview(await uploadArchive(file))
     } catch (err) {
       setPreview(null)
-      setError(err instanceof Error ? err.message : 'Failed to read the archive')
+      setError(err instanceof Error ? err.message : t('importArchive.readFailed'))
     } finally {
       setReading(false)
     }
@@ -113,7 +101,7 @@ export function ImportArchivePage() {
       setPreview(null)
       setResult(await importArchive(uploadId, mode, setProgress))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Import failed')
+      setError(err instanceof Error ? err.message : t('importArchive.failed'))
     } finally {
       setProgress(null)
     }
@@ -134,14 +122,15 @@ export function ImportArchivePage() {
   return (
     <section className="flex flex-col gap-5">
       <div>
-        <h2 className="font-display text-xl font-semibold text-ink">Restore a Lemmary archive</h2>
+        <h2 className="font-display text-xl font-semibold text-ink">{t('importArchive.title')}</h2>
         <p className="mt-1 text-sm text-ink-soft">
-          Restore a backup downloaded from{' '}
-          <Link to="/export" className="font-medium text-oxblood underline">
-            Export
-          </Link>
-          , on this instance or another one. Documents already in your library are skipped, so
-          restoring the same archive twice is safe.
+          {tNode('importArchive.intro', {
+            link: (
+              <Link to="/export" className="font-medium text-oxblood underline">
+                {t('importArchive.exportLink')}
+              </Link>
+            ),
+          })}
         </p>
       </div>
 
@@ -162,38 +151,41 @@ export function ImportArchivePage() {
             className="hidden"
           />
           <span className="text-sm font-medium text-ink">
-            {reading ? 'Reading archive…' : 'Choose a Lemmary archive (.zip)'}
+            {reading ? t('importArchive.reading') : t('importArchive.choose')}
           </span>
-          {!reading && <span className="text-xs text-ink-faint">Nothing is imported yet</span>}
+          {!reading && <span className="text-xs text-ink-faint">{t('importArchive.nothingYet')}</span>}
         </label>
       )}
 
       {preview && !importing && (
         <div className="flex flex-col gap-4 rounded-none border border-line bg-bright p-5">
           <div>
-            <p className="text-sm font-medium text-ink">{preview.file_name || 'Lemmary archive'}</p>
+            <p className="text-sm font-medium text-ink">{preview.file_name || t('importArchive.defaultName')}</p>
             <p className="mt-1 text-sm text-ink-soft">
-              Found {plural(preview.document_count, 'document')}: {preview.importable_count} new
+              {t('importArchive.found', {
+                count: preview.document_count,
+                importable: preview.importable_count,
+              })}
               {preview.duplicate_count > 0 &&
-                `, ${preview.duplicate_count} already in your library`}
-              {preview.oversized_count > 0 && `, ${preview.oversized_count} too large`}
-              {preview.missing_count > 0 && `, ${preview.missing_count} missing from the archive`}.
+                t('importArchive.foundDuplicates', { count: preview.duplicate_count })}
+              {preview.oversized_count > 0 &&
+                t('importArchive.foundOversized', { count: preview.oversized_count })}
+              {preview.missing_count > 0 &&
+                t('importArchive.foundMissing', { count: preview.missing_count })}
+              .
               {preview.taxonomy_count > 0 &&
-                ` ${taxonomyLabel(preview.taxonomy_count)} will be restored alongside them.`}
+                ` ${t('importArchive.taxonomyRestored', { count: preview.taxonomy_count })}`}
               {preview.ignored_count > 0 &&
-                ` ${plural(preview.ignored_count, 'other entry')} ignored.`}
+                ` ${t('importArchive.ignored', { count: preview.ignored_count })}`}
             </p>
             {mode === 'restore' && withoutMetadata > 0 && (
               <p className="mt-2 text-sm text-ink-soft">
-                The archive carries no metadata for {plural(withoutMetadata, 'document')}, so
-                {withoutMetadata === 1 ? ' it is' : ' they are'} processed like a new upload
-                instead of restored.
+                {t('importArchive.withoutMetadata', { count: withoutMetadata })}
               </p>
             )}
             {!preview.has_manifest && (
               <p className="mt-2 text-sm text-ink-soft">
-                This archive predates the backup manifest, so it is read from its file names alone.
-                Tags that no document uses cannot be recovered from it.
+                {t('importArchive.noManifest')}
               </p>
             )}
           </div>
@@ -214,7 +206,7 @@ export function ImportArchivePage() {
           </ul>
 
           <fieldset className="space-y-2">
-            <legend className={labelTextClassName}>Import mode</legend>
+            <legend className={labelTextClassName}>{t('importArchive.mode')}</legend>
             {modeOptions.map((option) => (
               <label
                 key={option.value}
@@ -244,20 +236,19 @@ export function ImportArchivePage() {
 
           {preview.importable_count === 0 && (
             <p className="text-sm text-ink-soft">
-              Every document in this archive is already in your library.
-              {taxonomyOnly &&
-                ' Restoring will still bring back its tags, correspondents and document types.'}
+              {t('importArchive.allPresent')}
+              {taxonomyOnly && ` ${t('importArchive.taxonomyStill')}`}
             </p>
           )}
 
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => void onConfirm()} disabled={!canImport}>
               {taxonomyOnly
-                ? `Restore ${taxonomyLabel(preview.taxonomy_count)}`
-                : `Import ${plural(preview.importable_count, 'document')}`}
+                ? t('importArchive.restoreTaxonomy', { count: preview.taxonomy_count })
+                : t('importArchive.importDocuments', { count: preview.importable_count })}
             </Button>
             <Button variant="secondary" onClick={() => void onCancel()}>
-              Cancel
+              {t('common.cancel')}
             </Button>
           </div>
         </div>
@@ -266,12 +257,12 @@ export function ImportArchivePage() {
       {importing && (
         <div className="rounded-none border border-line bg-bright p-5">
           <p className="text-sm font-medium text-ink">
-            Importing {progress.done} of {progress.total}…
+            {t('importArchive.progress', { done: progress.done, total: progress.total })}
           </p>
           <p className="mt-1 text-sm text-ink-soft">
             {mode === 'restore'
-              ? 'Restored documents go straight into your library; nothing is sent to OCR or the AI provider.'
-              : 'Imported documents are queued for OCR and AI processing.'}
+              ? t('importArchive.restoringNote')
+              : t('importArchive.importingNote')}
           </p>
         </div>
       )}
@@ -279,23 +270,23 @@ export function ImportArchivePage() {
       {result && (
         <div className="flex flex-col gap-3 rounded-none border border-line bg-bright p-5">
           <p className="text-sm font-medium text-ink">
-            Imported {plural(result.imported, 'document')}.
+            {t('importArchive.imported', { count: result.imported })}
           </p>
           <ul className="text-sm text-ink-soft">
             {result.skipped_duplicates > 0 && (
-              <li>{plural(result.skipped_duplicates, 'duplicate')} ignored.</li>
+              <li>{t('importArchive.duplicatesIgnored', { count: result.skipped_duplicates })}</li>
             )}
             {result.skipped_oversized > 0 && (
-              <li>{plural(result.skipped_oversized, 'file')} skipped as too large.</li>
+              <li>{t('importArchive.oversizedSkipped', { count: result.skipped_oversized })}</li>
             )}
-            {result.tags_upserted > 0 && <li>{plural(result.tags_upserted, 'tag')} created.</li>}
+            {result.tags_upserted > 0 && <li>{t('importArchive.tagsCreated', { count: result.tags_upserted })}</li>}
             {result.correspondents_upserted > 0 && (
-              <li>{plural(result.correspondents_upserted, 'correspondent')} created.</li>
+              <li>{t('importArchive.correspondentsCreated', { count: result.correspondents_upserted })}</li>
             )}
             {result.document_types_upserted > 0 && (
-              <li>{plural(result.document_types_upserted, 'document type')} created.</li>
+              <li>{t('importArchive.typesCreated', { count: result.document_types_upserted })}</li>
             )}
-            {result.failed > 0 && <li>{plural(result.failed, 'document')} failed.</li>}
+            {result.failed > 0 && <li>{t('importArchive.documentsFailed', { count: result.failed })}</li>}
           </ul>
           {result.errors.length > 0 && (
             <ul className="flex flex-col gap-1 text-sm text-madder">
@@ -305,7 +296,7 @@ export function ImportArchivePage() {
             </ul>
           )}
           <Link to="/" className="text-sm font-medium text-oxblood underline">
-            Open documents
+            {t('uploadScan.openDocuments')}
           </Link>
         </div>
       )}

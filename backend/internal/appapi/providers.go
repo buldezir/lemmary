@@ -133,7 +133,7 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 			alias = aiprovider.DefaultAlias(sdk)
 		}
 		if err := aiprovider.EnsureUniqueAlias(app, alias, ""); err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		}
 		apiKey := ""
 		if req.APIKey != nil {
@@ -163,7 +163,7 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 		record.Set("api_key", apiKey)
 		record.Set("catalog", catalog)
 		if err := app.Save(record); err != nil {
-			return writeError(e, http.StatusBadRequest, "Failed to create provider: "+err.Error())
+			return writeErrorf(e, http.StatusBadRequest, "Failed to create provider: %v", err)
 		}
 		p := aiprovider.FromRecord(record)
 		return writeJSON(e, http.StatusCreated, providerJSON(p))
@@ -246,7 +246,7 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 				return writeError(e, http.StatusBadRequest, "alias is required.")
 			}
 			if err := aiprovider.EnsureUniqueAlias(app, alias, record.Id); err != nil {
-				return writeError(e, http.StatusBadRequest, err.Error())
+				return writeBadRequest(e, err)
 			}
 			record.Set("alias", alias)
 		}
@@ -262,7 +262,7 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 			return writeError(e, http.StatusBadRequest, missing)
 		}
 		if err := app.Save(record); err != nil {
-			return writeError(e, http.StatusBadRequest, "Failed to update provider: "+err.Error())
+			return writeErrorf(e, http.StatusBadRequest, "Failed to update provider: %v", err)
 		}
 		return writeJSON(e, http.StatusOK, providerJSON(aiprovider.FromRecord(record)))
 	}
@@ -283,16 +283,16 @@ func refuseProviderSDKSwitch(e *core.RequestEvent, app core.App, rt *config.Runt
 		return true, writeError(e, http.StatusInternalServerError, "Failed to verify provider usage.")
 	}
 	if !aiprovider.IsLLM(sdk) && boundTo(settings, providerID, llmBindingFields...) {
-		return true, writeError(e, http.StatusConflict, "Provider is bound to extraction or research and must stay an LLM SDK ("+strings.Join(aiprovider.LLMSDKs(), ", ")+").")
+		return true, writeErrorf(e, http.StatusConflict, "Provider is bound to extraction or research and must stay an LLM SDK (%s).", strings.Join(aiprovider.LLMSDKs(), ", "))
 	}
 	if !aiprovider.CanEmbed(sdk) && boundTo(settings, providerID, embeddingBindingField) {
-		return true, writeError(e, http.StatusConflict, "Provider is bound to embeddings and must stay an SDK that can embed ("+strings.Join(aiprovider.EmbeddingSDKs(), ", ")+").")
+		return true, writeErrorf(e, http.StatusConflict, "Provider is bound to embeddings and must stay an SDK that can embed (%s).", strings.Join(aiprovider.EmbeddingSDKs(), ", "))
 	}
 	if !aiprovider.CanOCR(sdk) && boundTo(settings, providerID, ocrBindingField) {
-		return true, writeError(e, http.StatusConflict, "Provider is bound to OCR and must stay an SDK that can read a document ("+strings.Join(aiprovider.OCRSDKs(), ", ")+").")
+		return true, writeErrorf(e, http.StatusConflict, "Provider is bound to OCR and must stay an SDK that can read a document (%s).", strings.Join(aiprovider.OCRSDKs(), ", "))
 	}
 	if !aiprovider.CanWebSearch(sdk) && boundTo(settings, providerID, webSearchBindingField) {
-		return true, writeError(e, http.StatusConflict, "Provider is bound to web search and must stay an SDK that can search the web ("+strings.Join(aiprovider.WebSearchSDKs(), ", ")+").")
+		return true, writeErrorf(e, http.StatusConflict, "Provider is bound to web search and must stay an SDK that can search the web (%s).", strings.Join(aiprovider.WebSearchSDKs(), ", "))
 	}
 	return false, nil
 }

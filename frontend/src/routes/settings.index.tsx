@@ -16,6 +16,7 @@ import {
   sectionClassName,
   sectionTitleClassName,
 } from '../components/ui'
+import { t } from '../i18n'
 
 export function SettingsAppearancePage() {
   const { form, loading, error, success, saving, updateField, save, setError, closeResult } =
@@ -30,11 +31,11 @@ export function SettingsAppearancePage() {
     event.preventDefault()
     if (!form) return
     if (form.app_name.trim() === '') {
-      setError('Application name is required')
+      setError(t('settingsIndex.nameRequired'))
       return
     }
     if (!/^#[0-9a-fA-F]{6}$/.test(form.accent)) {
-      setError('Accent color must be a hex value like #6e2620')
+      setError(t('settingsIndex.accentInvalid'))
       return
     }
     await save({ app_name: form.app_name.trim(), accent: form.accent })
@@ -45,11 +46,11 @@ export function SettingsAppearancePage() {
   return (
     <form onSubmit={onSubmit}>
       <section className={sectionClassName}>
-        <h2 className={sectionTitleClassName}>Appearance</h2>
+        <h2 className={sectionTitleClassName}>{t('settingsIndex.title')}</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className={labelClassName}>
             <label className={labelClassName}>
-              <span className={labelTextClassName}>Application name</span>
+              <span className={labelTextClassName}>{t('settingsIndex.appName')}</span>
               <input
                 className={inputClassName}
                 value={form.app_name}
@@ -57,23 +58,22 @@ export function SettingsAppearancePage() {
               />
             </label>
             <p className={fieldHintClassName}>
-              Shown in the header and on the sign-in page, and used as the sender name on mail
-              and in passkey prompts.
+              {t('settingsIndex.appNameHint')}
             </p>
           </div>
           <div className={labelClassName}>
-            <span className={labelTextClassName}>Accent color</span>
+            <span className={labelTextClassName}>{t('settingsIndex.accent')}</span>
             <div className="flex items-center gap-2">
               <input
                 type="color"
-                aria-label="Accent color"
+                aria-label={t('settingsIndex.accent')}
                 className="h-9 w-12 cursor-pointer border border-line bg-surface p-1"
                 value={form.accent}
                 onChange={(e) => updateField('accent', e.target.value)}
               />
               <input
                 className={`${inputClassName} font-mono`}
-                aria-label="Accent color hex"
+                aria-label={t('settingsIndex.accentHex')}
                 spellCheck={false}
                 value={form.accent}
                 onChange={(e) => updateField('accent', e.target.value.trim())}
@@ -83,12 +83,11 @@ export function SettingsAppearancePage() {
                 size="sm"
                 onClick={() => updateField('accent', DEFAULT_ACCENT)}
               >
-                Reset
+                {t('settingsIndex.reset')}
               </Button>
             </div>
             <p className={fieldHintClassName}>
-              Colors the logo mark and the accents around it. Pick a swatch or paste a hex value
-              such as {DEFAULT_ACCENT}.
+              {t('settingsIndex.accentHint', { accent: DEFAULT_ACCENT })}
             </p>
           </div>
         </div>

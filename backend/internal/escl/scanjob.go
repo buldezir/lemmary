@@ -12,6 +12,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 
 	"lemmary/backend/internal/duplicates"
+	"lemmary/backend/internal/i18n"
 	"lemmary/backend/internal/importjob"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/pdftool"
@@ -39,7 +40,7 @@ var (
 	// ErrUploadNotFound is returned for an unknown, expired or foreign scan.
 	ErrUploadNotFound = errors.New("scan not found")
 	// ErrTooLarge is returned when the document so far has no room for more.
-	ErrTooLarge = fmt.Errorf("the scanned document is at the %d MB limit; save it and start another", maxScanBytes>>20)
+	ErrTooLarge error = i18n.Errorf("the scanned document is at the %d MB limit; save it and start another", maxScanBytes>>20)
 )
 
 const (

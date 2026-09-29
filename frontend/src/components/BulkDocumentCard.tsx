@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router'
+import { t } from '../i18n'
 import type { DocumentRecord } from '../lib/api/documents'
 import { pb } from '../lib/pb'
 import { DOCUMENT_STATUS_LABELS, DOCUMENT_STATUS_STYLES } from '../lib/documentStatus'
@@ -38,7 +39,7 @@ export function BulkDocumentCard({
   selected: boolean
   onToggleSelect: (id: string) => void
 }) {
-  const title = document.title || 'Untitled document'
+  const title = document.title || t('common.untitledDocument')
   const shared = Boolean(pb.authStore.record?.id) && document.user !== pb.authStore.record?.id
   const tags = document.expand?.tags ?? []
   const status = DOCUMENT_STATUS_STYLES[document.processing_status]
@@ -59,7 +60,7 @@ export function BulkDocumentCard({
               type="checkbox"
               checked={selected}
               onChange={() => onToggleSelect(document.id)}
-              aria-label={`Select ${title}`}
+              aria-label={t('documentCard.select', { title })}
               className="h-4 w-4 cursor-pointer rounded border-line-strong text-oxblood focus:ring-oxblood"
             />
           )}
@@ -78,8 +79,8 @@ export function BulkDocumentCard({
             params={{ documentId: document.id }}
             target="_blank"
             rel="noopener"
-            aria-label={`Open ${title} in a new tab`}
-            title="Open in a new tab"
+            aria-label={t('bulkDocumentCard.openNamed', { title })}
+            title={t('bulkDocumentCard.open')}
             className="text-ink-soft transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood"
           >
             <NewTabIcon />
@@ -90,13 +91,18 @@ export function BulkDocumentCard({
       <div className="border-t border-line pt-2.5">
         <h3 className="font-display text-lg font-semibold leading-snug text-ink">{title}</h3>
         <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-soft">
-          {[document.expand?.document_type?.name || 'Unknown type', document.expand?.correspondent?.name]
+          {[
+            document.expand?.document_type?.name || t('documentCard.unknownType'),
+            document.expand?.correspondent?.name,
+          ]
             .filter(Boolean)
             .join(' · ')}
         </p>
       </div>
 
-      <p className="line-clamp-3 text-sm text-ink-muted">{summary || 'No summary yet.'}</p>
+      <p className="line-clamp-3 text-sm text-ink-muted">
+        {summary || t('documentCard.noSummary')}
+      </p>
 
       {(shared || tags.length > 0) && (
         <div className="flex flex-wrap gap-1.5">

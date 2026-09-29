@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 
+import { t } from '../i18n'
+
 export type ComboboxOption = {
   value: string
   label: string
@@ -68,7 +70,7 @@ export function Combobox({
   ariaLabel,
   disabled = false,
   loading = false,
-  loadingLabel = 'Loading…',
+  loadingLabel = t('common.loading'),
   className = '',
   bgClassName = 'bg-bright',
   leading,
@@ -100,7 +102,10 @@ export function Combobox({
       ? canCreate(query!.trim())
       : !options.some((option) => normalize(option.label) === needle)
     if (!onCreate || !creatable) return matches
-    return [...matches, { value: CREATE_VALUE, label: `Create "${query!.trim()}"` }]
+    return [
+      ...matches,
+      { value: CREATE_VALUE, label: t('combobox.create', { text: query!.trim() }) },
+    ]
   }, [options, query, onCreate, canCreate])
 
   const lastIndex = Math.max(filteredOptions.length - 1, 0)
@@ -259,7 +264,7 @@ export function Combobox({
           }`}
         >
           {filteredOptions.length === 0 ? (
-            <li className="px-3 py-1.5 text-sm text-ink-faint">No matches</li>
+            <li className="px-3 py-1.5 text-sm text-ink-faint">{t('combobox.noMatches')}</li>
           ) : (
             filteredOptions.map((option, index) => {
               const selected = option.value === value

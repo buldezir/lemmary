@@ -1,3 +1,5 @@
+import { t } from '../i18n'
+
 /**
  * The document statuses. Mirrors the `processing_status` SelectField in
  * backend/migrations/1730000001_initial.go, which rejects anything else.
@@ -28,12 +30,12 @@ export const DOCUMENT_STATUS_STYLES: Record<DocumentStatus, { badge: string; bor
 }
 
 export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
-  pending: 'Pending',
-  processing: 'Processing',
-  completed: 'Completed',
-  failed: 'Failed',
-  cancelled: 'Cancelled',
-  needs_review: 'Needs review',
+  pending: t('documentStatus.pending'),
+  processing: t('documentStatus.processing'),
+  completed: t('documentStatus.completed'),
+  failed: t('documentStatus.failed'),
+  cancelled: t('documentStatus.cancelled'),
+  needs_review: t('documentStatus.needsReview'),
 }
 
 /**

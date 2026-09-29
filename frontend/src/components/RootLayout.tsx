@@ -15,6 +15,7 @@ import {
   type NavIconKey,
   type NavItem,
 } from '../lib/nav'
+import { t } from '../i18n'
 import { AppFooter } from './AppFooter'
 import { Button } from './ui'
 import { AppLogo } from './ui'
@@ -277,8 +278,8 @@ function MoreNavMenu({ items }: { items: NavItem[] }) {
       <button
         type="button"
         className={`${iconButtonClass} ${menuActive ? iconButtonActiveClass : ''}`}
-        aria-label="More"
-        title="More"
+        aria-label={t('rootLayout.more')}
+        title={t('rootLayout.more')}
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={() => setOpen((value) => !value)}
@@ -365,7 +366,7 @@ function AppHeader({
           <span className="truncate">{appName}</span>
         </Link>
         <div className="hidden items-center gap-4 md:flex">
-          <nav className="flex items-center gap-5" aria-label="Main">
+          <nav className="flex items-center gap-5" aria-label={t('rootLayout.mainNav')}>
             {primaryItems.map((item) => (
               <NavItemLink
                 key={item.label}
@@ -386,8 +387,8 @@ function AppHeader({
               type="button"
               onClick={logout}
               className={iconButtonClass}
-              aria-label="Log out"
-              title="Log out"
+              aria-label={t('rootLayout.logOut')}
+              title={t('rootLayout.logOut')}
             >
               <LogoutIcon />
             </button>
@@ -396,7 +397,7 @@ function AppHeader({
         <button
           type="button"
           className={`${iconButtonClass} -mr-1.5 shrink-0 md:hidden`}
-          aria-label={open ? 'Close menu' : 'Menu'}
+          aria-label={open ? t('rootLayout.closeMenu') : t('rootLayout.menu')}
           aria-expanded={open}
           aria-controls="header-nav-panel"
           onClick={() => setOpen((value) => !value)}
@@ -406,7 +407,7 @@ function AppHeader({
       </div>
       {open && (
         <div id="header-nav-panel" className="border-t border-line bg-surface md:hidden">
-          <nav className="mx-auto max-w-7xl px-4 sm:px-6" aria-label="Main">
+          <nav className="mx-auto max-w-7xl px-4 sm:px-6" aria-label={t('rootLayout.mainNav')}>
             {panelItems.map((item) => (
               <NavItemLink
                 key={item.label}
@@ -425,7 +426,7 @@ function AppHeader({
               className="flex shrink-0 items-center gap-2 px-0.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood"
             >
               <LogoutIcon />
-              Log out
+              {t('rootLayout.logOut')}
             </button>
           </div>
         </div>
@@ -486,7 +487,7 @@ export function RootLayout() {
     } catch (err) {
       setGate({
         kind: 'error',
-        message: err instanceof Error ? err.message : 'Failed to load setup status',
+        message: err instanceof Error ? err.message : t('rootLayout.statusFailed'),
       })
     }
   }
@@ -518,7 +519,7 @@ export function RootLayout() {
   if (gate.kind === 'loading') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-paper text-sm text-ink-soft">
-        Loading...
+        {t('rootLayout.loading')}
       </div>
     )
   }
@@ -533,7 +534,7 @@ export function RootLayout() {
             void refreshGate()
           }}
         >
-          Retry
+          {t('common.retry')}
         </Button>
       </div>
     )

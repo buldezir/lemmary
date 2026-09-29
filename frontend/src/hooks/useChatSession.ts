@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { RunInFlightError } from '../lib/apiClient'
 import {
@@ -124,7 +125,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
           if (!settled || settled.messages.length <= known) {
             // The run ended and stored nothing: it failed, or someone cancelled
             // it from the tab that started it.
-            setError('That run ended without an answer.')
+            setError(t('useChatSession.runEndedWithoutAnswer'))
             return
           }
           setSession(settled.session)
@@ -134,7 +135,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
         })
         .catch((err: unknown) => {
           if (epochRef.current === epoch && !signal.aborted) {
-            setError(err instanceof Error ? err.message : 'Failed to follow the running chat')
+            setError(err instanceof Error ? err.message : t('useChatSession.followFailed'))
           }
         })
         .finally(() => {
@@ -206,7 +207,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
           if (cancelled || epochRef.current !== epoch) {
             return
           }
-          setLoadError(err instanceof Error ? err.message : 'Failed to load the chat')
+          setLoadError(err instanceof Error ? err.message : t('chats.loadFailed'))
         })
         .finally(() => {
           if (!cancelled && epochRef.current === epoch) {
@@ -286,7 +287,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
       if (epochRef.current !== epoch) {
         return
       }
-      setError(err instanceof Error ? err.message : 'Failed to get AI response')
+      setError(err instanceof Error ? err.message : t('ai.responseFailed'))
       // A run that claimed a conversation mid-flight has already stored the
       // question and whatever work it got through, so this turn is unfinished
       // rather than gone. Taking the bubble back and handing the text to the

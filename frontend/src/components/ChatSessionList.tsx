@@ -1,4 +1,5 @@
 import { type SubmitEvent, useState } from 'react'
+import { t } from '../i18n'
 import { Button, inputClassName } from './ui'
 import { chatSessionDateLabel, chatSessionTitle, type ChatSession } from '../lib/api/chats'
 
@@ -77,14 +78,14 @@ function ChatSessionRow({
       <li className="rounded-xs border border-line bg-bright px-2 py-2">
         <form className="flex flex-col gap-2" onSubmit={onSubmit}>
           <input
-            aria-label="Chat title"
+            aria-label={t('chatSessionList.titleLabel')}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             className={inputClassName}
           />
           <div className="flex items-center gap-2">
             <Button type="submit" size="xs" disabled={busy}>
-              Save
+              {t('common.save')}
             </Button>
             <Button
               size="xs"
@@ -95,7 +96,7 @@ function ChatSessionRow({
                 setEditing(false)
               }}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
           </div>
         </form>
@@ -128,8 +129,8 @@ function ChatSessionRow({
       <div className="flex shrink-0 items-center gap-0.5">
         <button
           type="button"
-          aria-label="Rename chat"
-          title="Rename chat"
+          aria-label={t('chatSessionList.rename')}
+          title={t('chatSessionList.rename')}
           disabled={busy}
           onClick={() => {
             setDraft(session.title)
@@ -141,8 +142,8 @@ function ChatSessionRow({
         </button>
         <button
           type="button"
-          aria-label="Delete chat"
-          title="Delete chat"
+          aria-label={t('chatSessionList.delete')}
+          title={t('chatSessionList.delete')}
           disabled={busy}
           onClick={() => void onDelete(session)}
           className="p-1 text-ink-soft transition-colors hover:text-madder disabled:opacity-50"
@@ -190,7 +191,7 @@ export function ChatSessionList({
   onDelete,
 }: ChatSessionListProps) {
   return (
-    <nav aria-label="Chat sessions" className="flex flex-col gap-2">
+    <nav aria-label={t('chatSessionList.label')} className="flex flex-col gap-2">
       <Button
         variant="secondary"
         size="sm"
@@ -198,12 +199,14 @@ export function ChatSessionList({
         onClick={onNewChat}
         className="w-full"
       >
-        New chat
+        {t('chatSessionList.newChat')}
       </Button>
       {error && <p className="text-sm text-madder">{error}</p>}
-      {loading && sessions.length === 0 && <p className="text-sm text-ink-soft">Loading...</p>}
+      {loading && sessions.length === 0 && (
+        <p className="text-sm text-ink-soft">{t('rootLayout.loading')}</p>
+      )}
       {!loading && sessions.length === 0 && (
-        <p className="text-sm text-ink-faint">No chats yet.</p>
+        <p className="text-sm text-ink-faint">{t('chatSessionList.empty')}</p>
       )}
       {/* The rail is never paged: one request carries every chat an account can
           hold, so the list scrolls in place. */}

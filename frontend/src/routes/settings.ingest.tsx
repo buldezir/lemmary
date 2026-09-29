@@ -19,6 +19,7 @@ import {
   sectionTitleClassName,
   selectClassName,
 } from '../components/ui'
+import { lang, t, tNode } from '../i18n'
 
 // config.ValidIngestInterval: the steps a cron schedule spaces evenly.
 const SCAN_INTERVALS = [1, 2, 5, 10, 15, 30, 60, 120, 180, 360, 720, 1440]
@@ -26,16 +27,18 @@ const SCAN_INTERVALS = [1, 2, 5, 10, 15, 30, 60, 120, 180, 360, 720, 1440]
 const subTitleClassName = 'mb-3 mt-6 text-sm font-semibold text-ink'
 
 function intervalLabel(minutes: number) {
-  if (minutes === 1440) return 'day'
-  if (minutes >= 60) return minutes === 60 ? 'hour' : `${minutes / 60} hours`
-  return minutes === 1 ? 'minute' : `${minutes} minutes`
+  if (minutes === 1440) return t('settingsIngest.everyDay')
+  if (minutes === 60) return t('settingsIngest.everyHour')
+  if (minutes > 60) return t('settingsIngest.everyHours', { count: minutes / 60 })
+  if (minutes === 1) return t('settingsIngest.everyMinute')
+  return t('settingsIngest.everyMinutes', { count: minutes })
 }
 
 const imapFileTypes: [ImapFileType, string][] = [
   ['pdf', 'PDF'],
   ['office', 'Office (DOCX, XLSX)'],
-  ['image', 'Images'],
-  ['text', 'Text (TXT, CSV)'],
+  ['image', t('settingsIngest.typeImages')],
+  ['text', t('settingsIngest.typeText')],
 ]
 
 /** The consume folder and the IMAP mailbox. Reachable when INGEST_DIR or INGEST_IMAP_ENABLED is set. */
@@ -112,17 +115,17 @@ export function SettingsIngestPage() {
   return (
     <form onSubmit={onSubmit}>
       <section className={sectionClassName}>
-        <h2 className={sectionTitleClassName}>Ingest</h2>
+        <h2 className={sectionTitleClassName}>{t('settingsIngest.title')}</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className={labelClassName}>
             <label className={labelClassName}>
-              <span className={labelTextClassName}>Owner</span>
+              <span className={labelTextClassName}>{t('settingsIngest.owner')}</span>
               <select
                 className={selectClassName}
                 value={form.ingest_dir_owner}
                 onChange={(e) => onOwnerChange(e.target.value)}
               >
-                <option value="">Default (first admin account)</option>
+                <option value="">{t('settingsIngest.ownerDefault')}</option>
                 {(users ?? []).map((user) => (
                   <option key={user.id} value={user.id}>
                     {user.name ? `${user.name} (${user.email})` : user.email}
@@ -130,11 +133,11 @@ export function SettingsIngestPage() {
                 ))}
               </select>
             </label>
-            <p className={fieldHintClassName}>The account that owns every ingested document.</p>
+            <p className={fieldHintClassName}>{t('settingsIngest.ownerHint')}</p>
           </div>
           <div className={labelClassName}>
             <label className={labelClassName}>
-              <span className={labelTextClassName}>Scan every</span>
+              <span className={labelTextClassName}>{t('settingsIngest.scanEvery')}</span>
               <select
                 className={selectClassName}
                 value={form.ingest_dir_interval_min}
@@ -149,8 +152,7 @@ export function SettingsIngestPage() {
             </label>
             {ingestDir && (
               <p className={fieldHintClassName}>
-                Files changed in the last 30 seconds wait for the next scan, so nothing is picked
-                up half-written.
+                {t('settingsIngest.scanHint')}
               </p>
             )}
           </div>
@@ -158,10 +160,9 @@ export function SettingsIngestPage() {
 
         {ingestDir && (
           <>
-            <h3 className={subTitleClassName}>Folder</h3>
+            <h3 className={subTitleClassName}>{t('settingsIngest.folder')}</h3>
             <p className={`${fieldHintClassName} mb-4`}>
-              Files dropped into the mounted folder become documents on the next scan. Subfolders
-              become tags, so <code>Taxes/2024/invoice.pdf</code> arrives tagged Taxes and 2024.
+              {tNode('settingsIngest.folderHint', { path: <code>Taxes/2024/invoice.pdf</code> })}
             </p>
             <div className="rounded-xs border border-line-strong bg-bright p-4">
               <label className="flex items-center gap-2.5 text-sm font-medium text-ink">
@@ -171,12 +172,10 @@ export function SettingsIngestPage() {
                   checked={form.ingest_dir_delete_original}
                   onChange={(e) => updateField('ingest_dir_delete_original', e.target.checked)}
                 />
-                Delete the original file after it is consumed
+                {t('settingsIngest.deleteOriginal')}
               </label>
               <p className={`${fieldHintClassName} mt-2`}>
-                Off, files stay where they are and each is imported once, even if its document is
-                deleted later; changing the file imports it again. On, the file is removed once
-                its document exists, and a duplicate is removed too.
+                {t('settingsIngest.deleteOriginalHint')}
               </p>
             </div>
           </>
@@ -184,48 +183,46 @@ export function SettingsIngestPage() {
 
         {ingestImap && (
           <>
-            <h3 className={subTitleClassName}>Mailbox</h3>
+            <h3 className={subTitleClassName}>{t('settingsIngest.mailbox')}</h3>
             <p className={`${fieldHintClassName} mb-4`}>
-              Every attachment of a type chosen below in mail arriving in the folder becomes a
-              document on the next scan. Images the mail body embeds, such as logos and icons, never
-              do. Mail without one is left alone. Leave the server empty to turn this off.
+              {t('settingsIngest.mailboxHint')}
               {form.imap_since &&
-                ` Mail received before ${new Date(form.imap_since).toLocaleString()} is not scanned; Maintenance backfills it by date.`}
+                ` ${t('settingsIngest.mailboxSince', { date: new Date(form.imap_since).toLocaleString(lang) })}`}
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className={labelClassName}>
-                <span className={labelTextClassName}>IMAP server</span>
+                <span className={labelTextClassName}>{t('settingsIngest.imapServer')}</span>
                 <input {...text('imap_host')} placeholder="imap.example.com" />
               </label>
               <label className={labelClassName}>
-                <span className={labelTextClassName}>Security</span>
+                <span className={labelTextClassName}>{t('settingsIngest.security')}</span>
                 <select
                   className={selectClassName}
                   value={form.imap_security}
                   onChange={(e) => updateField('imap_security', e.target.value as AppSettings['imap_security'])}
                 >
-                  <option value="tls">TLS (port 993)</option>
-                  <option value="starttls">STARTTLS (port 143)</option>
+                  <option value="tls">{t('settingsIngest.securityTls')}</option>
+                  <option value="starttls">{t('settingsIngest.securityStarttls')}</option>
                 </select>
               </label>
               <label className={labelClassName}>
-                <span className={labelTextClassName}>Username</span>
+                <span className={labelTextClassName}>{t('settingsIngest.username')}</span>
                 <input {...text('imap_username')} />
               </label>
               <label className={labelClassName}>
-                <span className={labelTextClassName}>Password</span>
+                <span className={labelTextClassName}>{t('settingsIngest.password')}</span>
                 <input
                   {...text('imap_password')}
                   type="password"
-                  placeholder={form.imap_password_set ? 'Unchanged' : ''}
+                  placeholder={form.imap_password_set ? t('settingsIngest.passwordUnchanged') : ''}
                 />
               </label>
               <label className={labelClassName}>
-                <span className={labelTextClassName}>Folder</span>
+                <span className={labelTextClassName}>{t('settingsIngest.folder')}</span>
                 <input {...text('imap_folder')} placeholder="INBOX" />
               </label>
               <label className={labelClassName}>
-                <span className={labelTextClassName}>After import</span>
+                <span className={labelTextClassName}>{t('settingsIngest.afterImport')}</span>
                 <select
                   className={selectClassName}
                   value={form.imap_after_consume}
@@ -233,20 +230,20 @@ export function SettingsIngestPage() {
                     updateField('imap_after_consume', e.target.value as AppSettings['imap_after_consume'])
                   }
                 >
-                  <option value="keep">Keep the message</option>
-                  <option value="move">Move the message to another folder</option>
-                  <option value="delete">Delete the message</option>
+                  <option value="keep">{t('settingsIngest.afterKeep')}</option>
+                  <option value="move">{t('settingsIngest.afterMove')}</option>
+                  <option value="delete">{t('settingsIngest.afterDelete')}</option>
                 </select>
               </label>
               {form.imap_after_consume === 'move' && (
                 <label className={labelClassName}>
-                  <span className={labelTextClassName}>Move to folder</span>
+                  <span className={labelTextClassName}>{t('settingsIngest.moveFolder')}</span>
                   <input {...text('imap_move_folder')} placeholder="Lemmary/Done" required />
                 </label>
               )}
             </div>
             <fieldset className="mt-4">
-              <legend className={labelTextClassName}>Import</legend>
+              <legend className={labelTextClassName}>{t('settingsIngest.importTypes')}</legend>
               <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
                 {imapFileTypes.map(([type, label]) => (
                   <label key={type} className="flex items-center gap-2.5 text-sm font-medium text-ink">
@@ -262,7 +259,7 @@ export function SettingsIngestPage() {
                         updateField(
                           'imap_skip_types',
                           e.target.checked
-                            ? form.imap_skip_types.filter((t) => t !== type)
+                            ? form.imap_skip_types.filter((skip) => skip !== type)
                             : [...form.imap_skip_types, type],
                         )
                       }
@@ -273,9 +270,7 @@ export function SettingsIngestPage() {
               </div>
             </fieldset>
             <p className={`${fieldHintClassName} mt-2`}>
-              Kept messages are imported once, even if their documents are deleted later. A message
-              with an attachment that is refused, or of a type left unchecked, is never moved or
-              deleted.
+              {t('settingsIngest.keptHint')}
             </p>
           </>
         )}

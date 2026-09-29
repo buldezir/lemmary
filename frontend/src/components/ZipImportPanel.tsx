@@ -10,6 +10,7 @@ import {
   type ZipImportSource,
 } from '../lib/api/imports'
 import { documentsLanding } from '../lib/reviewPolicy'
+import { t, tNode, type MessageKey } from '../i18n'
 import { Button } from './ui'
 
 const ACCEPT_ATTR = '.zip,application/zip,application/x-zip-compressed'
@@ -23,43 +24,32 @@ const COPY: Record<
     description: ReactNode
     chooseLabel: string
     fileNameFallback: string
-    /** Singular; the count noun in "Found 12 files". */
-    countNoun: string
+    /** The "Found 12 files" plural. */
+    found: MessageKey
     allDuplicates: string
   }
 > = {
   amazon: {
-    heading: 'Import Amazon orders',
-    description: (
-      <>
-        Import an archive of your Amazon order history. Request it from Amazon under Account
-        &rarr; Request your data &rarr; Your Orders; Amazon emails a download link once the export
-        is ready. Only the invoice PDFs are imported — the CSV reports and delivery photos in the
-        archive are ignored.
-      </>
-    ),
-    chooseLabel: 'Choose the order export (.zip)',
-    fileNameFallback: 'Order export',
-    countNoun: 'PDF file',
-    allDuplicates: 'Every PDF in this archive is already in your library.',
+    heading: t('zipImportPanel.amazonHeading'),
+    description: t('zipImportPanel.amazonDescription'),
+    chooseLabel: t('zipImportPanel.amazonChoose'),
+    fileNameFallback: t('zipImportPanel.amazonFallback'),
+    found: 'zipImportPanel.amazonFound',
+    allDuplicates: t('zipImportPanel.amazonAllDuplicates'),
   },
   zip: {
-    heading: 'Import a zip archive',
-    description: (
-      <>
-        Import a zip of documents you packed yourself — PDF, JPEG, PNG, WebP, plain text, CSV,
-        Word (.docx) or Excel (.xlsx). Folders inside the archive are kept as a name prefix, and
-        anything else in it is ignored. To restore a Lemmary backup instead, use{' '}
+    heading: t('zipImportPanel.zipHeading'),
+    description: tNode('zipImportPanel.zipDescription', {
+      link: (
         <Link to="/import/archive" className="font-medium text-oxblood underline">
-          Import archive
+          {t('zipImportPanel.zipLink')}
         </Link>
-        .
-      </>
-    ),
-    chooseLabel: 'Choose a zip archive',
-    fileNameFallback: 'Archive',
-    countNoun: 'file',
-    allDuplicates: 'Every file in this archive is already in your library.',
+      ),
+    }),
+    chooseLabel: t('zipImportPanel.zipChoose'),
+    fileNameFallback: t('zipImportPanel.zipFallback'),
+    found: 'zipImportPanel.zipFound',
+    allDuplicates: t('zipImportPanel.zipAllDuplicates'),
   },
 }
 
@@ -67,10 +57,6 @@ function formatBytes(size: number) {
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
   return `${(size / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function plural(count: number, word: string) {
-  return `${count} ${word}${count === 1 ? '' : 's'}`
 }
 
 export function ZipImportPanel({ source }: { source: ZipImportSource }) {
@@ -100,7 +86,7 @@ export function ZipImportPanel({ source }: { source: ZipImportSource }) {
       setPreview(await uploadZipArchive(source, file))
     } catch (err) {
       setPreview(null)
-      setError(err instanceof Error ? err.message : 'Failed to read the archive')
+      setError(err instanceof Error ? err.message : t('zipImportPanel.readFailed'))
     } finally {
       setReading(false)
     }
@@ -117,7 +103,7 @@ export function ZipImportPanel({ source }: { source: ZipImportSource }) {
       setPreview(null)
       setResult(await importZipArchive(source, uploadId, setProgress))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Import failed')
+      setError(err instanceof Error ? err.message : t('zipImportPanel.importFailed'))
     } finally {
       setProgress(null)
     }
@@ -159,9 +145,11 @@ export function ZipImportPanel({ source }: { source: ZipImportSource }) {
             className="hidden"
           />
           <span className="text-sm font-medium text-ink">
-            {reading ? 'Reading archive…' : copy.chooseLabel}
+            {reading ? t('zipImportPanel.reading') : copy.chooseLabel}
           </span>
-          {!reading && <span className="text-xs text-ink-faint">Nothing is imported yet</span>}
+          {!reading && (
+            <span className="text-xs text-ink-faint">{t('zipImportPanel.nothingYet')}</span>
+          )}
         </label>
       )}
 
@@ -172,12 +160,19 @@ export function ZipImportPanel({ source }: { source: ZipImportSource }) {
               {preview.file_name || copy.fileNameFallback}
             </p>
             <p className="mt-1 text-sm text-ink-soft">
-              Found {plural(preview.file_count, copy.countNoun)}: {preview.importable_count} new
-              {preview.duplicate_count > 0 &&
-                `, ${preview.duplicate_count} already in your library`}
-              {preview.oversized_count > 0 && `, ${preview.oversized_count} too large`}.
+              {t(copy.found, { count: preview.file_count })}:{' '}
+              {[
+                t('zipImportPanel.new', { count: preview.importable_count }),
+                preview.duplicate_count > 0 &&
+                  t('zipImportPanel.duplicates', { count: preview.duplicate_count }),
+                preview.oversized_count > 0 &&
+                  t('zipImportPanel.oversized', { count: preview.oversized_count }),
+              ]
+                .filter(Boolean)
+                .join(', ')}
+              .
               {preview.ignored_count > 0 &&
-                ` ${plural(preview.ignored_count, 'other file')} in the archive ignored.`}
+                ` ${t('zipImportPanel.ignored', { count: preview.ignored_count })}`}
             </p>
           </div>
 
@@ -190,9 +185,9 @@ export function ZipImportPanel({ source }: { source: ZipImportSource }) {
                 </div>
                 <span className="shrink-0 text-xs text-ink-faint">
                   {file.oversized
-                    ? 'Too large'
+                    ? t('zipImportPanel.tooLarge')
                     : file.duplicate
-                      ? 'Duplicate'
+                      ? t('zipImportPanel.duplicate')
                       : formatBytes(file.size)}
                 </span>
               </li>
@@ -200,24 +195,23 @@ export function ZipImportPanel({ source }: { source: ZipImportSource }) {
           </ul>
 
           <p className="text-sm font-medium text-ink">
-            Do you actually want to import {plural(preview.file_count, 'file')} (duplicates will be
-            ignored)?
+            {t('zipImportPanel.confirm', { count: preview.file_count })}
           </p>
 
           {preview.importable_count === 0 && (
             <p className="text-sm text-ink-soft">
               {preview.duplicate_count === preview.file_count
                 ? copy.allDuplicates
-                : 'Nothing in this archive can be imported.'}
+                : t('zipImportPanel.nothingImportable')}
             </p>
           )}
 
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => void onConfirm()} disabled={preview.importable_count === 0}>
-              Import {plural(preview.importable_count, 'file')}
+              {t('zipImportPanel.import', { count: preview.importable_count })}
             </Button>
             <Button variant="secondary" onClick={() => void onCancel()}>
-              Cancel
+              {t('common.cancel')}
             </Button>
           </div>
         </div>
@@ -226,10 +220,10 @@ export function ZipImportPanel({ source }: { source: ZipImportSource }) {
       {importing && (
         <div className="rounded-none border border-line bg-bright p-5">
           <p className="text-sm font-medium text-ink">
-            Importing {progress.done} of {progress.total}…
+            {t('zipImportPanel.importing', { done: progress.done, total: progress.total })}
           </p>
           <p className="mt-1 text-sm text-ink-soft">
-            Imported documents are queued for OCR and AI processing.
+            {t('zipImportPanel.queued')}
           </p>
         </div>
       )}
@@ -237,16 +231,16 @@ export function ZipImportPanel({ source }: { source: ZipImportSource }) {
       {result && (
         <div className="flex flex-col gap-3 rounded-none border border-line bg-bright p-5">
           <p className="text-sm font-medium text-ink">
-            Imported {plural(result.imported, 'document')}.
+            {t('zipImportPanel.imported', { count: result.imported })}
           </p>
           <ul className="text-sm text-ink-soft">
             {result.skipped_duplicates > 0 && (
-              <li>{plural(result.skipped_duplicates, 'duplicate')} ignored.</li>
+              <li>{t('zipImportPanel.skippedDuplicates', { count: result.skipped_duplicates })}</li>
             )}
             {result.skipped_oversized > 0 && (
-              <li>{plural(result.skipped_oversized, 'file')} skipped as too large.</li>
+              <li>{t('zipImportPanel.skippedOversized', { count: result.skipped_oversized })}</li>
             )}
-            {result.failed > 0 && <li>{plural(result.failed, 'file')} failed.</li>}
+            {result.failed > 0 && <li>{t('zipImportPanel.failed', { count: result.failed })}</li>}
           </ul>
           {result.errors.length > 0 && (
             <ul className="flex flex-col gap-1 text-sm text-madder">
@@ -256,7 +250,9 @@ export function ZipImportPanel({ source }: { source: ZipImportSource }) {
             </ul>
           )}
           <Link to={documentsLanding()} className="text-sm font-medium text-oxblood underline">
-            {documentsLanding() === '/inbox' ? 'Open the Inbox' : 'Open documents'}
+            {documentsLanding() === '/inbox'
+              ? t('zipImportPanel.openInbox')
+              : t('zipImportPanel.openDocuments')}
           </Link>
         </div>
       )}

@@ -1,3 +1,4 @@
+import { t } from '../../i18n'
 import { pb } from '../pb'
 import { listUsers, type UserSummary } from './users'
 import { notifyDocumentsChanged } from '../documentEvents'
@@ -59,7 +60,9 @@ export async function shareDocuments(documentIds: string[], userId: string): Pro
   const failed = results.filter((result) => result.status === 'rejected').length
   if (failed > 0) {
     throw new Error(
-      failed === pending.length ? 'Could not share.' : `Shared ${pending.length - failed}; ${failed} failed.`,
+      failed === pending.length
+        ? t('shares.failed')
+        : t('shares.partial', { done: pending.length - failed, failed }),
     )
   }
   return pending.length

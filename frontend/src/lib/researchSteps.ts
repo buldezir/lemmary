@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import type { ResearchStepKind } from './api/ai'
 
 /** One visible research progress line, after folding start/progress/done events. */
@@ -57,69 +58,79 @@ export function foldSteps(events: StoredResearchStep[] | undefined): ResearchSte
   return steps.map((step) => ({ ...step, done: true }))
 }
 
-function plural(n: number, noun: string) {
-  return `${n} ${noun}${n === 1 ? '' : 's'}`
-}
-
 function startLabel(event: StoredResearchStep) {
+  const count = event.count ?? 0
+  const query = event.query
   switch (event.kind) {
     case 'search':
-      return event.query ? `Searching “${event.query}”` : 'Searching'
+      return query ? t('researchSteps.searchingQuery', { query }) : t('researchSteps.searching')
     case 'read':
-      return `Reading ${plural(event.count ?? 0, 'document')}`
+      return t('researchSteps.readingDocuments', { count })
     case 'survey':
-      return event.query ? `Surveying documents for “${event.query}”` : 'Surveying documents'
+      return query ? t('researchSteps.surveyingQuery', { query }) : t('researchSteps.surveying')
     case 'count':
-      return event.query ? `Counting documents matching “${event.query}”` : 'Counting documents'
+      return query ? t('researchSteps.countingQuery', { query }) : t('researchSteps.counting')
     case 'web_search':
-      return event.query ? `Searching the web for “${event.query}”` : 'Searching the web'
+      return query ? t('researchSteps.searchingWebQuery', { query }) : t('researchSteps.searchingWeb')
     case 'web_fetch':
-      return `Reading ${plural(event.count ?? 0, 'page')}`
+      return t('researchSteps.readingPages', { count })
     default:
-      return 'Writing answer'
+      return t('researchSteps.writing')
   }
 }
 
 function progressLabel(event: StoredResearchStep) {
   const total = event.count ?? 0
   const done = event.done ?? 0
-  return total > 0 ? `Surveyed ${done} of ${plural(total, 'document')}` : 'Surveying documents'
+  return total > 0
+    ? t('researchSteps.surveyedProgress', { done, count: total })
+    : t('researchSteps.surveying')
+}
+
+/** The first three names, then how many more. */
+function shortList(names: string[]) {
+  const rest = names.length > 3 ? t('researchSteps.andMore', { count: names.length - 3 }) : ''
+  return names.slice(0, 3).join(', ') + rest
 }
 
 function doneLabel(event: StoredResearchStep, fallback?: string) {
+  const count = event.count ?? 0
+  const query = event.query
   switch (event.kind) {
     case 'search': {
-      const found = `${event.count ?? 0} document${event.count === 1 ? '' : 's'} found`
-      return event.query ? `“${event.query}” — ${found}` : found
+      const found = t('researchSteps.found', { count })
+      return query ? t('researchSteps.queryOutcome', { query, outcome: found }) : found
     }
     case 'read': {
       const titles = event.titles ?? []
-      const shown = titles.slice(0, 3).join(', ')
-      const rest = titles.length > 3 ? `, and ${titles.length - 3} more` : ''
-      const verb = event.distilled ? 'Read and summarised' : 'Read'
-      return titles.length > 0 ? `${verb} ${shown}${rest}` : (fallback ?? `${verb} documents`)
+      if (titles.length > 0) {
+        return t(event.distilled ? 'researchSteps.summarisedTitles' : 'researchSteps.readTitles', {
+          titles: shortList(titles),
+        })
+      }
+      return (
+        fallback ?? t(event.distilled ? 'researchSteps.summarisedDocuments' : 'researchSteps.readDocuments')
+      )
     }
-    case 'survey': {
-      const surveyed = `Surveyed ${plural(event.count ?? 0, 'document')}`
-      return event.query ? `${surveyed} for “${event.query}”` : surveyed
-    }
-    case 'count': {
-      const counted = `Counted ${plural(event.count ?? 0, 'document')}`
-      return event.query ? `${counted} matching “${event.query}”` : counted
-    }
-    case 'web_search': {
-      const found = plural(event.count ?? 0, 'result')
-      return event.query ? `“${event.query}” — ${found}` : `Searched the web — ${found}`
-    }
+    case 'survey':
+      return query
+        ? t('researchSteps.surveyedQuery', { count, query })
+        : t('researchSteps.surveyed', { count })
+    case 'count':
+      return query ? t('researchSteps.countedQuery', { count, query }) : t('researchSteps.counted', { count })
+    case 'web_search':
+      return query
+        ? t('researchSteps.queryOutcome', { query, outcome: t('researchSteps.results', { count }) })
+        : t('researchSteps.searchedWeb', { count })
     case 'web_fetch': {
       // Titles are hostnames here: a URL is too long for a step line, and the
       // page's own title is not known until it has been read.
       const hosts = event.titles ?? []
-      const shown = hosts.slice(0, 3).join(', ')
-      const rest = hosts.length > 3 ? `, and ${hosts.length - 3} more` : ''
-      return hosts.length > 0 ? `Read ${shown}${rest}` : (fallback ?? 'Read web pages')
+      return hosts.length > 0
+        ? t('researchSteps.readTitles', { titles: shortList(hosts) })
+        : (fallback ?? t('researchSteps.readWebPages'))
     }
     default:
-      return 'Answer written'
+      return t('researchSteps.answerWritten')
   }
 }

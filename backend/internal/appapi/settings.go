@@ -2,7 +2,6 @@ package appapi
 
 import (
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -13,6 +12,7 @@ import (
 
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/i18n"
 	"lemmary/backend/internal/strutil"
 )
 
@@ -146,7 +146,7 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 		// reads as a validation error rather than a failed save.
 		appName, accent, err := brandingPatch(req)
 		if err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		}
 
 		// Load + patch + save in one transaction: settings is a singleton saved
@@ -378,7 +378,7 @@ func applyProcessingPatch(record *core.Record, req settingsPatchRequest) error {
 		// Checked here rather than left to the field's Max so the 400 carries a
 		// message an admin can read.
 		if len([]rune(rules)) > maxExtractionRules {
-			return errInvalid(fmt.Sprintf("extraction_rules must be at most %d characters", maxExtractionRules))
+			return errInvalid("extraction_rules must be at most %d characters", maxExtractionRules)
 		}
 		record.Set("extraction_rules", rules)
 	}
@@ -436,7 +436,7 @@ func patchSettingsPositive(record *core.Record, field string, value *int) error 
 		return nil
 	}
 	if *value <= 0 {
-		return errInvalid(field + " must be positive")
+		return errInvalid("%s must be positive", field)
 	}
 	record.Set(field, *value)
 	return nil
@@ -509,19 +509,19 @@ func providerServes(p aiprovider.Provider, need providerNeed) error {
 	switch need {
 	case needLLM:
 		if !aiprovider.IsLLM(p.SDK) {
-			return errInvalid("extraction and research require " + oneOf(aiprovider.LLMSDKs()) + " provider")
+			return errInvalid("extraction and research require %s provider", oneOf(aiprovider.LLMSDKs()))
 		}
 	case needEmbedding:
 		if !aiprovider.CanEmbed(p.SDK) {
-			return errInvalid("embeddings require " + oneOf(aiprovider.EmbeddingSDKs()) + " provider")
+			return errInvalid("embeddings require %s provider", oneOf(aiprovider.EmbeddingSDKs()))
 		}
 	case needOCR:
 		if !aiprovider.CanOCR(p.SDK) {
-			return errInvalid("OCR requires " + oneOf(aiprovider.OCRSDKs()) + " provider")
+			return errInvalid("OCR requires %s provider", oneOf(aiprovider.OCRSDKs()))
 		}
 	case needWebSearch:
 		if !aiprovider.CanWebSearch(p.SDK) {
-			return errInvalid("web search requires " + oneOf(aiprovider.WebSearchSDKs()) + " provider")
+			return errInvalid("web search requires %s provider", oneOf(aiprovider.WebSearchSDKs()))
 		}
 	}
 	return nil
@@ -545,11 +545,7 @@ func oneOf(sdks []string) string {
 	}
 }
 
-type settingsError string
-
-func (e settingsError) Error() string { return string(e) }
-
-func errInvalid(msg string) error { return settingsError(msg) }
+func errInvalid(format string, args ...any) error { return i18n.Errorf(format, args...) }
 
 func formatSince(t time.Time) string {
 	if t.IsZero() {

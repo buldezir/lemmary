@@ -377,7 +377,7 @@ func handlePostTagAssign(app core.App, rt *config.Runtime) func(*core.RequestEve
 		case errors.Is(err, importjob.ErrBusy):
 			return writeError(e, http.StatusConflict, "A tag assignment is already running.")
 		case err != nil:
-			return writeError(e, http.StatusBadRequest, "Could not start: "+err.Error())
+			return writeErrorf(e, http.StatusBadRequest, "Could not start: %v", err)
 		}
 		return writeJSON(e, http.StatusAccepted, map[string]any{
 			"job_id": jobID,

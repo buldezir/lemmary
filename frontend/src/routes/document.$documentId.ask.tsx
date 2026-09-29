@@ -27,6 +27,7 @@ import type { DocumentRecord } from '../lib/api/documents'
 import { useAsync } from '../hooks/useAsync'
 import { useChatSession, type ChatSendResult } from '../hooks/useChatSession'
 import { runId } from '../lib/runId'
+import { t } from '../i18n'
 
 export function DocumentAskPage() {
   const { documentId } = useParams({ from: '/document/$documentId/ask' })
@@ -125,7 +126,7 @@ export function DocumentAskPage() {
     load: async (id) => {
       const detail = await getChatSession(id)
       if (detail.session.document !== documentId) {
-        throw new Error('That chat belongs to a different document.')
+        throw new Error(t('documentAsk.wrongDocument'))
       }
       return detail
     },
@@ -171,14 +172,14 @@ export function DocumentAskPage() {
       setJustSettled((current) => (current?.id === id ? updated : current))
       await sessions.reload()
     } catch (err) {
-      setRailError(err instanceof Error ? err.message : 'Failed to rename the chat')
+      setRailError(err instanceof Error ? err.message : t('documentAsk.renameError'))
     } finally {
       setRailBusy(false)
     }
   }
 
   async function onDelete(session: ChatSession) {
-    if (!window.confirm(`Delete "${session.title}"? This cannot be undone.`)) {
+    if (!window.confirm(t('documentAsk.confirmDelete', { title: session.title }))) {
       return
     }
     try {
@@ -191,22 +192,22 @@ export function DocumentAskPage() {
         void navigate({ to: '/document/$documentId/ask', params: { documentId }, replace: true })
       }
     } catch (err) {
-      setRailError(err instanceof Error ? err.message : 'Failed to delete the chat')
+      setRailError(err instanceof Error ? err.message : t('documentAsk.deleteError'))
     } finally {
       setRailBusy(false)
     }
   }
 
   if (loading) {
-    return <p className="text-sm text-ink-soft">Loading...</p>
+    return <p className="text-sm text-ink-soft">{t('tagsPage.loading')}</p>
   }
 
   if (!document) {
     return (
       <section className="flex flex-col gap-3">
-        <p className="text-sm text-madder">{loadError || 'Document not found.'}</p>
+        <p className="text-sm text-madder">{loadError || t('documentPage.notFound')}</p>
         <Link to="/" className="text-sm font-medium text-oxblood underline">
-          Back to documents
+          {t('documentAsk.backToDocuments')}
         </Link>
       </section>
     )
@@ -220,19 +221,17 @@ export function DocumentAskPage() {
           params={{ documentId }}
           className="text-sm text-ink-soft hover:text-oxblood"
         >
-          &larr; Back to document
+          &larr; {t('documentAsk.backToDocument')}
         </Link>
         <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight text-ink">
-          Ask AI: {document.title || 'Untitled document'}
+          {t('documentAsk.title', { title: document.title || t('common.untitledDocument') })}
         </h2>
-        <p className="text-sm text-ink-soft">
-          Questions are answered using the document&apos;s OCR text as context. Chats are saved.
-        </p>
+        <p className="text-sm text-ink-soft">{t('documentAsk.intro')}</p>
       </div>
 
       {!hasOcrText ? (
         <div className="rounded-none border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          This document has no OCR text yet. Run full processing before asking questions.
+          {t('documentAsk.noOcr')}
         </div>
       ) : (
         <>
@@ -243,7 +242,7 @@ export function DocumentAskPage() {
             onClick={() => setRailOpen((open) => !open)}
             className="self-start lg:hidden"
           >
-            Chats ({rows.length})
+            {t('documentAsk.chats', { count: rows.length })}
           </Button>
 
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-3">
@@ -267,8 +266,7 @@ export function DocumentAskPage() {
               {chat.loadError && <p className="mb-3 text-sm text-madder">{chat.loadError}</p>}
               {chat.unsaved && (
                 <p className="mb-3 text-sm text-madder">
-                  {chat.unsavedDetail ||
-                    'This answer could not be saved, so the chat will not appear in your history.'}
+                  {chat.unsavedDetail || t('search.unsaved')}
                 </p>
               )}
               <ChatPanel>
@@ -277,16 +275,16 @@ export function DocumentAskPage() {
                   turns={chat.turns}
                   loading={chat.loading}
                   sending={chat.sending}
-                  sendingLabel="Thinking..."
-                  emptyHint='Ask a question about this document, for example: "What is the total amount?"'
+                  sendingLabel={t('documentAsk.thinking')}
+                  emptyHint={t('documentAsk.emptyHint')}
                 />
                 <ChatComposer
                   value={chat.input}
                   onChange={chat.setInput}
                   onSubmit={() => void chat.submit()}
-                  placeholder="Ask a question about this document..."
-                  submitLabel="Send"
-                  sendingLabel="Sending..."
+                  placeholder={t('documentAsk.placeholder')}
+                  submitLabel={t('documentAsk.send')}
+                  sendingLabel={t('documentAsk.sending')}
                   sending={chat.sending}
                   disabled={chat.loading}
                   error={chat.error}
@@ -302,13 +300,13 @@ export function DocumentAskPage() {
                   <WebSearchToggle checked={web} onChange={setWeb} disabled={chat.sending} />
                 </div>
                 <BindingOverride
-                  label="Chat"
+                  label={t('documentAsk.chat')}
                   purpose="llm"
                   value={shownBinding}
                   onChange={setBinding}
                   locked={bindingLocked}
-                  lockedHint="Fixed for this conversation. Start a new chat to ask a different model."
-                  help="Answers questions about this document."
+                  lockedHint={t('documentAsk.lockedHint')}
+                  help={t('documentAsk.bindingHelp')}
                   showConfigured
                 />
               </div>

@@ -32,6 +32,55 @@ let opener: HTMLElement | null = null
 
 const ZOOMABLE = 'data-lemmary-zoomable'
 
+const LABELS = {
+  en: {
+    viewer: 'Screenshot viewer',
+    original: 'Open original',
+    close: 'Close (Esc)',
+    prev: 'Previous screenshot',
+    prevTitle: 'Previous (←)',
+    next: 'Next screenshot',
+    nextTitle: 'Next (→)',
+    full: 'Full size',
+    fit: 'Fit to screen',
+    clickFull: 'Click for full size',
+    clickFit: 'Click to fit the screen',
+    enlarge: 'Click to enlarge',
+  },
+  de: {
+    viewer: 'Screenshot-Ansicht',
+    original: 'Original öffnen',
+    close: 'Schließen (Esc)',
+    prev: 'Vorheriger Screenshot',
+    prevTitle: 'Zurück (←)',
+    next: 'Nächster Screenshot',
+    nextTitle: 'Weiter (→)',
+    full: 'Originalgröße',
+    fit: 'An Bildschirm anpassen',
+    clickFull: 'Klicken für Originalgröße',
+    clickFit: 'Klicken zum Anpassen an den Bildschirm',
+    enlarge: 'Zum Vergrößern klicken',
+  },
+  ru: {
+    viewer: 'Просмотр скриншотов',
+    original: 'Открыть оригинал',
+    close: 'Закрыть (Esc)',
+    prev: 'Предыдущий скриншот',
+    prevTitle: 'Назад (←)',
+    next: 'Следующий скриншот',
+    nextTitle: 'Вперёд (→)',
+    full: 'Полный размер',
+    fit: 'По размеру экрана',
+    clickFull: 'Нажмите для полного размера',
+    clickFit: 'Нажмите, чтобы вписать в экран',
+    enlarge: 'Нажмите, чтобы увеличить',
+  },
+}
+
+function labels() {
+  return LABELS[document.documentElement.lang as keyof typeof LABELS] ?? LABELS.en
+}
+
 function icon(paths: string[], size = 18) {
   return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none"
     stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
@@ -49,7 +98,9 @@ function build(): Overlay {
   root.className = 'lb'
   root.setAttribute('role', 'dialog')
   root.setAttribute('aria-modal', 'true')
-  root.setAttribute('aria-label', 'Screenshot viewer')
+  const text = labels()
+  root.lang = document.documentElement.lang
+  root.setAttribute('aria-label', text.viewer)
   root.tabIndex = -1
   root.innerHTML = `
     <div class="lb-bar">
@@ -57,18 +108,18 @@ function build(): Overlay {
       <div class="lb-actions">
         <span class="lb-counter"></span>
         <button type="button" class="lb-btn lb-zoom"></button>
-        <a class="lb-btn lb-original" target="_blank" rel="noopener">Open original</a>
-        <button type="button" class="lb-btn lb-icon lb-close" aria-label="Close (Esc)"
-          title="Close (Esc)">${closeIcon}</button>
+        <a class="lb-btn lb-original" target="_blank" rel="noopener">${text.original}</a>
+        <button type="button" class="lb-btn lb-icon lb-close" aria-label="${text.close}"
+          title="${text.close}">${closeIcon}</button>
       </div>
     </div>
     <div class="lb-pane">
       <img class="lb-img" alt="" />
     </div>
-    <button type="button" class="lb-nav lb-prev" aria-label="Previous screenshot"
-      title="Previous (←)">${prevIcon}</button>
-    <button type="button" class="lb-nav lb-next" aria-label="Next screenshot"
-      title="Next (→)">${nextIcon}</button>
+    <button type="button" class="lb-nav lb-prev" aria-label="${text.prev}"
+      title="${text.prevTitle}">${prevIcon}</button>
+    <button type="button" class="lb-nav lb-next" aria-label="${text.next}"
+      title="${text.nextTitle}">${nextIcon}</button>
   `
 
   const made: Overlay = {
@@ -106,8 +157,9 @@ function setZoom(next: Zoom) {
   zoom = next
   overlay.img.classList.toggle('is-actual', zoom === 'actual')
   overlay.pane.classList.toggle('is-actual', zoom === 'actual')
-  overlay.zoomButton.textContent = zoom === 'fit' ? 'Full size' : 'Fit to screen'
-  overlay.img.title = zoom === 'fit' ? 'Click for full size' : 'Click to fit the screen'
+  const text = labels()
+  overlay.zoomButton.textContent = zoom === 'fit' ? text.full : text.fit
+  overlay.img.title = zoom === 'fit' ? text.clickFull : text.clickFit
   if (zoom === 'fit') {
     overlay.pane.scrollTo({ top: 0, left: 0 })
   } else {
@@ -189,6 +241,11 @@ function onKeyDown(event: KeyboardEvent) {
 }
 
 function open(image: HTMLImageElement) {
+  // Switching docs language is a client-side navigation, so an overlay built earlier may be in the old one.
+  if (overlay && overlay.root.lang !== document.documentElement.lang) {
+    overlay.root.remove()
+    overlay = null
+  }
   overlay ??= build()
   opener = image
   overlay.root.classList.add('is-open')
@@ -234,7 +291,7 @@ export function mountLightbox() {
     image.setAttribute(ZOOMABLE, '')
     image.setAttribute('role', 'button')
     image.tabIndex = 0
-    image.title = 'Click to enlarge'
+    image.title = labels().enlarge
     image.addEventListener('click', () => open(image))
     image.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.key === ' ') {

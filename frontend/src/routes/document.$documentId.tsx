@@ -43,13 +43,14 @@ import { DocumentPreview } from '../components/DocumentPreview'
 import { useStoredFlag } from '../hooks/useStoredFlag'
 import { useAppMeta } from '../hooks/useAppMeta'
 import { previewKind } from '../lib/documentPreview'
+import { t, tNode } from '../i18n'
 
 type OcrView = 'original' | 'translated' | 'both'
 
 const OCR_VIEW_LABELS: Record<OcrView, string> = {
-  original: 'Original',
-  translated: 'Translated',
-  both: 'Side by side',
+  original: t('documentPage.viewOriginal'),
+  translated: t('documentPage.viewTranslated'),
+  both: t('documentPage.viewBoth'),
 }
 
 /**
@@ -61,7 +62,7 @@ function backTarget(document: DocumentRecord | null, owned: boolean): '/' | '/in
 }
 
 function backLabel(to: '/' | '/inbox') {
-  return to === '/inbox' ? 'Back to the Inbox' : 'Back to Documents'
+  return to === '/inbox' ? t('documentPage.backToInbox') : t('documentPage.backToDocuments')
 }
 
 export function DocumentDetailPage() {
@@ -176,7 +177,7 @@ export function DocumentDetailPage() {
           return
         }
         if (active) {
-          setError(err instanceof Error ? err.message : 'Failed to load document')
+          setError(err instanceof Error ? err.message : t('documentPage.loadError'))
         }
       } finally {
         if (active && isInitial) {
@@ -362,7 +363,7 @@ export function DocumentDetailPage() {
       !hasOcrText &&
       !reprocessSteps.includes('ocr')
     ) {
-      setError('Extract metadata requires OCR text. Select OCR or run OCR first.')
+      setError(t('documentPage.extractNeedsOcr'))
       return
     }
 
@@ -371,9 +372,9 @@ export function DocumentDetailPage() {
     // does not name a model in the confirmation.
     const overrides = describeJobOverrides(overridesForSteps(reprocessOverrides, reprocessSteps))
     const confirmed = window.confirm(
-      `Re-run these steps?\n\n${stepLabels}\n` +
-        (overrides ? `\nModels: ${overrides}\n` : '') +
-        '\nExisting metadata may be overwritten.',
+      `${t('documentPage.confirmReprocess')}\n\n${stepLabels}\n` +
+        (overrides ? `\n${t('documentPage.confirmModels', { models: overrides })}\n` : '') +
+        `\n${t('documentPage.confirmOverwrite')}`,
     )
     if (confirmed) {
       void onReprocess()
@@ -402,7 +403,9 @@ export function DocumentDetailPage() {
       // subscription, whose load() autocancels the two requests below, and the
       // confirmation is owed either way.
       setMessage(
-        `Document queued for reprocessing (${steps.map((step) => PROCESSING_STEP_LABELS[step]).join(', ')}).`,
+        t('documentPage.queued', {
+          steps: steps.map((step) => PROCESSING_STEP_LABELS[step]).join(', '),
+        }),
       )
 
       const doc = await pb.collection('documents').getOne<DocumentRecord>(document.id, {
@@ -421,7 +424,7 @@ export function DocumentDetailPage() {
       if (err instanceof ClientResponseError && err.isAbort) {
         return
       }
-      setError(err instanceof Error ? err.message : 'Failed to reprocess document')
+      setError(err instanceof Error ? err.message : t('documentPage.reprocessError'))
     } finally {
       setReprocessing(false)
     }
@@ -432,10 +435,8 @@ export function DocumentDetailPage() {
       return
     }
 
-    const title = document.title?.trim() || 'Untitled document'
-    const confirmed = window.confirm(
-      `Delete "${title}"?\n\nThis permanently removes the document and cannot be undone.`,
-    )
+    const title = document.title?.trim() || t('common.untitledDocument')
+    const confirmed = window.confirm(t('documentPage.confirmDelete', { title }))
     if (!confirmed) {
       return
     }
@@ -446,7 +447,7 @@ export function DocumentDetailPage() {
       setError('')
       await pb.collection('documents').delete(document.id)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete document')
+      setError(err instanceof Error ? err.message : t('documentPage.deleteError'))
       setDeleting(false)
       return
     }
@@ -470,9 +471,9 @@ export function DocumentDetailPage() {
         expand: 'tags,document_type,correspondent,duplicate_of',
       })
       applyLoadedDocument(refreshed)
-      setMessage('Marked as reviewed.')
+      setMessage(t('documentPage.markedReviewed'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not mark as reviewed')
+      setError(err instanceof Error ? err.message : t('documentPage.markReviewedError'))
     } finally {
       setMarkingReviewed(false)
     }
@@ -504,9 +505,9 @@ export function DocumentDetailPage() {
       } else {
         applyLoadedDocument(refreshed)
       }
-      setMessage(`Added tag "${name}".`)
+      setMessage(t('documentPage.addedTag', { name }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not add the tag')
+      setError(err instanceof Error ? err.message : t('documentPage.addTagError'))
     } finally {
       setAcceptingSuggestion(false)
     }
@@ -560,22 +561,22 @@ export function DocumentDetailPage() {
         requestKey: null,
       })
       applyLoadedDocument(refreshed)
-      setMessage('Metadata saved.')
+      setMessage(t('documentPage.saved'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save metadata')
+      setError(err instanceof Error ? err.message : t('documentPage.saveError'))
     } finally {
       setSaving(false)
     }
   }
 
   if (loading) {
-    return <p className="text-sm text-ink-soft">Loading document...</p>
+    return <p className="text-sm text-ink-soft">{t('documentPage.loading')}</p>
   }
 
   if (!document) {
     return (
       <section className="flex flex-col gap-3">
-        <p className="text-sm text-madder">{error || 'Document not found.'}</p>
+        <p className="text-sm text-madder">{error || t('documentPage.notFound')}</p>
         <Link to={back} className="text-sm font-medium text-oxblood underline">
           {backLabel(back)}
         </Link>
@@ -587,20 +588,22 @@ export function DocumentDetailPage() {
     <section className="flex flex-col gap-5">
       {document.duplicate_of && (
         <div className="rounded-xs border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Possible duplicate of{' '}
-          <Link
-            to="/document/$documentId"
-            params={{ documentId: document.duplicate_of }}
-            className="font-medium underline"
-          >
-            {document.expand?.duplicate_of?.title?.trim() || document.duplicate_of}
-          </Link>
-          .{' '}
+          {tNode('documentPage.duplicateOf', {
+            link: (
+              <Link
+                to="/document/$documentId"
+                params={{ documentId: document.duplicate_of }}
+                className="font-medium underline"
+              >
+                {document.expand?.duplicate_of?.title?.trim() || document.duplicate_of}
+              </Link>
+            ),
+          })}{' '}
           {/* The relationship stays true after review, so the banner stays,
               but stops asking for something already done. */}
           {document.processing_status === 'needs_review'
-            ? 'Review both documents and delete the one you do not need.'
-            : 'Reviewed; both were kept.'}
+            ? t('documentPage.duplicateReview')
+            : t('documentPage.duplicateReviewed')}
         </div>
       )}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -609,10 +612,10 @@ export function DocumentDetailPage() {
             &larr; {backLabel(back)}
           </Link>
           <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight text-ink">
-            {document.title || 'Untitled document'}
+            {document.title || t('common.untitledDocument')}
           </h2>
           <p className="text-sm text-ink-soft">
-            Status: {DOCUMENT_STATUS_LABELS[document.processing_status]}
+            {t('documentPage.status', { status: DOCUMENT_STATUS_LABELS[document.processing_status] })}
           </p>
           <ShareSummary
             documentId={documentId}
@@ -637,7 +640,7 @@ export function DocumentDetailPage() {
                   : 'border-line-strong bg-surface text-ink-muted hover:bg-bright'
               }`}
             >
-              Preview
+              {t('documentPage.preview')}
             </button>
           )}
           {document.file && (
@@ -646,7 +649,7 @@ export function DocumentDetailPage() {
               className="rounded-xs border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-bright"
               onClick={() => void openDocumentFile(document)}
             >
-              Open file
+              {t('documentPage.openFile')}
             </button>
           )}
           {/* Always offered to the owner, job or no job: a document restored from
@@ -657,10 +660,10 @@ export function DocumentDetailPage() {
             type="button"
             onClick={() => setShowProcessingJob(!jobPanelOpen)}
             aria-label={
-              jobPanelOpen ? 'Hide processing job details' : 'Show processing job details'
+              jobPanelOpen ? t('documentPage.hideJobDetails') : t('documentPage.showJobDetails')
             }
             aria-pressed={jobPanelOpen}
-            title={jobPanelOpen ? 'Hide processing job' : 'Show processing job'}
+            title={jobPanelOpen ? t('documentPage.hideJob') : t('documentPage.showJob')}
             className={`flex shrink-0 items-center gap-1.5 rounded-xs border px-4 py-2 text-sm font-medium transition-colors ${
               jobPanelOpen
                 ? 'border-ink bg-ink text-paper hover:bg-oxblood'
@@ -676,7 +679,7 @@ export function DocumentDetailPage() {
             >
               <path d="M82.17,82.17a2.49,2.49,0,0,1-.32.26h6a2.5,2.5,0,0,1,0,5h-12a2.5,2.5,0,0,1-2.5-2.5v-12a2.5,2.5,0,0,1,5,0v6l.26-.28A40.5,40.5,0,0,0,50,9.5a2.5,2.5,0,0,1,0-5A45.5,45.5,0,0,1,82.17,82.17ZM4.5,50A45.5,45.5,0,0,0,50,95.5a2.5,2.5,0,0,0,0-5A40.5,40.5,0,0,1,21.36,21.36c.08-.08.17-.18.26-.29v6a2.5,2.5,0,0,0,5,0v-12a2.5,2.5,0,0,0-2.5-2.5h-12a2.5,2.5,0,0,0,0,5h6a3.72,3.72,0,0,0-.31.26A45.2,45.2,0,0,0,4.5,50ZM58.63,41.37a12.2,12.2,0,1,1-17.25,0A12.21,12.21,0,0,1,58.63,41.37Zm-3.54,3.54a7.2,7.2,0,1,0,0,10.18A7.21,7.21,0,0,0,55.09,44.91ZM67.3,67.31a24.68,24.68,0,0,1-2.59,2.25L65,72.84a6.47,6.47,0,0,1-4.78,6.83L56,80.81a6.48,6.48,0,0,1-7.56-3.53l-1.39-3a24.24,24.24,0,0,1-6.61-1.77l-2.7,1.89a6.48,6.48,0,0,1-8.31-.72l-3.11-3.11a6.47,6.47,0,0,1-.72-8.31l1.89-2.7A24.24,24.24,0,0,1,25.71,53l-3-1.39A6.48,6.48,0,0,1,19.19,44l1.14-4.25A6.46,6.46,0,0,1,27.16,35l3.28.29a24.72,24.72,0,0,1,4.84-4.84L35,27.16a6.48,6.48,0,0,1,4.78-6.83L44,19.19a6.48,6.48,0,0,1,7.56,3.53l1.39,3a24.24,24.24,0,0,1,6.61,1.77l2.7-1.89a6.47,6.47,0,0,1,8.31.72l3.11,3.11a6.48,6.48,0,0,1,.72,8.31l-1.89,2.7A24.21,24.21,0,0,1,74.29,47l3,1.39A6.48,6.48,0,0,1,80.81,56l-1.14,4.25A6.46,6.46,0,0,1,72.84,65l-3.28-.29A24.69,24.69,0,0,1,67.3,67.31Zm1.26-7.7,4.71.42a1.48,1.48,0,0,0,1.56-1.09L76,54.69A1.48,1.48,0,0,0,75.17,53l-4.3-2a2.5,2.5,0,0,1-1.44-2.12,19.31,19.31,0,0,0-2-7.55,2.5,2.5,0,0,1,.19-2.56l2.72-3.88a1.48,1.48,0,0,0-.17-1.9L67,29.84a1.48,1.48,0,0,0-1.9-.17L61.27,32.4a2.5,2.5,0,0,1-2.55.19,19.33,19.33,0,0,0-7.55-2A2.5,2.5,0,0,1,49,29.12l-2-4.3A1.48,1.48,0,0,0,45.31,24l-4.25,1.14A1.48,1.48,0,0,0,40,26.72l.42,4.71a2.5,2.5,0,0,1-1.11,2.31,19.54,19.54,0,0,0-3,2.49h0a19.51,19.51,0,0,0-2.49,3,2.5,2.5,0,0,1-2.31,1.11L26.72,40a1.48,1.48,0,0,0-1.56,1.09L24,45.31A1.48,1.48,0,0,0,24.83,47l4.3,2a2.5,2.5,0,0,1,1.44,2.12,19.33,19.33,0,0,0,2,7.55,2.5,2.5,0,0,1-.19,2.55l-2.72,3.88a1.48,1.48,0,0,0,.17,1.9L33,70.16a1.48,1.48,0,0,0,1.9.17l3.88-2.72a2.5,2.5,0,0,1,2.55-.19,19.33,19.33,0,0,0,7.55,2A2.5,2.5,0,0,1,51,70.88l2,4.3a1.48,1.48,0,0,0,1.73.81l4.25-1.14A1.48,1.48,0,0,0,60,73.28l-.42-4.71a2.5,2.5,0,0,1,1.11-2.31,19.67,19.67,0,0,0,5.54-5.54A2.5,2.5,0,0,1,68.57,59.61Z" />
             </svg>
-            Job
+            {t('documentPage.job')}
           </button>
           )}
           {owned && (
@@ -684,8 +687,8 @@ export function DocumentDetailPage() {
             type="button"
             onClick={toggleEditing}
             aria-pressed={editing}
-            aria-label={editing ? 'Lock metadata editing' : 'Unlock metadata editing'}
-            title={editing ? 'Lock editing and discard unsaved changes' : 'Unlock editing'}
+            aria-label={editing ? t('documentPage.lockMetadata') : t('documentPage.unlockMetadata')}
+            title={editing ? t('documentPage.lockDiscard') : t('documentPage.unlockEditing')}
             className={`flex shrink-0 items-center justify-center rounded-xs border px-2.5 py-2 transition-colors ${
               editing
                 ? 'border-ink bg-ink text-paper hover:bg-oxblood'
@@ -714,15 +717,15 @@ export function DocumentDetailPage() {
             <Button
               variant="secondary"
               disabled={markingReviewed || editing}
-              title={editing ? 'Lock editing first' : undefined}
+              title={editing ? t('documentPage.lockFirst') : undefined}
               onClick={() => void onMarkReviewed()}
             >
-              {markingReviewed ? 'Marking...' : 'Mark reviewed'}
+              {markingReviewed ? t('documentPage.marking') : t('bulk.markReviewed')}
             </Button>
           )}
           {owned && (
             <Button variant="secondary" onClick={() => setSharing(true)}>
-              Share
+              {t('bulk.share')}
             </Button>
           )}
           <Link
@@ -730,7 +733,7 @@ export function DocumentDetailPage() {
             params={{ documentId }}
             aria-disabled={!hasOcrText}
             title={
-              hasOcrText ? 'Ask questions about this document' : 'OCR text required before asking AI'
+              hasOcrText ? t('documentPage.askTitle') : t('documentPage.askNeedsOcr')
             }
             className={`rounded-xs border px-4 py-2 text-sm font-medium transition-colors ${
               hasOcrText
@@ -738,12 +741,12 @@ export function DocumentDetailPage() {
                 : 'pointer-events-none border-line bg-paper text-ink-faint'
             }`}
           >
-            Ask AI
+            {t('documentPage.askAI')}
           </Link>
           {owned && (
             <div className="ml-1 border-l border-line pl-3">
               <Button variant="danger" onClick={() => void onDelete()} disabled={deleting}>
-                {deleting ? 'Deleting...' : 'Delete'}
+                {deleting ? t('activity.deleting') : t('common.delete')}
               </Button>
             </div>
           )}
@@ -768,12 +771,14 @@ export function DocumentDetailPage() {
               {job ? (
                 <>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <h3 className="text-sm font-semibold text-ink">Processing job</h3>
+                    <h3 className="text-sm font-semibold text-ink">{t('documentPage.processingJob')}</h3>
                     <span className="bg-wash px-1.5 py-0.5 text-xs font-medium text-ink-muted">
                       {job.status}
                     </span>
                     {jobTotalMs !== null ? (
-                      <span className="text-xs text-ink-soft">total: {formatDuration(jobTotalMs)}</span>
+                      <span className="text-xs text-ink-soft">
+                        {t('documentPage.jobTotal', { duration: formatDuration(jobTotalMs) })}
+                      </span>
                     ) : null}
                   </div>
                   <div className="mt-2">
@@ -782,12 +787,8 @@ export function DocumentDetailPage() {
                 </>
               ) : (
                 <div className="flex flex-col gap-1">
-                  <h3 className="text-sm font-semibold text-ink">Processing job</h3>
-                  <p className="text-xs text-ink-soft">
-                    No processing job is recorded for this document. It was imported from an export or
-                    added before the pipeline kept a history. Reprocessing it below creates one and
-                    runs the steps you choose.
-                  </p>
+                  <h3 className="text-sm font-semibold text-ink">{t('documentPage.processingJob')}</h3>
+                  <p className="text-xs text-ink-soft">{t('documentPage.noJob')}</p>
                 </div>
               )}
 
@@ -796,11 +797,8 @@ export function DocumentDetailPage() {
                 onSubmit={onReprocessSubmit}
               >
                 <div>
-                  <h4 className="text-sm font-semibold text-ink">Reprocess</h4>
-                  <p className="mt-0.5 text-xs text-ink-soft">
-                    Choose which pipeline steps to run. Selected steps are forced to re-run even if
-                    output already exists.
-                  </p>
+                  <h4 className="text-sm font-semibold text-ink">{t('activity.reprocess')}</h4>
+                  <p className="mt-0.5 text-xs text-ink-soft">{t('documentPage.reprocessHint')}</p>
                 </div>
                 <fieldset className="flex flex-col gap-2" disabled={!canReprocess || reprocessing}>
                   {FULL_PIPELINE_STEPS.map((step) => {
@@ -826,7 +824,7 @@ export function DocumentDetailPage() {
                           className="flex items-start gap-2"
                           title={
                             step === 'extract_metadata' && !selectable
-                              ? 'OCR text required, or select OCR'
+                              ? t('documentPage.stepNeedsOcr')
                               : undefined
                           }
                         >
@@ -862,7 +860,7 @@ export function DocumentDetailPage() {
                   className="self-start"
                   disabled={!canReprocess || reprocessing || reprocessSteps.length === 0}
                 >
-                  {reprocessing ? 'Reprocessing...' : 'Reprocess selected steps'}
+                  {reprocessing ? t('documentPage.reprocessing') : t('documentPage.reprocessSelected')}
                 </Button>
               </form>
             </div>
@@ -873,7 +871,7 @@ export function DocumentDetailPage() {
             onSubmit={onSave}
           >
             <label className={labelClass}>
-              Title
+              {t('documentPage.fieldTitle')}
               <input
                 className={fieldClass(editing)}
                 readOnly={!editing}
@@ -882,13 +880,13 @@ export function DocumentDetailPage() {
               />
               {document.title_original && document.title_original !== document.title && (
                 <span className="text-xs font-normal text-ink-soft">
-                  Original: {document.title_original}
+                  {t('documentPage.original', { value: document.title_original })}
                 </span>
               )}
             </label>
 
             <label className={labelClass}>
-              Document date
+              {t('documentPage.fieldDate')}
               <input
                 type="date"
                 className={fieldClass(editing)}
@@ -899,7 +897,7 @@ export function DocumentDetailPage() {
             </label>
 
             <label className={labelClass}>
-              Document type
+              {t('documentPage.fieldType')}
               <input
                 className={fieldClass(editing)}
                 readOnly={!editing}
@@ -909,13 +907,13 @@ export function DocumentDetailPage() {
               {document.expand?.document_type?.name_original &&
                 document.expand.document_type.name_original !== document.expand.document_type.name && (
                   <span className="text-xs font-normal text-ink-soft">
-                    Original: {document.expand.document_type.name_original}
+                    {t('documentPage.original', { value: document.expand.document_type.name_original })}
                   </span>
                 )}
             </label>
 
             <label className={labelClass}>
-              Correspondent
+              {t('documentPage.fieldCorrespondent')}
               <input
                 className={fieldClass(editing)}
                 readOnly={!editing}
@@ -925,13 +923,13 @@ export function DocumentDetailPage() {
               {document.expand?.correspondent?.name_original &&
                 document.expand.correspondent.name_original !== document.expand.correspondent.name && (
                   <span className="text-xs font-normal text-ink-soft">
-                    Original: {document.expand.correspondent.name_original}
+                    {t('documentPage.original', { value: document.expand.correspondent.name_original })}
                   </span>
                 )}
             </label>
 
             <label className={`${labelClass} sm:col-span-2`}>
-              Purpose
+              {t('documentPage.fieldPurpose')}
               <input
                 className={fieldClass(editing)}
                 readOnly={!editing}
@@ -940,13 +938,13 @@ export function DocumentDetailPage() {
               />
               {document.purpose_original && document.purpose_original !== document.purpose && (
                 <span className="text-xs font-normal text-ink-soft">
-                  Original: {document.purpose_original}
+                  {t('documentPage.original', { value: document.purpose_original })}
                 </span>
               )}
             </label>
 
             <div className={`${labelClass} sm:col-span-2`}>
-              <span>Tags</span>
+              <span>{t('documentPage.fieldTags')}</span>
               <TagField
                 editing={editing}
                 vocabulary={vocabulary}
@@ -968,7 +966,7 @@ export function DocumentDetailPage() {
             </div>
 
             <label className={`${labelClass} sm:col-span-2`}>
-              Summary
+              {t('documentPage.fieldSummary')}
               <textarea
                 rows={4}
                 className={`${fieldClass(editing)} min-h-24 resize-y`}
@@ -978,14 +976,14 @@ export function DocumentDetailPage() {
               />
               {document.summary_original && document.summary_original !== document.summary && (
                 <span className="text-xs font-normal text-ink-soft">
-                  Original: {document.summary_original}
+                  {t('documentPage.original', { value: document.summary_original })}
                 </span>
               )}
             </label>
 
             <div className={`${labelClass} sm:col-span-2`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span id="ocr-text-label">OCR text</span>
+                <span id="ocr-text-label">{t('documentPage.fieldOcr')}</span>
                 {canTranslate && (
                   <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                     {/* Kept in the layout while hidden, so on a narrow row its
@@ -994,8 +992,8 @@ export function DocumentDetailPage() {
                       type="button"
                       disabled={translating}
                       onClick={() => void onRetranslate()}
-                      aria-label="Re-translate"
-                      title="Re-translate"
+                      aria-label={t('documentPage.retranslate')}
+                      title={t('documentPage.retranslate')}
                       className={`rounded-xs border border-line-strong bg-surface px-1.5 py-1 text-ink-muted transition-colors hover:bg-bright hover:text-ink disabled:opacity-50 ${
                         ocrView === 'original' ? 'invisible' : ''
                       }`}
@@ -1015,7 +1013,7 @@ export function DocumentDetailPage() {
                         <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
                       </svg>
                     </button>
-                    <div role="group" aria-label="OCR text view" className="flex">
+                    <div role="group" aria-label={t('documentPage.ocrView')} className="flex">
                       {(Object.keys(OCR_VIEW_LABELS) as OcrView[]).map((view) => (
                         <button
                           key={view}
@@ -1057,10 +1055,10 @@ export function DocumentDetailPage() {
                     ref={translatedOcrRef}
                     rows={22}
                     readOnly
-                    aria-label={`OCR text translated to ${resultLanguage}`}
+                    aria-label={t('documentPage.ocrTranslatedTo', { language: resultLanguage ?? '' })}
                     className={`${textareaClass(false)} ${ocrTextareaClass}`}
                     onScroll={() => syncOcrScroll(translatedOcrRef.current, originalOcrRef.current)}
-                    value={translating ? 'Translating...' : (translation.data ?? '')}
+                    value={translating ? t('documentPage.translating') : (translation.data ?? '')}
                   />
                 )}
               </div>
@@ -1068,23 +1066,16 @@ export function DocumentDetailPage() {
                 <span className="text-xs font-normal text-madder">{translation.error}</span>
               )}
               {editing && (
-                <span className="text-xs font-normal text-ink-soft">
-                  Everything else is derived from this text, so a correction here is worth more
-                  than one to a single field. Saving re-indexes the document for search and queues
-                  its passage vectors to be rebuilt; it does not re-run extraction -- reprocess
-                  below for that, which reads the corrected text rather than re-running OCR.
-                </span>
+                <span className="text-xs font-normal text-ink-soft">{t('documentPage.ocrEditHint')}</span>
               )}
             </div>
 
             <div className="flex items-center gap-4 sm:col-span-2">
               {!owned ? (
-                <p className="text-sm text-ink-soft">
-                  Shared with you, read-only. Only its owner can correct it.
-                </p>
+                <p className="text-sm text-ink-soft">{t('documentPage.sharedReadOnly')}</p>
               ) : editing ? (
                 <Button type="submit" disabled={saving}>
-                  {saving ? 'Saving...' : 'Save corrections'}
+                  {saving ? t('documentPage.saving') : t('documentPage.saveCorrections')}
                 </Button>
               ) : (
                 <Button
@@ -1096,7 +1087,7 @@ export function DocumentDetailPage() {
                     setEditing(true)
                   }}
                 >
-                  Unlock editing
+                  {t('documentPage.unlockEditing')}
                 </Button>
               )}
               {message && <p className="text-sm text-forest">{message}</p>}
@@ -1154,13 +1145,13 @@ function TagField({
   // An id with no name behind it is a tag deleted since the document loaded.
   // Shown as a placeholder rather than dropped, because saving writes
   // `selected`, so a silently missing chip would be written back anyway.
-  const chosen: TagRecord[] = selected.map((id) => byId.get(id) ?? { id, name: 'Deleted tag' })
+  const chosen: TagRecord[] = selected.map((id) => byId.get(id) ?? { id, name: t('documentPage.deletedTag') })
   const available = (vocabulary ?? []).filter((tag) => !selected.includes(tag.id))
 
   return (
     <div className="flex flex-col gap-2">
       {chosen.length === 0 ? (
-        <p className="text-sm font-normal text-ink-soft">No tags.</p>
+        <p className="text-sm font-normal text-ink-soft">{t('documentPage.noTags')}</p>
       ) : (
         <ul className="flex flex-wrap gap-1.5">
           {chosen.map((tag) => (
@@ -1173,7 +1164,7 @@ function TagField({
               {editing && (
                 <button
                   type="button"
-                  aria-label={`Remove ${tag.name}`}
+                  aria-label={t('bulk.removeTag', { name: tag.name })}
                   className="text-ink-faint transition-colors hover:text-madder"
                   onClick={() => onChange(selected.filter((id) => id !== tag.id))}
                 >
@@ -1189,7 +1180,7 @@ function TagField({
 
       {editing && vocabularyError && (
         <p className="text-sm font-normal text-madder">
-          {vocabularyError}. Tags already on this document can still be removed.
+          {t('documentPage.vocabularyError', { error: vocabularyError })}
         </p>
       )}
 
@@ -1197,21 +1188,23 @@ function TagField({
         vocabulary !== null &&
         (vocabulary.length === 0 ? (
           <p className="text-sm font-normal text-ink-soft">
-            You have no tags yet.{' '}
-            {/* A new tab on purpose: this renders mid-edit, and navigating away
-                from a half-corrected document throws the corrections away. */}
-            <Link to="/tags" target="_blank" rel="noopener noreferrer" className="text-oxblood underline">
-              Create some
-            </Link>{' '}
-            and they will be offered here.
+            {tNode('documentPage.noVocabulary', {
+              // A new tab on purpose: this renders mid-edit, and navigating away
+              // from a half-corrected document throws the corrections away.
+              link: (
+                <Link to="/tags" target="_blank" rel="noopener noreferrer" className="text-oxblood underline">
+                  {t('documentPage.createSome')}
+                </Link>
+              ),
+            })}
           </p>
         ) : (
           available.length > 0 && (
             <Combobox
               value=""
               options={available.map((tag) => ({ value: tag.id, label: tag.name }))}
-              placeholder="Add a tag..."
-              ariaLabel="Add a tag"
+              placeholder={t('bulk.addTag')}
+              ariaLabel={t('documentPage.addTag')}
               className="max-w-xs"
               onChange={(id) => onChange([...selected, id])}
             />

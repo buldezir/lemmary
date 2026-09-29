@@ -13,6 +13,7 @@ import {
   sectionClassName,
   sectionTitleClassName,
 } from '../components/ui'
+import { t, tNode } from '../i18n'
 
 export function SettingsWorkerPage() {
   const { form, loading, error, success, saving, updateField, save, setError, closeResult } =
@@ -28,11 +29,11 @@ export function SettingsWorkerPage() {
     const workerTimeout = Number(form.worker_timeout_sec)
     const maxRetries = Number(form.worker_max_retries)
     if (!Number.isFinite(workerTimeout) || workerTimeout <= 0) {
-      setError('Worker timeout must be a positive number')
+      setError(t('settingsWorker.timeoutInvalid'))
       return
     }
     if (!Number.isFinite(maxRetries) || maxRetries < 0) {
-      setError('Worker max retries must be >= 0')
+      setError(t('settingsWorker.retriesInvalid'))
       return
     }
 
@@ -44,10 +45,10 @@ export function SettingsWorkerPage() {
   return (
     <form onSubmit={onSubmit}>
       <section className={sectionClassName}>
-        <h2 className={sectionTitleClassName}>Worker</h2>
+        <h2 className={sectionTitleClassName}>{t('settingsWorker.title')}</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className={labelClassName}>
-            <span className={labelTextClassName}>Job timeout (seconds)</span>
+            <span className={labelTextClassName}>{t('settingsWorker.timeout')}</span>
             <input
               type="number"
               min={1}
@@ -57,7 +58,7 @@ export function SettingsWorkerPage() {
             />
           </label>
           <label className={labelClassName}>
-            <span className={labelTextClassName}>Max retries</span>
+            <span className={labelTextClassName}>{t('settingsWorker.maxRetries')}</span>
             <input
               type="number"
               min={0}
@@ -68,8 +69,10 @@ export function SettingsWorkerPage() {
           </label>
         </div>
         <p className="mt-3 text-xs text-ink-soft">
-          Worker cron schedule stays in <code className="font-mono">WORKER_CRON_EXPR</code> in{' '}
-          <code className="font-mono">.env</code>.
+          {tNode('settingsWorker.cronHint', {
+            env: <code className="font-mono">WORKER_CRON_EXPR</code>,
+            file: <code className="font-mono">.env</code>,
+          })}
         </p>
         <div className="mt-4">
           <SaveSettingsButton saving={saving} />

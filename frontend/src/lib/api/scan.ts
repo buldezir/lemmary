@@ -1,3 +1,4 @@
+import { t } from '../../i18n'
 import { pb, pbUrl } from '../pb'
 import { ensureAuth } from '../auth'
 import { apiFetch, pollJob } from '../apiClient'
@@ -62,7 +63,7 @@ export function recallScanner(): string {
 export function discoverScanners(cidr?: string) {
   const query = cidr ? `?cidr=${encodeURIComponent(cidr)}` : ''
   return apiFetch<ScanDiscovery>(`/api/app/scan/discover${query}`, {
-    fallbackError: 'Could not look for scanners',
+    fallbackError: t('scan.discoverFailed'),
   })
 }
 
@@ -78,13 +79,13 @@ export async function scanPage(
   const start = await apiFetch<{ job_id?: string }>('/api/app/scan', {
     method: 'POST',
     body: { scanner, source, upload_id: uploadId ?? '' },
-    fallbackError: 'The scan failed to start',
+    fallbackError: t('scan.startFailed'),
   })
   if (!start.job_id) {
-    throw new Error('Scan job id missing from server response')
+    throw new Error(t('scan.missingJobId'))
   }
   return pollJob<StagedScan>(`/api/app/scan/status?job_id=${encodeURIComponent(start.job_id)}`, {
-    label: 'scan',
+    label: t('scan.jobLabel'),
     timeoutMs: scanTimeoutMs,
   })
 }
@@ -93,7 +94,7 @@ export async function scanPage(
 export async function discardScan(uploadId: string) {
   await apiFetch<unknown>(`/api/app/scan?upload_id=${encodeURIComponent(uploadId)}`, {
     method: 'DELETE',
-    fallbackError: 'Failed to discard the scan',
+    fallbackError: t('scan.discardFailed'),
   })
 }
 
@@ -102,7 +103,7 @@ export function saveScan(uploadId: string) {
   return apiFetch<{ document_id: string }>('/api/app/scan/document', {
     method: 'POST',
     body: { upload_id: uploadId },
-    fallbackError: 'Failed to save the scan',
+    fallbackError: t('scan.saveFailed'),
   })
 }
 
@@ -117,14 +118,14 @@ export async function fetchScanPdf(uploadId: string): Promise<string> {
     headers: { Authorization: pb.authStore.token },
   })
   if (!response.ok) {
-    throw new Error('Failed to load the scan')
+    throw new Error(t('scan.loadFailed'))
   }
   return URL.createObjectURL(await response.blob())
 }
 
 /** "3 pages · 1.2 MB", under the preview. */
 export function describeScan(scan: StagedScan): string {
-  const pages = scan.page_count === 1 ? '1 page' : `${scan.page_count} pages`
+  const pages = t('scan.pages', { count: scan.page_count })
   const mb = scan.size_bytes / (1024 * 1024)
   const size = mb < 0.1 ? `${Math.round(scan.size_bytes / 1024)} KB` : `${mb.toFixed(1)} MB`
   return `${pages} · ${size}`

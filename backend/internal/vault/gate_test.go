@@ -126,7 +126,8 @@ func TestGateUnlockRejectsNonPost(t *testing.T) {
 	}
 }
 
-// The only value the page interpolates is a bool; pin that.
+// The page interpolates a bool, one of three language codes and catalog text,
+// never anything the request carried; pin that.
 func TestGateUnlockPageRendersWithoutUserInput(t *testing.T) {
 	_, _, handler := newGateHarness(t)
 
@@ -146,6 +147,26 @@ func TestGateUnlockPageRendersWithoutUserInput(t *testing.T) {
 	// exists and must offer to autofill it.
 	if !strings.Contains(body, `autocomplete="current-password"`) {
 		t.Fatalf("the unlock form does not offer to autofill: %s", body)
+	}
+}
+
+func TestGateUnlockPageFollowsAcceptLanguage(t *testing.T) {
+	_, _, handler := newGateHarness(t)
+
+	for _, c := range []struct{ header, lang, heading string }{
+		{"de-DE,de;q=0.9", "de", "Dieses Archiv ist gesperrt"},
+		{"", "en", "This archive is locked"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		if c.header != "" {
+			req.Header.Set("Accept-Language", c.header)
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		body := rec.Body.String()
+		if !strings.Contains(body, `<html lang="`+c.lang+`">`) || !strings.Contains(body, "<h1>"+c.heading+"</h1>") {
+			t.Errorf("Accept-Language %q: want lang %q and heading %q: %s", c.header, c.lang, c.heading, body)
+		}
 	}
 }
 

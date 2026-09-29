@@ -1,3 +1,4 @@
+import { t } from '../../i18n'
 import { apiFetch } from '../apiClient'
 import { setAlwaysRequireReview } from '../reviewPolicy'
 
@@ -81,7 +82,7 @@ async function fetchAppMeta(): Promise<AppMeta> {
       result_language?: string
     }>('/api/app/meta', {
       public: true,
-      fallbackError: 'Failed to load app meta',
+      fallbackError: t('meta.loadFailed'),
     })
     const appName = typeof data.app_name === 'string' ? data.app_name.trim() : ''
     const accent = typeof data.accent === 'string' ? data.accent.trim() : ''
@@ -115,7 +116,7 @@ export type SetupStatus = {
 export function getSetupStatus() {
   return apiFetch<SetupStatus>('/api/app/setup/status', {
     public: true,
-    fallbackError: 'Failed to load setup status',
+    fallbackError: t('meta.setupStatusFailed'),
   })
 }
 
@@ -124,6 +125,6 @@ export function createSetupAdmin(email: string, password: string, passwordConfir
     method: 'POST',
     public: true,
     body: { email, password, passwordConfirm },
-    fallbackError: 'Failed to create admin account',
+    fallbackError: t('meta.createAdminFailed'),
   })
 }

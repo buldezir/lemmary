@@ -6,6 +6,7 @@ import {
   type AIProvider,
   type ChatGPTDeviceLogin,
 } from '../lib/api/providers'
+import { t, tNode } from '../i18n'
 import { Button, fieldHintClassName } from './ui'
 
 /**
@@ -55,14 +56,14 @@ export function ChatGPTSignIn({
           if (result.status === 'pending') return
           setLogin(null)
           if (result.status === 'expired') {
-            setError('That code expired. Start again to get a new one.')
+            setError(t('chatGPTSignIn.expired'))
             return
           }
           await onChangeRef.current()
         } catch (err) {
           if (cancelled) return
           setLogin(null)
-          setError(err instanceof Error ? err.message : 'ChatGPT sign-in failed')
+          setError(err instanceof Error ? err.message : t('chatGPTSignIn.failed'))
         } finally {
           inFlight = false
         }
@@ -81,7 +82,7 @@ export function ChatGPTSignIn({
     try {
       setLogin(await startChatGPTLogin(provider.id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start the ChatGPT sign-in')
+      setError(err instanceof Error ? err.message : t('chatGPTSignIn.startFailed'))
     } finally {
       setBusy(false)
     }
@@ -95,7 +96,7 @@ export function ChatGPTSignIn({
       setLogin(null)
       await onChange()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to sign out')
+      setError(err instanceof Error ? err.message : t('chatGPTSignIn.signOutFailed'))
     } finally {
       setBusy(false)
     }
@@ -106,39 +107,49 @@ export function ChatGPTSignIn({
       {provider.signed_in ? (
         <div className="flex flex-wrap items-center gap-2">
           <p className={fieldHintClassName}>
-            Signed in{provider.account ? ` as ${provider.account}` : ''}
-            {provider.plan ? ` (${provider.plan})` : ''}.
+            {t(
+              provider.account
+                ? provider.plan
+                  ? 'chatGPTSignIn.signedInAsPlan'
+                  : 'chatGPTSignIn.signedInAs'
+                : provider.plan
+                  ? 'chatGPTSignIn.signedInPlan'
+                  : 'chatGPTSignIn.signedIn',
+              { account: provider.account ?? '', plan: provider.plan ?? '' },
+            )}
           </p>
           <Button variant="secondary" size="xs" disabled={busy} onClick={() => void onSignOut()}>
-            Sign out
+            {t('chatGPTSignIn.signOut')}
           </Button>
         </div>
       ) : login ? (
         <div className="flex flex-col gap-1">
           <p className="text-sm text-ink">
-            Open{' '}
-            <a
-              className="underline"
-              href={login.verification_url}
-              target="_blank"
-              rel="noreferrer noopener"
-            >
-              {login.verification_url}
-            </a>{' '}
-            and enter this code:
+            {tNode('chatGPTSignIn.openAndEnter', {
+              link: (
+                <a
+                  className="underline"
+                  href={login.verification_url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  {login.verification_url}
+                </a>
+              ),
+            })}
           </p>
           <p className="font-mono text-lg tracking-widest text-ink">{login.user_code}</p>
           <p className={fieldHintClassName}>
-            Waiting for you to approve it. The code is good for about fifteen minutes.
+            {t('chatGPTSignIn.waiting')}
           </p>
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="secondary" size="xs" disabled={busy} onClick={() => void onStart()}>
-            {busy ? 'Starting…' : 'Sign in with ChatGPT'}
+            {busy ? t('chatGPTSignIn.starting') : t('chatGPTSignIn.signIn')}
           </Button>
           <p className={fieldHintClassName}>
-            Needs device code sign-in enabled on the account, under ChatGPT Settings → Security.
+            {t('chatGPTSignIn.needsDeviceCode')}
           </p>
         </div>
       )}

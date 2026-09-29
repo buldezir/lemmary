@@ -1,19 +1,147 @@
+import { existsSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defineConfig } from 'vitepress'
+import { defineConfig, type DefaultTheme } from 'vitepress'
 
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const vuePkg = path.join(frontendRoot, 'node_modules/vue')
+const docsRoot = path.resolve(frontendRoot, '../docs')
+
+type Lang = 'en' | 'de' | 'ru'
+type Label = Record<Lang, string>
+
+for (const lang of ['de', 'ru']) {
+  for (const page of readdirSync(docsRoot).filter((name) => name.endsWith('.md'))) {
+    if (!existsSync(path.join(docsRoot, lang, page))) {
+      throw new Error(`docs/${lang}/${page} is missing: every docs page has a de and a ru copy`)
+    }
+  }
+}
+
+const nav: Array<[string, Label]> = [
+  ['screenshots', { en: 'Screenshots', de: 'Screenshots', ru: 'Скриншоты' }],
+  ['comparison', { en: 'Compare', de: 'Vergleich', ru: 'Сравнение' }],
+  ['deep_research', { en: 'Deep Research', de: 'Deep Research', ru: 'Deep Research' }],
+  ['self_hosting', { en: 'Self-hosting', de: 'Self-Hosting', ru: 'Хостинг' }],
+  ['setup', { en: 'Configure', de: 'Konfiguration', ru: 'Настройка' }],
+  ['guided_ai_setup', { en: 'AI setup', de: 'KI-Einrichtung', ru: 'Настройка ИИ' }],
+  ['ai_providers', { en: 'AI providers', de: 'KI-Anbieter', ru: 'Провайдеры ИИ' }],
+  ['passkeys', { en: 'Passkeys', de: 'Passkeys', ru: 'Ключи доступа' }],
+]
+
+const guides: Array<[string, Label]> = [
+  ['screenshots', { en: 'Screenshots', de: 'Screenshots', ru: 'Скриншоты' }],
+  [
+    'comparison',
+    { en: 'Lemmary vs alternatives', de: 'Lemmary im Vergleich', ru: 'Lemmary и альтернативы' },
+  ],
+  ['deep_research', { en: 'Deep Research', de: 'Deep Research', ru: 'Deep Research' }],
+  [
+    'self_hosting',
+    {
+      en: 'Self-hosting with Docker',
+      de: 'Self-Hosting mit Docker',
+      ru: 'Самостоятельный хостинг в Docker',
+    },
+  ],
+  [
+    'guided_ai_setup',
+    {
+      en: 'Guided AI provider setup',
+      de: 'Geführte Einrichtung des KI-Anbieters',
+      ru: 'Пошаговая настройка провайдера ИИ',
+    },
+  ],
+  ['setup', { en: 'Configuration Guide', de: 'Konfigurationsleitfaden', ru: 'Руководство по настройке' }],
+  [
+    'development',
+    { en: 'Development environment', de: 'Entwicklungsumgebung', ru: 'Среда разработки' },
+  ],
+  ['storage', { en: 'Storage', de: 'Speicher', ru: 'Хранилище' }],
+  [
+    'ai_providers',
+    { en: 'AI providers and models', de: 'KI-Anbieter und Modelle', ru: 'Провайдеры и модели ИИ' },
+  ],
+  ['paperless_ngx', { en: 'Paperless-ngx API', de: 'Paperless-ngx-API', ru: 'API Paperless-ngx' }],
+  ['mcp', { en: 'MCP for agents', de: 'MCP für Agenten', ru: 'MCP для агентов' }],
+  ['scanning', { en: 'Scanning', de: 'Scannen', ru: 'Сканирование' }],
+  ['local_ocr', { en: 'Local OCR', de: 'Lokales OCR', ru: 'Локальное OCR' }],
+  [
+    'local_embeddings',
+    { en: 'Local embeddings', de: 'Lokale Embeddings', ru: 'Локальные эмбеддинги' },
+  ],
+  ['local_ai_macos', { en: 'Local AI on a Mac', de: 'Lokale KI auf dem Mac', ru: 'Локальный ИИ на Mac' }],
+  ['google_vision', { en: 'Google Vision', de: 'Google Vision', ru: 'Google Vision' }],
+  ['chatgpt_login', { en: 'ChatGPT sign-in', de: 'ChatGPT-Anmeldung', ru: 'Вход через ChatGPT' }],
+  ['oauth', { en: 'OAuth2', de: 'OAuth2', ru: 'OAuth2' }],
+  ['passkeys', { en: 'Passkeys', de: 'Passkeys', ru: 'Ключи доступа' }],
+  [
+    'encryption',
+    { en: 'Encryption at rest', de: 'Verschlüsselung im Ruhezustand', ru: 'Шифрование данных' },
+  ],
+]
+
+const chrome: Record<Exclude<Lang, 'en'>, DefaultTheme.Config> = {
+  de: {
+    outline: { label: 'Auf dieser Seite' },
+    docFooter: { prev: 'Vorherige Seite', next: 'Nächste Seite' },
+    sidebarMenuLabel: 'Menü',
+    returnToTopLabel: 'Zurück nach oben',
+    darkModeSwitchLabel: 'Darstellung',
+    langMenuLabel: 'Sprache ändern',
+  },
+  ru: {
+    outline: { label: 'На этой странице' },
+    docFooter: { prev: 'Предыдущая страница', next: 'Следующая страница' },
+    sidebarMenuLabel: 'Меню',
+    returnToTopLabel: 'Наверх',
+    darkModeSwitchLabel: 'Оформление',
+    langMenuLabel: 'Сменить язык',
+  },
+}
+
+function themeFor(lang: Lang): DefaultTheme.Config {
+  const prefix = lang === 'en' ? '' : `/${lang}`
+  return {
+    ...(lang === 'en' ? {} : chrome[lang]),
+    nav: nav.map(([page, text]) => ({ text: text[lang], link: `${prefix}/${page}` })),
+    sidebar: [
+      {
+        text: { en: 'Guides', de: 'Anleitungen', ru: 'Руководства' }[lang],
+        items: guides.map(([page, text]) => ({ text: text[lang], link: `${prefix}/${page}` })),
+      },
+    ],
+  }
+}
 
 export default defineConfig({
   title: 'Lemmary',
-  description: 'Setup and operation documentation',
   head: [['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }]],
   srcDir: '../docs',
   base: '/docs/',
   outDir: '../public/docs',
   // Repo path links (e.g. ../backend/...) are intentional; they are not docs pages.
   ignoreDeadLinks: [/\.\.\//],
+  locales: {
+    root: {
+      label: 'English',
+      lang: 'en',
+      description: 'Setup and operation documentation',
+      themeConfig: themeFor('en'),
+    },
+    de: {
+      label: 'Deutsch',
+      lang: 'de',
+      description: 'Dokumentation zu Einrichtung und Betrieb',
+      themeConfig: themeFor('de'),
+    },
+    ru: {
+      label: 'Русский',
+      lang: 'ru',
+      description: 'Документация по установке и эксплуатации',
+      themeConfig: themeFor('ru'),
+    },
+  },
   vite: {
     resolve: {
       alias: [
@@ -27,44 +155,5 @@ export default defineConfig({
         },
       ],
     },
-  },
-  themeConfig: {
-    nav: [
-      { text: 'Screenshots', link: '/screenshots' },
-      { text: 'Compare', link: '/comparison' },
-      { text: 'Deep Research', link: '/deep_research' },
-      { text: 'Self-hosting', link: '/self_hosting' },
-      { text: 'Configure', link: '/setup' },
-      { text: 'AI setup', link: '/guided_ai_setup' },
-      { text: 'AI providers', link: '/ai_providers' },
-      { text: 'Passkeys', link: '/passkeys' },
-    ],
-    sidebar: [
-      {
-        text: 'Guides',
-        items: [
-          { text: 'Screenshots', link: '/screenshots' },
-          { text: 'Lemmary vs alternatives', link: '/comparison' },
-          { text: 'Deep Research', link: '/deep_research' },
-          { text: 'Self-hosting with Docker', link: '/self_hosting' },
-          { text: 'Guided AI provider setup', link: '/guided_ai_setup' },
-          { text: 'Configuration Guide', link: '/setup' },
-          { text: 'Development environment', link: '/development' },
-          { text: 'Storage', link: '/storage' },
-          { text: 'AI providers and models', link: '/ai_providers' },
-          { text: 'Paperless-ngx API', link: '/paperless_ngx' },
-          { text: 'MCP for agents', link: '/mcp' },
-          { text: 'Scanning', link: '/scanning' },
-          { text: 'Local OCR', link: '/local_ocr' },
-          { text: 'Local embeddings', link: '/local_embeddings' },
-          { text: 'Local AI on a Mac', link: '/local_ai_macos' },
-          { text: 'Google Vision', link: '/google_vision' },
-          { text: 'ChatGPT sign-in', link: '/chatgpt_login' },
-          { text: 'OAuth2', link: '/oauth' },
-          { text: 'Passkeys', link: '/passkeys' },
-          { text: 'Encryption at rest', link: '/encryption' },
-        ],
-      },
-    ],
   },
 })

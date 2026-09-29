@@ -1,3 +1,4 @@
+import { t } from '../../i18n'
 import { apiFetch, ConnectionLostError, HttpError, sleep } from '../apiClient'
 import type { ContextUsage } from '../contextUsage'
 import { foldSteps, type ResearchStep, type StoredResearchStep } from '../researchSteps'
@@ -115,14 +116,14 @@ export async function listChatSessions(params?: {
   }
   query.set('perPage', String(chatListPageSize))
   const data = await apiFetch<ChatSessionListResponse>(`/api/app/chats?${query.toString()}`, {
-    fallbackError: 'Failed to load chats',
+    fallbackError: t('chats.loadListFailed'),
   })
   return data.items ?? []
 }
 
 export function getChatSession(id: string, signal?: AbortSignal): Promise<ChatSessionDetail> {
   return apiFetch<ChatSessionDetail>(`/api/app/chats/${encodeURIComponent(id)}`, {
-    fallbackError: 'Failed to load the chat',
+    fallbackError: t('chats.loadFailed'),
     signal,
   })
 }
@@ -259,7 +260,7 @@ export async function renameChatSession(id: string, title: string): Promise<Chat
   const data = await apiFetch<ChatSessionResponse>(`/api/app/chats/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: { title },
-    fallbackError: 'Failed to rename the chat',
+    fallbackError: t('chats.renameFailed'),
   })
   return data.session
 }
@@ -274,7 +275,7 @@ export async function forkChatSession(id: string, upto?: string): Promise<ChatSe
     {
       method: 'POST',
       body: { upto: upto ?? '' },
-      fallbackError: 'Failed to fork the chat',
+      fallbackError: t('chats.forkFailed'),
     },
   )
   return data.session
@@ -283,13 +284,13 @@ export async function forkChatSession(id: string, upto?: string): Promise<ChatSe
 export function deleteChatSession(id: string) {
   return apiFetch<unknown>(`/api/app/chats/${encodeURIComponent(id)}`, {
     method: 'DELETE',
-    fallbackError: 'Failed to delete the chat',
+    fallbackError: t('chats.deleteFailed'),
   })
 }
 
 /** What the sidebar shows for a session whose title never resolved. */
 export function chatSessionTitle(session: ChatSession): string {
-  return session.title.trim() || 'New chat'
+  return session.title.trim() || t('chats.newChat')
 }
 
 /**

@@ -114,7 +114,7 @@ describe('boundedLimits', () => {
     )
     const byName = Object.fromEntries(rows.map((row) => [row.name, row]))
     expect(byName.storage_bytes.format(1024)).toBe('1.0 KB')
-    expect(byName.documents.format(1200)).toBe((1200).toLocaleString())
+    expect(byName.documents.format(1200)).toBe((1200).toLocaleString('en'))
   })
 
   it('keeps a zero allowance, which is a real plan', () => {

@@ -10,6 +10,7 @@ import (
 
 	"lemmary/backend/internal/duplicates"
 	"lemmary/backend/internal/escl"
+	"lemmary/backend/internal/i18n"
 	"lemmary/backend/internal/limits"
 )
 
@@ -77,6 +78,7 @@ func TestScanSaveErrorsReadLikeAnUploadsDo(t *testing.T) {
 	cases := []struct {
 		name       string
 		err        error
+		language   string
 		wantStatus int
 		wantBody   string
 	}{
@@ -98,10 +100,26 @@ func TestScanSaveErrorsReadLikeAnUploadsDo(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 			wantBody:   "doc123",
 		},
+		{
+			name:       "too large, in German",
+			err:        escl.ErrTooLarge,
+			language:   "de",
+			wantStatus: http.StatusBadRequest,
+			wantBody:   "Grenze",
+		},
+		{
+			name: "allowance exhausted, in Russian",
+			err: &limits.ErrExceeded{Name: limits.NameDocuments, Allowed: 3, Used: 3, Message: i18n.Errorf(
+				"This instance holds %d of %d documents, so there is no room for another.", 3, 3)},
+			language:   "ru",
+			wantStatus: http.StatusBadRequest,
+			wantBody:   "3 из 3",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			e, rec := scanEvent(http.MethodPost, "/api/app/scan/document", "")
+			e.Request.Header.Set("Accept-Language", tc.language)
 			if err := writeScanSaveError(nil, e, tc.err); err != nil {
 				t.Fatalf("writeScanSaveError: %v", err)
 			}

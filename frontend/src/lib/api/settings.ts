@@ -1,3 +1,4 @@
+import { t } from '../../i18n'
 import { apiFetch } from '../apiClient'
 import { setAlwaysRequireReview } from '../reviewPolicy'
 import { invalidateAppMeta } from './meta'
@@ -98,13 +99,13 @@ export type EmbeddingStats = {
 
 export function getEmbeddingStats() {
   return apiFetch<EmbeddingStats>('/api/app/settings/embeddings', {
-    fallbackError: 'Failed to load embedding statistics',
+    fallbackError: t('settingsApi.statsFailed'),
   })
 }
 
 export function getAppSettings() {
   return apiFetch<AppSettings>('/api/app/settings', {
-    fallbackError: 'Failed to load settings',
+    fallbackError: t('settingsApi.loadFailed'),
   })
 }
 
@@ -112,7 +113,7 @@ export async function updateAppSettings(patch: AppSettingsPatch) {
   const settings = await apiFetch<AppSettings>('/api/app/settings', {
     method: 'PATCH',
     body: patch,
-    fallbackError: 'Failed to save settings',
+    fallbackError: t('settingsApi.saveFailed'),
   })
   // Normally learned once from /api/app/meta at boot; taking it from the save
   // response spares an admin who just turned it on a page reload.

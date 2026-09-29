@@ -1,4 +1,5 @@
 import type { LinkProps } from '@tanstack/react-router'
+import { t } from '../i18n'
 
 /**
  * The header's link set as data: the bar and the mobile panel render it in two
@@ -13,8 +14,8 @@ export type NavBadgeKey = 'inbox' | 'activity'
  * not a useful accessible name. Rendered after the count.
  */
 export const NAV_BADGE_DESCRIPTIONS: Record<NavBadgeKey, string> = {
-  inbox: 'not finished processing',
-  activity: 'processing',
+  inbox: t('nav.badgeInbox'),
+  activity: t('nav.badgeActivity'),
 }
 
 /** Names an icon the header draws before a label -- the key, never the SVG. */
@@ -50,31 +51,31 @@ export type NavItem = RouteNavItem | ExternalNavItem
  */
 export function primaryNavItems(reviewRequired: boolean): readonly NavItem[] {
   return [
-    { kind: 'route', label: 'Documents', to: '/', exact: true },
+    { kind: 'route', label: t('nav.documents'), to: '/', exact: true },
     // A path rather than /?status=needs_review: a search-param link would be
     // active whenever Documents was, / being a subset of every search.
     ...(reviewRequired
-      ? [{ kind: 'route', label: 'Inbox', to: '/inbox', badgeKey: 'inbox' } as const]
+      ? [{ kind: 'route', label: t('nav.inbox'), to: '/inbox', badgeKey: 'inbox' } as const]
       : []),
-    { kind: 'route', label: 'Upload', to: '/upload' },
-    { kind: 'route', label: 'Activity', to: '/activity', badgeKey: 'activity' },
-    { kind: 'route', label: 'Deep Research', to: '/rag/research' },
+    { kind: 'route', label: t('nav.upload'), to: '/upload' },
+    { kind: 'route', label: t('nav.activity'), to: '/activity', badgeKey: 'activity' },
+    { kind: 'route', label: t('nav.deepResearch'), to: '/rag/research' },
   ]
 }
 
 /** The links behind the bar's "More" menu, listed inline on a narrow one. */
 export function secondaryNavItems(pbAdminUrl: string): readonly NavItem[] {
   return [
-    { kind: 'route', label: 'Account', to: '/account' },
-    { kind: 'route', label: 'Tags', to: '/tags' },
-    { kind: 'route', label: 'Bulk Actions', to: '/bulk' },
-    { kind: 'route', label: 'OCR test', to: '/ocr-test' },
-    { kind: 'route', label: 'Export', to: '/export' },
-    { kind: 'route', label: 'Import', to: '/import' },
-    { kind: 'route', label: 'Settings', to: '/settings', admin: true },
-    { kind: 'route', label: 'Management', to: '/management', admin: true },
-    { kind: 'route', label: 'Maintenance', to: '/maintenance', admin: true },
-    { kind: 'external', label: 'Admin', href: pbAdminUrl, admin: true, icon: 'pocketbase' },
+    { kind: 'route', label: t('nav.account'), to: '/account' },
+    { kind: 'route', label: t('nav.tags'), to: '/tags' },
+    { kind: 'route', label: t('nav.bulkActions'), to: '/bulk' },
+    { kind: 'route', label: t('nav.ocrTest'), to: '/ocr-test' },
+    { kind: 'route', label: t('nav.export'), to: '/export' },
+    { kind: 'route', label: t('nav.import'), to: '/import' },
+    { kind: 'route', label: t('nav.settings'), to: '/settings', admin: true },
+    { kind: 'route', label: t('nav.management'), to: '/management', admin: true },
+    { kind: 'route', label: t('nav.maintenance'), to: '/maintenance', admin: true },
+    { kind: 'external', label: t('nav.admin'), href: pbAdminUrl, admin: true, icon: 'pocketbase' },
   ]
 }
 

@@ -16,6 +16,7 @@ import {
 } from '../lib/api/scan'
 import { documentsLanding } from '../lib/reviewPolicy'
 import { Button, inputClassName, labelTextClassName } from '../components/ui'
+import { docsUrl, t } from '../i18n'
 
 function errorMessage(err: unknown, fallback: string) {
   return err instanceof Error && err.message ? err.message : fallback
@@ -87,7 +88,7 @@ export function UploadScanPage() {
       }
     } catch (err) {
       setFound([])
-      setError(errorMessage(err, 'Could not look for scanners'))
+      setError(errorMessage(err, t('uploadScan.findFailed')))
     } finally {
       setSearching(false)
     }
@@ -100,7 +101,7 @@ export function UploadScanPage() {
 
   async function onScan() {
     if (!scanner.trim()) {
-      setError('Enter the scanner address, or search for one.')
+      setError(t('uploadScan.addressRequired'))
       return
     }
     try {
@@ -110,7 +111,7 @@ export function UploadScanPage() {
       rememberScanner(scanner.trim())
       setScan(await scanPage(scanner.trim(), source, scan?.upload_id))
     } catch (err) {
-      setError(errorMessage(err, 'The scan failed'))
+      setError(errorMessage(err, t('uploadScan.scanFailed')))
     } finally {
       setScanning(false)
     }
@@ -125,7 +126,7 @@ export function UploadScanPage() {
       setScan(null)
       setSavedId(document_id)
     } catch (err) {
-      setError(errorMessage(err, 'Failed to save the scan'))
+      setError(errorMessage(err, t('uploadScan.saveFailed')))
     } finally {
       setSaving(false)
     }
@@ -146,17 +147,16 @@ export function UploadScanPage() {
   return (
     <section className="flex flex-col gap-5">
       <div>
-        <h2 className="font-display text-xl font-semibold text-ink">Scan</h2>
+        <h2 className="font-display text-xl font-semibold text-ink">{t('uploadScan.title')}</h2>
         <p className="mt-1 text-sm text-ink-soft">
-          Scan straight from a network scanner on your local network — no driver, no computer in
-          between. Scan as many pages as the document has, then add them as one document.{' '}
+          {t('uploadScan.intro')}{' '}
           <a
-            href="/docs/scanning"
+            href={docsUrl('scanning.html')}
             target="_blank"
             rel="noopener noreferrer"
             className="underline hover:text-oxblood"
           >
-            How this finds your scanner
+            {t('uploadScan.docsLink')}
           </a>
         </p>
       </div>
@@ -164,7 +164,7 @@ export function UploadScanPage() {
       <div className="flex flex-col gap-4 rounded-none border border-line bg-surface p-5">
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex min-w-64 flex-1 flex-col gap-1">
-            <span className={labelTextClassName}>Scanner</span>
+            <span className={labelTextClassName}>{t('uploadScan.scanner')}</span>
             <input
               className={inputClassName}
               value={scanner}
@@ -174,7 +174,7 @@ export function UploadScanPage() {
             />
           </label>
           <Button variant="secondary" disabled={busy} onClick={() => void onFind()}>
-            {searching ? 'Searching…' : 'Find scanners'}
+            {searching ? t('uploadScan.searching') : t('uploadScan.find')}
           </Button>
         </div>
 
@@ -203,12 +203,17 @@ export function UploadScanPage() {
         {found !== null && (
           <div className="flex flex-wrap items-end gap-3">
             <p className="text-xs text-ink-soft">
-              {found.length === 0 ? 'Found nothing' : `Found ${found.length}`}
-              {searchedCidr ? ` on ${searchedCidr}` : ''} and over mDNS.
-              {found.length === 0 && ' Try another range, or type the address above.'}
+              {found.length === 0
+                ? searchedCidr
+                  ? t('uploadScan.foundNothingOn', { cidr: searchedCidr })
+                  : t('uploadScan.foundNothing')
+                : searchedCidr
+                  ? t('uploadScan.foundOn', { count: found.length, cidr: searchedCidr })
+                  : t('uploadScan.found', { count: found.length })}
+              {found.length === 0 && ` ${t('uploadScan.tryAnother')}`}
             </p>
             <label className="flex flex-col gap-1">
-              <span className={labelTextClassName}>Ranges</span>
+              <span className={labelTextClassName}>{t('uploadScan.ranges')}</span>
               <input
                 className={`${inputClassName} w-72`}
                 value={cidr}
@@ -218,17 +223,17 @@ export function UploadScanPage() {
               />
             </label>
             <Button variant="secondary" disabled={busy} onClick={() => void onFind(cidr)}>
-              Search again
+              {t('uploadScan.searchAgain')}
             </Button>
           </div>
         )}
 
         <fieldset className="flex flex-wrap items-center gap-3">
-          <legend className={`${labelTextClassName} mb-1`}>Source</legend>
+          <legend className={`${labelTextClassName} mb-1`}>{t('uploadScan.source')}</legend>
           {(
             [
-              ['platen', 'Glass', 'One page at a time'],
-              ['feeder', 'Feeder', 'Every sheet in the tray'],
+              ['platen', t('uploadScan.glass'), t('uploadScan.glassHint')],
+              ['feeder', t('uploadScan.feeder'), t('uploadScan.feederHint')],
             ] as const
           ).map(([value, label, hint]) => (
             <label
@@ -254,39 +259,39 @@ export function UploadScanPage() {
 
         <div>
           <Button disabled={busy} onClick={() => void onScan()}>
-            {scanning ? 'Scanning…' : scan ? 'Scan another page' : 'Scan'}
+            {scanning ? t('uploadScan.scanning') : scan ? t('uploadScan.scanAnother') : t('uploadScan.scan')}
           </Button>
         </div>
       </div>
 
       {scanning && (
         <div className="rounded-none border border-line bg-bright p-5">
-          <p className="text-sm font-medium text-ink">Scanning…</p>
+          <p className="text-sm font-medium text-ink">{t('uploadScan.scanning')}</p>
           <p className="mt-1 text-sm text-ink-soft">
             {source === 'feeder'
-              ? 'Pulling every sheet in the tray. This takes a while.'
-              : 'A page at 300 dpi takes half a minute or so.'}
+              ? t('uploadScan.feederWait')
+              : t('uploadScan.glassWait')}
           </p>
         </div>
       )}
 
       {scan && (
         <div className="flex flex-col gap-4 rounded-none border border-line bg-bright p-5">
-          <p className="text-sm font-medium text-ink">{describeScan(scan)} scanned so far.</p>
+          <p className="text-sm font-medium text-ink">{t('uploadScan.soFar', { pages: describeScan(scan) })}</p>
           {previewUrl && (
             <object
               data={previewUrl}
               type="application/pdf"
-              aria-label="The scanned document so far"
+              aria-label={t('uploadScan.previewLabel')}
               className="h-[32rem] w-full border border-line bg-surface"
             />
           )}
           <div className="flex flex-wrap gap-2">
             <Button disabled={busy} onClick={() => void onSave()}>
-              {saving ? 'Adding…' : 'Add to your library'}
+              {saving ? t('uploadScan.adding') : t('uploadScan.add')}
             </Button>
             <Button variant="secondary" disabled={busy} onClick={() => void onDiscard()}>
-              Discard
+              {t('uploadScan.discard')}
             </Button>
           </div>
         </div>
@@ -295,10 +300,10 @@ export function UploadScanPage() {
       {savedId && (
         <div className="flex flex-col gap-3 rounded-none border border-line bg-bright p-5">
           <p className="text-sm font-medium text-ink">
-            Added to your library, and queued for OCR and AI processing.
+            {t('uploadScan.added')}
           </p>
           <Link to={documentsLanding()} className="text-sm font-medium text-oxblood underline">
-            {documentsLanding() === '/inbox' ? 'Open the Inbox' : 'Open documents'}
+            {documentsLanding() === '/inbox' ? t('uploadScan.openInbox') : t('uploadScan.openDocuments')}
           </Link>
         </div>
       )}

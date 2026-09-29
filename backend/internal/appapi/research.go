@@ -10,6 +10,7 @@ import (
 
 	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/chat"
+	"lemmary/backend/internal/i18n"
 )
 
 // Research is the surface that keeps its conversation. Where a search turn is
@@ -135,7 +136,7 @@ func streamResearchTurn(app core.App, turn searchTurn, ctx context.Context, stre
 		if runErr := ctx.Err(); runErr != nil {
 			app.Logger().Info("research run stopped", slog.Any("error", runErr))
 			if errors.Is(runErr, context.DeadlineExceeded) {
-				stream.Send(ai.ResearchEvent{Type: "error", Message: runTooLongMessage})
+				stream.Send(ai.ResearchEvent{Type: "error", Message: i18n.T(turn.lang, runTooLongMessage)})
 			}
 			stream.Send(ai.ResearchEvent{Type: "done"})
 			return nil
@@ -196,7 +197,7 @@ func persistResearchAnswer(app core.App, t searchTurn, result ai.ResearchResult,
 			Saved:     false,
 			// The work is not lost, only this answer, and saying so is the
 			// difference between "ask again" and "start over".
-			Detail: "This answer could not be saved. The research behind it was, so asking again will not repeat it.",
+			Detail: i18n.T(t.lang, "This answer could not be saved. The research behind it was, so asking again will not repeat it."),
 		}
 	}
 

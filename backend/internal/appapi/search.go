@@ -17,6 +17,7 @@ import (
 	"lemmary/backend/internal/chat"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/i18n"
 	"lemmary/backend/internal/websearch"
 )
 
@@ -78,6 +79,7 @@ type searchTurn struct {
 	// resume continues a research turn whose run stopped before it answered,
 	// rather than asking something new.
 	resume bool
+	lang   string
 }
 
 func (t searchTurn) research() bool { return t.mode == chat.ModeResearch }
@@ -157,7 +159,7 @@ func embedQueryFunc(embedder ai.Embedder) func(context.Context, string) ([]float
 func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e *core.RequestEvent) (searchTurn, bool, error) {
 	req, content, runID, err := decodeSearchRequest(e)
 	if err != nil {
-		return searchTurn{}, true, writeError(e, http.StatusBadRequest, err.Error())
+		return searchTurn{}, true, writeBadRequest(e, err)
 	}
 
 	// ownerID is whose sidebar this conversation belongs in, so a superuser
@@ -188,8 +190,8 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 	mode := parseSearchMode(req.Mode)
 	if session != nil {
 		if stored := session.GetString("mode"); stored != "" && stored != mode {
-			return searchTurn{}, true, writeError(e, http.StatusConflict,
-				"This chat is a "+stored+" chat and cannot change mode. Start a new chat to switch.")
+			return searchTurn{}, true, writeErrorf(e, http.StatusConflict,
+				"This chat is a %s chat and cannot change mode. Start a new chat to switch.", stored)
 		}
 	}
 
@@ -214,7 +216,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 	binding := recordedBinding(conversationBinding(session, requested), defaultProviderID, defaultModel)
 	snap, err := conversationSnapshot(app, rt, config.Overrides{Search: binding}, session, requested)
 	if err != nil {
-		return searchTurn{}, true, writeError(e, http.StatusBadRequest, err.Error())
+		return searchTurn{}, true, writeBadRequest(e, err)
 	}
 	agent := snap.SearchAgent
 	if agent == nil {
@@ -270,6 +272,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		priorDocuments: priorDocuments,
 		contextWindow:  contextWindowFor(e.Request.Context(), app, rt, snap.Cfg, binding, mode),
 		resume:         req.Resume,
+		lang:           i18n.FromRequest(e.Request),
 	}, false, nil
 }
 
@@ -366,7 +369,7 @@ func persistSearchTurn(app core.App, t searchTurn, reply string, hits []ai.Docum
 			Message:   unsavedMessage(reply, hits),
 			Documents: hits,
 			Saved:     false,
-			Detail:    "This answer could not be saved, so the chat will not appear in your history.",
+			Detail:    i18n.T(t.lang, "This answer could not be saved, so the chat will not appear in your history."),
 		}
 	}
 
@@ -500,7 +503,7 @@ func handleSearchStream(app core.App, rt *config.Runtime, idx *fulltext.Index) f
 				// A cancel the viewer asked for needs no explanation, but a
 				// run out of budget would otherwise end as a bare EOF.
 				if errors.Is(runErr, context.DeadlineExceeded) {
-					stream.Send(ai.ResearchEvent{Type: "error", Message: runTooLongMessage})
+					stream.Send(ai.ResearchEvent{Type: "error", Message: i18n.T(turn.lang, runTooLongMessage)})
 				}
 				stream.Send(ai.ResearchEvent{Type: "done"})
 				return nil

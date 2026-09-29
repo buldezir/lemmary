@@ -1,3 +1,4 @@
+import { docsUrl, t } from '../../i18n'
 import { apiFetch } from '../apiClient'
 
 export type ProviderSDK =
@@ -160,9 +161,9 @@ export const SDK_OPTIONS: { value: ProviderSDK; label: string }[] = [
   { value: 'mistral', label: 'Mistral' },
   { value: 'opencode', label: 'Opencode Go' },
   { value: 'google_vision', label: 'Google Cloud Vision' },
-  { value: 'chatgpt', label: 'ChatGPT subscription' },
-  { value: 'local', label: 'Local Embeddings' },
-  { value: 'docling', label: 'Local OCR' },
+  { value: 'chatgpt', label: t('providers.sdkChatgpt') },
+  { value: 'local', label: t('providers.sdkLocal') },
+  { value: 'docling', label: t('providers.sdkDocling') },
   { value: 'tavily', label: 'Tavily' },
 ]
 
@@ -176,7 +177,7 @@ export function sdkLabel(sdk: ProviderSDK | string) {
  * parentheses inside the label's.
  */
 export function sdkAliasDefault(sdk: ProviderSDK | string) {
-  if (sdk === 'local') return 'Local embeddings'
+  if (sdk === 'local') return t('providers.aliasLocal')
   if (sdk === 'docling') return 'Docling'
   return sdkLabel(sdk)
 }
@@ -281,7 +282,7 @@ export function usesOCRModel(sdk?: string) {
  */
 export function localOCRModelHint(sdk?: string) {
   if (sdk !== 'docling') return ''
-  return 'Optional. Names Docling\u2019s OCR engine \u2014 rapidocr (the default, PaddleOCR\u2019s PP-OCR models), easyocr, tesserocr or tesseract. An unrecognised name is ignored silently, so check the spelling.'
+  return t('providers.localOcrModelHint')
 }
 
 /**
@@ -293,7 +294,7 @@ export function keylessProviderHint(sdk?: string) {
   // stands where this hint would.
   if (requiresAPIKey(sdk) || requiresSignIn(sdk)) return ''
   const overlay = sdk === 'local' ? 'docker-compose.embeddings.yml' : 'docker-compose.local-ocr.yml'
-  return `Runs on your own host, so no API key is needed \u2014 the address is the whole configuration. The default is the service name from ${overlay}.`
+  return t('providers.keylessHint', { overlay })
 }
 
 /**
@@ -307,20 +308,26 @@ export function keylessProviderHint(sdk?: string) {
 export function providerDocs(sdk?: string) {
   switch (sdk) {
     case 'local':
-      return { href: '/docs/local_embeddings.html', label: 'Local embeddings' }
+      return { href: docsUrl('local_embeddings.html'), label: t('providers.docsLocalEmbeddings') }
     case 'docling':
-      return { href: '/docs/local_ocr.html', label: 'Local OCR' }
+      return { href: docsUrl('local_ocr.html'), label: t('providers.docsLocalOcr') }
     case 'google_vision':
-      return { href: '/docs/google_vision.html', label: 'Google Vision API key' }
+      return { href: docsUrl('google_vision.html'), label: t('providers.docsGoogleVision') }
     case 'chatgpt':
-      return { href: '/docs/chatgpt_login.html', label: 'ChatGPT sign-in' }
+      return { href: docsUrl('chatgpt_login.html'), label: t('providers.docsChatgpt') }
     case 'mistral':
     case 'opencode':
-      return { href: '/docs/guided_ai_setup.html', label: 'guided AI provider setup' }
+      return { href: docsUrl('guided_ai_setup.html'), label: t('providers.docsGuidedSetup') }
     case 'tavily':
-      return { href: '/docs/ai_providers.html#the-web-search-provider', label: 'web-search provider' }
+      return {
+        href: docsUrl('ai_providers.html#the-web-search-provider'),
+        label: t('providers.docsWebSearch'),
+      }
     default:
-      return { href: '/docs/ai_providers.html#choosing-a-provider', label: 'AI providers' }
+      return {
+        href: docsUrl('ai_providers.html#choosing-a-provider'),
+        label: t('providers.docsAiProviders'),
+      }
   }
 }
 
@@ -354,8 +361,7 @@ export function modelOptionLabel(item: CatalogModel) {
   return item.id
 }
 
-export const OCR_MODEL_WARNING =
-  'Choose this model wisely — this provider does not advertise which models accept file inputs.'
+export const OCR_MODEL_WARNING = t('providers.ocrModelWarning')
 
 export function showsOCRModelWarning(sdk?: string) {
   return sdk === 'openai'
@@ -363,7 +369,7 @@ export function showsOCRModelWarning(sdk?: string) {
 
 export async function listAIProviders() {
   const data = await apiFetch<{ providers?: AIProvider[] }>('/api/app/providers', {
-    fallbackError: 'Failed to load providers',
+    fallbackError: t('providers.loadFailed'),
   })
   return data.providers ?? []
 }
@@ -372,7 +378,7 @@ export function createAIProvider(body: AIProviderWrite) {
   return apiFetch<AIProvider>('/api/app/providers', {
     method: 'POST',
     body,
-    fallbackError: 'Failed to create provider',
+    fallbackError: t('providers.createFailed'),
   })
 }
 
@@ -380,21 +386,21 @@ export function updateAIProvider(id: string, body: Partial<AIProviderWrite>) {
   return apiFetch<AIProvider>(`/api/app/providers/${id}`, {
     method: 'PATCH',
     body,
-    fallbackError: 'Failed to update provider',
+    fallbackError: t('providers.updateFailed'),
   })
 }
 
 export async function deleteAIProvider(id: string) {
   await apiFetch<{ detail?: string }>(`/api/app/providers/${id}`, {
     method: 'DELETE',
-    fallbackError: 'Failed to delete provider',
+    fallbackError: t('providers.deleteFailed'),
   })
 }
 
 export async function listProviderModels(id: string, purpose: ModelPurpose = 'llm') {
   const data = await apiFetch<{ models?: CatalogModel[]; sdk?: string }>(
     `/api/app/providers/${id}/models?for=${purpose}`,
-    { fallbackError: 'Failed to load models' },
+    { fallbackError: t('providers.modelsFailed') },
   )
   return { models: data.models ?? [], sdk: data.sdk ?? '' }
 }
@@ -418,7 +424,7 @@ export type ChatGPTLoginStatus = {
 export function startChatGPTLogin(id: string) {
   return apiFetch<ChatGPTDeviceLogin>(`/api/app/providers/${id}/chatgpt/device`, {
     method: 'POST',
-    fallbackError: 'Failed to start the ChatGPT sign-in',
+    fallbackError: t('providers.chatgptStartFailed'),
   })
 }
 
@@ -429,7 +435,7 @@ export function startChatGPTLogin(id: string) {
 export function pollChatGPTLogin(id: string) {
   return apiFetch<ChatGPTLoginStatus>(`/api/app/providers/${id}/chatgpt/device/poll`, {
     method: 'POST',
-    fallbackError: 'Failed to check the ChatGPT sign-in',
+    fallbackError: t('providers.chatgptCheckFailed'),
   })
 }
 
@@ -437,7 +443,7 @@ export function pollChatGPTLogin(id: string) {
 export function signOutChatGPT(id: string) {
   return apiFetch<AIProvider>(`/api/app/providers/${id}/chatgpt`, {
     method: 'DELETE',
-    fallbackError: 'Failed to sign out of ChatGPT',
+    fallbackError: t('providers.chatgptSignOutFailed'),
   })
 }
 
@@ -449,7 +455,7 @@ export type OCRProviderInfo = {
 
 export async function listOCRProviders() {
   const data = await apiFetch<{ providers?: OCRProviderInfo[] }>('/api/app/ocr/providers', {
-    fallbackError: 'Failed to load OCR providers',
+    fallbackError: t('providers.ocrProvidersFailed'),
   })
   return data.providers ?? []
 }
@@ -473,13 +479,13 @@ export async function listPickableProviders(purpose: ModelPurpose, binding?: str
   if (binding) query.set('binding', binding)
   const data = await apiFetch<{ providers?: OCRProviderInfo[]; configured?: ConfiguredBinding }>(
     `/api/app/ai/providers?${query.toString()}`,
-    { fallbackError: 'Failed to load providers' },
+    { fallbackError: t('providers.loadFailed') },
   )
   return { providers: data.providers ?? [], configured: data.configured ?? {} }
 }
 
 /** How a model is named in the UI when there is nothing bound to name. */
-export const UNBOUND_MODEL_LABEL = 'not configured'
+export const UNBOUND_MODEL_LABEL = t('providers.unboundModel')
 
 /** The model a binding runs on, for the one-line "which model" summaries. */
 export function bindingModelLabel(model: string | undefined) {
@@ -521,6 +527,6 @@ export function testOCR(file: File, provider: string, model?: string) {
   return apiFetch<OCRTestResult>('/api/app/ocr/test', {
     method: 'POST',
     formData,
-    fallbackError: 'OCR test failed',
+    fallbackError: t('providers.ocrTestFailed'),
   })
 }

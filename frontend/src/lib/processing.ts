@@ -1,3 +1,5 @@
+import { lang, t } from '../i18n'
+
 export type ProcessingStep =
   | 'preview'
   | 'ocr'
@@ -63,21 +65,21 @@ export const EXTRACTION_PIPELINE_STEPS: ProcessingStep[] = [
 ]
 
 export const PROCESSING_STEP_LABELS: Record<ProcessingStep, string> = {
-  preview: 'Preview',
+  preview: t('processing.stepPreview'),
   ocr: 'OCR',
-  detect_duplicates: 'Detect duplicates',
-  extract_metadata: 'Extract metadata',
-  apply_metadata: 'Apply metadata',
-  embed: 'Build search vectors',
+  detect_duplicates: t('processing.stepDetectDuplicates'),
+  extract_metadata: t('processing.stepExtractMetadata'),
+  apply_metadata: t('processing.stepApplyMetadata'),
+  embed: t('processing.stepEmbed'),
 }
 
 export const PROCESSING_STEP_DESCRIPTIONS: Record<ProcessingStep, string> = {
-  preview: 'Regenerate the first-page preview image (PDF only)',
-  ocr: 'Re-run text extraction on the original file',
-  detect_duplicates: 'Compare OCR text for near-duplicates (when enabled in Settings)',
-  extract_metadata: 'Re-run AI metadata extraction from OCR text',
-  apply_metadata: 'Write extracted metadata onto the document',
-  embed: 'Re-build the passage vectors Deep Search retrieves by meaning (when an embedding model is set)',
+  preview: t('processing.descPreview'),
+  ocr: t('processing.descOcr'),
+  detect_duplicates: t('processing.descDetectDuplicates'),
+  extract_metadata: t('processing.descExtractMetadata'),
+  apply_metadata: t('processing.descApplyMetadata'),
+  embed: t('processing.descEmbed'),
 }
 
 export function orderedProcessingSteps(selected: Iterable<ProcessingStep>): ProcessingStep[] {
@@ -98,9 +100,9 @@ export function defaultReprocessSteps(hasOcrText: boolean): ProcessingStep[] {
 export type ReprocessMode = 'auto' | 'full' | 'extraction'
 
 export const REPROCESS_MODE_LABELS: Record<ReprocessMode, string> = {
-  auto: 'Auto (per document)',
-  full: 'Full pipeline',
-  extraction: 'Extraction only',
+  auto: t('processing.modeAuto'),
+  full: t('processing.modeFull'),
+  extraction: t('processing.modeExtraction'),
 }
 
 /**
@@ -157,18 +159,23 @@ export function jobDurationMs(job: ProcessingJobRecord, now: number = Date.now()
  * One significant figure rather than a fixed unit: a step can be milliseconds
  * or minutes. Sub-second rounds to the millisecond, because "0.0s" says nothing.
  */
-export function formatDuration(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)}ms`
-  const seconds = ms / 1000
-  if (seconds < 60) return `${seconds.toFixed(1)}s`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m ${String(Math.floor(seconds % 60)).padStart(2, '0')}s`
-  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`
-}
+const tenths = new Intl.NumberFormat(lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 
-/** "1 document" / "4 documents", for the counts these pages keep reporting. */
-export function countLabel(count: number, singular: string, plural: string): string {
-  return `${count} ${count === 1 ? singular : plural}`
+export function formatDuration(ms: number): string {
+  if (ms < 1000) return t('processing.durationMs', { ms: Math.round(ms) })
+  const seconds = ms / 1000
+  if (seconds < 60) return t('processing.durationSeconds', { seconds: tenths.format(seconds) })
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) {
+    return t('processing.durationMinutes', {
+      minutes,
+      seconds: String(Math.floor(seconds % 60)).padStart(2, '0'),
+    })
+  }
+  return t('processing.durationHours', {
+    hours: Math.floor(minutes / 60),
+    minutes: String(minutes % 60).padStart(2, '0'),
+  })
 }
 
 /** The label for a step, falling back to the raw name for one we don't know. */
@@ -206,7 +213,7 @@ export function summarizeJob(
   const runs = job.step_runs ?? []
 
   if (job.status === 'cancelled') {
-    return { tone: 'warning', label: 'Processing cancelled', detail: job.error }
+    return { tone: 'warning', label: t('processing.cancelled'), detail: job.error }
   }
 
   const running = runs.find((run) => run.status === 'running')
@@ -225,7 +232,7 @@ export function summarizeJob(
   if (failed && !job.finished_at && job.status === 'pending') {
     return {
       tone: 'running',
-      label: `Retrying ${stepLabel(failed.name)} (attempt ${failed.attempts + 1})`,
+      label: t('processing.retrying', { step: stepLabel(failed.name), attempt: failed.attempts + 1 }),
       detail: failed.error,
     }
   }
@@ -235,12 +242,12 @@ export function summarizeJob(
   if (failed) {
     return {
       tone: 'error',
-      label: `${stepLabel(failed.name)} failed`,
+      label: t('processing.stepFailed', { step: stepLabel(failed.name) }),
       detail: failed.error || job.error,
     }
   }
   if (job.error) {
-    return { tone: 'error', label: 'Processing failed', detail: job.error }
+    return { tone: 'error', label: t('processing.failed'), detail: job.error }
   }
 
   if (job.status === 'pending' && !job.started_at) {
@@ -248,8 +255,8 @@ export function summarizeJob(
     if (created !== null && now - created > stalledAfterMs) {
       return {
         tone: 'warning',
-        label: 'Not started yet',
-        detail: 'Check that the OCR and AI providers are configured in Settings.',
+        label: t('processing.notStarted'),
+        detail: t('processing.notStartedHint'),
       }
     }
     return null
@@ -259,12 +266,15 @@ export function summarizeJob(
   // missing.
   const soft = runs.find((run) => run.status === 'failed' && run.soft)
   if (soft) {
-    return { tone: 'warning', label: `${stepLabel(soft.name)} failed`, detail: soft.error }
+    return { tone: 'warning', label: t('processing.stepFailed', { step: stepLabel(soft.name) }), detail: soft.error }
   }
 
   if (jobStillRunning(job)) {
     const ms = jobDurationMs(job, now)
-    return { tone: 'running', label: ms === null ? 'Processing' : `Processing — ${formatDuration(ms)}` }
+    return {
+      tone: 'running',
+      label: ms === null ? t('processing.running') : t('processing.runningFor', { duration: formatDuration(ms) }),
+    }
   }
 
   return null
