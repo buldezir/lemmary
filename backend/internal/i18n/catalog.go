@@ -1,6 +1,10 @@
 package i18n
 
 var catalog = map[string]map[string]string{
+	"%s must be positive": {
+		"de": "%s muss positiv sein",
+		"ru": "%s должен быть положительным",
+	},
 	"A chat to resume is required.": {
 		"de": "Ein fortzusetzender Chat ist erforderlich.",
 		"ru": "Не указан чат для продолжения.",
@@ -441,6 +445,10 @@ var catalog = map[string]map[string]string{
 		"de": "Die OCR-Erkennung ist fehlgeschlagen; Details finden Sie in den Server-Logs.",
 		"ru": "Не удалось выполнить OCR; подробности в журналах сервера.",
 	},
+	"OCR requires %s provider": {
+		"de": "OCR benötigt einen passenden Anbieter (%s)",
+		"ru": "для OCR нужен подходящий провайдер (%s)",
+	},
 	"POST required.": {
 		"de": "POST erforderlich.",
 		"ru": "Требуется метод POST.",
@@ -677,6 +685,42 @@ var catalog = map[string]map[string]string{
 		"de": "Dieses Dokument ist bereits in Ihrer Bibliothek.",
 		"ru": "Этот документ уже есть в вашей библиотеке.",
 	},
+	"This file has %d pages, over the %d-page limit for a single document.": {
+		"de": "Diese Datei hat %d Seiten und überschreitet die Grenze von %d Seiten für ein einzelnes Dokument.",
+		"ru": "Страниц в этом файле: %d, это больше предела для одного документа (страниц: %d).",
+	},
+	"This file has %d pages. Text can be extracted from at most %d.": {
+		"de": "Diese Datei hat %d Seiten. Text kann aus höchstens %d extrahiert werden.",
+		"ru": "Страниц в этом файле: %d. Текст можно извлечь не более чем из %d.",
+	},
+	"This file is %s, over the %s limit for a single document.": {
+		"de": "Diese Datei ist %s groß und überschreitet die Grenze von %s für ein einzelnes Dokument.",
+		"ru": "Размер этого файла — %s, это больше предела в %s для одного документа.",
+	},
+	"This instance allows %d accounts beyond the admin account and already has that many.": {
+		"de": "Diese Instanz erlaubt %d Konten zusätzlich zum Administratorkonto und hat bereits so viele.",
+		"ru": "Этот экземпляр допускает дополнительных учётных записей (помимо администратора): %d, и все они уже созданы.",
+	},
+	"This instance does not allow accounts beyond the admin account.": {
+		"de": "Diese Instanz erlaubt keine Konten zusätzlich zum Administratorkonto.",
+		"ru": "Этот экземпляр не допускает учётных записей помимо администратора.",
+	},
+	"This instance holds %d of %d documents, so there is no room for %d more.": {
+		"de": "Diese Instanz enthält %d von %d Dokumenten, daher ist kein Platz für %d weitere.",
+		"ru": "В этом экземпляре документов: %d из %d, места для ещё %d нет.",
+	},
+	"This instance holds %d of %d documents, so there is no room for another.": {
+		"de": "Diese Instanz enthält %d von %d Dokumenten, daher ist kein Platz für ein weiteres.",
+		"ru": "В этом экземпляре документов: %d из %d, места для ещё одного нет.",
+	},
+	"This instance holds %d of %d pages, and this would add %d.": {
+		"de": "Diese Instanz enthält %d von %d Seiten, und dies würde %d hinzufügen.",
+		"ru": "В этом экземпляре занято страниц: %d из %d, а это добавит ещё %d.",
+	},
+	"This instance uses %s of its %s of storage, and this would add %s.": {
+		"de": "Diese Instanz belegt %s von %s Speicher, und dies würde %s hinzufügen.",
+		"ru": "Этот экземпляр использует %s из %s хранилища, а это добавит ещё %s.",
+	},
 	"This passkey could not be verified.": {
 		"de": "Dieser Passkey konnte nicht verifiziert werden.",
 		"ru": "Не удалось проверить этот ключ доступа.",
@@ -761,6 +805,10 @@ var catalog = map[string]map[string]string{
 		"de": "Sie haben die maximale Anzahl gespeicherter Chats erreicht. Löschen Sie einige, um einen neuen zu beginnen.",
 		"ru": "Достигнуто максимальное число сохранённых чатов. Удалите некоторые, чтобы начать новый.",
 	},
+	"accent must be a hex color like #6e2620": {
+		"de": "accent muss eine Hex-Farbe wie #6e2620 sein",
+		"ru": "accent должен быть цветом в формате hex, например #6e2620",
+	},
 	"alias is required.": {
 		"de": "alias ist erforderlich.",
 		"ru": "Требуется alias.",
@@ -768,6 +816,10 @@ var catalog = map[string]map[string]string{
 	"api_key is required.": {
 		"de": "api_key ist erforderlich.",
 		"ru": "Требуется api_key.",
+	},
+	"app_name must be 1-255 characters": {
+		"de": "app_name muss 1 bis 255 Zeichen lang sein",
+		"ru": "app_name должно содержать от 1 до 255 символов",
 	},
 	"base_url is required for a local OCR provider.": {
 		"de": "base_url ist für einen lokalen OCR-Anbieter erforderlich.",
@@ -777,13 +829,93 @@ var catalog = map[string]map[string]string{
 		"de": "catalog muss einer der bekannten Modellkataloge oder leer sein.",
 		"ru": "catalog должен быть одним из известных каталогов моделей или пустым.",
 	},
+	"embedding_model is required when an embedding provider is set": {
+		"de": "embedding_model ist erforderlich, wenn ein Embedding-Anbieter gesetzt ist",
+		"ru": "если задан провайдер эмбеддингов, требуется embedding_model",
+	},
+	"embeddings require %s provider": {
+		"de": "Embeddings benötigen einen passenden Anbieter (%s)",
+		"ru": "для эмбеддингов нужен подходящий провайдер (%s)",
+	},
+	"extract_model is required": {
+		"de": "extract_model ist erforderlich",
+		"ru": "требуется extract_model",
+	},
+	"extraction and research require %s provider": {
+		"de": "Extraktion und Recherche benötigen einen passenden Anbieter (%s)",
+		"ru": "для извлечения и исследования нужен подходящий провайдер (%s)",
+	},
+	"extraction_rules must be at most %d characters": {
+		"de": "extraction_rules darf höchstens %d Zeichen lang sein",
+		"ru": "extraction_rules: не более %d символов",
+	},
+	"imap_after_consume must be keep, delete or move": {
+		"de": "imap_after_consume muss keep, delete oder move sein",
+		"ru": "imap_after_consume должен быть keep, delete или move",
+	},
+	"imap_move_folder is required to move consumed messages": {
+		"de": "imap_move_folder ist erforderlich, um verarbeitete Nachrichten zu verschieben",
+		"ru": "чтобы перемещать обработанные письма, требуется imap_move_folder",
+	},
+	"imap_move_folder must differ from imap_folder": {
+		"de": "imap_move_folder muss sich von imap_folder unterscheiden",
+		"ru": "imap_move_folder должен отличаться от imap_folder",
+	},
+	"imap_security must be tls or starttls": {
+		"de": "imap_security muss tls oder starttls sein",
+		"ru": "imap_security должен быть tls или starttls",
+	},
+	"imap_skip_types cannot skip every file type": {
+		"de": "imap_skip_types kann nicht alle Dateitypen überspringen",
+		"ru": "imap_skip_types не может исключать все типы файлов",
+	},
+	"imap_skip_types must be pdf, office, image or text": {
+		"de": "imap_skip_types muss pdf, office, image oder text sein",
+		"ru": "imap_skip_types должен быть pdf, office, image или text",
+	},
+	"ingest_dir_interval_min must divide an hour (1-30 minutes) or a day (1-24 hours)": {
+		"de": "ingest_dir_interval_min muss eine Stunde (1–30 Minuten) oder einen Tag (1–24 Stunden) ohne Rest teilen",
+		"ru": "ingest_dir_interval_min должен делить без остатка час (1–30 минут) или сутки (1–24 часа)",
+	},
+	"ingest_dir_owner is not a known user": {
+		"de": "ingest_dir_owner ist kein bekannter Benutzer",
+		"ru": "ingest_dir_owner не является известным пользователем",
+	},
 	"job_id is required.": {
 		"de": "job_id ist erforderlich.",
 		"ru": "Требуется job_id.",
 	},
+	"near_duplicate_threshold must be between 0 and 1": {
+		"de": "near_duplicate_threshold muss zwischen 0 und 1 liegen",
+		"ru": "near_duplicate_threshold должен быть от 0 до 1",
+	},
+	"ocr_model is required for this OCR provider": {
+		"de": "ocr_model ist für diesen OCR-Anbieter erforderlich",
+		"ru": "для этого OCR-провайдера требуется ocr_model",
+	},
+	"ocr_provider_id is not a valid provider": {
+		"de": "ocr_provider_id ist kein gültiger Anbieter",
+		"ru": "ocr_provider_id не является допустимым провайдером",
+	},
 	"q is required.": {
 		"de": "q ist erforderlich.",
 		"ru": "Требуется q.",
+	},
+	"research_model is required when a research provider is set": {
+		"de": "research_model ist erforderlich, wenn ein Recherche-Anbieter gesetzt ist",
+		"ru": "если задан провайдер для исследования, требуется research_model",
+	},
+	"research_provider_id is required when a research model is set": {
+		"de": "research_provider_id ist erforderlich, wenn ein Recherche-Modell gesetzt ist",
+		"ru": "если задана модель для исследования, требуется research_provider_id",
+	},
+	"the scanned document is at the %d MB limit; save it and start another": {
+		"de": "Das gescannte Dokument hat die Grenze von %d MB erreicht; speichern Sie es und beginnen Sie ein neues",
+		"ru": "Отсканированный документ достиг предела в %d МБ; сохраните его и начните новый",
+	},
+	"unknown provider": {
+		"de": "unbekannter Anbieter",
+		"ru": "неизвестный провайдер",
 	},
 	"upload_id and page are required.": {
 		"de": "upload_id und page sind erforderlich.",
@@ -792,5 +924,13 @@ var catalog = map[string]map[string]string{
 	"upload_id is required.": {
 		"de": "upload_id ist erforderlich.",
 		"ru": "Требуется upload_id.",
+	},
+	"web search requires %s provider": {
+		"de": "Die Websuche benötigt einen passenden Anbieter (%s)",
+		"ru": "для веб-поиска нужен подходящий провайдер (%s)",
+	},
+	"worker_max_retries must be >= 0": {
+		"de": "worker_max_retries muss >= 0 sein",
+		"ru": "worker_max_retries должен быть >= 0",
 	},
 }

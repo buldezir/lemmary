@@ -1,6 +1,8 @@
 package i18n
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -50,6 +52,22 @@ func TestTFallsBackToMessage(t *testing.T) {
 	}
 	if got := T("de", "Invalid request body."); got == "Invalid request body." {
 		t.Error("T(de) left a catalogued message in English")
+	}
+}
+
+func TestOfTranslatesAnErrorFromItsFormat(t *testing.T) {
+	err := fmt.Errorf("saving: %w", Errorf("extraction_rules must be at most %d characters", 4000))
+	if got, want := Of("en", err), "saving: extraction_rules must be at most 4000 characters"; got != want {
+		t.Errorf("Of(en) = %q, want the English unchanged: %q", got, want)
+	}
+	if got, want := Of("de", err), "extraction_rules darf höchstens 4000 Zeichen lang sein"; got != want {
+		t.Errorf("Of(de) = %q, want %q", got, want)
+	}
+	if got := Of("ru", errors.New("Invalid request body.")); got == "Invalid request body." {
+		t.Error("Of(ru) left a catalogued plain error in English")
+	}
+	if got := Of("de", errors.New("not catalogued")); got != "not catalogued" {
+		t.Errorf("Of(de) = %q, want an uncatalogued error unchanged", got)
 	}
 }
 

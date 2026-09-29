@@ -159,7 +159,7 @@ func embedQueryFunc(embedder ai.Embedder) func(context.Context, string) ([]float
 func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e *core.RequestEvent) (searchTurn, bool, error) {
 	req, content, runID, err := decodeSearchRequest(e)
 	if err != nil {
-		return searchTurn{}, true, writeError(e, http.StatusBadRequest, err.Error())
+		return searchTurn{}, true, writeBadRequest(e, err)
 	}
 
 	// ownerID is whose sidebar this conversation belongs in, so a superuser
@@ -216,7 +216,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 	binding := recordedBinding(conversationBinding(session, requested), defaultProviderID, defaultModel)
 	snap, err := conversationSnapshot(app, rt, config.Overrides{Search: binding}, session, requested)
 	if err != nil {
-		return searchTurn{}, true, writeError(e, http.StatusBadRequest, err.Error())
+		return searchTurn{}, true, writeBadRequest(e, err)
 	}
 	agent := snap.SearchAgent
 	if agent == nil {

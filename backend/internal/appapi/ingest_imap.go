@@ -44,13 +44,13 @@ func handleStartIMAPBackfill(rt *config.Runtime, scanner *imapimport.Scanner) fu
 		}
 		from, to, err := scanWindow(req)
 		if err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		}
 		switch err := scanner.StartBackfill(rt.Snapshot().Cfg, from, to); {
 		case errors.Is(err, imapimport.ErrBusy):
 			return writeError(e, http.StatusConflict, "A mailbox scan is already running. Try again shortly.")
 		case err != nil:
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		}
 		return writeJSON(e, http.StatusAccepted, scanner.BackfillStatus())
 	}

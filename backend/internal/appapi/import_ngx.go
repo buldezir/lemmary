@@ -30,7 +30,7 @@ func handlePostImportNgx(app core.App) func(*core.RequestEvent) error {
 		}
 		mode, err := ngximport.ParseMode(req.Mode)
 		if err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		}
 
 		ownerID, err := resolveOwnerUserID(app, e)

@@ -52,7 +52,7 @@ API and browser e2e live in the overlay; its `AGENTS.md` covers them.
 The app, its API errors and the docs ship in English, German and Russian. English is the source; a change to any of them updates all three.
 
 - UI text lives in `frontend/src/i18n/en.ts`, `de.ts` and `ru.ts`, read through `t()`. `tsc` fails on a key missing from one of them.
-- A `writeError` message needs a de and ru entry in `backend/internal/i18n/catalog.go`; `appapi/messages_test.go` fails otherwise.
+- A message the backend shows a user needs a de and ru entry in `backend/internal/i18n/catalog.go`; `i18n/messages_test.go` fails otherwise. Build one from values with `i18n.Errorf`, not `fmt`, and send it with `writeBadRequest`, so it is translated from its format.
 - Every `docs/*.md` has a copy under `docs/de/` and `docs/ru/` whose headings keep the English anchors (`{#slug}`); the docs build fails on a missing copy.
 
 ## Lint

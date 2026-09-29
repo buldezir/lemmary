@@ -4,6 +4,8 @@
 package i18n
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 
 	"golang.org/x/text/language"
@@ -36,4 +38,24 @@ func T(lang, msg string) string {
 		return s
 	}
 	return msg
+}
+
+// Error is a user-facing error built from a catalog key: Error() is the English,
+// and Of renders it in another language from the same arguments.
+type Error struct {
+	Format string
+	Args   []any
+}
+
+func Errorf(format string, args ...any) *Error { return &Error{Format: format, Args: args} }
+
+func (e *Error) Error() string { return fmt.Sprintf(e.Format, e.Args...) }
+
+// Of is err as a user reads it in lang. An *Error anywhere in the chain is
+// translated from its format; any other error is looked up by its text.
+func Of(lang string, err error) string {
+	if e, ok := errors.AsType[*Error](err); ok && lang != "en" {
+		return fmt.Sprintf(T(lang, e.Format), e.Args...)
+	}
+	return T(lang, err.Error())
 }

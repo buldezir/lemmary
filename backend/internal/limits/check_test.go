@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"lemmary/backend/internal/i18n"
 	"lemmary/backend/internal/models"
 )
 
@@ -42,8 +43,8 @@ func TestCheckFilePages(t *testing.T) {
 	if exceeded.Name != NameFilePages {
 		t.Fatalf("Name = %q, want %q", exceeded.Name, NameFilePages)
 	}
-	if !strings.Contains(exceeded.Message, "3 pages") {
-		t.Fatalf("message does not say how many pages the file has: %q", exceeded.Message)
+	if !strings.Contains(exceeded.Error(), "3 pages") {
+		t.Fatalf("message does not say how many pages the file has: %q", exceeded.Error())
 	}
 }
 
@@ -72,8 +73,8 @@ func TestCheckRoomDocuments(t *testing.T) {
 	if exceeded.Name != NameDocuments {
 		t.Fatalf("Name = %q, want %q", exceeded.Name, NameDocuments)
 	}
-	if !strings.Contains(exceeded.Message, "3 of 3") {
-		t.Fatalf("message does not show usage against the limit: %q", exceeded.Message)
+	if !strings.Contains(exceeded.Error(), "3 of 3") {
+		t.Fatalf("message does not show usage against the limit: %q", exceeded.Error())
 	}
 }
 
@@ -85,8 +86,8 @@ func TestCheckRoomBatchMessage(t *testing.T) {
 	if exceeded == nil {
 		t.Fatal("a 20-document batch passed with 5 of 10 used")
 	}
-	if !strings.Contains(exceeded.Message, "20 more") {
-		t.Fatalf("message does not mention the batch size: %q", exceeded.Message)
+	if !strings.Contains(exceeded.Error(), "20 more") {
+		t.Fatalf("message does not mention the batch size: %q", exceeded.Error())
 	}
 }
 
@@ -135,8 +136,8 @@ func TestCheckAdditionalUsersZeroAllowance(t *testing.T) {
 	if exceeded == nil {
 		t.Fatal("an additional user passed a limit of zero")
 	}
-	if strings.Contains(exceeded.Message, "0") {
-		t.Fatalf("the zero-allowance message reads as an off-by-one: %q", exceeded.Message)
+	if strings.Contains(exceeded.Error(), "0") {
+		t.Fatalf("the zero-allowance message reads as an off-by-one: %q", exceeded.Error())
 	}
 }
 
@@ -180,7 +181,7 @@ func TestSeatLimitTraceOfEveryAccountCreate(t *testing.T) {
 // router.SafeErrorItem into a generic "Invalid value.", so assert on the JSON:
 // RawData passing proves nothing about what reaches the browser.
 func TestExceededAPIErrorSurvivesSerialization(t *testing.T) {
-	exceeded := &ErrExceeded{Name: NameDocuments, Allowed: 3, Used: 3, Message: "This instance holds 2 of 2 documents, so there is no room for another."}
+	exceeded := &ErrExceeded{Name: NameDocuments, Allowed: 3, Used: 3, Message: i18n.Errorf("This instance holds 2 of 2 documents, so there is no room for another.")}
 	apiErr := exceeded.APIError()
 	if apiErr.Status != 400 {
 		t.Fatalf("Status = %d, want 400", apiErr.Status)

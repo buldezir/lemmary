@@ -151,7 +151,7 @@ export function UploadScanPage() {
         <p className="mt-1 text-sm text-ink-soft">
           {t('uploadScan.intro')}{' '}
           <a
-            href={docsUrl('scanning')}
+            href={docsUrl('scanning.html')}
             target="_blank"
             rel="noopener noreferrer"
             className="underline hover:text-oxblood"

@@ -133,7 +133,7 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 			alias = aiprovider.DefaultAlias(sdk)
 		}
 		if err := aiprovider.EnsureUniqueAlias(app, alias, ""); err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		}
 		apiKey := ""
 		if req.APIKey != nil {
@@ -246,7 +246,7 @@ func handlePatchProvider(app core.App, rt *config.Runtime) func(*core.RequestEve
 				return writeError(e, http.StatusBadRequest, "alias is required.")
 			}
 			if err := aiprovider.EnsureUniqueAlias(app, alias, record.Id); err != nil {
-				return writeError(e, http.StatusBadRequest, err.Error())
+				return writeBadRequest(e, err)
 			}
 			record.Set("alias", alias)
 		}

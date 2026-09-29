@@ -102,7 +102,7 @@ func handleListChats(app core.App) func(*core.RequestEvent) error {
 
 		q, page, perPage, err := parseChatListQuery(e.Request.URL.Query(), ownerID)
 		if err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		}
 
 		records, total, err := chat.ListSessions(app, q)

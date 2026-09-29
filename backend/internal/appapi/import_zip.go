@@ -35,7 +35,7 @@ func handlePostImportUpload(app core.App, lim limits.Limits, src zipimport.Sourc
 		}
 		part, fileName, err := archivePart(reader)
 		if err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		}
 		defer part.Close()
 
@@ -60,7 +60,7 @@ func handlePostImportUpload(app core.App, lim limits.Limits, src zipimport.Sourc
 		}
 		if exceeded := preflightImport(app, lim, int64(preview.ImportableCount), 0, bytes); exceeded != nil {
 			zipimport.Discard(preview.UploadID, ownerID)
-			return writeError(e, http.StatusBadRequest, exceeded.Message)
+			return writeBadRequest(e, exceeded)
 		}
 
 		return writeJSON(e, http.StatusOK, preview)

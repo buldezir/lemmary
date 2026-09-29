@@ -40,7 +40,7 @@ func handlePostSplitUpload(app core.App) func(*core.RequestEvent) error {
 		}
 		part, fileName, err := archivePart(reader)
 		if err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		}
 		defer part.Close()
 
@@ -191,11 +191,11 @@ func handlePostSplit(app core.App, lim limits.Limits) func(*core.RequestEvent) e
 				}
 				pages += partPages
 				if exceeded := limits.AsExceeded(lim.CheckFile(0, partPages)); exceeded != nil {
-					return writeError(e, http.StatusBadRequest, exceeded.Message)
+					return writeBadRequest(e, exceeded)
 				}
 			}
 			if exceeded := preflightImport(app, lim, int64(len(req.Parts)), pages, 0); exceeded != nil {
-				return writeError(e, http.StatusBadRequest, exceeded.Message)
+				return writeBadRequest(e, exceeded)
 			}
 		}
 
@@ -206,7 +206,7 @@ func handlePostSplit(app core.App, lim limits.Limits) func(*core.RequestEvent) e
 		case errors.Is(err, pdfsplit.ErrSplitInProgress):
 			return writeError(e, http.StatusConflict, "A split is already in progress.")
 		case err != nil:
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		}
 		return writeJSON(e, http.StatusAccepted, map[string]any{
 			"job_id": jobID,

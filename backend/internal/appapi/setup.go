@@ -84,7 +84,7 @@ func handlePostSetupAdmin(app core.App) func(*core.RequestEvent) error {
 		case errors.Is(err, errAdminExists):
 			return writeError(e, http.StatusConflict, "An admin account already exists.")
 		case errors.Is(err, errInvalidAdmin):
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		case err != nil:
 			app.Logger().Error("setup admin creation failed", "error", err)
 			return writeError(e, http.StatusBadRequest, "Failed to create admin account.")

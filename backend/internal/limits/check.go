@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/pocketbase/pocketbase/tools/router"
+
+	"lemmary/backend/internal/i18n"
 )
 
 // Names identify a limit in an error payload and in the usage API, so a client
@@ -44,10 +46,13 @@ type ErrExceeded struct {
 	// Used is what was in use when the check ran; for a per-file limit, the value
 	// the file itself presented.
 	Used    int64
-	Message string
+	Message *i18n.Error
 }
 
-func (e *ErrExceeded) Error() string { return e.Message }
+func (e *ErrExceeded) Error() string { return e.Message.Error() }
+
+// Unwrap exposes the message, so an API handler can say it in the reader's language.
+func (e *ErrExceeded) Unwrap() error { return e.Message }
 
 // Code implements router.SafeErrorItem, which is what makes the limit name
 // survive the trip to the client: PocketBase replaces any value in an ApiError's
@@ -73,7 +78,7 @@ func (e *ErrExceeded) Params() map[string]any {
 // The error goes under a "limit" key, so the payload reads as
 // {"limit": {"code": "limit_documents", "params": {...}}}.
 func (e *ErrExceeded) APIError() *router.ApiError {
-	return router.NewBadRequestError(e.Message, map[string]any{"limit": e})
+	return router.NewBadRequestError(e.Error(), map[string]any{"limit": e})
 }
 
 // AsExceeded mirrors the shape duplicates uses, so an ingest path can test for
@@ -95,7 +100,7 @@ func CheckOCRPages(pageCount int64) error {
 		Name:    NameOCRPages,
 		Allowed: MaxOCRPages,
 		Used:    pageCount,
-		Message: fmt.Sprintf(
+		Message: i18n.Errorf(
 			"This file has %d pages. Text can be extracted from at most %d.",
 			pageCount, MaxOCRPages),
 	}
@@ -108,7 +113,7 @@ func (l Limits) CheckFile(sizeBytes, pageCount int64) error {
 			Name:    NameFileBytes,
 			Allowed: l.FileBytes.Value(),
 			Used:    sizeBytes,
-			Message: fmt.Sprintf(
+			Message: i18n.Errorf(
 				"This file is %s, over the %s limit for a single document.",
 				formatBytes(sizeBytes), formatBytes(l.FileBytes.Value())),
 		}
@@ -118,7 +123,7 @@ func (l Limits) CheckFile(sizeBytes, pageCount int64) error {
 			Name:    NameFilePages,
 			Allowed: l.FilePages.Value(),
 			Used:    pageCount,
-			Message: fmt.Sprintf(
+			Message: i18n.Errorf(
 				"This file has %d pages, over the %d-page limit for a single document.",
 				pageCount, l.FilePages.Value()),
 		}
@@ -142,7 +147,7 @@ func (l Limits) CheckRoom(usage Usage, documents, pages, bytes int64) error {
 			Name:    NameDocumentPages,
 			Allowed: l.DocumentPages.Value(),
 			Used:    usage.DocumentPages,
-			Message: fmt.Sprintf(
+			Message: i18n.Errorf(
 				"This instance holds %d of %d pages, and this would add %d.",
 				usage.DocumentPages, l.DocumentPages.Value(), pages),
 		}
@@ -152,7 +157,7 @@ func (l Limits) CheckRoom(usage Usage, documents, pages, bytes int64) error {
 			Name:    NameStorageBytes,
 			Allowed: l.StorageBytes.Value(),
 			Used:    usage.StorageBytes,
-			Message: fmt.Sprintf(
+			Message: i18n.Errorf(
 				"This instance uses %s of its %s of storage, and this would add %s.",
 				formatBytes(usage.StorageBytes), formatBytes(l.StorageBytes.Value()),
 				formatBytes(bytes)),
@@ -161,13 +166,13 @@ func (l Limits) CheckRoom(usage Usage, documents, pages, bytes int64) error {
 	return nil
 }
 
-func documentCountMessage(allowed, used, adding int64) string {
+func documentCountMessage(allowed, used, adding int64) *i18n.Error {
 	if adding == 1 {
-		return fmt.Sprintf(
+		return i18n.Errorf(
 			"This instance holds %d of %d documents, so there is no room for another.",
 			used, allowed)
 	}
-	return fmt.Sprintf(
+	return i18n.Errorf(
 		"This instance holds %d of %d documents, so there is no room for %d more.",
 		used, allowed, adding)
 }
@@ -179,11 +184,11 @@ func (l Limits) CheckAdditionalUsers(projected int64) error {
 		return nil
 	}
 	allowed := l.AdditionalUsers.Value()
-	message := fmt.Sprintf(
+	message := i18n.Errorf(
 		"This instance allows %d accounts beyond the admin account and already has that many.",
 		allowed)
 	if allowed == 0 {
-		message = "This instance does not allow accounts beyond the admin account."
+		message = i18n.Errorf("This instance does not allow accounts beyond the admin account.")
 	}
 	return &ErrExceeded{
 		Name:    NameAdditionalUsers,
