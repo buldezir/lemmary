@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
@@ -56,9 +57,9 @@ export function useSettingsForm<T extends object>(pick: (settings: AppSettings) 
       setSuccess('')
       const settings = await updateAppSettings(patch)
       setForm(pickRef.current(settings))
-      setSuccess('Settings saved. Runtime reloaded.')
+      setSuccess(t('useSettingsForm.saved'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save settings')
+      setError(err instanceof Error ? err.message : t('settingsApi.saveFailed'))
     } finally {
       setSaving(false)
     }

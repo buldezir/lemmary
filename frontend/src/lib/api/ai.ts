@@ -1,3 +1,4 @@
+import { t } from '../../i18n'
 import { apiFetch, apiStream } from '../apiClient'
 import { bindingBody, type ProviderBinding } from './providers'
 import type { ChatMessageRecord, ChatSession, SearchDocumentHit } from './chats'
@@ -65,11 +66,11 @@ export async function chatWithDocument(input: {
         web: input.web === true,
         ...bindingBody(input.binding),
       },
-      fallbackError: 'Failed to get AI response',
+      fallbackError: t('ai.responseFailed'),
     },
   )
   if (!data.message) {
-    throw new Error('AI response was empty')
+    throw new Error(t('ai.emptyResponse'))
   }
   return {
     session: data.session ?? null,
@@ -177,7 +178,7 @@ export async function searchStream(
     onEvent,
     signal,
     fallbackError:
-      input.mode === 'research' ? 'Failed to research your archive' : 'Failed to search your archive',
+      input.mode === 'research' ? t('ai.researchFailed') : t('ai.searchFailed'),
   })
 }
 
@@ -193,7 +194,7 @@ export async function cancelSearchRun(
     await apiFetch('/api/app/search/cancel', {
       method: 'POST',
       body: 'runId' in target ? { run_id: target.runId } : { session_id: target.sessionId },
-      fallbackError: 'Failed to cancel the run',
+      fallbackError: t('ai.cancelFailed'),
     })
   } catch {
     // Nothing to tell the user: they have already moved on.

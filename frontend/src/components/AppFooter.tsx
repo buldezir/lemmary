@@ -1,3 +1,5 @@
+import { docsUrl, lang, languageNames, setLanguage, t, type Language } from '../i18n'
+
 const githubRepoUrl = 'https://github.com/buldezir/lemmary'
 
 function GitHubIcon() {
@@ -30,14 +32,14 @@ export function AppFooter() {
           ·
         </span>
         <a
-          href="/docs"
+          href={docsUrl()}
           target="_blank"
           rel="noopener noreferrer"
-          aria-label="Documentation"
-          title="Documentation"
+          aria-label={t('footer.documentation')}
+          title={t('footer.documentation')}
           className="inline-flex transition-colors hover:text-oxblood"
         >
-          Documentation
+          {t('footer.documentation')}
         </a>
         <span className="mx-2 text-line-strong" aria-hidden="true">
           ·
@@ -46,12 +48,27 @@ export function AppFooter() {
           href={githubRepoUrl}
           target="_blank"
           rel="noopener noreferrer"
-          aria-label="GitHub repository"
+          aria-label={t('footer.github')}
           title="GitHub"
           className="inline-flex transition-colors hover:text-oxblood"
         >
           <GitHubIcon />
         </a>
+        <span className="mx-2 text-line-strong" aria-hidden="true">
+          ·
+        </span>
+        <select
+          aria-label={t('common.language')}
+          value={lang}
+          onChange={(e) => setLanguage(e.target.value as Language)}
+          className="cursor-pointer bg-transparent uppercase tracking-[0.14em] outline-none transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-oxblood"
+        >
+          {Object.entries(languageNames).map(([code, name]) => (
+            <option key={code} value={code}>
+              {name}
+            </option>
+          ))}
+        </select>
       </p>
     </footer>
   )

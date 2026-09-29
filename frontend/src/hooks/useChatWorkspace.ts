@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMatchRoute, useNavigate } from '@tanstack/react-router'
 
@@ -235,8 +236,8 @@ export function useChatWorkspace({
       if (!stored) {
         throw new Error(
           mode === 'research'
-            ? 'The research run ended without an answer.'
-            : 'The search ended without an answer.',
+            ? t('useChatWorkspace.researchNoAnswer')
+            : t('useChatWorkspace.searchNoAnswer'),
         )
       }
 
@@ -278,7 +279,7 @@ export function useChatWorkspace({
         setJustSettled((current) => (current?.id === id ? updated : current))
         await sessions.reload()
       } catch (err) {
-        setRailError(err instanceof Error ? err.message : 'Failed to rename the chat')
+        setRailError(err instanceof Error ? err.message : t('chats.renameFailed'))
       } finally {
         setRailBusy(false)
       }
@@ -301,7 +302,7 @@ export function useChatWorkspace({
         setForkError('')
         onSessionSettled(await forkChatSession(sessionId, messageId), false)
       } catch (err) {
-        setForkError(err instanceof Error ? err.message : 'Failed to fork the chat')
+        setForkError(err instanceof Error ? err.message : t('chats.forkFailed'))
       } finally {
         setRailBusy(false)
       }
@@ -311,7 +312,7 @@ export function useChatWorkspace({
 
   const onDelete = useCallback(
     async (session: ChatSession) => {
-      if (!window.confirm(`Delete "${session.title}"? This cannot be undone.`)) {
+      if (!window.confirm(t('useChatWorkspace.confirmDelete', { title: session.title }))) {
         return
       }
       try {
@@ -327,7 +328,7 @@ export function useChatWorkspace({
           void navigate({ to: basePath, replace: true })
         }
       } catch (err) {
-        setRailError(err instanceof Error ? err.message : 'Failed to delete the chat')
+        setRailError(err instanceof Error ? err.message : t('chats.deleteFailed'))
       } finally {
         setRailBusy(false)
       }
@@ -363,12 +364,14 @@ export function useChatWorkspace({
  * Not `streamConnectionLostMessage`, which promises the answer will be in the
  * chat history: by the time this is reached no turn was stored.
  */
-const interruptedWithoutAnswerMessage =
-  'The connection was interrupted and the run ended without an answer. Try again.'
+const interruptedWithoutAnswerMessage = t('useChatWorkspace.interrupted')
 
 /** Cancelling is not a provider failure, and fetch reports it as a DOMException nobody wants to read. */
 function cancelled(mode: SearchMode, cause: unknown) {
-  return new Error(mode === 'research' ? 'Research cancelled.' : 'Search cancelled.', { cause })
+  return new Error(
+    mode === 'research' ? t('useChatWorkspace.researchCancelled') : t('useChatWorkspace.searchCancelled'),
+    { cause },
+  )
 }
 
 /**

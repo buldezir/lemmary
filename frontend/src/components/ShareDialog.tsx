@@ -7,6 +7,7 @@ import {
   type DirectoryUser,
   type ShareRecord,
 } from '../lib/api/shares'
+import { t } from '../i18n'
 import { listUsers } from '../lib/api/users'
 import { useAsync } from '../hooks/useAsync'
 import { Combobox } from './Combobox'
@@ -35,13 +36,15 @@ export function ShareSummary({
     const users = new Map((await listUsers()).map((user) => [user.id, user]))
     const name = (id: string) => {
       const user = users.get(id)
-      return user ? label(user) : 'an unknown account'
+      return user ? label(user) : t('shareDialog.anUnknownAccount')
     }
     if (!owned) {
-      return `Shared with you by ${name(ownerId)}`
+      return t('shareDialog.sharedWithYouBy', { name: name(ownerId) })
     }
     const shares = await listDocumentShares(documentId)
-    return shares.length > 0 ? `Shared with ${shares.map((share) => name(share.user)).join(', ')}` : ''
+    return shares.length > 0
+      ? t('shareDialog.sharedWith', { names: shares.map((share) => name(share.user)).join(', ') })
+      : ''
   }, [documentId, ownerId, owned, version])
 
   return data ? <p className="text-sm text-ink-soft">{data}</p> : null
@@ -75,7 +78,7 @@ export function ShareDialog({
       setUsers(accounts)
       setShares(current)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load sharing.')
+      setError(err instanceof Error ? err.message : t('shareDialog.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -109,7 +112,7 @@ export function ShareDialog({
       await action()
       await reload()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to change sharing.')
+      setError(err instanceof Error ? err.message : t('shareDialog.changeFailed'))
       setBusy(false)
       return
     }
@@ -122,12 +125,12 @@ export function ShareDialog({
       onClose={onClose}
       className="m-auto w-full max-w-md border border-line bg-surface p-5 text-ink backdrop:bg-ink/40"
     >
-      <h2 className="font-display text-lg font-semibold text-ink">Share</h2>
+      <h2 className="font-display text-lg font-semibold text-ink">{t('shareDialog.title')}</h2>
       <p className="mt-1 text-sm text-ink-soft">
-        Anyone you add can read this document and open its file. They cannot change or delete it.
+        {t('shareDialog.description')}
       </p>
 
-      {loading && <p className="mt-4 text-sm text-ink-soft">Loading accounts...</p>}
+      {loading && <p className="mt-4 text-sm text-ink-soft">{t('shareDialog.loading')}</p>}
       {error && <p className="mt-4 text-sm text-madder">{error}</p>}
 
       {!loading && (
@@ -135,15 +138,17 @@ export function ShareDialog({
           <Combobox
             value=""
             options={available.map((user) => ({ value: user.id, label: label(user) }))}
-            placeholder={available.length > 0 ? 'Add an account...' : 'No other accounts'}
-            ariaLabel="Share with"
+            placeholder={
+              available.length > 0 ? t('shareDialog.addAccount') : t('shareDialog.noOtherAccounts')
+            }
+            ariaLabel={t('shareDialog.shareWith')}
             bgClassName="bg-surface"
             disabled={busy || available.length === 0}
             onChange={(userId) => void run(() => shareDocument(documentId, userId))}
           />
 
           {shares.length === 0 ? (
-            <p className="text-sm text-ink-soft">Not shared with anyone.</p>
+            <p className="text-sm text-ink-soft">{t('shareDialog.notShared')}</p>
           ) : (
             <ul className="flex flex-col gap-1">
               {shares.map((share) => {
@@ -153,14 +158,16 @@ export function ShareDialog({
                     key={share.id}
                     className="flex items-center justify-between gap-2 border border-line px-2 py-1.5 text-sm"
                   >
-                    <span className="truncate">{who ? label(who) : 'Unknown account'}</span>
+                    <span className="truncate">
+                      {who ? label(who) : t('shareDialog.unknownAccount')}
+                    </span>
                     <Button
                       variant="secondary"
                       size="xs"
                       disabled={busy}
                       onClick={() => void run(() => revokeDocumentShare(share.id))}
                     >
-                      Remove
+                      {t('common.remove')}
                     </Button>
                   </li>
                 )
@@ -171,7 +178,7 @@ export function ShareDialog({
       )}
 
       <div className="mt-5 flex justify-end">
-        <Button onClick={onClose}>Done</Button>
+        <Button onClick={onClose}>{t('shareDialog.done')}</Button>
       </div>
     </dialog>
   )

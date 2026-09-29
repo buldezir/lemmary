@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { t } from '../i18n'
 import { writableCountdown } from '../lib/writableCountdown'
 
 export function DemoCountdown({ until }: { until: number }) {
@@ -15,10 +16,10 @@ export function DemoCountdown({ until }: { until: number }) {
   return (
     <span
       role="timer"
-      title={`Demo: ${text}, ${note}`}
+      title={t('demoCountdown.title', { text, note })}
       className="shrink-0 whitespace-nowrap rounded-full border border-oxblood/40 px-2 py-0.5 text-xs font-medium tabular-nums text-oxblood"
     >
-      Demo · {text}
+      {t('demoCountdown.badge', { text })}
       {over && ` · ${note}`}
     </span>
   )

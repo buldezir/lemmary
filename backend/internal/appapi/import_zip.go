@@ -35,7 +35,7 @@ func handlePostImportUpload(app core.App, lim limits.Limits, src zipimport.Sourc
 		}
 		part, fileName, err := archivePart(reader)
 		if err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		}
 		defer part.Close()
 
@@ -60,7 +60,7 @@ func handlePostImportUpload(app core.App, lim limits.Limits, src zipimport.Sourc
 		}
 		if exceeded := preflightImport(app, lim, int64(preview.ImportableCount), 0, bytes); exceeded != nil {
 			zipimport.Discard(preview.UploadID, ownerID)
-			return writeError(e, http.StatusBadRequest, exceeded.Message)
+			return writeBadRequest(e, exceeded)
 		}
 
 		return writeJSON(e, http.StatusOK, preview)
@@ -106,7 +106,7 @@ func handlePostImport(app core.App) func(*core.RequestEvent) error {
 		case errors.Is(err, zipimport.ErrImportInProgress):
 			return writeError(e, http.StatusConflict, "An import is already in progress.")
 		case err != nil:
-			return writeError(e, http.StatusBadRequest, "Import failed to start: "+err.Error())
+			return writeErrorf(e, http.StatusBadRequest, "Import failed to start: %v", err)
 		}
 		return writeJSON(e, http.StatusAccepted, map[string]any{
 			"job_id": jobID,

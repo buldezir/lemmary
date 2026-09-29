@@ -19,6 +19,7 @@ import {
   sectionClassName,
   sectionTitleClassName,
 } from '../components/ui'
+import { t } from '../i18n'
 
 type Draft = { email: string; name: string; password: string }
 
@@ -36,7 +37,7 @@ function UserFields({
   return (
     <div className="grid gap-3 sm:grid-cols-3">
       <label className={labelClassName}>
-        <span className={labelTextClassName}>Email</span>
+        <span className={labelTextClassName}>{t('managementUsers.email')}</span>
         <input
           type="email"
           required
@@ -47,7 +48,7 @@ function UserFields({
         />
       </label>
       <label className={labelClassName}>
-        <span className={labelTextClassName}>Name</span>
+        <span className={labelTextClassName}>{t('managementUsers.name')}</span>
         <input
           autoComplete="off"
           value={draft.name}
@@ -95,14 +96,14 @@ function UserRow({
     return (
       <li className="rounded-xs border border-line bg-bright px-3 py-3">
         <form className="flex flex-col gap-3" onSubmit={onSubmit}>
-          <UserFields draft={draft} onChange={setDraft} passwordLabel="New password" />
-          <p className={fieldHintClassName}>Leave the password empty to keep the current one.</p>
+          <UserFields draft={draft} onChange={setDraft} passwordLabel={t('managementUsers.newPassword')} />
+          <p className={fieldHintClassName}>{t('managementUsers.keepPassword')}</p>
           <div className="flex gap-2">
             <Button type="submit" size="xs" disabled={busy}>
-              Save
+              {t('common.save')}
             </Button>
             <Button size="xs" variant="secondary" disabled={busy} onClick={() => setDraft(null)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
           </div>
         </form>
@@ -117,7 +118,7 @@ function UserRow({
         {user.name && <p className="truncate text-xs text-ink-soft">{user.email}</p>}
       </div>
       {user.admin ? (
-        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">Admin</span>
+        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">{t('managementUsers.admin')}</span>
       ) : (
         <div className="flex items-center gap-2">
           <Button
@@ -126,10 +127,10 @@ function UserRow({
             disabled={busy}
             onClick={() => setDraft({ email: user.email, name: user.name, password: '' })}
           >
-            Edit
+            {t('common.edit')}
           </Button>
           <Button size="xs" variant="danger" disabled={busy} onClick={() => void onDelete(user)}>
-            Delete
+            {t('common.delete')}
           </Button>
         </div>
       )}
@@ -156,7 +157,7 @@ export function ManagementUsersPage() {
       await Promise.all([reload(), reloadLimits()])
       return true
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
+      setError(err instanceof Error ? err.message : t('managementUsers.failed'))
       return false
     } finally {
       setBusy(false)
@@ -171,7 +172,7 @@ export function ManagementUsersPage() {
         name: draft.name.trim(),
         password: draft.password,
       })
-      return `Added ${user.email}.`
+      return t('managementUsers.added', { email: user.email })
     })
     if (created) setDraft(emptyDraft)
   }
@@ -179,21 +180,21 @@ export function ManagementUsersPage() {
   function onSave(user: ManagedUser, input: ManagedUserInput) {
     return run(async () => {
       await updateManagedUser(user.id, input)
-      return `Saved ${input.email || user.email}.`
+      return t('managementUsers.saved', { email: input.email || user.email })
     })
   }
 
   async function onDelete(user: ManagedUser) {
     if (
       !window.confirm(
-        `Delete ${user.email}?\n\nTheir documents, tags, shares and passkeys are deleted with the account. This cannot be undone.`,
+        t('managementUsers.deleteConfirm', { email: user.email }),
       )
     ) {
       return
     }
     await run(async () => {
       await deleteManagedUser(user.id)
-      return `Deleted ${user.email}.`
+      return t('managementUsers.deleted', { email: user.email })
     })
   }
 
@@ -202,14 +203,14 @@ export function ManagementUsersPage() {
   return (
     <div className="flex flex-col gap-5">
       <section className={sectionClassName}>
-        <h2 className={`${sectionTitleClassName} mb-3`}>Accounts</h2>
+        <h2 className={`${sectionTitleClassName} mb-3`}>{t('managementUsers.accounts')}</h2>
 
         {loadError && <p className="mb-3 text-sm text-madder">{loadError}</p>}
         {error && <p className="mb-3 text-sm text-madder">{error}</p>}
         {notice && <p className="mb-3 text-sm text-ink-soft">{notice}</p>}
 
         {loading ? (
-          <p className="text-sm text-ink-soft">Loading...</p>
+          <p className="text-sm text-ink-soft">{t('managementUsers.loading')}</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {rows.map((user) => (
@@ -218,29 +219,22 @@ export function ManagementUsersPage() {
           </ul>
         )}
         {managed === false && (
-          <p className={`${fieldHintClassName} mt-3`}>
-            Admin accounts are managed in the PocketBase dashboard.
-          </p>
+          <p className={`${fieldHintClassName} mt-3`}>{t('managementUsers.adminHint')}</p>
         )}
         {!seatsLeft && (
-          <p className={`${fieldHintClassName} mt-1`}>
-            This instance has reached its account limit. Delete an account to add another.
-          </p>
+          <p className={`${fieldHintClassName} mt-1`}>{t('managementUsers.seatsExhausted')}</p>
         )}
       </section>
 
       {seatsLeft && (
         <section className={sectionClassName}>
-          <h2 className={`${sectionTitleClassName} mb-3`}>Add a user</h2>
+          <h2 className={`${sectionTitleClassName} mb-3`}>{t('managementUsers.addTitle')}</h2>
           <form className="flex flex-col gap-3" onSubmit={onCreate}>
-            <UserFields draft={draft} onChange={setDraft} passwordLabel="Password" />
-            <p className={fieldHintClassName}>
-              The account can sign in straight away. It sees only its own documents and those
-              shared with it.
-            </p>
+            <UserFields draft={draft} onChange={setDraft} passwordLabel={t('managementUsers.password')} />
+            <p className={fieldHintClassName}>{t('managementUsers.addHint')}</p>
             <div>
               <Button type="submit" disabled={busy || !draft.email.trim() || !draft.password}>
-                Add user
+                {t('managementUsers.add')}
               </Button>
             </div>
           </form>

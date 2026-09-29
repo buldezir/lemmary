@@ -25,18 +25,19 @@ import {
   sectionTitleClassName,
   selectClassName,
 } from '../components/ui'
+import { docsUrl, t, tNode } from '../i18n'
 
 function SignedInSection() {
   const { data: me } = useAsync(getMe, [])
 
   return (
     <section className={sectionClassName}>
-      <h2 className={sectionTitleClassName}>Signed in as</h2>
+      <h2 className={sectionTitleClassName}>{t('account.signedInAs')}</h2>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm text-ink">{me?.email || '...'}</span>
         {me?.is_admin && (
           <span className="border border-line-strong px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-soft">
-            Admin
+            {t('account.admin')}
           </span>
         )}
       </div>
@@ -70,13 +71,13 @@ function PasskeyRow({ passkey, busy, onRename, onDelete }: PasskeyRowProps) {
       {editing ? (
         <form className="flex flex-1 flex-wrap items-center gap-2" onSubmit={onSubmit}>
           <input
-            aria-label="Passkey name"
+            aria-label={t('account.passkeyName')}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             className={`${inputClassName} max-w-xs flex-1`}
           />
           <Button type="submit" size="xs" disabled={busy}>
-            Save
+            {t('common.save')}
           </Button>
           <Button
             size="xs"
@@ -87,7 +88,7 @@ function PasskeyRow({ passkey, busy, onRename, onDelete }: PasskeyRowProps) {
               setEditing(false)
             }}
           >
-            Cancel
+            {t('common.cancel')}
           </Button>
         </form>
       ) : (
@@ -95,8 +96,10 @@ function PasskeyRow({ passkey, busy, onRename, onDelete }: PasskeyRowProps) {
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-ink">{passkey.name}</p>
             <p className="text-xs text-ink-soft">
-              Added {passkeyDateLabel(passkey.created)} · Last used{' '}
-              {passkeyDateLabel(passkey.last_used)}
+              {t('account.passkeyDates', {
+                created: passkeyDateLabel(passkey.created),
+                used: passkeyDateLabel(passkey.last_used),
+              })}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -109,7 +112,7 @@ function PasskeyRow({ passkey, busy, onRename, onDelete }: PasskeyRowProps) {
                 setEditing(true)
               }}
             >
-              Rename
+              {t('account.rename')}
             </Button>
             <Button
               size="xs"
@@ -117,7 +120,7 @@ function PasskeyRow({ passkey, busy, onRename, onDelete }: PasskeyRowProps) {
               disabled={busy}
               onClick={() => void onDelete(passkey)}
             >
-              Delete
+              {t('common.delete')}
             </Button>
           </div>
         </>
@@ -156,9 +159,9 @@ function PasskeysSection() {
       const created = await registerPasskey(name.trim() || defaultPasskeyName())
       await reload()
       setAdding(false)
-      setNotice(`Added "${created.name}".`)
+      setNotice(t('account.passkeyAdded', { name: created.name }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add the passkey')
+      setError(err instanceof Error ? err.message : t('account.addFailed'))
     } finally {
       setBusy(false)
     }
@@ -172,7 +175,7 @@ function PasskeysSection() {
       await renamePasskey(id, nextName)
       await reload()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to rename the passkey')
+      setError(err instanceof Error ? err.message : t('account.renameFailed'))
     } finally {
       setBusy(false)
     }
@@ -181,8 +184,8 @@ function PasskeysSection() {
   async function onDelete(passkey: Passkey) {
     const lastOne = rows.length === 1
     const warning = lastOne
-      ? `Remove "${passkey.name}"? This is your last passkey — you will need your email and password (or a sign-in provider) after this.`
-      : `Remove "${passkey.name}"?`
+      ? t('account.removeLastConfirm', { name: passkey.name })
+      : t('account.removeConfirm', { name: passkey.name })
     if (!window.confirm(warning)) {
       return
     }
@@ -192,9 +195,9 @@ function PasskeysSection() {
       setNotice('')
       await deletePasskey(passkey.id)
       await reload()
-      setNotice(`Removed "${passkey.name}".`)
+      setNotice(t('account.passkeyRemoved', { name: passkey.name }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to remove the passkey')
+      setError(err instanceof Error ? err.message : t('account.removeFailed'))
     } finally {
       setBusy(false)
     }
@@ -202,10 +205,9 @@ function PasskeysSection() {
 
   return (
     <section className={sectionClassName}>
-      <h2 className={sectionTitleClassName}>Passkeys</h2>
+      <h2 className={sectionTitleClassName}>{t('account.passkeys')}</h2>
       <p className={`${fieldHintClassName} mb-4`}>
-        Sign in with your fingerprint, face, or device PIN instead of a password. Add one per device
-        so losing a phone does not lock you out.
+        {t('account.passkeysHint')}
       </p>
 
       {loadError && <p className="mb-3 text-sm text-madder">{loadError}</p>}
@@ -213,7 +215,7 @@ function PasskeysSection() {
       {notice && <p className="mb-3 text-sm text-ink-soft">{notice}</p>}
 
       {rows.length === 0 ? (
-        <p className="mb-4 text-sm text-ink-soft">No passkeys yet.</p>
+        <p className="mb-4 text-sm text-ink-soft">{t('account.noPasskeys')}</p>
       ) : (
         <ul className="mb-4 flex flex-col gap-2">
           {rows.map((passkey) => (
@@ -232,27 +234,27 @@ function PasskeysSection() {
 
       {canEnroll && !adding && (
         <Button onClick={openAddForm} disabled={busy}>
-          Add a passkey
+          {t('account.addPasskey')}
         </Button>
       )}
 
       {canEnroll && adding && (
         <form className="flex flex-col gap-3" onSubmit={onAdd}>
           <label className={labelClassName}>
-            <span className={labelTextClassName}>Name</span>
+            <span className={labelTextClassName}>{t('account.name')}</span>
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
               className={`${inputClassName} max-w-sm`}
             />
           </label>
-          <p className={fieldHintClassName}>Something you will recognize, like the device name.</p>
+          <p className={fieldHintClassName}>{t('account.nameHint')}</p>
           <div className="flex items-center gap-2">
             <Button type="submit" disabled={busy}>
-              {busy ? 'Waiting for your device...' : 'Create passkey'}
+              {busy ? t('account.waiting') : t('account.createPasskey')}
             </Button>
             <Button variant="secondary" disabled={busy} onClick={() => setAdding(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
           </div>
         </form>
@@ -281,7 +283,7 @@ function AgentsSection() {
     try {
       setToken(await createMCPToken())
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create a token')
+      setError(err instanceof Error ? err.message : t('account.tokenFailed'))
     } finally {
       setBusy(false)
     }
@@ -295,24 +297,23 @@ function AgentsSection() {
       await navigator.clipboard.writeText(current.text)
       setCopied(true)
     } catch {
-      setError('Could not copy; select the text and copy it yourself.')
+      setError(t('account.copyFailed'))
     }
   }
 
   return (
     <section className={sectionClassName}>
-      <h2 className={sectionTitleClassName}>Agents</h2>
+      <h2 className={sectionTitleClassName}>{t('account.agents')}</h2>
       <p className={`${fieldHintClassName} mb-4`}>
-        Let Claude Code, Cursor or another agent search and read this archive directly over MCP.
-        The agent sees only your documents.{' '}
-        <DocsLink href="/docs/mcp.html">Read about the tools it gets.</DocsLink>
+        {tNode('account.agentsHint', {
+          link: <DocsLink href={docsUrl('mcp.html')}>{t('account.mcpLink')}</DocsLink>,
+        })}
       </p>
 
       {loadError && <p className="mb-3 text-sm text-madder">{loadError}</p>}
       {status && !status.enabled && (
         <p className="text-sm text-ink-soft">
-          The MCP endpoint is switched off on this instance (<code>MCP_ENABLED=0</code>). An
-          admin can turn it back on.
+          {tNode('account.mcpOff', { env: <code>MCP_ENABLED=0</code> })}
         </p>
       )}
 
@@ -320,18 +321,18 @@ function AgentsSection() {
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <Button onClick={onCreateToken} disabled={busy}>
-              {token ? 'Create another token' : 'Create token'}
+              {token ? t('account.createAnotherToken') : t('account.createToken')}
             </Button>
             <span className={fieldHintClassName}>
               {token
-                ? 'Valid for ten years. Shown once: changing your password revokes it.'
-                : 'Mints a long-lived token for your account and fills it into the snippet below.'}
+                ? t('account.tokenShown')
+                : t('account.tokenHint')}
             </span>
           </div>
           {error && <p className="text-sm text-madder">{error}</p>}
 
           <label className={labelClassName}>
-            <span className={labelTextClassName}>Agent</span>
+            <span className={labelTextClassName}>{t('account.agent')}</span>
             <select
               value={current.id}
               onChange={(event) => {
@@ -352,7 +353,7 @@ function AgentsSection() {
             <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
               <span className={fieldHintClassName}>{current.where}</span>
               <Button size="xs" variant="secondary" onClick={onCopy}>
-                {copied ? 'Copied' : 'Copy'}
+                {copied ? t('account.copied') : t('account.copy')}
               </Button>
             </div>
             <pre
@@ -363,7 +364,7 @@ function AgentsSection() {
             </pre>
             {!token && (
               <p className={`${fieldHintClassName} mt-1`}>
-                Replace <code>{tokenPlaceholder}</code> with a token, or create one above.
+                {tNode('account.replaceToken', { token: <code>{tokenPlaceholder}</code> })}
               </p>
             )}
           </div>
@@ -379,28 +380,20 @@ function InstanceLimitsSection() {
 
   return (
     <section className={sectionClassName}>
-      <h2 className={sectionTitleClassName}>Instance limits</h2>
-      <p className="text-xs text-ink-soft">
-        Set by your hosting provider and read at startup, so they cannot be changed from
-        Settings. Lowering a limit under an existing library never deletes anything &mdash; it
-        only refuses the next addition.
-      </p>
+      <h2 className={sectionTitleClassName}>{t('account.limitsTitle')}</h2>
+      <p className="text-xs text-ink-soft">{t('account.limitsHint')}</p>
       {limits.enforced ? (
         <LimitsUsage limits={limits} className="mt-4 border-0 bg-transparent p-0" />
       ) : (
-        <p className="mt-4 text-xs text-ink-soft">No limits are in effect.</p>
+        <p className="mt-4 text-xs text-ink-soft">{t('account.noLimits')}</p>
       )}
       {(limits.misconfigured?.length ?? 0) > 0 && (
         <p className="mt-4 text-sm text-madder">
-          Could not read {limits.misconfigured?.join(', ')}. Each fell back to unlimited, so these
-          are not being enforced.
+          {t('account.limitsMisconfigured', { names: limits.misconfigured?.join(', ') ?? '' })}
         </p>
       )}
       {limits.enforced && (
-        <p className="mt-4 text-xs text-ink-faint">
-          Documents added before this version was installed count as zero pages and zero bytes, so
-          those two figures can read low on an upgraded library.
-        </p>
+        <p className="mt-4 text-xs text-ink-faint">{t('account.limitsUpgrade')}</p>
       )}
     </section>
   )
@@ -410,8 +403,8 @@ export function AccountPage() {
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5">
       <div>
-        <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">Account</h1>
-        <p className="mt-1 text-sm text-ink-soft">How you and your agents sign in to this archive.</p>
+        <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">{t('account.title')}</h1>
+        <p className="mt-1 text-sm text-ink-soft">{t('account.intro')}</p>
       </div>
       <SignedInSection />
       <AgentsSection />

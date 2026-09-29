@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import type { TagRecord } from '../lib/api/tags'
 import { Combobox } from './Combobox'
 
@@ -22,12 +23,12 @@ export function TagFilter({
   const available = options.filter((tag) => !value.includes(tag.id))
 
   const chosen = untagged
-    ? [{ id: NO_TAGS, name: 'No tags', color: undefined, next: [] }]
+    ? [{ id: NO_TAGS, name: t('tagFilter.noTags'), color: undefined, next: [] }]
     : value.map((id) => ({
         id,
         // An id with no name behind it is a tag deleted since the link was
         // made; it still has to be removable.
-        name: byId.get(id)?.name ?? 'Unknown tag',
+        name: byId.get(id)?.name ?? t('tagFilter.unknownTag'),
         color: byId.get(id)?.color,
         next: value.filter((other) => other !== id),
       }))
@@ -41,7 +42,7 @@ export function TagFilter({
       <span className="truncate">{name}</span>
       <button
         type="button"
-        aria-label={`Remove ${name}`}
+        aria-label={t('tagFilter.remove', { name })}
         className="shrink-0 text-ink-faint transition-colors hover:text-madder"
         onClick={() => onChange(next, false)}
       >
@@ -51,7 +52,7 @@ export function TagFilter({
   ))
 
   const choices = [
-    ...(chosen.length > 0 ? [] : [{ value: NO_TAGS, label: 'No tags' }]),
+    ...(chosen.length > 0 ? [] : [{ value: NO_TAGS, label: t('tagFilter.noTags') }]),
     ...available.map((tag) => ({ value: tag.id, label: tag.name })),
   ]
 
@@ -59,8 +60,14 @@ export function TagFilter({
     <Combobox
       value=""
       options={choices}
-      placeholder={untagged ? 'Or pick a tag...' : value.length > 0 ? 'Add a tag...' : 'All tags'}
-      ariaLabel="Filter by tag"
+      placeholder={
+        untagged
+          ? t('tagFilter.orPick')
+          : value.length > 0
+            ? t('tagFilter.addTag')
+            : t('tagFilter.allTags')
+      }
+      ariaLabel={t('tagFilter.label')}
       bgClassName="bg-surface"
       className="w-full min-w-0 sm:flex-1"
       disabled={choices.length === 0}

@@ -17,6 +17,7 @@ import {
   type AIProvider,
   type ProviderSDK,
 } from '../../lib/api/providers'
+import { docsUrl, t, tNode } from '../../i18n'
 import { ChatGPTSignIn } from '../ChatGPTSignIn'
 import {
   Button,
@@ -61,7 +62,9 @@ export function ProvidersBlock({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
   const docs = providerDocs(draft.sdk)
-  const docsLink = <DocsLink href={docs.href}>Read the {docs.label} guide.</DocsLink>
+  const docsLink = (
+    <DocsLink href={docs.href}>{t('providersBlock.readGuide', { label: docs.label })}</DocsLink>
+  )
 
   async function onSaveProvider(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -89,9 +92,9 @@ export function ProvidersBlock({
       setDraft(emptyDraft())
       setEditingId(null)
       setShowAdd(false)
-      onSuccess('Provider saved.')
+      onSuccess(t('providersBlock.saved'))
     } catch (err) {
-      onError(err instanceof Error ? err.message : 'Failed to save provider')
+      onError(err instanceof Error ? err.message : t('providersBlock.saveFailed'))
     }
   }
 
@@ -101,24 +104,33 @@ export function ProvidersBlock({
       onSuccess('')
       await deleteAIProvider(id)
       await onChanged()
-      onSuccess('Provider deleted.')
+      onSuccess(t('providersBlock.deleted'))
     } catch (err) {
-      onError(err instanceof Error ? err.message : 'Failed to delete provider')
+      onError(err instanceof Error ? err.message : t('providersBlock.deleteFailed'))
     }
   }
 
   return (
     <section className={`${sectionClassName} mb-5`}>
-      <h2 className={sectionTitleClassName}>Providers</h2>
+      <h2 className={sectionTitleClassName}>{t('providersBlock.title')}</h2>
       <p className={`${fieldHintClassName} mb-4`}>
-        An account or endpoint the models below run on. Which provider can do which job, and
-        what each costs, is in{' '}
-        <DocsLink href="/docs/ai_providers.html">AI providers and models</DocsLink>; the{' '}
-        <DocsLink href="/docs/guided_ai_setup.html">guided setup</DocsLink> gets one working
-        for free.
+        {tNode('providersBlock.intro', {
+          providersLink: (
+            <DocsLink href={docsUrl('ai_providers.html')}>
+              {t('providersBlock.providersLink')}
+            </DocsLink>
+          ),
+          guidedLink: (
+            <DocsLink href={docsUrl('guided_ai_setup.html')}>
+              {t('providersBlock.guidedLink')}
+            </DocsLink>
+          ),
+        })}
       </p>
       <ul className="mb-4 flex flex-col gap-2">
-        {providers.length === 0 && <li className="text-sm text-ink-soft">No providers yet.</li>}
+        {providers.length === 0 && (
+          <li className="text-sm text-ink-soft">{t('providersBlock.empty')}</li>
+        )}
         {providers.map((item) => (
           <li
             key={item.id}
@@ -129,15 +141,16 @@ export function ProvidersBlock({
               <p className="text-xs text-ink-soft">
                 {sdkLabel(item.sdk)}
                 {item.base_url ? ` · ${item.base_url}` : ''}
+                {' · '}
                 {requiresSignIn(item.sdk)
                   ? item.signed_in
-                    ? ' · signed in'
-                    : ' · not signed in'
+                    ? t('providersBlock.signedIn')
+                    : t('providersBlock.notSignedIn')
                   : requiresAPIKey(item.sdk)
                     ? item.api_key_set
-                      ? ' · key set'
-                      : ' · missing key'
-                    : ' · no key needed'}
+                      ? t('providersBlock.keySet')
+                      : t('providersBlock.missingKey')
+                    : t('providersBlock.noKeyNeeded')}
               </p>
               {/* On the saved row rather than in the add form: the flow needs a
                   provider id to store the token against. */}
@@ -159,7 +172,7 @@ export function ProvidersBlock({
                   })
                 }}
               >
-                Edit
+                {t('common.edit')}
               </Button>
               <Button
                 variant="secondary"
@@ -167,7 +180,7 @@ export function ProvidersBlock({
                 className="text-madder hover:bg-madder/10"
                 onClick={() => void onDeleteProvider(item.id)}
               >
-                Delete
+                {t('common.delete')}
               </Button>
             </div>
           </li>
@@ -183,7 +196,7 @@ export function ProvidersBlock({
             setShowAdd(true)
           }}
         >
-          Add provider
+          {t('providersBlock.add')}
         </Button>
       ) : (
         <form className="grid gap-3 sm:grid-cols-2" onSubmit={onSaveProvider}>
@@ -219,7 +232,7 @@ export function ProvidersBlock({
             </select>
           </label>
           <label className={labelClassName}>
-            <span className={labelTextClassName}>Alias</span>
+            <span className={labelTextClassName}>{t('providersBlock.alias')}</span>
             <input
               className={inputClassName}
               value={draft.alias}
@@ -228,7 +241,7 @@ export function ProvidersBlock({
             />
           </label>
           <label className={labelClassName}>
-            <span className={labelTextClassName}>Model catalogue</span>
+            <span className={labelTextClassName}>{t('providersBlock.catalog')}</span>
             <select
               className={inputClassName}
               value={draft.catalog}
@@ -236,7 +249,7 @@ export function ProvidersBlock({
                 setDraft((current) => ({ ...current, catalog: event.target.value }))
               }
             >
-              <option value="">None — no context window shown</option>
+              <option value="">{t('providersBlock.noCatalog')}</option>
               {MODEL_CATALOGS.map((id) => (
                 <option key={id} value={id}>
                   {id}
@@ -246,7 +259,7 @@ export function ProvidersBlock({
           </label>
           {draft.sdk !== 'google_vision' && (
             <label className={`${labelClassName} sm:col-span-2`}>
-              <span className={labelTextClassName}>Base URL</span>
+              <span className={labelTextClassName}>{t('providersBlock.baseUrl')}</span>
               <input
                 className={inputClassName}
                 value={draft.base_url}
@@ -259,7 +272,7 @@ export function ProvidersBlock({
           {requiresAPIKey(draft.sdk) ? (
             <label className={`${labelClassName} sm:col-span-2`}>
               <span className={labelTextClassName}>
-                API key{editingId ? ' (leave blank to keep)' : ''}
+                {editingId ? t('providersBlock.apiKeyKeep') : t('providersBlock.apiKey')}
               </span>
               <input
                 type="password"
@@ -275,9 +288,7 @@ export function ProvidersBlock({
             </label>
           ) : requiresSignIn(draft.sdk) ? (
             <p className={`${fieldHintClassName} sm:col-span-2`}>
-              Save the provider first, then sign in to it from the list above. Chat,
-              extraction, Deep Search and OCR can run on the subscription; embeddings
-              cannot, and keep whichever provider they have. {docsLink}
+              {tNode('providersBlock.signInHint', { link: docsLink })}
             </p>
           ) : (
             <p className={`${fieldHintClassName} sm:col-span-2`}>
@@ -286,7 +297,7 @@ export function ProvidersBlock({
           )}
           <div className="flex gap-2 sm:col-span-2">
             <Button type="submit" size="sm">
-              {editingId ? 'Update provider' : 'Save provider'}
+              {editingId ? t('providersBlock.update') : t('providersBlock.save')}
             </Button>
             <Button
               variant="secondary"
@@ -296,7 +307,7 @@ export function ProvidersBlock({
                 setEditingId(null)
               }}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
           </div>
         </form>

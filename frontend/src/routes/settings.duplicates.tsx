@@ -16,6 +16,7 @@ import {
   sectionClassName,
   sectionTitleClassName,
 } from '../components/ui'
+import { t, tNode } from '../i18n'
 
 export function SettingsDuplicatesPage() {
   // unknown/failed meta counts as managed; see AppMeta.managed
@@ -32,7 +33,7 @@ export function SettingsDuplicatesPage() {
 
     const threshold = Number(form.near_duplicate_threshold)
     if (!Number.isFinite(threshold) || threshold <= 0 || threshold > 1) {
-      setError('Near-duplicate threshold must be between 0 and 1')
+      setError(t('settingsDuplicates.thresholdInvalid'))
       return
     }
 
@@ -50,7 +51,7 @@ export function SettingsDuplicatesPage() {
   return (
     <form onSubmit={onSubmit}>
       <section className={sectionClassName}>
-        <h2 className={sectionTitleClassName}>Duplicates</h2>
+        <h2 className={sectionTitleClassName}>{t('settingsDuplicates.title')}</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="flex items-center gap-2 text-sm text-ink-muted sm:col-span-2">
             <input
@@ -58,10 +59,10 @@ export function SettingsDuplicatesPage() {
               checked={form.near_duplicate_detection_enabled}
               onChange={(e) => updateField('near_duplicate_detection_enabled', e.target.checked)}
             />
-            Enable near-duplicate detection after OCR (re-scans)
+            {t('settingsDuplicates.enable')}
           </label>
           <label className={labelClassName}>
-            <span className={labelTextClassName}>Near-duplicate threshold (0–1)</span>
+            <span className={labelTextClassName}>{t('settingsDuplicates.threshold')}</span>
             <input
               type="number"
               min={0.01}
@@ -74,12 +75,13 @@ export function SettingsDuplicatesPage() {
           </label>
         </div>
         <p className="mt-3 text-xs text-ink-soft">
-          Exact file duplicates (same checksum) are always rejected on upload. Near-duplicate
-          matching compares OCR text and is off by default. Scan existing documents from{' '}
-          <Link to="/maintenance" className="underline hover:text-oxblood">
-            Maintenance
-          </Link>
-          .
+          {tNode('settingsDuplicates.hint', {
+            link: (
+              <Link to="/maintenance" className="underline hover:text-oxblood">
+                {t('settingsDuplicates.maintenanceLink')}
+              </Link>
+            ),
+          })}
         </p>
         <div className="mt-4">
           <SaveSettingsButton saving={saving} />

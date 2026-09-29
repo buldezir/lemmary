@@ -1,12 +1,13 @@
 import { useEffect, useRef } from 'react'
 
+import { t } from '../../i18n'
 import { Button, sectionClassName } from '../ui'
 
 export function SaveSettingsButton({ saving }: { saving: boolean }) {
   return (
     <div>
       <Button type="submit" disabled={saving}>
-        {saving ? 'Saving...' : 'Save settings'}
+        {saving ? t('settingsFeedback.saving') : t('settingsFeedback.save')}
       </Button>
     </div>
   )
@@ -47,7 +48,7 @@ export function ResultDialog({
       <p className={`text-sm ${error ? 'text-madder' : 'text-forest'}`}>{error || success}</p>
       {error && (
         <div className="mt-4 flex justify-end">
-          <Button onClick={onClose}>Close</Button>
+          <Button onClick={onClose}>{t('common.close')}</Button>
         </div>
       )}
     </dialog>
@@ -56,7 +57,7 @@ export function ResultDialog({
 
 /** What a tab shows while the settings record is still on its way. */
 export function SettingsLoading({ error }: { error: string }) {
-  return <p className="text-sm text-ink-soft">{error || 'Loading settings...'}</p>
+  return <p className="text-sm text-ink-soft">{error || t('settingsFeedback.loading')}</p>
 }
 
 /**
@@ -66,9 +67,7 @@ export function SettingsLoading({ error }: { error: string }) {
 export function ManagedByHostNotice() {
   return (
     <section className={sectionClassName}>
-      <p className="text-sm text-ink-soft">
-        This is managed by your hosting provider and is not available here.
-      </p>
+      <p className="text-sm text-ink-soft">{t('settingsFeedback.managedByHost')}</p>
     </section>
   )
 }

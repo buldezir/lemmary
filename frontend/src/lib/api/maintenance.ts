@@ -1,3 +1,4 @@
+import { t } from '../../i18n'
 import { pb } from '../pb'
 import { ensureAuth } from '../auth'
 import { apiFetch } from '../apiClient'
@@ -14,7 +15,7 @@ export type DuplicateScanResult = {
 export function scanDuplicates() {
   return apiFetch<DuplicateScanResult>('/api/app/duplicates/scan', {
     method: 'POST',
-    fallbackError: 'Duplicate scan failed',
+    fallbackError: t('maintenanceApi.duplicateScanFailed'),
   })
 }
 
@@ -38,13 +39,13 @@ export function startIMAPBackfill(from: string, to: string) {
   return apiFetch<IMAPBackfillState>('/api/app/ingest/imap/scan', {
     method: 'POST',
     body: { from, to },
-    fallbackError: 'Mailbox scan failed',
+    fallbackError: t('maintenanceApi.mailboxScanFailed'),
   })
 }
 
 export function getIMAPBackfill() {
   return apiFetch<IMAPBackfillState>('/api/app/ingest/imap/scan', {
-    fallbackError: 'Failed to load the mailbox scan',
+    fallbackError: t('maintenanceApi.mailboxScanLoadFailed'),
   })
 }
 
@@ -55,7 +56,7 @@ export type SearchReindexResult = {
 export function reindexSearch() {
   return apiFetch<SearchReindexResult>('/api/app/search/reindex', {
     method: 'POST',
-    fallbackError: 'Search reindex failed',
+    fallbackError: t('maintenanceApi.reindexFailed'),
   })
 }
 
@@ -77,13 +78,13 @@ export type EmbeddingBackfillState = {
 export function startEmbeddingBackfill() {
   return apiFetch<EmbeddingBackfillState>('/api/app/embeddings/backfill', {
     method: 'POST',
-    fallbackError: 'Embedding backfill failed',
+    fallbackError: t('maintenanceApi.backfillFailed'),
   })
 }
 
 export function getEmbeddingBackfillState() {
   return apiFetch<EmbeddingBackfillState>('/api/app/embeddings/backfill', {
-    fallbackError: 'Failed to load the embedding backfill state',
+    fallbackError: t('maintenanceApi.backfillLoadFailed'),
   })
 }
 
@@ -96,7 +97,7 @@ export type TaxonomyPruneResult = {
 export function pruneStaleTaxonomy() {
   return apiFetch<TaxonomyPruneResult>('/api/app/taxonomy/prune', {
     method: 'POST',
-    fallbackError: 'Stale data cleanup failed',
+    fallbackError: t('maintenanceApi.pruneFailed'),
   })
 }
 
@@ -150,7 +151,7 @@ export type StopQueueResult = {
 export function stopQueue() {
   return apiFetch<StopQueueResult>('/api/app/jobs/stop', {
     method: 'POST',
-    fallbackError: 'Could not stop the queue',
+    fallbackError: t('maintenanceApi.stopQueueFailed'),
   })
 }
 
@@ -171,6 +172,6 @@ export type DiscardResult = {
 export function discardUnprocessedDocuments() {
   return apiFetch<DiscardResult>('/api/app/documents/discard-unprocessed', {
     method: 'POST',
-    fallbackError: 'Could not delete the unprocessed documents',
+    fallbackError: t('maintenanceApi.discardFailed'),
   })
 }

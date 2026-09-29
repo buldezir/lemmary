@@ -1,19 +1,18 @@
 import { type SubmitEvent, useState } from 'react'
 import { importFromNgx, type NgxImportMode, type NgxImportResult } from '../lib/api/imports'
 import { Button, inputClassName, labelClassName, labelTextClassName } from '../components/ui'
+import { t } from '../i18n'
 
 const modeOptions: { value: NgxImportMode; label: string; description: string }[] = [
   {
     value: 'preserve',
-    label: 'Keep Paperless-ngx metadata',
-    description:
-      'Import title, tags, correspondent, document type, date, and OCR text. Preview and duplicate detection still run; AI does not overwrite metadata.',
+    label: t('importNgx.preserveLabel'),
+    description: t('importNgx.preserveDescription'),
   },
   {
     value: 'reprocess',
-    label: 'Import files only and reprocess',
-    description:
-      'Import only the original files, then run the full OCR and AI pipeline as if they were newly uploaded.',
+    label: t('importNgx.reprocessLabel'),
+    description: t('importNgx.reprocessDescription'),
   },
 ]
 
@@ -28,7 +27,7 @@ export function ImportNgxPage() {
   async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!url.trim() || !apiKey.trim()) {
-      setError('URL and API key are required')
+      setError(t('importNgx.required'))
       return
     }
 
@@ -40,7 +39,7 @@ export function ImportNgxPage() {
       setResult(summary)
       setApiKey('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Import failed')
+      setError(err instanceof Error ? err.message : t('importNgx.failed'))
     } finally {
       setRunning(false)
     }
@@ -49,18 +48,15 @@ export function ImportNgxPage() {
   return (
     <section className="space-y-5">
       <div>
-        <h2 className="font-display text-xl font-semibold text-ink">Import from Paperless-ngx</h2>
+        <h2 className="font-display text-xl font-semibold text-ink">{t('importNgx.title')}</h2>
         <p className="mt-1 text-sm text-ink-soft">
-          Pull documents from an existing Paperless-ngx instance using its URL and API token. The
-          remote token belongs to a specific ngx user, so imported documents are added to your
-          account. Choose whether to keep remote metadata or reprocess files through OCR and AI. The
-          API key is not stored.
+          {t('importNgx.intro')}
         </p>
       </div>
 
       <form onSubmit={onSubmit} className="space-y-4 rounded-none border border-line bg-surface p-5">
         <label className={labelClassName}>
-          <span className={labelTextClassName}>Paperless-ngx URL</span>
+          <span className={labelTextClassName}>{t('importNgx.url')}</span>
           <input
             className={inputClassName}
             type="url"
@@ -72,19 +68,19 @@ export function ImportNgxPage() {
           />
         </label>
         <label className={labelClassName}>
-          <span className={labelTextClassName}>API key</span>
+          <span className={labelTextClassName}>{t('importNgx.apiKey')}</span>
           <input
             className={inputClassName}
             type="password"
             required
-            placeholder="Token from Paperless-ngx profile"
+            placeholder={t('importNgx.apiKeyPlaceholder')}
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             autoComplete="off"
           />
         </label>
         <fieldset className="space-y-2" disabled={running}>
-          <legend className={labelTextClassName}>Import mode</legend>
+          <legend className={labelTextClassName}>{t('importNgx.mode')}</legend>
           {modeOptions.map((option) => (
             <label
               key={option.value}
@@ -112,7 +108,7 @@ export function ImportNgxPage() {
           ))}
         </fieldset>
         <Button type="submit" disabled={running}>
-          {running ? 'Importing…' : 'Start import'}
+          {running ? t('importNgx.importing') : t('importNgx.start')}
         </Button>
       </form>
 
@@ -120,18 +116,18 @@ export function ImportNgxPage() {
 
       {result && (
         <div className="space-y-2 rounded-none border border-line bg-bright p-5 text-sm text-ink-muted">
-          <p className="font-medium text-ink">Import finished</p>
+          <p className="font-medium text-ink">{t('importNgx.finished')}</p>
           <ul className="list-inside list-disc space-y-1">
-            <li>Imported: {result.imported}</li>
-            <li>Skipped duplicates: {result.skipped_duplicates}</li>
-            <li>Failed: {result.failed}</li>
-            <li>Tags upserted: {result.tags_upserted}</li>
-            <li>Correspondents upserted: {result.correspondents_upserted}</li>
-            <li>Document types upserted: {result.document_types_upserted}</li>
+            <li>{t('importNgx.imported', { count: result.imported })}</li>
+            <li>{t('importNgx.skippedDuplicates', { count: result.skipped_duplicates })}</li>
+            <li>{t('importNgx.failedCount', { count: result.failed })}</li>
+            <li>{t('importNgx.tagsUpserted', { count: result.tags_upserted })}</li>
+            <li>{t('importNgx.correspondentsUpserted', { count: result.correspondents_upserted })}</li>
+            <li>{t('importNgx.typesUpserted', { count: result.document_types_upserted })}</li>
           </ul>
           {result.errors.length > 0 && (
             <div className="mt-3">
-              <p className="font-medium text-ink">Errors</p>
+              <p className="font-medium text-ink">{t('importNgx.errors')}</p>
               <ul className="mt-1 list-inside list-disc space-y-1 text-madder">
                 {result.errors.map((msg) => (
                   <li key={msg}>{msg}</li>

@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { fetchDocumentsArchive } from '../lib/api/documents'
 import { saveBlob } from '../lib/download'
 import { Button } from '../components/ui'
+import { t, tNode } from '../i18n'
 
 export function ExportPage() {
   const [running, setRunning] = useState(false)
@@ -16,9 +17,9 @@ export function ExportPage() {
       setError('')
       setSuccess('')
       saveBlob(await fetchDocumentsArchive(), 'lemmary-export.zip')
-      setSuccess('Archive download started.')
+      setSuccess(t('export.started'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Download failed')
+      setError(err instanceof Error ? err.message : t('export.error'))
     } finally {
       setRunning(false)
     }
@@ -28,15 +29,16 @@ export function ExportPage() {
     <div className="mx-auto max-w-xl space-y-5">
       <div>
         <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">
-          Export archive
+          {t('export.title')}
         </h1>
         <p className="mt-1 text-sm text-ink-soft">
-          Download a full backup of your library as a single zip. It can be restored into this or
-          any other Lemmary instance under{' '}
-          <Link to="/import" className="font-medium text-oxblood underline">
-            Import &rarr; Lemmary archive
-          </Link>
-          .
+          {tNode('export.intro', {
+            link: (
+              <Link to="/import" className="font-medium text-oxblood underline">
+                {t('export.introLink')}
+              </Link>
+            ),
+          })}
         </p>
       </div>
 
@@ -45,25 +47,17 @@ export function ExportPage() {
         className="space-y-4 rounded-none border border-line bg-surface p-5"
       >
         <div className="text-sm text-ink-soft">
-          <p className="font-medium text-ink">The archive contains</p>
+          <p className="font-medium text-ink">{t('export.contains')}</p>
           <ul className="mt-2 list-inside list-disc space-y-1">
-            <li>every original file you uploaded</li>
-            <li>
-              an <code>.ocr.txt</code> sidecar with the extracted text
-            </li>
-            <li>
-              a <code>.metadata.json</code> sidecar with titles, tags, dates and other extracted
-              fields
-            </li>
-            <li>the generated thumbnails, and all of your tags, correspondents and document types</li>
+            <li>{t('export.originals')}</li>
+            <li>{tNode('export.ocrSidecar', { code: <code>.ocr.txt</code> })}</li>
+            <li>{tNode('export.metadataSidecar', { code: <code>.metadata.json</code> })}</li>
+            <li>{t('export.thumbnails')}</li>
           </ul>
-          <p className="mt-3">
-            Settings and API keys are not included — they belong to the instance, not to your
-            documents.
-          </p>
+          <p className="mt-3">{t('export.notIncluded')}</p>
         </div>
         <Button type="submit" disabled={running}>
-          {running ? 'Preparing archive…' : 'Download backup'}
+          {running ? t('export.preparing') : t('export.download')}
         </Button>
       </form>
 

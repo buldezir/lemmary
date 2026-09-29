@@ -1,3 +1,4 @@
+import { t } from '../../i18n'
 import { apiFetch } from '../apiClient'
 import {
   passkeyErrorMessage,
@@ -20,7 +21,7 @@ type PasskeyBeginResponse = { session_id: string; options: unknown }
 
 export async function listPasskeys(): Promise<Passkey[]> {
   const data = await apiFetch<PasskeyListResponse>('/api/app/passkeys', {
-    fallbackError: 'Failed to load passkeys',
+    fallbackError: t('passkeys.loadFailed'),
   })
   return data.passkeys ?? []
 }
@@ -29,14 +30,14 @@ export function renamePasskey(id: string, name: string) {
   return apiFetch<PasskeyResponse>(`/api/app/passkeys/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: { name },
-    fallbackError: 'Failed to rename the passkey',
+    fallbackError: t('passkeys.renameFailed'),
   })
 }
 
 export function deletePasskey(id: string) {
   return apiFetch<unknown>(`/api/app/passkeys/${encodeURIComponent(id)}`, {
     method: 'DELETE',
-    fallbackError: 'Failed to remove the passkey',
+    fallbackError: t('passkeys.removeFailed'),
   })
 }
 
@@ -52,7 +53,7 @@ export async function registerPasskey(name: string): Promise<Passkey> {
   const begin = await apiFetch<PasskeyBeginResponse>('/api/app/passkeys/register/begin', {
     method: 'POST',
     body: {},
-    fallbackError: 'Failed to start passkey setup',
+    fallbackError: t('passkeys.setupStartFailed'),
   })
 
   let credential: Credential | null
@@ -62,7 +63,7 @@ export async function registerPasskey(name: string): Promise<Passkey> {
     throw new Error(passkeyErrorMessage(err, 'register'), { cause: err })
   }
   if (!credential) {
-    throw new Error('No passkey was created.')
+    throw new Error(t('passkeys.noneCreated'))
   }
 
   const data = await apiFetch<PasskeyResponse>('/api/app/passkeys/register/finish', {
@@ -72,7 +73,7 @@ export async function registerPasskey(name: string): Promise<Passkey> {
       name,
       credential: registrationToJSON(credential),
     },
-    fallbackError: 'Failed to save the passkey',
+    fallbackError: t('passkeys.saveFailed'),
   })
   return data.passkey
 }
@@ -84,7 +85,7 @@ export async function registerPasskey(name: string): Promise<Passkey> {
 export function passkeyDateLabel(value: string): string {
   const trimmed = value.trim()
   if (!trimmed) {
-    return 'Never'
+    return t('passkeys.never')
   }
   return trimmed.slice(0, 10)
 }

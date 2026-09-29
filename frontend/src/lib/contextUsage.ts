@@ -1,3 +1,5 @@
+import { lang, t } from '../i18n'
+
 /**
  * How much of the model's context a research turn took. Peak, not total: the
  * agent loop resends a growing conversation each round, so what says how close
@@ -11,7 +13,7 @@ export interface ContextUsage {
   estimated?: boolean
 }
 
-const tokens = new Intl.NumberFormat()
+const tokens = new Intl.NumberFormat(lang)
 
 /**
  * Renders the usage as one line. Without a window there is no percentage to
@@ -24,10 +26,10 @@ export function formatContextUsage(usage: ContextUsage | undefined): string {
   const prefix = usage.estimated ? '~' : ''
   const used = `${prefix}${tokens.format(usage.peak_prompt)}`
   const window = usage.context_window ?? 0
-  if (window <= 0) return `${used} tokens`
+  if (window <= 0) return t('contextUsage.tokens', { used })
 
   const percent = Math.round((usage.peak_prompt / window) * 100)
-  return `${used} / ${tokens.format(window)} tokens (${percent}%)`
+  return t('contextUsage.tokensOfWindow', { used, window: tokens.format(window), percent })
 }
 
 /**
@@ -62,5 +64,9 @@ export function contextOverflowWarning(draft: string, usage: ContextUsage | unde
   const asked = estimateTokens(draft)
   const total = Math.max(usage?.peak_prompt ?? 0, 0) + asked
   if (total <= budget) return ''
-  return `This question is about ${tokens.format(asked)} tokens; with the chat so far that is roughly ${tokens.format(total)}, past the ${tokens.format(budget)} this model can take while leaving room for an answer.`
+  return t('contextUsage.overflow', {
+    asked: tokens.format(asked),
+    total: tokens.format(total),
+    budget: tokens.format(budget),
+  })
 }

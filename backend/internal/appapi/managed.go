@@ -7,6 +7,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/i18n"
 )
 
 // Shown when a write hits a setting the operator owns.
@@ -77,8 +78,9 @@ func refuseWritesWhenReadOnly(rt *config.Runtime) func(*core.RequestEvent) error
 			return e.Next()
 		}
 		// Both fields: the PocketBase SDK shows message, apiClient shows detail.
+		msg := i18n.T(i18n.FromRequest(e.Request), readOnlyMessage)
 		return writeJSON(e, http.StatusForbidden, map[string]any{
-			"status": http.StatusForbidden, "message": readOnlyMessage, "detail": readOnlyMessage, "data": map[string]any{},
+			"status": http.StatusForbidden, "message": msg, "detail": msg, "data": map[string]any{},
 		})
 	}
 }

@@ -1,4 +1,5 @@
 import { type KeyboardEvent, type SubmitEvent } from 'react'
+import { t } from '../i18n'
 import { Button } from './ui'
 
 type ChatComposerProps = {
@@ -26,7 +27,7 @@ type ChatComposerProps = {
 const sendChord =
   typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.userAgent)
     ? '⌘ + Enter'
-    : 'Ctrl + Enter'
+    : t('chatComposer.ctrlEnter')
 
 export function ChatComposer({
   value,
@@ -85,7 +86,7 @@ export function ChatComposer({
         </div>
         {sending && onCancel && (
           <Button type="button" variant="secondary" onClick={onCancel}>
-            Cancel
+            {t('common.cancel')}
           </Button>
         )}
       </div>

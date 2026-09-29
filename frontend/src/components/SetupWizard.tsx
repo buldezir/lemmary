@@ -23,6 +23,7 @@ import {
   type ProviderSDK,
 } from '../lib/api/providers'
 import { getAppSettings, updateAppSettings } from '../lib/api/settings'
+import { docsUrl, t, tNode } from '../i18n'
 import { AppFooter } from './AppFooter'
 import { ChatGPTSignIn } from './ChatGPTSignIn'
 import { ProviderModelFields } from './ProviderModelFields'
@@ -166,7 +167,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       setSubmitting(true)
       setError('')
       if (password !== passwordConfirm) {
-        throw new Error('Passwords do not match.')
+        throw new Error(t('setupWizard.passwordMismatch'))
       }
       await createSetupAdmin(email.trim(), password, passwordConfirm)
       await loginWithPassword(email.trim(), password)
@@ -182,7 +183,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       }
       setStep(target)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create admin')
+      setError(err instanceof Error ? err.message : t('setupWizard.createAdminFailed'))
     } finally {
       setSubmitting(false)
     }
@@ -196,7 +197,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       await registerPasskey(passkeyName.trim() || defaultPasskeyName())
       setStep(afterPasskey)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add the passkey')
+      setError(err instanceof Error ? err.message : t('setupWizard.passkeyFailed'))
     } finally {
       setSubmitting(false)
     }
@@ -214,7 +215,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
         { sdk: generalSdk, key: generalKey.trim() },
       ].filter((item) => item.key)
       if (wanted.length === 0) {
-        throw new Error('Enter at least one API key.')
+        throw new Error(t('setupWizard.enterOneKey'))
       }
       // Read from the server rather than from state: a failure on the second row
       // leaves the first saved but unknown here, and the retry would be refused
@@ -236,7 +237,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       const next = await refreshStatus()
       setStep(next.needs_config ? 'models' : 'done')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save providers')
+      setError(err instanceof Error ? err.message : t('setupWizard.saveProvidersFailed'))
     } finally {
       setSubmitting(false)
     }
@@ -248,7 +249,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       setSubmitting(true)
       setError('')
       if (requiresAPIKey(sdk) && !apiKey.trim()) {
-        throw new Error('Enter an API key.')
+        throw new Error(t('setupWizard.enterKey'))
       }
       const created = await createAIProvider({
         sdk,
@@ -273,7 +274,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       }
       setStep('models')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save provider')
+      setError(err instanceof Error ? err.message : t('providersBlock.saveFailed'))
     } finally {
       setSubmitting(false)
     }
@@ -303,10 +304,10 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       setSubmitting(true)
       setError('')
       if (!ocrProviderId) {
-        throw new Error('Choose an OCR provider.')
+        throw new Error(t('setupWizard.chooseOcrProvider'))
       }
       if (!extractProviderId) {
-        throw new Error('Choose an extraction provider.')
+        throw new Error(t('setupWizard.chooseExtractionProvider'))
       }
       // The rules the settings endpoint enforces, asked here so the answer is a
       // field to fill rather than a 400 quoting a request field. The two
@@ -314,13 +315,13 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       // box for.
       const ocrSdk = providers.find((item) => item.id === ocrProviderId)?.sdk
       if (usesOCRModel(ocrSdk) && !ocrModel.trim()) {
-        throw new Error('Choose an OCR model.')
+        throw new Error(t('setupWizard.chooseOcrModel'))
       }
       if (!extractModel.trim()) {
-        throw new Error('Choose an extraction model.')
+        throw new Error(t('setupWizard.chooseExtractionModel'))
       }
       if (embeddingProviderId && !embeddingModel.trim()) {
-        throw new Error('Choose an embedding model, or set the embedding provider to None.')
+        throw new Error(t('setupWizard.chooseEmbeddingModel'))
       }
       // First-launch setup asks for one LLM binding; Deep Research's own model
       // can be set later in Settings.
@@ -339,12 +340,12 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
         if (!next.has_ocr || !next.has_llm) {
           setStep(next.provider_count ? 'models' : 'providers')
         }
-        setError('Setup is still incomplete. Add an OCR provider and a language-model provider.')
+        setError(t('setupWizard.stillIncomplete'))
         return
       }
       setStep('done')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save models')
+      setError(err instanceof Error ? err.message : t('setupWizard.saveModelsFailed'))
     } finally {
       setSubmitting(false)
     }
@@ -352,14 +353,14 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
 
   const stepLabel =
     step === 'admin'
-      ? '1 · Admin account'
+      ? t('setupWizard.stepAdmin')
       : step === 'passkey'
-        ? 'Optional · Passkey'
+        ? t('setupWizard.stepPasskey')
         : step === 'providers'
-          ? '2 · Providers'
+          ? t('setupWizard.stepProviders')
           : step === 'models'
-            ? '3 · Models'
-            : 'Ready'
+            ? t('setupWizard.stepModels')
+            : t('setupWizard.stepReady')
 
   const llmProviders = providers.filter((item) => isLLMProvider(item.sdk))
   const keylessDocs = providerDocs(sdk)
@@ -376,25 +377,25 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
             {stepLabel}
           </p>
           <h2 className="mb-4 font-display text-lg font-semibold text-ink">
-            {step === 'admin' && 'Create your admin account'}
-            {step === 'passkey' && 'Add a passkey'}
+            {step === 'admin' && t('setupWizard.headingAdmin')}
+            {step === 'passkey' && t('setupWizard.headingPasskey')}
             {step === 'providers' &&
               (signInProvider
-                ? 'Sign in to ChatGPT'
+                ? t('setupWizard.headingSignIn')
                 : guided
-                  ? 'Connect your AI providers'
-                  : 'Add a provider')}
-            {step === 'models' && 'Choose models'}
-            {step === 'done' && 'Setup complete'}
+                  ? t('setupWizard.headingGuided')
+                  : t('setupWizard.headingProvider'))}
+            {step === 'models' && t('setupWizard.headingModels')}
+            {step === 'done' && t('setupWizard.headingDone')}
           </h2>
 
           {step === 'admin' && (
             <form className="flex flex-col gap-4" onSubmit={onCreateAdmin}>
               <p className="text-sm text-ink-muted">
-                This account manages settings and can access PocketBase Admin.
+                {t('setupWizard.adminIntro')}
               </p>
               <label className={labelClassName}>
-                <span className={labelTextClassName}>Email</span>
+                <span className={labelTextClassName}>{t('loginPage.email')}</span>
                 <input
                   type="email"
                   autoComplete="email"
@@ -405,7 +406,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 />
               </label>
               <label className={labelClassName}>
-                <span className={labelTextClassName}>Password</span>
+                <span className={labelTextClassName}>{t('loginPage.password')}</span>
                 <input
                   type="password"
                   autoComplete="new-password"
@@ -417,7 +418,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 />
               </label>
               <label className={labelClassName}>
-                <span className={labelTextClassName}>Confirm password</span>
+                <span className={labelTextClassName}>{t('setupWizard.confirmPassword')}</span>
                 <input
                   type="password"
                   autoComplete="new-password"
@@ -430,7 +431,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
               </label>
               {error && <p className="text-sm text-madder">{error}</p>}
               <Button type="submit" disabled={submitting}>
-                {submitting ? 'Creating...' : 'Create admin'}
+                {submitting ? t('setupWizard.creating') : t('setupWizard.createAdmin')}
               </Button>
             </form>
           )}
@@ -438,11 +439,10 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           {step === 'passkey' && (
             <form className="flex flex-col gap-4" onSubmit={onAddPasskey}>
               <p className="text-sm text-ink-muted">
-                Sign in later with your fingerprint, face, or device PIN instead of a password. You
-                can add or remove passkeys anytime from the Account page.
+                {t('setupWizard.passkeyIntro')}
               </p>
               <label className={labelClassName}>
-                <span className={labelTextClassName}>Name</span>
+                <span className={labelTextClassName}>{t('setupWizard.name')}</span>
                 <input
                   value={passkeyName}
                   onChange={(e) => setPasskeyName(e.target.value)}
@@ -451,7 +451,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
               </label>
               {error && <p className="text-sm text-madder">{error}</p>}
               <Button type="submit" disabled={submitting}>
-                {submitting ? 'Waiting for your device...' : 'Create passkey'}
+                {submitting ? t('setupWizard.waitingDevice') : t('setupWizard.createPasskey')}
               </Button>
               {/* Never disabled: a failure on this step must not trap anyone in
                   an optional detour. */}
@@ -460,7 +460,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 className="text-left text-xs font-medium text-ink-soft hover:text-ink"
                 onClick={() => setStep(afterPasskey)}
               >
-                Skip for now
+                {t('setupWizard.skip')}
               </button>
             </form>
           )}
@@ -468,9 +468,9 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           {step === 'providers' && signInProvider && (
             <div className="flex flex-col gap-4">
               <p className="text-sm text-ink-muted">
-                <strong className="font-medium text-ink">{signInProvider.alias}</strong> is saved
-                but not signed in yet. Open the link below, enter the code, and setup carries on by
-                itself once the token is stored.
+                {tNode('setupWizard.signInIntro', {
+                  alias: <strong className="font-medium text-ink">{signInProvider.alias}</strong>,
+                })}
               </p>
               <ChatGPTSignIn provider={signInProvider} onChange={onSignedIn} />
               {error && <p className="text-sm text-madder">{error}</p>}
@@ -479,7 +479,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 className="text-left text-xs font-medium text-ink-soft hover:text-ink"
                 onClick={() => setSignInProvider(null)}
               >
-                Add a different provider instead
+                {t('setupWizard.differentProvider')}
               </button>
             </div>
           )}
@@ -487,24 +487,28 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           {step === 'providers' && !signInProvider && guided && (
             <form className="flex flex-col gap-4" onSubmit={onSaveGuided}>
               <p className="text-sm text-ink-muted">
-                Two keys cover everything: <strong className="font-medium text-ink">Mistral</strong>{' '}
-                reads your documents and powers meaning-based search, and one other provider does
-                the thinking — extraction, chat and Deep Search.
+                {tNode('setupWizard.guidedIntro', {
+                  mistral: <strong className="font-medium text-ink">Mistral</strong>,
+                })}
               </p>
               <p className={fieldHintClassName}>
-                No provider account yet?{' '}
-                <DocsLink href="/docs/guided_ai_setup.html">
-                  Follow the guided AI provider setup
-                </DocsLink>{' '}
-                — it walks through both, and the Mistral key is free.
+                {tNode('setupWizard.guidedNoAccount', {
+                  link: (
+                    <DocsLink href={docsUrl('guided_ai_setup.html')}>
+                      {t('setupWizard.guidedLink')}
+                    </DocsLink>
+                  ),
+                })}
               </p>
               {providers.length > 0 && (
                 <p className="text-xs text-ink-soft">
-                  Already added: {providers.map((item) => item.alias).join(', ')}
+                  {t('setupWizard.alreadyAdded', {
+                    names: providers.map((item) => item.alias).join(', '),
+                  })}
                 </p>
               )}
               <label className={labelClassName}>
-                <span className={labelTextClassName}>Mistral API key — reading and retrieval</span>
+                <span className={labelTextClassName}>{t('setupWizard.mistralKey')}</span>
                 <input
                   type="password"
                   autoComplete="off"
@@ -514,11 +518,10 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 />
               </label>
               <p className={fieldHintClassName}>
-                OCR and embeddings, both on the free tier. Mistral can run the language model too,
-                so this key alone is a complete install.
+                {t('setupWizard.mistralHint')}
               </p>
               <label className={labelClassName}>
-                <span className={labelTextClassName}>General AI provider</span>
+                <span className={labelTextClassName}>{t('setupWizard.generalProvider')}</span>
                 <select
                   value={generalSdk}
                   onChange={(e) => setGeneralSdk(e.target.value as ProviderSDK)}
@@ -540,7 +543,9 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 </select>
               </label>
               <label className={labelClassName}>
-                <span className={labelTextClassName}>{sdkAliasDefault(generalSdk)} API key</span>
+                <span className={labelTextClassName}>
+                  {t('setupWizard.providerKey', { name: sdkAliasDefault(generalSdk) })}
+                </span>
                 <input
                   type="password"
                   autoComplete="off"
@@ -549,11 +554,11 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                   className={inputClassName}
                 />
               </label>
-              <p className={fieldHintClassName}>Leave blank to run everything on Mistral.</p>
+              <p className={fieldHintClassName}>{t('setupWizard.generalHint')}</p>
               {error && <p className="text-sm text-madder">{error}</p>}
               <div className="flex flex-col gap-2">
                 <Button type="submit" disabled={submitting}>
-                  {submitting ? 'Saving...' : 'Continue'}
+                  {submitting ? t('settingsFeedback.saving') : t('setupWizard.continue')}
                 </Button>
                 <button
                   type="button"
@@ -563,7 +568,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                     setGuided(false)
                   }}
                 >
-                  Add a provider manually instead
+                  {t('setupWizard.manual')}
                 </button>
               </div>
             </form>
@@ -572,24 +577,22 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           {step === 'providers' && !signInProvider && !guided && (
             <form className="flex flex-col gap-4" onSubmit={onSaveProvider}>
               <p className="text-sm text-ink-muted">
-                Add a provider. OpenAI, OpenRouter, or Mistral can run extraction and chat;
-                Google Vision or Mistral OCR can run OCR, and one Mistral provider covers both.
-                Local OCR runs Docling on your own host and Local Embeddings serves Deep
-                Search's dense half — neither needs an API key, but each needs its compose
-                overlay running first. A ChatGPT subscription covers extraction, chat and OCR
-                on the seat you already pay for, with no API key at all — you sign in with a
-                code instead.
+                {t('setupWizard.manualIntro')}
               </p>
               <p className={fieldHintClassName}>
-                No provider account yet?{' '}
-                <DocsLink href="/docs/guided_ai_setup.html">
-                  Follow the guided AI provider setup
-                </DocsLink>{' '}
-                — a free Mistral key for OCR, Opencode Go for the language model.
+                {tNode('setupWizard.manualNoAccount', {
+                  link: (
+                    <DocsLink href={docsUrl('guided_ai_setup.html')}>
+                      {t('setupWizard.guidedLink')}
+                    </DocsLink>
+                  ),
+                })}
               </p>
               {providers.length > 0 && (
                 <p className="text-xs text-ink-soft">
-                  Already added: {providers.map((item) => item.alias).join(', ')}
+                  {t('setupWizard.alreadyAdded', {
+                    names: providers.map((item) => item.alias).join(', '),
+                  })}
                 </p>
               )}
               <label className={labelClassName}>
@@ -613,7 +616,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 </select>
               </label>
               <label className={labelClassName}>
-                <span className={labelTextClassName}>Alias</span>
+                <span className={labelTextClassName}>{t('providersBlock.alias')}</span>
                 <input
                   value={alias}
                   placeholder={sdkAliasDefault(sdk)}
@@ -623,7 +626,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
               </label>
               {sdk !== 'google_vision' && (
                 <label className={labelClassName}>
-                  <span className={labelTextClassName}>Base URL</span>
+                  <span className={labelTextClassName}>{t('providersBlock.baseUrl')}</span>
                   <input
                     type="url"
                     value={baseURL}
@@ -634,7 +637,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
               )}
               {requiresAPIKey(sdk) ? (
                 <label className={labelClassName}>
-                  <span className={labelTextClassName}>API key</span>
+                  <span className={labelTextClassName}>{t('providersBlock.apiKey')}</span>
                   <input
                     type="password"
                     autoComplete="off"
@@ -647,13 +650,15 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
               ) : (
                 <p className={fieldHintClassName}>
                   {keylessProviderHint(sdk)}{' '}
-                  <DocsLink href={keylessDocs.href}>Read the {keylessDocs.label} guide.</DocsLink>
+                  <DocsLink href={keylessDocs.href}>
+                    {t('providersBlock.readGuide', { label: keylessDocs.label })}
+                  </DocsLink>
                 </p>
               )}
               {error && <p className="text-sm text-madder">{error}</p>}
               <div className="flex flex-col gap-2">
                 <Button type="submit" disabled={submitting}>
-                  {submitting ? 'Saving...' : 'Continue'}
+                  {submitting ? t('settingsFeedback.saving') : t('setupWizard.continue')}
                 </Button>
                 <button
                   type="button"
@@ -663,7 +668,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                     setGuided(true)
                   }}
                 >
-                  Back to the guided setup
+                  {t('setupWizard.backToGuided')}
                 </button>
               </div>
             </form>
@@ -672,14 +677,11 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           {step === 'models' && (
             <form className="flex flex-col gap-4" onSubmit={onSaveModels}>
               <p className="text-sm text-ink-muted">
-                Pick a provider and model for OCR and metadata extraction. Chat and search are set
-                to the extraction model too, and embeddings are optional; you can change them
-                later in Settings.
+                {t('setupWizard.modelsIntro')}
               </p>
               {llmProviders.length === 0 && (
                 <p className="text-sm text-amber-800">
-                  Add an OpenAI, OpenRouter, ChatGPT or Mistral provider to enable extraction
-                  and chat.
+                  {t('setupWizard.noLlm')}
                 </p>
               )}
               <ProviderModelFields
@@ -692,7 +694,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 onModelChange={setOcrModel}
               />
               <ProviderModelFields
-                label="Extraction"
+                label={t('bindingOverride.extraction')}
                 providers={llmProviders}
                 providerId={extractProviderId}
                 model={extractModel}
@@ -701,8 +703,8 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                 onModelChange={setExtractModel}
               />
               <ProviderModelFields
-                label="Embeddings"
-                help="Lets Deep Search find documents by meaning as well as by keyword, so a question in one language reaches a document written in another. Set the provider to None to search by keyword only; turning it on embeds the whole archive, not only new uploads."
+                label={t('setupWizard.embeddings')}
+                help={t('setupWizard.embeddingsHelp')}
                 providers={providers}
                 providerId={embeddingProviderId}
                 model={embeddingModel}
@@ -714,7 +716,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
               {error && <p className="text-sm text-madder">{error}</p>}
               <div className="flex flex-col gap-2">
                 <Button type="submit" disabled={submitting}>
-                  {submitting ? 'Saving...' : 'Finish setup'}
+                  {submitting ? t('settingsFeedback.saving') : t('setupWizard.finish')}
                 </Button>
                 <button
                   type="button"
@@ -728,7 +730,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                     setStep('providers')
                   }}
                 >
-                  Add another provider
+                  {t('setupWizard.addAnother')}
                 </button>
               </div>
             </form>
@@ -737,13 +739,12 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           {step === 'done' && (
             <div className="flex flex-col gap-4">
               <p className="text-sm text-ink-muted">
-                Your admin account and processing keys are ready. You can change them anytime in
-                Settings.
+                {t('setupWizard.doneIntro')}
               </p>
               {status.needs_config && (
-                <p className="text-sm text-madder">Setup still reports missing configuration.</p>
+                <p className="text-sm text-madder">{t('setupWizard.missingConfig')}</p>
               )}
-              <Button onClick={onComplete}>Open {appName}</Button>
+              <Button onClick={onComplete}>{t('setupWizard.open', { appName })}</Button>
             </div>
           )}
         </section>
@@ -768,11 +769,13 @@ export function SetupBlocked({ appName, accent, onLogout }: SetupBlockedProps) {
             <AppLogo appName={appName} accent={accent} />
             <h1 className="font-display text-xl font-semibold text-ink">{appName}</h1>
           </div>
-          <h2 className="mb-2 font-display text-lg font-semibold text-ink">Setup incomplete</h2>
+          <h2 className="mb-2 font-display text-lg font-semibold text-ink">
+            {t('setupWizard.blockedTitle')}
+          </h2>
           <p className="mb-4 text-sm text-ink-muted">
-            An administrator must finish first-launch configuration before the app can be used.
+            {t('setupWizard.blockedIntro')}
           </p>
-          <Button onClick={onLogout}>Log out</Button>
+          <Button onClick={onLogout}>{t('rootLayout.logOut')}</Button>
         </section>
       </div>
       <AppFooter />

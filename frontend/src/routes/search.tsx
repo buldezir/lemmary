@@ -10,6 +10,7 @@ import { useChatSession } from '../hooks/useChatSession'
 import { useChatWorkspace } from '../hooks/useChatWorkspace'
 import { cancelSearchRun } from '../lib/api/ai'
 import { chatSessionBinding, getChatSession, type ChatTurn } from '../lib/api/chats'
+import { t } from '../i18n'
 
 /**
  * Search: one round against the archive, answered as a list of what it found.
@@ -28,7 +29,7 @@ export function SearchPage() {
     load: async (id) => {
       const detail = await getChatSession(id)
       if (detail.session.kind !== 'search') {
-        throw new Error('That chat belongs to a different page.')
+        throw new Error(t('search.wrongPage'))
       }
       return detail
     },
@@ -68,8 +69,8 @@ export function SearchPage() {
 
   return (
     <ChatWorkspaceFrame
-      title="AI assisted search"
-      hint="Find documents and list them."
+      title={t('index.aiSearch')}
+      hint={t('search.hint')}
       rows={ws.rows}
       sessionId={ws.sessionId}
       sessionsLoading={ws.sessions.loading}
@@ -87,8 +88,7 @@ export function SearchPage() {
       {chat.loadError && <p className="mb-3 text-sm text-madder">{chat.loadError}</p>}
       {chat.unsaved && (
         <p className="mb-3 text-sm text-madder">
-          {chat.unsavedDetail ||
-            'This answer could not be saved, so the chat will not appear in your history.'}
+          {chat.unsavedDetail || t('search.unsaved')}
         </p>
       )}
       <ChatPanel>
@@ -97,17 +97,17 @@ export function SearchPage() {
           turns={chat.turns}
           loading={chat.loading}
           sending={chat.sending}
-          sendingLabel="Searching..."
-          emptyHint={'Try something like: "plumber invoice from last summer about the leak"'}
+          sendingLabel={t('search.searching')}
+          emptyHint={t('search.emptyHint')}
           renderExtra={(turn) => <SearchHits turn={turn} />}
         />
         <ChatComposer
           value={chat.input}
           onChange={chat.setInput}
           onSubmit={() => void chat.submit()}
-          placeholder="Describe what you are looking for..."
-          submitLabel="Search"
-          sendingLabel="Searching..."
+          placeholder={t('search.placeholder')}
+          submitLabel={t('search.search')}
+          sendingLabel={t('search.searching')}
           sending={chat.sending}
           disabled={chat.loading}
           error={chat.error}
@@ -126,13 +126,13 @@ export function SearchPage() {
           dropdown. border-t-0 keeps it reading as part of the panel. */}
       <div className="border border-t-0 border-line bg-surface px-4 py-3">
         <BindingOverride
-          label="Search"
+          label={t('search.search')}
           purpose="llm"
           value={shownBinding}
           onChange={ws.setBinding}
           locked={inConversation || chat.sending || chat.turns.length > 0}
-          lockedHint="Fixed for this chat. Start a new one to search with a different model."
-          help="Answers this search in place of the General AI model from Settings."
+          lockedHint={t('search.lockedHint')}
+          help={t('search.bindingHelp')}
           showConfigured
         />
       </div>

@@ -24,8 +24,9 @@ import {
   type TaxonomyPruneResult,
 } from '../lib/api/maintenance'
 import { ResultDialog } from '../components/settings/SettingsFeedback'
-import { REPROCESS_MODE_LABELS, countLabel, type ReprocessMode } from '../lib/processing'
+import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
 import { Button, labelTextClassName, sectionClassName, sectionTitleClassName } from '../components/ui'
+import { lang, t, tNode } from '../i18n'
 
 const selectClassName =
   'rounded-xs border border-line-strong bg-bright px-3 py-2 text-sm outline-none focus:border-oxblood focus:ring-1 focus:ring-oxblood'
@@ -46,19 +47,18 @@ function activeJobsTotal(counts: ActiveJobCounts | null) {
 }
 
 function activeJobsLabel(counts: ActiveJobCounts) {
-  const pending = countLabel(counts.pending, 'job', 'jobs')
-  const running = countLabel(counts.running, 'job', 'jobs')
-  return `${pending} pending, ${running} running`
+  const pending = t('maintenance.jobsPending', { count: counts.pending })
+  const running = t('maintenance.jobsRunning', { count: counts.running })
+  return `${pending}, ${running}`
 }
 
 // result.tags is not read: tags are a hand-curated vocabulary, so the prune
 // leaves them alone and the count is always zero.
 function pruneSummary(result: TaxonomyPruneResult) {
-  const parts = [
-    countLabel(result.correspondents, 'correspondent', 'correspondents'),
-    countLabel(result.document_types, 'document type', 'document types'),
-  ]
-  return `Removed ${parts.join(' and ')}.`
+  return t('maintenance.pruned', {
+    correspondents: t('maintenance.prunedCorrespondents', { count: result.correspondents }),
+    types: t('maintenance.prunedTypes', { count: result.document_types }),
+  })
 }
 
 // Admin access is enforced by the route's beforeLoad guard.
@@ -152,10 +152,10 @@ export function MaintenancePage() {
     const batch = Math.min(reprocessBatch, failedCount)
     const overrides = describeJobOverrides(reprocessOverrides)
     const confirmed = window.confirm(
-      `Reprocess ${countLabel(batch, 'failed document', 'failed documents')}?\n\n` +
-        `Steps: ${REPROCESS_MODE_LABELS[reprocessMode]}\n` +
-        (overrides ? `Models: ${overrides}\n` : '') +
-        '\nExisting metadata may be overwritten.',
+      `${t('maintenance.reprocessConfirm', { count: batch })}\n\n` +
+        `${t('maintenance.confirmSteps', { steps: REPROCESS_MODE_LABELS[reprocessMode] })}\n` +
+        (overrides ? `${t('maintenance.confirmModels', { models: overrides })}\n` : '') +
+        `\n${t('maintenance.confirmOverwrite')}`,
     )
     if (!confirmed) return
 
@@ -169,14 +169,14 @@ export function MaintenancePage() {
         overrides: reprocessOverrides,
       })
       setFailedCount(result.remaining)
-      const queued = countLabel(result.queued, 'document', 'documents')
+      const queued = t('maintenance.queued', { count: result.queued })
       setSuccess(
         result.remaining > 0
-          ? `Queued ${queued}. ${countLabel(result.remaining, 'document', 'documents')} still failed — run another batch once the queue drains.`
-          : `Queued ${queued}. No failed documents left.`,
+          ? `${queued} ${t('maintenance.stillFailed', { count: result.remaining })}`
+          : `${queued} ${t('maintenance.noneLeft')}`,
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Reprocess failed')
+      setError(err instanceof Error ? err.message : t('maintenance.reprocessFailed'))
       // The batch may have queued part of the set before failing.
       setFailedCount(await countFailedDocuments().catch(() => null))
     } finally {
@@ -218,8 +218,7 @@ export function MaintenancePage() {
     if (!missing) return
 
     const confirmed = window.confirm(
-      `Embed ${countLabel(missing, 'document', 'documents')}?\n\n` +
-        'Their text is sent to the embedding provider, which bills for it.',
+      t('maintenance.embedConfirm', { count: missing }),
     )
     if (!confirmed) return
 
@@ -232,11 +231,11 @@ export function MaintenancePage() {
       setEmbeddingLoaded(true)
       setSuccess(
         next.started
-          ? `Embedding ${countLabel(missing, 'document', 'documents')} in the background.`
-          : 'A sweep is already running; this page follows its progress.',
+          ? t('maintenance.embeddingStarted', { count: missing })
+          : t('maintenance.sweepRunning'),
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Embedding backfill failed')
+      setError(err instanceof Error ? err.message : t('maintenance.embeddingFailed'))
     } finally {
       setEmbeddingStarting(false)
     }
@@ -251,10 +250,14 @@ export function MaintenancePage() {
       const result = await scanDuplicates()
       setScanResult(result)
       setSuccess(
-        `Scan finished: ${result.scanned} scanned, ${result.exact_marked} exact marked, ${result.near_marked} near marked.`,
+        t('maintenance.scanFinished', {
+          scanned: result.scanned,
+          exact: result.exact_marked,
+          near: result.near_marked,
+        }),
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Duplicate scan failed')
+      setError(err instanceof Error ? err.message : t('maintenance.duplicateScanFailed'))
     } finally {
       setScanning(false)
     }
@@ -285,9 +288,13 @@ export function MaintenancePage() {
           if (!active) return
           setMailBackfill(next)
           if (next.running) return
-          const counts = `${next.created} imported, ${next.skipped} already in the library, ${next.failed} failed`
-          if (next.error) setError(`Mailbox scan stopped: ${next.error} (${counts}).`)
-          else setSuccess(`Mailbox scan finished: ${counts}.`)
+          const counts = t('maintenance.mailCounts', {
+            created: next.created,
+            skipped: next.skipped,
+            failed: next.failed,
+          })
+          if (next.error) setError(t('maintenance.mailStopped', { error: next.error, counts }))
+          else setSuccess(t('maintenance.mailFinished', { counts }))
         })
         .catch(() => {})
     }, embeddingPollMs)
@@ -304,7 +311,7 @@ export function MaintenancePage() {
       setSuccess('')
       setMailBackfill(await startIMAPBackfill(mailFrom, mailTo))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Mailbox scan failed')
+      setError(err instanceof Error ? err.message : t('maintenance.mailFailed'))
     } finally {
       setMailStarting(false)
     }
@@ -316,9 +323,9 @@ export function MaintenancePage() {
       setError('')
       setSuccess('')
       const result = await reindexSearch()
-      setSuccess(`Reindexed ${result.indexed} documents.`)
+      setSuccess(t('maintenance.reindexed', { count: result.indexed }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Search reindex failed')
+      setError(err instanceof Error ? err.message : t('maintenance.reindexFailed'))
     } finally {
       setReindexing(false)
     }
@@ -335,14 +342,14 @@ export function MaintenancePage() {
       setActiveJobs(counts)
       if (counts && counts.pending + counts.running > 0) {
         setError(
-          `Processing in flight (${activeJobsLabel(counts)}). Try again when the queue is idle.`,
+          t('maintenance.inFlight', { jobs: activeJobsLabel(counts) }),
         )
         return
       }
       const result = await pruneStaleTaxonomy()
       setSuccess(pruneSummary(result))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Stale data cleanup failed')
+      setError(err instanceof Error ? err.message : t('maintenance.pruneFailed'))
     } finally {
       setPruning(false)
     }
@@ -355,23 +362,21 @@ export function MaintenancePage() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-6">
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">Maintenance</h1>
+        <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">{t('maintenance.title')}</h1>
         <p className="mt-1 text-sm text-ink-soft">
-          Maintenance tasks that run over the whole library. Admin only.
+          {t('maintenance.intro')}
         </p>
       </div>
 
       <div className="flex flex-col gap-5">
         <section className={sectionClassName}>
-          <h2 className={sectionTitleClassName}>Failed processing</h2>
+          <h2 className={sectionTitleClassName}>{t('maintenance.failedTitle')}</h2>
           <p className="text-xs text-ink-soft">
-            Queues a fresh job for documents whose processing failed. Originals are never
-            touched. Jobs run one at a time, so a batch drains gradually — reprocess in batches
-            rather than all at once to keep OCR and AI spend under control.
+            {t('maintenance.failedHint')}
           </p>
           <div className="mt-4 flex flex-wrap items-end gap-3">
             <label className="flex flex-col gap-1">
-              <span className={labelTextClassName}>Steps</span>
+              <span className={labelTextClassName}>{t('maintenance.steps')}</span>
               <select
                 value={reprocessMode}
                 onChange={(event) => setReprocessMode(event.target.value as ReprocessMode)}
@@ -385,7 +390,7 @@ export function MaintenancePage() {
               </select>
             </label>
             <label className="flex flex-col gap-1">
-              <span className={labelTextClassName}>Batch</span>
+              <span className={labelTextClassName}>{t('maintenance.batch')}</span>
               <select
                 value={reprocessBatch}
                 onChange={(event) => setReprocessBatch(Number(event.target.value))}
@@ -404,8 +409,10 @@ export function MaintenancePage() {
               onClick={() => void onReprocessFailed()}
             >
               {reprocessing
-                ? 'Queueing...'
-                : `Reprocess ${Math.min(reprocessBatch, failedCount ?? 0)} failed`}
+                ? t('maintenance.queueing')
+                : t('maintenance.reprocessButton', {
+                    count: Math.min(reprocessBatch, failedCount ?? 0),
+                  })}
             </Button>
           </div>
           <div className="mt-4">
@@ -413,30 +420,33 @@ export function MaintenancePage() {
           </div>
           <p className="mt-3 text-xs text-ink-soft">
             {!failedCountLoaded
-              ? 'Loading the failed document count...'
+              ? t('maintenance.failedLoading')
               : failedCount === null
-                ? 'Could not read the failed document count.'
+                ? t('maintenance.failedUnknown')
                 : failedCount === 0
-                  ? 'No documents have failed processing.'
-                  : `${countLabel(failedCount, 'document has', 'documents have')} failed processing.`}
-            {activeJobs && jobsInFlight && ` Queue: ${activeJobsLabel(activeJobs)}.`}
+                  ? t('maintenance.failedNone')
+                  : t('maintenance.failedSome', { count: failedCount })}
+            {activeJobs &&
+              jobsInFlight &&
+              ` ${t('maintenance.queue', { jobs: activeJobsLabel(activeJobs) })}`}
           </p>
         </section>
 
         <section className={sectionClassName}>
-          <h2 className={sectionTitleClassName}>Duplicates</h2>
+          <h2 className={sectionTitleClassName}>{t('maintenance.duplicatesTitle')}</h2>
           <p className="text-xs text-ink-soft">
-            Backfills missing checksums and fingerprints, then marks exact duplicates (and near
-            duplicates, if near-duplicate detection is enabled in Settings).
+            {t('maintenance.duplicatesHint')}
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <Button variant="secondary" disabled={scanning} onClick={() => void onScanDuplicates()}>
-              {scanning ? 'Scanning...' : 'Scan for duplicates'}
+              {scanning ? t('maintenance.scanning') : t('maintenance.scanDuplicates')}
             </Button>
             {scanResult && (
               <p className="text-xs text-ink-soft">
-                Backfilled {scanResult.checksum_backfilled} checksums,{' '}
-                {scanResult.fingerprints_filled} fingerprints.
+                {t('maintenance.backfilled', {
+                  checksums: scanResult.checksum_backfilled,
+                  fingerprints: scanResult.fingerprints_filled,
+                })}
               </p>
             )}
           </div>
@@ -444,16 +454,13 @@ export function MaintenancePage() {
 
         {ingestImap && (
           <section className={sectionClassName}>
-            <h2 className={sectionTitleClassName}>Mailbox</h2>
+            <h2 className={sectionTitleClassName}>{t('maintenance.mailboxTitle')}</h2>
             <p className="text-xs text-ink-soft">
-              The mailbox scan imports only mail received after it was set up in Settings → Ingest.
-              This imports the attachments of older mail received between two days, inclusive.
-              Messages are never moved or deleted, and attachments already in the library are
-              skipped.
+              {t('maintenance.mailboxHint')}
             </p>
             <div className="mt-4 flex flex-wrap items-end gap-3">
               <label className="flex flex-col gap-1">
-                <span className={labelTextClassName}>Received from</span>
+                <span className={labelTextClassName}>{t('maintenance.receivedFrom')}</span>
                 <input
                   type="date"
                   className={selectClassName}
@@ -463,7 +470,7 @@ export function MaintenancePage() {
                 />
               </label>
               <label className="flex flex-col gap-1">
-                <span className={labelTextClassName}>Received to</span>
+                <span className={labelTextClassName}>{t('maintenance.receivedTo')}</span>
                 <input
                   type="date"
                   className={selectClassName}
@@ -477,26 +484,21 @@ export function MaintenancePage() {
                 disabled={mailStarting || mailRunning || !mailFrom || !mailTo}
                 onClick={() => void onScanMailbox()}
               >
-                {mailStarting || mailRunning ? 'Scanning...' : 'Scan mailbox'}
+                {mailStarting || mailRunning ? t('maintenance.scanning') : t('maintenance.scanMailbox')}
               </Button>
             </div>
             {mailBackfill?.running && (
               <p className="mt-3 text-xs text-ink-soft">
-                Scanning mail received {mailBackfill.from} to {mailBackfill.to} in the background.
-                It keeps running if you leave this page.
+                {t('maintenance.mailRunning', { from: mailBackfill.from, to: mailBackfill.to })}
               </p>
             )}
           </section>
         )}
 
         <section className={sectionClassName}>
-          <h2 className={sectionTitleClassName}>Stale data</h2>
+          <h2 className={sectionTitleClassName}>{t('maintenance.staleTitle')}</h2>
           <p className="text-xs text-ink-soft">
-            Deletes correspondents and document types that no document points at any more — left
-            behind by deleted documents, renames, or an aborted import. Documents are never touched,
-            and neither are tags: you create those by hand, so an unused one is simply one you have
-            not applied yet. Blocked while documents are processing, so entities a job is about to
-            attach are not swept up.
+            {t('maintenance.staleHint')}
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <Button
@@ -504,48 +506,46 @@ export function MaintenancePage() {
               disabled={pruning || jobsInFlight}
               onClick={() => void onPruneStale()}
             >
-              {pruning ? 'Clearing...' : 'Clear stale data'}
+              {pruning ? t('maintenance.clearing') : t('maintenance.clearStale')}
             </Button>
             {jobsInFlight && activeJobs && (
               <p className="text-xs text-amber-700">
-                Waiting for the queue to drain: {activeJobsLabel(activeJobs)}.
+                {t('maintenance.waiting', { jobs: activeJobsLabel(activeJobs) })}
               </p>
             )}
           </div>
         </section>
 
         <section className={sectionClassName}>
-          <h2 className={sectionTitleClassName}>Search index</h2>
+          <h2 className={sectionTitleClassName}>{t('maintenance.searchTitle')}</h2>
           <p className="text-xs text-ink-soft">
-            Full-text search is a derived Bleve index. Rebuild it if search results look stale after
-            imports or a crash.
+            {t('maintenance.searchHint')}
           </p>
           <div className="mt-4">
             <Button variant="secondary" disabled={reindexing} onClick={() => void onReindexSearch()}>
-              {reindexing ? 'Reindexing...' : 'Rebuild search index'}
+              {reindexing ? t('maintenance.reindexing') : t('maintenance.rebuild')}
             </Button>
           </div>
         </section>
 
         <section className={sectionClassName}>
-          <h2 className={sectionTitleClassName}>Embeddings</h2>
+          <h2 className={sectionTitleClassName}>{t('maintenance.embeddingsTitle')}</h2>
           <p className="text-xs text-ink-soft">
-            Deep Search also retrieves by meaning, which needs a vector for every passage. Uploads
-            are embedded as they are processed; documents that pre-date the embedding model, that
-            arrived through an import, or whose text has since changed are not. This works through
-            those in the background, a batch at a time.
+            {t('maintenance.embeddingsHint')}
           </p>
           {!embeddingLoaded ? (
-            <p className="mt-4 text-xs text-ink-soft">Loading the embedding backlog...</p>
+            <p className="mt-4 text-xs text-ink-soft">{t('maintenance.embeddingLoading')}</p>
           ) : embeddingStats === null ? (
-            <p className="mt-4 text-xs text-ink-soft">Could not read the embedding backlog.</p>
+            <p className="mt-4 text-xs text-ink-soft">{t('maintenance.embeddingUnknown')}</p>
           ) : !embeddingStats.enabled ? (
             <p className="mt-4 text-xs text-amber-700">
-              No embedding model is bound, so there is nothing to embed with. Choose one in{' '}
-              <Link to="/settings/ai" className="font-medium underline">
-                Settings
-              </Link>
-              .
+              {tNode('maintenance.noEmbeddingModel', {
+                link: (
+                  <Link to="/settings/ai" className="font-medium underline">
+                    {t('maintenance.settingsLink')}
+                  </Link>
+                ),
+              })}
             </p>
           ) : (
             <>
@@ -556,22 +556,34 @@ export function MaintenancePage() {
                   onClick={() => void onEmbedMissing()}
                 >
                   {embeddingRunning
-                    ? `Embedding... ${embeddingStats.embedded.toLocaleString()} of ${embeddingStats.total.toLocaleString()}`
-                    : `Embed ${countLabel(embeddingMissing, 'missing document', 'missing documents')}`}
+                    ? t('maintenance.embeddingProgress', {
+                        embedded: embeddingStats.embedded.toLocaleString(lang),
+                        total: embeddingStats.total.toLocaleString(lang),
+                      })
+                    : t('maintenance.embedMissing', { count: embeddingMissing })}
                 </Button>
                 {embeddingRunning && (
                   <p className="text-xs text-ink-soft">
-                    Running in the background. Leaving this page does not stop it.
+                    {t('maintenance.embeddingBackground')}
                   </p>
                 )}
               </div>
               <p className="mt-3 text-xs text-ink-soft">
-                {embeddingStats.embedded.toLocaleString()} of{' '}
-                {embeddingStats.total.toLocaleString()} documents embedded with{' '}
-                {embeddingStats.model}
-                {embeddingStats.chunks > 0 && ` · ${embeddingStats.chunks.toLocaleString()} passages`}
-                {embeddingStats.stale > 0 && ` · ${embeddingStats.stale.toLocaleString()} stale`}
-                {embeddingStats.failed > 0 && ` · ${embeddingStats.failed.toLocaleString()} failed`}.
+                {t('maintenance.embeddedWith', {
+                  embedded: embeddingStats.embedded.toLocaleString(lang),
+                  total: embeddingStats.total.toLocaleString(lang),
+                  model: embeddingStats.model,
+                })}
+                {embeddingStats.chunks > 0 &&
+                  ` · ${t('maintenance.statsPassages', {
+                    count: embeddingStats.chunks,
+                    n: embeddingStats.chunks.toLocaleString(lang),
+                  })}`}
+                {embeddingStats.stale > 0 &&
+                  ` · ${t('maintenance.statsStale', { n: embeddingStats.stale.toLocaleString(lang) })}`}
+                {embeddingStats.failed > 0 &&
+                  ` · ${t('maintenance.statsFailed', { n: embeddingStats.failed.toLocaleString(lang) })}`}
+                .
               </p>
             </>
           )}

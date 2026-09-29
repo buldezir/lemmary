@@ -9,6 +9,7 @@ import {
   type LoginMethods,
   type OAuthProvider,
 } from '../lib/auth'
+import { t } from '../i18n'
 import { isAbortError, passkeysSupported } from '../lib/webauthn'
 import { useAsync } from '../hooks/useAsync'
 import { AppFooter } from './AppFooter'
@@ -28,7 +29,7 @@ function MethodSeparator() {
   return (
     <div className="my-5 flex items-center gap-3" aria-hidden="true">
       <span className="h-px flex-1 bg-wash" />
-      <span className="text-xs font-medium text-ink-faint">or</span>
+      <span className="text-xs font-medium text-ink-faint">{t('loginPage.or')}</span>
       <span className="h-px flex-1 bg-wash" />
     </div>
   )
@@ -112,7 +113,7 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
       await loginWithPassword(email, password)
       onSuccess()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed')
+      setError(err instanceof Error ? err.message : t('loginPage.loginFailed'))
       armConditional()
     } finally {
       setSubmitting(false)
@@ -129,7 +130,7 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
       onSuccess()
     } catch (err) {
       if (!isAbortError(err)) {
-        setError(err instanceof Error ? err.message : 'Passkey sign-in failed')
+        setError(err instanceof Error ? err.message : t('loginPage.passkeyFailed'))
       }
       armConditional()
     } finally {
@@ -145,7 +146,7 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
       await loginWithOAuth2(provider.name)
       onSuccess()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign-in failed')
+      setError(err instanceof Error ? err.message : t('loginPage.signInFailed'))
       armConditional()
     } finally {
       setPendingProvider('')
@@ -164,14 +165,14 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
               {appName}
             </h1>
             <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-ink-soft">
-              Personal document archive
+              {t('loginPage.tagline')}
             </p>
           </div>
 
           {passwordEnabled && (
             <form className="flex flex-col gap-4" onSubmit={onSubmit}>
               <label className={labelClassName}>
-                <span className={labelTextClassName}>Email</span>
+                <span className={labelTextClassName}>{t('loginPage.email')}</span>
                 <input
                   type="email"
                   // The webauthn token is what lets a passkey appear in this
@@ -186,7 +187,7 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
               </label>
 
               <label className={labelClassName}>
-                <span className={labelTextClassName}>Password</span>
+                <span className={labelTextClassName}>{t('loginPage.password')}</span>
                 <input
                   type="password"
                   autoComplete="current-password"
@@ -200,7 +201,7 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
               {error && <p className="text-sm text-madder">{error}</p>}
 
               <Button type="submit" disabled={busy}>
-                {submitting ? 'Signing in...' : 'Sign in'}
+                {submitting ? t('loginPage.signingIn') : t('loginPage.signIn')}
               </Button>
             </form>
           )}
@@ -216,7 +217,7 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
                     disabled={busy}
                     onClick={() => void onPasskeySignIn()}
                   >
-                    {passkeyBusy ? 'Waiting for your passkey...' : 'Sign in with a passkey'}
+                    {passkeyBusy ? t('loginPage.waitingPasskey') : t('loginPage.passkey')}
                   </Button>
                 )}
                 {oauth.map((provider) => (
@@ -227,8 +228,8 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
                     onClick={() => void onOAuthSignIn(provider)}
                   >
                     {pendingProvider === provider.name
-                      ? `Signing in with ${provider.displayName}...`
-                      : `Continue with ${provider.displayName}`}
+                      ? t('loginPage.signingInWith', { provider: provider.displayName })
+                      : t('loginPage.continueWith', { provider: provider.displayName })}
                   </Button>
                 ))}
               </div>

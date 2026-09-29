@@ -13,6 +13,7 @@ import { useAsync } from '../hooks/useAsync'
 import { ManagedByHostNotice } from '../components/settings/SettingsFeedback'
 import { ModelSelect } from '../components/ProviderModelFields'
 import { Button } from '../components/ui'
+import { lang, t } from '../i18n'
 
 const ACCEPTED_EXTENSIONS = new Set([
   '.pdf',
@@ -91,7 +92,7 @@ function OCRTester() {
       return
     }
     if (!isAcceptedFile(next)) {
-      setError('Unsupported file type. Use PDF, common image formats, DOCX, or PPTX.')
+      setError(t('ocrTest.unsupported'))
       return
     }
     setError('')
@@ -122,11 +123,11 @@ function OCRTester() {
   async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!file) {
-      setError('Choose a file to test.')
+      setError(t('ocrTest.chooseFileError'))
       return
     }
     if (!provider) {
-      setError('Choose an OCR provider.')
+      setError(t('ocrTest.chooseProvider'))
       return
     }
 
@@ -139,10 +140,15 @@ function OCRTester() {
       const response = await testOCR(file, provider, hideModel ? undefined : model)
       setResult(response.text)
       setMeta(
-        `${response.char_count.toLocaleString()} characters · ${response.provider} · ${response.duration}`,
+        t('ocrTest.meta', {
+          count: response.char_count,
+          chars: response.char_count.toLocaleString(lang),
+          provider: response.provider,
+          duration: response.duration,
+        }),
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'OCR test failed')
+      setError(err instanceof Error ? err.message : t('ocrTest.failed'))
     } finally {
       setRunning(false)
     }
@@ -151,15 +157,15 @@ function OCRTester() {
   return (
     <section className="mx-auto flex max-w-3xl flex-col gap-5">
       <div>
-        <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">OCR test</h2>
+        <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{t('ocrTest.title')}</h2>
         <p className="text-sm text-ink-soft">
-          Upload a file and run OCR with a configured provider. Results are not saved.
+          {t('ocrTest.intro')}
         </p>
       </div>
 
       <form className="flex flex-col gap-4" onSubmit={onSubmit}>
         <label className="flex flex-col gap-1.5 text-sm font-medium text-ink-muted">
-          Provider
+          {t('ocrTest.provider')}
           <select
             value={provider}
             onChange={(event) => {
@@ -170,9 +176,9 @@ function OCRTester() {
             className="w-full rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm font-normal text-ink outline-none focus:border-oxblood focus:ring-1 focus:ring-oxblood disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loadingProviders ? (
-              <option value="">Loading providers...</option>
+              <option value="">{t('ocrTest.loadingProviders')}</option>
             ) : providers.length === 0 ? (
-              <option value="">No providers configured</option>
+              <option value="">{t('ocrTest.noProviders')}</option>
             ) : (
               providers.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -215,9 +221,9 @@ function OCRTester() {
             disabled={running}
           />
           <span className="text-sm font-medium text-ink">
-            {file ? file.name : 'Choose a file'}
+            {file ? file.name : t('ocrTest.chooseFile')}
           </span>
-          {!file && <span className="text-xs text-ink-faint">or drop it here (max 10 MB)</span>}
+          {!file && <span className="text-xs text-ink-faint">{t('ocrTest.dropHint')}</span>}
         </label>
 
         {(error || providersState.error) && (
@@ -225,20 +231,20 @@ function OCRTester() {
         )}
 
         <Button type="submit" disabled={running || !file || !provider || providers.length === 0}>
-          {running ? 'Running OCR...' : 'Run OCR'}
+          {running ? t('ocrTest.running') : t('ocrTest.run')}
         </Button>
       </form>
 
       {(result || running) && (
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-4">
-            <h3 className="text-sm font-medium text-ink-muted">Result</h3>
+            <h3 className="text-sm font-medium text-ink-muted">{t('ocrTest.result')}</h3>
             {meta && <p className="text-xs text-ink-soft">{meta}</p>}
           </div>
           <textarea
             readOnly
             rows={20}
-            value={running ? 'Running OCR...' : result}
+            value={running ? t('ocrTest.running') : result}
             className="min-h-96 w-full resize-y rounded-xs border border-line-strong bg-surface px-3 py-2 font-mono text-xs leading-relaxed text-ink outline-none"
           />
         </div>

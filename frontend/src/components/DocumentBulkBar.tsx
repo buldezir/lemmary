@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import type { JobOverrides } from '../lib/api/documents'
 import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
 import { JobOverrideFields } from './BindingOverride'
@@ -8,8 +9,8 @@ export type BulkMode = 'reprocess' | 'review'
 const reprocessModes: ReprocessMode[] = ['auto', 'full', 'extraction']
 
 const hints: Record<BulkMode, string> = {
-  reprocess: 'Select failed or cancelled documents to reprocess.',
-  review: 'Select documents to mark reviewed.',
+  reprocess: t('documentBulkBar.hintReprocess'),
+  review: t('documentBulkBar.hintReview'),
 }
 
 type Props = {
@@ -49,9 +50,9 @@ export function DocumentBulkBar({
     <div className="flex flex-wrap items-center gap-3 rounded-none border border-line bg-surface px-4 py-3">
       <span className="text-sm text-ink-muted">
         {selectedCount > 0
-          ? `${selectedCount} selected`
+          ? t('documentBulkBar.selected', { count: selectedCount })
           : onDelete && mode === 'review'
-            ? 'Select documents to mark reviewed or delete.'
+            ? t('documentBulkBar.hintReviewOrDelete')
             : hints[mode]}
       </span>
 
@@ -60,7 +61,7 @@ export function DocumentBulkBar({
           <select
             value={reprocessMode}
             onChange={(event) => onReprocessModeChange(event.target.value as ReprocessMode)}
-            aria-label="Reprocess steps"
+            aria-label={t('documentBulkBar.reprocessSteps')}
             className={selectClassName}
           >
             {reprocessModes.map((value) => (
@@ -70,27 +71,27 @@ export function DocumentBulkBar({
             ))}
           </select>
           <Button disabled={busy || selectedCount === 0} onClick={onReprocess}>
-            {busy ? 'Queueing...' : 'Reprocess'}
+            {busy ? t('documentBulkBar.queueing') : t('documentBulkBar.reprocess')}
           </Button>
         </>
       ) : (
         <Button disabled={busy || selectedCount === 0} onClick={onMarkReviewed}>
-          {busy ? 'Marking...' : 'Mark reviewed'}
+          {busy ? t('documentCard.marking') : t('documentCard.markReviewed')}
         </Button>
       )}
 
       {onDelete && (
         <Button variant="danger" disabled={busy || selectedCount === 0} onClick={onDelete}>
-          Delete selected
+          {t('documentBulkBar.deleteSelected')}
         </Button>
       )}
 
       <Button variant="secondary" onClick={onSelectAll}>
-        Select all on page
+        {t('documentBulkBar.selectAll')}
       </Button>
       {selectedCount > 0 && (
         <Button variant="secondary" onClick={onClear}>
-          Clear
+          {t('documentBulkBar.clear')}
         </Button>
       )}
       {mode === 'reprocess' && selectedCount > 0 && (

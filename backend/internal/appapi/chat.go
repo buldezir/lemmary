@@ -253,7 +253,7 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 
 		req, content, requestID, err := decodeChatRequest(e)
 		if err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		}
 
 		ownerID, err := resolveOwnerUserID(app, e)
@@ -274,7 +274,7 @@ func handleDocumentChat(app core.App, rt *config.Runtime) func(*core.RequestEven
 		binding := conversationBinding(session, recordedBinding(requested, cfg.ExtractProviderID, cfg.ExtractModel))
 		snap, err := conversationSnapshot(app, rt, config.Overrides{Chat: binding}, session, requested)
 		if err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		}
 		chatter := snap.Chatter
 		if chatter == nil {

@@ -14,6 +14,7 @@ import (
 
 	"lemmary/backend/internal/duplicates"
 	"lemmary/backend/internal/escl"
+	"lemmary/backend/internal/i18n"
 	"lemmary/backend/internal/limits"
 )
 
@@ -46,7 +47,7 @@ func handleGetScanDiscover(app core.App) func(*core.RequestEvent) error {
 
 		scanners, err := escl.Discover(ctx, cidr)
 		if err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		}
 		// "It found nothing" is the report that needs debugging: which range
 		// was swept, and whether mDNS reaches this container at all.
@@ -73,12 +74,12 @@ func handlePostScan(app core.App, lim limits.Limits) func(*core.RequestEvent) er
 		}
 		source, err := escl.ParseSource(req.Source)
 		if err != nil {
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		}
 		// Checked before the scanner is asked to do anything: better to hear
 		// the instance is full before the paper goes through the feeder.
 		if exceeded := preflightImport(app, lim, 1, 0, 0); exceeded != nil {
-			return writeError(e, http.StatusBadRequest, exceeded.Message)
+			return writeBadRequest(e, exceeded)
 		}
 
 		jobID, err := escl.Start(app, ownerID, req.Scanner, source, strings.TrimSpace(req.UploadID))
@@ -88,7 +89,7 @@ func handlePostScan(app core.App, lim limits.Limits) func(*core.RequestEvent) er
 		case errors.Is(err, escl.ErrScanInProgress):
 			return writeError(e, http.StatusConflict, "A scan is already in progress.")
 		case err != nil:
-			return writeError(e, http.StatusBadRequest, err.Error())
+			return writeBadRequest(e, err)
 		}
 		return writeJSON(e, http.StatusAccepted, map[string]any{
 			"job_id": jobID,
@@ -196,15 +197,15 @@ func writeScanSaveError(app core.App, e *core.RequestEvent, err error) error {
 	case errors.Is(err, escl.ErrUploadNotFound):
 		return writeError(e, http.StatusNotFound, "That scan expired. Start a new one.")
 	case errors.Is(err, escl.ErrTooLarge):
-		return writeError(e, http.StatusBadRequest, err.Error())
+		return writeBadRequest(e, err)
 	case errors.As(err, &dup):
 		return writeJSON(e, http.StatusBadRequest, map[string]any{
-			"detail":       "This document is already in your library.",
+			"detail":       i18n.T(i18n.FromRequest(e.Request), "This document is already in your library."),
 			"duplicate_of": dup.ExistingID,
 		})
 	}
 	if exceeded := limits.AsExceeded(err); exceeded != nil {
-		return writeError(e, http.StatusBadRequest, exceeded.Message)
+		return writeBadRequest(e, exceeded)
 	}
 	app.Logger().Error("saving a scan failed", slog.Any("error", err))
 	return writeError(e, http.StatusInternalServerError, "Failed to save the scan.")

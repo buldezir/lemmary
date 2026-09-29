@@ -2,8 +2,12 @@ package appapi
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"lemmary/backend/internal/i18n"
 )
 
 func writeJSON(e *core.RequestEvent, status int, data any) error {
@@ -13,5 +17,15 @@ func writeJSON(e *core.RequestEvent, status int, data any) error {
 }
 
 func writeError(e *core.RequestEvent, status int, detail string) error {
+	return writeJSON(e, status, map[string]string{"detail": i18n.T(i18n.FromRequest(e.Request), detail)})
+}
+
+// writeBadRequest refuses with err's own text, in the reader's language.
+func writeBadRequest(e *core.RequestEvent, err error) error {
+	return writeJSON(e, http.StatusBadRequest, map[string]string{"detail": i18n.Of(i18n.FromRequest(e.Request), err)})
+}
+
+func writeErrorf(e *core.RequestEvent, status int, format string, args ...any) error {
+	detail := fmt.Sprintf(i18n.T(i18n.FromRequest(e.Request), format), args...)
 	return writeJSON(e, status, map[string]string{"detail": detail})
 }

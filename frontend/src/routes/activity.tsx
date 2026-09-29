@@ -6,7 +6,6 @@ import { listActiveJobs } from '../lib/api/jobs'
 import { countDocumentsWithStatus, reprocessDocuments } from '../lib/api/documents'
 import { discardUnprocessedDocuments, stopQueue } from '../lib/api/maintenance'
 import {
-  countLabel,
   formatDuration,
   jobDurationMs,
   jobStillRunning,
@@ -16,6 +15,7 @@ import {
 import { ProcessingStatus } from '../components/ProcessingStatus'
 import { ProcessingSteps } from '../components/ProcessingSteps'
 import { Button, sectionClassName, sectionTitleClassName } from '../components/ui'
+import { t } from '../i18n'
 
 // Realtime is optional everywhere in this app, so the queue also refreshes on a
 // timer, at the Maintenance page's interval for the same counts.
@@ -96,22 +96,23 @@ export function ActivityPage() {
     setActionError('')
     try {
       const result = await stopQueue()
+      const notStopped =
+        result.remaining > 0 ? t('activity.notStopped', { count: result.remaining }) : ''
       setNotice(
         result.stopped === 0
-          ? result.remaining > 0
-            ? `${countLabel(result.remaining, 'queued job', 'queued jobs')} could not be stopped.`
-            : 'Nothing was queued to stop.'
-          : `Stopped ${countLabel(result.stopped, 'queued job', 'queued jobs')}.` +
-              (result.running > 0 ? ' The document already being processed finishes.' : '') +
-              (result.remaining > 0
-                ? ` ${countLabel(result.remaining, 'queued job', 'queued jobs')} could not be stopped.`
-                : '') +
-              ' They are listed as cancelled, and Reprocess queues them again.' +
-              ' An import still unpacking keeps adding to the queue -- stop again once it has finished.',
+          ? notStopped || t('activity.nothingToStop')
+          : [
+              t('activity.stopped', { count: result.stopped }),
+              result.running > 0 ? t('activity.runningFinishes') : '',
+              notStopped,
+              t('activity.stoppedNote'),
+            ]
+              .filter(Boolean)
+              .join(' '),
       )
       await reload()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Could not stop the queue')
+      setActionError(err instanceof Error ? err.message : t('activity.stopError'))
     } finally {
       setBusy('')
     }
@@ -130,27 +131,28 @@ export function ActivityPage() {
       ])
       const total = queued + cancelledCount
       if (total === 0) {
-        setNotice('Nothing unprocessed to delete.')
+        setNotice(t('activity.nothingToDiscard'))
         return
       }
       const confirmed = window.confirm(
-        `Delete up to ${countLabel(total, 'unprocessed document', 'unprocessed documents')} ` +
-          `(${queued} queued, ${cancelledCount} cancelled)?\n\n` +
-          'The original files go too. Failed documents are not touched, and neither is a ' +
-          'document that has already been processed once and is only queued again. This cannot be undone.',
+        t('activity.confirmDiscard', { count: total, queued, cancelled: cancelledCount }) +
+          '\n\n' +
+          t('activity.confirmDiscardNote'),
       )
       if (!confirmed) return
       const result = await discardUnprocessedDocuments()
       setNotice(
-        `Deleted ${countLabel(result.deleted, 'document', 'documents')}.` +
-          (result.kept > 0
-            ? ` ${countLabel(result.kept, 'document was', 'documents were')} kept: already processed, only queued again.`
-            : '') +
-          (result.remaining > 0 ? ` ${result.remaining} could not be deleted.` : ''),
+        [
+          t('activity.deleted', { count: result.deleted }),
+          result.kept > 0 ? t('activity.kept', { count: result.kept }) : '',
+          result.remaining > 0 ? t('activity.notDeleted', { count: result.remaining }) : '',
+        ]
+          .filter(Boolean)
+          .join(' '),
       )
       await reload()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Could not delete the unprocessed documents')
+      setActionError(err instanceof Error ? err.message : t('activity.discardError'))
     } finally {
       setBusy('')
     }
@@ -159,7 +161,7 @@ export function ActivityPage() {
   return (
     <section className={sectionClassName}>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <h2 className={sectionTitleClassName}>Activity</h2>
+        <h2 className={sectionTitleClassName}>{t('activity.title')}</h2>
         <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="secondary"
@@ -167,7 +169,7 @@ export function ActivityPage() {
             disabled={busy !== ''}
             onClick={() => void onStopAll()}
           >
-            {busy === 'stop' ? 'Stopping...' : 'Stop all'}
+            {busy === 'stop' ? t('activity.stopping') : t('activity.stopAll')}
           </Button>
           <Button
             variant="secondary"
@@ -175,33 +177,28 @@ export function ActivityPage() {
             disabled={busy !== ''}
             onClick={() => void onDiscard()}
           >
-            {busy === 'discard' ? 'Deleting...' : 'Delete unprocessed'}
+            {busy === 'discard' ? t('activity.deleting') : t('activity.deleteUnprocessed')}
           </Button>
         </div>
       </div>
-      <p className="mb-4 text-sm text-ink-soft">
-        What the pipeline is doing to your documents, and what stopped or went wrong. Recent
-        cancellations and failures stay listed so terminal work is still here to be found.
-      </p>
+      <p className="mb-4 text-sm text-ink-soft">{t('activity.intro')}</p>
 
       {notice ? <p className="mb-3 text-sm text-ink-soft">{notice}</p> : null}
       {actionError ? <p className="mb-3 text-sm text-madder">{actionError}</p> : null}
       {error ? <p className="mb-3 text-sm text-madder">{error}</p> : null}
 
       {loading && jobs.length === 0 ? (
-        <p className="text-sm text-ink-soft">Loading the queue...</p>
+        <p className="text-sm text-ink-soft">{t('activity.loading')}</p>
       ) : jobs.length === 0 ? (
-        <p className="text-sm text-ink-soft">
-          Nothing in the queue, and nothing was cancelled or failed in the last day.
-        </p>
+        <p className="text-sm text-ink-soft">{t('activity.empty')}</p>
       ) : (
         <div className="flex flex-col gap-6">
-          <JobGroup title="In progress" jobs={active} tick={tick} onReprocessed={reload} />
-          <JobGroup title="Recently cancelled" jobs={cancelled} tick={tick} onReprocessed={reload} />
-          <JobGroup title="Recently failed" jobs={failed} tick={tick} onReprocessed={reload} />
+          <JobGroup title={t('activity.inProgress')} jobs={active} tick={tick} onReprocessed={reload} />
+          <JobGroup title={t('activity.recentlyCancelled')} jobs={cancelled} tick={tick} onReprocessed={reload} />
+          <JobGroup title={t('activity.recentlyFailed')} jobs={failed} tick={tick} onReprocessed={reload} />
           {total > jobs.length ? (
             <p className="text-xs text-ink-soft">
-              Showing the newest {jobs.length} of {total}. The rest appear as these finish.
+              {t('activity.showingNewest', { shown: jobs.length, total })}
             </p>
           ) : null}
         </div>
@@ -247,7 +244,7 @@ function JobRow({
 }) {
   const [requeueing, setRequeueing] = useState(false)
   const [requeueError, setRequeueError] = useState('')
-  const title = job.expand?.document?.title?.trim() || 'Untitled document'
+  const title = job.expand?.document?.title?.trim() || t('common.untitledDocument')
   const elapsed = jobDurationMs(job, tick)
 
   async function onReprocess() {
@@ -257,7 +254,7 @@ function JobRow({
       await reprocessDocuments([job.document])
       await onReprocessed()
     } catch (err) {
-      setRequeueError(err instanceof Error ? err.message : 'Reprocess failed')
+      setRequeueError(err instanceof Error ? err.message : t('activity.reprocessError'))
     } finally {
       setRequeueing(false)
     }
@@ -279,7 +276,7 @@ function JobRow({
           ) : null}
           {job.finished_at ? (
             <Button variant="secondary" size="xs" disabled={requeueing} onClick={() => void onReprocess()}>
-              {requeueing ? 'Queueing...' : 'Reprocess'}
+              {requeueing ? t('activity.queueing') : t('activity.reprocess')}
             </Button>
           ) : null}
         </div>

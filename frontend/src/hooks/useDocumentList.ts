@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import { useCallback, useEffect, useState } from 'react'
 import { ClientResponseError } from 'pocketbase'
 import { pb } from '../lib/pb'
@@ -210,7 +211,7 @@ export function useDocumentList({
           return
         }
         if (active) {
-          setError(err instanceof Error ? err.message : 'Failed to load documents')
+          setError(err instanceof Error ? err.message : t('useDocumentList.loadFailed'))
         }
       } finally {
         if (active && isInitial) {
@@ -356,11 +357,15 @@ export function useDocumentList({
     if (ids.length === 0) return
 
     const overrides = describeJobOverrides(reprocessOverrides)
+    const question =
+      ids.length === 1
+        ? t('useDocumentList.confirmReprocessOne')
+        : t('useDocumentList.confirmReprocessMany', { count: ids.length })
     const confirmed = window.confirm(
-      `Reprocess ${ids.length === 1 ? 'this document' : `these ${ids.length} documents`}?\n\n` +
-        `Steps: ${REPROCESS_MODE_LABELS[reprocessMode]}\n` +
-        (overrides ? `Models: ${overrides}\n` : '') +
-        '\nExisting metadata may be overwritten.',
+      `${question}\n\n` +
+        `${t('useDocumentList.steps', { mode: REPROCESS_MODE_LABELS[reprocessMode] })}\n` +
+        (overrides ? `${t('useDocumentList.models', { models: overrides })}\n` : '') +
+        `\n${t('useDocumentList.overwriteWarning')}`,
     )
     if (!confirmed) return
 
@@ -372,11 +377,11 @@ export function useDocumentList({
       setSelectedIds(new Set())
       setMessage(
         result.skipped > 0
-          ? `Queued ${result.queued}, skipped ${result.skipped} already in the queue.`
-          : `Queued ${result.queued} for reprocessing.`,
+          ? t('useDocumentList.queuedSkipped', { queued: result.queued, skipped: result.skipped })
+          : t('useDocumentList.queued', { queued: result.queued }),
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Reprocess failed')
+      setError(err instanceof Error ? err.message : t('documents.reprocessFailed'))
     } finally {
       setReprocessing(false)
     }
@@ -392,9 +397,9 @@ export function useDocumentList({
       setError('')
       setMessage('')
       await acceptSuggestedTag(id, name)
-      setMessage(`Added tag "${name}".`)
+      setMessage(t('useDocumentList.tagAdded', { name }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not add the tag')
+      setError(err instanceof Error ? err.message : t('useDocumentList.addTagFailed'))
     } finally {
       setAcceptingSuggestion(false)
     }
@@ -420,10 +425,12 @@ export function useDocumentList({
       await markDocumentsReviewed(waiting)
       setSelectedIds(new Set())
       setMessage(
-        waiting.length === 1 ? 'Marked reviewed.' : `Marked ${waiting.length} reviewed.`,
+        waiting.length === 1
+          ? t('useDocumentList.markedReviewedOne')
+          : t('useDocumentList.markedReviewedMany', { count: waiting.length }),
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not mark as reviewed')
+      setError(err instanceof Error ? err.message : t('useDocumentList.markReviewedFailed'))
     } finally {
       setMarkingReviewed(false)
     }
@@ -434,10 +441,11 @@ export function useDocumentList({
     const ids = selectedOnPage.map((document) => document.id)
     if (ids.length === 0) return
 
-    const confirmed = window.confirm(
-      `Delete ${ids.length === 1 ? 'this document' : `these ${ids.length} documents`}?\n\n` +
-        'This permanently removes the documents and their files, and cannot be undone.',
-    )
+    const question =
+      ids.length === 1
+        ? t('useDocumentList.confirmDeleteOne')
+        : t('useDocumentList.confirmDeleteMany', { count: ids.length })
+    const confirmed = window.confirm(`${question}\n\n${t('useDocumentList.deleteWarning')}`)
     if (!confirmed) return
 
     try {
@@ -446,9 +454,13 @@ export function useDocumentList({
       setMessage('')
       await deleteDocuments(ids)
       setSelectedIds(new Set())
-      setMessage(ids.length === 1 ? 'Deleted.' : `Deleted ${ids.length} documents.`)
+      setMessage(
+        ids.length === 1
+          ? t('useDocumentList.deletedOne')
+          : t('useDocumentList.deletedMany', { count: ids.length }),
+      )
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not delete')
+      setError(err instanceof Error ? err.message : t('useDocumentList.deleteFailed'))
     } finally {
       setDeleting(false)
     }

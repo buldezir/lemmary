@@ -1,5 +1,6 @@
 import { pb, pbUrl } from './pb'
 import { ensureAuth } from './auth'
+import { t } from '../i18n'
 
 type ApiFetchOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
@@ -32,15 +33,14 @@ export function errorDetail(data: unknown, fallback: string): string {
  * wire may or may not have been applied. Only the search stream can promise
  * more, in `streamConnectionLostMessage`.
  */
-export const connectionLostMessage = 'Could not reach the server. Check your connection and try again.'
+export const connectionLostMessage = t('apiClient.connectionLost')
 
 /**
  * The same failure on a search stream, where more is known: a run outlives its
  * connection, so losing the stream is not losing the answer, and saying so is
  * what keeps a user from paying for the same research twice.
  */
-export const streamConnectionLostMessage =
-  'The connection to the server was interrupted. The run continues, and its answer will be in your chat history.'
+export const streamConnectionLostMessage = t('apiClient.streamConnectionLost')
 
 /**
  * A request that never made it over the wire. Typed so the chat surfaces, whose
@@ -292,7 +292,7 @@ export async function pollJob<TResult>(
   statusPath: string,
   opts: PollJobOptions = {},
 ): Promise<TResult> {
-  const label = opts.label ?? 'job'
+  const label = opts.label ?? t('apiClient.jobLabel')
   const attempts = Math.ceil((opts.timeoutMs ?? defaultJobTimeoutMs) / jobPollIntervalMs)
 
   for (let attempt = 0; attempt < attempts; attempt++) {
@@ -312,25 +312,25 @@ export async function pollJob<TResult>(
 
     const data = (await readJson(response)) as JobStatusResponse | null
     if (data === null) {
-      throw new Error(`Failed to poll the ${label} status`)
+      throw new Error(t('apiClient.pollFailed', { label }))
     }
     if (!response.ok) {
-      throw new Error(errorDetail(data, `Failed to poll the ${label} status`))
+      throw new Error(errorDetail(data, t('apiClient.pollFailed', { label })))
     }
     if (data.progress) {
       opts.onProgress?.(data.progress)
     }
     if (data.status === 'completed') {
       if (data.result == null) {
-        throw new Error(`The ${label} completed without a result`)
+        throw new Error(t('apiClient.noResult', { label }))
       }
       return data.result as TResult
     }
     if (data.status === 'failed') {
-      throw new Error(data.error ?? `The ${label} failed`)
+      throw new Error(data.error ?? t('apiClient.jobFailed', { label }))
     }
     await sleep(jobPollIntervalMs)
   }
 
-  throw new Error(`The ${label} is taking longer than expected; it may still be running on the server`)
+  throw new Error(t('apiClient.timedOut', { label }))
 }

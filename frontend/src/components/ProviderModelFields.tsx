@@ -12,6 +12,7 @@ import {
   type CatalogModel,
   type ModelPurpose,
 } from '../lib/api/providers'
+import { t } from '../i18n'
 import { useAsync } from '../hooks/useAsync'
 import { Combobox, type ComboboxOption } from './Combobox'
 import { fieldHintClassName, inputClassName, labelClassName, labelTextClassName } from './ui'
@@ -46,24 +47,26 @@ export function ModelSelect({
   const selectValue = showCustomInput ? CUSTOM_MODEL : model
 
   const options: ComboboxOption[] = [
-    ...(allowEmpty ? [{ value: '', label: 'None', pinned: true }] : []),
+    ...(allowEmpty ? [{ value: '', label: t('providerModelFields.none'), pinned: true }] : []),
     ...models.map((item) => ({ value: item.id, label: modelOptionLabel(item) })),
-    { value: CUSTOM_MODEL, label: 'Custom model id…', pinned: true },
+    { value: CUSTOM_MODEL, label: t('providerModelFields.customModel'), pinned: true },
   ]
 
   return (
     <div className={labelClassName}>
       <label htmlFor={inputId} className={labelTextClassName}>
-        {label} model
+        {t('providerModelFields.modelLabel', { label })}
       </label>
       {useSelect ? (
         <Combobox
           id={inputId}
           value={selectValue}
           options={options}
-          placeholder={allowEmpty ? 'None' : 'Select a model'}
+          placeholder={
+            allowEmpty ? t('providerModelFields.none') : t('providerModelFields.selectModel')
+          }
           loading={loading}
-          loadingLabel="Loading models…"
+          loadingLabel={t('providerModelFields.loadingModels')}
           disabled={disabled}
           onChange={(next) => {
             if (next === CUSTOM_MODEL) {
@@ -83,7 +86,7 @@ export function ModelSelect({
           id={inputId}
           className={inputClassName}
           value={model}
-          placeholder="Model id"
+          placeholder={t('providerModelFields.modelId')}
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
         />
@@ -92,8 +95,8 @@ export function ModelSelect({
         <input
           className={inputClassName}
           value={model}
-          placeholder="Model id"
-          aria-label={`Custom ${label} model`}
+          placeholder={t('providerModelFields.modelId')}
+          aria-label={t('providerModelFields.customModelLabel', { label })}
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
         />
@@ -152,16 +155,20 @@ export function ProviderModelFields({
     <div className="grid gap-4 sm:grid-cols-2 sm:col-span-2">
       <div className={labelClassName}>
         <label htmlFor={providerInputId} className={labelTextClassName}>
-          {label} provider
+          {t('providerModelFields.providerLabel', { label })}
         </label>
         <Combobox
           id={providerInputId}
           value={providerId}
           options={[
-            ...(allowEmpty ? [{ value: '', label: 'None', pinned: true }] : []),
+            ...(allowEmpty
+              ? [{ value: '', label: t('providerModelFields.none'), pinned: true }]
+              : []),
             ...eligible.map((item) => ({ value: item.id, label: providerOptionLabel(item) })),
           ]}
-          placeholder={allowEmpty ? 'None' : 'Select a provider'}
+          placeholder={
+            allowEmpty ? t('providerModelFields.none') : t('providerModelFields.selectProvider')
+          }
           onChange={(next) => {
             onProviderChange(next)
             // The model the guide names for the new provider, not an empty box,
@@ -188,7 +195,7 @@ export function ProviderModelFields({
       {help && <p className={`${fieldHintClassName} sm:col-span-2`}>{help}</p>}
       {modelsState.error && (
         <p className="text-xs text-amber-700 sm:col-span-2">
-          {modelsState.error}. You can still type a model id.
+          {t('providerModelFields.modelsError', { error: modelsState.error })}
         </p>
       )}
       {showWarning && <p className="text-xs text-amber-800 sm:col-span-2">{OCR_MODEL_WARNING}</p>}

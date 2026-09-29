@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router'
+import { t, tNode } from '../i18n'
 import { SHARED_TAG_NAME, type DocumentRecord } from '../lib/api/documents'
 import { pb } from '../lib/pb'
 import { DOCUMENT_STATUS_LABELS, DOCUMENT_STATUS_STYLES, reviewReason } from '../lib/documentStatus'
@@ -45,35 +46,42 @@ function CardDescription({ document }: { document: DocumentRecord }) {
     return <p className="line-clamp-3 text-sm text-ink-muted">{summary}</p>
   }
   if (document.processing_status !== 'needs_review') {
-    return <p className="line-clamp-3 text-sm text-ink-muted">No summary yet.</p>
+    return <p className="line-clamp-3 text-sm text-ink-muted">{t('documentCard.noSummary')}</p>
   }
 
   // With no summary to show, say why the document is waiting instead.
   switch (reviewReason(document)) {
     case 'duplicate': {
-      const originalTitle = document.expand?.duplicate_of?.title?.trim() || 'another document'
+      const originalTitle =
+        document.expand?.duplicate_of?.title?.trim() || t('documentCard.anotherDocument')
       return (
         <p className="line-clamp-3 text-sm text-amber-800">
-          Possible duplicate of{' '}
-          <Link
-            to="/document/$documentId"
-            params={{ documentId: document.duplicate_of! }}
-            className="relative z-10 pointer-events-auto font-medium underline underline-offset-2 hover:text-amber-950"
-          >
-            {originalTitle}
-          </Link>
-          .
+          {tNode('documentCard.possibleDuplicate', {
+            link: (
+              <Link
+                to="/document/$documentId"
+                params={{ documentId: document.duplicate_of! }}
+                className="relative z-10 pointer-events-auto font-medium underline underline-offset-2 hover:text-amber-950"
+              >
+                {originalTitle}
+              </Link>
+            ),
+          })}
         </p>
       )
     }
     case 'low_confidence': {
       const pct = Math.round((document.confidence ?? 0) * 100)
       return (
-        <p className="line-clamp-3 text-sm text-amber-800">Low extraction confidence ({pct}%).</p>
+        <p className="line-clamp-3 text-sm text-amber-800">
+          {t('documentCard.lowConfidence', { pct })}
+        </p>
       )
     }
     default:
-      return <p className="line-clamp-3 text-sm text-amber-800">Waiting for review.</p>
+      return (
+        <p className="line-clamp-3 text-sm text-amber-800">{t('documentCard.waitingForReview')}</p>
+      )
   }
 }
 
@@ -96,7 +104,7 @@ export function DocumentCard({
       : []
   const correspondent = document.expand?.correspondent?.name
   const documentType = document.expand?.document_type?.name
-  const title = document.title || 'Untitled document'
+  const title = document.title || t('common.untitledDocument')
   const shared = Boolean(pb.authStore.record?.id) && document.user !== pb.authStore.record?.id
   // A shared document is read-only, so its own owner's review is not the
   // reader's to clear.
@@ -126,7 +134,7 @@ export function DocumentCard({
                 type="checkbox"
                 checked={Boolean(selected)}
                 onChange={() => onToggleSelect?.(document.id)}
-                aria-label={`Select ${title}`}
+                aria-label={t('documentCard.select', { title })}
                 className="relative z-10 pointer-events-auto h-4 w-4 cursor-pointer rounded border-line-strong text-oxblood focus:ring-oxblood"
               />
             )}
@@ -144,7 +152,9 @@ export function DocumentCard({
         <div className="border-t border-line pt-2.5">
           <h3 className="font-display text-lg font-semibold leading-snug text-ink">{title}</h3>
           <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-soft">
-            {[documentType || 'Unknown type', correspondent].filter(Boolean).join(' · ')}
+            {[documentType || t('documentCard.unknownType'), correspondent]
+              .filter(Boolean)
+              .join(' · ')}
           </p>
         </div>
 
@@ -162,7 +172,7 @@ export function DocumentCard({
                 <button
                   key={tag.id}
                   type="button"
-                  aria-label={`Filter by ${tag.name}`}
+                  aria-label={t('documentCard.filterBy', { name: tag.name })}
                   className="relative z-10 pointer-events-auto border border-line px-1.5 py-0.5 text-[11px] text-ink-muted transition-colors hover:border-ink hover:text-ink"
                   style={{ borderColor: tag.color || undefined }}
                   onClick={() => onFilterTag(tag.id)}
@@ -201,7 +211,7 @@ export function DocumentCard({
               onClick={() => onMarkReviewed?.(document.id)}
               className="relative z-10 pointer-events-auto"
             >
-              {markingReviewed ? 'Marking...' : 'Mark reviewed'}
+              {markingReviewed ? t('documentCard.marking') : t('documentCard.markReviewed')}
             </Button>
           </div>
         )}

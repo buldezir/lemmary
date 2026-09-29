@@ -10,6 +10,7 @@ import {
 import { STEP_BINDINGS, type JobOverrides } from '../lib/api/documents'
 import type { ProcessingStep } from '../lib/processing'
 import { useAppMeta } from '../hooks/useAppMeta'
+import { lang, t, tNode } from '../i18n'
 import { useAsync } from '../hooks/useAsync'
 import { ProviderModelFields } from './ProviderModelFields'
 import { fieldHintClassName } from './ui'
@@ -101,16 +102,21 @@ function BindingPicker({
   const configured = providersState.data?.configured ?? {}
 
   const effectiveModel = value?.provider_id ? value.model : configured.model
-  const source = value?.provider_id ? '' : ' (from Settings)'
 
   if (locked) {
     if (!value?.provider_id && !showConfigured) return null
     return (
       <div className="flex flex-col gap-1">
         <p className="text-xs text-ink-soft">
-          {label} model:{' '}
-          <span className="font-medium text-ink">{bindingModelLabel(effectiveModel)}</span>
-          {source}
+          {tNode(
+            value?.provider_id ? 'bindingOverride.model' : 'bindingOverride.modelFromSettings',
+            {
+              label,
+              model: (
+                <span className="font-medium text-ink">{bindingModelLabel(effectiveModel)}</span>
+              ),
+            },
+          )}
         </p>
         {value?.provider_id && lockedHint && <p className={fieldHintClassName}>{lockedHint}</p>}
       </div>
@@ -123,9 +129,18 @@ function BindingPicker({
           way to know is Settings, which most accounts cannot open. */}
       {showConfigured && !open && (
         <p className="text-xs text-ink-soft">
-          {label} model:{' '}
-          <span className="font-medium text-ink">{bindingModelLabel(configured.model)}</span>
-          {configured.provider_name ? ` (${configured.provider_name}, from Settings)` : ' (from Settings)'}
+          {tNode(
+            configured.provider_name
+              ? 'bindingOverride.modelFromProviderSettings'
+              : 'bindingOverride.modelFromSettings',
+            {
+              label,
+              model: (
+                <span className="font-medium text-ink">{bindingModelLabel(configured.model)}</span>
+              ),
+              provider: configured.provider_name,
+            },
+          )}
         </p>
       )}
       <label className="flex items-center gap-2 text-sm text-ink-muted">
@@ -135,7 +150,7 @@ function BindingPicker({
           onChange={(event) => update(event.target.checked ? { ...EMPTY_BINDING } : undefined)}
           className="size-4 rounded-xs border-line-strong text-oxblood focus:ring-oxblood"
         />
-        Use a different {label.toLowerCase()} model
+        {t('bindingOverride.useDifferent', { label: lang === 'en' ? label.toLowerCase() : label })}
       </label>
 
       {open && (
@@ -153,7 +168,7 @@ function BindingPicker({
           {providersState.error && <p className="text-xs text-amber-700">{providersState.error}</p>}
           {!providersState.loading && providers.length === 0 && !providersState.error && (
             <p className="text-xs text-amber-800">
-              No configured provider can serve this binding. Add one in Settings.
+              {t('bindingOverride.noProvider')}
             </p>
           )}
         </>
@@ -173,19 +188,19 @@ const JOB_BINDINGS = [
     step: 'ocr',
     purpose: 'ocr',
     label: 'OCR',
-    help: 'Reads the text out of the document.',
+    help: t('bindingOverride.ocrHelp'),
   },
   {
     step: 'extract_metadata',
     purpose: 'llm',
-    label: 'Extraction',
-    help: "Turns the document's text into its title, date, type and tags.",
+    label: t('bindingOverride.extraction'),
+    help: t('bindingOverride.extractionHelp'),
   },
   {
     step: 'embed',
     purpose: 'embedding',
-    label: 'Embedding',
-    help: 'Builds the retrieval vectors. Must name the model already bound in Settings — vectors from any other model are written and never read, because the search index only reads the configured one.',
+    label: t('bindingOverride.embedding'),
+    help: t('bindingOverride.embeddingHelp'),
   },
 ] as const satisfies readonly {
   // Narrower than ProcessingStep on purpose: a step with no binding cannot be

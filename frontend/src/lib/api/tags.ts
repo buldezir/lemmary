@@ -1,3 +1,4 @@
+import { t } from '../../i18n'
 import { ClientResponseError } from 'pocketbase'
 import { pb } from '../pb'
 import { ensureAuth } from '../auth'
@@ -27,7 +28,7 @@ export async function createTag(name: string): Promise<TagRecord> {
   await ensureAuth()
   const userId = pb.authStore.record?.id
   if (!userId) {
-    throw new Error('You must be signed in to create a tag.')
+    throw new Error(t('tagsApi.signedInRequired'))
   }
   try {
     return await pb.collection('tags').create<TagRecord>({ name, user: userId })
@@ -95,8 +96,8 @@ export function addTagsToDocuments(documentIds: string[], tagIds: string[]): Pro
   return updateDocumentTags(
     tagIds.length > 0 ? documentIds : [],
     { 'tags+': tagIds },
-    'Could not assign tags.',
-    (done, failed) => `Tagged ${done}; ${failed} failed.`,
+    t('tagsApi.assignFailed'),
+    (done, failed) => t('tagsApi.assignPartial', { done, failed }),
   )
 }
 
@@ -104,8 +105,8 @@ export function removeTagsFromDocuments(documentIds: string[], tagIds: string[])
   return updateDocumentTags(
     tagIds.length > 0 ? documentIds : [],
     { 'tags-': tagIds },
-    'Could not remove tags.',
-    (done, failed) => `Untagged ${done}; ${failed} failed.`,
+    t('tagsApi.removeFailed'),
+    (done, failed) => t('tagsApi.removePartial', { done, failed }),
   )
 }
 
@@ -150,7 +151,7 @@ const assignQuery = (tagIds: string[]) =>
  */
 export function previewTagAssign(tagIds: string[]): Promise<TagAssignPreview> {
   return apiFetch<TagAssignPreview>(`/api/app/tags/assign?${assignQuery(tagIds)}`, {
-    fallbackError: 'Failed to count documents',
+    fallbackError: t('tagsApi.countFailed'),
   })
 }
 
@@ -176,15 +177,15 @@ export type TagAssignResult = {
 export async function assignTagsWithAI(tagIds: string[]): Promise<TagAssignResult> {
   const start = await apiFetch<{ job_id?: string }>(`/api/app/tags/assign?${assignQuery(tagIds)}`, {
     method: 'POST',
-    fallbackError: 'Tag assignment failed to start',
+    fallbackError: t('tagsApi.assignStartFailed'),
   })
   if (!start.job_id) {
-    throw new Error('Tag assignment job id missing from server response')
+    throw new Error(t('tagsApi.assignMissingJobId'))
   }
 
   const result = await pollJob<TagAssignResult>(
     `/api/app/tags/assign/status?job_id=${encodeURIComponent(start.job_id)}`,
-    { label: 'tag assignment' },
+    { label: t('tagsApi.jobLabel') },
   )
   // The server wrote the tags, so nothing on this side has seen them: without
   // this the cards keep their old chips beside a success message.
@@ -201,8 +202,8 @@ export function duplicateNameError(err: unknown, name: string): Error {
   if (err instanceof ClientResponseError) {
     const field = (err.response?.data as Record<string, { code?: string }> | undefined)?.name
     if (field?.code === 'validation_not_unique') {
-      return new Error(`You already have a tag called "${name}".`)
+      return new Error(t('tagsApi.duplicateName', { name }))
     }
   }
-  return err instanceof Error ? err : new Error('The tag could not be saved.')
+  return err instanceof Error ? err : new Error(t('tagsApi.saveFailed'))
 }
