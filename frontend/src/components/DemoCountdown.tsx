@@ -19,7 +19,7 @@ export function DemoCountdown({ until }: { until: number }) {
       className="shrink-0 whitespace-nowrap rounded-full border border-oxblood/40 px-2 py-0.5 text-xs font-medium tabular-nums text-oxblood"
     >
       Demo · {text}
-      <span className="hidden sm:inline"> · {note}</span>
+      {over && ` · ${note}`}
     </span>
   )
 }
