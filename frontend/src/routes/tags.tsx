@@ -21,6 +21,7 @@ import {
   sectionClassName,
   sectionTitleClassName,
 } from '../components/ui'
+import { lang, t, tNode } from '../i18n'
 
 /** What the picker opens on for a tag that has no colour of its own. */
 const UNCOLORED_SWATCH = '#808080'
@@ -57,7 +58,7 @@ function ColorSwatch({
     <input
       ref={ref}
       type="color"
-      aria-label={`Color for ${tag.name}`}
+      aria-label={t('tagsPage.colorFor', { name: tag.name })}
       disabled={busy}
       defaultValue={tag.color || UNCOLORED_SWATCH}
       className="h-6 w-8 shrink-0 cursor-pointer border border-line bg-surface p-0.5 disabled:cursor-not-allowed disabled:opacity-50"
@@ -99,13 +100,13 @@ function TagRow({ tag, busy, ticked, onTick, onRename, onDelete, onAssign, onCol
       {editing ? (
         <form className="flex flex-1 flex-wrap items-center gap-2" onSubmit={onSubmit}>
           <input
-            aria-label="Tag name"
+            aria-label={t('tagsPage.tagName')}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             className={`${inputClassName} max-w-xs flex-1`}
           />
           <Button type="submit" size="xs" disabled={busy}>
-            Save
+            {t('common.save')}
           </Button>
           <Button
             size="xs"
@@ -116,7 +117,7 @@ function TagRow({ tag, busy, ticked, onTick, onRename, onDelete, onAssign, onCol
               setEditing(false)
             }}
           >
-            Cancel
+            {t('common.cancel')}
           </Button>
         </form>
       ) : (
@@ -126,7 +127,7 @@ function TagRow({ tag, busy, ticked, onTick, onRename, onDelete, onAssign, onCol
             {tag.color && (
               <button
                 type="button"
-                aria-label={`Clear color for ${tag.name}`}
+                aria-label={t('tagsPage.clearColorFor', { name: tag.name })}
                 disabled={busy}
                 className="shrink-0 text-xs text-ink-faint transition-colors hover:text-madder disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={() => onColor(tag.id, '')}
@@ -140,7 +141,7 @@ function TagRow({ tag, busy, ticked, onTick, onRename, onDelete, onAssign, onCol
                 checked={ticked}
                 disabled={busy}
                 onChange={() => onTick(tag.id)}
-                aria-label={`Include ${tag.name}`}
+                aria-label={t('tagsPage.include', { name: tag.name })}
               />
               <span className="min-w-0 truncate text-sm font-medium text-ink">{tag.name}</span>
             </label>
@@ -151,15 +152,15 @@ function TagRow({ tag, busy, ticked, onTick, onRename, onDelete, onAssign, onCol
               search={{ q: tag.name }}
               className="rounded-xs border border-line px-2 py-1 text-xs text-ink-soft transition-colors hover:text-ink"
             >
-              Find documents
+              {t('tagsPage.findDocuments')}
             </Link>
             <Button
               size="xs"
               variant="secondary"
               disabled={busy}
-              onClick={() => void onAssign([tag.id], `"${tag.name}"`)}
+              onClick={() => void onAssign([tag.id], t('tagsPage.quoted', { name: tag.name }))}
             >
-              Assign with AI
+              {t('tagsPage.assignWithAI')}
             </Button>
             <Button
               size="xs"
@@ -170,10 +171,10 @@ function TagRow({ tag, busy, ticked, onTick, onRename, onDelete, onAssign, onCol
                 setEditing(true)
               }}
             >
-              Rename
+              {t('tagsPage.rename')}
             </Button>
             <Button size="xs" variant="danger" disabled={busy} onClick={() => void onDelete(tag)}>
-              Delete
+              {t('common.delete')}
             </Button>
           </div>
         </>
@@ -223,9 +224,9 @@ export function TagsPage() {
       await createTag(next)
       await reload()
       setName('')
-      setNotice(`Added "${next}".`)
+      setNotice(t('tagsPage.added', { name: next }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create the tag')
+      setError(err instanceof Error ? err.message : t('tagsPage.createError'))
     } finally {
       setBusy(false)
     }
@@ -238,9 +239,9 @@ export function TagsPage() {
       setNotice('')
       await renameTag(id, nextName)
       await reload()
-      setNotice(`Renamed to "${nextName}".`)
+      setNotice(t('tagsPage.renamed', { name: nextName }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to rename the tag')
+      setError(err instanceof Error ? err.message : t('tagsPage.renameError'))
     } finally {
       setBusy(false)
     }
@@ -262,19 +263,21 @@ export function TagsPage() {
 
       const preview = await previewTagAssign(tagIds)
       if (preview.candidates === 0) {
-        setNotice(`Every document already carries ${label}, or none has text to judge.`)
+        setNotice(t('tagsPage.nothingToAssign', { label }))
         return
       }
       const asked = Math.min(preview.candidates, preview.limit)
       const capped =
         preview.candidates > preview.limit
-          ? `\n\nOnly the ${preview.limit} newest of ${preview.candidates} run this time.`
+          ? '\n\n' + t('tagsPage.assignCapped', { limit: preview.limit, total: preview.candidates })
           : ''
       if (
         !window.confirm(
-          `Ask the model which of ${asked === 1 ? 'this document' : `these ${asked} documents`} warrant ${label}?\n\n` +
-            `Your model reads ${asked === 1 ? 'the document' : `all ${asked} documents`}, and your provider charges for each one.\n` +
-            'It only adds tags; nothing else on the documents changes.' +
+          t('tagsPage.confirmAssign', { count: asked, label }) +
+            '\n\n' +
+            t('tagsPage.confirmAssignCost', { count: asked }) +
+            '\n' +
+            t('tagsPage.confirmAssignNote') +
             capped,
         )
       ) {
@@ -283,12 +286,15 @@ export function TagsPage() {
 
       const result = await assignTagsWithAI(tagIds)
       setNotice(
-        `Tagged ${result.assigned} of ${result.asked}; ${result.declined} warranted nothing` +
-          (result.failed > 0 ? `, ${result.failed} failed` : '') +
-          '.',
+        t(result.failed > 0 ? 'tagsPage.assignedWithFailures' : 'tagsPage.assigned', {
+          assigned: result.assigned,
+          asked: result.asked,
+          declined: result.declined,
+          failed: result.failed,
+        }),
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not assign the tags')
+      setError(err instanceof Error ? err.message : t('tagsPage.assignError'))
     } finally {
       setBusy(false)
     }
@@ -296,7 +302,7 @@ export function TagsPage() {
 
   async function onDelete(tag: TagRecord) {
     if (
-      !window.confirm(`Delete "${tag.name}"? It will be removed from every document that has it.`)
+      !window.confirm(t('tagsPage.confirmDelete', { name: tag.name }))
     ) {
       return
     }
@@ -306,9 +312,9 @@ export function TagsPage() {
       setNotice('')
       await deleteTag(tag.id)
       await reload()
-      setNotice(`Deleted "${tag.name}".`)
+      setNotice(t('tagsPage.deleted', { name: tag.name }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete the tag')
+      setError(err instanceof Error ? err.message : t('tagsPage.deleteError'))
     } finally {
       setBusy(false)
     }
@@ -321,8 +327,9 @@ export function TagsPage() {
     }
     if (
       !window.confirm(
-        `Delete ${ids.length === 1 ? 'this tag' : `these ${ids.length} tags`}?\n\n` +
-          'They will be removed from every document that has them.',
+        t('tagsPage.confirmDeleteTicked', { count: ids.length }) +
+          '\n\n' +
+          t('tagsPage.confirmDeleteTickedNote'),
       )
     ) {
       return
@@ -334,9 +341,9 @@ export function TagsPage() {
       await Promise.all(ids.map(deleteTag))
       setTicked(new Set())
       await reload()
-      setNotice(`Deleted ${ids.length === 1 ? '1 tag' : `${ids.length} tags`}.`)
+      setNotice(t('tagsPage.deletedTicked', { count: ids.length }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete the tags')
+      setError(err instanceof Error ? err.message : t('tagsPage.deleteTickedError'))
     } finally {
       setBusy(false)
     }
@@ -351,7 +358,7 @@ export function TagsPage() {
       await setTagColor(id, color)
       await reload()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save the color')
+      setError(err instanceof Error ? err.message : t('tagsPage.colorError'))
     } finally {
       setBusy(false)
     }
@@ -360,47 +367,33 @@ export function TagsPage() {
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5">
       <header>
-        <h1 className="font-display text-2xl font-semibold text-ink">Tags</h1>
-        <p className={`${fieldHintClassName} mt-1`}>
-          Your tag vocabulary. Processing assigns tags from this list and never invents new ones, so
-          a tag only exists once you create it here.
-        </p>
-        <p className={`${fieldHintClassName} mt-2`}>
-          A new tag is not applied to documents already in the archive. "Find documents" searches for
-          it, so you can open the ones that match and tag them from their own pages, for free.
-        </p>
+        <h1 className="font-display text-2xl font-semibold text-ink">{t('tagsPage.title')}</h1>
+        <p className={`${fieldHintClassName} mt-1`}>{t('tagsPage.intro')}</p>
+        <p className={`${fieldHintClassName} mt-2`}>{t('tagsPage.introFind')}</p>
       </header>
 
       {/* Its own block rather than a line in the hints above: this is the only
           thing on the page that costs money, and the arithmetic decides which
           button a reader should press. */}
       <aside className="rounded-xs border-l-2 border-oxblood bg-bright px-4 py-3">
-        <h2 className="text-sm font-semibold text-ink">What assigning with AI costs</h2>
+        <h2 className="text-sm font-semibold text-ink">{t('tagsPage.costTitle')}</h2>
         <ul className={`${fieldHintClassName} mt-2 flex list-disc flex-col gap-1 pl-4`}>
+          <li>{t('tagsPage.costReads')}</li>
           <li>
-            Your model reads every document that is missing the tags you ask about, and your provider
-            charges for each one. Nothing runs until you press a button — creating a tag on its own
-            costs nothing.
+            {tNode('tagsPage.costTogether', {
+              strong: (
+                <strong className="font-semibold text-ink">{t('tagsPage.costTogetherStrong')}</strong>
+              ),
+            })}
           </li>
-          <li>
-            <strong className="font-semibold text-ink">Tick several tags and run them together.</strong>{' '}
-            A document is read once whatever it is being asked about, so one run over five tags costs
-            about what one tag costs. Five separate runs re-read the archive five times.
-          </li>
-          <li>
-            At most {MAX_TAG_ASSIGN_DOCUMENTS.toLocaleString()} documents per run, newest first. Run it
-            again for the rest.
-          </li>
-          <li>
-            Only tags are ever added — no title, date or correspondent changes. But reprocessing a
-            document later replaces its tags wholesale and discards what was assigned here.
-          </li>
+          <li>{t('tagsPage.costLimit', { max: MAX_TAG_ASSIGN_DOCUMENTS.toLocaleString(lang) })}</li>
+          <li>{t('tagsPage.costOnlyTags')}</li>
         </ul>
       </aside>
 
       <section className={sectionClassName}>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className={sectionTitleClassName}>Your tags</h2>
+          <h2 className={sectionTitleClassName}>{t('tagsPage.yourTags')}</h2>
           {rows.length > 1 && (
             <div className="flex items-center gap-2">
               <Button
@@ -415,7 +408,7 @@ export function TagsPage() {
                   )
                 }
               >
-                {tickedIds.length === rows.length ? 'Tick none' : 'Tick all'}
+                {tickedIds.length === rows.length ? t('tagsPage.tickNone') : t('tagsPage.tickAll')}
               </Button>
               <Button
                 size="xs"
@@ -424,12 +417,18 @@ export function TagsPage() {
                   void onAssign(
                     tickedIds,
                     tickedIds.length === 1
-                      ? `"${rows.find((tag) => tag.id === tickedIds[0])?.name}"`
-                      : `any of ${tickedIds.length} tags`,
+                      ? t('tagsPage.quoted', {
+                          name: rows.find((tag) => tag.id === tickedIds[0])?.name ?? '',
+                        })
+                      : t('tagsPage.anyOfTags', { count: tickedIds.length }),
                   )
                 }
               >
-                {busy ? 'Working...' : `Assign ${tickedIds.length || ''} ticked with AI`.trim()}
+                {busy
+                  ? t('tagsPage.working')
+                  : tickedIds.length
+                    ? t('tagsPage.assignTicked', { count: tickedIds.length })
+                    : t('tagsPage.assignTickedNone')}
               </Button>
               <Button
                 size="xs"
@@ -437,7 +436,7 @@ export function TagsPage() {
                 disabled={busy || tickedIds.length === 0}
                 onClick={() => void onDeleteTicked()}
               >
-                Delete selected
+                {t('tagsPage.deleteSelected')}
               </Button>
             </div>
           )}
@@ -448,11 +447,9 @@ export function TagsPage() {
         {notice && <p className="mb-3 text-sm text-ink-soft">{notice}</p>}
 
         {loading ? (
-          <p className="mb-4 text-sm text-ink-soft">Loading...</p>
+          <p className="mb-4 text-sm text-ink-soft">{t('tagsPage.loading')}</p>
         ) : rows.length === 0 ? (
-          <p className="mb-4 text-sm text-ink-soft">
-            No tags yet. Until you add one, documents are processed without any.
-          </p>
+          <p className="mb-4 text-sm text-ink-soft">{t('tagsPage.empty')}</p>
         ) : (
           <ul className="mb-4 flex flex-col gap-2">
             {rows.map((tag) => (
@@ -473,20 +470,18 @@ export function TagsPage() {
 
         <form className="flex flex-col gap-3" onSubmit={onCreate}>
           <label className={labelClassName}>
-            <span className={labelTextClassName}>New tag</span>
+            <span className={labelTextClassName}>{t('tagsPage.newTag')}</span>
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="Invoices"
+              placeholder={t('tagsPage.newTagPlaceholder')}
               className={`${inputClassName} max-w-sm`}
             />
           </label>
-          <p className={fieldHintClassName}>
-            Keep them broad enough to reuse — a tag that fits one document is a title, not a tag.
-          </p>
+          <p className={fieldHintClassName}>{t('tagsPage.newTagHint')}</p>
           <div>
             <Button type="submit" disabled={busy || !name.trim()}>
-              Add tag
+              {t('tagsPage.addTag')}
             </Button>
           </div>
         </form>

@@ -15,6 +15,7 @@ import type { BulkMode } from '../components/DocumentBulkBar'
 import { DocumentFilters } from '../components/DocumentFilters'
 import { DocumentGrid } from '../components/DocumentGrid'
 import { DocumentTimeline } from '../components/DocumentTimeline'
+import { t } from '../i18n'
 
 /** The whole library, filtered by hand. The Inbox is its own page. */
 export function IndexPage() {
@@ -65,7 +66,7 @@ export function IndexPage() {
       })
       saveBlob(await fetchDocumentsArchive(ids), 'lemmary-filtered-export.zip')
     } catch (err) {
-      setExportError(err instanceof Error ? err.message : 'Export failed')
+      setExportError(err instanceof Error ? err.message : t('index.exportError'))
     } finally {
       setExporting(false)
     }
@@ -75,8 +76,8 @@ export function IndexPage() {
     <section className="flex flex-col gap-3">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">Documents</h2>
-          <p className="text-sm text-ink-soft">Upload, search, and review AI-extracted metadata.</p>
+          <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{t('index.title')}</h2>
+          <p className="text-sm text-ink-soft">{t('index.intro')}</p>
         </div>
         <div className="flex shrink-0 gap-2">
           {hasActiveFilters(query) && list.totalItems > 0 && (
@@ -84,8 +85,8 @@ export function IndexPage() {
               type="button"
               onClick={() => void onExportFiltered()}
               disabled={exporting}
-              aria-label="Export filtered documents"
-              title="Export filtered documents"
+              aria-label={t('index.exportFiltered')}
+              title={t('index.exportFiltered')}
               className="flex items-center justify-center rounded-xs border border-line-strong bg-surface px-2.5 py-2 text-ink-muted transition-colors hover:bg-bright hover:text-ink disabled:opacity-50"
             >
               <svg
@@ -107,7 +108,7 @@ export function IndexPage() {
             to="/rag/search"
             className="rounded-xs border border-line-strong bg-surface px-4 py-2 text-sm font-medium text-ink transition-colors hover:border-ink hover:bg-bright"
           >
-            AI assisted search
+            {t('index.aiSearch')}
           </Link>
         </div>
       </div>
@@ -142,7 +143,7 @@ export function IndexPage() {
             status={statusFilter}
           />
 
-          {loading && <p className="text-sm text-ink-soft">Loading documents...</p>}
+          {loading && <p className="text-sm text-ink-soft">{t('index.loading')}</p>}
           {(error || filterOptions.error || timeline.error) && (
             <p className="text-sm text-madder">
               {error || filterOptions.error || timeline.error}
@@ -153,12 +154,12 @@ export function IndexPage() {
           {!loading && documents.length === 0 && (
             <div className="rounded-none border border-line bg-surface py-10 text-center">
               {hasActiveFilters(query) ? (
-                <p className="text-sm text-ink-soft">No documents match your filters.</p>
+                <p className="text-sm text-ink-soft">{t('index.noMatches')}</p>
               ) : (
                 <>
-                  <p className="text-sm text-ink-soft">No documents yet.</p>
+                  <p className="text-sm text-ink-soft">{t('index.empty')}</p>
                   <Link to="/upload" className="mt-3 inline-block rounded-xs bg-ink px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-oxblood">
-                    Upload your first document
+                    {t('index.uploadFirst')}
                   </Link>
                 </>
               )}

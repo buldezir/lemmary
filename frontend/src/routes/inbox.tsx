@@ -1,6 +1,7 @@
 import { UNFINISHED_STATUS } from '../lib/documentStatus'
 import { useDocumentList } from '../hooks/useDocumentList'
 import { DocumentGrid } from '../components/DocumentGrid'
+import { t } from '../i18n'
 
 /**
  * The working tray: everything the pipeline has not finished with -- waiting for
@@ -19,20 +20,17 @@ export function InboxPage() {
   return (
     <section className="flex flex-col gap-3">
       <div>
-        <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">Inbox</h2>
-        <p className="text-sm text-ink-soft">
-          Everything the pipeline has not finished with: waiting for review, still processing, or
-          failed.
-        </p>
+        <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{t('inbox.title')}</h2>
+        <p className="text-sm text-ink-soft">{t('inbox.intro')}</p>
       </div>
 
       <div className="flex flex-col gap-4">
-        {loading && <p className="text-sm text-ink-soft">Loading documents...</p>}
+        {loading && <p className="text-sm text-ink-soft">{t('index.loading')}</p>}
         {error && <p className="text-sm text-madder">{error}</p>}
 
         {!loading && documents.length === 0 && (
           <div className="rounded-none border border-line bg-surface py-10 text-center">
-            <p className="text-sm text-ink-soft">Nothing waiting.</p>
+            <p className="text-sm text-ink-soft">{t('inbox.empty')}</p>
           </div>
         )}
 

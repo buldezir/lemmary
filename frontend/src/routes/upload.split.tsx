@@ -15,15 +15,12 @@ import {
 } from '../lib/api/split'
 import { documentsLanding } from '../lib/reviewPolicy'
 import { Button } from '../components/ui'
+import { t } from '../i18n'
 
 const ACCEPT_ATTR = '.pdf,application/pdf'
 
 /** How many thumbnails are fetched at once, so a long scan still paints early. */
 const THUMB_CONCURRENCY = 4
-
-function plural(count: number, word: string) {
-  return `${count} ${word}${count === 1 ? '' : 's'}`
-}
 
 function isPdf(file: File) {
   return file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf'
@@ -115,7 +112,7 @@ export function UploadSplitPage() {
     resetInput()
     if (!file) return
     if (!isPdf(file)) {
-      setError('Choose a PDF. Other formats can be uploaded from the Files tab.')
+      setError(t('uploadSplit.notPdf'))
       return
     }
 
@@ -129,7 +126,7 @@ export function UploadSplitPage() {
       setUpload(await uploadSplitPdf(file))
     } catch (err) {
       setUpload(null)
-      setError(errorMessage(err, 'Failed to read the PDF'))
+      setError(errorMessage(err, t('uploadSplit.readFailed')))
     } finally {
       setReading(false)
     }
@@ -174,12 +171,12 @@ export function UploadSplitPage() {
       const suggestion = await detectSplitParts(upload.upload_id, setDetecting)
       setCuts(cutsFromParts(suggestion.parts, upload.page_count))
       setNotice(
-        `Proposed ${plural(suggestion.parts.length, 'document')}${
-          suggestion.text_source === 'ocr' ? ', read by OCR' : ''
-        }. Adjust the cuts if they are off.`,
+        t(suggestion.text_source === 'ocr' ? 'uploadSplit.proposedOcr' : 'uploadSplit.proposed', {
+          count: suggestion.parts.length,
+        }),
       )
     } catch (err) {
-      setError(errorMessage(err, 'Detection failed'))
+      setError(errorMessage(err, t('uploadSplit.detectFailed')))
     } finally {
       setDetecting(null)
     }
@@ -196,7 +193,7 @@ export function UploadSplitPage() {
       clearUpload()
       setResult(splitResult)
     } catch (err) {
-      setError(errorMessage(err, 'Split failed'))
+      setError(errorMessage(err, t('uploadSplit.splitFailed')))
     } finally {
       setSplitting(null)
     }
@@ -217,11 +214,9 @@ export function UploadSplitPage() {
   return (
     <section className="flex flex-col gap-5">
       <div>
-        <h2 className="font-display text-xl font-semibold text-ink">Split documents</h2>
+        <h2 className="font-display text-xl font-semibold text-ink">{t('uploadSplit.title')}</h2>
         <p className="mt-1 text-sm text-ink-soft">
-          Upload a PDF that holds several separate documents joined into one file, splitting it into
-          one document per part. Mark where each document starts, or let the AI propose the cuts.
-          The original file is not kept.
+          {t('uploadSplit.intro')}
         </p>
       </div>
 
@@ -246,9 +241,9 @@ export function UploadSplitPage() {
             className="hidden"
           />
           <span className="text-sm font-medium text-ink">
-            {reading ? 'Reading PDF…' : 'Choose a PDF to split'}
+            {reading ? t('uploadSplit.reading') : t('uploadSplit.choose')}
           </span>
-          {!reading && <span className="text-xs text-ink-faint">or drop it here</span>}
+          {!reading && <span className="text-xs text-ink-faint">{t('uploadSplit.dropHint')}</span>}
         </label>
       )}
 
@@ -256,13 +251,13 @@ export function UploadSplitPage() {
         <div className="flex flex-col gap-4 rounded-none border border-line bg-bright p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-medium text-ink">{upload.file_name || 'Scanned PDF'}</p>
+              <p className="text-sm font-medium text-ink">{upload.file_name || t('uploadSplit.defaultName')}</p>
               <p className="mt-1 text-sm text-ink-soft">
-                {plural(upload.page_count, 'page')}. Click a gap between pages to cut there.
+                {t('uploadSplit.pages', { count: upload.page_count })}
               </p>
             </div>
             <Button variant="secondary" size="sm" disabled={busy} onClick={() => void onDetect()}>
-              Detect automatically
+              {t('uploadSplit.detect')}
             </Button>
           </div>
 
@@ -272,13 +267,13 @@ export function UploadSplitPage() {
                 <button
                   type="button"
                   onClick={() => setZoomPage(page)}
-                  aria-label={`Enlarge page ${page}`}
+                  aria-label={t('uploadSplit.enlarge', { page })}
                   className="flex w-24 flex-col items-center gap-1 border border-line bg-surface p-1 transition-colors hover:border-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood"
                 >
                   {thumbs[page] ? (
                     <img
                       src={thumbs[page]}
-                      alt={`Page ${page}`}
+                      alt={t('uploadSplit.page', { page })}
                       className="h-28 w-full object-contain object-top"
                     />
                   ) : (
@@ -294,8 +289,12 @@ export function UploadSplitPage() {
                     onClick={() => toggleCut(page)}
                     disabled={busy}
                     aria-pressed={cuts.has(page)}
-                    aria-label={`Split after page ${page}`}
-                    title={cuts.has(page) ? `Remove the cut after page ${page}` : `Split after page ${page}`}
+                    aria-label={t('uploadSplit.splitAfter', { page })}
+                    title={
+                      cuts.has(page)
+                        ? t('uploadSplit.removeCut', { page })
+                        : t('uploadSplit.splitAfter', { page })
+                    }
                     className={`w-7 shrink-0 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood ${
                       cuts.has(page)
                         ? 'bg-oxblood text-paper'
@@ -313,36 +312,36 @@ export function UploadSplitPage() {
             <div className="flex flex-col items-start gap-2 border border-line-strong bg-surface p-3">
               <div className="flex w-full items-center justify-between gap-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">
-                  Page {zoomPage}
+                  {t('uploadSplit.page', { page: zoomPage })}
                 </p>
                 <button
                   type="button"
                   onClick={() => setZoomPage(null)}
                   className="text-xs font-medium text-ink-soft hover:text-ink"
                 >
-                  Close
+                  {t('common.close')}
                 </button>
               </div>
               <img
                 src={thumbs[zoomPage]}
-                alt={`Page ${zoomPage}, enlarged`}
+                alt={t('uploadSplit.enlarged', { page: zoomPage })}
                 className="max-h-[36rem] w-auto max-w-full"
               />
             </div>
           )}
 
           <p className="text-sm font-medium text-ink">
-            {plural(parts.length, 'document')}: pages {describeParts(parts)}
+            {t('uploadSplit.summary', { count: parts.length, ranges: describeParts(parts) })}
           </p>
 
           {notice && <p className="text-sm text-ink-soft">{notice}</p>}
 
           <div className="flex flex-wrap gap-2">
             <Button disabled={busy} onClick={() => void onSplit()}>
-              Split into {plural(parts.length, 'document')}
+              {t('uploadSplit.splitInto', { count: parts.length })}
             </Button>
             <Button variant="secondary" disabled={busy} onClick={() => void onCancel()}>
-              Cancel
+              {t('common.cancel')}
             </Button>
           </div>
         </div>
@@ -351,10 +350,10 @@ export function UploadSplitPage() {
       {detecting && (
         <div className="rounded-none border border-line bg-bright p-5">
           <p className="text-sm font-medium text-ink">
-            Analysing page {detecting.done} of {detecting.total}…
+            {t('uploadSplit.analysing', { done: detecting.done, total: detecting.total })}
           </p>
           <p className="mt-1 text-sm text-ink-soft">
-            Reading each page to find where the documents start.
+            {t('uploadSplit.analysingHint')}
           </p>
         </div>
       )}
@@ -362,10 +361,10 @@ export function UploadSplitPage() {
       {splitting && (
         <div className="rounded-none border border-line bg-bright p-5">
           <p className="text-sm font-medium text-ink">
-            Creating {splitting.done} of {splitting.total}…
+            {t('uploadSplit.creating', { done: splitting.done, total: splitting.total })}
           </p>
           <p className="mt-1 text-sm text-ink-soft">
-            New documents are queued for OCR and AI processing.
+            {t('uploadSplit.creatingHint')}
           </p>
         </div>
       )}
@@ -373,16 +372,16 @@ export function UploadSplitPage() {
       {result && (
         <div className="flex flex-col gap-3 rounded-none border border-line bg-bright p-5">
           <p className="text-sm font-medium text-ink">
-            Created {plural(result.created, 'document')}.
+            {t('uploadSplit.created', { count: result.created })}
           </p>
           <ul className="text-sm text-ink-soft">
             {result.skipped_duplicates > 0 && (
-              <li>{plural(result.skipped_duplicates, 'part')} already in your library.</li>
+              <li>{t('uploadSplit.partsDuplicate', { count: result.skipped_duplicates })}</li>
             )}
             {result.skipped_oversized > 0 && (
-              <li>{plural(result.skipped_oversized, 'part')} skipped as too large.</li>
+              <li>{t('uploadSplit.partsOversized', { count: result.skipped_oversized })}</li>
             )}
-            {result.failed > 0 && <li>{plural(result.failed, 'part')} failed.</li>}
+            {result.failed > 0 && <li>{t('uploadSplit.partsFailed', { count: result.failed })}</li>}
           </ul>
           {result.errors.length > 0 && (
             <ul className="flex flex-col gap-1 text-sm text-madder">
@@ -392,7 +391,7 @@ export function UploadSplitPage() {
             </ul>
           )}
           <Link to={documentsLanding()} className="text-sm font-medium text-oxblood underline">
-            {documentsLanding() === '/inbox' ? 'Open the Inbox' : 'Open documents'}
+            {documentsLanding() === '/inbox' ? t('uploadScan.openInbox') : t('uploadScan.openDocuments')}
           </Link>
         </div>
       )}

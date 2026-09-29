@@ -1,3 +1,4 @@
+import { t } from '../../i18n'
 import { pb, pbUrl } from '../pb'
 import { ensureAuth } from '../auth'
 import { apiFetch, pollJob, type JobProgress } from '../apiClient'
@@ -53,7 +54,7 @@ export function uploadSplitPdf(file: File) {
   return apiFetch<SplitUpload>('/api/app/split/upload', {
     method: 'POST',
     formData,
-    fallbackError: 'Failed to read the PDF',
+    fallbackError: t('split.readFailed'),
   })
 }
 
@@ -61,7 +62,7 @@ export function uploadSplitPdf(file: File) {
 export async function discardSplitUpload(uploadId: string) {
   await apiFetch<unknown>(`/api/app/split/upload?upload_id=${encodeURIComponent(uploadId)}`, {
     method: 'DELETE',
-    fallbackError: 'Failed to discard the PDF',
+    fallbackError: t('split.discardFailed'),
   })
 }
 
@@ -76,7 +77,7 @@ export async function fetchPageThumb(uploadId: string, page: number): Promise<st
     headers: { Authorization: pb.authStore.token },
   })
   if (!response.ok) {
-    throw new Error(`Failed to load page ${page}`)
+    throw new Error(t('split.pageFailed', { page }))
   }
   return URL.createObjectURL(await response.blob())
 }
@@ -89,15 +90,15 @@ export async function detectSplitParts(
   const start = await apiFetch<{ job_id?: string }>('/api/app/split/detect', {
     method: 'POST',
     body: { upload_id: uploadId },
-    fallbackError: 'Detection failed to start',
+    fallbackError: t('split.detectStartFailed'),
   })
   if (!start.job_id) {
-    throw new Error('Detection job id missing from server response')
+    throw new Error(t('split.detectMissingJobId'))
   }
 
   const result = await pollJob<SplitSuggestion>(
     `/api/app/split/detect/status?job_id=${encodeURIComponent(start.job_id)}`,
-    { onProgress, label: 'detection', timeoutMs: detectTimeoutMs },
+    { onProgress, label: t('split.detectLabel'), timeoutMs: detectTimeoutMs },
   )
   return { ...result, parts: result.parts ?? [] }
 }
@@ -111,15 +112,15 @@ export async function runSplit(
   const start = await apiFetch<{ job_id?: string }>('/api/app/split', {
     method: 'POST',
     body: { upload_id: uploadId, parts },
-    fallbackError: 'Split failed to start',
+    fallbackError: t('split.startFailed'),
   })
   if (!start.job_id) {
-    throw new Error('Split job id missing from server response')
+    throw new Error(t('split.missingJobId'))
   }
 
   const result = await pollJob<SplitResult>(
     `/api/app/split/status?job_id=${encodeURIComponent(start.job_id)}`,
-    { onProgress, label: 'split', timeoutMs: splitTimeoutMs },
+    { onProgress, label: t('split.jobLabel'), timeoutMs: splitTimeoutMs },
   )
   return { ...result, errors: result.errors ?? [], document_ids: result.document_ids ?? [] }
 }

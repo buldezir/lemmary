@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import type { DocumentTimeline as DocumentTimelineData } from '../lib/api/documents'
 import { UNDATED_PERIOD, groupByYear, monthLabel, openYear, shouldFold } from '../lib/timeline'
 
@@ -82,8 +83,8 @@ export function DocumentTimeline({
     return (
       <button
         type="button"
-        aria-label="Show timeline"
-        title="Show timeline"
+        aria-label={t('documentTimeline.show')}
+        title={t('documentTimeline.show')}
         aria-expanded={false}
         onClick={onToggleExpanded}
         className={`group flex items-center justify-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood ${className}`}
@@ -100,13 +101,13 @@ export function DocumentTimeline({
       <h3 id="timeline-heading" className="mb-2 border-b border-line pb-2">
         <button
           type="button"
-          title="Hide timeline"
+          title={t('documentTimeline.hide')}
           aria-expanded
           aria-controls="timeline-periods"
           onClick={onToggleExpanded}
           className="flex w-full items-center justify-between gap-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-soft transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood"
         >
-          <span>Timeline</span>
+          <span>{t('documentTimeline.title')}</span>
           <ChevronIcon expanded />
         </button>
       </h3>
@@ -160,7 +161,7 @@ export function DocumentTimeline({
               onClick={() => select(UNDATED_PERIOD)}
               className={`${rowClassName} pl-2 ${rowStateClassName(active === UNDATED_PERIOD)}`}
             >
-              <span>No date</span>
+              <span>{t('documentTimeline.noDate')}</span>
               <span className="text-xs tabular-nums text-ink-faint">{timeline.undated}</span>
             </button>
           </div>

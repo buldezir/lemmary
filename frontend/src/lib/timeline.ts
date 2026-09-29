@@ -1,3 +1,5 @@
+import { lang } from '../i18n'
+
 /**
  * A "period" is a year ("2025") or a month ("2025-03"). Selecting one writes the
  * existing From/To filters, so there is only ever one date filter in play.
@@ -22,20 +24,7 @@ export type DateRange = {
   to: string
 }
 
-const monthNames = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-]
+const monthName = new Intl.DateTimeFormat(lang, { month: 'long', timeZone: 'UTC' })
 
 /**
  * The one row that is not a date range. It travels the same onSelect path as a
@@ -57,7 +46,8 @@ export function isMonthPeriod(period: string): boolean {
 /** "2025-03" -> "March". */
 export function monthLabel(month: string): string {
   if (!isMonthPeriod(month)) return month
-  return monthNames[Number(month.slice(5, 7)) - 1]
+  const name = monthName.format(Date.UTC(2000, Number(month.slice(5, 7)) - 1, 1))
+  return name.charAt(0).toLocaleUpperCase(lang) + name.slice(1)
 }
 
 /**

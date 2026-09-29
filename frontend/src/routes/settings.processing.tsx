@@ -14,6 +14,7 @@ import {
   sectionClassName,
   sectionTitleClassName,
 } from '../components/ui'
+import { t } from '../i18n'
 
 /**
  * None of these is a provider or a model, so a managed tenant keeps them: the
@@ -38,11 +39,11 @@ export function SettingsProcessingPage() {
     const ocrTimeout = Number(form.ocr_timeout_sec)
     const openAITimeout = Number(form.openai_timeout_sec)
     if (!Number.isFinite(ocrTimeout) || ocrTimeout <= 0) {
-      setError('OCR timeout must be a positive number')
+      setError(t('settingsProcessing.ocrTimeoutInvalid'))
       return
     }
     if (!Number.isFinite(openAITimeout) || openAITimeout <= 0) {
-      setError('AI timeout must be a positive number')
+      setError(t('settingsProcessing.aiTimeoutInvalid'))
       return
     }
 
@@ -61,7 +62,7 @@ export function SettingsProcessingPage() {
   return (
     <form onSubmit={onSubmit}>
       <section className={sectionClassName}>
-        <h2 className={sectionTitleClassName}>Processing</h2>
+        <h2 className={sectionTitleClassName}>{t('settingsProcessing.title')}</h2>
         {/* In a panel of its own: it is the only setting here that decides
             where a finished document goes. */}
         <div className="mb-4 rounded-xs border border-line-strong bg-bright p-4">
@@ -72,20 +73,16 @@ export function SettingsProcessingPage() {
               checked={form.always_require_review}
               onChange={(e) => updateField('always_require_review', e.target.checked)}
             />
-            Always require review for new documents
+            {t('settingsProcessing.alwaysReview')}
           </label>
           <p className={`${fieldHintClassName} mt-2`}>
-            Every document the AI extracts metadata for waits in the Inbox, however confident
-            the extraction was &mdash; reprocessed documents included. Nothing completes but by
-            your saying so. Off, only low-confidence extractions and possible duplicates land
-            there. While a document waits, the AI may also suggest new tags for it; accepting
-            one creates the tag.
+            {t('settingsProcessing.alwaysReviewHint')}
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className={labelClassName}>
             <label className={labelClassName}>
-              <span className={labelTextClassName}>OCR timeout (seconds)</span>
+              <span className={labelTextClassName}>{t('settingsProcessing.ocrTimeout')}</span>
               <input
                 type="number"
                 min={1}
@@ -95,12 +92,12 @@ export function SettingsProcessingPage() {
               />
             </label>
             <p className={fieldHintClassName}>
-              How long one OCR call may take before the step fails.
+              {t('settingsProcessing.ocrTimeoutHint')}
             </p>
           </div>
           <div className={labelClassName}>
             <label className={labelClassName}>
-              <span className={labelTextClassName}>AI timeout (seconds)</span>
+              <span className={labelTextClassName}>{t('settingsProcessing.aiTimeout')}</span>
               <input
                 type="number"
                 min={1}
@@ -110,60 +107,52 @@ export function SettingsProcessingPage() {
               />
             </label>
             <p className={fieldHintClassName}>
-              How long one extraction, chat, search or split-detection request may take.
+              {t('settingsProcessing.aiTimeoutHint')}
             </p>
           </div>
           <div className={labelClassName}>
             <label className={labelClassName}>
-              <span className={labelTextClassName}>Result language (ISO 639-1)</span>
+              <span className={labelTextClassName}>{t('settingsProcessing.resultLanguage')}</span>
               <input
                 className={inputClassName}
-                placeholder="e.g. en"
+                placeholder={t('settingsProcessing.resultLanguagePlaceholder')}
                 value={form.processing_result_language}
                 onChange={(e) => updateField('processing_result_language', e.target.value)}
               />
             </label>
             <p className={fieldHintClassName}>
-              Also stores the title, purpose, summary, type and correspondent translated into
-              this language. Tags are exempt: they come from your own list, in whatever language
-              you wrote it. Leave empty to keep only the document&rsquo;s own language.
+              {t('settingsProcessing.resultLanguageHint')}
             </p>
           </div>
           <div className={labelClassName}>
             <label className={labelClassName}>
-              <span className={labelTextClassName}>Deep search languages</span>
+              <span className={labelTextClassName}>{t('settingsProcessing.deepSearchLanguages')}</span>
               <input
                 className={inputClassName}
-                placeholder="e.g. de,en,uk"
+                placeholder={t('settingsProcessing.deepSearchLanguagesPlaceholder')}
                 value={form.deep_search_languages}
                 onChange={(e) => updateField('deep_search_languages', e.target.value)}
               />
             </label>
             <p className={fieldHintClassName}>
               {form.embedding_model.trim() !== ''
-                ? 'With an embedding model configured, one search already reaches documents in every language; this list is only used when Deep Search falls back to keyword search.'
-                : 'Languages deep search translates keywords into, so a German invoice is found by an English question. Leave empty to search only in the language of the question.'}
+                ? t('settingsProcessing.deepSearchLanguagesEmbeddingHint')
+                : t('settingsProcessing.deepSearchLanguagesHint')}
             </p>
           </div>
           <div className={`${labelClassName} sm:col-span-2`}>
             <label className={labelClassName}>
-              <span className={labelTextClassName}>Extra extraction rules</span>
+              <span className={labelTextClassName}>{t('settingsProcessing.extractionRules')}</span>
               <textarea
                 rows={6}
                 className={inputClassName}
-                placeholder={
-                  'e.g. Treat "Rechnung" as the document type Invoice.\n' +
-                  'Tag every insurance document with the policy number.'
-                }
+                placeholder={t('settingsProcessing.extractionRulesPlaceholder')}
                 value={form.extraction_rules}
                 onChange={(e) => updateField('extraction_rules', e.target.value)}
               />
             </label>
             <p className={fieldHintClassName}>
-              Your own instructions, added to the prompt that reads metadata out of a document
-              &mdash; house conventions for titles, types, correspondents or tags. They cannot
-              change which fields are stored. Applies to documents processed or reprocessed from
-              now on; leave empty for the built-in prompt alone.
+              {t('settingsProcessing.extractionRulesHint')}
             </p>
           </div>
         </div>

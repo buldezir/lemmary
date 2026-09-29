@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import {
   formatDuration,
   stepDurationMs,
@@ -38,7 +39,7 @@ export function ProcessingSteps({
   if (runs.length === 0) {
     return (
       <p className="text-xs text-ink-faint">
-        {job.error ? job.error : 'No steps have run yet.'}
+        {job.error ? job.error : t('processingSteps.none')}
       </p>
     )
   }
@@ -71,9 +72,13 @@ export function ProcessingSteps({
                 {run.status === 'running' ? '…' : ''}
               </span>
             ) : null}
-            {run.status === 'skipped' ? <span className="text-ink-faint">skipped</span> : null}
+            {run.status === 'skipped' ? (
+              <span className="text-ink-faint">{t('processingSteps.skipped')}</span>
+            ) : null}
             {run.attempts > 1 ? (
-              <span className="text-ink-soft">attempt {run.attempts}</span>
+              <span className="text-ink-soft">
+                {t('processingSteps.attempt', { count: run.attempts })}
+              </span>
             ) : null}
           </li>
         )
@@ -112,7 +117,7 @@ export function ProcessingSteps({
   return (
     <details className="border-l-2 border-line pl-3">
       <summary className="cursor-pointer text-xs text-ink-faint">
-        {runs.length} step{runs.length === 1 ? '' : 's'}
+        {t('processingSteps.steps', { count: runs.length })}
       </summary>
       <div className="mt-1">{body}</div>
     </details>

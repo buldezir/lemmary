@@ -14,6 +14,7 @@ import { useAppMeta } from '../hooks/useAppMeta'
 import { useAsync } from '../hooks/useAsync'
 import { useSettingsForm } from '../hooks/useSettingsForm'
 import { DocsLink, fieldHintClassName, sectionClassName, sectionTitleClassName } from '../components/ui'
+import { docsUrl, t, tNode } from '../i18n'
 
 type Bindings = {
   ocr_provider_id: string
@@ -33,11 +34,11 @@ type Bindings = {
 function EmbeddingStatsLine({ stats }: { stats: EmbeddingStats | null }) {
   if (!stats || !stats.enabled) return null
 
-  const parts = [`${stats.embedded} of ${stats.total} documents embedded`]
-  if (stats.dims > 0) parts.push(`${stats.dims} dimensions`)
-  if (stats.chunks > 0) parts.push(`${stats.chunks} passages`)
-  if (stats.pending > 0) parts.push(`${stats.pending} queued`)
-  if (stats.failed > 0) parts.push(`${stats.failed} failed`)
+  const parts = [t('settingsAi.statsEmbedded', { embedded: stats.embedded, total: stats.total })]
+  if (stats.dims > 0) parts.push(t('settingsAi.statsDims', { count: stats.dims }))
+  if (stats.chunks > 0) parts.push(t('settingsAi.statsPassages', { count: stats.chunks }))
+  if (stats.pending > 0) parts.push(t('settingsAi.statsQueued', { count: stats.pending }))
+  if (stats.failed > 0) parts.push(t('settingsAi.statsFailed', { count: stats.failed }))
 
   return <p className={fieldHintClassName}>{parts.join(' · ')}.</p>
 }
@@ -100,23 +101,27 @@ export function SettingsAIPage() {
 
       <form onSubmit={onSubmit}>
         <section className={sectionClassName}>
-          <h2 className={sectionTitleClassName}>Models</h2>
+          <h2 className={sectionTitleClassName}>{t('settingsAi.models')}</h2>
           <p className={`${fieldHintClassName} mb-4`}>
-            Which provider and model each job runs on. See{' '}
-            <DocsLink href="/docs/ai_providers.html#binding-models-in-settings">
-              binding models in Settings
-            </DocsLink>
-            .
+            {tNode('settingsAi.modelsHint', {
+              link: (
+                <DocsLink href={docsUrl('ai_providers.html#binding-models-in-settings')}>
+                  {t('settingsAi.modelsLink')}
+                </DocsLink>
+              ),
+            })}
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <ProviderModelFields
               label="OCR"
               help={
-                <>
-                  Reads the text out of uploaded PDFs, images and scans. Plain text, CSV, Word and
-                  Excel files are read locally and skip this step.{' '}
-                  <DocsLink href="/docs/ai_providers.html#ocr-per-provider">OCR, per provider.</DocsLink>
-                </>
+                tNode('settingsAi.ocrHelp', {
+                  link: (
+                    <DocsLink href={docsUrl('ai_providers.html#ocr-per-provider')}>
+                      {t('settingsAi.ocrLink')}
+                    </DocsLink>
+                  ),
+                })
               }
               providers={providers ?? []}
               providerId={form.ocr_provider_id}
@@ -126,8 +131,8 @@ export function SettingsAIPage() {
               onModelChange={(value) => updateField('ocr_model', value)}
             />
             <ProviderModelFields
-              label="General AI"
-              help="Reads documents into metadata, answers questions on Ask AI, runs AI assisted search, and does Deep Research's document reads."
+              label={t('settingsAi.general')}
+              help={t('settingsAi.generalHelp')}
               providers={providers ?? []}
               providerId={form.extract_provider_id}
               model={form.extract_model}
@@ -136,14 +141,15 @@ export function SettingsAIPage() {
               onModelChange={(value) => updateField('extract_model', value)}
             />
             <ProviderModelFields
-              label="Advanced"
+              label={t('settingsAi.advanced')}
               help={
-                <>
-                  The Advanced model drives the Deep Research reasoning loop: a few expensive calls
-                  per question where everything else is many cheap ones. Leave empty to run it on
-                  General AI.{' '}
-                  <DocsLink href="/docs/deep_research.html">How Deep Research works.</DocsLink>
-                </>
+                tNode('settingsAi.advancedHelp', {
+                  link: (
+                    <DocsLink href={docsUrl('deep_research.html')}>
+                      {t('settingsAi.advancedLink')}
+                    </DocsLink>
+                  ),
+                })
               }
               providers={providers ?? []}
               providerId={form.research_provider_id}
@@ -155,17 +161,20 @@ export function SettingsAIPage() {
             />
 
             <ProviderModelFields
-              label="Embeddings"
+              label={t('settingsAi.embeddings')}
               help={
-                <>
-                  Lets Deep Search find documents by meaning as well as by keyword, which is what
-                  makes a question phrased in one language reach a document written in another.
-                  Leave the provider empty to search by keyword only.{' '}
-                  <DocsLink href="/docs/ai_providers.html#what-embeddings-cost">
-                    What embeddings cost
-                  </DocsLink>
-                  , or <DocsLink href="/docs/local_embeddings.html">run them locally</DocsLink>.
-                </>
+                tNode('settingsAi.embeddingsHelp', {
+                  costLink: (
+                    <DocsLink href={docsUrl('ai_providers.html#what-embeddings-cost')}>
+                      {t('settingsAi.embeddingsCostLink')}
+                    </DocsLink>
+                  ),
+                  localLink: (
+                    <DocsLink href={docsUrl('local_embeddings.html')}>
+                      {t('settingsAi.embeddingsLocalLink')}
+                    </DocsLink>
+                  ),
+                })
               }
               providers={providers ?? []}
               providerId={form.embedding_provider_id}
@@ -180,17 +189,15 @@ export function SettingsAIPage() {
             </div>
 
             <ProviderModelFields
-              label="Web search"
+              label={t('settingsAi.webSearch')}
               help={
-                <>
-                  Lets Deep Research and Ask AI look things up online when the archive cannot
-                  answer -- a rate that changed, a company&apos;s present details. Off unless a
-                  provider is bound here, and then still off in a chat until the reader turns it
-                  on. Every lookup is billed by the provider.{' '}
-                  <DocsLink href="/docs/ai_providers.html#the-web-search-provider">
-                    The web-search provider.
-                  </DocsLink>
-                </>
+                tNode('settingsAi.webSearchHelp', {
+                  link: (
+                    <DocsLink href={docsUrl('ai_providers.html#the-web-search-provider')}>
+                      {t('settingsAi.webSearchLink')}
+                    </DocsLink>
+                  ),
+                })
               }
               providers={providers ?? []}
               providerId={form.websearch_provider_id}

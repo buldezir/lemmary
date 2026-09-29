@@ -1,4 +1,5 @@
 import { ClientResponseError, type RecordModel } from 'pocketbase'
+import { t } from '../i18n'
 import { pb, pbUrl } from './pb'
 import {
   assertionToJSON,
@@ -12,7 +13,7 @@ import {
 
 export class AuthRequiredError extends Error {
   constructor() {
-    super('Authentication required')
+    super(t('auth.required'))
     this.name = 'AuthRequiredError'
   }
 }
@@ -145,7 +146,7 @@ function watchOAuthPopup(popup: Window | null) {
       window.clearInterval(poll)
       // The redirect page can close itself on success, so let an in-flight
       // token exchange finish before calling this a cancellation.
-      grace = window.setTimeout(() => reject(new Error('Sign-in was cancelled.')), 2000)
+      grace = window.setTimeout(() => reject(new Error(t('auth.signInCancelled'))), 2000)
     }, 400)
   })
   return {
@@ -165,12 +166,12 @@ function watchOAuthPopup(popup: Window | null) {
  */
 function oauthErrorMessage(err: unknown): string {
   if (err instanceof ClientResponseError && err.message === 'Failed to authenticate.') {
-    return 'Failed to authenticate. If this account is new, an admin has to create a user with the same email address first.'
+    return t('auth.oauthNewAccount')
   }
   if (err instanceof Error && err.message) {
     return err.message
   }
-  return 'Sign-in failed'
+  return t('auth.signInFailed')
 }
 
 export async function loginWithOAuth2(provider: string) {
@@ -226,7 +227,7 @@ export async function loginWithPassword(email: string, password: string) {
   const data = (await response.json()) as { detail?: string }
   if (!response.ok) {
     pb.authStore.clear()
-    throw new Error(data.detail ?? 'Failed to create paired user account')
+    throw new Error(data.detail ?? t('auth.pairedUserFailed'))
   }
   // App sessions must be users-collection so documents.user relations validate.
   await pb.collection('users').authWithPassword(email, password)
@@ -262,7 +263,7 @@ function beginPasskeyLogin() {
   return postPasskeyPublic<PasskeyBeginResponse>(
     '/api/app/passkeys/login/begin',
     {},
-    'Failed to start passkey sign-in',
+    t('auth.passkeyStartFailed'),
   )
 }
 
@@ -275,7 +276,7 @@ async function finishPasskeyLogin(sessionId: string, credential: Credential) {
   const data = await postPasskeyPublic<PasskeyAuthResponse>(
     '/api/app/passkeys/login/finish',
     { session_id: sessionId, credential: assertionToJSON(credential) },
-    'Passkey sign-in failed',
+    t('webauthn.signInFailed'),
   )
   clearMeCache()
   pb.authStore.save(data.token, data.record)
@@ -303,7 +304,7 @@ export async function loginWithPasskey() {
     throw new Error(passkeyErrorMessage(err, 'login'), { cause: err })
   }
   if (!credential) {
-    throw new Error('No passkey was selected.')
+    throw new Error(t('auth.noPasskeySelected'))
   }
   await finishPasskeyLogin(begin.session_id, credential)
 }
@@ -394,7 +395,7 @@ export async function getMe(): Promise<MeInfo> {
   })
   const data = (await response.json()) as MeInfo & { detail?: string }
   if (!response.ok) {
-    throw new Error(data.detail ?? 'Failed to load account info')
+    throw new Error(data.detail ?? t('auth.accountInfoFailed'))
   }
   meCache = {
     email: typeof data.email === 'string' ? data.email : '',

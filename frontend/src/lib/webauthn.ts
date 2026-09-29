@@ -8,6 +8,8 @@
  * path as a fallback anyway.
  */
 
+import { t } from '../i18n'
+
 const base64ChunkSize = 0x8000
 
 /**
@@ -22,7 +24,7 @@ export function base64UrlToBytes(value: string): Uint8Array<ArrayBuffer> {
   try {
     binary = atob(padded)
   } catch {
-    throw new Error('The server sent a passkey challenge this browser could not read.')
+    throw new Error(t('webauthn.unreadableChallenge'))
   }
   const bytes = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i++) {
@@ -50,7 +52,7 @@ type JSONObject = Record<string, unknown>
  */
 function unwrapOptions(raw: unknown): JSONObject {
   if (!raw || typeof raw !== 'object') {
-    throw new Error('The server sent an unreadable passkey request.')
+    throw new Error(t('webauthn.unreadableRequest'))
   }
   const outer = raw as JSONObject
   const inner = outer.publicKey
@@ -62,7 +64,7 @@ function unwrapOptions(raw: unknown): JSONObject {
 
 function requireChallenge(source: JSONObject): Uint8Array<ArrayBuffer> {
   if (typeof source.challenge !== 'string') {
-    throw new Error('The server sent a passkey request with no challenge.')
+    throw new Error(t('webauthn.noChallenge'))
   }
   return base64UrlToBytes(source.challenge)
 }
@@ -71,7 +73,7 @@ type DescriptorJSON = { id?: unknown; type?: unknown; transports?: unknown }
 
 function toDescriptor(raw: DescriptorJSON): PublicKeyCredentialDescriptor {
   if (typeof raw.id !== 'string') {
-    throw new Error('The server sent a passkey credential with no id.')
+    throw new Error(t('webauthn.noCredentialId'))
   }
   const descriptor: PublicKeyCredentialDescriptor = {
     type: 'public-key',
@@ -102,7 +104,7 @@ export function toCreationOptions(raw: unknown): CreationOptions {
   const source = unwrapOptions(raw)
   const user = (source.user ?? {}) as JSONObject
   if (typeof user.id !== 'string') {
-    throw new Error('The server sent a passkey request with no user handle.')
+    throw new Error(t('webauthn.noUserHandle'))
   }
 
   const options: CreationOptions = {
@@ -214,7 +216,7 @@ type RawCredential = {
 
 function credentialShell(credential: RawCredential) {
   if (typeof credential.id !== 'string' || !credential.rawId) {
-    throw new Error('The authenticator returned an unreadable passkey.')
+    throw new Error(t('webauthn.unreadablePasskey'))
   }
   const shell = {
     id: credential.id,
@@ -235,7 +237,7 @@ export function registrationToJSON(credential: unknown): RegistrationCredentialJ
   const raw = credential as RawCredential
   const response = raw.response
   if (!response?.clientDataJSON || !response.attestationObject) {
-    throw new Error('The authenticator returned an unreadable passkey.')
+    throw new Error(t('webauthn.unreadablePasskey'))
   }
 
   const out: RegistrationCredentialJSON = {
@@ -263,7 +265,7 @@ export function assertionToJSON(credential: unknown): AuthenticationCredentialJS
   const raw = credential as RawCredential
   const response = raw.response
   if (!response?.clientDataJSON || !response.authenticatorData || !response.signature) {
-    throw new Error('The authenticator returned an unreadable passkey.')
+    throw new Error(t('webauthn.unreadablePasskey'))
   }
 
   const out: AuthenticationCredentialJSON = {
@@ -314,13 +316,13 @@ export function passkeysSupported(): boolean {
 /** Explains why passkeys are unavailable. Empty string when they are available. */
 export function passkeyUnavailableHint(): string {
   if (typeof window === 'undefined' || typeof window.PublicKeyCredential !== 'function') {
-    return 'This browser does not support passkeys.'
+    return t('webauthn.unsupportedBrowser')
   }
   if (!window.isSecureContext) {
-    return 'Passkeys need a secure connection. Open this app over HTTPS, or from localhost.'
+    return t('webauthn.insecureContext')
   }
   if (hostnameIsIPAddress(window.location.hostname)) {
-    return 'Passkeys cannot be used on an IP address. Open this app by its hostname (for example http://localhost:8090 or https://archive.example.com).'
+    return t('webauthn.ipAddress')
   }
   return ''
 }
@@ -375,20 +377,20 @@ export function passkeyErrorMessage(err: unknown, ceremony: PasskeyCeremony): st
     switch (err.name) {
       case 'NotAllowedError':
         return registering
-          ? 'Passkey setup was cancelled or timed out. Nothing was saved.'
-          : 'Passkey sign-in was cancelled or timed out. Try again, or sign in with your email and password.'
+          ? t('webauthn.setupCancelled')
+          : t('webauthn.signInCancelledOrTimedOut')
       case 'AbortError':
-        return 'Passkey sign-in was cancelled.'
+        return t('webauthn.signInCancelled')
       case 'InvalidStateError':
-        return 'This device already has a passkey for this account. Use it to sign in, or remove the old one first.'
+        return t('webauthn.alreadyRegistered')
       case 'SecurityError':
-        return 'Passkeys need a secure connection to a hostname. A plain-HTTP page, or an address like http://192.168.1.10, cannot use them.'
+        return t('webauthn.securityError')
       case 'NotSupportedError':
-        return 'This device could not create a passkey of a supported type.'
+        return t('webauthn.notSupported')
       case 'ConstraintError':
-        return 'This device cannot create a passkey yet — a screen lock or biometric may need to be set up first.'
+        return t('webauthn.constraint')
       case 'UnknownError':
-        return 'The authenticator could not complete the request. Try again.'
+        return t('webauthn.unknownError')
     }
   }
 
@@ -396,13 +398,13 @@ export function passkeyErrorMessage(err: unknown, ceremony: PasskeyCeremony): st
     // PocketBase reports a rejected session as a bare "Failed to authenticate.",
     // which here almost always means the credential outlived its user record.
     if (err.message === 'Failed to authenticate.') {
-      return 'That passkey is no longer valid on this server. Sign in another way, then remove and add it again.'
+      return t('webauthn.staleCredential')
     }
     // Otherwise this is the server's own {"detail": ...}; it owns the wording.
     return err.message
   }
 
-  return registering ? 'Passkey setup failed' : 'Passkey sign-in failed'
+  return registering ? t('webauthn.setupFailed') : t('webauthn.signInFailed')
 }
 
 const browserTokens: [RegExp, string][] = [
@@ -435,12 +437,12 @@ function firstMatch(tokens: [RegExp, string][], value: string): string {
 export function defaultPasskeyName(userAgent?: string): string {
   const ua = userAgent ?? (typeof navigator === 'undefined' ? '' : navigator.userAgent)
   if (!ua) {
-    return 'Passkey'
+    return t('webauthn.defaultName')
   }
   const browser = firstMatch(browserTokens, ua)
   const platform = firstMatch(platformTokens, ua)
   if (browser && platform) {
-    return `${browser} on ${platform}`
+    return t('webauthn.browserOnPlatform', { browser, platform })
   }
-  return browser || platform || 'Passkey'
+  return browser || platform || t('webauthn.defaultName')
 }

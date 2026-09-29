@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ClientResponseError } from 'pocketbase'
+import { t } from '../i18n'
 import { fileUrlWithToken, type DocumentFileRef } from '../lib/api/documents'
 import { previewKind } from '../lib/documentPreview'
 
@@ -37,7 +38,7 @@ export function DocumentPreview({ record }: { record: DocumentFileRef }) {
           return
         }
         if (active) {
-          setError(err instanceof Error ? err.message : 'Failed to load the file')
+          setError(err instanceof Error ? err.message : t('documentPreview.loadFailed'))
         }
       })
 
@@ -52,7 +53,8 @@ export function DocumentPreview({ record }: { record: DocumentFileRef }) {
     return (
       <div className="flex h-full items-center justify-center border border-line bg-surface p-6">
         <p className={`text-center text-sm ${error ? 'text-madder' : 'text-ink-soft'}`}>
-          {error || (kind === 'none' ? 'This file type has no preview.' : 'Loading preview...')}
+          {error ||
+            (kind === 'none' ? t('documentPreview.noPreview') : t('documentPreview.loading'))}
         </p>
       </div>
     )
@@ -62,8 +64,8 @@ export function DocumentPreview({ record }: { record: DocumentFileRef }) {
     return (
       <img
         src={url}
-        alt="Document preview"
-        onError={() => setError('The image could not be loaded.')}
+        alt={t('documentPreview.label')}
+        onError={() => setError(t('documentPreview.imageFailed'))}
         className="h-full w-full border border-line bg-surface object-contain"
       />
     )
@@ -84,7 +86,7 @@ export function DocumentPreview({ record }: { record: DocumentFileRef }) {
   // whole file by then. Fetch it into a blob URL instead if that ever bites.
   return (
     <iframe
-      title="Document preview"
+      title={t('documentPreview.label')}
       src={`${url}#view=FitH`}
       referrerPolicy="no-referrer"
       className="h-full w-full border border-line bg-wash"

@@ -1,3 +1,4 @@
+import { t } from '../../i18n'
 import { apiFetch, pollJob, type JobProgress } from '../apiClient'
 
 export type NgxImportMode = 'preserve' | 'reprocess'
@@ -20,15 +21,15 @@ export async function importFromNgx(
   const start = await apiFetch<{ job_id?: string }>('/api/app/import/ngx', {
     method: 'POST',
     body: { url, api_key: apiKey, mode },
-    fallbackError: 'Import failed to start',
+    fallbackError: t('imports.startFailed'),
   })
   if (!start.job_id) {
-    throw new Error('Import job id missing from server response')
+    throw new Error(t('imports.missingJobId'))
   }
 
   const result = await pollJob<NgxImportResult>(
     `/api/app/import/ngx/status?job_id=${encodeURIComponent(start.job_id)}`,
-    { label: 'import' },
+    { label: t('imports.jobLabel') },
   )
   return { ...result, errors: result.errors ?? [] }
 }
@@ -84,7 +85,7 @@ export function uploadZipArchive(source: ZipImportSource, file: File) {
   return apiFetch<ZipArchivePreview>(`${base(source)}/upload`, {
     method: 'POST',
     formData,
-    fallbackError: 'Failed to read the archive',
+    fallbackError: t('imports.readFailed'),
   })
 }
 
@@ -94,7 +95,7 @@ export async function discardZipArchive(source: ZipImportSource, uploadId: strin
     `${base(source)}/upload?upload_id=${encodeURIComponent(uploadId)}`,
     {
       method: 'DELETE',
-      fallbackError: 'Failed to discard the archive',
+      fallbackError: t('imports.discardFailed'),
     },
   )
 }
@@ -108,15 +109,15 @@ export async function importZipArchive(
   const start = await apiFetch<{ job_id?: string }>(base(source), {
     method: 'POST',
     body: { upload_id: uploadId },
-    fallbackError: 'Import failed to start',
+    fallbackError: t('imports.startFailed'),
   })
   if (!start.job_id) {
-    throw new Error('Import job id missing from server response')
+    throw new Error(t('imports.missingJobId'))
   }
 
   const result = await pollJob<ZipImportResult>(
     `${base(source)}/status?job_id=${encodeURIComponent(start.job_id)}`,
-    { onProgress, label: 'import' },
+    { onProgress, label: t('imports.jobLabel') },
   )
   return { ...result, errors: result.errors ?? [] }
 }
@@ -182,7 +183,7 @@ export function uploadArchive(file: File) {
   return apiFetch<ArchivePreview>('/api/app/import/archive/upload', {
     method: 'POST',
     formData,
-    fallbackError: 'Failed to read the archive',
+    fallbackError: t('imports.readFailed'),
   })
 }
 
@@ -190,7 +191,7 @@ export function uploadArchive(file: File) {
 export async function discardArchive(uploadId: string) {
   await apiFetch<unknown>(`/api/app/import/archive/upload?upload_id=${encodeURIComponent(uploadId)}`, {
     method: 'DELETE',
-    fallbackError: 'Failed to discard the archive',
+    fallbackError: t('imports.discardFailed'),
   })
 }
 
@@ -203,15 +204,15 @@ export async function importArchive(
   const start = await apiFetch<{ job_id?: string }>('/api/app/import/archive', {
     method: 'POST',
     body: { upload_id: uploadId, mode },
-    fallbackError: 'Import failed to start',
+    fallbackError: t('imports.startFailed'),
   })
   if (!start.job_id) {
-    throw new Error('Import job id missing from server response')
+    throw new Error(t('imports.missingJobId'))
   }
 
   const result = await pollJob<ArchiveImportResult>(
     `/api/app/import/archive/status?job_id=${encodeURIComponent(start.job_id)}`,
-    { onProgress, label: 'import' },
+    { onProgress, label: t('imports.jobLabel') },
   )
   return { ...result, errors: result.errors ?? [] }
 }

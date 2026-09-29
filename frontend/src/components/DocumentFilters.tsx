@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import { DOCUMENT_STATUSES, DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
 import type { CorrespondentRecord, DocumentTypeRecord } from '../lib/api/documents'
 import { MIN_SEARCH_LENGTH, tagIds, type DocumentOwner, type DocumentQuery } from '../lib/documentQuery'
@@ -47,7 +48,7 @@ export function DocumentFilters({
         <div className="flex w-full min-w-0 flex-col gap-1 sm:flex-1">
           <input
             type="search"
-            placeholder="Search title, tags, purpose, summary..."
+            placeholder={t('documentFilters.searchPlaceholder')}
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             aria-describedby={tooShort ? 'search-too-short' : undefined}
@@ -55,7 +56,7 @@ export function DocumentFilters({
           />
           {tooShort && (
             <p id="search-too-short" role="status" className="text-xs text-ink-soft">
-              Type at least {MIN_SEARCH_LENGTH} characters to search.
+              {t('documentFilters.tooShort', { count: MIN_SEARCH_LENGTH })}
             </p>
           )}
         </div>
@@ -71,11 +72,11 @@ export function DocumentFilters({
           <Combobox
             value={status}
             options={[
-              { value: 'all', label: 'All statuses' },
+              { value: 'all', label: t('documentFilters.allStatuses') },
               ...DOCUMENT_STATUSES.map((value) => ({ value, label: DOCUMENT_STATUS_LABELS[value] })),
             ]}
-            placeholder="All statuses"
-            ariaLabel="Processing status"
+            placeholder={t('documentFilters.allStatuses')}
+            ariaLabel={t('documentFilters.status')}
             bgClassName="bg-surface"
             className="shrink-0 sm:w-48"
             onChange={(next) => updateQuery({ status: next })}
@@ -91,7 +92,7 @@ export function DocumentFilters({
         }`}
       >
         <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-ink-soft">From date</span>
+          <span className="text-xs font-medium text-ink-soft">{t('documentFilters.from')}</span>
           <input
             type="date"
             value={query.from}
@@ -103,7 +104,7 @@ export function DocumentFilters({
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-ink-soft">To date</span>
+          <span className="text-xs font-medium text-ink-soft">{t('documentFilters.to')}</span>
           <input
             type="date"
             value={query.to}
@@ -113,27 +114,27 @@ export function DocumentFilters({
         </label>
         {owner && (
           <FilterCombobox
-            label="Owner"
+            label={t('documentFilters.owner')}
             value={query.owner}
-            allLabel="All"
+            allLabel={t('documentFilters.all')}
             options={[
-              { value: 'mine', label: 'Only mine' },
-              { value: 'shared', label: 'Only shared' },
+              { value: 'mine', label: t('documentFilters.mine') },
+              { value: 'shared', label: t('documentFilters.shared') },
             ]}
             onChange={(next) => updateQuery({ owner: next as DocumentOwner })}
           />
         )}
         <FilterCombobox
-          label="Document type"
+          label={t('documentFilters.type')}
           value={query.type}
-          allLabel="All types"
+          allLabel={t('documentFilters.allTypes')}
           options={documentTypes.map((type) => ({ value: type.id, label: type.name }))}
           onChange={(next) => updateQuery({ type: next })}
         />
         <FilterCombobox
-          label="Correspondent"
+          label={t('documentFilters.correspondent')}
           value={query.correspondent}
-          allLabel="All correspondents"
+          allLabel={t('documentFilters.allCorrespondents')}
           options={correspondents.map((correspondent) => ({
             value: correspondent.id,
             label: correspondent.name,

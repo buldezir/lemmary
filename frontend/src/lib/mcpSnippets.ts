@@ -1,3 +1,5 @@
+import { t } from '../i18n'
+
 export type MCPSnippet = {
   id: string
   name: string
@@ -21,13 +23,13 @@ export function mcpSnippets(url: string, token: string): MCPSnippet[] {
     {
       id: 'claude-code',
       name: 'Claude Code',
-      where: 'Terminal',
+      where: t('mcpSnippets.terminal'),
       text: `claude mcp add --transport http ${SERVER} ${url} --header "Authorization: ${bearer}"`,
     },
     {
       id: 'codex',
       name: 'Codex CLI',
-      where: 'Terminal (keep the export in your shell profile)',
+      where: t('mcpSnippets.terminalCodex'),
       // Codex reads a bearer token from an environment variable, never from
       // the command line, so the token lives in the shell and the config
       // names the variable.

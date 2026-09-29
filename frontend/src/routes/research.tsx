@@ -19,6 +19,7 @@ import {
   formatContextUsage,
   type ContextUsage,
 } from '../lib/contextUsage'
+import { docsUrl, t, tNode } from '../i18n'
 
 /**
  * Research: the agent loop, and the page that keeps its conversation. It shows
@@ -97,7 +98,7 @@ export function ResearchPage() {
     load: async (id) => {
       const detail = await getChatSession(id)
       if (detail.session.kind !== 'search') {
-        throw new Error('That chat belongs to a different page.')
+        throw new Error(t('search.wrongPage'))
       }
       return detail
     },
@@ -159,13 +160,10 @@ export function ResearchPage() {
 
   return (
     <ChatWorkspaceFrame
-      title="Deep Research"
-      hint={
-        <>
-          Read the documents and answer, with citations.{' '}
-          <DocsLink href="/docs/deep_research.html">How it works</DocsLink>.
-        </>
-      }
+      title={t('research.title')}
+      hint={tNode('research.hint', {
+        link: <DocsLink href={docsUrl('deep_research.html')}>{t('research.howItWorks')}</DocsLink>,
+      })}
       rows={ws.rows}
       sessionId={ws.sessionId}
       sessionsLoading={ws.sessions.loading}
@@ -184,8 +182,7 @@ export function ResearchPage() {
       {ws.forkError && <p className="mb-3 text-sm text-madder">{ws.forkError}</p>}
       {chat.unsaved && (
         <p className="mb-3 text-sm text-madder">
-          {chat.unsavedDetail ||
-            'This answer could not be saved, so the chat will not appear in your history.'}
+          {chat.unsavedDetail || t('search.unsaved')}
         </p>
       )}
       <ChatPanel>
@@ -194,8 +191,8 @@ export function ResearchPage() {
           turns={chat.turns}
           loading={chat.loading}
           sending={chat.sending}
-          sendingLabel="Researching..."
-          emptyHint={'Try something like: "how much did I spend on the car in 2024?"'}
+          sendingLabel={t('research.researching')}
+          emptyHint={t('research.emptyHint')}
           renderBefore={(turn) =>
             turn.steps && turn.steps.length > 0 ? <StepList steps={turn.steps} collapsed /> : null
           }
@@ -210,11 +207,11 @@ export function ResearchPage() {
                 <Button
                   variant="secondary"
                   size="xs"
-                  title="Copy this chat up to this answer and continue there, leaving this one as it is."
+                  title={t('research.forkTitle')}
                   disabled={chat.sending || ws.railBusy}
                   onClick={() => void ws.onForkFrom(turn.id)}
                 >
-                  ⑂ Fork from here
+                  ⑂ {t('research.fork')}
                 </Button>
               )}
             </>
@@ -247,9 +244,9 @@ export function ResearchPage() {
           value={chat.input}
           onChange={chat.setInput}
           onSubmit={() => void chat.submit()}
-          placeholder="Ask a question about your documents..."
-          submitLabel="Research"
-          sendingLabel="Researching..."
+          placeholder={t('research.placeholder')}
+          submitLabel={t('research.research')}
+          sendingLabel={t('research.researching')}
           sending={chat.sending}
           disabled={chat.loading}
           error={chat.error}
@@ -266,14 +263,14 @@ export function ResearchPage() {
           <WebSearchToggle checked={web} onChange={setWeb} disabled={chat.sending} />
         </div>
         <BindingOverride
-          label="Research"
+          label={t('research.research')}
           purpose="llm"
           bindingName="research"
           value={shownBinding}
           onChange={ws.setBinding}
           locked={inConversation || chat.sending || chat.turns.length > 0}
-          lockedHint="Fixed for this chat. Start a new one to research with a different model."
-          help="Drives the research loop. Documents read in bulk stay on the General AI model from Settings."
+          lockedHint={t('research.lockedHint')}
+          help={t('research.bindingHelp')}
           showConfigured
         />
       </div>
@@ -288,11 +285,9 @@ export function ResearchPage() {
 function UnfinishedNotice({ onContinue, disabled }: { onContinue: () => void; disabled: boolean }) {
   return (
     <div className="flex flex-wrap items-center gap-3 border-t border-line bg-paper px-4 py-3">
-      <p className="text-sm text-ink-muted">
-        This question was not finished. The research it had done is kept.
-      </p>
+      <p className="text-sm text-ink-muted">{t('research.unfinished')}</p>
       <Button variant="secondary" size="xs" disabled={disabled} onClick={onContinue}>
-        Continue
+        {t('research.continue')}
       </Button>
     </div>
   )
@@ -300,16 +295,16 @@ function UnfinishedNotice({ onContinue, disabled }: { onContinue: () => void; di
 
 function IncompleteNotice() {
   return (
-    <p className="border-t border-line pt-2 text-xs text-ink-muted">
-      This answer was cut off before it finished. Ask again to get the rest.
-    </p>
+    <p className="border-t border-line pt-2 text-xs text-ink-muted">{t('research.incomplete')}</p>
   )
 }
 
 function ContextUsageNotice({ usage }: { usage: ContextUsage }) {
   const text = formatContextUsage(usage)
   if (!text) return null
-  return <p className="border-t border-line pt-2 text-xs text-ink-muted">Context used: {text}</p>
+  return <p className="border-t border-line pt-2 text-xs text-ink-muted">
+      {t('research.contextUsed', { usage: text })}
+    </p>
 }
 
 function LiveContextUsage({ usage }: { usage: ContextUsage }) {
@@ -317,7 +312,7 @@ function LiveContextUsage({ usage }: { usage: ContextUsage }) {
   if (!text) return null
   return (
     <p className="border-l-2 border-line pl-3 text-xs text-ink-faint tabular-nums">
-      Context: {text}
+      {t('research.contextLive', { usage: text })}
     </p>
   )
 }
@@ -326,7 +321,7 @@ function StepList({ steps, collapsed = false }: { steps: ResearchStep[]; collaps
   if (steps.length === 0) {
     return (
       <p className="text-xs text-ink-faint">
-        <span className="animate-pulse">Researching your archive…</span>
+        <span className="animate-pulse">{t('research.researchingArchive')}</span>
       </p>
     )
   }
@@ -353,7 +348,7 @@ function StepList({ steps, collapsed = false }: { steps: ResearchStep[]; collaps
   return (
     <details className="border-l-2 border-line pl-3">
       <summary className="cursor-pointer text-xs text-ink-faint">
-        {steps.length} research step{steps.length === 1 ? '' : 's'}
+        {t('research.steps', { count: steps.length })}
       </summary>
       <div className="mt-1">{list}</div>
     </details>

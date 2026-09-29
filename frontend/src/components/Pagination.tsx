@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import { pageNumbers } from '../lib/pagination'
 
 type Props = {
@@ -23,17 +24,17 @@ export function Pagination({ page, totalPages, totalItems, pageSize, onPageChang
   return (
     <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
       <p className="font-mono text-xs tabular-nums text-ink-soft">
-        Showing {start}–{end} of {totalItems}
+        {t('pagination.showing', { start, end, total: totalItems })}
       </p>
 
-      <nav aria-label="Pagination" className="flex items-center gap-1">
+      <nav aria-label={t('pagination.label')} className="flex items-center gap-1">
         <button
           type="button"
           onClick={() => onPageChange(page - 1)}
           disabled={page <= 1}
           className={buttonClassName}
         >
-          Previous
+          {t('pagination.previous')}
         </button>
 
         {pages.map((pageNumber, index) => {
@@ -65,7 +66,7 @@ export function Pagination({ page, totalPages, totalItems, pageSize, onPageChang
           disabled={page >= totalPages}
           className={buttonClassName}
         >
-          Next
+          {t('pagination.next')}
         </button>
       </nav>
     </div>

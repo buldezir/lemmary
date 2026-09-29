@@ -1,3 +1,4 @@
+import { t } from '../../i18n'
 import { pb, pbUrl } from '../pb'
 import { ensureAuth } from '../auth'
 import { apiFetch, errorDetail } from '../apiClient'
@@ -76,7 +77,7 @@ export async function fileUrlWithToken(record: DocumentFileRef, filename?: strin
   // getURL answers "" for an empty filename, and fetching "" resolves against
   // index.html with a 200, which no response check would catch.
   if (!name) {
-    throw new Error('This document has no file.')
+    throw new Error(t('documents.noFile'))
   }
 
   await ensureAuth()
@@ -108,11 +109,10 @@ export const MAX_FILE_BYTES = 47 * 1024 * 1024
 /** Above this a file still uploads, but OCR providers and the worker get slow or fail. */
 export const PROCESSING_WARN_BYTES = 20 * 1024 * 1024
 
-export const largeFileWarning =
-  `Over ${formatBytes(PROCESSING_WARN_BYTES)}. Large files may fail OCR or take much longer to process.`
+export const largeFileWarning = t('documents.largeFile', { size: formatBytes(PROCESSING_WARN_BYTES) })
 
 export function fileTooLargeMessage(sizeBytes: number): string {
-  return `This file is ${formatBytes(sizeBytes)}, over the ${formatBytes(MAX_FILE_BYTES)} limit for a single document.`
+  return t('documents.tooLarge', { size: formatBytes(sizeBytes), limit: formatBytes(MAX_FILE_BYTES) })
 }
 
 /**
@@ -142,7 +142,7 @@ export function uploadErrorMessage(err: unknown, sizeBytes = 0): string {
     if (typeof message === 'string' && message) return message
   }
   if (err instanceof Error) return err.message
-  return 'Upload failed'
+  return t('documents.uploadFailed')
 }
 
 export function parseDuplicateOfId(message: string): string | null {
@@ -298,8 +298,8 @@ export async function deleteDocuments(documentIds: string[]): Promise<void> {
   if (failed > 0) {
     throw new Error(
       failed === documentIds.length
-        ? 'Could not delete.'
-        : `Deleted ${documentIds.length - failed}; ${failed} failed.`,
+        ? t('documents.deleteFailed')
+        : t('documents.deletePartial', { done: documentIds.length - failed, failed }),
     )
   }
 }
@@ -337,8 +337,8 @@ export function markDocumentsReviewed(documentIds: string[]): Promise<void> {
   return setDocumentsStatus(
     documentIds,
     'completed',
-    'Could not mark as reviewed.',
-    (done, failed) => `Marked ${done} reviewed; ${failed} failed.`,
+    t('documents.markReviewedFailed'),
+    (done, failed) => t('documents.markReviewedPartial', { done, failed }),
   )
 }
 
@@ -346,8 +346,8 @@ export function markDocumentsUnreviewed(documentIds: string[]): Promise<void> {
   return setDocumentsStatus(
     documentIds,
     'needs_review',
-    'Could not mark unreviewed.',
-    (done, failed) => `Marked ${done} unreviewed; ${failed} failed.`,
+    t('documents.markUnreviewedFailed'),
+    (done, failed) => t('documents.markUnreviewedPartial', { done, failed }),
   )
 }
 
@@ -412,7 +412,7 @@ export function describeJobOverrides(overrides: JobOverrides | undefined): strin
   // Read off the input: jobOverridesBody's output is "the field or nothing".
   return Object.entries(overrides ?? {})
     .filter(([, binding]) => binding?.provider_id.trim())
-    .map(([name, binding]) => `${name}: ${binding!.model.trim() || 'provider default'}`)
+    .map(([name, binding]) => `${name}: ${binding!.model.trim() || t('documents.providerDefault')}`)
     .join(', ')
 }
 
@@ -420,7 +420,7 @@ function postReprocess(body: Record<string, unknown>) {
   return apiFetch<ReprocessResult>('/api/app/documents/reprocess-failed', {
     method: 'POST',
     body,
-    fallbackError: 'Reprocess failed',
+    fallbackError: t('documents.reprocessFailed'),
   })
 }
 
@@ -502,7 +502,7 @@ export async function searchDocuments(opts: {
 
   const data = await apiFetch<Partial<DocumentSearchList>>(
     `/api/app/documents/search?${params}`,
-    { fallbackError: 'Failed to search documents' },
+    { fallbackError: t('documents.searchFailed') },
   )
   return {
     page: data.page ?? opts.page,
@@ -552,7 +552,7 @@ export type DocumentTimeline = {
  */
 export async function fetchDocumentTimeline(): Promise<DocumentTimeline> {
   const data = await apiFetch<Partial<DocumentTimeline>>('/api/app/documents/timeline', {
-    fallbackError: 'Failed to load the timeline',
+    fallbackError: t('documents.timelineFailed'),
   })
   return {
     months: data.months ?? [],
@@ -611,7 +611,7 @@ export async function saveDocumentMetadata(
   await ensureAuth()
   const userId = pb.authStore.record?.id
   if (!userId) {
-    throw new Error('You must be signed in to save metadata.')
+    throw new Error(t('documents.signedInRequired'))
   }
 
   const tagIds = [...new Set(input.tagIds.filter(Boolean))]
@@ -652,7 +652,7 @@ export async function saveDocumentMetadata(
 export async function translateOcrText(documentId: string, force = false): Promise<string> {
   const data = await apiFetch<{ text?: string }>(
     `/api/app/documents/${encodeURIComponent(documentId)}/translation${force ? '?force=1' : ''}`,
-    { method: 'POST', fallbackError: 'Translation failed' },
+    { method: 'POST', fallbackError: t('documents.translationFailed') },
   )
   return data.text ?? ''
 }
@@ -681,7 +681,7 @@ export async function fetchDocumentsArchive(ids?: string[]): Promise<Blob> {
     } catch {
       // response may be non-JSON on some errors
     }
-    throw new Error(errorDetail(data, 'Failed to download archive'))
+    throw new Error(errorDetail(data, t('documents.downloadArchiveFailed')))
   }
 
   return response.blob()

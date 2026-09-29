@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 
+import { t, tNode } from '../i18n'
 import { Button } from './ui'
 import { ChatSessionList } from './ChatSessionList'
 import type { ChatSession } from '../lib/api/chats'
@@ -48,7 +49,7 @@ export function ChatWorkspaceFrame({
     <section className="flex flex-col gap-4">
       <div>
         <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{title}</h2>
-        <p className="text-sm text-ink-soft">{hint} Chats are saved.</p>
+        <p className="text-sm text-ink-soft">{tNode('chatWorkspaceFrame.hint', { hint })}</p>
       </div>
 
       <Button
@@ -58,7 +59,7 @@ export function ChatWorkspaceFrame({
         onClick={onToggleRail}
         className="self-start lg:hidden"
       >
-        Chats ({rows.length})
+        {t('chatWorkspaceFrame.chats', { count: rows.length })}
       </Button>
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-3">

@@ -21,6 +21,7 @@ import {
   withFolderName,
 } from '../lib/fileDrop'
 import { Button } from '../components/ui'
+import { t, tNode } from '../i18n'
 
 // The documents.file allowlist (see the migrations), mirroring `storable` in
 // backend/internal/zipimport. The server decides by sniffing content, so this is
@@ -37,8 +38,7 @@ const ACCEPTED: Record<string, string> = {
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 }
 const ACCEPTED_MIME_TYPES = new Set(Object.values(ACCEPTED))
-const SUPPORTED_FORMATS_LABEL =
-  'PDF, JPEG, PNG, WebP, plain text, CSV, Word (.docx), or Excel (.xlsx)'
+const SUPPORTED_FORMATS_LABEL = t('uploadIndex.formats')
 
 const ACCEPT_ATTR = [...Object.keys(ACCEPTED), ...ACCEPTED_MIME_TYPES].join(',')
 
@@ -140,8 +140,11 @@ export function UploadFilesPage() {
     if (!zipped && rejected.length > 0) {
       setError(
         rejected.length === 1
-          ? `Unsupported file type (${rejected[0]}). Use ${SUPPORTED_FORMATS_LABEL}.`
-          : `Unsupported file types (${rejected.join(', ')}). Use ${SUPPORTED_FORMATS_LABEL}.`,
+          ? t('uploadIndex.unsupportedOne', { types: rejected[0], formats: SUPPORTED_FORMATS_LABEL })
+          : t('uploadIndex.unsupportedMany', {
+              types: rejected.join(', '),
+              formats: SUPPORTED_FORMATS_LABEL,
+            }),
       )
     } else {
       setError('')
@@ -191,7 +194,7 @@ export function UploadFilesPage() {
   async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (files.length === 0) {
-      setError('Choose at least one file to upload.')
+      setError(t('uploadIndex.chooseAtLeastOne'))
       return
     }
 
@@ -265,15 +268,15 @@ export function UploadFilesPage() {
       resetInput()
       if (stoppedAt >= 0) {
         const notAttempted = files.length - stoppedAt - 1
-        const uploaded = `Uploaded ${uploadedIds.length} of ${files.length} files.`
+        const uploaded = t('uploadIndex.uploadedOf', { uploaded: uploadedIds.length, total: files.length })
         setError(
           notAttempted > 0
-            ? `${uploaded} This instance ran out of room, so ${notAttempted} more ${notAttempted === 1 ? 'was' : 'were'} not attempted.`
-            : `${uploaded} This instance ran out of room.`,
+            ? `${uploaded} ${t('uploadIndex.outOfRoomMore', { count: notAttempted })}`
+            : `${uploaded} ${t('uploadIndex.outOfRoom')}`,
         )
       } else if (uploadedIds.length > 0) {
         setError(
-          `Uploaded ${uploadedIds.length} of ${files.length} files. ${failures.length} failed.`,
+          `${t('uploadIndex.uploadedOf', { uploaded: uploadedIds.length, total: files.length })} ${t('uploadIndex.failedCount', { count: failures.length })}`,
         )
       }
     } finally {
@@ -284,16 +287,16 @@ export function UploadFilesPage() {
 
   const dropLabel =
     files.length === 0
-      ? 'Choose files'
+      ? t('uploadIndex.chooseFiles')
       : files.length === 1
         ? files[0].name
-        : `${files.length} files selected`
+        : t('uploadIndex.filesSelected', { count: files.length })
 
   return (
     <section className="flex flex-col gap-5">
       <div>
-        <h2 className="font-display text-xl font-semibold text-ink">Upload documents</h2>
-        <p className="text-sm text-ink-soft">Supported formats: {SUPPORTED_FORMATS_LABEL}.</p>
+        <h2 className="font-display text-xl font-semibold text-ink">{t('uploadIndex.title')}</h2>
+        <p className="text-sm text-ink-soft">{t('uploadIndex.supported', { formats: SUPPORTED_FORMATS_LABEL })}</p>
       </div>
 
       <form className="flex flex-col gap-4" onSubmit={onSubmit}>
@@ -319,9 +322,9 @@ export function UploadFilesPage() {
             id="file-upload"
           />
           <span className="text-sm font-medium text-ink">
-            {scanning ? 'Reading folder…' : dropLabel}
+            {scanning ? t('uploadIndex.readingFolder') : dropLabel}
           </span>
-          <span className="text-xs text-ink-faint">or drop files and folders here</span>
+          <span className="text-xs text-ink-faint">{t('uploadIndex.dropHint')}</span>
         </label>
 
         {/* An input cannot offer files and folders at once, so the folder
@@ -341,7 +344,7 @@ export function UploadFilesPage() {
             htmlFor="folder-upload"
             className="cursor-pointer text-xs font-medium text-ink-soft underline hover:text-ink"
           >
-            Choose a folder instead
+            {t('uploadIndex.chooseFolder')}
           </label>
           {files.length > 0 && (
             <button
@@ -350,7 +353,9 @@ export function UploadFilesPage() {
               disabled={uploading}
               className="ml-4 text-xs font-medium text-ink-soft underline hover:text-ink disabled:opacity-50"
             >
-              Clear {files.length === 1 ? 'the file' : `all ${files.length}`}
+              {files.length === 1
+                ? t('uploadIndex.clearOne')
+                : t('uploadIndex.clearAll', { count: files.length })}
             </button>
           )}
         </div>
@@ -379,7 +384,7 @@ export function UploadFilesPage() {
                             params={{ documentId: fileError.duplicateOfId }}
                             className="font-medium text-oxblood underline"
                           >
-                            Open existing document
+                            {t('uploadIndex.openExisting')}
                           </Link>
                         )}
                       </div>
@@ -389,10 +394,10 @@ export function UploadFilesPage() {
                     type="button"
                     onClick={() => removeFile(index)}
                     disabled={uploading}
-                    aria-label={`Remove ${file.name}`}
+                    aria-label={t('uploadIndex.removeFile', { name: file.name })}
                     className="shrink-0 text-xs font-medium text-ink-soft hover:text-ink disabled:opacity-50"
                   >
-                    Remove
+                    {t('common.remove')}
                   </button>
                 </li>
               )
@@ -402,11 +407,13 @@ export function UploadFilesPage() {
 
         {zipRejected && (
           <p className="text-sm text-ink-soft">
-            That is a zip archive.{' '}
-            <Link to="/upload/zip" className="font-medium text-oxblood underline">
-              Import it on the Zip archive tab
-            </Link>{' '}
-            to see what it holds before anything is imported.
+            {tNode('uploadIndex.zipRejected', {
+              link: (
+                <Link to="/upload/zip" className="font-medium text-oxblood underline">
+                  {t('uploadIndex.zipLink')}
+                </Link>
+              ),
+            })}
           </p>
         )}
 
@@ -415,9 +422,9 @@ export function UploadFilesPage() {
         <Button type="submit" disabled={uploading || files.length === 0}>
           {uploading
             ? files.length > 1
-              ? `Uploading ${uploadIndex} of ${files.length}...`
-              : 'Uploading...'
-            : 'Upload and process'}
+              ? t('uploadIndex.uploadingOf', { index: uploadIndex, total: files.length })
+              : t('uploadIndex.uploading')
+            : t('uploadIndex.submit')}
         </Button>
       </form>
     </section>

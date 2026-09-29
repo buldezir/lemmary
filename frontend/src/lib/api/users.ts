@@ -1,3 +1,4 @@
+import { t } from '../../i18n'
 import { apiFetch } from '../apiClient'
 
 export type UserSummary = {
@@ -9,7 +10,7 @@ export type UserSummary = {
 /** Every account, oldest first. Admin only: the users collection shows a session only itself. */
 export function listUsers() {
   return apiFetch<UserSummary[]>('/api/app/users', {
-    fallbackError: 'Failed to load users',
+    fallbackError: t('users.loadFailed'),
   })
 }
 
@@ -27,7 +28,7 @@ export type ManagedUserInput = {
 
 export function listManagedUsers() {
   return apiFetch<ManagedUser[]>('/api/app/admin/users', {
-    fallbackError: 'Failed to load users',
+    fallbackError: t('users.loadFailed'),
   })
 }
 
@@ -35,7 +36,7 @@ export function createManagedUser(input: ManagedUserInput) {
   return apiFetch<ManagedUser>('/api/app/admin/users', {
     method: 'POST',
     body: input,
-    fallbackError: 'Failed to create the user',
+    fallbackError: t('users.createFailed'),
   })
 }
 
@@ -43,13 +44,13 @@ export function updateManagedUser(id: string, input: ManagedUserInput) {
   return apiFetch<ManagedUser>(`/api/app/admin/users/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: input,
-    fallbackError: 'Failed to update the user',
+    fallbackError: t('users.updateFailed'),
   })
 }
 
 export function deleteManagedUser(id: string) {
   return apiFetch<void>(`/api/app/admin/users/${encodeURIComponent(id)}`, {
     method: 'DELETE',
-    fallbackError: 'Failed to delete the user',
+    fallbackError: t('users.deleteFailed'),
   })
 }
