@@ -64,7 +64,8 @@ export function primaryNavItems(reviewRequired: boolean): readonly NavItem[] {
 
 /**
  * The links behind the bar's "More" menu, listed inline on a narrow one.
- * `hostEditable` is false on a managed instance, which offers no OCR test.
+ * `hostEditable` is false on a managed instance, which offers no OCR test and
+ * no PocketBase dashboard.
  */
 export function secondaryNavItems(pbAdminUrl: string, hostEditable: boolean): readonly NavItem[] {
   return [
@@ -77,7 +78,9 @@ export function secondaryNavItems(pbAdminUrl: string, hostEditable: boolean): re
     { kind: 'route', label: 'Settings', to: '/settings', admin: true },
     { kind: 'route', label: 'Management', to: '/management', admin: true },
     { kind: 'route', label: 'Maintenance', to: '/maintenance', admin: true },
-    { kind: 'external', label: 'Admin', href: pbAdminUrl, admin: true, icon: 'pocketbase' },
+    ...(hostEditable
+      ? [{ kind: 'external', label: 'Admin', href: pbAdminUrl, admin: true, icon: 'pocketbase' } as const]
+      : []),
   ]
 }
 

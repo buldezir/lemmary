@@ -8,6 +8,7 @@ import {
   type ManagedUserInput,
 } from '../lib/api/users'
 import { useAsync } from '../hooks/useAsync'
+import { useAppMeta } from '../hooks/useAppMeta'
 import { getLimits, isExhausted } from '../lib/api/limits'
 import {
   Button,
@@ -140,6 +141,7 @@ export function ManagementUsersPage() {
   const { data: users, loading, error: loadError, reload } = useAsync(listManagedUsers, [])
   const { data: limits, reload: reloadLimits } = useAsync(getLimits, [])
   const seatsLeft = !limits || !isExhausted(limits.additional_users)
+  const { managed } = useAppMeta()
   const [draft, setDraft] = useState<Draft>(emptyDraft)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -215,9 +217,11 @@ export function ManagementUsersPage() {
             ))}
           </ul>
         )}
-        <p className={`${fieldHintClassName} mt-3`}>
-          Admin accounts are managed in the PocketBase dashboard.
-        </p>
+        {managed === false && (
+          <p className={`${fieldHintClassName} mt-3`}>
+            Admin accounts are managed in the PocketBase dashboard.
+          </p>
+        )}
         {!seatsLeft && (
           <p className={`${fieldHintClassName} mt-1`}>
             This instance has reached its account limit. Delete an account to add another.

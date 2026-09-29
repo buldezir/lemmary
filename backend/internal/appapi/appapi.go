@@ -32,6 +32,8 @@ func Register(
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: 45,
 		Func: func(e *core.ServeEvent) error {
+			e.Router.BindFunc(lockSuperusersWhenManaged(rt))
+
 			g := e.Router.Group("/api/app")
 			g.GET("/meta", handleGetMeta(app, rt, ingestDirEnabled, imapScanner != nil))
 			g.GET("/me", handleGetMe(app))

@@ -2,6 +2,7 @@ package appapi
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
 
@@ -32,4 +33,35 @@ func unlessManaged(rt *config.Runtime) func(*core.RequestEvent) error {
 		}
 		return e.Next()
 	}
+}
+
+// lockSuperusersWhenManaged shuts PocketBase's own admin surface: the
+// dashboard, every _superusers route, and any request a superuser token
+// carries. The managed guards sit on this package's routes, so a superuser
+// writing settings or ai_providers through the collection API would go round
+// them, live until the next boot. The superuser CLI never touches HTTP and is
+// how the host creates and resets the account.
+func lockSuperusersWhenManaged(rt *config.Runtime) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		if !rt.Managed() {
+			return e.Next()
+		}
+		if path := e.Request.URL.Path; path == "/_" || strings.HasPrefix(path, "/_/") {
+			return writeError(e, http.StatusNotFound, "Not found.")
+		}
+		if e.HasSuperuserAuth() || routesToSuperusers(e) {
+			return writeError(e, http.StatusForbidden, unavailableWhenManagedMessage)
+		}
+		return e.Next()
+	}
+}
+
+// By name or id, since PocketBase routes accept either.
+func routesToSuperusers(e *core.RequestEvent) bool {
+	name := e.Request.PathValue("collection")
+	if name == "" {
+		return false
+	}
+	collection, err := e.App.FindCachedCollectionByNameOrId(name)
+	return err == nil && collection.Name == core.CollectionNameSuperusers
 }

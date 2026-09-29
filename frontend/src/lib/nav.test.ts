@@ -33,10 +33,11 @@ describe('nav items', () => {
     ])
   })
 
-  test('offers no OCR test on a managed instance', () => {
+  test('offers no OCR test or dashboard on a managed instance', () => {
     const labels = secondaryNavItems('http://pb.test/_/', false).map((item) => item.label)
 
     expect(labels).not.toContain('OCR test')
+    expect(labels).not.toContain('Admin')
     expect(labels).toContain('Export')
   })
 
