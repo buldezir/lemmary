@@ -56,9 +56,6 @@ Three consequences worth being clear about:
   spend a window quickly; if that becomes a problem, move the **Deep Search
   helper** binding back to a keyed provider first — it does the bulk reading.
 
-This is why the SDK never appears on a managed instance: there, the tenant is
-not the party whose account would be at stake.
-
 ## Turning it on
 
 ### 1. Allow device-code sign-in on the ChatGPT account

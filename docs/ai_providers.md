@@ -90,10 +90,9 @@ The alternatives are worth naming:
   extraction, Deep Research or OCR to it. OCR works the way it does on `openai` —
   the file goes to the model — so an instance whose only AI credential is a
   ChatGPT seat is a complete install. Embeddings are refused: the endpoint has
-  no `/embeddings` at all. Refused on a managed instance — it reaches OpenAI's
-  own Codex endpoints, so the account you sign in with is the one carrying the
-  risk. Its SDK value is `chatgpt`, though
-  it is not an `AI_SDK` or `OCR_SDK` value: a sign-in cannot be written into
+  no `/embeddings` at all. It reaches OpenAI's own Codex endpoints, so the
+  account you sign in with is the one carrying the risk. Its SDK value is
+  `chatgpt`, though it is not an `AI_SDK` or `OCR_SDK` value: a sign-in cannot be written into
   `.env`. See [ChatGPT sign-in](/chatgpt_login).
 - **Local OCR** — OCR only, and the only provider that reads a
   document without sending it anywhere: a sidecar container beside the app,
@@ -118,40 +117,16 @@ nothing leaves the host: point `AI_BASE_URL` at Ollama or vLLM, set
 Without a language-model provider, AI extraction, document chat and Deep Research
 return a configuration error.
 
-## Two modes, one build
-
-Which mode an instance is in is a runtime flag, `AI_MANAGED`, and that is the
-whole of the difference.
-
-| | self-hosted (default) | managed (`AI_MANAGED=1`) |
-| --- | --- | --- |
-| when the environment is written to the database | the first boot, when the settings singleton does not exist yet | **every** boot |
-| authority afterwards | the **Settings** page | the container's environment |
-| Providers, Models and Duplicates in Settings | editable | not rendered, and the API answers `403` |
-| an incomplete or invalid block | the setup wizard opens and an admin fills it in | the process **refuses to start**, naming the variable |
-
-Self-hosted is the ordinary install: put a key in `.env` so a fresh volume comes
-up ready to use instead of on the wizard, and change your mind later in
-**Settings**. Managed is for a hosted fleet, where the operator carries the AI
-bill and the tenant must not be able to move it onto their own key. Refusing to
-start is the right failure there, because nobody inside a managed instance can
-repair a bad key: the Settings page is gone.
-
-Neither mode compares against what was applied last. An earlier release stored a
-digest per variable in `app_settings.env_applied` and re-applied a variable only
-when it had changed; naming the two modes made that unnecessary, and the column
-is dropped.
-
-A provider record is matched by the default alias it is created with. A renamed
-or deleted provider is left alone rather than reclaimed — renaming one is an
-edit an admin made, and a boot that undid it would undo it again on every boot
-after that.
-
 ## The provider block
+
+The providers and models below seed the database on the **first boot only**, when
+the settings row does not exist yet, so a fresh volume comes up ready to use
+instead of on the setup wizard. After that **Settings** is the authority and
+editing `.env` changes nothing. A missing key is not an error: the setup wizard
+asks for it.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `AI_MANAGED` | `0` | Whether the operator owns AI configuration. See the table above. |
 | `AI_SDK` | `openai` | The language model's SDK: `opencode`, `openai`, `anthropic`, `openrouter` or `mistral`. `google_vision`, `docling` (Local OCR) and `local` (Local Embeddings) are refused — none of them can serve extraction. `chatgpt` too: it has no key to seed from the environment. |
 | `AI_API_KEY` | empty | Its credential. **One key is usually the whole configuration**: with this and nothing else the app creates one provider and routes extraction, chat, Deep Research *and* OCR to it. |
 | `AI_MODEL` | `gpt-5.6-luna` | The **General AI** model: extraction, Ask AI, AI assisted search, and Deep Research's bulk document reads. Be sure it supports the result language set in **Settings**. |
@@ -160,8 +135,8 @@ after that.
 | `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK` — except Local OCR (`docling`), which has no account behind it. Optional there, and only if you started the sidecar with `DOCLING_SERVE_API_KEY`. |
 | `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. For Local OCR (`docling`) the default is the compose service name, `http://docling:5001`, so `OCR_SDK=docling` alone is a complete configuration under the overlay. |
 | `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Not required for `google_vision` or Local OCR (`docling`), which read a document without one; for Local OCR it optionally names the OCR engine instead. See [Choosing an engine](/local_ocr#choosing-an-engine). |
-| `AI_EMBEDDING_MODEL` | unset (Deep Research and the search box match keywords only) | An embedding model — on the `AI_SDK` provider, or on the `AI_EMBEDDING_SDK` one when that is set — so Deep Research and the Documents search box can also find documents by meaning. Under `AI_SDK=opencode` or `AI_SDK=anthropic` it requires `AI_EMBEDDING_SDK`: neither serves `/embeddings`, so there is no provider to fall back to, and naming a model without one is refused at boot. Operator-owned under `AI_MANAGED=1`; removing it there turns the feature off. See [what embeddings cost](#what-embeddings-cost). |
-| `AI_RESEARCH_MODEL` | unset (Deep Research runs on `AI_MODEL`) | The **Advanced model**, on the `AI_SDK` provider: drives the Deep Research reasoning loop, a few expensive calls per question where everything else is many cheap ones. Bulk document reads stay on `AI_MODEL`. Operator-owned under `AI_MANAGED=1`; removing it there puts research back on the general model. See [How Research covers a topic](/deep_research#how-research-covers-a-topic). |
+| `AI_EMBEDDING_MODEL` | unset (Deep Research and the search box match keywords only) | An embedding model — on the `AI_SDK` provider, or on the `AI_EMBEDDING_SDK` one when that is set — so Deep Research and the Documents search box can also find documents by meaning. Under `AI_SDK=opencode` or `AI_SDK=anthropic` it requires `AI_EMBEDDING_SDK`: neither serves `/embeddings`, so there is no provider to fall back to, and naming a model without one is refused at boot. See [what embeddings cost](#what-embeddings-cost). |
+| `AI_RESEARCH_MODEL` | unset (Deep Research runs on `AI_MODEL`) | The **Advanced model**, on the `AI_SDK` provider: drives the Deep Research reasoning loop, a few expensive calls per question where everything else is many cheap ones. Bulk document reads stay on `AI_MODEL`. See [How Research covers a topic](/deep_research#how-research-covers-a-topic). |
 
 ### The embedding provider
 
@@ -173,8 +148,7 @@ mostly be three more ways to half-configure the feature.
 Running the embedding model yourself is the case that reasoning did not
 anticipate. A sidecar on the compose network *is* a different endpoint, by
 definition and not by preference — so without these an operator could not bring
-an instance up on one from `.env` at all, and a managed instance could not use
-one at any price. They are here, shaped exactly like the `OCR_*` block above,
+an instance up on one from `.env` at all. They are here, shaped exactly like the `OCR_*` block above,
 which has always been how a second provider for one job is described.
 
 | Variable | Default | Description |
@@ -236,7 +210,7 @@ the `OCR_*` block is — there is no other provider to fold it into.
 ### Seeded settings
 
 Written to `app_settings` on the first boot and edited from **Settings**
-afterwards, in both modes.
+afterwards.
 
 | Variable | Default | Description |
 | --- | --- | --- |
@@ -246,13 +220,6 @@ afterwards, in both modes.
 | `WORKER_MAX_RETRIES` | `0` | Max step retry attempts before a job fails |
 | `DEEP_SEARCH_LANGUAGES` | empty | Comma-separated ISO 639-1 codes (e.g. `de,en,uk`) for keyword expansion on both search pages. Only drives per-language searches when no embedding model is set; with one, a single search already crosses languages |
 | `EXTRACTION_PROMPT_VERSION` | `v1` | Stored on each processing job step run, with a digest of the Settings extraction rules appended where any are set; bookkeeping only, not offered in the Settings UI |
-
-Two more are seeded the same way but are **operator-owned under
-`AI_MANAGED=1`**, because each is a cost rather than a preference — so a hosted
-plan can price them per tier:
-
-| Variable | Default | Description |
-| --- | --- | --- |
 | `NEAR_DUPLICATE_DETECTION_ENABLED` | `false` | Whether the pipeline runs near-duplicate detection |
 | `NEAR_DUPLICATE_THRESHOLD` | `0.92` | How similar two documents' text must be to count as near-duplicates |
 
@@ -265,9 +232,9 @@ paces spending rather than describing the instance:
 
 The **result language** has no variable at all. It decides what language a
 document's title, summary, type and correspondent are stored in, which is a
-reader's preference rather than an operator's, so it is set in **Settings** and a
-managed instance keeps it. Tags are exempt: they are assigned from a list the
-user writes, so they are already in the language that user chose.
+reader's preference rather than an operator's, so it is set in **Settings**. Tags
+are exempt: they are assigned from a list the user writes, so they are already in
+the language that user chose.
 
 ## Binding models in Settings
 
@@ -509,11 +476,9 @@ size, memory, GPU variants and the per-page cost — is in
 
   An install that predates the SDK needs no edit: `AI_SDK=openai` with a base
   URL addressing `opencode.ai` is *read* as `AI_SDK=opencode`, and the provider
-  row it seeded is moved onto that SDK by migration `1730000026`. Both halves
-  matter — a managed instance re-applies its environment on every boot, so the
-  row alone would be moved straight back. So this only bites a row created by
-  hand afterwards, or one pointed at Opencode through a URL that hides the
-  host. The same applies to the `x-opencode-session` header, which Opencode
+  row it seeded is moved onto that SDK by migration `1730000026`. So this only
+  bites a row created by hand afterwards, or one pointed at Opencode through a
+  URL that hides the host. The same applies to the `x-opencode-session` header, which Opencode
   requires and which only the `opencode` SDK sends.
 
   The routing, for reference. A model Lemmary has not heard of goes to
@@ -534,8 +499,6 @@ size, memory, GPU variants and the per-page cost — is in
   function tools; retrying on the Responses API`. What is learned is remembered
   per provider, so the same model name behind two providers is discovered
   separately.
-- **A managed instance will not start** — the log names the missing or invalid
-  variable in the provider block; nothing inside the instance can repair it.
 - **Local Embeddings embeds nothing** — `docker compose logs embeddings`. On a
   first boot it is downloading weights and the container is unhealthy until that
   finishes, which is why the app waits on its healthcheck; embed steps fail soft

@@ -105,9 +105,8 @@ type settingsPatchRequest struct {
 	Accent                        *string   `json:"accent"`
 }
 
-// touchesManaged is true for the same fields ApplyManaged rewrites. Timeouts,
-// retries, languages, the prompt version and always_require_review are
-// tenant-owned; see AIEnv.
+// touchesManaged is true for the same fields ApplyManaged rewrites. Languages,
+// the prompt version and always_require_review are tenant-owned; see AIEnv.
 func (r settingsPatchRequest) touchesManaged() bool {
 	return r.OCRProviderID != nil ||
 		r.OCRModel != nil ||
@@ -119,7 +118,11 @@ func (r settingsPatchRequest) touchesManaged() bool {
 		r.EmbeddingModel != nil ||
 		r.WebSearchProviderID != nil ||
 		r.NearDuplicateDetectionEnabled != nil ||
-		r.NearDuplicateThreshold != nil
+		r.NearDuplicateThreshold != nil ||
+		r.OCRTimeoutSec != nil ||
+		r.OpenAITimeoutSec != nil ||
+		r.WorkerTimeoutSec != nil ||
+		r.WorkerMaxRetries != nil
 }
 
 func handleGetSettings(app core.App, rt *config.Runtime) func(*core.RequestEvent) error {

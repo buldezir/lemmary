@@ -187,12 +187,7 @@ Two kinds, and they answer different questions:
   docker compose start
   ```
 
-## Instance limits and resources
-
-The `LIMIT_*` family bounds how much one instance may hold and is read at
-startup only, never from Settings — change one by recreating the container. All
-of them are unlimited when unset. See
-[Instance limits](/setup#instance-limits).
+## Resources
 
 The image pins `OPENBLAS_NUM_THREADS=1` and `OMP_NUM_THREADS=1`: OpenBLAS and
 OpenMP each start a thread per core by default, inside a process that is already

@@ -8,11 +8,12 @@ export type AppMeta = {
   appName: string
   accent: string
   /**
-   * Hosting provider owns AI configuration. `undefined` is in-flight or failed:
+   * A hosting provider runs this instance and owns its AI configuration,
+   * timeouts and worker settings. `undefined` is in-flight or failed:
    * treat as managed. Defaulting to false flashes those sections, and Save
    * would send fields the server rejects, failing the whole patch.
    */
-  aiManaged?: boolean
+  managed?: boolean
   /**
    * Whether every AI-extracted document waits in the review Inbox. Unknown
    * reads as off, which is the behaviour before the flag existed.
@@ -73,7 +74,7 @@ async function fetchAppMeta(): Promise<AppMeta> {
     const data = await apiFetch<{
       app_name?: string
       accent?: string
-      ai_managed?: boolean
+      managed?: boolean
       always_require_review?: boolean
       web_search?: boolean
       ingest_dir?: boolean
@@ -89,7 +90,7 @@ async function fetchAppMeta(): Promise<AppMeta> {
     return {
       appName: appName || DEFAULT_APP_NAME,
       accent: accent || DEFAULT_ACCENT,
-      aiManaged: data.ai_managed === true,
+      managed: data.managed === true,
       alwaysRequireReview: data.always_require_review === true,
       webSearch: data.web_search === true,
       ingestDir: data.ingest_dir === true,

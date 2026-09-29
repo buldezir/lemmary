@@ -12,6 +12,8 @@ import { defaultPasskeyName, passkeysSupported, passkeyUnavailableHint } from '.
 import { createMCPToken, getMCPStatus } from '../lib/api/mcp'
 import { mcpSnippets } from '../lib/mcpSnippets'
 import { useAsync } from '../hooks/useAsync'
+import { getLimits } from '../lib/api/limits'
+import { LimitsUsage } from '../components/LimitsUsage'
 import {
   Button,
   DocsLink,
@@ -371,6 +373,39 @@ function AgentsSection() {
   )
 }
 
+function InstanceLimitsSection() {
+  const { data: limits } = useAsync(getLimits, [])
+  if (!limits || !(limits.enforced || (limits.misconfigured?.length ?? 0) > 0)) return null
+
+  return (
+    <section className={sectionClassName}>
+      <h2 className={sectionTitleClassName}>Instance limits</h2>
+      <p className="text-xs text-ink-soft">
+        Set by your hosting provider and read at startup, so they cannot be changed from
+        Settings. Lowering a limit under an existing library never deletes anything &mdash; it
+        only refuses the next addition.
+      </p>
+      {limits.enforced ? (
+        <LimitsUsage limits={limits} className="mt-4 border-0 bg-transparent p-0" />
+      ) : (
+        <p className="mt-4 text-xs text-ink-soft">No limits are in effect.</p>
+      )}
+      {(limits.misconfigured?.length ?? 0) > 0 && (
+        <p className="mt-4 text-sm text-madder">
+          Could not read {limits.misconfigured?.join(', ')}. Each fell back to unlimited, so these
+          are not being enforced.
+        </p>
+      )}
+      {limits.enforced && (
+        <p className="mt-4 text-xs text-ink-faint">
+          Documents added before this version was installed count as zero pages and zero bytes, so
+          those two figures can read low on an upgraded library.
+        </p>
+      )}
+    </section>
+  )
+}
+
 export function AccountPage() {
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5">
@@ -381,6 +416,7 @@ export function AccountPage() {
       <SignedInSection />
       <AgentsSection />
       <PasskeysSection />
+      <InstanceLimitsSection />
     </div>
   )
 }

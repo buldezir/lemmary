@@ -231,8 +231,8 @@ func EnsureDefaults(app core.App, env AIEnv) error {
 }
 
 // ApplyManaged unconditionally rewrites the operator-owned settings (providers,
-// task bindings, duplicate detection) from the environment. Timeouts and
-// language settings are not here; see AIEnv.
+// task bindings, duplicate detection, timeouts, retries) from the environment.
+// Language settings are not here; see AIEnv.
 func ApplyManaged(app core.App, env AIEnv) error {
 	settings, err := app.FindRecordById(CollectionName, SingletonID)
 	if err != nil {
@@ -243,6 +243,10 @@ func ApplyManaged(app core.App, env AIEnv) error {
 	}
 	settings.Set("near_duplicate_detection_enabled", env.NearDuplicateEnabled)
 	settings.Set("near_duplicate_threshold", env.NearDuplicateThreshold)
+	settings.Set("ocr_timeout_sec", int(env.OCRTimeout.Seconds()))
+	settings.Set("openai_timeout_sec", int(env.AITimeout.Seconds()))
+	settings.Set("worker_timeout_sec", int(env.WorkerTimeout.Seconds()))
+	settings.Set("worker_max_retries", env.WorkerMaxRetries)
 	if err := app.Save(settings); err != nil {
 		return fmt.Errorf("save %s: %w", CollectionName, err)
 	}

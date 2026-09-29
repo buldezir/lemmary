@@ -48,24 +48,24 @@ func DocumentFrom(ctx context.Context) string {
 	return checksum
 }
 
-// managed is AI_MANAGED, read once at wiring time by config.NewRuntime. It
+// managed is MANAGED, read once at wiring time by config.NewRuntime. It
 // lives here rather than being threaded through every constructor because the
-// two places that need it are the deepest ones: the Anthropic client the
-// opencode SDK builds, and the hand-built OCR requests in internal/ocr.
+// places that need it are the deepest ones: the Anthropic client the opencode
+// SDK builds, the hand-built OCR requests in internal/ocr, and the override
+// check in config.Overrides.Validate.
 var managed atomic.Bool
 
 // SetManaged records whether this deployment is the managed one. Called once,
 // from config.NewRuntime.
 func SetManaged(v bool) { managed.Store(v) }
 
-// Managed reports whether AI_MANAGED is on. Self-hosted installs never send
+// Managed reports whether MANAGED is on. Self-hosted installs never send
 // DocumentHeader, whatever is on the context.
 func Managed() bool { return managed.Load() }
 
 // DocumentOptions is the SDK option that stamps DocumentHeader, and nothing at
 // all when this is not the managed deployment. Asked at client construction, so
 // a self-hosted install has no middleware to run per request.
-// all when this is not the managed deployment. Asked at client construction, so
 func DocumentOptions() []option.RequestOption {
 	if !Managed() {
 		return nil

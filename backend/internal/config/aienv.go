@@ -16,8 +16,8 @@ import (
 // on first boot and are inert afterwards; the Settings page is then the authority.
 //
 // Managed (Managed true): the operator owns the AI bill, so these are re-applied
-// on every boot and the tenant cannot edit providers, model bindings, or duplicate
-// detection. Timeouts, retries, and language settings stay tenant-owned.
+// on every boot and the tenant cannot edit providers, model bindings, duplicate
+// detection, timeouts or retries. Language settings stay tenant-owned.
 type AIEnv struct {
 	Managed   bool
 	Providers aiprovider.Bootstrap
@@ -25,12 +25,12 @@ type AIEnv struct {
 	// Operator-owned in managed mode.
 	NearDuplicateEnabled   bool
 	NearDuplicateThreshold float64
+	OCRTimeout             time.Duration
+	AITimeout              time.Duration
+	WorkerTimeout          time.Duration
+	WorkerMaxRetries       int
 
 	// Seed-only in both modes; managed mode does not reset these on restart.
-	OCRTimeout          time.Duration
-	AITimeout           time.Duration
-	WorkerTimeout       time.Duration
-	WorkerMaxRetries    int
 	DeepSearchLanguages string
 	ExtractionPromptVer string
 
@@ -44,7 +44,7 @@ type AIEnv struct {
 // Environment variable names in one place, so the error messages and the
 // parsing cannot drift apart.
 const (
-	EnvManaged = "AI_MANAGED"
+	EnvManaged = "MANAGED"
 
 	// EnvModelCatalogURL points the context-window lookup somewhere other than
 	// pi.dev. Empty falls back to that default rather than turning it off.
@@ -131,7 +131,7 @@ func AIEnvFromEnv() (AIEnv, error) {
 }
 
 // strictBool refuses a value it cannot read rather than falling back to off:
-// AI_MANAGED is the billing lock, and a typo read as "off" would leave
+// MANAGED is the billing lock, and a typo read as "off" would leave
 // Settings editable and the environment unapplied.
 func strictBool(key string) (bool, error) {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {

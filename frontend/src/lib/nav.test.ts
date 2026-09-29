@@ -8,7 +8,7 @@ import {
 
 describe('nav items', () => {
   test('hides admin-only entries from a regular user', () => {
-    const items = visibleNavItems(secondaryNavItems('http://pb.test/_/'), false)
+    const items = visibleNavItems(secondaryNavItems('http://pb.test/_/', true), false)
     const labels = items.map((item) => item.label)
 
     expect(labels).toEqual(['Account', 'Tags', 'Bulk Actions', 'OCR test', 'Export', 'Import'])
@@ -16,7 +16,7 @@ describe('nav items', () => {
   })
 
   test('gives an admin the full secondary set', () => {
-    const items = visibleNavItems(secondaryNavItems('http://pb.test/_/'), true)
+    const items = visibleNavItems(secondaryNavItems('http://pb.test/_/', true), true)
 
     expect(items.map((item) => item.label)).toEqual([
       'Account',
@@ -33,8 +33,15 @@ describe('nav items', () => {
     ])
   })
 
+  test('offers no OCR test on a managed instance', () => {
+    const labels = secondaryNavItems('http://pb.test/_/', false).map((item) => item.label)
+
+    expect(labels).not.toContain('OCR test')
+    expect(labels).toContain('Export')
+  })
+
   test('points the admin entry at the PocketBase dashboard', () => {
-    const admin = secondaryNavItems('http://pb.test/_/').find((item) => item.label === 'Admin')
+    const admin = secondaryNavItems('http://pb.test/_/', true).find((item) => item.label === 'Admin')
 
     expect(admin).toEqual({ kind: 'external', label: 'Admin', href: 'http://pb.test/_/', admin: true, icon: 'pocketbase' })
   })
@@ -84,7 +91,7 @@ describe('nav items', () => {
   // Only the document list is exact: every other link has children it should
   // stay lit for (/upload/split, /rag/research/<chat>, /import/ngx).
   test('marks only the document list as an exact match', () => {
-    const exact = [...primaryNavItems(true), ...secondaryNavItems('/_/')].filter(
+    const exact = [...primaryNavItems(true), ...secondaryNavItems('/_/', true)].filter(
       (item) => item.kind === 'route' && item.exact,
     )
 

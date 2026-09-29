@@ -314,17 +314,19 @@ function AppHeader({
   accent,
   admin,
   reviewRequired,
+  hostEditable,
   userDisplayName,
 }: {
   appName: string
   accent: string
   admin: boolean
   reviewRequired: boolean
+  hostEditable: boolean
   userDisplayName: string
 }) {
   const [open, setOpen] = useState(false)
   const primaryItems = primaryNavItems(reviewRequired)
-  const secondaryItems = visibleNavItems(secondaryNavItems(pbAdminUrl), admin)
+  const secondaryItems = visibleNavItems(secondaryNavItems(pbAdminUrl, hostEditable), admin)
   const panelItems = [...primaryItems, ...secondaryItems]
   const badges = { inbox: useInboxCount(), activity: useActiveJobCount() }
 
@@ -476,7 +478,7 @@ async function resolveGate(): Promise<Gate> {
 
 export function RootLayout() {
   const [gate, setGate] = useState<Gate>({ kind: 'loading' })
-  const { appName, accent, alwaysRequireReview } = useAppMeta()
+  const { appName, accent, alwaysRequireReview, managed } = useAppMeta()
   const userDisplayName = gate.kind === 'app' ? getUserDisplayName() : ''
   const admin = gate.kind === 'app' ? gate.admin : false
 
@@ -576,6 +578,7 @@ export function RootLayout() {
         accent={accent}
         admin={admin}
         reviewRequired={Boolean(alwaysRequireReview)}
+        hostEditable={managed === false}
         userDisplayName={userDisplayName}
       />
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6 sm:py-6">

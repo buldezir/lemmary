@@ -9,9 +9,9 @@ import { tabClassName } from '../components/ui'
  * optional, so a tab naming its own leaves the rest of the record alone.
  */
 export function SettingsPage() {
-  // unknown/failed meta counts as managed; see AppMeta.aiManaged
-  const { aiManaged, ingestDir, ingestImap } = useAppMeta()
-  const aiEditable = aiManaged === false
+  // unknown/failed meta counts as managed; see AppMeta.managed
+  const { managed, ingestDir, ingestImap } = useAppMeta()
+  const hostEditable = managed === false
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -20,9 +20,10 @@ export function SettingsPage() {
         <p className="mt-1 text-sm text-ink-soft">
           Runtime configuration for OCR, AI, and the worker. Changes apply immediately.
         </p>
-        {!aiEditable && (
+        {!hostEditable && (
           <p className="mt-2 text-sm text-ink-soft">
-            AI providers and models are set by your hosting provider and are not editable here.
+            AI providers, models, timeouts and the worker are set by your hosting provider and are
+            not editable here.
           </p>
         )}
       </div>
@@ -36,7 +37,7 @@ export function SettingsPage() {
         </Link>
         {/* Hidden rather than disabled on a managed instance: there is nothing
             editable behind them. */}
-        {aiEditable && (
+        {hostEditable && (
           <Link to="/settings/ai" className={tabClassName}>
             AI
           </Link>
@@ -44,10 +45,12 @@ export function SettingsPage() {
         <Link to="/settings/processing" className={tabClassName}>
           Processing
         </Link>
-        <Link to="/settings/worker" className={tabClassName}>
-          Worker
-        </Link>
-        {aiEditable && (
+        {hostEditable && (
+          <Link to="/settings/worker" className={tabClassName}>
+            Worker
+          </Link>
+        )}
+        {hostEditable && (
           <Link to="/settings/duplicates" className={tabClassName}>
             Duplicates
           </Link>

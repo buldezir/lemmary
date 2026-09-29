@@ -8,6 +8,7 @@ import {
   type ManagedUserInput,
 } from '../lib/api/users'
 import { useAsync } from '../hooks/useAsync'
+import { getLimits, isExhausted } from '../lib/api/limits'
 import {
   Button,
   fieldHintClassName,
@@ -137,6 +138,8 @@ function UserRow({
 
 export function ManagementUsersPage() {
   const { data: users, loading, error: loadError, reload } = useAsync(listManagedUsers, [])
+  const { data: limits, reload: reloadLimits } = useAsync(getLimits, [])
+  const seatsLeft = !limits || !isExhausted(limits.additional_users)
   const [draft, setDraft] = useState<Draft>(emptyDraft)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -148,7 +151,7 @@ export function ManagementUsersPage() {
       setError('')
       setNotice('')
       setNotice(await action())
-      await reload()
+      await Promise.all([reload(), reloadLimits()])
       return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
@@ -215,23 +218,30 @@ export function ManagementUsersPage() {
         <p className={`${fieldHintClassName} mt-3`}>
           Admin accounts are managed in the PocketBase dashboard.
         </p>
+        {!seatsLeft && (
+          <p className={`${fieldHintClassName} mt-1`}>
+            This instance has reached its account limit. Delete an account to add another.
+          </p>
+        )}
       </section>
 
-      <section className={sectionClassName}>
-        <h2 className={`${sectionTitleClassName} mb-3`}>Add a user</h2>
-        <form className="flex flex-col gap-3" onSubmit={onCreate}>
-          <UserFields draft={draft} onChange={setDraft} passwordLabel="Password" />
-          <p className={fieldHintClassName}>
-            The account can sign in straight away. It sees only its own documents and those shared
-            with it.
-          </p>
-          <div>
-            <Button type="submit" disabled={busy || !draft.email.trim() || !draft.password}>
-              Add user
-            </Button>
-          </div>
-        </form>
-      </section>
+      {seatsLeft && (
+        <section className={sectionClassName}>
+          <h2 className={`${sectionTitleClassName} mb-3`}>Add a user</h2>
+          <form className="flex flex-col gap-3" onSubmit={onCreate}>
+            <UserFields draft={draft} onChange={setDraft} passwordLabel="Password" />
+            <p className={fieldHintClassName}>
+              The account can sign in straight away. It sees only its own documents and those
+              shared with it.
+            </p>
+            <div>
+              <Button type="submit" disabled={busy || !draft.email.trim() || !draft.password}>
+                Add user
+              </Button>
+            </div>
+          </form>
+        </section>
+      )}
     </div>
   )
 }

@@ -18,13 +18,16 @@ All variables live in `.env` at the project root (see `.env.example`). The
 `AI_*` and `OCR_*` families are documented in
 [AI providers and models](/ai_providers#the-provider-block).
 
+`MANAGED` and the `LIMIT_*` variables exist for hosted deployments and are not
+meant for self-hosting; leave them unset.
+
 ### Always env-backed
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `WORKER_CRON_EXPR` | `* * * * *` | Cron expression for sweeping stuck pending jobs (registered once at startup) |
 | `LOG_LEVEL` | unset (no stdout slog) | Min level for JSON slog lines on stdout (`debug`, `info`, `warn`/`warning`, `error`). Ignored while PocketBase `--dev` is on (that mode already prints to the console, including SQL). PocketBase Admin → Settings → Logs still controls the logs table. |
-| `METRICS_ADDR` | unset (off) | Address for the OpenTelemetry metrics endpoint, served as a Prometheus scrape target on its own port so nothing scraping it holds a credential for the archive. A bare port (`9464`) or one with no host (`:9464`) listens on every interface, which is the only form reachable in Docker through a published port &mdash; the mapping is deliberately not in `docker-compose.yml`, since an unauthenticated endpoint should not become internet-reachable by default. Name a host (`127.0.0.1:9464`) to keep it on loopback when running the binary directly. Exposes request rate and latency by route, job durations by outcome, pending queue depth, outbound AI/OCR latency by provider and model, token counts, how full the instance is against the instance-wide totals (documents, pages, stored bytes, accounts) &mdash; not the per-file `LIMIT_FILE_*` ceilings &mdash; and Go runtime metrics; no document text, account names or paths. The usage gauges read the same measurement the Settings page shows, and pair with an allowance under the same `resource` label, so utilisation is one division &mdash; `lemmary_usage / lemmary_limit`, and `lemmary_usage_bytes / lemmary_limit_bytes`. A `LIMIT_*` you have not set emits no allowance series at all, since `0` is an allowance somebody sells and cannot also mean unbounded. Costs three queries per scrape: a `COUNT` over `processing_jobs`, plus the usage aggregate (one index-only scan of `documents` and a `COUNT` over `users`). A port that will not bind is logged and the app serves anyway. |
+| `METRICS_ADDR` | unset (off) | Address for the OpenTelemetry metrics endpoint, served as a Prometheus scrape target on its own port so nothing scraping it holds a credential for the archive. A bare port (`9464`) or one with no host (`:9464`) listens on every interface, which is the only form reachable in Docker through a published port &mdash; the mapping is deliberately not in `docker-compose.yml`, since an unauthenticated endpoint should not become internet-reachable by default. Name a host (`127.0.0.1:9464`) to keep it on loopback when running the binary directly. Exposes request rate and latency by route, job durations by outcome, pending queue depth, outbound AI/OCR latency by provider and model, token counts, pages sent to an OCR provider, Deep Search runs by mode, how much the instance holds (documents, pages, stored bytes, accounts, and the largest stored file in pages and bytes) and Go runtime metrics; no document text, account names or paths. What it holds is two gauges under a `resource` label: `lemmary_usage` for the counts and `lemmary_usage_bytes` for bytes. Costs three queries per scrape: a `COUNT` over `processing_jobs`, plus the usage aggregate (one index-only scan of `documents` and a `COUNT` over `users`). A port that will not bind is logged and the app serves anyway. |
 | `MCP_ENABLED` | unset (on) | Set to `0`/`false`/`no`/`off` to remove the read-only [Model Context Protocol](/mcp) endpoint at `POST /api/mcp` on the app port. It is on by default because it answers only to the ordinary bearer token and costs nothing until an agent calls it. Search tools (`search_documents`, `read_documents`, `count_documents`) share Deep Search's index; plain-access tools (`list_documents`, `get_document`, `list_taxonomy`) read the rows directly. All scoped to the token's user. Costs one embedding request per search, and per read with a `focus`, when embeddings are configured; reads are excerpted text and never call a language model. Read at startup. |
 | `IMPORT_ALLOW_PRIVATE` | unset (blocked) | Set to `1`/`true` to let ngx import reach loopback and RFC1918 hosts. Link-local / cloud-metadata addresses stay blocked. Needed when Paperless-ngx is on the same LAN or Docker network. |
 | `UPLOAD_MAX_MB` | `100` | Cap on a staged split-document PDF upload, in megabytes. Read at startup, not from Settings: staging a PDF costs several times its size in memory while pages are rendered, so it protects the host as much as it shapes the product. A malformed or non-positive value falls back to the default rather than failing the boot. Per-file uploads are capped separately by the `documents.file` field (47 MB). |
@@ -33,103 +36,9 @@ All variables live in `.env` at the project root (see `.env.example`). The
 | `IMPORT_STAGING_MAX_BYTES` | `1073741824` (1 GiB) | Cap on an archive staged for import (Amazon orders, Lemmary backup), in bytes. Staging a new archive discards that account's previous one, so this is also the disk a single account can occupy while deciding whether to confirm — the staging area's ceiling is roughly this times the number of accounts. Lower it on a small volume; raise it for a library whose backup runs past a gigabyte. A malformed value, or one under 1 MiB, falls back to the default rather than rejecting every upload. |
 | `PASSKEY_RP_ID` | derived from the request host | Relying-party ID for [passkey sign-in](/passkeys): a bare domain name, no scheme and no port. Defaults to the hostname the request arrived with, which is right whenever the proxy forwards the public `Host`. Set it when it does not, or to pin a parent domain (`example.com` while serving `app.example.com`). **Every enrolled passkey is bound to this value — changing it makes all of them unusable.** Read at startup, not from Settings. |
 | `PASSKEY_ORIGINS` | derived from the request scheme + host | Comma-separated full origins (scheme, host and port) allowed to complete a passkey ceremony. Defaults to the origin the request arrived on, using `X-Forwarded-Proto` for the scheme when present. Set it when the app is reachable at more than one origin, or when a TLS-terminating proxy does not set that header. |
-| `LIMIT_DOCUMENTS` | unset (unlimited) | Total documents this instance may store. |
-| `LIMIT_DOCUMENT_PAGES` | unset (unlimited) | Total pages across all stored documents. Anything that is not a PDF counts as one page &mdash; including a multi-page `.docx` or `.xlsx`, whose real page count is not knowable without converting the file. |
-| `LIMIT_STORAGE_BYTES` | unset (unlimited) | Total bytes of stored document files. Counts the uploaded originals only, not the generated thumbnails or the extracted OCR text. When sizing a volume, budget for the database separately: extracted text is stored inline in the row and a single document may hold up to 47 Mi characters of it, so a text-heavy library's `data.db` can approach the same order as the files themselves. |
-| `LIMIT_FILE_BYTES` | unset (unlimited) | Largest single document file, in bytes. Can only **lower** the effective cap: the `documents.file` field carries its own 47 MB `MaxSize` (49,283,072 bytes, just under Mistral OCR's documented 50 MB) that PocketBase validates on every save, and no value here can raise it. Files over 20 MB upload but are flagged on the upload page: OCR providers and the worker get slower and less reliable with them. Distinct from `UPLOAD_MAX_MB`, which caps the one staged PDF a split is cut from rather than each document it produces. |
-| `LIMIT_FILE_PAGES` | unset (unlimited) | Most pages in a single document. Can only **lower** the effective cap: a 1000-page ceiling applies to every install regardless (see [the page ceiling](#the-page-ceiling)), and no value here can raise it. |
-| `LIMIT_ADDITIONAL_USERS` | unset (unlimited) | Accounts beyond the admin account. Exactly one account is free, so `0` is a single-account instance. |
 | `VITE_POCKETBASE_URL` | `http://127.0.0.1:8090` | PocketBase API URL (frontend) |
 | `SETUP_ADMIN_EMAIL` | — | The first admin account, created on the first boot that finds none. Creates a `_superusers` record **and** the paired `users` account, exactly as the setup wizard does. Never resets a password that already exists. In a development build the SPA also signs itself in with this pair; a production bundle contains neither value. **Commented out in `.env.example`** — uncommenting it in a served install would hand it an admin whose password is published in this repository. |
 | `SETUP_ADMIN_PASSWORD` | — | Its password, at least 8 characters. Readable from `docker inspect` and `/proc/<pid>/environ` for the life of the container, so this is for local and CI instances — a served install should use the wizard or `superuser upsert`. |
-
-#### Instance limits
-
-The six `LIMIT_*` variables bound how much one instance may hold. **All of them are
-unlimited when unset**, so an install that sets none of them runs no extra queries
-per upload and shows no quota in the UI. It is not entirely unmeasured, though —
-see [the page ceiling](#the-page-ceiling) below, which applies to every install.
-
-They are read at startup and deliberately never stored in `app_settings`: they say
-what an instance is *allowed* to hold, and an admin editing the Settings page must
-not be able to raise their own allowance. Change one by recreating the container
-with a new value.
-
-- An explicit `0` means zero, not unlimited. `LIMIT_ADDITIONAL_USERS=0` is a
-  single-account instance.
-- A value that cannot be read — a typo, a negative, a decimal — falls back to
-  unlimited and is logged at `ERROR`, and the variable is named in
-  `GET /api/app/limits` for an admin session and on the **Maintenance** page. The
-  fallback direction is deliberate: a stray character in an orchestrator's
-  environment should grant room rather than lock an owner out of their own archive,
-  and being told loudly is what keeps that from going unnoticed.
-- Lowering a limit under a library that already exceeds it never deletes anything.
-  Usage is simply reported as over, and the next addition is refused.
-- The three instance-wide totals are measured from the live rows on each write, so
-  deleting a document (or a user, which cascades to their documents) frees its
-  allowance immediately.
-- Documents created **before** this version was installed count as zero pages and
-  zero bytes: the page and size columns are added without a backfill, because
-  filling them would mean running `pdfinfo` once per existing PDF during a
-  migration. `LIMIT_DOCUMENTS` and `LIMIT_ADDITIONAL_USERS` are exact regardless;
-  the page and byte totals read low on an upgraded library until those documents
-  are replaced.
-- A bulk path — a backup restore, an Amazon-orders import, a document split — is
-  checked against the remaining allowance up front, so the common case of a batch
-  that plainly does not fit is refused before anything is created. That check is
-  **not** a reservation, and a bulk run can still stop partway:
-  - a restore or an Amazon import knows its document count and bytes, but not its
-    page count (an archive's real page counts are only discoverable by opening
-    every PDF in it), so a page limit is enforced per document as the run
-    proceeds;
-  - a split knows its document and page counts exactly, but not the size of parts
-    that do not exist yet, so a storage limit is enforced per part;
-  - a Paperless-ngx import checks only the document count the remote reports;
-  - and any of them can be confirmed minutes after its preview, by which time
-    another upload may have taken the room.
-
-  A run that stops partway keeps what it already created and reports the rest as
-  errors; nothing is rolled back. The per-document checks are what make the limit
-  itself exact — the up-front check is there to turn the common failure into one
-  clear message instead of several hundred.
-
-#### The page ceiling
-
-One bound is not a plan and not configurable: **a document may hold at most 1000
-pages**, on every install. An upload over that is refused with
-`limit_ocr_pages`, before any OCR provider is called.
-
-It exists because of where the text goes. The OCR providers return a document's
-whole text as one string, and that string has to fit the `ocr_text` column,
-which holds 47 Mi characters — the same 47 MB the `documents.file` field accepts,
-counted in characters instead of bytes. Nothing else bounds an OCR result:
-Mistral is the only provider that documents a page limit (1000 pages, which is
-where this number comes from), and Google Vision reads however many pages the
-file has, five at a time. The page count, taken before the first provider call,
-is the one measurement that says whether the answer could be stored — and
-refusing there means an over-long document costs nothing rather than being paid
-for and then discarded.
-
-Consequences worth knowing:
-
-- `LIMIT_FILE_PAGES` can lower this and cannot raise it, the same way
-  `LIMIT_FILE_BYTES` relates to the 47 MB `documents.file` cap. When both would
-  refuse a file, the message names the plan limit, since that is the one the
-  account can do something about.
-- Every install now counts the pages of each PDF upload with `pdfinfo`, where
-  before only an install with a limit set did. Other file types cost a five-byte
-  header read. A PDF whose page count cannot be read counts as one page, so on a
-  host without poppler this ceiling is not enforced at upload — the OCR step
-  refuses an over-long result there instead, which fails the document rather than
-  the upload.
-- A restore or a Paperless-ngx import that brings a document's text with it skips
-  the ceiling: no OCR will run, so there is nothing to spend, and a long document
-  archived before this existed stays restorable.
-- DOCX and XLSX are not bounded by page count — a spreadsheet has none — so they
-  are measured as they are parsed instead, and an extraction that runs past the
-  column is abandoned with an error rather than stored short. An XLSX is the case
-  this matters for: cells reference a shared string table, so the text one
-  extracts to is not bounded by the bytes it arrived in.
 
 ## First-launch setup wizard
 
@@ -156,25 +65,25 @@ configuration.
 
 `WORKER_CRON_EXPR` is not editable there; change `.env` and restart, or use PocketBase Admin → Settings → Crons.
 
-**Extra extraction rules** (Processing tab) is the one part of the extraction prompt an admin writes. Whatever is in it is appended to the built-in prompt, after the list of existing correspondents and document types and before the format rules, so it can state house conventions the fixed prompt cannot know — “treat *Rechnung* as the document type Invoice”, “tag insurance documents with the policy number”. It cannot change which fields are stored: the pipeline parses the answer into a fixed set, and the prompt says so after the rules. Up to 4000 characters, empty by default, and applied to documents processed or reprocessed from then on. It is tenant-owned, so a managed instance keeps it. The extraction log line reports its length as `rule_chars`, and each document's `extract_metadata` step run records the prompt it actually ran under (see below).
+**Extra extraction rules** (Processing tab) is the one part of the extraction prompt an admin writes. Whatever is in it is appended to the built-in prompt, after the list of existing correspondents and document types and before the format rules, so it can state house conventions the fixed prompt cannot know — “treat *Rechnung* as the document type Invoice”, “tag insurance documents with the policy number”. It cannot change which fields are stored: the pipeline parses the answer into a fixed set, and the prompt says so after the rules. Up to 4000 characters, empty by default, and applied to documents processed or reprocessed from then on. The extraction log line reports its length as `rule_chars`, and each document's `extract_metadata` step run records the prompt it actually ran under (see below).
 
 `EXTRACTION_PROMPT_VERSION` is not offered there either. It is pure bookkeeping — it is recorded on each document's `extract_metadata` step run so metadata can be traced back to a prompt, and never reaches the prompt itself — so there is nothing for an admin to tune. Where extraction rules are set, that step run records `v1+rules.<digest>` instead of the bare version: the rules change the prompt while the version does not, and a run recorded under `v1` alone would name a prompt that no longer exists. Documents extracted with no rules keep the bare version, so nothing changes for an instance that sets none. `PATCH /api/app/settings` still accepts `extraction_prompt_version`, and it can be edited in PocketBase Admin → `app_settings`.
 
 ### Ingest folder
 
-With `INGEST_DIR` set, a cron walks that directory and turns every storable file (the same types the upload accepts: PDF, JPEG, PNG, WebP, TXT, CSV, DOCX, XLSX) into a document, exactly as if it had been uploaded: the file is hashed, measured against the instance limits, and queued for the full pipeline. The walk is recursive (a root that is itself a symlink is followed), and the folders between the root and the file become its tags — `Taxes/2024/invoice.pdf` arrives tagged **Taxes** and **2024**, reusing an existing tag whose name matches case-insensitively and creating the ones that do not exist yet. Extraction adds the model's tags to these rather than replacing them. Dot-files and dot-folders, symlinks, empty files and anything not storable are ignored; a file modified in the last 30 seconds waits for the next scan so nothing half-written is picked up.
+With `INGEST_DIR` set, a cron walks that directory and turns every storable file (the same types the upload accepts: PDF, JPEG, PNG, WebP, TXT, CSV, DOCX, XLSX) into a document, exactly as if it had been uploaded: the file is hashed, measured against the 47 MB document cap and [the page ceiling](#the-page-ceiling), and queued for the full pipeline. The walk is recursive (a root that is itself a symlink is followed), and the folders between the root and the file become its tags — `Taxes/2024/invoice.pdf` arrives tagged **Taxes** and **2024**, reusing an existing tag whose name matches case-insensitively and creating the ones that do not exist yet. Extraction adds the model's tags to these rather than replacing them. Dot-files and dot-folders, symlinks, empty files and anything not storable are ignored; a file modified in the last 30 seconds waits for the next scan so nothing half-written is picked up.
 
-The **Ingest** tab (`/settings/ingest`) holds the three settings, all tenant-owned (owner and interval are shared with [IMAP ingest](#ingest-from-imap)):
+The **Ingest** tab (`/settings/ingest`) holds the three settings (owner and interval are shared with [IMAP ingest](#ingest-from-imap)):
 
 - **Owner** — the account every document from the folder belongs to. Default is the first admin's paired `users` account; any account can be picked.
 - **Scan every** — default 5 minutes. Saving re-schedules the `dir_ingest` cron (visible in PocketBase Admin → Settings → Crons), so a change applies without a restart. Accepted are the minutes that divide an hour (1–30) and the hours that divide a day (1–24); anything else is refused, since a cron step would space it unevenly.
-- **Delete the original file after it is consumed** — off by default. Off, files stay in place and each is imported once: the account's `ingest_files` ledger remembers every consumed path with its size and modification time, so neither a restart nor deleting the document brings a file back; changing the file imports it again. A file whose content is already in the library is skipped by the checksum duplicate check. Files above the 47 MB document cap and symlinks are never read. On, a file is removed once its document exists, and a file that turns out to be a duplicate is removed as well; with encryption at rest the removal waits until the vault has sealed the document, so a hard kill cannot lose both copies. A file the pipeline refuses (wrong content for its extension, over a per-file limit) is never deleted; it is logged once and skipped. Reaching an instance-wide limit stops the scan until the next interval.
+- **Delete the original file after it is consumed** — off by default. Off, files stay in place and each is imported once: the account's `ingest_files` ledger remembers every consumed path with its size and modification time, so neither a restart nor deleting the document brings a file back; changing the file imports it again. A file whose content is already in the library is skipped by the checksum duplicate check. Files above the 47 MB document cap and symlinks are never read. On, a file is removed once its document exists, and a file that turns out to be a duplicate is removed as well; with encryption at rest the removal waits until the vault has sealed the document, so a hard kill cannot lose both copies. A file the pipeline refuses (wrong content for its extension, over the page ceiling) is never deleted; it is logged once and skipped.
 
 ### Ingest from IMAP
 
 With `INGEST_IMAP_ENABLED` set, the **Ingest** tab also offers a mailbox, and a cron (`imap_ingest`, on the same interval as the folder) reads its folder: every attachment whose name has a storable extension of a chosen type becomes a document owned by the same account, through the same hooks as an upload. The message body is never a document, nor is an image anywhere under a `multipart/related` part — the logos and icons an HTML body embeds by `cid:` — unless the sender marked it `Content-Disposition: attachment`; an image sent as a real attachment still counts. An inline image outside `multipart/related` is imported, since that is how iPhone Mail sends attached photos. Mail without such an attachment is left untouched. Leaving the server empty turns it off.
 
-Only mail received after the mailbox was set up is scanned: saving a new server, username or folder records that moment (`imap_since`, shown under the Mailbox fields), and anything the folder already held is left alone, whatever the after-import action. A new password or after-import action keeps the moment, so nothing that arrived meanwhile is skipped. Older mail is a backfill: **Maintenance → Mailbox** takes two days, inclusive, and imports the attachments of everything received between them (IMAP `SINCE`/`BEFORE`, by the server's received date). The backfill opens the folder read-only, never moves or deletes a message, does not touch the keep-mode ledger, and relies on the checksum check to skip attachments already in the library, so running it twice is harmless. It runs in the background and holds the same lock as the scheduled scan, so neither starts while the other runs — a delete or move scan never works on the folder a backfill is reading. A message that fails is counted and passed over; only an instance limit stops it early.
+Only mail received after the mailbox was set up is scanned: saving a new server, username or folder records that moment (`imap_since`, shown under the Mailbox fields), and anything the folder already held is left alone, whatever the after-import action. A new password or after-import action keeps the moment, so nothing that arrived meanwhile is skipped. Older mail is a backfill: **Maintenance → Mailbox** takes two days, inclusive, and imports the attachments of everything received between them (IMAP `SINCE`/`BEFORE`, by the server's received date). The backfill opens the folder read-only, never moves or deletes a message, does not touch the keep-mode ledger, and relies on the checksum check to skip attachments already in the library, so running it twice is harmless. It runs in the background and holds the same lock as the scheduled scan, so neither starts while the other runs — a delete or move scan never works on the folder a backfill is reading. A message that fails is counted and passed over.
 
 Messages are fetched 200 at a time. Attachments inside a forwarded message (`message/rfc822`) count too. Messages already flagged `\Deleted` are ignored. A message whose import keeps failing for another reason than a refusal (a hook error, a full disk) is retried on the next two scans and then given up on with an error in the log, so it cannot hold back the mail behind it; the backfill can import it later. The since cut allows 10 minutes for a server clock running behind this host's.
 
@@ -186,11 +95,11 @@ Delete and move rely on UIDPLUS (or IMAP4rev2) to expunge only the messages Lemm
 - **Import** — which file types become documents: **PDF**, **Office** (DOCX, XLSX), **Images** (JPG, PNG, WEBP) and **Text** (TXT, CSV); all by default. Stored as the types to skip (`imap_skip_types`); at least one must stay on. A message with an attachment of an unchecked type is never moved or deleted, like one with a refused attachment, so Delete cannot take a file that was never imported; embedded logos do not hold a message. Turning a type back on does not revisit mail already scanned; a backfill picks it up. The backfill applies the same filter.
 - **After import** — **Keep** (default) opens the folder read-only and remembers the highest UID consumed in the `ingest_files` ledger, so neither a restart nor deleting the document brings a message back; a server that resets UIDVALIDITY starts over, and the checksum check skips what is already in the library. **Move** moves each consumed message to another folder (created if missing; it must differ from the source). **Delete** flags it `\Deleted` and expunges it. With encryption at rest, moving or deleting waits until the vault has sealed the documents.
 
-A message whose attachment is refused (empty, over the 47 MB cap, wrong content for its extension) is never moved or deleted; it is logged and skipped. Reaching an instance-wide limit, or any other error, stops the scan and the message is retried next interval.
+A message whose attachment is refused (empty, over the 47 MB cap, wrong content for its extension) is never moved or deleted; it is logged and skipped. Any other error stops the scan, and the message is retried next interval.
 
 ## Management (admin UI)
 
-**Management** in the nav (admin only, below Settings) manages the accounts on the instance. Its **Users** tab lists every `users` account, adds one (email, optional name, password; created verified, so it can sign in at once), edits a regular account's email, name or password, and deletes one. Deleting an account also deletes its documents, tags, shares and passkeys. Admin accounts (`is_app_admin`) are listed but read-only here; manage them in the PocketBase dashboard. The routes are `GET`/`POST /api/app/admin/users` and `PATCH`/`DELETE /api/app/admin/users/{id}`, admin only, and `403` on an admin account. A new account counts against `LIMIT_ADDITIONAL_USERS`, and with the vault on its password gets its own key wrap, as with any other account.
+**Management** in the nav (admin only, below Settings) manages the accounts on the instance. Its **Users** tab lists every `users` account, adds one (email, optional name, password; created verified, so it can sign in at once), edits a regular account's email, name or password, and deletes one. Deleting an account also deletes its documents, tags, shares and passkeys. Admin accounts (`is_app_admin`) are listed but read-only here; manage them in the PocketBase dashboard. The routes are `GET`/`POST /api/app/admin/users` and `PATCH`/`DELETE /api/app/admin/users/{id}`, admin only, and `403` on an admin account. With the vault on, a new account's password gets its own key wrap, as with any other account.
 
 ## Maintenance (admin UI)
 
@@ -226,6 +135,39 @@ Browse them in PocketBase Admin as a superuser. Enable SMTP when you want real d
 Plain file upload stays on `/upload` itself (an index route), so existing links and the **Upload** nav entry keep landing on it.
 
 A folder can be dropped on the Files tab or picked with **Choose a folder instead**, and is walked to the bottom in the browser: each file inside it is posted as its own document, exactly as if it had been picked by hand. A file that came out of a folder is named `<parent folder>-<file>`, the same rule the zip imports use, because a scanner that writes `1.pdf` into a folder per batch would otherwise fill the library with documents called `1.pdf`. Finder and archiver leftovers are dropped silently rather than reported as the wrong type — `__MACOSX/`, AppleDouble `._` shadows (which carry the extension of the file they belong to) and any other dot-file, the same rule the zip import applies. A `.zip` dropped here is not uploaded; it points at the Zip archive tab, which can show what the archive holds first.
+
+### The page ceiling
+
+One bound is not configurable: **a document may hold at most 1000 pages**, on
+every install. An upload over that is refused with `limit_ocr_pages`, before any
+OCR provider is called.
+
+It exists because of where the text goes. The OCR providers return a document's
+whole text as one string, and that string has to fit the `ocr_text` column,
+which holds 47 Mi characters — the same 47 MB the `documents.file` field accepts,
+counted in characters instead of bytes. Nothing else bounds an OCR result:
+Mistral is the only provider that documents a page limit (1000 pages, which is
+where this number comes from), and Google Vision reads however many pages the
+file has, five at a time. The page count, taken before the first provider call,
+is the one measurement that says whether the answer could be stored — and
+refusing there means an over-long document costs nothing rather than being paid
+for and then discarded.
+
+Consequences worth knowing:
+
+- Every PDF upload has its pages counted with `pdfinfo`; other file types cost a
+  five-byte header read. A PDF whose page count cannot be read counts as one
+  page, so on a host without poppler this ceiling is not enforced at upload — the
+  OCR step refuses an over-long result there instead, which fails the document
+  rather than the upload.
+- A restore or a Paperless-ngx import that brings a document's text with it skips
+  the ceiling: no OCR will run, so there is nothing to spend, and a long document
+  archived before this existed stays restorable.
+- DOCX and XLSX are not bounded by page count — a spreadsheet has none — so they
+  are measured as they are parsed instead, and an extraction that runs past the
+  column is abandoned with an error rather than stored short. An XLSX is the case
+  this matters for: cells reference a shared string table, so the text one
+  extracts to is not bounded by the bytes it arrived in.
 
 ### Amazon order import
 

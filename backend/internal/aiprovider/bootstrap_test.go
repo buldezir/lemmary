@@ -219,7 +219,7 @@ func TestReferencedBySettingsCoversTheEmbeddingBinding(t *testing.T) {
 
 // Removing WEB_SEARCH_SDK from a managed instance has to actually turn the
 // tools off again. Leaving the binding standing would be a one-way door: the
-// Settings page refuses this field under AI_MANAGED=1, so an operator who
+// Settings page refuses this field under MANAGED=1, so an operator who
 // unset the environment would have no way back to the off behaviour.
 func TestBindWebSearchClearsWhenTheProviderIsRemoved(t *testing.T) {
 	t.Parallel()

@@ -16,6 +16,8 @@ import {
 } from '../lib/api/scan'
 import { documentsLanding } from '../lib/reviewPolicy'
 import { Button, inputClassName, labelTextClassName } from '../components/ui'
+import { ManagedByHostNotice } from '../components/settings/SettingsFeedback'
+import { useAppMeta } from '../hooks/useAppMeta'
 
 function errorMessage(err: unknown, fallback: string) {
   return err instanceof Error && err.message ? err.message : fallback
@@ -56,6 +58,14 @@ function useScanPreview(uploadId: string | undefined, pageCount: number) {
 }
 
 export function UploadScanPage() {
+  // unknown/failed meta counts as managed; see AppMeta.managed
+  const { managed, metaLoaded } = useAppMeta()
+  if (!metaLoaded) return null
+  if (managed !== false) return <ManagedByHostNotice />
+  return <ScanPanel />
+}
+
+function ScanPanel() {
   const [scanner, setScanner] = useState(recallScanner)
   const [source, setSource] = useState<ScanSource>('platen')
   const [found, setFound] = useState<FoundScanner[] | null>(null)

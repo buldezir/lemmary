@@ -62,13 +62,16 @@ export function primaryNavItems(reviewRequired: boolean): readonly NavItem[] {
   ]
 }
 
-/** The links behind the bar's "More" menu, listed inline on a narrow one. */
-export function secondaryNavItems(pbAdminUrl: string): readonly NavItem[] {
+/**
+ * The links behind the bar's "More" menu, listed inline on a narrow one.
+ * `hostEditable` is false on a managed instance, which offers no OCR test.
+ */
+export function secondaryNavItems(pbAdminUrl: string, hostEditable: boolean): readonly NavItem[] {
   return [
     { kind: 'route', label: 'Account', to: '/account' },
     { kind: 'route', label: 'Tags', to: '/tags' },
     { kind: 'route', label: 'Bulk Actions', to: '/bulk' },
-    { kind: 'route', label: 'OCR test', to: '/ocr-test' },
+    ...(hostEditable ? [{ kind: 'route', label: 'OCR test', to: '/ocr-test' } as const] : []),
     { kind: 'route', label: 'Export', to: '/export' },
     { kind: 'route', label: 'Import', to: '/import' },
     { kind: 'route', label: 'Settings', to: '/settings', admin: true },

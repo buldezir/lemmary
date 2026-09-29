@@ -136,9 +136,7 @@ everything, because vectors from two models cannot be compared.
 Only useful if you want a *fresh* instance to come up already configured — a
 scripted deploy, or a volume you expect to recreate. The variables are read on
 the **first boot only**, when the settings row does not exist yet; after that
-**Settings** is the authority and editing `.env` changes nothing. (The exception
-is a managed instance, `AI_MANAGED=1`, where the environment wins on every
-boot — see [Two modes, one build](/ai_providers#two-modes-one-build).)
+**Settings** is the authority and editing `.env` changes nothing.
 
 ```dotenv
 # General AI — extraction, Ask AI, search, Deep Research

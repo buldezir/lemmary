@@ -17,6 +17,7 @@ import (
 	"lemmary/backend/internal/chat"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/metrics"
 	"lemmary/backend/internal/websearch"
 )
 
@@ -257,6 +258,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		session, opened = created, created
 	}
 
+	metrics.SearchRun(mode)
 	return searchTurn{
 		agent:          agent,
 		session:        session,

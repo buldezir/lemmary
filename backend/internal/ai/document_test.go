@@ -15,7 +15,7 @@ import (
 	"lemmary/backend/internal/aiprovider"
 )
 
-// managedForTest turns AI_MANAGED on for the length of one test. Not
+// managedForTest turns MANAGED on for the length of one test. Not
 // parallel-safe; none of the tests below call t.Parallel().
 func managedForTest(t *testing.T, on bool) {
 	t.Helper()

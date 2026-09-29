@@ -150,6 +150,7 @@ func buildRegistry() (*prometheus.Registry, error) {
 		// instrumentation already inside our dependencies -- the Google Vision
 		// client's otelgrpc, which no code of ours could reach.
 		otel.SetMeterProvider(provider)
+		primeWorkCounters()
 		registry.reg = reg
 	})
 	return registry.reg, registry.err

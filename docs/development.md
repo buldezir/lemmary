@@ -104,7 +104,7 @@ On first run, migrations create the PocketBase collections:
 The app then opens the same
 [first-launch wizard](/setup#first-launch-setup-wizard) as a Docker
 installation. `app_settings` and `ai_providers` are seeded from `.env` on first
-boot; settings are reapplied on every boot under `AI_MANAGED=1`.
+boot.
 
 Build the frontend and documentation once, then restart the backend:
 

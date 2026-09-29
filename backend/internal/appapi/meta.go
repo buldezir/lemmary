@@ -87,8 +87,8 @@ func handleGetMeta(app core.App, rt *config.Runtime, ingestDirEnabled, ingestIMA
 			"app_name":    resolvedAppName(app),
 			"accent":      resolvedAccent(app),
 			// Public: the SPA needs both before anyone has signed in.
-			"passkeys":   passkeyLoginAvailable(app, e),
-			"ai_managed": rt.Managed(),
+			"passkeys": passkeyLoginAvailable(app, e),
+			"managed":  rt.Managed(),
 			// Public because it shapes what a regular user sees, while only an
 			// admin can change it.
 			"always_require_review": rt.AlwaysRequireReview(),

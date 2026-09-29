@@ -199,7 +199,7 @@ func TestParseRejectsMalformedInput(t *testing.T) {
 			want: EnvOCRAPIKey,
 		},
 		{
-			name: "an unreadable AI_MANAGED, which must never read as off",
+			name: "an unreadable MANAGED, which must never read as off",
 			env:  map[string]string{EnvManaged: "ture"},
 			want: EnvManaged,
 		},
@@ -257,10 +257,10 @@ func TestManagedAcceptsTheDocumentedBooleans(t *testing.T) {
 		t.Setenv(EnvAIModel, "some-model")
 		env, err := AIEnvFromEnv()
 		if err != nil {
-			t.Fatalf("AI_MANAGED=%q: %v", on, err)
+			t.Fatalf("MANAGED=%q: %v", on, err)
 		}
 		if !env.Managed {
-			t.Fatalf("AI_MANAGED=%q read as off", on)
+			t.Fatalf("MANAGED=%q read as off", on)
 		}
 	}
 	for _, off := range []string{"", "0", "false", "no", "off"} {
@@ -268,10 +268,10 @@ func TestManagedAcceptsTheDocumentedBooleans(t *testing.T) {
 		t.Setenv(EnvManaged, off)
 		env, err := AIEnvFromEnv()
 		if err != nil {
-			t.Fatalf("AI_MANAGED=%q: %v", off, err)
+			t.Fatalf("MANAGED=%q: %v", off, err)
 		}
 		if env.Managed {
-			t.Fatalf("AI_MANAGED=%q read as on", off)
+			t.Fatalf("MANAGED=%q read as on", off)
 		}
 	}
 }
