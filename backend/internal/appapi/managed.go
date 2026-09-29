@@ -15,6 +15,8 @@ const managedMessage = "AI configuration is managed by your hosting provider and
 // Shown when a feature a managed instance does not offer is called anyway.
 const unavailableWhenManagedMessage = "Not available on an instance run by a hosting provider."
 
+const readOnlyMessage = "This workspace is read-only now."
+
 // refuseWhenManaged is the real guard: hiding those Settings sections is a
 // courtesy, and the endpoints remain reachable with any admin session.
 func refuseWhenManaged(e *core.RequestEvent, rt *config.Runtime) (bool, error) {
@@ -64,4 +66,32 @@ func routesToSuperusers(e *core.RequestEvent) bool {
 	}
 	collection, err := e.App.FindCachedCollectionByNameOrId(name)
 	return err == nil && collection.Name == core.CollectionNameSuperusers
+}
+
+// refuseWritesWhenReadOnly gates by request rather than by record hook: some
+// writes are raw SQL, and a hook would also refuse the sign-in counter a
+// passkey login saves. Work queued before the deadline still runs.
+func refuseWritesWhenReadOnly(rt *config.Runtime) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		if !rt.ReadOnly() || readsOnly(e.Request) {
+			return e.Next()
+		}
+		// Both fields: the PocketBase SDK shows message, apiClient shows detail.
+		return writeJSON(e, http.StatusForbidden, map[string]any{
+			"status": http.StatusForbidden, "message": readOnlyMessage, "detail": readOnlyMessage, "data": map[string]any{},
+		})
+	}
+}
+
+// The POSTs here sign in or subscribe; none of them changes a document.
+func readsOnly(r *http.Request) bool {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	case http.MethodPost:
+		path := r.URL.Path
+		return path == "/api/realtime" || path == "/api/files/token" ||
+			strings.Contains(path, "/auth-") || strings.HasPrefix(path, "/api/app/passkeys/login/")
+	}
+	return false
 }

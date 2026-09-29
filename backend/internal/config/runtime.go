@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/openai/openai-go/v3/option"
 	"github.com/pocketbase/pocketbase/core"
@@ -88,6 +89,12 @@ func (r *Runtime) ModelCatalog() *aiprovider.Catalog { return r.catalog }
 func (r *Runtime) Env() AIEnv { return r.env }
 
 func (r *Runtime) Managed() bool { return r.env.Managed }
+
+func (r *Runtime) WritableUntil() time.Time { return r.env.WritableUntil }
+
+func (r *Runtime) ReadOnly() bool {
+	return !r.env.WritableUntil.IsZero() && !time.Now().Before(r.env.WritableUntil)
+}
 
 // AlwaysRequireReview comes off the snapshot rather than the env, unlike
 // Managed: it is a tenant's own setting, so it changes when Settings is saved

@@ -33,6 +33,7 @@ func Register(
 		Priority: 45,
 		Func: func(e *core.ServeEvent) error {
 			e.Router.BindFunc(lockSuperusersWhenManaged(rt))
+			e.Router.BindFunc(refuseWritesWhenReadOnly(rt))
 
 			g := e.Router.Group("/api/app")
 			g.GET("/meta", handleGetMeta(app, rt, ingestDirEnabled, imapScanner != nil))

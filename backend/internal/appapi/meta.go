@@ -3,6 +3,7 @@ package appapi
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 
@@ -81,7 +82,7 @@ func resolvedAccent(app core.App) string {
 
 func handleGetMeta(app core.App, rt *config.Runtime, ingestDirEnabled, ingestIMAPEnabled bool) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		return writeJSON(e, http.StatusOK, map[string]any{
+		meta := map[string]any{
 			"ingest_dir":  ingestDirEnabled,
 			"ingest_imap": ingestIMAPEnabled,
 			"app_name":    resolvedAppName(app),
@@ -98,7 +99,11 @@ func handleGetMeta(app core.App, rt *config.Runtime, ingestDirEnabled, ingestIMA
 			"web_search": rt.WebSearchAvailable(),
 			// Whether the document page offers a translated OCR text.
 			"result_language": rt.Snapshot().Cfg.ProcessingResultLanguage,
-		})
+		}
+		if until := rt.WritableUntil(); !until.IsZero() {
+			meta["writable_until"] = until.UTC().Format(time.RFC3339)
+		}
+		return writeJSON(e, http.StatusOK, meta)
 	}
 }
 

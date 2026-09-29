@@ -31,6 +31,8 @@ export type AppMeta = {
   ingestDir?: boolean
   /** Whether INGEST_IMAP_ENABLED is set; shows the mailbox half of the Ingest tab. */
   ingestImap?: boolean
+  /** When a hosted instance stops taking changes (ms since the epoch); absent for any other. */
+  writableUntil?: number
 }
 
 // One request per page load, shared by three components and the auth gate --
@@ -80,6 +82,7 @@ async function fetchAppMeta(): Promise<AppMeta> {
       ingest_dir?: boolean
       ingest_imap?: boolean
       result_language?: string
+      writable_until?: string
     }>('/api/app/meta', {
       public: true,
       fallbackError: 'Failed to load app meta',
@@ -87,6 +90,7 @@ async function fetchAppMeta(): Promise<AppMeta> {
     const appName = typeof data.app_name === 'string' ? data.app_name.trim() : ''
     const accent = typeof data.accent === 'string' ? data.accent.trim() : ''
     setAlwaysRequireReview(data.always_require_review === true)
+    const writableUntil = typeof data.writable_until === 'string' ? Date.parse(data.writable_until) : NaN
     return {
       appName: appName || DEFAULT_APP_NAME,
       accent: accent || DEFAULT_ACCENT,
@@ -96,6 +100,7 @@ async function fetchAppMeta(): Promise<AppMeta> {
       ingestDir: data.ingest_dir === true,
       ingestImap: data.ingest_imap === true,
       resultLanguage: typeof data.result_language === 'string' ? data.result_language : '',
+      writableUntil: Number.isNaN(writableUntil) ? undefined : writableUntil,
     }
   } catch {
     // A name and accent have safe defaults; who owns AI configuration does not.

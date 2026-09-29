@@ -16,6 +16,7 @@ import {
   type NavItem,
 } from '../lib/nav'
 import { AppFooter } from './AppFooter'
+import { DemoCountdown } from './DemoCountdown'
 import { Button } from './ui'
 import { AppLogo } from './ui'
 import { LoginPage } from './LoginPage'
@@ -316,6 +317,7 @@ function AppHeader({
   reviewRequired,
   hostEditable,
   userDisplayName,
+  writableUntil,
 }: {
   appName: string
   accent: string
@@ -323,6 +325,7 @@ function AppHeader({
   reviewRequired: boolean
   hostEditable: boolean
   userDisplayName: string
+  writableUntil?: number
 }) {
   const [open, setOpen] = useState(false)
   const primaryItems = primaryNavItems(reviewRequired)
@@ -359,13 +362,16 @@ function AppHeader({
   return (
     <header className="border-b-3 border-double border-line-strong bg-paper">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6 md:py-4">
-        <Link
-          to="/"
-          className="flex min-w-0 items-center gap-2.5 font-display text-lg font-semibold tracking-tight text-ink transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-oxblood sm:text-xl"
-        >
-          <AppLogo appName={appName} accent={accent} />
-          <span className="truncate">{appName}</span>
-        </Link>
+        <div className="flex min-w-0 items-center gap-3">
+          <Link
+            to="/"
+            className="flex min-w-0 items-center gap-2.5 font-display text-lg font-semibold tracking-tight text-ink transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-oxblood sm:text-xl"
+          >
+            <AppLogo appName={appName} accent={accent} />
+            <span className="truncate">{appName}</span>
+          </Link>
+          {writableUntil !== undefined && <DemoCountdown until={writableUntil} />}
+        </div>
         <div className="hidden items-center gap-4 md:flex">
           <nav className="flex items-center gap-5" aria-label="Main">
             {primaryItems.map((item) => (
@@ -478,7 +484,7 @@ async function resolveGate(): Promise<Gate> {
 
 export function RootLayout() {
   const [gate, setGate] = useState<Gate>({ kind: 'loading' })
-  const { appName, accent, alwaysRequireReview, managed } = useAppMeta()
+  const { appName, accent, alwaysRequireReview, managed, writableUntil } = useAppMeta()
   const userDisplayName = gate.kind === 'app' ? getUserDisplayName() : ''
   const admin = gate.kind === 'app' ? gate.admin : false
 
@@ -580,6 +586,7 @@ export function RootLayout() {
         reviewRequired={Boolean(alwaysRequireReview)}
         hostEditable={managed === false}
         userDisplayName={userDisplayName}
+        writableUntil={writableUntil}
       />
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6 sm:py-6">
         <Outlet />

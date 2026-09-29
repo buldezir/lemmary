@@ -22,6 +22,9 @@ type AIEnv struct {
 	Managed   bool
 	Providers aiprovider.Bootstrap
 
+	// Managed only: from this moment the instance refuses writes.
+	WritableUntil time.Time
+
 	// Operator-owned in managed mode.
 	NearDuplicateEnabled   bool
 	NearDuplicateThreshold float64
@@ -44,7 +47,8 @@ type AIEnv struct {
 // Environment variable names in one place, so the error messages and the
 // parsing cannot drift apart.
 const (
-	EnvManaged = "MANAGED"
+	EnvManaged       = "MANAGED"
+	EnvWritableUntil = "WRITABLE_UNTIL"
 
 	// EnvModelCatalogURL points the context-window lookup somewhere other than
 	// pi.dev. Empty falls back to that default rather than turning it off.
@@ -123,11 +127,28 @@ func AIEnvFromEnv() (AIEnv, error) {
 	env.Providers = aiprovider.Bootstrap{LLM: llm, OCR: ocr, Embedding: embedding, WebSearch: webSearch}
 
 	if env.Managed {
+		if env.WritableUntil, err = strictTime(EnvWritableUntil); err != nil {
+			return AIEnv{}, err
+		}
 		if err := env.validateManaged(); err != nil {
 			return AIEnv{}, err
 		}
 	}
 	return env, nil
+}
+
+// strictTime refuses rather than ignores, for strictBool's reason: a typo read
+// as unset would leave the instance writable forever.
+func strictTime(key string) (time.Time, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return time.Time{}, nil
+	}
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%s=%q is not an RFC3339 time such as 2026-01-02T15:04:05Z, or leave it unset", key, raw)
+	}
+	return t, nil
 }
 
 // strictBool refuses a value it cannot read rather than falling back to off:

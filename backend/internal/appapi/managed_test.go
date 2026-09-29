@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 
@@ -92,6 +93,48 @@ func TestLockSuperusersWhenManaged(t *testing.T) {
 			}
 			if rec.Code != want {
 				t.Errorf("%s (managed %v): status = %d, want %d", tc.name, managed, rec.Code, want)
+			}
+		}
+	}
+}
+
+// Not parallel, for the same reason.
+func TestRefuseWritesWhenReadOnly(t *testing.T) {
+	prev := aiprovider.Managed()
+	t.Cleanup(func() { aiprovider.SetManaged(prev) })
+
+	for _, tc := range []struct {
+		method, path string
+		passes       bool
+	}{
+		{http.MethodGet, "/api/collections/documents/records", true},
+		{http.MethodPost, "/api/collections/users/auth-with-password", true},
+		{http.MethodPost, "/api/collections/users/auth-refresh", true},
+		{http.MethodPost, "/api/app/passkeys/login/finish", true},
+		{http.MethodPost, "/api/realtime", true},
+		{http.MethodPost, "/api/files/token", true},
+		{http.MethodPost, "/api/collections/documents/records", false},
+		{http.MethodPatch, "/api/app/settings", false},
+		{http.MethodDelete, "/api/collections/documents/records/abc", false},
+		{http.MethodPost, "/api/app/search", false},
+		{http.MethodPost, "/api/app/passkeys/register/begin", false},
+	} {
+		for _, until := range []time.Time{{}, time.Now().Add(time.Hour), time.Now().Add(-time.Minute)} {
+			rt := config.NewRuntime(config.AIEnv{Managed: true, WritableUntil: until})
+			rec := httptest.NewRecorder()
+			e := &core.RequestEvent{}
+			e.Response = rec
+			e.Request = httptest.NewRequest(tc.method, tc.path, nil)
+
+			if err := refuseWritesWhenReadOnly(rt)(e); err != nil {
+				t.Fatalf("%s %s: middleware: %v", tc.method, tc.path, err)
+			}
+			want := http.StatusOK
+			if rt.ReadOnly() && !tc.passes {
+				want = http.StatusForbidden
+			}
+			if rec.Code != want {
+				t.Errorf("%s %s (until %v): status = %d, want %d", tc.method, tc.path, until, rec.Code, want)
 			}
 		}
 	}
