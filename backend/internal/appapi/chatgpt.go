@@ -173,5 +173,5 @@ func writeChatGPTAuthError(e *core.RequestEvent, app core.App, err error) error 
 		return writeError(e, http.StatusConflict, chatgpt.ErrDeviceAuthDisabled.Error())
 	}
 	app.Logger().Warn("chatgpt device sign-in failed", "error", err)
-	return writeError(e, http.StatusBadGateway, "ChatGPT sign-in failed: "+err.Error())
+	return writeErrorf(e, http.StatusBadGateway, "ChatGPT sign-in failed: %v", err)
 }

@@ -43,7 +43,7 @@ func handlePostImportNgx(app core.App) func(*core.RequestEvent) error {
 			return writeError(e, http.StatusConflict, "An import is already in progress.")
 		}
 		if err != nil {
-			return writeError(e, http.StatusBadRequest, "Import failed to start: "+err.Error())
+			return writeErrorf(e, http.StatusBadRequest, "Import failed to start: %v", err)
 		}
 		return writeJSON(e, http.StatusAccepted, map[string]any{
 			"job_id": jobID,

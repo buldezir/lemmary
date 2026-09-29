@@ -2,7 +2,6 @@ package appapi
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -153,7 +152,7 @@ func handleOCRTest(app core.App, rt *config.Runtime) func(*core.RequestEvent) er
 			return writeError(e, 500, "Failed to save upload.")
 		}
 		if written > ocrTestMaxFileBytes {
-			return writeError(e, 400, fmt.Sprintf("File exceeds %d byte limit.", ocrTestMaxFileBytes))
+			return writeErrorf(e, 400, "File exceeds %d byte limit.", ocrTestMaxFileBytes)
 		}
 
 		mimeType := ocr.GuessMimeType(header.Filename)

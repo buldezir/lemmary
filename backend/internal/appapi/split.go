@@ -136,7 +136,7 @@ func handlePostSplitDetect(app core.App, rt *config.Runtime) func(*core.RequestE
 		case errors.Is(err, pdfsplit.ErrDetectInProgress):
 			return writeError(e, http.StatusConflict, "A detection is already in progress.")
 		case err != nil:
-			return writeError(e, http.StatusBadRequest, "Detection failed to start: "+err.Error())
+			return writeErrorf(e, http.StatusBadRequest, "Detection failed to start: %v", err)
 		}
 		return writeJSON(e, http.StatusAccepted, map[string]any{
 			"job_id": jobID,

@@ -12,6 +12,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"lemmary/backend/internal/i18n"
 )
 
 // The unlock gate is a small HTTP server that runs before PocketBase exists.
@@ -147,22 +149,23 @@ func (v *Vault) gateHandler(done chan<- GateResult) http.Handler {
 	})
 
 	mux.HandleFunc("/unlock", func(w http.ResponseWriter, r *http.Request) {
+		lang := i18n.FromRequest(r)
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
-			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"message": "POST required."})
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"message": i18n.T(lang, "POST required.")})
 			return
 		}
 		if err := checkSameOrigin(r); err != nil {
 			// Initialising an empty vault mints a master key under a caller-chosen
 			// password, so neither that nor unlocking may be reachable by cross-origin
 			// script.
-			writeJSON(w, http.StatusForbidden, map[string]string{"message": err.Error()})
+			writeJSON(w, http.StatusForbidden, map[string]string{"message": i18n.T(lang, err.Error())})
 			return
 		}
 
 		var req unlockRequest
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"message": "Expected a JSON body."})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"message": i18n.T(lang, "Expected a JSON body.")})
 			return
 		}
 
@@ -186,20 +189,20 @@ func (v *Vault) gateHandler(done chan<- GateResult) http.Handler {
 
 		if !v.Initialized() {
 			if req.Password == "" {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"message": "A password is required to initialise this instance."})
+				writeJSON(w, http.StatusBadRequest, map[string]string{"message": i18n.T(lang, "A password is required to initialise this instance.")})
 				return
 			}
 			code, err := v.Init("", req.Password)
 			if err != nil {
 				v.opts.Log("vault: initialisation failed: %v", err)
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "Initialisation failed."})
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"message": i18n.T(lang, "Initialisation failed.")})
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]any{
 				"ok":            true,
 				"initialized":   true,
 				"recovery_code": code,
-				"message":       "Write this recovery code down now. It is shown once and it is the only way back in if the password is lost.",
+				"message":       i18n.T(lang, "Write this recovery code down now. It is shown once and it is the only way back in if the password is lost."),
 			})
 			done <- GateResult{Initialized: true, RecoveryCode: code}
 			return
@@ -217,7 +220,7 @@ func (v *Vault) gateHandler(done chan<- GateResult) http.Handler {
 				v.opts.Log("vault: unlock failed: %v", err)
 				status, msg = http.StatusInternalServerError, "Unlock failed."
 			}
-			writeJSON(w, status, map[string]string{"message": msg})
+			writeJSON(w, status, map[string]string{"message": i18n.T(lang, msg)})
 			return
 		}
 
@@ -229,7 +232,7 @@ func (v *Vault) gateHandler(done chan<- GateResult) http.Handler {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
-		_ = unlockPage.Execute(w, map[string]any{"Initialized": v.Initialized()})
+		_ = unlockPage.Execute(w, map[string]any{"Initialized": v.Initialized(), "Lang": i18n.FromRequest(r)})
 	})
 
 	return mux
@@ -264,10 +267,10 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-var unlockPage = template.Must(template.New("unlock").Parse(`<!doctype html>
-<html lang="en"><head>
+var unlockPage = template.Must(template.New("unlock").Funcs(template.FuncMap{"t": i18n.T}).Parse(`<!doctype html>
+<html lang="{{.Lang}}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Locked</title>
+<title>{{t .Lang "Locked"}}</title>
 <style>
   :root { color-scheme: light dark; --fg:#1a1614; --bg:#f6f2ea; --muted:#6b625a; --line:#ddd4c6; --accent:#7a4a2b; }
   @media (prefers-color-scheme: dark) { :root { --fg:#ece5da; --bg:#17140f; --muted:#a2988a; --line:#3a332a; --accent:#c98f5f; } }
@@ -293,22 +296,22 @@ var unlockPage = template.Must(template.New("unlock").Parse(`<!doctype html>
 </style>
 </head><body><main>
 {{if .Initialized}}
-  <h1>This archive is locked</h1>
-  <p>Its contents are encrypted on disk. Sign in to decrypt them for this session.</p>
+  <h1>{{t .Lang "This archive is locked"}}</h1>
+  <p>{{t .Lang "Its contents are encrypted on disk. Sign in to decrypt them for this session."}}</p>
 {{else}}
-  <h1>Set up encryption</h1>
-  <p>Choose the password that will unlock this archive. You will be given a recovery code — it is shown once.</p>
+  <h1>{{t .Lang "Set up encryption"}}</h1>
+  <p>{{t .Lang "Choose the password that will unlock this archive. You will be given a recovery code — it is shown once."}}</p>
 {{end}}
 <form id="f">
-  <label for="password">Password</label>
+  <label for="password">{{t .Lang "Password"}}</label>
   <input id="password" name="password" type="password" autocomplete="{{if .Initialized}}current-password{{else}}new-password{{end}}" autofocus required>
   {{if .Initialized}}
-  <details><summary>Use a recovery code instead</summary>
-    <label for="recovery_code" style="margin-top:.8rem">Recovery code</label>
+  <details><summary>{{t .Lang "Use a recovery code instead"}}</summary>
+    <label for="recovery_code" style="margin-top:.8rem">{{t .Lang "Recovery code"}}</label>
     <input id="recovery_code" name="recovery_code" autocomplete="off" spellcheck="false">
   </details>
   {{end}}
-  <button type="submit">Unlock</button>
+  <button type="submit">{{t .Lang "Unlock"}}</button>
 </form>
 <div class="msg" id="m"></div>
 <script>
@@ -332,20 +335,20 @@ f.addEventListener('submit', async (ev) => {
       if (d.recovery_code) {
         m.textContent = d.message + '\n\n' + d.recovery_code;
         m.style.display = 'block';
-        btn.textContent = 'Continue';
+        btn.textContent = {{t .Lang "Continue"}};
         btn.disabled = false;
         f.onsubmit = () => location.reload();
         return;
       }
-      m.textContent = 'Unlocked. Starting…';
+      m.textContent = {{t .Lang "Unlocked. Starting…"}};
       m.style.display = 'block';
       setTimeout(() => location.reload(), 1500);
       return;
     }
-    m.textContent = d.message || 'Unlock failed.';
+    m.textContent = d.message || {{t .Lang "Unlock failed."}};
     m.style.display = 'block';
   } catch (e) {
-    m.textContent = 'Unlock failed.';
+    m.textContent = {{t .Lang "Unlock failed."}};
     m.style.display = 'block';
   }
   btn.disabled = false;

@@ -14,6 +14,7 @@ import (
 
 	"lemmary/backend/internal/duplicates"
 	"lemmary/backend/internal/escl"
+	"lemmary/backend/internal/i18n"
 	"lemmary/backend/internal/limits"
 )
 
@@ -199,7 +200,7 @@ func writeScanSaveError(app core.App, e *core.RequestEvent, err error) error {
 		return writeError(e, http.StatusBadRequest, err.Error())
 	case errors.As(err, &dup):
 		return writeJSON(e, http.StatusBadRequest, map[string]any{
-			"detail":       "This document is already in your library.",
+			"detail":       i18n.T(i18n.FromRequest(e.Request), "This document is already in your library."),
 			"duplicate_of": dup.ExistingID,
 		})
 	}
