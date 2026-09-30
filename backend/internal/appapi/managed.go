@@ -85,15 +85,19 @@ func refuseWritesWhenReadOnly(rt *config.Runtime) func(*core.RequestEvent) error
 	}
 }
 
-// The POSTs here sign in or subscribe; none of them changes a document.
+// The POSTs here sign in or subscribe; none of them changes a document. By
+// exact path: OAuth2 and OTP can create a user, so they stay refused.
 func readsOnly(r *http.Request) bool {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 		return true
 	case http.MethodPost:
-		path := r.URL.Path
-		return path == "/api/realtime" || path == "/api/files/token" ||
-			strings.Contains(path, "/auth-") || strings.HasPrefix(path, "/api/app/passkeys/login/")
+		switch r.URL.Path {
+		case "/api/collections/users/auth-with-password", "/api/collections/users/auth-refresh",
+			"/api/app/passkeys/login/begin", "/api/app/passkeys/login/finish",
+			"/api/realtime", "/api/files/token":
+			return true
+		}
 	}
 	return false
 }
