@@ -81,7 +81,7 @@ func handleGetLimits(app core.App, lim limits.Limits, badKeys []string) func(*co
 // enforces every limit per document, and this only turns the common case into
 // one message instead of several hundred. It is not a reservation -- nothing
 // holds the room between the check and the run, so do not describe the bulk
-// paths as all-or-nothing on the strength of it (docs/setup.md has the detail).
+// paths as all-or-nothing on the strength of it.
 // pages is passed as 0 by callers that cannot know it without opening every PDF.
 func preflightImport(app core.App, lim limits.Limits, documents, pages, bytes int64) *limits.ErrExceeded {
 	if documents <= 0 {

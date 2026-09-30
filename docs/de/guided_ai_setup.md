@@ -143,9 +143,7 @@ alles neu ein, weil sich Vektoren aus zwei Modellen nicht vergleichen lassen.
 Nur nützlich, wenn eine *frische* Instanz bereits konfiguriert starten soll – bei einem
 skriptgesteuerten Deployment oder einem Volume, das Sie neu anlegen wollen. Die Variablen
 werden **nur beim ersten Start** gelesen, wenn der Einstellungsdatensatz noch nicht existiert;
-danach sind die **Einstellungen** maßgeblich, und eine Änderung an `.env` bewirkt nichts. (Die
-Ausnahme ist eine verwaltete Instanz, `AI_MANAGED=1`, bei der die Umgebung bei jedem Start
-Vorrang hat – siehe [Zwei Modi, ein Build](/de/ai_providers#two-modes-one-build).)
+danach sind die **Einstellungen** maßgeblich, und eine Änderung an `.env` bewirkt nichts.
 
 ```dotenv
 # General AI — extraction, Ask AI, search, Deep Research

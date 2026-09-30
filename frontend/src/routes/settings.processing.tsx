@@ -1,6 +1,8 @@
 import { type SubmitEvent } from 'react'
 
+import { useAppMeta } from '../hooks/useAppMeta'
 import { useSettingsForm } from '../hooks/useSettingsForm'
+import type { AppSettingsPatch } from '../lib/api/settings'
 import {
   ResultDialog,
   SaveSettingsButton,
@@ -17,10 +19,13 @@ import {
 import { t } from '../i18n'
 
 /**
- * None of these is a provider or a model, so a managed tenant keeps them: the
- * environment seeds them on the first boot and never touches them again.
+ * A managed tenant keeps everything here but the two timeouts, which its host
+ * re-applies from the environment on every boot.
  */
 export function SettingsProcessingPage() {
+  // unknown/failed meta counts as managed; see AppMeta.managed
+  const { managed } = useAppMeta()
+  const timeoutsEditable = managed === false
   const { form, loading, error, success, saving, updateField, save, setError, closeResult } =
     useSettingsForm((settings) => ({
       ocr_timeout_sec: String(settings.ocr_timeout_sec),
@@ -36,20 +41,23 @@ export function SettingsProcessingPage() {
     event.preventDefault()
     if (!form) return
 
-    const ocrTimeout = Number(form.ocr_timeout_sec)
-    const openAITimeout = Number(form.openai_timeout_sec)
-    if (!Number.isFinite(ocrTimeout) || ocrTimeout <= 0) {
-      setError(t('settingsProcessing.ocrTimeoutInvalid'))
-      return
-    }
-    if (!Number.isFinite(openAITimeout) || openAITimeout <= 0) {
-      setError(t('settingsProcessing.aiTimeoutInvalid'))
-      return
+    let timeouts: AppSettingsPatch = {}
+    if (timeoutsEditable) {
+      const ocrTimeout = Number(form.ocr_timeout_sec)
+      const openAITimeout = Number(form.openai_timeout_sec)
+      if (!Number.isFinite(ocrTimeout) || ocrTimeout <= 0) {
+        setError(t('settingsProcessing.ocrTimeoutInvalid'))
+        return
+      }
+      if (!Number.isFinite(openAITimeout) || openAITimeout <= 0) {
+        setError(t('settingsProcessing.aiTimeoutInvalid'))
+        return
+      }
+      timeouts = { ocr_timeout_sec: ocrTimeout, openai_timeout_sec: openAITimeout }
     }
 
     await save({
-      ocr_timeout_sec: ocrTimeout,
-      openai_timeout_sec: openAITimeout,
+      ...timeouts,
       processing_result_language: form.processing_result_language,
       deep_search_languages: form.deep_search_languages,
       extraction_rules: form.extraction_rules,
@@ -80,36 +88,40 @@ export function SettingsProcessingPage() {
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className={labelClassName}>
-            <label className={labelClassName}>
-              <span className={labelTextClassName}>{t('settingsProcessing.ocrTimeout')}</span>
-              <input
-                type="number"
-                min={1}
-                className={inputClassName}
-                value={form.ocr_timeout_sec}
-                onChange={(e) => updateField('ocr_timeout_sec', e.target.value)}
-              />
-            </label>
-            <p className={fieldHintClassName}>
-              {t('settingsProcessing.ocrTimeoutHint')}
-            </p>
-          </div>
-          <div className={labelClassName}>
-            <label className={labelClassName}>
-              <span className={labelTextClassName}>{t('settingsProcessing.aiTimeout')}</span>
-              <input
-                type="number"
-                min={1}
-                className={inputClassName}
-                value={form.openai_timeout_sec}
-                onChange={(e) => updateField('openai_timeout_sec', e.target.value)}
-              />
-            </label>
-            <p className={fieldHintClassName}>
-              {t('settingsProcessing.aiTimeoutHint')}
-            </p>
-          </div>
+          {timeoutsEditable && (
+            <>
+              <div className={labelClassName}>
+                <label className={labelClassName}>
+                  <span className={labelTextClassName}>{t('settingsProcessing.ocrTimeout')}</span>
+                  <input
+                    type="number"
+                    min={1}
+                    className={inputClassName}
+                    value={form.ocr_timeout_sec}
+                    onChange={(e) => updateField('ocr_timeout_sec', e.target.value)}
+                  />
+                </label>
+                <p className={fieldHintClassName}>
+                  {t('settingsProcessing.ocrTimeoutHint')}
+                </p>
+              </div>
+              <div className={labelClassName}>
+                <label className={labelClassName}>
+                  <span className={labelTextClassName}>{t('settingsProcessing.aiTimeout')}</span>
+                  <input
+                    type="number"
+                    min={1}
+                    className={inputClassName}
+                    value={form.openai_timeout_sec}
+                    onChange={(e) => updateField('openai_timeout_sec', e.target.value)}
+                  />
+                </label>
+                <p className={fieldHintClassName}>
+                  {t('settingsProcessing.aiTimeoutHint')}
+                </p>
+              </div>
+            </>
+          )}
           <div className={labelClassName}>
             <label className={labelClassName}>
               <span className={labelTextClassName}>{t('settingsProcessing.resultLanguage')}</span>

@@ -63,7 +63,7 @@ Fix what it reports rather than excluding it. Delete dead code instead of adding
 
 ## Feature flags
 
-One binary, one image. Optional behaviour is a runtime env flag, never a build tag. Absent means off, and off is the pre-flag behaviour. Pattern: `VAULT_ENABLED`, `LIMIT_*`.
+One binary, one image. Optional behaviour is a runtime env flag, never a build tag. Absent means off, and off is the pre-flag behaviour. Pattern: `VAULT_ENABLED`, `INGEST_IMAP_ENABLED`.
 
 When adding one: read it once at wiring time and pass it down; document it in `.env.example` with what it costs, not only what it does.
 

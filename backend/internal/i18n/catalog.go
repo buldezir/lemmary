@@ -441,6 +441,14 @@ var catalog = map[string]map[string]string{
 		"de": "Es ist keine Ergebnissprache festgelegt; passen Sie die Einstellungen an.",
 		"ru": "Язык результата не задан; измените Настройки.",
 	},
+	"Not available on an instance run by a hosting provider.": {
+		"de": "Auf einer von einem Hosting-Anbieter betriebenen Instanz nicht verfügbar.",
+		"ru": "Недоступно на экземпляре, которым управляет хостинг-провайдер.",
+	},
+	"Not found.": {
+		"de": "Nicht gefunden.",
+		"ru": "Не найдено.",
+	},
 	"OCR extraction failed; check the server logs for details.": {
 		"de": "Die OCR-Erkennung ist fehlgeschlagen; Details finden Sie in den Server-Logs.",
 		"ru": "Не удалось выполнить OCR; подробности в журналах сервера.",
@@ -744,6 +752,10 @@ var catalog = map[string]map[string]string{
 	"This sign-in request expired. Try again.": {
 		"de": "Diese Anmeldeanfrage ist abgelaufen. Versuchen Sie es erneut.",
 		"ru": "Срок действия запроса на вход истёк. Повторите попытку.",
+	},
+	"This workspace is read-only now.": {
+		"de": "Dieser Arbeitsbereich ist jetzt schreibgeschützt.",
+		"ru": "Это рабочее пространство теперь доступно только для чтения.",
 	},
 	"Too many sign-in attempts are in progress. Try again in a minute.": {
 		"de": "Es laufen zu viele Anmeldeversuche. Versuchen Sie es in einer Minute erneut.",

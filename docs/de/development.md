@@ -104,8 +104,7 @@ Beim ersten Start legen Migrationen die PocketBase-Collections an:
 Die App öffnet dann denselben
 [Assistenten für den ersten Start](/de/setup#first-launch-setup-wizard) wie eine
 Docker-Installation. `app_settings` und `ai_providers` werden beim ersten Start aus
-`.env` vorbelegt; unter `AI_MANAGED=1` werden die Einstellungen bei jedem Start neu
-angewendet.
+`.env` vorbelegt.
 
 Bauen Sie Frontend und Dokumentation einmal und starten Sie dann das Backend neu:
 

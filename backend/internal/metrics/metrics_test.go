@@ -60,6 +60,8 @@ func TestScrape(t *testing.T) {
 	Job("completed", 2*time.Second)
 	TimeAICall(context.Background(), "ocr", "mistral", "mistral-ocr-latest")(nil)
 	AITokens("gpt-5", 100, 10, 20)
+	OCRPages(3)
+	SearchRun("research")
 	qd := QueueDepth(func() (int64, error) { return 7, nil })
 	usage := RegisterUsage(func() (Usage, error) {
 		return Usage{
@@ -90,6 +92,10 @@ func TestScrape(t *testing.T) {
 		`kind="ocr"`,
 		`lemmary_ai_tokens_total{`,
 		"lemmary_jobs_pending 7",
+		"lemmary_ocr_pages_total 3",
+		`lemmary_search_runs_total{mode="research"} 1`,
+		// Primed at zero: present before any search in this mode ran.
+		`lemmary_search_runs_total{mode="search"} 0`,
 		// Usage and its allowance share the resource label, so a dashboard
 		// divides one by the other. An unset limit emits no series at all --
 		// asserted below.

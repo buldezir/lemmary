@@ -10,9 +10,9 @@ import { t } from '../i18n'
  * optional, so a tab naming its own leaves the rest of the record alone.
  */
 export function SettingsPage() {
-  // unknown/failed meta counts as managed; see AppMeta.aiManaged
-  const { aiManaged, ingestDir, ingestImap } = useAppMeta()
-  const aiEditable = aiManaged === false
+  // unknown/failed meta counts as managed; see AppMeta.managed
+  const { managed, ingestDir, ingestImap } = useAppMeta()
+  const hostEditable = managed === false
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -21,7 +21,7 @@ export function SettingsPage() {
         <p className="mt-1 text-sm text-ink-soft">
           {t('settings.intro')}
         </p>
-        {!aiEditable && (
+        {!hostEditable && (
           <p className="mt-2 text-sm text-ink-soft">
             {t('settings.aiManaged')}
           </p>
@@ -37,7 +37,7 @@ export function SettingsPage() {
         </Link>
         {/* Hidden rather than disabled on a managed instance: there is nothing
             editable behind them. */}
-        {aiEditable && (
+        {hostEditable && (
           <Link to="/settings/ai" className={tabClassName}>
             {t('settings.tabAi')}
           </Link>
@@ -45,10 +45,12 @@ export function SettingsPage() {
         <Link to="/settings/processing" className={tabClassName}>
           {t('settings.tabProcessing')}
         </Link>
-        <Link to="/settings/worker" className={tabClassName}>
-          {t('settings.tabWorker')}
-        </Link>
-        {aiEditable && (
+        {hostEditable && (
+          <Link to="/settings/worker" className={tabClassName}>
+            {t('settings.tabWorker')}
+          </Link>
+        )}
+        {hostEditable && (
           <Link to="/settings/duplicates" className={tabClassName}>
             {t('settings.tabDuplicates')}
           </Link>

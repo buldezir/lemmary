@@ -202,12 +202,7 @@ Zwei Arten, und sie beantworten unterschiedliche Fragen:
   docker compose start
   ```
 
-## Instanzlimits und Ressourcen {#instance-limits-and-resources}
-
-Die Familie `LIMIT_*` begrenzt, wie viel eine Instanz aufnehmen darf, und wird nur
-beim Start gelesen, nie aus den Einstellungen – ändern Sie einen Wert, indem Sie
-den Container neu erstellen. Alle sind unbegrenzt, wenn sie nicht gesetzt sind.
-Siehe [Instanzlimits](/de/setup#instance-limits).
+## Ressourcen {#resources}
 
 Das Image legt `OPENBLAS_NUM_THREADS=1` und `OMP_NUM_THREADS=1` fest: OpenBLAS und
 OpenMP starten standardmäßig jeweils einen Thread pro Kern, und das in einem

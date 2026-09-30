@@ -128,8 +128,8 @@ than lowering `--max-batch-tokens` past the truncation floor.
 ## Changing the model
 
 Vectors from two models cannot be compared, so switching is a re-embed of the
-whole archive — and on a self-hosted instance it takes **two** steps, because
-outside `AI_MANAGED=1` the environment seeds the database on the first boot only:
+whole archive — and it takes **two** steps, because the environment seeds the
+database on the first boot only:
 
 1. Change `EMBEDDINGS_MODEL` and recreate the sidecar.
 2. Change the model in **Settings → Models** as well.
@@ -139,5 +139,4 @@ serving the new one. That is caught rather than silently wrong — the app recor
 the vector length from the provider's first response and refuses a later
 disagreement — but the archive stops embedding until the binding is corrected.
 Changing it in Settings resets the recorded dimensions and rebuilds the chunk
-index, which is what a model switch actually requires. Under `AI_MANAGED=1` the
-environment is authoritative on every boot, so step 1 is enough.
+index, which is what a model switch actually requires.

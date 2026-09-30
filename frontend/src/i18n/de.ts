@@ -368,7 +368,7 @@ export const de: Catalog = {
   'settingsFeedback.save': 'Einstellungen speichern',
   'settingsFeedback.loading': 'Einstellungen werden geladen...',
   'settingsFeedback.managedByHost':
-    'Diese Einstellungen werden von Ihrem Hosting-Anbieter verwaltet. Anbieter, Modelle und Duplikaterkennung stammen aus der Umgebung der Instanz und können hier nicht geändert werden.',
+    'Dies wird von Ihrem Hosting-Anbieter verwaltet und ist hier nicht verfügbar.',
 
   'suggestedTags.suggested': 'Vorgeschlagen',
   'suggestedTags.add': 'Tag {name} hinzufügen',
@@ -602,6 +602,13 @@ export const de: Catalog = {
   'rootLayout.mainNav': 'Hauptnavigation',
   'rootLayout.statusFailed': 'Einrichtungsstatus konnte nicht geladen werden',
   'rootLayout.loading': 'Wird geladen...',
+
+  'demoCountdown.badge': 'Demo · {text}',
+  'demoCountdown.title': 'Demo: {text}, {note}',
+  'demoCountdown.left': 'noch {clock}',
+  'demoCountdown.thenReadOnly': 'danach schreibgeschützt, kurz darauf gelöscht',
+  'demoCountdown.readOnly': 'Schreibgeschützt',
+  'demoCountdown.deletedSoon': 'wird bald gelöscht',
 
   'chatSessionList.titleLabel': 'Chat-Titel',
   'chatSessionList.rename': 'Chat umbenennen',
@@ -1081,7 +1088,7 @@ export const de: Catalog = {
   'settings.intro':
     'Laufzeitkonfiguration für OCR, KI und den Worker. Änderungen gelten sofort.',
   'settings.aiManaged':
-    'KI-Anbieter und Modelle werden von Ihrem Hosting-Anbieter festgelegt und können hier nicht geändert werden.',
+    'KI-Anbieter, Modelle, Zeitlimits und der Worker werden von Ihrem Hosting-Anbieter festgelegt und können hier nicht geändert werden.',
   'settings.sectionsLabel': 'Bereiche der Einstellungen',
   'settings.tabAppearance': 'Darstellung',
   'settings.tabAi': 'KI',
@@ -1235,6 +1242,8 @@ export const de: Catalog = {
   'managementUsers.accounts': 'Konten',
   'managementUsers.loading': 'Wird geladen...',
   'managementUsers.adminHint': 'Administratorkonten werden im PocketBase-Dashboard verwaltet.',
+  'managementUsers.seatsExhausted':
+    'Diese Instanz hat ihr Kontolimit erreicht. Löschen Sie ein Konto, um ein weiteres hinzuzufügen.',
   'managementUsers.addTitle': 'Benutzer hinzufügen',
   'managementUsers.addHint':
     'Das Konto kann sich sofort anmelden. Es sieht nur seine eigenen Dokumente und die mit ihm geteilten.',
@@ -1638,13 +1647,13 @@ export const de: Catalog = {
   'maintenance.clearing': 'Wird bereinigt...',
   'maintenance.clearStale': 'Veraltete Daten bereinigen',
   'maintenance.waiting': 'Warten, bis die Warteschlange leer ist: {jobs}.',
-  'maintenance.limitsTitle': 'Instanzlimits',
-  'maintenance.limitsHint':
-    'Vom Betreiber über die Umgebungsvariablen {env} gesetzt und beim Start gelesen; sie lassen sich daher nicht in den Einstellungen ändern. Ein Limit unter die bestehende Bibliothek zu senken löscht nie etwas – es verweigert nur die nächste Ergänzung.',
-  'maintenance.noLimits': 'Es gelten keine Limits.',
-  'maintenance.misconfigured':
+  'account.limitsTitle': 'Instanzlimits',
+  'account.limitsHint':
+    'Von Ihrem Hosting-Anbieter gesetzt und beim Start gelesen; sie lassen sich daher nicht in den Einstellungen ändern. Ein Limit unter die bestehende Bibliothek zu senken löscht nie etwas – es verweigert nur die nächste Ergänzung.',
+  'account.noLimits': 'Es gelten keine Limits.',
+  'account.limitsMisconfigured':
     '{names} konnte nicht gelesen werden. Jeder Wert fiel auf unbegrenzt zurück und wird daher nicht durchgesetzt.',
-  'maintenance.limitsUpgrade':
+  'account.limitsUpgrade':
     'Dokumente, die vor der Installation dieser Version hinzugefügt wurden, zählen mit null Seiten und null Bytes; diese beiden Werte können bei einer aktualisierten Bibliothek daher zu niedrig sein.',
   'maintenance.searchTitle': 'Suchindex',
   'maintenance.searchHint':

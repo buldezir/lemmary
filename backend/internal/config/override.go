@@ -63,11 +63,44 @@ func (o Overrides) Purposes() []BoundOverride {
 // request or a record write can be refused before any work is queued.
 func (o Overrides) Validate(app core.App, cfg Config) error {
 	for _, item := range o.Purposes() {
+		if aiprovider.Managed() && !item.configuredIn(cfg) {
+			return fmt.Errorf("%s override: a managed instance runs only the models its host configured", item.Name)
+		}
 		if _, _, err := aiprovider.Resolve(app, item.Binding, item.Purpose); err != nil {
 			return fmt.Errorf("%s override: %w", item.Name, err)
 		}
 	}
 	return o.validateEmbeddingModel(cfg)
+}
+
+// configuredIn compares against what Settings binds rather than asking for an
+// empty override: chat and research record the configured pair on every turn.
+func (b BoundOverride) configuredIn(cfg Config) bool {
+	binding := b.Binding.Normalized()
+	if binding == (aiprovider.Binding{}) {
+		return true
+	}
+	var allowed []aiprovider.Binding
+	switch b.Name {
+	case "ocr":
+		allowed = []aiprovider.Binding{{ProviderID: cfg.OCRProviderID, Model: cfg.OCRModel}}
+	case "extract", "chat":
+		allowed = []aiprovider.Binding{{ProviderID: cfg.ExtractProviderID, Model: cfg.ExtractModel}}
+	case "search":
+		researchID, researchModel := cfg.ResearchBinding()
+		allowed = []aiprovider.Binding{
+			{ProviderID: cfg.ExtractProviderID, Model: cfg.ExtractModel},
+			{ProviderID: researchID, Model: researchModel},
+		}
+	case "embedding":
+		allowed = []aiprovider.Binding{{ProviderID: cfg.EmbeddingProviderID, Model: cfg.EmbeddingModel}}
+	}
+	for _, candidate := range allowed {
+		if binding == candidate.Normalized() {
+			return true
+		}
+	}
+	return false
 }
 
 // validateEmbeddingModel refuses an embedding override naming a model other than

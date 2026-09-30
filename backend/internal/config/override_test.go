@@ -103,3 +103,56 @@ func TestValidateEmbeddingModel(t *testing.T) {
 		})
 	}
 }
+
+func TestConfiguredInAcceptsOnlyWhatSettingsBinds(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		OCRProviderID: "ocr", OCRModel: "ocr-m",
+		ExtractProviderID: "llm", ExtractModel: "small",
+		ResearchProviderID: "llm", ResearchModel: "big",
+		EmbeddingProviderID: "emb", EmbeddingModel: "emb-m",
+	}
+	general := aiprovider.Binding{ProviderID: "llm", Model: "small"}
+	research := aiprovider.Binding{ProviderID: "llm", Model: "big"}
+	elsewhere := aiprovider.Binding{ProviderID: "llm", Model: "frontier"}
+
+	for name, tc := range map[string]struct {
+		o    Overrides
+		want bool
+	}{
+		"nothing picked":                    {Overrides{}, true},
+		"chat on the general model":         {Overrides{Chat: general}, true},
+		"chat on the research model":        {Overrides{Chat: research}, false},
+		"search on the research model":      {Overrides{Search: research}, true},
+		"search on the general model":       {Overrides{Search: general}, true},
+		"search elsewhere":                  {Overrides{Search: elsewhere}, false},
+		"extract on the general model":      {Overrides{Extract: general}, true},
+		"extract elsewhere":                 {Overrides{Extract: elsewhere}, false},
+		"ocr on the ocr binding":            {Overrides{OCR: aiprovider.Binding{ProviderID: "ocr", Model: "ocr-m"}}, true},
+		"ocr on the language model":         {Overrides{OCR: general}, false},
+		"embedding on the embedding model":  {Overrides{Embedding: aiprovider.Binding{ProviderID: "emb", Model: "emb-m"}}, true},
+		"embedding on another provider":     {Overrides{Embedding: aiprovider.Binding{ProviderID: "llm", Model: "emb-m"}}, false},
+		"whitespace is not another binding": {Overrides{Chat: aiprovider.Binding{ProviderID: " llm ", Model: " small "}}, true},
+	} {
+		got := true
+		for _, item := range tc.o.Purposes() {
+			got = got && item.configuredIn(cfg)
+		}
+		if got != tc.want {
+			t.Errorf("%s: configuredIn = %v, want %v", name, got, tc.want)
+		}
+	}
+}
+
+// Not parallel: the managed flag is process-global.
+func TestValidateRefusesAnotherModelWhenManaged(t *testing.T) {
+	prev := aiprovider.Managed()
+	t.Cleanup(func() { aiprovider.SetManaged(prev) })
+	aiprovider.SetManaged(true)
+
+	cfg := Config{ExtractProviderID: "llm", ExtractModel: "small"}
+	err := (Overrides{Chat: aiprovider.Binding{ProviderID: "llm", Model: "frontier"}}).Validate(nil, cfg)
+	if err == nil || !strings.Contains(err.Error(), "managed") {
+		t.Fatalf("Validate = %v, want a managed refusal", err)
+	}
+}

@@ -12,6 +12,8 @@ import { defaultPasskeyName, passkeysSupported, passkeyUnavailableHint } from '.
 import { createMCPToken, getMCPStatus } from '../lib/api/mcp'
 import { mcpSnippets } from '../lib/mcpSnippets'
 import { useAsync } from '../hooks/useAsync'
+import { getLimits } from '../lib/api/limits'
+import { LimitsUsage } from '../components/LimitsUsage'
 import {
   Button,
   DocsLink,
@@ -372,6 +374,31 @@ function AgentsSection() {
   )
 }
 
+function InstanceLimitsSection() {
+  const { data: limits } = useAsync(getLimits, [])
+  if (!limits || !(limits.enforced || (limits.misconfigured?.length ?? 0) > 0)) return null
+
+  return (
+    <section className={sectionClassName}>
+      <h2 className={sectionTitleClassName}>{t('account.limitsTitle')}</h2>
+      <p className="text-xs text-ink-soft">{t('account.limitsHint')}</p>
+      {limits.enforced ? (
+        <LimitsUsage limits={limits} className="mt-4 border-0 bg-transparent p-0" />
+      ) : (
+        <p className="mt-4 text-xs text-ink-soft">{t('account.noLimits')}</p>
+      )}
+      {(limits.misconfigured?.length ?? 0) > 0 && (
+        <p className="mt-4 text-sm text-madder">
+          {t('account.limitsMisconfigured', { names: limits.misconfigured?.join(', ') ?? '' })}
+        </p>
+      )}
+      {limits.enforced && (
+        <p className="mt-4 text-xs text-ink-faint">{t('account.limitsUpgrade')}</p>
+      )}
+    </section>
+  )
+}
+
 export function AccountPage() {
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5">
@@ -382,6 +409,7 @@ export function AccountPage() {
       <SignedInSection />
       <AgentsSection />
       <PasskeysSection />
+      <InstanceLimitsSection />
     </div>
   )
 }

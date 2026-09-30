@@ -32,10 +32,12 @@ func registerUsageMetrics(app core.App, lim limits.Limits) {
 				limits.NameDocuments:       used.Documents,
 				limits.NameDocumentPages:   used.DocumentPages,
 				limits.NameAdditionalUsers: used.AdditionalUsers,
+				limits.NameFilePages:       used.LargestFilePages,
 			},
 			CountLimits: countLimits,
 			Bytes: map[string]int64{
 				limits.NameStorageBytes: used.StorageBytes,
+				limits.NameFileBytes:    used.LargestFileBytes,
 			},
 			ByteLimits: byteLimits,
 		}, nil
@@ -46,19 +48,20 @@ func registerUsageMetrics(app core.App, lim limits.Limits) {
 	})
 }
 
-// instanceLimits is the allowance series for how full the instance is.
-// Per-file ceilings (LIMIT_FILE_PAGES, LIMIT_FILE_BYTES, MaxOCRPages) stay
-// off this instrument: they are not a stock the instance holds, and putting
-// them on lemmary.limit next to documents would make lemmary_usage /
-// lemmary_limit a lie for those labels.
+// instanceLimits is the allowance series, one per usage series. A per-file
+// ceiling bounds one upload, so its usage is the largest stored document rather
+// than a sum, which keeps lemmary_usage / lemmary_limit honest for that label
+// too. MaxOCRPages is not a plan and stays off.
 func instanceLimits(lim limits.Limits) (counts, bytes map[string]int64) {
 	counts = setLimits(map[string]limits.Limit{
 		limits.NameDocuments:       lim.Documents,
 		limits.NameDocumentPages:   lim.DocumentPages,
 		limits.NameAdditionalUsers: lim.AdditionalUsers,
+		limits.NameFilePages:       lim.FilePages,
 	})
 	bytes = setLimits(map[string]limits.Limit{
 		limits.NameStorageBytes: lim.StorageBytes,
+		limits.NameFileBytes:    lim.FileBytes,
 	})
 	return counts, bytes
 }

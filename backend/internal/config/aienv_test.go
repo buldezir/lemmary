@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"lemmary/backend/internal/aiprovider"
 )
@@ -12,7 +13,7 @@ import (
 func clearAIEnv(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
-		EnvManaged, EnvAISDK, EnvAIAPIKey, EnvAIBaseURL, EnvAIModel, EnvAIResearchModel, EnvAIEmbeddingModel,
+		EnvManaged, EnvWritableUntil, EnvAISDK, EnvAIAPIKey, EnvAIBaseURL, EnvAIModel, EnvAIResearchModel, EnvAIEmbeddingModel,
 		EnvAIEmbeddingSDK, EnvAIEmbeddingAPIKey, EnvAIEmbeddingBaseURL,
 		EnvOCRSDK, EnvOCRAPIKey, EnvOCRBaseURL, EnvOCRModel,
 		EnvWebSearchSDK, EnvWebSearchAPIKey, EnvWebSearchBaseURL,
@@ -199,7 +200,7 @@ func TestParseRejectsMalformedInput(t *testing.T) {
 			want: EnvOCRAPIKey,
 		},
 		{
-			name: "an unreadable AI_MANAGED, which must never read as off",
+			name: "an unreadable MANAGED, which must never read as off",
 			env:  map[string]string{EnvManaged: "ture"},
 			want: EnvManaged,
 		},
@@ -257,10 +258,10 @@ func TestManagedAcceptsTheDocumentedBooleans(t *testing.T) {
 		t.Setenv(EnvAIModel, "some-model")
 		env, err := AIEnvFromEnv()
 		if err != nil {
-			t.Fatalf("AI_MANAGED=%q: %v", on, err)
+			t.Fatalf("MANAGED=%q: %v", on, err)
 		}
 		if !env.Managed {
-			t.Fatalf("AI_MANAGED=%q read as off", on)
+			t.Fatalf("MANAGED=%q read as off", on)
 		}
 	}
 	for _, off := range []string{"", "0", "false", "no", "off"} {
@@ -268,11 +269,39 @@ func TestManagedAcceptsTheDocumentedBooleans(t *testing.T) {
 		t.Setenv(EnvManaged, off)
 		env, err := AIEnvFromEnv()
 		if err != nil {
-			t.Fatalf("AI_MANAGED=%q: %v", off, err)
+			t.Fatalf("MANAGED=%q: %v", off, err)
 		}
 		if env.Managed {
-			t.Fatalf("AI_MANAGED=%q read as on", off)
+			t.Fatalf("MANAGED=%q read as on", off)
 		}
+	}
+}
+
+func TestWritableUntilIsReadOnlyWhenManaged(t *testing.T) {
+	clearAIEnv(t)
+	t.Setenv(EnvWritableUntil, "2026-01-02T15:04:05Z")
+	env, err := AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("self-hosted: %v", err)
+	}
+	if !env.WritableUntil.IsZero() {
+		t.Fatalf("self-hosted kept %s=%s", EnvWritableUntil, env.WritableUntil)
+	}
+
+	t.Setenv(EnvManaged, "1")
+	t.Setenv(EnvAIAPIKey, "sk-test")
+	t.Setenv(EnvAIModel, "some-model")
+	env, err = AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("managed: %v", err)
+	}
+	if want := time.Date(2026, 1, 2, 15, 4, 5, 0, time.UTC); !env.WritableUntil.Equal(want) {
+		t.Fatalf("WritableUntil = %s, want %s", env.WritableUntil, want)
+	}
+
+	t.Setenv(EnvWritableUntil, "in an hour")
+	if _, err := AIEnvFromEnv(); err == nil || !strings.Contains(err.Error(), EnvWritableUntil) {
+		t.Fatalf("an unreadable deadline must refuse boot, got %v", err)
 	}
 }
 

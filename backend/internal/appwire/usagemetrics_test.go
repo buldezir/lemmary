@@ -34,11 +34,10 @@ func TestSetLimits(t *testing.T) {
 	}
 }
 
-// Per-file ceilings are a property of one upload, not a stock the instance
-// holds. Publishing them on lemmary.limit next to documents would make a
-// dashboard dividing usage by limit treat "200 pages per file" as a library
-// cap of 200 pages.
-func TestInstanceLimitsOmitPerFileCaps(t *testing.T) {
+// A per-file ceiling is published beside the instance-wide ones, since the
+// orchestrator that set it checks the container honours it. The built-in OCR
+// page ceiling is not a plan and never is.
+func TestInstanceLimitsCarryPerFileCaps(t *testing.T) {
 	t.Parallel()
 
 	counts, bytes := instanceLimits(limits.Limits{
@@ -50,18 +49,14 @@ func TestInstanceLimitsOmitPerFileCaps(t *testing.T) {
 		FileBytes:       limits.Of(10485760),
 	})
 
-	for _, leaked := range []string{limits.NameFilePages, limits.NameOCRPages} {
-		if _, ok := counts[leaked]; ok {
-			t.Errorf("%s leaked onto the instance count-limit series: %v", leaked, counts)
-		}
+	if _, ok := counts[limits.NameOCRPages]; ok {
+		t.Errorf("ocr_pages leaked onto the count-limit series: %v", counts)
 	}
-	if _, ok := bytes[limits.NameFileBytes]; ok {
-		t.Errorf("file_bytes leaked onto the instance byte-limit series: %v", bytes)
+	if counts[limits.NameDocuments] != 1000 || counts[limits.NameAdditionalUsers] != 0 ||
+		counts[limits.NameFilePages] != 200 {
+		t.Errorf("count limits = %v, want documents=1000 additional_users=0 file_pages=200", counts)
 	}
-	if counts[limits.NameDocuments] != 1000 || counts[limits.NameAdditionalUsers] != 0 {
-		t.Errorf("instance count limits = %v, want documents=1000 additional_users=0", counts)
-	}
-	if bytes[limits.NameStorageBytes] != 5368709120 {
-		t.Errorf("instance byte limits = %v, want storage_bytes=5368709120", bytes)
+	if bytes[limits.NameStorageBytes] != 5368709120 || bytes[limits.NameFileBytes] != 10485760 {
+		t.Errorf("byte limits = %v, want storage_bytes=5368709120 file_bytes=10485760", bytes)
 	}
 }

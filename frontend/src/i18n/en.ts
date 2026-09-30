@@ -350,7 +350,7 @@ export const en = {
   'settingsFeedback.save': 'Save settings',
   'settingsFeedback.loading': 'Loading settings...',
   'settingsFeedback.managedByHost':
-    'These settings are managed by your hosting provider. Providers, models and duplicate detection come from the instance’s environment and cannot be changed here.',
+    'This is managed by your hosting provider and is not available here.',
 
   'suggestedTags.suggested': 'Suggested',
   'suggestedTags.add': 'Add tag {name}',
@@ -572,6 +572,13 @@ export const en = {
   'rootLayout.mainNav': 'Main',
   'rootLayout.statusFailed': 'Failed to load setup status',
   'rootLayout.loading': 'Loading...',
+
+  'demoCountdown.badge': 'Demo · {text}',
+  'demoCountdown.title': 'Demo: {text}, {note}',
+  'demoCountdown.left': '{clock} left',
+  'demoCountdown.thenReadOnly': 'then read-only, deleted soon after',
+  'demoCountdown.readOnly': 'Read-only',
+  'demoCountdown.deletedSoon': 'deleted soon',
 
   'chatSessionList.titleLabel': 'Chat title',
   'chatSessionList.rename': 'Rename chat',
@@ -1021,7 +1028,7 @@ export const en = {
   'settings.title': 'Settings',
   'settings.intro': 'Runtime configuration for OCR, AI, and the worker. Changes apply immediately.',
   'settings.aiManaged':
-    'AI providers and models are set by your hosting provider and are not editable here.',
+    'AI providers, models, timeouts and the worker are set by your hosting provider and are not editable here.',
   'settings.sectionsLabel': 'Settings sections',
   'settings.tabAppearance': 'Appearance',
   'settings.tabAi': 'AI',
@@ -1173,6 +1180,8 @@ export const en = {
   'managementUsers.accounts': 'Accounts',
   'managementUsers.loading': 'Loading...',
   'managementUsers.adminHint': 'Admin accounts are managed in the PocketBase dashboard.',
+  'managementUsers.seatsExhausted':
+    'This instance has reached its account limit. Delete an account to add another.',
   'managementUsers.addTitle': 'Add a user',
   'managementUsers.addHint':
     'The account can sign in straight away. It sees only its own documents and those shared with it.',
@@ -1544,13 +1553,13 @@ export const en = {
   'maintenance.clearing': 'Clearing...',
   'maintenance.clearStale': 'Clear stale data',
   'maintenance.waiting': 'Waiting for the queue to drain: {jobs}.',
-  'maintenance.limitsTitle': 'Instance limits',
-  'maintenance.limitsHint':
-    'Set by the operator through {env} environment variables and read at startup, so they cannot be changed from Settings. Lowering a limit under an existing library never deletes anything — it only refuses the next addition.',
-  'maintenance.noLimits': 'No limits are in effect.',
-  'maintenance.misconfigured':
+  'account.limitsTitle': 'Instance limits',
+  'account.limitsHint':
+    'Set by your hosting provider and read at startup, so they cannot be changed from Settings. Lowering a limit under an existing library never deletes anything — it only refuses the next addition.',
+  'account.noLimits': 'No limits are in effect.',
+  'account.limitsMisconfigured':
     'Could not read {names}. Each fell back to unlimited, so these are not being enforced.',
-  'maintenance.limitsUpgrade':
+  'account.limitsUpgrade':
     'Documents added before this version was installed count as zero pages and zero bytes, so those two figures can read low on an upgraded library.',
   'maintenance.searchTitle': 'Search index',
   'maintenance.searchHint':

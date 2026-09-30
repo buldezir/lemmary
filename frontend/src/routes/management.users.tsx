@@ -8,6 +8,8 @@ import {
   type ManagedUserInput,
 } from '../lib/api/users'
 import { useAsync } from '../hooks/useAsync'
+import { useAppMeta } from '../hooks/useAppMeta'
+import { getLimits, isExhausted } from '../lib/api/limits'
 import {
   Button,
   fieldHintClassName,
@@ -138,6 +140,9 @@ function UserRow({
 
 export function ManagementUsersPage() {
   const { data: users, loading, error: loadError, reload } = useAsync(listManagedUsers, [])
+  const { data: limits, reload: reloadLimits } = useAsync(getLimits, [])
+  const seatsLeft = !limits || !isExhausted(limits.additional_users)
+  const { managed } = useAppMeta()
   const [draft, setDraft] = useState<Draft>(emptyDraft)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -149,7 +154,7 @@ export function ManagementUsersPage() {
       setError('')
       setNotice('')
       setNotice(await action())
-      await reload()
+      await Promise.all([reload(), reloadLimits()])
       return true
     } catch (err) {
       setError(err instanceof Error ? err.message : t('managementUsers.failed'))
@@ -213,25 +218,28 @@ export function ManagementUsersPage() {
             ))}
           </ul>
         )}
-        <p className={`${fieldHintClassName} mt-3`}>
-          {t('managementUsers.adminHint')}
-        </p>
+        {managed === false && (
+          <p className={`${fieldHintClassName} mt-3`}>{t('managementUsers.adminHint')}</p>
+        )}
+        {!seatsLeft && (
+          <p className={`${fieldHintClassName} mt-1`}>{t('managementUsers.seatsExhausted')}</p>
+        )}
       </section>
 
-      <section className={sectionClassName}>
-        <h2 className={`${sectionTitleClassName} mb-3`}>{t('managementUsers.addTitle')}</h2>
-        <form className="flex flex-col gap-3" onSubmit={onCreate}>
-          <UserFields draft={draft} onChange={setDraft} passwordLabel={t('managementUsers.password')} />
-          <p className={fieldHintClassName}>
-            {t('managementUsers.addHint')}
-          </p>
-          <div>
-            <Button type="submit" disabled={busy || !draft.email.trim() || !draft.password}>
-              {t('managementUsers.add')}
-            </Button>
-          </div>
-        </form>
-      </section>
+      {seatsLeft && (
+        <section className={sectionClassName}>
+          <h2 className={`${sectionTitleClassName} mb-3`}>{t('managementUsers.addTitle')}</h2>
+          <form className="flex flex-col gap-3" onSubmit={onCreate}>
+            <UserFields draft={draft} onChange={setDraft} passwordLabel={t('managementUsers.password')} />
+            <p className={fieldHintClassName}>{t('managementUsers.addHint')}</p>
+            <div>
+              <Button type="submit" disabled={busy || !draft.email.trim() || !draft.password}>
+                {t('managementUsers.add')}
+              </Button>
+            </div>
+          </form>
+        </section>
+      )}
     </div>
   )
 }

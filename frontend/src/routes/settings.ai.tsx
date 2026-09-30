@@ -44,8 +44,8 @@ function EmbeddingStatsLine({ stats }: { stats: EmbeddingStats | null }) {
 }
 
 export function SettingsAIPage() {
-  // unknown/failed meta counts as managed; see AppMeta.aiManaged
-  const { aiManaged, metaLoaded } = useAppMeta()
+  // unknown/failed meta counts as managed; see AppMeta.managed
+  const { managed, metaLoaded } = useAppMeta()
   const { data: providers, reload: reloadProviders } = useAsync(listAIProviders, [])
   // Allowed to fail, and loaded apart from the settings: it scans two tables,
   // and a slow or broken count must not keep the form off the screen.
@@ -87,7 +87,7 @@ export function SettingsAIPage() {
   // undefined means the meta request is still out, and claiming a hosting
   // provider owns these settings is a statement, not a safe default.
   if (!metaLoaded) return <SettingsLoading error="" />
-  if (aiManaged !== false) return <ManagedByHostNotice />
+  if (managed !== false) return <ManagedByHostNotice />
   if (loading || !form) return <SettingsLoading error={error} />
 
   return (

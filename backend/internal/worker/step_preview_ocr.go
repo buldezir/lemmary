@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"lemmary/backend/internal/metrics"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/ocr"
 	"lemmary/backend/internal/preview"
@@ -131,5 +132,7 @@ func resolveOCRText(ctx context.Context, state *StepState, provider ocr.Provider
 	if err != nil {
 		return "", "", err
 	}
+	// At least one: a document from before page_count was stamped reads 0.
+	metrics.OCRPages(max(1, int64(state.Document.GetFloat("page_count"))))
 	return text, provider.Name(), nil
 }

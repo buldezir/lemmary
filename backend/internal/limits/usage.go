@@ -11,6 +11,9 @@ type Usage struct {
 	DocumentPages   int64
 	StorageBytes    int64
 	AdditionalUsers int64
+
+	LargestFilePages int64
+	LargestFileBytes int64
 }
 
 // Measure counts from live rows rather than a stored counter, so deleting a
@@ -21,7 +24,7 @@ type Usage struct {
 // Documents predating the page_count / size_bytes migration contribute 0 to the
 // two sums; see the migration for why they are not backfilled.
 func Measure(app core.App) (Usage, error) {
-	var documents, pages, bytes int64
+	var documents, pages, bytes, largestPages, largestBytes int64
 	// One index-only scan of idx_documents_usage; see the migration for why that
 	// index is not optional. COALESCE covers the empty library, and the CAST the
 	// column type: a NumberField is NUMERIC and PocketBase writes float64 into it,
@@ -29,15 +32,17 @@ func Measure(app core.App) (Usage, error) {
 	//
 	// RecordQuery rather than DB().NewQuery, so this inherits the lock-retry and
 	// query timeout and, inside a transaction, reads that transaction's own
-	// uncommitted rows, which is what makes a batched importer accumulate.
-	// importer accumulate correctly instead of re-reading a stale total.
+	// uncommitted rows, which is what makes a batched importer accumulate
+	// correctly instead of re-reading a stale total.
 	err := app.RecordQuery("documents").
 		Select(
 			"COUNT(*)",
 			"CAST(COALESCE(SUM(page_count), 0) AS INTEGER)",
 			"CAST(COALESCE(SUM(size_bytes), 0) AS INTEGER)",
+			"CAST(COALESCE(MAX(page_count), 0) AS INTEGER)",
+			"CAST(COALESCE(MAX(size_bytes), 0) AS INTEGER)",
 		).
-		Row(&documents, &pages, &bytes)
+		Row(&documents, &pages, &bytes, &largestPages, &largestBytes)
 	if err != nil {
 		return Usage{}, fmt.Errorf("measure document usage: %w", err)
 	}
@@ -52,6 +57,9 @@ func Measure(app core.App) (Usage, error) {
 		DocumentPages:   pages,
 		StorageBytes:    bytes,
 		AdditionalUsers: users,
+
+		LargestFilePages: largestPages,
+		LargestFileBytes: largestBytes,
 	}, nil
 }
 
@@ -63,7 +71,6 @@ func Measure(app core.App) (Usage, error) {
 // Counting from the total also sidesteps three-valued logic: a record that never
 // had is_app_admin written holds NULL, which `is_app_admin != true` never
 // matches in SQLite.
-// NULL, which `is_app_admin != true` does not match in SQLite.
 func CountAdditionalUsers(app core.App) (int64, error) {
 	total, err := app.CountRecords("users")
 	if err != nil {

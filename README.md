@@ -97,9 +97,8 @@ Volumes, reverse proxies, backups and upgrades: [docs/self_hosting.md](docs/self
 [docs/setup.md](docs/setup.md) is the configuration reference;
 [docs/ai_providers.md](docs/ai_providers.md) covers the AI-specific options.
 
-- `WORKER_CRON_EXPR`, the `LIMIT_*` family, `VAULT_*` and the frontend's `VITE_*` stay in `.env`
+- `WORKER_CRON_EXPR`, `VAULT_*` and the frontend's `VITE_*` stay in `.env`
 - OCR/AI keys, models and worker timeouts live in the DB (`app_settings`). `AI_API_KEY` plus `SETUP_ADMIN_EMAIL`/`SETUP_ADMIN_PASSWORD` in `.env` bring a fresh instance up with nothing to answer; otherwise the first-launch wizard collects them. Either way **Settings** is authoritative afterwards
-- `AI_MANAGED=1` inverts that for a hosted fleet: the environment is re-applied on every boot and the tenant's Settings page has no Providers, Models or Duplicates sections
 
 ## Tests
 

@@ -16,21 +16,24 @@ import (
 // on first boot and are inert afterwards; the Settings page is then the authority.
 //
 // Managed (Managed true): the operator owns the AI bill, so these are re-applied
-// on every boot and the tenant cannot edit providers, model bindings, or duplicate
-// detection. Timeouts, retries, and language settings stay tenant-owned.
+// on every boot and the tenant cannot edit providers, model bindings, duplicate
+// detection, timeouts or retries. Language settings stay tenant-owned.
 type AIEnv struct {
 	Managed   bool
 	Providers aiprovider.Bootstrap
 
+	// Managed only: from this moment the instance refuses writes.
+	WritableUntil time.Time
+
 	// Operator-owned in managed mode.
 	NearDuplicateEnabled   bool
 	NearDuplicateThreshold float64
+	OCRTimeout             time.Duration
+	AITimeout              time.Duration
+	WorkerTimeout          time.Duration
+	WorkerMaxRetries       int
 
 	// Seed-only in both modes; managed mode does not reset these on restart.
-	OCRTimeout          time.Duration
-	AITimeout           time.Duration
-	WorkerTimeout       time.Duration
-	WorkerMaxRetries    int
 	DeepSearchLanguages string
 	ExtractionPromptVer string
 
@@ -44,7 +47,8 @@ type AIEnv struct {
 // Environment variable names in one place, so the error messages and the
 // parsing cannot drift apart.
 const (
-	EnvManaged = "AI_MANAGED"
+	EnvManaged       = "MANAGED"
+	EnvWritableUntil = "WRITABLE_UNTIL"
 
 	// EnvModelCatalogURL points the context-window lookup somewhere other than
 	// pi.dev. Empty falls back to that default rather than turning it off.
@@ -123,6 +127,9 @@ func AIEnvFromEnv() (AIEnv, error) {
 	env.Providers = aiprovider.Bootstrap{LLM: llm, OCR: ocr, Embedding: embedding, WebSearch: webSearch}
 
 	if env.Managed {
+		if env.WritableUntil, err = strictTime(EnvWritableUntil); err != nil {
+			return AIEnv{}, err
+		}
 		if err := env.validateManaged(); err != nil {
 			return AIEnv{}, err
 		}
@@ -130,8 +137,22 @@ func AIEnvFromEnv() (AIEnv, error) {
 	return env, nil
 }
 
+// strictTime refuses rather than ignores, for strictBool's reason: a typo read
+// as unset would leave the instance writable forever.
+func strictTime(key string) (time.Time, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return time.Time{}, nil
+	}
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%s=%q is not an RFC3339 time such as 2026-01-02T15:04:05Z, or leave it unset", key, raw)
+	}
+	return t, nil
+}
+
 // strictBool refuses a value it cannot read rather than falling back to off:
-// AI_MANAGED is the billing lock, and a typo read as "off" would leave
+// MANAGED is the billing lock, and a typo read as "off" would leave
 // Settings editable and the environment unapplied.
 func strictBool(key string) (bool, error) {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {

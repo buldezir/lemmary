@@ -23,8 +23,6 @@ import {
   type IMAPBackfillState,
   type TaxonomyPruneResult,
 } from '../lib/api/maintenance'
-import { getLimits, type InstanceLimits } from '../lib/api/limits'
-import { LimitsUsage } from '../components/LimitsUsage'
 import { ResultDialog } from '../components/settings/SettingsFeedback'
 import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
 import { Button, labelTextClassName, sectionClassName, sectionTitleClassName } from '../components/ui'
@@ -70,7 +68,6 @@ export function MaintenancePage() {
   const [reindexing, setReindexing] = useState(false)
   const [pruning, setPruning] = useState(false)
   const [activeJobs, setActiveJobs] = useState<ActiveJobCounts | null>(null)
-  const [limits, setLimits] = useState<InstanceLimits | null>(null)
   const [failedCount, setFailedCount] = useState<number | null>(null)
   const [failedCountLoaded, setFailedCountLoaded] = useState(false)
   const [reprocessing, setReprocessing] = useState(false)
@@ -98,18 +95,6 @@ export function MaintenancePage() {
 
   // Pruning taxonomy while documents are still processing could delete an entity
   // a running job is about to attach, so the queue is polled to gate that button.
-  useEffect(() => {
-    let active = true
-    getLimits()
-      .then((next) => {
-        if (active) setLimits(next)
-      })
-      .catch(() => {})
-    return () => {
-      active = false
-    }
-  }, [])
-
   useEffect(() => {
     let active = true
     let hadJobs = false
@@ -530,30 +515,6 @@ export function MaintenancePage() {
             )}
           </div>
         </section>
-
-        {limits && (limits.enforced || (limits.misconfigured?.length ?? 0) > 0) && (
-          <section className={sectionClassName}>
-            <h2 className={sectionTitleClassName}>{t('maintenance.limitsTitle')}</h2>
-            <p className="text-xs text-ink-soft">
-              {tNode('maintenance.limitsHint', { env: <code>LIMIT_*</code> })}
-            </p>
-            {limits.enforced ? (
-              <LimitsUsage limits={limits} className="mt-4 border-0 bg-transparent p-0" />
-            ) : (
-              <p className="mt-4 text-xs text-ink-soft">{t('maintenance.noLimits')}</p>
-            )}
-            {(limits.misconfigured?.length ?? 0) > 0 && (
-              <p className="mt-4 text-sm text-madder">
-                {t('maintenance.misconfigured', { names: limits.misconfigured?.join(', ') ?? '' })}
-              </p>
-            )}
-            {limits.enforced && (
-              <p className="mt-4 text-xs text-ink-faint">
-                {t('maintenance.limitsUpgrade')}
-              </p>
-            )}
-          </section>
-        )}
 
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>{t('maintenance.searchTitle')}</h2>

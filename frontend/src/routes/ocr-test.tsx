@@ -8,7 +8,9 @@ import {
   OCR_MODEL_WARNING,
   type CatalogModel,
 } from '../lib/api/providers'
+import { useAppMeta } from '../hooks/useAppMeta'
 import { useAsync } from '../hooks/useAsync'
+import { ManagedByHostNotice } from '../components/settings/SettingsFeedback'
 import { ModelSelect } from '../components/ProviderModelFields'
 import { Button } from '../components/ui'
 import { lang, t } from '../i18n'
@@ -43,6 +45,14 @@ function isAcceptedFile(file: File) {
 }
 
 export function OCRTestPage() {
+  // unknown/failed meta counts as managed; see AppMeta.managed
+  const { managed, metaLoaded } = useAppMeta()
+  if (!metaLoaded) return null
+  if (managed !== false) return <ManagedByHostNotice />
+  return <OCRTester />
+}
+
+function OCRTester() {
   const [provider, setProvider] = useState('')
   const [model, setModel] = useState('')
   const [file, setFile] = useState<File | null>(null)

@@ -410,7 +410,7 @@ export const ru: Catalog = {
   'settingsFeedback.save': 'Сохранить настройки',
   'settingsFeedback.loading': 'Загрузка настроек...',
   'settingsFeedback.managedByHost':
-    'Этими настройками управляет ваш хостинг-провайдер. Провайдеры, модели и поиск дубликатов задаются окружением экземпляра и здесь не меняются.',
+    'Этим управляет ваш хостинг-провайдер, здесь это недоступно.',
 
   'suggestedTags.suggested': 'Предложено',
   'suggestedTags.add': 'Добавить тег {name}',
@@ -681,6 +681,13 @@ export const ru: Catalog = {
   'rootLayout.mainNav': 'Основная навигация',
   'rootLayout.statusFailed': 'Не удалось загрузить статус настройки',
   'rootLayout.loading': 'Загрузка...',
+
+  'demoCountdown.badge': 'Демо · {text}',
+  'demoCountdown.title': 'Демо: {text}, {note}',
+  'demoCountdown.left': 'осталось {clock}',
+  'demoCountdown.thenReadOnly': 'затем только чтение, вскоре после этого удаление',
+  'demoCountdown.readOnly': 'Только чтение',
+  'demoCountdown.deletedSoon': 'скоро будет удалено',
 
   'chatSessionList.titleLabel': 'Название чата',
   'chatSessionList.rename': 'Переименовать чат',
@@ -1195,7 +1202,7 @@ export const ru: Catalog = {
   'settings.title': 'Настройки',
   'settings.intro': 'Настройки OCR, ИИ и обработчика заданий. Изменения применяются сразу.',
   'settings.aiManaged':
-    'ИИ-провайдеры и модели задаёт ваш хостинг-провайдер, здесь их изменить нельзя.',
+    'ИИ-провайдеры, модели, тайм-ауты и обработчик задаёт ваш хостинг-провайдер, здесь их изменить нельзя.',
   'settings.sectionsLabel': 'Разделы настроек',
   'settings.tabAppearance': 'Оформление',
   'settings.tabAi': 'ИИ',
@@ -1367,6 +1374,8 @@ export const ru: Catalog = {
   'managementUsers.accounts': 'Учётные записи',
   'managementUsers.loading': 'Загрузка...',
   'managementUsers.adminHint': 'Учётными записями администраторов управляют в панели PocketBase.',
+  'managementUsers.seatsExhausted':
+    'На этом экземпляре достигнут лимит учётных записей. Удалите одну, чтобы добавить новую.',
   'managementUsers.addTitle': 'Добавить пользователя',
   'managementUsers.addHint':
     'Пользователь сможет войти сразу. Он видит только свои документы и те, которыми с ним поделились.',
@@ -1845,13 +1854,13 @@ export const ru: Catalog = {
   'maintenance.clearing': 'Очистка...',
   'maintenance.clearStale': 'Очистить устаревшие данные',
   'maintenance.waiting': 'Ожидание, пока очередь опустеет: {jobs}.',
-  'maintenance.limitsTitle': 'Лимиты сервера',
-  'maintenance.limitsHint':
-    'Задаются оператором через переменные окружения {env} и читаются при запуске, поэтому изменить их в настройках нельзя. Снижение лимита ниже размера существующей библиотеки ничего не удаляет — оно лишь отклоняет следующее добавление.',
-  'maintenance.noLimits': 'Лимиты не действуют.',
-  'maintenance.misconfigured':
+  'account.limitsTitle': 'Лимиты сервера',
+  'account.limitsHint':
+    'Задаются вашим хостинг-провайдером и читаются при запуске, поэтому изменить их в настройках нельзя. Снижение лимита ниже размера существующей библиотеки ничего не удаляет — оно лишь отклоняет следующее добавление.',
+  'account.noLimits': 'Лимиты не действуют.',
+  'account.limitsMisconfigured':
     'Не удалось прочитать {names}. Для каждого значения действует «без ограничений», поэтому они не применяются.',
-  'maintenance.limitsUpgrade':
+  'account.limitsUpgrade':
     'Документы, добавленные до установки этой версии, считаются как ноль страниц и ноль байт, поэтому после обновления эти два показателя могут быть занижены.',
   'maintenance.searchTitle': 'Поисковый индекс',
   'maintenance.searchHint':

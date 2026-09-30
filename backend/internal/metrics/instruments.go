@@ -54,6 +54,18 @@ var (
 		metric.WithDescription("Tokens a provider reported for a completion."),
 	)
 
+	// The two quantities a hosted plan is sold in. Counters rather than a
+	// reading off the archive, because what is sold is work done, and deleting
+	// a document does not undo it.
+	ocrPages, _ = meter.Int64Counter(
+		"lemmary.ocr.pages",
+		metric.WithDescription("Pages sent to an OCR provider. A reprocess that runs OCR again counts again."),
+	)
+	searchRuns, _ = meter.Int64Counter(
+		"lemmary.search.runs",
+		metric.WithDescription("Deep Search turns started, by mode: search or research."),
+	)
+
 	jobsPending, _ = meter.Int64ObservableGauge(
 		"lemmary.jobs.pending",
 		metric.WithDescription("Processing jobs waiting to be claimed."),
@@ -166,6 +178,34 @@ func AITokens(model string, prompt, cached, completion int64) {
 	add("prompt", prompt)
 	add("cached", cached)
 	add("completion", completion)
+}
+
+// OCRPages records one document's pages going to an OCR provider. Text read
+// natively from the file never reaches a provider and is not recorded.
+func OCRPages(pages int64) {
+	ocrPages.Add(context.Background(), pages)
+}
+
+// SearchRun records one Deep Search turn, a resumed research run included:
+// resuming spends provider calls like any other turn.
+func SearchRun(mode string) {
+	searchRuns.Add(context.Background(), 1, metric.WithAttributes(
+		attribute.String("mode", mode),
+	))
+}
+
+// primeWorkCounters publishes the work counters at zero before any work, so a
+// scrape without them means an image that predates them rather than a quiet
+// one: a billing reader must not state "0 pages" for a workspace it cannot
+// count. The modes are chat.ModeSearch and chat.ModeResearch, spelled out to
+// keep this package free of chat.
+func primeWorkCounters() {
+	ocrPages.Add(context.Background(), 0)
+	for _, mode := range []string{"search", "research"} {
+		searchRuns.Add(context.Background(), 0, metric.WithAttributes(
+			attribute.String("mode", mode),
+		))
+	}
 }
 
 // QueueDepth registers a gauge that is read on every scrape rather than

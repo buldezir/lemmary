@@ -1,7 +1,9 @@
 import { type SubmitEvent } from 'react'
 
+import { useAppMeta } from '../hooks/useAppMeta'
 import { useSettingsForm } from '../hooks/useSettingsForm'
 import {
+  ManagedByHostNotice,
   ResultDialog,
   SaveSettingsButton,
   SettingsLoading,
@@ -16,6 +18,8 @@ import {
 import { t, tNode } from '../i18n'
 
 export function SettingsWorkerPage() {
+  // unknown/failed meta counts as managed; see AppMeta.managed
+  const { managed, metaLoaded } = useAppMeta()
   const { form, loading, error, success, saving, updateField, save, setError, closeResult } =
     useSettingsForm((settings) => ({
       worker_timeout_sec: String(settings.worker_timeout_sec),
@@ -40,6 +44,8 @@ export function SettingsWorkerPage() {
     await save({ worker_timeout_sec: workerTimeout, worker_max_retries: maxRetries })
   }
 
+  if (!metaLoaded) return <SettingsLoading error="" />
+  if (managed !== false) return <ManagedByHostNotice />
   if (loading || !form) return <SettingsLoading error={error} />
 
   return (

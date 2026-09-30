@@ -9,6 +9,7 @@ import {
 } from '../lib/api/providers'
 import { STEP_BINDINGS, type JobOverrides } from '../lib/api/documents'
 import type { ProcessingStep } from '../lib/processing'
+import { useAppMeta } from '../hooks/useAppMeta'
 import { lang, t, tNode } from '../i18n'
 import { useAsync } from '../hooks/useAsync'
 import { ProviderModelFields } from './ProviderModelFields'
@@ -53,7 +54,14 @@ type BindingOverrideProps = {
  * ProviderModelFields rather than using it directly: in Settings a binding
  * always exists, and here it usually should not.
  */
-export function BindingOverride({
+export function BindingOverride(props: BindingOverrideProps) {
+  // unknown/failed meta counts as managed; see AppMeta.managed
+  const { managed } = useAppMeta()
+  if (managed !== false) return null
+  return <BindingPicker {...props} />
+}
+
+function BindingPicker({
   label,
   purpose,
   value,
@@ -243,6 +251,8 @@ export function JobOverrideFields({
   value: JobOverrides
   onChange: (overrides: JobOverrides) => void
 }) {
+  const { managed } = useAppMeta()
+  if (managed !== false) return null
   return (
     <div className="flex flex-col gap-3 border-t border-line pt-3">
       {JOB_BINDINGS.map((binding) => (

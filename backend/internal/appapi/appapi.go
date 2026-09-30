@@ -32,6 +32,9 @@ func Register(
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: 45,
 		Func: func(e *core.ServeEvent) error {
+			e.Router.BindFunc(lockSuperusersWhenManaged(rt))
+			e.Router.BindFunc(refuseWritesWhenReadOnly(rt))
+
 			g := e.Router.Group("/api/app")
 			g.GET("/meta", handleGetMeta(app, rt, ingestDirEnabled, imapScanner != nil))
 			g.GET("/me", handleGetMe(app))
@@ -75,15 +78,18 @@ func Register(
 			g.DELETE("/chats/{id}", bindAuth(handleDeleteChat(app)))
 			g.POST("/chats/{id}/fork", bindAuth(handlePostForkChat(app)))
 			// The OCR test page sends no purpose and means OCR.
-			g.GET("/ocr/providers", bindAuth(handlePickableProviders(app, rt, aiprovider.PurposeOCR)))
+			g.GET("/ocr/providers", bindAuth(handlePickableProviders(app, rt, aiprovider.PurposeOCR))).
+				BindFunc(unlessManaged(rt))
 			// Auth rather than admin: an override is a per-user choice among
 			// providers an admin configured, and this answer carries no
 			// credential.
-			g.GET("/ai/providers", bindAuth(handlePickableProviders(app, rt, aiprovider.PurposeLLM)))
+			g.GET("/ai/providers", bindAuth(handlePickableProviders(app, rt, aiprovider.PurposeLLM))).
+				BindFunc(unlessManaged(rt))
 			// Without a route-level limit the multipart parse consumes the whole
 			// request under PocketBase's 32MB default before the handler's own
 			// check can reject it.
 			g.POST("/ocr/test", bindAuth(handleOCRTest(app, rt))).
+				BindFunc(unlessManaged(rt)).
 				Bind(apis.BodyLimit(ocrTestMaxFileBytes + (1 << 20)))
 			g.GET("/users", bindAuth(handleListUsers(app)))
 			g.GET("/admin/users", bindAdmin(handleListManagedUsers(app)))
@@ -101,7 +107,8 @@ func Register(
 			g.DELETE("/providers/{id}", bindAdmin(handleDeleteProvider(app, rt)))
 			// Auth rather than admin, unlike the rest of /providers: the answer is
 			// model ids and an SDK name, no key, account or base URL.
-			g.GET("/providers/{id}/models", bindAuth(handleListProviderModels(app)))
+			g.GET("/providers/{id}/models", bindAuth(handleListProviderModels(app))).
+				BindFunc(unlessManaged(rt))
 			// Two calls rather than one blocking handler: the browser owns the
 			// polling interval.
 			g.POST("/providers/{id}/chatgpt/device", bindAdmin(handleChatGPTDeviceStart(app, rt)))
@@ -122,7 +129,7 @@ func Register(
 			g.GET("/tags/assign/status", bindAuth(handleGetTagAssignStatus(app)))
 			registerImportRoutes(g, app, lim)
 			registerSplitRoutes(g, app, rt, lim)
-			registerScanRoutes(g, app, lim)
+			registerScanRoutes(g, app, rt, lim)
 			return e.Next()
 		},
 	})
@@ -164,13 +171,14 @@ func registerSplitRoutes(g *router.RouterGroup[*core.RequestEvent], app core.App
 	g.GET("/split/status", bindAuth(handleGetSplitStatus(app)))
 }
 
-func registerScanRoutes(g *router.RouterGroup[*core.RequestEvent], app core.App, lim limits.Limits) {
+func registerScanRoutes(g *router.RouterGroup[*core.RequestEvent], app core.App, rt *config.Runtime, lim limits.Limits) {
+	off := unlessManaged(rt)
 	// A scan is a job rather than a synchronous call: a feeder run is
 	// minutes long, and a proxy's read timeout would cut it in half.
-	g.GET("/scan/discover", bindAuth(handleGetScanDiscover(app)))
-	g.POST("/scan", bindAuth(handlePostScan(app, lim)))
-	g.GET("/scan/status", bindAuth(handleGetScanStatus(app)))
-	g.GET("/scan/pdf", bindAuth(handleGetScanPDF(app)))
-	g.DELETE("/scan", bindAuth(handleDeleteScan(app)))
-	g.POST("/scan/document", bindAuth(handlePostScanDocument(app)))
+	g.GET("/scan/discover", bindAuth(handleGetScanDiscover(app))).BindFunc(off)
+	g.POST("/scan", bindAuth(handlePostScan(app, lim))).BindFunc(off)
+	g.GET("/scan/status", bindAuth(handleGetScanStatus(app))).BindFunc(off)
+	g.GET("/scan/pdf", bindAuth(handleGetScanPDF(app))).BindFunc(off)
+	g.DELETE("/scan", bindAuth(handleDeleteScan(app))).BindFunc(off)
+	g.POST("/scan/document", bindAuth(handlePostScanDocument(app))).BindFunc(off)
 }

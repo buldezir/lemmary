@@ -8,7 +8,7 @@ import {
 } from '../lib/api/meta'
 import { useAsync } from './useAsync'
 
-// aiManaged omitted: unknown must not default to "not managed". See AppMeta.
+// managed omitted: unknown must not default to "not managed". See AppMeta.
 const fallbackMeta: AppMeta = {
   appName: DEFAULT_APP_NAME,
   accent: DEFAULT_ACCENT,
@@ -17,7 +17,7 @@ const fallbackMeta: AppMeta = {
 /**
  * metaLoaded separates "not answered yet" from the two answers that both read
  * as managed. Without it a reader cannot tell an in-flight request from a known
- * `aiManaged: true`, and anything that *states* which of the two it is -- rather
+ * `managed: true`, and anything that *states* which of the two it is -- rather
  * than just offering less -- says the wrong thing on the first render.
  */
 export function useAppMeta(): AppMeta & { metaLoaded: boolean } {

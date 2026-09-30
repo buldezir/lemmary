@@ -127,8 +127,25 @@ func TestTouchesManagedCoversTheEmbeddingBinding(t *testing.T) {
 		t.Fatal("embedding_model must count as managed")
 	}
 	// The tenant-owned fields still are not.
-	if (settingsPatchRequest{WorkerMaxRetries: new(int)}).touchesManaged() {
-		t.Fatal("worker_max_retries is tenant-owned")
+	if (settingsPatchRequest{DeepSearchLanguages: new("en")}).touchesManaged() {
+		t.Fatal("deep_search_languages is tenant-owned")
+	}
+}
+
+// A retry after a paid OCR call spends again, and a timeout decides how long a
+// provider may bill for one call, so both are the operator's in managed mode.
+func TestTouchesManagedCoversTimeoutsAndRetries(t *testing.T) {
+	t.Parallel()
+
+	for name, req := range map[string]settingsPatchRequest{
+		"ocr_timeout_sec":    {OCRTimeoutSec: new(90)},
+		"openai_timeout_sec": {OpenAITimeoutSec: new(90)},
+		"worker_timeout_sec": {WorkerTimeoutSec: new(300)},
+		"worker_max_retries": {WorkerMaxRetries: new(0)},
+	} {
+		if !req.touchesManaged() {
+			t.Errorf("%s must count as managed", name)
+		}
 	}
 }
 

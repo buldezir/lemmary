@@ -203,6 +203,7 @@ export async function loginWithOAuth2(provider: string) {
 
 export async function loginWithPassword(email: string, password: string) {
   clearMeCache()
+  let rejected: ClientResponseError
   try {
     await pb.collection('users').authWithPassword(email, password)
     return
@@ -213,9 +214,16 @@ export async function loginWithPassword(email: string, password: string) {
     if (!(err instanceof ClientResponseError) || err.status !== 400) {
       throw err
     }
+    rejected = err
   }
 
-  await pb.collection('_superusers').authWithPassword(email, password)
+  try {
+    await pb.collection('_superusers').authWithPassword(email, password)
+  } catch (err) {
+    // A managed instance refuses superuser sign-in outright, so a wrong
+    // password there must read as one rather than as a refused feature.
+    throw err instanceof ClientResponseError && err.status === 403 ? rejected : err
+  }
   const response = await fetch(`${pbUrl}/api/app/ensure-user`, {
     method: 'POST',
     headers: {

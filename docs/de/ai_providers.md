@@ -98,10 +98,9 @@ Die Alternativen verdienen eine Erwähnung:
   weisen ihm Chat, Extraktion, Deep Research oder OCR zu. OCR funktioniert wie bei
   `openai` – die Datei geht an das Modell –, daher ist eine Instanz, deren einziger
   KI-Zugang ein ChatGPT-Platz ist, eine vollständige Installation. Embeddings werden
-  abgelehnt: Der Endpunkt hat überhaupt kein `/embeddings`. Auf einer verwalteten
-  Instanz abgelehnt – es greift auf die eigenen Codex-Endpunkte von OpenAI zu, daher
-  trägt das Konto, mit dem Sie sich anmelden, das Risiko. Sein SDK-Wert ist `chatgpt`,
-  allerdings ist es kein Wert für `AI_SDK` oder `OCR_SDK`: Eine Anmeldung lässt sich
+  abgelehnt: Der Endpunkt hat überhaupt kein `/embeddings`. Es greift auf die eigenen
+  Codex-Endpunkte von OpenAI zu, daher trägt das Konto, mit dem Sie sich anmelden, das
+  Risiko. Sein SDK-Wert ist `chatgpt`, allerdings ist es kein Wert für `AI_SDK` oder `OCR_SDK`: Eine Anmeldung lässt sich
   nicht in `.env` schreiben. Siehe [Anmeldung mit ChatGPT](/de/chatgpt_login).
 - **Local OCR** – nur OCR, und der einzige Anbieter, der ein Dokument liest, ohne es
   irgendwohin zu senden: ein Sidecar-Container neben der App, ohne veröffentlichten
@@ -126,42 +125,16 @@ der nichts den Host verlässt: Richten Sie `AI_BASE_URL` auf Ollama oder vLLM, s
 Ohne einen Sprachmodell-Anbieter geben KI-Extraktion, Chat mit Dokumenten und Deep
 Research einen Konfigurationsfehler zurück.
 
-## Zwei Modi, ein Build {#two-modes-one-build}
-
-In welchem Modus eine Instanz läuft, bestimmt ein Laufzeit-Flag, `AI_MANAGED`, und das
-ist der ganze Unterschied.
-
-| | selbst gehostet (Standard) | verwaltet (`AI_MANAGED=1`) |
-| --- | --- | --- |
-| wann die Umgebung in die Datenbank geschrieben wird | beim ersten Start, wenn der Einstellungs-Singleton noch nicht existiert | bei **jedem** Start |
-| maßgeblich danach | die Seite **Einstellungen** | die Umgebung des Containers |
-| Anbieter, Modelle und Duplikate in den Einstellungen | bearbeitbar | nicht angezeigt, und die API antwortet mit `403` |
-| ein unvollständiger oder ungültiger Block | der Einrichtungsassistent öffnet sich, und ein Administrator füllt ihn aus | der Prozess **verweigert den Start** und nennt die Variable |
-
-Selbst gehostet ist die gewöhnliche Installation: Tragen Sie einen Schlüssel in `.env`
-ein, damit ein frisches Volume einsatzbereit statt im Assistenten startet, und ändern Sie
-Ihre Meinung später in den **Einstellungen**. Verwaltet ist für eine gehostete Flotte
-gedacht, bei der der Betreiber die KI-Rechnung trägt und der Mandant sie nicht auf seinen
-eigenen Schlüssel verlagern können darf. Den Start zu verweigern, ist dort die richtige
-Art zu scheitern, denn innerhalb einer verwalteten Instanz kann niemand einen falschen
-Schlüssel reparieren: Die Seite Einstellungen gibt es dort nicht.
-
-Keiner der beiden Modi vergleicht mit dem zuletzt Angewendeten. Eine frühere Version
-speicherte pro Variable einen Digest in `app_settings.env_applied` und wendete eine
-Variable nur dann erneut an, wenn sie sich geändert hatte; mit der Benennung der beiden
-Modi wurde das überflüssig, und die Spalte entfällt.
-
-Ein Anbieter-Datensatz wird anhand des Standard-Alias zugeordnet, mit dem er angelegt
-wird. Ein umbenannter oder gelöschter Anbieter bleibt unangetastet, statt
-zurückgefordert zu werden – eine Umbenennung ist eine Änderung, die ein Administrator
-vorgenommen hat, und ein Start, der sie rückgängig machte, würde sie danach bei jedem
-Start erneut rückgängig machen.
-
 ## Der Anbieter-Block {#the-provider-block}
+
+Die folgenden Anbieter und Modelle belegen die Datenbank **nur beim ersten Start** vor,
+wenn die Einstellungszeile noch nicht existiert, damit ein frisches Volume einsatzbereit
+statt im Einrichtungsassistenten startet. Danach sind die **Einstellungen** maßgeblich,
+und eine Änderung an `.env` bewirkt nichts. Ein fehlender Schlüssel ist kein Fehler: Der
+Einrichtungsassistent fragt danach.
 
 | Variable | Standard | Beschreibung |
 | --- | --- | --- |
-| `AI_MANAGED` | `0` | Ob der Betreiber die KI-Konfiguration verantwortet. Siehe die Tabelle oben. |
 | `AI_SDK` | `openai` | Das SDK des Sprachmodells: `opencode`, `openai`, `anthropic`, `openrouter` oder `mistral`. `google_vision`, `docling` (Local OCR) und `local` (Local Embeddings) werden abgelehnt – keines davon kann Extraktion übernehmen. `chatgpt` ebenfalls: Es hat keinen Schlüssel, der sich aus der Umgebung vorbelegen ließe. |
 | `AI_API_KEY` | leer | Sein Zugangsschlüssel. **Ein Schlüssel ist meist die gesamte Konfiguration**: Damit und mit nichts anderem legt die App einen Anbieter an und leitet Extraktion, Chat, Deep Research *und* OCR dorthin. |
 | `AI_MODEL` | `gpt-5.6-luna` | Das Modell für **Allgemeine KI**: Extraktion, KI fragen, KI-gestützte Suche und das massenhafte Lesen von Dokumenten durch Deep Research. Achten Sie darauf, dass es die in den **Einstellungen** festgelegte Ergebnissprache unterstützt. |
@@ -170,8 +143,8 @@ Start erneut rückgängig machen.
 | `OCR_API_KEY` | `AI_API_KEY`, wenn die SDKs übereinstimmen | Sein Zugangsschlüssel. Erforderlich für ein OCR-SDK, das sich von `AI_SDK` unterscheidet – außer Local OCR (`docling`), hinter dem kein Konto steht. Dort optional, und nur, wenn Sie den Sidecar mit `DOCLING_SERVE_API_KEY` gestartet haben. |
 | `OCR_BASE_URL` | `AI_BASE_URL`, wenn die SDKs übereinstimmen, sonst der eigene Endpunkt des SDKs | Wo sich dieser Anbieter befindet. Für Local OCR (`docling`) ist der Standard der Name des Compose-Dienstes, `http://docling:5001`, sodass `OCR_SDK=docling` allein unter dem Overlay eine vollständige Konfiguration ist. |
 | `OCR_MODEL` | `AI_MODEL`, wenn die SDKs übereinstimmen | Sein Modell. Nicht erforderlich für `google_vision` oder Local OCR (`docling`), die ein Dokument ohne Modell lesen; bei Local OCR nennt es optional stattdessen die OCR-Engine. Siehe [Eine Engine wählen](/de/local_ocr#choosing-an-engine). |
-| `AI_EMBEDDING_MODEL` | ungesetzt (Deep Research und das Suchfeld gleichen nur Stichwörter ab) | Ein Embedding-Modell – beim `AI_SDK`-Anbieter oder, wenn gesetzt, beim `AI_EMBEDDING_SDK`-Anbieter –, damit Deep Research und das Suchfeld der Dokumente Dokumente auch nach Bedeutung finden können. Unter `AI_SDK=opencode` oder `AI_SDK=anthropic` erfordert es `AI_EMBEDDING_SDK`: Keines von beiden bietet `/embeddings`, daher gibt es keinen Anbieter, auf den zurückgegriffen werden könnte, und die Angabe eines Modells ohne einen solchen wird beim Start abgelehnt. Unter `AI_MANAGED=1` vom Betreiber verwaltet; wird es dort entfernt, ist die Funktion ausgeschaltet. Siehe [was Embeddings kosten](#what-embeddings-cost). |
-| `AI_RESEARCH_MODEL` | ungesetzt (Deep Research läuft auf `AI_MODEL`) | Das **Erweiterte Modell**, beim `AI_SDK`-Anbieter: treibt die Denkschleife von Deep Research an, wenige teure Aufrufe pro Frage, während alles andere aus vielen günstigen besteht. Das massenhafte Lesen von Dokumenten bleibt auf `AI_MODEL`. Unter `AI_MANAGED=1` vom Betreiber verwaltet; wird es dort entfernt, läuft die Recherche wieder auf dem allgemeinen Modell. Siehe [Wie Research ein Thema abdeckt](/de/deep_research#how-research-covers-a-topic). |
+| `AI_EMBEDDING_MODEL` | ungesetzt (Deep Research und das Suchfeld gleichen nur Stichwörter ab) | Ein Embedding-Modell – beim `AI_SDK`-Anbieter oder, wenn gesetzt, beim `AI_EMBEDDING_SDK`-Anbieter –, damit Deep Research und das Suchfeld der Dokumente Dokumente auch nach Bedeutung finden können. Unter `AI_SDK=opencode` oder `AI_SDK=anthropic` erfordert es `AI_EMBEDDING_SDK`: Keines von beiden bietet `/embeddings`, daher gibt es keinen Anbieter, auf den zurückgegriffen werden könnte, und die Angabe eines Modells ohne einen solchen wird beim Start abgelehnt. Siehe [was Embeddings kosten](#what-embeddings-cost). |
+| `AI_RESEARCH_MODEL` | ungesetzt (Deep Research läuft auf `AI_MODEL`) | Das **Erweiterte Modell**, beim `AI_SDK`-Anbieter: treibt die Denkschleife von Deep Research an, wenige teure Aufrufe pro Frage, während alles andere aus vielen günstigen besteht. Das massenhafte Lesen von Dokumenten bleibt auf `AI_MODEL`. Siehe [Wie Research ein Thema abdeckt](/de/deep_research#how-research-covers-a-topic). |
 
 ### Der Embedding-Anbieter {#the-embedding-provider}
 
@@ -183,8 +156,7 @@ Variablen vor allem drei weitere Möglichkeiten wären, die Funktion halb zu kon
 Das Embedding-Modell selbst zu betreiben, ist der Fall, den diese Begründung nicht
 vorhergesehen hat. Ein Sidecar im Compose-Netzwerk *ist* ein anderer Endpunkt, per
 Definition und nicht aus Vorliebe – ohne diese Variablen könnte ein Betreiber eine Instanz
-also überhaupt nicht aus `.env` damit starten, und eine verwaltete Instanz könnte ihn um
-keinen Preis nutzen. Sie sind hier, genau wie der `OCR_*`-Block oben aufgebaut, der schon
+also überhaupt nicht aus `.env` damit starten. Sie sind hier, genau wie der `OCR_*`-Block oben aufgebaut, der schon
 immer beschrieben hat, wie ein zweiter Anbieter für eine Aufgabe angegeben wird.
 
 | Variable | Standard | Beschreibung |
@@ -248,7 +220,7 @@ beim `OCR_*`-Block – es gibt keinen anderen Anbieter, in den sie einfließen k
 
 ### Vorbelegte Einstellungen {#seeded-settings}
 
-Werden beim ersten Start in `app_settings` geschrieben und danach in beiden Modi über die
+Werden beim ersten Start in `app_settings` geschrieben und danach über die
 **Einstellungen** bearbeitet.
 
 | Variable | Standard | Beschreibung |
@@ -259,13 +231,6 @@ Werden beim ersten Start in `app_settings` geschrieben und danach in beiden Modi
 | `WORKER_MAX_RETRIES` | `0` | Maximale Anzahl von Wiederholungsversuchen pro Schritt, bevor ein Auftrag fehlschlägt |
 | `DEEP_SEARCH_LANGUAGES` | leer | Kommagetrennte ISO-639-1-Codes (z. B. `de,en,uk`) für die Stichworterweiterung auf beiden Suchseiten. Steuert sprachspezifische Suchen nur, wenn kein Embedding-Modell gesetzt ist; mit einem solchen überschreitet bereits eine einzige Suche Sprachgrenzen |
 | `EXTRACTION_PROMPT_VERSION` | `v1` | Wird bei jedem Schrittlauf eines Verarbeitungsauftrags gespeichert, mit einem angehängten Digest der Extraktionsregeln aus den Einstellungen, sofern welche gesetzt sind; dient nur der Buchführung, wird in der Einstellungsoberfläche nicht angeboten |
-
-Zwei weitere werden auf dieselbe Weise vorbelegt, sind aber **unter `AI_MANAGED=1` vom
-Betreiber verwaltet**, weil jede davon ein Kostenfaktor und keine Vorliebe ist – so kann ein
-gehosteter Tarif sie pro Stufe bepreisen:
-
-| Variable | Standard | Beschreibung |
-| --- | --- | --- |
 | `NEAR_DUPLICATE_DETECTION_ENABLED` | `false` | Ob die Pipeline eine Erkennung von Beinahe-Duplikaten ausführt |
 | `NEAR_DUPLICATE_THRESHOLD` | `0.92` | Wie ähnlich sich die Texte zweier Dokumente sein müssen, damit sie als Beinahe-Duplikate gelten |
 
@@ -278,8 +243,8 @@ das Ausgabentempo steuert, statt die Instanz zu beschreiben:
 
 Die **Ergebnissprache** hat überhaupt keine Variable. Sie bestimmt, in welcher Sprache Titel,
 Zusammenfassung, Typ und Korrespondent eines Dokuments gespeichert werden, und das ist eine
-Vorliebe des Lesers, nicht des Betreibers; daher wird sie in den **Einstellungen** festgelegt,
-und eine verwaltete Instanz behält sie bei. Tags sind ausgenommen: Sie werden aus einer Liste
+Vorliebe des Lesers, nicht des Betreibers; daher wird sie in den **Einstellungen** festgelegt.
+Tags sind ausgenommen: Sie werden aus einer Liste
 zugewiesen, die der Benutzer schreibt, und sind daher bereits in der Sprache, die dieser
 Benutzer gewählt hat.
 
@@ -534,9 +499,7 @@ Image-Größe, Arbeitsspeicher, GPU-Varianten und die Kosten pro Seite – steht
   Eine Installation, die älter als das SDK ist, muss nicht angepasst werden: `AI_SDK=openai`
   mit einer Basis-URL, die `opencode.ai` adressiert, wird als `AI_SDK=opencode` *gelesen*, und
   der Anbieter-Eintrag, den sie vorbelegt hat, wird durch die Migration `1730000026` auf dieses
-  SDK umgestellt. Beide Hälften sind wichtig – eine verwaltete Instanz wendet ihre Umgebung bei
-  jedem Start erneut an, daher würde der Eintrag allein sofort zurückgestellt. Das betrifft
-  also nur einen Eintrag, der danach von Hand angelegt wurde, oder einen, der über eine URL auf
+  SDK umgestellt. Das betrifft also nur einen Eintrag, der danach von Hand angelegt wurde, oder einen, der über eine URL auf
   Opencode zeigt, die den Host verbirgt. Dasselbe gilt für den Header `x-opencode-session`, den
   Opencode verlangt und den nur das `opencode`-SDK sendet.
 
@@ -557,8 +520,6 @@ Image-Größe, Arbeitsspeicher, GPU-Varianten und die Kosten pro Seite – steht
   Log-Zeile lautet `model rejected reasoning_effort with function tools; retrying on the
   Responses API`. Das Gelernte wird pro Anbieter gespeichert, daher wird derselbe Modellname
   hinter zwei Anbietern getrennt ermittelt.
-- **Eine verwaltete Instanz startet nicht** – das Log nennt die fehlende oder ungültige
-  Variable im Anbieter-Block; innerhalb der Instanz kann nichts sie reparieren.
 - **Local Embeddings bettet nichts ein** – `docker compose logs embeddings`. Beim ersten Start
   lädt er Gewichte herunter, und der Container ist bis zum Abschluss unhealthy, weshalb die App
   auf seinen Healthcheck wartet; Embedding-Schritte schlagen währenddessen weich fehl und werden

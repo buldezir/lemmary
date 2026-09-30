@@ -132,9 +132,8 @@ Abschneidegrenze zu senken.
 ## Das Modell wechseln {#changing-the-model}
 
 Vektoren aus zwei Modellen lassen sich nicht vergleichen, daher bedeutet ein Wechsel,
-das gesamte Archiv neu einzubetten – und auf einer selbst gehosteten Instanz erfordert
-das **zwei** Schritte, weil die Umgebung außerhalb von `AI_MANAGED=1` die Datenbank nur
-beim ersten Start vorbelegt:
+das gesamte Archiv neu einzubetten – und das erfordert **zwei** Schritte, weil die
+Umgebung die Datenbank nur beim ersten Start vorbelegt:
 
 1. Ändern Sie `EMBEDDINGS_MODEL` und erstellen Sie den Sidecar neu.
 2. Ändern Sie das Modell außerdem unter **Einstellungen → Modelle**.
@@ -145,5 +144,4 @@ stillschweigend falsch – die App speichert die Vektorlänge aus der ersten Ant
 Anbieters und lehnt eine spätere Abweichung ab –, aber das Archiv erzeugt keine
 Embeddings mehr, bis die Zuweisung korrigiert ist. Eine Änderung in den Einstellungen
 setzt die gespeicherten Dimensionen zurück und baut den Chunk-Index neu auf, was ein
-Modellwechsel tatsächlich erfordert. Unter `AI_MANAGED=1` ist die Umgebung bei jedem
-Start maßgeblich, daher genügt Schritt 1.
+Modellwechsel tatsächlich erfordert.

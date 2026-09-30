@@ -1,10 +1,10 @@
 // Package limits bounds how much one instance may hold.
 //
 // The six allowances are what a hosted plan is made of. They are read from the
-// environment and nowhere else: an orchestrator can only express a plan as the
-// environment of the container it creates, and an admin editing the Settings
-// page must not be able to raise their own plan. Every limit is unlimited by
-// default.
+// environment and nowhere else, and only on a managed instance (appwire decides):
+// an orchestrator can only express a plan as the environment of the container it
+// creates, and an admin editing the Settings page must not be able to raise
+// their own plan. Every limit is unlimited by default.
 //
 // MaxOCRPages is neither a plan nor read from the environment: it is what this
 // can extract rather than what a plan sells, since the providers hand back a
@@ -115,8 +115,7 @@ func EnvKeys() []string {
 //
 // The bad names travel with the limits because an unusable value falls back to
 // unlimited, which is a working instance and a wrong plan, the one failure mode
-// here invisible from the outside.
-// the bad names travel with the limits, to be logged loudly and shown to an
+// here invisible from the outside. They are logged loudly and shown to an
 // admin, rather than only appearing once in a boot log nobody reads.
 func FromEnv(logger *slog.Logger) (Limits, []string) {
 	var misconfigured []string

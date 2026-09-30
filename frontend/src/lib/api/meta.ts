@@ -9,11 +9,12 @@ export type AppMeta = {
   appName: string
   accent: string
   /**
-   * Hosting provider owns AI configuration. `undefined` is in-flight or failed:
+   * A hosting provider runs this instance and owns its AI configuration,
+   * timeouts and worker settings. `undefined` is in-flight or failed:
    * treat as managed. Defaulting to false flashes those sections, and Save
    * would send fields the server rejects, failing the whole patch.
    */
-  aiManaged?: boolean
+  managed?: boolean
   /**
    * Whether every AI-extracted document waits in the review Inbox. Unknown
    * reads as off, which is the behaviour before the flag existed.
@@ -31,6 +32,8 @@ export type AppMeta = {
   ingestDir?: boolean
   /** Whether INGEST_IMAP_ENABLED is set; shows the mailbox half of the Ingest tab. */
   ingestImap?: boolean
+  /** When a hosted instance stops taking changes (ms since the epoch); absent for any other. */
+  writableUntil?: number
 }
 
 // One request per page load, shared by three components and the auth gate --
@@ -74,12 +77,13 @@ async function fetchAppMeta(): Promise<AppMeta> {
     const data = await apiFetch<{
       app_name?: string
       accent?: string
-      ai_managed?: boolean
+      managed?: boolean
       always_require_review?: boolean
       web_search?: boolean
       ingest_dir?: boolean
       ingest_imap?: boolean
       result_language?: string
+      writable_until?: string
     }>('/api/app/meta', {
       public: true,
       fallbackError: t('meta.loadFailed'),
@@ -87,15 +91,17 @@ async function fetchAppMeta(): Promise<AppMeta> {
     const appName = typeof data.app_name === 'string' ? data.app_name.trim() : ''
     const accent = typeof data.accent === 'string' ? data.accent.trim() : ''
     setAlwaysRequireReview(data.always_require_review === true)
+    const writableUntil = typeof data.writable_until === 'string' ? Date.parse(data.writable_until) : NaN
     return {
       appName: appName || DEFAULT_APP_NAME,
       accent: accent || DEFAULT_ACCENT,
-      aiManaged: data.ai_managed === true,
+      managed: data.managed === true,
       alwaysRequireReview: data.always_require_review === true,
       webSearch: data.web_search === true,
       ingestDir: data.ingest_dir === true,
       ingestImap: data.ingest_imap === true,
       resultLanguage: typeof data.result_language === 'string' ? data.result_language : '',
+      writableUntil: Number.isNaN(writableUntil) ? undefined : writableUntil,
     }
   } catch {
     // A name and accent have safe defaults; who owns AI configuration does not.

@@ -60,9 +60,6 @@ Drei Konsequenzen, über die Sie sich im Klaren sein sollten:
   zum Problem wird, legen Sie zuerst die Zuweisung **Deep-Search-Helfer** wieder auf einen
   Anbieter mit Schlüssel – er erledigt den Großteil des Lesens.
 
-Deshalb erscheint das SDK nie auf einer verwalteten Instanz: Dort ist der Mandant nicht
-derjenige, dessen Konto auf dem Spiel stünde.
-
 ## Einschalten {#turning-it-on}
 
 ### 1. Die Anmeldung per Gerätecode im ChatGPT-Konto erlauben {#_1-allow-device-code-sign-in-on-the-chatgpt-account}

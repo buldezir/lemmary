@@ -63,19 +63,25 @@ export function primaryNavItems(reviewRequired: boolean): readonly NavItem[] {
   ]
 }
 
-/** The links behind the bar's "More" menu, listed inline on a narrow one. */
-export function secondaryNavItems(pbAdminUrl: string): readonly NavItem[] {
+/**
+ * The links behind the bar's "More" menu, listed inline on a narrow one.
+ * `hostEditable` is false on a managed instance, which offers no OCR test and
+ * no PocketBase dashboard.
+ */
+export function secondaryNavItems(pbAdminUrl: string, hostEditable: boolean): readonly NavItem[] {
   return [
     { kind: 'route', label: t('nav.account'), to: '/account' },
     { kind: 'route', label: t('nav.tags'), to: '/tags' },
     { kind: 'route', label: t('nav.bulkActions'), to: '/bulk' },
-    { kind: 'route', label: t('nav.ocrTest'), to: '/ocr-test' },
+    ...(hostEditable ? [{ kind: 'route', label: t('nav.ocrTest'), to: '/ocr-test' } as const] : []),
     { kind: 'route', label: t('nav.export'), to: '/export' },
     { kind: 'route', label: t('nav.import'), to: '/import' },
     { kind: 'route', label: t('nav.settings'), to: '/settings', admin: true },
     { kind: 'route', label: t('nav.management'), to: '/management', admin: true },
     { kind: 'route', label: t('nav.maintenance'), to: '/maintenance', admin: true },
-    { kind: 'external', label: t('nav.admin'), href: pbAdminUrl, admin: true, icon: 'pocketbase' },
+    ...(hostEditable
+      ? [{ kind: 'external', label: t('nav.admin'), href: pbAdminUrl, admin: true, icon: 'pocketbase' } as const]
+      : []),
   ]
 }
 

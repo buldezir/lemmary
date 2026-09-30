@@ -29,8 +29,13 @@ import (
 // app. publicDir holds the built frontend; indexFallback enables SPA routing.
 func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, indexFallback bool) {
 	// Read once so the enforcing hooks, the importer caps and the usage endpoint
-	// all see the same numbers.
-	lim, badLimitKeys := limits.FromEnv(app.Logger())
+	// all see the same numbers. A plan is the managed operator's to set; a
+	// self-hosted install is unlimited whatever its environment says.
+	var lim limits.Limits
+	var badLimitKeys []string
+	if rt.Managed() {
+		lim, badLimitKeys = limits.FromEnv(app.Logger())
+	}
 	applyPerFileCaps(lim)
 	// Bound to the same numbers, so what a dashboard reports and what the app
 	// enforces cannot drift apart. Registered on every install, limits or none:

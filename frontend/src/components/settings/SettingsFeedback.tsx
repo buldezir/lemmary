@@ -61,8 +61,8 @@ export function SettingsLoading({ error }: { error: string }) {
 }
 
 /**
- * What the operator-owned tabs show on a managed instance, where they are left
- * out of the tab bar: this is for a link or a bookmark.
+ * What the pages a managed instance leaves out of its navigation show: this is
+ * for a link or a bookmark.
  */
 export function ManagedByHostNotice() {
   return (

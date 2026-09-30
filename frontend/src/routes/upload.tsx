@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, Outlet } from '@tanstack/react-router'
 
 import { LimitsUsage } from '../components/LimitsUsage'
+import { useAppMeta } from '../hooks/useAppMeta'
 import { getLimits, type InstanceLimits } from '../lib/api/limits'
 import { tabClassName } from '../components/ui'
 import { t } from '../i18n'
@@ -11,6 +12,7 @@ export function UploadPage() {
   // figures without a fetch each. A failure is swallowed: the server refuses an
   // over-limit upload whatever this shows.
   const [limits, setLimits] = useState<InstanceLimits | null>(null)
+  const { managed } = useAppMeta()
 
   useEffect(() => {
     let active = true
@@ -43,12 +45,14 @@ export function UploadPage() {
         >
           {t('upload.tabFiles')}
         </Link>
-        <Link
-          to="/upload/scan"
-          className={tabClassName}
-        >
-          {t('upload.tabScan')}
-        </Link>
+        {managed === false && (
+          <Link
+            to="/upload/scan"
+            className={tabClassName}
+          >
+            {t('upload.tabScan')}
+          </Link>
+        )}
         <Link
           to="/upload/amazon"
           className={tabClassName}

@@ -19,13 +19,16 @@ Alle Variablen stehen in `.env` im Projektstammverzeichnis (siehe `.env.example`
 Die Familien `AI_*` und `OCR_*` sind unter
 [KI-Anbieter und Modelle](/de/ai_providers#the-provider-block) dokumentiert.
 
+`MANAGED` und die `LIMIT_*`-Variablen sind für gehostete Deployments gedacht und
+nicht für das Selbst-Hosting; lassen Sie sie ungesetzt.
+
 ### Immer aus der Umgebung gelesen {#always-env-backed}
 
 | Variable | Standard | Beschreibung |
 | --- | --- | --- |
 | `WORKER_CRON_EXPR` | `* * * * *` | Cron-Ausdruck für das Einsammeln hängengebliebener wartender Jobs (einmalig beim Start registriert) |
 | `LOG_LEVEL` | nicht gesetzt (kein slog auf stdout) | Mindeststufe für JSON-slog-Zeilen auf stdout (`debug`, `info`, `warn`/`warning`, `error`). Wird ignoriert, solange PocketBase `--dev` aktiv ist (dieser Modus gibt bereits auf der Konsole aus, einschließlich SQL). PocketBase Admin → Settings → Logs steuert weiterhin die Log-Tabelle. |
-| `METRICS_ADDR` | nicht gesetzt (aus) | Adresse für den OpenTelemetry-Metrik-Endpunkt, der als Prometheus-Scrape-Ziel auf einem eigenen Port bereitgestellt wird, damit nichts, was ihn abfragt, ein Zugangsdatum für das Archiv besitzt. Ein reiner Port (`9464`) oder einer ohne Host (`:9464`) lauscht auf jeder Schnittstelle; nur diese Form ist in Docker über einen veröffentlichten Port erreichbar &mdash; die Portzuordnung steht bewusst nicht in `docker-compose.yml`, da ein Endpunkt ohne Authentifizierung nicht standardmäßig aus dem Internet erreichbar werden sollte. Geben Sie einen Host an (`127.0.0.1:9464`), um ihn auf Loopback zu halten, wenn Sie das Binary direkt betreiben. Stellt bereit: Anfragerate und Latenz pro Route, Jobdauern nach Ergebnis, Tiefe der wartenden Warteschlange, ausgehende KI-/OCR-Latenz pro Anbieter und Modell, Tokenzahlen, wie voll die Instanz gemessen an den instanzweiten Gesamtwerten ist (Dokumente, Seiten, gespeicherte Bytes, Konten) &mdash; nicht die dateibezogenen Obergrenzen `LIMIT_FILE_*` &mdash; sowie Go-Laufzeitmetriken; keine Dokumenttexte, Kontonamen oder Pfade. Die Nutzungs-Gauges lesen dieselbe Messung, die die Einstellungsseite zeigt, und bilden mit einem Kontingent unter demselben Label `resource` ein Paar, sodass die Auslastung eine einzige Division ist &mdash; `lemmary_usage / lemmary_limit` und `lemmary_usage_bytes / lemmary_limit_bytes`. Ein nicht gesetztes `LIMIT_*` erzeugt überhaupt keine Kontingent-Serie, da `0` ein Kontingent ist, das jemand verkauft, und nicht zugleich unbegrenzt bedeuten kann. Kostet drei Abfragen pro Scrape: ein `COUNT` über `processing_jobs` sowie das Nutzungsaggregat (ein reiner Index-Scan über `documents` und ein `COUNT` über `users`). Ein Port, der sich nicht binden lässt, wird protokolliert, und die App läuft trotzdem weiter. |
+| `METRICS_ADDR` | nicht gesetzt (aus) | Adresse für den OpenTelemetry-Metrik-Endpunkt, der als Prometheus-Scrape-Ziel auf einem eigenen Port bereitgestellt wird, damit nichts, was ihn abfragt, ein Zugangsdatum für das Archiv besitzt. Ein reiner Port (`9464`) oder einer ohne Host (`:9464`) lauscht auf jeder Schnittstelle; nur diese Form ist in Docker über einen veröffentlichten Port erreichbar &mdash; die Portzuordnung steht bewusst nicht in `docker-compose.yml`, da ein Endpunkt ohne Authentifizierung nicht standardmäßig aus dem Internet erreichbar werden sollte. Geben Sie einen Host an (`127.0.0.1:9464`), um ihn auf Loopback zu halten, wenn Sie das Binary direkt betreiben. Stellt bereit: Anfragerate und Latenz pro Route, Jobdauern nach Ergebnis, Tiefe der wartenden Warteschlange, ausgehende KI-/OCR-Latenz pro Anbieter und Modell, Tokenzahlen, an einen OCR-Anbieter gesendete Seiten, Deep-Search-Läufe nach Modus, wie viel die Instanz enthält (Dokumente, Seiten, gespeicherte Bytes, Konten sowie die größte gespeicherte Datei in Seiten und Bytes) sowie Go-Laufzeitmetriken; keine Dokumenttexte, Kontonamen oder Pfade. Der Bestand wird über zwei Gauges unter dem Label `resource` gemeldet: `lemmary_usage` für die Anzahlen und `lemmary_usage_bytes` für die Bytes. Kostet drei Abfragen pro Scrape: ein `COUNT` über `processing_jobs` sowie das Nutzungsaggregat (ein reiner Index-Scan über `documents` und ein `COUNT` über `users`). Ein Port, der sich nicht binden lässt, wird protokolliert, und die App läuft trotzdem weiter. |
 | `MCP_ENABLED` | nicht gesetzt (an) | Auf `0`/`false`/`no`/`off` setzen, um den schreibgeschützten [Model-Context-Protocol](/de/mcp)-Endpunkt unter `POST /api/mcp` auf dem App-Port zu entfernen. Er ist standardmäßig an, weil er nur auf das gewöhnliche Bearer-Token antwortet und nichts kostet, bis ein Agent ihn aufruft. Such-Tools (`search_documents`, `read_documents`, `count_documents`) teilen sich den Index von Deep Search; Tools für den direkten Zugriff (`list_documents`, `get_document`, `list_taxonomy`) lesen die Zeilen direkt. Alle sind auf den Benutzer des Tokens beschränkt. Kostet eine Embedding-Anfrage pro Suche und pro Lesevorgang mit `focus`, wenn Embeddings konfiguriert sind; Lesevorgänge liefern Textauszüge und rufen nie ein Sprachmodell auf. Wird beim Start gelesen. |
 | `IMPORT_ALLOW_PRIVATE` | nicht gesetzt (gesperrt) | Auf `1`/`true` setzen, damit der ngx-Import Loopback- und RFC1918-Hosts erreichen darf. Link-Local- und Cloud-Metadaten-Adressen bleiben gesperrt. Nötig, wenn Paperless-ngx im selben LAN oder Docker-Netzwerk liegt. |
 | `UPLOAD_MAX_MB` | `100` | Obergrenze für einen bereitgestellten PDF-Upload zum Aufteilen, in Megabyte. Wird beim Start gelesen, nicht aus den Einstellungen: Das Bereitstellen eines PDFs kostet während des Renderns der Seiten ein Mehrfaches seiner Größe an Speicher, daher schützt der Wert den Host ebenso sehr, wie er das Produkt formt. Ein fehlerhafter oder nicht positiver Wert fällt auf den Standard zurück, statt den Start scheitern zu lassen. Uploads einzelner Dateien werden separat über das Feld `documents.file` begrenzt (47 MB). |
@@ -34,117 +37,9 @@ Die Familien `AI_*` und `OCR_*` sind unter
 | `IMPORT_STAGING_MAX_BYTES` | `1073741824` (1 GiB) | Obergrenze für ein zum Import bereitgestelltes Archiv (Amazon-Bestellungen, Lemmary-Sicherung), in Byte. Das Bereitstellen eines neuen Archivs verwirft das vorherige desselben Kontos, daher ist dies auch der Plattenplatz, den ein einzelnes Konto belegen kann, während es über die Bestätigung entscheidet – die Obergrenze des Bereitstellungsbereichs liegt grob bei diesem Wert mal der Anzahl der Konten. Verringern Sie ihn auf einem kleinen Volume; erhöhen Sie ihn für eine Bibliothek, deren Sicherung über ein Gigabyte hinausgeht. Ein fehlerhafter Wert oder einer unter 1 MiB fällt auf den Standard zurück, statt jeden Upload abzulehnen. |
 | `PASSKEY_RP_ID` | aus dem Host der Anfrage abgeleitet | Relying-Party-ID für die [Passkey-Anmeldung](/de/passkeys): ein reiner Domainname, ohne Schema und ohne Port. Standardmäßig der Hostname, mit dem die Anfrage eintraf, was immer dann richtig ist, wenn der Proxy den öffentlichen `Host` weiterleitet. Setzen Sie ihn, wenn das nicht der Fall ist, oder um eine übergeordnete Domain festzulegen (`example.com`, während `app.example.com` ausgeliefert wird). **Jeder registrierte Passkey ist an diesen Wert gebunden – eine Änderung macht alle unbrauchbar.** Wird beim Start gelesen, nicht aus den Einstellungen. |
 | `PASSKEY_ORIGINS` | aus Schema + Host der Anfrage abgeleitet | Kommagetrennte vollständige Origins (Schema, Host und Port), die eine Passkey-Zeremonie abschließen dürfen. Standardmäßig der Origin, über den die Anfrage eintraf, wobei für das Schema `X-Forwarded-Proto` verwendet wird, sofern vorhanden. Setzen Sie den Wert, wenn die App unter mehr als einem Origin erreichbar ist oder wenn ein TLS-terminierender Proxy diesen Header nicht setzt. |
-| `LIMIT_DOCUMENTS` | nicht gesetzt (unbegrenzt) | Gesamtzahl der Dokumente, die diese Instanz speichern darf. |
-| `LIMIT_DOCUMENT_PAGES` | nicht gesetzt (unbegrenzt) | Gesamtzahl der Seiten über alle gespeicherten Dokumente. Alles, was kein PDF ist, zählt als eine Seite &mdash; auch ein mehrseitiges `.docx` oder `.xlsx`, dessen tatsächliche Seitenzahl sich ohne Konvertierung der Datei nicht ermitteln lässt. |
-| `LIMIT_STORAGE_BYTES` | nicht gesetzt (unbegrenzt) | Gesamtzahl der Bytes gespeicherter Dokumentdateien. Zählt nur die hochgeladenen Originale, nicht die erzeugten Vorschaubilder oder den extrahierten OCR-Text. Planen Sie bei der Bemessung eines Volumes die Datenbank separat ein: Extrahierter Text wird direkt in der Zeile gespeichert, und ein einzelnes Dokument kann bis zu 47 Mi Zeichen davon enthalten, sodass die `data.db` einer textlastigen Bibliothek in dieselbe Größenordnung wie die Dateien selbst kommen kann. |
-| `LIMIT_FILE_BYTES` | nicht gesetzt (unbegrenzt) | Größte einzelne Dokumentdatei, in Byte. Kann die effektive Obergrenze nur **senken**: Das Feld `documents.file` hat eine eigene `MaxSize` von 47 MB (49.283.072 Byte, knapp unter den dokumentierten 50 MB von Mistral OCR), die PocketBase bei jedem Speichern prüft, und kein Wert hier kann sie anheben. Dateien über 20 MB werden hochgeladen, aber auf der Upload-Seite markiert: OCR-Anbieter und der Worker werden mit ihnen langsamer und unzuverlässiger. Unterscheidet sich von `UPLOAD_MAX_MB`, das das eine bereitgestellte PDF begrenzt, aus dem eine Aufteilung geschnitten wird, und nicht jedes daraus entstehende Dokument. |
-| `LIMIT_FILE_PAGES` | nicht gesetzt (unbegrenzt) | Höchstzahl der Seiten in einem einzelnen Dokument. Kann die effektive Obergrenze nur **senken**: Eine Obergrenze von 1000 Seiten gilt ohnehin für jede Installation (siehe [die Seitenobergrenze](#the-page-ceiling)), und kein Wert hier kann sie anheben. |
-| `LIMIT_ADDITIONAL_USERS` | nicht gesetzt (unbegrenzt) | Konten über das Admin-Konto hinaus. Genau ein Konto ist frei, daher ist `0` eine Instanz mit einem einzigen Konto. |
 | `VITE_POCKETBASE_URL` | `http://127.0.0.1:8090` | PocketBase-API-URL (Frontend) |
 | `SETUP_ADMIN_EMAIL` | — | Das erste Admin-Konto, angelegt beim ersten Start, der keines vorfindet. Legt einen `_superusers`-Datensatz **und** das zugehörige `users`-Konto an, genau wie der Einrichtungsassistent. Setzt nie ein bereits vorhandenes Passwort zurück. In einem Entwicklungs-Build meldet sich die SPA außerdem selbst mit diesem Paar an; ein Produktions-Bundle enthält keinen der beiden Werte. **In `.env.example` auskommentiert** – ihn in einer ausgelieferten Installation einzukommentieren, würde ihr einen Admin verschaffen, dessen Passwort in diesem Repository veröffentlicht ist. |
 | `SETUP_ADMIN_PASSWORD` | — | Das zugehörige Passwort, mindestens 8 Zeichen. Für die Lebensdauer des Containers über `docker inspect` und `/proc/<pid>/environ` lesbar, daher ist dies für lokale und CI-Instanzen gedacht – eine ausgelieferte Installation sollte den Assistenten oder `superuser upsert` verwenden. |
-
-#### Instanzlimits {#instance-limits}
-
-Die sechs `LIMIT_*`-Variablen begrenzen, wie viel eine Instanz aufnehmen darf.
-**Alle sind unbegrenzt, wenn sie nicht gesetzt sind**, sodass eine Installation,
-die keine davon setzt, pro Upload keine zusätzlichen Abfragen ausführt und in der
-Oberfläche kein Kontingent anzeigt. Völlig ungemessen ist sie trotzdem nicht –
-siehe [die Seitenobergrenze](#the-page-ceiling) unten, die für jede Installation
-gilt.
-
-Sie werden beim Start gelesen und bewusst nie in `app_settings` gespeichert: Sie
-legen fest, was eine Instanz aufnehmen *darf*, und ein Admin, der die
-Einstellungsseite bearbeitet, darf sein eigenes Kontingent nicht anheben können.
-Ändern Sie einen Wert, indem Sie den Container mit dem neuen Wert neu erstellen.
-
-- Eine explizite `0` bedeutet null, nicht unbegrenzt. `LIMIT_ADDITIONAL_USERS=0`
-  ist eine Instanz mit einem einzigen Konto.
-- Ein Wert, der sich nicht lesen lässt – ein Tippfehler, ein negativer Wert, eine
-  Dezimalzahl –, fällt auf unbegrenzt zurück und wird auf Stufe `ERROR`
-  protokolliert, und die Variable wird für eine Admin-Sitzung in
-  `GET /api/app/limits` sowie auf der Seite **Wartung** genannt. Die Richtung des
-  Rückfalls ist beabsichtigt: Ein verirrtes Zeichen in der Umgebung eines
-  Orchestrators sollte eher Spielraum gewähren, als einen Eigentümer aus seinem
-  eigenen Archiv auszusperren, und die lautstarke Meldung sorgt dafür, dass das
-  nicht unbemerkt bleibt.
-- Das Senken eines Limits unter eine Bibliothek, die es bereits überschreitet,
-  löscht nie etwas. Die Nutzung wird einfach als überschritten gemeldet, und die
-  nächste Hinzufügung wird abgelehnt.
-- Die drei instanzweiten Gesamtwerte werden bei jedem Schreibvorgang aus den
-  aktuellen Zeilen gemessen, sodass das Löschen eines Dokuments (oder eines
-  Benutzers, was sich auf dessen Dokumente auswirkt) sein Kontingent sofort
-  freigibt.
-- Dokumente, die **vor** der Installation dieser Version angelegt wurden, zählen
-  als null Seiten und null Byte: Die Spalten für Seiten und Größe werden ohne
-  nachträgliches Befüllen hinzugefügt, denn das Befüllen hieße, während einer
-  Migration `pdfinfo` einmal pro vorhandenem PDF auszuführen. `LIMIT_DOCUMENTS`
-  und `LIMIT_ADDITIONAL_USERS` sind trotzdem exakt; die Seiten- und Bytesummen
-  fallen bei einer aktualisierten Bibliothek zu niedrig aus, bis diese Dokumente
-  ersetzt werden.
-- Ein Massenpfad – eine Wiederherstellung aus einer Sicherung, ein Import von
-  Amazon-Bestellungen, eine Dokumentaufteilung – wird vorab gegen das verbleibende
-  Kontingent geprüft, sodass der häufige Fall eines Stapels, der offensichtlich
-  nicht passt, abgelehnt wird, bevor etwas angelegt wird. Diese Prüfung ist
-  **keine** Reservierung, und ein Massenlauf kann trotzdem mittendrin anhalten:
-  - eine Wiederherstellung oder ein Amazon-Import kennt die Anzahl der Dokumente
-    und die Bytes, aber nicht die Seitenzahl (die tatsächlichen Seitenzahlen eines
-    Archivs lassen sich nur ermitteln, indem man jedes PDF darin öffnet), daher
-    wird ein Seitenlimit während des Laufs pro Dokument durchgesetzt;
-  - eine Aufteilung kennt die Anzahl der Dokumente und Seiten exakt, aber nicht
-    die Größe von Teilen, die noch nicht existieren, daher wird ein Speicherlimit
-    pro Teil durchgesetzt;
-  - ein Paperless-ngx-Import prüft nur die Anzahl der Dokumente, die die
-    Gegenstelle meldet;
-  - und jeder von ihnen kann Minuten nach seiner Vorschau bestätigt werden,
-    wenn ein anderer Upload den Platz bereits belegt haben kann.
-
-  Ein Lauf, der mittendrin anhält, behält, was er bereits angelegt hat, und meldet
-  den Rest als Fehler; nichts wird zurückgerollt. Die Prüfungen pro Dokument machen
-  das Limit selbst exakt – die Vorabprüfung ist dazu da, aus dem häufigen
-  Fehlschlag eine klare Meldung statt mehrerer hundert zu machen.
-
-#### Die Seitenobergrenze {#the-page-ceiling}
-
-Eine Grenze ist kein Tarif und nicht konfigurierbar: **Ein Dokument darf höchstens
-1000 Seiten umfassen**, auf jeder Installation. Ein Upload darüber wird mit
-`limit_ocr_pages` abgelehnt, bevor irgendein OCR-Anbieter aufgerufen wird.
-
-Sie existiert wegen des Ziels, in das der Text fließt. Die OCR-Anbieter liefern
-den gesamten Text eines Dokuments als eine einzige Zeichenkette zurück, und diese
-muss in die Spalte `ocr_text` passen, die 47 Mi Zeichen fasst – dieselben 47 MB,
-die das Feld `documents.file` akzeptiert, nur in Zeichen statt in Byte gezählt.
-Nichts anderes begrenzt ein OCR-Ergebnis: Mistral ist der einzige Anbieter, der
-ein Seitenlimit dokumentiert (1000 Seiten, woher diese Zahl stammt), und Google
-Vision liest so viele Seiten, wie die Datei hat, jeweils fünf auf einmal. Die
-Seitenzahl, die vor dem ersten Anbieteraufruf ermittelt wird, ist die einzige
-Messung, die sagt, ob die Antwort gespeichert werden könnte – und die Ablehnung an
-dieser Stelle bedeutet, dass ein zu langes Dokument nichts kostet, statt bezahlt
-und dann verworfen zu werden.
-
-Wissenswerte Folgen:
-
-- `LIMIT_FILE_PAGES` kann diese Grenze senken, aber nicht anheben, genauso wie
-  sich `LIMIT_FILE_BYTES` zur 47-MB-Obergrenze von `documents.file` verhält. Wenn
-  beide eine Datei ablehnen würden, nennt die Meldung das Tariflimit, da dies
-  dasjenige ist, gegen das das Konto etwas unternehmen kann.
-- Jede Installation zählt nun die Seiten jedes PDF-Uploads mit `pdfinfo`, während
-  das früher nur Installationen mit gesetztem Limit taten. Andere Dateitypen
-  kosten das Lesen eines fünf Byte langen Headers. Ein PDF, dessen Seitenzahl sich
-  nicht lesen lässt, zählt als eine Seite, sodass diese Obergrenze auf einem Host
-  ohne poppler beim Upload nicht durchgesetzt wird – dort lehnt stattdessen der
-  OCR-Schritt ein zu langes Ergebnis ab, wodurch das Dokument statt des Uploads
-  fehlschlägt.
-- Eine Wiederherstellung oder ein Paperless-ngx-Import, der den Text eines
-  Dokuments mitbringt, umgeht die Obergrenze: Es läuft keine OCR, also gibt es
-  nichts auszugeben, und ein langes Dokument, das archiviert wurde, bevor es diese
-  Grenze gab, bleibt wiederherstellbar.
-- DOCX und XLSX werden nicht über die Seitenzahl begrenzt – eine Tabelle hat keine
-  –, daher werden sie stattdessen beim Parsen gemessen, und eine Extraktion, die
-  über die Spalte hinausläuft, wird mit einem Fehler abgebrochen, statt gekürzt
-  gespeichert zu werden. Bei XLSX ist das relevant: Zellen verweisen auf eine
-  gemeinsame String-Tabelle, sodass der extrahierte Text nicht durch die Bytes
-  begrenzt ist, in denen die Datei ankam.
 
 ## Einrichtungsassistent beim ersten Start {#first-launch-setup-wizard}
 
@@ -173,25 +68,25 @@ Konfiguration abschließen.
 
 `WORKER_CRON_EXPR` ist dort nicht bearbeitbar; ändern Sie `.env` und starten Sie neu, oder verwenden Sie PocketBase Admin → Settings → Crons.
 
-**Zusätzliche Extraktionsregeln** (Tab Verarbeitung) ist der einzige Teil des Extraktions-Prompts, den ein Admin selbst schreibt. Was darin steht, wird an den eingebauten Prompt angehängt, nach der Liste der vorhandenen Korrespondenten und Dokumenttypen und vor den Formatregeln, sodass sich Hauskonventionen formulieren lassen, die der feste Prompt nicht kennen kann – „behandle *Rechnung* als Dokumenttyp Invoice“, „versieh Versicherungsdokumente mit der Policennummer als Tag“. Welche Felder gespeichert werden, lässt sich damit nicht ändern: Die Pipeline parst die Antwort in einen festen Satz von Feldern, und der Prompt sagt das nach den Regeln auch. Bis zu 4000 Zeichen, standardmäßig leer, und angewendet auf Dokumente, die ab dann verarbeitet oder erneut verarbeitet werden. Die Regeln gehören dem Mandanten, eine verwaltete Instanz behält sie also. Die Logzeile der Extraktion meldet ihre Länge als `rule_chars`, und der `extract_metadata`-Schrittlauf jedes Dokuments hält den Prompt fest, unter dem er tatsächlich lief (siehe unten).
+**Zusätzliche Extraktionsregeln** (Tab Verarbeitung) ist der einzige Teil des Extraktions-Prompts, den ein Admin selbst schreibt. Was darin steht, wird an den eingebauten Prompt angehängt, nach der Liste der vorhandenen Korrespondenten und Dokumenttypen und vor den Formatregeln, sodass sich Hauskonventionen formulieren lassen, die der feste Prompt nicht kennen kann – „behandle *Rechnung* als Dokumenttyp Invoice“, „versieh Versicherungsdokumente mit der Policennummer als Tag“. Welche Felder gespeichert werden, lässt sich damit nicht ändern: Die Pipeline parst die Antwort in einen festen Satz von Feldern, und der Prompt sagt das nach den Regeln auch. Bis zu 4000 Zeichen, standardmäßig leer, und angewendet auf Dokumente, die ab dann verarbeitet oder erneut verarbeitet werden. Die Logzeile der Extraktion meldet ihre Länge als `rule_chars`, und der `extract_metadata`-Schrittlauf jedes Dokuments hält den Prompt fest, unter dem er tatsächlich lief (siehe unten).
 
 `EXTRACTION_PROMPT_VERSION` wird dort ebenfalls nicht angeboten. Der Wert dient reiner Buchführung – er wird im `extract_metadata`-Schrittlauf jedes Dokuments festgehalten, damit sich Metadaten auf einen Prompt zurückführen lassen, und erreicht den Prompt selbst nie –, daher gibt es für einen Admin nichts einzustellen. Wo Extraktionsregeln gesetzt sind, hält dieser Schrittlauf statt der reinen Version `v1+rules.<digest>` fest: Die Regeln ändern den Prompt, die Version aber nicht, und ein Lauf, der nur unter `v1` festgehalten wird, würde einen Prompt benennen, den es nicht mehr gibt. Dokumente, die ohne Regeln extrahiert wurden, behalten die reine Version, sodass sich für eine Instanz ohne Regeln nichts ändert. `PATCH /api/app/settings` akzeptiert weiterhin `extraction_prompt_version`, und der Wert lässt sich in PocketBase Admin → `app_settings` bearbeiten.
 
 ### Import-Ordner {#ingest-folder}
 
-Ist `INGEST_DIR` gesetzt, durchläuft ein Cron-Job dieses Verzeichnis und macht aus jeder speicherbaren Datei (dieselben Typen, die der Upload akzeptiert: PDF, JPEG, PNG, WebP, TXT, CSV, DOCX, XLSX) ein Dokument, genau so, als wäre sie hochgeladen worden: Die Datei wird gehasht, an den Instanzlimits gemessen und für die vollständige Pipeline eingereiht. Der Durchlauf ist rekursiv (ein Stammverzeichnis, das selbst ein Symlink ist, wird verfolgt), und die Ordner zwischen dem Stammverzeichnis und der Datei werden zu deren Tags – `Taxes/2024/invoice.pdf` kommt mit den Tags **Taxes** und **2024** an, wobei ein vorhandener Tag, dessen Name ohne Beachtung der Groß-/Kleinschreibung übereinstimmt, wiederverwendet wird und noch nicht vorhandene angelegt werden. Die Extraktion fügt die Tags des Modells zu diesen hinzu, statt sie zu ersetzen. Dateien und Ordner, deren Name mit einem Punkt beginnt, Symlinks, leere Dateien und alles nicht Speicherbare werden ignoriert; eine Datei, die in den letzten 30 Sekunden geändert wurde, wartet auf den nächsten Scan, damit nichts halb Geschriebenes aufgenommen wird.
+Ist `INGEST_DIR` gesetzt, durchläuft ein Cron-Job dieses Verzeichnis und macht aus jeder speicherbaren Datei (dieselben Typen, die der Upload akzeptiert: PDF, JPEG, PNG, WebP, TXT, CSV, DOCX, XLSX) ein Dokument, genau so, als wäre sie hochgeladen worden: Die Datei wird gehasht, an der Dokumentobergrenze von 47 MB und [der Seitenobergrenze](#the-page-ceiling) gemessen und für die vollständige Pipeline eingereiht. Der Durchlauf ist rekursiv (ein Stammverzeichnis, das selbst ein Symlink ist, wird verfolgt), und die Ordner zwischen dem Stammverzeichnis und der Datei werden zu deren Tags – `Taxes/2024/invoice.pdf` kommt mit den Tags **Taxes** und **2024** an, wobei ein vorhandener Tag, dessen Name ohne Beachtung der Groß-/Kleinschreibung übereinstimmt, wiederverwendet wird und noch nicht vorhandene angelegt werden. Die Extraktion fügt die Tags des Modells zu diesen hinzu, statt sie zu ersetzen. Dateien und Ordner, deren Name mit einem Punkt beginnt, Symlinks, leere Dateien und alles nicht Speicherbare werden ignoriert; eine Datei, die in den letzten 30 Sekunden geändert wurde, wartet auf den nächsten Scan, damit nichts halb Geschriebenes aufgenommen wird.
 
-Der Tab **Ingest** (`/settings/ingest`) enthält die drei Einstellungen, die alle dem Mandanten gehören (Eigentümer und Intervall werden mit dem [IMAP-Import](#ingest-from-imap) geteilt):
+Der Tab **Ingest** (`/settings/ingest`) enthält die drei Einstellungen (Eigentümer und Intervall werden mit dem [IMAP-Import](#ingest-from-imap) geteilt):
 
 - **Eigentümer** – das Konto, dem jedes Dokument aus dem Ordner gehört. Standard ist das zugehörige `users`-Konto des ersten Admins; jedes Konto kann gewählt werden.
 - **Scannen alle** – standardmäßig 5 Minuten. Das Speichern plant den Cron-Job `dir_ingest` neu (sichtbar unter PocketBase Admin → Settings → Crons), sodass eine Änderung ohne Neustart wirkt. Akzeptiert werden die Minutenwerte, die eine Stunde teilen (1–30), und die Stundenwerte, die einen Tag teilen (1–24); alles andere wird abgelehnt, da ein Cron-Schritt die Abstände sonst ungleichmäßig verteilen würde.
-- **Originaldatei nach dem Import löschen** – standardmäßig aus. Wenn aus, bleiben Dateien an Ort und Stelle, und jede wird einmal importiert: Das `ingest_files`-Verzeichnis des Kontos merkt sich jeden importierten Pfad mit Größe und Änderungszeit, sodass weder ein Neustart noch das Löschen des Dokuments eine Datei zurückbringt; eine Änderung der Datei importiert sie erneut. Eine Datei, deren Inhalt bereits in der Bibliothek liegt, wird von der Duplikatprüfung per Prüfsumme übersprungen. Dateien über der Dokumentobergrenze von 47 MB und Symlinks werden nie gelesen. Wenn an, wird eine Datei entfernt, sobald ihr Dokument existiert, und eine Datei, die sich als Duplikat herausstellt, wird ebenfalls entfernt; mit Verschlüsselung im Ruhezustand wartet das Entfernen, bis der Tresor das Dokument versiegelt hat, sodass ein hartes Beenden nicht beide Kopien verlieren kann. Eine Datei, die die Pipeline ablehnt (falscher Inhalt für ihre Endung, über einem dateibezogenen Limit), wird nie gelöscht; sie wird einmal protokolliert und übersprungen. Das Erreichen eines instanzweiten Limits stoppt den Scan bis zum nächsten Intervall.
+- **Originaldatei nach dem Import löschen** – standardmäßig aus. Wenn aus, bleiben Dateien an Ort und Stelle, und jede wird einmal importiert: Das `ingest_files`-Verzeichnis des Kontos merkt sich jeden importierten Pfad mit Größe und Änderungszeit, sodass weder ein Neustart noch das Löschen des Dokuments eine Datei zurückbringt; eine Änderung der Datei importiert sie erneut. Eine Datei, deren Inhalt bereits in der Bibliothek liegt, wird von der Duplikatprüfung per Prüfsumme übersprungen. Dateien über der Dokumentobergrenze von 47 MB und Symlinks werden nie gelesen. Wenn an, wird eine Datei entfernt, sobald ihr Dokument existiert, und eine Datei, die sich als Duplikat herausstellt, wird ebenfalls entfernt; mit Verschlüsselung im Ruhezustand wartet das Entfernen, bis der Tresor das Dokument versiegelt hat, sodass ein hartes Beenden nicht beide Kopien verlieren kann. Eine Datei, die die Pipeline ablehnt (falscher Inhalt für ihre Endung, über der Seitenobergrenze), wird nie gelöscht; sie wird einmal protokolliert und übersprungen.
 
 ### Import per IMAP {#ingest-from-imap}
 
 Ist `INGEST_IMAP_ENABLED` gesetzt, bietet der Tab **Ingest** zusätzlich ein Postfach an, und ein Cron-Job (`imap_ingest`, im selben Intervall wie der Ordner) liest dessen Ordner: Jeder Anhang, dessen Name eine speicherbare Endung eines gewählten Typs hat, wird zu einem Dokument desselben Kontos, über dieselben Hooks wie ein Upload. Der Nachrichtentext ist nie ein Dokument, ebenso wenig ein Bild irgendwo unterhalb eines `multipart/related`-Teils – die Logos und Symbole, die ein HTML-Text per `cid:` einbettet –, es sei denn, der Absender hat es mit `Content-Disposition: attachment` gekennzeichnet; ein Bild, das als echter Anhang gesendet wurde, zählt weiterhin. Ein Inline-Bild außerhalb von `multipart/related` wird importiert, denn so versendet iPhone Mail angehängte Fotos. E-Mails ohne einen solchen Anhang bleiben unberührt. Ein leeres Serverfeld schaltet die Funktion ab.
 
-Gescannt werden nur E-Mails, die nach der Einrichtung des Postfachs eingegangen sind: Das Speichern eines neuen Servers, Benutzernamens oder Ordners hält diesen Zeitpunkt fest (`imap_since`, angezeigt unter den Postfachfeldern), und alles, was der Ordner bereits enthielt, bleibt unberührt, unabhängig von der Aktion nach dem Import. Ein neues Passwort oder eine neue Aktion nach dem Import behält den Zeitpunkt bei, sodass nichts übersprungen wird, was in der Zwischenzeit eingegangen ist. Ältere E-Mails werden nachträglich eingelesen: **Wartung → Postfach** nimmt zwei Tage entgegen, jeweils einschließlich, und importiert die Anhänge von allem, was dazwischen eingegangen ist (IMAP `SINCE`/`BEFORE`, nach dem Empfangsdatum des Servers). Das nachträgliche Einlesen öffnet den Ordner schreibgeschützt, verschiebt oder löscht nie eine Nachricht, rührt das Verzeichnis des Behalten-Modus nicht an und verlässt sich auf die Prüfsummenprüfung, um Anhänge zu überspringen, die bereits in der Bibliothek liegen; eine doppelte Ausführung ist daher unschädlich. Es läuft im Hintergrund und hält dieselbe Sperre wie der geplante Scan, sodass keiner von beiden startet, während der andere läuft – ein Scan mit Löschen oder Verschieben arbeitet nie auf dem Ordner, den ein nachträgliches Einlesen gerade liest. Eine fehlschlagende Nachricht wird gezählt und übergangen; nur ein Instanzlimit bricht vorzeitig ab.
+Gescannt werden nur E-Mails, die nach der Einrichtung des Postfachs eingegangen sind: Das Speichern eines neuen Servers, Benutzernamens oder Ordners hält diesen Zeitpunkt fest (`imap_since`, angezeigt unter den Postfachfeldern), und alles, was der Ordner bereits enthielt, bleibt unberührt, unabhängig von der Aktion nach dem Import. Ein neues Passwort oder eine neue Aktion nach dem Import behält den Zeitpunkt bei, sodass nichts übersprungen wird, was in der Zwischenzeit eingegangen ist. Ältere E-Mails werden nachträglich eingelesen: **Wartung → Postfach** nimmt zwei Tage entgegen, jeweils einschließlich, und importiert die Anhänge von allem, was dazwischen eingegangen ist (IMAP `SINCE`/`BEFORE`, nach dem Empfangsdatum des Servers). Das nachträgliche Einlesen öffnet den Ordner schreibgeschützt, verschiebt oder löscht nie eine Nachricht, rührt das Verzeichnis des Behalten-Modus nicht an und verlässt sich auf die Prüfsummenprüfung, um Anhänge zu überspringen, die bereits in der Bibliothek liegen; eine doppelte Ausführung ist daher unschädlich. Es läuft im Hintergrund und hält dieselbe Sperre wie der geplante Scan, sodass keiner von beiden startet, während der andere läuft – ein Scan mit Löschen oder Verschieben arbeitet nie auf dem Ordner, den ein nachträgliches Einlesen gerade liest. Eine fehlschlagende Nachricht wird gezählt und übergangen.
 
 Nachrichten werden jeweils zu 200 Stück abgerufen. Anhänge innerhalb einer weitergeleiteten Nachricht (`message/rfc822`) zählen ebenfalls. Bereits mit `\Deleted` markierte Nachrichten werden ignoriert. Eine Nachricht, deren Import aus einem anderen Grund als einer Ablehnung wiederholt fehlschlägt (ein Hook-Fehler, eine volle Festplatte), wird bei den nächsten zwei Scans erneut versucht und dann mit einem Fehler im Log aufgegeben, damit sie die nachfolgenden E-Mails nicht aufhält; das nachträgliche Einlesen kann sie später importieren. Die Zeitgrenze erlaubt 10 Minuten für eine Serveruhr, die hinter der dieses Hosts zurückliegt.
 
@@ -203,11 +98,11 @@ Löschen und Verschieben setzen UIDPLUS (oder IMAP4rev2) voraus, um nur die Nach
 - **Importieren** – welche Dateitypen zu Dokumenten werden: **PDF**, **Office** (DOCX, XLSX), **Bilder** (JPG, PNG, WEBP) und **Text** (TXT, CSV); standardmäßig alle. Gespeichert als die zu überspringenden Typen (`imap_skip_types`); mindestens einer muss aktiviert bleiben. Eine Nachricht mit einem Anhang eines nicht ausgewählten Typs wird nie verschoben oder gelöscht, genau wie eine mit einem abgelehnten Anhang, sodass Löschen keine Datei mitnehmen kann, die nie importiert wurde; eingebettete Logos halten eine Nachricht nicht zurück. Das erneute Aktivieren eines Typs geht bereits gescannte E-Mails nicht noch einmal durch; ein nachträgliches Einlesen erfasst sie. Das nachträgliche Einlesen wendet denselben Filter an.
 - **Nach dem Import** – **Behalten** (Standard) öffnet den Ordner schreibgeschützt und merkt sich die höchste verarbeitete UID im `ingest_files`-Verzeichnis, sodass weder ein Neustart noch das Löschen des Dokuments eine Nachricht zurückbringt; ein Server, der UIDVALIDITY zurücksetzt, beginnt von vorn, und die Prüfsummenprüfung überspringt, was bereits in der Bibliothek liegt. **Verschieben** verschiebt jede verarbeitete Nachricht in einen anderen Ordner (der bei Bedarf angelegt wird; er muss sich vom Quellordner unterscheiden). **Löschen** markiert sie mit `\Deleted` und entfernt sie endgültig. Mit Verschlüsselung im Ruhezustand wartet das Verschieben oder Löschen, bis der Tresor die Dokumente versiegelt hat.
 
-Eine Nachricht, deren Anhang abgelehnt wird (leer, über der Obergrenze von 47 MB, falscher Inhalt für seine Endung), wird nie verschoben oder gelöscht; sie wird protokolliert und übersprungen. Das Erreichen eines instanzweiten Limits oder jeder andere Fehler stoppt den Scan, und die Nachricht wird im nächsten Intervall erneut versucht.
+Eine Nachricht, deren Anhang abgelehnt wird (leer, über der Obergrenze von 47 MB, falscher Inhalt für seine Endung), wird nie verschoben oder gelöscht; sie wird protokolliert und übersprungen. Jeder andere Fehler stoppt den Scan, und die Nachricht wird im nächsten Intervall erneut versucht.
 
 ## Verwaltung (Admin-Oberfläche) {#management-admin-ui}
 
-**Verwaltung** in der Navigation (nur für Admins, unterhalb von Einstellungen) verwaltet die Konten der Instanz. Der Tab **Benutzer** listet jedes `users`-Konto auf, legt eines an (E-Mail, optionaler Name, Passwort; als verifiziert angelegt, sodass es sich sofort anmelden kann), bearbeitet E-Mail, Name oder Passwort eines normalen Kontos und löscht eines. Das Löschen eines Kontos löscht auch dessen Dokumente, Tags, Freigaben und Passkeys. Admin-Konten (`is_app_admin`) werden aufgeführt, sind hier aber schreibgeschützt; verwalten Sie sie im PocketBase-Dashboard. Die Routen sind `GET`/`POST /api/app/admin/users` und `PATCH`/`DELETE /api/app/admin/users/{id}`, nur für Admins, mit `403` bei einem Admin-Konto. Ein neues Konto zählt gegen `LIMIT_ADDITIONAL_USERS`, und bei aktivem Tresor erhält sein Passwort wie bei jedem anderen Konto eine eigene Schlüsselhülle.
+**Verwaltung** in der Navigation (nur für Admins, unterhalb von Einstellungen) verwaltet die Konten der Instanz. Der Tab **Benutzer** listet jedes `users`-Konto auf, legt eines an (E-Mail, optionaler Name, Passwort; als verifiziert angelegt, sodass es sich sofort anmelden kann), bearbeitet E-Mail, Name oder Passwort eines normalen Kontos und löscht eines. Das Löschen eines Kontos löscht auch dessen Dokumente, Tags, Freigaben und Passkeys. Admin-Konten (`is_app_admin`) werden aufgeführt, sind hier aber schreibgeschützt; verwalten Sie sie im PocketBase-Dashboard. Die Routen sind `GET`/`POST /api/app/admin/users` und `PATCH`/`DELETE /api/app/admin/users/{id}`, nur für Admins, mit `403` bei einem Admin-Konto. Bei aktivem Tresor erhält das Passwort eines neuen Kontos wie bei jedem anderen Konto eine eigene Schlüsselhülle.
 
 ## Wartung (Admin-Oberfläche) {#maintenance-admin-ui}
 
@@ -243,6 +138,43 @@ Sie können sie als Superuser in PocketBase Admin durchsehen. Aktivieren Sie SMT
 Der einfache Datei-Upload bleibt auf `/upload` selbst (eine Index-Route), sodass bestehende Links und der Navigationseintrag **Hochladen** weiterhin dort landen.
 
 Ein Ordner lässt sich auf den Tab Dateien ziehen oder mit **Stattdessen einen Ordner wählen** auswählen und wird im Browser bis ganz nach unten durchlaufen: Jede darin enthaltene Datei wird als eigenes Dokument gesendet, genau so, als wäre sie von Hand ausgewählt worden. Eine Datei aus einem Ordner erhält den Namen `<parent folder>-<file>`, dieselbe Regel, die die Zip-Importe verwenden, denn ein Scanner, der pro Stapel `1.pdf` in einen Ordner schreibt, würde die Bibliothek sonst mit Dokumenten namens `1.pdf` füllen. Überbleibsel von Finder und Packprogrammen werden stillschweigend verworfen, statt als falscher Typ gemeldet zu werden – `__MACOSX/`, AppleDouble-Schattendateien `._` (die die Endung der Datei tragen, zu der sie gehören) und jede andere Datei, deren Name mit einem Punkt beginnt, dieselbe Regel, die der Zip-Import anwendet. Ein hier abgelegtes `.zip` wird nicht hochgeladen; es verweist auf den Tab Zip-Archiv, der zuerst zeigen kann, was das Archiv enthält.
+
+### Die Seitenobergrenze {#the-page-ceiling}
+
+Eine Grenze ist nicht konfigurierbar: **Ein Dokument darf höchstens 1000 Seiten
+umfassen**, auf jeder Installation. Ein Upload darüber wird mit `limit_ocr_pages`
+abgelehnt, bevor irgendein OCR-Anbieter aufgerufen wird.
+
+Sie existiert wegen des Ziels, in das der Text fließt. Die OCR-Anbieter liefern
+den gesamten Text eines Dokuments als eine einzige Zeichenkette zurück, und diese
+muss in die Spalte `ocr_text` passen, die 47 Mi Zeichen fasst – dieselben 47 MB,
+die das Feld `documents.file` akzeptiert, nur in Zeichen statt in Byte gezählt.
+Nichts anderes begrenzt ein OCR-Ergebnis: Mistral ist der einzige Anbieter, der
+ein Seitenlimit dokumentiert (1000 Seiten, woher diese Zahl stammt), und Google
+Vision liest so viele Seiten, wie die Datei hat, jeweils fünf auf einmal. Die
+Seitenzahl, die vor dem ersten Anbieteraufruf ermittelt wird, ist die einzige
+Messung, die sagt, ob die Antwort gespeichert werden könnte – und die Ablehnung an
+dieser Stelle bedeutet, dass ein zu langes Dokument nichts kostet, statt bezahlt
+und dann verworfen zu werden.
+
+Wissenswerte Folgen:
+
+- Bei jedem PDF-Upload werden die Seiten mit `pdfinfo` gezählt; andere Dateitypen
+  kosten das Lesen eines fünf Byte langen Headers. Ein PDF, dessen Seitenzahl sich
+  nicht lesen lässt, zählt als eine Seite, sodass diese Obergrenze auf einem Host
+  ohne poppler beim Upload nicht durchgesetzt wird – dort lehnt stattdessen der
+  OCR-Schritt ein zu langes Ergebnis ab, wodurch das Dokument statt des Uploads
+  fehlschlägt.
+- Eine Wiederherstellung oder ein Paperless-ngx-Import, der den Text eines
+  Dokuments mitbringt, umgeht die Obergrenze: Es läuft keine OCR, also gibt es
+  nichts auszugeben, und ein langes Dokument, das archiviert wurde, bevor es diese
+  Grenze gab, bleibt wiederherstellbar.
+- DOCX und XLSX werden nicht über die Seitenzahl begrenzt – eine Tabelle hat keine
+  –, daher werden sie stattdessen beim Parsen gemessen, und eine Extraktion, die
+  über die Spalte hinausläuft, wird mit einem Fehler abgebrochen, statt gekürzt
+  gespeichert zu werden. Bei XLSX ist das relevant: Zellen verweisen auf eine
+  gemeinsame String-Tabelle, sodass der extrahierte Text nicht durch die Bytes
+  begrenzt ist, in denen die Datei ankam.
 
 ### Import von Amazon-Bestellungen {#amazon-order-import}
 
