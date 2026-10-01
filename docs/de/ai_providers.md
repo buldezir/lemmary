@@ -137,7 +137,7 @@ Einrichtungsassistent fragt danach.
 | --- | --- | --- |
 | `AI_SDK` | `openai` | Das SDK des Sprachmodells: `opencode`, `openai`, `anthropic`, `openrouter` oder `mistral`. `google_vision`, `docling` (Local OCR) und `local` (Local Embeddings) werden abgelehnt – keines davon kann Extraktion übernehmen. `chatgpt` ebenfalls: Es hat keinen Schlüssel, der sich aus der Umgebung vorbelegen ließe. |
 | `AI_API_KEY` | leer | Sein Zugangsschlüssel. **Ein Schlüssel ist meist die gesamte Konfiguration**: Damit und mit nichts anderem legt die App einen Anbieter an und leitet Extraktion, Chat, Deep Research *und* OCR dorthin. |
-| `AI_MODEL` | `gpt-5.6-luna` | Das Modell für **Allgemeine KI**: Extraktion, KI fragen, KI-gestützte Suche und das massenhafte Lesen von Dokumenten durch Deep Research. Achten Sie darauf, dass es die in den **Einstellungen** festgelegte Ergebnissprache unterstützt. |
+| `AI_MODEL` | `gpt-6-luna` | Das Modell für **Allgemeine KI**: Extraktion, KI fragen, KI-gestützte Suche und das massenhafte Lesen von Dokumenten durch Deep Research. Achten Sie darauf, dass es die in den **Einstellungen** festgelegte Ergebnissprache unterstützt. |
 | `AI_BASE_URL` | der eigene Endpunkt des SDKs | Eine OpenAI-kompatible Basis-URL, für ein Gateway oder einen selbst gehosteten Endpunkt. Lassen Sie sie für `opencode` ungesetzt, dessen eigener Endpunkt `https://opencode.ai/zen/go/v1` ist. |
 | `OCR_SDK` | ungesetzt (OCR läuft über den `AI_SDK`-Anbieter) | Ein separater Anbieter für OCR: `opencode`, `openai`, `anthropic`, `openrouter`, `mistral`, `google_vision` oder `docling` (Local OCR). `local` (Local Embeddings) wird abgelehnt – es bietet nur Embeddings. `chatgpt` liest Dokumente, wird hier aber ebenfalls abgelehnt: Die Anmeldung erfolgt über die Einstellungen statt über einen Schlüssel, daher hat die Umgebung nichts, womit sie es vorbelegen könnte. Wird dasselbe SDK wie bei `AI_SDK` genannt, werden dessen Schlüssel und Endpunkt wiederverwendet, und nur das Modell ändert sich. |
 | `OCR_API_KEY` | `AI_API_KEY`, wenn die SDKs übereinstimmen | Sein Zugangsschlüssel. Erforderlich für ein OCR-SDK, das sich von `AI_SDK` unterscheidet – außer Local OCR (`docling`), hinter dem kein Konto steht. Dort optional, und nur, wenn Sie den Sidecar mit `DOCLING_SERVE_API_KEY` gestartet haben. |
@@ -509,7 +509,7 @@ Image-Größe, Arbeitsspeicher, GPU-Varianten und die Kosten pro Seite – steht
   | Endpunkt | Modelle |
   | --- | --- |
   | `/chat/completions` | `glm-*`, `kimi-*`, `longcat-*`, `deepseek-*`, `mimo-*`, `hy*`, `omen-*` |
-  | `/responses` | `grok-*`, `gpt-5.6-luna`, `muse-spark-*` |
+  | `/responses` | `grok-*`, `gpt-*`, `muse-spark-*` |
   | `/messages` (Anthropics API) | `minimax-*`, `qwen*` |
 
 - **Ein Modell der `gpt-5`-Familie lehnt eine Deep-Research-Anfrage ab** – diese Modelle setzen

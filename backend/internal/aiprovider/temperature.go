@@ -3,14 +3,14 @@ package aiprovider
 import "strings"
 
 // AllowsCustomTemperature reports whether an OpenAI-compatible chat model
-// accepts a non-default temperature. GPT-5 and o-series reasoning models
+// accepts a non-default temperature. GPT-5, GPT-6 and o-series reasoning models
 // only allow the API default (1); sending 0.1 causes a 400.
 func AllowsCustomTemperature(model string) bool {
 	name := canonicalChatModel(model)
 	if name == "" {
 		return true
 	}
-	if strings.HasPrefix(name, "gpt-5") {
+	if strings.HasPrefix(name, "gpt-5") || strings.HasPrefix(name, "gpt-6") {
 		return false
 	}
 	return !isOSeriesReasoningModel(name)

@@ -30,6 +30,7 @@ func TestEveryDocumentedModelRoutesToItsEndpoint(t *testing.T) {
 		"omen-alpha":                   EndpointChat,
 		// /responses
 		"grok-4.6":                   EndpointResponses,
+		"gpt-6-luna":                 EndpointResponses,
 		"gpt-5.6-luna":               EndpointResponses,
 		"muse-spark-1.3-contributor": EndpointResponses,
 		"muse-spark-1.2-contributor": EndpointResponses,

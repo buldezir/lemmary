@@ -117,14 +117,15 @@ func ModelsURL(p Provider, purpose ModelPurpose) string {
 // Codex backend publishes none. Names, not capabilities: which of these an
 // account may use depends on its plan, and a model refused there surfaces as a
 // provider error on the first request. Codex's own descriptions, because the
-// picker renders `id (name)` and which of seven near-identically-named models to
-// bind is a real question. In Codex's order, most capable first.
+// picker renders `id (name)` and which of eight near-identically-named models to
+// bind is a real question. In Codex's order.
 func ChatGPTModels() []Model {
 	return []Model{
+		{ID: "gpt-6.1-sol", Name: "Latest workhorse model for coding and everyday work"},
 		{ID: "gpt-6-astra", Name: "Frontier intelligence for the most demanding work"},
-		{ID: "gpt-6-sol", Name: "Workhorse model for coding and everyday work"},
+		{ID: "gpt-6-sol", Name: "Previous generation workhorse model"},
 		{ID: "gpt-6-luna", Name: "Fast and affordable model for easier tasks"},
-		{ID: "gpt-5.6-sol", Name: "Older coding model for complex work"},
+		{ID: "gpt-5.6-sol", Name: "Older generation workhorse model"},
 		{ID: "gpt-5.6-terra", Name: "Older balanced model for straightforward work"},
 		{ID: "gpt-5.6-luna", Name: "Older fast and efficient model"},
 		{ID: "gpt-5.5", Name: "Legacy coding model"},

@@ -64,7 +64,7 @@ Opencode jedes Modell bereitgestellt wird.
 
 | | Modell | Warum |
 | --- | --- | --- |
-| **Empfohlen** | `gpt-5.6-luna` | Das Standard-Extraktionsmodell von Lemmary. Von den dreien das stärkste darin, strukturierte Metadaten aus einem unordentlichen Scan herauszuziehen, und beim mehrstufigen Lesen von Deep Research. |
+| **Empfohlen** | `gpt-6-luna` | Das Standard-Extraktionsmodell von Lemmary. Von den dreien das stärkste darin, strukturierte Metadaten aus einem unordentlichen Scan herauszuziehen, und beim mehrstufigen Lesen von Deep Research. |
 | Alternative | `deepseek-v4-flash` | Schnell und günstig im selben Abonnement. Ein gutes Modell für **Allgemeine KI**, mit Luna als **Erweitertem Modell** für Deep Research. |
 | Alternative | `qwen3.8-flash` | Die andere schnelle Option; probieren Sie sie aus, wenn DeepSeek ratenbegrenzt ist oder Ihre Ergebnissprache ablehnt. |
 
@@ -117,7 +117,7 @@ anhand der obigen Schlüssel ausgefüllt sind; **Einstellungen → Modelle** hat
 | Zuweisung | Anbieter | Modell |
 | --- | --- | --- |
 | OCR | Mistral | `mistral-ocr-latest` |
-| Allgemeine KI | Opencode Go | `gpt-5.6-luna` |
+| Allgemeine KI | Opencode Go | `gpt-6-luna` |
 | Embeddings *(optional)* | Mistral | `mistral-embed` |
 
 Allgemeine KI übernimmt hier alles, was ein Sprachmodell tut, daher sind diese drei Felder
@@ -149,7 +149,7 @@ danach sind die **Einstellungen** maßgeblich, und eine Änderung an `.env` bewi
 # General AI — extraction, Ask AI, search, Deep Research
 AI_SDK=opencode
 AI_API_KEY=sk-your-opencode-key
-AI_MODEL=gpt-5.6-luna
+AI_MODEL=gpt-6-luna
 
 # OCR — Mistral's Document OCR API
 OCR_SDK=mistral

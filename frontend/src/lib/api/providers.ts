@@ -343,7 +343,7 @@ export function recommendedModel(sdk: string | undefined, purpose: ModelPurpose)
     return ''
   }
   // Mirrors aiprovider.DefaultExtractModel.
-  if (sdk === 'opencode' && purpose === 'llm') return 'gpt-5.6-luna'
+  if (sdk === 'opencode' && purpose === 'llm') return 'gpt-6-luna'
   if (sdk === 'anthropic' && purpose !== 'embedding') return 'claude-opus-5'
   if (sdk === 'local' && purpose === 'embedding') return 'BAAI/bge-m3'
   return ''

@@ -129,7 +129,7 @@ asks for it.
 | --- | --- | --- |
 | `AI_SDK` | `openai` | The language model's SDK: `opencode`, `openai`, `anthropic`, `openrouter` or `mistral`. `google_vision`, `docling` (Local OCR) and `local` (Local Embeddings) are refused — none of them can serve extraction. `chatgpt` too: it has no key to seed from the environment. |
 | `AI_API_KEY` | empty | Its credential. **One key is usually the whole configuration**: with this and nothing else the app creates one provider and routes extraction, chat, Deep Research *and* OCR to it. |
-| `AI_MODEL` | `gpt-5.6-luna` | The **General AI** model: extraction, Ask AI, AI assisted search, and Deep Research's bulk document reads. Be sure it supports the result language set in **Settings**. |
+| `AI_MODEL` | `gpt-6-luna` | The **General AI** model: extraction, Ask AI, AI assisted search, and Deep Research's bulk document reads. Be sure it supports the result language set in **Settings**. |
 | `AI_BASE_URL` | the SDK's own endpoint | An OpenAI-compatible base URL, for a gateway or a self-hosted endpoint. Leave it unset for `opencode`, whose own endpoint is `https://opencode.ai/zen/go/v1`. |
 | `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `opencode`, `openai`, `anthropic`, `openrouter`, `mistral`, `google_vision` or `docling` (Local OCR). `local` (Local Embeddings) is refused — it serves embeddings only. `chatgpt` reads documents but is refused here too: it is signed in to from Settings rather than given a key, so the environment has nothing to seed it with. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
 | `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK` — except Local OCR (`docling`), which has no account behind it. Optional there, and only if you started the sidecar with `DOCLING_SERVE_API_KEY`. |
@@ -487,7 +487,7 @@ size, memory, GPU variants and the per-page cost — is in
   | Endpoint | Models |
   | --- | --- |
   | `/chat/completions` | `glm-*`, `kimi-*`, `longcat-*`, `deepseek-*`, `mimo-*`, `hy*`, `omen-*` |
-  | `/responses` | `grok-*`, `gpt-5.6-luna`, `muse-spark-*` |
+  | `/responses` | `grok-*`, `gpt-*`, `muse-spark-*` |
   | `/messages` (Anthropic's API) | `minimax-*`, `qwen*` |
 
 - **A `gpt-5`-family model refuses a Deep Research request** — those models set

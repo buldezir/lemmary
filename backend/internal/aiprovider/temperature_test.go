@@ -9,6 +9,8 @@ func TestAllowsCustomTemperature(t *testing.T) {
 		want  bool
 	}{
 		{"gpt-5.6-luna", false},
+		{"gpt-6-luna", false},
+		{"openai/gpt-6.1-sol", false},
 		{"gpt-4.1", true},
 		{"openai/gpt-5.6-luna", false},
 		{"mistral-small-latest", true},

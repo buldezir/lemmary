@@ -11,7 +11,7 @@ import (
 
 // DefaultExtractModel is the fallback when nothing names a model. One copy so
 // call sites cannot disagree.
-const DefaultExtractModel = "gpt-5.6-luna"
+const DefaultExtractModel = "gpt-6-luna"
 
 // An empty APIKey means the environment did not ask for this provider, which
 // is not an error outside managed mode — the setup wizard will ask.

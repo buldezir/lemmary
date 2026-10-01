@@ -59,7 +59,7 @@ it already knows which of Opencode's three endpoints each model is served on.
 
 | | Model | Why |
 | --- | --- | --- |
-| **Recommended** | `gpt-5.6-luna` | Lemmary's default extraction model. Strongest of the three at pulling structured metadata out of a messy scan and at Deep Research's multi-step reading. |
+| **Recommended** | `gpt-6-luna` | Lemmary's default extraction model. Strongest of the three at pulling structured metadata out of a messy scan and at Deep Research's multi-step reading. |
 | Backup | `deepseek-v4-flash` | Fast and cheap on the same subscription. A good **General AI** model with Luna as the **Advanced model** for Deep Research. |
 | Backup | `qwen3.8-flash` | The other fast option; try it if DeepSeek is rate-limited or refuses your result language. |
 
@@ -110,7 +110,7 @@ filled from the keys above; **Settings → Models** has the same fields.
 | Binding | Provider | Model |
 | --- | --- | --- |
 | OCR | Mistral | `mistral-ocr-latest` |
-| General AI | Opencode Go | `gpt-5.6-luna` |
+| General AI | Opencode Go | `gpt-6-luna` |
 | Embeddings *(optional)* | Mistral | `mistral-embed` |
 
 General AI does everything a language model does here, so those three fields
@@ -142,7 +142,7 @@ the **first boot only**, when the settings row does not exist yet; after that
 # General AI — extraction, Ask AI, search, Deep Research
 AI_SDK=opencode
 AI_API_KEY=sk-your-opencode-key
-AI_MODEL=gpt-5.6-luna
+AI_MODEL=gpt-6-luna
 
 # OCR — Mistral's Document OCR API
 OCR_SDK=mistral

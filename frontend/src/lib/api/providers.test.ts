@@ -189,7 +189,7 @@ describe('recommendedModel', () => {
   })
 
   it('names the default extraction model on Opencode', () => {
-    expect(recommendedModel('opencode', 'llm')).toBe('gpt-5.6-luna')
+    expect(recommendedModel('opencode', 'llm')).toBe('gpt-6-luna')
   })
 
   it('names the embedding model the local sidecar serves by default', () => {

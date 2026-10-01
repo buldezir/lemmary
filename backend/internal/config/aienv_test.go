@@ -479,7 +479,7 @@ func TestEmbeddingsOnAnOpenCodeBaseURLAreRefused(t *testing.T) {
 
 // AI_SDK=anthropic seeds one row that serves extraction, chat, search and OCR,
 // with the base URL coming from the SDK. AI_MODEL is not optional here despite
-// having a default: that default is gpt-5.6-luna, which is nothing Anthropic
+// having a default: that default is gpt-6-luna, which is nothing Anthropic
 // serves.
 func TestTheAnthropicSDKSeedsFromTheEnvironment(t *testing.T) {
 	clearAIEnv(t)
