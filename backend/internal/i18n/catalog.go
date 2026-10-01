@@ -329,6 +329,18 @@ var catalog = map[string]map[string]string{
 		"de": "Der Eigentümer des Dokuments konnte nicht ermittelt werden.",
 		"ru": "Не удалось определить владельца документа.",
 	},
+	"unknown custom field %q": {
+		"de": "Unbekanntes eigenes Feld %q",
+		"ru": "Неизвестное пользовательское поле %q",
+	},
+	"%s must be a name": {
+		"de": "%s muss ein Name sein",
+		"ru": "%s: нужно указать название",
+	},
+	"%s must be a %s": {
+		"de": "%s muss vom Typ %s sein",
+		"ru": "%s: ожидается значение типа %s",
+	},
 	"Failed to save settings.": {
 		"de": "Die Einstellungen konnten nicht gespeichert werden.",
 		"ru": "Не удалось сохранить настройки.",

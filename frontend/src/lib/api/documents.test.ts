@@ -101,7 +101,10 @@ describe('buildDocumentFilter', () => {
   it('filters by taxonomy record ids', () => {
     expect(
       buildDocumentFilter({ ...noFilters, documentType: 'type123', correspondent: 'corr456' }),
-    ).toBe('document_type = "type123" && correspondent = "corr456"')
+    ).toBe(
+      'custom_field_values_via_document.option ?= "type123" && ' +
+        'custom_field_values_via_document.document.custom_field_values_via_document.option ?= "corr456"',
+    )
   })
 
   it('escapes values instead of letting them terminate the filter expression', () => {

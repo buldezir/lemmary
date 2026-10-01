@@ -36,7 +36,7 @@ Two of those groups need a word on granularity and scope:
 
 Three things behave differently from paperless-ngx, deliberately:
 
-- **A filter Lemmary cannot honour is a `400`, not an unfiltered page.** Lemmary has no storage paths, custom fields, or archive serial numbers, so a request that filters on them is refused with `{"detail": "Unsupported filter \"…\"."}`. Returning a `200` that ignored the filter would be worse: the client renders it as though the filter had applied, so "documents tagged Invoice" silently becomes the whole archive.
+- **A filter Lemmary cannot honour is a `400`, not an unfiltered page.** Lemmary has no storage paths or archive serial numbers, and its [custom fields](/setup#custom-fields) are not exposed through this API (`/api/custom_fields/` lists none), so a request that filters on any of them is refused with `{"detail": "Unsupported filter \"…\"."}`. Returning a `200` that ignored the filter would be worse: the client renders it as though the filter had applied, so "documents tagged Invoice" silently becomes the whole archive.
 - **Text search matches whole words, not substrings.** All four text filters run through the same Bleve index as the web UI's search box, which is tokenised. Searching `rechn` matches `Rechnung` only as a *prefix*, and only when no document matches `rechn` as a whole word; `rechnung` matches directly. A term inside a word (`echnung`) finds nothing, and a term containing a digit is never used as a prefix.
 - **A filtered text search enumerates at most 5000 matches.** Beyond that the reported `count` under-reports — consistently, so the paging links never point past what can be served.
 

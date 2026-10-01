@@ -111,7 +111,7 @@ func (p *Processor) recoverStaleRunningJobs() {
 
 func (p *Processor) registerHooks() {
 	p.app.OnRecordValidate("documents").BindFunc(func(e *core.RecordEvent) error {
-		if err := validateDocumentNamedEntityOwnership(e.App, e.Record); err != nil {
+		if err := validateDocumentTagOwnership(e.App, e.Record); err != nil {
 			return err
 		}
 		return e.Next()

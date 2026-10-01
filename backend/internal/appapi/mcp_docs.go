@@ -110,13 +110,14 @@ func newMCPDocs(app core.App, userID string) mcpDocs {
 			out := mcpTaxonomyResult{}
 			for _, part := range []struct {
 				collection string
+				fieldID    string
 				into       *[]string
 			}{
-				{"tags", &out.Tags},
-				{"document_types", &out.DocumentTypes},
-				{"correspondents", &out.Correspondents},
+				{"tags", "", &out.Tags},
+				{models.CustomFieldOptionsCollection, models.DocumentTypeFieldID, &out.DocumentTypes},
+				{models.CustomFieldOptionsCollection, models.CorrespondentFieldID, &out.Correspondents},
 			} {
-				names, truncated, err := taxonomyNames(app, part.collection, userID, mcpMaxTaxonomyNames)
+				names, truncated, err := taxonomyNames(app, part.collection, part.fieldID, userID, mcpMaxTaxonomyNames)
 				if err != nil {
 					return out, err
 				}
@@ -130,8 +131,8 @@ func newMCPDocs(app core.App, userID string) mcpDocs {
 
 // taxonomyNames asks for one more than limit, which is how it can tell a
 // full list from one that was cut there.
-func taxonomyNames(app core.App, collection, userID string, limit int) ([]string, bool, error) {
-	names, err := listNames(app, collection, userID, limit+1)
+func taxonomyNames(app core.App, collection, fieldID, userID string, limit int) ([]string, bool, error) {
+	names, err := listNames(app, collection, fieldID, userID, limit+1)
 	if err != nil {
 		return nil, false, err
 	}
@@ -298,7 +299,7 @@ func runePage(text string, offset, count int) (string, bool) {
 }
 
 func expandMCPDocuments(app core.App, records []*core.Record) {
-	_ = app.ExpandRecords(records, []string{"tags", "document_type", "correspondent"}, nil)
+	_ = app.ExpandRecords(records, []string{"tags", fieldValuesExpand}, nil)
 }
 
 // mcpDocumentOf reads an expanded record; relations that failed to expand
@@ -315,8 +316,8 @@ func mcpDocumentOf(record *core.Record) mcpDocument {
 		ID:               record.Id,
 		Title:            strutil.FirstNonEmpty(record.GetString("title"), "Untitled document"),
 		DocumentDate:     truncateDate(record.GetString("document_date")),
-		DocumentType:     expandedName(record, "document_type"),
-		Correspondent:    expandedName(record, "correspondent"),
+		DocumentType:     expandedOptionName(record, models.DocumentTypeFieldID),
+		Correspondent:    expandedOptionName(record, models.CorrespondentFieldID),
 		Tags:             tags,
 		Summary:          record.GetString("summary"),
 		ProcessingStatus: record.GetString("processing_status"),
@@ -327,9 +328,20 @@ func mcpDocumentOf(record *core.Record) mcpDocument {
 	}
 }
 
-func expandedName(record *core.Record, field string) string {
-	if related := record.ExpandedOne(field); related != nil {
-		return related.GetString("name")
+// fieldValuesExpand is the expand that carries a document's field values and,
+// for option fields, the option behind each.
+const fieldValuesExpand = models.CustomFieldValuesCollection + "_via_document.option"
+
+// expandedOptionName reads an option field's name off a record expanded with
+// fieldValuesExpand.
+func expandedOptionName(record *core.Record, fieldID string) string {
+	for _, value := range record.ExpandedAll(models.CustomFieldValuesCollection + "_via_document") {
+		if value.GetString("field") != fieldID {
+			continue
+		}
+		if option := value.ExpandedOne("option"); option != nil {
+			return option.GetString("name")
+		}
 	}
 	return ""
 }

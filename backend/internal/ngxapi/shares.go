@@ -7,6 +7,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"lemmary/backend/internal/appapi"
+	"lemmary/backend/internal/models"
 )
 
 // readableDocuments is the documents ViewRule as a query expression: rows the
@@ -45,44 +46,45 @@ func sharedEntityIDs(app core.App, collection, authID string) ([]any, error) {
 	if authID == "" {
 		return nil, nil
 	}
-
-	type row struct {
-		DocumentType  string `db:"document_type"`
-		Correspondent string `db:"correspondent"`
-		Tags          string `db:"tags"`
+	if _, fieldID := storage(collection); fieldID != "" {
+		var options []string
+		err := app.DB().NewQuery(
+			"SELECT DISTINCT v.[[option]] FROM {{" + models.CustomFieldValuesCollection + "}} v" +
+				" JOIN {{" + appapi.CollectionShares + "}} s ON s.[[document]] = v.[[document]]" +
+				" WHERE s.[[user]] = {:user} AND v.[[field]] = {:field} AND v.[[option]] != ''").
+			Bind(dbx.Params{"user": authID, "field": fieldID}).Column(&options)
+		if err != nil {
+			return nil, err
+		}
+		ids := make([]any, len(options))
+		for i, id := range options {
+			ids[i] = id
+		}
+		return ids, nil
 	}
-	var rows []row
+
+	var rows []string
 	err := app.DB().NewQuery(
-		"SELECT d.[[document_type]], d.[[correspondent]], d.[[tags]] FROM {{documents}} d" +
+		"SELECT d.[[tags]] FROM {{documents}} d" +
 			" JOIN {{" + appapi.CollectionShares + "}} s ON s.[[document]] = d.[[id]]" +
 			" WHERE s.[[user]] = {:user}").
-		Bind(dbx.Params{"user": authID}).All(&rows)
+		Bind(dbx.Params{"user": authID}).Column(&rows)
 	if err != nil {
 		return nil, err
 	}
 
 	seen := map[string]bool{}
 	ids := []any{}
-	add := func(id string) {
-		if id == "" || seen[id] {
-			return
+	for _, raw := range rows {
+		var tags []string
+		// The column is a JSON array, and legacy rows hold an empty string.
+		if json.Unmarshal([]byte(raw), &tags) != nil {
+			continue
 		}
-		seen[id] = true
-		ids = append(ids, id)
-	}
-	for _, r := range rows {
-		switch collection {
-		case "document_types":
-			add(r.DocumentType)
-		case "correspondents":
-			add(r.Correspondent)
-		case "tags":
-			var tags []string
-			// The column is a JSON array, and legacy rows hold an empty string.
-			if json.Unmarshal([]byte(r.Tags), &tags) == nil {
-				for _, tag := range tags {
-					add(tag)
-				}
+		for _, tag := range tags {
+			if tag != "" && !seen[tag] {
+				seen[tag] = true
+				ids = append(ids, tag)
 			}
 		}
 	}
@@ -92,15 +94,18 @@ func sharedEntityIDs(app core.App, collection, authID string) ([]any, error) {
 // readableEntities is sharedEntityIDs folded together with ownership, for the
 // named-entity list and detail routes.
 func readableEntities(app core.App, collection, authID string) (dbx.Expression, error) {
-	owned := dbx.HashExp{"user": authID}
+	var scope dbx.Expression = dbx.HashExp{"user": authID}
 	shared, err := sharedEntityIDs(app, collection, authID)
 	if err != nil {
 		return nil, err
 	}
-	if len(shared) == 0 {
-		return owned, nil
+	if len(shared) > 0 {
+		scope = dbx.Or(scope, dbx.In("id", shared...))
 	}
-	return dbx.Or(owned, dbx.In("id", shared...)), nil
+	if _, fieldID := storage(collection); fieldID != "" {
+		scope = dbx.And(dbx.HashExp{"field": fieldID}, scope)
+	}
+	return scope, nil
 }
 
 func findReadableNamedRecord(app core.App, collection string, ngxID int, authID string) (*core.Record, error) {

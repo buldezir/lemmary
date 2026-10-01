@@ -1,6 +1,6 @@
 import { t } from '../i18n'
 import { DOCUMENT_STATUSES, DOCUMENT_STATUS_LABELS } from '../lib/documentStatus'
-import type { CorrespondentRecord, DocumentTypeRecord } from '../lib/api/documents'
+import type { OptionRecord } from '../lib/api/documents'
 import { MIN_SEARCH_LENGTH, tagIds, type DocumentOwner, type DocumentQuery } from '../lib/documentQuery'
 import type { TagRecord } from '../lib/api/tags'
 import { Combobox } from './Combobox'
@@ -27,8 +27,8 @@ export function DocumentFilters({
   search: string
   onSearchChange: (value: string) => void
   updateQuery: (patch: Partial<DocumentQuery>, replace?: boolean) => void
-  documentTypes: DocumentTypeRecord[]
-  correspondents: CorrespondentRecord[]
+  documentTypes: OptionRecord[]
+  correspondents: OptionRecord[]
   tags: TagRecord[]
   /** Omit to hide the status dropdown. */
   status?: string

@@ -29,6 +29,7 @@ func Register(
 ) {
 	RegisterAppName(app)
 	app.OnRecordUpdate("documents").BindFunc(clearStaleTranslation)
+	app.OnRecordUpdateRequest("documents").BindFunc(saveFieldsWithDocument)
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: 45,
 		Func: func(e *core.ServeEvent) error {

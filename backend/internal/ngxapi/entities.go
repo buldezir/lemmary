@@ -5,8 +5,6 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
-
-	"lemmary/backend/internal/strutil"
 )
 
 func handleListTags(e *core.RequestEvent) error {
@@ -70,12 +68,9 @@ func handleDeleteDocumentType(e *core.RequestEvent) error {
 }
 
 type namedEntityBody struct {
-	Name         string `json:"name"`
-	NameOriginal string `json:"name_original"`
+	Name string `json:"name"`
 }
 
-// createOwnedNamedRecord defaults name_original to name for the collections
-// that carry it; tags have no such column.
 func createOwnedNamedRecord(e *core.RequestEvent, collection string, mapper recordMapper) error {
 	var body namedEntityBody
 	if err := e.BindBody(&body); err != nil {
@@ -85,9 +80,8 @@ func createOwnedNamedRecord(e *core.RequestEvent, collection string, mapper reco
 	if name == "" {
 		return badRequest(e, "Name is required.")
 	}
-	original := strutil.FirstNonEmpty(body.NameOriginal, name)
-
-	coll, err := e.App.FindCollectionByNameOrId(collection)
+	table, fieldID := storage(collection)
+	coll, err := e.App.FindCollectionByNameOrId(table)
 	if err != nil {
 		return internalError(e, err)
 	}
@@ -95,8 +89,8 @@ func createOwnedNamedRecord(e *core.RequestEvent, collection string, mapper reco
 	record := core.NewRecord(coll)
 	record.Set("user", e.Auth.Id)
 	record.Set("name", name)
-	if coll.Fields.GetByName("name_original") != nil {
-		record.Set("name_original", original)
+	if fieldID != "" {
+		record.Set("field", fieldID)
 	}
 	if err := e.App.Save(record); err != nil {
 		return saveError(e, err)
@@ -124,9 +118,6 @@ func patchOwnedNamedRecord(e *core.RequestEvent, collection string, mapper recor
 	if name := strings.TrimSpace(body.Name); name != "" {
 		record.Set("name", name)
 	}
-	if original := strings.TrimSpace(body.NameOriginal); original != "" && record.Collection().Fields.GetByName("name_original") != nil {
-		record.Set("name_original", original)
-	}
 	if err := e.App.Save(record); err != nil {
 		return saveError(e, err)
 	}
@@ -145,14 +136,15 @@ func listNamedRecords(e *core.RequestEvent, collection string, mapper recordMapp
 	if err != nil {
 		return internalError(e, err)
 	}
-	total, err := e.App.CountRecords(collection, scope)
+	table, _ := storage(collection)
+	total, err := e.App.CountRecords(table, scope)
 	if err != nil {
 		return internalError(e, err)
 	}
 
 	offset := (page - 1) * pageSize
 	records := []*core.Record{}
-	q := e.App.RecordQuery(collection).AndWhere(scope).AndOrderBy("name ASC")
+	q := e.App.RecordQuery(table).AndWhere(scope).AndOrderBy("name ASC")
 	if err := q.Limit(int64(pageSize)).Offset(int64(offset)).All(&records); err != nil {
 		return internalError(e, err)
 	}

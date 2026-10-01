@@ -74,7 +74,7 @@ func lexicalRanking(query string, filters testdata.Filters) []Ranked {
 			continue
 		}
 		all := strings.Join([]string{
-			doc.Title, doc.TitleOriginal, doc.Purpose, doc.Summary,
+			doc.Title, doc.Summary,
 			doc.DocumentType, doc.Correspondent, strings.Join(doc.Tags, " "), doc.Text,
 		}, "\n")
 		tokens := map[string]int{}

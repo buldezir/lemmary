@@ -1,6 +1,6 @@
 import { type SubmitEvent, useState } from 'react'
 import { t } from '../i18n'
-import { Button, inputClassName } from './ui'
+import { Button, inputClassName, TrashIcon } from './ui'
 import { chatSessionDateLabel, chatSessionTitle, type ChatSession } from '../lib/api/chats'
 
 function PencilIcon() {
@@ -18,25 +18,6 @@ function PencilIcon() {
     >
       <path d="M12 20h9" />
       <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-    </svg>
-  )
-}
-
-function TrashIcon() {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="h-3.5 w-3.5"
-      aria-hidden="true"
-    >
-      <polyline points="3 6 5 6 21 6" />
-      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
     </svg>
   )
 }

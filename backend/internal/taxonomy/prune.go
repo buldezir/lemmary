@@ -5,16 +5,11 @@ package taxonomy
 import (
 	"fmt"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
-)
 
-const (
-	collectionDocuments      = "documents"
-	collectionCorrespondents = "correspondents"
-	collectionDocumentTypes  = "document_types"
+	"lemmary/backend/internal/models"
 )
-
-const prunePageSize = 500
 
 // PruneResult counts the records a prune removed, per collection. Tags is
 // always 0 and stays in the shape because the API response and the Maintenance
@@ -30,26 +25,21 @@ func (r PruneResult) Total() int {
 }
 
 // PruneOrphans deletes every correspondent and document type that no document
-// references. Collecting the references and deleting share one transaction, so
-// a document saved concurrently cannot end up pointing at an id this prune
-// just removed.
+// carries. Finding the orphans and deleting them share one transaction, so a
+// value saved concurrently cannot end up pointing at an option this prune just
+// removed.
 func PruneOrphans(app core.App) (PruneResult, error) {
 	var result PruneResult
 
 	err := app.RunInTransaction(func(txApp core.App) error {
-		refs, err := referencedIDs(txApp)
-		if err != nil {
-			return err
-		}
-
 		for _, target := range []struct {
-			collection string
-			removed    *int
+			fieldID string
+			removed *int
 		}{
-			{collectionCorrespondents, &result.Correspondents},
-			{collectionDocumentTypes, &result.DocumentTypes},
+			{models.CorrespondentFieldID, &result.Correspondents},
+			{models.DocumentTypeFieldID, &result.DocumentTypes},
 		} {
-			n, err := deleteOrphans(txApp, target.collection, refs[target.collection])
+			n, err := deleteOrphanOptions(txApp, target.fieldID)
 			if err != nil {
 				return err
 			}
@@ -63,88 +53,25 @@ func PruneOrphans(app core.App) (PruneResult, error) {
 	return result, nil
 }
 
-// documentRefs is the projection a prune reads from documents: the relation
-// columns only, so OCR text is not loaded just to look at relations.
-type documentRefs struct {
-	Correspondent string `db:"correspondent"`
-	DocumentType  string `db:"document_type"`
-}
-
-func referencedIDs(app core.App) (map[string]map[string]struct{}, error) {
-	collection, err := app.FindCollectionByNameOrId(collectionDocuments)
+// deleteOrphanOptions lists before the first delete, and deletes through the
+// app so the search index hears about each one.
+func deleteOrphanOptions(app core.App, fieldID string) (int, error) {
+	var ids []string
+	err := app.DB().NewQuery(`SELECT o.id FROM ` + models.CustomFieldOptionsCollection + ` o
+		WHERE o.field = {:field} AND NOT EXISTS (
+			SELECT 1 FROM ` + models.CustomFieldValuesCollection + ` v WHERE v.option = o.id)`).
+		Bind(dbx.Params{"field": fieldID}).Column(&ids)
 	if err != nil {
-		return nil, err
+		return 0, fmt.Errorf("list orphan %s options: %w", fieldID, err)
 	}
-
-	refs := map[string]map[string]struct{}{
-		collectionCorrespondents: {},
-		collectionDocumentTypes:  {},
-	}
-
-	offset := 0
-	for {
-		var page []documentRefs
-		err := app.RecordQuery(collection).
-			Select("correspondent", "document_type").
-			OrderBy("id ASC").
-			Limit(int64(prunePageSize)).
-			Offset(int64(offset)).
-			All(&page)
+	for _, id := range ids {
+		record, err := app.FindRecordById(models.CustomFieldOptionsCollection, id)
 		if err != nil {
-			return nil, fmt.Errorf("list document relations: %w", err)
+			return 0, err
 		}
-
-		for _, row := range page {
-			addRef(refs[collectionCorrespondents], row.Correspondent)
-			addRef(refs[collectionDocumentTypes], row.DocumentType)
-		}
-
-		if len(page) < prunePageSize {
-			return refs, nil
-		}
-		offset += prunePageSize
-	}
-}
-
-func addRef(ids map[string]struct{}, id string) {
-	if id == "" {
-		return
-	}
-	ids[id] = struct{}{}
-}
-
-func deleteOrphans(app core.App, collection string, referenced map[string]struct{}) (int, error) {
-	orphans, err := orphanRecords(app, collection, referenced)
-	if err != nil {
-		return 0, err
-	}
-	for _, record := range orphans {
 		if err := app.Delete(record); err != nil {
-			return 0, fmt.Errorf("delete %s %s: %w", collection, record.Id, err)
+			return 0, fmt.Errorf("delete %s option %s: %w", fieldID, id, err)
 		}
 	}
-	return len(orphans), nil
-}
-
-// orphanRecords pages through collection and keeps the unreferenced records. The
-// listing finishes before the first delete: deleting while paging would shift
-// the later offsets and skip records.
-func orphanRecords(app core.App, collection string, referenced map[string]struct{}) ([]*core.Record, error) {
-	var orphans []*core.Record
-	offset := 0
-	for {
-		page, err := app.FindRecordsByFilter(collection, "id != ''", "id", prunePageSize, offset)
-		if err != nil {
-			return nil, fmt.Errorf("list %s: %w", collection, err)
-		}
-		for _, record := range page {
-			if _, used := referenced[record.Id]; !used {
-				orphans = append(orphans, record)
-			}
-		}
-		if len(page) < prunePageSize {
-			return orphans, nil
-		}
-		offset += prunePageSize
-	}
+	return len(ids), nil
 }

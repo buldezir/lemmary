@@ -44,9 +44,6 @@ func makeTag(t *testing.T, app core.App, userID, name string) string {
 	record := core.NewRecord(collection)
 	record.Set("user", userID)
 	record.Set("name", name)
-	if collection.Fields.GetByName("name_original") != nil {
-		record.Set("name_original", name)
-	}
 	if err := app.Save(record); err != nil {
 		t.Fatalf("save tag %s: %v", name, err)
 	}
@@ -156,9 +153,6 @@ func TestAssignSkipsACollectionWithoutTheColumn(t *testing.T) {
 	record := core.NewRecord(collection)
 	record.Set("user", userID)
 	record.Set("name", "pre-column")
-	if collection.Fields.GetByName("name_original") != nil {
-		record.Set("name_original", "pre-column")
-	}
 	if err := app.Save(record); err != nil {
 		t.Fatalf("creating a record before the column exists must succeed: %v", err)
 	}

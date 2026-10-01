@@ -325,7 +325,7 @@ func TestMCPPlainAccessListsFiltersAndReadsDocuments(t *testing.T) {
 	if err != nil || !slices.Equal(tax.Tags, []string{"invoice", "plumbing"}) || tax.Truncated {
 		t.Fatalf("taxonomy = %#v err=%v", tax, err)
 	}
-	names, truncated, err := taxonomyNames(app, "tags", owner, 1)
+	names, truncated, err := taxonomyNames(app, "tags", "", owner, 1)
 	if err != nil || !slices.Equal(names, []string{"invoice"}) || !truncated {
 		t.Fatalf("cut taxonomy = %v truncated %v err=%v", names, truncated, err)
 	}

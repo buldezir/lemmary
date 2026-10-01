@@ -12,6 +12,7 @@ import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 
+	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/ngxid"
 )
 
@@ -214,6 +215,8 @@ func TestEveryAddressableCollectionIsStamped(t *testing.T) {
 			pbID = documentID
 		case "processing_jobs":
 			pbID = createJob(t, app, documentID, "pending")
+		case models.CustomFieldOptionsCollection:
+			pbID = createNamed(t, app, "correspondents", "stamped", userID)
 		default:
 			pbID = createNamed(t, app, collection, "stamped", userID)
 		}
@@ -252,7 +255,6 @@ func TestCollidingHashTakesTheNextFreeID(t *testing.T) {
 	record := core.NewRecord(collection)
 	record.Id = wantedPBID
 	record.Set("name", "collider")
-	record.Set("name_original", "collider")
 	record.Set("user", userID)
 	if err := app.Save(record); err != nil {
 		t.Fatalf("save the colliding tag: %v", err)

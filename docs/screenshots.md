@@ -53,7 +53,7 @@ down the left side counts documents per year and month.
 
 ![Documents list](./screenshots/documents.png)
 
-Full-text search runs over titles, OCR text, tags, purposes and summaries
+Full-text search runs over titles, OCR text, tags and summaries
 through a Bleve index.
 
 ![Searching the library](./screenshots/documents-search.png)
@@ -103,15 +103,18 @@ do under it, and whatever was cancelled or failed in the last day still listed.
 The detail page is where extraction gets reviewed. The file sits beside its
 metadata -- a PDF in the browser's own viewer, so you can read page three while
 correcting the fields it belongs to -- and the **Preview** button hides that
-column when the fields need the width. Fields the model wrote in the document's
-own language keep the original underneath the translation, so a German invoice
-reads in English without losing what it actually said.
+column when the fields need the width. With a result language set, the model
+writes those fields in it, so a German invoice reads in English while its OCR
+text keeps what it actually said.
 
 ![Document detail](./screenshots/document-detail.png)
 
 **Unlock editing** turns those fields into a form. Corrections are saved back
 onto the document, and the taxonomy follows: a new type or correspondent typed
-here is created and reused from then on. Tags are different -- they are picked
+here is created and reused from then on. The match is the same one extraction
+uses: exact name first, then one ignoring punctuation and accents, so typing
+`Müller GmbH` where `Muller GmbH` exists keeps the existing name. To change the
+spelling, rename the correspondent itself. Tags are different -- they are picked
 from a list you keep under **Tags**, so the editor offers what exists rather
 than creating one from whatever you type.
 

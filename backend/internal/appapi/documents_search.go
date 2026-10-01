@@ -192,7 +192,7 @@ func hydrateDocumentExports(app documentLookup, hits []fulltext.Hit, userID stri
 		if !CanReadDocument(app, rec, userID) {
 			continue
 		}
-		_ = app.ExpandRecord(rec, []string{"tags", "document_type", "correspondent", "duplicate_of"}, nil)
+		_ = app.ExpandRecord(rec, []string{"tags", fieldValuesExpand, "duplicate_of"}, nil)
 		items = append(items, rec.PublicExport())
 	}
 	if items == nil {

@@ -15,11 +15,12 @@ import (
 	"time"
 
 	"github.com/openai/openai-go/v3"
+
+	"lemmary/backend/internal/models"
 )
 
 const extractTestJSON = `{
   "title": "Invoice",
-  "purpose": "Pay",
   "document_date": "2024-07-15",
   "document_type": "Invoice",
   "correspondent": "Acme",
@@ -258,6 +259,37 @@ func TestBuildExtractionSystemPromptForbidsPartialDates(t *testing.T) {
 	}
 }
 
+func TestBuildExtractionSystemPromptAsksForCustomFieldsOnlyWhenDefined(t *testing.T) {
+	t.Parallel()
+
+	if prompt := buildExtractionSystemPrompt("", "", ExtractionCatalog{}); strings.Contains(prompt, "custom_fields") {
+		t.Fatalf("no fields defined, yet the prompt asks for custom_fields:\n%s", prompt)
+	}
+
+	prompt := buildExtractionSystemPrompt("", "Always tag invoices.", ExtractionCatalog{CustomFields: []models.CustomField{
+		{ID: "finvoice", Name: "Invoice number", Type: models.CustomFieldText, Description: "next to Rechnungsnr."},
+		{ID: "famount", Name: "Amount", Type: models.CustomFieldNumber},
+	}})
+	for _, want := range []string{
+		"Also return custom_fields (object)",
+		`{"name":"Invoice number","type":"text","description":"next to Rechnungsnr."}`,
+		`{"name":"Amount","type":"number"}`,
+		"leave a field out rather than guess",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("expected the custom fields block to contain %q, got:\n%s", want, prompt)
+		}
+	}
+	// Ids mean nothing to the model; the names are the keys it answers with.
+	if strings.Contains(prompt, "finvoice") {
+		t.Fatalf("the prompt leaks field ids:\n%s", prompt)
+	}
+	// Admin rules come after the contract they may not change.
+	if strings.Index(prompt, "custom_fields") > strings.Index(prompt, "Always tag invoices.") {
+		t.Fatalf("custom fields block must precede the admin rules:\n%s", prompt)
+	}
+}
+
 func TestBuildExtractionSystemPromptClosesTheTagVocabulary(t *testing.T) {
 	t.Parallel()
 
@@ -291,17 +323,23 @@ func TestBuildExtractionSystemPromptClosesTheTagVocabulary(t *testing.T) {
 	}
 }
 
-// A result language translates the prose fields; tags come from a vocabulary the
-// user owns, so there is nothing to translate and no tags_translated field.
-func TestBuildExtractionSystemPromptDoesNotTranslateTags(t *testing.T) {
+// A result language is what the metadata is written in, with no copy in the
+// document's own language; tags come from a vocabulary the user owns, so they
+// stay as listed.
+func TestBuildExtractionSystemPromptWritesInTheResultLanguage(t *testing.T) {
 	t.Parallel()
 	prompt := buildExtractionSystemPrompt("English", "", ExtractionCatalog{Tags: []string{"Invoices"}})
 
-	if !strings.Contains(prompt, "title_translated") {
-		t.Fatalf("expected the translated block, got:\n%s", prompt)
+	if !strings.Contains(prompt, "document_type, and correspondent in English") {
+		t.Fatalf("expected the result-language rule, got:\n%s", prompt)
 	}
-	if strings.Contains(prompt, "tags_translated") {
-		t.Fatalf("tags_translated is gone from the contract, got:\n%s", prompt)
+	for _, gone := range []string{"_translated", "same language as the source document", "purpose"} {
+		if strings.Contains(prompt, gone) {
+			t.Fatalf("prompt still mentions %q:\n%s", gone, prompt)
+		}
+	}
+	if !strings.Contains(prompt, "Tags are the exception") {
+		t.Fatalf("expected tags to stay verbatim, got:\n%s", prompt)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 
 	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/models"
 )
 
 // maxCountIDs is the most documents a grouped count over a text query
@@ -139,10 +140,14 @@ func countDocuments(ctx context.Context, db dbx.Builder, spec countSpec) ([]coun
 	key := `''`
 	from := `documents d`
 	switch spec.groupBy {
-	case "document_type":
-		key = `COALESCE(d.document_type, '')`
-	case "correspondent":
-		key = `COALESCE(d.correspondent, '')`
+	case "document_type", "correspondent":
+		fieldID := models.DocumentTypeFieldID
+		if spec.groupBy == "correspondent" {
+			fieldID = models.CorrespondentFieldID
+		}
+		// One value per (document, field), so the join keeps one row per document.
+		from = `documents d LEFT JOIN ` + models.CustomFieldValuesCollection + ` g ON g.document = d.id AND g.field = '` + fieldID + `'`
+		key = `COALESCE(g.option, '')`
 	case "year":
 		key = `substr(COALESCE(d.document_date, ''), 1, 4)`
 	case "month":
@@ -226,10 +231,10 @@ func documentConditions(spec countSpec) ([]string, dbx.Params) {
 		params["user"] = spec.userID
 	}
 	if in := inClause("dt", spec.documentTypeIDs, params); in != "" {
-		where = append(where, `d.document_type IN `+in)
+		where = append(where, optionValueIn("dt", models.DocumentTypeFieldID, in, params))
 	}
 	if in := inClause("co", spec.correspondentIDs, params); in != "" {
-		where = append(where, `d.correspondent IN `+in)
+		where = append(where, optionValueIn("co", models.CorrespondentFieldID, in, params))
 	}
 	if in := inClause("tg", spec.tagIDs, params); in != "" {
 		where = append(where, `(json_valid(d.tags) AND EXISTS (SELECT 1 FROM json_each(d.tags) t WHERE t.value IN `+in+`))`)
@@ -249,6 +254,14 @@ func documentConditions(spec countSpec) ([]string, dbx.Params) {
 		}
 	}
 	return where, params
+}
+
+// optionValueIn holds when the document's value for fieldID is one of the
+// options in the in clause.
+func optionValueIn(prefix, fieldID, in string, params dbx.Params) string {
+	params[prefix+"_field"] = fieldID
+	return `EXISTS (SELECT 1 FROM ` + models.CustomFieldValuesCollection + ` v WHERE v.document = d.id AND v.field = {:` +
+		prefix + `_field} AND v.option IN ` + in + `)`
 }
 
 // inClause registers the parameters under prefix. Empty for no ids.
@@ -313,9 +326,9 @@ func (r *agentRetriever) countGroupName(groupBy, key string) string {
 	collection, none := "", "(undated)"
 	switch groupBy {
 	case "document_type":
-		collection, none = "document_types", "(no type)"
+		collection, none = models.CustomFieldOptionsCollection, "(no type)"
 	case "correspondent":
-		collection, none = "correspondents", "(no correspondent)"
+		collection, none = models.CustomFieldOptionsCollection, "(no correspondent)"
 	case "tag":
 		collection, none = "tags", "(untagged)"
 	}

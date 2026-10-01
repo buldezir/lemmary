@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"lemmary/backend/internal/models"
 )
 
 func makeShare(t *testing.T, app core.App, documentID, userID string) string {
@@ -168,8 +170,6 @@ func TestSharedDocumentCarriesItsOwnersNamedEntities(t *testing.T) {
 	other := makeUser(t, app, "other@example.com")
 
 	tagID := makeNamedEntity(t, app, "tags", owner, "receipts")
-	typeID := makeNamedEntity(t, app, "document_types", owner, "invoice")
-	corrID := makeNamedEntity(t, app, "correspondents", owner, "acme")
 	otherTagID := makeNamedEntity(t, app, "tags", owner, "unused")
 
 	docID := makeDocument(t, app, owner, "invoice")
@@ -178,18 +178,24 @@ func TestSharedDocumentCarriesItsOwnersNamedEntities(t *testing.T) {
 		t.Fatalf("load document: %v", err)
 	}
 	doc.Set("tags", []string{tagID})
-	doc.Set("document_type", typeID)
-	doc.Set("correspondent", corrID)
 	if err := app.Save(doc); err != nil {
-		t.Fatalf("attach named entities: %v", err)
+		t.Fatalf("attach tags: %v", err)
+	}
+	optionID := makeOption(t, app, models.CorrespondentFieldID, owner, "acme")
+	if err := models.SaveFieldValue(app, doc, models.CorrespondentField, optionID); err != nil {
+		t.Fatalf("attach correspondent: %v", err)
+	}
+	values, err := app.FindRecordsByFilter(models.CustomFieldValuesCollection, "document = {:d}", "", 0, 0,
+		map[string]any{"d": docID})
+	if err != nil || len(values) != 1 {
+		t.Fatalf("value rows: %v, %v", values, err)
 	}
 	makeShare(t, app, docID, other)
 
 	info := asUser(t, app, other)
 	for _, entity := range []struct{ collection, id string }{
 		{"tags", tagID},
-		{"document_types", typeID},
-		{"correspondents", corrID},
+		{models.CustomFieldOptionsCollection, optionID},
 	} {
 		coll, err := app.FindCollectionByNameOrId(entity.collection)
 		if err != nil {
@@ -210,6 +216,29 @@ func TestSharedDocumentCarriesItsOwnersNamedEntities(t *testing.T) {
 	if canAccess(t, app, "tags", otherTagID, info, tags.ViewRule) {
 		t.Fatal("a tag on no shared document is readable by the recipient")
 	}
+	valuesColl, err := app.FindCollectionByNameOrId(models.CustomFieldValuesCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !canAccess(t, app, models.CustomFieldValuesCollection, values[0].Id, info, valuesColl.ViewRule) {
+		t.Fatal("a value on a shared document is not readable by the recipient")
+	}
+}
+
+func makeOption(t *testing.T, app core.App, fieldID, userID, name string) string {
+	t.Helper()
+	coll, err := app.FindCollectionByNameOrId(models.CustomFieldOptionsCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := core.NewRecord(coll)
+	record.Set("field", fieldID)
+	record.Set("user", userID)
+	record.Set("name", name)
+	if err := app.Save(record); err != nil {
+		t.Fatalf("save option %s: %v", name, err)
+	}
+	return record.Id
 }
 
 func makeNamedEntity(t *testing.T, app core.App, collection, userID, name string) string {
@@ -231,6 +260,10 @@ func makeNamedEntity(t *testing.T, app core.App, collection, userID, name string
 // collection and rewriting the rules has to be safe to do twice.
 func TestDocumentSharesMigrationIsIdempotent(t *testing.T) {
 	app := bootMigratedApp(t)
+	// The collections this migration ruled over until 1730000051.
+	if err := moveOptionsToNamedEntities(app); err != nil {
+		t.Fatalf("roll back 1730000051: %v", err)
+	}
 	if err := createDocumentShares(app); err != nil {
 		t.Fatalf("second createDocumentShares: %v", err)
 	}

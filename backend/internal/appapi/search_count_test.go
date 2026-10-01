@@ -8,10 +8,12 @@ import (
 	"github.com/pocketbase/dbx"
 
 	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/models"
 )
 
 // countDB writes the columns in the shapes PocketBase does: dates as text in
 // two formats, tags as a JSON array, and one legacy empty-string tags value.
+// Type and correspondent are value rows, absent where a document has none.
 func countDB(t *testing.T) dbx.Builder {
 	t.Helper()
 	db, err := dbx.Open("sqlite", "file::memory:?cache=shared&_pragma=foreign_keys(0)")
@@ -20,10 +22,14 @@ func countDB(t *testing.T) dbx.Builder {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	_, err = db.NewQuery(`CREATE TABLE documents (
-		id TEXT PRIMARY KEY, user TEXT, title TEXT, document_date TEXT,
-		document_type TEXT, correspondent TEXT, tags TEXT, ocr_text TEXT)`).Execute()
+		id TEXT PRIMARY KEY, user TEXT, title TEXT, document_date TEXT, tags TEXT, ocr_text TEXT)`).Execute()
 	if err != nil {
 		t.Fatalf("create table: %v", err)
+	}
+	_, err = db.NewQuery(`CREATE TABLE ` + models.CustomFieldValuesCollection + ` (
+		id TEXT PRIMARY KEY, document TEXT, field TEXT, option TEXT)`).Execute()
+	if err != nil {
+		t.Fatalf("create values table: %v", err)
 	}
 	_, err = db.NewQuery(`CREATE TABLE document_shares (
 		id TEXT PRIMARY KEY, document TEXT, user TEXT)`).Execute()
@@ -41,12 +47,24 @@ func countDB(t *testing.T) dbx.Builder {
 		{"d6", "you", "2025-05-05", "invoice", "acme", `["paid"]`},
 	}
 	for _, r := range rows {
-		_, err := db.NewQuery(`INSERT INTO documents (id, user, title, document_date, document_type, correspondent, tags, ocr_text)
-			VALUES ({:id}, {:user}, {:title}, {:date}, {:typ}, {:corr}, {:tags}, '')`).Bind(dbx.Params{
-			"id": r.id, "user": r.user, "title": "Doc " + r.id, "date": r.date, "typ": r.typ, "corr": r.corr, "tags": r.tags,
+		_, err := db.NewQuery(`INSERT INTO documents (id, user, title, document_date, tags, ocr_text)
+			VALUES ({:id}, {:user}, {:title}, {:date}, {:tags}, '')`).Bind(dbx.Params{
+			"id": r.id, "user": r.user, "title": "Doc " + r.id, "date": r.date, "tags": r.tags,
 		}).Execute()
 		if err != nil {
 			t.Fatalf("insert %s: %v", r.id, err)
+		}
+		for field, option := range map[string]string{models.DocumentTypeFieldID: r.typ, models.CorrespondentFieldID: r.corr} {
+			if option == "" {
+				continue
+			}
+			_, err := db.NewQuery(`INSERT INTO ` + models.CustomFieldValuesCollection + ` (id, document, field, option)
+				VALUES ({:id}, {:document}, {:field}, {:option})`).Bind(dbx.Params{
+				"id": r.id + field, "document": r.id, "field": field, "option": option,
+			}).Execute()
+			if err != nil {
+				t.Fatalf("insert value %s: %v", r.id, err)
+			}
 		}
 	}
 	return db

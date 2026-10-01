@@ -19,7 +19,7 @@ The API has been tested with the [swift-paperless](https://github.com/paulgessin
 - Import a zip of documents (**Upload → Zip archive**) or the invoice PDFs from an Amazon "Your Orders" data export (**Upload → Amazon orders**); either way the archive is previewed and only imported after you confirm the file count, duplicates are skipped
 - Async processing jobs with status tracking
 - OCR text extraction (native text extraction for TXT/CSV/DOCX/XLSX)
-- AI metadata extraction: title, purpose, date, type, tags, summary
+- AI metadata extraction: title, date, type, tags, summary
 - Document list with full-text search and status filters
 - Two search pages, one per path: **AI assisted search** (`/rag/search`) finds documents and lists them as cards; **Deep Research** (`/rag/research`) searches, reads the documents it finds, surveys hundreds at once on the General AI model, counts and totals, and answers with links to its sources — streaming each step as it works; a run that outgrows the model's context window fails with the provider's error; chats are saved, listed in a sidebar, and resumable by URL
 - Detail page for reviewing OCR text and correcting metadata
@@ -40,8 +40,7 @@ that counts the archive by month:
 ![Documents](docs/screenshots/documents.png)
 
 Document detail: the file itself beside editable metadata, summary, and OCR
-text. Fields the model wrote in the document's own language keep the original
-under the translation:
+text:
 
 ![Document detail](docs/screenshots/document-detail.png)
 

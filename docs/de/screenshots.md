@@ -58,7 +58,7 @@ selbst. Die Zeitleiste am linken Rand zählt die Dokumente pro Jahr und Monat.
 
 ![Dokumentliste](../screenshots/documents.png)
 
-Die Volltextsuche durchsucht Titel, OCR-Text, Tags, Zwecke und Zusammenfassungen
+Die Volltextsuche durchsucht Titel, OCR-Text, Tags und Zusammenfassungen
 über einen Bleve-Index.
 
 ![Die Bibliothek durchsuchen](../screenshots/documents-search.png)
@@ -113,17 +113,21 @@ fehlgeschlagen ist, bleibt weiter aufgeführt.
 Auf der Detailseite wird die Extraktion geprüft. Die Datei steht neben ihren
 Metadaten -- ein PDF im browsereigenen Betrachter, sodass Sie Seite drei lesen
 können, während Sie die zugehörigen Felder korrigieren --, und die Schaltfläche
-**Vorschau** blendet diese Spalte aus, wenn die Felder die Breite brauchen.
-Felder, die das Modell in der Sprache des Dokuments geschrieben hat, behalten das
-Original unter der Übersetzung, sodass sich eine deutsche Rechnung auf Englisch
-lesen lässt, ohne zu verlieren, was tatsächlich darin stand.
+**Vorschau** blendet diese Spalte aus, wenn die Felder die Breite brauchen. Ist
+eine Ergebnissprache gesetzt, schreibt das Modell diese Felder in ihr, sodass sich
+eine deutsche Rechnung auf Englisch lesen lässt, während ihr OCR-Text behält, was
+tatsächlich darin stand.
 
 ![Dokumentdetails](../screenshots/document-detail.png)
 
 **Bearbeitung entsperren** verwandelt diese Felder in ein Formular. Korrekturen
 werden am Dokument gespeichert, und die Taxonomie zieht nach: Ein neuer Typ oder
 Korrespondent, der hier eingegeben wird, wird angelegt und ab dann
-wiederverwendet. Bei Tags ist das anders -- sie werden aus einer Liste gewählt,
+wiederverwendet. Der Abgleich ist derselbe wie bei der Extraktion: erst der
+exakte Name, dann einer ohne Beachtung von Satz- und Akzentzeichen, sodass die
+Eingabe `Müller GmbH` bei vorhandenem `Muller GmbH` den vorhandenen Namen behält.
+Um die Schreibweise zu ändern, benennen Sie den Korrespondenten selbst um. Bei
+Tags ist das anders -- sie werden aus einer Liste gewählt,
 die Sie unter **Tags** pflegen, daher bietet der Editor an, was existiert, statt
 aus Ihrer Eingabe einen neuen anzulegen.
 

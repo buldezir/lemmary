@@ -13,6 +13,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/models"
 )
 
 // truncatedContentLen matches paperless-ngx's own truncated-content cut.
@@ -78,8 +79,8 @@ var textParams = []struct {
 	fields []string
 }{
 	{"query", nil},
-	{"title_content", []string{fulltext.FieldTitle, fulltext.FieldTitleOriginal, fulltext.FieldOCRText}},
-	{"title__icontains", []string{fulltext.FieldTitle, fulltext.FieldTitleOriginal}},
+	{"title_content", []string{fulltext.FieldTitle, fulltext.FieldOCRText}},
+	{"title__icontains", []string{fulltext.FieldTitle}},
 	{"content__icontains", []string{fulltext.FieldOCRText}},
 }
 
@@ -634,35 +635,44 @@ func documentFilterExprs(f documentFilters) []dbx.Expression {
 	}
 
 	for _, spec := range []struct {
-		column string
-		in     []string
-		none   []string
-		unset  *bool
+		name    string
+		fieldID string
+		in      []string
+		none    []string
+		unset   *bool
 	}{
-		{"document_type", f.docTypes, f.docTypesNone, f.docTypeUnset},
-		{"correspondent", f.corrs, f.corrsNone, f.corrUnset},
+		{"document_type", models.DocumentTypeFieldID, f.docTypes, f.docTypesNone, f.docTypeUnset},
+		{"correspondent", models.CorrespondentFieldID, f.corrs, f.corrsNone, f.corrUnset},
 	} {
+		// The relation is a value row, present or not: NOT EXISTS is what keeps
+		// a document with none through an exclusion, as paperless' exclude()
+		// does.
+		hasValue := func(suffix string, options []string) (string, dbx.Params) {
+			field, params := names.bindOne(spec.name+"_field"+suffix, spec.fieldID)
+			sql := "SELECT 1 FROM {{" + models.CustomFieldValuesCollection + "}} v WHERE v.[[document]] = [[documents.id]]" +
+				" AND v.[[field]] = " + field
+			if len(options) > 0 {
+				placeholders, optionParams := names.bind(spec.name+suffix, options)
+				maps.Copy(params, optionParams)
+				sql += " AND v.[[option]] IN (" + strings.Join(placeholders, ", ") + ")"
+			}
+			return sql, params
+		}
 		if len(spec.in) > 0 {
-			exprs = append(exprs, dbx.In("documents."+spec.column, anyValues(spec.in)...))
+			sql, params := hasValue("_in", spec.in)
+			exprs = append(exprs, dbx.NewExp("EXISTS ("+sql+")", params))
 		}
 		if len(spec.none) > 0 {
-			// COALESCE, because a document with no relation at all must survive
-			// an exclusion: SQL three-valued logic drops NULL from a bare
-			// NOT IN, where paperless' exclude() keeps it.
-			placeholders, params := names.bind(spec.column+"_none", spec.none)
-			exprs = append(exprs, dbx.NewExp(fmt.Sprintf(
-				"COALESCE([[documents.%s]], '') NOT IN (%s)",
-				spec.column, strings.Join(placeholders, ", "),
-			), params))
+			sql, params := hasValue("_none", spec.none)
+			exprs = append(exprs, dbx.NewExp("NOT EXISTS ("+sql+")", params))
 		}
 		if spec.unset != nil {
-			op := "="
-			if !*spec.unset {
-				op = "!="
+			sql, params := hasValue("_unset", nil)
+			op := "EXISTS"
+			if *spec.unset {
+				op = "NOT EXISTS"
 			}
-			exprs = append(exprs, dbx.NewExp(
-				fmt.Sprintf("COALESCE([[documents.%s]], '') %s ''", spec.column, op),
-			))
+			exprs = append(exprs, dbx.NewExp(op+" ("+sql+")", params))
 		}
 	}
 

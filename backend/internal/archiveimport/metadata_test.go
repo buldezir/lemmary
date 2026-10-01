@@ -13,11 +13,7 @@ func testDocumentsCollection() *core.Collection {
 	docs := core.NewBaseCollection("documents")
 	docs.Fields.Add(
 		&core.TextField{Name: "title"},
-		&core.TextField{Name: "title_original"},
-		&core.TextField{Name: "purpose"},
-		&core.TextField{Name: "purpose_original"},
 		&core.TextField{Name: "summary"},
-		&core.TextField{Name: "summary_original"},
 		&core.TextField{Name: "metadata_source"},
 		&core.TextField{Name: "text_fingerprint"},
 		&core.TextField{Name: "processing_status"},
@@ -28,11 +24,34 @@ func testDocumentsCollection() *core.Collection {
 	return docs
 }
 
+// Field ids are each instance's own, so values travel by name and land on
+// whichever field here carries it; a name nobody defined here is dropped.
+func TestApplyMetadataRestoresCustomFieldsByName(t *testing.T) {
+	record := core.NewRecord(testDocumentsCollection())
+	resolver := newTaxonomyResolver(nil, "owner", &Result{})
+	resolver.customFields = []models.CustomField{
+		{ID: "fhere", Name: "Invoice number", Type: models.CustomFieldText},
+		{ID: "famount", Name: "Amount", Type: models.CustomFieldNumber},
+	}
+	meta := map[string]any{"custom_fields": map[string]any{
+		"invoice number": "R-1",
+		"Amount":         "not a number",
+		"Elsewhere only": "dropped",
+	}}
+
+	values, err := applyMetadata(record, meta, resolver)
+	if err != nil {
+		t.Fatalf("applyMetadata: %v", err)
+	}
+	if len(values) != 1 || values[0].Field.ID != "fhere" || values[0].Value != "R-1" {
+		t.Fatalf("values = %#v, want only fhere=R-1", values)
+	}
+}
+
 func TestApplyMetadataRestoresFields(t *testing.T) {
 	record := core.NewRecord(testDocumentsCollection())
 	meta := map[string]any{
 		"title":                   "Invoice 42",
-		"title_original":          "Rechnung 42",
 		"summary":                 "A summary",
 		"metadata_source":         "ai",
 		"text_fingerprint":        "deadbeefdeadbeef",
@@ -42,12 +61,12 @@ func TestApplyMetadataRestoresFields(t *testing.T) {
 		"people_or_organizations": []any{"Acme", "  ", "Jane"},
 	}
 
-	if err := applyMetadata(record, meta, newTaxonomyResolver(nil, "owner", &Result{})); err != nil {
+	if _, err := applyMetadata(record, meta, newTaxonomyResolver(nil, "owner", &Result{})); err != nil {
 		t.Fatalf("applyMetadata: %v", err)
 	}
 
-	if record.GetString("title") != "Invoice 42" || record.GetString("title_original") != "Rechnung 42" {
-		t.Fatalf("titles=%q/%q", record.GetString("title"), record.GetString("title_original"))
+	if record.GetString("title") != "Invoice 42" {
+		t.Fatalf("title=%q", record.GetString("title"))
 	}
 	if record.GetString("summary") != "A summary" || record.GetString("text_fingerprint") != "deadbeefdeadbeef" {
 		t.Fatalf("record=%#v", record.PublicExport())
@@ -79,7 +98,7 @@ func TestApplyMetadataDropsUnusableValues(t *testing.T) {
 		"tags":              "not-an-array",
 	}
 
-	if err := applyMetadata(record, meta, newTaxonomyResolver(nil, "owner", &Result{})); err != nil {
+	if _, err := applyMetadata(record, meta, newTaxonomyResolver(nil, "owner", &Result{})); err != nil {
 		t.Fatalf("applyMetadata: %v", err)
 	}
 
@@ -100,7 +119,7 @@ func TestApplyMetadataRestoresCancelledStatus(t *testing.T) {
 	record := core.NewRecord(testDocumentsCollection())
 	meta := map[string]any{"processing_status": models.DocStatusCancelled}
 
-	if err := applyMetadata(record, meta, newTaxonomyResolver(nil, "owner", &Result{})); err != nil {
+	if _, err := applyMetadata(record, meta, newTaxonomyResolver(nil, "owner", &Result{})); err != nil {
 		t.Fatalf("applyMetadata: %v", err)
 	}
 	if got := record.GetString("processing_status"); got != models.DocStatusCancelled {

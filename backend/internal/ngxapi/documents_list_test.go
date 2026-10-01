@@ -13,6 +13,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 
 	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/models"
 )
 
 // listFixture is one owner with two tags and three documents, plus a second
@@ -61,17 +62,20 @@ func createUser(t *testing.T, app core.App, email string) string {
 	return record.Id
 }
 
+// createNamed takes the collection names the compat layer addresses, so
+// "correspondents" is an option of the predefined field.
 func createNamed(t *testing.T, app core.App, collection, name, userID string) string {
 	t.Helper()
-	coll, err := app.FindCollectionByNameOrId(collection)
+	table, fieldID := storage(collection)
+	coll, err := app.FindCollectionByNameOrId(table)
 	if err != nil {
 		t.Fatalf("%s collection: %v", collection, err)
 	}
 	record := core.NewRecord(coll)
 	record.Set("name", name)
 	record.Set("user", userID)
-	if coll.Fields.GetByName("name_original") != nil {
-		record.Set("name_original", name)
+	if fieldID != "" {
+		record.Set("field", fieldID)
 	}
 	if err := app.Save(record); err != nil {
 		t.Fatalf("save %s %s: %v", collection, name, err)
@@ -315,10 +319,11 @@ func TestListDocumentsAppliesTaxonomyFilters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load document: %v", err)
 	}
-	doc.Set("document_type", invoiceType)
-	doc.Set("correspondent", acme)
-	if err := f.app.Save(doc); err != nil {
-		t.Fatalf("assign taxonomy: %v", err)
+	if err := models.SaveFieldValue(f.app, doc, models.DocumentTypeField, invoiceType); err != nil {
+		t.Fatalf("assign type: %v", err)
+	}
+	if err := models.SaveFieldValue(f.app, doc, models.CorrespondentField, acme); err != nil {
+		t.Fatalf("assign correspondent: %v", err)
 	}
 
 	_, byType := f.list(t, fmt.Sprintf("document_type__id=%d", toNgxID(invoiceType)))
@@ -461,10 +466,11 @@ func TestListRendersStoredRelationIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load document: %v", err)
 	}
-	doc.Set("document_type", invoiceType)
-	doc.Set("correspondent", acme)
-	if err := f.app.Save(doc); err != nil {
-		t.Fatalf("assign taxonomy: %v", err)
+	if err := models.SaveFieldValue(f.app, doc, models.DocumentTypeField, invoiceType); err != nil {
+		t.Fatalf("assign type: %v", err)
+	}
+	if err := models.SaveFieldValue(f.app, doc, models.CorrespondentField, acme); err != nil {
+		t.Fatalf("assign correspondent: %v", err)
 	}
 
 	_, body := f.list(t, "is_tagged=true&tags__id__all="+fmt.Sprint(storedID(t, f.app, "tags", f.tagOne)))
@@ -508,7 +514,8 @@ func TestRenderingAPageBatchesRelationLookups(t *testing.T) {
 
 func storedID(t *testing.T, app core.App, collection, pbID string) int {
 	t.Helper()
-	record, err := app.FindRecordById(collection, pbID)
+	table, _ := storage(collection)
+	record, err := app.FindRecordById(table, pbID)
 	if err != nil {
 		t.Fatalf("load %s %s: %v", collection, pbID, err)
 	}

@@ -15,6 +15,7 @@ import (
 
 	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/retrieval"
 	"lemmary/backend/internal/strutil"
 )
@@ -190,7 +191,7 @@ func (r *agentRetriever) resolveFilters(args ai.SearchDocumentsArgs) (fulltext.Q
 	var unresolved []string
 
 	if typeName := strings.TrimSpace(args.DocumentType); typeName != "" {
-		typeIDs, err := findNamedEntityIDs(r.app, "document_types", typeName, r.nameScope())
+		typeIDs, err := findOptionIDs(r.app, models.DocumentTypeFieldID, typeName, r.nameScope())
 		if err != nil {
 			return ftQuery, nil, err
 		}
@@ -201,7 +202,7 @@ func (r *agentRetriever) resolveFilters(args ai.SearchDocumentsArgs) (fulltext.Q
 	}
 
 	if corrName := strings.TrimSpace(args.Correspondent); corrName != "" {
-		corrIDs, err := findNamedEntityIDs(r.app, "correspondents", corrName, r.nameScope())
+		corrIDs, err := findOptionIDs(r.app, models.CorrespondentFieldID, corrName, r.nameScope())
 		if err != nil {
 			return ftQuery, nil, err
 		}
@@ -432,7 +433,7 @@ func (r *agentRetriever) hydrate(
 		ID:           record.Id,
 		Title:        strutil.FirstNonEmpty(record.GetString("title"), "Untitled document"),
 		DocumentDate: truncateDate(record.GetString("document_date")),
-		Summary:      strutil.TruncateRunes(strutil.FirstNonEmpty(record.GetString("summary"), record.GetString("purpose")), maxSummaryLen),
+		Summary:      strutil.TruncateRunes(record.GetString("summary"), maxSummaryLen),
 		Passages:     toolPassages(passages),
 	}
 
@@ -447,8 +448,8 @@ func (r *agentRetriever) hydrate(
 		hit.OCRSnippet = ocrSnippet(ocrText, query)
 	}
 
-	hit.DocumentType = relatedName(r.app, "document_types", record.GetString("document_type"))
-	hit.Correspondent = relatedName(r.app, "correspondents", record.GetString("correspondent"))
+	hit.DocumentType = optionName(r.app, record.Id, models.DocumentTypeFieldID)
+	hit.Correspondent = optionName(r.app, record.Id, models.CorrespondentFieldID)
 	hit.Tags = documentTagNames(r.app, record)
 	return hit, true
 }
@@ -502,6 +503,16 @@ func toolPassages(passages []retrieval.Passage) []ai.Passage {
 		out = append(out, ai.Passage{Page: p.Page, Text: p.Text})
 	}
 	return out
+}
+
+// optionName is the name of the option a document's option field points at.
+func optionName(app documentLookup, docID, fieldID string) string {
+	value, err := app.FindFirstRecordByFilter(models.CustomFieldValuesCollection,
+		"document = {:document} && field = {:field}", dbx.Params{"document": docID, "field": fieldID})
+	if err != nil {
+		return ""
+	}
+	return relatedName(app, models.CustomFieldOptionsCollection, value.GetString("option"))
 }
 
 func relatedName(app documentLookup, collection, id string) string {
@@ -658,8 +669,8 @@ func readUserDocuments(app documentLookup, userID string, req ai.ReadRequest, ra
 			ID:            record.Id,
 			Title:         strutil.FirstNonEmpty(record.GetString("title"), "Untitled document"),
 			DocumentDate:  truncateDate(record.GetString("document_date")),
-			DocumentType:  relatedName(app, "document_types", record.GetString("document_type")),
-			Correspondent: relatedName(app, "correspondents", record.GetString("correspondent")),
+			DocumentType:  optionName(app, record.Id, models.DocumentTypeFieldID),
+			Correspondent: optionName(app, record.Id, models.CorrespondentFieldID),
 			Tags:          documentTagNames(app, record),
 		}
 
@@ -694,15 +705,16 @@ func excerptDocument(documentID, full, focus string, rank focusRanker, budget in
 	return retrieval.Excerpt(full, windows, ranked, budget)
 }
 
-func findNamedEntityIDs(app retrieverApp, collection, name string, userIDs []string) ([]string, error) {
+// findOptionIDs is the options of fieldID whose name contains name.
+func findOptionIDs(app retrieverApp, fieldID, name string, userIDs []string) ([]string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, nil
 	}
-	params := dbx.Params{"name": name}
-	filter := scopeToUsers("name ~ {:name} || name_original ~ {:name}", params, userIDs)
+	params := dbx.Params{"name": name, "field": fieldID}
+	filter := scopeToUsers("field = {:field} && name ~ {:name}", params, userIDs)
 	records, err := app.FindRecordsByFilter(
-		collection,
+		models.CustomFieldOptionsCollection,
 		filter,
 		"name",
 		20,
@@ -710,7 +722,7 @@ func findNamedEntityIDs(app retrieverApp, collection, name string, userIDs []str
 		params,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("lookup %s: %w", collection, err)
+		return nil, fmt.Errorf("lookup %s options: %w", fieldID, err)
 	}
 	ids := make([]string, 0, len(records))
 	for _, record := range records {

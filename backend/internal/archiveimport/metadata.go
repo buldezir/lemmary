@@ -41,6 +41,22 @@ func stringsField(meta map[string]any, key string) []string {
 	return out
 }
 
+// customFieldsField maps the archive's values, keyed by field name, onto this
+// instance's fields. A name with no field here is dropped.
+func customFieldsField(meta map[string]any, fields []models.CustomField) []models.FieldWrite {
+	byName, ok := meta["custom_fields"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	var out []models.FieldWrite
+	for _, field := range fields {
+		if value, ok := field.ValueIn(byName); ok {
+			out = append(out, models.FieldWrite{Field: field, Value: value})
+		}
+	}
+	return out
+}
+
 // restorableStatuses are the processing_status values the collection accepts.
 // "processing" is deliberately absent: nothing is mid-run in a fresh restore,
 // and the pipeline sets the real status once its job runs.
@@ -52,15 +68,13 @@ var restorableStatuses = map[string]struct{}{
 	models.DocStatusNeedsReview: {},
 }
 
-// applyMetadata restores the document fields carried by a metadata sidecar.
-// Relations are resolved by name through resolver, creating the taxonomy record
-// when this instance does not have it yet.
-func applyMetadata(record *core.Record, meta map[string]any, resolver *taxonomyResolver) error {
+// applyMetadata restores the document fields carried by a metadata sidecar and
+// returns the field values to save once the document exists. Names are
+// resolved through resolver, creating the tag or option when this instance does
+// not have it yet.
+func applyMetadata(record *core.Record, meta map[string]any, resolver *taxonomyResolver) ([]models.FieldWrite, error) {
 	for _, field := range []string{
-		"title", "title_original",
-		"purpose", "purpose_original",
-		"summary", "summary_original",
-		"metadata_source", "text_fingerprint",
+		"title", "summary", "metadata_source", "text_fingerprint",
 	} {
 		if value := stringField(meta, field); value != "" {
 			record.Set(field, value)
@@ -83,12 +97,13 @@ func applyMetadata(record *core.Record, meta map[string]any, resolver *taxonomyR
 	if people := stringsField(meta, "people_or_organizations"); len(people) > 0 {
 		record.Set("people_or_organizations", people)
 	}
+	values := customFieldsField(meta, resolver.customFields)
 
 	tagIDs := make([]string, 0)
 	for _, name := range stringsField(meta, "tags") {
 		id, err := resolver.tag(name)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if id != "" {
 			tagIDs = append(tagIDs, id)
@@ -98,25 +113,23 @@ func applyMetadata(record *core.Record, meta map[string]any, resolver *taxonomyR
 		record.Set("tags", tagIDs)
 	}
 
-	if name := stringField(meta, "document_type"); name != "" {
-		id, err := resolver.namedEntity("document_types", name, "")
+	for key, field := range map[string]models.CustomField{
+		"document_type": models.DocumentTypeField,
+		"correspondent": models.CorrespondentField,
+	} {
+		name := stringField(meta, key)
+		if name == "" {
+			continue
+		}
+		id, err := resolver.option(field.ID, name)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if id != "" {
-			record.Set("document_type", id)
+			values = append(values, models.FieldWrite{Field: field, Value: id})
 		}
 	}
-	if name := stringField(meta, "correspondent"); name != "" {
-		id, err := resolver.namedEntity("correspondents", name, "")
-		if err != nil {
-			return err
-		}
-		if id != "" {
-			record.Set("correspondent", id)
-		}
-	}
-	return nil
+	return values, nil
 }
 
 // parseTimestamp validates a timestamp from a sidecar before it is written back

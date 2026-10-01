@@ -10,15 +10,18 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pocketbase/pocketbase/core"
+
+	"lemmary/backend/internal/models"
 )
 
 var htmlTagRE = regexp.MustCompile(`<[^>]*>`)
 
-// singleRelations maps a document's single-relation fields to the collection
-// each one points at, which is what the lens is keyed by.
-var singleRelations = map[string]string{
-	"document_type": "document_types",
-	"correspondent": "correspondents",
+// singleRelations maps a document's paperless-ngx relation fields to the
+// collection each one points at, which is what the lens is keyed by, and the
+// option field that holds it.
+var singleRelations = map[string]struct{ collection, fieldID string }{
+	"document_type": {"document_types", models.DocumentTypeFieldID},
+	"correspondent": {"correspondents", models.CorrespondentFieldID},
 }
 
 // ngxIDLens holds the client-facing ids of everything a response refers to by
@@ -28,6 +31,7 @@ var singleRelations = map[string]string{
 // page of 250 documents would otherwise be 500 point lookups.
 type ngxIDLens struct {
 	byCollection map[string]map[string]int
+	values       map[string]models.FieldValues
 }
 
 func newNgxIDLens(app core.App, records []*core.Record) (*ngxIDLens, error) {
@@ -44,16 +48,24 @@ func newNgxIDLens(app core.App, records []*core.Record) (*ngxIDLens, error) {
 		set[pbID] = struct{}{}
 	}
 
+	docIDs := make([]string, len(records))
+	for i, record := range records {
+		docIDs[i] = record.Id
+	}
+	values, err := models.LoadFieldValues(app, docIDs...)
+	if err != nil {
+		return nil, err
+	}
 	for _, record := range records {
 		for _, pbID := range record.GetStringSlice("tags") {
 			add("tags", pbID)
 		}
-		for field, collection := range singleRelations {
-			add(collection, record.GetString(field))
+		for _, relation := range singleRelations {
+			add(relation.collection, values[record.Id].OptionID(relation.fieldID))
 		}
 	}
 
-	lens := &ngxIDLens{byCollection: make(map[string]map[string]int, len(wanted))}
+	lens := &ngxIDLens{byCollection: make(map[string]map[string]int, len(wanted)), values: values}
 	for collection, set := range wanted {
 		pbIDs := make([]string, 0, len(set))
 		for pbID := range set {
@@ -89,7 +101,8 @@ func (l *ngxIDLens) ids(collection string, pbIDs []string) []int {
 }
 
 func (l *ngxIDLens) relation(record *core.Record, field string) any {
-	id := l.id(singleRelations[field], record.GetString(field))
+	relation := singleRelations[field]
+	id := l.id(relation.collection, l.values[record.Id].OptionID(relation.fieldID))
 	if id == 0 {
 		return nil
 	}

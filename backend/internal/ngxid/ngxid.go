@@ -16,6 +16,8 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+
+	"lemmary/backend/internal/models"
 )
 
 const Field = "ngx_id"
@@ -44,8 +46,9 @@ type Collection struct {
 var Collections = []Collection{
 	{Name: "documents", Owner: ""},
 	{Name: "tags", Owner: ""},
-	{Name: "correspondents", Owner: ""},
-	{Name: "document_types", Owner: ""},
+	// Correspondents and document types: per field, because paperless-ngx
+	// numbered the two apart and clients hold both.
+	{Name: models.CustomFieldOptionsCollection, Owner: "field"},
 	{Name: "processing_jobs", Owner: ""},
 }
 

@@ -1,6 +1,8 @@
 package fulltext
 
 import (
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +23,7 @@ type nameCache struct {
 	app     core.App
 	names   map[string]string
 	readers map[string][]string
+	values  map[string]models.FieldValues
 }
 
 func newNameCache(app core.App) *nameCache {
@@ -43,6 +46,36 @@ func (c *nameCache) preloadReaders() {
 		docID := share.GetString("document")
 		c.readers[docID] = append(c.readers[docID], share.GetString("user"))
 	}
+}
+
+// preloadValues reads every document's field values once, for the same callers.
+func (c *nameCache) preloadValues() {
+	if c == nil || c.app == nil || c.values != nil {
+		return
+	}
+	values, err := models.LoadAllFieldValues(c.app)
+	if err != nil {
+		// Unreadable values index as none rather than stopping the rebuild.
+		values = map[string]models.FieldValues{}
+	}
+	c.values = values
+}
+
+func (c *nameCache) valuesOf(docID string) models.FieldValues {
+	if c == nil {
+		return nil
+	}
+	if c.values != nil {
+		return c.values[docID]
+	}
+	if c.app == nil {
+		return nil
+	}
+	values, err := models.LoadDocumentFieldValues(c.app, docID)
+	if err != nil {
+		return nil
+	}
+	return values
 }
 
 // readersOf is the owner plus everyone the document is shared with. Indexing
@@ -90,25 +123,21 @@ func buildWith(names *nameCache, rec *core.Record) map[string]any {
 		}
 	}
 
-	typeID := rec.GetString("document_type")
-	corrID := rec.GetString("correspondent")
-	typeName := names.lookup("document_types", typeID)
-	corrName := names.lookup("correspondents", corrID)
+	values := names.valuesOf(rec.Id)
+	typeID := values.OptionID(models.DocumentTypeFieldID)
+	corrID := values.OptionID(models.CorrespondentFieldID)
+	typeName := strings.TrimSpace(values.OptionName(models.DocumentTypeFieldID))
+	corrName := strings.TrimSpace(values.OptionName(models.CorrespondentFieldID))
 	people := models.PeopleOrOrganizations(rec)
 
 	title := strings.TrimSpace(rec.GetString("title"))
-	titleOrig := strings.TrimSpace(rec.GetString("title_original"))
-	purpose := strings.TrimSpace(rec.GetString("purpose"))
-	purposeOrig := strings.TrimSpace(rec.GetString("purpose_original"))
 	summary := strings.TrimSpace(rec.GetString("summary"))
-	summaryOrig := strings.TrimSpace(rec.GetString("summary_original"))
 	ocr := strings.TrimSpace(rec.GetString("ocr_text"))
 	peopleText := strings.Join(people, " ")
 	tagNameText := strings.Join(tagNames, " ")
 
 	allParts := []string{
-		title, titleOrig, purpose, purposeOrig, summary, summaryOrig,
-		ocr, tagNameText, typeName, corrName, peopleText,
+		title, summary, ocr, tagNameText, typeName, corrName, peopleText, customFieldsText(values),
 	}
 
 	doc := map[string]any{
@@ -119,11 +148,7 @@ func buildWith(names *nameCache, rec *core.Record) map[string]any {
 		FieldCorrespondent:     corrID,
 		FieldTags:              tagIDs,
 		FieldTitle:             title,
-		FieldTitleOriginal:     titleOrig,
-		FieldPurpose:           purpose,
-		FieldPurposeOriginal:   purposeOrig,
 		FieldSummary:           summary,
-		FieldSummaryOriginal:   summaryOrig,
 		FieldOCRText:           ocr,
 		FieldTagNames:          tagNameText,
 		FieldDocumentTypeName:  typeName,
@@ -147,6 +172,26 @@ func lookupName(app core.App, collection, id string) string {
 		return ""
 	}
 	return strings.TrimSpace(rec.GetString("name"))
+}
+
+// customFieldsText is searchable through FieldAll only: a value typed by hand
+// is often the one thing about a document its OCR text does not say. Options
+// are indexed on their own fields above.
+func customFieldsText(values models.FieldValues) string {
+	parts := make([]string, 0, len(values))
+	for _, v := range values {
+		switch v.Type {
+		case models.CustomFieldOption:
+		case models.CustomFieldNumber:
+			parts = append(parts, strconv.FormatFloat(v.Number, 'f', -1, 64))
+		case models.CustomFieldDate:
+			parts = append(parts, v.Date)
+		default:
+			parts = append(parts, v.Text)
+		}
+	}
+	slices.Sort(parts)
+	return joinNonEmpty(parts)
 }
 
 func joinNonEmpty(parts []string) string {

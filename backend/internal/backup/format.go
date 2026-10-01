@@ -35,12 +35,10 @@ const (
 	PreviewSuffix  = ".preview.png"
 )
 
-// NamedEntity is a correspondent or document type. name_original is what
-// worker.EnsureNamedEntity matches on, so keeping it lets a restore land on the
-// same record instead of creating a near-duplicate.
+// NamedEntity is a correspondent or document type. An object rather than a bare
+// name, as tags are, because older archives also carry name_original.
 type NamedEntity struct {
-	Name         string `json:"name"`
-	NameOriginal string `json:"name_original,omitempty"`
+	Name string `json:"name"`
 }
 
 // Taxonomy includes records no document references, which are invisible in the
