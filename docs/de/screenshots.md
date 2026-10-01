@@ -123,7 +123,11 @@ tatsächlich darin stand.
 **Bearbeitung entsperren** verwandelt diese Felder in ein Formular. Korrekturen
 werden am Dokument gespeichert, und die Taxonomie zieht nach: Ein neuer Typ oder
 Korrespondent, der hier eingegeben wird, wird angelegt und ab dann
-wiederverwendet. Bei Tags ist das anders -- sie werden aus einer Liste gewählt,
+wiederverwendet. Der Abgleich ist derselbe wie bei der Extraktion: erst der
+exakte Name, dann einer ohne Beachtung von Satz- und Akzentzeichen, sodass die
+Eingabe `Müller GmbH` bei vorhandenem `Muller GmbH` den vorhandenen Namen behält.
+Um die Schreibweise zu ändern, benennen Sie den Korrespondenten selbst um. Bei
+Tags ist das anders -- sie werden aus einer Liste gewählt,
 die Sie unter **Tags** pflegen, daher bietet der Editor an, was existiert, statt
 aus Ihrer Eingabe einen neuen anzulegen.
 

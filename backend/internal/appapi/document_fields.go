@@ -15,7 +15,9 @@ import (
 // "fields", by field id, in the transaction that saves the document, so a
 // refused update changes neither. A field left out keeps its value and null or
 // "" clears one. An option field takes a name: the owner's option of that name
-// is reused, or created, as extraction does.
+// is reused, or created, as extraction does, and created before the
+// transaction for the reason fieldWrites in the worker gives; a document the
+// update then refuses leaves at most an unused option, which prune removes.
 func saveFieldsWithDocument(e *core.RecordRequestEvent) error {
 	info, err := e.RequestInfo()
 	if err != nil {
@@ -47,7 +49,7 @@ func saveFieldsWithDocument(e *core.RecordRequestEvent) error {
 }
 
 // documentFieldWrites checks every value before it turns a name into an
-// option, so a refused body creates none.
+// option, so a body refused here creates none.
 func documentFieldWrites(app core.App, document *core.Record, body map[string]any) ([]models.FieldWrite, error) {
 	fields, err := documentFields(app)
 	if err != nil {

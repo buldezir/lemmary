@@ -111,7 +111,10 @@ text keeps what it actually said.
 
 **Unlock editing** turns those fields into a form. Corrections are saved back
 onto the document, and the taxonomy follows: a new type or correspondent typed
-here is created and reused from then on. Tags are different -- they are picked
+here is created and reused from then on. The match is the same one extraction
+uses: exact name first, then one ignoring punctuation and accents, so typing
+`Müller GmbH` where `Muller GmbH` exists keeps the existing name. To change the
+spelling, rename the correspondent itself. Tags are different -- they are picked
 from a list you keep under **Tags**, so the editor offers what exists rather
 than creating one from whatever you type.
 
