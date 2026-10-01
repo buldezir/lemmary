@@ -123,14 +123,10 @@ type boostedField struct {
 
 var boostedTextFields = []boostedField{
 	{FieldTitle, 4},
-	{FieldTitleOriginal, 4},
 	{FieldTagNames, 3},
 	{FieldDocumentTypeName, 3},
 	{FieldCorrespondentName, 3},
-	{FieldPurpose, 2},
-	{FieldPurposeOriginal, 2},
 	{FieldSummary, 2},
-	{FieldSummaryOriginal, 2},
 	{FieldPeople, 2},
 	{FieldOCRText, 1},
 }

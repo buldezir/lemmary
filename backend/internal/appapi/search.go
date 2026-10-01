@@ -592,19 +592,25 @@ func handleSearchCancel(app core.App) func(*core.RequestEvent) error {
 
 // userID scopes the list to that owner; empty lists every tag (superusers).
 func listAvailableTagNames(app core.App, userID string) ([]string, error) {
-	return listNames(app, "tags", userID, maxAvailableTagNames)
+	return listNames(app, "tags", "", userID, maxAvailableTagNames)
 }
 
 // listNames returns up to limit names in a user-owned taxonomy collection,
 // sorted.
-func listNames(app core.App, collection, userID string, limit int) ([]string, error) {
-	filter := ""
-	var params []dbx.Params
-	if userID != "" {
-		filter = "user = {:userId}"
-		params = append(params, dbx.Params{"userId": userID})
+// listNames lists collection's names, only userID's when set. fieldID narrows
+// an options listing to one field.
+func listNames(app core.App, collection, fieldID, userID string, limit int) ([]string, error) {
+	var filters []string
+	params := dbx.Params{}
+	if fieldID != "" {
+		filters = append(filters, "field = {:field}")
+		params["field"] = fieldID
 	}
-	records, err := app.FindRecordsByFilter(collection, filter, "name", limit, 0, params...)
+	if userID != "" {
+		filters = append(filters, "user = {:userId}")
+		params["userId"] = userID
+	}
+	records, err := app.FindRecordsByFilter(collection, strings.Join(filters, " && "), "name", limit, 0, params)
 	if err != nil {
 		return nil, fmt.Errorf("list %s: %w", collection, err)
 	}

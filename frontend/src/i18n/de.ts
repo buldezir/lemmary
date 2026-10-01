@@ -294,6 +294,9 @@ export const de: Catalog = {
   'settingsApi.statsFailed': 'Embedding-Statistik konnte nicht geladen werden',
   'settingsApi.loadFailed': 'Einstellungen konnten nicht geladen werden',
   'settingsApi.saveFailed': 'Einstellungen konnten nicht gespeichert werden',
+  'customFieldsApi.duplicateName': 'Ein eigenes Feld namens „{name}“ gibt es bereits.',
+  'customFieldsApi.saveFailed': 'Das eigene Feld konnte nicht gespeichert werden.',
+  'customFieldsApi.valuesSaveFailed': 'Die Felder des Dokuments konnten nicht gespeichert werden.',
 
   'mcp.statusFailed': 'Der MCP-Endpunkt konnte nicht geprüft werden',
   'mcp.tokenFailed': 'Token konnte nicht erstellt werden',
@@ -439,7 +442,7 @@ export const de: Catalog = {
   'processingSteps.attempt': 'Versuch {count}',
   'processingSteps.steps': { one: '{count} Schritt', other: '{count} Schritte' },
 
-  'documentFilters.searchPlaceholder': 'Titel, Tags, Zweck, Zusammenfassung durchsuchen...',
+  'documentFilters.searchPlaceholder': 'Titel, Tags, Zusammenfassung durchsuchen...',
   'documentFilters.tooShort': {
     one: 'Geben Sie mindestens {count} Zeichen ein, um zu suchen.',
     other: 'Geben Sie mindestens {count} Zeichen ein, um zu suchen.',
@@ -999,6 +1002,9 @@ export const de: Catalog = {
   'documentPage.confirmReprocess': 'Diese Schritte erneut ausführen?',
   'documentPage.confirmModels': 'Modelle: {models}',
   'documentPage.confirmOverwrite': 'Vorhandene Metadaten können überschrieben werden.',
+  'documentPage.overwriteCustomFields': 'Eigene Felder überschreiben',
+  'documentPage.overwriteCustomFieldsHint':
+    'Ersetzt bereits gesetzte Werte, auch eingetippte, überall dort, wo die Extraktion einen findet. Ausgeschaltet füllt sie nur leere Felder.',
   'documentPage.queued': 'Dokument zur erneuten Verarbeitung eingereiht ({steps}).',
   'documentPage.reprocessError': 'Dokument konnte nicht erneut verarbeitet werden',
   'documentPage.confirmDelete':
@@ -1046,11 +1052,9 @@ export const de: Catalog = {
   'documentPage.fieldDate': 'Dokumentdatum',
   'documentPage.fieldType': 'Dokumenttyp',
   'documentPage.fieldCorrespondent': 'Korrespondent',
-  'documentPage.fieldPurpose': 'Zweck',
   'documentPage.fieldTags': 'Tags',
   'documentPage.fieldSummary': 'Zusammenfassung',
   'documentPage.fieldOcr': 'OCR-Text',
-  'documentPage.original': 'Original: {value}',
   'documentPage.retranslate': 'Neu übersetzen',
   'documentPage.ocrView': 'Ansicht des OCR-Texts',
   'documentPage.ocrTranslatedTo': 'OCR-Text übersetzt in {language}',
@@ -1173,7 +1177,7 @@ export const de: Catalog = {
   'settingsProcessing.resultLanguage': 'Ergebnissprache (ISO 639-1)',
   'settingsProcessing.resultLanguagePlaceholder': 'z. B. de',
   'settingsProcessing.resultLanguageHint':
-    'Speichert zusätzlich Titel, Zweck, Zusammenfassung, Typ und Korrespondent in diese Sprache übersetzt. Tags sind ausgenommen: Sie stammen aus Ihrer eigenen Liste, in welcher Sprache Sie diese auch geschrieben haben. Leer lassen, um nur die Sprache des Dokuments selbst zu behalten.',
+    'Schreibt Titel, Zusammenfassung, Typ und Korrespondent in dieser Sprache, gleich in welcher Sprache das Dokument verfasst ist. Tags sind ausgenommen: Sie stammen aus Ihrer eigenen Liste, in welcher Sprache Sie diese auch geschrieben haben. Leer lassen, um die Sprache des Dokuments selbst zu behalten.',
   'settingsProcessing.deepSearchLanguages': 'Sprachen für Deep Search',
   'settingsProcessing.deepSearchLanguagesPlaceholder': 'z. B. de,en,uk',
   'settingsProcessing.deepSearchLanguagesEmbeddingHint':
@@ -1185,6 +1189,23 @@ export const de: Catalog = {
     'z. B. Behandle „Invoice“ als Dokumenttyp Rechnung.\nVersieh jedes Versicherungsdokument mit der Policennummer als Tag.',
   'settingsProcessing.extractionRulesHint':
     'Ihre eigenen Anweisungen, ergänzt im Prompt, der die Metadaten aus einem Dokument liest – hauseigene Konventionen für Titel, Typen, Korrespondenten oder Tags. Sie ändern nicht, welche Felder gespeichert werden. Gilt für Dokumente, die ab jetzt verarbeitet oder erneut verarbeitet werden; leer lassen für den eingebauten Prompt allein.',
+  'settingsProcessing.customFields': 'Eigene Dokumentfelder',
+  'settingsProcessing.customFieldsHint':
+    'Zusätzliche Felder auf jedem Dokument, etwa eine Rechnungsnummer, ein Betrag oder ein Fälligkeitsdatum. Name und Hinweis für die Extraktion jedes Felds werden Teil des Prompts, mit dem das KI-Modell jedes Dokument liest: Sagen Sie im Hinweis, was das Feld bedeutet und wo es auf dem Dokument steht, z. B. „steht neben Rechnungsnr.“. Die Extraktion füllt leere Felder; ein eingetippter Wert bleibt erhalten, außer eine erneute Verarbeitung soll ihn überschreiben. Der Typ eines Felds steht nach dem Speichern fest, und wird ein Feld entfernt, werden seine Werte gelöscht.',
+  'settingsProcessing.customFieldName': 'Feldname',
+  'settingsProcessing.customFieldNamePlaceholder': 'z. B. Rechnungsnummer',
+  'settingsProcessing.customFieldType': 'Typ',
+  'settingsProcessing.customFieldTypeText': 'Text',
+  'settingsProcessing.customFieldTypeNumber': 'Zahl',
+  'settingsProcessing.customFieldTypeDate': 'Datum',
+  'settingsProcessing.customFieldDescription': 'Hinweis für die Extraktion',
+  'settingsProcessing.customFieldDescriptionPlaceholder':
+    'Optional, geht an das KI-Modell, z. B. steht neben „Rechnungsnr.“',
+  'settingsProcessing.customFieldAdd': 'Feld hinzufügen',
+  'settingsProcessing.customFieldRemove': 'Entfernen',
+  'settingsProcessing.customFieldSave': 'Speichern',
+  'settingsProcessing.customFieldRemoveConfirm':
+    'Feld „{name}“ entfernen? Seine Werte verschwinden aus allen Dokumenten.',
 
   'settingsIngest.everyDay': 'täglich',
   'settingsIngest.everyHour': 'stündlich',

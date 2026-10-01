@@ -11,10 +11,19 @@ import {
   reprocessDocument,
   saveDocumentMetadata,
   translateOcrText,
+  DOCUMENT_EXPAND,
   type DocumentRecord,
   type JobOverrides,
 } from '../lib/api/documents'
 import { acceptSuggestedTag, listTags, type TagRecord } from '../lib/api/tags'
+import {
+  CORRESPONDENT_FIELD_ID,
+  DOCUMENT_TYPE_FIELD_ID,
+  customFieldValuesForSave,
+  fieldInputValue,
+  listCustomFields,
+  optionName,
+} from '../lib/api/customFields'
 import { pendingTagSuggestions } from '../lib/tagSuggestions'
 import { SuggestedTags } from '../components/SuggestedTags'
 import { StepBindingOverride } from '../components/BindingOverride'
@@ -74,8 +83,11 @@ export function DocumentDetailPage() {
   // The whole vocabulary, loaded once: the picker needs every tag, not only the
   // ones this document carries.
   const { data: vocabulary, error: vocabularyError } = useAsync(listTags, [])
+  const { data: customFields } = useAsync(listCustomFields, [])
   const [documentTypeInput, setDocumentTypeInput] = useState('')
   const [correspondentInput, setCorrespondentInput] = useState('')
+  // Only the fields edited since the document loaded; the rest read from it.
+  const [customInputs, setCustomInputs] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -85,6 +97,7 @@ export function DocumentDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [reprocessSteps, setReprocessSteps] = useState<ProcessingStep[]>([])
   const [reprocessOverrides, setReprocessOverrides] = useState<JobOverrides>({})
+  const [overwriteCustomFields, setOverwriteCustomFields] = useState(false)
   // null means "the reader has not said", which lets the panel open itself for
   // a failed job. Once they toggle it, their choice is a boolean and sticks.
   const [showProcessingJob, setShowProcessingJob] = useState<boolean | null>(null)
@@ -111,8 +124,9 @@ export function DocumentDetailPage() {
     loadedRef.current = doc
     setDocument(doc)
     setTagIds(doc.tags ?? [])
-    setDocumentTypeInput(doc.expand?.document_type?.name ?? '')
-    setCorrespondentInput(doc.expand?.correspondent?.name ?? '')
+    setDocumentTypeInput(optionName(doc, DOCUMENT_TYPE_FIELD_ID))
+    setCorrespondentInput(optionName(doc, CORRESPONDENT_FIELD_ID))
+    setCustomInputs({})
 
     const hasOcr = Boolean(doc.ocr_text?.trim())
     const key = `${doc.id}:${hasOcr}`
@@ -135,7 +149,7 @@ export function DocumentDetailPage() {
         await ensureAuth()
 
         const doc = await pb.collection('documents').getOne<DocumentRecord>(documentId, {
-          expand: 'tags,document_type,correspondent,duplicate_of',
+          expand: DOCUMENT_EXPAND,
         })
 
         const jobs = await pb.collection('processing_jobs').getList<ProcessingJobRecord>(1, 1, {
@@ -397,6 +411,7 @@ export function DocumentDetailPage() {
         steps,
         forceStepsForReprocess(steps),
         reprocessOverrides,
+        overwriteCustomFields,
       )
 
       // Confirmed as soon as the job exists: queueing wakes the realtime
@@ -409,7 +424,7 @@ export function DocumentDetailPage() {
       )
 
       const doc = await pb.collection('documents').getOne<DocumentRecord>(document.id, {
-        expand: 'tags,document_type,correspondent,duplicate_of',
+        expand: DOCUMENT_EXPAND,
       })
       const jobs = await pb.collection('processing_jobs').getList<ProcessingJobRecord>(1, 1, {
         filter: pb.filter('document = {:documentId}', { documentId: document.id }),
@@ -468,7 +483,7 @@ export function DocumentDetailPage() {
       setError('')
       await markDocumentsReviewed([document.id])
       const refreshed = await pb.collection('documents').getOne<DocumentRecord>(document.id, {
-        expand: 'tags,document_type,correspondent,duplicate_of',
+        expand: DOCUMENT_EXPAND,
       })
       applyLoadedDocument(refreshed)
       setMessage(t('documentPage.markedReviewed'))
@@ -493,7 +508,7 @@ export function DocumentDetailPage() {
       const tag = await acceptSuggestedTag(document.id, name)
       // requestKey null, as in onSave: the PATCH wakes the realtime load().
       const refreshed = await pb.collection('documents').getOne<DocumentRecord>(document.id, {
-        expand: 'tags,document_type,correspondent,duplicate_of',
+        expand: DOCUMENT_EXPAND,
         requestKey: null,
       })
       if (editingRef.current) {
@@ -541,13 +556,13 @@ export function DocumentDetailPage() {
 
       await saveDocumentMetadata(document.id, {
         title: document.title,
-        purpose: document.purpose,
         summary: document.summary,
         ocrText: document.ocr_text ?? '',
         documentDate: document.document_date,
         documentTypeName: documentTypeInput,
         correspondentName: correspondentInput,
         tagIds,
+        customFields: customFieldValuesForSave(customFields ?? [], customInputs),
         processingStatus: document.processing_status,
       })
 
@@ -557,7 +572,7 @@ export function DocumentDetailPage() {
       // load() would otherwise autocancel this refresh and the confirmation
       // with it, then wipe the abort error, leaving no word that it saved.
       const refreshed = await pb.collection('documents').getOne<DocumentRecord>(document.id, {
-        expand: 'tags,document_type,correspondent,duplicate_of',
+        expand: DOCUMENT_EXPAND,
         requestKey: null,
       })
       applyLoadedDocument(refreshed)
@@ -849,6 +864,24 @@ export function DocumentDetailPage() {
                             onChange={setReprocessOverrides}
                           />
                         )}
+                        {checked && step === 'apply_metadata' && (customFields?.length ?? 0) > 0 && (
+                          <label className="flex items-start gap-2 text-xs">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5"
+                              checked={overwriteCustomFields}
+                              onChange={(event) => setOverwriteCustomFields(event.target.checked)}
+                            />
+                            <span>
+                              <span className="font-medium">
+                                {t('documentPage.overwriteCustomFields')}
+                              </span>
+                              <span className="mt-0.5 block font-normal text-ink-soft">
+                                {t('documentPage.overwriteCustomFieldsHint')}
+                              </span>
+                            </span>
+                          </label>
+                        )}
                       </div>
                     )
                   })}
@@ -878,11 +911,6 @@ export function DocumentDetailPage() {
                 value={document.title ?? ''}
                 onChange={(event) => setDocument({ ...document, title: event.target.value })}
               />
-              {document.title_original && document.title_original !== document.title && (
-                <span className="text-xs font-normal text-ink-soft">
-                  {t('documentPage.original', { value: document.title_original })}
-                </span>
-              )}
             </label>
 
             <label className={labelClass}>
@@ -904,12 +932,6 @@ export function DocumentDetailPage() {
                 value={documentTypeInput}
                 onChange={(event) => setDocumentTypeInput(event.target.value)}
               />
-              {document.expand?.document_type?.name_original &&
-                document.expand.document_type.name_original !== document.expand.document_type.name && (
-                  <span className="text-xs font-normal text-ink-soft">
-                    {t('documentPage.original', { value: document.expand.document_type.name_original })}
-                  </span>
-                )}
             </label>
 
             <label className={labelClass}>
@@ -920,28 +942,23 @@ export function DocumentDetailPage() {
                 value={correspondentInput}
                 onChange={(event) => setCorrespondentInput(event.target.value)}
               />
-              {document.expand?.correspondent?.name_original &&
-                document.expand.correspondent.name_original !== document.expand.correspondent.name && (
-                  <span className="text-xs font-normal text-ink-soft">
-                    {t('documentPage.original', { value: document.expand.correspondent.name_original })}
-                  </span>
-                )}
             </label>
 
-            <label className={`${labelClass} sm:col-span-2`}>
-              {t('documentPage.fieldPurpose')}
-              <input
-                className={fieldClass(editing)}
-                readOnly={!editing}
-                value={document.purpose ?? ''}
-                onChange={(event) => setDocument({ ...document, purpose: event.target.value })}
-              />
-              {document.purpose_original && document.purpose_original !== document.purpose && (
-                <span className="text-xs font-normal text-ink-soft">
-                  {t('documentPage.original', { value: document.purpose_original })}
-                </span>
-              )}
-            </label>
+            {customFields?.map((field) => (
+              <label key={field.id} className={labelClass}>
+                {field.name}
+                <input
+                  type={field.type}
+                  step={field.type === 'number' ? 'any' : undefined}
+                  className={fieldClass(editing)}
+                  readOnly={!editing}
+                  value={customInputs[field.id] ?? fieldInputValue(document, field)}
+                  onChange={(event) =>
+                    setCustomInputs({ ...customInputs, [field.id]: event.target.value })
+                  }
+                />
+              </label>
+            ))}
 
             <div className={`${labelClass} sm:col-span-2`}>
               <span>{t('documentPage.fieldTags')}</span>
@@ -974,11 +991,6 @@ export function DocumentDetailPage() {
                 value={document.summary ?? ''}
                 onChange={(event) => setDocument({ ...document, summary: event.target.value })}
               />
-              {document.summary_original && document.summary_original !== document.summary && (
-                <span className="text-xs font-normal text-ink-soft">
-                  {t('documentPage.original', { value: document.summary_original })}
-                </span>
-              )}
             </label>
 
             <div className={`${labelClass} sm:col-span-2`}>

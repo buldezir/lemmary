@@ -173,7 +173,7 @@ func handlePatchSettings(app core.App, rt *config.Runtime) func(*core.RequestEve
 		})
 		switch {
 		case patchErr != nil:
-			return writeError(e, http.StatusBadRequest, patchErr.Error())
+			return writeBadRequest(e, patchErr)
 		case brandingErr != nil:
 			app.Logger().Error("save branding failed", slog.Any("error", brandingErr))
 			return writeError(e, http.StatusBadRequest, "Failed to save the application name or accent color.")

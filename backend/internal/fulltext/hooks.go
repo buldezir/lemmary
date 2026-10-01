@@ -7,13 +7,13 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
+
+	"lemmary/backend/internal/models"
 )
 
 const (
-	collectionDocuments      = "documents"
-	collectionTags           = "tags"
-	collectionCorrespondents = "correspondents"
-	collectionDocumentTypes  = "document_types"
+	collectionDocuments = "documents"
+	collectionTags      = "tags"
 
 	// CollectionShares is the read-only grants table; a row appearing or going
 	// away changes who the document is indexed for.
@@ -92,10 +92,26 @@ func registerRecordHooks(app core.App, idx *Index) {
 
 	app.OnRecordAfterUpdateSuccess(collectionTags).BindFunc(reindexNamed(collectionTags, FieldTags))
 	app.OnRecordAfterDeleteSuccess(collectionTags).BindFunc(reindexNamed(collectionTags, FieldTags))
-	app.OnRecordAfterUpdateSuccess(collectionCorrespondents).BindFunc(reindexNamed(collectionCorrespondents, FieldCorrespondent))
-	app.OnRecordAfterDeleteSuccess(collectionCorrespondents).BindFunc(reindexNamed(collectionCorrespondents, FieldCorrespondent))
-	app.OnRecordAfterUpdateSuccess(collectionDocumentTypes).BindFunc(reindexNamed(collectionDocumentTypes, FieldDocumentType))
-	app.OnRecordAfterDeleteSuccess(collectionDocumentTypes).BindFunc(reindexNamed(collectionDocumentTypes, FieldDocumentType))
+	// A deleted option takes its value rows with it, and those reindex below.
+	app.OnRecordAfterUpdateSuccess(models.CustomFieldOptionsCollection).BindFunc(func(e *core.RecordEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
+		if field := optionKeywordField(e.Record.GetString("field")); field != "" {
+			idx.EnqueueReindexEntity(e.App, models.CustomFieldOptionsCollection, field, e.Record.Id)
+		}
+		return nil
+	})
+	reindexValue := func(e *core.RecordEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
+		idx.EnqueueUpsert(e.App, e.Record.GetString("document"))
+		return nil
+	}
+	app.OnRecordAfterCreateSuccess(models.CustomFieldValuesCollection).BindFunc(reindexValue)
+	app.OnRecordAfterUpdateSuccess(models.CustomFieldValuesCollection).BindFunc(reindexValue)
+	app.OnRecordAfterDeleteSuccess(models.CustomFieldValuesCollection).BindFunc(reindexValue)
 
 	reindexShared := func(e *core.RecordEvent) error {
 		if err := e.Next(); err != nil {
@@ -108,10 +124,22 @@ func registerRecordHooks(app core.App, idx *Index) {
 	app.OnRecordAfterDeleteSuccess(CollectionShares).BindFunc(reindexShared)
 }
 
+// optionKeywordField is the keyword field an option field's options are
+// indexed under.
+func optionKeywordField(fieldID string) string {
+	switch fieldID {
+	case models.CorrespondentFieldID:
+		return FieldCorrespondent
+	case models.DocumentTypeFieldID:
+		return FieldDocumentType
+	}
+	return ""
+}
+
 func reindexDocumentsForEntity(app core.App, idx *Index, collection, field, entityID string) {
 	ids := map[string]struct{}{}
 
-	filter := field + " = {:id}"
+	filter := models.CustomFieldValuesCollection + "_via_document.option ?= {:id}"
 	if collection == collectionTags {
 		filter = "tags.id ?= {:id}"
 	}
@@ -135,6 +163,7 @@ func reindexDocumentsForEntity(app core.App, idx *Index, collection, field, enti
 
 	names := newNameCache(app)
 	names.preloadReaders()
+	names.preloadValues()
 	for id := range ids {
 		rec, err := app.FindRecordById(collectionDocuments, id)
 		if err != nil {

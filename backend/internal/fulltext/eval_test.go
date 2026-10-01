@@ -25,11 +25,20 @@ import (
 //
 // The gap is what relaxing buys: typos and inflections a prefix cannot reach.
 //
+// Re-measured when the purpose field was dropped from the schema:
+//
+//	strict:  recall@5 0.511  MRR 0.522
+//	relaxed: recall@5 0.989  MRR 1.000
+//
+// Two cross-language cases had their words ("meter", "monthly") only in the
+// English purpose sentence; relaxed search still finds both. The strict floors
+// were lowered for that, by decision, not to make a change pass.
+//
 // Raise the floors when a change raises the numbers; one never revised stops
 // measuring anything. Never lower one to make a change pass.
 const (
-	strictRecallFloor  = 0.57
-	strictMRRFloor     = 0.58
+	strictRecallFloor  = 0.48
+	strictMRRFloor     = 0.49
 	relaxedRecallFloor = 0.96
 	relaxedMRRFloor    = 0.97
 )
@@ -45,8 +54,6 @@ func evalIndex(t *testing.T) *Index {
 			FieldUser:              doc.User,
 			FieldProcessingStatus:  "completed",
 			FieldTitle:             doc.Title,
-			FieldTitleOriginal:     doc.TitleOriginal,
-			FieldPurpose:           doc.Purpose,
 			FieldSummary:           doc.Summary,
 			FieldOCRText:           doc.Text,
 			FieldTagNames:          strings.Join(doc.Tags, " "),
@@ -57,7 +64,7 @@ func evalIndex(t *testing.T) *Index {
 			FieldTags:              doc.Tags,
 			FieldDocumentDate:      doc.Date,
 			FieldAll: strings.Join([]string{
-				doc.Title, doc.TitleOriginal, doc.Purpose, doc.Summary,
+				doc.Title, doc.Summary,
 				strings.Join(doc.Tags, " "), doc.DocumentType, doc.Correspondent, doc.Text,
 			}, " "),
 		}

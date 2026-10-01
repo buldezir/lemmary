@@ -82,6 +82,10 @@ func TestInstanceUniqueNgxIDsLeaveUncontestedIDsAlone(t *testing.T) {
 // A managed instance re-runs every migration on every boot.
 func TestInstanceUniqueNgxIDsMigrationIsIdempotent(t *testing.T) {
 	app := bootMigratedApp(t)
+	// The collections this migration indexed until 1730000051.
+	if err := moveOptionsToNamedEntities(app); err != nil {
+		t.Fatalf("roll back 1730000051: %v", err)
+	}
 	owner := makeUser(t, app, "owner@example.com")
 	docID := makeDocument(t, app, owner, "Doc")
 	// testpb binds no hooks, so the row arrives unstamped: sweep once to reach

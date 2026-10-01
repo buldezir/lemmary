@@ -82,12 +82,12 @@ func runImport(app core.App, ownerUserID, baseURL, apiKey, mode string, client *
 			return result, fmt.Errorf("import tags: %w", err)
 		}
 
-		corrMap, result.CorrespondentsUpserted, err = importNamedEntities(app, "correspondents", ownerUserID, client.ListCorrespondents)
+		corrMap, result.CorrespondentsUpserted, err = importNamedEntities(app, models.CorrespondentFieldID, ownerUserID, client.ListCorrespondents)
 		if err != nil {
 			return result, fmt.Errorf("import correspondents: %w", err)
 		}
 
-		typeMap, result.DocumentTypesUpserted, err = importNamedEntities(app, "document_types", ownerUserID, client.ListDocumentTypes)
+		typeMap, result.DocumentTypesUpserted, err = importNamedEntities(app, models.DocumentTypeFieldID, ownerUserID, client.ListDocumentTypes)
 		if err != nil {
 			return result, fmt.Errorf("import document types: %w", err)
 		}
@@ -117,7 +117,8 @@ func runImport(app core.App, ownerUserID, baseURL, apiKey, mode string, client *
 	return result, nil
 }
 
-func importNamedEntities(app core.App, collection, ownerUserID string, list func() ([]namedEntity, error)) (map[int]string, int, error) {
+// importNamedEntities takes "tags" or an option field's id as kind.
+func importNamedEntities(app core.App, kind, ownerUserID string, list func() ([]namedEntity, error)) (map[int]string, int, error) {
 	entities, err := list()
 	if err != nil {
 		return nil, 0, err
@@ -129,7 +130,7 @@ func importNamedEntities(app core.App, collection, ownerUserID string, list func
 		if entity.ID == 0 || name == "" {
 			continue
 		}
-		localID, created, err := ensureNamed(app, collection, ownerUserID, name)
+		localID, created, err := ensureNamed(app, kind, ownerUserID, name)
 		if err != nil {
 			return nil, createdCount, err
 		}
@@ -141,18 +142,18 @@ func importNamedEntities(app core.App, collection, ownerUserID string, list func
 	return idMap, createdCount, nil
 }
 
-func ensureNamed(app core.App, collection, ownerUserID, name string) (id string, created bool, err error) {
+func ensureNamed(app core.App, kind, ownerUserID, name string) (id string, created bool, err error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return "", false, nil
 	}
-	switch collection {
+	switch kind {
 	case "tags":
 		return worker.EnsureTag(app, ownerUserID, name)
-	case "correspondents", "document_types":
-		return worker.EnsureNamedEntity(app, collection, ownerUserID, name, name)
+	case models.CorrespondentFieldID, models.DocumentTypeFieldID:
+		return worker.EnsureOption(app, kind, ownerUserID, name)
 	default:
-		return "", false, fmt.Errorf("unsupported collection %q", collection)
+		return "", false, fmt.Errorf("unsupported kind %q", kind)
 	}
 }
 
@@ -189,12 +190,23 @@ func importOneDocument(
 	record.Set("file", fsFile)
 	record.Set("processing_status", models.DocStatusPending)
 
+	options := map[models.CustomField]string{}
 	if mode == ModePreserve {
-		applyPreservedMetadata(record, doc, tagMap, corrMap, typeMap)
+		options = applyPreservedMetadata(record, doc, tagMap, corrMap, typeMap)
 		worker.SetCreateSteps(record, models.ImportPreserveSteps)
 	}
 
-	return duplicates.NormalizeSaveError(app, record, app.Save(record))
+	return app.RunInTransaction(func(txApp core.App) error {
+		if err := duplicates.NormalizeSaveError(txApp, record, txApp.Save(record)); err != nil {
+			return err
+		}
+		for field, id := range options {
+			if err := models.SaveFieldValue(txApp, record, field, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func documentFilename(doc ngxDocument, file downloadedFile) string {
@@ -228,7 +240,9 @@ func rejectKnownChecksum(app core.App, ownerUserID string, data []byte) error {
 	return nil
 }
 
-func applyPreservedMetadata(record *core.Record, doc ngxDocument, tagMap, corrMap, typeMap map[int]string) {
+// applyPreservedMetadata returns the options to save once the document exists.
+func applyPreservedMetadata(record *core.Record, doc ngxDocument, tagMap, corrMap, typeMap map[int]string) map[models.CustomField]string {
+	options := map[models.CustomField]string{}
 	if title := strings.TrimSpace(doc.Title); title != "" {
 		record.Set("title", title)
 	}
@@ -240,12 +254,12 @@ func applyPreservedMetadata(record *core.Record, doc ngxDocument, tagMap, corrMa
 	}
 	if doc.Correspondent != nil {
 		if id := corrMap[*doc.Correspondent]; id != "" {
-			record.Set("correspondent", id)
+			options[models.CorrespondentField] = id
 		}
 	}
 	if doc.DocumentType != nil {
 		if id := typeMap[*doc.DocumentType]; id != "" {
-			record.Set("document_type", id)
+			options[models.DocumentTypeField] = id
 		}
 	}
 	if len(doc.Tags) > 0 {
@@ -259,6 +273,7 @@ func applyPreservedMetadata(record *core.Record, doc ngxDocument, tagMap, corrMa
 			record.Set("tags", tagIDs)
 		}
 	}
+	return options
 }
 
 func documentDate(doc ngxDocument) string {

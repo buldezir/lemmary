@@ -11,8 +11,9 @@ import (
 
 const (
 	// MappingVersion is bumped when the Bleve mapping changes so Open wipes and rebuilds.
-	// 3 added FieldOwner, which an index built at 2 does not carry.
-	MappingVersion = "3"
+	// 3 added FieldOwner, which an index built at 2 does not carry. 4 dropped
+	// purpose and the *_original fields, which an older "all" still matches on.
+	MappingVersion = "4"
 
 	AnalyzerName = "archive"
 
@@ -27,11 +28,7 @@ const (
 	FieldTags              = "tags"
 	FieldDocumentDate      = "document_date"
 	FieldTitle             = "title"
-	FieldTitleOriginal     = "title_original"
-	FieldPurpose           = "purpose"
-	FieldPurposeOriginal   = "purpose_original"
 	FieldSummary           = "summary"
-	FieldSummaryOriginal   = "summary_original"
 	FieldOCRText           = "ocr_text"
 	FieldTagNames          = "tag_names"
 	FieldDocumentTypeName  = "document_type_name"
@@ -74,11 +71,7 @@ func newMapping() (mapping.IndexMapping, error) {
 	doc.AddFieldMappingsAt(FieldDocumentDate, dateField())
 
 	doc.AddFieldMappingsAt(FieldTitle, textField(false, true))
-	doc.AddFieldMappingsAt(FieldTitleOriginal, textField(false, true))
-	doc.AddFieldMappingsAt(FieldPurpose, textField(false, true))
-	doc.AddFieldMappingsAt(FieldPurposeOriginal, textField(false, true))
 	doc.AddFieldMappingsAt(FieldSummary, textField(false, true))
-	doc.AddFieldMappingsAt(FieldSummaryOriginal, textField(false, true))
 	doc.AddFieldMappingsAt(FieldOCRText, textField(true, true))
 	doc.AddFieldMappingsAt(FieldTagNames, textField(false, true))
 	doc.AddFieldMappingsAt(FieldDocumentTypeName, textField(false, true))

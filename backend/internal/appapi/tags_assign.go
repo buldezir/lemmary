@@ -224,8 +224,8 @@ func runTagAssign(ctx context.Context, app core.App, helper ai.Helper, ownerID s
 			ID:            record.Id,
 			Title:         strutil.FirstNonEmpty(record.GetString("title"), "Untitled document"),
 			DocumentDate:  truncateDate(record.GetString("document_date")),
-			DocumentType:  relatedName(app, "document_types", record.GetString("document_type")),
-			Correspondent: relatedName(app, "correspondents", record.GetString("correspondent")),
+			DocumentType:  optionName(app, record.Id, models.DocumentTypeFieldID),
+			Correspondent: optionName(app, record.Id, models.CorrespondentFieldID),
 			Text:          strutil.Truncate(record.GetString("ocr_text"), tagAssignDocBytes),
 			// ponytail: a prefix, though Excerpted tells the helper the text was
 			// picked for relevance. Marked anyway: believing it has the whole

@@ -1,0 +1,134 @@
+import { ClientResponseError } from 'pocketbase'
+import { t } from '../../i18n'
+import { apiFetch } from '../apiClient'
+import { ensureAuth } from '../auth'
+import { pb } from '../pb'
+
+/** The predefined option fields, whose ids are fixed. */
+export const CORRESPONDENT_FIELD_ID = 'fcorrespondent0'
+export const DOCUMENT_TYPE_FIELD_ID = 'fdocumenttype00'
+
+export type CustomFieldType = 'text' | 'number' | 'date'
+
+export const CUSTOM_FIELD_TYPES: CustomFieldType[] = ['text', 'number', 'date']
+
+/** An admin-defined document field: one record of the custom_fields collection. */
+export type CustomField = {
+  id: string
+  name: string
+  type: CustomFieldType
+  /** A hint for extraction: what the field means, where it appears. */
+  description: string
+}
+
+export type CustomFieldInput = Omit<CustomField, 'id'>
+
+/** What PUT /fields takes, by field id: null clears, an option field takes a name. */
+export type CustomFieldValues = Record<string, string | number | null>
+
+/** One custom_field_values row, with the option expanded for an option field. */
+export type FieldValueRecord = {
+  id: string
+  field: string
+  text: string
+  number: number
+  date: string
+  option: string
+  expand?: { option?: { id: string; name: string } }
+}
+
+/** The expand that brings a document's values along with it. */
+export const FIELD_VALUES_EXPAND = 'custom_field_values_via_document.option'
+
+type WithFieldValues = { expand?: { custom_field_values_via_document?: FieldValueRecord[] } }
+
+function fieldValueRow(document: WithFieldValues, fieldId: string) {
+  return document.expand?.custom_field_values_via_document?.find((value) => value.field === fieldId)
+}
+
+/** The name of the option an option field points at, or "". */
+export function optionName(document: WithFieldValues, fieldId: string): string {
+  return fieldValueRow(document, fieldId)?.expand?.option?.name ?? ''
+}
+
+/** A field's value as its input holds it, "" when the document has none. */
+export function fieldInputValue(document: WithFieldValues, field: CustomField): string {
+  const value = fieldValueRow(document, field.id)
+  if (!value) return ''
+  if (field.type === 'number') return String(value.number)
+  if (field.type === 'date') return value.date.slice(0, 10)
+  return value.text
+}
+
+/** The admin's fields; the predefined option fields have inputs of their own. */
+export async function listCustomFields(): Promise<CustomField[]> {
+  await ensureAuth()
+  return pb
+    .collection('custom_fields')
+    .getFullList<CustomField>({ filter: "type != 'option'", sort: 'created,id' })
+}
+
+/** Sets the fields named in values and leaves every other one as it is. */
+export function saveDocumentFields(documentId: string, values: CustomFieldValues) {
+  return apiFetch<null>(`/api/app/documents/${encodeURIComponent(documentId)}/fields`, {
+    method: 'PATCH',
+    body: values,
+    fallbackError: t('customFieldsApi.valuesSaveFailed'),
+  })
+}
+
+/** Creates the field when id is empty, otherwise updates it. Admins only. */
+export async function saveCustomField(id: string, input: CustomFieldInput): Promise<CustomField> {
+  await ensureAuth()
+  const body = {
+    name: input.name.trim(),
+    type: input.type,
+    description: input.description.trim(),
+  }
+  const collection = pb.collection('custom_fields')
+  try {
+    return id
+      ? await collection.update<CustomField>(id, body)
+      : await collection.create<CustomField>(body)
+  } catch (err) {
+    throw customFieldSaveError(err, body.name)
+  }
+}
+
+export async function deleteCustomField(id: string): Promise<void> {
+  await ensureAuth()
+  await pb.collection('custom_fields').delete(id)
+}
+
+/**
+ * The collection's unique index ignores case, and PocketBase reports a clash
+ * as a per-field code whose message never names the value. Exported for its test.
+ */
+export function customFieldSaveError(err: unknown, name: string): Error {
+  if (err instanceof ClientResponseError) {
+    const field = (err.response?.data as Record<string, { code?: string }> | undefined)?.name
+    if (field?.code === 'validation_not_unique') {
+      return new Error(t('customFieldsApi.duplicateName', { name }))
+    }
+  }
+  return err instanceof Error ? err : new Error(t('customFieldsApi.saveFailed'))
+}
+
+/**
+ * What a document save sends for the fields edited on the page: a blank
+ * clears, a number field's input goes as a number. A field nobody touched is
+ * not sent, so the save leaves it as it is.
+ */
+export function customFieldValuesForSave(
+  fields: CustomField[],
+  inputs: Record<string, string>,
+): CustomFieldValues {
+  const out: CustomFieldValues = {}
+  for (const field of fields) {
+    if (!(field.id in inputs)) continue
+    const value = inputs[field.id].trim()
+    const n = field.type === 'number' && value !== '' ? Number(value) : NaN
+    out[field.id] = value === '' ? null : Number.isFinite(n) ? n : value
+  }
+  return out
+}

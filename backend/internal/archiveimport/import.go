@@ -140,6 +140,9 @@ func runImport(app core.App, ownerUserID, mode string, item *stagedArchive, repo
 
 	files := indexEntries(&zr.Reader)
 	resolver := newTaxonomyResolver(app, ownerUserID, &result)
+	if resolver.customFields, err = models.LoadCustomFields(app); err != nil {
+		return result, err
+	}
 
 	if mode == ModeRestore {
 		// Ahead of the documents so tags nothing references still land: they
@@ -245,8 +248,9 @@ func restoreOne(
 	// document's metadata. Without a sidecar the entry is just a file, so it
 	// takes the ordinary upload path -- which is also what a pre-manifest
 	// "originals" archive holds.
+	var values []fieldValue
 	if mode == ModeRestore && entry.metadataPath != "" {
-		if err := restoreSidecars(record, &doc, entry, files, resolver, budget); err != nil {
+		if values, err = restoreSidecars(record, &doc, entry, files, resolver, budget); err != nil {
 			return nil, err
 		}
 
@@ -258,7 +262,18 @@ func restoreOne(
 		worker.SkipCreateJob(record)
 	}
 
-	if err := duplicates.NormalizeSaveError(app, record, app.Save(record)); err != nil {
+	err = app.RunInTransaction(func(txApp core.App) error {
+		if err := duplicates.NormalizeSaveError(txApp, record, txApp.Save(record)); err != nil {
+			return err
+		}
+		for _, v := range values {
+			if err := models.SaveFieldValue(txApp, record, v.field, v.value); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 	doc.NewID = record.Id
@@ -272,13 +287,14 @@ func restoreSidecars(
 	files map[string]*zip.File,
 	resolver *taxonomyResolver,
 	budget *scanBudget,
-) error {
+) ([]fieldValue, error) {
 	meta, err := readMetadataBudgeted(files, entry.metadataPath, budget)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err := applyMetadata(record, meta, resolver); err != nil {
-		return err
+	values, err := applyMetadata(record, meta, resolver)
+	if err != nil {
+		return nil, err
 	}
 	doc.DuplicateOfExported = stringField(meta, "duplicate_of")
 	doc.Created, _ = parseTimestamp(stringField(meta, "created"))
@@ -287,7 +303,7 @@ func restoreSidecars(
 	if entry.ocrPath != "" {
 		raw, err := budget.take(files, entry.ocrPath, maxSidecarBytes)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if text := string(raw); strings.TrimSpace(text) != "" {
 			record.Set("ocr_text", text)
@@ -296,7 +312,7 @@ func restoreSidecars(
 	if previewFile := restorePreview(files, entry.previewPath, budget); previewFile != nil {
 		record.Set("preview", previewFile)
 	}
-	return nil
+	return values, nil
 }
 
 // pngMagic is the PNG signature. The preview field only accepts image/png, and
@@ -380,7 +396,10 @@ type taxonomyResolver struct {
 	tags           map[string]string
 	correspondents map[string]string
 	documentTypes  map[string]string
-	result         *Result
+	// This instance's definitions: a value is restored only onto a field the
+	// admin here has defined under the same name.
+	customFields []models.CustomField
+	result       *Result
 }
 
 func newTaxonomyResolver(app core.App, ownerUserID string, result *Result) *taxonomyResolver {
@@ -403,12 +422,12 @@ func (r *taxonomyResolver) preload(taxonomy backup.Taxonomy) error {
 		}
 	}
 	for _, entity := range taxonomy.Correspondents {
-		if _, err := r.namedEntity("correspondents", entity.Name, entity.NameOriginal); err != nil {
+		if _, err := r.option(models.CorrespondentFieldID, entity.Name); err != nil {
 			return err
 		}
 	}
 	for _, entity := range taxonomy.DocumentTypes {
-		if _, err := r.namedEntity("document_types", entity.Name, entity.NameOriginal); err != nil {
+		if _, err := r.option(models.DocumentTypeFieldID, entity.Name); err != nil {
 			return err
 		}
 	}
@@ -434,21 +453,21 @@ func (r *taxonomyResolver) tag(name string) (string, error) {
 	return id, nil
 }
 
-func (r *taxonomyResolver) namedEntity(collection, name, originalName string) (string, error) {
+func (r *taxonomyResolver) option(fieldID, name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return "", nil
 	}
 	cache := r.correspondents
 	counter := &r.result.CorrespondentsUpserted
-	if collection == "document_types" {
+	if fieldID == models.DocumentTypeFieldID {
 		cache = r.documentTypes
 		counter = &r.result.DocumentTypesUpserted
 	}
 	if id, ok := cache[name]; ok {
 		return id, nil
 	}
-	id, created, err := worker.EnsureNamedEntity(r.app, collection, r.ownerUserID, name, originalName)
+	id, created, err := worker.EnsureOption(r.app, fieldID, r.ownerUserID, name)
 	if err != nil {
 		return "", err
 	}

@@ -16,7 +16,7 @@ func TestWriteArchiveShape(t *testing.T) {
 		ExportedAt: time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC),
 		Taxonomy: Taxonomy{
 			Tags:           []string{"finance", "unused"},
-			Correspondents: []NamedEntity{{Name: "Acme", NameOriginal: "ACME GmbH"}},
+			Correspondents: []NamedEntity{{Name: "Acme"}},
 		},
 		Documents: []Document{
 			{

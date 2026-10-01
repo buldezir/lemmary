@@ -11,23 +11,19 @@ import (
 var xmlBlockRE = regexp.MustCompile(`(?s)<[^>]+>.*?</[^>]+>`)
 
 type ExtractedMetadata struct {
-	Title                   string   `json:"title"`
-	TitleTranslated         string   `json:"title_translated"`
-	Purpose                 string   `json:"purpose"`
-	PurposeTranslated       string   `json:"purpose_translated"`
-	DocumentDate            string   `json:"document_date"`
-	DocumentType            string   `json:"document_type"`
-	DocumentTypeTranslated  string   `json:"document_type_translated"`
-	Correspondent           string   `json:"correspondent"`
-	CorrespondentTranslated string   `json:"correspondent_translated"`
-	Tags                    []string `json:"tags"`
+	Title         string   `json:"title"`
+	DocumentDate  string   `json:"document_date"`
+	DocumentType  string   `json:"document_type"`
+	Correspondent string   `json:"correspondent"`
+	Tags          []string `json:"tags"`
 	// New tag names the model proposes, asked for only in review mode. Never
 	// applied to the document; the reviewer accepts them one by one.
 	SuggestedTags         lenientStrings `json:"suggested_tags,omitempty"`
 	PeopleOrOrganizations []string       `json:"people_or_organizations"`
 	Summary               string         `json:"summary"`
-	SummaryTranslated     string         `json:"summary_translated"`
 	Confidence            float64        `json:"confidence"`
+	// Keyed by field name as the prompt offered it; apply maps names to ids.
+	CustomFields lenientObject `json:"custom_fields,omitempty"`
 }
 
 type lenientStrings []string
@@ -41,6 +37,19 @@ func (s *lenientStrings) UnmarshalJSON(data []byte) error {
 			*s = append(*s, name)
 		}
 	}
+	return nil
+}
+
+// lenientObject drops a custom_fields answer that is not an object rather than
+// failing the whole extraction over an optional field.
+type lenientObject map[string]any
+
+func (o *lenientObject) UnmarshalJSON(data []byte) error {
+	var values map[string]any
+	if json.Unmarshal(data, &values) != nil {
+		values = nil
+	}
+	*o = values
 	return nil
 }
 

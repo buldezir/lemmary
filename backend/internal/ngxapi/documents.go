@@ -312,14 +312,12 @@ func handlePatchDocument(e *core.RequestEvent) error {
 	if v, ok := body["created"].(string); ok {
 		record.Set("document_date", createdDateOnly(v))
 	}
-	if v, ok := body["document_type"]; ok {
-		if err := setRelationField(e.App, record, "document_type", v, e.Auth.Id); err != nil {
-			return badRequest(e, err.Error())
-		}
-	}
-	if v, ok := body["correspondent"]; ok {
-		if err := setRelationField(e.App, record, "correspondent", v, e.Auth.Id); err != nil {
-			return badRequest(e, err.Error())
+	relations := relationValues{}
+	for _, field := range []string{"document_type", "correspondent"} {
+		if v, ok := body[field]; ok {
+			if err := relations.set(e.App, field, v, e.Auth.Id); err != nil {
+				return badRequest(e, err.Error())
+			}
 		}
 	}
 	if v, ok := body["tags"].([]any); ok {
@@ -342,7 +340,7 @@ func handlePatchDocument(e *core.RequestEvent) error {
 	}
 
 	record.Set("metadata_source", models.MetadataSourceUser)
-	if err := e.App.Save(record); err != nil {
+	if err := relations.saveWith(e.App, record); err != nil {
 		return saveError(e, err)
 	}
 
@@ -382,11 +380,12 @@ func handlePostDocument(e *core.RequestEvent) error {
 	record.Set("file", files[0])
 	record.Set("processing_status", models.DocStatusPending)
 
-	if err := applyUploadFields(e.App, record, e.Request.MultipartForm, e.Auth.Id); err != nil {
+	relations, err := applyUploadFields(e.App, record, e.Request.MultipartForm, e.Auth.Id)
+	if err != nil {
 		return badRequest(e, err.Error())
 	}
 
-	if err := e.App.Save(record); err != nil {
+	if err := relations.saveWith(e.App, record); err != nil {
 		return saveError(e, err)
 	}
 
@@ -398,9 +397,12 @@ func handlePostDocument(e *core.RequestEvent) error {
 	return writeJSON(e, http.StatusOK, taskID)
 }
 
-func applyUploadFields(app core.App, record *core.Record, form *multipart.Form, authID string) error {
+// applyUploadFields resolves every id before the document exists, so an
+// unknown one refuses the upload rather than storing a document without it.
+func applyUploadFields(app core.App, record *core.Record, form *multipart.Form, authID string) (relationValues, error) {
+	relations := relationValues{}
 	if form == nil {
-		return nil
+		return relations, nil
 	}
 	if title := firstFormValue(form, "title"); title != "" {
 		record.Set("title", title)
@@ -410,19 +412,19 @@ func applyUploadFields(app core.App, record *core.Record, form *multipart.Form, 
 	}
 	for _, field := range []string{"correspondent", "document_type"} {
 		if value := firstFormValue(form, field); value != "" {
-			if err := setRelationField(app, record, field, value, authID); err != nil {
-				return err
+			if err := relations.set(app, field, value, authID); err != nil {
+				return nil, err
 			}
 		}
 	}
 	if rawTagIDs := parseTagIDs(form.Value); len(rawTagIDs) > 0 {
 		tagIDs, err := resolveTagPBIDs(app, rawTagIDs, authID)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		record.Set("tags", tagIDs)
 	}
-	return nil
+	return relations, nil
 }
 
 func handleDownloadDocument(e *core.RequestEvent) error {
@@ -489,47 +491,65 @@ func findTaskIDForDocument(app core.App, documentID string) (string, error) {
 	return taskID, nil
 }
 
-// setRelationField resolves a client-sent relation id and errors when it does
-// not resolve: silently storing "" would wipe the document's existing relation
-// while the client sees a 200. nil, 0, and "" are explicit clears.
-func setRelationField(app core.App, record *core.Record, field string, value any, authID string) error {
+// relationValues are the correspondent and document type a request sets,
+// keyed by paperless-ngx field name; "" clears one. They are option values,
+// which need the document's id, so they are saved after it.
+type relationValues map[string]string
+
+// set resolves a client-sent relation id and errors when it does not resolve:
+// silently clearing would wipe the document's existing relation while the
+// client sees a 200. nil, 0, and "" are explicit clears.
+func (r relationValues) set(app core.App, field string, value any, authID string) error {
 	switch v := value.(type) {
 	case nil:
-		record.Set(field, "")
+		r[field] = ""
 		return nil
 	case float64:
 		if v == 0 {
-			record.Set(field, "")
+			r[field] = ""
 			return nil
 		}
 	case int:
 		if v == 0 {
-			record.Set(field, "")
+			r[field] = ""
 			return nil
 		}
 	case string:
 		if strings.TrimSpace(v) == "" {
-			record.Set(field, "")
+			r[field] = ""
 			return nil
 		}
 	}
-	pbID := resolvePBRelationID(app, collectionForRelationField(field), value, authID)
+	pbID := resolvePBRelationID(app, singleRelations[field].collection, value, authID)
 	if pbID == "" {
 		return fmt.Errorf("unknown %s id", field)
 	}
-	record.Set(field, pbID)
+	r[field] = pbID
 	return nil
 }
 
-func collectionForRelationField(field string) string {
-	switch field {
-	case "correspondent":
-		return "correspondents"
-	case "document_type":
-		return "document_types"
-	default:
-		return ""
-	}
+// saveWith saves record and then the relations in one transaction.
+func (r relationValues) saveWith(app core.App, record *core.Record) error {
+	return app.RunInTransaction(func(txApp core.App) error {
+		if err := txApp.Save(record); err != nil {
+			return err
+		}
+		for field, optionID := range r {
+			var value any
+			if optionID != "" {
+				value = optionID
+			}
+			fieldID := singleRelations[field].fieldID
+			definition := models.CorrespondentField
+			if fieldID == models.DocumentTypeFieldID {
+				definition = models.DocumentTypeField
+			}
+			if err := models.SaveFieldValue(txApp, record, definition, value); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func firstFormValue(form *multipart.Form, key string) string {

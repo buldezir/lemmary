@@ -40,6 +40,8 @@ type ExtractionCatalog struct {
 	// from Tags. Only set when a human reviews every document, so the
 	// suggestions have someone to accept them.
 	SuggestNewTags bool
+	// CustomFields are the admin's own document fields, asked for by name.
+	CustomFields []models.CustomField
 }
 
 type Extractor interface {
@@ -53,7 +55,6 @@ func buildExtractionSystemPrompt(resultLanguage, rules string, catalog Extractio
 	prompt := `You extract structured metadata from OCR document text.
 Return ONLY valid JSON with these fields:
 - title (string, required)
-- purpose (string)
 - document_date (string, the date printed on the document, formatted exactly as YYYY-MM-DD, or empty)
 - document_type (string)
 - correspondent (string, primary sender or issuer)
@@ -62,18 +63,14 @@ Return ONLY valid JSON with these fields:
 - summary (string, 1-3 sentences)
 - confidence (number between 0 and 1)
 
-Always write title, purpose, summary, and people_or_organizations in the same language as the source document. Tags are the exception: they are copied verbatim from the list below, whatever language it is in.`
+`
 
 	if resultLanguage != "" {
-		prompt += fmt.Sprintf(`
-
-Also include these fields translated into %s:
-- title_translated (string)
-- purpose_translated (string)
-- summary_translated (string)
-- document_type_translated (string)
-- correspondent_translated (string)`, resultLanguage)
+		prompt += fmt.Sprintf("Always write title, summary, document_type, and correspondent in %s, whatever language the source document is in; write people_or_organizations as the document spells them.", resultLanguage)
+	} else {
+		prompt += "Always write title, summary, and people_or_organizations in the same language as the source document."
 	}
+	prompt += " Tags are the exception: they are copied verbatim from the list below, whatever language it is in."
 
 	prompt += formatExistingCorrespondentsPrompt(catalog.Correspondents)
 	prompt += formatExistingDocumentTypesPrompt(catalog.DocumentTypes)
@@ -83,6 +80,7 @@ Also include these fields translated into %s:
 
 Also return suggested_tags (array of strings): up to 3 short new tag names that fit this document and are NOT in the existing tags list, in the language of the existing tags. Keep tags itself restricted to the list above; return an empty suggested_tags array when the existing tags already cover the document.`
 	}
+	prompt += formatCustomFieldsPrompt(catalog.CustomFields)
 	prompt += formatExtractionRulesPrompt(rules)
 
 	// Last on purpose: the rules above are the admin's, but the JSON contract
@@ -123,6 +121,32 @@ Additional instructions from the archive's administrator. Follow them where they
 do not conflict with the format above; never add, rename or drop fields because
 of them:
 %s`, rules)
+}
+
+// formatCustomFieldsPrompt is keyed by name rather than id: names are what the
+// model can read, and apply maps them back to ids. The admin wrote the
+// definitions, so unlike the catalogs they are not labelled untrusted.
+func formatCustomFieldsPrompt(fields []models.CustomField) string {
+	if len(fields) == 0 {
+		return ""
+	}
+	type promptField struct {
+		Name        string `json:"name"`
+		Type        string `json:"type"`
+		Description string `json:"description,omitempty"`
+	}
+	list := make([]promptField, 0, len(fields))
+	for _, f := range fields {
+		list = append(list, promptField{Name: f.Name, Type: f.Type, Description: f.Description})
+	}
+	payload, err := marshalCatalogNames(list)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf(`
+
+Also return custom_fields (object): the archive's own fields, listed in the JSON array below. Use each field's name exactly as its key and fill it only with a value the document states; leave a field out rather than guess. Format by type: text is a string as written on the document, number is a JSON number with "." as the decimal separator and no currency symbol or thousands separator, date is a complete YYYY-MM-DD date. A description says what the field means or where it appears:
+%s`, payload)
 }
 
 func formatExistingCorrespondentsPrompt(names []string) string {
@@ -187,7 +211,7 @@ Reuse an exact string from this array as the %s when %s; only invent a new %s wh
 %s`, kindPlural, kindSingular, reuseWhen, kindSingular, payload)
 }
 
-func marshalCatalogNames(names []string) (string, error) {
+func marshalCatalogNames(names any) (string, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"lemmary/backend/internal/ai"
+	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/retrieval"
 	"lemmary/backend/internal/strutil"
 )
@@ -106,8 +107,8 @@ func (r *agentRetriever) surveyDocuments(ctx context.Context, ids []string, ques
 			ID:            record.Id,
 			Title:         strutil.FirstNonEmpty(record.GetString("title"), "Untitled document"),
 			DocumentDate:  truncateDate(record.GetString("document_date")),
-			DocumentType:  relatedName(r.app, "document_types", record.GetString("document_type")),
-			Correspondent: relatedName(r.app, "correspondents", record.GetString("correspondent")),
+			DocumentType:  optionName(r.app, record.Id, models.DocumentTypeFieldID),
+			Correspondent: optionName(r.app, record.Id, models.CorrespondentFieldID),
 			Text:          full,
 		}
 		if len(full) > helperInputBytes {
@@ -119,7 +120,7 @@ func (r *agentRetriever) surveyDocuments(ctx context.Context, ids []string, ques
 			ID:            record.Id,
 			Title:         doc.Title,
 			DocumentDate:  doc.DocumentDate,
-			Summary:       strutil.TruncateRunes(strutil.FirstNonEmpty(record.GetString("summary"), record.GetString("purpose")), maxSummaryLen),
+			Summary:       strutil.TruncateRunes(record.GetString("summary"), maxSummaryLen),
 			OCRSnippet:    ocrSnippet(full, question),
 			DocumentType:  doc.DocumentType,
 			Correspondent: doc.Correspondent,

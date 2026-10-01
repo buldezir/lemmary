@@ -129,14 +129,14 @@ func loadExtractionCatalog(app core.App, userID string, logger *slog.Logger) (ai
 		return ai.ExtractionCatalog{}, fmt.Errorf("extraction catalog: document has no owner")
 	}
 
-	correspondents, err := listCorrespondentNames(app, userID)
+	correspondents, err := listOptionNames(app, models.CorrespondentFieldID, userID)
 	if err != nil {
 		if logger != nil {
 			logger.Warn("extraction catalog correspondents unavailable; continuing without them", slog.Any("error", err))
 		}
 		correspondents = nil
 	}
-	documentTypes, err := listDocumentTypeNames(app, userID)
+	documentTypes, err := listOptionNames(app, models.DocumentTypeFieldID, userID)
 	if err != nil {
 		if logger != nil {
 			logger.Warn("extraction catalog document types unavailable; continuing without them", slog.Any("error", err))
@@ -155,10 +155,15 @@ func loadExtractionCatalog(app core.App, userID string, logger *slog.Logger) (ai
 			"cap", ai.MaxExtractionCatalogNames,
 		)
 	}
+	customFields, err := models.LoadCustomFields(app)
+	if err != nil {
+		return ai.ExtractionCatalog{}, fmt.Errorf("extraction catalog custom fields: %w", err)
+	}
 	return ai.ExtractionCatalog{
 		Correspondents: correspondents,
 		DocumentTypes:  documentTypes,
 		Tags:           tags,
+		CustomFields:   customFields,
 	}, nil
 }
 
@@ -188,19 +193,19 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 		return fmt.Errorf("apply_metadata requires metadata_json")
 	}
 
-	applyExtractedMetadata(state.Document, metadata, state.Cfg.ProcessingResultLanguage)
-	if err := applyDocumentType(state.App, state.Document, metadata, state.Cfg.ProcessingResultLanguage); err != nil {
+	state.Document.Set("title", metadata.Title)
+	state.Document.Set("summary", metadata.Summary)
+	documentType := strings.TrimSpace(metadata.DocumentType)
+	if err := applyOption(state.App, state.Document, models.DocumentTypeField, documentType); err != nil {
 		return fmt.Errorf("document type: %w", err)
 	}
-	state.Logger.Info("document type applied",
-		"document_type", strutil.TruncateRunes(state.Document.GetString("document_type"), 40),
-	)
-
-	if err := applyCorrespondent(state.App, state.Document, metadata, state.Cfg.ProcessingResultLanguage); err != nil {
+	correspondent := correspondentName(metadata)
+	if err := applyOption(state.App, state.Document, models.CorrespondentField, correspondent); err != nil {
 		return fmt.Errorf("correspondent: %w", err)
 	}
-	state.Logger.Info("correspondent applied",
-		"correspondent", strutil.TruncateRunes(state.Document.GetString("correspondent"), 40),
+	state.Logger.Info("document type and correspondent applied",
+		"document_type", strutil.TruncateRunes(documentType, 40),
+		"correspondent", strutil.TruncateRunes(correspondent, 40),
 	)
 
 	state.Document.Set("confidence", metadata.Confidence)
@@ -211,6 +216,10 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 
 	if metadata.DocumentDate != "" {
 		state.Document.Set("document_date", metadata.DocumentDate)
+	}
+	overwrite := state.Job != nil && state.Job.GetBool(models.JobOverwriteCustomFields)
+	if err := applyCustomFields(state.App, state.Document, metadata.CustomFields, overwrite); err != nil {
+		return fmt.Errorf("custom fields: %w", err)
 	}
 
 	// In review mode the proposals join the closed list: a proposal naming an

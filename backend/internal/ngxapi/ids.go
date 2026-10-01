@@ -9,6 +9,7 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
+	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/ngxid"
 )
 
@@ -29,8 +30,21 @@ func parseNgxID(raw string) (int, error) {
 	return strconv.Atoi(strings.TrimSpace(raw))
 }
 
+// storage maps the collection names the compat layer addresses to where the
+// rows live: correspondents and document types are the options of the two
+// predefined fields, narrowed to that field.
+func storage(collection string) (table, fieldID string) {
+	switch collection {
+	case "correspondents":
+		return models.CustomFieldOptionsCollection, models.CorrespondentFieldID
+	case "document_types":
+		return models.CustomFieldOptionsCollection, models.DocumentTypeFieldID
+	}
+	return collection, ""
+}
+
 // findRecordByNgxID resolves one client-facing id inside an owner's scope, in
-// one seek on the unique (user, ngx_id) index.
+// one seek on the unique ngx_id index.
 var errNotFound = errors.New("not found")
 
 func findRecordByNgxID(app core.App, collection string, ngxID int, ownerUserID string) (*core.Record, error) {
@@ -44,13 +58,18 @@ func findRecordByNgxID(app core.App, collection string, ngxID int, ownerUserID s
 	// The literal "ngx_id > 0" is not redundant with the guard above: the
 	// unique index is partial on exactly that predicate, and SQLite will only
 	// use a partial index when the query restates its WHERE clause.
+	table, fieldID := storage(collection)
 	filter := "ngx_id > 0 && ngx_id = {:ngxID}"
 	params := dbx.Params{"ngxID": ngxID}
+	if fieldID != "" {
+		filter += " && field = {:field}"
+		params["field"] = fieldID
+	}
 	if ownerUserID != "" {
 		filter += " && user = {:userID}"
 		params["userID"] = ownerUserID
 	}
-	return app.FindFirstRecordByFilter(collection, filter, params)
+	return app.FindFirstRecordByFilter(table, filter, params)
 }
 
 // ngxIDsByPBID reads the client-facing ids of a known set of records in one
@@ -70,10 +89,11 @@ func ngxIDsByPBID(app core.App, collection string, pbIDs []string) (map[string]i
 		PBID  string `db:"id"`
 		NgxID int    `db:"ngx_id"`
 	}
+	table, _ := storage(collection)
 	var rows []idRow
-	err := app.RecordQuery(collection).
-		Select("[["+collection+".id]]", "[["+collection+".ngx_id]]").
-		AndWhere(dbx.In("[["+collection+".id]]", values...)).
+	err := app.RecordQuery(table).
+		Select("[["+table+".id]]", "[["+table+".ngx_id]]").
+		AndWhere(dbx.In("[["+table+".id]]", values...)).
 		All(&rows)
 	if err != nil {
 		return nil, err
@@ -108,12 +128,16 @@ func pbIDsByNgxID(app core.App, collection, ownerUserID string, ngxIDs []int) (m
 		PBID  string `db:"id"`
 		NgxID int    `db:"ngx_id"`
 	}
-	q := app.RecordQuery(collection).
-		Select("[["+collection+".id]]", "[["+collection+".ngx_id]]").
+	table, fieldID := storage(collection)
+	q := app.RecordQuery(table).
+		Select("[["+table+".id]]", "[["+table+".ngx_id]]").
 		// Restating the partial index's own predicate is what lets SQLite use
 		// it -- see findRecordByNgxID.
-		AndWhere(dbx.NewExp("[[" + collection + ".ngx_id]] > 0")).
-		AndWhere(dbx.In("[["+collection+".ngx_id]]", values...))
+		AndWhere(dbx.NewExp("[[" + table + ".ngx_id]] > 0")).
+		AndWhere(dbx.In("[["+table+".ngx_id]]", values...))
+	if fieldID != "" {
+		q.AndWhere(dbx.HashExp{"field": fieldID})
+	}
 	if ownerUserID != "" {
 		q.AndWhere(dbx.HashExp{"user": ownerUserID})
 	}
@@ -178,11 +202,15 @@ func resolvePBRelationID(app core.App, collection string, raw any, ownerUserID s
 			}
 			return record.Id
 		}
-		record, err := app.FindRecordById(collection, v)
+		table, fieldID := storage(collection)
+		record, err := app.FindRecordById(table, v)
 		if err != nil {
 			return ""
 		}
 		if ownerUserID != "" && record.GetString("user") != ownerUserID {
+			return ""
+		}
+		if fieldID != "" && record.GetString("field") != fieldID {
 			return ""
 		}
 		return record.Id

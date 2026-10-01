@@ -10,6 +10,7 @@ import (
 	"github.com/pocketbase/dbx"
 
 	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/models"
 )
 
 // seededIDs is an ngxIDs backed by a fixed table, the seam that lets the parser
@@ -180,7 +181,7 @@ func TestTextCriteriaCarryTheirFields(t *testing.T) {
 	if f.text[0].text != "lease" || f.text[0].fields != nil {
 		t.Fatalf("first criterion = %+v, want the unrestricted query", f.text[0])
 	}
-	if got, want := len(f.text[1].fields), 3; got != want {
+	if got, want := len(f.text[1].fields), 2; got != want {
 		t.Fatalf("title_content fields = %d, want %d", got, want)
 	}
 	if f.text[3].fields[0] != fulltext.FieldOCRText {
@@ -333,8 +334,9 @@ func TestStoragePathIsNullFalseMatchesNothing(t *testing.T) {
 }
 
 // filterDB is a documents table in the shapes PocketBase actually writes: tags
-// as a JSON array, as the legacy empty string, and as NULL; relations both
-// empty and NULL; dates in both stored formats and blank.
+// as a JSON array, as the legacy empty string, and as NULL; dates in both
+// stored formats and blank. Type and correspondent are value rows, absent for
+// a document that has none.
 func filterDB(t *testing.T) *dbx.DB {
 	t.Helper()
 	db, err := dbx.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared&_pragma=foreign_keys(0)")
@@ -345,9 +347,12 @@ func filterDB(t *testing.T) *dbx.DB {
 
 	if _, err := db.NewQuery(`CREATE TABLE documents (
 		id TEXT PRIMARY KEY, user TEXT, tags TEXT,
-		document_type TEXT, correspondent TEXT,
 		document_date TEXT, created TEXT)`).Execute(); err != nil {
 		t.Fatalf("create table: %v", err)
+	}
+	if _, err := db.NewQuery(`CREATE TABLE ` + models.CustomFieldValuesCollection + ` (
+		id TEXT PRIMARY KEY, document TEXT, field TEXT, option TEXT)`).Execute(); err != nil {
+		t.Fatalf("create values table: %v", err)
 	}
 
 	rows := []struct{ id, tags, typ, corr, date, created string }{
@@ -359,18 +364,28 @@ func filterDB(t *testing.T) *dbx.DB {
 	}
 	for _, r := range rows {
 		if _, err := db.NewQuery(`INSERT INTO documents
-			(id, user, tags, document_type, correspondent, document_date, created)
-			VALUES ({:id}, 'me', {:tags}, {:typ}, {:corr}, {:date}, {:created})`).Bind(dbx.Params{
-			"id": r.id, "tags": r.tags, "typ": r.typ, "corr": r.corr,
-			"date": r.date, "created": r.created,
+			(id, user, tags, document_date, created)
+			VALUES ({:id}, 'me', {:tags}, {:date}, {:created})`).Bind(dbx.Params{
+			"id": r.id, "tags": r.tags, "date": r.date, "created": r.created,
 		}).Execute(); err != nil {
 			t.Fatalf("insert %s: %v", r.id, err)
+		}
+		for field, option := range map[string]string{models.DocumentTypeFieldID: r.typ, models.CorrespondentFieldID: r.corr} {
+			if option == "" {
+				continue
+			}
+			if _, err := db.NewQuery(`INSERT INTO ` + models.CustomFieldValuesCollection + `
+				(id, document, field, option) VALUES ({:id}, {:document}, {:field}, {:option})`).Bind(dbx.Params{
+				"id": r.id + field, "document": r.id, "field": field, "option": option,
+			}).Execute(); err != nil {
+				t.Fatalf("insert value %s: %v", r.id, err)
+			}
 		}
 	}
 	// The NULL row cannot be bound as a Go string, so it is written separately.
 	if _, err := db.NewQuery(`INSERT INTO documents
-		(id, user, tags, document_type, correspondent, document_date, created)
-		VALUES ('null', 'me', NULL, NULL, NULL, NULL, '2025-01-04 09:00:00.000Z')`).Execute(); err != nil {
+		(id, user, tags, document_date, created)
+		VALUES ('null', 'me', NULL, NULL, '2025-01-04 09:00:00.000Z')`).Execute(); err != nil {
 		t.Fatalf("insert null row: %v", err)
 	}
 	return db
@@ -426,8 +441,7 @@ func TestIsTaggedSplitsTheArchive(t *testing.T) {
 	assertIDs(t, matchingIDs(t, db, documentFilters{isTagged: &no}), "empty", "legacy", "null")
 }
 
-// A bare NOT IN drops NULL under SQL three-valued logic, but a document with no
-// document type at all is plainly not of the excluded type.
+// A document with no document type at all is plainly not of the excluded type.
 func TestRelationNoneKeepsRowsWithNoRelation(t *testing.T) {
 	t.Parallel()
 	db := filterDB(t)

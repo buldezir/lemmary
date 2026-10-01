@@ -82,7 +82,7 @@ func TestFieldsRestrictsWhichFieldsMatch(t *testing.T) {
 	}
 
 	titleOnly := searchIDs(t, idx, Query{
-		UserID: "u1", Text: "lease", Fields: []string{FieldTitle, FieldTitleOriginal},
+		UserID: "u1", Text: "lease", Fields: []string{FieldTitle},
 	})
 	if len(titleOnly) != 1 || titleOnly[0] != "titled" {
 		t.Fatalf("title-only ids = %v, want [titled]", titleOnly)

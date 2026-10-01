@@ -331,6 +331,9 @@ export const ru: Catalog = {
   'settingsApi.statsFailed': 'Не удалось загрузить статистику эмбеддингов',
   'settingsApi.loadFailed': 'Не удалось загрузить настройки',
   'settingsApi.saveFailed': 'Не удалось сохранить настройки',
+  'customFieldsApi.duplicateName': 'Пользовательское поле «{name}» уже существует.',
+  'customFieldsApi.saveFailed': 'Не удалось сохранить пользовательское поле.',
+  'customFieldsApi.valuesSaveFailed': 'Не удалось сохранить поля документа.',
 
   'mcp.statusFailed': 'Не удалось проверить конечную точку MCP',
   'mcp.tokenFailed': 'Не удалось создать токен',
@@ -486,7 +489,7 @@ export const ru: Catalog = {
     other: '{count} шага',
   },
 
-  'documentFilters.searchPlaceholder': 'Поиск по названию, тегам, назначению, сводке...',
+  'documentFilters.searchPlaceholder': 'Поиск по названию, тегам, сводке...',
   'documentFilters.tooShort': {
     one: 'Для поиска введите не меньше {count} символа.',
     few: 'Для поиска введите не меньше {count} символов.',
@@ -1117,6 +1120,9 @@ export const ru: Catalog = {
   'documentPage.confirmReprocess': 'Выполнить эти шаги заново?',
   'documentPage.confirmModels': 'Модели: {models}',
   'documentPage.confirmOverwrite': 'Существующие метаданные могут быть перезаписаны.',
+  'documentPage.overwriteCustomFields': 'Перезаписать пользовательские поля',
+  'documentPage.overwriteCustomFieldsHint':
+    'Заменяет уже заданные значения, в том числе введённые вручную, везде, где извлечение что-то нашло. Если выключено, заполняются только пустые поля.',
   'documentPage.queued': 'Документ поставлен в очередь на повторную обработку ({steps}).',
   'documentPage.reprocessError': 'Не удалось обработать документ заново',
   'documentPage.confirmDelete':
@@ -1163,11 +1169,9 @@ export const ru: Catalog = {
   'documentPage.fieldDate': 'Дата документа',
   'documentPage.fieldType': 'Тип документа',
   'documentPage.fieldCorrespondent': 'Корреспондент',
-  'documentPage.fieldPurpose': 'Назначение',
   'documentPage.fieldTags': 'Теги',
   'documentPage.fieldSummary': 'Краткое содержание',
   'documentPage.fieldOcr': 'OCR-текст',
-  'documentPage.original': 'Оригинал: {value}',
   'documentPage.retranslate': 'Перевести заново',
   'documentPage.ocrView': 'Вид OCR-текста',
   'documentPage.ocrTranslatedTo': 'OCR-текст в переводе на {language}',
@@ -1295,7 +1299,7 @@ export const ru: Catalog = {
   'settingsProcessing.resultLanguage': 'Язык результата (ISO 639-1)',
   'settingsProcessing.resultLanguagePlaceholder': 'например, ru',
   'settingsProcessing.resultLanguageHint':
-    'Дополнительно сохраняет название, назначение, краткое содержание, тип и корреспондента в переводе на этот язык. Теги не переводятся: они берутся из вашего списка на том языке, на котором вы его составили. Оставьте пустым, чтобы хранить только язык самого документа.',
+    'Название, краткое содержание, тип и корреспондент записываются на этом языке, на каком бы языке ни был документ. Теги не переводятся: они берутся из вашего списка на том языке, на котором вы его составили. Оставьте пустым, чтобы хранить язык самого документа.',
   'settingsProcessing.deepSearchLanguages': 'Языки Deep Search',
   'settingsProcessing.deepSearchLanguagesPlaceholder': 'например, de,en,uk',
   'settingsProcessing.deepSearchLanguagesEmbeddingHint':
@@ -1307,6 +1311,23 @@ export const ru: Catalog = {
     'например: Считай «Rechnung» типом документа «Счёт».\nСтавь на каждый страховой документ тег с номером полиса.',
   'settingsProcessing.extractionRulesHint':
     'Ваши собственные указания, добавляемые в промпт, который извлекает метаданные из документа, — принятые у вас правила для названий, типов, корреспондентов или тегов. Они не меняют набор сохраняемых полей. Применяются к документам, обработанным или повторно обработанным с этого момента; оставьте пустым, чтобы использовать только встроенный промпт.',
+  'settingsProcessing.customFields': 'Пользовательские поля документов',
+  'settingsProcessing.customFieldsHint':
+    'Дополнительные поля на каждом документе, например номер счёта, сумма или срок оплаты. Название поля и подсказка для извлечения становятся частью промпта, с которым ИИ-модель читает каждый документ: в подсказке объясните, что означает поле и где его искать в документе, например «рядом с „Счёт №“». Извлечение заполняет пустые поля; введённое вручную значение сохраняется, если только повторная обработка не должна его перезаписать. Тип поля после сохранения не меняется, а удаление поля удаляет его значения.',
+  'settingsProcessing.customFieldName': 'Название поля',
+  'settingsProcessing.customFieldNamePlaceholder': 'например, Номер счёта',
+  'settingsProcessing.customFieldType': 'Тип',
+  'settingsProcessing.customFieldTypeText': 'Текст',
+  'settingsProcessing.customFieldTypeNumber': 'Число',
+  'settingsProcessing.customFieldTypeDate': 'Дата',
+  'settingsProcessing.customFieldDescription': 'Подсказка для извлечения',
+  'settingsProcessing.customFieldDescriptionPlaceholder':
+    'Необязательно, отправляется ИИ-модели, например «рядом с „Счёт №“»',
+  'settingsProcessing.customFieldAdd': 'Добавить поле',
+  'settingsProcessing.customFieldRemove': 'Удалить',
+  'settingsProcessing.customFieldSave': 'Сохранить',
+  'settingsProcessing.customFieldRemoveConfirm':
+    'Удалить поле «{name}»? Его значения пропадут из всех документов.',
 
   'settingsIngest.everyDay': 'раз в день',
   'settingsIngest.everyHour': 'раз в час',

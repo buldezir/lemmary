@@ -6,11 +6,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/pocketbase/pocketbase/core"
+	"lemmary/backend/internal/models"
 )
 
-func TestEnsureNamedEntityRequiresUser(t *testing.T) {
-	_, created, err := EnsureNamedEntity(nil, "correspondents", "", "Acme", "Acme")
+func TestEnsureOptionRequiresUser(t *testing.T) {
+	_, created, err := EnsureOption(nil, models.CorrespondentFieldID, "", "Acme")
 	if err == nil {
 		t.Fatal("expected error when user id is empty")
 	}
@@ -19,8 +19,8 @@ func TestEnsureNamedEntityRequiresUser(t *testing.T) {
 	}
 }
 
-func TestEnsureNamedEntitySkipsEmptyName(t *testing.T) {
-	id, created, err := EnsureNamedEntity(nil, "correspondents", "user1", "  ", "")
+func TestEnsureOptionSkipsEmptyName(t *testing.T) {
+	id, created, err := EnsureOption(nil, models.CorrespondentFieldID, "user1", "  ")
 	if err != nil {
 		t.Fatalf("empty name should be a no-op, got %v", err)
 	}
@@ -29,12 +29,9 @@ func TestEnsureNamedEntitySkipsEmptyName(t *testing.T) {
 	}
 }
 
-func TestListNamedEntityNamesEmptyUser(t *testing.T) {
-	for _, fn := range []func(core.App, string) ([]string, error){
-		listCorrespondentNames,
-		listDocumentTypeNames,
-	} {
-		names, err := fn(nil, "  ")
+func TestListOptionNamesEmptyUser(t *testing.T) {
+	for _, fieldID := range []string{models.CorrespondentFieldID, models.DocumentTypeFieldID} {
+		names, err := listOptionNames(nil, fieldID, "  ")
 		if err != nil {
 			t.Fatalf("empty user should be a no-op, got %v", err)
 		}
@@ -89,18 +86,18 @@ func TestAddUniqueCatalogNameCaps(t *testing.T) {
 }
 
 func TestRequireOwnedRelationSkipsEmpty(t *testing.T) {
-	if err := requireOwnedRelation(nil, "correspondents", "correspondent", "", "user1"); err != nil {
+	if err := requireOwnedRelation(nil, "tags", "tag", "", "user1"); err != nil {
 		t.Fatalf("empty id should skip, got %v", err)
 	}
-	if err := requireOwnedRelation(nil, "correspondents", "correspondent", "  ", "user1"); err != nil {
+	if err := requireOwnedRelation(nil, "tags", "tag", "  ", "user1"); err != nil {
 		t.Fatalf("blank id should skip, got %v", err)
 	}
 }
 
-// Only (user, name) is unique in the schema, so the normalized tier is unbacked
+// Only (field, user, name) is unique in the schema, so the normalized tier is unbacked
 // by an index: two pipelines extracting spelling variants of the same
 // correspondent would both miss, both insert, and no conflict would fire.
-func TestEnsureNamedEntityConcurrentSpellingVariants(t *testing.T) {
+func TestEnsureOptionConcurrentSpellingVariants(t *testing.T) {
 	app := bootAppForEnqueue(t)
 	userID := makeUserForDrain(t, app, "entities@example.test")
 
@@ -114,7 +111,7 @@ func TestEnsureNamedEntityConcurrentSpellingVariants(t *testing.T) {
 	for i, name := range names {
 		wg.Go(func() {
 			<-start
-			ids[i], _, errs[i] = EnsureNamedEntity(app, "correspondents", userID, name, name)
+			ids[i], _, errs[i] = EnsureOption(app, models.CorrespondentFieldID, userID, name)
 		})
 	}
 	close(start)
@@ -135,7 +132,7 @@ func TestEnsureNamedEntityConcurrentSpellingVariants(t *testing.T) {
 		}
 	}
 
-	records, err := app.FindRecordsByFilter("correspondents", "user = {:user}", "", 0, 0,
+	records, err := app.FindRecordsByFilter(models.CustomFieldOptionsCollection, "user = {:user}", "", 0, 0,
 		map[string]any{"user": userID})
 	if err != nil {
 		t.Fatalf("list correspondents: %v", err)

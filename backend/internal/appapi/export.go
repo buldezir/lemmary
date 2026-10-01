@@ -50,13 +50,7 @@ func handleExportDocuments(app core.App) func(*core.RequestEvent) error {
 			app.Logger().Error("export list documents failed", "error", err)
 			return writeError(e, http.StatusInternalServerError, "Failed to list documents.")
 		}
-		var taxonomy backup.Taxonomy
-		var index taxonomyIndex
-		if req.IDs == nil {
-			taxonomy, index, err = listOwnedTaxonomy(app, userID)
-		} else {
-			taxonomy, index, err = listReferencedTaxonomy(app, userID, records)
-		}
+		taxonomy, index, err := exportTaxonomy(app, userID, records, req.IDs == nil)
 		if err != nil {
 			app.Logger().Error("export list taxonomy failed", "error", err)
 			return writeError(e, http.StatusInternalServerError, "Failed to list tags.")
@@ -78,7 +72,7 @@ func handleExportDocuments(app core.App) func(*core.RequestEvent) error {
 			rec := record
 			doc := backup.Document{
 				ID:               rec.Id,
-				Title:            strutil.FirstNonEmpty(rec.GetString("title"), rec.GetString("title_original"), "Untitled"),
+				Title:            strutil.FirstNonEmpty(rec.GetString("title"), "Untitled"),
 				Date:             truncateDate(rec.GetString("document_date")),
 				OriginalFilename: fileName,
 				OpenFile:         openStoredFile(app, fsys, rec, fileName),
@@ -143,17 +137,52 @@ func findRecordsByIDs(app core.App, collection string, ids []string, filters ...
 	return all, nil
 }
 
+// exportTaxonomy is everything the archive names the documents' relations
+// and values by: the caller's whole taxonomy for a full export, else only what
+// the documents carry.
+func exportTaxonomy(app core.App, userID string, records []*core.Record, whole bool) (backup.Taxonomy, taxonomyIndex, error) {
+	values, err := models.LoadFieldValues(app, recordIDs(records)...)
+	if err != nil {
+		return backup.Taxonomy{}, taxonomyIndex{}, err
+	}
+	var taxonomy backup.Taxonomy
+	var index taxonomyIndex
+	if whole {
+		taxonomy, index, err = listOwnedTaxonomy(app, userID)
+	} else {
+		taxonomy, index, err = listReferencedTaxonomy(app, userID, records, values)
+	}
+	if err != nil {
+		return taxonomy, index, err
+	}
+	index.values = values
+	index.customFields, err = customFieldNamesByID(app)
+	return taxonomy, index, err
+}
+
+func recordIDs(records []*core.Record) []string {
+	ids := make([]string, len(records))
+	for i, record := range records {
+		ids[i] = record.Id
+	}
+	return ids
+}
+
 func listOwnedRecords(app core.App, collection, userID, sort string) ([]*core.Record, error) {
+	return listRecordsWhere(app, collection, "user = {:userId}", dbx.Params{"userId": userID}, sort)
+}
+
+func listRecordsWhere(app core.App, collection, filter string, params dbx.Params, sort string) ([]*core.Record, error) {
 	var all []*core.Record
 	page := 1
 	for {
 		records, err := app.FindRecordsByFilter(
 			collection,
-			"user = {:userId}",
+			filter,
 			sort,
 			exportPageSize,
 			(page-1)*exportPageSize,
-			dbx.Params{"userId": userID},
+			params,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("list %s: %w", collection, err)
@@ -167,32 +196,39 @@ func listOwnedRecords(app core.App, collection, userID, sort string) ([]*core.Re
 	return all, nil
 }
 
-// taxonomyIndex resolves relation ids to names while packing, so a few hundred
+// taxonomyIndex resolves ids to names while packing, so a few hundred
 // documents do not re-read the same tag record each.
 type taxonomyIndex struct {
-	tags           map[string]string
-	correspondents map[string]string
-	documentTypes  map[string]string
+	tags         map[string]string
+	customFields map[string]string
+	values       map[string]models.FieldValues
 }
 
 // listOwnedTaxonomy includes records no document references on purpose: they
 // exist only here, and a restore that dropped them would lose part of the
 // library.
 func listOwnedTaxonomy(app core.App, userID string) (backup.Taxonomy, taxonomyIndex, error) {
-	return collectTaxonomy(func(collection string) ([]*core.Record, error) {
-		return listOwnedRecords(app, collection, userID, "name")
+	return collectTaxonomy(func(kind string) ([]*core.Record, error) {
+		if kind == "tags" {
+			return listOwnedRecords(app, kind, userID, "name")
+		}
+		return listRecordsWhere(app, models.CustomFieldOptionsCollection, "field = {:field} && user = {:userId}",
+			dbx.Params{"field": kind, "userId": userID}, "name")
 	})
 }
 
 // listReferencedTaxonomy takes whatever the documents carry, whoever owns it: a
 // shared document's tags are its owner's. The caller's own records come first,
 // so on a name both owners use, theirs is the one the archive keeps.
-func listReferencedTaxonomy(app core.App, userID string, documents []*core.Record) (backup.Taxonomy, taxonomyIndex, error) {
+func listReferencedTaxonomy(app core.App, userID string, documents []*core.Record, values map[string]models.FieldValues) (backup.Taxonomy, taxonomyIndex, error) {
 	ids := map[string][]string{}
 	for _, doc := range documents {
 		ids["tags"] = append(ids["tags"], doc.GetStringSlice("tags")...)
-		ids["correspondents"] = append(ids["correspondents"], doc.GetString("correspondent"))
-		ids["document_types"] = append(ids["document_types"], doc.GetString("document_type"))
+		for _, field := range models.PredefinedCustomFields {
+			if id := values[doc.Id].OptionID(field.ID); id != "" {
+				ids[field.ID] = append(ids[field.ID], id)
+			}
+		}
 	}
 	ownFirst := func(record *core.Record) string {
 		if record.GetString("user") == userID {
@@ -200,8 +236,12 @@ func listReferencedTaxonomy(app core.App, userID string, documents []*core.Recor
 		}
 		return "1" + record.Id
 	}
-	return collectTaxonomy(func(collection string) ([]*core.Record, error) {
-		records, err := findRecordsByIDs(app, collection, ids[collection])
+	return collectTaxonomy(func(kind string) ([]*core.Record, error) {
+		collection := models.CustomFieldOptionsCollection
+		if kind == "tags" {
+			collection = kind
+		}
+		records, err := findRecordsByIDs(app, collection, ids[kind])
 		slices.SortFunc(records, func(a, b *core.Record) int {
 			return strings.Compare(ownFirst(a), ownFirst(b))
 		})
@@ -210,13 +250,9 @@ func listReferencedTaxonomy(app core.App, userID string, documents []*core.Recor
 }
 
 // collectTaxonomy lists each name once, since two owners can each have an
-// "invoice" tag.
-func collectTaxonomy(list func(collection string) ([]*core.Record, error)) (backup.Taxonomy, taxonomyIndex, error) {
-	index := taxonomyIndex{
-		tags:           map[string]string{},
-		correspondents: map[string]string{},
-		documentTypes:  map[string]string{},
-	}
+// "invoice" tag. list is asked for "tags" and for each predefined field's id.
+func collectTaxonomy(list func(kind string) ([]*core.Record, error)) (backup.Taxonomy, taxonomyIndex, error) {
+	index := taxonomyIndex{tags: map[string]string{}}
 	taxonomy := backup.Taxonomy{
 		Tags:           []string{},
 		Correspondents: []backup.NamedEntity{},
@@ -241,14 +277,13 @@ func collectTaxonomy(list func(collection string) ([]*core.Record, error)) (back
 	}
 
 	for _, group := range []struct {
-		collection string
-		index      map[string]string
-		into       *[]backup.NamedEntity
+		fieldID string
+		into    *[]backup.NamedEntity
 	}{
-		{"correspondents", index.correspondents, &taxonomy.Correspondents},
-		{"document_types", index.documentTypes, &taxonomy.DocumentTypes},
+		{models.CorrespondentFieldID, &taxonomy.Correspondents},
+		{models.DocumentTypeFieldID, &taxonomy.DocumentTypes},
 	} {
-		records, err := list(group.collection)
+		records, err := list(group.fieldID)
 		if err != nil {
 			return taxonomy, index, err
 		}
@@ -258,19 +293,40 @@ func collectTaxonomy(list func(collection string) ([]*core.Record, error)) (back
 			if name == "" {
 				continue
 			}
-			group.index[record.Id] = name
 			if seen[name] {
 				continue
 			}
 			seen[name] = true
-			*group.into = append(*group.into, backup.NamedEntity{
-				Name:         name,
-				NameOriginal: strings.TrimSpace(record.GetString("name_original")),
-			})
+			*group.into = append(*group.into, backup.NamedEntity{Name: name})
 		}
 	}
 
 	return taxonomy, index, nil
+}
+
+func customFieldNamesByID(app core.App) (map[string]string, error) {
+	fields, err := models.LoadCustomFields(app)
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[string]string, len(fields))
+	for _, field := range fields {
+		names[field.ID] = field.Name
+	}
+	return names, nil
+}
+
+// exportCustomFields keys values by field name, like the relations: field ids
+// are this instance's own. names holds the admin's fields only, so the
+// predefined ones stay in their own sidecar keys.
+func exportCustomFields(values models.FieldValues, names map[string]string) map[string]any {
+	out := map[string]any{}
+	for id, value := range values {
+		if name := names[id]; name != "" {
+			out[name] = value.Value()
+		}
+	}
+	return out
 }
 
 // buildExportMetadata writes relations as names, not ids: ids mean nothing in
@@ -286,16 +342,13 @@ func buildExportMetadata(record *core.Record, index taxonomyIndex, originalFilen
 	return map[string]any{
 		"id":                      record.Id,
 		"title":                   record.GetString("title"),
-		"title_original":          record.GetString("title_original"),
-		"purpose":                 record.GetString("purpose"),
-		"purpose_original":        record.GetString("purpose_original"),
 		"summary":                 record.GetString("summary"),
-		"summary_original":        record.GetString("summary_original"),
 		"document_date":           record.GetString("document_date"),
 		"tags":                    tags,
-		"document_type":           index.documentTypes[record.GetString("document_type")],
-		"correspondent":           index.correspondents[record.GetString("correspondent")],
+		"document_type":           index.values[record.Id].OptionName(models.DocumentTypeFieldID),
+		"correspondent":           index.values[record.Id].OptionName(models.CorrespondentFieldID),
 		"people_or_organizations": models.PeopleOrOrganizations(record),
+		"custom_fields":           exportCustomFields(index.values[record.Id], index.customFields),
 		"processing_status":       record.GetString("processing_status"),
 		"metadata_source":         record.GetString("metadata_source"),
 		"confidence":              record.GetFloat("confidence"),

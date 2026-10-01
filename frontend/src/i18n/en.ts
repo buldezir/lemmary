@@ -280,6 +280,9 @@ export const en = {
   'settingsApi.statsFailed': 'Failed to load embedding statistics',
   'settingsApi.loadFailed': 'Failed to load settings',
   'settingsApi.saveFailed': 'Failed to save settings',
+  'customFieldsApi.duplicateName': 'A custom field called "{name}" already exists.',
+  'customFieldsApi.saveFailed': 'The custom field could not be saved.',
+  'customFieldsApi.valuesSaveFailed': "The document's fields could not be saved.",
 
   'mcp.statusFailed': 'Failed to check the MCP endpoint',
   'mcp.tokenFailed': 'Failed to create a token',
@@ -419,7 +422,7 @@ export const en = {
   'processingSteps.attempt': 'attempt {count}',
   'processingSteps.steps': { one: '{count} step', other: '{count} steps' },
 
-  'documentFilters.searchPlaceholder': 'Search title, tags, purpose, summary...',
+  'documentFilters.searchPlaceholder': 'Search title, tags, summary...',
   'documentFilters.tooShort': {
     one: 'Type at least {count} character to search.',
     other: 'Type at least {count} characters to search.',
@@ -944,6 +947,9 @@ export const en = {
   'documentPage.confirmReprocess': 'Re-run these steps?',
   'documentPage.confirmModels': 'Models: {models}',
   'documentPage.confirmOverwrite': 'Existing metadata may be overwritten.',
+  'documentPage.overwriteCustomFields': 'Overwrite custom fields',
+  'documentPage.overwriteCustomFieldsHint':
+    'Replace values already set, typed ones included, wherever extraction finds one. Off, it only fills the empty fields.',
   'documentPage.queued': 'Document queued for reprocessing ({steps}).',
   'documentPage.reprocessError': 'Failed to reprocess document',
   'documentPage.confirmDelete':
@@ -990,11 +996,9 @@ export const en = {
   'documentPage.fieldDate': 'Document date',
   'documentPage.fieldType': 'Document type',
   'documentPage.fieldCorrespondent': 'Correspondent',
-  'documentPage.fieldPurpose': 'Purpose',
   'documentPage.fieldTags': 'Tags',
   'documentPage.fieldSummary': 'Summary',
   'documentPage.fieldOcr': 'OCR text',
-  'documentPage.original': 'Original: {value}',
   'documentPage.retranslate': 'Re-translate',
   'documentPage.ocrView': 'OCR text view',
   'documentPage.ocrTranslatedTo': 'OCR text translated to {language}',
@@ -1111,7 +1115,7 @@ export const en = {
   'settingsProcessing.resultLanguage': 'Result language (ISO 639-1)',
   'settingsProcessing.resultLanguagePlaceholder': 'e.g. en',
   'settingsProcessing.resultLanguageHint':
-    'Also stores the title, purpose, summary, type and correspondent translated into this language. Tags are exempt: they come from your own list, in whatever language you wrote it. Leave empty to keep only the document’s own language.',
+    'Writes the title, summary, type and correspondent in this language, whatever language the document is in. Tags are exempt: they come from your own list, in whatever language you wrote it. Leave empty to keep the document’s own language.',
   'settingsProcessing.deepSearchLanguages': 'Deep search languages',
   'settingsProcessing.deepSearchLanguagesPlaceholder': 'e.g. de,en,uk',
   'settingsProcessing.deepSearchLanguagesEmbeddingHint':
@@ -1123,6 +1127,23 @@ export const en = {
     'e.g. Treat "Rechnung" as the document type Invoice.\nTag every insurance document with the policy number.',
   'settingsProcessing.extractionRulesHint':
     'Your own instructions, added to the prompt that reads metadata out of a document — house conventions for titles, types, correspondents or tags. They cannot change which fields are stored. Applies to documents processed or reprocessed from now on; leave empty for the built-in prompt alone.',
+  'settingsProcessing.customFields': 'Custom document fields',
+  'settingsProcessing.customFieldsHint':
+    'Extra fields shown on every document, such as an invoice number, an amount or a due date. Each field’s name and its hint for extraction become part of the prompt the AI model reads every document with: use the hint to say what the field means and where on the document to find it, e.g. “printed next to Invoice no.”. Extraction fills the empty fields; a value someone typed is kept unless a reprocess is told to overwrite it. A field’s type is fixed once saved, and removing a field deletes its values.',
+  'settingsProcessing.customFieldName': 'Field name',
+  'settingsProcessing.customFieldNamePlaceholder': 'e.g. Invoice number',
+  'settingsProcessing.customFieldType': 'Type',
+  'settingsProcessing.customFieldTypeText': 'Text',
+  'settingsProcessing.customFieldTypeNumber': 'Number',
+  'settingsProcessing.customFieldTypeDate': 'Date',
+  'settingsProcessing.customFieldDescription': 'Hint for extraction',
+  'settingsProcessing.customFieldDescriptionPlaceholder':
+    'Optional, sent to the AI model, e.g. printed next to "Invoice no."',
+  'settingsProcessing.customFieldAdd': 'Add field',
+  'settingsProcessing.customFieldRemove': 'Remove',
+  'settingsProcessing.customFieldSave': 'Save',
+  'settingsProcessing.customFieldRemoveConfirm':
+    'Remove the field "{name}"? Its values disappear from every document.',
 
   'settingsIngest.everyDay': 'day',
   'settingsIngest.everyHour': 'hour',

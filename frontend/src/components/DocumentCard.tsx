@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { t, tNode } from '../i18n'
 import { SHARED_TAG_NAME, type DocumentRecord } from '../lib/api/documents'
+import { CORRESPONDENT_FIELD_ID, DOCUMENT_TYPE_FIELD_ID, optionName } from '../lib/api/customFields'
 import { pb } from '../lib/pb'
 import { DOCUMENT_STATUS_LABELS, DOCUMENT_STATUS_STYLES, reviewReason } from '../lib/documentStatus'
 import { summarizeJob, type ProcessingJobRecord } from '../lib/processing'
@@ -41,7 +42,7 @@ export function SharedChip() {
 }
 
 function CardDescription({ document }: { document: DocumentRecord }) {
-  const summary = document.summary?.trim() || document.purpose?.trim()
+  const summary = document.summary?.trim()
   if (summary) {
     return <p className="line-clamp-3 text-sm text-ink-muted">{summary}</p>
   }
@@ -102,8 +103,8 @@ export function DocumentCard({
     onAcceptSuggestedTag && document.processing_status === 'needs_review'
       ? pendingTagSuggestions(job, tags.map((tag) => tag.name))
       : []
-  const correspondent = document.expand?.correspondent?.name
-  const documentType = document.expand?.document_type?.name
+  const correspondent = optionName(document, CORRESPONDENT_FIELD_ID)
+  const documentType = optionName(document, DOCUMENT_TYPE_FIELD_ID)
   const title = document.title || t('common.untitledDocument')
   const shared = Boolean(pb.authStore.record?.id) && document.user !== pb.authStore.record?.id
   // A shared document is read-only, so its own owner's review is not the

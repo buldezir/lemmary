@@ -7,14 +7,15 @@ import {
   buildDocumentFilter,
   deleteDocuments,
   describeJobOverrides,
+  DOCUMENT_EXPAND,
+  listOptions,
   markDocumentsReviewed,
   reprocessDocuments,
   searchDocuments,
-  type CorrespondentRecord,
   type DocumentRecord,
-  type DocumentTypeRecord,
   type JobOverrides,
 } from '../lib/api/documents'
+import { CORRESPONDENT_FIELD_ID, DOCUMENT_TYPE_FIELD_ID } from '../lib/api/customFields'
 import { acceptSuggestedTag, listTags } from '../lib/api/tags'
 import { getLatestJobsFor } from '../lib/api/jobs'
 import {
@@ -186,7 +187,7 @@ export function useDocumentList({
             })
           : await pb.collection('documents').getList<DocumentRecord>(page, DOCUMENT_PAGE_SIZE, {
               sort: '-created',
-              expand: 'tags,document_type,correspondent,duplicate_of',
+              expand: DOCUMENT_EXPAND,
               ...(filter ? { filter } : {}),
             })
         if (!active) return
@@ -537,8 +538,8 @@ export function useDocumentFilterOptions() {
   const { data, error } = useAsync(async () => {
     await ensureAuth()
     const [types, correspondents, tags] = await Promise.all([
-      pb.collection('document_types').getFullList<DocumentTypeRecord>({ sort: 'name' }),
-      pb.collection('correspondents').getFullList<CorrespondentRecord>({ sort: 'name' }),
+      listOptions(DOCUMENT_TYPE_FIELD_ID),
+      listOptions(CORRESPONDENT_FIELD_ID),
       listTags(),
     ])
     return { types, correspondents, tags }

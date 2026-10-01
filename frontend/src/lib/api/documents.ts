@@ -12,20 +12,38 @@ import type { TimelineMonth } from '../timeline'
 // Re-exported from ./tags because a document's expand carries them.
 export type { TagRecord } from './tags'
 import type { TagRecord } from './tags'
+import {
+  CORRESPONDENT_FIELD_ID,
+  DOCUMENT_TYPE_FIELD_ID,
+  FIELD_VALUES_EXPAND,
+  saveDocumentFields,
+  type CustomFieldValues,
+  type FieldValueRecord,
+} from './customFields'
 import type { DocumentOwner } from '../documentQuery'
 
-export type DocumentTypeRecord = {
+/** A custom_field_options row: a correspondent or a document type. */
+export type OptionRecord = {
   id: string
+  field: string
   name: string
-  name_original: string
   user?: string
 }
 
-export type CorrespondentRecord = {
-  id: string
-  name: string
-  name_original: string
-  user?: string
+/** Everything a document page or card reads off a document's relations. */
+export const DOCUMENT_EXPAND = `tags,duplicate_of,${FIELD_VALUES_EXPAND}`
+
+/**
+ * The signed-in user's options of one predefined field, by name. Keyed per
+ * field: both lists load together, and the SDK cancels a second pending request
+ * to the same collection.
+ */
+export function listOptions(fieldId: string): Promise<OptionRecord[]> {
+  return pb.collection('custom_field_options').getFullList<OptionRecord>({
+    filter: pb.filter('field = {:field}', { field: fieldId }),
+    sort: 'name',
+    requestKey: `options-${fieldId}`,
+  })
 }
 
 export type DocumentRecord = {
@@ -37,15 +55,9 @@ export type DocumentRecord = {
   file: string
   user: string
   title: string
-  title_original: string
-  purpose: string
-  purpose_original: string
   document_date: string
-  document_type: string
-  correspondent: string
   ocr_text: string
   summary: string
-  summary_original: string
   processing_status: DocumentStatus
   metadata_source: string
   confidence: number
@@ -56,9 +68,9 @@ export type DocumentRecord = {
   duplicate_of?: string
   expand?: {
     tags?: TagRecord[]
-    document_type?: DocumentTypeRecord
-    correspondent?: CorrespondentRecord
     duplicate_of?: DocumentRecord
+    /** Correspondent, document type and the admin's fields, one row each. */
+    custom_field_values_via_document?: FieldValueRecord[]
   }
 }
 
@@ -184,11 +196,16 @@ export function buildDocumentFilter(filters: DocumentListFilters): string | unde
   } else if (filters.status !== 'all') {
     parts.push(pb.filter('processing_status = {:status}', { status: filters.status }))
   }
+  // Option ids are unique across fields, so the option alone picks the field.
   if (filters.documentType !== 'all') {
-    parts.push(pb.filter('document_type = {:id}', { id: filters.documentType }))
+    parts.push(
+      pb.filter('custom_field_values_via_document.option ?= {:id}', { id: filters.documentType }),
+    )
   }
   if (filters.correspondent !== 'all') {
-    parts.push(pb.filter('correspondent = {:id}', { id: filters.correspondent }))
+    parts.push(
+      pb.filter('custom_field_values_via_document.option ?= {:id}', { id: filters.correspondent }),
+    )
   }
   if (filters.dateFrom) {
     parts.push(pb.filter('document_date >= {:date}', { date: filters.dateFrom }))
@@ -226,11 +243,16 @@ export function buildDocumentFilter(filters: DocumentListFilters): string | unde
   return parts.length > 0 ? parts.join(' && ') : undefined
 }
 
+/**
+ * overwriteCustomFields lets the job's apply step replace custom field values
+ * already set, not only fill the empty ones.
+ */
 export async function reprocessDocument(
   documentId: string,
   steps: ProcessingStep[],
   forceSteps?: ProcessingStep[],
   overrides?: JobOverrides,
+  overwriteCustomFields = false,
 ) {
   await ensureAuth()
   await pb.collection('documents').update(documentId, {
@@ -246,6 +268,9 @@ export async function reprocessDocument(
     // binding on the job, so an override left behind by an unticked step
     // would refuse the whole job.
     ...jobOverridesBody(overridesForSteps(overrides, steps)),
+    ...(overwriteCustomFields && steps.includes('apply_metadata')
+      ? { overwrite_custom_fields: true }
+      : {}),
   })
 }
 
@@ -560,35 +585,8 @@ export async function fetchDocumentTimeline(): Promise<DocumentTimeline> {
   }
 }
 
-type TaxonomyCollection = 'document_types' | 'correspondents'
-
-// requestKey: null — several upserts run concurrently and must not auto-cancel
-// each other.
-//
-// Tags are deliberately not a TaxonomyCollection: they are a vocabulary the
-// user curates on the Tags page, so nothing here may conjure a new one.
-async function upsertTaxonomyByName(
-  collection: TaxonomyCollection,
-  name: string,
-  userId: string,
-  extra: Record<string, unknown> = {},
-): Promise<string> {
-  const existing = await pb.collection(collection).getList(1, 1, {
-    filter: pb.filter('name = {:name}', { name }),
-    requestKey: null,
-  })
-  if (existing.items.length > 0) {
-    return existing.items[0].id
-  }
-  const created = await pb
-    .collection(collection)
-    .create({ name, user: userId, ...extra }, { requestKey: null })
-  return created.id
-}
-
 export type DocumentMetadataInput = {
   title: string
-  purpose: string
   summary: string
   /**
    * Editable because everything else is derived from it, so a misread total is
@@ -601,6 +599,7 @@ export type DocumentMetadataInput = {
   correspondentName: string
   /** Ids from the user's existing tags; saving never creates one. */
   tagIds: string[]
+  customFields: CustomFieldValues
   processingStatus: DocumentRecord['processing_status']
 }
 
@@ -615,30 +614,19 @@ export async function saveDocumentMetadata(
   }
 
   const tagIds = [...new Set(input.tagIds.filter(Boolean))]
-  const documentTypeName = input.documentTypeName.trim()
-  const correspondentName = input.correspondentName.trim()
 
-  const [documentTypeId, correspondentId] = await Promise.all([
-    documentTypeName
-      ? upsertTaxonomyByName('document_types', documentTypeName, userId, {
-          name_original: documentTypeName,
-        })
-      : Promise.resolve(''),
-    correspondentName
-      ? upsertTaxonomyByName('correspondents', correspondentName, userId, {
-          name_original: correspondentName,
-        })
-      : Promise.resolve(''),
-  ])
+  // Names, not ids: the server reuses the owner's option of that name or adds one.
+  await saveDocumentFields(documentId, {
+    ...input.customFields,
+    [DOCUMENT_TYPE_FIELD_ID]: input.documentTypeName.trim() || null,
+    [CORRESPONDENT_FIELD_ID]: input.correspondentName.trim() || null,
+  })
 
   const saved = await pb.collection('documents').update<DocumentRecord>(documentId, {
     title: input.title,
-    purpose: input.purpose,
     summary: input.summary,
     ocr_text: input.ocrText,
     document_date: input.documentDate || null,
-    document_type: documentTypeId || null,
-    correspondent: correspondentId || null,
     tags: tagIds,
     metadata_source: 'user',
     processing_status:
