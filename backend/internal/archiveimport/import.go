@@ -248,7 +248,7 @@ func restoreOne(
 	// document's metadata. Without a sidecar the entry is just a file, so it
 	// takes the ordinary upload path -- which is also what a pre-manifest
 	// "originals" archive holds.
-	var values []fieldValue
+	var values []models.FieldWrite
 	if mode == ModeRestore && entry.metadataPath != "" {
 		if values, err = restoreSidecars(record, &doc, entry, files, resolver, budget); err != nil {
 			return nil, err
@@ -266,12 +266,7 @@ func restoreOne(
 		if err := duplicates.NormalizeSaveError(txApp, record, txApp.Save(record)); err != nil {
 			return err
 		}
-		for _, v := range values {
-			if err := models.SaveFieldValue(txApp, record, v.field, v.value); err != nil {
-				return err
-			}
-		}
-		return nil
+		return models.SaveFieldValues(txApp, record, values)
 	})
 	if err != nil {
 		return nil, err
@@ -287,7 +282,7 @@ func restoreSidecars(
 	files map[string]*zip.File,
 	resolver *taxonomyResolver,
 	budget *scanBudget,
-) ([]fieldValue, error) {
+) ([]models.FieldWrite, error) {
 	meta, err := readMetadataBudgeted(files, entry.metadataPath, budget)
 	if err != nil {
 		return nil, err

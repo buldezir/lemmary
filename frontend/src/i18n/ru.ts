@@ -333,7 +333,6 @@ export const ru: Catalog = {
   'settingsApi.saveFailed': 'Не удалось сохранить настройки',
   'customFieldsApi.duplicateName': 'Пользовательское поле «{name}» уже существует.',
   'customFieldsApi.saveFailed': 'Не удалось сохранить пользовательское поле.',
-  'customFieldsApi.valuesSaveFailed': 'Не удалось сохранить поля документа.',
 
   'mcp.statusFailed': 'Не удалось проверить конечную точку MCP',
   'mcp.tokenFailed': 'Не удалось создать токен',

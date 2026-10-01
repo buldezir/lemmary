@@ -16,7 +16,6 @@ import {
   CORRESPONDENT_FIELD_ID,
   DOCUMENT_TYPE_FIELD_ID,
   FIELD_VALUES_EXPAND,
-  saveDocumentFields,
   type CustomFieldValues,
   type FieldValueRecord,
 } from './customFields'
@@ -196,15 +195,20 @@ export function buildDocumentFilter(filters: DocumentListFilters): string | unde
   } else if (filters.status !== 'all') {
     parts.push(pb.filter('processing_status = {:status}', { status: filters.status }))
   }
-  // Option ids are unique across fields, so the option alone picks the field.
+  // ponytail: two clauses on one back-relation path share its join, so both
+  // would have to match one value row, and PocketBase refuses @collection
+  // aliases to non-superusers. The correspondent walks back through the
+  // document to a second join; the first hop stands on any of the document's
+  // value rows, which a document holding the option has. Option ids are unique
+  // across fields, so the option alone picks the field. A Go list endpoint
+  // (ngxapi's documentFilterExprs) is the way out if a third field joins.
+  const values = 'custom_field_values_via_document'
   if (filters.documentType !== 'all') {
-    parts.push(
-      pb.filter('custom_field_values_via_document.option ?= {:id}', { id: filters.documentType }),
-    )
+    parts.push(pb.filter(`${values}.option ?= {:id}`, { id: filters.documentType }))
   }
   if (filters.correspondent !== 'all') {
     parts.push(
-      pb.filter('custom_field_values_via_document.option ?= {:id}', { id: filters.correspondent }),
+      pb.filter(`${values}.document.${values}.option ?= {:id}`, { id: filters.correspondent }),
     )
   }
   if (filters.dateFrom) {
@@ -615,14 +619,14 @@ export async function saveDocumentMetadata(
 
   const tagIds = [...new Set(input.tagIds.filter(Boolean))]
 
-  // Names, not ids: the server reuses the owner's option of that name or adds one.
-  await saveDocumentFields(documentId, {
-    ...input.customFields,
-    [DOCUMENT_TYPE_FIELD_ID]: input.documentTypeName.trim() || null,
-    [CORRESPONDENT_FIELD_ID]: input.correspondentName.trim() || null,
-  })
-
   const saved = await pb.collection('documents').update<DocumentRecord>(documentId, {
+    // Saved with the document, by field id. Names, not ids: the server reuses
+    // the owner's option of that name or adds one.
+    fields: {
+      ...input.customFields,
+      [DOCUMENT_TYPE_FIELD_ID]: input.documentTypeName.trim() || null,
+      [CORRESPONDENT_FIELD_ID]: input.correspondentName.trim() || null,
+    },
     title: input.title,
     summary: input.summary,
     ocr_text: input.ocrText,

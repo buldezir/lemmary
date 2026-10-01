@@ -2,7 +2,6 @@ package appapi
 
 import (
 	"errors"
-	"net/http"
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -12,52 +11,70 @@ import (
 	"lemmary/backend/internal/worker"
 )
 
-// handlePatchDocumentFields sets the values of the fields the body names, by
-// field id, in one transaction; a field left out keeps its value and null or
+// saveFieldsWithDocument stores the values a document update carries under
+// "fields", by field id, in the transaction that saves the document, so a
+// refused update changes neither. A field left out keeps its value and null or
 // "" clears one. An option field takes a name: the owner's option of that name
 // is reused, or created, as extraction does.
-func handlePatchDocumentFields(app core.App) func(*core.RequestEvent) error {
-	return func(e *core.RequestEvent) error {
-		document, err := app.FindRecordById("documents", e.Request.PathValue("documentId"))
-		if err != nil || document.GetString("user") != e.Auth.Id {
-			return writeError(e, http.StatusNotFound, "Document not found.")
-		}
-		var body map[string]any
-		if err := e.BindBody(&body); err != nil {
-			return writeError(e, http.StatusBadRequest, "Invalid request body.")
-		}
-		fields, err := documentFields(app)
-		if err != nil {
-			app.Logger().Error("load custom fields failed", "error", err)
-			return writeError(e, http.StatusInternalServerError, "Failed to save the document.")
-		}
-
-		err = app.RunInTransaction(func(txApp core.App) error {
-			for id, raw := range body {
-				field, ok := fields[id]
-				if !ok {
-					return i18n.Errorf("unknown custom field %q", id)
-				}
-				value, err := clientFieldValue(txApp, document, field, raw)
-				if err != nil {
-					return err
-				}
-				if err := models.SaveFieldValue(txApp, document, field, value); err != nil {
-					return err
-				}
-			}
-			return nil
-		})
-		if _, invalid := errors.AsType[*i18n.Error](err); invalid {
-			return writeBadRequest(e, err)
-		}
-		if err != nil {
-			app.Logger().Error("save custom field values failed", "document", document.Id, "error", err)
-			return writeError(e, http.StatusInternalServerError, "Failed to save the document.")
-		}
-		e.Response.WriteHeader(http.StatusNoContent)
-		return nil
+func saveFieldsWithDocument(e *core.RecordRequestEvent) error {
+	info, err := e.RequestInfo()
+	if err != nil {
+		return err
 	}
+	raw, ok := info.Body["fields"]
+	if !ok {
+		return e.Next()
+	}
+	lang := i18n.FromRequest(e.Request)
+	body, ok := raw.(map[string]any)
+	if !ok {
+		return e.BadRequestError(i18n.T(lang, "Invalid request body."), nil)
+	}
+	writes, err := documentFieldWrites(e.App, e.Record, body)
+	if _, invalid := errors.AsType[*i18n.Error](err); invalid {
+		return e.BadRequestError(i18n.Of(lang, err), nil)
+	}
+	if err != nil {
+		return err
+	}
+	return e.App.RunInTransaction(func(txApp core.App) error {
+		if err := models.SaveFieldValues(txApp, e.Record, writes); err != nil {
+			return err
+		}
+		e.App = txApp
+		return e.Next()
+	})
+}
+
+// documentFieldWrites checks every value before it turns a name into an
+// option, so a refused body creates none.
+func documentFieldWrites(app core.App, document *core.Record, body map[string]any) ([]models.FieldWrite, error) {
+	fields, err := documentFields(app)
+	if err != nil {
+		return nil, err
+	}
+	writes := make([]models.FieldWrite, 0, len(body))
+	for id, raw := range body {
+		field, ok := fields[id]
+		if !ok {
+			return nil, i18n.Errorf("unknown custom field %q", id)
+		}
+		value, err := clientFieldValue(field, raw)
+		if err != nil {
+			return nil, err
+		}
+		writes = append(writes, models.FieldWrite{Field: field, Value: value})
+	}
+	for i, w := range writes {
+		if name, ok := w.Value.(string); ok && w.Field.Type == models.CustomFieldOption {
+			id, _, err := worker.EnsureOption(app, w.Field.ID, document.GetString("user"), name)
+			if err != nil {
+				return nil, err
+			}
+			writes[i].Value = id
+		}
+	}
+	return writes, nil
 }
 
 // documentFields is every field a document can hold, by id.
@@ -73,19 +90,18 @@ func documentFields(app core.App) (map[string]models.CustomField, error) {
 	return fields, nil
 }
 
-// clientFieldValue turns what a client sent into what SaveFieldValue stores:
-// nil to clear, the coerced value, or an option's id.
-func clientFieldValue(app core.App, document *core.Record, field models.CustomField, raw any) (any, error) {
-	if s, ok := raw.(string); raw == nil || (ok && strings.TrimSpace(s) == "") {
+// clientFieldValue turns what a client sent into nil to clear, the coerced
+// value, or an option's name.
+func clientFieldValue(field models.CustomField, raw any) (any, error) {
+	s, isString := raw.(string)
+	if raw == nil || (isString && strings.TrimSpace(s) == "") {
 		return nil, nil
 	}
 	if field.Type == models.CustomFieldOption {
-		name, ok := raw.(string)
-		if !ok {
+		if !isString {
 			return nil, i18n.Errorf("%s must be a name", field.Name)
 		}
-		id, _, err := worker.EnsureOption(app, field.ID, document.GetString("user"), name)
-		return id, err
+		return strings.TrimSpace(s), nil
 	}
 	value, ok := field.Coerce(raw)
 	if !ok {

@@ -167,6 +167,33 @@ func loadExtractionCatalog(app core.App, userID string, logger *slog.Logger) (ai
 	}, nil
 }
 
+// fieldWrites is what apply stores beside the document: the type and the
+// correspondent, then the admin's fields. Options are created here, outside
+// the document's transaction: EnsureOption's lock must not wait inside one,
+// and a refused document leaves at most an unused option, which prune removes.
+func fieldWrites(state *StepState, metadata *models.ExtractedMetadata) ([]models.FieldWrite, error) {
+	documentType := strings.TrimSpace(metadata.DocumentType)
+	typeWrite, err := optionWrite(state.App, state.Document, models.DocumentTypeField, documentType)
+	if err != nil {
+		return nil, fmt.Errorf("document type: %w", err)
+	}
+	correspondent := correspondentName(metadata)
+	correspondentWrite, err := optionWrite(state.App, state.Document, models.CorrespondentField, correspondent)
+	if err != nil {
+		return nil, fmt.Errorf("correspondent: %w", err)
+	}
+	state.Logger.Info("document type and correspondent applied",
+		"document_type", strutil.TruncateRunes(documentType, 40),
+		"correspondent", strutil.TruncateRunes(correspondent, 40),
+	)
+	overwrite := state.Job != nil && state.Job.GetBool(models.JobOverwriteCustomFields)
+	custom, err := customFieldWrites(state.App, state.Document, metadata.CustomFields, overwrite)
+	if err != nil {
+		return nil, fmt.Errorf("custom fields: %w", err)
+	}
+	return append([]models.FieldWrite{typeWrite, correspondentWrite}, custom...), nil
+}
+
 type ApplyMetadataStep struct{}
 
 func (s *ApplyMetadataStep) Name() string { return models.StepApplyMetadata }
@@ -195,18 +222,10 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 
 	state.Document.Set("title", metadata.Title)
 	state.Document.Set("summary", metadata.Summary)
-	documentType := strings.TrimSpace(metadata.DocumentType)
-	if err := applyOption(state.App, state.Document, models.DocumentTypeField, documentType); err != nil {
-		return fmt.Errorf("document type: %w", err)
+	writes, err := fieldWrites(state, metadata)
+	if err != nil {
+		return err
 	}
-	correspondent := correspondentName(metadata)
-	if err := applyOption(state.App, state.Document, models.CorrespondentField, correspondent); err != nil {
-		return fmt.Errorf("correspondent: %w", err)
-	}
-	state.Logger.Info("document type and correspondent applied",
-		"document_type", strutil.TruncateRunes(documentType, 40),
-		"correspondent", strutil.TruncateRunes(correspondent, 40),
-	)
 
 	state.Document.Set("confidence", metadata.Confidence)
 	state.Document.Set("people_or_organizations", metadata.PeopleOrOrganizations)
@@ -217,11 +236,6 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 	if metadata.DocumentDate != "" {
 		state.Document.Set("document_date", metadata.DocumentDate)
 	}
-	overwrite := state.Job != nil && state.Job.GetBool(models.JobOverwriteCustomFields)
-	if err := applyCustomFields(state.App, state.Document, metadata.CustomFields, overwrite); err != nil {
-		return fmt.Errorf("custom fields: %w", err)
-	}
-
 	// In review mode the proposals join the closed list: a proposal naming an
 	// existing tag is that tag, and an invented name the model put in tags is
 	// still a proposal. Off, nobody would accept one, so they are discarded.
@@ -257,7 +271,13 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 	}
 
 	state.Document.Set("processing_status", finishedDocStatus(state.Cfg, lowConfidence))
-	if err := state.App.Save(state.Document); err != nil {
+	err = state.App.RunInTransaction(func(txApp core.App) error {
+		if err := models.SaveFieldValues(txApp, state.Document, writes); err != nil {
+			return err
+		}
+		return txApp.Save(state.Document)
+	})
+	if err != nil {
 		return fmt.Errorf("save document: %w", err)
 	}
 

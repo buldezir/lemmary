@@ -41,23 +41,17 @@ func stringsField(meta map[string]any, key string) []string {
 	return out
 }
 
-// fieldValue is a value restored onto a document once the document exists.
-type fieldValue struct {
-	field models.CustomField
-	value any
-}
-
 // customFieldsField maps the archive's values, keyed by field name, onto this
 // instance's fields. A name with no field here is dropped.
-func customFieldsField(meta map[string]any, fields []models.CustomField) []fieldValue {
+func customFieldsField(meta map[string]any, fields []models.CustomField) []models.FieldWrite {
 	byName, ok := meta["custom_fields"].(map[string]any)
 	if !ok {
 		return nil
 	}
-	var out []fieldValue
+	var out []models.FieldWrite
 	for _, field := range fields {
 		if value, ok := field.ValueIn(byName); ok {
-			out = append(out, fieldValue{field, value})
+			out = append(out, models.FieldWrite{Field: field, Value: value})
 		}
 	}
 	return out
@@ -78,7 +72,7 @@ var restorableStatuses = map[string]struct{}{
 // returns the field values to save once the document exists. Names are
 // resolved through resolver, creating the tag or option when this instance does
 // not have it yet.
-func applyMetadata(record *core.Record, meta map[string]any, resolver *taxonomyResolver) ([]fieldValue, error) {
+func applyMetadata(record *core.Record, meta map[string]any, resolver *taxonomyResolver) ([]models.FieldWrite, error) {
 	for _, field := range []string{
 		"title", "summary", "metadata_source", "text_fingerprint",
 	} {
@@ -132,7 +126,7 @@ func applyMetadata(record *core.Record, meta map[string]any, resolver *taxonomyR
 			return nil, err
 		}
 		if id != "" {
-			values = append(values, fieldValue{field, id})
+			values = append(values, models.FieldWrite{Field: field, Value: id})
 		}
 	}
 	return values, nil

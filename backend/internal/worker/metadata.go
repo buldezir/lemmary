@@ -10,32 +10,31 @@ import (
 	"lemmary/backend/internal/models"
 )
 
-// applyCustomFields fills only what is empty, so a value someone typed survives
+// customFieldWrites fills only what is empty, so a value someone typed survives
 // every reprocess, unless overwrite asks for every answer to replace what is
 // there. A field extraction found nothing for keeps its value either way.
-func applyCustomFields(app core.App, document *core.Record, answers map[string]any, overwrite bool) error {
+func customFieldWrites(app core.App, document *core.Record, answers map[string]any, overwrite bool) ([]models.FieldWrite, error) {
 	if len(answers) == 0 {
-		return nil
+		return nil, nil
 	}
 	fields, err := models.LoadCustomFields(app)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	values, err := models.LoadDocumentFieldValues(app, document.Id)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	var writes []models.FieldWrite
 	for _, field := range fields {
 		if _, filled := values[field.ID]; filled && !overwrite {
 			continue
 		}
 		if value, ok := field.ValueIn(answers); ok {
-			if err := models.SaveFieldValue(app, document, field, value); err != nil {
-				return err
-			}
+			writes = append(writes, models.FieldWrite{Field: field, Value: value})
 		}
 	}
-	return nil
+	return writes, nil
 }
 
 // correspondentName falls back to the first person or organization named, for
@@ -52,17 +51,17 @@ func correspondentName(metadata *models.ExtractedMetadata) string {
 	return ""
 }
 
-// applyOption points an option field at the owner's option for name, creating
+// optionWrite points an option field at the owner's option for name, creating
 // it when the owner has none. An empty name clears the field.
-func applyOption(app core.App, document *core.Record, field models.CustomField, name string) error {
+func optionWrite(app core.App, document *core.Record, field models.CustomField, name string) (models.FieldWrite, error) {
 	if name == "" {
-		return models.SaveFieldValue(app, document, field, nil)
+		return models.FieldWrite{Field: field}, nil
 	}
 	id, _, err := EnsureOption(app, field.ID, document.GetString("user"), name)
 	if err != nil {
-		return err
+		return models.FieldWrite{}, err
 	}
-	return models.SaveFieldValue(app, document, field, id)
+	return models.FieldWrite{Field: field, Value: id}, nil
 }
 
 func loadMetadataJSON(job *core.Record) (*models.ExtractedMetadata, error) {

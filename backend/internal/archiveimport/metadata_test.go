@@ -43,7 +43,7 @@ func TestApplyMetadataRestoresCustomFieldsByName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("applyMetadata: %v", err)
 	}
-	if len(values) != 1 || values[0].field.ID != "fhere" || values[0].value != "R-1" {
+	if len(values) != 1 || values[0].Field.ID != "fhere" || values[0].Value != "R-1" {
 		t.Fatalf("values = %#v, want only fhere=R-1", values)
 	}
 }

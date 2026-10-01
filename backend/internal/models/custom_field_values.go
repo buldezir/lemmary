@@ -175,6 +175,23 @@ func SaveFieldValue(app core.App, document *core.Record, field CustomField, valu
 	return app.Save(record)
 }
 
+// FieldWrite is one value for SaveFieldValues; a nil Value clears the field.
+type FieldWrite struct {
+	Field CustomField
+	Value any
+}
+
+// SaveFieldValues is SaveFieldValue for each write, in order. Run it in the
+// transaction that saves the document, so a refused document keeps its values.
+func SaveFieldValues(app core.App, document *core.Record, writes []FieldWrite) error {
+	for _, w := range writes {
+		if err := SaveFieldValue(app, document, w.Field, w.Value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func requireOwnOption(app core.App, document *core.Record, field CustomField, id string) error {
 	option, err := app.FindRecordById(CustomFieldOptionsCollection, id)
 	if err != nil {

@@ -68,6 +68,30 @@ func TestCustomFieldsCollectionAfterMigrating(t *testing.T) {
 	if values.CreateRule != nil || values.UpdateRule != nil || values.DeleteRule != nil {
 		t.Fatal("custom_field_values must be written by the server only")
 	}
+
+	// An option is renamed in place, never moved to another field or owner.
+	options, err := app.FindCollectionByNameOrId(models.CustomFieldOptionsCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerID := makeUser(t, app, "owner@example.com")
+	other := makeUser(t, app, "other@example.com")
+	owner, err := app.FindRecordById("users", ownerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	option := makeOption(t, app, models.CorrespondentFieldID, ownerID, "Acme")
+	for body, want := range map[string]bool{
+		"name":  true,
+		"field": false,
+		"user":  false,
+	} {
+		update := map[string]any{"name": "Acme GmbH", "field": models.DocumentTypeFieldID, "user": other}
+		info := &core.RequestInfo{Auth: owner, Body: map[string]any{body: update[body]}}
+		if got := canAccess(t, app, options.Name, option, info, options.UpdateRule); got != want {
+			t.Errorf("changing %s: allowed = %v, want %v", body, got, want)
+		}
+	}
 }
 
 func TestCustomFieldsMigrationIsIdempotent(t *testing.T) {

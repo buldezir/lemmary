@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -122,5 +123,21 @@ func TestApplyMetadataFillsOnlyEmptyCustomFields(t *testing.T) {
 	}
 	if got := values[ids["Amount"]].Value(); got != 129.9 {
 		t.Fatalf("an unanswered field lost its value: %#v", got)
+	}
+
+	// The values are saved with the document, so a document refused for its
+	// title changes none of them.
+	state.Metadata.Title = strings.Repeat("x", 501)
+	state.Metadata.Correspondent = "Acme"
+	state.Metadata.CustomFields = map[string]any{"Amount": "1"}
+	if err := (&ApplyMetadataStep{}).Run(context.Background(), state); err == nil {
+		t.Fatal("a 501-rune title was saved")
+	}
+	values, err = models.LoadDocumentFieldValues(app, doc.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := values[ids["Amount"]].Value(); got != 129.9 || values.OptionID(models.CorrespondentFieldID) != "" {
+		t.Fatalf("a refused document changed its values: %#v", values)
 	}
 }

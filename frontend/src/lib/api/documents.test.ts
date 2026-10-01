@@ -103,7 +103,7 @@ describe('buildDocumentFilter', () => {
       buildDocumentFilter({ ...noFilters, documentType: 'type123', correspondent: 'corr456' }),
     ).toBe(
       'custom_field_values_via_document.option ?= "type123" && ' +
-        'custom_field_values_via_document.option ?= "corr456"',
+        'custom_field_values_via_document.document.custom_field_values_via_document.option ?= "corr456"',
     )
   })
 

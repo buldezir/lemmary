@@ -282,7 +282,6 @@ export const en = {
   'settingsApi.saveFailed': 'Failed to save settings',
   'customFieldsApi.duplicateName': 'A custom field called "{name}" already exists.',
   'customFieldsApi.saveFailed': 'The custom field could not be saved.',
-  'customFieldsApi.valuesSaveFailed': "The document's fields could not be saved.",
 
   'mcp.statusFailed': 'Failed to check the MCP endpoint',
   'mcp.tokenFailed': 'Failed to create a token',

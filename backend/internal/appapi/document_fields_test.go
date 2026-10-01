@@ -11,31 +11,36 @@ import (
 	"lemmary/backend/internal/models"
 )
 
-func patchDocumentFields(t *testing.T, app core.App, authID, docID, body string) *httptest.ResponseRecorder {
+// updateDocument runs a documents update carrying fields through the hooks,
+// the way PocketBase's record update handler does once the update rule has
+// passed.
+func updateDocument(t *testing.T, app core.App, docID, title, fields string) error {
 	t.Helper()
-	auth, err := app.FindRecordById("users", authID)
+	record, err := app.FindRecordById("documents", docID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec := httptest.NewRecorder()
-	e := &core.RequestEvent{App: app, Auth: auth}
-	e.Response = rec
-	e.Request = httptest.NewRequest(http.MethodPatch, "/api/app/documents/"+docID+"/fields", strings.NewReader(body))
-	e.Request.Header.Set("Content-Type", "application/json")
-	e.Request.SetPathValue("documentId", docID)
-	if err := handlePatchDocumentFields(app)(e); err != nil {
-		t.Fatalf("handler: %v", err)
+	if title != "" {
+		record.Set("title", title)
 	}
-	return rec
+	e := &core.RecordRequestEvent{RequestEvent: &core.RequestEvent{App: app}, Record: record}
+	e.Collection = record.Collection()
+	e.Response = httptest.NewRecorder()
+	e.Request = httptest.NewRequest(http.MethodPatch, "/api/collections/documents/records/"+docID,
+		strings.NewReader(`{"fields": `+fields+`}`))
+	e.Request.Header.Set("Content-Type", "application/json")
+	return app.OnRecordUpdateRequest().Trigger(e, func(e *core.RecordRequestEvent) error {
+		return e.App.Save(e.Record)
+	})
 }
 
-// One request sets the predefined and the admin's fields; a name becomes the
-// owner's option, a value of the wrong type refuses the whole request, and only
-// the owner may write.
-func TestPatchDocumentFields(t *testing.T) {
+// One update sets the predefined and the admin's fields with the document; a
+// name becomes the owner's option, a value of the wrong type refuses the whole
+// update without creating one, and a refused document keeps its values.
+func TestSaveFieldsWithDocument(t *testing.T) {
 	app := bootQueueApp(t)
+	app.OnRecordUpdateRequest("documents").BindFunc(saveFieldsWithDocument)
 	owner := makeQueueUser(t, app, "owner@example.com")
-	other := makeQueueUser(t, app, "other@example.com")
 	doc := makeQueueDocument(t, app, owner, models.DocStatusCompleted, "text")
 	fields, err := app.FindCollectionByNameOrId(models.CustomFieldsCollection)
 	if err != nil {
@@ -47,42 +52,44 @@ func TestPatchDocumentFields(t *testing.T) {
 	if err := app.Save(amount); err != nil {
 		t.Fatal(err)
 	}
-
-	rec := patchDocumentFields(t, app, owner, doc.Id,
-		`{"`+models.CorrespondentFieldID+`": "Acme", "`+amount.Id+`": "12.50"}`)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	values := func() models.FieldValues {
+		t.Helper()
+		values, err := models.LoadDocumentFieldValues(app, doc.Id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return values
 	}
-	values, err := models.LoadDocumentFieldValues(app, doc.Id)
-	if err != nil {
+
+	if err := updateDocument(t, app, doc.Id, "Paid",
+		`{"`+models.CorrespondentFieldID+`": "Acme", "`+amount.Id+`": "12.50"}`); err != nil {
 		t.Fatal(err)
 	}
-	if values.OptionName(models.CorrespondentFieldID) != "Acme" || values[amount.Id].Number != 12.5 {
-		t.Fatalf("values = %#v", values)
+	if got := values(); got.OptionName(models.CorrespondentFieldID) != "Acme" || got[amount.Id].Number != 12.5 {
+		t.Fatalf("values = %#v", got)
 	}
 
-	for name, body := range map[string]string{
-		"a word for a number": `{"` + amount.Id + `": "twelve", "` + models.CorrespondentFieldID + `": null}`,
-		"an unknown field":    `{"fnosuchfield00": "x"}`,
+	for name, update := range map[string]struct{ title, fields string }{
+		"a word for a number": {"", `{"` + amount.Id + `": "twelve", "` + models.DocumentTypeFieldID + `": "Invoice"}`},
+		"an unknown field":    {"", `{"fnosuchfield00": "x"}`},
+		"not an object":       {"", `"x"`},
+		"a refused document":  {strings.Repeat("x", 501), `{"` + amount.Id + `": 1}`},
 	} {
-		if rec := patchDocumentFields(t, app, owner, doc.Id, body); rec.Code != http.StatusBadRequest {
-			t.Errorf("%s: status = %d, want 400", name, rec.Code)
+		if err := updateDocument(t, app, doc.Id, update.title, update.fields); err == nil {
+			t.Errorf("%s: the update was accepted", name)
 		}
 	}
-	values, _ = models.LoadDocumentFieldValues(app, doc.Id)
-	if values.OptionName(models.CorrespondentFieldID) != "Acme" {
-		t.Fatal("a refused request changed the values")
+	if got := values(); got[amount.Id].Number != 12.5 || got.OptionID(models.DocumentTypeFieldID) != "" {
+		t.Fatalf("a refused update changed the values: %#v", got)
+	}
+	if n, _ := app.CountRecords(models.CustomFieldOptionsCollection); n != 1 {
+		t.Fatalf("options = %d, want only Acme", n)
 	}
 
-	if rec := patchDocumentFields(t, app, other, doc.Id, `{"`+amount.Id+`": 1}`); rec.Code != http.StatusNotFound {
-		t.Fatalf("another user's write: status = %d, want 404", rec.Code)
+	if err := updateDocument(t, app, doc.Id, "", `{"`+amount.Id+`": ""}`); err != nil {
+		t.Fatal(err)
 	}
-
-	if rec := patchDocumentFields(t, app, owner, doc.Id, `{"`+amount.Id+`": ""}`); rec.Code != http.StatusNoContent {
-		t.Fatalf("clear: status = %d", rec.Code)
-	}
-	values, _ = models.LoadDocumentFieldValues(app, doc.Id)
-	if _, ok := values[amount.Id]; ok {
+	if _, ok := values()[amount.Id]; ok {
 		t.Fatal("an empty value did not clear the field")
 	}
 }

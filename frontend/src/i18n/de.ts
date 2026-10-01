@@ -296,7 +296,6 @@ export const de: Catalog = {
   'settingsApi.saveFailed': 'Einstellungen konnten nicht gespeichert werden',
   'customFieldsApi.duplicateName': 'Ein eigenes Feld namens „{name}“ gibt es bereits.',
   'customFieldsApi.saveFailed': 'Das eigene Feld konnte nicht gespeichert werden.',
-  'customFieldsApi.valuesSaveFailed': 'Die Felder des Dokuments konnten nicht gespeichert werden.',
 
   'mcp.statusFailed': 'Der MCP-Endpunkt konnte nicht geprüft werden',
   'mcp.tokenFailed': 'Token konnte nicht erstellt werden',

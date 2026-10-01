@@ -108,7 +108,7 @@ func createCustomFieldOptionsCollection(app core.App) error {
 	coll.ListRule = new(owner)
 	coll.ViewRule = new(owner)
 	coll.CreateRule = new(owner + " && field.type = 'option'")
-	coll.UpdateRule = new(owner)
+	coll.UpdateRule = new(owner + " && @request.body.field:changed = false && @request.body.user:changed = false")
 	coll.DeleteRule = new(owner)
 	coll.Fields.Add(
 		&core.RelationField{Name: "field", Required: true, CollectionId: fields.Id, MaxSelect: 1, CascadeDelete: true},

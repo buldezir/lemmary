@@ -1,6 +1,5 @@
 import { ClientResponseError } from 'pocketbase'
 import { t } from '../../i18n'
-import { apiFetch } from '../apiClient'
 import { ensureAuth } from '../auth'
 import { pb } from '../pb'
 
@@ -66,15 +65,6 @@ export async function listCustomFields(): Promise<CustomField[]> {
   return pb
     .collection('custom_fields')
     .getFullList<CustomField>({ filter: "type != 'option'", sort: 'created,id' })
-}
-
-/** Sets the fields named in values and leaves every other one as it is. */
-export function saveDocumentFields(documentId: string, values: CustomFieldValues) {
-  return apiFetch<null>(`/api/app/documents/${encodeURIComponent(documentId)}/fields`, {
-    method: 'PATCH',
-    body: values,
-    fallbackError: t('customFieldsApi.valuesSaveFailed'),
-  })
 }
 
 /** Creates the field when id is empty, otherwise updates it. Admins only. */
