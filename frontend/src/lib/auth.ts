@@ -45,6 +45,39 @@ export async function ensureAuth() {
   }
 }
 
+type HandoffLocation = Pick<Location, 'hash' | 'pathname' | 'search'>
+type HandoffHistory = Pick<History, 'replaceState' | 'state'>
+
+export function takeAuthHandoff(location: HandoffLocation, history: HandoffHistory): string | null {
+  const match = /^#auth=([\w.-]+)$/.exec(location.hash)
+  if (!match) {
+    return null
+  }
+  history.replaceState(history.state, '', location.pathname + location.search)
+  return match[1]
+}
+
+// Taken while this module loads, before the router reads the URL.
+let pendingHandoff = typeof window === 'undefined' ? null : takeAuthHandoff(window.location, window.history)
+
+/**
+ * A demo's landing site signs the visitor in and hands the session over in the
+ * URL fragment. Only a demo adopts it: it has a single account, so a link cannot
+ * sign anybody into an account that is not theirs.
+ */
+export async function adoptAuthHandoff(demo: boolean, token = pendingHandoff) {
+  pendingHandoff = null
+  if (!token || !demo) {
+    return
+  }
+  pb.authStore.save(token)
+  try {
+    await pb.collection('users').authRefresh()
+  } catch {
+    pb.authStore.clear()
+  }
+}
+
 export type OAuthProvider = {
   name: string
   displayName: string

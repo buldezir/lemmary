@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { Link, Outlet, useMatchRoute } from '@tanstack/react-router'
 import { pb, pbAdminUrl } from '../lib/pb'
-import { ensureAuth, getUserDisplayName, isAdmin, logout } from '../lib/auth'
+import { adoptAuthHandoff, ensureAuth, getUserDisplayName, isAdmin, logout } from '../lib/auth'
 import { getAppMeta, getSetupStatus, type SetupStatus } from '../lib/api/meta'
 import { useAppMeta } from '../hooks/useAppMeta'
 import { useInboxCount } from '../hooks/useInboxCount'
@@ -455,11 +455,13 @@ async function resolveGate(): Promise<Gate> {
   // Meta before the gate opens, because always_require_review decides what a
   // bare "/" means: without it the list paints every status for one frame and
   // then narrows.
-  const [status] = await Promise.all([getSetupStatus(), getAppMeta()])
+  const [status, meta] = await Promise.all([getSetupStatus(), getAppMeta()])
 
   if (status.needs_admin) {
     return { kind: 'setup', status }
   }
+
+  await adoptAuthHandoff(meta.writableUntil !== undefined)
 
   let authenticated: boolean
   try {
