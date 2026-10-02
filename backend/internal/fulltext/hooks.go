@@ -102,6 +102,22 @@ func registerRecordHooks(app core.App, idx *Index) {
 		}
 		return nil
 	})
+	// A deleted choice takes its value rows with it too; a renamed one changes
+	// FieldCustomFields of every document holding it.
+	app.OnRecordAfterUpdateSuccess(models.CustomFieldChoicesCollection).BindFunc(func(e *core.RecordEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
+		ids, err := documentIDsByFilter(e.App, models.CustomFieldValuesCollection+"_via_document.choice ?= {:id}",
+			map[string]any{"id": e.Record.Id})
+		if err != nil {
+			e.App.Logger().Error("fulltext choice lookup failed", slog.Any("error", err))
+		}
+		for _, id := range ids {
+			idx.EnqueueUpsert(e.App, id)
+		}
+		return nil
+	})
 	reindexValue := func(e *core.RecordEvent) error {
 		if err := e.Next(); err != nil {
 			return err

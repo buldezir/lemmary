@@ -295,6 +295,7 @@ export const de: Catalog = {
   'settingsApi.loadFailed': 'Einstellungen konnten nicht geladen werden',
   'settingsApi.saveFailed': 'Einstellungen konnten nicht gespeichert werden',
   'customFieldsApi.duplicateName': 'Ein eigenes Feld namens „{name}“ gibt es bereits.',
+  'customFieldsApi.duplicateChoice': 'Die Auswahl „{name}“ steht doppelt in der Liste.',
   'customFieldsApi.saveFailed': 'Das eigene Feld konnte nicht gespeichert werden.',
 
   'mcp.statusFailed': 'Der MCP-Endpunkt konnte nicht geprüft werden',
@@ -1096,6 +1097,7 @@ export const de: Catalog = {
   'settings.tabAppearance': 'Darstellung',
   'settings.tabAi': 'KI',
   'settings.tabProcessing': 'Verarbeitung',
+  'settings.tabFields': 'Felder',
   'settings.tabWorker': 'Worker',
   'settings.tabDuplicates': 'Duplikate',
   'settings.tabIngest': 'Eingang',
@@ -1161,6 +1163,41 @@ export const de: Catalog = {
     'Damit können Deep Research und „KI fragen“ online nachschlagen, wenn das Archiv keine Antwort hat – etwa einen geänderten Tarif oder die aktuellen Angaben einer Firma. Aus, solange hier kein Anbieter zugewiesen ist, und auch dann in einem Chat aus, bis der Leser sie einschaltet. Jede Abfrage wird vom Anbieter berechnet. {link}',
   'settingsAi.webSearchLink': 'Der Websuche-Anbieter.',
 
+  'settingsFields.title': 'Dokumentfelder',
+  'settingsFields.intro':
+    'Zusätzliche Felder auf jeder Dokumentseite, etwa eine Rechnungsnummer, ein Betrag oder ein Zahlungsstatus. Die Extraktion füllt leere Felder aus dem jeweiligen Dokument; ein eingetippter Wert bleibt erhalten, außer eine erneute Verarbeitung soll ihn überschreiben. Wird ein Feld gelöscht, werden seine Werte gelöscht.',
+  'settingsFields.add': 'Feld hinzufügen',
+  'settingsFields.empty': 'Noch keine Felder.',
+  'settingsFields.edit': 'Bearbeiten',
+  'settingsFields.removeConfirm':
+    'Feld „{name}“ löschen? Seine Werte verschwinden aus allen Dokumenten.',
+  'settingsFields.addTitle': 'Neues Feld',
+  'settingsFields.editTitle': 'Feld bearbeiten',
+  'settingsFields.name': 'Name',
+  'settingsFields.namePlaceholder': 'z. B. Rechnungsnummer',
+  'settingsFields.type': 'Typ',
+  'settingsFields.typeText': 'Text',
+  'settingsFields.typeNumber': 'Zahl',
+  'settingsFields.typeDate': 'Datum',
+  'settingsFields.typeChoice': 'Auswahl',
+  'settingsFields.typeFixed':
+    'Steht nach dem Speichern fest: Die Werte des Felds werden in diesem Typ gespeichert.',
+  'settingsFields.typeLocked': 'fest: Die Werte werden in diesem Typ gespeichert',
+  'settingsFields.hint': 'Hinweis für die Extraktion',
+  'settingsFields.hintPlaceholder': 'Optional, z. B. steht neben „Rechnungsnr.“',
+  'settingsFields.hintHelp':
+    'Name und Hinweis sind Teil des Prompts, mit dem das KI-Modell jedes Dokument liest: Sagen Sie, was das Feld bedeutet und wo es auf dem Dokument steht.',
+  'settingsFields.choices': 'Auswahlwerte',
+  'settingsFields.choiceN': 'Auswahlwert {n}',
+  'settingsFields.removeChoice': 'Wert {name} entfernen',
+  'settingsFields.newChoice': 'Neuer Auswahlwert',
+  'settingsFields.newChoicePlaceholder': 'Wert eingeben und Enter drücken',
+  'settingsFields.addChoice': 'Wert hinzufügen',
+  'settingsFields.choicesHelp':
+    'Die Extraktion wählt nur aus diesen Werten. Ein umbenannter Wert heißt auf jedem Dokument neu; ein entfernter verschwindet aus den Dokumenten, die ihn tragen.',
+  'settingsFields.choicesRemoveConfirm':
+    '{names} entfernen? Dokumente mit einem entfernten Wert verlieren ihn.',
+  'settingsFields.saving': 'Wird gespeichert…',
   'settingsProcessing.ocrTimeoutInvalid': 'Das OCR-Zeitlimit muss eine positive Zahl sein',
   'settingsProcessing.aiTimeoutInvalid': 'Das KI-Zeitlimit muss eine positive Zahl sein',
   'settingsProcessing.title': 'Verarbeitung',
@@ -1188,23 +1225,6 @@ export const de: Catalog = {
     'z. B. Behandle „Invoice“ als Dokumenttyp Rechnung.\nVersieh jedes Versicherungsdokument mit der Policennummer als Tag.',
   'settingsProcessing.extractionRulesHint':
     'Ihre eigenen Anweisungen, ergänzt im Prompt, der die Metadaten aus einem Dokument liest – hauseigene Konventionen für Titel, Typen, Korrespondenten oder Tags. Sie ändern nicht, welche Felder gespeichert werden. Gilt für Dokumente, die ab jetzt verarbeitet oder erneut verarbeitet werden; leer lassen für den eingebauten Prompt allein.',
-  'settingsProcessing.customFields': 'Eigene Dokumentfelder',
-  'settingsProcessing.customFieldsHint':
-    'Zusätzliche Felder auf jedem Dokument, etwa eine Rechnungsnummer, ein Betrag oder ein Fälligkeitsdatum. Name und Hinweis für die Extraktion jedes Felds werden Teil des Prompts, mit dem das KI-Modell jedes Dokument liest: Sagen Sie im Hinweis, was das Feld bedeutet und wo es auf dem Dokument steht, z. B. „steht neben Rechnungsnr.“. Die Extraktion füllt leere Felder; ein eingetippter Wert bleibt erhalten, außer eine erneute Verarbeitung soll ihn überschreiben. Der Typ eines Felds steht nach dem Speichern fest, und wird ein Feld entfernt, werden seine Werte gelöscht.',
-  'settingsProcessing.customFieldName': 'Feldname',
-  'settingsProcessing.customFieldNamePlaceholder': 'z. B. Rechnungsnummer',
-  'settingsProcessing.customFieldType': 'Typ',
-  'settingsProcessing.customFieldTypeText': 'Text',
-  'settingsProcessing.customFieldTypeNumber': 'Zahl',
-  'settingsProcessing.customFieldTypeDate': 'Datum',
-  'settingsProcessing.customFieldDescription': 'Hinweis für die Extraktion',
-  'settingsProcessing.customFieldDescriptionPlaceholder':
-    'Optional, geht an das KI-Modell, z. B. steht neben „Rechnungsnr.“',
-  'settingsProcessing.customFieldAdd': 'Feld hinzufügen',
-  'settingsProcessing.customFieldRemove': 'Entfernen',
-  'settingsProcessing.customFieldSave': 'Speichern',
-  'settingsProcessing.customFieldRemoveConfirm':
-    'Feld „{name}“ entfernen? Seine Werte verschwinden aus allen Dokumenten.',
 
   'settingsIngest.everyDay': 'täglich',
   'settingsIngest.everyHour': 'stündlich',

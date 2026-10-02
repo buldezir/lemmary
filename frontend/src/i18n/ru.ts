@@ -332,6 +332,7 @@ export const ru: Catalog = {
   'settingsApi.loadFailed': 'Не удалось загрузить настройки',
   'settingsApi.saveFailed': 'Не удалось сохранить настройки',
   'customFieldsApi.duplicateName': 'Пользовательское поле «{name}» уже существует.',
+  'customFieldsApi.duplicateChoice': 'Значение «{name}» указано дважды.',
   'customFieldsApi.saveFailed': 'Не удалось сохранить пользовательское поле.',
 
   'mcp.statusFailed': 'Не удалось проверить конечную точку MCP',
@@ -1210,6 +1211,7 @@ export const ru: Catalog = {
   'settings.tabAppearance': 'Оформление',
   'settings.tabAi': 'ИИ',
   'settings.tabProcessing': 'Обработка',
+  'settings.tabFields': 'Поля',
   'settings.tabWorker': 'Обработчик',
   'settings.tabDuplicates': 'Дубликаты',
   'settings.tabIngest': 'Поступление',
@@ -1284,6 +1286,41 @@ export const ru: Catalog = {
     'Позволяет Deep Research и «Спросить ИИ» искать в интернете, когда архив не знает ответа, — например, изменившийся тариф или актуальные данные компании. Выключен, пока здесь не назначен провайдер, и даже тогда выключен в чате, пока читатель его не включит. Каждый запрос оплачивается у провайдера. {link}',
   'settingsAi.webSearchLink': 'Провайдер веб-поиска.',
 
+  'settingsFields.title': 'Поля документов',
+  'settingsFields.intro':
+    'Дополнительные поля на каждой странице документа, например номер счёта, сумма или статус оплаты. Извлечение заполняет пустые поля из самого документа; введённое вручную значение сохраняется, если только повторная обработка не должна его перезаписать. Удаление поля удаляет его значения.',
+  'settingsFields.add': 'Добавить поле',
+  'settingsFields.empty': 'Полей пока нет.',
+  'settingsFields.edit': 'Изменить',
+  'settingsFields.removeConfirm':
+    'Удалить поле «{name}»? Его значения пропадут из всех документов.',
+  'settingsFields.addTitle': 'Новое поле',
+  'settingsFields.editTitle': 'Изменить поле',
+  'settingsFields.name': 'Название',
+  'settingsFields.namePlaceholder': 'например, Номер счёта',
+  'settingsFields.type': 'Тип',
+  'settingsFields.typeText': 'Текст',
+  'settingsFields.typeNumber': 'Число',
+  'settingsFields.typeDate': 'Дата',
+  'settingsFields.typeChoice': 'Выбор из списка',
+  'settingsFields.typeFixed':
+    'После сохранения тип не меняется: значения поля хранятся в этом типе.',
+  'settingsFields.typeLocked': 'не меняется: значения хранятся в этом типе',
+  'settingsFields.hint': 'Подсказка для извлечения',
+  'settingsFields.hintPlaceholder': 'Необязательно, например «рядом с „Счёт №“»',
+  'settingsFields.hintHelp':
+    'Название и подсказка входят в промпт, с которым ИИ-модель читает каждый документ: объясните, что означает поле и где его искать в документе.',
+  'settingsFields.choices': 'Значения',
+  'settingsFields.choiceN': 'Значение {n}',
+  'settingsFields.removeChoice': 'Удалить значение {name}',
+  'settingsFields.newChoice': 'Новое значение',
+  'settingsFields.newChoicePlaceholder': 'Введите значение и нажмите Enter',
+  'settingsFields.addChoice': 'Добавить значение',
+  'settingsFields.choicesHelp':
+    'Извлечение выбирает только из этих значений. Переименованное значение меняется во всех документах; удалённое стирается из документов, где оно стояло.',
+  'settingsFields.choicesRemoveConfirm':
+    'Удалить {names}? Документы с удалённым значением его потеряют.',
+  'settingsFields.saving': 'Сохранение…',
   'settingsProcessing.ocrTimeoutInvalid': 'Тайм-аут OCR должен быть положительным числом',
   'settingsProcessing.aiTimeoutInvalid': 'Тайм-аут ИИ должен быть положительным числом',
   'settingsProcessing.title': 'Обработка',
@@ -1310,23 +1347,6 @@ export const ru: Catalog = {
     'например: Считай «Rechnung» типом документа «Счёт».\nСтавь на каждый страховой документ тег с номером полиса.',
   'settingsProcessing.extractionRulesHint':
     'Ваши собственные указания, добавляемые в промпт, который извлекает метаданные из документа, — принятые у вас правила для названий, типов, корреспондентов или тегов. Они не меняют набор сохраняемых полей. Применяются к документам, обработанным или повторно обработанным с этого момента; оставьте пустым, чтобы использовать только встроенный промпт.',
-  'settingsProcessing.customFields': 'Пользовательские поля документов',
-  'settingsProcessing.customFieldsHint':
-    'Дополнительные поля на каждом документе, например номер счёта, сумма или срок оплаты. Название поля и подсказка для извлечения становятся частью промпта, с которым ИИ-модель читает каждый документ: в подсказке объясните, что означает поле и где его искать в документе, например «рядом с „Счёт №“». Извлечение заполняет пустые поля; введённое вручную значение сохраняется, если только повторная обработка не должна его перезаписать. Тип поля после сохранения не меняется, а удаление поля удаляет его значения.',
-  'settingsProcessing.customFieldName': 'Название поля',
-  'settingsProcessing.customFieldNamePlaceholder': 'например, Номер счёта',
-  'settingsProcessing.customFieldType': 'Тип',
-  'settingsProcessing.customFieldTypeText': 'Текст',
-  'settingsProcessing.customFieldTypeNumber': 'Число',
-  'settingsProcessing.customFieldTypeDate': 'Дата',
-  'settingsProcessing.customFieldDescription': 'Подсказка для извлечения',
-  'settingsProcessing.customFieldDescriptionPlaceholder':
-    'Необязательно, отправляется ИИ-модели, например «рядом с „Счёт №“»',
-  'settingsProcessing.customFieldAdd': 'Добавить поле',
-  'settingsProcessing.customFieldRemove': 'Удалить',
-  'settingsProcessing.customFieldSave': 'Сохранить',
-  'settingsProcessing.customFieldRemoveConfirm':
-    'Удалить поле «{name}»? Его значения пропадут из всех документов.',
 
   'settingsIngest.everyDay': 'раз в день',
   'settingsIngest.everyHour': 'раз в час',

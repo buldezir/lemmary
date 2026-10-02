@@ -127,6 +127,7 @@ var boostedTextFields = []boostedField{
 	{FieldTagNames, 3},
 	{FieldDocumentTypeName, 3},
 	{FieldCorrespondentName, 3},
+	{FieldCustomFields, 3},
 	{FieldSummary, 2},
 	{FieldPeople, 2},
 	{FieldOCRText, 1},

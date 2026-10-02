@@ -63,10 +63,6 @@ func evalIndex(t *testing.T) *Index {
 			FieldCorrespondent:     doc.Correspondent,
 			FieldTags:              doc.Tags,
 			FieldDocumentDate:      doc.Date,
-			FieldAll: strings.Join([]string{
-				doc.Title, doc.Summary,
-				strings.Join(doc.Tags, " "), doc.DocumentType, doc.Correspondent, doc.Text,
-			}, " "),
 		}
 		mustPut(t, idx, doc.ID, fields)
 	}

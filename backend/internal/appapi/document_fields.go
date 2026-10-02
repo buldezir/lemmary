@@ -93,7 +93,8 @@ func documentFields(app core.App) (map[string]models.CustomField, error) {
 }
 
 // clientFieldValue turns what a client sent into nil to clear, the coerced
-// value, or an option's name.
+// value, or an option's name. A choice field takes a choice's name too, which
+// Coerce resolves.
 func clientFieldValue(field models.CustomField, raw any) (any, error) {
 	s, isString := raw.(string)
 	if raw == nil || (isString && strings.TrimSpace(s) == "") {
@@ -106,6 +107,13 @@ func clientFieldValue(field models.CustomField, raw any) (any, error) {
 		return strings.TrimSpace(s), nil
 	}
 	value, ok := field.Coerce(raw)
+	if !ok && field.Type == models.CustomFieldChoice {
+		names := make([]string, len(field.Choices))
+		for i, choice := range field.Choices {
+			names[i] = choice.Name
+		}
+		return nil, i18n.Errorf("%s must be one of: %s", field.Name, strings.Join(names, ", "))
+	}
 	if !ok {
 		return nil, i18n.Errorf("%s must be a %s", field.Name, field.Type)
 	}

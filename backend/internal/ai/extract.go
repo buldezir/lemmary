@@ -131,13 +131,18 @@ func formatCustomFieldsPrompt(fields []models.CustomField) string {
 		return ""
 	}
 	type promptField struct {
-		Name        string `json:"name"`
-		Type        string `json:"type"`
-		Description string `json:"description,omitempty"`
+		Name        string   `json:"name"`
+		Type        string   `json:"type"`
+		Description string   `json:"description,omitempty"`
+		Choices     []string `json:"choices,omitempty"`
 	}
 	list := make([]promptField, 0, len(fields))
 	for _, f := range fields {
-		list = append(list, promptField{Name: f.Name, Type: f.Type, Description: f.Description})
+		field := promptField{Name: f.Name, Type: f.Type, Description: f.Description}
+		for _, choice := range f.Choices {
+			field.Choices = append(field.Choices, choice.Name)
+		}
+		list = append(list, field)
 	}
 	payload, err := marshalCatalogNames(list)
 	if err != nil {
@@ -145,7 +150,7 @@ func formatCustomFieldsPrompt(fields []models.CustomField) string {
 	}
 	return fmt.Sprintf(`
 
-Also return custom_fields (object): the archive's own fields, listed in the JSON array below. Use each field's name exactly as its key and fill it only with a value the document states; leave a field out rather than guess. Format by type: text is a string as written on the document, number is a JSON number with "." as the decimal separator and no currency symbol or thousands separator, date is a complete YYYY-MM-DD date. A description says what the field means or where it appears:
+Also return custom_fields (object): the archive's own fields, listed in the JSON array below. Use each field's name exactly as its key and fill it only with a value the document states; leave a field out rather than guess. Format by type: text is a string as written on the document, number is a JSON number with "." as the decimal separator and no currency symbol or thousands separator, date is a complete YYYY-MM-DD date, choice is exactly one of the field's choices, copied as written, left out when none fits. A description says what the field means or where it appears:
 %s`, payload)
 }
 

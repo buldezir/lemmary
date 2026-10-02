@@ -25,16 +25,21 @@ func testDocumentsCollection() *core.Collection {
 }
 
 // Field ids are each instance's own, so values travel by name and land on
-// whichever field here carries it; a name nobody defined here is dropped.
+// whichever field here carries it; a name nobody defined here is dropped, and
+// so is a choice this instance does not list.
 func TestApplyMetadataRestoresCustomFieldsByName(t *testing.T) {
 	record := core.NewRecord(testDocumentsCollection())
 	resolver := newTaxonomyResolver(nil, "owner", &Result{})
 	resolver.customFields = []models.CustomField{
 		{ID: "fhere", Name: "Invoice number", Type: models.CustomFieldText},
 		{ID: "famount", Name: "Amount", Type: models.CustomFieldNumber},
+		{ID: "fstatus", Name: "Status", Type: models.CustomFieldChoice, Choices: []models.FieldChoice{{ID: "cpaid", Name: "Paid"}}},
+		{ID: "fpriority", Name: "Priority", Type: models.CustomFieldChoice, Choices: []models.FieldChoice{{ID: "chigh", Name: "High"}}},
 	}
 	meta := map[string]any{"custom_fields": map[string]any{
 		"invoice number": "R-1",
+		"Status":         "Paid",
+		"Priority":       "Low",
 		"Amount":         "not a number",
 		"Elsewhere only": "dropped",
 	}}
@@ -43,8 +48,12 @@ func TestApplyMetadataRestoresCustomFieldsByName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("applyMetadata: %v", err)
 	}
-	if len(values) != 1 || values[0].Field.ID != "fhere" || values[0].Value != "R-1" {
-		t.Fatalf("values = %#v, want only fhere=R-1", values)
+	got := map[string]any{}
+	for _, v := range values {
+		got[v.Field.ID] = v.Value
+	}
+	if len(got) != 2 || got["fhere"] != "R-1" || got["fstatus"] != "cpaid" {
+		t.Fatalf("values = %#v, want fhere=R-1 and fstatus=cpaid", got)
 	}
 }
 

@@ -281,6 +281,7 @@ export const en = {
   'settingsApi.loadFailed': 'Failed to load settings',
   'settingsApi.saveFailed': 'Failed to save settings',
   'customFieldsApi.duplicateName': 'A custom field called "{name}" already exists.',
+  'customFieldsApi.duplicateChoice': 'The choice "{name}" is listed twice.',
   'customFieldsApi.saveFailed': 'The custom field could not be saved.',
 
   'mcp.statusFailed': 'Failed to check the MCP endpoint',
@@ -1036,6 +1037,7 @@ export const en = {
   'settings.tabAppearance': 'Appearance',
   'settings.tabAi': 'AI',
   'settings.tabProcessing': 'Processing',
+  'settings.tabFields': 'Fields',
   'settings.tabWorker': 'Worker',
   'settings.tabDuplicates': 'Duplicates',
   'settings.tabIngest': 'Ingest',
@@ -1100,6 +1102,40 @@ export const en = {
     "Lets Deep Research and Ask AI look things up online when the archive cannot answer -- a rate that changed, a company's present details. Off unless a provider is bound here, and then still off in a chat until the reader turns it on. Every lookup is billed by the provider. {link}",
   'settingsAi.webSearchLink': 'The web-search provider.',
 
+  'settingsFields.title': 'Document fields',
+  'settingsFields.intro':
+    'Extra fields every document page shows, such as an invoice number, an amount or a payment status. Extraction fills the empty ones from each document; a value someone typed is kept unless a reprocess is told to overwrite it. Deleting a field deletes its values.',
+  'settingsFields.add': 'Add field',
+  'settingsFields.empty': 'No fields yet.',
+  'settingsFields.edit': 'Edit',
+  'settingsFields.removeConfirm':
+    'Delete the field "{name}"? Its values disappear from every document.',
+  'settingsFields.addTitle': 'New field',
+  'settingsFields.editTitle': 'Edit field',
+  'settingsFields.name': 'Name',
+  'settingsFields.namePlaceholder': 'e.g. Invoice number',
+  'settingsFields.type': 'Type',
+  'settingsFields.typeText': 'Text',
+  'settingsFields.typeNumber': 'Number',
+  'settingsFields.typeDate': 'Date',
+  'settingsFields.typeChoice': 'Choice',
+  'settingsFields.typeFixed': 'Fixed once the field is saved: its values are stored as this type.',
+  'settingsFields.typeLocked': 'fixed: its values are stored as this type',
+  'settingsFields.hint': 'Hint for extraction',
+  'settingsFields.hintPlaceholder': 'Optional, e.g. printed next to "Invoice no."',
+  'settingsFields.hintHelp':
+    'The name and this hint are part of the prompt the AI model reads every document with: say what the field means and where on the document to find it.',
+  'settingsFields.choices': 'Choices',
+  'settingsFields.choiceN': 'Choice {n}',
+  'settingsFields.removeChoice': 'Remove choice {name}',
+  'settingsFields.newChoice': 'New choice',
+  'settingsFields.newChoicePlaceholder': 'Type a choice and press Enter',
+  'settingsFields.addChoice': 'Add choice',
+  'settingsFields.choicesHelp':
+    'Extraction picks only from these. Renaming a choice renames it on every document; removing one clears it from the documents that hold it.',
+  'settingsFields.choicesRemoveConfirm':
+    'Remove {names}? Documents holding a removed choice lose that value.',
+  'settingsFields.saving': 'Saving…',
   'settingsProcessing.ocrTimeoutInvalid': 'OCR timeout must be a positive number',
   'settingsProcessing.aiTimeoutInvalid': 'AI timeout must be a positive number',
   'settingsProcessing.title': 'Processing',
@@ -1126,23 +1162,6 @@ export const en = {
     'e.g. Treat "Rechnung" as the document type Invoice.\nTag every insurance document with the policy number.',
   'settingsProcessing.extractionRulesHint':
     'Your own instructions, added to the prompt that reads metadata out of a document — house conventions for titles, types, correspondents or tags. They cannot change which fields are stored. Applies to documents processed or reprocessed from now on; leave empty for the built-in prompt alone.',
-  'settingsProcessing.customFields': 'Custom document fields',
-  'settingsProcessing.customFieldsHint':
-    'Extra fields shown on every document, such as an invoice number, an amount or a due date. Each field’s name and its hint for extraction become part of the prompt the AI model reads every document with: use the hint to say what the field means and where on the document to find it, e.g. “printed next to Invoice no.”. Extraction fills the empty fields; a value someone typed is kept unless a reprocess is told to overwrite it. A field’s type is fixed once saved, and removing a field deletes its values.',
-  'settingsProcessing.customFieldName': 'Field name',
-  'settingsProcessing.customFieldNamePlaceholder': 'e.g. Invoice number',
-  'settingsProcessing.customFieldType': 'Type',
-  'settingsProcessing.customFieldTypeText': 'Text',
-  'settingsProcessing.customFieldTypeNumber': 'Number',
-  'settingsProcessing.customFieldTypeDate': 'Date',
-  'settingsProcessing.customFieldDescription': 'Hint for extraction',
-  'settingsProcessing.customFieldDescriptionPlaceholder':
-    'Optional, sent to the AI model, e.g. printed next to "Invoice no."',
-  'settingsProcessing.customFieldAdd': 'Add field',
-  'settingsProcessing.customFieldRemove': 'Remove',
-  'settingsProcessing.customFieldSave': 'Save',
-  'settingsProcessing.customFieldRemoveConfirm':
-    'Remove the field "{name}"? Its values disappear from every document.',
 
   'settingsIngest.everyDay': 'day',
   'settingsIngest.everyHour': 'hour',

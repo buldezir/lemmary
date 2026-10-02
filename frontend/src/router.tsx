@@ -31,6 +31,7 @@ import { SettingsPage } from './routes/settings'
 import { SettingsAppearancePage } from './routes/settings.index'
 import { SettingsAIPage } from './routes/settings.ai'
 import { SettingsProcessingPage } from './routes/settings.processing'
+import { SettingsFieldsPage } from './routes/settings.fields'
 import { SettingsWorkerPage } from './routes/settings.worker'
 import { SettingsDuplicatesPage } from './routes/settings.duplicates'
 import { SettingsIngestPage } from './routes/settings.ingest'
@@ -215,6 +216,12 @@ const settingsProcessingRoute = createRoute({
   component: SettingsProcessingPage,
 })
 
+const settingsFieldsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'fields',
+  component: SettingsFieldsPage,
+})
+
 const settingsWorkerRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: 'worker',
@@ -338,6 +345,7 @@ const routeTree = rootRoute.addChildren([
     settingsAppearanceRoute,
     settingsAIRoute,
     settingsProcessingRoute,
+    settingsFieldsRoute,
     settingsWorkerRoute,
     settingsDuplicatesRoute,
     settingsIngestRoute,

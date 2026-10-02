@@ -24,6 +24,7 @@ describe('route tree', () => {
       '/settings',
       '/settings/ai',
       '/settings/processing',
+      '/settings/fields',
       '/settings/worker',
       '/settings/duplicates',
       '/settings/ingest',

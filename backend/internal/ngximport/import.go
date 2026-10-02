@@ -190,7 +190,7 @@ func importOneDocument(
 	record.Set("file", fsFile)
 	record.Set("processing_status", models.DocStatusPending)
 
-	options := map[models.CustomField]string{}
+	var options []models.FieldWrite
 	if mode == ModePreserve {
 		options = applyPreservedMetadata(record, doc, tagMap, corrMap, typeMap)
 		worker.SetCreateSteps(record, models.ImportPreserveSteps)
@@ -200,12 +200,7 @@ func importOneDocument(
 		if err := duplicates.NormalizeSaveError(txApp, record, txApp.Save(record)); err != nil {
 			return err
 		}
-		for field, id := range options {
-			if err := models.SaveFieldValue(txApp, record, field, id); err != nil {
-				return err
-			}
-		}
-		return nil
+		return models.SaveFieldValues(txApp, record, options)
 	})
 }
 
@@ -241,8 +236,8 @@ func rejectKnownChecksum(app core.App, ownerUserID string, data []byte) error {
 }
 
 // applyPreservedMetadata returns the options to save once the document exists.
-func applyPreservedMetadata(record *core.Record, doc ngxDocument, tagMap, corrMap, typeMap map[int]string) map[models.CustomField]string {
-	options := map[models.CustomField]string{}
+func applyPreservedMetadata(record *core.Record, doc ngxDocument, tagMap, corrMap, typeMap map[int]string) []models.FieldWrite {
+	var options []models.FieldWrite
 	if title := strings.TrimSpace(doc.Title); title != "" {
 		record.Set("title", title)
 	}
@@ -254,12 +249,12 @@ func applyPreservedMetadata(record *core.Record, doc ngxDocument, tagMap, corrMa
 	}
 	if doc.Correspondent != nil {
 		if id := corrMap[*doc.Correspondent]; id != "" {
-			options[models.CorrespondentField] = id
+			options = append(options, models.FieldWrite{Field: models.CorrespondentField, Value: id})
 		}
 	}
 	if doc.DocumentType != nil {
 		if id := typeMap[*doc.DocumentType]; id != "" {
-			options[models.DocumentTypeField] = id
+			options = append(options, models.FieldWrite{Field: models.DocumentTypeField, Value: id})
 		}
 	}
 	if len(doc.Tags) > 0 {

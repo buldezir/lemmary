@@ -5,13 +5,13 @@ import "testing"
 func TestEligibleIDsResolvesFiltersWithoutText(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "tagged", map[string]any{
-		FieldUser: "u1", FieldTags: []string{"tag1"}, FieldTitle: "Lease", FieldAll: "Lease",
+		FieldUser: "u1", FieldTags: []string{"tag1"}, FieldTitle: "Lease",
 	})
 	mustPut(t, idx, "untagged", map[string]any{
-		FieldUser: "u1", FieldTitle: "Invoice", FieldAll: "Invoice",
+		FieldUser: "u1", FieldTitle: "Invoice",
 	})
 	mustPut(t, idx, "theirs", map[string]any{
-		FieldUser: "u2", FieldTags: []string{"tag1"}, FieldTitle: "Lease", FieldAll: "Lease",
+		FieldUser: "u2", FieldTags: []string{"tag1"}, FieldTitle: "Lease",
 	})
 
 	q := Query{UserID: "u1", TagIDs: []string{"tag1"}}
@@ -48,9 +48,9 @@ func TestEligibleIDsResolvesFiltersWithoutText(t *testing.T) {
 func TestKeepEligibleFiltersAShortList(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "tagged", map[string]any{
-		FieldUser: "u1", FieldTags: []string{"tag1"}, FieldAll: "Lease",
+		FieldUser: "u1", FieldTags: []string{"tag1"},
 	})
-	mustPut(t, idx, "untagged", map[string]any{FieldUser: "u1", FieldAll: "Invoice"})
+	mustPut(t, idx, "untagged", map[string]any{FieldUser: "u1"})
 
 	kept, err := idx.KeepEligible(Query{UserID: "u1", TagIDs: []string{"tag1"}}, []string{"untagged", "tagged", "gone"})
 	if err != nil {
@@ -71,10 +71,10 @@ func TestKeepEligibleFiltersAShortList(t *testing.T) {
 func TestFieldsRestrictsWhichFieldsMatch(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "titled", map[string]any{
-		FieldUser: "u1", FieldTitle: "Lease", FieldOCRText: "nothing relevant", FieldAll: "Lease",
+		FieldUser: "u1", FieldTitle: "Lease", FieldOCRText: "nothing relevant",
 	})
 	mustPut(t, idx, "bodied", map[string]any{
-		FieldUser: "u1", FieldTitle: "Invoice", FieldOCRText: "the lease runs to 2030", FieldAll: "Invoice",
+		FieldUser: "u1", FieldTitle: "Invoice", FieldOCRText: "the lease runs to 2030",
 	})
 
 	if ids := searchIDs(t, idx, Query{UserID: "u1", Text: "lease"}); len(ids) != 2 {

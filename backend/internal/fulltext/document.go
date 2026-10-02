@@ -136,10 +136,6 @@ func buildWith(names *nameCache, rec *core.Record) map[string]any {
 	peopleText := strings.Join(people, " ")
 	tagNameText := strings.Join(tagNames, " ")
 
-	allParts := []string{
-		title, summary, ocr, tagNameText, typeName, corrName, peopleText, customFieldsText(values),
-	}
-
 	doc := map[string]any{
 		FieldUser:              names.readersOf(rec),
 		FieldOwner:             rec.GetString("user"),
@@ -154,7 +150,7 @@ func buildWith(names *nameCache, rec *core.Record) map[string]any {
 		FieldDocumentTypeName:  typeName,
 		FieldCorrespondentName: corrName,
 		FieldPeople:            peopleText,
-		FieldAll:               joinNonEmpty(allParts),
+		FieldCustomFields:      customFieldsText(values),
 	}
 	if t, ok := parseDocumentDate(rec.GetString("document_date")); ok {
 		doc[FieldDocumentDate] = t
@@ -174,14 +170,16 @@ func lookupName(app core.App, collection, id string) string {
 	return strings.TrimSpace(rec.GetString("name"))
 }
 
-// customFieldsText is searchable through FieldAll only: a value typed by hand
-// is often the one thing about a document its OCR text does not say. Options
-// are indexed on their own fields above.
+// customFieldsText is FieldCustomFields: a value typed by hand is often the
+// one thing about a document its OCR text does not say. Options are indexed on
+// their own fields above.
 func customFieldsText(values models.FieldValues) string {
 	parts := make([]string, 0, len(values))
 	for _, v := range values {
 		switch v.Type {
 		case models.CustomFieldOption:
+		case models.CustomFieldChoice:
+			parts = append(parts, v.ChoiceName)
 		case models.CustomFieldNumber:
 			parts = append(parts, strconv.FormatFloat(v.Number, 'f', -1, 64))
 		case models.CustomFieldDate:

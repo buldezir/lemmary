@@ -7,9 +7,12 @@ import { pb } from '../pb'
 export const CORRESPONDENT_FIELD_ID = 'fcorrespondent0'
 export const DOCUMENT_TYPE_FIELD_ID = 'fdocumenttype00'
 
-export type CustomFieldType = 'text' | 'number' | 'date'
+export type CustomFieldType = 'text' | 'number' | 'date' | 'choice'
 
-export const CUSTOM_FIELD_TYPES: CustomFieldType[] = ['text', 'number', 'date']
+export const CUSTOM_FIELD_TYPES: CustomFieldType[] = ['text', 'number', 'date', 'choice']
+
+/** One of a choice field's fixed values; a new one has no id yet. */
+export type CustomFieldChoice = { id: string; name: string }
 
 /** An admin-defined document field: one record of the custom_fields collection. */
 export type CustomField = {
@@ -18,6 +21,8 @@ export type CustomField = {
   type: CustomFieldType
   /** A hint for extraction: what the field means, where it appears. */
   description: string
+  /** A choice field's values, in the order they were added; empty otherwise. */
+  choices: CustomFieldChoice[]
 }
 
 export type CustomFieldInput = Omit<CustomField, 'id'>
@@ -33,11 +38,13 @@ export type FieldValueRecord = {
   number: number
   date: string
   option: string
-  expand?: { option?: { id: string; name: string } }
+  choice: string
+  expand?: { option?: { id: string; name: string }; choice?: CustomFieldChoice }
 }
 
 /** The expand that brings a document's values along with it. */
-export const FIELD_VALUES_EXPAND = 'custom_field_values_via_document.option'
+export const FIELD_VALUES_EXPAND =
+  'custom_field_values_via_document.option,custom_field_values_via_document.choice'
 
 type WithFieldValues = { expand?: { custom_field_values_via_document?: FieldValueRecord[] } }
 
@@ -56,30 +63,45 @@ export function fieldInputValue(document: WithFieldValues, field: CustomField): 
   if (!value) return ''
   if (field.type === 'number') return String(value.number)
   if (field.type === 'date') return value.date.slice(0, 10)
+  if (field.type === 'choice') return value.expand?.choice?.name ?? ''
   return value.text
 }
 
 /** The admin's fields; the predefined option fields have inputs of their own. */
 export async function listCustomFields(): Promise<CustomField[]> {
   await ensureAuth()
-  return pb
-    .collection('custom_fields')
-    .getFullList<CustomField>({ filter: "type != 'option'", sort: 'created,id' })
+  const [fields, choices] = await Promise.all([
+    pb
+      .collection('custom_fields')
+      .getFullList<Omit<CustomField, 'choices'>>({ filter: "type != 'option'", sort: 'created,id' }),
+    pb
+      .collection('custom_field_choices')
+      .getFullList<CustomFieldChoice & { field: string }>({ sort: 'created,id' }),
+  ])
+  return fields.map((field) => ({
+    ...field,
+    choices: choices.filter((c) => c.field === field.id).map(({ id, name }) => ({ id, name })),
+  }))
 }
 
-/** Creates the field when id is empty, otherwise updates it. Admins only. */
-export async function saveCustomField(id: string, input: CustomFieldInput): Promise<CustomField> {
+/**
+ * Creates the field when id is empty, otherwise updates it. A choice field's
+ * choices travel with it, in order, each new one without an id: the server
+ * stores the field and the whole list in one transaction. Admins only.
+ */
+export async function saveCustomField(id: string, input: CustomFieldInput): Promise<void> {
   await ensureAuth()
   const body = {
     name: input.name.trim(),
     type: input.type,
     description: input.description.trim(),
+    ...(input.type === 'choice' && {
+      choices: input.choices.map((c) => ({ id: c.id, name: c.name.trim() })),
+    }),
   }
   const collection = pb.collection('custom_fields')
   try {
-    return id
-      ? await collection.update<CustomField>(id, body)
-      : await collection.create<CustomField>(body)
+    await (id ? collection.update(id, body) : collection.create(body))
   } catch (err) {
     throw customFieldSaveError(err, body.name)
   }

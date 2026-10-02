@@ -952,16 +952,34 @@ export function DocumentDetailPage() {
             {customFields?.map((field) => (
               <label key={field.id} className={labelClass}>
                 {field.name}
-                <input
-                  type={field.type}
-                  step={field.type === 'number' ? 'any' : undefined}
-                  className={fieldClass(editing)}
-                  readOnly={!editing}
-                  value={customInputs[field.id] ?? fieldInputValue(document, field)}
-                  onChange={(event) =>
-                    setCustomInputs({ ...customInputs, [field.id]: event.target.value })
-                  }
-                />
+                {field.type === 'choice' ? (
+                  <select
+                    className={`${fieldClass(editing)} disabled:opacity-100`}
+                    disabled={!editing}
+                    value={customInputs[field.id] ?? fieldInputValue(document, field)}
+                    onChange={(event) =>
+                      setCustomInputs({ ...customInputs, [field.id]: event.target.value })
+                    }
+                  >
+                    <option value="" />
+                    {field.choices.map((choice) => (
+                      <option key={choice.id} value={choice.name}>
+                        {choice.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type={field.type}
+                    step={field.type === 'number' ? 'any' : undefined}
+                    className={fieldClass(editing)}
+                    readOnly={!editing}
+                    value={customInputs[field.id] ?? fieldInputValue(document, field)}
+                    onChange={(event) =>
+                      setCustomInputs({ ...customInputs, [field.id]: event.target.value })
+                    }
+                  />
+                )}
               </label>
             ))}
 
