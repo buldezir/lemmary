@@ -106,9 +106,22 @@ func TestPlanPairsInputsWithChunks(t *testing.T) {
 		}
 		// A chunk is offsets, not a copy, so they must address the very text
 		// that was sent to the provider.
-		if inputs[i] != ocrText[c.StartByte:c.EndByte] {
+		if inputs[i] != chunk.Compact(ocrText[c.StartByte:c.EndByte]) {
 			t.Fatalf("input %d does not match its stored range", i)
 		}
+	}
+}
+
+func TestPlanSendsTablesWithoutPadding(t *testing.T) {
+	t.Parallel()
+	ocrText := "| Betrag" + strings.Repeat(" ", 80) + "|\n|" + strings.Repeat("-", 90) + "|\n| 12,99 €" + strings.Repeat(" ", 79) + "|"
+	doc := planTestDocument(t, ocrText)
+	pieces, _ := chunk.Split(ocrText, chunk.DefaultOptions())
+
+	inputs, _ := plan(doc, ocrText, pieces)
+
+	if want := "| Betrag |\n|---|\n| 12,99 € |"; len(inputs) != 1 || inputs[0] != want {
+		t.Fatalf("inputs = %q, want [%q]", inputs, want)
 	}
 }
 

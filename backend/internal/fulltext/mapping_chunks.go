@@ -144,6 +144,8 @@ func vectorField(dims int) *mapping.FieldMapping {
 	return fm
 }
 
+// Compacted like the embedding input: the chunker sizes a chunk by what Compact
+// keeps, so the raw slice of a padded table runs far past the cap.
 func chunkText(text string) string {
-	return strutil.TruncateRunes(strings.TrimSpace(text), maxChunkTextRunes)
+	return strutil.TruncateRunes(strings.TrimSpace(chunk.Compact(text)), maxChunkTextRunes)
 }

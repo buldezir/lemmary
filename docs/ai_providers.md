@@ -358,13 +358,16 @@ make it.
 
 - **Tokens.** Each document's OCR text is cut into ~1100-character passages, and
   each passage is one embedding input — roughly one request per 30 KB of text.
+  The padding OCR puts in tables (runs of spaces, long `----` rules) is
+  neither counted nor sent.
   Embedding models are cheap per token; this is simply every document you have.
 - **Re-embedding.** Only the OCR text is embedded, so only the OCR text can date
   a document's vectors: a re-OCR, a corrected page, a reprocess. Editing a
   title, retagging a document or renaming a tag across the archive costs
   nothing. *Every* document is embedded again when you change the model,
   because vectors from two models cannot be compared — there is no partial
-  migration.
+  migration. The same happens once after an upgrade that changes how passages
+  are cut.
 - **Space, which under encryption is RAM.** A 1536-dimension vector is about
   6 KB; a typical document is a handful of passages, so 30–60 KB each inside
   `data.db`. With `VAULT_ENABLED=1` the archive is decrypted into a tmpfs, so

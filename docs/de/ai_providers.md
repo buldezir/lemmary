@@ -376,6 +376,8 @@ Sie sich darauf einlassen.
 
 - **Tokens.** Der OCR-Text jedes Dokuments wird in Passagen von ~1100 Zeichen zerlegt, und
   jede Passage ist eine Embedding-Eingabe – ungefähr eine Anfrage pro 30 KB Text.
+  Die Auffüllung, die OCR in Tabellen einfügt (Folgen von Leerzeichen, lange
+  `----`-Linien), wird weder gezählt noch gesendet.
   Embedding-Modelle sind pro Token günstig; es handelt sich einfach um jedes Dokument, das
   Sie haben.
 - **Erneutes Einbetten.** Nur der OCR-Text wird eingebettet, daher kann nur der OCR-Text die
@@ -383,7 +385,8 @@ Sie sich darauf einlassen.
   erneute Verarbeitung. Einen Titel zu bearbeiten, ein Dokument neu zu taggen oder einen Tag
   im gesamten Archiv umzubenennen, kostet nichts. *Jedes* Dokument wird erneut eingebettet,
   wenn Sie das Modell wechseln, weil sich Vektoren aus zwei Modellen nicht vergleichen lassen –
-  eine teilweise Migration gibt es nicht.
+  eine teilweise Migration gibt es nicht. Dasselbe geschieht einmalig nach einem Update, das
+  ändert, wie Passagen geschnitten werden.
 - **Platz, der unter Verschlüsselung Arbeitsspeicher ist.** Ein Vektor mit 1536 Dimensionen
   ist etwa 6 KB groß; ein typisches Dokument besteht aus einer Handvoll Passagen, also 30–60 KB
   pro Dokument in `data.db`. Mit `VAULT_ENABLED=1` wird das Archiv in ein tmpfs entschlüsselt,

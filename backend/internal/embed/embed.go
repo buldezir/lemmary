@@ -207,7 +207,7 @@ func plan(doc *core.Record, ocrText string, pieces []chunk.Chunk) ([]string, []e
 			StartByte:  piece.Start,
 			EndByte:    piece.End,
 		})
-		inputs = append(inputs, text)
+		inputs = append(inputs, chunk.Compact(text))
 	}
 	return inputs, chunks
 }

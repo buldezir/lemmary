@@ -275,21 +275,30 @@ func TestChunkSearchReturnsStoredFields(t *testing.T) {
 // The stored copy is what retrieval quotes, so the cap has to clear the
 // chunker's ceiling: a lower one silently ate the tail of every full chunk.
 func TestChunkTextSurvivesAFullSizeChunk(t *testing.T) {
-	body := strings.Repeat("ä", chunk.DefaultOptions().MaxRunes)
-	src := &fakeChunkSource{spec: testChunkSpec(), chunks: []Chunk{
-		chunkOf("doc1", "u1", 0, 0, body),
-	}}
-	idx := testChunkIndex(t, src)
-	mustRebuildChunks(t, idx)
+	maxRunes := chunk.DefaultOptions().MaxRunes
+	for name, tc := range map[string]struct{ body, want string }{
+		"plain": {strings.Repeat("ä", maxRunes), strings.Repeat("ä", maxRunes)},
+		// Padding does not count towards a chunk's size, so a full-size chunk
+		// of a padded table is several times the cap before it is compacted.
+		"padded": {strings.Repeat("ä     ", maxRunes/2), strings.TrimSpace(strings.Repeat("ä ", maxRunes/2))},
+	} {
+		t.Run(name, func(t *testing.T) {
+			src := &fakeChunkSource{spec: testChunkSpec(), chunks: []Chunk{
+				chunkOf("doc1", "u1", 0, 0, tc.body),
+			}}
+			idx := testChunkIndex(t, src)
+			mustRebuildChunks(t, idx)
 
-	hits := searchChunks(t, idx, retrieval.ChunkQuery{Vector: unit(4, 0), UserID: "u1", K: 5})
-	if len(hits) == 0 || hits[0].Text != body {
-		got := ""
-		if len(hits) > 0 {
-			got = hits[0].Text
-		}
-		t.Fatalf("the chunk came back %d runes, want %d",
-			utf8.RuneCountInString(got), utf8.RuneCountInString(body))
+			hits := searchChunks(t, idx, retrieval.ChunkQuery{Vector: unit(4, 0), UserID: "u1", K: 5})
+			if len(hits) == 0 || hits[0].Text != tc.want {
+				got := ""
+				if len(hits) > 0 {
+					got = hits[0].Text
+				}
+				t.Fatalf("the chunk came back %d runes, want %d",
+					utf8.RuneCountInString(got), utf8.RuneCountInString(tc.want))
+			}
+		})
 	}
 }
 

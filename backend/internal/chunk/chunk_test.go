@@ -1,6 +1,7 @@
 package chunk
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -116,9 +117,58 @@ func TestSplitRespectsMaxRunes(t *testing.T) {
 
 	chunks, _ := Split(text, opts)
 	for i, c := range chunks {
-		if n := utf8.RuneCountInString(text[c.Start:c.End]); n > opts.MaxRunes {
+		if n := utf8.RuneCountInString(Compact(text[c.Start:c.End])); n > opts.MaxRunes {
 			t.Fatalf("chunk %d is %d runes, over the %d cap", i, n, opts.MaxRunes)
 		}
+	}
+}
+
+// The shape of a docling table: cells padded to the column width, a dashed
+// rule under the header.
+func paddedTable(rows int) string {
+	var b strings.Builder
+	b.WriteString("| Beschreibung" + strings.Repeat(" ", 120) + "| Betrag" + strings.Repeat(" ", 60) + "|\n")
+	b.WriteString("|" + strings.Repeat("-", 133) + "|" + strings.Repeat("-", 67) + "|\n")
+	for i := range rows {
+		fmt.Fprintf(&b, "| Position %d Proteinriegel%s| %d,99 €%s|\n", i, strings.Repeat(" ", 100), i, strings.Repeat(" ", 55))
+	}
+	return b.String()
+}
+
+func TestCompactShortensPaddingOnly(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"| Betrag      | 12,99 €    |":        "| Betrag | 12,99 € |",
+		"|----------|---|\n":                  "|---|---|\n",
+		"Summe ........ 12,00\t\t€":           "Summe ... 12,00\t€",
+		"Die Rechnung. Привіт, 世界 — 1.000,00": "Die Rechnung. Привіт, 世界 — 1.000,00",
+		"line one\n\n\nline two":              "line one\n\n\nline two",
+	}
+	for in, want := range cases {
+		if got := Compact(in); got != want {
+			t.Errorf("Compact(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// Counted in raw runes, every chunk of a padded table was a few words in a
+// thousand spaces, and those chunks embedded close to any short query.
+func TestSplitSizesPaddedTablesByContent(t *testing.T) {
+	t.Parallel()
+	text := paddedTable(200)
+	opts := DefaultOptions()
+
+	chunks, _ := Split(text, opts)
+	if len(chunks) < 2 {
+		t.Fatalf("want several chunks, got %d", len(chunks))
+	}
+	for i, c := range chunks[:len(chunks)-1] {
+		if n := utf8.RuneCountInString(Compact(text[c.Start:c.End])); n < opts.MinRunes {
+			t.Fatalf("chunk %d carries %d runes of content, under the %d minimum", i, n, opts.MinRunes)
+		}
+	}
+	if last := chunks[len(chunks)-1]; last.End != len(text) {
+		t.Fatalf("last chunk ends at %d, want %d", last.End, len(text))
 	}
 }
 

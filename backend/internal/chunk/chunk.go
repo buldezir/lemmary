@@ -14,7 +14,8 @@ import (
 )
 
 // Stored per document; a mismatch makes the document a backfill candidate.
-const Version = 1
+// 2 stopped counting padding (see Compact) towards a chunk's size.
+const Version = 2
 
 // A half-open byte range [Start, End) into the text it was cut from.
 type Chunk struct {
@@ -23,7 +24,9 @@ type Chunk struct {
 }
 
 // Sizes are in runes, not bytes: the budget being spent is the model's token
-// window, which tracks characters far better than UTF-8 bytes.
+// window, which tracks characters far better than UTF-8 bytes. Only runes that
+// survive Compact count, so a padded OCR table yields chunks of content rather
+// than chunks of spaces.
 type Options struct {
 	TargetRunes int
 	// A hard ceiling, even with no whitespace to cut at.
@@ -120,15 +123,49 @@ func Split(text string, opts Options) (chunks []Chunk, truncated bool) {
 	return chunks, truncated
 }
 
-// Returns the byte offset reached and how many runes it covered (fewer at end
-// of text).
+// Compact is what gets embedded in place of a chunk's raw text: OCR tables pad
+// cells with spaces and rules with dashes, and a passage that is mostly padding
+// embeds as a vector of nothing that sits near every short query.
+func Compact(text string) string {
+	var b strings.Builder
+	b.Grow(len(text))
+	for i := range len(text) {
+		if !padding(text, i, 0) {
+			b.WriteByte(text[i])
+		}
+	}
+	return b.String()
+}
+
+// Whether the byte at i only lengthens a run Compact shortens: a second space
+// or tab, or a fourth repeat of an ASCII punctuation mark. Runs are counted
+// from floor. Both are ASCII, so a byte test never splits a rune.
+func padding(text string, i, floor int) bool {
+	c := text[i]
+	switch {
+	case c == ' ' || c == '\t':
+		return i > floor && (text[i-1] == ' ' || text[i-1] == '\t')
+	case c < utf8.RuneSelf && (unicode.IsPunct(rune(c)) || unicode.IsSymbol(rune(c))):
+		return i-3 >= floor && text[i-3] == c && text[i-2] == c && text[i-1] == c
+	}
+	return false
+}
+
+// Returns the byte offset reached and how many content runes it covered (fewer
+// at end of text). Padding right after the last one is taken along, so a text
+// ending in padding ends in this chunk.
 func advance(text string, from, n int) (int, int) {
 	i := from
 	count := 0
 	for count < n && i < len(text) {
 		_, size := utf8.DecodeRuneInString(text[i:])
+		if !padding(text, i, from) {
+			count++
+		}
 		i += size
-		count++
+	}
+	for i < len(text) && padding(text, i, from) {
+		i++
 	}
 	return i, count
 }
@@ -224,7 +261,9 @@ func backUp(text string, floor, end, overlap int) int {
 	for count < overlap && i > floor {
 		_, size := utf8.DecodeLastRuneInString(text[:i])
 		i -= size
-		count++
+		if !padding(text, i, floor) {
+			count++
+		}
 	}
 	if i <= floor {
 		return end
