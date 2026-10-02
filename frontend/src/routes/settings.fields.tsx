@@ -18,6 +18,7 @@ import {
   type CustomFieldInput,
   type CustomFieldType,
 } from '../lib/api/customFields'
+import { fieldPresets, missingFields, type FieldPreset } from '../lib/fieldPresets'
 import { t } from '../i18n'
 
 const TYPE_LABELS: Record<CustomFieldType, string> = {
@@ -26,6 +27,8 @@ const TYPE_LABELS: Record<CustomFieldType, string> = {
   date: t('settingsFields.typeDate'),
   choice: t('settingsFields.typeChoice'),
 }
+
+const PRESETS = fieldPresets()
 
 const NEW_FIELD: CustomField = { id: '', name: '', type: 'text', description: '', choices: [] }
 
@@ -52,6 +55,19 @@ export function SettingsFieldsPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : t('customFieldsApi.saveFailed'))
     } finally {
+      setBusy(false)
+    }
+  }
+
+  async function addPreset(preset: FieldPreset) {
+    setBusy(true)
+    setError('')
+    try {
+      for (const field of missingFields(preset, fields ?? [])) await saveCustomField('', field)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('customFieldsApi.saveFailed'))
+    } finally {
+      await reload()
       setBusy(false)
     }
   }
@@ -105,6 +121,38 @@ export function SettingsFieldsPage() {
           ))}
         </ul>
       )}
+
+      <h3 className="mt-6 font-display text-base font-semibold text-ink">
+        {t('settingsFields.presets')}
+      </h3>
+      <p className={fieldHintClassName}>{t('settingsFields.presetsIntro')}</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {PRESETS.map((preset) => {
+          const missing = fields ? missingFields(preset, fields).length : preset.fields.length
+          return (
+            <div
+              key={preset.title}
+              role="group"
+              aria-label={preset.title}
+              className="flex flex-col items-start gap-2 border border-line bg-bright px-3 py-2.5"
+            >
+              <span className="text-sm font-medium text-ink">{preset.title}</span>
+              <p className={fieldHintClassName}>{preset.fields.map((f) => f.name).join(' · ')}</p>
+              <Button
+                size="xs"
+                variant="secondary"
+                className="mt-auto"
+                disabled={busy || !fields || missing === 0}
+                onClick={() => void addPreset(preset)}
+              >
+                {missing === 0
+                  ? t('settingsFields.presetAdded')
+                  : t('settingsFields.presetAdd', { count: missing })}
+              </Button>
+            </div>
+          )
+        })}
+      </div>
 
       <FieldDialog
         field={editing}

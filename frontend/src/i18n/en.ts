@@ -1136,6 +1136,150 @@ export const en = {
   'settingsFields.choicesRemoveConfirm':
     'Remove {names}? Documents holding a removed choice lose that value.',
   'settingsFields.saving': 'Saving…',
+  'settingsFields.presets': 'Presets',
+  'settingsFields.presetsIntro':
+    'Ready-made fields for common kinds of paperwork. Adding a preset creates the fields not defined yet; a field of the same name is left as it is. Added fields can be edited or deleted like any other.',
+  'settingsFields.presetAdd': { one: 'Add {count} field', other: 'Add {count} fields' },
+  'settingsFields.presetAdded': 'All added',
+  'fieldPresets.invoices': 'Invoices & bills',
+  'fieldPresets.bookkeeping': 'Bookkeeping (small business)',
+  'fieldPresets.orders': 'Quotes, orders & delivery notes',
+  'fieldPresets.contracts': 'Contracts & subscriptions',
+  'fieldPresets.insurance': 'Insurance',
+  'fieldPresets.warranty': 'Purchases & warranty',
+  'fieldPresets.taxes': 'Taxes & authorities',
+  'fieldPresets.payslips': 'Payslips',
+  'fieldPresets.bank': 'Bank statements',
+  'fieldPresets.invoiceNumber': 'Invoice number',
+  'fieldPresets.invoiceNumberHint':
+    'The number the issuer gave the invoice, printed next to "Invoice no." or "Invoice #".',
+  'fieldPresets.amount': 'Amount',
+  'fieldPresets.amountHint':
+    "The document's total including tax (gross), as a plain number without the currency.",
+  'fieldPresets.dueDate': 'Due date',
+  'fieldPresets.dueDateHint':
+    'The date payment is due. If only a term is printed, such as "within 14 days", count it from the document date.',
+  'fieldPresets.paymentStatus': 'Payment status',
+  'fieldPresets.paymentStatusHint':
+    'Paid when the document says the amount was paid, received or will be debited; otherwise Open.',
+  'fieldPresets.paymentOpen': 'Open',
+  'fieldPresets.paymentPaid': 'Paid',
+  'fieldPresets.direction': 'Invoice direction',
+  'fieldPresets.directionHint':
+    'Outgoing when our company issued the invoice to a customer, incoming when a supplier sent it to us. Name the company here, e.g. "We are Example Ltd."',
+  'fieldPresets.directionIncoming': 'Incoming',
+  'fieldPresets.directionOutgoing': 'Outgoing',
+  'fieldPresets.netAmount': 'Net amount',
+  'fieldPresets.netAmountHint': 'The total before tax, as a plain number without the currency.',
+  'fieldPresets.vatRate': 'VAT rate',
+  'fieldPresets.vatRateHint': 'The VAT rate in percent, e.g. 19 or 7; the highest one when several apply.',
+  'fieldPresets.vatAmount': 'VAT amount',
+  'fieldPresets.vatAmountHint': 'The total VAT charged, as a plain number without the currency.',
+  'fieldPresets.discountUntil': 'Early-payment discount until',
+  'fieldPresets.discountUntilHint':
+    'The last day a cash discount applies, e.g. "2% if paid within 10 days" counted from the document date.',
+  'fieldPresets.customerNumber': 'Customer number',
+  'fieldPresets.customerNumberHint':
+    'The customer or account number the issuer keeps for the recipient.',
+  'fieldPresets.quoteNumber': 'Quote number',
+  'fieldPresets.quoteNumberHint':
+    'The number of the quote or offer, or of the quote an order or invoice refers to.',
+  'fieldPresets.orderNumber': 'Order number',
+  'fieldPresets.orderNumberHint': 'The purchase order or order confirmation number.',
+  'fieldPresets.deliveryNoteNumber': 'Delivery note number',
+  'fieldPresets.deliveryNoteNumberHint':
+    'The number of the delivery note, or of the one an invoice refers to.',
+  'fieldPresets.validUntil': 'Valid until',
+  'fieldPresets.validUntilHint':
+    'The date the document stops being valid, such as when a quote expires or a power of attorney ends.',
+  'fieldPresets.contractNumber': 'Contract number',
+  'fieldPresets.contractNumberHint':
+    'The contract, subscription or account number the contract is filed under.',
+  'fieldPresets.startDate': 'Start date',
+  'fieldPresets.startDateHint': 'The date the contract or subscription begins.',
+  'fieldPresets.endDate': 'End date',
+  'fieldPresets.endDateHint': 'The date the contract ends, or renews unless it is cancelled.',
+  'fieldPresets.noticePeriod': 'Notice period',
+  'fieldPresets.noticePeriodHint':
+    'How far ahead it must be cancelled, as printed, e.g. "3 months to the end of the month".',
+  'fieldPresets.monthlyCost': 'Monthly cost',
+  'fieldPresets.monthlyCostHint':
+    'The amount payable per month, as a plain number; divide a yearly amount by 12.',
+  'fieldPresets.policyNumber': 'Policy number',
+  'fieldPresets.policyNumberHint': 'The insurance policy or certificate number.',
+  'fieldPresets.premium': 'Premium',
+  'fieldPresets.premiumHint':
+    'The premium payable per year, as a plain number; multiply a monthly premium by 12.',
+  'fieldPresets.renewalDate': 'Renewal date',
+  'fieldPresets.renewalDateHint': 'The date the policy renews or the next premium falls due.',
+  'fieldPresets.warrantyUntil': 'Warranty until',
+  'fieldPresets.warrantyUntilHint':
+    'The date the warranty or guarantee ends; if only a length is given, count it from the purchase date.',
+  'fieldPresets.serialNumber': 'Serial number',
+  'fieldPresets.serialNumberHint': 'The serial number or IMEI of the item bought.',
+  'fieldPresets.taxYear': 'Tax year',
+  'fieldPresets.taxYearHint':
+    'The year the tax return or assessment is for, as a four-digit number.',
+  'fieldPresets.taxNumber': 'Tax number',
+  'fieldPresets.taxNumberHint':
+    'The tax number or tax ID printed on a tax office letter or a return.',
+  'fieldPresets.fileReference': 'File reference',
+  'fieldPresets.fileReferenceHint':
+    'The reference an authority or court files the matter under, to quote in a reply.',
+  'fieldPresets.responseDeadline': 'Response deadline',
+  'fieldPresets.responseDeadlineHint':
+    'The last day to reply, object, appeal or pay, as the letter sets it.',
+  'fieldPresets.employee': 'Employee',
+  'fieldPresets.employeeHint': 'The full name of the employee the payslip is for.',
+  'fieldPresets.payPeriod': 'Pay period',
+  'fieldPresets.payPeriodHint': 'The month the payslip is for, written YYYY-MM.',
+  'fieldPresets.grossPay': 'Gross pay',
+  'fieldPresets.grossPayHint':
+    'Total gross pay for the period, as a plain number without the currency.',
+  'fieldPresets.netPay': 'Net pay',
+  'fieldPresets.netPayHint':
+    'The amount paid out for the period, as a plain number without the currency.',
+  'fieldPresets.iban': 'IBAN',
+  'fieldPresets.ibanHint': 'The IBAN of the account the statement is for, without spaces.',
+  'fieldPresets.statementNumber': 'Statement number',
+  'fieldPresets.statementNumberHint': 'The number of the statement, e.g. "5/2026".',
+  'fieldPresets.closingBalance': 'Closing balance',
+  'fieldPresets.closingBalanceHint':
+    'The new balance at the end of the statement, as a plain number; negative when overdrawn.',
+  'fieldPresets.currency': 'Currency',
+  'fieldPresets.currencyHint':
+    'The currency of the amounts, as a three-letter ISO code such as EUR, USD or CHF.',
+  'fieldPresets.leases': 'Leases & property',
+  'fieldPresets.legalCases': 'Legal cases & disputes',
+  'fieldPresets.deeds': 'Powers of attorney & notarial deeds',
+  'fieldPresets.propertyAddress': 'Property address',
+  'fieldPresets.propertyAddressHint':
+    'The address of the rented or owned property: street, number and town.',
+  'fieldPresets.baseRent': 'Base rent',
+  'fieldPresets.baseRentHint':
+    'The monthly rent without service charges, as a plain number without the currency.',
+  'fieldPresets.serviceCharges': 'Service charges',
+  'fieldPresets.serviceChargesHint':
+    'The monthly advance for service and utility costs, as a plain number without the currency.',
+  'fieldPresets.deposit': 'Deposit',
+  'fieldPresets.depositHint': 'The security deposit, as a plain number without the currency.',
+  'fieldPresets.court': 'Court',
+  'fieldPresets.courtHint': 'The court or arbitration body handling the case, as named on the document.',
+  'fieldPresets.opposingParty': 'Opposing party',
+  'fieldPresets.opposingPartyHint': 'The name of the party on the other side of the case or dispute.',
+  'fieldPresets.hearingDate': 'Hearing date',
+  'fieldPresets.hearingDateHint': 'The date of the next court hearing the document sets.',
+  'fieldPresets.amountInDispute': 'Amount in dispute',
+  'fieldPresets.amountInDisputeHint':
+    'The amount claimed or in dispute, as a plain number without the currency.',
+  'fieldPresets.deedNumber': 'Deed number',
+  'fieldPresets.deedNumberHint':
+    "The number the notary recorded the deed under in the notary's register.",
+  'fieldPresets.grantor': 'Grantor',
+  'fieldPresets.grantorHint':
+    'The full name of the person who grants the power of attorney or makes the declaration.',
+  'fieldPresets.agent': 'Authorised person',
+  'fieldPresets.agentHint': 'The full name of the person the power of attorney is granted to.',
   'settingsProcessing.ocrTimeoutInvalid': 'OCR timeout must be a positive number',
   'settingsProcessing.aiTimeoutInvalid': 'AI timeout must be a positive number',
   'settingsProcessing.title': 'Processing',

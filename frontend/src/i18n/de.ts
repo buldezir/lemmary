@@ -1198,6 +1198,157 @@ export const de: Catalog = {
   'settingsFields.choicesRemoveConfirm':
     '{names} entfernen? Dokumente mit einem entfernten Wert verlieren ihn.',
   'settingsFields.saving': 'Wird gespeichert…',
+  'settingsFields.presets': 'Vorlagen',
+  'settingsFields.presetsIntro':
+    'Fertige Felder für häufige Arten von Unterlagen. Eine Vorlage legt die Felder an, die es noch nicht gibt; ein Feld gleichen Namens bleibt, wie es ist. Angelegte Felder lassen sich wie jedes andere bearbeiten oder löschen.',
+  'settingsFields.presetAdd': { one: '{count} Feld hinzufügen', other: '{count} Felder hinzufügen' },
+  'settingsFields.presetAdded': 'Alle hinzugefügt',
+  'fieldPresets.invoices': 'Rechnungen',
+  'fieldPresets.bookkeeping': 'Buchhaltung (Unternehmen)',
+  'fieldPresets.orders': 'Angebote, Aufträge & Lieferscheine',
+  'fieldPresets.contracts': 'Verträge & Abos',
+  'fieldPresets.insurance': 'Versicherungen',
+  'fieldPresets.warranty': 'Käufe & Garantie',
+  'fieldPresets.taxes': 'Steuern & Behörden',
+  'fieldPresets.payslips': 'Lohn & Gehalt',
+  'fieldPresets.bank': 'Kontoauszüge',
+  'fieldPresets.invoiceNumber': 'Rechnungsnummer',
+  'fieldPresets.invoiceNumberHint':
+    'Die Nummer, die der Aussteller der Rechnung gegeben hat, neben „Rechnungsnr.“ oder „Rechnung Nr.“.',
+  'fieldPresets.amount': 'Betrag',
+  'fieldPresets.amountHint':
+    'Der Gesamtbetrag des Dokuments inklusive Steuer (brutto), als reine Zahl ohne Währung.',
+  'fieldPresets.dueDate': 'Fällig am',
+  'fieldPresets.dueDateHint':
+    'Das Datum, bis zu dem zu zahlen ist. Steht nur eine Frist da, etwa „zahlbar innerhalb von 14 Tagen“, ab dem Dokumentdatum rechnen.',
+  'fieldPresets.paymentStatus': 'Zahlungsstatus',
+  'fieldPresets.paymentStatusHint':
+    'Bezahlt, wenn das Dokument sagt, dass der Betrag bezahlt, erhalten oder abgebucht wird; sonst Offen.',
+  'fieldPresets.paymentOpen': 'Offen',
+  'fieldPresets.paymentPaid': 'Bezahlt',
+  'fieldPresets.direction': 'Rechnungsart',
+  'fieldPresets.directionHint':
+    'Ausgangsrechnung, wenn unser Unternehmen sie einem Kunden gestellt hat; Eingangsrechnung, wenn ein Lieferant sie uns geschickt hat. Hier den Firmennamen nennen, z. B. „Wir sind die Beispiel GmbH.“',
+  'fieldPresets.directionIncoming': 'Eingangsrechnung',
+  'fieldPresets.directionOutgoing': 'Ausgangsrechnung',
+  'fieldPresets.netAmount': 'Nettobetrag',
+  'fieldPresets.netAmountHint': 'Der Gesamtbetrag vor Steuer, als reine Zahl ohne Währung.',
+  'fieldPresets.vatRate': 'USt.-Satz',
+  'fieldPresets.vatRateHint':
+    'Der Umsatzsteuersatz in Prozent, z. B. 19 oder 7; bei mehreren der höchste.',
+  'fieldPresets.vatAmount': 'USt.-Betrag',
+  'fieldPresets.vatAmountHint':
+    'Die ausgewiesene Umsatzsteuer insgesamt, als reine Zahl ohne Währung.',
+  'fieldPresets.discountUntil': 'Skonto bis',
+  'fieldPresets.discountUntilHint':
+    'Der letzte Tag, an dem Skonto gilt, z. B. „2 % Skonto bei Zahlung innerhalb von 10 Tagen“, ab dem Dokumentdatum gerechnet.',
+  'fieldPresets.customerNumber': 'Kundennummer',
+  'fieldPresets.customerNumberHint':
+    'Die Kunden- oder Kontonummer, unter der der Aussteller den Empfänger führt.',
+  'fieldPresets.quoteNumber': 'Angebotsnummer',
+  'fieldPresets.quoteNumberHint':
+    'Die Nummer des Angebots oder die des Angebots, auf das sich ein Auftrag oder eine Rechnung bezieht.',
+  'fieldPresets.orderNumber': 'Bestellnummer',
+  'fieldPresets.orderNumberHint': 'Die Nummer der Bestellung oder Auftragsbestätigung.',
+  'fieldPresets.deliveryNoteNumber': 'Lieferscheinnummer',
+  'fieldPresets.deliveryNoteNumberHint':
+    'Die Nummer des Lieferscheins oder die des Lieferscheins, auf den sich eine Rechnung bezieht.',
+  'fieldPresets.validUntil': 'Gültig bis',
+  'fieldPresets.validUntilHint':
+    'Das Datum, bis zu dem das Dokument gilt, etwa ein Angebot oder eine Vollmacht.',
+  'fieldPresets.contractNumber': 'Vertragsnummer',
+  'fieldPresets.contractNumberHint':
+    'Die Vertrags-, Abo- oder Kontonummer, unter der der Vertrag geführt wird.',
+  'fieldPresets.startDate': 'Vertragsbeginn',
+  'fieldPresets.startDateHint': 'Das Datum, an dem der Vertrag oder das Abo beginnt.',
+  'fieldPresets.endDate': 'Vertragsende',
+  'fieldPresets.endDateHint':
+    'Das Datum, an dem der Vertrag endet oder sich ohne Kündigung verlängert.',
+  'fieldPresets.noticePeriod': 'Kündigungsfrist',
+  'fieldPresets.noticePeriodHint':
+    'Wie lange vorher gekündigt werden muss, wie gedruckt, z. B. „3 Monate zum Monatsende“.',
+  'fieldPresets.monthlyCost': 'Monatliche Kosten',
+  'fieldPresets.monthlyCostHint':
+    'Der Betrag pro Monat, als reine Zahl; einen Jahresbetrag durch 12 teilen.',
+  'fieldPresets.policyNumber': 'Versicherungsnummer',
+  'fieldPresets.policyNumberHint': 'Die Versicherungsschein- oder Policennummer.',
+  'fieldPresets.premium': 'Beitrag',
+  'fieldPresets.premiumHint':
+    'Der Beitrag pro Jahr, als reine Zahl; einen Monatsbeitrag mit 12 malnehmen.',
+  'fieldPresets.renewalDate': 'Hauptfälligkeit',
+  'fieldPresets.renewalDateHint':
+    'Das Datum, an dem sich die Versicherung verlängert oder der nächste Beitrag fällig wird.',
+  'fieldPresets.warrantyUntil': 'Garantie bis',
+  'fieldPresets.warrantyUntilHint':
+    'Das Datum, an dem Garantie oder Gewährleistung enden; ist nur eine Dauer angegeben, ab dem Kaufdatum rechnen.',
+  'fieldPresets.serialNumber': 'Seriennummer',
+  'fieldPresets.serialNumberHint': 'Die Seriennummer oder IMEI des gekauften Geräts.',
+  'fieldPresets.taxYear': 'Steuerjahr',
+  'fieldPresets.taxYearHint':
+    'Das Jahr, für das die Erklärung oder der Bescheid gilt, als vierstellige Zahl.',
+  'fieldPresets.taxNumber': 'Steuernummer',
+  'fieldPresets.taxNumberHint':
+    'Die Steuernummer oder Steuer-ID auf einem Schreiben des Finanzamts oder einer Erklärung.',
+  'fieldPresets.fileReference': 'Aktenzeichen',
+  'fieldPresets.fileReferenceHint':
+    'Das Zeichen, unter dem eine Behörde oder ein Gericht die Sache führt und das in einer Antwort anzugeben ist.',
+  'fieldPresets.responseDeadline': 'Frist',
+  'fieldPresets.responseDeadlineHint':
+    'Der letzte Tag für Antwort, Einspruch, Widerspruch oder Zahlung, wie das Schreiben ihn setzt.',
+  'fieldPresets.employee': 'Mitarbeiter',
+  'fieldPresets.employeeHint': 'Der vollständige Name der Person, für die die Abrechnung ist.',
+  'fieldPresets.payPeriod': 'Abrechnungsmonat',
+  'fieldPresets.payPeriodHint': 'Der Monat, für den abgerechnet wird, geschrieben JJJJ-MM.',
+  'fieldPresets.grossPay': 'Bruttolohn',
+  'fieldPresets.grossPayHint':
+    'Das Gesamtbrutto des Abrechnungszeitraums, als reine Zahl ohne Währung.',
+  'fieldPresets.netPay': 'Auszahlungsbetrag',
+  'fieldPresets.netPayHint':
+    'Der für den Zeitraum ausgezahlte Betrag, als reine Zahl ohne Währung.',
+  'fieldPresets.iban': 'IBAN',
+  'fieldPresets.ibanHint': 'Die IBAN des Kontos, zu dem der Auszug gehört, ohne Leerzeichen.',
+  'fieldPresets.statementNumber': 'Auszugsnummer',
+  'fieldPresets.statementNumberHint': 'Die Nummer des Kontoauszugs, z. B. „5/2026“.',
+  'fieldPresets.closingBalance': 'Neuer Kontostand',
+  'fieldPresets.closingBalanceHint':
+    'Der neue Saldo am Ende des Auszugs, als reine Zahl; negativ bei Überziehung.',
+  'fieldPresets.currency': 'Währung',
+  'fieldPresets.currencyHint':
+    'Die Währung der Beträge, als dreistelliger ISO-Code wie EUR, USD oder CHF.',
+  'fieldPresets.leases': 'Miete & Immobilien',
+  'fieldPresets.legalCases': 'Rechtsstreit & Gericht',
+  'fieldPresets.deeds': 'Vollmachten & Notarurkunden',
+  'fieldPresets.propertyAddress': 'Objektadresse',
+  'fieldPresets.propertyAddressHint':
+    'Die Anschrift der gemieteten oder eigenen Immobilie: Straße, Hausnummer und Ort.',
+  'fieldPresets.baseRent': 'Kaltmiete',
+  'fieldPresets.baseRentHint':
+    'Die monatliche Miete ohne Nebenkosten, als reine Zahl ohne Währung.',
+  'fieldPresets.serviceCharges': 'Nebenkosten',
+  'fieldPresets.serviceChargesHint':
+    'Die monatliche Vorauszahlung für Neben- und Betriebskosten, als reine Zahl ohne Währung.',
+  'fieldPresets.deposit': 'Kaution',
+  'fieldPresets.depositHint': 'Die Mietkaution, als reine Zahl ohne Währung.',
+  'fieldPresets.court': 'Gericht',
+  'fieldPresets.courtHint':
+    'Das Gericht oder die Schlichtungsstelle, die den Fall führt, wie im Dokument genannt.',
+  'fieldPresets.opposingParty': 'Gegenpartei',
+  'fieldPresets.opposingPartyHint':
+    'Der Name der Partei auf der anderen Seite des Verfahrens oder Streits.',
+  'fieldPresets.hearingDate': 'Verhandlungstermin',
+  'fieldPresets.hearingDateHint':
+    'Das Datum des nächsten Gerichtstermins, den das Dokument festsetzt.',
+  'fieldPresets.amountInDispute': 'Streitwert',
+  'fieldPresets.amountInDisputeHint':
+    'Der Streitwert oder die geforderte Summe, als reine Zahl ohne Währung.',
+  'fieldPresets.deedNumber': 'Urkundennummer',
+  'fieldPresets.deedNumberHint':
+    'Die Nummer, unter der der Notar die Urkunde in seiner Urkundenrolle führt (UR-Nr.).',
+  'fieldPresets.grantor': 'Vollmachtgeber',
+  'fieldPresets.grantorHint':
+    'Der vollständige Name der Person, die die Vollmacht erteilt oder die Erklärung abgibt.',
+  'fieldPresets.agent': 'Bevollmächtigter',
+  'fieldPresets.agentHint': 'Der vollständige Name der Person, der die Vollmacht erteilt wird.',
   'settingsProcessing.ocrTimeoutInvalid': 'Das OCR-Zeitlimit muss eine positive Zahl sein',
   'settingsProcessing.aiTimeoutInvalid': 'Das KI-Zeitlimit muss eine positive Zahl sein',
   'settingsProcessing.title': 'Verarbeitung',
