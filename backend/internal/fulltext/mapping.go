@@ -13,7 +13,9 @@ const (
 	// MappingVersion is bumped when the Bleve mapping changes so Open wipes and rebuilds.
 	// 3 added FieldOwner, which an index built at 2 does not carry. 4 dropped
 	// purpose and the *_original fields, which an older "all" still matches on.
-	MappingVersion = "4"
+	// 5 added FieldCustomFields and dropped "all", a copy of every text field
+	// that no query read.
+	MappingVersion = "5"
 
 	AnalyzerName = "archive"
 
@@ -34,7 +36,7 @@ const (
 	FieldDocumentTypeName  = "document_type_name"
 	FieldCorrespondentName = "correspondent_name"
 	FieldPeople            = "people_or_organizations"
-	FieldAll               = "all"
+	FieldCustomFields      = "custom_fields"
 )
 
 // No stemmer, deliberately: one analyzer serves every document, and a document
@@ -45,7 +47,6 @@ const (
 func newMapping() (mapping.IndexMapping, error) {
 	im := bleve.NewIndexMapping()
 	im.DefaultAnalyzer = AnalyzerName
-	im.DefaultField = FieldAll
 	im.IndexDynamic = false
 	im.StoreDynamic = false
 	im.DocValuesDynamic = false
@@ -78,7 +79,7 @@ func newMapping() (mapping.IndexMapping, error) {
 	doc.AddFieldMappingsAt(FieldCorrespondentName, textField(false, true))
 	doc.AddFieldMappingsAt(FieldPeople, textField(false, true))
 	// Never highlighted, so term vectors would just double posting storage.
-	doc.AddFieldMappingsAt(FieldAll, textField(false, false))
+	doc.AddFieldMappingsAt(FieldCustomFields, textField(false, false))
 
 	im.DefaultMapping = doc
 	return im, nil

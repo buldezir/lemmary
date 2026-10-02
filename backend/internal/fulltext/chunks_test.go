@@ -399,7 +399,7 @@ func TestVectorSpecChangeWipesOnlyTheChunkIndex(t *testing.T) {
 	}}
 	idx := testChunkIndex(t, src)
 	mustPut(t, idx, "doc1", map[string]any{
-		FieldUser: "u1", FieldTitle: "Lease", FieldAll: "Lease rent",
+		FieldUser: "u1", FieldTitle: "Lease",
 	})
 	mustRebuildChunks(t, idx)
 	if count, _ := idx.ChunkCount(); count != 1 {

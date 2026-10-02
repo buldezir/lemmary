@@ -55,7 +55,6 @@ func hybridIndex(t *testing.T) *fulltext.Index {
 			fulltext.FieldUser:    "u1",
 			fulltext.FieldTitle:   title,
 			fulltext.FieldOCRText: ocr,
-			fulltext.FieldAll:     title + " " + ocr,
 		})
 		if err != nil {
 			t.Fatalf("put %s: %v", id, err)
@@ -411,7 +410,6 @@ func TestFusedDocumentPageKeepsSharedDocumentsOffMine(t *testing.T) {
 			fulltext.FieldUser:  []string{"u1", owner},
 			fulltext.FieldOwner: owner,
 			fulltext.FieldTitle: id,
-			fulltext.FieldAll:   id,
 		})
 		if err != nil {
 			t.Fatalf("put %s: %v", id, err)

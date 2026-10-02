@@ -18,12 +18,10 @@ func TestSearchFindsADocumentForEveryIndexedReader(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "shared", map[string]any{
 		FieldUser:    []string{"owner", "recipient"},
-		FieldAll:     "quarterly invoice",
 		FieldOCRText: "quarterly invoice",
 	})
 	mustPut(t, idx, "private", map[string]any{
 		FieldUser:    []string{"owner"},
-		FieldAll:     "quarterly invoice",
 		FieldOCRText: "quarterly invoice",
 	})
 
@@ -47,13 +45,11 @@ func TestOwnerFilterSplitsMineFromShared(t *testing.T) {
 	mustPut(t, idx, "shared", map[string]any{
 		FieldUser:    []string{"owner", "recipient"},
 		FieldOwner:   "owner",
-		FieldAll:     "quarterly invoice",
 		FieldOCRText: "quarterly invoice",
 	})
 	mustPut(t, idx, "mine", map[string]any{
 		FieldUser:    []string{"recipient"},
 		FieldOwner:   "recipient",
-		FieldAll:     "quarterly invoice",
 		FieldOCRText: "quarterly invoice",
 	})
 

@@ -103,7 +103,7 @@ func registerRecordHooks(app core.App, idx *Index) {
 		return nil
 	})
 	// A deleted choice takes its value rows with it too; a renamed one changes
-	// FieldAll of every document holding it.
+	// FieldCustomFields of every document holding it.
 	app.OnRecordAfterUpdateSuccess(models.CustomFieldChoicesCollection).BindFunc(func(e *core.RecordEvent) error {
 		if err := e.Next(); err != nil {
 			return err

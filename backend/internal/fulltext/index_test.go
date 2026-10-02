@@ -57,13 +57,11 @@ func TestSearchANDVsPhrase(t *testing.T) {
 		FieldUser:    "u1",
 		FieldTitle:   "Plumber invoice",
 		FieldOCRText: "Paid the plumber invoice in July",
-		FieldAll:     "Plumber invoice Paid the plumber invoice in July",
 	})
 	mustPut(t, idx, "split", map[string]any{
 		FieldUser:    "u1",
 		FieldTitle:   "Plumber visit",
 		FieldOCRText: "Later an invoice arrived by mail",
-		FieldAll:     "Plumber visit Later an invoice arrived by mail",
 	})
 
 	andHits := searchIDs(t, idx, Query{Text: "plumber invoice", UserID: "u1"})
@@ -125,7 +123,6 @@ func TestSearchRelaxedFuzzyMatchesTypos(t *testing.T) {
 		FieldUser:    "u1",
 		FieldTitle:   "Versicherung Police",
 		FieldOCRText: "Beitragsrechnung 2024 für die Hausratversicherung, Vertragsnummer 4711.",
-		FieldAll:     "Versicherung Police Beitragsrechnung 2024 Hausratversicherung 4711",
 	})
 
 	// One transposed letter. Strict matching cannot reach it.
@@ -153,13 +150,11 @@ func TestSearchRelaxedRanksExactAboveFuzzy(t *testing.T) {
 		FieldUser:    "u1",
 		FieldTitle:   "Versicherung",
 		FieldOCRText: "Versicherung",
-		FieldAll:     "Versicherung",
 	})
 	mustPut(t, idx, "fuzzy", map[string]any{
 		FieldUser:    "u1",
 		FieldTitle:   "Versicherunh",
 		FieldOCRText: "Versicherunh",
-		FieldAll:     "Versicherunh",
 	})
 
 	// The fuzzy leg only exists on the fallback rung, so the query has to be
@@ -185,7 +180,6 @@ func TestSearchHighlightReturnsFragments(t *testing.T) {
 		FieldOCRText: "Preface text. The plumber invoice for the leak was paid in July. " +
 			strings.Repeat("Filler sentence with nothing of interest. ", 40) +
 			"A second plumber visit followed in September.",
-		FieldAll: "Invoice plumber",
 	})
 
 	res, err := idx.Search(Query{Text: "plumber", UserID: "u1"})
@@ -214,12 +208,10 @@ func TestSearchOwnerIsolation(t *testing.T) {
 	mustPut(t, idx, "mine", map[string]any{
 		FieldUser:  "u1",
 		FieldTitle: "Secret lease",
-		FieldAll:   "Secret lease",
 	})
 	mustPut(t, idx, "theirs", map[string]any{
 		FieldUser:  "u2",
 		FieldTitle: "Secret lease",
-		FieldAll:   "Secret lease",
 	})
 
 	mine := searchIDs(t, idx, Query{Text: "lease", UserID: "u1"})
@@ -241,7 +233,6 @@ func TestSearchTagNameAndDateRange(t *testing.T) {
 		FieldTagNames:     "filter-tag-abc",
 		FieldDocumentDate: time.Date(2024, 7, 15, 0, 0, 0, 0, time.UTC),
 		FieldTitle:        "Tagged invoice",
-		FieldAll:          "filter-tag-abc Tagged invoice",
 	})
 	mustPut(t, idx, "other", map[string]any{
 		FieldUser:         "u1",
@@ -249,7 +240,6 @@ func TestSearchTagNameAndDateRange(t *testing.T) {
 		FieldTagNames:     "",
 		FieldDocumentDate: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
 		FieldTitle:        "Other invoice",
-		FieldAll:          "Other invoice",
 	})
 
 	byTag := searchIDs(t, idx, Query{Text: "filter-tag-abc", UserID: "u1"})
@@ -279,13 +269,11 @@ func TestSearchAllTagIDsRequiresEveryTag(t *testing.T) {
 		FieldUser:  "u1",
 		FieldTags:  []string{"tag1", "tag2"},
 		FieldTitle: "Both invoice",
-		FieldAll:   "Both invoice",
 	})
 	mustPut(t, idx, "one", map[string]any{
 		FieldUser:  "u1",
 		FieldTags:  []string{"tag1"},
 		FieldTitle: "One invoice",
-		FieldAll:   "One invoice",
 	})
 
 	all := searchIDs(t, idx, Query{Text: "invoice", UserID: "u1", AllTagIDs: []string{"tag1", "tag2"}})
@@ -305,7 +293,6 @@ func TestSearchHighlightSnippet(t *testing.T) {
 		FieldUser:    "u1",
 		FieldTitle:   "Invoice",
 		FieldOCRText: "Preface text. The plumber invoice for the leak was paid in July. Trailing notes.",
-		FieldAll:     "Invoice Preface text. The plumber invoice for the leak was paid in July. Trailing notes.",
 	})
 
 	res, err := idx.Search(Query{Text: "plumber", UserID: "u1"})
@@ -329,13 +316,11 @@ func TestSearchStatusFilter(t *testing.T) {
 		FieldUser:             "u1",
 		FieldProcessingStatus: "completed",
 		FieldTitle:            "Done invoice",
-		FieldAll:              "Done invoice",
 	})
 	mustPut(t, idx, "pending", map[string]any{
 		FieldUser:             "u1",
 		FieldProcessingStatus: "pending",
 		FieldTitle:            "Pending invoice",
-		FieldAll:              "Pending invoice",
 	})
 
 	hits := searchIDs(t, idx, Query{Text: "invoice", UserID: "u1", ProcessingStatus: "completed"})
@@ -360,7 +345,6 @@ func TestSearchUnfinishedStatusFilter(t *testing.T) {
 			FieldUser:             "u1",
 			FieldProcessingStatus: status,
 			FieldTitle:            "Invoice",
-			FieldAll:              "Invoice",
 		})
 	}
 
@@ -385,7 +369,7 @@ func TestMappingVersionRebuild(t *testing.T) {
 	if err := idx.Open(dir); err != nil {
 		t.Fatal(err)
 	}
-	mustPut(t, idx, "keep", map[string]any{FieldUser: "u1", FieldTitle: "hello", FieldAll: "hello"})
+	mustPut(t, idx, "keep", map[string]any{FieldUser: "u1", FieldTitle: "hello"})
 	if err := idx.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -446,7 +430,7 @@ func TestHasPhrase(t *testing.T) {
 
 func TestEmptyQuerySkipsIndex(t *testing.T) {
 	idx := testIndex(t)
-	mustPut(t, idx, "doc", map[string]any{FieldUser: "u1", FieldTitle: "x", FieldAll: "x"})
+	mustPut(t, idx, "doc", map[string]any{FieldUser: "u1", FieldTitle: "x"})
 	res, err := idx.Search(Query{Text: "   ", UserID: "u1"})
 	if err != nil {
 		t.Fatal(err)
@@ -460,7 +444,6 @@ func sampleDoc(title string) map[string]any {
 	return map[string]any{
 		FieldUser:  "u1",
 		FieldTitle: title,
-		FieldAll:   title,
 	}
 }
 
@@ -624,7 +607,6 @@ func TestIDsByKeywordPaginates(t *testing.T) {
 			FieldUser:  "u1",
 			FieldTags:  []string{"tag-wide"},
 			FieldTitle: id,
-			FieldAll:   id,
 		})
 	}
 
@@ -663,7 +645,6 @@ func ocrDoc(title, ocr string) map[string]any {
 		FieldUser:    "u1",
 		FieldTitle:   title,
 		FieldOCRText: ocr,
-		FieldAll:     title + " " + ocr,
 	}
 }
 
@@ -810,19 +791,16 @@ func TestRelaxedRespectsFilters(t *testing.T) {
 		FieldUser:         "u1",
 		FieldTitle:        "Invoice",
 		FieldDocumentDate: time.Date(2024, 7, 15, 0, 0, 0, 0, time.UTC),
-		FieldAll:          "Invoice",
 	})
 	mustPut(t, idx, "stale", map[string]any{
 		FieldUser:         "u1",
 		FieldTitle:        "Receipt",
 		FieldDocumentDate: time.Date(2019, 1, 1, 0, 0, 0, 0, time.UTC),
-		FieldAll:          "Receipt",
 	})
 	mustPut(t, idx, "theirs", map[string]any{
 		FieldUser:         "u2",
 		FieldTitle:        "Invoice",
 		FieldDocumentDate: time.Date(2024, 7, 15, 0, 0, 0, 0, time.UTC),
-		FieldAll:          "Invoice",
 	})
 
 	owned := mustSearch(t, idx, Query{Text: synonymBag, UserID: "u1", Relaxed: true})
@@ -897,12 +875,10 @@ func TestSearchUndatedFilter(t *testing.T) {
 		FieldUser:         "u1",
 		FieldDocumentDate: time.Date(2024, 7, 15, 0, 0, 0, 0, time.UTC),
 		FieldTitle:        "Dated invoice",
-		FieldAll:          "Dated invoice",
 	})
 	mustPut(t, idx, "undated", map[string]any{
 		FieldUser:  "u1",
 		FieldTitle: "Undated invoice",
-		FieldAll:   "Undated invoice",
 	})
 
 	ids := searchIDs(t, idx, Query{Text: "invoice", UserID: "u1", Undated: true})
@@ -922,13 +898,11 @@ func TestSearchUntaggedFilter(t *testing.T) {
 		FieldUser:  "u1",
 		FieldTags:  []string{"tag1"},
 		FieldTitle: "Tagged invoice",
-		FieldAll:   "Tagged invoice",
 	})
 	mustPut(t, idx, "untagged", map[string]any{
 		FieldUser:  "u1",
 		FieldTags:  []string{},
 		FieldTitle: "Untagged invoice",
-		FieldAll:   "Untagged invoice",
 	})
 
 	ids := searchIDs(t, idx, Query{Text: "invoice", UserID: "u1", Untagged: true})
