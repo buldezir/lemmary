@@ -52,6 +52,22 @@ func TestSaveFieldsWithDocument(t *testing.T) {
 	if err := app.Save(amount); err != nil {
 		t.Fatal(err)
 	}
+	status := core.NewRecord(fields)
+	status.Set("name", "Status")
+	status.Set("type", models.CustomFieldChoice)
+	if err := app.Save(status); err != nil {
+		t.Fatal(err)
+	}
+	choices, err := app.FindCollectionByNameOrId(models.CustomFieldChoicesCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paid := core.NewRecord(choices)
+	paid.Set("field", status.Id)
+	paid.Set("name", "Paid")
+	if err := app.Save(paid); err != nil {
+		t.Fatal(err)
+	}
 	values := func() models.FieldValues {
 		t.Helper()
 		values, err := models.LoadDocumentFieldValues(app, doc.Id)
@@ -62,16 +78,18 @@ func TestSaveFieldsWithDocument(t *testing.T) {
 	}
 
 	if err := updateDocument(t, app, doc.Id, "Paid",
-		`{"`+models.CorrespondentFieldID+`": "Acme", "`+amount.Id+`": "12.50"}`); err != nil {
+		`{"`+models.CorrespondentFieldID+`": "Acme", "`+amount.Id+`": "12.50", "`+status.Id+`": "paid"}`); err != nil {
 		t.Fatal(err)
 	}
-	if got := values(); got.OptionName(models.CorrespondentFieldID) != "Acme" || got[amount.Id].Number != 12.5 {
+	if got := values(); got.OptionName(models.CorrespondentFieldID) != "Acme" || got[amount.Id].Number != 12.5 ||
+		got[status.Id].Choice != paid.Id {
 		t.Fatalf("values = %#v", got)
 	}
 
 	for name, update := range map[string]struct{ title, fields string }{
 		"a word for a number": {"", `{"` + amount.Id + `": "twelve", "` + models.DocumentTypeFieldID + `": "Invoice"}`},
 		"an unknown field":    {"", `{"fnosuchfield00": "x"}`},
+		"an unlisted choice":  {"", `{"` + status.Id + `": "Overdue"}`},
 		"not an object":       {"", `"x"`},
 		"a refused document":  {strings.Repeat("x", 501), `{"` + amount.Id + `": 1}`},
 	} {
@@ -79,7 +97,8 @@ func TestSaveFieldsWithDocument(t *testing.T) {
 			t.Errorf("%s: the update was accepted", name)
 		}
 	}
-	if got := values(); got[amount.Id].Number != 12.5 || got.OptionID(models.DocumentTypeFieldID) != "" {
+	if got := values(); got[amount.Id].Number != 12.5 || got.OptionID(models.DocumentTypeFieldID) != "" ||
+		got[status.Id].ChoiceName != "Paid" {
 		t.Fatalf("a refused update changed the values: %#v", got)
 	}
 	if n, _ := app.CountRecords(models.CustomFieldOptionsCollection); n != 1 {

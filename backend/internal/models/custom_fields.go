@@ -15,6 +15,8 @@ const (
 	// CustomFieldOption takes its value from a per-user vocabulary in
 	// custom_field_options. Only the predefined fields are of this type.
 	CustomFieldOption = "option"
+	// CustomFieldChoice takes one of the admin's fixed custom_field_choices.
+	CustomFieldChoice = "choice"
 )
 
 const MaxCustomFieldValueRunes = 500
@@ -28,6 +30,7 @@ const (
 	CustomFieldsCollection       = "custom_fields"
 	CustomFieldOptionsCollection = "custom_field_options"
 	CustomFieldValuesCollection  = "custom_field_values"
+	CustomFieldChoicesCollection = "custom_field_choices"
 )
 
 // The predefined fields' ids are fixed, so code and filters name them directly.
@@ -43,6 +46,14 @@ type CustomField struct {
 	Name        string `json:"name"`
 	Type        string `json:"type"`
 	Description string `json:"description"`
+	// Choices is set for a choice field only.
+	Choices []FieldChoice `json:"choices,omitempty"`
+}
+
+// FieldChoice is one allowed value of a choice field.
+type FieldChoice struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 var (
@@ -73,12 +84,29 @@ func LoadCustomFields(app core.App) ([]CustomField, error) {
 			fields = append(fields, field)
 		}
 	}
-	return fields, nil
+	return fields, attachChoices(app, fields)
+}
+
+func attachChoices(app core.App, fields []CustomField) error {
+	records, err := app.FindRecordsByFilter(CustomFieldChoicesCollection, "", "created,id", 0, 0)
+	if err != nil {
+		return err
+	}
+	byField := map[string][]FieldChoice{}
+	for _, record := range records {
+		field := record.GetString("field")
+		byField[field] = append(byField[field], FieldChoice{ID: record.Id, Name: strings.TrimSpace(record.GetString("name"))})
+	}
+	for i := range fields {
+		fields[i].Choices = byField[fields[i].ID]
+	}
+	return nil
 }
 
 // Coerce turns a value from a model, an archive or a client into what the
 // field stores, or reports false when it does not fit the field's type. An
-// option field takes an option id.
+// option field takes an option id; a choice field takes the name of one of its
+// choices and stores that choice's id.
 func (f CustomField) Coerce(v any) (any, bool) {
 	switch f.Type {
 	case CustomFieldNumber:
@@ -94,6 +122,14 @@ func (f CustomField) Coerce(v any) (any, bool) {
 		s, ok := v.(string)
 		s = strings.TrimSpace(s)
 		return s, ok && s != ""
+	case CustomFieldChoice:
+		s, _ := v.(string)
+		for _, choice := range f.Choices {
+			if strings.EqualFold(strings.TrimSpace(s), choice.Name) {
+				return choice.ID, true
+			}
+		}
+		return nil, false
 	default:
 		return coerceText(v)
 	}

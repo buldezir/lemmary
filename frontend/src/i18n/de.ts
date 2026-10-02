@@ -295,6 +295,7 @@ export const de: Catalog = {
   'settingsApi.loadFailed': 'Einstellungen konnten nicht geladen werden',
   'settingsApi.saveFailed': 'Einstellungen konnten nicht gespeichert werden',
   'customFieldsApi.duplicateName': 'Ein eigenes Feld namens „{name}“ gibt es bereits.',
+  'customFieldsApi.duplicateChoice': 'Die Auswahl „{name}“ steht doppelt in der Liste.',
   'customFieldsApi.saveFailed': 'Das eigene Feld konnte nicht gespeichert werden.',
 
   'mcp.statusFailed': 'Der MCP-Endpunkt konnte nicht geprüft werden',
@@ -1197,6 +1198,12 @@ export const de: Catalog = {
   'settingsProcessing.customFieldTypeText': 'Text',
   'settingsProcessing.customFieldTypeNumber': 'Zahl',
   'settingsProcessing.customFieldTypeDate': 'Datum',
+  'settingsProcessing.customFieldTypeChoice': 'Auswahl',
+  'settingsProcessing.customFieldChoices': 'Auswahlwerte',
+  'settingsProcessing.customFieldChoice': 'Auswahlwert',
+  'settingsProcessing.customFieldChoiceAdd': 'Wert hinzufügen',
+  'settingsProcessing.customFieldChoiceRemove': 'Wert {name} entfernen',
+  'settingsProcessing.customFieldChoicesRemoveConfirm': '{names} entfernen? Dokumente mit einem entfernten Wert verlieren ihn.',
   'settingsProcessing.customFieldDescription': 'Hinweis für die Extraktion',
   'settingsProcessing.customFieldDescriptionPlaceholder':
     'Optional, geht an das KI-Modell, z. B. steht neben „Rechnungsnr.“',

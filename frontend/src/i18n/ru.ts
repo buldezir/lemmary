@@ -332,6 +332,7 @@ export const ru: Catalog = {
   'settingsApi.loadFailed': 'Не удалось загрузить настройки',
   'settingsApi.saveFailed': 'Не удалось сохранить настройки',
   'customFieldsApi.duplicateName': 'Пользовательское поле «{name}» уже существует.',
+  'customFieldsApi.duplicateChoice': 'Значение «{name}» указано дважды.',
   'customFieldsApi.saveFailed': 'Не удалось сохранить пользовательское поле.',
 
   'mcp.statusFailed': 'Не удалось проверить конечную точку MCP',
@@ -1319,6 +1320,12 @@ export const ru: Catalog = {
   'settingsProcessing.customFieldTypeText': 'Текст',
   'settingsProcessing.customFieldTypeNumber': 'Число',
   'settingsProcessing.customFieldTypeDate': 'Дата',
+  'settingsProcessing.customFieldTypeChoice': 'Выбор из списка',
+  'settingsProcessing.customFieldChoices': 'Значения',
+  'settingsProcessing.customFieldChoice': 'Значение',
+  'settingsProcessing.customFieldChoiceAdd': 'Добавить значение',
+  'settingsProcessing.customFieldChoiceRemove': 'Удалить значение {name}',
+  'settingsProcessing.customFieldChoicesRemoveConfirm': 'Удалить {names}? Документы с удалённым значением его потеряют.',
   'settingsProcessing.customFieldDescription': 'Подсказка для извлечения',
   'settingsProcessing.customFieldDescriptionPlaceholder':
     'Необязательно, отправляется ИИ-модели, например «рядом с „Счёт №“»',

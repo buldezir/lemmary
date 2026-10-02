@@ -35,6 +35,7 @@ const CUSTOM_FIELD_TYPE_LABELS: Record<CustomFieldType, string> = {
   text: t('settingsProcessing.customFieldTypeText'),
   number: t('settingsProcessing.customFieldTypeNumber'),
   date: t('settingsProcessing.customFieldTypeDate'),
+  choice: t('settingsProcessing.customFieldTypeChoice'),
 }
 
 const CUSTOM_FIELD_TYPE_OPTIONS = CUSTOM_FIELD_TYPES.map((type) => ({
@@ -42,7 +43,17 @@ const CUSTOM_FIELD_TYPE_OPTIONS = CUSTOM_FIELD_TYPES.map((type) => ({
   label: CUSTOM_FIELD_TYPE_LABELS[type],
 }))
 
-const BLANK_CUSTOM_FIELD: CustomField = { id: '', name: '', type: 'text', description: '' }
+const BLANK_CUSTOM_FIELD: CustomField = {
+  id: '',
+  name: '',
+  type: 'text',
+  description: '',
+  choices: [],
+}
+
+function choiceKey(choices: { id: string; name: string }[]) {
+  return JSON.stringify(choices.map((c) => [c.id, c.name.trim()]))
+}
 
 /** One field, saved on its own: a row is a record, not part of the settings form. */
 function CustomFieldRow({
@@ -56,18 +67,42 @@ function CustomFieldRow({
 }) {
   const [draft, setDraft] = useState<CustomFieldInput>(field)
   const [saving, setSaving] = useState(false)
+  // A save reloads every row; only the one whose field changed takes the
+  // server's copy, which carries the ids of the choices it just created.
+  const [shown, setShown] = useState(() => JSON.stringify(field))
+  if (shown !== JSON.stringify(field)) {
+    setShown(JSON.stringify(field))
+    setDraft(field)
+  }
+  const isChoice = draft.type === 'choice'
   const dirty =
     !field.id ||
     draft.name.trim() !== field.name ||
     draft.type !== field.type ||
-    draft.description.trim() !== field.description
+    draft.description.trim() !== field.description ||
+    (isChoice && choiceKey(draft.choices) !== choiceKey(field.choices))
+  const removed = isChoice
+    ? field.choices.filter((c) => !draft.choices.some((d) => d.id === c.id))
+    : []
+
+  function setChoices(choices: CustomFieldInput['choices']) {
+    setDraft({ ...draft, choices })
+  }
 
   async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
-    setSaving(true)
-    if (await onSave(draft)) {
-      setDraft({ ...draft, name: draft.name.trim(), description: draft.description.trim() })
+    if (
+      removed.length > 0 &&
+      !window.confirm(
+        t('settingsProcessing.customFieldChoicesRemoveConfirm', {
+          names: removed.map((c) => c.name).join(', '),
+        }),
+      )
+    ) {
+      return
     }
+    setSaving(true)
+    await onSave(draft)
     setSaving(false)
   }
 
@@ -101,7 +136,11 @@ function CustomFieldRow({
         value={draft.description}
         onChange={(e) => setDraft({ ...draft, description: e.target.value })}
       />
-      <Button type="submit" size="sm" disabled={!dirty || saving || !draft.name.trim()}>
+      <Button
+        type="submit"
+        size="sm"
+        disabled={!dirty || saving || !draft.name.trim() || (isChoice && draft.choices.length === 0)}
+      >
         {t('settingsProcessing.customFieldSave')}
       </Button>
       <button
@@ -114,6 +153,47 @@ function CustomFieldRow({
       >
         <TrashIcon />
       </button>
+      {isChoice && (
+        <div className="flex flex-col gap-2 sm:col-span-full sm:pl-6">
+          <span className={labelTextClassName}>{t('settingsProcessing.customFieldChoices')}</span>
+          {draft.choices.map((choice, index) => (
+            <div key={choice.id || `new-${index}`} className="flex max-w-md items-center gap-2">
+              <input
+                className={inputClassName}
+                aria-label={t('settingsProcessing.customFieldChoice')}
+                required
+                maxLength={500}
+                value={choice.name}
+                onChange={(e) =>
+                  setChoices(
+                    draft.choices.map((c, i) => (i === index ? { ...c, name: e.target.value } : c)),
+                  )
+                }
+              />
+              <button
+                type="button"
+                aria-label={t('settingsProcessing.customFieldChoiceRemove', { name: choice.name })}
+                title={t('settingsProcessing.customFieldChoiceRemove', { name: choice.name })}
+                disabled={saving}
+                onClick={() => setChoices(draft.choices.filter((_, i) => i !== index))}
+                className="p-1 text-ink-soft transition-colors hover:text-madder disabled:opacity-50"
+              >
+                <TrashIcon />
+              </button>
+            </div>
+          ))}
+          <div>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={saving}
+              onClick={() => setChoices([...draft.choices, { id: '', name: '' }])}
+            >
+              {t('settingsProcessing.customFieldChoiceAdd')}
+            </Button>
+          </div>
+        </div>
+      )}
     </form>
   )
 }
@@ -151,7 +231,7 @@ function CustomFieldsSection() {
         <CustomFieldRow
           key={field.id}
           field={field}
-          onSave={(input) => run(() => saveCustomField(field.id, input))}
+          onSave={(input) => run(() => saveCustomField(field.id, input, field.choices))}
           onRemove={() => remove(field)}
         />
       ))}

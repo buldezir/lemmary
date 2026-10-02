@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/pocketbase/dbx"
@@ -18,6 +19,8 @@ type FieldValue struct {
 	Date       string // YYYY-MM-DD
 	Option     string // custom_field_options id
 	OptionName string
+	Choice     string // custom_field_choices id
+	ChoiceName string
 }
 
 // Value is what the field holds as an archive or the search index carries it:
@@ -30,6 +33,8 @@ func (v FieldValue) Value() any {
 		return v.Date
 	case CustomFieldOption:
 		return v.OptionName
+	case CustomFieldChoice:
+		return v.ChoiceName
 	}
 	return v.Text
 }
@@ -83,12 +88,15 @@ func loadFieldValuesInto(app core.App, out map[string]FieldValues, where string,
 		Date       string  `db:"date"`
 		Option     string  `db:"option"`
 		OptionName string  `db:"option_name"`
+		Choice     string  `db:"choice"`
+		ChoiceName string  `db:"choice_name"`
 	}
 	query := `SELECT v.document, v.field, f.type, v.text, v.number, v.date, v.option,
-		COALESCE(o.name, '') AS option_name
+		COALESCE(o.name, '') AS option_name, v.choice, COALESCE(c.name, '') AS choice_name
 		FROM ` + CustomFieldValuesCollection + ` v
 		JOIN ` + CustomFieldsCollection + ` f ON f.id = v.field
 		LEFT JOIN ` + CustomFieldOptionsCollection + ` o ON o.id = v.option
+		LEFT JOIN ` + CustomFieldChoicesCollection + ` c ON c.id = v.choice
 		WHERE ` + where
 	if err := app.DB().NewQuery(query).Bind(params).All(&rows); err != nil {
 		return err
@@ -104,6 +112,8 @@ func loadFieldValuesInto(app core.App, out map[string]FieldValues, where string,
 			Date:       truncateDate(row.Date),
 			Option:     row.Option,
 			OptionName: row.OptionName,
+			Choice:     row.Choice,
+			ChoiceName: row.ChoiceName,
 		}
 	}
 	return nil
@@ -130,8 +140,8 @@ func truncateDate(s string) string {
 
 // SaveFieldValue stores an already coerced value (see CustomField.Coerce) as
 // document's value for field, or removes it when value is nil. An option must
-// be the document owner's and the field's: the values collection has no write
-// rules, so this is the only check there is.
+// be the document owner's and the field's, a choice the field's: the values
+// collection has no write rules, so this is the only check there is.
 func SaveFieldValue(app core.App, document *core.Record, field CustomField, value any) error {
 	existing, err := app.FindFirstRecordByFilter(CustomFieldValuesCollection,
 		"document = {:document} && field = {:field}", dbx.Params{"document": document.Id, "field": field.ID})
@@ -155,7 +165,7 @@ func SaveFieldValue(app core.App, document *core.Record, field CustomField, valu
 		record.Set("document", document.Id)
 		record.Set("field", field.ID)
 	}
-	for _, column := range []string{"text", "number", "date", "option"} {
+	for _, column := range []string{"text", "number", "date", "option", "choice"} {
 		record.Set(column, nil)
 	}
 	switch field.Type {
@@ -169,6 +179,12 @@ func SaveFieldValue(app core.App, document *core.Record, field CustomField, valu
 			return err
 		}
 		record.Set("option", id)
+	case CustomFieldChoice:
+		id, _ := value.(string)
+		if !slices.ContainsFunc(field.Choices, func(c FieldChoice) bool { return c.ID == id }) {
+			return fmt.Errorf("choice %q is not one of %s's", id, field.Name)
+		}
+		record.Set("choice", id)
 	default:
 		record.Set("text", value)
 	}

@@ -14,7 +14,7 @@ import (
 
 // Extraction fills only the empty fields: a value typed by hand survives a
 // reprocess, an answer for no defined field is dropped, and one that does not
-// fit its type is not stored.
+// fit its type, a choice its list included, is not stored.
 func TestApplyMetadataFillsOnlyEmptyCustomFields(t *testing.T) {
 	app := bootTagTestApp(t)
 	owner := createTagUser(t, app, "owner@example.com")
@@ -38,6 +38,8 @@ func TestApplyMetadataFillsOnlyEmptyCustomFields(t *testing.T) {
 		"Amount":         models.CustomFieldNumber,
 		"Due date":       models.CustomFieldDate,
 		"IBAN":           models.CustomFieldNumber,
+		"Status":         models.CustomFieldChoice,
+		"Priority":       models.CustomFieldChoice,
 	} {
 		definition := core.NewRecord(definitions)
 		definition.Set("name", name)
@@ -46,6 +48,18 @@ func TestApplyMetadataFillsOnlyEmptyCustomFields(t *testing.T) {
 			t.Fatalf("save field %s: %v", name, err)
 		}
 		ids[name] = definition.Id
+	}
+	choices, err := app.FindCollectionByNameOrId(models.CustomFieldChoicesCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for field, name := range map[string]string{"Status": "Paid", "Priority": "High"} {
+		choice := core.NewRecord(choices)
+		choice.Set("field", ids[field])
+		choice.Set("name", name)
+		if err := app.Save(choice); err != nil {
+			t.Fatalf("save choice %s: %v", name, err)
+		}
 	}
 
 	doc := core.NewRecord(documents)
@@ -82,6 +96,8 @@ func TestApplyMetadataFillsOnlyEmptyCustomFields(t *testing.T) {
 				"Due date":       "31.10.2026",
 				"IBAN":           "DE89 3704",
 				"Customer":       "unasked",
+				"Status":         "paid",
+				"Priority":       "Urgent",
 			},
 		},
 	}
@@ -97,7 +113,9 @@ func TestApplyMetadataFillsOnlyEmptyCustomFields(t *testing.T) {
 	for id, value := range values {
 		got[id] = value.Value()
 	}
-	want := map[string]any{ids["Invoice number"]: "typed by hand", ids["Amount"]: 129.9, ids["Due date"]: "2026-10-31"}
+	want := map[string]any{
+		ids["Invoice number"]: "typed by hand", ids["Amount"]: 129.9, ids["Due date"]: "2026-10-31", ids["Status"]: "Paid",
+	}
 	if len(got) != len(want) {
 		t.Fatalf("custom_fields = %#v, want %#v", got, want)
 	}

@@ -341,6 +341,10 @@ var catalog = map[string]map[string]string{
 		"de": "%s muss vom Typ %s sein",
 		"ru": "%s: ожидается значение типа %s",
 	},
+	"%s must be one of: %s": {
+		"de": "%s muss eines davon sein: %s",
+		"ru": "%s: допустимые значения — %s",
+	},
 	"Failed to save settings.": {
 		"de": "Die Einstellungen konnten nicht gespeichert werden.",
 		"ru": "Не удалось сохранить настройки.",

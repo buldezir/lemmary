@@ -182,6 +182,8 @@ func customFieldsText(values models.FieldValues) string {
 	for _, v := range values {
 		switch v.Type {
 		case models.CustomFieldOption:
+		case models.CustomFieldChoice:
+			parts = append(parts, v.ChoiceName)
 		case models.CustomFieldNumber:
 			parts = append(parts, strconv.FormatFloat(v.Number, 'f', -1, 64))
 		case models.CustomFieldDate:

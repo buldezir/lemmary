@@ -19,12 +19,13 @@ func TestBuildIndexesFieldValues(t *testing.T) {
 	names := &nameCache{values: map[string]models.FieldValues{"doc1": {
 		"finvoice":                  {Type: models.CustomFieldText, Text: "R-2026-001"},
 		"famount":                   {Type: models.CustomFieldNumber, Number: 129.9},
+		"fstatus":                   {Type: models.CustomFieldChoice, Choice: "c1", ChoiceName: "Overdue"},
 		models.CorrespondentFieldID: {Type: models.CustomFieldOption, Option: "o1", OptionName: "Acme"},
 	}}}
 
 	doc := buildWith(names, rec)
 	all, _ := doc[FieldAll].(string)
-	for _, want := range []string{"Invoice", "R-2026-001", "129.9", "Acme"} {
+	for _, want := range []string{"Invoice", "R-2026-001", "129.9", "Acme", "Overdue"} {
 		if !strings.Contains(all, want) {
 			t.Fatalf("FieldAll = %q, want it to contain %q", all, want)
 		}

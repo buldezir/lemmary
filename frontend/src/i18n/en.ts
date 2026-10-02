@@ -281,6 +281,7 @@ export const en = {
   'settingsApi.loadFailed': 'Failed to load settings',
   'settingsApi.saveFailed': 'Failed to save settings',
   'customFieldsApi.duplicateName': 'A custom field called "{name}" already exists.',
+  'customFieldsApi.duplicateChoice': 'The choice "{name}" is listed twice.',
   'customFieldsApi.saveFailed': 'The custom field could not be saved.',
 
   'mcp.statusFailed': 'Failed to check the MCP endpoint',
@@ -1135,6 +1136,12 @@ export const en = {
   'settingsProcessing.customFieldTypeText': 'Text',
   'settingsProcessing.customFieldTypeNumber': 'Number',
   'settingsProcessing.customFieldTypeDate': 'Date',
+  'settingsProcessing.customFieldTypeChoice': 'Choice',
+  'settingsProcessing.customFieldChoices': 'Choices',
+  'settingsProcessing.customFieldChoice': 'Choice',
+  'settingsProcessing.customFieldChoiceAdd': 'Add choice',
+  'settingsProcessing.customFieldChoiceRemove': 'Remove choice {name}',
+  'settingsProcessing.customFieldChoicesRemoveConfirm': 'Remove {names}? Documents holding a removed choice lose that value.',
   'settingsProcessing.customFieldDescription': 'Hint for extraction',
   'settingsProcessing.customFieldDescriptionPlaceholder':
     'Optional, sent to the AI model, e.g. printed next to "Invoice no."',

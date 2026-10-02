@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ClientResponseError } from 'pocketbase'
 import {
   CORRESPONDENT_FIELD_ID,
+  choiceChanges,
   customFieldSaveError,
   customFieldValuesForSave,
   fieldInputValue,
@@ -10,9 +11,16 @@ import {
 } from './customFields'
 
 const fields: CustomField[] = [
-  { id: 'finvoice', name: 'Invoice number', type: 'text', description: '' },
-  { id: 'famount', name: 'Amount', type: 'number', description: '' },
-  { id: 'fdue', name: 'Due date', type: 'date', description: '' },
+  { id: 'finvoice', name: 'Invoice number', type: 'text', description: '', choices: [] },
+  { id: 'famount', name: 'Amount', type: 'number', description: '', choices: [] },
+  { id: 'fdue', name: 'Due date', type: 'date', description: '', choices: [] },
+  {
+    id: 'fstatus',
+    name: 'Status',
+    type: 'choice',
+    description: '',
+    choices: [{ id: 'c1', name: 'Paid' }],
+  },
 ]
 
 describe('customFieldValuesForSave', () => {
@@ -40,8 +48,26 @@ describe('fieldInputValue and optionName', () => {
   const document = {
     expand: {
       custom_field_values_via_document: [
-        { id: 'v1', field: 'famount', text: '', number: 12.5, date: '', option: '' },
-        { id: 'v2', field: 'fdue', text: '', number: 0, date: '2026-10-31 00:00:00.000Z', option: '' },
+        { id: 'v1', field: 'famount', text: '', number: 12.5, date: '', option: '', choice: '' },
+        {
+          id: 'v2',
+          field: 'fdue',
+          text: '',
+          number: 0,
+          date: '2026-10-31 00:00:00.000Z',
+          option: '',
+          choice: '',
+        },
+        {
+          id: 'v4',
+          field: 'fstatus',
+          text: '',
+          number: 0,
+          date: '',
+          option: '',
+          choice: 'c1',
+          expand: { choice: { id: 'c1', name: 'Paid' } },
+        },
         {
           id: 'v3',
           field: CORRESPONDENT_FIELD_ID,
@@ -49,6 +75,7 @@ describe('fieldInputValue and optionName', () => {
           number: 0,
           date: '',
           option: 'o1',
+          choice: '',
           expand: { option: { id: 'o1', name: 'Acme' } },
         },
       ],
@@ -59,8 +86,36 @@ describe('fieldInputValue and optionName', () => {
     expect(fieldInputValue(document, fields[1])).toBe('12.5')
     expect(fieldInputValue(document, fields[2])).toBe('2026-10-31')
     expect(fieldInputValue(document, fields[0])).toBe('')
+    expect(fieldInputValue(document, fields[3])).toBe('Paid')
     expect(optionName(document, CORRESPONDENT_FIELD_ID)).toBe('Acme')
     expect(optionName({}, CORRESPONDENT_FIELD_ID)).toBe('')
+  })
+})
+
+describe('choiceChanges', () => {
+  const saved = [
+    { id: 'c1', name: 'Paid' },
+    { id: 'c2', name: 'Open' },
+    { id: 'c3', name: 'Overdue' },
+  ]
+
+  it('removes, renames and adds what the edit changed', () => {
+    expect(
+      choiceChanges(saved, [
+        { id: 'c1', name: 'Paid' },
+        { id: 'c2', name: ' Unpaid ' },
+        { id: '', name: 'Disputed ' },
+      ]),
+    ).toEqual({ remove: ['c3'], rename: [{ id: 'c2', name: 'Unpaid' }], add: ['Disputed'] })
+  })
+
+  it('refuses two names that differ only in case before sending anything', () => {
+    expect(() =>
+      choiceChanges(saved, [
+        { id: 'c1', name: 'Paid' },
+        { id: '', name: 'paid' },
+      ]),
+    ).toThrow('The choice "paid" is listed twice.')
   })
 })
 

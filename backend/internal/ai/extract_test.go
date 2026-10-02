@@ -269,11 +269,14 @@ func TestBuildExtractionSystemPromptAsksForCustomFieldsOnlyWhenDefined(t *testin
 	prompt := buildExtractionSystemPrompt("", "Always tag invoices.", ExtractionCatalog{CustomFields: []models.CustomField{
 		{ID: "finvoice", Name: "Invoice number", Type: models.CustomFieldText, Description: "next to Rechnungsnr."},
 		{ID: "famount", Name: "Amount", Type: models.CustomFieldNumber},
+		{ID: "fstatus", Name: "Status", Type: models.CustomFieldChoice, Choices: []models.FieldChoice{{ID: "cpaid", Name: "Paid"}, {ID: "copen", Name: "Open"}}},
 	}})
 	for _, want := range []string{
 		"Also return custom_fields (object)",
 		`{"name":"Invoice number","type":"text","description":"next to Rechnungsnr."}`,
 		`{"name":"Amount","type":"number"}`,
+		`{"name":"Status","type":"choice","choices":["Paid","Open"]}`,
+		"choice is exactly one of the field's choices",
 		"leave a field out rather than guess",
 	} {
 		if !strings.Contains(prompt, want) {
@@ -281,7 +284,7 @@ func TestBuildExtractionSystemPromptAsksForCustomFieldsOnlyWhenDefined(t *testin
 		}
 	}
 	// Ids mean nothing to the model; the names are the keys it answers with.
-	if strings.Contains(prompt, "finvoice") {
+	if strings.Contains(prompt, "finvoice") || strings.Contains(prompt, "cpaid") {
 		t.Fatalf("the prompt leaks field ids:\n%s", prompt)
 	}
 	// Admin rules come after the contract they may not change.

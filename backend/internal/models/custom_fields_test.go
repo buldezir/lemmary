@@ -1,6 +1,7 @@
 package models_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -18,6 +19,7 @@ func TestCustomFieldCoerce(t *testing.T) {
 	number := models.CustomField{Type: models.CustomFieldNumber}
 	date := models.CustomField{Type: models.CustomFieldDate}
 	option := models.CustomField{Type: models.CustomFieldOption}
+	choice := models.CustomField{Type: models.CustomFieldChoice, Choices: []models.FieldChoice{{ID: "c1", Name: "Paid"}}}
 
 	cases := []struct {
 		name  string
@@ -41,6 +43,9 @@ func TestCustomFieldCoerce(t *testing.T) {
 		{"date from number", date, 2026.0, nil, false},
 		{"option id", option, " o123 ", "o123", true},
 		{"option blank", option, "", "", false},
+		{"choice by name ignoring case", choice, " paid ", "c1", true},
+		{"choice not listed", choice, "Overdue", nil, false},
+		{"choice by id", choice, "c1", nil, false},
 	}
 	for _, tc := range cases {
 		got, ok := tc.field.Coerce(tc.in)
@@ -86,8 +91,8 @@ func newUser(t *testing.T, app core.App, email string) *core.Record {
 	return user
 }
 
-// One row per document and field: a save replaces, nil removes, and an option
-// has to be the document owner's and the field's.
+// One row per document and field: a save replaces, nil removes, an option has
+// to be the document owner's and the field's, and a choice the field's.
 func TestSaveAndLoadFieldValues(t *testing.T) {
 	app := testpb.Open(t)
 	owner := newUser(t, app, "owner@example.com")
@@ -108,6 +113,18 @@ func TestSaveAndLoadFieldValues(t *testing.T) {
 	asType := saveRecord(t, app, models.CustomFieldOptionsCollection, map[string]any{
 		"field": models.DocumentTypeFieldID, "user": owner.Id, "name": "Invoice",
 	})
+	status := saveRecord(t, app, models.CustomFieldsCollection, map[string]any{"name": "Status", "type": models.CustomFieldChoice})
+	paid := saveRecord(t, app, models.CustomFieldChoicesCollection, map[string]any{"field": status.Id, "name": "Paid"})
+	priority := saveRecord(t, app, models.CustomFieldsCollection, map[string]any{"name": "Priority", "type": models.CustomFieldChoice})
+	high := saveRecord(t, app, models.CustomFieldChoicesCollection, map[string]any{"field": priority.Id, "name": "High"})
+	loaded, err := models.LoadCustomFields(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statusField := loaded[slices.IndexFunc(loaded, func(f models.CustomField) bool { return f.ID == status.Id })]
+	if len(statusField.Choices) != 1 || statusField.Choices[0] != (models.FieldChoice{ID: paid.Id, Name: "Paid"}) {
+		t.Fatalf("Status choices = %#v", statusField.Choices)
+	}
 
 	for _, v := range []float64{12.5, 99} {
 		if err := models.SaveFieldValue(app, doc, field, v); err != nil {
@@ -122,12 +139,19 @@ func TestSaveAndLoadFieldValues(t *testing.T) {
 			t.Errorf("%s option was accepted", name)
 		}
 	}
+	if err := models.SaveFieldValue(app, doc, statusField, high.Id); err == nil {
+		t.Error("another field's choice was accepted")
+	}
+	if err := models.SaveFieldValue(app, doc, statusField, paid.Id); err != nil {
+		t.Fatalf("save choice: %v", err)
+	}
 
 	values, err := models.LoadDocumentFieldValues(app, doc.Id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(values) != 2 || values[amount.Id].Value() != 99.0 || values.OptionName(models.CorrespondentFieldID) != "Acme" {
+	if len(values) != 3 || values[amount.Id].Value() != 99.0 || values.OptionName(models.CorrespondentFieldID) != "Acme" ||
+		values[status.Id].Value() != "Paid" {
 		t.Fatalf("values = %#v", values)
 	}
 
@@ -135,7 +159,7 @@ func TestSaveAndLoadFieldValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	values, err = models.LoadDocumentFieldValues(app, doc.Id)
-	if err != nil || len(values) != 1 {
+	if err != nil || len(values) != 2 {
 		t.Fatalf("after removing Amount: %#v, %v", values, err)
 	}
 }
