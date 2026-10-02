@@ -768,8 +768,8 @@ export const de: Catalog = {
   'activity.inProgress': 'In Bearbeitung',
   'activity.recentlyCancelled': 'Kürzlich abgebrochen',
   'activity.recentlyFailed': 'Kürzlich fehlgeschlagen',
-  'activity.showingNewest':
-    'Die neuesten {shown} von {total} werden angezeigt. Die übrigen erscheinen, sobald diese abgeschlossen sind.',
+  'activity.showingFirst':
+    'Die ersten {shown} von {total} werden angezeigt. Die übrigen erscheinen, sobald diese abgeschlossen sind.',
   'activity.reprocessError': 'Erneute Verarbeitung fehlgeschlagen',
   'activity.queueing': 'Wird eingereiht...',
   'activity.reprocess': 'Erneut verarbeiten',

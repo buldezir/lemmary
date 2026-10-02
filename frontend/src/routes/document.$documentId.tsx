@@ -52,6 +52,7 @@ import { DocumentPreview } from '../components/DocumentPreview'
 import { useStoredFlag } from '../hooks/useStoredFlag'
 import { useAppMeta } from '../hooks/useAppMeta'
 import { previewKind } from '../lib/documentPreview'
+import { anyJobRunning } from '../lib/api/jobs'
 import { t, tNode } from '../i18n'
 
 type OcrView = 'original' | 'translated' | 'both'
@@ -79,6 +80,7 @@ export function DocumentDetailPage() {
   const navigate = useNavigate()
   const [document, setDocument] = useState<DocumentRecord | null>(null)
   const [job, setJob] = useState<ProcessingJobRecord | null>(null)
+  const [queueMoving, setQueueMoving] = useState(false)
   const [tagIds, setTagIds] = useState<string[]>([])
   // The whole vocabulary, loaded once: the picker needs every tag, not only the
   // ones this document carries.
@@ -156,12 +158,15 @@ export function DocumentDetailPage() {
           filter: pb.filter('document = {:documentId}', { documentId }),
           sort: '-created',
         })
+        const waiting = jobs.items[0]?.status === 'pending' && !jobs.items[0].started_at
+        const moving = waiting ? await anyJobRunning() : false
 
         if (!active) {
           return
         }
 
         setJob(jobs.items[0] ?? null)
+        setQueueMoving(moving)
         loadedRef.current = doc
         if (!editingRef.current) {
           applyLoadedDocument(doc)
@@ -325,7 +330,7 @@ export function DocumentDetailPage() {
   }, [needsClock])
 
   const jobTotalMs = job ? jobDurationMs(job, tick) : null
-  const summary = summarizeJob(job, tick)
+  const summary = summarizeJob(job, tick, queueMoving)
   // Latched, not derived: a panel that opened itself to show a failure must not
   // close again the moment Reprocess turns the tone back to 'running'. Warnings
   // count too, since a soft-failed embed is the one failure the status badge

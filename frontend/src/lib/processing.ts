@@ -186,8 +186,9 @@ export function stepLabel(name: string): string {
 /**
  * The worker leaves every job pending and records nothing when OCR or the AI
  * extractor is unconfigured (providersReady in worker/processor.go), so the
- * document would read "Pending" for ever. Two minutes is long enough that a
- * queue working through a bulk upload is not accused of being broken.
+ * document would read "Pending" for ever. Age alone cannot tell that from a
+ * job waiting behind a bulk upload, so the caller also says whether any job is
+ * running.
  */
 export const stalledAfterMs = 2 * 60_000
 
@@ -208,6 +209,7 @@ export type ProcessingSummary = {
 export function summarizeJob(
   job: ProcessingJobRecord | null | undefined,
   now: number = Date.now(),
+  queueMoving = false,
 ): ProcessingSummary | null {
   if (!job) return null
   const runs = job.step_runs ?? []
@@ -252,7 +254,7 @@ export function summarizeJob(
 
   if (job.status === 'pending' && !job.started_at) {
     const created = parseStepTimestamp(job.created)
-    if (created !== null && now - created > stalledAfterMs) {
+    if (!queueMoving && created !== null && now - created > stalledAfterMs) {
       return {
         tone: 'warning',
         label: t('processing.notStarted'),

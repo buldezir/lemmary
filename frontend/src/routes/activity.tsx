@@ -193,12 +193,12 @@ export function ActivityPage() {
         <p className="text-sm text-ink-soft">{t('activity.empty')}</p>
       ) : (
         <div className="flex flex-col gap-6">
-          <JobGroup title={t('activity.inProgress')} jobs={active} tick={tick} onReprocessed={reload} />
-          <JobGroup title={t('activity.recentlyCancelled')} jobs={cancelled} tick={tick} onReprocessed={reload} />
-          <JobGroup title={t('activity.recentlyFailed')} jobs={failed} tick={tick} onReprocessed={reload} />
+          <JobGroup title={t('activity.inProgress')} jobs={active} tick={tick} queueMoving={anyRunning} onReprocessed={reload} />
+          <JobGroup title={t('activity.recentlyCancelled')} jobs={cancelled} tick={tick} queueMoving={anyRunning} onReprocessed={reload} />
+          <JobGroup title={t('activity.recentlyFailed')} jobs={failed} tick={tick} queueMoving={anyRunning} onReprocessed={reload} />
           {total > jobs.length ? (
             <p className="text-xs text-ink-soft">
-              {t('activity.showingNewest', { shown: jobs.length, total })}
+              {t('activity.showingFirst', { shown: jobs.length, total })}
             </p>
           ) : null}
         </div>
@@ -211,11 +211,13 @@ function JobGroup({
   title,
   jobs,
   tick,
+  queueMoving,
   onReprocessed,
 }: {
   title: string
   jobs: ProcessingJobRecord[]
   tick: number
+  queueMoving: boolean
   onReprocessed: () => Promise<void>
 }) {
   if (jobs.length === 0) return null
@@ -226,7 +228,7 @@ function JobGroup({
       </h3>
       <ul className="flex flex-col divide-y divide-line border-y border-line">
         {jobs.map((job) => (
-          <JobRow key={job.id} job={job} tick={tick} onReprocessed={onReprocessed} />
+          <JobRow key={job.id} job={job} tick={tick} queueMoving={queueMoving} onReprocessed={onReprocessed} />
         ))}
       </ul>
     </div>
@@ -236,15 +238,18 @@ function JobGroup({
 function JobRow({
   job,
   tick,
+  queueMoving,
   onReprocessed,
 }: {
   job: ProcessingJobRecord
   tick: number
+  queueMoving: boolean
   onReprocessed: () => Promise<void>
 }) {
   const [requeueing, setRequeueing] = useState(false)
   const [requeueError, setRequeueError] = useState('')
-  const title = job.expand?.document?.title?.trim() || t('common.untitledDocument')
+  const title =
+    job.expand?.document?.title?.trim() || job.expand?.document?.file || t('common.untitledDocument')
   const elapsed = jobDurationMs(job, tick)
 
   async function onReprocess() {
@@ -282,7 +287,7 @@ function JobRow({
         </div>
       </div>
 
-      <ProcessingStatus summary={summarizeJob(job, tick)} />
+      <ProcessingStatus summary={summarizeJob(job, tick, queueMoving)} />
       <ProcessingSteps job={job} now={tick} collapsed />
       {requeueError ? <p className="text-xs text-madder">{requeueError}</p> : null}
     </li>

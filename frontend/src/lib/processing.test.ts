@@ -295,6 +295,12 @@ describe('summarizeJob', () => {
     expect(summary?.label).toBe('Not started yet')
   })
 
+  it('does not suspect the providers while another job is running', () => {
+    expect(
+      summarizeJob(job({ status: 'pending', started_at: '', created: at(-stalledAfterMs - 1000) }), now, true),
+    ).toBeNull()
+  })
+
   // The document already reads "completed"; only the soft-failed run says the
   // search vectors are missing.
   it('warns about a soft failure on a job that otherwise completed', () => {

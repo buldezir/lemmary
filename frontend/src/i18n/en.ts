@@ -732,7 +732,7 @@ export const en = {
   'activity.inProgress': 'In progress',
   'activity.recentlyCancelled': 'Recently cancelled',
   'activity.recentlyFailed': 'Recently failed',
-  'activity.showingNewest': 'Showing the newest {shown} of {total}. The rest appear as these finish.',
+  'activity.showingFirst': 'Showing the first {shown} of {total}. The rest appear as these finish.',
   'activity.reprocessError': 'Reprocess failed',
   'activity.queueing': 'Queueing...',
   'activity.reprocess': 'Reprocess',

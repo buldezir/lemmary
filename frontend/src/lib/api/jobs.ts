@@ -36,13 +36,26 @@ export async function getLatestJobsFor(
   return byDocument
 }
 
+/** Tells a job waiting behind a long queue from one no worker will pick up. */
+export async function anyJobRunning(): Promise<boolean> {
+  await ensureAuth()
+  const jobs = await pb.collection(collection).getList(1, 1, {
+    filter: "started_at != '' && finished_at = ''",
+    fields: 'id',
+    skipTotal: true,
+    requestKey: null,
+  })
+  return jobs.items.length > 0
+}
+
 /** How far back a finished-and-failed job stays on the Activity page. */
 const failedWindowMs = 24 * 60 * 60_000
 
 /**
  * Everything unfinished, plus failures and cancellations from the last day.
  * finished_at = '' rather than a status test, for the reason
- * createProcessingJob gives.
+ * createProcessingJob gives. Oldest first, the order the worker takes them in,
+ * so the job running now heads the list.
  */
 export async function listActiveJobs(
   limit = 100,
@@ -55,7 +68,7 @@ export async function listActiveJobs(
 
   const jobs = await pb.collection(collection).getList<ProcessingJobRecord>(1, limit, {
     filter,
-    sort: '-created',
+    sort: 'created',
     expand: 'document',
     requestKey: null,
   })

@@ -859,8 +859,8 @@ export const ru: Catalog = {
   'activity.inProgress': 'В работе',
   'activity.recentlyCancelled': 'Недавно отменённые',
   'activity.recentlyFailed': 'Недавно завершившиеся ошибкой',
-  'activity.showingNewest':
-    'Показаны последние {shown} из {total}. Остальные появятся по мере завершения этих.',
+  'activity.showingFirst':
+    'Показаны первые {shown} из {total}. Остальные появятся по мере завершения этих.',
   'activity.reprocessError': 'Не удалось обработать заново',
   'activity.queueing': 'Постановка в очередь...',
   'activity.reprocess': 'Обработать заново',
