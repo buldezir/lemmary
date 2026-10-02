@@ -12,7 +12,7 @@ Write a detailed commit message so later agents can understand what was done fro
 
 ## Overlay
 
-E2e suites live in a sibling repo at `../lemmary-dev`, found by `scripts/overlay.sh`.
+E2e suites live in a sibling repo at `../lemmary-app-overlay`, found by `scripts/overlay.sh`.
 `./scripts/test-all.sh` is tracked and locates it; no test suites need attaching by hand.
 
 If this project checkout is a Git worktree, always create a corresponding overlay
@@ -23,8 +23,8 @@ When a change needs an e2e update in a regular checkout, create a matching
 branch directly in the overlay checkout first:
 
 ```bash
-git -C ../lemmary-dev fetch origin
-git -C ../lemmary-dev switch -c "$(git rev-parse --abbrev-ref HEAD)" origin/main
+git -C ../lemmary-app-overlay fetch origin
+git -C ../lemmary-app-overlay switch -c "$(git rev-parse --abbrev-ref HEAD)" origin/main
 ```
 
 The PR job uses the overlay branch named like the PR, else `main`. A mismatched name looks green. Push the overlay branch before the public one. Details: overlay `AGENTS.md`.

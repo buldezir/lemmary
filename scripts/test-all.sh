@@ -16,7 +16,7 @@ ARGS=()
 
 if ! OVERLAY="$("$ROOT/scripts/overlay.sh" "${ARGS[@]+"${ARGS[@]}"}")"; then
   echo "No verification overlay found." >&2
-  echo "scripts/overlay.sh looks in \$LEMMARY_DEV, $ROOT/dev, and the lemmary-dev sibling." >&2
+  echo "scripts/overlay.sh looks in \$LEMMARY_DEV, $ROOT/dev, and the lemmary-app-overlay sibling." >&2
   exit 3
 fi
 

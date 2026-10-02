@@ -29,7 +29,7 @@ is_overlay "$ROOT/dev" && emit "$ROOT/dev"
 # Sibling of the *main* checkout, so a worktree resolves where its main does.
 MAIN="$(git -C "$ROOT" worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')"
 [[ -n "$MAIN" ]] || MAIN="$ROOT"
-BASE="$(dirname "$MAIN")/lemmary-dev"
+BASE="$(dirname "$MAIN")/lemmary-app-overlay"
 is_overlay "$BASE" || { log "not found (looked in \$LEMMARY_DEV, $ROOT/dev, $BASE)"; exit 3; }
 
 BRANCH="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
