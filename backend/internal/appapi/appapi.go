@@ -10,6 +10,7 @@ import (
 	"lemmary/backend/internal/fulltext"
 	"lemmary/backend/internal/imapimport"
 	"lemmary/backend/internal/limits"
+	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/pdfsplit"
 	"lemmary/backend/internal/zipimport"
 )
@@ -30,6 +31,8 @@ func Register(
 	RegisterAppName(app)
 	app.OnRecordUpdate("documents").BindFunc(clearStaleTranslation)
 	app.OnRecordUpdateRequest("documents").BindFunc(saveFieldsWithDocument)
+	app.OnRecordCreateRequest(models.CustomFieldsCollection).BindFunc(saveChoicesWithField)
+	app.OnRecordUpdateRequest(models.CustomFieldsCollection).BindFunc(saveChoicesWithField)
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: 45,
 		Func: func(e *core.ServeEvent) error {

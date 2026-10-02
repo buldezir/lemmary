@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { ClientResponseError } from 'pocketbase'
 import {
   CORRESPONDENT_FIELD_ID,
-  choiceChanges,
   customFieldSaveError,
   customFieldValuesForSave,
   fieldInputValue,
@@ -89,33 +88,6 @@ describe('fieldInputValue and optionName', () => {
     expect(fieldInputValue(document, fields[3])).toBe('Paid')
     expect(optionName(document, CORRESPONDENT_FIELD_ID)).toBe('Acme')
     expect(optionName({}, CORRESPONDENT_FIELD_ID)).toBe('')
-  })
-})
-
-describe('choiceChanges', () => {
-  const saved = [
-    { id: 'c1', name: 'Paid' },
-    { id: 'c2', name: 'Open' },
-    { id: 'c3', name: 'Overdue' },
-  ]
-
-  it('removes, renames and adds what the edit changed', () => {
-    expect(
-      choiceChanges(saved, [
-        { id: 'c1', name: 'Paid' },
-        { id: 'c2', name: ' Unpaid ' },
-        { id: '', name: 'Disputed ' },
-      ]),
-    ).toEqual({ remove: ['c3'], rename: [{ id: 'c2', name: 'Unpaid' }], add: ['Disputed'] })
-  })
-
-  it('refuses two names that differ only in case before sending anything', () => {
-    expect(() =>
-      choiceChanges(saved, [
-        { id: 'c1', name: 'Paid' },
-        { id: '', name: 'paid' },
-      ]),
-    ).toThrow('The choice "paid" is listed twice.')
   })
 })
 

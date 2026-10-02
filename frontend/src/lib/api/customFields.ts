@@ -85,59 +85,25 @@ export async function listCustomFields(): Promise<CustomField[]> {
 }
 
 /**
- * Creates the field when id is empty, otherwise updates it, then brings a
- * choice field's choices from saved to input's. Admins only.
+ * Creates the field when id is empty, otherwise updates it. A choice field's
+ * choices travel with it, in order, each new one without an id: the server
+ * stores the field and the whole list in one transaction. Admins only.
  */
-export async function saveCustomField(
-  id: string,
-  input: CustomFieldInput,
-  saved: CustomFieldChoice[] = [],
-): Promise<void> {
+export async function saveCustomField(id: string, input: CustomFieldInput): Promise<void> {
   await ensureAuth()
   const body = {
     name: input.name.trim(),
     type: input.type,
     description: input.description.trim(),
+    ...(input.type === 'choice' && {
+      choices: input.choices.map((c) => ({ id: c.id, name: c.name.trim() })),
+    }),
   }
-  const choices = input.type === 'choice' ? choiceChanges(saved, input.choices) : null
   const collection = pb.collection('custom_fields')
-  const fieldId = await (id
-    ? collection.update<CustomField>(id, body)
-    : collection.create<CustomField>(body)
-  )
-    .then((field) => field.id)
-    .catch((err: unknown) => {
-      throw customFieldSaveError(err, body.name)
-    })
-  if (!choices) return
-  const records = pb.collection('custom_field_choices')
-  for (const choiceId of choices.remove) await records.delete(choiceId)
-  for (const choice of choices.rename) await records.update(choice.id, { name: choice.name })
-  for (const name of choices.add) await records.create({ field: fieldId, name })
-}
-
-/**
- * What turns the saved choices into the edited ones, removals first so a name
- * can move to a new choice. Refuses two names that differ only in case before
- * anything is sent, as the unique index would halfway through. Exported for
- * its test.
- */
-export function choiceChanges(saved: CustomFieldChoice[], edited: CustomFieldChoice[]) {
-  const seen = new Set<string>()
-  for (const choice of edited) {
-    const key = choice.name.trim().toLowerCase()
-    if (seen.has(key)) {
-      throw new Error(t('customFieldsApi.duplicateChoice', { name: choice.name.trim() }))
-    }
-    seen.add(key)
-  }
-  const kept = new Map(edited.filter((c) => c.id).map((c) => [c.id, c.name.trim()]))
-  return {
-    remove: saved.filter((c) => !kept.has(c.id)).map((c) => c.id),
-    rename: saved
-      .filter((c) => kept.has(c.id) && kept.get(c.id) !== c.name)
-      .map((c) => ({ id: c.id, name: kept.get(c.id)! })),
-    add: edited.filter((c) => !c.id).map((c) => c.name.trim()),
+  try {
+    await (id ? collection.update(id, body) : collection.create(body))
+  } catch (err) {
+    throw customFieldSaveError(err, body.name)
   }
 }
 

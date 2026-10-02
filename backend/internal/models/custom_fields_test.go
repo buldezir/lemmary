@@ -181,3 +181,65 @@ func TestParseExtractedMetadataCustomFields(t *testing.T) {
 		t.Fatalf("custom_fields = %#v, want nil", metadata.CustomFields)
 	}
 }
+
+// Choices keep their ids through any rename, a swap and a rotation included,
+// which the unique name index would refuse taken one row at a time; values
+// follow the id, and a choice left out goes with its values.
+func TestSyncFieldChoices(t *testing.T) {
+	app := testpb.Open(t)
+	owner := newUser(t, app, "owner@example.com")
+	file, err := filesystem.NewFileFromBytes([]byte("x"), "x.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := saveRecord(t, app, "documents", map[string]any{"user": owner.Id, "file": file})
+	status := saveRecord(t, app, models.CustomFieldsCollection, map[string]any{"name": "Status", "type": models.CustomFieldChoice})
+	ids := map[string]string{}
+	for _, name := range []string{"Paid", "Open", "Overdue"} {
+		ids[name] = saveRecord(t, app, models.CustomFieldChoicesCollection, map[string]any{"field": status.Id, "name": name}).Id
+	}
+	field := models.CustomField{ID: status.Id, Name: "Status", Type: models.CustomFieldChoice, Choices: []models.FieldChoice{{ID: ids["Paid"]}}}
+	if err := models.SaveFieldValue(app, doc, field, ids["Paid"]); err != nil {
+		t.Fatal(err)
+	}
+	names := func() map[string]string {
+		t.Helper()
+		records, err := app.FindAllRecords(models.CustomFieldChoicesCollection)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]string{}
+		for _, record := range records {
+			out[record.Id] = record.GetString("name")
+		}
+		return out
+	}
+
+	sync := func(want ...models.FieldChoice) {
+		t.Helper()
+		if err := app.RunInTransaction(func(tx core.App) error {
+			return models.SyncFieldChoices(tx, status.Id, want)
+		}); err != nil {
+			t.Fatalf("sync %v: %v", want, err)
+		}
+	}
+	sync(models.FieldChoice{ID: ids["Paid"], Name: "Open"}, models.FieldChoice{ID: ids["Open"], Name: "Overdue"},
+		models.FieldChoice{ID: ids["Overdue"], Name: "Paid"})
+	if got := names(); got[ids["Paid"]] != "Open" || got[ids["Open"]] != "Overdue" || got[ids["Overdue"]] != "Paid" {
+		t.Fatalf("after the rotation: %v", got)
+	}
+	values, err := models.LoadDocumentFieldValues(app, doc.Id)
+	if err != nil || values[status.Id].ChoiceName != "Open" {
+		t.Fatalf("the value did not follow its choice: %#v, %v", values, err)
+	}
+
+	sync(models.FieldChoice{ID: ids["Open"], Name: "Overdue"}, models.FieldChoice{Name: "Disputed"})
+	got := names()
+	if len(got) != 2 || got[ids["Open"]] != "Overdue" {
+		t.Fatalf("after removing two and adding one: %v", got)
+	}
+	values, err = models.LoadDocumentFieldValues(app, doc.Id)
+	if err != nil || len(values) != 0 {
+		t.Fatalf("a removed choice kept its value: %#v, %v", values, err)
+	}
+}

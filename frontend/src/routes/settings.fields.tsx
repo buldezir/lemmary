@@ -198,7 +198,7 @@ function FieldDialog({
     setSaving(true)
     setError('')
     try {
-      await saveCustomField(field.id, input, field.choices)
+      await saveCustomField(field.id, input)
       await onSaved()
     } catch (err) {
       setError(err instanceof Error ? err.message : t('customFieldsApi.saveFailed'))
@@ -342,7 +342,12 @@ function FieldDialog({
           </Button>
           <Button
             type="submit"
-            disabled={saving || !draft.name.trim() || (isChoice && draft.choices.length === 0 && !pending)}
+            disabled={
+              saving ||
+              !draft.name.trim() ||
+              (isChoice &&
+                ((draft.choices.length === 0 && !pending) || draft.choices.some((c) => !c.name.trim())))
+            }
           >
             {saving ? t('settingsFields.saving') : t('common.save')}
           </Button>

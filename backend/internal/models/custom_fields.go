@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -187,4 +188,69 @@ func coerceText(v any) (any, bool) {
 		s = string(runes[:MaxCustomFieldValueRunes])
 	}
 	return s, s != ""
+}
+
+// SyncFieldChoices makes want, in order, the field's choices: one with an id
+// keeps it and takes its new name, one without is created, and every other
+// choice is deleted, its values with it. Renamed choices pass through a
+// temporary name first, because the unique name index would refuse a swap
+// taken one row at a time. Run it in a transaction, so a failure leaves the
+// deletes undone too.
+func SyncFieldChoices(app core.App, fieldID string, want []FieldChoice) error {
+	existing, err := app.FindRecordsByFilter(CustomFieldChoicesCollection, "field = {:field}", "", 0, 0,
+		dbx.Params{"field": fieldID})
+	if err != nil {
+		return err
+	}
+	byID := make(map[string]*core.Record, len(existing))
+	for _, record := range existing {
+		byID[record.Id] = record
+	}
+	kept := map[string]bool{}
+	for _, choice := range want {
+		kept[choice.ID] = true
+	}
+	for _, record := range existing {
+		if !kept[record.Id] {
+			if err := app.Delete(record); err != nil {
+				return err
+			}
+		}
+	}
+	var renamed []*core.Record
+	var names []string
+	for _, choice := range want {
+		record := byID[choice.ID]
+		if record == nil || record.GetString("name") == choice.Name {
+			continue
+		}
+		record.Set("name", "~"+record.Id)
+		if err := app.Save(record); err != nil {
+			return err
+		}
+		renamed = append(renamed, record)
+		names = append(names, choice.Name)
+	}
+	for i, record := range renamed {
+		record.Set("name", names[i])
+		if err := app.Save(record); err != nil {
+			return err
+		}
+	}
+	coll, err := app.FindCachedCollectionByNameOrId(CustomFieldChoicesCollection)
+	if err != nil {
+		return err
+	}
+	for _, choice := range want {
+		if choice.ID != "" {
+			continue
+		}
+		record := core.NewRecord(coll)
+		record.Set("field", fieldID)
+		record.Set("name", choice.Name)
+		if err := app.Save(record); err != nil {
+			return err
+		}
+	}
+	return nil
 }

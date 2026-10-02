@@ -345,6 +345,26 @@ var catalog = map[string]map[string]string{
 		"de": "%s muss eines davon sein: %s",
 		"ru": "%s: допустимые значения — %s",
 	},
+	"only a choice field has choices": {
+		"de": "Nur ein Auswahlfeld hat Auswahlwerte",
+		"ru": "Значения бывают только у поля с выбором из списка",
+	},
+	"%s needs at least one choice": {
+		"de": "%s braucht mindestens einen Auswahlwert",
+		"ru": "%s: нужно хотя бы одно значение",
+	},
+	"a choice needs a name": {
+		"de": "Ein Auswahlwert braucht einen Namen",
+		"ru": "У значения должно быть название",
+	},
+	"unknown choice %q": {
+		"de": "Unbekannter Auswahlwert %q",
+		"ru": "Неизвестное значение %q",
+	},
+	"the choice %q is listed twice": {
+		"de": "Der Auswahlwert %q steht doppelt in der Liste",
+		"ru": "Значение %q указано дважды",
+	},
 	"Failed to save settings.": {
 		"de": "Die Einstellungen konnten nicht gespeichert werden.",
 		"ru": "Не удалось сохранить настройки.",
