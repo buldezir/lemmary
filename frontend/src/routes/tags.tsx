@@ -12,6 +12,7 @@ import {
   type TagRecord,
 } from '../lib/api/tags'
 import { useAsync } from '../hooks/useAsync'
+import { exactSearch } from '../lib/documentQuery'
 import {
   Button,
   fieldHintClassName,
@@ -149,7 +150,7 @@ function TagRow({ tag, busy, ticked, onTick, onRename, onDelete, onAssign, onCol
           <div className="flex flex-wrap items-center gap-2">
             <Link
               to="/"
-              search={{ q: tag.name }}
+              search={{ q: exactSearch(tag.name) }}
               className="rounded-xs border border-line px-2 py-1 text-xs text-ink-soft transition-colors hover:text-ink"
             >
               {t('tagsPage.findDocuments')}

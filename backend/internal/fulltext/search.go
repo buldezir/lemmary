@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html"
 	"math"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -536,6 +537,12 @@ func looseParts(parts []queryPart) []queryPart {
 // however many loose terms surround it.
 func mandatoryPhrase(part queryPart) bool {
 	return part.phrase && part.closed
+}
+
+// HasPhrase reports whether text quotes a phrase: the searcher asking for the
+// words themselves, not for anything close to them in meaning.
+func HasPhrase(text string) bool {
+	return slices.ContainsFunc(parseQueryParts(text), mandatoryPhrase)
 }
 
 func textQuery(parts []queryPart, mode relaxMode, prefix bool, fields []boostedField) query.Query {

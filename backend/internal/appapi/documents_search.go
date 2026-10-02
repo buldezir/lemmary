@@ -131,8 +131,12 @@ func handleDocumentSearch(app core.App, rt *config.Runtime, idx *fulltext.Index)
 // chunk index finds by meaning, the way the agent's search does, then cuts the
 // page. Meaning reorders the keyword matches but never outranks them: the box
 // is a filter, and a hit without the words above one with them reads as a bug.
-// ok is false when there are too many keyword matches to rank here.
+// ok is false when there are too many keyword matches to rank here, and when a
+// quoted phrase asks for the words exactly.
 func (r *agentRetriever) fusedDocumentPage(ctx context.Context, q fulltext.Query, floor float64) (fulltext.Result, bool, error) {
+	if fulltext.HasPhrase(q.Text) {
+		return fulltext.Result{}, false, nil
+	}
 	ids, _, complete, err := r.idx.MatchingIDs(q, maxFusedKeywordMatches)
 	if err != nil || !complete {
 		return fulltext.Result{}, false, err

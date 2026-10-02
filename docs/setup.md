@@ -352,7 +352,7 @@ Archive search uses a [Bleve](https://github.com/blevesearch/bleve) inverted ind
 
 Query behavior:
 
-- Terms are **AND**ed (all must match) and ranked with **BM25**. Quoted `"phrases"` must appear in order.
+- Terms are **AND**ed (all must match) and ranked with **BM25**. Quoted `"phrases"` must appear in order, and a search box query that quotes one adds nothing by meaning: quotes ask for exactly those words. **Find documents** on the Tags page searches for the tag name that way.
 - **When nothing matches exactly, terms of three letters or more are retried as prefixes** — `amaz` finds *Amazon* while you are still typing, `Rechnung` finds *Rechnungsnummer*. Exact and prefix hits never mix: the retry only runs when the whole-word search came back empty, so a document that really contains the word is never pushed down by one that merely starts with it. Terms containing a digit are excluded (`202` would prefix every year in the archive), and it is a prefix, not a substring — `mazon` still finds nothing.
 - Search covers title, summary, OCR text, tag/type/correspondent names, `people_or_organizations`, and [custom field](#custom-fields) values.
 - The homepage search box calls `GET /api/app/documents/search` once three characters are typed — below that it says so and leaves the list unfiltered, since a one- or two-letter prefix would match most of the archive. An empty search box still lists via PocketBase (sort by created).

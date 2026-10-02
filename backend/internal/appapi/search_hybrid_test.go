@@ -388,6 +388,20 @@ func TestFusedDocumentPageNeverRanksMeaningAboveKeywords(t *testing.T) {
 	}
 }
 
+// Quotes ask for the words, so the closest document by meaning stays off the
+// list and the handler answers from the keyword index alone.
+func TestFusedDocumentPageStepsAsideForAQuotedPhrase(t *testing.T) {
+	r := hybridRetriever(t, nil)
+	r.chunks = append(fixedChunks{{DocumentID: "outsider", Score: 0.60}}, neighbours(0.3)[1:]...)
+	for _, text := range []string{`"240 EUR"`, `insurance "240 EUR"`} {
+		_, ok, err := r.fusedDocumentPage(context.Background(),
+			fulltext.Query{Text: text, UserID: "u1", Limit: 10}, similarityFloor("BAAI/bge-m3"))
+		if err != nil || ok {
+			t.Fatalf("%s: ok = %v, err = %v; want the keyword path", text, ok, err)
+		}
+	}
+}
+
 // The chunk index knows readable, not owned, so a shared document close in
 // meaning has to be kept off a mine-only list such as the Inbox here.
 func TestFusedDocumentPageKeepsSharedDocumentsOffMine(t *testing.T) {

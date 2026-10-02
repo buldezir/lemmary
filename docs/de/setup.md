@@ -359,7 +359,7 @@ Die Archivsuche verwendet einen invertierten Index von [Bleve](https://github.co
 
 Verhalten von Suchanfragen:
 
-- Begriffe werden per **UND** verknüpft (alle müssen passen) und mit **BM25** gerankt. `"Phrasen"` in Anführungszeichen müssen in dieser Reihenfolge vorkommen.
+- Begriffe werden per **UND** verknüpft (alle müssen passen) und mit **BM25** gerankt. `"Phrasen"` in Anführungszeichen müssen in dieser Reihenfolge vorkommen, und eine Suchfeld-Anfrage mit einer solchen Phrase fügt nichts über die Bedeutung hinzu: Anführungszeichen verlangen genau diese Wörter. **Dokumente finden** auf der Tags-Seite sucht so nach dem Tag-Namen.
 - **Passt nichts exakt, werden Begriffe mit drei oder mehr Buchstaben erneut als Präfixe versucht** – `amaz` findet *Amazon*, während Sie noch tippen, `Rechnung` findet *Rechnungsnummer*. Exakte Treffer und Präfixtreffer vermischen sich nie: Der erneute Versuch läuft nur, wenn die Suche nach ganzen Wörtern leer zurückkam, sodass ein Dokument, das das Wort tatsächlich enthält, nie von einem verdrängt wird, das nur damit beginnt. Begriffe mit einer Ziffer sind ausgenommen (`202` wäre Präfix jedes Jahres im Archiv), und es ist ein Präfix, keine Teilzeichenkette – `mazon` findet weiterhin nichts.
 - Die Suche umfasst Titel, Zusammenfassung, OCR-Text, Namen von Tags/Typen/Korrespondenten, `people_or_organizations` sowie die Werte [eigener Felder](#custom-fields).
 - Das Suchfeld auf der Startseite ruft `GET /api/app/documents/search` auf, sobald drei Zeichen eingegeben sind – darunter weist es darauf hin und lässt die Liste ungefiltert, da ein Präfix aus einem oder zwei Buchstaben auf den Großteil des Archivs passen würde. Ein leeres Suchfeld listet weiterhin über PocketBase (sortiert nach Erstellung).

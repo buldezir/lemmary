@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import {
   defaultDocumentQuery,
   documentQuerySearch,
+  exactSearch,
   hasActiveFilters,
   inboxQuerySearch,
   parseDocumentQuery,
@@ -232,5 +233,16 @@ describe('searchableTerm', () => {
   test('a hand-typed short ?q= shows the unfiltered list rather than filtering', () => {
     expect(parseDocumentQuery({ q: 'am' }).q).toBe('')
     expect(parseDocumentQuery({ q: 'amaz' }).q).toBe('amaz')
+  })
+})
+
+describe('exactSearch', () => {
+  test('quotes the text as one phrase', () => {
+    expect(exactSearch('AUTO1')).toBe('"AUTO1"')
+    expect(exactSearch(' Kfz Versicherung ')).toBe('"Kfz Versicherung"')
+  })
+
+  test('a quote inside cannot end the phrase early', () => {
+    expect(exactSearch('12" Vinyl')).toBe('"12  Vinyl"')
   })
 })

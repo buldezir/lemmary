@@ -430,6 +430,20 @@ func TestParseQueryParts(t *testing.T) {
 	}
 }
 
+func TestHasPhrase(t *testing.T) {
+	for text, want := range map[string]bool{
+		`"auto1"`:                true,
+		`plumber "invoice paid"`: true,
+		`auto1`:                  false,
+		`"unclosed phrase`:       false,
+		`""`:                     false,
+	} {
+		if got := HasPhrase(text); got != want {
+			t.Errorf("HasPhrase(%q) = %v, want %v", text, got, want)
+		}
+	}
+}
+
 func TestEmptyQuerySkipsIndex(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "doc", map[string]any{FieldUser: "u1", FieldTitle: "x", FieldAll: "x"})

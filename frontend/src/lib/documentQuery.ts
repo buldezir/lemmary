@@ -24,6 +24,15 @@ export function searchableTerm(value: string): string {
   return term.length < MIN_SEARCH_LENGTH ? '' : term
 }
 
+/**
+ * A search for these words only: the index reads a quoted phrase as exact and
+ * adds nothing by meaning. A quote inside would end the phrase early; the
+ * tokenizer drops it anyway, so a space stands in.
+ */
+export function exactSearch(text: string): string {
+  return `"${text.replaceAll('"', ' ').trim()}"`
+}
+
 export type DocumentQuery = {
   /** Fulltext search; empty means list everything. */
   q: string
