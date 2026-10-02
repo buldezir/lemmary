@@ -41,7 +41,8 @@ the provider buttons appear for whatever is enabled in PocketBase.
 
 ![Login screen with password, passkey and OAuth2](./screenshots/login.png)
 
-Each account manages its own passkeys, one per device.
+Each account manages its own passkeys, one per device, and its own tokens for
+an agent that should search and read the archive over [MCP](/mcp).
 
 ![Account page with an enrolled passkey](./screenshots/account.png)
 
@@ -53,15 +54,17 @@ down the left side counts documents per year and month.
 
 ![Documents list](./screenshots/documents.png)
 
-Full-text search runs over titles, OCR text, tags and summaries
-through a Bleve index.
+The search box matches titles, OCR text, tags and summaries through a Bleve
+index and, with embeddings on, finds documents by meaning as well. A phrase in
+quotes means exactly that phrase.
 
 ![Searching the library](./screenshots/documents-search.png)
 
 Document type and correspondent are typeahead filters built from the taxonomy
 the extraction step created; tags narrow the same list and stack, and picking a
 period in the timeline writes the date range. Every filter lives in the query
-string, so a filtered list survives a reload and can be linked to.
+string, so a filtered list survives a reload and can be linked to, and the
+download button beside the heading exports exactly that list.
 
 ![Document type filter open](./screenshots/documents-filter-type.png)
 
@@ -76,12 +79,19 @@ button.
 
 ![Documents list on a phone](./screenshots/documents-mobile.png)
 
+**Bulk Actions**, behind the gear menu, is the same list made for working on
+many documents at once: mark them reviewed, assign or remove tags, share them,
+or queue steps to run again.
+
+![Bulk Actions, every invoice selected and a tag picked](./screenshots/bulk.png)
+
 ## Tags
 
 A tag exists only once you create it here. Processing assigns from this list and
 never invents anything, which is what keeps a library of 200 documents from
 ending up with 200 tags. Applying a new tag to documents already in the archive
-means reading them again, so the page prices that run before offering it.
+means reading them again, so the page prices that run before offering it. A
+tag can carry a colour of its own, and **Find documents** lists what holds it.
 
 ![The tag vocabulary](./screenshots/tags.png)
 
@@ -89,7 +99,9 @@ means reading them again, so the page prices that run before offering it.
 
 With review always required, a finished document waits to be read rather than
 joining the library unseen. The Inbox is that tray — waiting, still processing
-and failed together — and the header carries what it holds.
+and failed together — and the header carries what it holds. Since a person reads
+each of these anyway, extraction may also suggest up to three tags the
+vocabulary lacks; one click creates the tag and adds it.
 
 ![The Inbox](./screenshots/inbox.png)
 
@@ -105,9 +117,18 @@ metadata -- a PDF in the browser's own viewer, so you can read page three while
 correcting the fields it belongs to -- and the **Preview** button hides that
 column when the fields need the width. With a result language set, the model
 writes those fields in it, so a German invoice reads in English while its OCR
-text keeps what it actually said.
+text keeps what it actually said. Below the built-in fields sit the ones
+defined under **Settings → Fields** — here an invoice number, amount, currency,
+due date and payment status — filled by the same extraction.
 
 ![Document detail](./screenshots/document-detail.png)
+
+With a result language set, the OCR text can also be read translated: the
+switch above it shows the original, the translation, or both side by side. The
+translation is made the first time it is asked for and stored with the
+document.
+
+![A German letter's OCR text beside its English translation](./screenshots/document-translated.png)
 
 **Unlock editing** turns those fields into a form. Corrections are saved back
 onto the document, and the taxonomy follows: a new type or correspondent typed
@@ -132,6 +153,15 @@ Ask AI answers questions about a single document, using its OCR text as the
 context. The chat is saved.
 
 ![Asking questions about one document](./screenshots/document-ask.png)
+
+**Share** gives another account on the instance read access to one document.
+It appears in their list, marked as shared, and only its owner can change it.
+
+![Sharing a document with another account](./screenshots/document-share.png)
+
+The page fits a phone as well, with its actions in the header.
+
+![A document on a phone](./screenshots/document-mobile.png)
 
 ## Adding documents
 
@@ -210,8 +240,9 @@ the accent the whole interface takes.
 
 ![Settings, appearance](./screenshots/settings-appearance.png)
 
-AI holds the providers and which model does what. API keys are write-only: the
-page reports that a key is set, never what it is.
+AI holds the providers and which model does what: a General AI model for the
+everyday work and an optional Advanced one for Deep Research. API keys are
+write-only: the page reports that a key is set, never what it is.
 
 ![Settings, the AI tab in full](./screenshots/settings.png)
 
@@ -221,6 +252,12 @@ the place to say that "Rechnung" is an invoice, or that these three senders are
 the same company.
 
 ![Settings, processing](./screenshots/settings-processing.png)
+
+Fields are the extra ones every document carries — text, number, date or a
+fixed set of choices — each with a hint the extraction prompt reads. A preset
+adds the usual set for one kind of paperwork in a click.
+
+![Settings, document fields and presets](./screenshots/settings-fields.png)
 
 The worker's own limits: how long one job may run, and how often a failed step
 is retried.
@@ -232,6 +269,17 @@ OCR text instead, which costs a pass over the library, so it is off until asked
 for.
 
 ![Settings, duplicates](./screenshots/settings-duplicates.png)
+
+Ingest appears on an instance started with a watched folder (`INGEST_DIR`) or a
+mailbox (`INGEST_IMAP_ENABLED`): files dropped into the folder, and attachments
+of mail arriving in the mailbox folder, become documents on the next scan.
+
+![Settings, ingest](./screenshots/settings-ingest.png)
+
+Management is the admin's list of the accounts on the instance, where one is
+added, edited or deleted.
+
+![Management, the accounts on the instance](./screenshots/management.png)
 
 Library-wide maintenance: reprocess failed documents in batches, scan for
 duplicates, delete taxonomy nothing points at any more, rebuild the search

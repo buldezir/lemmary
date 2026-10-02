@@ -46,7 +46,9 @@ erscheinen für alles, was in PocketBase aktiviert ist.
 
 ![Anmeldebildschirm mit Passwort, Passkey und OAuth2](../screenshots/login.png)
 
-Jedes Konto verwaltet seine eigenen Passkeys, einen pro Gerät.
+Jedes Konto verwaltet seine eigenen Passkeys, einen pro Gerät, und seine eigenen
+Tokens für einen Agenten, der das Archiv über [MCP](/de/mcp) durchsuchen und lesen
+soll.
 
 ![Kontoseite mit einem registrierten Passkey](../screenshots/account.png)
 
@@ -58,8 +60,9 @@ selbst. Die Zeitleiste am linken Rand zählt die Dokumente pro Jahr und Monat.
 
 ![Dokumentliste](../screenshots/documents.png)
 
-Die Volltextsuche durchsucht Titel, OCR-Text, Tags und Zusammenfassungen
-über einen Bleve-Index.
+Das Suchfeld durchsucht Titel, OCR-Text, Tags und Zusammenfassungen über einen
+Bleve-Index und findet Dokumente bei eingeschalteten Einbettungen auch nach ihrer
+Bedeutung. Eine Wortfolge in Anführungszeichen meint genau diese Wortfolge.
 
 ![Die Bibliothek durchsuchen](../screenshots/documents-search.png)
 
@@ -67,7 +70,8 @@ Dokumenttyp und Korrespondent sind Filter mit Autovervollständigung, die aus de
 beim Extraktionsschritt angelegten Taxonomie gebildet werden; Tags grenzen dieselbe
 Liste ein und lassen sich kombinieren, und die Auswahl eines Zeitraums in der
 Zeitleiste setzt den Datumsbereich. Jeder Filter steht im Query-String, sodass eine
-gefilterte Liste ein Neuladen übersteht und verlinkt werden kann.
+gefilterte Liste ein Neuladen übersteht und verlinkt werden kann, und die
+Download-Schaltfläche neben der Überschrift exportiert genau diese Liste.
 
 ![Geöffneter Dokumenttyp-Filter](../screenshots/documents-filter-type.png)
 
@@ -82,13 +86,20 @@ Menüschaltfläche gestapelt werden.
 
 ![Dokumentliste auf einem Smartphone](../screenshots/documents-mobile.png)
 
+**Massenaktionen**, hinter dem Zahnradmenü, ist dieselbe Liste, gemacht für die
+Arbeit an vielen Dokumenten auf einmal: als geprüft markieren, Tags vergeben oder
+entfernen, teilen oder Schritte zur erneuten Ausführung einreihen.
+
+![Massenaktionen, alle Rechnungen ausgewählt und ein Tag gewählt](../screenshots/bulk.png)
+
 ## Tags {#tags}
 
 Ein Tag existiert erst, wenn Sie ihn hier anlegen. Die Verarbeitung vergibt Tags
 aus dieser Liste und erfindet nie etwas Neues – genau das verhindert, dass eine
 Bibliothek mit 200 Dokumenten am Ende 200 Tags hat. Einen neuen Tag auf Dokumente
 anzuwenden, die bereits im Archiv liegen, bedeutet, sie erneut zu lesen; deshalb
-beziffert die Seite die Kosten dieses Durchlaufs, bevor sie ihn anbietet.
+beziffert die Seite die Kosten dieses Durchlaufs, bevor sie ihn anbietet. Ein Tag
+kann eine eigene Farbe tragen, und **Dokumente finden** listet auf, was ihn trägt.
 
 ![Das Tag-Vokabular](../screenshots/tags.png)
 
@@ -98,7 +109,9 @@ Ist die Prüfung immer erforderlich, wartet ein fertig verarbeitetes Dokument
 darauf, gelesen zu werden, statt ungesehen in die Bibliothek aufgenommen zu
 werden. Der Posteingang ist diese Ablage – wartende, noch in Verarbeitung
 befindliche und fehlgeschlagene Dokumente zusammen –, und die Kopfzeile zeigt,
-wie viel darin liegt.
+wie viel darin liegt. Da hier ohnehin ein Mensch jedes Dokument liest, darf die
+Extraktion zusätzlich bis zu drei Tags vorschlagen, die im Vokabular fehlen; ein
+Klick legt den Tag an und fügt ihn hinzu.
 
 ![Der Posteingang](../screenshots/inbox.png)
 
@@ -116,9 +129,18 @@ können, während Sie die zugehörigen Felder korrigieren --, und die Schaltflä
 **Vorschau** blendet diese Spalte aus, wenn die Felder die Breite brauchen. Ist
 eine Ergebnissprache gesetzt, schreibt das Modell diese Felder in ihr, sodass sich
 eine deutsche Rechnung auf Englisch lesen lässt, während ihr OCR-Text behält, was
-tatsächlich darin stand.
+tatsächlich darin stand. Unter den eingebauten Feldern stehen die unter
+**Einstellungen → Felder** definierten – hier Rechnungsnummer, Betrag, Währung,
+Fälligkeitsdatum und Zahlungsstatus –, ausgefüllt von derselben Extraktion.
 
 ![Dokumentdetails](../screenshots/document-detail.png)
+
+Ist eine Ergebnissprache gesetzt, lässt sich auch der OCR-Text übersetzt lesen:
+Der Umschalter darüber zeigt das Original, die Übersetzung oder beides
+nebeneinander. Die Übersetzung entsteht, wenn sie zum ersten Mal angefordert
+wird, und wird mit dem Dokument gespeichert.
+
+![Der OCR-Text eines deutschen Briefs neben seiner englischen Übersetzung](../screenshots/document-translated.png)
 
 **Bearbeitung entsperren** verwandelt diese Felder in ein Formular. Korrekturen
 werden am Dokument gespeichert, und die Taxonomie zieht nach: Ein neuer Typ oder
@@ -146,6 +168,16 @@ KI fragen beantwortet Fragen zu einem einzelnen Dokument und nutzt dessen OCR-Te
 als Kontext. Der Chat wird gespeichert.
 
 ![Fragen zu einem Dokument stellen](../screenshots/document-ask.png)
+
+**Teilen** gibt einem anderen Konto der Instanz Lesezugriff auf ein einzelnes
+Dokument. Es erscheint in dessen Liste, als geteilt markiert, und nur sein
+Eigentümer kann es ändern.
+
+![Ein Dokument mit einem anderen Konto teilen](../screenshots/document-share.png)
+
+Die Seite passt auch auf ein Smartphone, mit ihren Aktionen in der Kopfzeile.
+
+![Ein Dokument auf einem Smartphone](../screenshots/document-mobile.png)
 
 ## Dokumente hinzufügen {#adding-documents}
 
@@ -230,8 +262,9 @@ Instanz ihren Namen und die Akzentfarbe, die die gesamte Oberfläche übernimmt.
 
 ![Einstellungen, Darstellung](../screenshots/settings-appearance.png)
 
-Unter KI stehen die Anbieter und welches Modell welche Aufgabe übernimmt.
-API-Schlüssel sind nur schreibbar: Die Seite meldet, dass ein Schlüssel gesetzt
+Unter KI stehen die Anbieter und welches Modell welche Aufgabe übernimmt: ein
+allgemeines KI-Modell für die alltägliche Arbeit und ein optionales
+fortgeschrittenes für Deep Research. API-Schlüssel sind nur schreibbar: Die Seite meldet, dass ein Schlüssel gesetzt
 ist, aber nie, wie er lautet.
 
 ![Einstellungen, der KI-Tab vollständig](../screenshots/settings.png)
@@ -244,6 +277,13 @@ sind.
 
 ![Einstellungen, Verarbeitung](../screenshots/settings-processing.png)
 
+Felder sind die zusätzlichen Felder, die jedes Dokument trägt – Text, Zahl, Datum
+oder eine feste Auswahl –, jedes mit einem Hinweis, den der Extraktions-Prompt
+liest. Eine Vorlage fügt mit einem Klick den üblichen Satz für eine Art von
+Unterlagen hinzu.
+
+![Einstellungen, Dokumentfelder und Vorlagen](../screenshots/settings-fields.png)
+
 Die eigenen Grenzen des Workers: wie lange ein Job laufen darf und wie oft ein
 fehlgeschlagener Schritt wiederholt wird.
 
@@ -254,6 +294,18 @@ Beinahe-Duplikaten vergleicht stattdessen den OCR-Text, was einen Durchlauf übe
 die Bibliothek kostet; daher ist sie ausgeschaltet, bis sie angefordert wird.
 
 ![Einstellungen, Duplikate](../screenshots/settings-duplicates.png)
+
+Eingang erscheint auf einer Instanz, die mit einem überwachten Ordner
+(`INGEST_DIR`) oder einem Postfach (`INGEST_IMAP_ENABLED`) gestartet wurde:
+Dateien, die im Ordner abgelegt werden, und Anhänge von E-Mails, die im
+Postfachordner eintreffen, werden beim nächsten Scan zu Dokumenten.
+
+![Einstellungen, Eingang](../screenshots/settings-ingest.png)
+
+Verwaltung ist die Liste der Konten der Instanz für den Admin, in der eines
+angelegt, bearbeitet oder gelöscht wird.
+
+![Verwaltung, die Konten der Instanz](../screenshots/management.png)
 
 Bibliotheksweite Wartung: fehlgeschlagene Dokumente stapelweise erneut
 verarbeiten, nach Duplikaten suchen, Taxonomie-Einträge löschen, auf die nichts
