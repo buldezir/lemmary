@@ -1,6 +1,14 @@
 import { UNFINISHED_STATUS } from '../lib/documentStatus'
 import { useDocumentList } from '../hooks/useDocumentList'
+import { useAsync } from '../hooks/useAsync'
 import { DocumentGrid } from '../components/DocumentGrid'
+import { Button } from '../components/ui'
+import {
+  confirmReprocessFailed,
+  countFailedDocuments,
+  reprocessFailedBatch,
+  reprocessFailedLabel,
+} from '../lib/api/documents'
 import { t } from '../i18n'
 
 /**
@@ -16,12 +24,31 @@ export function InboxPage() {
     ownerOnly: true,
   })
   const { documents, loading, error } = list
+  // Counted rather than read off the page: the page is twelve documents, the
+  // button reprocesses every failed one. Recounted whenever the list reloads.
+  const failedCount = useAsync(() => countFailedDocuments(), [documents]).data ?? 0
+
+  // Confirmed outside runBulkAction, so a dismissal keeps the selection and
+  // the message and never shows the button as busy.
+  function onReprocessFailed() {
+    const batch = confirmReprocessFailed(failedCount)
+    if (batch) {
+      void list.runBulkAction(() => reprocessFailedBatch(batch), t('documents.reprocessFailed'))
+    }
+  }
 
   return (
     <section className="flex flex-col gap-3">
-      <div>
-        <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{t('inbox.title')}</h2>
-        <p className="text-sm text-ink-soft">{t('inbox.intro')}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{t('inbox.title')}</h2>
+          <p className="text-sm text-ink-soft">{t('inbox.intro')}</p>
+        </div>
+        {failedCount > 0 && (
+          <Button variant="secondary" size="xs" disabled={list.runningAction} onClick={onReprocessFailed}>
+            {list.runningAction ? t('documentBulkBar.queueing') : reprocessFailedLabel(failedCount)}
+          </Button>
+        )}
       </div>
 
       <div className="flex flex-col gap-4">

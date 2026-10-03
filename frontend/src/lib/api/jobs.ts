@@ -52,10 +52,10 @@ export async function anyJobRunning(): Promise<boolean> {
 const failedWindowMs = 24 * 60 * 60_000
 
 /**
- * Everything unfinished, plus failures and cancellations from the last day.
- * finished_at = '' rather than a status test, for the reason
- * createProcessingJob gives. Oldest first, the order the worker takes them in,
- * so the job running now heads the list.
+ * Everything unfinished, plus failures and cancellations from the last day
+ * that still stand. finished_at = '' rather than a status test, for the reason
+ * createProcessingJob gives. The queue oldest first, the order the worker takes
+ * it in, so the job running now heads the list.
  */
 export async function listActiveJobs(
   limit = 100,
@@ -63,16 +63,40 @@ export async function listActiveJobs(
   await ensureAuth()
   const since = new Date(Date.now() - failedWindowMs).toISOString().replace('T', ' ')
   // finished_at, not created: a job that ran for two days and then failed is a
-  // failure from a minute ago.
-  const filter = `finished_at = '' || ${pb.filter('((status = "failed" || status = "cancelled") && finished_at >= {:since})', { since })}`
+  // failure from a minute ago. The document's status, because a reprocess
+  // leaves the failed job behind: once the document has moved on, so has the
+  // failure.
+  const finishedFilter = pb.filter(
+    '((status = "failed" && document.processing_status = "failed") || (status = "cancelled" && document.processing_status = "cancelled")) && finished_at >= {:since}',
+    { since },
+  )
 
-  const jobs = await pb.collection(collection).getList<ProcessingJobRecord>(1, limit, {
-    filter,
-    sort: 'created',
-    expand: 'document',
-    requestKey: null,
+  // Two lists, so a long queue cannot push the failures off the page.
+  const [queued, finished] = await Promise.all([
+    pb.collection(collection).getList<ProcessingJobRecord>(1, limit, {
+      filter: "finished_at = ''",
+      sort: 'created',
+      expand: 'document',
+      requestKey: null,
+    }),
+    pb.collection(collection).getList<ProcessingJobRecord>(1, limit, {
+      filter: finishedFilter,
+      sort: '-created',
+      expand: 'document',
+      requestKey: null,
+    }),
+  ])
+
+  // A document that failed twice has two failed jobs, and newest first, the
+  // first one met says why it is failed now.
+  const seen = new Set<string>()
+  const failures = finished.items.filter((job) => {
+    if (seen.has(job.document)) return false
+    seen.add(job.document)
+    return true
   })
-  // The total as well as the page, so a bulk upload of 150 does not look like
-  // it lost fifty behind a hundred-row page.
-  return { jobs: jobs.items, total: jobs.totalItems }
+
+  // The queue's total as well as its page, so a bulk upload of 150 does not
+  // look like it lost fifty behind a hundred-row page.
+  return { jobs: [...queued.items, ...failures], total: queued.totalItems + failures.length }
 }

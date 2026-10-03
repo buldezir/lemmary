@@ -350,6 +350,7 @@ export const ru: Catalog = {
   'documents.markUnreviewedFailed': 'Не удалось снять отметку о проверке.',
   'documents.markUnreviewedPartial': 'Отметка о проверке снята: {done}; ошибок: {failed}.',
   'documents.providerDefault': 'по умолчанию у провайдера',
+  'documents.reprocessAllFailed': 'Обработать заново все с ошибкой ({count})',
   'documents.reprocessFailed': 'Не удалось обработать заново',
   'documents.searchFailed': 'Не удалось выполнить поиск документов',
   'documents.timelineFailed': 'Не удалось загрузить хронологию',

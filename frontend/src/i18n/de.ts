@@ -314,6 +314,7 @@ export const de: Catalog = {
   'documents.markUnreviewedFailed': 'Konnte nicht als ungeprüft markiert werden.',
   'documents.markUnreviewedPartial': '{done} als ungeprüft markiert; {failed} fehlgeschlagen.',
   'documents.providerDefault': 'Anbieter-Standard',
+  'documents.reprocessAllFailed': 'Alle fehlgeschlagenen erneut verarbeiten ({count})',
   'documents.reprocessFailed': 'Erneute Verarbeitung fehlgeschlagen',
   'documents.searchFailed': 'Dokumentsuche fehlgeschlagen',
   'documents.timelineFailed': 'Die Zeitleiste konnte nicht geladen werden',

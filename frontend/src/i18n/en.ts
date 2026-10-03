@@ -298,6 +298,7 @@ export const en = {
   'documents.markUnreviewedFailed': 'Could not mark unreviewed.',
   'documents.markUnreviewedPartial': 'Marked {done} unreviewed; {failed} failed.',
   'documents.providerDefault': 'provider default',
+  'documents.reprocessAllFailed': 'Reprocess all failed ({count})',
   'documents.reprocessFailed': 'Reprocess failed',
   'documents.searchFailed': 'Failed to search documents',
   'documents.timelineFailed': 'Failed to load the timeline',
