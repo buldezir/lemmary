@@ -468,23 +468,33 @@ export function reprocessFailedDocuments(opts: {
   })
 }
 
+// The one-click retry after a provider outage, on Activity and the Inbox: the
+// same batch Maintenance runs, over every failed document the caller owns.
 const reprocessAllBatch = 100
 
+/** Says so when one click will not cover every failed document. */
+export function reprocessFailedLabel(count: number): string {
+  return count > reprocessAllBatch
+    ? t('maintenance.reprocessButton', { count: reprocessAllBatch })
+    : t('documents.reprocessAllFailed', { count })
+}
+
 /**
- * The one-click retry after a provider outage: confirmed with the count, then
- * the same batch Maintenance runs. Resolves to the notice to show, or '' when
- * the confirmation is dismissed.
+ * Asked before anything on the page shows as busy, so a dismissal changes
+ * nothing there. Resolves to the batch to queue, or 0 when dismissed.
  */
-export async function reprocessAllFailed(): Promise<string> {
-  const count = await countFailedDocuments()
-  if (count === 0) return t('documents.nothingFailed')
-
+export function confirmReprocessFailed(count: number): number {
   const batch = Math.min(count, reprocessAllBatch)
-  const confirmed = window.confirm(
-    `${t('maintenance.reprocessConfirm', { count: batch })}\n\n${t('maintenance.confirmOverwrite')}`,
-  )
-  if (!confirmed) return ''
+  const lines = [
+    ...(count > batch ? [t('maintenance.failedSome', { count })] : []),
+    t('maintenance.reprocessConfirm', { count: batch }),
+    t('maintenance.confirmOverwrite'),
+  ]
+  return window.confirm(lines.join('\n\n')) ? batch : 0
+}
 
+/** Resolves to the notice to show. */
+export async function reprocessFailedBatch(batch: number): Promise<string> {
   const result = await reprocessFailedDocuments({ limit: batch })
   const queued = t('maintenance.queued', { count: result.queued })
   return result.remaining > 0

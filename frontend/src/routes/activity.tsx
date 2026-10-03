@@ -4,9 +4,12 @@ import { useAsync } from '../hooks/useAsync'
 import { pb } from '../lib/pb'
 import { listActiveJobs } from '../lib/api/jobs'
 import {
+  confirmReprocessFailed,
   countDocumentsWithStatus,
-  reprocessAllFailed,
+  countFailedDocuments,
   reprocessDocuments,
+  reprocessFailedBatch,
+  reprocessFailedLabel,
 } from '../lib/api/documents'
 import { discardUnprocessedDocuments, stopQueue } from '../lib/api/maintenance'
 import {
@@ -32,9 +35,15 @@ const realtimeDebounceMs = 300
  * -- so there is no endpoint behind this page.
  */
 export function ActivityPage() {
-  const { data, loading, error, reload } = useAsync(() => listActiveJobs(), [])
-  const jobs = data?.jobs ?? []
-  const total = data?.total ?? 0
+  // The failed count rides along: it, not the rows on screen, is what the
+  // reprocess button acts on.
+  const { data, loading, error, reload } = useAsync(
+    () => Promise.all([listActiveJobs(), countFailedDocuments()]),
+    [],
+  )
+  const jobs = data?.[0].jobs ?? []
+  const total = data?.[0].total ?? 0
+  const failedCount = data?.[1] ?? 0
 
   const reloadRef = useRef(reload)
   useEffect(() => {
@@ -123,11 +132,13 @@ export function ActivityPage() {
   }
 
   async function onReprocessFailed() {
+    const batch = confirmReprocessFailed(failedCount)
+    if (!batch) return
     setBusy('reprocess')
     setNotice('')
     setActionError('')
     try {
-      setNotice(await reprocessAllFailed())
+      setNotice(await reprocessFailedBatch(batch))
       await reload()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : t('documents.reprocessFailed'))
@@ -181,14 +192,14 @@ export function ActivityPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <h2 className={sectionTitleClassName}>{t('activity.title')}</h2>
         <div className="flex flex-wrap items-center gap-2">
-          {failed.length > 0 ? (
+          {failedCount > 0 ? (
             <Button
               variant="secondary"
               size="xs"
               disabled={busy !== ''}
               onClick={() => void onReprocessFailed()}
             >
-              {busy === 'reprocess' ? t('activity.queueing') : t('documents.reprocessAllFailed')}
+              {busy === 'reprocess' ? t('activity.queueing') : reprocessFailedLabel(failedCount)}
             </Button>
           ) : null}
           <Button
