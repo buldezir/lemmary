@@ -3,7 +3,11 @@ import { Link } from '@tanstack/react-router'
 import { useAsync } from '../hooks/useAsync'
 import { pb } from '../lib/pb'
 import { listActiveJobs } from '../lib/api/jobs'
-import { countDocumentsWithStatus, reprocessDocuments } from '../lib/api/documents'
+import {
+  countDocumentsWithStatus,
+  reprocessAllFailed,
+  reprocessDocuments,
+} from '../lib/api/documents'
 import { discardUnprocessedDocuments, stopQueue } from '../lib/api/maintenance'
 import {
   formatDuration,
@@ -118,6 +122,20 @@ export function ActivityPage() {
     }
   }
 
+  async function onReprocessFailed() {
+    setBusy('reprocess')
+    setNotice('')
+    setActionError('')
+    try {
+      setNotice(await reprocessAllFailed())
+      await reload()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : t('documents.reprocessFailed'))
+    } finally {
+      setBusy('')
+    }
+  }
+
   // Counted on the click rather than polled: the number only matters at the
   // moment it goes into the confirmation.
   async function onDiscard() {
@@ -163,6 +181,16 @@ export function ActivityPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <h2 className={sectionTitleClassName}>{t('activity.title')}</h2>
         <div className="flex flex-wrap items-center gap-2">
+          {failed.length > 0 ? (
+            <Button
+              variant="secondary"
+              size="xs"
+              disabled={busy !== ''}
+              onClick={() => void onReprocessFailed()}
+            >
+              {busy === 'reprocess' ? t('activity.queueing') : t('documents.reprocessAllFailed')}
+            </Button>
+          ) : null}
           <Button
             variant="secondary"
             size="xs"

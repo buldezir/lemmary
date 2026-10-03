@@ -445,12 +445,14 @@ export function describeJobOverrides(overrides: JobOverrides | undefined): strin
     .join(', ')
 }
 
-function postReprocess(body: Record<string, unknown>) {
-  return apiFetch<ReprocessResult>('/api/app/documents/reprocess-failed', {
+async function postReprocess(body: Record<string, unknown>) {
+  const result = await apiFetch<ReprocessResult>('/api/app/documents/reprocess-failed', {
     method: 'POST',
     body,
     fallbackError: t('documents.reprocessFailed'),
   })
+  notifyDocumentsChanged()
+  return result
 }
 
 /** Requeues up to `limit` of the caller's failed documents, oldest first. */
@@ -464,6 +466,30 @@ export function reprocessFailedDocuments(opts: {
     mode: opts.mode ?? 'auto',
     ...jobOverridesBody(opts.overrides),
   })
+}
+
+const reprocessAllBatch = 100
+
+/**
+ * The one-click retry after a provider outage: confirmed with the count, then
+ * the same batch Maintenance runs. Resolves to the notice to show, or '' when
+ * the confirmation is dismissed.
+ */
+export async function reprocessAllFailed(): Promise<string> {
+  const count = await countFailedDocuments()
+  if (count === 0) return t('documents.nothingFailed')
+
+  const batch = Math.min(count, reprocessAllBatch)
+  const confirmed = window.confirm(
+    `${t('maintenance.reprocessConfirm', { count: batch })}\n\n${t('maintenance.confirmOverwrite')}`,
+  )
+  if (!confirmed) return ''
+
+  const result = await reprocessFailedDocuments({ limit: batch })
+  const queued = t('maintenance.queued', { count: result.queued })
+  return result.remaining > 0
+    ? `${queued} ${t('maintenance.stillFailed', { count: result.remaining })}`
+    : `${queued} ${t('maintenance.noneLeft')}`
 }
 
 /** Documents already queued are skipped, so a stale selection cannot double-queue. */

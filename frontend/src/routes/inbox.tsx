@@ -1,6 +1,8 @@
 import { UNFINISHED_STATUS } from '../lib/documentStatus'
 import { useDocumentList } from '../hooks/useDocumentList'
 import { DocumentGrid } from '../components/DocumentGrid'
+import { Button } from '../components/ui'
+import { reprocessAllFailed } from '../lib/api/documents'
 import { t } from '../i18n'
 
 /**
@@ -16,12 +18,25 @@ export function InboxPage() {
     ownerOnly: true,
   })
   const { documents, loading, error } = list
+  const anyFailed = documents.some((document) => document.processing_status === 'failed')
 
   return (
     <section className="flex flex-col gap-3">
-      <div>
-        <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{t('inbox.title')}</h2>
-        <p className="text-sm text-ink-soft">{t('inbox.intro')}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-display text-2xl font-semibold tracking-tight text-ink">{t('inbox.title')}</h2>
+          <p className="text-sm text-ink-soft">{t('inbox.intro')}</p>
+        </div>
+        {anyFailed && (
+          <Button
+            variant="secondary"
+            size="xs"
+            disabled={list.runningAction}
+            onClick={() => void list.runBulkAction(reprocessAllFailed, t('documents.reprocessFailed'))}
+          >
+            {list.runningAction ? t('documentBulkBar.queueing') : t('documents.reprocessAllFailed')}
+          </Button>
+        )}
       </div>
 
       <div className="flex flex-col gap-4">
