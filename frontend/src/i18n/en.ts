@@ -1021,6 +1021,7 @@ export const en = {
   'documentPage.related': 'Related documents',
   'documentPage.noRelated': 'No related documents.',
   'documentPage.linkRelated': 'Link a document',
+  'documentPage.unlink': 'Unlink',
   'documentPage.unlinkRelated': 'Unlink {title}',
 
   'upload.title': 'Upload',

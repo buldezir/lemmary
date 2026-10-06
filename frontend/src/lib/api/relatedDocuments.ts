@@ -5,9 +5,10 @@ export type RelatedDocument = {
   id: string
   title: string
   document_date: string
+  created: string
 }
 
-const FIELDS = 'id,title,document_date'
+const FIELDS = 'id,title,document_date,created'
 
 /** Both directions: a link is stored on whichever of the two documents made it. */
 export function listRelatedDocuments(documentId: string): Promise<RelatedDocument[]> {

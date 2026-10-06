@@ -356,7 +356,7 @@ A document page lists the documents related to it: an invoice, its reminder and 
 
 With `RELATED_LINKING_ENABLED=1` the pipeline links documents itself, in a `link_related` step after `embed`:
 
-- **Reference numbers** — extraction also returns the invoice, order, contract, policy, claim, case or booking numbers printed on the document. A document is linked to the owner's earlier documents carrying the same number, compared without case, spaces or punctuation. A number found on more than ten documents is taken for a customer number and links nothing.
+- **Reference numbers** — extraction also returns the invoice, order, contract, policy, claim, case or booking numbers printed on the document. A document is linked to the owner's earlier documents carrying the same number, compared without case, spaces or punctuation. Customer and account numbers are left out, since they would tie together every bill that carries them. A document holds at most 50 links; past that the newest matches are kept.
 - **Similarity** — with an [embedding model](/ai_providers) set, a document is also linked to up to five of the owner's documents that come closest in meaning as a whole, at or above `RELATED_SIMILARITY_THRESHOLD` (cosine of the documents' averaged passage vectors, default `0.9`). `0` turns this half off.
 
 The step only adds links, so one you removed by hand comes back if the document is reprocessed. Documents processed before the flag was set are linked when they are reprocessed; reprocessing only the `link_related` step links by similarity without another AI call, while reference numbers need **Extract metadata** again.

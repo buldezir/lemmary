@@ -93,16 +93,22 @@ func TestLinkRelatedLinksTheOwnersDocumentsSharingAReference(t *testing.T) {
 	}
 }
 
-func TestLinkRelatedIgnoresAReferenceOnTooManyDocuments(t *testing.T) {
+// A court case runs to dozens of filings; every one of them carries the case
+// number, and all of them belong together.
+func TestLinkRelatedLinksEveryDocumentOfALargeMatter(t *testing.T) {
 	app := testpb.Open(t)
 	owner := makeUserForDrain(t, app, "owner@example.com")
-	for i := range maxDocumentsPerReference + 1 {
-		linkTestDocument(t, app, owner, fmt.Sprintf("bill %d", i), "CUST-55120")
+	var filings []string
+	for i := range 15 {
+		filings = append(filings, linkTestDocument(t, app, owner, fmt.Sprintf("filing %d", i), "20 F 415/26").Id)
 	}
-	doc := linkTestDocument(t, app, owner, "another bill", "CUST-55120")
+	doc := linkTestDocument(t, app, owner, "another filing", "20 F 415/26")
 
-	if got := runLinkRelated(t, app, &LinkRelatedStep{RelatedLinking{Enabled: true}}, doc); len(got) != 0 {
-		t.Fatalf("related = %v, want nothing for a reference on every bill", got)
+	got := runLinkRelated(t, app, &LinkRelatedStep{RelatedLinking{Enabled: true}}, doc)
+	slices.Sort(got)
+	slices.Sort(filings)
+	if !slices.Equal(got, filings) {
+		t.Fatalf("related = %v, want all %d earlier filings", got, len(filings))
 	}
 }
 

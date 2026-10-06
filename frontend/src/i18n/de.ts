@@ -1080,6 +1080,7 @@ export const de: Catalog = {
   'documentPage.related': 'Verwandte Dokumente',
   'documentPage.noRelated': 'Keine verwandten Dokumente.',
   'documentPage.linkRelated': 'Dokument verknüpfen',
+  'documentPage.unlink': 'Lösen',
   'documentPage.unlinkRelated': 'Verknüpfung mit {title} lösen',
 
   'upload.title': 'Hochladen',

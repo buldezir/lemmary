@@ -1195,6 +1195,7 @@ export const ru: Catalog = {
   'documentPage.related': 'Связанные документы',
   'documentPage.noRelated': 'Связанных документов нет.',
   'documentPage.linkRelated': 'Связать документ',
+  'documentPage.unlink': 'Отвязать',
   'documentPage.unlinkRelated': 'Убрать связь с {title}',
 
   'upload.title': 'Загрузить',

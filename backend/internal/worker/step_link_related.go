@@ -27,11 +27,6 @@ type RelatedLinking struct {
 	Chunks retrieval.ChunkSearcher
 }
 
-// ponytail: a reference number on more documents than this is a customer or
-// account number the model should have left out, not a matter; it links
-// nothing. Raise it if real matters (a long-running contract) get cut off.
-const maxDocumentsPerReference = 10
-
 // ponytail: fixed caps on similarity links. Tune with the threshold, or make
 // them settings, if the archive's real neighbourhoods turn out wider.
 const (
@@ -131,6 +126,9 @@ func linkedDocumentIDs(app core.App, doc *core.Record) (map[string]struct{}, err
 	return linked, nil
 }
 
+// Newest first, so a matter with more documents than related can hold keeps
+// the latest ones. A customer number the model should have left out links
+// every bill that carries it; the prompt is the guard against that.
 func documentsSharingReferences(app core.App, doc *core.Record) ([]string, error) {
 	var refs []string
 	if err := doc.UnmarshalJSONField("reference_numbers", &refs); err != nil || len(refs) == 0 {
@@ -140,30 +138,14 @@ func documentsSharingReferences(app core.App, doc *core.Record) ([]string, error
 	if err != nil {
 		return nil, err
 	}
-	var hits []struct {
-		Ref string `db:"ref"`
-		ID  string `db:"id"`
-	}
-	err = app.DB().NewQuery(
-		"SELECT r.value AS ref, d.id AS id FROM documents d, " + dbutils.JSONEach("d.reference_numbers") + " r" +
-			" WHERE d.user = {:user} AND d.id != {:id} AND d.duplicate_of = ''" +
-			" AND r.value IN (SELECT value FROM json_each({:refs}))",
-	).Bind(dbx.Params{"user": doc.GetString("user"), "id": doc.Id, "refs": string(encoded)}).All(&hits)
-	if err != nil {
-		return nil, err
-	}
-
-	byRef := map[string][]string{}
-	for _, hit := range hits {
-		byRef[hit.Ref] = append(byRef[hit.Ref], hit.ID)
-	}
 	var ids []string
-	for _, ref := range refs {
-		if matches := byRef[ref]; len(matches) <= maxDocumentsPerReference {
-			ids = append(ids, matches...)
-		}
-	}
-	return ids, nil
+	err = app.DB().NewQuery(
+		"SELECT DISTINCT d.id, d.created FROM documents d, " + dbutils.JSONEach("d.reference_numbers") + " r" +
+			" WHERE d.user = {:user} AND d.id != {:id} AND d.duplicate_of = ''" +
+			" AND r.value IN (SELECT value FROM json_each({:refs}))" +
+			" ORDER BY d.created DESC",
+	).Bind(dbx.Params{"user": doc.GetString("user"), "id": doc.Id, "refs": string(encoded)}).Column(&ids)
+	return ids, err
 }
 
 // Documents compare by their chunks averaged, one vector each: a single chunk

@@ -2,6 +2,7 @@ import { useId, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 
 import { Combobox } from './Combobox'
+import { Button } from './ui'
 import { useAsync } from '../hooks/useAsync'
 import {
   linkDocuments,
@@ -12,9 +13,11 @@ import {
 } from '../lib/api/relatedDocuments'
 import { t } from '../i18n'
 
+/** Dated by the upload when the document carries no date of its own. */
 function documentLabel(document: RelatedDocument): string {
   const title = document.title?.trim() || t('common.untitledDocument')
-  return document.document_date ? `${title} · ${document.document_date.slice(0, 10)}` : title
+  const date = (document.document_date || document.created).slice(0, 10)
+  return date ? `${date} · ${title}` : title
 }
 
 /**
@@ -74,9 +77,12 @@ export function RelatedDocuments({
         <p className="text-sm text-ink-soft">{t('documentPage.noRelated')}</p>
       )}
       {linked.length > 0 && (
-        <ul className="flex flex-col gap-1.5">
+        <ul className="flex flex-col gap-1">
           {linked.map((document) => (
-            <li key={document.id} className="flex items-center justify-between gap-3 text-sm">
+            <li
+              key={document.id}
+              className="flex items-center justify-between gap-3 border border-line px-2 py-1.5 text-sm"
+            >
               <Link
                 to="/document/$documentId"
                 params={{ documentId: document.id }}
@@ -85,15 +91,16 @@ export function RelatedDocuments({
                 {documentLabel(document)}
               </Link>
               {owned && (
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="xs"
                   disabled={busy}
                   aria-label={t('documentPage.unlinkRelated', { title: documentLabel(document) })}
-                  className="text-ink-faint transition-colors hover:text-madder disabled:opacity-50"
+                  className="shrink-0"
                   onClick={() => void change(() => unlinkDocuments(documentId, document.id))}
                 >
-                  &times;
-                </button>
+                  {t('documentPage.unlink')}
+                </Button>
               )}
             </li>
           ))}
