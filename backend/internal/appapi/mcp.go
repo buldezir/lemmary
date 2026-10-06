@@ -25,7 +25,11 @@ import (
 const EnvMCPEnabled = "MCP_ENABLED"
 
 const (
-	mcpMaxBodyBytes = 1 << 20
+	// mcpMaxUploadBytes is upload_document's largest file, below the upload
+	// page's: the whole file travels base64-encoded inside one JSON body,
+	// which mcpMaxBodyBytes has to fit.
+	mcpMaxUploadBytes = 20 << 20
+	mcpMaxBodyBytes   = 28 << 20
 	// mcpTokenTTL is how long a token minted for an agent lasts. Ten years,
 	// like the paperless one: an agent config is written once and never
 	// refreshes. Changing the password invalidates it, as with any token.
@@ -35,9 +39,10 @@ const (
 	mcpMaxReadIDs = 10
 )
 
-// RegisterMCP mounts a read-only Model Context Protocol server over the same
-// retrieval closures Deep Search uses, so an outside agent sees exactly what
-// the in-app agent sees for that token's user. Stateless: every request builds
+// RegisterMCP mounts a Model Context Protocol server over the same retrieval
+// closures Deep Search uses, so an outside agent sees exactly what the in-app
+// agent sees for that token's user. It is read-only unless Settings → MCP
+// switches write tools on. Stateless: every request builds
 // its own server bound to the caller, which is what makes per-user scoping
 // fall out of the existing auth binder instead of session bookkeeping. Every
 // token, superuser or not, is scoped to one users account.
@@ -119,6 +124,7 @@ func handleMCP(app core.App, rt *config.Runtime, idx *fulltext.Index) func(*core
 			return writeError(e, http.StatusInternalServerError, "Failed to prepare the document tools.")
 		}
 		server := newMCPServer(tools, newMCPDocs(app, userID))
+		addMCPWriteTools(server, app, userID, rt.Snapshot().Cfg.MCPCapabilities)
 		handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server },
 			&mcp.StreamableHTTPOptions{
 				Stateless:    true,

@@ -35,6 +35,7 @@ import { SettingsFieldsPage } from './routes/settings.fields'
 import { SettingsWorkerPage } from './routes/settings.worker'
 import { SettingsDuplicatesPage } from './routes/settings.duplicates'
 import { SettingsIngestPage } from './routes/settings.ingest'
+import { SettingsMCPPage } from './routes/settings.mcp'
 import { MaintenancePage } from './routes/maintenance'
 import { ManagementPage } from './routes/management'
 import { ManagementUsersPage } from './routes/management.users'
@@ -240,6 +241,12 @@ const settingsIngestRoute = createRoute({
   component: SettingsIngestPage,
 })
 
+const settingsMCPRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'mcp',
+  component: SettingsMCPPage,
+})
+
 const managementRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/management',
@@ -349,6 +356,7 @@ const routeTree = rootRoute.addChildren([
     settingsWorkerRoute,
     settingsDuplicatesRoute,
     settingsIngestRoute,
+    settingsMCPRoute,
   ]),
   managementRoute.addChildren([managementUsersRoute]),
   maintenanceRoute,

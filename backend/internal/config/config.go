@@ -90,9 +90,23 @@ type Config struct {
 	// IMAPSince is when the mailbox was last pointed somewhere new; mail
 	// received before it is left to a Maintenance backfill. Zero reads all.
 	IMAPSince time.Time
+	// MCPCapabilities are the write tools the MCP endpoint offers, out of
+	// the MCPCapabilities list. Empty keeps it read-only.
+	MCPCapabilities []string
 }
 
 const DefaultNearDuplicateThreshold = 0.92
+
+// The MCP write capabilities an admin can switch on, each a group of tools.
+const (
+	MCPEdit      = "edit"
+	MCPReprocess = "reprocess"
+	MCPUpload    = "upload"
+	MCPDelete    = "delete"
+	MCPTags      = "tags"
+)
+
+var MCPCapabilities = []string{MCPEdit, MCPReprocess, MCPUpload, MCPDelete, MCPTags}
 
 const (
 	DefaultIngestDirIntervalMin = 5
@@ -343,6 +357,7 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 		IMAPMoveFolder:                strings.TrimSpace(record.GetString("imap_move_folder")),
 		IMAPSkipTypes:                 record.GetStringSlice("imap_skip_types"),
 		IMAPSince:                     record.GetDateTime("imap_since").Time(),
+		MCPCapabilities:               record.GetStringSlice("mcp_capabilities"),
 	}
 
 	if err := resolveProviders(app, &cfg); err != nil {

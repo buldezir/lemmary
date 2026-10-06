@@ -63,6 +63,9 @@ export function SettingsPage() {
             {t('settings.tabIngest')}
           </Link>
         )}
+        <Link to="/settings/mcp" className={tabClassName}>
+          {t('settings.tabMcp')}
+        </Link>
       </nav>
 
       <Outlet />

@@ -1102,6 +1102,7 @@ export const de: Catalog = {
   'settings.tabWorker': 'Worker',
   'settings.tabDuplicates': 'Duplikate',
   'settings.tabIngest': 'Eingang',
+  'settings.tabMcp': 'MCP',
 
   'management.title': 'Verwaltung',
   'management.intro': 'Konten auf dieser Instanz. Nur für Administratoren.',
@@ -1122,6 +1123,24 @@ export const de: Catalog = {
 
   'settingsDuplicates.thresholdInvalid':
     'Der Schwellenwert für Beinahe-Duplikate muss zwischen 0 und 1 liegen',
+  'settingsMcp.title': 'Agentenzugriff (MCP)',
+  'settingsMcp.intro':
+    'Über MCP verbundene Agenten können die Dokumente ihres Benutzers immer durchsuchen und lesen. Jeder Schalter unten erlaubt ihnen zusätzlich, das Archiv zu ändern, für die Token aller Benutzer. {link}',
+  'settingsMcp.connect':
+    'Um einen Agenten zu verbinden, erstellen Sie unter {link} ein Token und kopieren seine Konfiguration.',
+  'settingsMcp.accountLink': 'Konto → Agenten',
+  'settingsMcp.edit': 'Metadaten bearbeiten',
+  'settingsMcp.editHint':
+    'Titel, Zusammenfassung, Datum, Dokumenttyp, Korrespondent und Tags sowie Dokumente als geprüft markieren.',
+  'settingsMcp.reprocess': 'Dokumente erneut verarbeiten',
+  'settingsMcp.reprocessHint':
+    'Führt OCR und Extraktion erneut aus. Verursacht KI-Kosten und überschreibt Metadaten, auch manuelle Änderungen.',
+  'settingsMcp.upload': 'Dokumente hochladen',
+  'settingsMcp.uploadHint': 'Fügt Dateien bis 20 MB hinzu. Jede wird verarbeitet, was KI-Kosten verursacht.',
+  'settingsMcp.delete': 'Dokumente löschen',
+  'settingsMcp.deleteHint': 'Endgültig: Es gibt keinen Papierkorb und kein Rückgängig.',
+  'settingsMcp.tags': 'Tags verwalten',
+  'settingsMcp.tagsHint': 'Tags anlegen, umbenennen und löschen.',
   'settingsDuplicates.title': 'Duplikate',
   'settingsDuplicates.enable': 'Beinahe-Duplikate nach der OCR erkennen (bei erneutem Scan)',
   'settingsDuplicates.threshold': 'Schwellenwert für Beinahe-Duplikate (0–1)',
@@ -1468,7 +1487,7 @@ export const de: Catalog = {
     'Kopieren nicht möglich; markieren Sie den Text und kopieren Sie ihn selbst.',
   'account.agents': 'Agenten',
   'account.agentsHint':
-    'Lassen Sie Claude Code, Cursor oder einen anderen Agenten dieses Archiv direkt über MCP durchsuchen und lesen. Der Agent sieht nur Ihre Dokumente. {link}',
+    'Lassen Sie Claude Code, Cursor oder einen anderen Agenten dieses Archiv direkt über MCP durchsuchen und lesen. Der Agent sieht nur Ihre Dokumente und ändert sie nur so weit, wie ein Admin es unter Einstellungen → MCP erlaubt. {link}',
   'account.mcpLink': 'Mehr über die Werkzeuge, die er erhält.',
   'account.mcpOff':
     'Der MCP-Endpunkt ist auf dieser Instanz ausgeschaltet ({env}). Ein Administrator kann ihn wieder einschalten.',

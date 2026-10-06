@@ -5,6 +5,9 @@ import { invalidateAppMeta } from './meta'
 
 export type ImapFileType = 'pdf' | 'office' | 'image' | 'text'
 
+export const mcpCapabilities = ['edit', 'reprocess', 'upload', 'delete', 'tags'] as const
+export type MCPCapability = (typeof mcpCapabilities)[number]
+
 export type AppSettings = {
   ocr_provider_id: string
   ocr_model: string
@@ -69,6 +72,8 @@ export type AppSettings = {
   imap_skip_types: ImapFileType[]
   /** Read-only, RFC 3339 or empty: moved to now whenever the mailbox changes. */
   imap_since: string
+  /** MCP write tools switched on; empty keeps the endpoint read-only. */
+  mcp_capabilities: MCPCapability[]
   /** Instance name, shown in the header and stamped on emails and passkeys. */
   app_name: string
   /** Accent color as #rrggbb. Empty means the built-in accent. */

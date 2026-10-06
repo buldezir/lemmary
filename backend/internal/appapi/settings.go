@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -62,7 +63,8 @@ type settingsResponse struct {
 	IMAPMoveFolder   string   `json:"imap_move_folder"`
 	IMAPSkipTypes    []string `json:"imap_skip_types"`
 	// Read-only: set whenever the mailbox changes; older mail is not scanned.
-	IMAPSince string `json:"imap_since"`
+	IMAPSince       string   `json:"imap_since"`
+	MCPCapabilities []string `json:"mcp_capabilities"`
 	// Branding lives in PocketBase's own settings, not the app_settings record:
 	// the name is what passkeys, emails and backups are stamped with.
 	AppName string `json:"app_name"`
@@ -101,6 +103,7 @@ type settingsPatchRequest struct {
 	IMAPAfterConsume              *string   `json:"imap_after_consume"`
 	IMAPMoveFolder                *string   `json:"imap_move_folder"`
 	IMAPSkipTypes                 *[]string `json:"imap_skip_types"`
+	MCPCapabilities               *[]string `json:"mcp_capabilities"`
 	AppName                       *string   `json:"app_name"`
 	Accent                        *string   `json:"accent"`
 }
@@ -294,6 +297,7 @@ func settingsResponseFromConfig(cfg config.Config) settingsResponse {
 		IMAPMoveFolder:                cfg.IMAPMoveFolder,
 		IMAPSkipTypes:                 append([]string{}, cfg.IMAPSkipTypes...),
 		IMAPSince:                     formatSince(cfg.IMAPSince),
+		MCPCapabilities:               append([]string{}, cfg.MCPCapabilities...),
 	}
 }
 
@@ -313,6 +317,9 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	if err := applyIMAPPatch(record, req); err != nil {
 		return err
 	}
+	if err := applyMCPPatch(record, req.MCPCapabilities); err != nil {
+		return err
+	}
 	if req.NearDuplicateThreshold != nil {
 		if *req.NearDuplicateThreshold <= 0 || *req.NearDuplicateThreshold > 1 {
 			return errInvalid("near_duplicate_threshold must be between 0 and 1")
@@ -325,6 +332,19 @@ func applySettingsPatch(app core.App, record *core.Record, req settingsPatchRequ
 	if embeddingBinding(record) != embeddingBefore {
 		record.Set("embedding_dims", 0)
 	}
+	return nil
+}
+
+func applyMCPPatch(record *core.Record, capabilities *[]string) error {
+	if capabilities == nil {
+		return nil
+	}
+	for _, c := range *capabilities {
+		if !slices.Contains(config.MCPCapabilities, c) {
+			return errInvalid("mcp_capabilities must be edit, reprocess, upload, delete or tags")
+		}
+	}
+	record.Set("mcp_capabilities", *capabilities)
 	return nil
 }
 

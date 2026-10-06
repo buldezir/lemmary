@@ -1,6 +1,6 @@
 # MCP für Agenten {#mcp-for-agents}
 
-Lemmary kann sein Archiv über das [Model Context Protocol](https://modelcontextprotocol.io) bereitstellen, sodass ein Agent – Claude Code, Claude Desktop, Cursor oder einer, den Sie selbst geschrieben haben – Ihre Dokumente direkt durchsucht und liest statt über den Browser. Der Endpunkt ist schreibgeschützt und nutzt dieselbe Abfrage wie Deep Search: Ein Token sieht genau das, was sein Benutzer in der App sieht, und nichts anderes.
+Lemmary kann sein Archiv über das [Model Context Protocol](https://modelcontextprotocol.io) bereitstellen, sodass ein Agent – Claude Code, Claude Desktop, Cursor oder einer, den Sie selbst geschrieben haben – Ihre Dokumente direkt durchsucht und liest statt über den Browser. Der Endpunkt ist schreibgeschützt, solange ein Admin keine Änderungen erlaubt, und nutzt dieselbe Abfrage wie Deep Search: Ein Token sieht genau das, was sein Benutzer in der App sieht, und nichts anderes.
 
 ## Standardmäßig eingeschaltet {#it-is-on-by-default}
 
@@ -63,8 +63,20 @@ Zwei Arten: Suche über den Index und einfacher Zugriff auf die Datensätze. Die
 | `count_documents` | Zählt Dokumente, die den Filtern entsprechen, optional gruppiert nach `document_type`, `correspondent`, `year`, `month` oder `tag`. |
 | `list_taxonomy` | Die Namen der Tags, Dokumenttypen und Korrespondenten im Archiv, für die oben genannten Filter. Jede Liste endet bei 5.000 Namen und meldet dies mit `truncated`. |
 
-Hochladen, Taggen und Bearbeiten sind nicht verfügbar. Verwenden Sie dafür die [paperless-ngx-API](/de/paperless_ngx).
+## Schreibwerkzeuge {#write-tools}
+
+Änderungen am Archiv sind standardmäßig aus. Ein Admin schaltet jede Art von Änderung unter **Einstellungen → MCP** ein, für die Token aller Benutzer zugleich; ein ausgeschaltetes Werkzeug wird gar nicht angeboten. Jede Änderung betrifft nur Dokumente und Tags, die dem Benutzer des Tokens gehören: Ein mit ihm geteiltes Dokument bleibt schreibgeschützt.
+
+| Schalter | Werkzeuge | Was es tut |
+| --- | --- | --- |
+| Metadaten bearbeiten | `update_document` | Setzt Titel, Zusammenfassung, Datum, Dokumenttyp, Korrespondent (beide bei Bedarf per Name angelegt) und Tags (vorhandene Namen, die ganze Liste) eines Dokuments und schließt die Prüfung ab. Die Änderung gilt als von Hand gemacht. |
+| Dokumente erneut verarbeiten | `reprocess_documents` | Stellt bis zu 50 Dokumente erneut in die Warteschlange für OCR und Extraktion (`auto`, `full` oder `extraction`). Verursacht KI-Kosten, und die Extraktion überschreibt die Metadaten, auch manuelle Änderungen. |
+| Dokumente hochladen | `upload_document` | Fügt eine Datei hinzu, base64-kodiert, bis 20 MB; es gelten dieselben Typen, Kontingente und dieselbe Duplikatprüfung wie auf der Upload-Seite, und die Datei wird wie jede andere verarbeitet. |
+| Dokumente löschen | `delete_documents` | Löscht bis zu 50 Dokumente samt Dateien. Endgültig: Es gibt keinen Papierkorb. |
+| Tags verwalten | `create_tag`, `rename_tag`, `delete_tag` | Legt Tags per Name an, benennt sie um und löscht sie. Ein gelöschter Tag verschwindet von seinen Dokumenten, die Dokumente bleiben. |
+
+Ein Schalter wirkt ab dem nächsten Aufruf, ohne Neustart. Für bestehende Clients bleibt die [paperless-ngx-API](/de/paperless_ngx) der Weg zum Schreiben.
 
 ## Was es kostet {#what-it-costs}
 
-Jeder Aufruf von `search_documents` ist eine Deep-Search-Abfrage: eine Volltextabfrage sowie, wenn Embeddings konfiguriert sind, eine Embedding-Anfrage an Ihren Anbieter für den Abfragetext. Ein Aufruf von `read_documents` mit einem `focus` bettet den Fokus auf dieselbe Weise ein. Hier ruft nichts ein Sprachmodell auf, daher werden keine Chat-Tokens verbraucht. Ein Agent in einer Schleife zahlt trotzdem pro Aufruf, über Ihren Schlüssel. Solange das Flag nicht gesetzt ist, wird nichts ausgegeben.
+Jeder Aufruf von `search_documents` ist eine Deep-Search-Abfrage: eine Volltextabfrage sowie, wenn Embeddings konfiguriert sind, eine Embedding-Anfrage an Ihren Anbieter für den Abfragetext. Ein Aufruf von `read_documents` mit einem `focus` bettet den Fokus auf dieselbe Weise ein. Hier ruft nichts ein Sprachmodell auf, daher werden keine Chat-Tokens verbraucht. Ein Agent in einer Schleife zahlt trotzdem pro Aufruf, über Ihren Schlüssel. Erneute Verarbeitung und Uploads durchlaufen die Verarbeitungspipeline, mit denselben Modellen und Kosten wie jedes andere Dokument. Solange das Flag nicht gesetzt ist, wird nichts ausgegeben.
