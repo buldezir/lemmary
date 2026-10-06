@@ -1,0 +1,21 @@
+name: Landing docs
+
+# lemmary.app builds its docs from this repo's main, so a docs change rebuilds
+# that site. LANDING_DISPATCH_TOKEN is a fine-grained token scoped to
+# lemmary/lemmary-landing with Actions: read and write.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "frontend/.vitepress/**"
+
+permissions: {}
+
+jobs:
+  dispatch:
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted", "linux", "x64", "homelab"]') }}
+    steps:
+      - run: gh workflow run docker.yml --repo lemmary/lemmary-landing
+        env:
+          GH_TOKEN: ${{ secrets.LANDING_DISPATCH_TOKEN }}
