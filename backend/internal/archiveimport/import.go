@@ -3,8 +3,10 @@ package archiveimport
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/pocketbase/dbx"
@@ -119,12 +121,13 @@ func GetJob(id string) (Job, bool) {
 }
 
 // restoredDocument records what a created document still needs once every
-// document exists: its original timestamps, and the archive-relative id of the
-// near-duplicate it pointed at.
+// document exists: its original timestamps, and the archive-relative ids of the
+// near-duplicate and the related documents it pointed at.
 type restoredDocument struct {
 	NewID               string
 	ExportedID          string
 	DuplicateOfExported string
+	RelatedExported     []string
 	Created             string
 	Updated             string
 }
@@ -292,6 +295,7 @@ func restoreSidecars(
 		return nil, err
 	}
 	doc.DuplicateOfExported = stringField(meta, "duplicate_of")
+	doc.RelatedExported = stringsField(meta, "related")
 	doc.Created, _ = parseTimestamp(stringField(meta, "created"))
 	doc.Updated, _ = parseTimestamp(stringField(meta, "updated"))
 
@@ -337,9 +341,9 @@ func restorePreview(files map[string]*zip.File, previewPath string, budget *scan
 //
 // created and updated are autodate columns: PocketBase stamps them on every
 // save, so a restored document would otherwise be dated the moment of the
-// restore and the library would come back in the wrong order. duplicate_of is
-// remapped in the same statement rather than through a second save, which would
-// bump updated straight back to now.
+// restore and the library would come back in the wrong order. duplicate_of and
+// related are remapped in the same statement rather than through a second save,
+// which would bump updated straight back to now.
 func applyFixups(app core.App, restored []restoredDocument, result *Result) {
 	if len(restored) == 0 {
 		return
@@ -369,6 +373,10 @@ func applyFixups(app core.App, restored []restoredDocument, result *Result) {
 			assignments = append(assignments, "duplicate_of = {:duplicateOf}")
 			params["duplicateOf"] = target
 		}
+		if related := remapRelated(idByExported, doc); related != "" {
+			assignments = append(assignments, "related = {:related}")
+			params["related"] = related
+		}
 		if len(assignments) == 0 {
 			continue
 		}
@@ -379,6 +387,22 @@ func applyFixups(app core.App, restored []restoredDocument, result *Result) {
 			result.Errors = importjob.AppendError(result.Errors, fmt.Sprintf("%s: restore timestamps: %v", doc.NewID, err))
 		}
 	}
+}
+
+// remapRelated keeps the related documents that were restored with this one,
+// as the JSON array the column stores, or "" when none were.
+func remapRelated(idByExported map[string]string, doc restoredDocument) string {
+	related := make([]string, 0, len(doc.RelatedExported))
+	for _, exported := range doc.RelatedExported {
+		if target := idByExported[exported]; target != "" && target != doc.NewID && !slices.Contains(related, target) {
+			related = append(related, target)
+		}
+	}
+	if len(related) == 0 {
+		return ""
+	}
+	encoded, _ := json.Marshal(related)
+	return string(encoded)
 }
 
 // taxonomyResolver maps a taxonomy name to this instance's record id, creating

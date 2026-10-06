@@ -34,6 +34,8 @@ type Props = {
   onCreate?: (text: string) => void
   /** Overrides "nothing matches it exactly" for onCreate. */
   canCreate?: (text: string) => boolean
+  /** For options fetched per query, which then still filter locally. */
+  onQueryChange?: (query: string) => void
 }
 
 const CREATE_VALUE = '\u0000create'
@@ -76,6 +78,7 @@ export function Combobox({
   leading,
   onCreate,
   canCreate,
+  onQueryChange,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const highlightedRef = useRef<HTMLLIElement>(null)
@@ -216,6 +219,7 @@ export function Combobox({
       value={loading ? '' : open && query !== null ? query : selectedLabel}
       onChange={(event) => {
         setQuery(event.target.value)
+        onQueryChange?.(event.target.value)
         setOpen(true)
         setHighlightedIndex(0)
       }}

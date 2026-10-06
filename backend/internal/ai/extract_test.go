@@ -433,6 +433,20 @@ func TestBuildExtractionSystemPromptSuggestsNewTagsOnlyOnRequest(t *testing.T) {
 	}
 }
 
+func TestBuildExtractionSystemPromptAsksForReferencesOnlyOnRequest(t *testing.T) {
+	t.Parallel()
+	catalog := ExtractionCatalog{Tags: []string{"Invoices"}}
+
+	if prompt := buildExtractionSystemPrompt("", "", catalog); strings.Contains(prompt, "references") {
+		t.Fatalf("references asked for without ExtractReferences:\n%s", prompt)
+	}
+
+	catalog.ExtractReferences = true
+	if prompt := buildExtractionSystemPrompt("", "", catalog); !strings.Contains(prompt, "references (array of strings)") {
+		t.Fatalf("expected references in the prompt, got:\n%s", prompt)
+	}
+}
+
 func TestExtractMetadataCoercesPartialDocumentDate(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

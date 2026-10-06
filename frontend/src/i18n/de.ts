@@ -54,6 +54,9 @@ export const de: Catalog = {
   'processing.descApplyMetadata': 'Extrahierte Metadaten in das Dokument schreiben',
   'processing.descEmbed':
     'Die Abschnittsvektoren neu erstellen, über die Deep Search nach Bedeutung sucht (wenn ein Embedding-Modell gesetzt ist)',
+  'processing.stepLinkRelated': 'Verwandte Dokumente verknüpfen',
+  'processing.descLinkRelated':
+    'Dokumente mit gleicher Referenznummer oder, mit Embeddings, ähnlicher Bedeutung verknüpfen (wenn RELATED_LINKING_ENABLED gesetzt ist)',
   'processing.modeAuto': 'Automatisch (je Dokument)',
   'processing.modeFull': 'Vollständige Pipeline',
   'processing.modeExtraction': 'Nur Extraktion',
@@ -1074,6 +1077,11 @@ export const de: Catalog = {
     'Sie haben noch keine Tags. {link}, dann werden sie hier angeboten.',
   'documentPage.createSome': 'Legen Sie welche an',
   'documentPage.addTag': 'Tag hinzufügen',
+  'documentPage.related': 'Verwandte Dokumente',
+  'documentPage.noRelated': 'Keine verwandten Dokumente.',
+  'documentPage.linkRelated': 'Dokument verknüpfen',
+  'documentPage.unlink': 'Lösen',
+  'documentPage.unlinkRelated': 'Verknüpfung mit {title} lösen',
 
   'upload.title': 'Hochladen',
   'upload.intro': 'Fügen Sie Ihrer Bibliothek Dokumente hinzu. Wählen Sie unten eine Quelle.',

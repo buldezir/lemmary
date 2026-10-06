@@ -97,6 +97,9 @@ func applyMetadata(record *core.Record, meta map[string]any, resolver *taxonomyR
 	if people := stringsField(meta, "people_or_organizations"); len(people) > 0 {
 		record.Set("people_or_organizations", people)
 	}
+	if refs := stringsField(meta, "reference_numbers"); len(refs) > 0 {
+		record.Set("reference_numbers", refs)
+	}
 	values := customFieldsField(meta, resolver.customFields)
 
 	tagIDs := make([]string, 0)

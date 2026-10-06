@@ -147,6 +147,23 @@ func IngestIMAPEnabledFromEnv() bool {
 }
 
 const (
+	EnvRelatedLinking                 = "RELATED_LINKING_ENABLED"
+	EnvRelatedSimilarityThreshold     = "RELATED_SIMILARITY_THRESHOLD"
+	DefaultRelatedSimilarityThreshold = 0.9
+)
+
+// RelatedLinkingFromEnv reads the link_related step's switch and its cosine
+// threshold. Unlike getEnvFloat, 0 is a value: links by reference numbers only.
+func RelatedLinkingFromEnv() (enabled bool, threshold float64) {
+	enabled = getEnvBool(EnvRelatedLinking, false)
+	threshold, err := strconv.ParseFloat(strings.TrimSpace(os.Getenv(EnvRelatedSimilarityThreshold)), 64)
+	if err != nil || threshold < 0 || threshold > 1 {
+		threshold = DefaultRelatedSimilarityThreshold
+	}
+	return enabled, threshold
+}
+
+const (
 	IMAPSecurityTLS      = "tls"
 	IMAPSecuritySTARTTLS = "starttls"
 

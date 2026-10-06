@@ -40,6 +40,9 @@ type ExtractionCatalog struct {
 	// from Tags. Only set when a human reviews every document, so the
 	// suggestions have someone to accept them.
 	SuggestNewTags bool
+	// ExtractReferences asks for a references array of identifiers the
+	// pipeline links related documents by. Only set with RELATED_LINKING_ENABLED.
+	ExtractReferences bool
 	// CustomFields are the admin's own document fields, asked for by name.
 	CustomFields []models.CustomField
 }
@@ -79,6 +82,11 @@ Return ONLY valid JSON with these fields:
 		prompt += `
 
 Also return suggested_tags (array of strings): up to 3 short new tag names that fit this document and are NOT in the existing tags list, in the language of the existing tags. Keep tags itself restricted to the list above; return an empty suggested_tags array when the existing tags already cover the document.`
+	}
+	if catalog.ExtractReferences {
+		prompt += `
+
+Also return references (array of strings): identifiers printed on the document that tie it to other documents about the same matter, such as invoice, order, contract, policy, claim, case, ticket or booking numbers, copied exactly as printed. Leave out customer and account numbers, tax and VAT ids, IBANs, phone numbers and dates. Return an empty array when there are none.`
 	}
 	prompt += formatCustomFieldsPrompt(catalog.CustomFields)
 	prompt += formatExtractionRulesPrompt(rules)

@@ -24,7 +24,8 @@ type Processor struct {
 	rt  *config.Runtime
 	// How many pipelines may run at once: a document is mostly time spent
 	// waiting on someone else's HTTP server.
-	limit int
+	limit   int
+	linking RelatedLinking
 
 	mu     sync.Mutex
 	active int
@@ -38,7 +39,7 @@ type Processor struct {
 	snapshot func() config.Snapshot
 }
 
-func Register(app core.App, rt *config.Runtime, backfill *Backfiller, concurrency int) {
+func Register(app core.App, rt *config.Runtime, backfill *Backfiller, concurrency int, linking RelatedLinking) {
 	if concurrency < 1 {
 		concurrency = 1
 	}
@@ -47,6 +48,7 @@ func Register(app core.App, rt *config.Runtime, backfill *Backfiller, concurrenc
 		rt:       rt,
 		limit:    concurrency,
 		inflight: make(map[string]struct{}),
+		linking:  linking,
 	}
 	p.snapshot = rt.Snapshot
 	p.registerHooks()
@@ -111,7 +113,7 @@ func (p *Processor) recoverStaleRunningJobs() {
 
 func (p *Processor) registerHooks() {
 	p.app.OnRecordValidate("documents").BindFunc(func(e *core.RecordEvent) error {
-		if err := validateDocumentTagOwnership(e.App, e.Record); err != nil {
+		if err := validateDocumentRelationOwnership(e.App, e.Record); err != nil {
 			return err
 		}
 		return e.Next()
@@ -484,7 +486,7 @@ func (p *Processor) runJob(jobID string, snap config.Snapshot) error {
 		return nil
 	}
 
-	runner := NewPipelineRunner(p.app, snap.Cfg, snap.OCR, snap.AI, snap.Embedder)
+	runner := NewPipelineRunner(p.app, snap.Cfg, snap.OCR, snap.AI, snap.Embedder, p.linking)
 	return runner.Run(context.Background(), jobID)
 }
 

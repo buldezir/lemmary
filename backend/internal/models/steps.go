@@ -7,17 +7,20 @@ const (
 	StepExtractMetadata  = "extract_metadata"
 	StepApplyMetadata    = "apply_metadata"
 	// StepEmbed runs after apply_metadata so the header chunk indexes the
-	// metadata the document ended up with, and last so a document whose
+	// metadata the document ended up with, and after it so a document whose
 	// extraction failed is still embedded.
 	StepEmbed = "embed"
+	// StepLinkRelated runs after embed: it reads the reference numbers apply
+	// stored and the vectors embed wrote.
+	StepLinkRelated = "link_related"
 )
 
 var (
-	FullPipelineSteps       = []string{StepPreview, StepOCR, StepDetectDuplicates, StepExtractMetadata, StepApplyMetadata, StepEmbed}
-	ExtractionPipelineSteps = []string{StepExtractMetadata, StepApplyMetadata, StepEmbed}
+	FullPipelineSteps       = []string{StepPreview, StepOCR, StepDetectDuplicates, StepExtractMetadata, StepApplyMetadata, StepEmbed, StepLinkRelated}
+	ExtractionPipelineSteps = []string{StepExtractMetadata, StepApplyMetadata, StepEmbed, StepLinkRelated}
 	// ImportPreserveSteps runs preview/OCR/near-dup detection without AI metadata
 	// overwrite, so ngx title/tags/correspondent/type survive import.
-	ImportPreserveSteps = []string{StepPreview, StepOCR, StepDetectDuplicates, StepEmbed}
+	ImportPreserveSteps = []string{StepPreview, StepOCR, StepDetectDuplicates, StepEmbed, StepLinkRelated}
 )
 
 const (

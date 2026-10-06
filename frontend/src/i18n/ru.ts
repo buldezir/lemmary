@@ -58,6 +58,9 @@ export const ru: Catalog = {
   'processing.descApplyMetadata': 'Записать извлечённые метаданные в документ',
   'processing.descEmbed':
     'Перестроить векторы фрагментов, по которым Deep Search ищет по смыслу (если задана модель эмбеддингов)',
+  'processing.stepLinkRelated': 'Связывание документов',
+  'processing.descLinkRelated':
+    'Связать документы с общим номером или, при наличии эмбеддингов, близкие по смыслу (если задан RELATED_LINKING_ENABLED)',
   'processing.modeAuto': 'Авто (для каждого документа)',
   'processing.modeFull': 'Полный конвейер',
   'processing.modeExtraction': 'Только извлечение',
@@ -1189,6 +1192,11 @@ export const ru: Catalog = {
   'documentPage.noVocabulary': 'У вас ещё нет тегов. {link}, и они будут предложены здесь.',
   'documentPage.createSome': 'Создайте их',
   'documentPage.addTag': 'Добавить тег',
+  'documentPage.related': 'Связанные документы',
+  'documentPage.noRelated': 'Связанных документов нет.',
+  'documentPage.linkRelated': 'Связать документ',
+  'documentPage.unlink': 'Отвязать',
+  'documentPage.unlinkRelated': 'Убрать связь с {title}',
 
   'upload.title': 'Загрузить',
   'upload.intro': 'Добавьте документы в библиотеку. Выберите источник ниже.',

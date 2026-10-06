@@ -42,6 +42,7 @@ describe('forceStepsForReprocess', () => {
       'detect_duplicates',
       'extract_metadata',
       'embed',
+      'link_related',
     ])
   })
 })
@@ -58,7 +59,7 @@ describe('defaultReprocessSteps', () => {
   it('returns fresh arrays that callers may mutate', () => {
     const steps = defaultReprocessSteps(true)
     steps.push('preview')
-    expect(EXTRACTION_PIPELINE_STEPS).toEqual(['extract_metadata', 'apply_metadata', 'embed'])
+    expect(EXTRACTION_PIPELINE_STEPS).toEqual(['extract_metadata', 'apply_metadata', 'embed', 'link_related'])
   })
 })
 

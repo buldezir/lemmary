@@ -59,7 +59,7 @@ var (
 // the restore consumes it.
 type Entry struct {
 	// DocumentID is the id the document had in the instance it was exported
-	// from. It relates documents to each other (duplicate_of); the restored
+	// from. It relates documents to each other (duplicate_of, related); the restored
 	// record always gets a fresh id.
 	DocumentID string `json:"document_id"`
 	Title      string `json:"title"`

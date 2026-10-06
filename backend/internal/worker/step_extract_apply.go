@@ -30,7 +30,8 @@ func finishedDocStatus(cfg config.Config, lowConfidence bool) string {
 }
 
 type ExtractMetadataStep struct {
-	Extractor ai.Extractor
+	Extractor         ai.Extractor
+	ExtractReferences bool
 }
 
 func (s *ExtractMetadataStep) Name() string { return models.StepExtractMetadata }
@@ -74,6 +75,7 @@ func (s *ExtractMetadataStep) Run(ctx context.Context, state *StepState) error {
 		return err
 	}
 	catalog.SuggestNewTags = state.Cfg.AlwaysRequireReview
+	catalog.ExtractReferences = s.ExtractReferences
 
 	state.Logger.Info("starting AI extraction",
 		"provider", s.Extractor.Name(),
@@ -194,7 +196,11 @@ func fieldWrites(state *StepState, metadata *models.ExtractedMetadata) ([]models
 	return append([]models.FieldWrite{typeWrite, correspondentWrite}, custom...), nil
 }
 
-type ApplyMetadataStep struct{}
+type ApplyMetadataStep struct {
+	// Set when extraction asks for reference numbers. Otherwise there is no
+	// answer to apply, and an empty one would wipe numbers already stored.
+	StoreReferences bool
+}
 
 func (s *ApplyMetadataStep) Name() string { return models.StepApplyMetadata }
 
@@ -229,6 +235,9 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 
 	state.Document.Set("confidence", metadata.Confidence)
 	state.Document.Set("people_or_organizations", metadata.PeopleOrOrganizations)
+	if s.StoreReferences {
+		state.Document.Set("reference_numbers", normalizeReferences(metadata.References))
+	}
 	if state.AI != nil {
 		state.Document.Set("metadata_source", state.AI.Model())
 	}

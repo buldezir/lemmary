@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"strings"
@@ -330,10 +331,18 @@ func tagIndexByKey(app core.App, userID string) (map[string]string, error) {
 	}
 }
 
-func validateDocumentTagOwnership(app core.App, record *core.Record) error {
+func validateDocumentRelationOwnership(app core.App, record *core.Record) error {
 	userID := strings.TrimSpace(record.GetString("user"))
 	for _, tagID := range record.GetStringSlice("tags") {
 		if err := requireOwnedRelation(app, "tags", "tag", tagID, userID); err != nil {
+			return err
+		}
+	}
+	for _, documentID := range record.GetStringSlice("related") {
+		if documentID == record.Id {
+			return errors.New("a document cannot be related to itself")
+		}
+		if err := requireOwnedRelation(app, "documents", "related document", documentID, userID); err != nil {
 			return err
 		}
 	}

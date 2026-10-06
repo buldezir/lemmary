@@ -271,7 +271,7 @@ Two modes:
 
 Because a restore does not run the pipeline, near-duplicate detection does not re-run over the restored documents. Exact duplicates are still rejected on create by checksum, and `duplicate_of` / `text_fingerprint` come back from the archive; **Maintenance → Scan for duplicates** re-derives near-duplicate links across the whole library when you want them recomputed. A restored document also keeps whatever thumbnail the archive carried — an older archive without `.preview.png` sidecars leaves those documents without one until they are reprocessed.
 
-What a restore does *not* preserve: **document ids**. Restored documents get fresh ids, and `duplicate_of` is remapped to the restored copy when the original is in the same archive (dropped when it is not). `created` and `updated` are written back after the save, so the library comes back in its original order. Documents whose file checksum is already in your library are skipped, which makes restoring the same archive twice safe.
+What a restore does *not* preserve: **document ids**. Restored documents get fresh ids, and `duplicate_of` and [related-document](#related-documents) links are remapped to the restored copies when the other document is in the same archive (dropped when it is not). `created` and `updated` are written back after the save, so the library comes back in its original order. Documents whose file checksum is already in your library are skipped, which makes restoring the same archive twice safe.
 
 Archives exported before manifests existed still restore: their documents are reconstructed from the entry names alone. Only orphan taxonomy — and that one sidecar-lookalike case — cannot be recovered from them.
 
@@ -349,6 +349,17 @@ Text extraction:
 - **TXT, CSV, DOCX, XLSX** — native parsers (no OCR API call); preview is skipped for these formats. A DOCX or XLSX whose text runs past what `ocr_text` can hold fails the document rather than being stored short; see [the page ceiling](#the-page-ceiling)
 
 Cron jobs are visible and manually triggerable in PocketBase Admin → Settings → Crons.
+
+### Related documents
+
+A document page lists the documents related to it: an invoice, its reminder and the receipt that settled it. The owner links one with **Link a document**, which searches their own documents by title, and removes a link with its ×. A link shows on both documents, and deleting either one removes it. Someone a document is shared with sees a link only when the other document is shared with them too.
+
+With `RELATED_LINKING_ENABLED=1` the pipeline links documents itself, in a `link_related` step after `embed`:
+
+- **Reference numbers** — extraction also returns the invoice, order, contract, policy, claim, case or booking numbers printed on the document. A document is linked to the owner's earlier documents carrying the same number, compared without case, spaces or punctuation. Customer and account numbers are left out, since they would tie together every bill that carries them. A document holds at most 50 links; past that the newest matches are kept.
+- **Similarity** — with an [embedding model](/ai_providers) set, a document is also linked to up to five of the owner's documents that come closest in meaning as a whole, at or above `RELATED_SIMILARITY_THRESHOLD` (cosine of the documents' averaged passage vectors, default `0.9`). `0` turns this half off.
+
+The step only adds links, so one you removed by hand comes back if the document is reprocessed. Documents processed before the flag was set are linked when they are reprocessed; reprocessing only the `link_related` step links by similarity without another AI call, while reference numbers need **Extract metadata** again.
 
 ## Full-text search
 

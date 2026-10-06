@@ -34,14 +34,14 @@ type PipelineRunner struct {
 	registry map[string]Step
 }
 
-func NewPipelineRunner(app core.App, cfg config.Config, ocrProvider ocr.Provider, aiExtractor ai.Extractor, embedder ai.Embedder) *PipelineRunner {
+func NewPipelineRunner(app core.App, cfg config.Config, ocrProvider ocr.Provider, aiExtractor ai.Extractor, embedder ai.Embedder, linking RelatedLinking) *PipelineRunner {
 	return &PipelineRunner{
 		App:      app,
 		Cfg:      cfg,
 		OCR:      ocrProvider,
 		AI:       aiExtractor,
 		Embedder: embedder,
-		registry: buildRegistry(ocrProvider, aiExtractor, embedder),
+		registry: buildRegistry(ocrProvider, aiExtractor, embedder, linking),
 	}
 }
 

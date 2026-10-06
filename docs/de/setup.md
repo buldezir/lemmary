@@ -278,7 +278,7 @@ Zwei Modi:
 
 Da eine Wiederherstellung die Pipeline nicht ausführt, läuft die Erkennung von Beinahe-Duplikaten über die wiederhergestellten Dokumente nicht erneut. Exakte Duplikate werden beim Anlegen weiterhin per Prüfsumme abgelehnt, und `duplicate_of` / `text_fingerprint` kommen aus dem Archiv zurück; **Wartung → Nach Duplikaten suchen** leitet die Verknüpfungen von Beinahe-Duplikaten über die gesamte Bibliothek neu ab, wenn Sie sie neu berechnen lassen möchten. Ein wiederhergestelltes Dokument behält außerdem das Vorschaubild, das das Archiv mitbrachte – ein älteres Archiv ohne `.preview.png`-Begleitdateien lässt diese Dokumente ohne Vorschaubild, bis sie erneut verarbeitet werden.
 
-Was eine Wiederherstellung *nicht* erhält: **Dokument-IDs**. Wiederhergestellte Dokumente erhalten neue IDs, und `duplicate_of` wird auf die wiederhergestellte Kopie umgeschrieben, wenn das Original im selben Archiv liegt (andernfalls entfernt). `created` und `updated` werden nach dem Speichern zurückgeschrieben, sodass die Bibliothek in ihrer ursprünglichen Reihenfolge zurückkommt. Dokumente, deren Dateiprüfsumme bereits in Ihrer Bibliothek liegt, werden übersprungen, was die doppelte Wiederherstellung desselben Archivs unbedenklich macht.
+Was eine Wiederherstellung *nicht* erhält: **Dokument-IDs**. Wiederhergestellte Dokumente erhalten neue IDs, und `duplicate_of` sowie Verknüpfungen zu [verwandten Dokumenten](#related-documents) werden auf die wiederhergestellten Kopien umgeschrieben, wenn das andere Dokument im selben Archiv liegt (andernfalls entfernt). `created` und `updated` werden nach dem Speichern zurückgeschrieben, sodass die Bibliothek in ihrer ursprünglichen Reihenfolge zurückkommt. Dokumente, deren Dateiprüfsumme bereits in Ihrer Bibliothek liegt, werden übersprungen, was die doppelte Wiederherstellung desselben Archivs unbedenklich macht.
 
 Archive, die exportiert wurden, bevor es Manifeste gab, lassen sich weiterhin wiederherstellen: Ihre Dokumente werden allein aus den Eintragsnamen rekonstruiert. Nur verwaiste Taxonomie – und dieser eine Fall der verwechselbaren Begleitdatei – lässt sich daraus nicht wiedergewinnen.
 
@@ -356,6 +356,17 @@ Textextraktion:
 - **TXT, CSV, DOCX, XLSX** – native Parser (kein Aufruf einer OCR-API); die Vorschau entfällt bei diesen Formaten. Ein DOCX oder XLSX, dessen Text über das hinausgeht, was `ocr_text` fassen kann, lässt das Dokument fehlschlagen, statt gekürzt gespeichert zu werden; siehe [die Seitenobergrenze](#the-page-ceiling)
 
 Cron-Jobs sind in PocketBase Admin → Settings → Crons sichtbar und lassen sich dort manuell auslösen.
+
+### Verwandte Dokumente {#related-documents}
+
+Eine Dokumentseite listet die Dokumente auf, die mit ihm zusammenhängen: eine Rechnung, ihre Mahnung und die Quittung, die sie beglichen hat. Der Eigentümer verknüpft eines über **Dokument verknüpfen**, das seine eigenen Dokumente nach Titel durchsucht, und löst eine Verknüpfung mit ihrem ×. Eine Verknüpfung erscheint auf beiden Dokumenten, und das Löschen eines der beiden entfernt sie. Wer ein freigegebenes Dokument sieht, sieht eine Verknüpfung nur, wenn auch das andere Dokument mit ihm geteilt ist.
+
+Mit `RELATED_LINKING_ENABLED=1` verknüpft die Pipeline Dokumente selbst, in einem Schritt `link_related` nach `embed`:
+
+- **Referenznummern** – die Extraktion liefert zusätzlich die auf dem Dokument gedruckten Rechnungs-, Bestell-, Vertrags-, Policen-, Schadens-, Vorgangs- oder Buchungsnummern. Ein Dokument wird mit früheren Dokumenten des Eigentümers verknüpft, die dieselbe Nummer tragen, verglichen ohne Groß-/Kleinschreibung, Leerzeichen und Satzzeichen. Kunden- und Kontonummern bleiben außen vor, da sie jede Rechnung verknüpfen würden, auf der sie stehen. Ein Dokument hält höchstens 50 Verknüpfungen; darüber hinaus werden die neuesten Treffer behalten.
+- **Ähnlichkeit** – mit gesetztem [Embedding-Modell](/de/ai_providers) wird ein Dokument außerdem mit bis zu fünf Dokumenten des Eigentümers verknüpft, die ihm als Ganzes inhaltlich am nächsten kommen, ab `RELATED_SIMILARITY_THRESHOLD` (Kosinus der gemittelten Abschnittsvektoren beider Dokumente, Standard `0.9`). `0` schaltet diesen Teil ab.
+
+Der Schritt fügt nur Verknüpfungen hinzu, daher kommt eine von Hand gelöste zurück, wenn das Dokument erneut verarbeitet wird. Dokumente, die vor dem Setzen des Flags verarbeitet wurden, werden bei einer erneuten Verarbeitung verknüpft; nur den Schritt `link_related` erneut auszuführen verknüpft nach Ähnlichkeit ohne weiteren KI-Aufruf, während Referenznummern erneut **Metadaten extrahieren** brauchen.
 
 ## Volltextsuche {#full-text-search}
 
