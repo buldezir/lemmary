@@ -9,12 +9,15 @@ on:
     paths:
       - "docs/**"
       - "frontend/.vitepress/**"
+      - "frontend/package.json"
+      - "frontend/pnpm-lock.yaml"
+      - "frontend/pnpm-workspace.yaml"
 
 permissions: {}
 
 jobs:
   dispatch:
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted", "linux", "x64", "homelab"]') }}
+    runs-on: ubuntu-latest
     steps:
       - run: gh workflow run docker.yml --repo lemmary/lemmary-landing
         env:
