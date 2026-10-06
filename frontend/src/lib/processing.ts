@@ -7,6 +7,7 @@ export type ProcessingStep =
   | 'extract_metadata'
   | 'apply_metadata'
   | 'embed'
+  | 'link_related'
 
 export type StepRunRecord = {
   name: ProcessingStep
@@ -56,12 +57,14 @@ export const FULL_PIPELINE_STEPS: ProcessingStep[] = [
   'extract_metadata',
   'apply_metadata',
   'embed',
+  'link_related',
 ]
 
 export const EXTRACTION_PIPELINE_STEPS: ProcessingStep[] = [
   'extract_metadata',
   'apply_metadata',
   'embed',
+  'link_related',
 ]
 
 export const PROCESSING_STEP_LABELS: Record<ProcessingStep, string> = {
@@ -71,6 +74,7 @@ export const PROCESSING_STEP_LABELS: Record<ProcessingStep, string> = {
   extract_metadata: t('processing.stepExtractMetadata'),
   apply_metadata: t('processing.stepApplyMetadata'),
   embed: t('processing.stepEmbed'),
+  link_related: t('processing.stepLinkRelated'),
 }
 
 export const PROCESSING_STEP_DESCRIPTIONS: Record<ProcessingStep, string> = {
@@ -80,6 +84,7 @@ export const PROCESSING_STEP_DESCRIPTIONS: Record<ProcessingStep, string> = {
   extract_metadata: t('processing.descExtractMetadata'),
   apply_metadata: t('processing.descApplyMetadata'),
   embed: t('processing.descEmbed'),
+  link_related: t('processing.descLinkRelated'),
 }
 
 export function orderedProcessingSteps(selected: Iterable<ProcessingStep>): ProcessingStep[] {

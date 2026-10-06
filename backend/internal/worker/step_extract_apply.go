@@ -30,7 +30,8 @@ func finishedDocStatus(cfg config.Config, lowConfidence bool) string {
 }
 
 type ExtractMetadataStep struct {
-	Extractor ai.Extractor
+	Extractor         ai.Extractor
+	ExtractReferences bool
 }
 
 func (s *ExtractMetadataStep) Name() string { return models.StepExtractMetadata }
@@ -74,6 +75,7 @@ func (s *ExtractMetadataStep) Run(ctx context.Context, state *StepState) error {
 		return err
 	}
 	catalog.SuggestNewTags = state.Cfg.AlwaysRequireReview
+	catalog.ExtractReferences = s.ExtractReferences
 
 	state.Logger.Info("starting AI extraction",
 		"provider", s.Extractor.Name(),
@@ -229,6 +231,7 @@ func (s *ApplyMetadataStep) Run(ctx context.Context, state *StepState) error {
 
 	state.Document.Set("confidence", metadata.Confidence)
 	state.Document.Set("people_or_organizations", metadata.PeopleOrOrganizations)
+	state.Document.Set("reference_numbers", normalizeReferences(metadata.References))
 	if state.AI != nil {
 		state.Document.Set("metadata_source", state.AI.Model())
 	}

@@ -232,3 +232,25 @@ func TestCronExprFollowsTheInterval(t *testing.T) {
 		}
 	}
 }
+
+func TestRelatedLinkingFromEnv(t *testing.T) {
+	for _, tc := range []struct {
+		enabled, threshold string
+		wantOn             bool
+		want               float64
+	}{
+		{"", "", false, DefaultRelatedSimilarityThreshold},
+		{"1", "0", true, 0},
+		{"true", "0.8", true, 0.8},
+		{"1", "1.5", true, DefaultRelatedSimilarityThreshold},
+		{"1", "-0.1", true, DefaultRelatedSimilarityThreshold},
+		{"1", "high", true, DefaultRelatedSimilarityThreshold},
+	} {
+		t.Setenv(EnvRelatedLinking, tc.enabled)
+		t.Setenv(EnvRelatedSimilarityThreshold, tc.threshold)
+		on, threshold := RelatedLinkingFromEnv()
+		if on != tc.wantOn || threshold != tc.want {
+			t.Errorf("%q/%q: got %v/%v, want %v/%v", tc.enabled, tc.threshold, on, threshold, tc.wantOn, tc.want)
+		}
+	}
+}

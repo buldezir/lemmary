@@ -53,6 +53,9 @@ export const en = {
   'processing.descApplyMetadata': 'Write extracted metadata onto the document',
   'processing.descEmbed':
     'Re-build the passage vectors Deep Search retrieves by meaning (when an embedding model is set)',
+  'processing.stepLinkRelated': 'Link related documents',
+  'processing.descLinkRelated':
+    'Link documents sharing a reference number or, with embeddings, close in meaning (when RELATED_LINKING_ENABLED is set)',
   'processing.modeAuto': 'Auto (per document)',
   'processing.modeFull': 'Full pipeline',
   'processing.modeExtraction': 'Extraction only',
@@ -1015,6 +1018,10 @@ export const en = {
   'documentPage.noVocabulary': 'You have no tags yet. {link} and they will be offered here.',
   'documentPage.createSome': 'Create some',
   'documentPage.addTag': 'Add a tag',
+  'documentPage.related': 'Related documents',
+  'documentPage.noRelated': 'No related documents.',
+  'documentPage.linkRelated': 'Link a document',
+  'documentPage.unlinkRelated': 'Unlink {title}',
 
   'upload.title': 'Upload',
   'upload.intro': 'Add documents to your library. Pick a source below.',

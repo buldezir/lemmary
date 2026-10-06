@@ -20,8 +20,10 @@ type ExtractedMetadata struct {
 	// applied to the document; the reviewer accepts them one by one.
 	SuggestedTags         lenientStrings `json:"suggested_tags,omitempty"`
 	PeopleOrOrganizations []string       `json:"people_or_organizations"`
-	Summary               string         `json:"summary"`
-	Confidence            float64        `json:"confidence"`
+	// Asked for only with related-document linking on.
+	References lenientStrings `json:"references,omitempty"`
+	Summary    string         `json:"summary"`
+	Confidence float64        `json:"confidence"`
 	// Keyed by field name as the prompt offered it; apply maps names to ids.
 	CustomFields lenientObject `json:"custom_fields,omitempty"`
 }

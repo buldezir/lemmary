@@ -48,6 +48,7 @@ import { ProcessingStatus } from '../components/ProcessingStatus'
 import { ProcessingSteps } from '../components/ProcessingSteps'
 import { Button } from '../components/ui'
 import { ShareDialog, ShareSummary } from '../components/ShareDialog'
+import { RelatedDocuments } from '../components/RelatedDocuments'
 import { DocumentPreview } from '../components/DocumentPreview'
 import { useStoredFlag } from '../hooks/useStoredFlag'
 import { useAppMeta } from '../hooks/useAppMeta'
@@ -1129,6 +1130,13 @@ export function DocumentDetailPage() {
               {error && <p className="text-sm text-madder">{error}</p>}
             </div>
           </form>
+
+          <RelatedDocuments
+            key={document.id}
+            documentId={document.id}
+            owned={owned}
+            version={document.updated}
+          />
         </div>
 
         {canPreview && previewMounted && (

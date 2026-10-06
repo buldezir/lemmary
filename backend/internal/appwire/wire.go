@@ -83,7 +83,9 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	appapi.RegisterAdminBootstrap(app)
 	appapi.RegisterMCP(app, rt, ft)
 	ngxapi.Register(app, ft)
-	worker.Register(app, rt, backfill, config.WorkerConcurrencyFromEnv())
+	linkEnabled, linkThreshold := config.RelatedLinkingFromEnv()
+	worker.Register(app, rt, backfill, config.WorkerConcurrencyFromEnv(),
+		worker.RelatedLinking{Enabled: linkEnabled, Threshold: linkThreshold, Chunks: ft})
 	// After worker.Register: the documents it creates go through the same
 	// create hooks as an upload, which is what hashes and queues them.
 	dirimport.Register(app, rt, ingestDir)

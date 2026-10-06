@@ -42,14 +42,15 @@ func (s *StepState) forced(stepName string) bool {
 
 // Built per reload rather than once at wiring time: the OCR provider and the
 // extractor are rebuilt whenever an admin changes the settings.
-func buildRegistry(ocrProvider ocr.Provider, aiExtractor ai.Extractor, embedder ai.Embedder) map[string]Step {
+func buildRegistry(ocrProvider ocr.Provider, aiExtractor ai.Extractor, embedder ai.Embedder, linking RelatedLinking) map[string]Step {
 	steps := []Step{
 		&PreviewStep{},
 		&OCRStep{Provider: ocrProvider},
 		&DetectDuplicatesStep{},
-		&ExtractMetadataStep{Extractor: aiExtractor},
+		&ExtractMetadataStep{Extractor: aiExtractor, ExtractReferences: linking.Enabled},
 		&ApplyMetadataStep{},
 		&EmbedStep{Embedder: embedder},
+		&LinkRelatedStep{RelatedLinking: linking},
 	}
 	registry := make(map[string]Step, len(steps))
 	for _, step := range steps {

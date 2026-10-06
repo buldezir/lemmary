@@ -25,8 +25,8 @@ func TestEmbedRunsAfterApplyMetadata(t *testing.T) {
 			if apply < 0 || embed < apply {
 				t.Fatalf("embed at %d must come after apply_metadata at %d in %v", embed, apply, steps)
 			}
-			if embed != len(steps)-1 {
-				t.Fatalf("embed should be the last step in %v", steps)
+			if embed != len(steps)-2 || steps[len(steps)-1] != StepLinkRelated {
+				t.Fatalf("embed then link_related should end %v", steps)
 			}
 		})
 	}
@@ -35,9 +35,8 @@ func TestEmbedRunsAfterApplyMetadata(t *testing.T) {
 func TestImportPreserveStepsEmbed(t *testing.T) {
 	t.Parallel()
 
-	last := ImportPreserveSteps[len(ImportPreserveSteps)-1]
-	if last != StepEmbed {
-		t.Fatalf("ImportPreserveSteps ends with %q, want %q", last, StepEmbed)
+	if tail := ImportPreserveSteps[len(ImportPreserveSteps)-2:]; tail[0] != StepEmbed || tail[1] != StepLinkRelated {
+		t.Fatalf("ImportPreserveSteps ends with %v, want embed then link_related", tail)
 	}
 	for _, step := range ImportPreserveSteps {
 		if step == StepApplyMetadata || step == StepExtractMetadata {

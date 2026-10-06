@@ -23,7 +23,7 @@ var ErrUnsupportedVersion = errors.New("the archive was written by a newer versi
 // Every path is a full entry name; the sidecars are empty when absent.
 type Group struct {
 	// ID is the document id in the instance the archive came from. It is used
-	// to relate documents to each other (duplicate_of), never reused as the id
+	// to relate documents to each other (duplicate_of, related), never reused as the id
 	// of the restored record.
 	ID       string
 	Title    string
