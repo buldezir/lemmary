@@ -48,7 +48,7 @@ func buildRegistry(ocrProvider ocr.Provider, aiExtractor ai.Extractor, embedder 
 		&OCRStep{Provider: ocrProvider},
 		&DetectDuplicatesStep{},
 		&ExtractMetadataStep{Extractor: aiExtractor, ExtractReferences: linking.Enabled},
-		&ApplyMetadataStep{},
+		&ApplyMetadataStep{StoreReferences: linking.Enabled},
 		&EmbedStep{Embedder: embedder},
 		&LinkRelatedStep{RelatedLinking: linking},
 	}

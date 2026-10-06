@@ -94,9 +94,12 @@ func (s *LinkRelatedStep) Run(ctx context.Context, state *StepState) error {
 		return nil
 	}
 	doc.Set("related", related)
-	if err := state.App.Save(doc); err != nil {
+	if err := state.App.Save(doc.IgnoreUnchangedFields(true)); err != nil {
 		return fmt.Errorf("%w: save links: %w", ErrStepSoft, err)
 	}
+	// Without apply_metadata in the job, finishRun saves the job's copy whole,
+	// and would put back the related it was loaded with.
+	state.Document.Set("related", related)
 	return nil
 }
 
@@ -173,16 +176,28 @@ func (s *LinkRelatedStep) similarDocuments(ctx context.Context, app core.App, do
 		return nil, err
 	}
 
-	score := map[string]float64{}
+	candidates := make([]any, 0, len(hits))
 	for _, hit := range hits {
-		if _, seen := score[hit.DocumentID]; seen || hit.DocumentID == doc.Id {
-			continue
+		if hit.DocumentID != doc.Id {
+			candidates = append(candidates, hit.DocumentID)
 		}
-		other, err := documentCentroid(app, hit.DocumentID)
+	}
+	var eligible []string
+	err = app.DB().Select("id").From("documents").
+		Where(dbx.In("id", candidates...)).
+		AndWhere(dbx.HashExp{"duplicate_of": ""}).
+		Column(&eligible)
+	if err != nil {
+		return nil, err
+	}
+
+	score := map[string]float64{}
+	for _, id := range eligible {
+		other, err := documentCentroid(app, id)
 		if err != nil {
 			return nil, err
 		}
-		score[hit.DocumentID] = retrieval.Cosine(centroid, other)
+		score[id] = retrieval.Cosine(centroid, other)
 	}
 	ids := make([]string, 0, len(score))
 	for id, similarity := range score {

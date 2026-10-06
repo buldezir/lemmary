@@ -10,6 +10,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"lemmary/backend/internal/embedstore"
+	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/retrieval"
 	"lemmary/backend/internal/testpb"
 )
@@ -141,11 +142,18 @@ func TestLinkRelatedBySimilarityOfTheDocumentsAverages(t *testing.T) {
 	doc := linkTestDocument(t, app, owner, "statement")
 	near := linkTestDocument(t, app, owner, "reply to the statement")
 	far := linkTestDocument(t, app, owner, "dentist bill")
+	// Embedded before a duplicate scan marked it: its chunks stay in the index.
+	copied := linkTestDocument(t, app, owner, "statement, scanned twice")
+	copied.Set("duplicate_of", doc.Id)
+	if err := app.Save(copied); err != nil {
+		t.Fatal(err)
+	}
 
 	vectors := map[string][][]float32{
-		doc.Id:  {{1, 0}, {0, 1}},
-		near.Id: {{0, 1}, {1, 0}},
-		far.Id:  {{1, 0.1}, {0.9, 0}},
+		doc.Id:    {{1, 0}, {0, 1}},
+		near.Id:   {{0, 1}, {1, 0}},
+		far.Id:    {{1, 0.1}, {0.9, 0}},
+		copied.Id: {{1, 0}, {0, 1}},
 	}
 	index := &retrieval.MemoryChunks{}
 	for id, chunkVectors := range vectors {
@@ -162,7 +170,7 @@ func TestLinkRelatedBySimilarityOfTheDocumentsAverages(t *testing.T) {
 
 	step := &LinkRelatedStep{RelatedLinking{Enabled: true, Threshold: 0.9, Chunks: index}}
 	if got := runLinkRelated(t, app, step, doc); !slices.Equal(got, []string{near.Id}) {
-		t.Fatalf("related = %v, want only %s, whose average matches", got, near.Id)
+		t.Fatalf("related = %v, want only %s, whose average matches and which is no duplicate", got, near.Id)
 	}
 }
 
@@ -184,6 +192,75 @@ func TestLinkRelatedSkipsWhenOffOrADuplicate(t *testing.T) {
 		skip, err := tc.step.ShouldSkip(&StepState{Document: tc.doc})
 		if err != nil || !skip {
 			t.Errorf("%s: ShouldSkip = %v, %v; want a skip", name, skip, err)
+		}
+	}
+}
+
+// A reprocess of link_related alone, and the paperless import, end without
+// apply_metadata, so finishRun saves the job's copy of the document whole.
+func TestLinkRelatedSurvivesTheEndOfAJobWithoutApply(t *testing.T) {
+	app := testpb.Open(t)
+	owner := makeUserForDrain(t, app, "owner@example.com")
+	invoice := linkTestDocument(t, app, owner, "invoice", "INV-2024/0042")
+	receipt := linkTestDocument(t, app, owner, "receipt", "INV-2024/0042")
+	receipt.Set("processing_status", models.DocStatusProcessing)
+
+	state := &StepState{App: app, Document: receipt, Logger: slog.Default()}
+	if err := (&LinkRelatedStep{RelatedLinking{Enabled: true}}).Run(context.Background(), state); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if err := finalizeDocumentWithoutApply(app, state.Document, []string{models.StepLinkRelated}); err != nil {
+		t.Fatalf("finalize: %v", err)
+	}
+
+	stored, err := app.FindRecordById("documents", receipt.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stored.GetStringSlice("related"); !slices.Equal(got, []string{invoice.Id}) {
+		t.Fatalf("related = %v after the job finished, want [%s]", got, invoice.Id)
+	}
+}
+
+// With linking off, extraction never asked for numbers, so an apply has none
+// to write and must not wipe the ones stored while it was on.
+func TestApplyMetadataKeepsReferenceNumbersItWasNotAskedFor(t *testing.T) {
+	app := testpb.Open(t)
+	owner := makeUserForDrain(t, app, "owner@example.com")
+	doc := linkTestDocument(t, app, owner, "invoice", "INV-2024/0042")
+	jobs, err := app.FindCollectionByNameOrId("processing_jobs")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		step *ApplyMetadataStep
+		refs []string
+		want []string
+	}{
+		{&ApplyMetadataStep{}, nil, []string{"INV20240042"}},
+		{&ApplyMetadataStep{StoreReferences: true}, []string{"ORD-5521"}, []string{"ORD5521"}},
+	} {
+		job := core.NewRecord(jobs)
+		job.Set("document", doc.Id)
+		job.Set("status", models.JobStatusRunning)
+		state := &StepState{
+			App:      app,
+			Job:      job,
+			Document: doc,
+			Logger:   slog.Default(),
+			Metadata: &models.ExtractedMetadata{Title: "Invoice", Confidence: 0.9, References: tc.refs},
+		}
+		if err := tc.step.Run(context.Background(), state); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+		stored, err := app.FindRecordById("documents", doc.Id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		if err := stored.UnmarshalJSONField("reference_numbers", &got); err != nil || !slices.Equal(got, tc.want) {
+			t.Fatalf("StoreReferences=%v: reference_numbers = %v (%v), want %v", tc.step.StoreReferences, got, err, tc.want)
 		}
 	}
 }
