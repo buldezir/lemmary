@@ -147,22 +147,28 @@ func TestMCPUploadStoresAPendingDocument(t *testing.T) {
 	owner := makeQueueUser(t, app, "owner@example.com")
 	session := connectMCPWrites(t, app, owner, config.MCPUpload)
 
-	var got mcpDocument
-	res := callMCP(t, session, "upload_document", map[string]any{
-		"filename":       "note.txt",
-		"content_base64": base64.StdEncoding.EncodeToString([]byte("pay the plumber")),
-		"title":          "Plumber note",
-	}, &got)
-	if res.IsError {
-		t.Fatalf("upload: %#v", res.Content)
-	}
-	stored, err := app.FindRecordById("documents", got.ID)
-	if err != nil {
-		t.Fatalf("uploaded document: %v", err)
-	}
-	if stored.GetString("user") != owner || stored.GetString("processing_status") != models.DocStatusPending ||
-		stored.GetString("title") != "Plumber note" || stored.GetString("file") == "" {
-		t.Fatalf("stored = %v", stored.PublicExport())
+	// What tools actually send: the base64 CLI wraps at 76 columns, some
+	// encoders drop the padding, browsers hand over data: URLs. Each body is a
+	// different file, or the duplicate check would refuse the second.
+	for i, encoded := range []string{
+		base64.StdEncoding.EncodeToString([]byte("pay the plumber")),
+		"cGF5IHRoZSBwbHVt\nYmVyIGFnYWlu\n",
+		base64.RawStdEncoding.EncodeToString([]byte("pay the plumber, third time")),
+		"data:text/plain;base64," + base64.StdEncoding.EncodeToString([]byte("pay the plumber, finally")),
+	} {
+		var got mcpDocument
+		res := callMCP(t, session, "upload_document", map[string]any{"filename": "note.txt", "content_base64": encoded}, &got)
+		if res.IsError {
+			t.Fatalf("upload %d: %#v", i, res.Content)
+		}
+		stored, err := app.FindRecordById("documents", got.ID)
+		if err != nil {
+			t.Fatalf("uploaded document %d: %v", i, err)
+		}
+		if stored.GetString("user") != owner || stored.GetString("processing_status") != models.DocStatusPending ||
+			stored.GetString("file") == "" {
+			t.Fatalf("stored %d = %v", i, stored.PublicExport())
+		}
 	}
 
 	for name, args := range map[string]map[string]any{
@@ -172,6 +178,9 @@ func TestMCPUploadStoresAPendingDocument(t *testing.T) {
 		if res := callMCP(t, session, "upload_document", args, nil); !res.IsError {
 			t.Fatalf("%s: expected IsError", name)
 		}
+	}
+	if _, err := decodeMCPFile(base64.StdEncoding.EncodeToString(make([]byte, mcpMaxUploadBytes+1))); err == nil {
+		t.Fatal("a file over the cap was accepted")
 	}
 }
 
@@ -199,13 +208,18 @@ func TestMCPDeleteRemovesOnlyOwnDocuments(t *testing.T) {
 func TestMCPReprocessQueuesOwnDocuments(t *testing.T) {
 	app := bootQueueApp(t)
 	owner := makeQueueUser(t, app, "owner@example.com")
+	other := makeQueueUser(t, app, "other@example.com")
 	failed := makeQueueDocument(t, app, owner, models.DocStatusFailed, "text")
+	foreign := makeQueueDocument(t, app, other, models.DocStatusFailed, "text")
 	session := connectMCPWrites(t, app, owner, config.MCPReprocess)
 
 	var got reprocess.Result
-	res := callMCP(t, session, "reprocess_documents", map[string]any{"ids": []string{failed.Id}, "mode": "extraction"}, &got)
-	if res.IsError || got.Queued != 1 {
+	res := callMCP(t, session, "reprocess_documents", map[string]any{"ids": []string{failed.Id, foreign.Id}, "mode": "extraction"}, &got)
+	if res.IsError || got.Queued != 1 || got.Skipped != 1 {
 		t.Fatalf("result = %#v %#v", got, res.Content)
+	}
+	if jobs, _ := app.FindRecordsByFilter("processing_jobs", "document = {:id}", "", 0, 0, map[string]any{"id": foreign.Id}); len(jobs) != 0 {
+		t.Fatalf("another user's document was queued: %d jobs", len(jobs))
 	}
 	if res := callMCP(t, session, "reprocess_documents", map[string]any{"ids": []string{failed.Id}, "mode": "sideways"}, nil); !res.IsError {
 		t.Fatal("expected an unknown mode to be refused")

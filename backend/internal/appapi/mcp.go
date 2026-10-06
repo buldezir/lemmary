@@ -25,8 +25,11 @@ import (
 const EnvMCPEnabled = "MCP_ENABLED"
 
 const (
-	// mcpMaxBodyBytes fits upload_document's largest file, 20 MB, base64-encoded.
-	mcpMaxBodyBytes = 28 << 20
+	// mcpMaxUploadBytes is upload_document's largest file, below the upload
+	// page's: the whole file travels base64-encoded inside one JSON body,
+	// which mcpMaxBodyBytes has to fit.
+	mcpMaxUploadBytes = 20 << 20
+	mcpMaxBodyBytes   = 28 << 20
 	// mcpTokenTTL is how long a token minted for an agent lasts. Ten years,
 	// like the paperless one: an agent config is written once and never
 	// refreshes. Changing the password invalidates it, as with any token.

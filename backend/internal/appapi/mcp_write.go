@@ -2,7 +2,9 @@ package appapi
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -42,8 +44,7 @@ type mcpReprocessArgs struct {
 
 type mcpUploadArgs struct {
 	Filename      string `json:"filename" jsonschema:"File name with its extension. PDF, JPEG, PNG, WebP or plain text."`
-	ContentBase64 string `json:"content_base64" jsonschema:"The file, base64-encoded; at most 20 MB decoded."`
-	Title         string `json:"title,omitempty" jsonschema:"Title. Left out, extraction picks one."`
+	ContentBase64 string `json:"content_base64" jsonschema:"The file, base64-encoded (wrapped, unpadded or a data: URL are fine); at most 20 MB decoded."`
 }
 
 type mcpDeleteResult struct {
@@ -86,13 +87,13 @@ func addMCPWriteTools(server *mcp.Server, app core.App, userID string, capabilit
 	}
 	if slices.Contains(capabilities, config.MCPUpload) {
 		addMCPTool(server, "upload_document",
-			"Add a file to the archive. It is queued for OCR and extraction, which cost AI usage; "+
+			"Add a file to the archive. It is queued for OCR and extraction, which cost AI usage and set its title and metadata; "+
 				"a file already in the archive is refused with the id of the copy.",
 			func(args mcpUploadArgs) (mcpDocument, error) { return uploadMCPDocument(app, userID, args) })
 	}
 	if slices.Contains(capabilities, config.MCPDelete) {
 		addMCPTool(server, "delete_documents",
-			"Delete documents permanently, with their files. There is no trash and no undo.",
+			"Delete documents permanently, with their files: all of them or, on an error, none. There is no trash and no undo.",
 			func(args mcpIDsArgs) (mcpDeleteResult, error) { return deleteMCPDocuments(app, userID, args.IDs) })
 	}
 	if slices.Contains(capabilities, config.MCPTags) {
@@ -233,9 +234,9 @@ func uploadMCPDocument(app core.App, userID string, args mcpUploadArgs) (mcpDocu
 	if name == "" {
 		return mcpDocument{}, fmt.Errorf("filename is required")
 	}
-	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(args.ContentBase64))
-	if err != nil || len(data) == 0 {
-		return mcpDocument{}, fmt.Errorf("content_base64 must be the file, base64-encoded")
+	data, err := decodeMCPFile(args.ContentBase64)
+	if err != nil {
+		return mcpDocument{}, err
 	}
 	file, err := filesystem.NewFileFromBytes(data, name)
 	if err != nil {
@@ -249,28 +250,55 @@ func uploadMCPDocument(app core.App, userID string, args mcpUploadArgs) (mcpDocu
 	record.Set("user", userID)
 	record.Set("file", file)
 	record.Set("processing_status", models.DocStatusPending)
-	record.Set("title", strings.TrimSpace(args.Title))
 	if err := app.Save(record); err != nil {
 		return mcpDocument{}, err
 	}
 	return mcpDocumentOf(record), nil
 }
 
+// decodeMCPFile takes base64 the way tools write it: wrapped at any width,
+// padded or not, or as a data: URL.
+func decodeMCPFile(content string) ([]byte, error) {
+	content = strings.Join(strings.Fields(content), "")
+	if strings.HasPrefix(content, "data:") {
+		_, content, _ = strings.Cut(content, ",")
+	}
+	data, err := base64.RawStdEncoding.DecodeString(strings.TrimRight(content, "="))
+	if err != nil || len(data) == 0 {
+		return nil, fmt.Errorf("content_base64 must be the file, base64-encoded")
+	}
+	if len(data) > mcpMaxUploadBytes {
+		return nil, fmt.Errorf("the file is %d bytes; at most %d", len(data), mcpMaxUploadBytes)
+	}
+	return data, nil
+}
+
+// deleteMCPDocuments deletes all of them or none, so a failure part-way
+// leaves nothing the caller was not told about.
 func deleteMCPDocuments(app core.App, userID string, ids []string) (mcpDeleteResult, error) {
 	if err := checkMCPBatch(ids); err != nil {
 		return mcpDeleteResult{}, err
 	}
 	out := mcpDeleteResult{Deleted: []string{}, NotFound: []string{}}
-	for _, id := range ids {
-		record, err := findOwnedMCPDocument(app, userID, id)
-		if err != nil {
-			out.NotFound = append(out.NotFound, id)
-			continue
+	err := app.RunInTransaction(func(txApp core.App) error {
+		for _, id := range ids {
+			record, err := findOwnedMCPDocument(txApp, userID, id)
+			if errors.Is(err, errNoOwnedDocument) {
+				out.NotFound = append(out.NotFound, id)
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if err := txApp.Delete(record); err != nil {
+				return err
+			}
+			out.Deleted = append(out.Deleted, record.Id)
 		}
-		if err := app.Delete(record); err != nil {
-			return out, err
-		}
-		out.Deleted = append(out.Deleted, record.Id)
+		return nil
+	})
+	if err != nil {
+		return mcpDeleteResult{}, err
 	}
 	return out, nil
 }
@@ -285,13 +313,17 @@ func checkMCPBatch(ids []string) error {
 	return nil
 }
 
+var errNoOwnedDocument = errors.New("no such document of yours")
+
+// findOwnedMCPDocument tells a missing or someone else's document
+// (errNoOwnedDocument) from a lookup that failed.
 func findOwnedMCPDocument(app core.App, userID, id string) (*core.Record, error) {
 	id = strings.TrimSpace(id)
 	record, err := app.FindRecordById("documents", id)
-	if err != nil || record.GetString("user") != userID {
-		return nil, fmt.Errorf("no document %s of yours", id)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && record.GetString("user") != userID) {
+		return nil, fmt.Errorf("%s: %w", id, errNoOwnedDocument)
 	}
-	return record, nil
+	return record, err
 }
 
 func findOwnedMCPTag(app core.App, userID, name string) (*core.Record, error) {
