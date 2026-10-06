@@ -1,4 +1,5 @@
 import { type SubmitEvent } from 'react'
+import { Link } from '@tanstack/react-router'
 
 import { useAsync } from '../hooks/useAsync'
 import { useSettingsForm } from '../hooks/useSettingsForm'
@@ -45,6 +46,15 @@ export function SettingsMCPPage() {
         <p className="mb-4 text-sm text-ink-soft">
           {tNode('settingsMcp.intro', {
             link: <DocsLink href={docsUrl('mcp.html')}>{t('account.mcpLink')}</DocsLink>,
+          })}
+        </p>
+        <p className="mb-4 text-sm text-ink-soft">
+          {tNode('settingsMcp.connect', {
+            link: (
+              <Link to="/account" hash="agents" className="underline hover:text-oxblood">
+                {t('settingsMcp.accountLink')}
+              </Link>
+            ),
           })}
         </p>
         {status?.enabled === false && (

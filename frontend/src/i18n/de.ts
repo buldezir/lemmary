@@ -1126,6 +1126,9 @@ export const de: Catalog = {
   'settingsMcp.title': 'Agentenzugriff (MCP)',
   'settingsMcp.intro':
     'Über MCP verbundene Agenten können die Dokumente ihres Benutzers immer durchsuchen und lesen. Jeder Schalter unten erlaubt ihnen zusätzlich, das Archiv zu ändern, für die Token aller Benutzer. {link}',
+  'settingsMcp.connect':
+    'Um einen Agenten zu verbinden, erstellen Sie unter {link} ein Token und kopieren seine Konfiguration.',
+  'settingsMcp.accountLink': 'Konto → Agenten',
   'settingsMcp.edit': 'Metadaten bearbeiten',
   'settingsMcp.editHint':
     'Titel, Zusammenfassung, Datum, Dokumenttyp, Korrespondent und Tags sowie Dokumente als geprüft markieren.',

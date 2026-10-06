@@ -302,7 +302,7 @@ function AgentsSection() {
   }
 
   return (
-    <section className={sectionClassName}>
+    <section id="agents" className={sectionClassName}>
       <h2 className={sectionTitleClassName}>{t('account.agents')}</h2>
       <p className={`${fieldHintClassName} mb-4`}>
         {tNode('account.agentsHint', {

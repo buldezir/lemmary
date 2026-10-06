@@ -1065,6 +1065,8 @@ export const en = {
   'settingsMcp.title': 'Agent access (MCP)',
   'settingsMcp.intro':
     'Agents connected over MCP can always search and read their user’s documents. Each switch below also lets them change the archive, for every user’s token. {link}',
+  'settingsMcp.connect': 'To connect an agent, create a token and copy its configuration under {link}.',
+  'settingsMcp.accountLink': 'Account → Agents',
   'settingsMcp.edit': 'Edit metadata',
   'settingsMcp.editHint':
     'Title, summary, date, document type, correspondent and tags, and marking documents reviewed.',
