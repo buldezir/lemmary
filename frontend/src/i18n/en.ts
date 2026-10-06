@@ -1042,6 +1042,7 @@ export const en = {
   'settings.tabWorker': 'Worker',
   'settings.tabDuplicates': 'Duplicates',
   'settings.tabIngest': 'Ingest',
+  'settings.tabMcp': 'MCP',
 
   'management.title': 'Management',
   'management.intro': 'Accounts on this instance. Admin only.',
@@ -1061,6 +1062,21 @@ export const en = {
     'Colors the logo mark and the accents around it. Pick a swatch or paste a hex value such as {accent}.',
 
   'settingsDuplicates.thresholdInvalid': 'Near-duplicate threshold must be between 0 and 1',
+  'settingsMcp.title': 'Agent access (MCP)',
+  'settingsMcp.intro':
+    'Agents connected over MCP can always search and read their user’s documents. Each switch below also lets them change the archive, for every user’s token. {link}',
+  'settingsMcp.edit': 'Edit metadata',
+  'settingsMcp.editHint':
+    'Title, summary, date, document type, correspondent and tags, and marking documents reviewed.',
+  'settingsMcp.reprocess': 'Reprocess documents',
+  'settingsMcp.reprocessHint':
+    'Runs OCR and extraction again. Costs AI usage and overwrites metadata, hand edits included.',
+  'settingsMcp.upload': 'Upload documents',
+  'settingsMcp.uploadHint': 'Adds files up to 20 MB. Each is processed, which costs AI usage.',
+  'settingsMcp.delete': 'Delete documents',
+  'settingsMcp.deleteHint': 'Permanent: there is no trash and no undo.',
+  'settingsMcp.tags': 'Manage tags',
+  'settingsMcp.tagsHint': 'Create, rename and delete tags.',
   'settingsDuplicates.title': 'Duplicates',
   'settingsDuplicates.enable': 'Enable near-duplicate detection after OCR (re-scans)',
   'settingsDuplicates.threshold': 'Near-duplicate threshold (0–1)',
@@ -1397,7 +1413,7 @@ export const en = {
   'account.copyFailed': 'Could not copy; select the text and copy it yourself.',
   'account.agents': 'Agents',
   'account.agentsHint':
-    'Let Claude Code, Cursor or another agent search and read this archive directly over MCP. The agent sees only your documents. {link}',
+    'Let Claude Code, Cursor or another agent search and read this archive directly over MCP. The agent sees only your documents, and changes them only as far as an admin allows in Settings → MCP. {link}',
   'account.mcpLink': 'Read about the tools it gets.',
   'account.mcpOff':
     'The MCP endpoint is switched off on this instance ({env}). An admin can turn it back on.',

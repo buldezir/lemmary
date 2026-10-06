@@ -41,6 +41,7 @@ func settingsRecordForTest(t *testing.T) *core.Record {
 		&core.TextField{Name: "imap_move_folder"},
 		&core.DateField{Name: "imap_since"},
 		&core.SelectField{Name: "imap_skip_types", Values: []string{"pdf", "office", "image", "text"}, MaxSelect: 4},
+		&core.SelectField{Name: "mcp_capabilities", Values: config.MCPCapabilities, MaxSelect: 5},
 	)
 	record := core.NewRecord(collection)
 	record.Id = config.SingletonID
@@ -292,6 +293,31 @@ func TestPatchTurnsAlwaysRequireReviewOnAndOff(t *testing.T) {
 	}
 	if record.GetBool("always_require_review") {
 		t.Fatal("always_require_review stayed on after a patch turning it off")
+	}
+}
+
+func TestPatchMCPCapabilities(t *testing.T) {
+	t.Parallel()
+	record := settingsRecordForTest(t)
+
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{
+		MCPCapabilities: &[]string{config.MCPEdit, config.MCPTags},
+	}); err != nil {
+		t.Fatalf("applySettingsPatch: %v", err)
+	}
+	if got := record.GetStringSlice("mcp_capabilities"); !slices.Equal(got, []string{"edit", "tags"}) {
+		t.Fatalf("mcp_capabilities = %v", got)
+	}
+
+	err := applySettingsPatch(nil, record, settingsPatchRequest{MCPCapabilities: &[]string{"admin"}})
+	if err == nil {
+		t.Fatal("an unknown capability was accepted")
+	}
+	if got := record.GetStringSlice("mcp_capabilities"); !slices.Equal(got, []string{"edit", "tags"}) {
+		t.Fatalf("a refused patch changed mcp_capabilities to %v", got)
+	}
+	if (settingsPatchRequest{MCPCapabilities: &[]string{}}).touchesManaged() {
+		t.Fatal("mcp_capabilities counts as managed; a hosted tenant could not set it")
 	}
 }
 

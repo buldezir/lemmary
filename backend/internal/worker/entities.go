@@ -355,9 +355,9 @@ func requireOwnedRelation(app core.App, collection, label, id, userID string) er
 	return nil
 }
 
-// Import paths only (archive restore, paperless-ngx import, the ngx REST API):
-// those move data the user already owns, so creating a tag there is the user
-// acting. The extraction pipeline deliberately uses matchTags instead.
+// Import paths only (archive restore, paperless-ngx import, the ngx REST API)
+// and the MCP create_tag tool an admin switched on: there creating a tag is
+// the user acting. The extraction pipeline deliberately uses matchTags instead.
 func EnsureTag(app core.App, userID, name string) (id string, created bool, err error) {
 	userID = strings.TrimSpace(userID)
 	name = strings.TrimSpace(name)

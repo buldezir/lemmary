@@ -28,6 +28,7 @@ describe('route tree', () => {
       '/settings/worker',
       '/settings/duplicates',
       '/settings/ingest',
+      '/settings/mcp',
       '/management',
       '/maintenance',
       '/import',

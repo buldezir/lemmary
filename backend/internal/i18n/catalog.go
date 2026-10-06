@@ -933,6 +933,10 @@ var catalog = map[string]map[string]string{
 		"de": "job_id ist erforderlich.",
 		"ru": "Требуется job_id.",
 	},
+	"mcp_capabilities must be edit, reprocess, upload, delete or tags": {
+		"de": "mcp_capabilities muss edit, reprocess, upload, delete oder tags sein",
+		"ru": "mcp_capabilities должен быть edit, reprocess, upload, delete или tags",
+	},
 	"near_duplicate_threshold must be between 0 and 1": {
 		"de": "near_duplicate_threshold muss zwischen 0 und 1 liegen",
 		"ru": "near_duplicate_threshold должен быть от 0 до 1",

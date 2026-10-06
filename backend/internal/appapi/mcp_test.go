@@ -18,13 +18,18 @@ import (
 
 func connectMCP(t *testing.T, tools agentTools, docs ...mcpDocs) *mcp.ClientSession {
 	t.Helper()
-	ctx := context.Background()
-	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	var plain mcpDocs
 	if len(docs) > 0 {
 		plain = docs[0]
 	}
-	if _, err := newMCPServer(tools, plain).Connect(ctx, serverTransport, nil); err != nil {
+	return connectMCPServer(t, newMCPServer(tools, plain))
+}
+
+func connectMCPServer(t *testing.T, server *mcp.Server) *mcp.ClientSession {
+	t.Helper()
+	ctx := context.Background()
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	if _, err := server.Connect(ctx, serverTransport, nil); err != nil {
 		t.Fatalf("connect server: %v", err)
 	}
 	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil)
