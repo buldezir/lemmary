@@ -12,6 +12,7 @@ on:
       - "frontend/package.json"
       - "frontend/pnpm-lock.yaml"
       - "frontend/pnpm-workspace.yaml"
+  workflow_dispatch:
 
 permissions: {}
 
@@ -19,6 +20,6 @@ jobs:
   dispatch:
     runs-on: ubuntu-latest
     steps:
-      - run: gh workflow run docker.yml --repo lemmary/lemmary-landing
+      - run: gh workflow run docker.yml --repo lemmary/lemmary-landing --ref main
         env:
           GH_TOKEN: ${{ secrets.LANDING_DISPATCH_TOKEN }}
