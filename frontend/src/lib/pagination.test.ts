@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pageNumbers } from './pagination'
+import { pageNumbers, parsePageSize } from './pagination'
 
 describe('pageNumbers', () => {
   it('lists every page when there are seven or fewer', () => {
@@ -19,5 +19,14 @@ describe('pageNumbers', () => {
   it('deduplicates when the window touches the ends', () => {
     expect(pageNumbers(2, 8)).toEqual([1, 2, 3, 8])
     expect(pageNumbers(7, 8)).toEqual([1, 6, 7, 8])
+  })
+})
+
+describe('parsePageSize', () => {
+  it('accepts only the sizes the pager offers', () => {
+    expect(parsePageSize('48')).toBe(48)
+    expect(parsePageSize('13')).toBeUndefined()
+    expect(parsePageSize('96')).toBeUndefined()
+    expect(parsePageSize('')).toBeUndefined()
   })
 })

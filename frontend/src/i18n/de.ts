@@ -397,6 +397,7 @@ export const de: Catalog = {
   'pagination.label': 'Seitennavigation',
   'pagination.previous': 'Zurück',
   'pagination.next': 'Weiter',
+  'pagination.perPage': 'Pro Seite',
 
   'limitsUsage.usedOf': '{used} von {limit}',
 

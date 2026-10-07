@@ -10,3 +10,10 @@ export function pageNumbers(current: number, total: number): number[] {
   const pages = new Set<number>([1, total, current, current - 1, current + 1])
   return [...pages].filter((page) => page >= 1 && page <= total).sort((a, b) => a - b)
 }
+
+export const PAGE_SIZES = [12, 24, 48]
+
+/** A stored page size, if it is still one the pager offers. */
+export function parsePageSize(stored: string): number | undefined {
+  return PAGE_SIZES.find((size) => String(size) === stored)
+}

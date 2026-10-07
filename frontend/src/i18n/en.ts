@@ -379,6 +379,7 @@ export const en = {
   'pagination.label': 'Pagination',
   'pagination.previous': 'Previous',
   'pagination.next': 'Next',
+  'pagination.perPage': 'Per page',
 
   'limitsUsage.usedOf': '{used} of {limit}',
 

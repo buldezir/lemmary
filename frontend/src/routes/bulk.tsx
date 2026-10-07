@@ -7,7 +7,6 @@ import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
 import { tagKey } from '../lib/tagSuggestions'
 import { useAsync } from '../hooks/useAsync'
 import {
-  DOCUMENT_PAGE_SIZE,
   useDocumentFilterOptions,
   useDocumentList,
   type DocumentList,
@@ -73,7 +72,8 @@ export function BulkActionsPage() {
               page={list.page}
               totalPages={list.totalPages}
               totalItems={list.totalItems}
-              pageSize={DOCUMENT_PAGE_SIZE}
+              pageSize={list.pageSize}
+              onPageSizeChange={list.changePageSize}
               onPageChange={(next) => updateQuery({ page: next })}
             />
           </>

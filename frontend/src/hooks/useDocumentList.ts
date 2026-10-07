@@ -28,10 +28,10 @@ import {
 } from '../lib/documentQuery'
 import { onDocumentsChanged } from '../lib/documentEvents'
 import { REPROCESS_MODE_LABELS, type ProcessingJobRecord, type ReprocessMode } from '../lib/processing'
+import { PAGE_SIZES, parsePageSize } from '../lib/pagination'
 import { useAsync } from './useAsync'
+import { useStoredValue } from './useStoredFlag'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-
-export const DOCUMENT_PAGE_SIZE = 12
 
 export type DocumentListRoute = '/' | '/inbox' | '/bulk'
 
@@ -105,6 +105,7 @@ export function useDocumentList({
   const [deleting, setDeleting] = useState(false)
   const [runningAction, setRunningAction] = useState(false)
   const [libraryVersion, setLibraryVersion] = useState(0)
+  const [pageSize, setPageSize] = useStoredValue('lemmary.pageSize', PAGE_SIZES[0], parsePageSize)
 
   // URL -> box. Adjusted during render rather than in an effect, so the box
   // never paints one frame of the old term. syncedSearch makes this fire on a
@@ -174,7 +175,7 @@ export function useDocumentList({
           ? await searchDocuments({
               q: text,
               page,
-              perPage: DOCUMENT_PAGE_SIZE,
+              perPage: pageSize,
               status: statusFilter,
               documentType: documentTypeFilter,
               correspondent: correspondentFilter,
@@ -185,7 +186,7 @@ export function useDocumentList({
               untagged,
               owner: ownerFilter,
             })
-          : await pb.collection('documents').getList<DocumentRecord>(page, DOCUMENT_PAGE_SIZE, {
+          : await pb.collection('documents').getList<DocumentRecord>(page, pageSize, {
               sort: '-created',
               expand: DOCUMENT_EXPAND,
               ...(filter ? { filter } : {}),
@@ -257,6 +258,7 @@ export function useDocumentList({
     }
   }, [
     page,
+    pageSize,
     statusFilter,
     dateFrom,
     dateTo,
@@ -502,6 +504,11 @@ export function useDocumentList({
     documents,
     jobs,
     page,
+    pageSize,
+    changePageSize: (size: number) => {
+      setPageSize(size)
+      updateQuery({ page: 1 }, true)
+    },
     totalItems,
     totalPages,
     loading,

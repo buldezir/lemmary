@@ -1,4 +1,4 @@
-import { DOCUMENT_PAGE_SIZE, type DocumentList } from '../hooks/useDocumentList'
+import { type DocumentList } from '../hooks/useDocumentList'
 import { DocumentBulkBar, type BulkMode } from './DocumentBulkBar'
 import { DocumentCard } from './DocumentCard'
 import { Pagination } from './Pagination'
@@ -39,6 +39,8 @@ export function DocumentGrid({
     onDeleteSelected,
     filterByTag,
     page,
+    pageSize,
+    changePageSize,
     totalPages,
     totalItems,
     updateQuery,
@@ -85,7 +87,8 @@ export function DocumentGrid({
         page={page}
         totalPages={totalPages}
         totalItems={totalItems}
-        pageSize={DOCUMENT_PAGE_SIZE}
+        pageSize={pageSize}
+        onPageSizeChange={changePageSize}
         onPageChange={(next) => updateQuery({ page: next })}
       />
     </>

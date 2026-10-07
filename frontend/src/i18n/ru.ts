@@ -439,6 +439,7 @@ export const ru: Catalog = {
   'pagination.label': 'Страницы',
   'pagination.previous': 'Назад',
   'pagination.next': 'Вперёд',
+  'pagination.perPage': 'На странице',
 
   'limitsUsage.usedOf': '{used} из {limit}',
 

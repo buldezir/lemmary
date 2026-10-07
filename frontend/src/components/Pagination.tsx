@@ -1,5 +1,6 @@
 import { t } from '../i18n'
-import { pageNumbers } from '../lib/pagination'
+import { PAGE_SIZES, pageNumbers } from '../lib/pagination'
+import { selectClassName } from './ui'
 
 type Props = {
   page: number
@@ -7,13 +8,22 @@ type Props = {
   totalItems: number
   pageSize: number
   onPageChange: (page: number) => void
+  onPageSizeChange: (size: number) => void
 }
 
 const buttonClassName =
   'rounded-xs border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-ink-muted transition-colors hover:bg-bright disabled:cursor-not-allowed disabled:opacity-40'
 
-export function Pagination({ page, totalPages, totalItems, pageSize, onPageChange }: Props) {
-  if (totalPages <= 1) {
+export function Pagination({
+  page,
+  totalPages,
+  totalItems,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+}: Props) {
+  // Kept while the list fits on one page at a larger size, so it can be shrunk again.
+  if (totalItems <= PAGE_SIZES[0]) {
     return null
   }
 
@@ -23,52 +33,70 @@ export function Pagination({ page, totalPages, totalItems, pageSize, onPageChang
 
   return (
     <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
-      <p className="font-mono text-xs tabular-nums text-ink-soft">
-        {t('pagination.showing', { start, end, total: totalItems })}
-      </p>
+      <div className="flex items-center gap-3">
+        <p className="font-mono text-xs tabular-nums text-ink-soft">
+          {t('pagination.showing', { start, end, total: totalItems })}
+        </p>
+        <label className="flex items-center gap-2 text-xs text-ink-soft">
+          {t('pagination.perPage')}
+          <select
+            value={pageSize}
+            onChange={(event) => onPageSizeChange(Number(event.target.value))}
+            className={selectClassName}
+          >
+            {PAGE_SIZES.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
 
-      <nav aria-label={t('pagination.label')} className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => onPageChange(page - 1)}
-          disabled={page <= 1}
-          className={buttonClassName}
-        >
-          {t('pagination.previous')}
-        </button>
+      {totalPages > 1 && (
+        <nav aria-label={t('pagination.label')} className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => onPageChange(page - 1)}
+            disabled={page <= 1}
+            className={buttonClassName}
+          >
+            {t('pagination.previous')}
+          </button>
 
-        {pages.map((pageNumber, index) => {
-          const previous = pages[index - 1]
-          const showEllipsis = previous !== undefined && pageNumber - previous > 1
+          {pages.map((pageNumber, index) => {
+            const previous = pages[index - 1]
+            const showEllipsis = previous !== undefined && pageNumber - previous > 1
 
-          return (
-            <span key={pageNumber} className="flex items-center gap-1">
-              {showEllipsis && <span className="px-1 text-sm text-ink-faint">…</span>}
-              <button
-                type="button"
-                onClick={() => onPageChange(pageNumber)}
-                aria-current={pageNumber === page ? 'page' : undefined}
-                className={`min-w-9 rounded-xs px-2 py-1.5 text-sm font-medium transition-colors ${
-                  pageNumber === page
-                    ? 'bg-ink text-paper hover:bg-oxblood'
-                    : 'text-ink-muted hover:text-oxblood'
-                }`}
-              >
-                {pageNumber}
-              </button>
-            </span>
-          )
-        })}
+            return (
+              <span key={pageNumber} className="flex items-center gap-1">
+                {showEllipsis && <span className="px-1 text-sm text-ink-faint">…</span>}
+                <button
+                  type="button"
+                  onClick={() => onPageChange(pageNumber)}
+                  aria-current={pageNumber === page ? 'page' : undefined}
+                  className={`min-w-9 rounded-xs px-2 py-1.5 text-sm font-medium transition-colors ${
+                    pageNumber === page
+                      ? 'bg-ink text-paper hover:bg-oxblood'
+                      : 'text-ink-muted hover:text-oxblood'
+                  }`}
+                >
+                  {pageNumber}
+                </button>
+              </span>
+            )
+          })}
 
-        <button
-          type="button"
-          onClick={() => onPageChange(page + 1)}
-          disabled={page >= totalPages}
-          className={buttonClassName}
-        >
-          {t('pagination.next')}
-        </button>
-      </nav>
+          <button
+            type="button"
+            onClick={() => onPageChange(page + 1)}
+            disabled={page >= totalPages}
+            className={buttonClassName}
+          >
+            {t('pagination.next')}
+          </button>
+        </nav>
+      )}
     </div>
   )
 }
