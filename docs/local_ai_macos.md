@@ -38,8 +38,9 @@ any OpenAI-compatible `/v1/embeddings`) and OCR its Local OCR SDK
 ## Host requirements
 
 - Apple Silicon Mac. The reference machine is a Mac mini M4 (4P + 6E cores,
-  10-core GPU) with 16 GB, on macOS 26. With both services loaded, 16 GB
-  leaves room for a CI runner or similar alongside.
+  10-core GPU) with 16 GB, on macOS 26 and later 27.0. With both services
+  loaded, 16 GB leaves room for a CI runner or similar alongside. macOS 27.0
+  needs the [ocrmac patch](#_4-ocr-patch-ocrmac-against-the-vision-hang).
 - A stable IP. If the Mac has both wired and Wi-Fi addresses, use the wired
   one; the services listen on all interfaces.
 - The services are **LaunchAgents**, so they run inside a user's login
@@ -67,6 +68,7 @@ any OpenAI-compatible `/v1/embeddings`) and OCR its Local OCR SDK
 ```
 ~/ai/
   models/bge-m3-f16.gguf        embeddings model (1.1 GB)
+  bin/docling-watchdog.py       OCR watchdog
   docling/                      docling-serve working directory
   embeddings/embtest.py         embeddings smoke test / benchmark
   logs/                         service logs
@@ -74,6 +76,7 @@ any OpenAI-compatible `/v1/embeddings`) and OCR its Local OCR SDK
 ~/.cache/huggingface/                     docling layout/table models (~0.5 GB)
 ~/Library/LaunchAgents/com.example.llama-embeddings.plist
 ~/Library/LaunchAgents/com.example.docling-serve.plist
+~/Library/LaunchAgents/com.example.docling-watchdog.plist
 ```
 
 ## Installation
@@ -222,6 +225,288 @@ The first conversion downloads docling's layout and table models (about
 The log should show `Auto OCR model selected ocrmac.` and
 `Accelerator device: 'mps'`.
 
+### 4. OCR: patch ocrmac against the Vision hang
+
+On macOS 27.0 (build 26A428), Apple Vision's accurate text recognizer
+sometimes never returns. It hangs when explicit recognition languages and
+language correction are both set, which is how docling calls it through
+`ocrmac`. Nothing is logged and no error comes back. Because Vision runs one
+recognition at a time per process, every later OCR request queues behind the
+stuck one. docling-serve keeps answering `/health`, so launchd never restarts
+it, and Lemmary's OCR jobs fail one after another on `OCR_TIMEOUT_SEC`.
+
+It isn't tied to the document: the image that hung went through on the next
+try. Forcing Vision onto the CPU or GPU hangs as well, so it isn't the Neural
+Engine either. A stress test calling Vision directly, without docling, hung
+within 7 to 431 calls.
+
+Turning off language correction avoids it. With the patch the same stress
+test ran 10,000 calls without a hang, and the text from German invoices was
+identical. `ocrmac` has no option for it, so patch the installed copy:
+
+```sh
+~/.local/share/uv/tools/docling-serve/bin/python - <<'EOF'
+import ocrmac.ocrmac as m
+p, anchor = m.__file__, "            req.setRecognitionLevel_(0)\n"
+s = open(p).read()
+if "setUsesLanguageCorrection_(False)" in s:
+    print("already patched")
+else:
+    assert s.count(anchor) == 1, "ocrmac changed upstream, patch it by hand"
+    open(p, "w").write(s.replace(anchor, anchor + "\n        req.setUsesLanguageCorrection_(False)\n"))
+    print("patched", p)
+EOF
+launchctl kickstart -k gui/$(id -u)/com.example.docling-serve
+```
+
+The patch lives in the venv, so `uv tool install ... --force` removes it. The
+watchdog in the next step puts it back. Without the watchdog, rerun the
+snippet after every upgrade. The patch does no harm on macOS versions without
+the bug.
+
+### 5. OCR: watchdog
+
+The patch prevents the known hang. The watchdog also recovers from any other
+one, and keeps the patch in place across upgrades. A LaunchAgent runs it every
+minute. On each run it:
+
+- re-applies the ocrmac patch if an upgrade removed it, then restarts
+  docling-serve as soon as no conversion is running;
+- restarts docling-serve when a conversion has been running for 2 minutes
+  while the server used almost no CPU (under 2 s since the previous run), or
+  for 20 minutes no matter what. Before restarting a hung server it saves a
+  3-second `sample` of its threads to `~/ai/logs/docling-hang-*.sample` and
+  keeps the last three.
+
+It reads the in-flight conversions from docling-serve's log, so the plist
+above must keep writing to `~/ai/logs/docling-serve.log`. A restart drops the
+conversion that was running; Lemmary marks that document failed (see
+[Troubleshooting](#troubleshooting)).
+
+Save this as `~/ai/bin/docling-watchdog.py` and make it executable
+(`chmod +x`):
+
+```python
+#!/usr/bin/python3
+"""Watchdog for docling-serve with the ocrmac (Apple Vision) OCR engine.
+
+Run every minute by a LaunchAgent. On each run it:
+
+1. Makes sure ocrmac is patched to disable Vision's language correction (it is
+   lost whenever `uv tool install/upgrade docling-serve` rebuilds the venv), and
+   restarts docling-serve once it is idle if the running server predates the
+   patch.
+2. Restarts docling-serve when a task hangs: it has been "processing" for
+   >= STALL_SEC while the server burned almost no CPU since the previous run,
+   or for >= HARD_SEC regardless.
+
+Why: on macOS 27.0 VNRecognizeTextRequest (accurate, revision 3, explicit
+languages, language correction on) intermittently never returns. docling-serve
+keeps answering /health, so launchd's KeepAlive never notices.
+"""
+import glob, json, os, re, subprocess, sys, time
+
+LABEL = os.environ.get("WD_LABEL", "com.example.docling-serve")
+HOME = os.path.expanduser("~")
+LOG = os.environ.get("WD_LOG", f"{HOME}/ai/logs/docling-serve.log")
+OUT = f"{HOME}/ai/logs/docling-watchdog.log"
+STATE = os.environ.get("WD_STATE", f"{HOME}/ai/docling/.watchdog-state.json")
+OCRMAC_GLOB = os.environ.get("WD_OCRMAC_GLOB") or f"{HOME}/.local/share/uv/tools/docling-serve/lib/python3*/site-packages/ocrmac/ocrmac.py"
+STALL_SEC = int(os.environ.get("WD_STALL_SEC", 120))
+HARD_SEC = int(os.environ.get("WD_HARD_SEC", 1200))
+CPU_IDLE_SEC = float(os.environ.get("WD_CPU_IDLE_SEC", 2.0))
+DRY_RUN = os.environ.get("WD_DRY_RUN") == "1"
+TAIL_BYTES = 8 * 1024 * 1024
+
+UUID = r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+RE_START = re.compile(r"processing task " + UUID)
+RE_END = re.compile(r"(?:completed job|failed to process job) " + UUID)
+
+PATCH_ANCHOR = "            req.setRecognitionLevel_(0)\n"
+PATCH_LINE = "        req.setUsesLanguageCorrection_(False)\n"
+PATCH = (
+    "\n"
+    "        # Local patch: on macOS 27.0 the accurate revision-3 recognizer with\n"
+    "        # explicit languages + language correction intermittently deadlocks\n"
+    "        # inside TextRecognition. Re-applied by docling-watchdog.py.\n"
+    + PATCH_LINE
+)
+
+
+def say(msg):
+    with open(OUT, "a") as f:
+        f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + msg + "\n")
+
+
+def ensure_ocrmac_patch():
+    """Patch every ocrmac.py in the docling-serve venv; return their paths."""
+    paths = glob.glob(OCRMAC_GLOB)
+    for path in paths:
+        with open(path) as f:
+            src = f.read()
+        if PATCH_LINE in src:
+            continue
+        if src.count(PATCH_ANCHOR) != 1 or "setUsesLanguageCorrection_" in src:
+            # ocrmac changed upstream; warn once per file version, never loop.
+            marker = path + ".patch-warned"
+            stamp = str(os.path.getmtime(path))
+            if not os.path.exists(marker) or open(marker).read() != stamp:
+                say(f"PATCH FAILED: anchor not found in {path}; patch ocrmac by hand")
+                with open(marker, "w") as f:
+                    f.write(stamp)
+            continue
+        say(f"PATCH: re-applying ocrmac language-correction patch to {path}")
+        if DRY_RUN:
+            continue
+        tmp = path + ".wd-tmp"
+        with open(tmp, "w") as f:
+            f.write(src.replace(PATCH_ANCHOR, PATCH_ANCHOR + PATCH))
+        os.chmod(tmp, os.stat(path).st_mode & 0o7777)
+        os.replace(tmp, path)
+    return paths
+
+
+def server_pid():
+    out = subprocess.run(["launchctl", "list", LABEL], capture_output=True, text=True).stdout
+    m = re.search(r'"PID" = (\d+);', out)
+    return int(m.group(1)) if m else None
+
+
+def ps_field(pid, field):
+    return subprocess.run(["ps", "-o", f"{field}=", "-p", str(pid)],
+                          capture_output=True, text=True, env={"LC_ALL": "C"}).stdout.strip()
+
+
+def cpu_seconds(pid):
+    t = ps_field(pid, "time")
+    if not t:
+        return None
+    days, _, t = t.rpartition("-")
+    secs = 0.0
+    for part in t.split(":"):
+        secs = secs * 60 + float(part)
+    return secs + int(days or 0) * 86400
+
+
+def started_at(pid):
+    t = ps_field(pid, "lstart")
+    return time.mktime(time.strptime(t, "%a %b %d %H:%M:%S %Y")) if t else None
+
+
+def in_flight(pid):
+    with open(LOG, "rb") as f:
+        f.seek(max(0, os.path.getsize(LOG) - TAIL_BYTES))
+        text = f.read().decode("utf-8", "replace")
+    # Only look at the log of the current server process.
+    marker = f"Started server process [{pid}]"
+    idx = text.rfind(marker)
+    if idx >= 0:
+        text = text[idx:]
+    started = RE_START.findall(text)
+    ended = set(RE_END.findall(text))
+    return [t for t in dict.fromkeys(started) if t not in ended]
+
+
+def restart(pid, kind, reason):
+    say(f"{kind}: {reason}; restarting {LABEL} (pid {pid})")
+    if DRY_RUN:
+        return
+    if kind == "HUNG":
+        sample = f"{HOME}/ai/logs/docling-hang-{time.strftime('%Y%m%d-%H%M%S')}.sample"
+        subprocess.run(["sample", str(pid), "3", "-file", sample], capture_output=True)
+        for old in sorted(glob.glob(f"{HOME}/ai/logs/docling-hang-*.sample"))[:-3]:
+            os.remove(old)
+    subprocess.run(["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{LABEL}"], check=False)
+
+
+def main():
+    ocrmac_files = ensure_ocrmac_patch()
+    pid = server_pid()
+    if not pid:
+        return
+    now, cpu = time.time(), cpu_seconds(pid)
+    try:
+        with open(STATE) as f:
+            state = json.load(f)
+    except (OSError, ValueError):
+        state = {}
+    if state.get("pid") != pid:
+        state = {"pid": pid, "seen": {}}
+
+    tasks = in_flight(pid)
+    seen = {t: state["seen"].get(t, now) for t in tasks}
+    prev_cpu, prev_ts = state.get("cpu"), state.get("ts")
+    oldest = max((now - ts for ts in seen.values()), default=0)
+    cpu_delta = None if prev_cpu is None or cpu is None else cpu - prev_cpu
+
+    action = None
+    if not tasks:
+        # Idle: reload if the running server imported ocrmac before the patch.
+        start = started_at(pid)
+        patched = max((os.path.getmtime(p) for p in ocrmac_files), default=0)
+        if start and patched > start:
+            action = ("RELOAD", "ocrmac.py changed after the server started")
+    elif oldest >= HARD_SEC:
+        action = ("HUNG", f"{len(tasks)} task(s) in flight, oldest {oldest:.0f}s >= {HARD_SEC}s")
+    elif oldest >= STALL_SEC and cpu_delta is not None and cpu_delta < CPU_IDLE_SEC:
+        action = ("HUNG", f"{len(tasks)} task(s) in flight, oldest {oldest:.0f}s, "
+                          f"cpu +{cpu_delta:.2f}s over {now - prev_ts:.0f}s")
+
+    if action:
+        restart(pid, *action)
+        state = {}
+    else:
+        state.update(seen=seen, cpu=cpu, ts=now)
+    with open(STATE, "w") as f:
+        json.dump(state, f)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:  # never let launchd see a crash loop
+        say(f"watchdog error: {e!r}")
+        sys.exit(0)
+```
+
+Create `~/Library/LaunchAgents/com.example.docling-watchdog.plist`. `WD_LABEL`
+is the docling-serve agent's label:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.example.docling-watchdog</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/<USER>/ai/bin/docling-watchdog.py</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>WD_LABEL</key><string>com.example.docling-serve</string>
+  </dict>
+  <key>StartInterval</key><integer>60</integer>
+  <key>RunAtLoad</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/Users/<USER>/ai/logs/docling-watchdog.log</string>
+  <key>StandardErrorPath</key><string>/Users/<USER>/ai/logs/docling-watchdog.log</string>
+</dict>
+</plist>
+```
+
+```sh
+plutil -lint ~/Library/LaunchAgents/com.example.docling-watchdog.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.docling-watchdog.plist
+```
+
+`~/ai/logs/docling-watchdog.log` gets a line only when the watchdog acts:
+`PATCH` when it re-applies the patch, `RELOAD` when it restarts docling-serve
+to load it, `HUNG` when it restarts a stuck server, and `PATCH FAILED` once if
+a new ocrmac no longer matches the patch. An empty log means nothing has
+happened. To try it without restarting anything, run it with `WD_DRY_RUN=1`.
+
 ## Lemmary configuration
 
 On an instance that has already booted, the AI settings in `.env` are ignored
@@ -340,6 +625,7 @@ launchctl bootout gui/$(id -u)/com.example.docling-serve
 
 # logs
 tail -f ~/ai/logs/llama-embeddings.log ~/ai/logs/docling-serve.log
+cat ~/ai/logs/docling-watchdog.log      # only what the watchdog did
 
 # OCR a file the way Lemmary does
 curl -s \
@@ -355,7 +641,10 @@ curl -s \
   `uv tool install --python 3.12 docling-serve==<new> --with ocrmac --force`,
   restart the agent, and run one test conversion. Lemmary sends `ocr_engine`
   only when an engine is bound, which keeps image bumps from turning into
-  422 errors.
+  422 errors. The reinstall removes the
+  [ocrmac patch](#_4-ocr-patch-ocrmac-against-the-vision-hang). Within a
+  minute the watchdog logs `PATCH` and then `RELOAD`; without the watchdog,
+  rerun the patch snippet and restart the agent.
 
 ## Troubleshooting
 
@@ -363,6 +652,16 @@ curl -s \
   whether `<USER>` is logged in (`who` shows `console`).
 - **The first OCR document after a restart times out:** the models were still
   loading. Wait for `/ready` to return 200, or raise `OCR_TIMEOUT_SEC`.
+- **OCR stops working while `/health` still says `ok`:** every OCR job fails on
+  `OCR_TIMEOUT_SEC`, docling-serve sits at 0% CPU, and its log shows
+  `Worker N processing task <id>` with no matching `completed job <id>`. That
+  is the [Vision hang](#_4-ocr-patch-ocrmac-against-the-vision-hang). To
+  confirm, run `sample <pid> 3` on the docling-serve process and look for
+  `VNRecognizeTextRequest` waiting in `_dispatch_sema4_wait`. Restart the agent,
+  then check that the patch is applied (rerunning the snippet prints `already
+  patched`) and that the watchdog is loaded. `WORKER_MAX_RETRIES` defaults to
+  0, so documents that timed out stay failed: use **Reprocess all failed** on
+  the Documents page.
 - **Embeddings fail on very long inputs:** `-ub` is smaller than the input.
   Keep it at or above 6144; 8192 is the model's maximum.
 - **Memory:** together the services use about 8.5 GB. On a 16 GB Mac with
