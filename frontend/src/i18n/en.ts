@@ -100,6 +100,11 @@ export const en = {
     other: 'Surveyed {count} documents for “{query}”',
   },
   'researchSteps.counted': { one: 'Counted {count} document', other: 'Counted {count} documents' },
+  'researchSteps.byType': 'by type',
+  'researchSteps.byCorrespondent': 'by correspondent',
+  'researchSteps.byYear': 'by year',
+  'researchSteps.byMonth': 'by month',
+  'researchSteps.byTag': 'by tag',
   'researchSteps.countedQuery': {
     one: 'Counted {count} document matching “{query}”',
     other: 'Counted {count} documents matching “{query}”',

@@ -9,6 +9,18 @@ describe('applyStep', () => {
     applyStep(steps, { kind: 'search', status: 'done', query: 'plumbing', count: 2 })
     expect(steps).toEqual([{ kind: 'search', label: '“plumbing” — 2 documents found', done: true }])
   })
+
+  // Grouped counts of one set share its total, so the grouping is all that
+  // tells them apart.
+  it('names the grouping of a count', () => {
+    const steps: ResearchStep[] = []
+    applyStep(steps, { kind: 'count', status: 'start', group_by: 'year' })
+    expect(steps[0].label).toBe('Counting documents · by year')
+    applyStep(steps, { kind: 'count', status: 'done', group_by: 'year', count: 2 })
+    expect(steps[0].label).toBe('Counted 2 documents · by year')
+    applyStep(steps, { kind: 'count', status: 'done', count: 2 })
+    expect(steps[1].label).toBe('Counted 2 documents')
+  })
 })
 
 describe('foldSteps', () => {

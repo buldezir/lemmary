@@ -107,6 +107,8 @@ export type ResearchEvent =
       done?: number
       /** A read the helper model summarised instead of passing text through. */
       distilled?: boolean
+      /** A count's grouping: document_type, correspondent, year, month or tag. */
+      group_by?: string
     }
   | { type: 'delta'; content: string }
   // How wide the research conversation has grown, emitted after every

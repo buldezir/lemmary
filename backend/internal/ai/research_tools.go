@@ -470,13 +470,13 @@ func (a *openAISearchAgent) runCountTool(
 	}
 
 	label := strings.TrimSpace(args.Query)
-	emit(ResearchEvent{Type: "step", Kind: "count", Status: "start", Query: label})
+	emit(ResearchEvent{Type: "step", Kind: "count", Status: "start", Query: label, GroupBy: args.GroupBy})
 	result, err := req.Count(ctx, args)
 	if err != nil {
-		emit(ResearchEvent{Type: "step", Kind: "count", Status: "done", Query: label})
+		emit(ResearchEvent{Type: "step", Kind: "count", Status: "done", Query: label, GroupBy: args.GroupBy})
 		return toolExecResult{ID: callID, Name: name, Content: fmt.Sprintf(`{"error":%q}`, err.Error())}, false
 	}
-	emit(ResearchEvent{Type: "step", Kind: "count", Status: "done", Query: label, Count: result.Count})
+	emit(ResearchEvent{Type: "step", Kind: "count", Status: "done", Query: label, Count: result.Count, GroupBy: args.GroupBy})
 
 	encoded, err := json.Marshal(result)
 	if err != nil {

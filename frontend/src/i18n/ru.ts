@@ -134,6 +134,11 @@ export const ru: Catalog = {
     many: 'Подсчитано {count} документов',
     other: 'Подсчитано {count} документа',
   },
+  'researchSteps.byType': 'по типу',
+  'researchSteps.byCorrespondent': 'по корреспонденту',
+  'researchSteps.byYear': 'по годам',
+  'researchSteps.byMonth': 'по месяцам',
+  'researchSteps.byTag': 'по тегам',
   'researchSteps.countedQuery': {
     one: 'Подсчитан {count} документ по запросу «{query}»',
     few: 'Подсчитано {count} документа по запросу «{query}»',

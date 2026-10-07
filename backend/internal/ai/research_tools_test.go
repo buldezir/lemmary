@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -185,6 +186,11 @@ func TestResearchCountsWithoutSearching(t *testing.T) {
 	want := "count:start,count:done,answer:start,answer:done"
 	if kinds := strings.Join(stepKinds(events), ","); kinds != want {
 		t.Fatalf("steps = %s, want %s", kinds, want)
+	}
+	// Grouped counts of one set share a total; the grouping tells them apart.
+	done := events[slices.IndexFunc(events, func(e ResearchEvent) bool { return e.Kind == "count" && e.Status == "done" })]
+	if done.GroupBy != "correspondent" || done.Count != 143 {
+		t.Fatalf("count done event = %+v", done)
 	}
 	content := toolMessageContent(t, h.request(1), "count_documents")
 	if !strings.Contains(content, `"count":143`) || !strings.Contains(content, `"ACME"`) {

@@ -108,6 +108,11 @@ export const de: Catalog = {
     other: '{count} Dokumente auf „{query}“ gesichtet',
   },
   'researchSteps.counted': { one: '{count} Dokument gezählt', other: '{count} Dokumente gezählt' },
+  'researchSteps.byType': 'nach Typ',
+  'researchSteps.byCorrespondent': 'nach Korrespondent',
+  'researchSteps.byYear': 'nach Jahr',
+  'researchSteps.byMonth': 'nach Monat',
+  'researchSteps.byTag': 'nach Tag',
   'researchSteps.countedQuery': {
     one: '{count} Dokument zu „{query}“ gezählt',
     other: '{count} Dokumente zu „{query}“ gezählt',

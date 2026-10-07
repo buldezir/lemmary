@@ -1,4 +1,4 @@
-import { t } from '../i18n'
+import { t, type MessageKey } from '../i18n'
 import type { ResearchStepKind } from './api/ai'
 
 /** One visible research progress line, after folding start/progress/done events. */
@@ -20,6 +20,24 @@ export type StoredResearchStep = {
   count?: number
   done?: number
   distilled?: boolean
+  group_by?: string
+}
+
+const GROUP_LABELS: Record<string, MessageKey> = {
+  document_type: 'researchSteps.byType',
+  correspondent: 'researchSteps.byCorrespondent',
+  year: 'researchSteps.byYear',
+  month: 'researchSteps.byMonth',
+  tag: 'researchSteps.byTag',
+}
+
+/**
+ * Grouped counts of one set all report its total, so the grouping is what tells
+ * four of them apart.
+ */
+function countLabel(label: string, groupBy: string | undefined) {
+  const key = groupBy ? GROUP_LABELS[groupBy] : undefined
+  return key ? `${label} · ${t(key)}` : label
 }
 
 /**
@@ -69,7 +87,10 @@ function startLabel(event: StoredResearchStep) {
     case 'survey':
       return query ? t('researchSteps.surveyingQuery', { query }) : t('researchSteps.surveying')
     case 'count':
-      return query ? t('researchSteps.countingQuery', { query }) : t('researchSteps.counting')
+      return countLabel(
+        query ? t('researchSteps.countingQuery', { query }) : t('researchSteps.counting'),
+        event.group_by,
+      )
     case 'web_search':
       return query ? t('researchSteps.searchingWebQuery', { query }) : t('researchSteps.searchingWeb')
     case 'web_fetch':
@@ -117,7 +138,10 @@ function doneLabel(event: StoredResearchStep, fallback?: string) {
         ? t('researchSteps.surveyedQuery', { count, query })
         : t('researchSteps.surveyed', { count })
     case 'count':
-      return query ? t('researchSteps.countedQuery', { count, query }) : t('researchSteps.counted', { count })
+      return countLabel(
+        query ? t('researchSteps.countedQuery', { count, query }) : t('researchSteps.counted', { count }),
+        event.group_by,
+      )
     case 'web_search':
       return query
         ? t('researchSteps.queryOutcome', { query, outcome: t('researchSteps.results', { count }) })

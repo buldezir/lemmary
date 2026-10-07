@@ -141,6 +141,9 @@ type ResearchEvent struct {
 	// Done is the running count of a step with progress: documents surveyed
 	// so far, out of Count.
 	Done int `json:"done,omitempty"`
+	// GroupBy is a count step's grouping. Grouped counts of one set share its
+	// total, so without it they read as the same count repeated.
+	GroupBy string `json:"group_by,omitempty"`
 	// Distilled marks a read step whose documents the helper model read and
 	// summarised rather than being passed through whole.
 	Distilled  bool          `json:"distilled,omitempty"`

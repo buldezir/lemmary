@@ -271,6 +271,7 @@ type StoredStep struct {
 	Count     int      `json:"count,omitempty"`
 	Done      int      `json:"done,omitempty"`
 	Distilled bool     `json:"distilled,omitempty"`
+	GroupBy   string   `json:"group_by,omitempty"`
 }
 
 // StepFromEvent copies the fields a stored trail needs off a live research
@@ -284,6 +285,7 @@ func StepFromEvent(ev ai.ResearchEvent) StoredStep {
 		Count:     ev.Count,
 		Done:      ev.Done,
 		Distilled: ev.Distilled,
+		GroupBy:   ev.GroupBy,
 	}
 }
 
