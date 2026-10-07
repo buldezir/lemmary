@@ -295,7 +295,11 @@ func (r *agentRetriever) searchChunks(ctx context.Context, ftQuery fulltext.Quer
 	var eligible []string
 	postFilter := false
 	if fulltext.HasDocumentFilters(ftQuery) {
-		ids, complete, err := r.idx.EligibleIDs(ftQuery, maxPreFilterIDs)
+		// A scope always goes down whole: a post-filter over the library's top
+		// passages would miss most of a scope of a few thousand documents.
+		// ponytail: up to maxScopeDocuments terms in one filter; batch the
+		// chunk query if a filter that wide proves slow.
+		ids, complete, err := r.idx.EligibleIDs(ftQuery, max(maxPreFilterIDs, len(ftQuery.IDs)))
 		switch {
 		case err != nil:
 			r.app.Logger().Warn("deep search filter resolution failed", slog.Any("error", err))

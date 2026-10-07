@@ -257,18 +257,22 @@ describe('listMatchingDocumentIds', () => {
     expect(params.get('filter')).toBe('processing_status = "failed"')
   })
 
-  // The export takes every match, not the page on screen.
-  it('walks every page of a search', async () => {
+  // The export and a research scope take every match, not the page on screen,
+  // and from one ranking: paging a search can reorder it between pages.
+  it('asks a search for every id at once', async () => {
     signIn()
+    const urls: string[] = []
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
-        const page = Number(new URL(url).searchParams.get('page'))
-        return Response.json({ page, totalPages: 3, items: [{ id: `doc${page}` }] })
+        urls.push(url)
+        return Response.json({ ids: ['doc1', 'doc2', 'doc3'], totalItems: 3 })
       }),
     )
 
     expect(await listMatchingDocumentIds('invoice', noFilters)).toEqual(['doc1', 'doc2', 'doc3'])
+    expect(urls).toHaveLength(1)
+    expect(new URL(urls[0]).searchParams.get('ids')).toBe('true')
   })
 })
 

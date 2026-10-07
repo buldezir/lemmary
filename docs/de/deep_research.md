@@ -95,8 +95,10 @@ Suche, Tags, Status, Datum, Eigentümer, Typ und Korrespondent. Eingeklappt zeig
 es nur, wie viele Dokumente sie übrig lassen. Ist ein Filter gesetzt, geht die
 Frage mit den IDs genau dieser Dokumente hinaus, und jedes Werkzeug hält sich
 daran: Suchen nach Schlüsselwörtern und nach Bedeutung, Lesen, Erhebungen und
-Zählungen. Dokumente, die eine frühere Runde außerhalb des Umfangs zitiert hat,
-werden ebenfalls nicht in die Runde übernommen.
+Zählungen. Das Modell erfährt, dass die Frage eingegrenzt ist, und meldet eine
+Suche ohne Treffer deshalb nicht als im Archiv fehlend. Dokumente, die eine
+frühere Runde außerhalb des Umfangs zitiert hat, lassen sich nicht erneut lesen;
+was jene Runde bereits gelesen hat, bleibt aber im Gespräch.
 
 Jede Frage nimmt die Filter so, wie sie beim Absenden stehen, und der Chat
 behält die Filter der letzten Frage: Wird er erneut geöffnet, nach einem

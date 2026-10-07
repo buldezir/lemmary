@@ -147,13 +147,15 @@ export function ResearchPage() {
   const { setAdopt } = ws
   useEffect(() => setAdopt(chat.adoptSession), [chat.adoptSession, setAdopt])
 
-  // Adjusted during render rather than in an effect, once per chat opened. A new
-  // chat has no session, and so no filters. Unfolded when there are some, so a
-  // chat says what it is limited to.
-  const openedId = chat.session?.id
-  if (openedId !== scopeRestoredFor) {
-    setScopeRestoredFor(openedId)
-    const saved = parseDocumentQuery(chat.session?.filters ?? {})
+  // Adjusted during render rather than in an effect, once per chat opened: the
+  // one in the URL, once it has loaded, so a chat still loading does not read
+  // as a new one. A new chat has none, and so no filters. Unfolded when there
+  // are some, so a chat says what it is limited to.
+  const wantedId = ws.sessionId
+  const loaded = !wantedId || chat.session?.id === wantedId
+  if (loaded && wantedId !== scopeRestoredFor) {
+    setScopeRestoredFor(wantedId)
+    const saved = parseDocumentQuery((wantedId && chat.session?.filters) || {})
     setScope({ ...saved, q: '' })
     setScopeSearch(saved.q)
     setScopeOpen(hasActiveFilters(saved))
@@ -318,7 +320,7 @@ export function ResearchPage() {
                 ? t('research.scopeCounting')
                 : t('research.scopeCount', { count: scopeCount })
           }
-          disabled={chat.sending}
+          disabled={chat.sending || !loaded}
           open={scopeOpen}
           onOpenChange={setScopeOpen}
         />

@@ -94,6 +94,8 @@ type searchTurn struct {
 	// rather than asking something new.
 	resume bool
 	lang   string
+	// scope is the ids the request limited the turn to, nil for none.
+	scope []string
 }
 
 func (t searchTurn) research() bool { return t.mode == chat.ModeResearch }
@@ -289,6 +291,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		contextWindow:  contextWindowFor(e.Request.Context(), app, rt, snap.Cfg, binding, mode),
 		resume:         req.Resume,
 		lang:           i18n.FromRequest(e.Request),
+		scope:          req.Scope,
 	}, false, nil
 }
 

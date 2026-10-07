@@ -175,6 +175,47 @@ func hitsFor(ids ...string) []DocumentHit {
 	return hits
 }
 
+// The model learns the turn is scoped from the question it is sent, while the
+// tools' default focus and the stored thread keep the question as asked.
+func TestResearchTellsTheModelItsScope(t *testing.T) {
+	t.Parallel()
+	h, agent := newResearchAgent(t,
+		scriptedTurn{toolCalls: []scriptedToolCall{{name: "read_documents", args: `{"ids":["doc1"]}`}}},
+		scriptedTurn{content: "ready"},
+		scriptedTurn{content: "See [Doc doc1](/document/doc1)."},
+	)
+	var question string
+	var recorded []ThreadMessage
+	_, err := agent.Research(context.Background(), ResearchRequest{
+		Thread:         []ThreadMessage{{Role: "user", Content: "how much did I pay?"}},
+		PriorDocuments: hitsFor("doc1"),
+		Scope:          12,
+		Record:         func(m ThreadMessage) { recorded = append(recorded, m) },
+		Search:         func(context.Context, SearchDocumentsArgs) ([]DocumentHit, error) { return nil, nil },
+		Read: func(_ context.Context, req ReadRequest) ([]DocumentContent, error) {
+			question = req.Question
+			return []DocumentContent{{ID: "doc1", Title: "Doc doc1", Text: "Premium 200 EUR"}}, nil
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Research: %v", err)
+	}
+
+	messages, _ := h.request(0)["messages"].([]any)
+	last, _ := messages[len(messages)-1].(map[string]any)
+	if content, _ := last["content"].(string); !strings.Contains(content, "limited this question to 12 selected documents") {
+		t.Fatalf("the question sent carries no scope note: %#v", last)
+	}
+	if question != "how much did I pay?" {
+		t.Fatalf("read focus = %q, want the question as asked", question)
+	}
+	for _, m := range recorded {
+		if strings.Contains(m.Content, "[Scope:") {
+			t.Fatalf("the scope note was stored: %#v", m)
+		}
+	}
+}
+
 func TestResearchSearchesThenReadsThenAnswers(t *testing.T) {
 	t.Parallel()
 	h, agent := newResearchAgent(t,

@@ -519,10 +519,8 @@ export type DocumentSearchList = {
   items: DocumentRecord[]
 }
 
-export async function searchDocuments(opts: {
+type DocumentSearch = {
   q: string
-  page: number
-  perPage: number
   status?: string
   documentType?: string
   correspondent?: string
@@ -532,11 +530,31 @@ export async function searchDocuments(opts: {
   tags?: string[]
   untagged?: boolean
   owner?: DocumentOwner
-}): Promise<DocumentSearchList> {
-  const params = new URLSearchParams()
-  params.set('q', opts.q)
+}
+
+export async function searchDocuments(
+  opts: DocumentSearch & { page: number; perPage: number },
+): Promise<DocumentSearchList> {
+  const params = searchParams(opts)
   params.set('page', String(opts.page))
   params.set('perPage', String(opts.perPage))
+
+  const data = await apiFetch<Partial<DocumentSearchList>>(
+    `/api/app/documents/search?${params}`,
+    { fallbackError: t('documents.searchFailed') },
+  )
+  return {
+    page: data.page ?? opts.page,
+    perPage: data.perPage ?? opts.perPage,
+    totalItems: data.totalItems ?? 0,
+    totalPages: data.totalPages ?? 0,
+    items: data.items ?? [],
+  }
+}
+
+function searchParams(opts: DocumentSearch): URLSearchParams {
+  const params = new URLSearchParams()
+  params.set('q', opts.q)
   if (opts.status && opts.status !== 'all') {
     params.set('status', opts.status)
   }
@@ -564,18 +582,7 @@ export async function searchDocuments(opts: {
   if (opts.untagged) {
     params.set('untagged', 'true')
   }
-
-  const data = await apiFetch<Partial<DocumentSearchList>>(
-    `/api/app/documents/search?${params}`,
-    { fallbackError: t('documents.searchFailed') },
-  )
-  return {
-    page: data.page ?? opts.page,
-    perPage: data.perPage ?? opts.perPage,
-    totalItems: data.totalItems ?? 0,
-    totalPages: data.totalPages ?? 0,
-    items: data.items ?? [],
-  }
+  return params
 }
 
 /** How many documents the list's filters match, by the paths the list itself takes. */
@@ -615,12 +622,14 @@ export async function listMatchingDocumentIds(
     })
     return records.map((record) => record.id)
   }
-  const ids: string[] = []
-  for (let page = 1; ; page++) {
-    const result = await searchDocuments({ ...filters, q, page, perPage: 100 })
-    ids.push(...result.items.map((document) => document.id))
-    if (page >= result.totalPages) return ids
-  }
+  // One request, one ranking: paging would recompute the search's fusion per
+  // page, and a reordered page can skip a match.
+  const params = searchParams({ ...filters, q })
+  params.set('ids', 'true')
+  const data = await apiFetch<{ ids?: string[] }>(`/api/app/documents/search?${params}`, {
+    fallbackError: t('documents.searchFailed'),
+  })
+  return data.ids ?? []
 }
 
 export type DocumentTimeline = {

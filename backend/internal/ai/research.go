@@ -116,6 +116,9 @@ type ResearchRequest struct {
 	// nobody knows it. Reported, never enforced: what fits is the provider's
 	// ruling, and it delivers it by refusing the request.
 	ContextWindow int
+	// Scope is how many documents the user limited this turn to, 0 for the
+	// whole library. The tools enforce it; this only tells the model.
+	Scope int
 }
 
 type ResearchResult struct {
@@ -258,7 +261,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 		record:   record,
 		meter:    meter,
 		tools:    researchRunTools(),
-		messages: replayThread(thread, meter),
+		messages: replayThread(withScopeNote(thread, req.Scope), meter),
 	}
 	if err := a.gatherResearch(ctx, run); err != nil {
 		return ResearchResult{}, err
@@ -902,6 +905,28 @@ func validateCitations(reply string, seenIDs map[string]struct{}) string {
 		}
 		return parts[1]
 	})
+}
+
+// withScopeNote tells the model, on the question it is answering, that its
+// tools only reach the documents the user picked; otherwise an empty search
+// reads as an empty archive. On what is sent, never on what is stored, and
+// after the question was taken as the tools' default focus. The system prompt
+// is no place for it: a conversation keeps the prompt it opened with.
+func withScopeNote(thread []ThreadMessage, scope int) []ThreadMessage {
+	if scope <= 0 {
+		return thread
+	}
+	for i := len(thread) - 1; i >= 0; i-- {
+		if thread[i].Role != "user" {
+			continue
+		}
+		out := slices.Clone(thread)
+		out[i].Content += fmt.Sprintf("\n\n[Scope: the user limited this question to %d selected documents. "+
+			"Every tool reaches only those, so a search that finds nothing means nothing in the selection, not in the whole archive. "+
+			"Earlier answers may cite documents outside it, which can no longer be read. Say so when it matters to the answer.]", scope)
+		return out
+	}
+	return thread
 }
 
 func researchAnswerInstruction(web bool) string {

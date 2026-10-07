@@ -1,13 +1,44 @@
 package appapi
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/fulltext"
 )
+
+// Collecting ids for a scope or an export takes every match at once: a page of
+// Search stops at MaxSearchLimit.
+func TestDocumentSearchAllReturnsEveryMatchPastAPage(t *testing.T) {
+	idx := fulltext.New()
+	if err := idx.Open(t.TempDir()); err != nil {
+		t.Fatalf("open index: %v", err)
+	}
+	t.Cleanup(func() { _ = idx.Close() })
+	want := fulltext.MaxSearchLimit + 10
+	for i := range want {
+		if err := idx.Put(fmt.Sprintf("doc%d", i), map[string]any{fulltext.FieldUser: "u1", fulltext.FieldTitle: "Lease"}); err != nil {
+			t.Fatalf("put: %v", err)
+		}
+	}
+
+	q := fulltext.Query{Text: "lease", UserID: "u1", Limit: want}
+	result, err := documentSearch(context.Background(), nil, &config.Runtime{}, idx, q, true)
+	if err != nil {
+		t.Fatalf("documentSearch: %v", err)
+	}
+	if len(result.Hits) != want || result.Total != uint64(want) {
+		t.Fatalf("all = %d hits of %d, want %d", len(result.Hits), result.Total, want)
+	}
+	page, err := documentSearch(context.Background(), nil, &config.Runtime{}, idx, q, false)
+	if err != nil || len(page.Hits) != fulltext.MaxSearchLimit {
+		t.Fatalf("a page = %d hits, err %v, want the %d cap", len(page.Hits), err, fulltext.MaxSearchLimit)
+	}
+}
 
 type stubDocuments struct {
 	recs map[string]*core.Record
