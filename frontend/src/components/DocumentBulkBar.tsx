@@ -48,14 +48,6 @@ export function DocumentBulkBar({
 }: Props) {
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-none border border-line bg-surface px-4 py-3">
-      <span className="text-sm text-ink-muted">
-        {selectedCount > 0
-          ? t('documentBulkBar.selected', { count: selectedCount })
-          : onDelete && mode === 'review'
-            ? t('documentBulkBar.hintReviewOrDelete')
-            : hints[mode]}
-      </span>
-
       {mode === 'reprocess' ? (
         <>
           <select
@@ -94,6 +86,13 @@ export function DocumentBulkBar({
           {t('documentBulkBar.clear')}
         </Button>
       )}
+      <span className="ml-auto text-sm text-ink-muted">
+        {selectedCount > 0
+          ? t('documentBulkBar.selected', { count: selectedCount })
+          : onDelete && mode === 'review'
+            ? t('documentBulkBar.hintReviewOrDelete')
+            : hints[mode]}
+      </span>
       {mode === 'reprocess' && selectedCount > 0 && (
         <div className="w-full">
           <JobOverrideFields value={reprocessOverrides} onChange={onReprocessOverridesChange} />
