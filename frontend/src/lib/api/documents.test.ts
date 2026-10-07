@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildDocumentFilter,
+  countMatchingDocuments,
   fileUrlWithToken,
   listMatchingDocumentIds,
   parseDuplicateOfId,
@@ -268,5 +269,49 @@ describe('listMatchingDocumentIds', () => {
     )
 
     expect(await listMatchingDocumentIds('invoice', noFilters)).toEqual(['doc1', 'doc2', 'doc3'])
+  })
+})
+
+describe('countMatchingDocuments', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    pb.authStore.clear()
+  })
+
+  function signIn() {
+    const payload = btoa(JSON.stringify({ exp: 4102444800 }))
+    pb.authStore.save(`h.${payload}.s`, { id: 'me', collectionId: 'users', collectionName: 'users' })
+  }
+
+  it('counts a plain filter from one record', async () => {
+    signIn()
+    const urls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url)
+        return Response.json({ page: 1, perPage: 1, totalItems: 42, items: [{ id: 'a' }] })
+      }),
+    )
+
+    expect(await countMatchingDocuments('', { ...noFilters, status: 'failed' })).toBe(42)
+    const params = new URL(urls[0]).searchParams
+    expect(params.get('perPage')).toBe('1')
+    expect(params.get('filter')).toBe('processing_status = "failed"')
+  })
+
+  it('counts a search through the search endpoint', async () => {
+    signIn()
+    const urls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url)
+        return Response.json({ page: 1, perPage: 1, totalItems: 7, totalPages: 7, items: [] })
+      }),
+    )
+
+    expect(await countMatchingDocuments('invoice', noFilters)).toBe(7)
+    expect(new URL(urls[0]).pathname).toBe('/api/app/documents/search')
   })
 })

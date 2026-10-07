@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"unicode/utf8"
@@ -448,6 +449,9 @@ func ForkSession(app core.App, userID string, source *core.Record, upto string) 
 		}
 		session.Set("provider", source.GetString("provider"))
 		session.Set("model", source.GetString("model"))
+		if filters := decodeFilters(source); filters != nil {
+			session.Set("filters", filters)
+		}
 		session.Set("title", ForkTitle(source.GetString("title")))
 		session.Set("message_count", visibleCount(messages))
 		// Now rather than the source's, so the fork is where the sidebar puts
@@ -678,6 +682,25 @@ func fitContent(role, content string) string {
 func RenameSession(app core.App, record *core.Record, title string) error {
 	record.Set("title", NormalizeTitle(title))
 	return app.Save(record)
+}
+
+// SetFilters remembers the document filters a turn was sent with, replacing the
+// last turn's. The row is read again first: record may predate a turn appended
+// since, and saving it whole would put that turn's counters back.
+func SetFilters(app core.App, record *core.Record, filters json.RawMessage) error {
+	err := app.RunInTransaction(func(txApp core.App) error {
+		fresh, err := txApp.FindRecordById(SessionsCollection, record.Id)
+		if err != nil {
+			return err
+		}
+		fresh.Set("filters", filters)
+		return txApp.Save(fresh)
+	})
+	if err != nil {
+		return err
+	}
+	record.Set("filters", filters)
+	return nil
 }
 
 // DeleteSession removes a session; its messages follow by cascade.

@@ -88,6 +88,23 @@ schon immer war. Jeder Aufruf protokolliert eine Zeile, `deep search retrieval
 lexical=… dense=… fused=… embedded=…`; dort sollten Sie nachsehen, wenn eine
 Antwort ein Dokument übersehen zu haben scheint.
 
+## Dokumente eingrenzen {#limiting-the-documents}
+
+Unter dem Fragefeld klappt **Umfang** die Filter aus den Massenaktionen auf:
+Suche, Tags, Status, Datum, Eigentümer, Typ und Korrespondent. Eingeklappt zeigt
+es nur, wie viele Dokumente sie übrig lassen. Ist ein Filter gesetzt, geht die
+Frage mit den IDs genau dieser Dokumente hinaus, und jedes Werkzeug hält sich
+daran: Suchen nach Schlüsselwörtern und nach Bedeutung, Lesen, Erhebungen und
+Zählungen. Dokumente, die eine frühere Runde außerhalb des Umfangs zitiert hat,
+werden ebenfalls nicht in die Runde übernommen.
+
+Jede Frage nimmt die Filter so, wie sie beim Absenden stehen, und der Chat
+behält die Filter der letzten Frage: Wird er erneut geöffnet, nach einem
+Neuladen oder aus der Chatliste, stehen sie wieder da. Ein neuer Chat beginnt
+ohne Filter. Ein Umfang ohne Treffer wird
+abgelehnt, ebenso einer mit mehr als 10.000 Dokumenten; schränken Sie die Filter
+ein oder leeren Sie sie, um die ganze Bibliothek zu durchsuchen.
+
 ## Wie Research ein Thema abdeckt {#how-research-covers-a-topic}
 
 Dokumente einzeln Aufruf für Aufruf zu lesen ist richtig für eine Frage nach der

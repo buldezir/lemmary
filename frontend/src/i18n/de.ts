@@ -848,6 +848,9 @@ export const de: Catalog = {
   'research.contextLive': 'Kontext: {usage}',
   'research.researchingArchive': 'Ihr Archiv wird durchsucht…',
   'research.steps': { one: '{count} Rechercheschritt', other: '{count} Rechercheschritte' },
+  'research.scopeAll': 'Umfang: alle Dokumente',
+  'research.scopeCount': { one: 'Umfang: {count} Dokument', other: 'Umfang: {count} Dokumente' },
+  'research.scopeCounting': 'Umfang: Dokumente werden gezählt…',
 
   'bulk.title': 'Massenaktionen',
   'bulk.unknownTag': 'Unbekannter Tag',

@@ -60,6 +60,8 @@ type Query struct {
 	// Owner narrows by who owns a readable document: OwnerMine, OwnerShared
 	// (another account shared it with the caller), or empty for both.
 	Owner string
+	// IDs, when set, keeps only these documents.
+	IDs []string
 	// Fields narrows the text match to named index fields; empty means every
 	// field. The paperless-ngx layer uses it for title-only/content-only.
 	Fields []string
@@ -486,6 +488,9 @@ func filterConjuncts(q Query) []query.Query {
 	}
 	if q.Undated {
 		conjuncts = append(conjuncts, undatedQuery())
+	}
+	if len(q.IDs) > 0 {
+		conjuncts = append(conjuncts, bleve.NewDocIDQuery(q.IDs))
 	}
 	return conjuncts
 }

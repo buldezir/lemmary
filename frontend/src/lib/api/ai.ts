@@ -2,6 +2,7 @@ import { t } from '../../i18n'
 import { apiFetch, apiStream } from '../apiClient'
 import { bindingBody, type ProviderBinding } from './providers'
 import type { ChatMessageRecord, ChatSession, SearchDocumentHit } from './chats'
+import type { DocumentQuery } from '../documentQuery'
 
 export type { SearchDocumentHit } from './chats'
 
@@ -161,6 +162,10 @@ export async function searchStream(
      * conversation is replayed and the loop re-entered where it stopped.
      */
     resume?: boolean
+    /** The only documents this turn may reach; omit for the whole library. */
+    scope?: string[]
+    /** The filters `scope` was picked with, kept on the chat to restore them. */
+    filters?: Partial<DocumentQuery>
   },
   onEvent: (event: ResearchEvent) => void,
   signal?: AbortSignal,
@@ -174,6 +179,8 @@ export async function searchStream(
       web: input.web === true,
       resume: input.resume === true,
       ...bindingBody(input.binding),
+      ...(input.scope ? { scope: input.scope } : {}),
+      ...(input.filters ? { filters: input.filters } : {}),
     },
     onEvent,
     signal,

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/pocketbase/dbx"
@@ -44,7 +45,19 @@ type searchRequest struct {
 	// Resume finishes a research turn whose run did not: no new question, the
 	// stored thread is replayed and the loop re-entered where it stopped.
 	Resume bool `json:"resume"`
+	// Scope, when present, is every document the turn may reach: the ids the
+	// page's filters matched. Per turn, as Web is. An empty list is refused
+	// rather than read as no scope, which would widen it to the whole library.
+	Scope []string `json:"scope"`
+	// Filters are what the page picked Scope with, kept on the session so that
+	// reopening the chat restores them. Opaque here: only the page reads them.
+	// Absent leaves the session's alone.
+	Filters json.RawMessage `json:"filters"`
 }
+
+// maxScopeDocuments bounds the id list a turn may carry; past it the filters
+// are too broad to be worth sending as ids.
+const maxScopeDocuments = 10000
 
 type searchResponse struct {
 	// Session is null when Saved is false -- see the AppendTurn failure path.
@@ -114,13 +127,13 @@ type agentTools struct {
 // distill hands the retriever the helper model, so a large read comes back as
 // notes and a survey is offered; without it every read is excerpted text and
 // no call reaches a language model.
-func buildAgentTools(app core.App, rt *config.Runtime, idx *fulltext.Index, userID string, distill bool) (agentTools, error) {
+func buildAgentTools(app core.App, rt *config.Runtime, idx *fulltext.Index, userID string, distill bool, scope []string) (agentTools, error) {
 	tags, err := listAvailableTagNames(app, userID)
 	if err != nil {
 		return agentTools{}, err
 	}
 	snap := rt.Snapshot()
-	retriever := &agentRetriever{app: app, idx: idx, userID: userID}
+	retriever := &agentRetriever{app: app, idx: idx, userID: userID, scope: scope}
 	if distill {
 		retriever.helper = snap.SearchHelper
 	}
@@ -224,7 +237,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		return searchTurn{}, true, writeError(e, http.StatusServiceUnavailable, "AI search is not configured; update Settings.")
 	}
 
-	tools, err := buildAgentTools(app, rt, idx, searchUserID, true)
+	tools, err := buildAgentTools(app, rt, idx, searchUserID, true, req.Scope)
 	if err != nil {
 		app.Logger().Error("search list tags failed", slog.Any("error", err))
 		return searchTurn{}, true, writeError(e, http.StatusInternalServerError, "Search is unavailable.")
@@ -235,7 +248,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		tools.web = snap.WebSearch
 	}
 
-	priorDocuments := searchPriorDocuments(app, session)
+	priorDocuments := scopedHits(searchPriorDocuments(app, session), req.Scope)
 
 	// Last, so a failure above cannot leave an empty conversation behind, and
 	// before the provider, so the agent loop runs inside the session it will be
@@ -259,6 +272,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		}
 		session, opened = created, created
 	}
+	rememberFilters(app, session, req.Filters)
 
 	metrics.SearchRun(mode)
 	return searchTurn{
@@ -298,7 +312,44 @@ func decodeSearchRequest(e *core.RequestEvent) (searchRequest, string, string, e
 	if err != nil {
 		return req, "", "", err
 	}
+	if req.Scope != nil && len(req.Scope) == 0 {
+		return req, "", "", errors.New("No documents match the research filters.")
+	}
+	if len(req.Scope) > maxScopeDocuments {
+		return req, "", "", i18n.Errorf("The research filters match more than %d documents. Narrow them.", maxScopeDocuments)
+	}
+	if !validFilters(req.Filters) {
+		return req, "", "", errors.New("Invalid request body.")
+	}
 	return req, content, runID, nil
+}
+
+// validFilters accepts an absent value or a JSON object that fits the column.
+func validFilters(raw json.RawMessage) bool {
+	if raw == nil {
+		return true
+	}
+	var object map[string]any
+	return len(raw) <= chat.MaxFiltersJSONBytes && json.Unmarshal(raw, &object) == nil && object != nil
+}
+
+// scopedHits drops the hits outside scope; a nil scope keeps them all.
+func scopedHits(hits []ai.DocumentHit, scope []string) []ai.DocumentHit {
+	if scope == nil {
+		return hits
+	}
+	return slices.DeleteFunc(hits, func(hit ai.DocumentHit) bool { return !slices.Contains(scope, hit.ID) })
+}
+
+// rememberFilters keeps the filters a turn was sent with on its session. A
+// failure costs the next visit its restored filters, not this turn its answer.
+func rememberFilters(app core.App, session *core.Record, filters json.RawMessage) {
+	if filters == nil {
+		return
+	}
+	if err := chat.SetFilters(app, session, filters); err != nil {
+		app.Logger().Warn("search filters not saved", slog.Any("error", err))
+	}
 }
 
 // searchPriorDocuments carries the earlier turns' hits: a follow-up is usually

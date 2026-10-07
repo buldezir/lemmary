@@ -804,6 +804,9 @@ export const en = {
   'research.contextLive': 'Context: {usage}',
   'research.researchingArchive': 'Researching your archive…',
   'research.steps': { one: '{count} research step', other: '{count} research steps' },
+  'research.scopeAll': 'Scope: all documents',
+  'research.scopeCount': { one: 'Scope: {count} document', other: 'Scope: {count} documents' },
+  'research.scopeCounting': 'Scope: counting documents…',
 
   'bulk.title': 'Bulk Actions',
   'bulk.unknownTag': 'Unknown tag',

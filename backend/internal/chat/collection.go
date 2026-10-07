@@ -92,6 +92,9 @@ func ensureSessions(app core.App) (*core.Collection, error) {
 		// the same way an empty one does.
 		&core.TextField{Name: "provider", Max: 15},
 		&core.TextField{Name: "model", Max: 200},
+		// The document filters a research chat's last turn was scoped by, kept
+		// as the page sent them: only the page reads them back.
+		&core.JSONField{Name: "filters", MaxSize: MaxFiltersJSONBytes},
 		// Not Required: a NumberField's Required means non-zero, and a session
 		// legitimately holds 0 between its creation and its first turn inside
 		// AppendTurn's transaction.

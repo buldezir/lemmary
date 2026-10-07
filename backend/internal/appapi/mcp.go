@@ -119,7 +119,7 @@ func handleMCP(app core.App, rt *config.Runtime, idx *fulltext.Index) func(*core
 			return writeOwnerError(e, err)
 		}
 		// No distillation: a read is excerpted text, never a billed summary.
-		tools, err := buildAgentTools(app, rt, idx, userID, false)
+		tools, err := buildAgentTools(app, rt, idx, userID, false, nil)
 		if err != nil {
 			return writeError(e, http.StatusInternalServerError, "Failed to prepare the document tools.")
 		}

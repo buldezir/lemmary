@@ -578,6 +578,24 @@ export async function searchDocuments(opts: {
   }
 }
 
+/** How many documents the list's filters match, by the paths the list itself takes. */
+export async function countMatchingDocuments(
+  q: string,
+  filters: DocumentListFilters,
+): Promise<number> {
+  if (q) {
+    return (await searchDocuments({ ...filters, q, page: 1, perPage: 1 })).totalItems
+  }
+  await ensureAuth()
+  const filter = buildDocumentFilter(filters)
+  const result = await pb.collection('documents').getList(1, 1, {
+    fields: 'id',
+    requestKey: null,
+    ...(filter ? { filter } : {}),
+  })
+  return result.totalItems
+}
+
 /** Every id the list's filters match, across all of its pages. */
 export async function listMatchingDocumentIds(
   q: string,

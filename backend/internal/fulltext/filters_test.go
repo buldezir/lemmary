@@ -45,6 +45,30 @@ func TestEligibleIDsResolvesFiltersWithoutText(t *testing.T) {
 	}
 }
 
+func TestIDsKeepOnlyTheListedDocuments(t *testing.T) {
+	idx := testIndex(t)
+	mustPut(t, idx, "in", map[string]any{FieldUser: "u1", FieldTitle: "Lease"})
+	mustPut(t, idx, "out", map[string]any{FieldUser: "u1", FieldTitle: "Lease"})
+
+	q := Query{UserID: "u1", IDs: []string{"in"}}
+	if !HasDocumentFilters(q) {
+		t.Fatal("an id list is a document filter")
+	}
+	ids, complete, err := idx.EligibleIDs(q, 10)
+	if err != nil || !complete || len(ids) != 1 || ids[0] != "in" {
+		t.Fatalf("eligible ids = %v, complete = %v, err = %v", ids, complete, err)
+	}
+
+	q.Text = "lease"
+	res, err := idx.Search(q)
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(res.Hits) != 1 || res.Hits[0].ID != "in" {
+		t.Fatalf("hits = %+v", res.Hits)
+	}
+}
+
 func TestKeepEligibleFiltersAShortList(t *testing.T) {
 	idx := testIndex(t)
 	mustPut(t, idx, "tagged", map[string]any{

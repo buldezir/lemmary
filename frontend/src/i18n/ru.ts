@@ -940,6 +940,14 @@ export const ru: Catalog = {
     many: '{count} шагов исследования',
     other: '{count} шага исследования',
   },
+  'research.scopeAll': 'Область: все документы',
+  'research.scopeCount': {
+    one: 'Область: {count} документ',
+    few: 'Область: {count} документа',
+    many: 'Область: {count} документов',
+    other: 'Область: {count} документа',
+  },
+  'research.scopeCounting': 'Область: подсчёт документов…',
 
   'bulk.title': 'Массовые действия',
   'bulk.unknownTag': 'Неизвестный тег',
