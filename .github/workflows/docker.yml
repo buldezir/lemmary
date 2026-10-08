@@ -24,12 +24,10 @@ on:
       - "docker-compose.yml"
   workflow_dispatch:
 
-# The build fans out over two self-hosted runners, one per architecture, and
-# there is exactly one of each -- so a superseded run still occupies the machines
-# the run that replaced it needs. Pushes to main and tags are never cancelled:
-# those publish the images everything else pulls. A superseded pull request build
-# is cancelled with the rest of its run, since its image is a preview of a commit
-# nobody is looking at any more.
+# Pushes to main and tags are never cancelled: those publish the images
+# everything else pulls. A superseded pull request build is cancelled with the
+# rest of its run, since its image is a preview of a commit nobody is looking at
+# any more.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -38,39 +36,18 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
-# Each architecture is built on a runner of that architecture and the two are
-# merged into one manifest, so nothing here runs under emulation. The homelab x64
-# machine takes the test job, the amd64 build and the merge; the arm64 build goes
-# to a GitHub-hosted arm64 runner, which is free for a public repository.
-#
-# The arm64 build is hosted rather than homelab on measured grounds. gh-runner-arm-1
-# can take it -- set CI_RUNNER_LABELS_ARM64 to
-# ["self-hosted", "linux", "arm64", "linux-arm64"] and it will -- but that machine
-# compiles FAISS in 699s and the Go backend in 413s where the x64 box
-# cross-compiles them in roughly 44s and 76s (run 34135193438). It even builds the
-# frontend slower natively, 186s, than the x64 box did emulating it at 158s. Native
-# is only faster when the native machine is not the slow one.
-#
-# Two repository variables move the jobs without editing this file, each a JSON
-# array of runner labels: CI_RUNNER_LABELS for the x64 jobs and
-# CI_RUNNER_LABELS_ARM64 for the arm64 build. ["ubuntu-latest"] puts the x64 work
-# on GitHub's runners while the homelab is down, and unsetting it brings that work
-# home again.
-#
-# A self-hosted runner needs Docker with buildx usable by the runner user, and
-# nothing else: the test job runs verification inside Docker rather than
-# installing Go, Node, Playwright or poppler on the host, and no runner needs
-# QEMU now that neither build crosses architectures.
+# Every job runs on a GitHub-hosted runner, free for a public repository. Each
+# architecture is built on a runner of that architecture and the two are merged
+# into one manifest, so nothing here runs under emulation. The test job runs
+# verification inside Docker rather than installing Go, Node, Playwright or
+# poppler on the runner.
 jobs:
   test:
     if: github.event_name == 'pull_request'
-    # A fork's pull request must never land on the self-hosted runner: the job
-    # would execute that fork's code on a machine inside a private network,
-    # which is the hazard GitHub warns about for self-hosted runners. Fork PRs
-    # go to a throwaway hosted runner instead. The private overlay's key is
-    # withheld there, so ./scripts/test-all.sh fails rather than reporting a
-    # green run that never executed e2e.
-    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted", "linux", "x64", "homelab"]') || 'ubuntu-latest' }}
+    # A fork's pull request gets no private overlay key, so
+    # ./scripts/test-all.sh fails rather than reporting a green run that never
+    # executed e2e.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
 
@@ -160,8 +137,8 @@ jobs:
 
   # The tags every architecture's image will end up under, resolved once. This
   # job is the reason a branch named `latest` costs seconds rather than two
-  # builds: it runs alongside `test`, needs no checkout and no runner of ours,
-  # and the branch-name guard below fails it before anything is built.
+  # builds: it runs alongside `test`, needs no checkout, and the branch-name
+  # guard below fails it before anything is built.
   #
   # A fork's pull request stops here, which is what skips the builds and the
   # merge: those jobs require this one to have succeeded.
@@ -261,11 +238,9 @@ jobs:
     # only), and a skipped dependency must not block the release build, hence
     # accepting "skipped" alongside "success".
     #
-    # A fork's pull request never builds. These jobs hold a package-write token
-    # and run on the self-hosted runners, and a fork's code must have neither;
-    # skipping is the only safe answer, since there is no fork equivalent of the
-    # test job's throwaway-runner fallback once GHCR push is involved. `meta`
-    # carries that guard, so requiring it here is what enforces it.
+    # A fork's pull request never builds. These jobs hold a package-write token,
+    # which a fork's code must not have. `meta` carries that guard, so requiring
+    # it here is what enforces it.
     if: >-
       always()
       && (needs.test.result == 'success' || needs.test.result == 'skipped')
@@ -279,14 +254,11 @@ jobs:
         include:
           - arch: amd64
             platform: linux/amd64
-            runner: ${{ vars.CI_RUNNER_LABELS || '["self-hosted", "linux", "x64", "homelab"]' }}
-          # Hosted, for the reasons in the comment above this job block. Note that
-          # gh-runner-arm-1 carries neither `homelab` nor `docker`, so its label
-          # set is not the x64 one with the architecture swapped.
+            runner: ubuntu-latest
           - arch: arm64
             platform: linux/arm64
-            runner: ${{ vars.CI_RUNNER_LABELS_ARM64 || '["ubuntu-24.04-arm"]' }}
-    runs-on: ${{ fromJSON(matrix.runner) }}
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
@@ -299,19 +271,14 @@ jobs:
       # apt-get, which used to be emulated.
       #
       # The version is pinned because setup-buildx-action has no default for it:
-      # unset, each machine uses whatever buildx it happens to have installed, and
-      # these are two hand-managed hosts. `merge` below depends on buildx keeping
-      # the provenance attestation each of these builds pushes, so the two boxes
-      # agreeing on the buildx version is load-bearing, not hygiene.
+      # unset, each runner uses whatever buildx its image happens to ship, and the
+      # x64 and arm64 images are updated separately. `merge` below depends on
+      # buildx keeping the provenance attestation each of these builds pushes, so
+      # the two agreeing on the buildx version is load-bearing, not hygiene.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
         with:
           version: v0.37.0
-          # Worth keeping on the self-hosted x64 machine, where a local cache
-          # beats pulling the registry cache and the teardown otherwise tries to
-          # delete a multi-gigabyte state volume -- which is what timed out on run
-          # 34135193438. A no-op on a hosted runner, which is discarded either way.
-          keep-state: true
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -390,7 +357,7 @@ jobs:
     # architecture succeeded, so a failed or cancelled leg still cannot publish a
     # tag carrying one architecture where callers expect two.
     if: always() && needs.meta.result == 'success' && needs.build.result == 'success'
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["self-hosted", "linux", "x64", "homelab"]') }}
+    runs-on: ubuntu-latest
     permissions:
       packages: write
 
