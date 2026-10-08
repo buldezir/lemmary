@@ -7,18 +7,18 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
-	"lemmary/backend/internal/ngximport"
+	"lemmary/backend/internal/remoteimport"
 )
 
-type importNgxRequest struct {
+type importRemoteRequest struct {
 	URL    string `json:"url"`
 	APIKey string `json:"api_key"`
 	Mode   string `json:"mode"`
 }
 
-func handlePostImportNgx(app core.App) func(*core.RequestEvent) error {
+func handlePostImportRemote(app core.App, start func(app core.App, ownerUserID, baseURL, apiKey, mode string) (string, error)) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		var req importNgxRequest
+		var req importRemoteRequest
 		if err := json.NewDecoder(e.Request.Body).Decode(&req); err != nil {
 			return writeError(e, http.StatusBadRequest, "Invalid request body.")
 		}
@@ -28,7 +28,7 @@ func handlePostImportNgx(app core.App) func(*core.RequestEvent) error {
 		if strings.TrimSpace(req.APIKey) == "" {
 			return writeError(e, http.StatusBadRequest, "API key is required.")
 		}
-		mode, err := ngximport.ParseMode(req.Mode)
+		mode, err := remoteimport.ParseMode(req.Mode)
 		if err != nil {
 			return writeBadRequest(e, err)
 		}
@@ -38,8 +38,8 @@ func handlePostImportNgx(app core.App) func(*core.RequestEvent) error {
 			return writeOwnerError(e, err)
 		}
 
-		jobID, err := ngximport.Start(app, ownerID, req.URL, req.APIKey, mode)
-		if errors.Is(err, ngximport.ErrImportInProgress) {
+		jobID, err := start(app, ownerID, req.URL, req.APIKey, mode)
+		if errors.Is(err, remoteimport.ErrImportInProgress) {
 			return writeError(e, http.StatusConflict, "An import is already in progress.")
 		}
 		if err != nil {
@@ -47,12 +47,12 @@ func handlePostImportNgx(app core.App) func(*core.RequestEvent) error {
 		}
 		return writeJSON(e, http.StatusAccepted, map[string]any{
 			"job_id": jobID,
-			"status": ngximport.JobStatusRunning,
+			"status": remoteimport.JobStatusRunning,
 		})
 	}
 }
 
-func handleGetImportNgxStatus(app core.App) func(*core.RequestEvent) error {
+func handleGetImportRemoteStatus(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		jobID := strings.TrimSpace(e.Request.URL.Query().Get("job_id"))
 		if jobID == "" {
@@ -62,7 +62,7 @@ func handleGetImportNgxStatus(app core.App) func(*core.RequestEvent) error {
 		if err != nil {
 			return writeOwnerError(e, err)
 		}
-		job, ok := ngximport.GetJob(jobID)
+		job, ok := remoteimport.GetJob(jobID)
 		if !ok || job.OwnerUserID != ownerID {
 			return writeError(e, http.StatusNotFound, "Import job not found.")
 		}

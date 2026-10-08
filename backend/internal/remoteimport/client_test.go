@@ -1,4 +1,4 @@
-package ngximport
+package remoteimport
 
 import (
 	"encoding/json"

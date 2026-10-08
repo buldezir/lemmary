@@ -1477,6 +1477,15 @@ export const en = {
   'importNgx.typesUpserted': 'Document types upserted: {count}',
   'importNgx.errors': 'Errors',
 
+  'importPapra.preserveLabel': 'Keep Papra metadata',
+  'importPapra.preserveDescription':
+    'Import name, tags, document date, and extracted text. Preview and duplicate detection still run; AI metadata extraction is skipped, so correspondent and document type stay empty.',
+  'importPapra.title': 'Import from Papra',
+  'importPapra.intro':
+    'Pull documents from a Papra instance using its URL and an API key with the organizations:read and documents:read permissions. Documents from every organization the key can read are added to your account. Choose whether to keep Papra metadata or reprocess files through OCR and AI. The API key is not stored.',
+  'importPapra.url': 'Papra URL',
+  'importPapra.apiKeyPlaceholder': 'API key from Papra settings',
+
   'importArchive.restoreLabel': 'Restore the archive as it was',
   'importArchive.restoreDescription':
     'Bring back titles, tags, correspondents, document types, dates, OCR text and thumbnails exactly as the archive holds them. Restored documents are not processed at all, so nothing is sent to OCR or the AI provider.',

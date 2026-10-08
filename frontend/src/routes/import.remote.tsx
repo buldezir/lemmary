@@ -1,28 +1,58 @@
 import { type SubmitEvent, useState } from 'react'
-import { importFromNgx, type NgxImportMode, type NgxImportResult } from '../lib/api/imports'
+import {
+  importFromRemote,
+  type RemoteImportMode,
+  type RemoteImportResult,
+  type RemoteImportSource,
+} from '../lib/api/imports'
 import { Button, inputClassName, labelClassName, labelTextClassName } from '../components/ui'
 import { t } from '../i18n'
 
-const modeOptions: { value: NgxImportMode; label: string; description: string }[] = [
-  {
-    value: 'preserve',
-    label: t('importNgx.preserveLabel'),
-    description: t('importNgx.preserveDescription'),
+const sources = {
+  ngx: {
+    title: t('importNgx.title'),
+    intro: t('importNgx.intro'),
+    url: t('importNgx.url'),
+    urlPlaceholder: 'https://paperless.example.com',
+    apiKeyPlaceholder: t('importNgx.apiKeyPlaceholder'),
+    preserveLabel: t('importNgx.preserveLabel'),
+    preserveDescription: t('importNgx.preserveDescription'),
   },
-  {
-    value: 'reprocess',
-    label: t('importNgx.reprocessLabel'),
-    description: t('importNgx.reprocessDescription'),
+  papra: {
+    title: t('importPapra.title'),
+    intro: t('importPapra.intro'),
+    url: t('importPapra.url'),
+    urlPlaceholder: 'https://papra.example.com',
+    apiKeyPlaceholder: t('importPapra.apiKeyPlaceholder'),
+    preserveLabel: t('importPapra.preserveLabel'),
+    preserveDescription: t('importPapra.preserveDescription'),
   },
-]
+}
 
 export function ImportNgxPage() {
+  return <RemoteImport source="ngx" />
+}
+
+export function ImportPapraPage() {
+  return <RemoteImport source="papra" />
+}
+
+function RemoteImport({ source }: { source: RemoteImportSource }) {
+  const text = sources[source]
+  const modeOptions: { value: RemoteImportMode; label: string; description: string }[] = [
+    { value: 'preserve', label: text.preserveLabel, description: text.preserveDescription },
+    {
+      value: 'reprocess',
+      label: t('importNgx.reprocessLabel'),
+      description: t('importNgx.reprocessDescription'),
+    },
+  ]
   const [url, setUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
-  const [mode, setMode] = useState<NgxImportMode>('preserve')
+  const [mode, setMode] = useState<RemoteImportMode>('preserve')
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
-  const [result, setResult] = useState<NgxImportResult | null>(null)
+  const [result, setResult] = useState<RemoteImportResult | null>(null)
 
   async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -35,7 +65,7 @@ export function ImportNgxPage() {
       setRunning(true)
       setError('')
       setResult(null)
-      const summary = await importFromNgx(url.trim(), apiKey.trim(), mode)
+      const summary = await importFromRemote(source, url.trim(), apiKey.trim(), mode)
       setResult(summary)
       setApiKey('')
     } catch (err) {
@@ -48,20 +78,20 @@ export function ImportNgxPage() {
   return (
     <section className="space-y-5">
       <div>
-        <h2 className="font-display text-xl font-semibold text-ink">{t('importNgx.title')}</h2>
+        <h2 className="font-display text-xl font-semibold text-ink">{text.title}</h2>
         <p className="mt-1 text-sm text-ink-soft">
-          {t('importNgx.intro')}
+          {text.intro}
         </p>
       </div>
 
       <form onSubmit={onSubmit} className="space-y-4 rounded-none border border-line bg-surface p-5">
         <label className={labelClassName}>
-          <span className={labelTextClassName}>{t('importNgx.url')}</span>
+          <span className={labelTextClassName}>{text.url}</span>
           <input
             className={inputClassName}
             type="url"
             required
-            placeholder="https://paperless.example.com"
+            placeholder={text.urlPlaceholder}
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             autoComplete="off"
@@ -73,7 +103,7 @@ export function ImportNgxPage() {
             className={inputClassName}
             type="password"
             required
-            placeholder={t('importNgx.apiKeyPlaceholder')}
+            placeholder={text.apiKeyPlaceholder}
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             autoComplete="off"
@@ -122,8 +152,12 @@ export function ImportNgxPage() {
             <li>{t('importNgx.skippedDuplicates', { count: result.skipped_duplicates })}</li>
             <li>{t('importNgx.failedCount', { count: result.failed })}</li>
             <li>{t('importNgx.tagsUpserted', { count: result.tags_upserted })}</li>
-            <li>{t('importNgx.correspondentsUpserted', { count: result.correspondents_upserted })}</li>
-            <li>{t('importNgx.typesUpserted', { count: result.document_types_upserted })}</li>
+            {source === 'ngx' && (
+              <>
+                <li>{t('importNgx.correspondentsUpserted', { count: result.correspondents_upserted })}</li>
+                <li>{t('importNgx.typesUpserted', { count: result.document_types_upserted })}</li>
+              </>
+            )}
           </ul>
           {result.errors.length > 0 && (
             <div className="mt-3">

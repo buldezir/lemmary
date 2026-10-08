@@ -1551,6 +1551,15 @@ export const de: Catalog = {
   'importNgx.typesUpserted': 'Dokumenttypen angelegt oder aktualisiert: {count}',
   'importNgx.errors': 'Fehler',
 
+  'importPapra.preserveLabel': 'Metadaten aus Papra behalten',
+  'importPapra.preserveDescription':
+    'Name, Tags, Dokumentdatum und extrahierten Text importieren. Vorschau und Duplikaterkennung laufen trotzdem; die KI-Metadatenextraktion wird übersprungen, Korrespondent und Dokumenttyp bleiben also leer.',
+  'importPapra.title': 'Aus Papra importieren',
+  'importPapra.intro':
+    'Holen Sie Dokumente aus einer Papra-Instanz über deren URL und einen API-Schlüssel mit den Berechtigungen organizations:read und documents:read. Dokumente aus jeder Organisation, die der Schlüssel lesen darf, werden Ihrem Konto hinzugefügt. Wählen Sie, ob die Metadaten übernommen oder die Dateien per OCR und KI neu verarbeitet werden. Der API-Schlüssel wird nicht gespeichert.',
+  'importPapra.url': 'Papra-URL',
+  'importPapra.apiKeyPlaceholder': 'API-Schlüssel aus den Papra-Einstellungen',
+
   'importArchive.restoreLabel': 'Archiv unverändert wiederherstellen',
   'importArchive.restoreDescription':
     'Titel, Tags, Korrespondenten, Dokumenttypen, Daten, OCR-Text und Vorschaubilder genau so zurückholen, wie das Archiv sie enthält. Wiederhergestellte Dokumente werden gar nicht verarbeitet; nichts wird an die OCR oder den KI-Anbieter gesendet.',

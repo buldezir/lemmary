@@ -33,6 +33,7 @@ describe('route tree', () => {
       '/maintenance',
       '/import',
       '/import/ngx',
+      '/import/papra',
       '/import/archive',
       '/account',
       '/tags',

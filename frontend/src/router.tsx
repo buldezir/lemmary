@@ -40,7 +40,7 @@ import { MaintenancePage } from './routes/maintenance'
 import { ManagementPage } from './routes/management'
 import { ManagementUsersPage } from './routes/management.users'
 import { ImportPage } from './routes/import'
-import { ImportNgxPage } from './routes/import.ngx'
+import { ImportNgxPage, ImportPapraPage } from './routes/import.remote'
 import { ImportArchivePage } from './routes/import.archive'
 import { ExportPage } from './routes/export'
 import { AccountPage } from './routes/account'
@@ -287,6 +287,12 @@ const importNgxRoute = createRoute({
   component: ImportNgxPage,
 })
 
+const importPapraRoute = createRoute({
+  getParentRoute: () => importRoute,
+  path: 'papra',
+  component: ImportPapraPage,
+})
+
 // /import/archive was the archive tab before it moved onto /import.
 const importArchiveAliasRoute = createRoute({
   getParentRoute: () => importRoute,
@@ -360,7 +366,7 @@ const routeTree = rootRoute.addChildren([
   ]),
   managementRoute.addChildren([managementUsersRoute]),
   maintenanceRoute,
-  importRoute.addChildren([importArchiveRoute, importNgxRoute, importArchiveAliasRoute]),
+  importRoute.addChildren([importArchiveRoute, importNgxRoute, importPapraRoute, importArchiveAliasRoute]),
   exportRoute,
   accountRoute,
   tagsRoute,

@@ -1,4 +1,4 @@
-package ngximport
+package remoteimport
 
 import (
 	"github.com/pocketbase/pocketbase/core"
@@ -16,8 +16,8 @@ type Job = importjob.Job[Result]
 
 var registry = importjob.NewRegistry[Result](importjob.DefaultRetention)
 
-// Start runs the import in a background goroutine; one at a time per owner.
-func Start(app core.App, ownerUserID, baseURL, apiKey, mode string) (string, error) {
+// StartNgx runs a Paperless-ngx import in a background goroutine; one at a time per owner.
+func StartNgx(app core.App, ownerUserID, baseURL, apiKey, mode string) (string, error) {
 	return registry.Start(ownerUserID, func(func(done, total int)) (Result, error) {
 		return runImport(app, ownerUserID, baseURL, apiKey, mode, nil)
 	})

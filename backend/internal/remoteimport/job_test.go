@@ -1,4 +1,4 @@
-package ngximport
+package remoteimport
 
 import (
 	"errors"
@@ -6,7 +6,7 @@ import (
 )
 
 // The job machinery itself is covered by internal/importjob; this only asserts
-// that ngximport is wired to it and still guards one import per owner.
+// that remoteimport is wired to it and still guards one import per owner.
 func TestRunWithClientRejectsConcurrentImports(t *testing.T) {
 	const owner = "owner-a"
 	if err := registry.Acquire(owner); err != nil {
