@@ -27,7 +27,11 @@ const (
 	helperInputBytes = 400_000
 	// helperBatchBytes lets several short documents share a call, so a read
 	// of twenty letters is a few calls, not twenty.
-	helperBatchBytes  = 300_000
+	helperBatchBytes = 300_000
+	// helperBatchDocs bounds a batch by its answer: every document costs a
+	// row of output, and generation, not reading, is what runs a batch of
+	// eighty short invoices past the helper's timeout.
+	helperBatchDocs   = 15
 	helperConcurrency = 4
 )
 
@@ -90,7 +94,7 @@ func (r *agentRetriever) distillDocuments(ctx context.Context, question string, 
 // distillAll returns the rows by document id and the summed usage. Failed
 // batches are logged and their documents are simply absent from the result.
 func (r *agentRetriever) distillAll(ctx context.Context, question string, fields []ai.SurveyField, docs []ai.DistillDoc, progress func(done int)) (map[string]ai.DistillRow, ai.Usage) {
-	batches := packDistillBatches(docs, helperBatchBytes)
+	batches := packDistillBatches(docs, helperBatchBytes, helperBatchDocs)
 
 	var (
 		mu    sync.Mutex
@@ -142,15 +146,16 @@ func (r *agentRetriever) distillAll(ctx context.Context, question string, fields
 	return rows, usage
 }
 
-// packDistillBatches keeps each call under budgetBytes; a single document over
-// it travels alone. Order is preserved so batches are deterministic.
-func packDistillBatches(docs []ai.DistillDoc, budgetBytes int) [][]ai.DistillDoc {
+// packDistillBatches keeps each call under budgetBytes and maxDocs; a single
+// document over the budget travels alone. Order is preserved so batches are
+// deterministic.
+func packDistillBatches(docs []ai.DistillDoc, budgetBytes, maxDocs int) [][]ai.DistillDoc {
 	var batches [][]ai.DistillDoc
 	var current []ai.DistillDoc
 	size := 0
 	for _, doc := range docs {
 		n := len(doc.Text)
-		if len(current) > 0 && size+n > budgetBytes {
+		if len(current) > 0 && (size+n > budgetBytes || len(current) >= maxDocs) {
 			batches = append(batches, current)
 			current = nil
 			size = 0
