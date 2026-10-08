@@ -93,6 +93,19 @@ func TestChatWithoutWebMakesOneCompletionAndDeclaresNoTools(t *testing.T) {
 	}
 }
 
+func TestChatSendsTheWholeDocument(t *testing.T) {
+	server, turns := scriptedChatServer(t)
+	ocr := strings.Repeat("filler line\n", 5000) + "TOTAL DUE 42.17"
+
+	if _, err := chatTestClient(t, server.URL).Chat(context.Background(), ocr,
+		[]ChatMessage{{Role: "user", Content: "what is the total?"}}, nil); err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if got := (*turns)[0].Messages[0]["content"].(string); !strings.Contains(got, "TOTAL DUE 42.17") {
+		t.Error("the end of a long document must reach the model")
+	}
+}
+
 func TestChatWithWebDeclaresBothToolsAndRunsThem(t *testing.T) {
 	web, webCalls := newWebServer(t,
 		`{"results":[{"title":"VAT","url":"https://example.com/vat","content":"19%"}]}`, `{}`)

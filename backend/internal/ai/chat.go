@@ -13,7 +13,6 @@ import (
 
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/logfmt"
-	"lemmary/backend/internal/strutil"
 	"lemmary/backend/internal/websearch"
 )
 
@@ -56,7 +55,7 @@ Web calls are limited and billed; make them count.`
 
 Document OCR text:
 
-%s`, strutil.Truncate(ocrText, 12000))
+%s`, ocrText)
 }
 
 func (c *OpenAIClient) Chat(ctx context.Context, ocrText string, messages []ChatMessage, web *websearch.Tavily) (string, error) {
