@@ -108,6 +108,11 @@ export const de: Catalog = {
     other: '{count} Dokumente auf „{query}“ gesichtet',
   },
   'researchSteps.counted': { one: '{count} Dokument gezählt', other: '{count} Dokumente gezählt' },
+  'researchSteps.byType': 'nach Typ',
+  'researchSteps.byCorrespondent': 'nach Korrespondent',
+  'researchSteps.byYear': 'nach Jahr',
+  'researchSteps.byMonth': 'nach Monat',
+  'researchSteps.byTag': 'nach Tag',
   'researchSteps.countedQuery': {
     one: '{count} Dokument zu „{query}“ gezählt',
     other: '{count} Dokumente zu „{query}“ gezählt',
@@ -320,6 +325,8 @@ export const de: Catalog = {
   'documents.reprocessAllFailed': 'Alle fehlgeschlagenen erneut verarbeiten ({count})',
   'documents.reprocessFailed': 'Erneute Verarbeitung fehlgeschlagen',
   'documents.searchFailed': 'Dokumentsuche fehlgeschlagen',
+  'documents.tooManyMatches':
+    'Die Filter treffen auf mehr als {count} Dokumente zu. Schränken Sie sie ein.',
   'documents.timelineFailed': 'Die Zeitleiste konnte nicht geladen werden',
   'documents.signedInRequired': 'Sie müssen angemeldet sein, um Metadaten zu speichern.',
   'documents.translationFailed': 'Übersetzung fehlgeschlagen',
@@ -848,6 +855,11 @@ export const de: Catalog = {
   'research.contextLive': 'Kontext: {usage}',
   'research.researchingArchive': 'Ihr Archiv wird durchsucht…',
   'research.steps': { one: '{count} Rechercheschritt', other: '{count} Rechercheschritte' },
+  'research.scopeAll': 'Umfang: alle Dokumente',
+  'research.scopeCount': { one: 'Umfang: {count} Dokument', other: 'Umfang: {count} Dokumente' },
+  'research.scopeCounting': 'Umfang: Dokumente werden gezählt…',
+  'research.scopeUnknown': 'Umfang: gefilterte Dokumente (Anzahl nicht verfügbar)',
+  'research.scopeEmpty': 'Keine Dokumente entsprechen den Recherchefiltern.',
 
   'bulk.title': 'Massenaktionen',
   'bulk.unknownTag': 'Unbekannter Tag',

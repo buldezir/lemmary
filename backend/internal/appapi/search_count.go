@@ -59,7 +59,10 @@ func (r *agentRetriever) count(ctx context.Context, args ai.CountArgs) (ai.Count
 	}
 
 	result := ai.CountResult{GroupBy: groupBy}
-	if query := strings.TrimSpace(args.Query); query != "" {
+	query := strings.TrimSpace(args.Query)
+	if query == "" {
+		spec.ids = r.scope
+	} else {
 		if r.idx == nil || !r.idx.Ready() {
 			return ai.CountResult{}, fmt.Errorf("search index is not ready")
 		}
@@ -87,7 +90,7 @@ func (r *agentRetriever) count(ctx context.Context, args ai.CountArgs) (ai.Count
 	if err != nil {
 		return ai.CountResult{}, fmt.Errorf("count documents: %w", err)
 	}
-	if spec.ids == nil {
+	if query == "" {
 		result.Count = total
 	}
 	if groupBy != "" {

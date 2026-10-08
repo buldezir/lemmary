@@ -8,11 +8,27 @@ import { ChatComposer } from '../components/ChatComposer'
 import { ChatWorkspaceFrame } from '../components/ChatWorkspaceFrame'
 import { MarkdownContent } from '../components/MarkdownContent'
 import { BindingOverride } from '../components/BindingOverride'
+import { DocumentFilters } from '../components/DocumentFilters'
 import { WebSearchToggle } from '../components/WebSearchToggle'
 import { useChatSession } from '../hooks/useChatSession'
 import { useChatWorkspace } from '../hooks/useChatWorkspace'
+import { useDocumentFilterOptions } from '../hooks/useDocumentList'
 import { cancelSearchRun, type ResearchEvent } from '../lib/api/ai'
 import { chatSessionBinding, getChatSession } from '../lib/api/chats'
+import {
+  countMatchingDocuments,
+  listMatchingDocumentIds,
+  type DocumentListFilters,
+} from '../lib/api/documents'
+import {
+  defaultDocumentQuery,
+  documentQuerySearch,
+  hasActiveFilters,
+  parseDocumentQuery,
+  searchableTerm,
+  tagIds,
+  type DocumentQuery,
+} from '../lib/documentQuery'
 import { applyStep, type ResearchStep } from '../lib/researchSteps'
 import {
   contextOverflowWarning,
@@ -38,6 +54,16 @@ export function ResearchPage() {
   // Per turn, not per conversation: the server stores nothing about it, so a
   // reload starts from off. Off is the safe direction for a metered tool.
   const [web, setWeb] = useState(false)
+  // The documents a turn may reach, picked with the Documents list's filters.
+  // Every turn sends them and the chat keeps the last, so opening a chat puts
+  // its filters back; a new chat starts with none.
+  const [scope, setScope] = useState<DocumentQuery>(defaultDocumentQuery)
+  const [scopeSearch, setScopeSearch] = useState('')
+  const [scopeRestoredFor, setScopeRestoredFor] = useState<string | undefined>()
+  const [scopeOpen, setScopeOpen] = useState(false)
+  const scopeTerm = searchableTerm(scopeSearch)
+  const scoped = hasActiveFilters({ ...scope, q: scopeTerm })
+  const [scopeCount, setScopeCount] = useScopeCount(scope, scopeTerm, scoped)
   const [steps, setSteps] = useState<ResearchStep[]>([])
   const [draft, setDraft] = useState('')
   const [liveUsage, setLiveUsage] = useState<ContextUsage | null>(null)
@@ -80,8 +106,18 @@ export function ResearchPage() {
       setDraft('')
       setLiveUsage(null)
       try {
+        const ids = scoped ? await scopeIds(scope, scopeTerm, scopeCount) : undefined
+        if (ids) setScopeCount(ids.length)
         return await ws.runTurn(
-          { sessionId: id, content, resume, web, binding: ws.binding },
+          {
+            sessionId: id,
+            content,
+            resume,
+            web,
+            binding: ws.binding,
+            scope: ids,
+            filters: documentQuerySearch({ ...scope, q: scopeTerm }),
+          },
           onEvent,
         )
       } finally {
@@ -90,7 +126,7 @@ export function ResearchPage() {
         setLiveUsage(null)
       }
     },
-    [onEvent, web, ws],
+    [onEvent, web, ws, scoped, scopeTerm, scope, scopeCount, setScopeCount],
   )
 
   const chat = useChatSession({
@@ -111,6 +147,20 @@ export function ResearchPage() {
   })
   const { setAdopt } = ws
   useEffect(() => setAdopt(chat.adoptSession), [chat.adoptSession, setAdopt])
+
+  // Adjusted during render rather than in an effect, once per chat opened: the
+  // one in the URL, once it has loaded, so a chat still loading does not read
+  // as a new one. A new chat has none, and so no filters. Unfolded when there
+  // are some, so a chat says what it is limited to.
+  const wantedId = ws.sessionId
+  const loaded = !wantedId || chat.session?.id === wantedId
+  if (loaded && wantedId !== scopeRestoredFor) {
+    setScopeRestoredFor(wantedId)
+    const saved = parseDocumentQuery((wantedId && chat.session?.filters) || {})
+    setScope({ ...saved, q: '' })
+    setScopeSearch(saved.q)
+    setScopeOpen(hasActiveFilters(saved))
+  }
 
   const loadedMode = chat.session?.mode
   useEffect(() => {
@@ -259,6 +309,24 @@ export function ResearchPage() {
         />
       </ChatPanel>
       <div className="border border-t-0 border-line bg-surface px-4 py-3">
+        <ScopeFilters
+          query={scope}
+          search={scopeSearch}
+          onSearchChange={setScopeSearch}
+          updateQuery={(patch) => setScope((current) => ({ ...current, ...patch }))}
+          summary={
+            !scoped
+              ? t('research.scopeAll')
+              : scopeCount === null
+                ? t('research.scopeCounting')
+                : scopeCount === 'failed'
+                  ? t('research.scopeUnknown')
+                  : t('research.scopeCount', { count: scopeCount })
+          }
+          disabled={chat.sending || !loaded}
+          open={scopeOpen}
+          onOpenChange={setScopeOpen}
+        />
         <div className="mb-3">
           <WebSearchToggle checked={web} onChange={setWeb} disabled={chat.sending} />
         </div>
@@ -275,6 +343,120 @@ export function ResearchPage() {
         />
       </div>
     </ChatWorkspaceFrame>
+  )
+}
+
+function listFilters(query: DocumentQuery): DocumentListFilters {
+  return {
+    status: query.status,
+    documentType: query.type,
+    correspondent: query.correspondent,
+    dateFrom: query.from,
+    dateTo: query.to,
+    undated: query.undated,
+    tags: tagIds(query.tags),
+    untagged: query.untagged,
+    owner: query.owner,
+  }
+}
+
+// Mirrors the server's maxScopeDocuments, so a scope past it is refused before
+// its ids are collected and sent.
+const maxScopeDocuments = 10000
+
+type ScopeCount = number | 'failed'
+
+/**
+ * The ids a scoped turn is sent with. A count already in hand refuses an empty
+ * or too wide scope without a request; the collection itself stops at the cap.
+ */
+async function scopeIds(
+  query: DocumentQuery,
+  term: string,
+  count: ScopeCount | null,
+): Promise<string[]> {
+  if (count === 0) throw new Error(t('research.scopeEmpty'))
+  if (typeof count === 'number' && count > maxScopeDocuments) {
+    throw new Error(t('documents.tooManyMatches', { count: maxScopeDocuments }))
+  }
+  const ids = await listMatchingDocumentIds(term, listFilters(query), maxScopeDocuments)
+  if (ids.length === 0) throw new Error(t('research.scopeEmpty'))
+  return ids
+}
+
+/**
+ * How many documents the scope holds: null until the count for these filters
+ * is in, 'failed' when it could not be had. The setter settles it from a send,
+ * whose ids are the one ranking the model is told the size of.
+ */
+function useScopeCount(
+  query: DocumentQuery,
+  term: string,
+  scoped: boolean,
+): [ScopeCount | null, (count: number) => void] {
+  const key = JSON.stringify({ ...query, q: term })
+  const [counted, setCounted] = useState<{ key: string; count: ScopeCount } | null>(null)
+  useEffect(() => {
+    if (!scoped) return
+    let live = true
+    // Debounced like the Documents list's search box: a change per keystroke.
+    const timer = window.setTimeout(() => {
+      countMatchingDocuments(term, listFilters(query)).then(
+        (count) => live && setCounted({ key, count }),
+        () => live && setCounted({ key, count: 'failed' }),
+      )
+    }, 300)
+    return () => {
+      live = false
+      window.clearTimeout(timer)
+    }
+  }, [query, term, scoped, key])
+  const settle = useCallback((count: number) => setCounted({ key, count }), [key])
+  return [counted?.key === key ? counted.count : null, settle]
+}
+
+/** The Bulk actions filters, folded away, saying only how many documents they keep. */
+function ScopeFilters({
+  query,
+  search,
+  onSearchChange,
+  updateQuery,
+  summary,
+  disabled,
+  open,
+  onOpenChange,
+}: {
+  query: DocumentQuery
+  search: string
+  onSearchChange: (value: string) => void
+  updateQuery: (patch: Partial<DocumentQuery>) => void
+  summary: string
+  disabled: boolean
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const options = useDocumentFilterOptions()
+  return (
+    <details
+      className="mb-3"
+      open={open}
+      onToggle={(event) => onOpenChange(event.currentTarget.open)}
+    >
+      <summary className="cursor-pointer text-sm text-ink">{summary}</summary>
+      <fieldset disabled={disabled} className="mt-3 min-w-0">
+        <DocumentFilters
+          query={query}
+          search={search}
+          onSearchChange={onSearchChange}
+          updateQuery={updateQuery}
+          documentTypes={options.documentTypes}
+          correspondents={options.correspondents}
+          tags={options.tags}
+          status={query.status}
+        />
+        {options.error && <p className="mt-2 text-sm text-madder">{options.error}</p>}
+      </fieldset>
+    </details>
   )
 }
 

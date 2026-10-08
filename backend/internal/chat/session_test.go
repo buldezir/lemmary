@@ -204,6 +204,9 @@ func TestStepFromEventCopiesTrailFields(t *testing.T) {
 	if got.Kind != "read" || got.Status != "done" || !got.Distilled || len(got.Titles) != 1 {
 		t.Fatalf("StepFromEvent = %+v", got)
 	}
+	if got := chat.StepFromEvent(ai.ResearchEvent{Kind: "count", GroupBy: "year"}); got.GroupBy != "year" {
+		t.Fatalf("StepFromEvent dropped the grouping: %+v", got)
+	}
 }
 
 func TestEncodeHitsCapsCount(t *testing.T) {

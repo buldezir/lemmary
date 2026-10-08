@@ -3,7 +3,10 @@ package appapi
 import (
 	"context"
 	"log/slog"
+	"math"
 	"net/http"
+	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -66,49 +69,24 @@ func handleDocumentSearch(app core.App, rt *config.Runtime, idx *fulltext.Index)
 			userID = e.Auth.Id
 		}
 
-		status := strings.TrimSpace(e.Request.URL.Query().Get("status"))
-		typeID := strings.TrimSpace(e.Request.URL.Query().Get("document_type"))
-		corrID := strings.TrimSpace(e.Request.URL.Query().Get("correspondent"))
-
-		query := fulltext.Query{
-			Text:             q,
-			UserID:           userID,
-			ProcessingStatus: status,
-			DateFrom:         strings.TrimSpace(e.Request.URL.Query().Get("date_from")),
-			DateTo:           strings.TrimSpace(e.Request.URL.Query().Get("date_to")),
-			Undated:          e.Request.URL.Query().Get("undated") == "true",
-			Untagged:         e.Request.URL.Query().Get("untagged") == "true",
-			Owner:            e.Request.URL.Query().Get("owner"),
-			Offset:           (page - 1) * perPage,
-			Limit:            perPage,
+		query := documentSearchQuery(e.Request.URL.Query(), q, userID)
+		query.Offset, query.Limit = (page-1)*perPage, perPage
+		all := e.Request.URL.Query().Get("ids") == "true"
+		if all {
+			query.Offset, query.Limit = 0, queryPositiveInt(e, "limit", 0)
 		}
-		if typeID != "" && typeID != "all" {
-			query.DocumentTypeIDs = []string{typeID}
-		}
-		if corrID != "" && corrID != "all" {
-			query.CorrespondentIDs = []string{corrID}
-		}
-		for tagID := range strings.SplitSeq(e.Request.URL.Query().Get("tags"), ",") {
-			if tagID = strings.TrimSpace(tagID); tagID != "" && tagID != "all" {
-				query.AllTagIDs = append(query.AllTagIDs, tagID)
-			}
-		}
-
-		var (
-			result fulltext.Result
-			fused  bool
-			err    error
-		)
-		if embedder := rt.Snapshot().Embedder; embedder != nil && idx.ChunksReady() {
-			r := &agentRetriever{app: app, idx: idx, userID: userID, embedQuery: embedQueryFunc(embedder), chunks: idx}
-			result, fused, err = r.fusedDocumentPage(e.Request.Context(), query, similarityFloor(embedder.Model()))
-		}
-		if err == nil && !fused {
-			result, err = idx.Search(query)
-		}
+		result, err := documentSearch(e.Request.Context(), app, rt, idx, query, all)
 		if err != nil {
 			app.Logger().Error("document search failed", slog.Any("error", err))
 			return writeError(e, http.StatusInternalServerError, "Search failed.")
+		}
+		if all {
+			ids, err := readableIDs(app, result.Hits, userID)
+			if err != nil {
+				app.Logger().Error("document search failed", slog.Any("error", err))
+				return writeError(e, http.StatusInternalServerError, "Search failed.")
+			}
+			return writeJSON(e, http.StatusOK, map[string]any{"ids": ids, "totalItems": int(result.Total)})
 		}
 
 		items := hydrateDocumentExports(app, result.Hits, userID)
@@ -125,6 +103,91 @@ func handleDocumentSearch(app core.App, rt *config.Runtime, idx *fulltext.Index)
 			Items:      items,
 		})
 	}
+}
+
+func documentSearchQuery(params url.Values, text, userID string) fulltext.Query {
+	query := fulltext.Query{
+		Text:             text,
+		UserID:           userID,
+		ProcessingStatus: strings.TrimSpace(params.Get("status")),
+		DateFrom:         strings.TrimSpace(params.Get("date_from")),
+		DateTo:           strings.TrimSpace(params.Get("date_to")),
+		Undated:          params.Get("undated") == "true",
+		Untagged:         params.Get("untagged") == "true",
+		Owner:            params.Get("owner"),
+	}
+	if typeID := strings.TrimSpace(params.Get("document_type")); typeID != "" && typeID != "all" {
+		query.DocumentTypeIDs = []string{typeID}
+	}
+	if corrID := strings.TrimSpace(params.Get("correspondent")); corrID != "" && corrID != "all" {
+		query.CorrespondentIDs = []string{corrID}
+	}
+	for tagID := range strings.SplitSeq(params.Get("tags"), ",") {
+		if tagID = strings.TrimSpace(tagID); tagID != "" && tagID != "all" {
+			query.AllTagIDs = append(query.AllTagIDs, tagID)
+		}
+	}
+	return query
+}
+
+// documentSearch ranks the Documents list's search. all asks for every match in
+// one ranking, which is what a caller collecting ids needs: paged, the fusion
+// is recomputed per page, and a dense leg that times out on one page and not
+// the next reorders the list under the pager. Unfused, every match comes back
+// in index order, since Search pages are capped. With all, query.Limit caps
+// how many ids are collected while Total still counts every match, so a
+// caller with a ceiling learns it is past it without the whole set; 0 is no
+// cap.
+func documentSearch(ctx context.Context, app core.App, rt *config.Runtime, idx *fulltext.Index, query fulltext.Query, all bool) (fulltext.Result, error) {
+	if all && query.Limit <= 0 {
+		query.Limit = math.MaxInt
+	}
+	if embedder := rt.Snapshot().Embedder; embedder != nil && idx.ChunksReady() {
+		r := &agentRetriever{app: app, idx: idx, userID: query.UserID, embedQuery: embedQueryFunc(embedder), chunks: idx}
+		result, fused, err := r.fusedDocumentPage(ctx, query, similarityFloor(embedder.Model()))
+		if err != nil || fused {
+			return result, err
+		}
+	}
+	if !all {
+		return idx.Search(query)
+	}
+	ids, total, _, err := idx.MatchingIDs(query, query.Limit)
+	hits := make([]fulltext.Hit, 0, len(ids))
+	for _, id := range ids {
+		hits = append(hits, fulltext.Hit{ID: id})
+	}
+	return fulltext.Result{Hits: hits, Total: total}, err
+}
+
+// readableIDs keeps, in order, the hits whose document exists and userID may
+// read: the index runs ahead of a delete or a revoked share, and a scope built
+// from it would otherwise count and rank a document the turn cannot open.
+func readableIDs(app core.App, hits []fulltext.Hit, userID string) ([]string, error) {
+	ids := make([]string, 0, len(hits))
+	for _, hit := range hits {
+		ids = append(ids, hit.ID)
+	}
+	readable := make(map[string]bool, len(ids))
+	// SQLite's parameter limit is generous but not unbounded; chunk.
+	for chunk := range slices.Chunk(ids, 500) {
+		values := make([]any, len(chunk))
+		for i, id := range chunk {
+			values[i] = id
+		}
+		q := app.DB().Select("id").From("documents").Where(dbx.In("id", values...))
+		if userID != "" {
+			q.AndWhere(dbx.NewExp(ReadableDocumentsSQL("documents", "reader"), dbx.Params{"reader": userID}))
+		}
+		var found []string
+		if err := q.Column(&found); err != nil {
+			return nil, err
+		}
+		for _, id := range found {
+			readable[id] = true
+		}
+	}
+	return slices.DeleteFunc(ids, func(id string) bool { return !readable[id] }), nil
 }
 
 // fusedDocumentPage ranks every keyword match together with the documents the

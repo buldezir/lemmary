@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildDocumentFilter,
+  countMatchingDocuments,
   fileUrlWithToken,
   listMatchingDocumentIds,
   parseDuplicateOfId,
@@ -256,17 +257,99 @@ describe('listMatchingDocumentIds', () => {
     expect(params.get('filter')).toBe('processing_status = "failed"')
   })
 
-  // The export takes every match, not the page on screen.
-  it('walks every page of a search', async () => {
+  // The export and a research scope take every match, not the page on screen,
+  // and from one ranking: paging a search can reorder it between pages.
+  it('asks a search for every id at once', async () => {
     signIn()
+    const urls: string[] = []
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
-        const page = Number(new URL(url).searchParams.get('page'))
-        return Response.json({ page, totalPages: 3, items: [{ id: `doc${page}` }] })
+        urls.push(url)
+        return Response.json({ ids: ['doc1', 'doc2', 'doc3'], totalItems: 3 })
       }),
     )
 
     expect(await listMatchingDocumentIds('invoice', noFilters)).toEqual(['doc1', 'doc2', 'doc3'])
+    expect(urls).toHaveLength(1)
+    expect(new URL(urls[0]).searchParams.get('ids')).toBe('true')
+  })
+
+  // A scope has a ceiling; the server stops collecting at it and says how
+  // many there were, and more than the ceiling is refused, not truncated.
+  it('refuses a search past its limit', async () => {
+    signIn()
+    const urls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url)
+        return Response.json({ ids: ['doc1', 'doc2'], totalItems: 3 })
+      }),
+    )
+
+    await expect(listMatchingDocumentIds('invoice', noFilters, 2)).rejects.toThrow('2')
+    expect(new URL(urls[0]).searchParams.get('limit')).toBe('2')
+  })
+
+  it('refuses a plain filter past its limit before listing it', async () => {
+    signIn()
+    const urls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url)
+        return Response.json({ page: 1, perPage: 1, totalItems: 3, items: [{ id: 'a' }] })
+      }),
+    )
+
+    await expect(
+      listMatchingDocumentIds('', { ...noFilters, status: 'failed' }, 2),
+    ).rejects.toThrow('2')
+    expect(urls).toHaveLength(1)
+  })
+})
+
+describe('countMatchingDocuments', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    pb.authStore.clear()
+  })
+
+  function signIn() {
+    const payload = btoa(JSON.stringify({ exp: 4102444800 }))
+    pb.authStore.save(`h.${payload}.s`, { id: 'me', collectionId: 'users', collectionName: 'users' })
+  }
+
+  it('counts a plain filter from one record', async () => {
+    signIn()
+    const urls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url)
+        return Response.json({ page: 1, perPage: 1, totalItems: 42, items: [{ id: 'a' }] })
+      }),
+    )
+
+    expect(await countMatchingDocuments('', { ...noFilters, status: 'failed' })).toBe(42)
+    const params = new URL(urls[0]).searchParams
+    expect(params.get('perPage')).toBe('1')
+    expect(params.get('filter')).toBe('processing_status = "failed"')
+  })
+
+  it('counts a search through the search endpoint', async () => {
+    signIn()
+    const urls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url)
+        return Response.json({ page: 1, perPage: 1, totalItems: 7, totalPages: 7, items: [] })
+      }),
+    )
+
+    expect(await countMatchingDocuments('invoice', noFilters)).toBe(7)
+    expect(new URL(urls[0]).pathname).toBe('/api/app/documents/search')
   })
 })

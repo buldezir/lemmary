@@ -134,7 +134,7 @@ func (r *agentRetriever) surveyDocuments(ctx context.Context, ids []string, ques
 // to limit. candidates is how many there were before the cut.
 func (r *agentRetriever) surveyCandidates(ctx context.Context, args ai.SurveyArgs, limit int) ([]string, int, error) {
 	if len(args.IDs) > 0 {
-		ids := args.IDs
+		ids := r.inScope(args.IDs)
 		total := len(ids)
 		if len(ids) > limit {
 			ids = ids[:limit]

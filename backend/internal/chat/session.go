@@ -100,6 +100,8 @@ const (
 	// MaxToolCallsJSONBytes bounds the calls one assistant turn may make.
 	MaxToolCallsJSONBytes = 64000
 	MaxToolCallIDRunes    = 200
+	// MaxFiltersJSONBytes bounds the document filters a session remembers.
+	MaxFiltersJSONBytes = 16000
 
 	// MaxSessionsPerUser stops an account from turning the sidebar into an
 	// unbounded table. Breaching it is an error, never a silent prune.
@@ -269,6 +271,7 @@ type StoredStep struct {
 	Count     int      `json:"count,omitempty"`
 	Done      int      `json:"done,omitempty"`
 	Distilled bool     `json:"distilled,omitempty"`
+	GroupBy   string   `json:"group_by,omitempty"`
 }
 
 // StepFromEvent copies the fields a stored trail needs off a live research
@@ -282,6 +285,7 @@ func StepFromEvent(ev ai.ResearchEvent) StoredStep {
 		Count:     ev.Count,
 		Done:      ev.Done,
 		Distilled: ev.Distilled,
+		GroupBy:   ev.GroupBy,
 	}
 }
 
@@ -398,6 +402,9 @@ type SessionInfo struct {
 	// it runs on the one in Settings, so reopening a chat restores the picker.
 	Provider string `json:"provider,omitempty"`
 	Model    string `json:"model,omitempty"`
+	// Filters are the document filters the last turn was sent with, as the page
+	// wrote them, so reopening a research chat restores its scope.
+	Filters json.RawMessage `json:"filters,omitempty"`
 	// Document is set for KindDocument sessions; DocumentTitle is filled by the
 	// handler, which is the layer that may read the documents collection.
 	Document      string `json:"document,omitempty"`
@@ -433,12 +440,23 @@ func ToSessionInfo(record *core.Record) SessionInfo {
 		Mode:          record.GetString("mode"),
 		Provider:      record.GetString("provider"),
 		Model:         record.GetString("model"),
+		Filters:       decodeFilters(record),
 		Document:      record.GetString("document"),
 		MessageCount:  record.GetInt("message_count"),
 		LastMessageAt: lastMessageAt,
 		Created:       record.GetDateTime("created").String(),
 		Updated:       record.GetDateTime("updated").String(),
 	}
+}
+
+// decodeFilters reads the JSON field the way DecodeHits does, for the same
+// typed-or-raw reason.
+func decodeFilters(record *core.Record) json.RawMessage {
+	raw := strings.TrimSpace(record.GetString("filters"))
+	if raw == "" || raw == "null" {
+		return nil
+	}
+	return json.RawMessage(raw)
 }
 
 // BindingOf reads the provider and model a conversation is pinned to. A nil

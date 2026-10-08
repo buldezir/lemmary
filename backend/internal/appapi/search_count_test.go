@@ -225,6 +225,21 @@ func TestCountToolResolvesFiltersAndCountsFromTheIndexWithText(t *testing.T) {
 	}
 }
 
+func TestCountToolStaysInsideTheScope(t *testing.T) {
+	r := hybridRetriever(t, nil)
+	r.app = countApp{stubRetrieverApp: r.app.(stubRetrieverApp), db: countDB(t)}
+	r.userID = "me"
+	r.scope = []string{"d1", "d2", "d6"}
+
+	result, err := r.count(context.Background(), ai.CountArgs{})
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if result.Count != 2 {
+		t.Fatalf("scoped count = %d, want the two owned ids in the scope", result.Count)
+	}
+}
+
 func TestCountToolWithoutADatabaseIsRefused(t *testing.T) {
 	r := hybridRetriever(t, nil)
 	if _, err := r.count(context.Background(), ai.CountArgs{}); err == nil {

@@ -119,6 +119,7 @@ func runResearchTurn(app core.App, turn searchTurn, ctx context.Context, recorde
 		Count:          turn.tools.count,
 		Web:            turn.tools.web,
 		ContextWindow:  turn.contextWindow,
+		Scope:          len(turn.scope),
 	}, func(event ai.ResearchEvent) {
 		recorder.step(event)
 		emit(event)

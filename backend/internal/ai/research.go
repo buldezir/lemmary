@@ -116,6 +116,9 @@ type ResearchRequest struct {
 	// nobody knows it. Reported, never enforced: what fits is the provider's
 	// ruling, and it delivers it by refusing the request.
 	ContextWindow int
+	// Scope is how many documents the user limited this turn to, 0 for the
+	// whole library. The tools enforce it; this only tells the model.
+	Scope int
 }
 
 type ResearchResult struct {
@@ -141,6 +144,9 @@ type ResearchEvent struct {
 	// Done is the running count of a step with progress: documents surveyed
 	// so far, out of Count.
 	Done int `json:"done,omitempty"`
+	// GroupBy is a count step's grouping. Grouped counts of one set share its
+	// total, so without it they read as the same count repeated.
+	GroupBy string `json:"group_by,omitempty"`
 	// Distilled marks a read step whose documents the helper model read and
 	// summarised rather than being passed through whole.
 	Distilled  bool          `json:"distilled,omitempty"`
@@ -255,7 +261,7 @@ func (a *openAISearchAgent) Research(ctx context.Context, req ResearchRequest, e
 		record:   record,
 		meter:    meter,
 		tools:    researchRunTools(),
-		messages: replayThread(thread, meter),
+		messages: replayThread(withScopeNote(thread, req.Scope), meter),
 	}
 	if err := a.gatherResearch(ctx, run); err != nil {
 		return ResearchResult{}, err
@@ -899,6 +905,37 @@ func validateCitations(reply string, seenIDs map[string]struct{}) string {
 		}
 		return parts[1]
 	})
+}
+
+// withScopeNote tells the model, on the question it is answering, that its
+// tools only reach the documents the user picked; otherwise an empty search
+// reads as an empty archive. On what is sent, never on what is stored, and
+// after the question was taken as the tools' default focus. The system prompt
+// is no place for it: a conversation keeps the prompt it opened with.
+func withScopeNote(thread []ThreadMessage, scope int) []ThreadMessage {
+	if scope <= 0 {
+		return thread
+	}
+	for i := len(thread) - 1; i >= 0; i-- {
+		if thread[i].Role != "user" {
+			continue
+		}
+		out := slices.Clone(thread)
+		out[i].Content += ScopeNote(scope)
+		return out
+	}
+	return thread
+}
+
+// ScopeNote is what withScopeNote appends, for the one-round search to put on
+// its question the same way; empty when there is no scope.
+func ScopeNote(scope int) string {
+	if scope <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("\n\n[Scope: the user limited this question to %d selected documents. "+
+		"Every tool reaches only those, so a search that finds nothing means nothing in the selection, not in the whole archive. "+
+		"Earlier answers may cite documents outside it, which can no longer be read. Say so when it matters to the answer.]", scope)
 }
 
 func researchAnswerInstruction(web bool) string {

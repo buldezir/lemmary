@@ -7,6 +7,7 @@ import { RunInFlightError } from '../lib/apiClient'
 import { useAsync } from './useAsync'
 import type { ChatSendResult } from './useChatSession'
 import type { ProviderBinding } from '../lib/api/providers'
+import type { DocumentQuery } from '../lib/documentQuery'
 import { cancelSearchRun, searchStream, type ResearchEvent, type SearchMode } from '../lib/api/ai'
 import {
   chatSessionsInMode,
@@ -135,6 +136,8 @@ export function useChatWorkspace({
         binding?: ProviderBinding
         web?: boolean
         resume?: boolean
+        scope?: string[]
+        filters?: Partial<DocumentQuery>
       },
       onEvent?: (event: ResearchEvent) => void,
     ): Promise<ChatSendResult> => {
@@ -162,6 +165,8 @@ export function useChatWorkspace({
             web: input.web === true,
             resume: input.resume === true,
             binding: input.binding,
+            scope: input.scope,
+            filters: input.filters,
           },
           (event) => {
             onEvent?.(event)

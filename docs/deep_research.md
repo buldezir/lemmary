@@ -78,6 +78,22 @@ Each call logs one line, `deep search retrieval lexical=… dense=… fused=…
 embedded=…`, which is where to look when an answer seems to have missed a
 document.
 
+## Limiting the documents
+
+Under the question box, **Scope** folds open the filters from Bulk actions:
+search, tags, status, dates, owner, type and correspondent. Folded, it only says
+how many documents they keep. With any filter set, the question is sent with the
+ids of exactly those documents, and every tool keeps to them: searches by keyword
+and by meaning, reads, surveys and counts. The model is told the question is
+limited, so a search that finds nothing is not reported as missing from the
+archive. Documents an earlier turn cited outside the scope cannot be read
+again, though what that turn already read stays in the conversation.
+
+Each question takes the filters as they stand when it is sent, and the chat
+keeps the last question's filters: opening it again, after a reload or from
+the list of chats, puts them back. A new chat starts with none. A scope that matches nothing is refused, and so is one over 10,000
+documents; narrow the filters, or clear them to research the whole library.
+
 ## How Research covers a topic
 
 Reading documents one call at a time is right for a needle question and wrong

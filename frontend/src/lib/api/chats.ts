@@ -1,6 +1,7 @@
 import { t } from '../../i18n'
 import { apiFetch, ConnectionLostError, HttpError, sleep } from '../apiClient'
 import type { ContextUsage } from '../contextUsage'
+import type { DocumentQueryInput } from '../documentQuery'
 import { foldSteps, type ResearchStep, type StoredResearchStep } from '../researchSteps'
 import type { ProviderBinding } from './providers'
 
@@ -39,6 +40,8 @@ export type ChatSession = {
    */
   provider?: string
   model?: string
+  /** The document filters the last research turn was sent with, as the page wrote them. */
+  filters?: DocumentQueryInput
   /** Set only for kind === 'document'. */
   document?: string
   document_title?: string

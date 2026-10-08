@@ -195,6 +195,40 @@ func TestSearchWithoutADenseIndexIsUnchanged(t *testing.T) {
 	}
 }
 
+// A scoped turn reaches nothing outside its ids, by keyword, by meaning, by a
+// read or by a survey naming the id.
+func TestScopeKeepsEveryToolInsideIt(t *testing.T) {
+	r := hybridRetriever(t, nil)
+	r.scope = []string{"lexical"}
+
+	hits, err := r.search(context.Background(), ai.SearchDocumentsArgs{Query: "Versicherungspraemien"})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	for _, hit := range hits {
+		if hit.ID == "dense" {
+			t.Fatalf("the dense leg reached a document outside the scope: %#v", hits)
+		}
+	}
+
+	docs, err := r.read(context.Background(), ai.ReadRequest{IDs: []string{"lexical", "dense"}})
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(docs) != 1 || docs[0].ID != "lexical" {
+		t.Fatalf("read = %#v, want only the scoped document", docs)
+	}
+
+	r.helper = &fakeHelper{}
+	result, err := r.survey(context.Background(), ai.SurveyArgs{IDs: []string{"dense"}, Question: "premium?"}, nil)
+	if err != nil {
+		t.Fatalf("survey: %v", err)
+	}
+	if result.Surveyed != 0 || result.Candidates != 0 {
+		t.Fatalf("survey = %+v, want nothing outside the scope", result)
+	}
+}
+
 // The other half of the wiring: a focused read uses the stored chunks to decide
 // what to show, so an answer in the middle survives the excerpt.
 func TestReadFocusRanksWithTheChunkIndex(t *testing.T) {

@@ -465,6 +465,10 @@ var catalog = map[string]map[string]string{
 		"de": "Im Archiv wurden keine Dokumente gefunden.",
 		"ru": "В архиве не найдено документов.",
 	},
+	"No documents match the research filters.": {
+		"de": "Keine Dokumente entsprechen den Recherchefiltern.",
+		"ru": "Ни один документ не подходит под фильтры исследования.",
+	},
 	"No embedding model is bound. Choose one in Settings before embedding the archive.": {
 		"de": "Es ist kein Embedding-Modell zugeordnet. Wählen Sie eines in den Einstellungen, bevor Sie Embeddings für das Archiv erzeugen.",
 		"ru": "Модель эмбеддингов не привязана. Выберите её в Настройках, прежде чем создавать эмбеддинги для архива.",
@@ -688,6 +692,10 @@ var catalog = map[string]map[string]string{
 	"The passkey response could not be read.": {
 		"de": "Die Passkey-Antwort konnte nicht gelesen werden.",
 		"ru": "Не удалось прочитать ответ ключа доступа.",
+	},
+	"The research filters match more than %d documents. Narrow them.": {
+		"de": "Die Recherchefilter treffen auf mehr als %d Dokumente zu. Schränken Sie sie ein.",
+		"ru": "Под фильтры исследования подходит больше %d документов. Сузьте их.",
 	},
 	"The upload is not a readable Lemmary export archive.": {
 		"de": "Der Upload ist kein lesbares Lemmary-Exportarchiv.",

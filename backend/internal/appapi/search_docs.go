@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,6 +35,9 @@ type agentRetriever struct {
 	app    retrieverApp
 	idx    *fulltext.Index
 	userID string
+	// scope, when set, is every document this turn may reach: what the page's
+	// filters matched, sorted. Nil is the whole library.
+	scope []string
 
 	embedQuery func(ctx context.Context, text string) ([]float32, error)
 	chunks     retrieval.ChunkSearcher
@@ -62,6 +66,13 @@ func (r *agentRetriever) loadShares() {
 		r.app.Logger().Warn("deep search shared documents lookup failed", slog.Any("error", err))
 	}
 	r.sharedDocs, r.sharedOwners, r.sharedLoaded = docs, owners, true
+}
+
+func (r *agentRetriever) inScope(ids []string) []string {
+	if r.scope == nil {
+		return ids
+	}
+	return slices.DeleteFunc(slices.Clone(ids), func(id string) bool { return !inSortedScope(r.scope, id) })
 }
 
 func (r *agentRetriever) sharedIDs() []string {
@@ -184,6 +195,7 @@ func (r *agentRetriever) resolveFilters(args ai.SearchDocumentsArgs) (fulltext.Q
 		// The agent's query is a guess, not a filter the user typed, so this
 		// is the one caller that relaxes matching.
 		Relaxed:  true,
+		IDs:      r.scope,
 		DateFrom: strings.TrimSpace(args.DateFrom),
 		DateTo:   strings.TrimSpace(args.DateTo),
 		Limit:    fulltext.MaxSearchLimit,
@@ -282,7 +294,11 @@ func (r *agentRetriever) searchChunks(ctx context.Context, ftQuery fulltext.Quer
 	var eligible []string
 	postFilter := false
 	if fulltext.HasDocumentFilters(ftQuery) {
-		ids, complete, err := r.idx.EligibleIDs(ftQuery, maxPreFilterIDs)
+		// A scope always goes down whole: a post-filter over the library's top
+		// passages would miss most of a scope of a few thousand documents.
+		// ponytail: up to maxScopeDocuments terms in one filter; batch the
+		// chunk query if a filter that wide proves slow.
+		ids, complete, err := r.idx.EligibleIDs(ftQuery, max(maxPreFilterIDs, len(ftQuery.IDs)))
 		switch {
 		case err != nil:
 			r.app.Logger().Warn("deep search filter resolution failed", slog.Any("error", err))
@@ -547,6 +563,7 @@ func documentTagNames(app documentLookup, record *core.Record) []string {
 // large read is distilled to notes and quotes; a small read passes through as
 // excerpts, because for a needle question the exact wording is the point.
 func (r *agentRetriever) read(ctx context.Context, req ai.ReadRequest) ([]ai.DocumentContent, error) {
+	req.IDs = r.inScope(req.IDs)
 	if r.helper == nil {
 		return readUserDocuments(r.app, r.userID, req, r.focusRanker(ctx), focusExcerptBytes)
 	}
