@@ -921,12 +921,21 @@ func withScopeNote(thread []ThreadMessage, scope int) []ThreadMessage {
 			continue
 		}
 		out := slices.Clone(thread)
-		out[i].Content += fmt.Sprintf("\n\n[Scope: the user limited this question to %d selected documents. "+
-			"Every tool reaches only those, so a search that finds nothing means nothing in the selection, not in the whole archive. "+
-			"Earlier answers may cite documents outside it, which can no longer be read. Say so when it matters to the answer.]", scope)
+		out[i].Content += ScopeNote(scope)
 		return out
 	}
 	return thread
+}
+
+// ScopeNote is what withScopeNote appends, for the one-round search to put on
+// its question the same way; empty when there is no scope.
+func ScopeNote(scope int) string {
+	if scope <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("\n\n[Scope: the user limited this question to %d selected documents. "+
+		"Every tool reaches only those, so a search that finds nothing means nothing in the selection, not in the whole archive. "+
+		"Earlier answers may cite documents outside it, which can no longer be read. Say so when it matters to the answer.]", scope)
 }
 
 func researchAnswerInstruction(web bool) string {

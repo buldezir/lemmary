@@ -63,7 +63,7 @@ export function ResearchPage() {
   const [scopeOpen, setScopeOpen] = useState(false)
   const scopeTerm = searchableTerm(scopeSearch)
   const scoped = hasActiveFilters({ ...scope, q: scopeTerm })
-  const scopeCount = useScopeCount(scope, scopeTerm, scoped)
+  const [scopeCount, setScopeCount] = useScopeCount(scope, scopeTerm, scoped)
   const [steps, setSteps] = useState<ResearchStep[]>([])
   const [draft, setDraft] = useState('')
   const [liveUsage, setLiveUsage] = useState<ContextUsage | null>(null)
@@ -106,7 +106,8 @@ export function ResearchPage() {
       setDraft('')
       setLiveUsage(null)
       try {
-        const ids = scoped ? await listMatchingDocumentIds(scopeTerm, listFilters(scope)) : undefined
+        const ids = scoped ? await scopeIds(scope, scopeTerm, scopeCount) : undefined
+        if (ids) setScopeCount(ids.length)
         return await ws.runTurn(
           {
             sessionId: id,
@@ -125,7 +126,7 @@ export function ResearchPage() {
         setLiveUsage(null)
       }
     },
-    [onEvent, web, ws, scoped, scopeTerm, scope],
+    [onEvent, web, ws, scoped, scopeTerm, scope, scopeCount, setScopeCount],
   )
 
   const chat = useChatSession({
@@ -318,7 +319,9 @@ export function ResearchPage() {
               ? t('research.scopeAll')
               : scopeCount === null
                 ? t('research.scopeCounting')
-                : t('research.scopeCount', { count: scopeCount })
+                : scopeCount === 'failed'
+                  ? t('research.scopeUnknown')
+                  : t('research.scopeCount', { count: scopeCount })
           }
           disabled={chat.sending || !loaded}
           open={scopeOpen}
@@ -357,10 +360,42 @@ function listFilters(query: DocumentQuery): DocumentListFilters {
   }
 }
 
-/** How many documents the scope holds, null until the count for these filters is in. */
-function useScopeCount(query: DocumentQuery, term: string, scoped: boolean): number | null {
+// Mirrors the server's maxScopeDocuments, so a scope past it is refused before
+// its ids are collected and sent.
+const maxScopeDocuments = 10000
+
+type ScopeCount = number | 'failed'
+
+/**
+ * The ids a scoped turn is sent with. A count already in hand refuses an empty
+ * or too wide scope without a request; the collection itself stops at the cap.
+ */
+async function scopeIds(
+  query: DocumentQuery,
+  term: string,
+  count: ScopeCount | null,
+): Promise<string[]> {
+  if (count === 0) throw new Error(t('research.scopeEmpty'))
+  if (typeof count === 'number' && count > maxScopeDocuments) {
+    throw new Error(t('documents.tooManyMatches', { count: maxScopeDocuments }))
+  }
+  const ids = await listMatchingDocumentIds(term, listFilters(query), maxScopeDocuments)
+  if (ids.length === 0) throw new Error(t('research.scopeEmpty'))
+  return ids
+}
+
+/**
+ * How many documents the scope holds: null until the count for these filters
+ * is in, 'failed' when it could not be had. The setter settles it from a send,
+ * whose ids are the one ranking the model is told the size of.
+ */
+function useScopeCount(
+  query: DocumentQuery,
+  term: string,
+  scoped: boolean,
+): [ScopeCount | null, (count: number) => void] {
   const key = JSON.stringify({ ...query, q: term })
-  const [counted, setCounted] = useState<{ key: string; count: number } | null>(null)
+  const [counted, setCounted] = useState<{ key: string; count: ScopeCount } | null>(null)
   useEffect(() => {
     if (!scoped) return
     let live = true
@@ -368,7 +403,7 @@ function useScopeCount(query: DocumentQuery, term: string, scoped: boolean): num
     const timer = window.setTimeout(() => {
       countMatchingDocuments(term, listFilters(query)).then(
         (count) => live && setCounted({ key, count }),
-        () => {},
+        () => live && setCounted({ key, count: 'failed' }),
       )
     }, 300)
     return () => {
@@ -376,7 +411,8 @@ function useScopeCount(query: DocumentQuery, term: string, scoped: boolean): num
       window.clearTimeout(timer)
     }
   }, [query, term, scoped, key])
-  return counted?.key === key ? counted.count : null
+  const settle = useCallback((count: number) => setCounted({ key, count }), [key])
+  return [counted?.key === key ? counted.count : null, settle]
 }
 
 /** The Bulk actions filters, folded away, saying only how many documents they keep. */

@@ -361,6 +361,7 @@ export const ru: Catalog = {
   'documents.reprocessAllFailed': 'Обработать заново все с ошибкой ({count})',
   'documents.reprocessFailed': 'Не удалось обработать заново',
   'documents.searchFailed': 'Не удалось выполнить поиск документов',
+  'documents.tooManyMatches': 'Под фильтры подходит больше {count} документов. Сузьте их.',
   'documents.timelineFailed': 'Не удалось загрузить хронологию',
   'documents.signedInRequired': 'Чтобы сохранить метаданные, нужно войти.',
   'documents.translationFailed': 'Не удалось перевести',
@@ -953,6 +954,8 @@ export const ru: Catalog = {
     other: 'Область: {count} документа',
   },
   'research.scopeCounting': 'Область: подсчёт документов…',
+  'research.scopeUnknown': 'Область: отфильтрованные документы (число недоступно)',
+  'research.scopeEmpty': 'Ни один документ не подходит под фильтры исследования.',
 
   'bulk.title': 'Массовые действия',
   'bulk.unknownTag': 'Неизвестный тег',

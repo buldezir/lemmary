@@ -309,6 +309,7 @@ export const en = {
   'documents.reprocessAllFailed': 'Reprocess all failed ({count})',
   'documents.reprocessFailed': 'Reprocess failed',
   'documents.searchFailed': 'Failed to search documents',
+  'documents.tooManyMatches': 'The filters match more than {count} documents. Narrow them.',
   'documents.timelineFailed': 'Failed to load the timeline',
   'documents.signedInRequired': 'You must be signed in to save metadata.',
   'documents.translationFailed': 'Translation failed',
@@ -812,6 +813,8 @@ export const en = {
   'research.scopeAll': 'Scope: all documents',
   'research.scopeCount': { one: 'Scope: {count} document', other: 'Scope: {count} documents' },
   'research.scopeCounting': 'Scope: counting documents…',
+  'research.scopeUnknown': 'Scope: filtered documents (count unavailable)',
+  'research.scopeEmpty': 'No documents match the research filters.',
 
   'bulk.title': 'Bulk Actions',
   'bulk.unknownTag': 'Unknown tag',

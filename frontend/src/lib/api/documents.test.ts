@@ -274,6 +274,40 @@ describe('listMatchingDocumentIds', () => {
     expect(urls).toHaveLength(1)
     expect(new URL(urls[0]).searchParams.get('ids')).toBe('true')
   })
+
+  // A scope has a ceiling; the server stops collecting at it and says how
+  // many there were, and more than the ceiling is refused, not truncated.
+  it('refuses a search past its limit', async () => {
+    signIn()
+    const urls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url)
+        return Response.json({ ids: ['doc1', 'doc2'], totalItems: 3 })
+      }),
+    )
+
+    await expect(listMatchingDocumentIds('invoice', noFilters, 2)).rejects.toThrow('2')
+    expect(new URL(urls[0]).searchParams.get('limit')).toBe('2')
+  })
+
+  it('refuses a plain filter past its limit before listing it', async () => {
+    signIn()
+    const urls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url)
+        return Response.json({ page: 1, perPage: 1, totalItems: 3, items: [{ id: 'a' }] })
+      }),
+    )
+
+    await expect(
+      listMatchingDocumentIds('', { ...noFilters, status: 'failed' }, 2),
+    ).rejects.toThrow('2')
+    expect(urls).toHaveLength(1)
+  })
 })
 
 describe('countMatchingDocuments', () => {

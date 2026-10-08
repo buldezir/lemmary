@@ -247,6 +247,15 @@ func TestForkSessionCopiesTheTranscriptAndLeavesTheSourceAlone(t *testing.T) {
 	if err := chat.SetFilters(app, source, json.RawMessage(`{"tags":"tag1"}`)); err != nil {
 		t.Fatalf("SetFilters: %v", err)
 	}
+	// The same filters again, as every later turn sends them, write nothing.
+	saved, _ := app.FindRecordById(chat.SessionsCollection, source.Id)
+	before := saved.GetDateTime("updated")
+	if err := chat.SetFilters(app, source, json.RawMessage(` {"tags":"tag1"}`)); err != nil {
+		t.Fatalf("SetFilters again: %v", err)
+	}
+	if again, _ := app.FindRecordById(chat.SessionsCollection, source.Id); !again.GetDateTime("updated").Time().Equal(before.Time()) {
+		t.Fatalf("unchanged filters rewrote the session")
+	}
 
 	fork, err := chat.ForkSession(app, userID, source, "")
 	if err != nil {

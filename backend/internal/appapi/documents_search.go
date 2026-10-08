@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -72,7 +73,7 @@ func handleDocumentSearch(app core.App, rt *config.Runtime, idx *fulltext.Index)
 		query.Offset, query.Limit = (page-1)*perPage, perPage
 		all := e.Request.URL.Query().Get("ids") == "true"
 		if all {
-			query.Offset, query.Limit = 0, maxFusedKeywordMatches+maxDenseListDocuments
+			query.Offset, query.Limit = 0, queryPositiveInt(e, "limit", 0)
 		}
 		result, err := documentSearch(e.Request.Context(), app, rt, idx, query, all)
 		if err != nil {
@@ -80,11 +81,12 @@ func handleDocumentSearch(app core.App, rt *config.Runtime, idx *fulltext.Index)
 			return writeError(e, http.StatusInternalServerError, "Search failed.")
 		}
 		if all {
-			ids := make([]string, 0, len(result.Hits))
-			for _, hit := range result.Hits {
-				ids = append(ids, hit.ID)
+			ids, err := readableIDs(app, result.Hits, userID)
+			if err != nil {
+				app.Logger().Error("document search failed", slog.Any("error", err))
+				return writeError(e, http.StatusInternalServerError, "Search failed.")
 			}
-			return writeJSON(e, http.StatusOK, map[string]any{"ids": ids, "totalItems": len(ids)})
+			return writeJSON(e, http.StatusOK, map[string]any{"ids": ids, "totalItems": int(result.Total)})
 		}
 
 		items := hydrateDocumentExports(app, result.Hits, userID)
@@ -103,7 +105,6 @@ func handleDocumentSearch(app core.App, rt *config.Runtime, idx *fulltext.Index)
 	}
 }
 
-// documentSearchQuery reads the Documents list's filters off the query string.
 func documentSearchQuery(params url.Values, text, userID string) fulltext.Query {
 	query := fulltext.Query{
 		Text:             text,
@@ -133,8 +134,14 @@ func documentSearchQuery(params url.Values, text, userID string) fulltext.Query 
 // one ranking, which is what a caller collecting ids needs: paged, the fusion
 // is recomputed per page, and a dense leg that times out on one page and not
 // the next reorders the list under the pager. Unfused, every match comes back
-// in index order, since Search pages are capped.
+// in index order, since Search pages are capped. With all, query.Limit caps
+// how many ids are collected while Total still counts every match, so a
+// caller with a ceiling learns it is past it without the whole set; 0 is no
+// cap.
 func documentSearch(ctx context.Context, app core.App, rt *config.Runtime, idx *fulltext.Index, query fulltext.Query, all bool) (fulltext.Result, error) {
+	if all && query.Limit <= 0 {
+		query.Limit = math.MaxInt
+	}
 	if embedder := rt.Snapshot().Embedder; embedder != nil && idx.ChunksReady() {
 		r := &agentRetriever{app: app, idx: idx, userID: query.UserID, embedQuery: embedQueryFunc(embedder), chunks: idx}
 		result, fused, err := r.fusedDocumentPage(ctx, query, similarityFloor(embedder.Model()))
@@ -145,12 +152,42 @@ func documentSearch(ctx context.Context, app core.App, rt *config.Runtime, idx *
 	if !all {
 		return idx.Search(query)
 	}
-	ids, total, _, err := idx.MatchingIDs(query, math.MaxInt)
+	ids, total, _, err := idx.MatchingIDs(query, query.Limit)
 	hits := make([]fulltext.Hit, 0, len(ids))
 	for _, id := range ids {
 		hits = append(hits, fulltext.Hit{ID: id})
 	}
 	return fulltext.Result{Hits: hits, Total: total}, err
+}
+
+// readableIDs keeps, in order, the hits whose document exists and userID may
+// read: the index runs ahead of a delete or a revoked share, and a scope built
+// from it would otherwise count and rank a document the turn cannot open.
+func readableIDs(app core.App, hits []fulltext.Hit, userID string) ([]string, error) {
+	ids := make([]string, 0, len(hits))
+	for _, hit := range hits {
+		ids = append(ids, hit.ID)
+	}
+	readable := make(map[string]bool, len(ids))
+	// SQLite's parameter limit is generous but not unbounded; chunk.
+	for chunk := range slices.Chunk(ids, 500) {
+		values := make([]any, len(chunk))
+		for i, id := range chunk {
+			values[i] = id
+		}
+		q := app.DB().Select("id").From("documents").Where(dbx.In("id", values...))
+		if userID != "" {
+			q.AndWhere(dbx.NewExp(ReadableDocumentsSQL("documents", "reader"), dbx.Params{"reader": userID}))
+		}
+		var found []string
+		if err := q.Column(&found); err != nil {
+			return nil, err
+		}
+		for _, id := range found {
+			readable[id] = true
+		}
+	}
+	return slices.DeleteFunc(ids, func(id string) bool { return !readable[id] }), nil
 }
 
 // fusedDocumentPage ranks every keyword match together with the documents the

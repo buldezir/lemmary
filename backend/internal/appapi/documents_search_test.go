@@ -38,6 +38,12 @@ func TestDocumentSearchAllReturnsEveryMatchPastAPage(t *testing.T) {
 	if err != nil || len(page.Hits) != fulltext.MaxSearchLimit {
 		t.Fatalf("a page = %d hits, err %v, want the %d cap", len(page.Hits), err, fulltext.MaxSearchLimit)
 	}
+	// A caller with a ceiling learns it is past it without the whole set.
+	q.Limit = 3
+	capped, err := documentSearch(context.Background(), nil, &config.Runtime{}, idx, q, true)
+	if err != nil || len(capped.Hits) != 3 || capped.Total != uint64(want) {
+		t.Fatalf("capped = %d hits of %d, err %v, want 3 of %d", len(capped.Hits), capped.Total, err, want)
+	}
 }
 
 type stubDocuments struct {

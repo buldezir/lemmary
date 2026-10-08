@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -686,8 +687,12 @@ func RenameSession(app core.App, record *core.Record, title string) error {
 
 // SetFilters remembers the document filters a turn was sent with, replacing the
 // last turn's. The row is read again first: record may predate a turn appended
-// since, and saving it whole would put that turn's counters back.
+// since, and saving it whole would put that turn's counters back. The same
+// filters again, which every turn after the first sends, write nothing.
 func SetFilters(app core.App, record *core.Record, filters json.RawMessage) error {
+	if bytes.Equal(bytes.TrimSpace(filters), decodeFilters(record)) {
+		return nil
+	}
 	err := app.RunInTransaction(func(txApp core.App) error {
 		fresh, err := txApp.FindRecordById(SessionsCollection, record.Id)
 		if err != nil {

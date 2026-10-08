@@ -48,6 +48,7 @@ type searchRequest struct {
 	// Scope, when present, is every document the turn may reach: the ids the
 	// page's filters matched. Per turn, as Web is. An empty list is refused
 	// rather than read as no scope, which would widen it to the whole library.
+	// Sorted on decoding, so membership is a binary search.
 	Scope []string `json:"scope"`
 	// Filters are what the page picked Scope with, kept on the session so that
 	// reopening the chat restores them. Opaque here: only the page reads them.
@@ -285,7 +286,7 @@ func prepareSearchTurn(app core.App, rt *config.Runtime, idx *fulltext.Index, e 
 		runID:          runID,
 		content:        content,
 		mode:           mode,
-		messages:       append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content}),
+		messages:       append(history, ai.ChatMessage{Role: chat.RoleUser, Content: content + ai.ScopeNote(len(req.Scope))}),
 		tools:          tools,
 		priorDocuments: priorDocuments,
 		contextWindow:  contextWindowFor(e.Request.Context(), app, rt, snap.Cfg, binding, mode),
@@ -324,6 +325,7 @@ func decodeSearchRequest(e *core.RequestEvent) (searchRequest, string, string, e
 	if !validFilters(req.Filters) {
 		return req, "", "", errors.New("Invalid request body.")
 	}
+	slices.Sort(req.Scope)
 	return req, content, runID, nil
 }
 
@@ -336,12 +338,16 @@ func validFilters(raw json.RawMessage) bool {
 	return len(raw) <= chat.MaxFiltersJSONBytes && json.Unmarshal(raw, &object) == nil && object != nil
 }
 
-// scopedHits drops the hits outside scope; a nil scope keeps them all.
 func scopedHits(hits []ai.DocumentHit, scope []string) []ai.DocumentHit {
 	if scope == nil {
 		return hits
 	}
-	return slices.DeleteFunc(hits, func(hit ai.DocumentHit) bool { return !slices.Contains(scope, hit.ID) })
+	return slices.DeleteFunc(hits, func(hit ai.DocumentHit) bool { return !inSortedScope(scope, hit.ID) })
+}
+
+func inSortedScope(scope []string, id string) bool {
+	_, found := slices.BinarySearch(scope, id)
+	return found
 }
 
 // rememberFilters keeps the filters a turn was sent with on its session. A

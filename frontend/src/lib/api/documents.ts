@@ -603,13 +603,20 @@ export async function countMatchingDocuments(
   return result.totalItems
 }
 
-/** Every id the list's filters match, across all of its pages. */
+/**
+ * Every id the list's filters match, across all of its pages. With a limit,
+ * more matches than that is refused before they are all collected.
+ */
 export async function listMatchingDocumentIds(
   q: string,
   filters: DocumentListFilters,
+  limit?: number,
 ): Promise<string[]> {
   if (!q) {
     await ensureAuth()
+    if (limit && (await countMatchingDocuments('', filters)) > limit) {
+      throw new Error(t('documents.tooManyMatches', { count: limit }))
+    }
     const filter = buildDocumentFilter(filters)
     const records = await pb.collection('documents').getFullList<{ id: string }>({
       fields: 'id',
@@ -626,9 +633,14 @@ export async function listMatchingDocumentIds(
   // page, and a reordered page can skip a match.
   const params = searchParams({ ...filters, q })
   params.set('ids', 'true')
-  const data = await apiFetch<{ ids?: string[] }>(`/api/app/documents/search?${params}`, {
-    fallbackError: t('documents.searchFailed'),
-  })
+  if (limit) params.set('limit', String(limit))
+  const data = await apiFetch<{ ids?: string[]; totalItems?: number }>(
+    `/api/app/documents/search?${params}`,
+    { fallbackError: t('documents.searchFailed') },
+  )
+  if (limit && (data.totalItems ?? 0) > limit) {
+    throw new Error(t('documents.tooManyMatches', { count: limit }))
+  }
   return data.ids ?? []
 }
 

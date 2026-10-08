@@ -36,7 +36,7 @@ type agentRetriever struct {
 	idx    *fulltext.Index
 	userID string
 	// scope, when set, is every document this turn may reach: what the page's
-	// filters matched. Nil is the whole library.
+	// filters matched, sorted. Nil is the whole library.
 	scope []string
 
 	embedQuery func(ctx context.Context, text string) ([]float32, error)
@@ -68,12 +68,11 @@ func (r *agentRetriever) loadShares() {
 	r.sharedDocs, r.sharedOwners, r.sharedLoaded = docs, owners, true
 }
 
-// inScope drops the ids outside the turn's scope.
 func (r *agentRetriever) inScope(ids []string) []string {
 	if r.scope == nil {
 		return ids
 	}
-	return slices.DeleteFunc(slices.Clone(ids), func(id string) bool { return !slices.Contains(r.scope, id) })
+	return slices.DeleteFunc(slices.Clone(ids), func(id string) bool { return !inSortedScope(r.scope, id) })
 }
 
 func (r *agentRetriever) sharedIDs() []string {
