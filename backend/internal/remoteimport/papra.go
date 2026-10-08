@@ -194,12 +194,20 @@ func ensurePapraTags(app core.App, ownerUserID string, remote []papraTag, cache 
 	return ids, nil
 }
 
-// papraDate rounds to the nearest UTC day: a date picked in Papra's browser UI
-// is a local midnight, which in UTC can fall on the day before.
+// papraDate recovers the calendar day from the instant Papra stores, which
+// carries no zone. Its date picker stores the browser's local midnight: an
+// instant on a quarter hour from 10:00 UTC on is midnight east of UTC (+1 to
+// +14) and belongs to the next UTC day. Its Today button stores the current
+// instant, kept as its UTC day. Ceilings: a pick made in UTC−10 to −12 lands a
+// day late, and a Today press between local and UTC midnight lands on UTC's day.
 func papraDate(raw string) string {
 	t, err := time.Parse(time.RFC3339, strings.TrimSpace(raw))
 	if err != nil {
 		return ""
 	}
-	return t.UTC().Add(12 * time.Hour).Format("2006-01-02")
+	t = t.UTC()
+	if hour, minute, second := t.Clock(); t.Nanosecond() == 0 && second == 0 && minute%15 == 0 && hour >= 10 {
+		t = t.AddDate(0, 0, 1)
+	}
+	return t.Format("2006-01-02")
 }

@@ -15,6 +15,13 @@ export type RemoteImportResult = {
   errors: string[]
 }
 
+/**
+ * Sized to a whole library: every document is downloaded one after another, a
+ * Papra one in preserve mode fetched twice. Polling ends when the job does, so this
+ * only bounds a run that never reports back.
+ */
+const remoteImportTimeoutMs = 24 * 60 * 60 * 1000
+
 export async function importFromRemote(
   source: RemoteImportSource,
   url: string,
@@ -32,7 +39,7 @@ export async function importFromRemote(
 
   const result = await pollJob<RemoteImportResult>(
     `/api/app/import/${source}/status?job_id=${encodeURIComponent(start.job_id)}`,
-    { label: t('imports.jobLabel') },
+    { label: t('imports.jobLabel'), timeoutMs: remoteImportTimeoutMs },
   )
   return { ...result, errors: result.errors ?? [] }
 }

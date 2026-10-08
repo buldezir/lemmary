@@ -11,12 +11,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"lemmary/backend/internal/models"
 )
 
 const (
 	defaultPageSize   = 100
 	documentPageSize  = 25
-	maxDownloadBytes  = 32 << 20
+	maxDownloadBytes  = models.MaxFileBytes
 	maxJSONErrorBytes = 8 << 20
 	listTimeout       = 60 * time.Second
 	downloadTimeout   = 5 * time.Minute
@@ -154,11 +156,11 @@ func (c *Client) download(rel, fallbackName string) (downloadedFile, error) {
 	if err != nil {
 		return downloadedFile{}, err
 	}
-	if len(body) > maxDownloadBytes {
-		return downloadedFile{}, fmt.Errorf("%s exceeds %d bytes", fallbackName, maxDownloadBytes)
+	if int64(len(body)) > maxDownloadBytes {
+		return downloadedFile{}, fmt.Errorf("file exceeds the %d-byte document limit", maxDownloadBytes)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return downloadedFile{}, fmt.Errorf("download %s: status %d", fallbackName, resp.StatusCode)
+		return downloadedFile{}, fmt.Errorf("download: status %d", resp.StatusCode)
 	}
 	name := filenameFromDisposition(resp.Header.Get("Content-Disposition"))
 	if name == "" {
