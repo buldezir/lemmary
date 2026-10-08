@@ -1,7 +1,7 @@
 .DS_Store
 .env
 .env.local
-public/
+/public/
 frontend/.vitepress/cache/
 frontend/.vitepress/dist/
 backend/pb_data/
