@@ -189,7 +189,7 @@ func TestPackDistillBatchesRespectsTheBudget(t *testing.T) {
 		{ID: "c", Text: strings.Repeat("x", 150)},
 		{ID: "d", Text: strings.Repeat("x", 10)},
 	}
-	batches := packDistillBatches(docs, 100)
+	batches := packDistillBatches(docs, 100, 10)
 	want := [][]string{{"a"}, {"b"}, {"c"}, {"d"}}
 	if len(batches) != len(want) {
 		t.Fatalf("batches = %d, want %d", len(batches), len(want))
@@ -200,8 +200,13 @@ func TestPackDistillBatchesRespectsTheBudget(t *testing.T) {
 		}
 	}
 
-	together := packDistillBatches(docs[:2], 200)
+	together := packDistillBatches(docs[:2], 200, 10)
 	if len(together) != 1 || len(together[0]) != 2 {
 		t.Fatalf("two documents under the budget should share a batch: %+v", together)
+	}
+
+	counted := packDistillBatches(docs, 1000, 3)
+	if len(counted) != 2 || len(counted[0]) != 3 || len(counted[1]) != 1 {
+		t.Fatalf("a batch should stop at maxDocs however short its documents: %+v", counted)
 	}
 }
