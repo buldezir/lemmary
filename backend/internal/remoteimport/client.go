@@ -1,4 +1,4 @@
-package ngximport
+package remoteimport
 
 import (
 	"encoding/json"
@@ -24,7 +24,7 @@ const (
 
 type Client struct {
 	baseURL        string
-	apiKey         string
+	authorization  string
 	httpClient     *http.Client
 	downloadClient *http.Client
 }
@@ -55,7 +55,7 @@ func NewClient(baseURL, apiKey string, httpClient *http.Client) (*Client, error)
 	}
 	return &Client{
 		baseURL:        normalized,
-		apiKey:         strings.TrimSpace(apiKey),
+		authorization:  "Token " + strings.TrimSpace(apiKey),
 		httpClient:     httpClient,
 		downloadClient: downloadClient,
 	}, nil
@@ -137,7 +137,10 @@ type downloadedFile struct {
 }
 
 func (c *Client) DownloadDocument(id int) (downloadedFile, error) {
-	rel := fmt.Sprintf("/api/documents/%d/download/?original=true", id)
+	return c.download(fmt.Sprintf("/api/documents/%d/download/?original=true", id), fmt.Sprintf("document-%d.bin", id))
+}
+
+func (c *Client) download(rel, fallbackName string) (downloadedFile, error) {
 	req, err := c.newRequest(http.MethodGet, rel, nil)
 	if err != nil {
 		return downloadedFile{}, err
@@ -152,14 +155,14 @@ func (c *Client) DownloadDocument(id int) (downloadedFile, error) {
 		return downloadedFile{}, err
 	}
 	if len(body) > maxDownloadBytes {
-		return downloadedFile{}, fmt.Errorf("document %d exceeds %d bytes", id, maxDownloadBytes)
+		return downloadedFile{}, fmt.Errorf("%s exceeds %d bytes", fallbackName, maxDownloadBytes)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return downloadedFile{}, fmt.Errorf("download document %d: status %d", id, resp.StatusCode)
+		return downloadedFile{}, fmt.Errorf("download %s: status %d", fallbackName, resp.StatusCode)
 	}
 	name := filenameFromDisposition(resp.Header.Get("Content-Disposition"))
 	if name == "" {
-		name = fmt.Sprintf("document-%d.bin", id)
+		name = fallbackName
 	}
 	return downloadedFile{Name: name, Data: body}, nil
 }
@@ -242,7 +245,7 @@ func (c *Client) newRequest(method, relOrPath string, body io.Reader) (*http.Req
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Token "+c.apiKey)
+	req.Header.Set("Authorization", c.authorization)
 	req.Header.Set("Accept", "application/json; version=9")
 	return req, nil
 }

@@ -17,6 +17,7 @@ The API has been tested with the [swift-paperless](https://github.com/paulgessin
 - Drop files into a watched folder (`INGEST_DIR`, a bind mount in Docker): scanned on a schedule, subfolders become tags, and the original is kept or deleted as you choose — see [docs/setup.md](docs/setup.md#ingest-folder)
 - Read attachments from an IMAP mailbox (`INGEST_IMAP_ENABLED`): each storable attachment of the types you pick becomes a document (images embedded in the mail body are skipped), and the message is kept, moved or deleted as you choose — see [docs/setup.md](docs/setup.md#ingest-from-imap)
 - Import a zip of documents (**Upload → Zip archive**) or the invoice PDFs from an Amazon "Your Orders" data export (**Upload → Amazon orders**); either way the archive is previewed and only imported after you confirm the file count, duplicates are skipped
+- Migrate from a running Paperless-ngx or Papra instance (**More → Import**): pulls the original files over its API with an API key, keeping titles, tags, dates and OCR text (plus correspondents and document types from Paperless-ngx) or reprocessing everything through OCR and AI; duplicates are skipped — see [docs/paperless_ngx.md](docs/paperless_ngx.md#importing-from-paperless-ngx) and [docs/setup.md](docs/setup.md#importing-from-papra)
 - Async processing jobs with status tracking
 - OCR text extraction (native text extraction for TXT/CSV/DOCX/XLSX)
 - AI metadata extraction: title, date, type, tags, summary

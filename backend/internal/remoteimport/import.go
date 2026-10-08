@@ -1,4 +1,4 @@
-package ngximport
+package remoteimport
 
 import (
 	"bytes"
@@ -97,16 +97,8 @@ func runImport(app core.App, ownerUserID, baseURL, apiKey, mode string, client *
 
 	err = client.ForEachDocuments(func(docs []ngxDocument) error {
 		for _, doc := range docs {
-			if err := importOneDocument(app, client, ownerUserID, parsedMode, doc, tagMap, corrMap, typeMap); err != nil {
-				if _, ok := errors.AsType[*duplicates.ErrDuplicate](err); ok {
-					result.SkippedDuplicates++
-					continue
-				}
-				result.Failed++
-				appendError(&result, fmt.Sprintf("document %d (%s): %v", doc.ID, strings.TrimSpace(doc.Title), err))
-				continue
-			}
-			result.Imported++
+			err := importOneDocument(app, client, ownerUserID, parsedMode, doc, tagMap, corrMap, typeMap)
+			result.count(fmt.Sprintf("document %d (%s)", doc.ID, strings.TrimSpace(doc.Title)), err)
 		}
 		return nil
 	})
@@ -169,13 +161,24 @@ func importOneDocument(
 	if err != nil {
 		return err
 	}
-	filename := documentFilename(doc, file)
+	var preserve func(*core.Record) []models.FieldWrite
+	if mode == ModePreserve {
+		preserve = func(record *core.Record) []models.FieldWrite {
+			return applyPreservedMetadata(record, doc, tagMap, corrMap, typeMap)
+		}
+	}
+	return saveDocument(app, ownerUserID, documentFilename(doc, file), file.Data, preserve)
+}
 
-	if err := rejectKnownChecksum(app, ownerUserID, file.Data); err != nil {
+// saveDocument stores one downloaded file as a new document. A non-nil preserve
+// fills the remote metadata and returns the option values to write once the
+// document exists; nil queues the full pipeline as for an upload.
+func saveDocument(app core.App, ownerUserID, filename string, data []byte, preserve func(*core.Record) []models.FieldWrite) error {
+	if err := rejectKnownChecksum(app, ownerUserID, data); err != nil {
 		return err
 	}
 
-	fsFile, err := filesystem.NewFileFromBytes(file.Data, filename)
+	fsFile, err := filesystem.NewFileFromBytes(data, filename)
 	if err != nil {
 		return fmt.Errorf("prepare file: %w", err)
 	}
@@ -191,8 +194,8 @@ func importOneDocument(
 	record.Set("processing_status", models.DocStatusPending)
 
 	var options []models.FieldWrite
-	if mode == ModePreserve {
-		options = applyPreservedMetadata(record, doc, tagMap, corrMap, typeMap)
+	if preserve != nil {
+		options = preserve(record)
 		worker.SetCreateSteps(record, models.ImportPreserveSteps)
 	}
 
@@ -302,6 +305,20 @@ func pathBase(name string) string {
 		name = name[i+1:]
 	}
 	return strings.TrimSpace(name)
+}
+
+// count tallies one document's outcome; label names it in the error list.
+func (r *Result) count(label string, err error) {
+	if err == nil {
+		r.Imported++
+		return
+	}
+	if _, ok := errors.AsType[*duplicates.ErrDuplicate](err); ok {
+		r.SkippedDuplicates++
+		return
+	}
+	r.Failed++
+	appendError(r, fmt.Sprintf("%s: %v", label, err))
 }
 
 func appendError(result *Result, msg string) {

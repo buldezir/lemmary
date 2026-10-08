@@ -20,6 +20,9 @@ export function ImportPage() {
         <Link to="/import/ngx" className={tabClassName}>
           Paperless-ngx
         </Link>
+        <Link to="/import/papra" className={tabClassName}>
+          Papra
+        </Link>
       </nav>
 
       <Outlet />

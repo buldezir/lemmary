@@ -1,4 +1,4 @@
-package ngximport
+package remoteimport
 
 import (
 	"fmt"
@@ -16,7 +16,7 @@ var allowPrivateImportHosts atomic.Bool
 
 // SetAllowPrivateImportHosts lets tests reach httptest servers on loopback.
 // Production should leave this false and use IMPORT_ALLOW_PRIVATE when a
-// self-hosted Paperless-ngx instance is on a private network.
+// self-hosted Paperless-ngx or Papra instance is on a private network.
 func SetAllowPrivateImportHosts(allow bool) {
 	allowPrivateImportHosts.Store(allow)
 }

@@ -12,6 +12,7 @@ import (
 	"lemmary/backend/internal/limits"
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/pdfsplit"
+	"lemmary/backend/internal/remoteimport"
 	"lemmary/backend/internal/zipimport"
 )
 
@@ -140,8 +141,10 @@ func Register(
 }
 
 func registerImportRoutes(g *router.RouterGroup[*core.RequestEvent], app core.App, lim limits.Limits) {
-	g.POST("/import/ngx", bindAuth(handlePostImportNgx(app)))
-	g.GET("/import/ngx/status", bindAuth(handleGetImportNgxStatus(app)))
+	g.POST("/import/ngx", bindAuth(handlePostImportRemote(app, remoteimport.StartNgx)))
+	g.GET("/import/ngx/status", bindAuth(handleGetImportRemoteStatus(app)))
+	g.POST("/import/papra", bindAuth(handlePostImportRemote(app, remoteimport.StartPapra)))
+	g.GET("/import/papra/status", bindAuth(handleGetImportRemoteStatus(app)))
 	// Two path families over one implementation: only the upload route
 	// says which source it is, and the staged upload remembers.
 	g.POST("/import/amazon/upload", bindAuth(handlePostImportUpload(app, lim, zipimport.SourceAmazon))).

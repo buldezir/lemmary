@@ -1,9 +1,11 @@
 import { t } from '../../i18n'
 import { apiFetch, pollJob, type JobProgress } from '../apiClient'
 
-export type NgxImportMode = 'preserve' | 'reprocess'
+export type RemoteImportSource = 'ngx' | 'papra'
 
-export type NgxImportResult = {
+export type RemoteImportMode = 'preserve' | 'reprocess'
+
+export type RemoteImportResult = {
   imported: number
   skipped_duplicates: number
   failed: number
@@ -13,12 +15,13 @@ export type NgxImportResult = {
   errors: string[]
 }
 
-export async function importFromNgx(
+export async function importFromRemote(
+  source: RemoteImportSource,
   url: string,
   apiKey: string,
-  mode: NgxImportMode = 'preserve',
-): Promise<NgxImportResult> {
-  const start = await apiFetch<{ job_id?: string }>('/api/app/import/ngx', {
+  mode: RemoteImportMode = 'preserve',
+): Promise<RemoteImportResult> {
+  const start = await apiFetch<{ job_id?: string }>(`/api/app/import/${source}`, {
     method: 'POST',
     body: { url, api_key: apiKey, mode },
     fallbackError: t('imports.startFailed'),
@@ -27,8 +30,8 @@ export async function importFromNgx(
     throw new Error(t('imports.missingJobId'))
   }
 
-  const result = await pollJob<NgxImportResult>(
-    `/api/app/import/ngx/status?job_id=${encodeURIComponent(start.job_id)}`,
+  const result = await pollJob<RemoteImportResult>(
+    `/api/app/import/${source}/status?job_id=${encodeURIComponent(start.job_id)}`,
     { label: t('imports.jobLabel') },
   )
   return { ...result, errors: result.errors ?? [] }
