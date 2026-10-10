@@ -1,3 +1,7 @@
+---
+description: "Stellen Sie Ihrem Dokumentenarchiv eine Frage und erhalten Sie eine Antwort, die jedes verwendete Dokument zitiert. Wie Deep Research funktioniert, wie man gut fragt und was eine breite Frage kostet."
+---
+
 # Deep Research {#deep-research}
 
 Deep Research beantwortet Fragen zum Archiv, statt Ihnen Dokumente zum Lesen

@@ -1,3 +1,7 @@
+---
+description: "Lemmary mit Docker betreiben: das veröffentlichte Image, Volumes, Reverse-Proxys, Backups und Upgrades. Auf dem Host wird nur Docker benötigt."
+---
+
 # Self-Hosting mit Docker {#self-hosting-with-docker}
 
 Das veröffentlichte Image enthält alles, was Lemmary braucht – das Go-Binary, die

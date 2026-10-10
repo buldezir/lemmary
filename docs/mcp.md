@@ -1,3 +1,7 @@
+---
+description: "Connect Claude Code, Claude Desktop, Cursor, or your own agent to a Lemmary archive over the Model Context Protocol. Read-only unless an admin allows changes; a token sees only what its user sees."
+---
+
 # MCP for agents
 
 Lemmary can serve its archive over the [Model Context Protocol](https://modelcontextprotocol.io), so an agent — Claude Code, Claude Desktop, Cursor, or one you wrote — searches and reads your documents directly instead of through the browser. The endpoint is read-only unless an admin allows changes, and uses the same retrieval as Deep Search: a token sees exactly what its user sees in the app, and nothing else.

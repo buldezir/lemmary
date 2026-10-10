@@ -1,3 +1,7 @@
+---
+description: "Lemmary, Paperless-ngx, and Papra compared: OCR, AI metadata, search and research, sharing, automation, encryption, and licensing for self-hosted document archives."
+---
+
 # Lemmary vs Paperless-ngx vs Papra
 
 All three products turn a self-hosted collection of files into a searchable

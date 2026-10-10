@@ -1,3 +1,7 @@
+---
+description: "Verbinden Sie Claude Code, Claude Desktop, Cursor oder einen eigenen Agenten über das Model Context Protocol mit einem Lemmary-Archiv. Schreibgeschützt, solange ein Admin keine Änderungen erlaubt."
+---
+
 # MCP für Agenten {#mcp-for-agents}
 
 Lemmary kann sein Archiv über das [Model Context Protocol](https://modelcontextprotocol.io) bereitstellen, sodass ein Agent – Claude Code, Claude Desktop, Cursor oder einer, den Sie selbst geschrieben haben – Ihre Dokumente direkt durchsucht und liest statt über den Browser. Der Endpunkt ist schreibgeschützt, solange ein Admin keine Änderungen erlaubt, und nutzt dieselbe Abfrage wie Deep Search: Ein Token sieht genau das, was sein Benutzer in der App sieht, und nichts anderes.

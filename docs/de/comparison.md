@@ -1,3 +1,7 @@
+---
+description: "Lemmary, Paperless-ngx und Papra im Vergleich: OCR, KI-Metadaten, Suche und Recherche, Freigabe, Automatisierung, Verschlüsselung und Lizenzierung selbst gehosteter Dokumentenarchive."
+---
+
 # Lemmary vs Paperless-ngx vs Papra {#lemmary-vs-paperless-ngx-vs-papra}
 
 Alle drei Produkte machen aus einer selbst gehosteten Dateisammlung ein

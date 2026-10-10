@@ -1,3 +1,7 @@
+---
+description: "Run Lemmary with Docker: the published image, volumes, reverse proxies, backups, and upgrades. Nothing to install on the host but Docker."
+---
+
 # Self-hosting with Docker
 
 The published image carries everything Lemmary needs — the Go binary, the built

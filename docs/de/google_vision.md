@@ -1,3 +1,9 @@
+---
+description: "Einen Google-Cloud-Vision-API-Schlüssel für das OCR von Lemmary erhalten: Projekt anlegen, Abrechnung einrichten, Vision API aktivieren und Schlüssel erzeugen. 1.000 Anfragen pro Monat sind kostenlos."
+---
+
+# API-Schlüssel für Google Cloud Vision {#google-cloud-vision-api-key}
+
 Um einen API-Schlüssel für Google Cloud Vision zu erhalten, sind einige bestimmte Schritte in der Google Cloud Console nötig. Da die Vision API ein kostenpflichtiger Dienst ist (wenn auch mit einem großzügigen kostenlosen Kontingent von 1.000 Anfragen pro Monat), müssen Sie ein Rechnungskonto einrichten, um sie zu aktivieren.
 
 Hier ist eine Schritt-für-Schritt-Anleitung zum Erzeugen und Absichern Ihres API-Schlüssels.

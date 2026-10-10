@@ -1,3 +1,7 @@
+---
+description: "Die Paperless-ngx-kompatible REST-API von Lemmary lässt bestehende Paperless-ngx-Clients und -Apps weiterarbeiten, und Lemmary kann die Bibliothek eines laufenden Paperless-ngx importieren."
+---
+
 # Paperless-ngx-API-Kompatibilität {#paperless-ngx-api-compatibility}
 
 Lemmary stellt auf demselben Host wie PocketBase eine paperless-ngx-kompatible REST-API bereit (zum Beispiel `http://127.0.0.1:8090/api/`). Das Backend implementiert die Endpunkte, die Drittanbieter-Clients für Authentifizierung, Dokumente, Tags, Korrespondenten, Dokumenttypen und zugehörige Metadaten erwarten.

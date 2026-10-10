@@ -1,3 +1,7 @@
+---
+description: "Ask your document archive a question and get an answer that cites every document it used. How Deep Research works, how to ask well, and what a broad question costs."
+---
+
 # Deep Research
 
 Deep Research answers questions about the archive rather than listing documents

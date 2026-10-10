@@ -1,3 +1,8 @@
+---
+title: Dokumentation
+description: "Anleitungen zur Installation, Konfiguration und zum Betrieb von Lemmary, dem selbst gehosteten Dokumentenarchiv mit OCR, KI-Metadaten und Recherche mit Quellenangaben."
+---
+
 # Lemmary-Dokumentation {#lemmary-docs}
 
 Anleitungen zur Einrichtung und zum Betrieb von Lemmary.

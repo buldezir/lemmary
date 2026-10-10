@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defineConfig, type DefaultTheme } from 'vitepress'
+import { defineConfig, type DefaultTheme, type HeadConfig } from 'vitepress'
 
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const vuePkg = path.join(frontendRoot, 'node_modules/vue')
@@ -9,6 +9,9 @@ const docsRoot = path.resolve(frontendRoot, '../docs')
 
 type Lang = 'en' | 'de' | 'ru'
 type Label = Record<Lang, string>
+
+const langs: Lang[] = ['en', 'de', 'ru']
+const site = 'https://lemmary.app/docs/'
 
 for (const lang of ['de', 'ru']) {
   for (const page of readdirSync(docsRoot).filter((name) => name.endsWith('.md'))) {
@@ -114,6 +117,11 @@ function themeFor(lang: Lang): DefaultTheme.Config {
   }
 }
 
+function urlFor(page: string, lang: Lang) {
+  const file = page.replace(/(^|\/)index\.md$/, '$1').replace(/\.md$/, '.html')
+  return `${site}${lang === 'en' ? '' : `${lang}/`}${file}`
+}
+
 export default defineConfig({
   title: 'Lemmary',
   head: [['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }]],
@@ -122,6 +130,23 @@ export default defineConfig({
   outDir: '../public/docs',
   // Repo path links (e.g. ../backend/...) are intentional; they are not docs pages.
   ignoreDeadLinks: [/\.\.\//],
+  sitemap: { hostname: site },
+  transformHead({ pageData, title, description }) {
+    if (pageData.isNotFound) return
+    const lang = langs.find((l) => pageData.relativePath.startsWith(`${l}/`)) ?? 'en'
+    const page = lang === 'en' ? pageData.relativePath : pageData.relativePath.slice(lang.length + 1)
+    const url = urlFor(page, lang)
+    return [
+      ['link', { rel: 'canonical', href: url }],
+      ...langs.map((l): HeadConfig => ['link', { rel: 'alternate', hreflang: l, href: urlFor(page, l) }]),
+      ['link', { rel: 'alternate', hreflang: 'x-default', href: urlFor(page, 'en') }],
+      ['meta', { property: 'og:url', content: url }],
+      ['meta', { property: 'og:title', content: title }],
+      ['meta', { property: 'og:description', content: description }],
+      ['meta', { property: 'og:image', content: 'https://lemmary.app/social-card.png' }],
+      ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ]
+  },
   locales: {
     root: {
       label: 'English',

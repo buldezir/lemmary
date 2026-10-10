@@ -1,3 +1,9 @@
+---
+description: "Get a Google Cloud Vision API key for Lemmary's OCR: create a project, set up billing, enable the Vision API, and generate the key. Includes 1,000 free requests a month."
+---
+
+# Google Cloud Vision API key
+
 Getting a Google Cloud Vision API key involves a few specific steps within the Google Cloud Console. Because the Vision API is a paid service (though it includes a generous free tier of 1,000 free requests per month), you will need to set up a billing account to activate it.
 
 Here is a step-by-step guide to generating and securing your API key.

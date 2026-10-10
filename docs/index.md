@@ -1,3 +1,8 @@
+---
+title: Documentation
+description: "Guides for installing, configuring, and running Lemmary, the self-hosted document archive with OCR, AI metadata, and cited research."
+---
+
 # Lemmary docs
 
 Setup and operation guides for Lemmary.
