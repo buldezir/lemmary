@@ -29,6 +29,8 @@ TOKEN=$(curl -s -X POST https://lemmary.example.com/api/token/ \
 
 Every token is scoped to one account's documents. An admin's token maps to the admin's own `users` account (the one created alongside it at setup), not to every account on the instance.
 
+A token stays valid for ten years, and creating another does not retire the earlier ones. Changing your password under **Account → Password** revokes every token at once, Paperless-ngx app tokens included; there is no way to revoke one alone.
+
 ## Connect
 
 The server speaks Streamable HTTP at `POST /api/mcp` and expects `Authorization: Bearer <token>`. As the protocol requires, requests carry `Accept: application/json, text/event-stream`; MCP clients do this themselves, a hand-rolled `curl` has to.

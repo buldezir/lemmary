@@ -1642,7 +1642,7 @@ export const ru: Catalog = {
     'Точка доступа MCP на этом сервере выключена ({env}). Администратор может включить её снова.',
   'account.createAnotherToken': 'Создать ещё один токен',
   'account.createToken': 'Создать токен',
-  'account.tokenShown': 'Действует десять лет. Показывается один раз: смена пароля отзывает его.',
+  'account.tokenShown': 'Действует десять лет и показывается один раз. Прежние токены работают, пока вы не смените пароль ниже.',
   'account.tokenHint':
     'Выпускает долгоживущий токен для вашей учётной записи и подставляет его в фрагмент ниже.',
   'account.agent': 'Агент',
@@ -1654,6 +1654,18 @@ export const ru: Catalog = {
     'Приложения для Paperless-ngx, например Paperparrot или swift-paperless, могут входить по токену вместо пароля. Укажите {url} как сервер и вставьте токен. {link}',
   'account.paperlessLink': 'Что работает через эти приложения.',
   'account.paperlessTokenHint': 'Создаёт долгоживущий токен для вашей учётной записи.',
+  'account.password': 'Пароль',
+  'account.passwordHint':
+    'Смена пароля завершает сеансы на других ваших устройствах и отзывает все токены агентов и приложений Paperless-ngx, включая созданные раньше. Эта вкладка останется в системе.',
+  'account.currentPassword': 'Текущий пароль',
+  'account.newPassword': 'Новый пароль',
+  'account.confirmPassword': 'Повторите новый пароль',
+  'account.changePassword': 'Сменить пароль',
+  'account.passwordChanged': 'Пароль изменён. Все прежние токены больше не действуют.',
+  'account.passwordMismatch': 'Новые пароли не совпадают.',
+  'account.passwordWrong': 'Текущий пароль неверен.',
+  'account.passwordRejected': 'Новый пароль отклонён: используйте не менее 8 символов.',
+  'account.passwordFailed': 'Не удалось сменить пароль.',
   'account.title': 'Учётная запись',
   'account.intro': 'Как вы и ваши агенты входите в этот архив.',
 

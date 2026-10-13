@@ -457,6 +457,31 @@ export async function isAdmin() {
   }
 }
 
+/**
+ * Changing the password rotates the account's token key, which ends every
+ * session and revokes every agent and Paperless-ngx token, this tab's own
+ * session included, so the tab signs straight back in with the new password.
+ */
+export async function changePassword(oldPassword: string, password: string) {
+  const record = pb.authStore.record
+  if (!record) {
+    throw new AuthRequiredError()
+  }
+  try {
+    await pb.collection('users').update(record.id, { oldPassword, password, passwordConfirm: password })
+  } catch (err) {
+    const fields = err instanceof ClientResponseError ? err.response?.data : undefined
+    if (fields?.oldPassword) {
+      throw new Error(t('account.passwordWrong'), { cause: err })
+    }
+    if (fields?.password) {
+      throw new Error(t('account.passwordRejected'), { cause: err })
+    }
+    throw new Error(t('account.passwordFailed'), { cause: err })
+  }
+  await loginWithPassword(record.email, password)
+}
+
 export function logout() {
   clearMeCache()
   pb.authStore.clear()

@@ -1515,7 +1515,7 @@ export const de: Catalog = {
   'account.createAnotherToken': 'Weiteres Token erstellen',
   'account.createToken': 'Token erstellen',
   'account.tokenShown':
-    'Zehn Jahre gültig. Wird nur einmal angezeigt: Eine Änderung Ihres Passworts widerruft es.',
+    'Zehn Jahre gültig und nur einmal angezeigt. Frühere Tokens funktionieren weiter, bis Sie unten Ihr Passwort ändern.',
   'account.tokenHint':
     'Erstellt ein langlebiges Token für Ihr Konto und setzt es in das Snippet unten ein.',
   'account.agent': 'Agent',
@@ -1527,6 +1527,18 @@ export const de: Catalog = {
     'Apps für Paperless-ngx wie Paperparrot oder swift-paperless können sich mit einem Token statt mit einem Passwort anmelden. Geben Sie {url} als Server ein und fügen Sie das Token ein. {link}',
   'account.paperlessLink': 'Was über diese Apps funktioniert.',
   'account.paperlessTokenHint': 'Erstellt ein langlebiges Token für Ihr Konto.',
+  'account.password': 'Passwort',
+  'account.passwordHint':
+    'Eine Änderung meldet Sie auf Ihren anderen Geräten ab und widerruft alle Tokens für Agenten und Paperless-ngx-Apps, auch früher erstellte. Dieser Tab bleibt angemeldet.',
+  'account.currentPassword': 'Aktuelles Passwort',
+  'account.newPassword': 'Neues Passwort',
+  'account.confirmPassword': 'Neues Passwort wiederholen',
+  'account.changePassword': 'Passwort ändern',
+  'account.passwordChanged': 'Passwort geändert. Alle früheren Tokens funktionieren nicht mehr.',
+  'account.passwordMismatch': 'Die neuen Passwörter stimmen nicht überein.',
+  'account.passwordWrong': 'Das aktuelle Passwort ist falsch.',
+  'account.passwordRejected': 'Das neue Passwort wurde abgelehnt; verwenden Sie mindestens 8 Zeichen.',
+  'account.passwordFailed': 'Das Passwort konnte nicht geändert werden.',
   'account.title': 'Konto',
   'account.intro': 'Wie Sie und Ihre Agenten sich bei diesem Archiv anmelden.',
 

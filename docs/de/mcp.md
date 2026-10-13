@@ -29,6 +29,8 @@ TOKEN=$(curl -s -X POST https://lemmary.example.com/api/token/ \
 
 Jedes Token ist auf die Dokumente eines Kontos beschränkt. Das Token eines Administrators gehört zum eigenen `users`-Konto des Administrators (dem, das bei der Einrichtung zusammen mit ihm angelegt wurde), nicht zu jedem Konto auf der Instanz.
 
+Ein Token bleibt zehn Jahre gültig, und ein weiteres zu erstellen macht die früheren nicht ungültig. Eine Passwortänderung unter **Konto → Passwort** widerruft alle Tokens auf einmal, auch die für Paperless-ngx-Apps; ein einzelnes lässt sich nicht widerrufen.
+
 ## Verbinden {#connect}
 
 Der Server spricht Streamable HTTP unter `POST /api/mcp` und erwartet `Authorization: Bearer <token>`. Wie vom Protokoll verlangt, enthalten Anfragen `Accept: application/json, text/event-stream`; MCP-Clients setzen das selbst, ein handgeschriebenes `curl` muss es angeben.

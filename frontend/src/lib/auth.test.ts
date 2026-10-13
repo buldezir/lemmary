@@ -5,19 +5,27 @@ const signIn = vi.hoisted(() => vi.fn())
 const refresh = vi.hoisted(() => vi.fn())
 const save = vi.hoisted(() => vi.fn())
 const clear = vi.hoisted(() => vi.fn())
+const update = vi.hoisted(() => vi.fn())
 
 vi.mock('./pb', () => ({
   pb: {
     collection: (name: string) => ({
       authWithPassword: (email: string, password: string) => signIn(name, email, password),
       authRefresh: () => refresh(name),
+      update: (id: string, body: unknown) => update(name, id, body),
     }),
-    authStore: { token: '', save, clear, onChange: () => {} },
+    authStore: {
+      token: '',
+      record: { id: 'user1', email: 'user@example.test' },
+      save,
+      clear,
+      onChange: () => {},
+    },
   },
   pbUrl: '',
 }))
 
-import { adoptAuthHandoff, loginWithPassword, takeAuthHandoff } from './auth'
+import { adoptAuthHandoff, changePassword, loginWithPassword, takeAuthHandoff } from './auth'
 
 function rejection(status: number) {
   return new ClientResponseError({ status, response: { message: `status ${status}` } })
@@ -99,5 +107,40 @@ describe('adoptAuthHandoff', () => {
 
     expect(save).not.toHaveBeenCalled()
     expect(refresh).not.toHaveBeenCalled()
+  })
+})
+
+describe('changePassword', () => {
+  beforeEach(() => {
+    signIn.mockReset()
+    update.mockReset()
+  })
+
+  // The change rotates the token key, so this tab's own session dies with
+  // every other token and has to be replaced at once.
+  it('changes the password and signs this tab back in with it', async () => {
+    update.mockResolvedValue({})
+    signIn.mockResolvedValue({})
+
+    await changePassword('old-secret', 'new-secret')
+
+    expect(update).toHaveBeenCalledWith('users', 'user1', {
+      oldPassword: 'old-secret',
+      password: 'new-secret',
+      passwordConfirm: 'new-secret',
+    })
+    expect(signIn).toHaveBeenCalledWith('users', 'user@example.test', 'new-secret')
+  })
+
+  it('says the current password is wrong rather than the server message', async () => {
+    update.mockRejectedValue(
+      new ClientResponseError({
+        status: 400,
+        response: { message: 'Failed to update record.', data: { oldPassword: { code: 'invalid' } } },
+      }),
+    )
+
+    await expect(changePassword('nope', 'new-secret')).rejects.toThrow('The current password is wrong.')
+    expect(signIn).not.toHaveBeenCalled()
   })
 })

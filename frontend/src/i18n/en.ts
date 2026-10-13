@@ -1441,7 +1441,7 @@ export const en = {
     'The MCP endpoint is switched off on this instance ({env}). An admin can turn it back on.',
   'account.createAnotherToken': 'Create another token',
   'account.createToken': 'Create token',
-  'account.tokenShown': 'Valid for ten years. Shown once: changing your password revokes it.',
+  'account.tokenShown': 'Valid for ten years and shown once. Earlier tokens keep working until you change your password below.',
   'account.tokenHint':
     'Mints a long-lived token for your account and fills it into the snippet below.',
   'account.agent': 'Agent',
@@ -1453,6 +1453,18 @@ export const en = {
     'Apps made for Paperless-ngx, such as Paperparrot or swift-paperless, can sign in with a token instead of a password. Enter {url} as the server and paste the token. {link}',
   'account.paperlessLink': 'What works through these apps.',
   'account.paperlessTokenHint': 'Mints a long-lived token for your account.',
+  'account.password': 'Password',
+  'account.passwordHint':
+    'Changing it signs you out on your other devices and revokes every agent and Paperless-ngx app token, including ones created earlier. This tab stays signed in.',
+  'account.currentPassword': 'Current password',
+  'account.newPassword': 'New password',
+  'account.confirmPassword': 'Repeat new password',
+  'account.changePassword': 'Change password',
+  'account.passwordChanged': 'Password changed. Every earlier token has stopped working.',
+  'account.passwordMismatch': 'The new passwords do not match.',
+  'account.passwordWrong': 'The current password is wrong.',
+  'account.passwordRejected': 'The new password was refused; use at least 8 characters.',
+  'account.passwordFailed': 'Could not change the password.',
   'account.title': 'Account',
   'account.intro': 'How you and your agents sign in to this archive.',
 

@@ -253,8 +253,11 @@ func mapTask(job *core.Record, doc *taskDocument) map[string]any {
 // paperless client asks for.
 const ngxTaskType = "consume_file"
 
-// mapTaskV10 is the task as paperless-ngx 3 reports it. Lemmary does not record
-// where an upload came from, so every task says it came from the web UI.
+// ngxTriggerSource is the source every task reports: Lemmary does not record
+// where an upload came from.
+const ngxTriggerSource = "web_ui"
+
+// mapTaskV10 is the task as paperless-ngx 3 reports it.
 func mapTaskV10(job *core.Record, doc *taskDocument, owner int) map[string]any {
 	status := strings.ToLower(mapJobStatus(job.GetString("status")))
 
@@ -282,7 +285,7 @@ func mapTaskV10(job *core.Record, doc *taskDocument, owner int) map[string]any {
 		"task_id":                taskUUID(job),
 		"task_type":              ngxTaskType,
 		"task_type_display":      "Consume File",
-		"trigger_source":         "web_ui",
+		"trigger_source":         ngxTriggerSource,
 		"trigger_source_display": "Web UI",
 		"status":                 status,
 		"status_display":         strings.ToUpper(status[:1]) + status[1:],

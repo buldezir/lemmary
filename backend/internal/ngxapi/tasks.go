@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/pocketbase/dbx"
@@ -120,8 +121,11 @@ var taskStatuses = map[string][]string{
 	"revoked": {models.JobStatusCancelled},
 }
 
-// taskScope reads the task list filters. v9 knew only task_id and
-// acknowledged; paperless-ngx 3 filters by status and type as well.
+// taskScope reads the task filters paperless-ngx 3 defines, in either API
+// version. A value no job here can have, such as a trigger source other than
+// the one every task reports, matches nothing rather than being dropped: a
+// client reads a 200 as the filter applied. Parameters outside that set are
+// ignored, as paperless ignores them.
 func taskScope(authID string, query url.Values, v9 bool) ([]dbx.Expression, error) {
 	scope := []dbx.Expression{taskOwnerExp(authID)}
 
@@ -138,14 +142,54 @@ func taskScope(authID string, query url.Values, v9 bool) ([]dbx.Expression, erro
 	if acknowledged != nil {
 		scope = append(scope, dbx.HashExp{ngxAcknowledgedField: *acknowledged})
 	}
+
+	statusScope, err := taskStatusScope(query)
+	if err != nil {
+		return nil, err
+	}
+	scope = append(scope, statusScope...)
+
+	reported := map[string]string{
+		"task_type":      ngxTaskType,
+		"trigger_source": ngxTriggerSource,
+		"owner":          strconv.Itoa(toNgxID(authID)),
+	}
 	if v9 {
-		return scope, nil
+		// v9's names for the same two fields, as mapTask reports them.
+		reported["task_name"] = ngxTaskType
+		reported["type"] = "file"
+	}
+	for param, value := range reported {
+		if values := query[param]; len(values) > 0 && !slices.Contains(values, value) {
+			scope = append(scope, matchNothing)
+		}
 	}
 
+	dateScope, err := taskCreatedScope(query)
+	if err != nil {
+		return nil, err
+	}
+	scope = append(scope, dateScope...)
+
+	if exp := taskNameExp(query.Get("name")); exp != nil {
+		scope = append(scope, exp)
+	}
+	if exp := taskResultExp(query.Get("result")); exp != nil {
+		scope = append(scope, exp)
+	}
+	return scope, nil
+}
+
+var matchNothing = dbx.NewExp("1 = 0")
+
+// taskStatusScope reads status and is_complete. v9 reported status in
+// upper case, so either case is accepted.
+func taskStatusScope(query url.Values) ([]dbx.Expression, error) {
+	var scope []dbx.Expression
 	if names := query["status"]; len(names) > 0 {
 		var statuses []any
 		for _, name := range names {
-			mapped, ok := taskStatuses[name]
+			mapped, ok := taskStatuses[strings.ToLower(name)]
 			if !ok {
 				return nil, fmt.Errorf("Select a valid choice. %s is not one of the available choices.", name)
 			}
@@ -167,11 +211,68 @@ func taskScope(authID string, query url.Values, v9 bool) ([]dbx.Expression, erro
 			scope = append(scope, dbx.Not(done))
 		}
 	}
+	return scope, nil
+}
 
-	if types := query["task_type"]; len(types) > 0 && !slices.Contains(types, ngxTaskType) {
-		scope = append(scope, dbx.NewExp("1 = 0"))
+func taskCreatedScope(query url.Values) ([]dbx.Expression, error) {
+	var scope []dbx.Expression
+	for param, op := range map[string]string{"date_created_after": ">=", "date_created_before": "<="} {
+		raw := strings.TrimSpace(query.Get(param))
+		if raw == "" {
+			continue
+		}
+		at, err := parseFilterTime(raw)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid date %q for %q.", raw, param)
+		}
+		scope = append(scope, dbx.NewExp(
+			"[[processing_jobs.created]] "+op+" {:"+param+"}",
+			dbx.Params{param: at.UTC().Format(storedTimeLayout)},
+		))
 	}
 	return scope, nil
+}
+
+// taskNameExp is paperless's name search: the file name, or the task type's
+// or trigger source's label. Every task here carries the same two labels, so
+// a term inside either matches them all.
+func taskNameExp(value string) dbx.Expression {
+	term := strings.ToLower(strings.TrimSpace(value))
+	labels := []string{"consume file", "web ui"}
+	if term == "" || slices.ContainsFunc(labels, func(label string) bool { return strings.Contains(label, term) }) {
+		return nil
+	}
+	return dbx.NewExp(
+		"[[document]] IN (SELECT [[documents.id]] FROM {{documents}} WHERE instr(lower([[documents.file]]), {:taskName}) > 0)",
+		dbx.Params{"taskName": term},
+	)
+}
+
+// taskResultExp is paperless's result search: a number is the document a
+// task created, anything else is looked for in a failed task's step errors,
+// which is where its error message comes from.
+func taskResultExp(value string) dbx.Expression {
+	term := strings.TrimSpace(value)
+	if term == "" {
+		return nil
+	}
+	if id, err := strconv.Atoi(term); err == nil {
+		return dbx.And(
+			dbx.In("status", models.JobStatusCompleted, models.JobStatusNeedsReview),
+			dbx.NewExp(
+				"[[document]] IN (SELECT [[documents.id]] FROM {{documents}} WHERE [[documents."+ngxid.Field+"]] = {:taskResultID})",
+				dbx.Params{"taskResultID": id},
+			),
+		)
+	}
+	return dbx.And(
+		dbx.HashExp{"status": models.JobStatusFailed},
+		dbx.NewExp(
+			"EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid([[step_runs]]) THEN [[step_runs]] ELSE '[]' END) "+
+				"WHERE instr(lower(json_extract(value, '$.error')), {:taskResult}) > 0)",
+			dbx.Params{"taskResult": strings.ToLower(term)},
+		),
+	)
 }
 
 func taskOrdering(ordering string) string {

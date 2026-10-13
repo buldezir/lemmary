@@ -462,3 +462,45 @@ func TestAcknowledgeAllStaysWithinTheOwner(t *testing.T) {
 		t.Fatalf("%d tasks left after all:true, want none", got)
 	}
 }
+
+// A filter paperless defines and this server dropped answered 200 with the
+// whole list, which a client shows as filtered.
+func TestTaskListHonoursEveryPaperlessFilter(t *testing.T) {
+	f := newListFixture(t)
+	createJob(t, f.app, f.docBoth, "completed")
+	failed := createJob(t, f.app, f.docOne, "failed")
+	job := mustFind(t, f.app, "processing_jobs", failed)
+	job.Set("step_runs", []map[string]any{{"name": "ocr", "error": "Tesseract crashed"}})
+	if err := f.app.Save(job); err != nil {
+		t.Fatalf("save step runs: %v", err)
+	}
+	docBoth := storedID(t, f.app, "documents", f.docBoth)
+
+	cases := map[string]int64{
+		"trigger_source=web_ui":                   2,
+		"trigger_source=email_consume":            0,
+		"owner=" + fmt.Sprint(toNgxID(f.userID)):  2,
+		"owner=" + fmt.Sprint(toNgxID(f.otherID)): 0,
+		"name=consume":                            2,
+		"name=both":                               1,
+		"name=nowhere":                            0,
+		"result=" + fmt.Sprint(docBoth):           1,
+		"result=tesseract":                        1,
+		"result=nowhere":                          0,
+		"date_created_after=2999-01-01":           0,
+		"date_created_before=2999-01-01":          2,
+	}
+	for query, want := range cases {
+		if got := f.taskPage(t, query).Count; got != want {
+			t.Errorf("%s: %d tasks, want %d", query, got, want)
+		}
+	}
+
+	// v9's own names for type and source, and the case it reported status in.
+	if got := len(f.tasksFiltered(t, "type=manual_task")); got != 0 {
+		t.Errorf("v9 type=manual_task returned %d tasks, want none", got)
+	}
+	if got := len(f.tasksFiltered(t, "status=FAILURE")); got != 1 {
+		t.Errorf("v9 status=FAILURE returned %d tasks, want 1", got)
+	}
+}

@@ -1,5 +1,5 @@
 import { type SubmitEvent, useState } from 'react'
-import { getMe } from '../lib/auth'
+import { changePassword, getMe } from '../lib/auth'
 import {
   deletePasskey,
   listPasskeys,
@@ -443,6 +443,73 @@ function PaperlessAppsSection() {
   )
 }
 
+function PasswordSection() {
+  const [current, setCurrent] = useState('')
+  const [next, setNext] = useState('')
+  const [repeated, setRepeated] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError('')
+    setNotice('')
+    if (next !== repeated) {
+      setError(t('account.passwordMismatch'))
+      return
+    }
+    try {
+      setBusy(true)
+      await changePassword(current, next)
+      setCurrent('')
+      setNext('')
+      setRepeated('')
+      setNotice(t('account.passwordChanged'))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('account.passwordFailed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const fields = [
+    { label: t('account.currentPassword'), value: current, set: setCurrent, autoComplete: 'current-password' },
+    { label: t('account.newPassword'), value: next, set: setNext, autoComplete: 'new-password' },
+    { label: t('account.confirmPassword'), value: repeated, set: setRepeated, autoComplete: 'new-password' },
+  ]
+
+  return (
+    <section id="password" className={sectionClassName}>
+      <h2 className={sectionTitleClassName}>{t('account.password')}</h2>
+      <p className={`${fieldHintClassName} mb-4`}>{t('account.passwordHint')}</p>
+      <form className="flex flex-col gap-3" onSubmit={onSubmit}>
+        {fields.map((field) => (
+          <label key={field.label} className={labelClassName}>
+            <span className={labelTextClassName}>{field.label}</span>
+            <input
+              type="password"
+              required
+              minLength={field.autoComplete === 'new-password' ? 8 : undefined}
+              autoComplete={field.autoComplete}
+              value={field.value}
+              onChange={(event) => field.set(event.target.value)}
+              className={`${inputClassName} max-w-sm`}
+            />
+          </label>
+        ))}
+        {error && <p className="text-sm text-madder">{error}</p>}
+        {notice && <p className="text-sm text-ink-soft">{notice}</p>}
+        <div>
+          <Button type="submit" disabled={busy}>
+            {t('account.changePassword')}
+          </Button>
+        </div>
+      </form>
+    </section>
+  )
+}
+
 function InstanceLimitsSection() {
   const { data: limits } = useAsync(getLimits, [])
   if (!limits || !(limits.enforced || (limits.misconfigured?.length ?? 0) > 0)) return null
@@ -478,6 +545,7 @@ export function AccountPage() {
       <SignedInSection />
       <AgentsSection />
       <PaperlessAppsSection />
+      <PasswordSection />
       <PasskeysSection />
       <InstanceLimitsSection />
     </div>
