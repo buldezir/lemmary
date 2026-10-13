@@ -1649,6 +1649,11 @@ export const ru: Catalog = {
   'account.copied': 'Скопировано',
   'account.copy': 'Копировать',
   'account.replaceToken': 'Замените {token} на токен или создайте его выше.',
+  'account.paperlessApps': 'Приложения для Paperless-ngx',
+  'account.paperlessAppsHint':
+    'Приложения для Paperless-ngx, например Paperparrot или swift-paperless, могут входить по токену вместо пароля. Укажите {url} как сервер и вставьте токен. {link}',
+  'account.paperlessLink': 'Что работает через эти приложения.',
+  'account.paperlessTokenHint': 'Создаёт долгоживущий токен для вашей учётной записи.',
   'account.title': 'Учётная запись',
   'account.intro': 'Как вы и ваши агенты входите в этот архив.',
 

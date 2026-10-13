@@ -448,6 +448,22 @@ func handleDownloadDocument(e *core.RequestEvent) error {
 	return fsys.Serve(e.Response, e.Request, fileKey, fileName)
 }
 
+// handleDocumentSuggestions answers paperless-ngx's classifier suggestions.
+// Lemmary has no classifier: its AI sets the metadata while processing, so
+// there is nothing left to suggest. Like paperless, it needs change rights.
+func handleDocumentSuggestions(e *core.RequestEvent) error {
+	if _, err := findOwnedDocument(e.App, e.Auth.Id, e.Request.PathValue("id")); err != nil {
+		return notFound(e, "Not found.")
+	}
+	return writeJSON(e, http.StatusOK, map[string][]any{
+		"correspondents": {},
+		"tags":           {},
+		"document_types": {},
+		"storage_paths":  {},
+		"dates":          {},
+	})
+}
+
 func handleDocumentThumb(e *core.RequestEvent) error {
 	record, err := findReadableDocument(e.App, e.Auth.Id, e.Request.PathValue("id"))
 	if err != nil {
@@ -592,7 +608,7 @@ func documentOrder(ordering string) (columns []string, dbSorted bool) {
 	case "added":
 		column = addedValueSQL
 	case "modified":
-		column = "[[documents.updated]]"
+		column = modifiedValueSQL
 	case "title":
 		column = "[[documents.title]]"
 	case "id":

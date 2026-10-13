@@ -11,9 +11,11 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
+// ngxAPIVersion is the newest version served, which paperless-ngx both
+// advertises and assumes when a request names none.
 const (
-	ngxAPIVersion = 9
-	ngxAppVersion = "0.1.0"
+	ngxAPIVersion = 10
+	ngxAppVersion = "3.0.0"
 )
 
 var supportedAPIVersions = []int{9, 10}
@@ -38,6 +40,13 @@ func checkAPIVersion(e *core.RequestEvent) error {
 		return errUnsupportedAPIVersion
 	}
 	return nil
+}
+
+func apiVersion(e *core.RequestEvent) int {
+	if v := parseAcceptVersion(e.Request.Header.Get("Accept")); v != 0 {
+		return v
+	}
+	return ngxAPIVersion
 }
 
 func parseAcceptVersion(accept string) int {

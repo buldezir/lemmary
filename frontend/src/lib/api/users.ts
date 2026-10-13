@@ -54,3 +54,12 @@ export function deleteManagedUser(id: string) {
     fallbackError: t('users.deleteFailed'),
   })
 }
+
+/** A long-lived token Paperless-ngx clients send as `Authorization: Token <token>`. */
+export function createPaperlessToken() {
+  return apiFetch<string>('/api/profile/generate_auth_token/', {
+    method: 'POST',
+    body: {},
+    fallbackError: t('account.tokenFailed'),
+  })
+}

@@ -189,6 +189,22 @@ func TestTextCriteriaCarryTheirFields(t *testing.T) {
 	}
 }
 
+// paperless-ngx 3 deprecates title_content for text and title_search, and an
+// unknown parameter is a 400 here, so a 3.x client could not search at all.
+func TestPaperless3TextParamsAreUnderstood(t *testing.T) {
+	t.Parallel()
+	f := mustParse(t, "text=rent&title_search=deed")
+	if len(f.text) != 2 {
+		t.Fatalf("text = %v, want two criteria", f.text)
+	}
+	if got := f.text[0].fields; len(got) != 2 {
+		t.Fatalf("text fields = %v, want title and content", got)
+	}
+	if got := f.text[1].fields; len(got) != 1 || got[0] != fulltext.FieldTitle {
+		t.Fatalf("title_search fields = %v, want the title only", got)
+	}
+}
+
 func TestDateComparatorsBecomeBounds(t *testing.T) {
 	t.Parallel()
 	cases := map[string][]dateBound{
@@ -239,6 +255,25 @@ func TestAddedComparatorsKeepTheirTime(t *testing.T) {
 	for query, want := range cases {
 		if got := mustParse(t, query).added; !sameBounds(got, want) {
 			t.Fatalf("%s: added = %+v, want %+v", query, got, want)
+		}
+	}
+}
+
+// Paperparrot syncs with modified__gt and, refused, could not list anything.
+func TestModifiedComparatorsKeepTheirTime(t *testing.T) {
+	t.Parallel()
+	cases := map[string][]dateBound{
+		"modified__gt=2026-10-13":           {{op: ">", value: "2026-10-13 00:00:00.000Z"}},
+		"modified__gt=2026-10-13T09:30:00Z": {{op: ">", value: "2026-10-13 09:30:00.000Z"}},
+		"modified__date__lte=2026-10-13":    {{op: "<=", value: "2026-10-13", day: true}},
+	}
+	for query, want := range cases {
+		f := mustParse(t, query)
+		if !sameBounds(f.modified, want) {
+			t.Fatalf("%s: modified = %+v, want %+v", query, f.modified, want)
+		}
+		if len(f.added) != 0 || len(f.created) != 0 {
+			t.Fatalf("%s landed on another date: added %+v, created %+v", query, f.added, f.created)
 		}
 	}
 }

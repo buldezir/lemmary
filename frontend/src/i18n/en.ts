@@ -1448,6 +1448,11 @@ export const en = {
   'account.copied': 'Copied',
   'account.copy': 'Copy',
   'account.replaceToken': 'Replace {token} with a token, or create one above.',
+  'account.paperlessApps': 'Paperless-ngx apps',
+  'account.paperlessAppsHint':
+    'Apps made for Paperless-ngx, such as Paperparrot or swift-paperless, can sign in with a token instead of a password. Enter {url} as the server and paste the token. {link}',
+  'account.paperlessLink': 'What works through these apps.',
+  'account.paperlessTokenHint': 'Mints a long-lived token for your account.',
   'account.title': 'Account',
   'account.intro': 'How you and your agents sign in to this archive.',
 

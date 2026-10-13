@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/types"
 
 	"lemmary/backend/internal/models"
 )
@@ -159,6 +160,17 @@ func mapDocument(lens *ngxIDLens, record *core.Record, callerID string, truncate
 		"user_can_change":       record.GetString("user") == callerID,
 		"notes":                 []any{},
 		"custom_fields":         []any{},
+		"duplicate_documents":   []any{},
+		// paperless-ngx 3 file versions: Lemmary keeps one file per document,
+		// which paperless lists as a root with no further versions.
+		"root_document": nil,
+		"versions": []any{map[string]any{
+			"id":            ngxIDOf(record),
+			"added":         formatNgxDateTime(created),
+			"version_label": nil,
+			"checksum":      record.GetString("checksum"),
+			"is_root":       true,
+		}},
 	}
 }
 
@@ -222,31 +234,88 @@ func mapTask(job *core.Record, doc *taskDocument) map[string]any {
 		fileName = doc.File
 	}
 
-	// PocketBase stores a datetime as "2006-01-02 15:04:05.000Z" and paperless
-	// clients parse ISO8601: swift-paperless throws on the space, and a throw on
-	// one field fails the decode of the whole task array, so the task list
-	// renders empty with no error anywhere. date_done is null rather than ""
-	// while a job is still running, for the same reason.
-	var dateDone any
-	if finished := formatNgxDateTime(job.GetString("finished_at")); finished != "" {
-		dateDone = finished
-	}
-
 	return map[string]any{
-		"id":             ngxIDOf(job),
-		"task_id":        taskUUID(job),
-		"task_file_name": fileName,
-		// Every Lemmary job is a file consumption, which is the only task name a
-		// paperless client asks for.
-		"task_name":        "consume_file",
+		"id":               ngxIDOf(job),
+		"task_id":          taskUUID(job),
+		"task_file_name":   fileName,
+		"task_name":        ngxTaskType,
 		"date_created":     formatNgxDateTime(job.GetString("created")),
-		"date_done":        dateDone,
+		"date_done":        nullableNgxDateTime(job.GetString("finished_at")),
 		"type":             "file",
 		"status":           status,
 		"result":           result,
 		"acknowledged":     job.GetBool(ngxAcknowledgedField),
 		"related_document": relatedDoc,
 	}
+}
+
+// Every Lemmary job is a file consumption, which is the only task type a
+// paperless client asks for.
+const ngxTaskType = "consume_file"
+
+// mapTaskV10 is the task as paperless-ngx 3 reports it. Lemmary does not record
+// where an upload came from, so every task says it came from the web UI.
+func mapTaskV10(job *core.Record, doc *taskDocument, owner int) map[string]any {
+	status := strings.ToLower(mapJobStatus(job.GetString("status")))
+
+	inputData := map[string]any{}
+	var resultData any
+	relatedIDs := []int{}
+	if doc != nil {
+		inputData["filename"] = doc.File
+	}
+	switch status {
+	case "success":
+		if doc != nil {
+			resultData = map[string]any{"document_id": doc.NgxID}
+			relatedIDs = append(relatedIDs, doc.NgxID)
+		}
+	case "failure":
+		resultData = map[string]any{"error_message": taskResultMessage(job, "FAILURE", doc)}
+	}
+
+	created := job.GetDateTime("created")
+	started := job.GetDateTime("started_at")
+	finished := job.GetDateTime("finished_at")
+	return map[string]any{
+		"id":                     ngxIDOf(job),
+		"task_id":                taskUUID(job),
+		"task_type":              ngxTaskType,
+		"task_type_display":      "Consume File",
+		"trigger_source":         "web_ui",
+		"trigger_source_display": "Web UI",
+		"status":                 status,
+		"status_display":         strings.ToUpper(status[:1]) + status[1:],
+		"date_created":           formatNgxDateTime(job.GetString("created")),
+		"date_started":           nullableNgxDateTime(job.GetString("started_at")),
+		"date_done":              nullableNgxDateTime(job.GetString("finished_at")),
+		"duration_seconds":       secondsBetween(started, finished),
+		"wait_time_seconds":      secondsBetween(created, started),
+		"input_data":             inputData,
+		"result_data":            resultData,
+		"related_document_ids":   relatedIDs,
+		"acknowledged":           job.GetBool(ngxAcknowledgedField),
+		"owner":                  owner,
+	}
+}
+
+// PocketBase stores a datetime as "2006-01-02 15:04:05.000Z" and paperless
+// clients parse ISO8601: swift-paperless throws on the space, and a throw on one
+// field fails the decode of the whole task array, so the task list renders
+// empty with no error anywhere. An unset time is null rather than "" for the
+// same reason.
+func nullableNgxDateTime(datetime string) any {
+	if formatted := formatNgxDateTime(datetime); formatted != "" {
+		return formatted
+	}
+	return nil
+}
+
+func secondsBetween(from, to types.DateTime) any {
+	if from.IsZero() || to.IsZero() {
+		return nil
+	}
+	return to.Time().Sub(from.Time()).Seconds()
 }
 
 // taskUUID is the job's Celery-style task id.

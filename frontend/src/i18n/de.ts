@@ -1522,6 +1522,11 @@ export const de: Catalog = {
   'account.copied': 'Kopiert',
   'account.copy': 'Kopieren',
   'account.replaceToken': 'Ersetzen Sie {token} durch ein Token oder erstellen Sie oben eines.',
+  'account.paperlessApps': 'Paperless-ngx-Apps',
+  'account.paperlessAppsHint':
+    'Apps für Paperless-ngx wie Paperparrot oder swift-paperless können sich mit einem Token statt mit einem Passwort anmelden. Geben Sie {url} als Server ein und fügen Sie das Token ein. {link}',
+  'account.paperlessLink': 'Was über diese Apps funktioniert.',
+  'account.paperlessTokenHint': 'Erstellt ein langlebiges Token für Ihr Konto.',
   'account.title': 'Konto',
   'account.intro': 'Wie Sie und Ihre Agenten sich bei diesem Archiv anmelden.',
 

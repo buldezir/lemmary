@@ -51,8 +51,8 @@ func RegisterMCP(app core.App, rt *config.Runtime, idx *fulltext.Index) {
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Priority: 45,
 		Func: func(e *core.ServeEvent) error {
-			// Answered either way: an absent route would fall through to the
-			// paperless GET /api/ root and look like a yes to the Account page.
+			// Answered either way: the Account page reads "enabled" from it, and
+			// an absent route is a 404 it would show as an error.
 			e.Router.GET("/api/app/mcp", bindAuth(func(e *core.RequestEvent) error {
 				return writeJSON(e, http.StatusOK, map[string]any{"enabled": enabled, "path": "/api/mcp"})
 			}))

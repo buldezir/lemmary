@@ -71,6 +71,23 @@ func handleToken(e *core.RequestEvent) error {
 	return writeJSON(e, http.StatusOK, map[string]string{"token": token})
 }
 
+// handleGenerateAuthToken answers paperless-ngx's "API Auth Token" button, the
+// only way in for clients that take a token instead of a password and for
+// accounts that have no password. Paperless stores one key per user and shows it
+// again; a JWT cannot be shown again, so each call mints a new one.
+func handleGenerateAuthToken(e *core.RequestEvent) error {
+	if e.Auth.Collection().Name != "users" {
+		return writeJSON(e, http.StatusForbidden, map[string]any{
+			"detail": "Sign in with a user account to create an API token.",
+		})
+	}
+	token, err := mintPaperlessAPIToken(e.Auth)
+	if err != nil {
+		return internalError(e, err)
+	}
+	return writeJSON(e, http.StatusOK, token)
+}
+
 func mintPaperlessAPIToken(record *core.Record) (string, error) {
 	return record.NewStaticAuthToken(paperlessAPITokenTTL)
 }
@@ -106,7 +123,7 @@ func requireAuth(e *core.RequestEvent) error {
 			// Paperless-ngx TokenAuthentication says "Invalid token." when a
 			// token was sent and rejected; a catch-all makes an expired JWT look
 			// like a missing header.
-			return unauthorized(e, "Invalid token.")
+			return rejectUnauthenticated(e, "Invalid token.")
 		}
 	}
 
@@ -118,7 +135,20 @@ func requireAuth(e *core.RequestEvent) error {
 		}
 	}
 
-	return unauthorized(e, "Authentication credentials were not provided.")
+	return rejectUnauthenticated(e, "Authentication credentials were not provided.")
+}
+
+// errUnauthenticated means requireAuth already wrote the 401. Like
+// errUnsupportedAPIVersion it must be non-nil: a nil let bindAuth run the
+// handler anyway, appending its body to the 401 for any handler that does not
+// touch e.Auth.
+var errUnauthenticated = errors.New("paperless-ngx API request not authenticated")
+
+func rejectUnauthenticated(e *core.RequestEvent, detail string) error {
+	if err := unauthorized(e, detail); err != nil {
+		return err
+	}
+	return errUnauthenticated
 }
 
 func authenticateWithPassword(app core.App, identity, password string) (*core.Record, error) {

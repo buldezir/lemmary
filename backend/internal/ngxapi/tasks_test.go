@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,6 +37,7 @@ func (f listFixture) tasks(t *testing.T) []map[string]any {
 	e := &core.RequestEvent{}
 	e.App = f.app
 	e.Request = httptest.NewRequest(http.MethodGet, "/api/tasks/?task_name=consume_file", nil)
+	e.Request.Header.Set("Accept", "application/json; version=9")
 	e.Response = httptest.NewRecorder()
 
 	user, err := f.app.FindRecordById("users", f.userID)
@@ -68,11 +72,11 @@ func TestTaskListReadsItsDocumentsInOneQuery(t *testing.T) {
 	if got := len(f.tasks(t)); got != 3 {
 		t.Fatalf("listed %d tasks, want 3", got)
 	}
-	// Two, whatever the page size: the owner filter joins documents to scope
-	// the jobs, and the batch reads the columns the response needs. A third
-	// would mean it went back to one lookup per task.
-	if n := queries(); n != 2 {
-		t.Fatalf("a page of 3 tasks ran %d document queries, want 2", n)
+	// One, whatever the page size: the batch reads the columns the response
+	// needs. The owner filter is a subquery inside the job query, which the
+	// counter does not see. A second would mean one lookup per task.
+	if n := queries(); n != 1 {
+		t.Fatalf("a page of 3 tasks ran %d document queries, want 1", n)
 	}
 }
 
@@ -184,6 +188,7 @@ func (f listFixture) tasksFiltered(t *testing.T, query string) []map[string]any 
 	e := &core.RequestEvent{}
 	e.App = f.app
 	e.Request = httptest.NewRequest(http.MethodGet, "/api/tasks/?"+query, nil)
+	e.Request.Header.Set("Accept", "application/json; version=9")
 	e.Response = httptest.NewRecorder()
 	e.Auth = mustFind(t, f.app, "users", f.userID)
 
@@ -298,5 +303,162 @@ func TestAcknowledgeIgnoresUnknownIDs(t *testing.T) {
 	_, body := f.acknowledge(t, f.userID, []int{0, 999999999, storedID(t, f.app, "processing_jobs", job)})
 	if got := body["result"]; got != float64(1) {
 		t.Fatalf("result = %v, want the one real task", got)
+	}
+}
+
+func (f listFixture) tasksV10(t *testing.T, path string) (int, []byte) {
+	t.Helper()
+	e := &core.RequestEvent{}
+	e.App = f.app
+	e.Request = httptest.NewRequest(http.MethodGet, path, nil)
+	e.Response = httptest.NewRecorder()
+	e.Auth = mustFind(t, f.app, "users", f.userID)
+
+	handler := handleListTasks
+	switch {
+	case strings.HasPrefix(path, "/api/tasks/active/"):
+		handler = handleActiveTasks
+	case strings.HasPrefix(path, "/api/tasks/status_counts/"):
+		handler = handleTaskStatusCounts
+	}
+	if err := handler(e); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	rec := e.Response.(*httptest.ResponseRecorder)
+	return rec.Code, rec.Body.Bytes()
+}
+
+func (f listFixture) taskPage(t *testing.T, query string) paginatedResponse {
+	t.Helper()
+	status, raw := f.tasksV10(t, "/api/tasks/?"+query)
+	if status != http.StatusOK {
+		t.Fatalf("status %d: %s", status, raw)
+	}
+	var page paginatedResponse
+	if err := json.Unmarshal(raw, &page); err != nil {
+		t.Fatalf("decode %s: %v", raw, err)
+	}
+	return page
+}
+
+// paperless-ngx 3 assumes v10 when a request names no version, and v10 pages
+// the task list and renames its fields.
+func TestTaskListV10IsAPageWithTheNewFieldNames(t *testing.T) {
+	f := newListFixture(t)
+	createJob(t, f.app, f.docBoth, "completed")
+	createJob(t, f.app, f.docNone, "completed")
+	createJob(t, f.app, f.docOne, "completed")
+
+	page := f.taskPage(t, "page_size=2")
+	if page.Count != 3 || len(page.Results) != 2 || page.Next == nil {
+		t.Fatalf("page = count %d, %d results, next %v; want 3, 2, a next link", page.Count, len(page.Results), page.Next)
+	}
+
+	want := float64(storedID(t, f.app, "documents", f.docBoth))
+	var task map[string]any
+	for _, result := range f.taskPage(t, "task_type=consume_file").Results {
+		if r := result.(map[string]any); r["input_data"].(map[string]any)["filename"] == mustFind(t, f.app, "documents", f.docBoth).GetString("file") {
+			task = r
+		}
+	}
+	if task["task_type"] != "consume_file" || task["status"] != "success" {
+		t.Fatalf("task = %v, want a successful consume_file", task)
+	}
+	if ids, _ := task["related_document_ids"].([]any); len(ids) != 1 || ids[0] != want {
+		t.Fatalf("related_document_ids = %v, want [%v]", task["related_document_ids"], want)
+	}
+	if got := task["result_data"].(map[string]any)["document_id"]; got != want {
+		t.Fatalf("result_data.document_id = %v, want %v", got, want)
+	}
+	if _, legacy := task["task_name"]; legacy {
+		t.Fatal("v10 still carries the v9 task_name")
+	}
+}
+
+func TestTaskListV10FiltersByStatus(t *testing.T) {
+	f := newListFixture(t)
+	createJob(t, f.app, f.docBoth, "needs_review")
+	failed := createJob(t, f.app, f.docOne, "failed")
+	running := createJob(t, f.app, f.docNone, "running")
+
+	cases := map[string][]string{
+		"status=failure":                      {failed},
+		"status=failure&status=started":       {failed, running},
+		"is_complete=false":                   {running},
+		"status=success&task_type=mail_fetch": nil,
+	}
+	for query, want := range cases {
+		page := f.taskPage(t, query)
+		if int(page.Count) != len(want) {
+			t.Fatalf("%s: %d tasks, want %d", query, page.Count, len(want))
+		}
+		for _, result := range page.Results {
+			id := int(result.(map[string]any)["id"].(float64))
+			if !slices.ContainsFunc(want, func(job string) bool { return storedID(t, f.app, "processing_jobs", job) == id }) {
+				t.Fatalf("%s returned task %d", query, id)
+			}
+		}
+	}
+
+	if status, raw := f.tasksV10(t, "/api/tasks/?status=done"); status != http.StatusBadRequest {
+		t.Fatalf("an unknown status answered %d, want 400: %s", status, raw)
+	}
+}
+
+func TestActiveTasksAndStatusCounts(t *testing.T) {
+	f := newListFixture(t)
+	for _, status := range []string{"pending", "running", "completed", "needs_review", "failed", "cancelled"} {
+		createJob(t, f.app, f.docOne, status)
+	}
+
+	status, raw := f.tasksV10(t, "/api/tasks/active/")
+	var active []map[string]any
+	if err := json.Unmarshal(raw, &active); status != http.StatusOK || err != nil {
+		t.Fatalf("active: status %d, %v: %s", status, err, raw)
+	}
+	if len(active) != 2 {
+		t.Fatalf("%d active tasks, want the pending and the running one", len(active))
+	}
+
+	// status is dropped, as paperless does: the counts are by status.
+	status, raw = f.tasksV10(t, "/api/tasks/status_counts/?status=failure")
+	var counts map[string]int
+	if err := json.Unmarshal(raw, &counts); status != http.StatusOK || err != nil {
+		t.Fatalf("status_counts: status %d, %v: %s", status, err, raw)
+	}
+	want := map[string]int{"all": 6, "needs_attention": 2, "in_progress": 2, "completed": 2}
+	if !maps.Equal(counts, want) {
+		t.Fatalf("counts = %v, want %v", counts, want)
+	}
+}
+
+func TestAcknowledgeAllStaysWithinTheOwner(t *testing.T) {
+	f := newListFixture(t)
+	createJob(t, f.app, f.docOne, "completed")
+	createJob(t, f.app, f.docNone, "failed")
+
+	payload := bytes.NewReader([]byte(`{"all": true}`))
+	e := &core.RequestEvent{}
+	e.App = f.app
+	e.Request = httptest.NewRequest(http.MethodPost, "/api/tasks/acknowledge/", payload)
+	e.Request.Header.Set("Content-Type", "application/json")
+	e.Response = httptest.NewRecorder()
+	e.Auth = mustFind(t, f.app, "users", f.otherID)
+	if err := handleAcknowledgeTasks(e); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if got := f.taskPage(t, "acknowledged=false").Count; got != 2 {
+		t.Fatalf("another account's all:true dismissed my tasks: %d left", got)
+	}
+
+	e.Request = httptest.NewRequest(http.MethodPost, "/api/tasks/acknowledge/", bytes.NewReader([]byte(`{"all": true}`)))
+	e.Request.Header.Set("Content-Type", "application/json")
+	e.Response = httptest.NewRecorder()
+	e.Auth = mustFind(t, f.app, "users", f.userID)
+	if err := handleAcknowledgeTasks(e); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if got := f.taskPage(t, "acknowledged=false").Count; got != 0 {
+		t.Fatalf("%d tasks left after all:true, want none", got)
 	}
 }

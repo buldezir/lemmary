@@ -2,6 +2,8 @@ package ngxapi
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -64,5 +66,41 @@ func TestPostDocumentRefusesUnknownRelation(t *testing.T) {
 	}
 	if after != before {
 		t.Fatalf("documents went from %d to %d, want no document created", before, after)
+	}
+}
+
+// Paperparrot decodes every key; a missing one failed the whole response and
+// the document's suggestions with it.
+func TestSuggestionsCarryEveryKeyAClientDecodes(t *testing.T) {
+	f := newListFixture(t)
+	e := &core.RequestEvent{}
+	e.App = f.app
+	e.Request = httptest.NewRequest(http.MethodGet, "/api/documents/x/suggestions/", nil)
+	e.Request.SetPathValue("id", fmt.Sprint(storedID(t, f.app, "documents", f.docOne)))
+	e.Response = httptest.NewRecorder()
+	e.Auth = mustFind(t, f.app, "users", f.userID)
+
+	if err := handleDocumentSuggestions(e); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	rec := e.Response.(*httptest.ResponseRecorder)
+	var body map[string][]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); rec.Code != http.StatusOK || err != nil {
+		t.Fatalf("status %d, %v: %s", rec.Code, err, rec.Body.String())
+	}
+	for _, key := range []string{"correspondents", "tags", "document_types", "storage_paths", "dates"} {
+		if list, ok := body[key]; !ok || list == nil {
+			t.Fatalf("%s missing or null in %s", key, rec.Body.String())
+		}
+	}
+
+	// Change rights, as in paperless: another account gets nothing.
+	e.Response = httptest.NewRecorder()
+	e.Auth = mustFind(t, f.app, "users", f.otherID)
+	if err := handleDocumentSuggestions(e); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if code := e.Response.(*httptest.ResponseRecorder).Code; code != http.StatusNotFound {
+		t.Fatalf("another account got %d, want 404", code)
 	}
 }

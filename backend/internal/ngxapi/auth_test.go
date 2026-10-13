@@ -29,11 +29,11 @@ func TestTokenGETReturns405ForSupportedAPIVersion(t *testing.T) {
 	if rec.Code != 405 {
 		t.Fatalf("status = %d, want 405", rec.Code)
 	}
-	if got := rec.Header().Get("X-Api-Version"); got != "9" {
-		t.Fatalf("X-Api-Version = %q, want 9", got)
+	if got := rec.Header().Get("X-Api-Version"); got != "10" {
+		t.Fatalf("X-Api-Version = %q, want 10", got)
 	}
-	if got := rec.Header().Get("X-Version"); got != "0.1.0" {
-		t.Fatalf("X-Version = %q, want 0.1.0", got)
+	if got := rec.Header().Get("X-Version"); got != "3.0.0" {
+		t.Fatalf("X-Version = %q, want 3.0.0", got)
 	}
 }
 
@@ -135,12 +135,66 @@ func TestPaperlessAPITokenLastsYearsNotDays(t *testing.T) {
 	}
 }
 
+func TestGenerateAuthTokenMintsAPITokenForCaller(t *testing.T) {
+	t.Parallel()
+
+	record := core.NewRecord(core.NewAuthCollection("users"))
+	record.Id = "userpaperless01"
+	record.SetTokenKey("test-token-key-for-paperless")
+	e := newAuthRequestEvent(t, "")
+	e.Request.Method = http.MethodPost
+	e.Auth = record
+
+	if err := handleGenerateAuthToken(e); err != nil {
+		t.Fatalf("handleGenerateAuthToken() error: %v", err)
+	}
+	rec := e.Response.(*httptest.ResponseRecorder)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body %s", rec.Code, rec.Body.String())
+	}
+	var token string
+	if err := json.Unmarshal(rec.Body.Bytes(), &token); err != nil {
+		t.Fatalf("paperless-ngx answers a bare JSON string: %v (%s)", err, rec.Body.String())
+	}
+	claims, err := security.ParseUnverifiedJWT(token)
+	if err != nil {
+		t.Fatalf("ParseUnverifiedJWT() error: %v", err)
+	}
+	if claims[core.TokenClaimId] != record.Id {
+		t.Fatalf("token is for %v, want %s", claims[core.TokenClaimId], record.Id)
+	}
+	if exp := jwtExpUnix(claims["exp"]); exp < time.Now().Add(9*365*24*time.Hour).Unix() {
+		t.Fatalf("exp %d is not years away", exp)
+	}
+}
+
+// A superuser session must not walk away with a ten-year superuser token.
+func TestGenerateAuthTokenRefusesSuperusers(t *testing.T) {
+	t.Parallel()
+
+	record := core.NewRecord(core.NewAuthCollection(core.CollectionNameSuperusers))
+	record.SetTokenKey("test-token-key-for-superuser")
+	e := newAuthRequestEvent(t, "")
+	e.Request.Method = http.MethodPost
+	e.Auth = record
+
+	if err := handleGenerateAuthToken(e); err != nil {
+		t.Fatalf("handleGenerateAuthToken() error: %v", err)
+	}
+	rec := e.Response.(*httptest.ResponseRecorder)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403; body %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestRequireAuthMissingHeader(t *testing.T) {
 	t.Parallel()
 
 	e := newAuthRequestEvent(t, "")
-	if err := requireAuth(e); err != nil {
-		t.Fatalf("requireAuth() error: %v", err)
+	// The handler must not run after the 401: a nil error let it append its
+	// own body to the response.
+	if err := requireAuth(e); !errors.Is(err, errUnauthenticated) {
+		t.Fatalf("requireAuth() error = %v, want errUnauthenticated", err)
 	}
 	assertUnauthorizedDetail(t, e, "Authentication credentials were not provided.")
 }
@@ -149,8 +203,10 @@ func TestRequireAuthInvalidToken(t *testing.T) {
 	e := newAuthRequestEvent(t, "Token not-a-jwt")
 	e.App = bootTestApp(t)
 
-	if err := requireAuth(e); err != nil {
-		t.Fatalf("requireAuth() error: %v", err)
+	// The handler must not run after the 401: a nil error let it append its
+	// own body to the response.
+	if err := requireAuth(e); !errors.Is(err, errUnauthenticated) {
+		t.Fatalf("requireAuth() error = %v, want errUnauthenticated", err)
 	}
 	assertUnauthorizedDetail(t, e, "Invalid token.")
 }

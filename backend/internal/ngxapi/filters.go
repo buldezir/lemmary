@@ -53,9 +53,10 @@ type documentFilters struct {
 	corrUnset *bool
 
 	// created bounds the date a client is shown for a document; added bounds
-	// the moment it was uploaded.
-	created []dateBound
-	added   []dateBound
+	// the moment it was uploaded, modified the moment it last changed.
+	created  []dateBound
+	added    []dateBound
+	modified []dateBound
 
 	ids []string
 
@@ -79,7 +80,9 @@ var textParams = []struct {
 	fields []string
 }{
 	{"query", nil},
+	{"text", []string{fulltext.FieldTitle, fulltext.FieldOCRText}},
 	{"title_content", []string{fulltext.FieldTitle, fulltext.FieldOCRText}},
+	{"title_search", []string{fulltext.FieldTitle}},
 	{"title__icontains", []string{fulltext.FieldTitle}},
 	{"content__icontains", []string{fulltext.FieldOCRText}},
 }
@@ -132,6 +135,7 @@ type dateFieldSpec struct {
 var dateFieldSpecs = []dateFieldSpec{
 	{param: "created", datetime: false},
 	{param: "added", datetime: true},
+	{param: "modified", datetime: true},
 }
 
 // dateSuffixes are the comparators paperless spells. dayOnly marks the
@@ -237,6 +241,9 @@ func parseDocumentFiltersWith(ids *ngxIDs, ownerID int, q url.Values) (documentF
 		return f, err
 	}
 	if f.added, err = parseDateBounds(q, dateFieldSpecs[1]); err != nil {
+		return f, err
+	}
+	if f.modified, err = parseDateBounds(q, dateFieldSpecs[2]); err != nil {
 		return f, err
 	}
 
@@ -602,6 +609,10 @@ const createdValueSQL = `COALESCE(NULLIF([[documents.document_date]], ''), [[doc
 // addedValueSQL is the upload timestamp, which paperless calls added.
 const addedValueSQL = `[[documents.created]]`
 
+// modifiedValueSQL is when the record last changed, which clients that sync
+// incrementally ask for with modified__gt.
+const modifiedValueSQL = `[[documents.updated]]`
+
 // documentFilterExprs compiles the filter set to SQL.
 //
 // Raw expressions rather than PocketBase's filter DSL: the same slice has to
@@ -678,6 +689,7 @@ func documentFilterExprs(f documentFilters) []dbx.Expression {
 
 	exprs = append(exprs, dateBoundExprs(createdValueSQL, "created", f.created, names)...)
 	exprs = append(exprs, dateBoundExprs(addedValueSQL, "added", f.added, names)...)
+	exprs = append(exprs, dateBoundExprs(modifiedValueSQL, "modified", f.modified, names)...)
 
 	if len(f.ids) > 0 {
 		exprs = append(exprs, dbx.In("documents.id", anyValues(f.ids)...))

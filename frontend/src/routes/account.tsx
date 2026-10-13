@@ -10,6 +10,8 @@ import {
 } from '../lib/api/passkeys'
 import { defaultPasskeyName, passkeysSupported, passkeyUnavailableHint } from '../lib/webauthn'
 import { createMCPToken, getMCPStatus } from '../lib/api/mcp'
+import { createPaperlessToken } from '../lib/api/users'
+import { pbUrl } from '../lib/pb'
 import { mcpSnippets } from '../lib/mcpSnippets'
 import { useAsync } from '../hooks/useAsync'
 import { getLimits } from '../lib/api/limits'
@@ -374,6 +376,73 @@ function AgentsSection() {
   )
 }
 
+function PaperlessAppsSection() {
+  const [token, setToken] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
+
+  async function onCreateToken() {
+    setBusy(true)
+    setError('')
+    setCopied(false)
+    try {
+      setToken(await createPaperlessToken())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('account.tokenFailed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onCopy() {
+    try {
+      await navigator.clipboard.writeText(token)
+      setCopied(true)
+    } catch {
+      setError(t('account.copyFailed'))
+    }
+  }
+
+  return (
+    <section id="paperless-apps" className={sectionClassName}>
+      <h2 className={sectionTitleClassName}>{t('account.paperlessApps')}</h2>
+      <p className={`${fieldHintClassName} mb-4`}>
+        {tNode('account.paperlessAppsHint', {
+          url: <code>{pbUrl}</code>,
+          link: <DocsLink href={docsUrl('paperless_ngx.html')}>{t('account.paperlessLink')}</DocsLink>,
+        })}
+      </p>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={onCreateToken} disabled={busy}>
+            {token ? t('account.createAnotherToken') : t('account.createToken')}
+          </Button>
+          <span className={fieldHintClassName}>
+            {token ? t('account.tokenShown') : t('account.paperlessTokenHint')}
+          </span>
+        </div>
+        {error && <p className="text-sm text-madder">{error}</p>}
+        {token && (
+          <div>
+            <div className="mb-1 flex justify-end">
+              <Button size="xs" variant="secondary" onClick={onCopy}>
+                {copied ? t('account.copied') : t('account.copy')}
+              </Button>
+            </div>
+            <pre
+              data-testid="paperless-token"
+              className="whitespace-pre-wrap break-all rounded-xs border border-line bg-bright p-3 text-xs text-ink"
+            >
+              {token}
+            </pre>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function InstanceLimitsSection() {
   const { data: limits } = useAsync(getLimits, [])
   if (!limits || !(limits.enforced || (limits.misconfigured?.length ?? 0) > 0)) return null
@@ -408,6 +477,7 @@ export function AccountPage() {
       </div>
       <SignedInSection />
       <AgentsSection />
+      <PaperlessAppsSection />
       <PasskeysSection />
       <InstanceLimitsSection />
     </div>
