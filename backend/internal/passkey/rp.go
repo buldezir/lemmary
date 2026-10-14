@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"lemmary/backend/internal/requrl"
 )
 
 // ErrUnsupportedOrigin means this request cannot carry a WebAuthn ceremony at
@@ -241,29 +242,13 @@ func New(caller Caller, displayName string) (*webauthn.WebAuthn, error) {
 	return w, nil
 }
 
-// RequestScheme reports the scheme the browser used.
-//
-// The same shape as ngxapi.requestBaseURL, including its two guards: only the
-// first hop's value, and only when it is a real scheme. The header is
-// client-controlled, which is survivable here, because the browser reports its
-// true origin in clientDataJSON and the worst a forged value can do is get a
-// request past the secure-context gate and then fail origin verification.
-func RequestScheme(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	if proto, _, _ := strings.Cut(r.Header.Get("X-Forwarded-Proto"), ","); proto != "" {
-		if proto = strings.TrimSpace(proto); proto == "http" || proto == "https" {
-			scheme = proto
-		}
-	}
-	return scheme
-}
-
+// X-Forwarded-Proto is client-controlled, which is survivable here: the
+// browser reports its true origin in clientDataJSON, so the worst a forged
+// scheme can do is get a request past the secure-context gate and then fail
+// origin verification.
 func CallerOf(r *http.Request) Caller {
 	return Caller{
-		Scheme: RequestScheme(r),
+		Scheme: requrl.Scheme(r),
 		Host:   r.Host,
 		Origin: r.Header.Get("Origin"),
 	}

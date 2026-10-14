@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 
 	validation "github.com/pocketbase/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
 	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/requrl"
 )
 
 // maxPageSize bounds DB-backed listings; the fulltext path has its own clamp.
@@ -92,21 +92,6 @@ func methodNotAllowed(e *core.RequestEvent, allowed string) error {
 	})
 }
 
-func requestBaseURL(e *core.RequestEvent) string {
-	scheme := "http"
-	if e.IsTLS() {
-		scheme = "https"
-	}
-	// Only the first hop's value, and only if it is a real scheme: the header
-	// is client-controlled and multi-hop proxies join values with commas.
-	if proto, _, _ := strings.Cut(e.Request.Header.Get("X-Forwarded-Proto"), ","); proto != "" {
-		if proto = strings.TrimSpace(proto); proto == "http" || proto == "https" {
-			scheme = proto
-		}
-	}
-	return fmt.Sprintf("%s://%s", scheme, e.Request.Host)
-}
-
 func paginationParams(e *core.RequestEvent) (page, pageSize int) {
 	page = 1
 	pageSize = 25
@@ -140,7 +125,7 @@ func clampSearchPageSize(pageSize int) int {
 func buildPageURL(e *core.RequestEvent, page int) string {
 	q := e.Request.URL.Query()
 	q.Set("page", strconv.Itoa(page))
-	return requestBaseURL(e) + e.Request.URL.Path + "?" + q.Encode()
+	return requrl.Base(e.Request) + e.Request.URL.Path + "?" + q.Encode()
 }
 
 func paginatedList(e *core.RequestEvent, total int64, page, pageSize int, results []any) error {

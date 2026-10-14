@@ -16,6 +16,7 @@ import (
 	"lemmary/backend/internal/ai"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/fulltext"
+	"lemmary/backend/internal/requrl"
 )
 
 // EnvMCPEnabled switches the MCP endpoint at /api/mcp. Unset means on: the
@@ -124,7 +125,7 @@ func handleMCP(app core.App, rt *config.Runtime, idx *fulltext.Index) func(*core
 		if err != nil {
 			return writeError(e, http.StatusInternalServerError, "Failed to prepare the document tools.")
 		}
-		server := newMCPServer(tools, newMCPDocs(app, userID))
+		server := newMCPServer(tools, newMCPDocs(app, userID, requrl.Base(e.Request)))
 		addMCPWriteTools(server, app, userID, rt.Snapshot().Cfg.MCPCapabilities)
 		mcpHTTPHandler(server).ServeHTTP(e.Response, e.Request)
 		return nil
@@ -270,7 +271,8 @@ func addMCPDocsTools(server *mcp.Server, docs mcpDocs) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "get_document",
 		Description: "One document's metadata and its full extracted text, unranked and unabridged. " +
-			"Text is paged by offset and max_chars (at most 200000); text_chars is the whole length and truncated means more follows this page.",
+			"Text is paged by offset and max_chars (at most 200000); text_chars is the whole length and truncated means more follows this page. " +
+			"file_url opens the original file and preview_url its first-page image; both expire 15 minutes after this call.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args mcpGetArgs) (*mcp.CallToolResult, mcpGetResult, error) {
 		result, err := docs.get(ctx, args)
 		if err != nil {

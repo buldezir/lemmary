@@ -1,18 +1,23 @@
 package appapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/png"
 	"io"
 	"log/slog"
 	"math"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/filesystem"
 	"lemmary/backend/internal/ai"
 )
 
@@ -183,7 +188,7 @@ func TestMCPPlainAccessListsFiltersAndReadsDocuments(t *testing.T) {
 	pending := makeQueueDocument(t, app, owner, "pending", "")
 	foreign := makeQueueDocument(t, app, other, "completed", "not yours")
 
-	docs := newMCPDocs(app, owner)
+	docs := newMCPDocs(app, owner, "https://archive.example")
 	ctx := context.Background()
 
 	list, err := docs.list(ctx, mcpListArgs{})
@@ -229,6 +234,38 @@ func TestMCPPlainAccessListsFiltersAndReadsDocuments(t *testing.T) {
 	got, err = docs.get(ctx, mcpGetArgs{ID: older.Id})
 	if err != nil || got.Text != "older text" || got.Truncated || got.DocumentDate != "2024-01-05" {
 		t.Fatalf("whole = %#v err=%v", got, err)
+	}
+	if got.PreviewURL != "" {
+		t.Fatalf("preview_url without a preview = %q", got.PreviewURL)
+	}
+	var thumb bytes.Buffer
+	if err := png.Encode(&thumb, image.NewGray(image.Rect(0, 0, 1, 1))); err != nil {
+		t.Fatal(err)
+	}
+	previewFile, err := filesystem.NewFileFromBytes(thumb.Bytes(), "preview.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	older.Set("preview", previewFile)
+	if err := app.Save(older); err != nil {
+		t.Fatal(err)
+	}
+	got, err = docs.get(ctx, mcpGetArgs{ID: older.Id})
+	if err != nil {
+		t.Fatalf("get with preview: %v", err)
+	}
+	for field, link := range map[string]string{"file": got.FileURL, "preview": got.PreviewURL} {
+		parsed, err := url.Parse(link)
+		if err != nil {
+			t.Fatalf("%s url %q: %v", field, link, err)
+		}
+		if want := "/api/files/" + older.BaseFilesPath() + "/" + older.GetString(field); parsed.Host != "archive.example" || parsed.Path != want {
+			t.Fatalf("%s url = %q, want path %q", field, link, want)
+		}
+		holder, err := app.FindAuthRecordByToken(parsed.Query().Get("token"), core.TokenTypeFile)
+		if err != nil || holder.Id != owner {
+			t.Fatalf("%s token: holder=%v err=%v", field, holder, err)
+		}
 	}
 	if _, err := docs.get(ctx, mcpGetArgs{ID: foreign.Id}); err == nil {
 		t.Fatal("another user's document was readable")

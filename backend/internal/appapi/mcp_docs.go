@@ -3,6 +3,7 @@ package appapi
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -73,7 +74,9 @@ type mcpGetArgs struct {
 
 type mcpGetResult struct {
 	mcpDocument
-	Text string `json:"text"`
+	FileURL    string `json:"file_url,omitempty"`
+	PreviewURL string `json:"preview_url,omitempty"`
+	Text       string `json:"text"`
 	// TextChars is the whole document's length, so a caller can tell a
 	// complete read from a page of one.
 	TextChars int `json:"text_chars"`
@@ -97,14 +100,14 @@ type mcpDocs struct {
 	taxonomy func(ctx context.Context) (mcpTaxonomyResult, error)
 }
 
-func newMCPDocs(app core.App, userID string) mcpDocs {
+func newMCPDocs(app core.App, userID, baseURL string) mcpDocs {
 	retriever := &agentRetriever{app: app, userID: userID}
 	return mcpDocs{
 		list: func(ctx context.Context, args mcpListArgs) (mcpListResult, error) {
 			return listMCPDocuments(ctx, app, retriever, args)
 		},
 		get: func(_ context.Context, args mcpGetArgs) (mcpGetResult, error) {
-			return getMCPDocument(app, userID, args)
+			return getMCPDocument(app, userID, baseURL, args)
 		},
 		taxonomy: func(context.Context) (mcpTaxonomyResult, error) {
 			out := mcpTaxonomyResult{}
@@ -256,7 +259,7 @@ func mcpListOrder(sort string) (string, error) {
 	return "", fmt.Errorf("unknown sort %q; use date_desc, date_asc, added_desc or added_asc", sort)
 }
 
-func getMCPDocument(app core.App, userID string, args mcpGetArgs) (mcpGetResult, error) {
+func getMCPDocument(app core.App, userID, baseURL string, args mcpGetArgs) (mcpGetResult, error) {
 	id := strings.TrimSpace(args.ID)
 	if id == "" {
 		return mcpGetResult{}, fmt.Errorf("id is required")
@@ -268,6 +271,7 @@ func getMCPDocument(app core.App, userID string, args mcpGetArgs) (mcpGetResult,
 	expandMCPDocuments(app, []*core.Record{record})
 	text := record.GetString("ocr_text")
 	out := mcpGetResult{mcpDocument: mcpDocumentOf(record), TextChars: utf8.RuneCountInString(text)}
+	out.FileURL, out.PreviewURL = mcpFileURLs(app, record, userID, baseURL)
 	maxChars := args.MaxChars
 	if maxChars <= 0 {
 		maxChars = mcpDefaultTextChars
@@ -277,6 +281,28 @@ func getMCPDocument(app core.App, userID string, args mcpGetArgs) (mcpGetResult,
 	}
 	out.Text, out.Truncated = runePage(text, max(args.Offset, 0), maxChars)
 	return out, nil
+}
+
+// mcpFileURLs links the file and preview on PocketBase's file route. Both
+// fields are protected, so each link carries a file token minted for the
+// caller and expires with it, after 15 minutes. No token, no links: the
+// document itself is still worth answering with.
+func mcpFileURLs(app core.App, record *core.Record, userID, baseURL string) (file, preview string) {
+	user, err := app.FindRecordById("users", userID)
+	if err != nil {
+		return "", ""
+	}
+	token, err := user.NewFileToken()
+	if err != nil {
+		return "", ""
+	}
+	link := func(name string) string {
+		if name == "" {
+			return ""
+		}
+		return baseURL + "/api/files/" + record.BaseFilesPath() + "/" + url.PathEscape(name) + "?token=" + url.QueryEscape(token)
+	}
+	return link(record.GetString("file")), link(record.GetString("preview"))
 }
 
 // runePage is text[offset:offset+count] in runes, and whether any text

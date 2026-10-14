@@ -1,7 +1,6 @@
 package passkey
 
 import (
-	"crypto/tls"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -299,41 +298,6 @@ func TestConfiguredOriginsAreNotWidenedByTheHeader(t *testing.T) {
 	}
 	if len(rp.Origins) != 1 || rp.Origins[0] != "https://archive.example.com" {
 		t.Fatalf("Origins = %v, want only the configured one", rp.Origins)
-	}
-}
-
-func TestRequestSchemeReadsFirstForwardedHopOnly(t *testing.T) {
-	cases := []struct {
-		name      string
-		tls       bool
-		forwarded string
-		want      string
-	}{
-		{name: "plain", want: "http"},
-		{name: "tls", tls: true, want: "https"},
-		{name: "forwarded https over a plain listener", forwarded: "https", want: "https"},
-		{name: "first hop wins", forwarded: "https, http", want: "https"},
-		{name: "padded value is trimmed", forwarded: "  https  ", want: "https"},
-		// The header is client-controlled, so a value that is not a scheme is
-		// ignored rather than propagated.
-		{name: "garbage is ignored", forwarded: "javascript:", want: "http"},
-		{name: "empty is ignored", forwarded: "", want: "http"},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			r := httptest.NewRequest(http.MethodPost, "/api/app/passkeys/login/begin", nil)
-			if tc.forwarded != "" {
-				r.Header.Set("X-Forwarded-Proto", tc.forwarded)
-			}
-			if tc.tls {
-				r.TLS = &tls.ConnectionState{}
-			}
-			if got := RequestScheme(r); got != tc.want {
-				t.Fatalf("RequestScheme() = %q, want %q", got, tc.want)
-			}
-		})
 	}
 }
 

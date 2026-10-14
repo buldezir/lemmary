@@ -65,7 +65,7 @@ Two kinds: search over the index, and plain access to the rows. The intelligence
 | `search_documents` | Hybrid search by meaning and keywords over the full-text and vector index, with optional date, type, correspondent and tag filters. Returns matching documents with one to three verbatim passages each. |
 | `read_documents` | The parts of up to ten documents that matter for a `focus`, ranked by the same index. Long documents come back as passages with gaps marked. |
 | `list_documents` | Plain listing by metadata: date range, document type, correspondent, tags, processing status (`unfinished` means everything but completed); sorted by date or by when it was added; paged with `limit` and `offset`. Returns metadata and the total, no text. |
-| `get_document` | One document's metadata and its extracted text, unranked and unabridged. A call returns up to 200,000 characters; page through a longer one with `offset` and `max_chars`, and `truncated` says when more follows. |
+| `get_document` | One document's metadata and its extracted text, unranked and unabridged. A call returns up to 200,000 characters; page through a longer one with `offset` and `max_chars`, and `truncated` says when more follows. `file_url` and `preview_url` open the original file and its first-page image; they carry a file token that expires after 15 minutes. |
 | `count_documents` | Count documents matching filters, optionally grouped by `document_type`, `correspondent`, `year`, `month` or `tag`. |
 | `list_taxonomy` | The tag, document type and correspondent names in the archive, for the filters above. Each list stops at 5,000 names and says so with `truncated`. |
 

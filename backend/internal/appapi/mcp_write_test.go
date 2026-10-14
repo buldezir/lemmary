@@ -19,7 +19,7 @@ import (
 
 func connectMCPWrites(t *testing.T, app core.App, userID string, capabilities ...string) *mcp.ClientSession {
 	t.Helper()
-	server := newMCPServer(agentTools{}, newMCPDocs(app, userID))
+	server := newMCPServer(agentTools{}, newMCPDocs(app, userID, ""))
 	addMCPWriteTools(server, app, userID, capabilities)
 	return connectMCPServer(t, server)
 }
@@ -190,7 +190,7 @@ func TestMCPUploadStoresAPendingDocument(t *testing.T) {
 func TestMCPUploadAtTheCapFitsTheHTTPBody(t *testing.T) {
 	app := bootQueueApp(t)
 	owner := makeQueueUser(t, app, "owner@example.com")
-	server := newMCPServer(agentTools{}, newMCPDocs(app, owner))
+	server := newMCPServer(agentTools{}, newMCPDocs(app, owner, ""))
 	addMCPWriteTools(server, app, owner, []string{config.MCPUpload})
 	srv := httptest.NewServer(mcpHTTPHandler(server))
 	t.Cleanup(srv.Close)
