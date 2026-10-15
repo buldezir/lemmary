@@ -111,6 +111,19 @@ async function fetchAppMeta(): Promise<AppMeta> {
   }
 }
 
+/** Set from GET /api/app/update; version and url only for a release image. */
+export type UpdateStatus = {
+  available: boolean
+  version?: string
+  url?: string
+}
+
+export function getUpdateStatus() {
+  return apiFetch<UpdateStatus>('/api/app/update', {
+    fallbackError: t('rootLayout.updateCheckFailed'),
+  })
+}
+
 export type SetupStatus = {
   needs_admin: boolean
   needs_config: boolean

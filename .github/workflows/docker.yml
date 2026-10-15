@@ -294,6 +294,12 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           labels: ${{ needs.meta.outputs.labels }}
+          # What the update check compares against: a `v*` tag checks GitHub
+          # releases, `main` checks `latest`'s revision label, and any other ref
+          # (a pull request is "<n>/merge") checks nothing.
+          build-args: |
+            LEMMARY_VERSION=${{ github.ref_name }}
+            LEMMARY_REVISION=${{ github.sha }}
           # push-by-digest publishes the image under no tag at all; the digest
           # comes back as an output for the merge job. name-canonical records the
           # repository in the image config so the digest resolves.
