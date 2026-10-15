@@ -1040,8 +1040,7 @@ export const de: Catalog = {
   'documentPage.notFound': 'Dokument nicht gefunden.',
   'documentPage.duplicateOf': 'Mögliches Duplikat von {link}.',
   'documentPage.duplicateReview':
-    'Prüfen Sie beide Dokumente und löschen Sie das, das Sie nicht benötigen.',
-  'documentPage.duplicateReviewed': 'Geprüft; beide wurden behalten.',
+    'Löschen Sie das, das Sie nicht benötigen, oder markieren Sie dieses als geprüft, um beide zu behalten.',
   'documentPage.status': 'Status: {status}',
   'documentPage.preview': 'Vorschau',
   'documentPage.openFile': 'Datei öffnen',

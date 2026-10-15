@@ -983,8 +983,8 @@ export const en = {
   'documentPage.loading': 'Loading document...',
   'documentPage.notFound': 'Document not found.',
   'documentPage.duplicateOf': 'Possible duplicate of {link}.',
-  'documentPage.duplicateReview': 'Review both documents and delete the one you do not need.',
-  'documentPage.duplicateReviewed': 'Reviewed; both were kept.',
+  'documentPage.duplicateReview':
+    'Delete the one you do not need, or mark this one reviewed to keep both.',
   'documentPage.status': 'Status: {status}',
   'documentPage.preview': 'Preview',
   'documentPage.openFile': 'Open file',

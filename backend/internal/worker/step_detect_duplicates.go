@@ -3,7 +3,10 @@ package worker
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
+
+	"github.com/pocketbase/pocketbase/core"
 
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/duplicates"
@@ -87,4 +90,33 @@ func (s *DetectDuplicatesStep) Run(ctx context.Context, state *StepState) error 
 		"score", score,
 	)
 	return nil
+}
+
+// Marking a possible duplicate reviewed keeps it as a document of its own,
+// whichever way it is marked (Inbox, document page, metadata save, MCP): the
+// pair is kept apart from then on, and the steps a duplicate skips are queued.
+// Extraction only when it has no title yet and nobody wrote its metadata by
+// hand, so what an import or the owner gave it is not overwritten.
+func keepReviewedDuplicate(e *core.RecordEvent) error {
+	record := e.Record
+	if record.GetString("duplicate_of") == "" ||
+		record.Original().GetString("processing_status") != models.DocStatusNeedsReview ||
+		record.GetString("processing_status") != models.DocStatusCompleted {
+		return e.Next()
+	}
+
+	duplicates.KeepApart(record)
+	record.Set("processing_status", models.DocStatusPending)
+	steps := []string{models.StepEmbed, models.StepLinkRelated}
+	if strings.TrimSpace(record.GetString("title")) == "" && record.GetString("metadata_source") != models.MetadataSourceUser {
+		steps = slices.Clone(models.ExtractionPipelineSteps)
+	}
+	return e.App.RunInTransaction(func(txApp core.App) error {
+		e.App = txApp
+		if err := e.Next(); err != nil {
+			return err
+		}
+		_, err := createProcessingJob(txApp, record.Id, steps, nil, config.Overrides{})
+		return err
+	})
 }

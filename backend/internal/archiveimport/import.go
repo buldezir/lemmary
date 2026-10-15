@@ -122,14 +122,16 @@ func GetJob(id string) (Job, bool) {
 
 // restoredDocument records what a created document still needs once every
 // document exists: its original timestamps, and the archive-relative ids of the
-// near-duplicate and the related documents it pointed at.
+// near-duplicate, the documents it was kept apart from and the related
+// documents it pointed at.
 type restoredDocument struct {
-	NewID               string
-	ExportedID          string
-	DuplicateOfExported string
-	RelatedExported     []string
-	Created             string
-	Updated             string
+	NewID                  string
+	ExportedID             string
+	DuplicateOfExported    string
+	NotDuplicateOfExported []string
+	RelatedExported        []string
+	Created                string
+	Updated                string
 }
 
 func runImport(app core.App, ownerUserID, mode string, item *stagedArchive, report func(done, total int)) (Result, error) {
@@ -295,6 +297,7 @@ func restoreSidecars(
 		return nil, err
 	}
 	doc.DuplicateOfExported = stringField(meta, "duplicate_of")
+	doc.NotDuplicateOfExported = stringsField(meta, "not_duplicate_of")
 	doc.RelatedExported = stringsField(meta, "related")
 	doc.Created, _ = parseTimestamp(stringField(meta, "created"))
 	doc.Updated, _ = parseTimestamp(stringField(meta, "updated"))
@@ -341,9 +344,9 @@ func restorePreview(files map[string]*zip.File, previewPath string, budget *scan
 //
 // created and updated are autodate columns: PocketBase stamps them on every
 // save, so a restored document would otherwise be dated the moment of the
-// restore and the library would come back in the wrong order. duplicate_of and
-// related are remapped in the same statement rather than through a second save,
-// which would bump updated straight back to now.
+// restore and the library would come back in the wrong order. duplicate_of,
+// not_duplicate_of and related are remapped in the same statement rather than
+// through a second save, which would bump updated straight back to now.
 func applyFixups(app core.App, restored []restoredDocument, result *Result) {
 	if len(restored) == 0 {
 		return
@@ -357,7 +360,7 @@ func applyFixups(app core.App, restored []restoredDocument, result *Result) {
 	}
 
 	for _, doc := range restored {
-		assignments := make([]string, 0, 3)
+		assignments := make([]string, 0, 5)
 		params := dbx.Params{"id": doc.NewID}
 		if doc.Created != "" {
 			assignments = append(assignments, "created = {:created}")
@@ -373,7 +376,11 @@ func applyFixups(app core.App, restored []restoredDocument, result *Result) {
 			assignments = append(assignments, "duplicate_of = {:duplicateOf}")
 			params["duplicateOf"] = target
 		}
-		if related := remapRelated(idByExported, doc); related != "" {
+		if kept := remapIDs(idByExported, doc.NewID, doc.NotDuplicateOfExported); kept != "" {
+			assignments = append(assignments, "not_duplicate_of = {:notDuplicateOf}")
+			params["notDuplicateOf"] = kept
+		}
+		if related := remapIDs(idByExported, doc.NewID, doc.RelatedExported); related != "" {
 			assignments = append(assignments, "related = {:related}")
 			params["related"] = related
 		}
@@ -389,19 +396,19 @@ func applyFixups(app core.App, restored []restoredDocument, result *Result) {
 	}
 }
 
-// remapRelated keeps the related documents that were restored with this one,
-// as the JSON array the column stores, or "" when none were.
-func remapRelated(idByExported map[string]string, doc restoredDocument) string {
-	related := make([]string, 0, len(doc.RelatedExported))
-	for _, exported := range doc.RelatedExported {
-		if target := idByExported[exported]; target != "" && target != doc.NewID && !slices.Contains(related, target) {
-			related = append(related, target)
+// remapIDs keeps the documents that were restored with this one, as the JSON
+// array a multi-relation column stores, or "" when none were.
+func remapIDs(idByExported map[string]string, newID string, exportedIDs []string) string {
+	ids := make([]string, 0, len(exportedIDs))
+	for _, exported := range exportedIDs {
+		if target := idByExported[exported]; target != "" && target != newID && !slices.Contains(ids, target) {
+			ids = append(ids, target)
 		}
 	}
-	if len(related) == 0 {
+	if len(ids) == 0 {
 		return ""
 	}
-	encoded, _ := json.Marshal(related)
+	encoded, _ := json.Marshal(ids)
 	return string(encoded)
 }
 

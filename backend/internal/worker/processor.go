@@ -150,6 +150,8 @@ func (p *Processor) registerHooks() {
 		return err
 	})
 
+	p.app.OnRecordUpdate("documents").BindFunc(keepReviewedDuplicate)
+
 	p.app.OnRecordCreate("processing_jobs").BindFunc(func(e *core.RecordEvent) error {
 		record := e.Record
 		if record.GetString("task_id") == "" {

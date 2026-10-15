@@ -2,6 +2,7 @@ package duplicates
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/pocketbase/dbx"
@@ -75,12 +76,12 @@ func FindNearDuplicate(app core.App, document *core.Record, ocrText string, thre
 	return best, bestScore, nil
 }
 
-// Earlier, same timeline, not itself a duplicate.
+// Earlier, same timeline, not itself a duplicate, not reviewed apart from it.
 func EligibleNearDuplicateOriginal(document, candidate *core.Record) bool {
 	if document == nil || candidate == nil {
 		return false
 	}
-	if candidate.GetString("duplicate_of") != "" {
+	if candidate.GetString("duplicate_of") != "" || keptApart(document, candidate) {
 		return false
 	}
 	docCreated := strings.TrimSpace(document.GetString("created"))
@@ -97,7 +98,7 @@ func MarkAsDuplicate(app core.App, document, original *core.Record) (marked bool
 	if document == nil || original == nil {
 		return false, fmt.Errorf("missing document for duplicate mark")
 	}
-	if document.GetString("duplicate_of") != "" {
+	if document.GetString("duplicate_of") != "" || keptApart(document, original) {
 		return false, nil
 	}
 	document.Set("duplicate_of", original.Id)
@@ -106,6 +107,18 @@ func MarkAsDuplicate(app core.App, document, original *core.Record) (marked bool
 		return false, err
 	}
 	return true, nil
+}
+
+// Marking a possible duplicate reviewed says it is not one: the link moves to
+// not_duplicate_of, which detection reads before pairing the two again.
+func KeepApart(document *core.Record) {
+	document.Set("not_duplicate_of+", document.GetString("duplicate_of"))
+	document.Set("duplicate_of", "")
+}
+
+func keptApart(a, b *core.Record) bool {
+	return slices.Contains(a.GetStringSlice("not_duplicate_of"), b.Id) ||
+		slices.Contains(b.GetStringSlice("not_duplicate_of"), a.Id)
 }
 
 func ScanAll(app core.App, cfg config.Config) (ScanResult, error) {
@@ -156,6 +169,9 @@ func backfillChecksum(app core.App, record *core.Record, result *ScanResult) err
 	}
 	// Marked duplicates carry no checksum (the original owns it); without this
 	// they are re-read and re-hashed from storage on every scan.
+	// ponytail: an exact copy the owner kept apart has no checksum either (the
+	// index allows one per user), so every scan re-hashes it. Remember the hash
+	// somewhere other than checksum if that ever shows up in scan times.
 	if strings.TrimSpace(record.GetString("duplicate_of")) != "" {
 		return nil
 	}
@@ -324,7 +340,7 @@ func markNearDuplicatesOf(app core.App, a scanRow, later []scanRow, threshold fl
 		if err != nil {
 			return err
 		}
-		if TextSimilarity(aText, bRecord.GetString("ocr_text")) < threshold {
+		if keptApart(aRecord, bRecord) || TextSimilarity(aText, bRecord.GetString("ocr_text")) < threshold {
 			continue
 		}
 		// The older is the original; the group is sorted ascending.

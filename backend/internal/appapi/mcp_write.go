@@ -30,7 +30,7 @@ type mcpUpdateArgs struct {
 	DocumentType  *string   `json:"document_type,omitempty" jsonschema:"Document type name, created if new; empty clears it."`
 	Correspondent *string   `json:"correspondent,omitempty" jsonschema:"Correspondent name, created if new; empty clears it."`
 	Tags          *[]string `json:"tags,omitempty" jsonschema:"The whole tag list as exact names of existing tags. Replaces the current tags; an empty list removes them all."`
-	MarkReviewed  bool      `json:"mark_reviewed,omitempty" jsonschema:"Move a needs_review document to completed."`
+	MarkReviewed  bool      `json:"mark_reviewed,omitempty" jsonschema:"Move a needs_review document to completed. A possible duplicate is kept as a document of its own and processed again."`
 }
 
 type mcpIDsArgs struct {

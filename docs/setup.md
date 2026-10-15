@@ -272,7 +272,7 @@ Two modes:
 
 Because a restore does not run the pipeline, near-duplicate detection does not re-run over the restored documents. Exact duplicates are still rejected on create by checksum, and `duplicate_of` / `text_fingerprint` come back from the archive; **Maintenance → Scan for duplicates** re-derives near-duplicate links across the whole library when you want them recomputed. A restored document also keeps whatever thumbnail the archive carried — an older archive without `.preview.png` sidecars leaves those documents without one until they are reprocessed.
 
-What a restore does *not* preserve: **document ids**. Restored documents get fresh ids, and `duplicate_of` and [related-document](#related-documents) links are remapped to the restored copies when the other document is in the same archive (dropped when it is not). `created` and `updated` are written back after the save, so the library comes back in its original order. Documents whose file checksum is already in your library are skipped, which makes restoring the same archive twice safe.
+What a restore does *not* preserve: **document ids**. Restored documents get fresh ids, and `duplicate_of`, the pairs you kept apart by reviewing a possible duplicate, and [related-document](#related-documents) links are remapped to the restored copies when the other document is in the same archive (dropped when it is not). `created` and `updated` are written back after the save, so the library comes back in its original order. Documents whose file checksum is already in your library are skipped, which makes restoring the same archive twice safe.
 
 Archives exported before manifests existed still restore: their documents are reconstructed from the entry names alone. Only orphan taxonomy — and that one sidecar-lookalike case — cannot be recovered from them.
 
@@ -345,12 +345,12 @@ Two ways out, both of which set the status to `completed`:
 
 With **Always require review** on, extraction also asks the model for up to three **suggested tags**: new names not yet in your vocabulary. They appear as dashed `+ name` chips on the card and the detail page while the document waits, and accepting one creates the tag and adds it to the document. Suggestions are stored on the processing job, never on the document, and vanish once it is reviewed. Tags are otherwise never created by the AI.
 
-A document marked reviewed while `duplicate_of` is set keeps that link: the relationship is still true, and marking it reviewed says you looked and kept both.
+Marking a possible duplicate reviewed says it is not one, and keeps both as documents of their own. `duplicate_of` is cleared, the pair is remembered so neither the pipeline nor **Scan for duplicates** links them again, and the document is queued for what a duplicate skips: embedding and related links, plus AI metadata extraction when it has no title yet. To drop the copy instead, delete it.
 
 ### Duplicate detection
 
 - **Exact duplicates** — on create, the uploaded file is hashed (SHA-256) into `documents.checksum`. A second upload with the same checksum for the same user is **rejected**, with an error pointing at the existing document id. Uniqueness is enforced with a per-user unique index on non-empty checksums so concurrent uploads cannot both succeed.
-- **Near-duplicates (optional)** — after OCR, a `detect_duplicates` step can compare normalized OCR text (SimHash + Jaccard). This is controlled by Settings → **Enable near-duplicate detection after OCR** (off by default). Matches are marked `needs_review` with `duplicate_of` set to the earlier document (never a newer one), so they show up in the [Inbox](#review-inbox); AI extract/apply steps are skipped.
+- **Near-duplicates (optional)** — after OCR, a `detect_duplicates` step can compare normalized OCR text (SimHash + Jaccard). This is controlled by Settings → **Enable near-duplicate detection after OCR** (off by default). Matches are marked `needs_review` with `duplicate_of` set to the earlier document (never a newer one), so they show up in the [Inbox](#review-inbox); AI extraction, embedding and related links are skipped until you review it.
 - **Bulk scan** — Maintenance → **Scan for duplicates** (admin) backfills missing checksums/fingerprints and marks exact (and, if enabled, near) duplicates among existing documents.
 
 Text extraction:
