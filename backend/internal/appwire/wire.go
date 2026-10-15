@@ -18,6 +18,7 @@ import (
 	"lemmary/backend/internal/metrics"
 	"lemmary/backend/internal/ngxapi"
 	"lemmary/backend/internal/ngxid"
+	"lemmary/backend/internal/updatecheck"
 	"lemmary/backend/internal/worker"
 
 	"github.com/pocketbase/pocketbase"
@@ -98,6 +99,11 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	// instrument declared before this point to the provider once it exists --
 	// but reading it in wiring order is worth more than saving a line.
 	metrics.Register(app)
+
+	// A managed instance's image is the operator's to move, not its admin's.
+	if !rt.Managed() && config.UpdateCheckEnabledFromEnv() {
+		updatecheck.Register(app, os.Getenv(updatecheck.EnvVersion), os.Getenv(updatecheck.EnvRevision))
+	}
 
 	registerSQLiteShrink(app)
 	registerCOOPHeader(app)

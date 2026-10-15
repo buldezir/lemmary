@@ -169,4 +169,10 @@ EXPOSE ${PORT}
 # delays when Docker starts reporting unhealthy — it costs a fast boot nothing.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=120s --retries=3 \
     CMD wget -q --spider "http://127.0.0.1:${PORT}/api/health" || exit 1
+# Last, so a new commit changes only the config and no layer is rebuilt. CI
+# passes the ref and commit; internal/updatecheck reads them, and an image built
+# without them never checks for updates.
+ARG LEMMARY_VERSION= LEMMARY_REVISION=
+ENV LEMMARY_VERSION=$LEMMARY_VERSION \
+    LEMMARY_REVISION=$LEMMARY_REVISION
 ENTRYPOINT ["/app/docker-entrypoint.sh"]

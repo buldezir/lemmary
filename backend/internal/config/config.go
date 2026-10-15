@@ -146,6 +146,14 @@ func IngestIMAPEnabledFromEnv() bool {
 	return getEnvBool(EnvIngestIMAP, false)
 }
 
+// EnvUpdateCheck is on when unset, like MCP_ENABLED: a notifier nobody switches
+// on notifies nobody, and it costs two small GitHub requests a day.
+const EnvUpdateCheck = "UPDATE_CHECK_ENABLED"
+
+func UpdateCheckEnabledFromEnv() bool {
+	return getEnvBool(EnvUpdateCheck, true)
+}
+
 const (
 	EnvRelatedLinking                 = "RELATED_LINKING_ENABLED"
 	EnvRelatedSimilarityThreshold     = "RELATED_SIMILARITY_THRESHOLD"

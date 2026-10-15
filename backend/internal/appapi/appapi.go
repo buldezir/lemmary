@@ -1,6 +1,8 @@
 package appapi
 
 import (
+	"net/http"
+
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
@@ -13,6 +15,7 @@ import (
 	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/pdfsplit"
 	"lemmary/backend/internal/remoteimport"
+	"lemmary/backend/internal/updatecheck"
 	"lemmary/backend/internal/zipimport"
 )
 
@@ -43,6 +46,9 @@ func Register(
 			g := e.Router.Group("/api/app")
 			g.GET("/meta", handleGetMeta(app, rt, ingestDirEnabled, imapScanner != nil))
 			g.GET("/me", handleGetMe(app))
+			g.GET("/update", bindAdmin(func(e *core.RequestEvent) error {
+				return writeJSON(e, http.StatusOK, updatecheck.Current())
+			}))
 			g.GET("/limits", bindAuth(handleGetLimits(app, lim, badLimitKeys)))
 			g.GET("/setup/status", handleGetSetupStatus(app, rt))
 			g.POST("/setup/admin", handlePostSetupAdmin(app))

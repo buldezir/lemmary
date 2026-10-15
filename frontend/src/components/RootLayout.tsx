@@ -18,6 +18,7 @@ import {
 import { t } from '../i18n'
 import { AppFooter } from './AppFooter'
 import { DemoCountdown } from './DemoCountdown'
+import { UpdateNotice } from './UpdateNotice'
 import { Button } from './ui'
 import { AppLogo } from './ui'
 import { LoginPage } from './LoginPage'
@@ -371,6 +372,7 @@ function AppHeader({
             <AppLogo appName={appName} accent={accent} />
             <span className="truncate">{appName}</span>
           </Link>
+          {admin && <UpdateNotice />}
           {writableUntil !== undefined && <DemoCountdown until={writableUntil} />}
         </div>
         <div className="hidden items-center gap-4 md:flex">
