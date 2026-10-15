@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { t } from '../i18n'
 import { getUpdateStatus } from '../lib/api/meta'
 import { useAsync } from '../hooks/useAsync'
@@ -22,8 +23,21 @@ function UpdateIcon() {
   )
 }
 
+// The server's answer changes at startup and twice a day, not when this page loads.
+const pollMs = 15 * 60 * 1000
+
 export function UpdateNotice() {
-  const { data } = useAsync(getUpdateStatus, [])
+  const { data, reload } = useAsync(getUpdateStatus, [])
+  const reloadRef = useRef(reload)
+  useEffect(() => {
+    reloadRef.current = reload
+  })
+
+  useEffect(() => {
+    const id = setInterval(() => void reloadRef.current(), pollMs)
+    return () => clearInterval(id)
+  }, [])
+
   if (!data?.available) return null
 
   if (data.url && data.version) {
