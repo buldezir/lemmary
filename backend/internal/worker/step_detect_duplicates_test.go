@@ -148,6 +148,33 @@ func reviewTestJobSteps(t *testing.T, app core.App, documentID string) []string 
 	return jobs[0].GetStringSlice("steps")
 }
 
+// The run that marked it sets needs_review before it finishes, and finishing
+// would save the link back over the review, so the review waits for it.
+func TestMarkingADuplicateReviewedWaitsForItsJob(t *testing.T) {
+	app := testpb.Open(t)
+	app.OnRecordUpdate("documents").BindFunc(keepReviewedDuplicate)
+	userID := createTagUser(t, app, "review@example.test")
+	original := saveReviewTestDocument(t, app, userID, "Invoice", "")
+	duplicate := saveReviewTestDocument(t, app, userID, "", original.Id)
+	makeJob(t, app, duplicate.Id, models.JobStatusRunning, "")
+
+	record, err := app.FindRecordById("documents", duplicate.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.Set("processing_status", models.DocStatusCompleted)
+	if err := app.Save(record); err == nil {
+		t.Fatal("review saved while the job that marked the duplicate is still open")
+	}
+	stored, err := app.FindRecordById("documents", duplicate.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.GetString("duplicate_of") != original.Id || stored.GetString("processing_status") != models.DocStatusNeedsReview {
+		t.Fatalf("duplicate_of=%q status=%q after a refused review", stored.GetString("duplicate_of"), stored.GetString("processing_status"))
+	}
+}
+
 // Reviewing a possible duplicate keeps it: the pair is remembered apart and
 // the steps a duplicate skipped are queued, extraction only for a document
 // nobody has titled yet.

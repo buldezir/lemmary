@@ -352,7 +352,7 @@ Zwei Wege hinaus, die beide den Status auf `completed` setzen:
 
 Ist **Prüfung immer verlangen** an, bittet die Extraktion das Modell außerdem um bis zu drei **vorgeschlagene Tags**: neue Namen, die noch nicht in Ihrem Vokabular stehen. Sie erscheinen als gestrichelte `+ name`-Chips auf der Karte und der Detailseite, solange das Dokument wartet, und das Annehmen eines Vorschlags legt den Tag an und fügt ihn dem Dokument hinzu. Vorschläge werden am Verarbeitungsjob gespeichert, nie am Dokument, und verschwinden, sobald es geprüft ist. Ansonsten legt die KI nie Tags an.
 
-Ein mögliches Duplikat als geprüft zu markieren besagt, dass es keines ist, und behält beide als eigenständige Dokumente. `duplicate_of` wird geleert, das Paar wird gemerkt, sodass weder die Pipeline noch **Nach Duplikaten suchen** die beiden erneut verknüpft, und das Dokument wird für das eingeplant, was ein Duplikat überspringt: Embeddings und verwandte Dokumente, dazu die KI-Extraktion der Metadaten, wenn es noch keinen Titel hat. Um die Kopie stattdessen loszuwerden, löschen Sie sie.
+Ein mögliches Duplikat als geprüft zu markieren besagt, dass es keines ist, und behält beide als eigenständige Dokumente. `duplicate_of` wird geleert, das Paar wird gemerkt, sodass weder die Pipeline noch **Nach Duplikaten suchen** die beiden erneut verknüpft, und das Dokument wird für das eingeplant, was ein Duplikat überspringt: Embeddings und verwandte Dokumente, dazu die KI-Extraktion der Metadaten, wenn es noch keinen Titel hat und niemand seine Metadaten von Hand geschrieben hat. Mit **Prüfung immer verlangen** bringt diese Extraktion es wie jede andere zurück in den Posteingang. Um die Kopie stattdessen loszuwerden, löschen Sie sie.
 
 ### Duplikaterkennung {#duplicate-detection}
 

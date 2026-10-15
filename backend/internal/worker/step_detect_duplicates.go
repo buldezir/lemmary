@@ -6,7 +6,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/router"
 
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/duplicates"
@@ -97,12 +99,23 @@ func (s *DetectDuplicatesStep) Run(ctx context.Context, state *StepState) error 
 // pair is kept apart from then on, and the steps a duplicate skips are queued.
 // Extraction only when it has no title yet and nobody wrote its metadata by
 // hand, so what an import or the owner gave it is not overwritten.
+//
+// Refused while a job is open: the run that marked the duplicate sets
+// needs_review before it finishes, and finishing saves its own copy of the
+// document, link included, over this one.
 func keepReviewedDuplicate(e *core.RecordEvent) error {
 	record := e.Record
 	if record.GetString("duplicate_of") == "" ||
 		record.Original().GetString("processing_status") != models.DocStatusNeedsReview ||
 		record.GetString("processing_status") != models.DocStatusCompleted {
 		return e.Next()
+	}
+	active, err := e.App.CountRecords("processing_jobs", dbx.HashExp{"document": record.Id, "finished_at": ""})
+	if err != nil {
+		return err
+	}
+	if active > 0 {
+		return router.NewBadRequestError("This document is still being processed. Try again in a moment.", nil)
 	}
 
 	duplicates.KeepApart(record)

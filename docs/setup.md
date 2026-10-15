@@ -345,7 +345,7 @@ Two ways out, both of which set the status to `completed`:
 
 With **Always require review** on, extraction also asks the model for up to three **suggested tags**: new names not yet in your vocabulary. They appear as dashed `+ name` chips on the card and the detail page while the document waits, and accepting one creates the tag and adds it to the document. Suggestions are stored on the processing job, never on the document, and vanish once it is reviewed. Tags are otherwise never created by the AI.
 
-Marking a possible duplicate reviewed says it is not one, and keeps both as documents of their own. `duplicate_of` is cleared, the pair is remembered so neither the pipeline nor **Scan for duplicates** links them again, and the document is queued for what a duplicate skips: embedding and related links, plus AI metadata extraction when it has no title yet. To drop the copy instead, delete it.
+Marking a possible duplicate reviewed says it is not one, and keeps both as documents of their own. `duplicate_of` is cleared, the pair is remembered so neither the pipeline nor **Scan for duplicates** links them again, and the document is queued for what a duplicate skips: embedding and related links, plus AI metadata extraction when it has no title yet and nobody wrote its metadata by hand. With **Always require review** on, that extraction brings it back to the Inbox like any other. To drop the copy instead, delete it.
 
 ### Duplicate detection
 

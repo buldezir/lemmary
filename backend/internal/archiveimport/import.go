@@ -360,7 +360,7 @@ func applyFixups(app core.App, restored []restoredDocument, result *Result) {
 	}
 
 	for _, doc := range restored {
-		assignments := make([]string, 0, 5)
+		assignments := make([]string, 0, 6)
 		params := dbx.Params{"id": doc.NewID}
 		if doc.Created != "" {
 			assignments = append(assignments, "created = {:created}")
@@ -373,7 +373,13 @@ func applyFixups(app core.App, restored []restoredDocument, result *Result) {
 		// Only when the original is in this archive too; a near-duplicate
 		// pointing at a document that was not restored has no target here.
 		if target := idByExported[doc.DuplicateOfExported]; target != "" && target != doc.NewID {
-			assignments = append(assignments, "duplicate_of = {:duplicateOf}")
+			// An archive from before not_duplicate_of carries a reviewed duplicate
+			// as completed with its link; it goes back to review, as migration
+			// 1730000058 sent it.
+			assignments = append(assignments,
+				"duplicate_of = {:duplicateOf}",
+				"processing_status = (CASE processing_status WHEN 'completed' THEN 'needs_review' ELSE processing_status END)",
+			)
 			params["duplicateOf"] = target
 		}
 		if kept := remapIDs(idByExported, doc.NewID, doc.NotDuplicateOfExported); kept != "" {
