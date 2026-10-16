@@ -7,15 +7,21 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
 
+	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/i18n"
 )
 
 var allowPrivateImportHosts atomic.Bool
+
+// Cloud metadata endpoints outside link-local: Alibaba's sits in CGNAT and
+// EC2's IPv6 one in ULA space, both of which private hosts would allow.
+var metadataIPs = []net.IP{net.ParseIP("100.100.100.200"), net.ParseIP("fd00:ec2::254")}
 
 // SetAllowPrivateImportHosts lets tests reach httptest servers on loopback
 // even under IMPORT_ALLOW_PRIVATE=0.
@@ -27,11 +33,14 @@ func privateImportHostsAllowed() bool {
 	if allowPrivateImportHosts.Load() {
 		return true
 	}
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("IMPORT_ALLOW_PRIVATE"))) {
-	case "0", "false", "no":
+	if aiprovider.Managed() {
 		return false
-	default:
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("IMPORT_ALLOW_PRIVATE"))) {
+	case "", "1", "true", "yes", "on":
 		return true
+	default:
+		return false
 	}
 }
 
@@ -93,7 +102,7 @@ func blockedImportIP(ip net.IP) error {
 }
 
 func blockedImportIPWithPrivate(ip net.IP, allowPrivate bool) error {
-	if ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+	if ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || slices.ContainsFunc(metadataIPs, ip.Equal) {
 		return i18n.Errorf("The import address %s is link-local, multicast or a cloud metadata endpoint, which is never allowed.", ip)
 	}
 	if !allowPrivate && (cgnatIP(ip) || ip.IsLoopback() || ip.IsPrivate()) {

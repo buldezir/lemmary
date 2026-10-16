@@ -318,7 +318,7 @@ func (r *Result) count(label string, err error) {
 		return
 	}
 	r.Failed++
-	appendError(r, fmt.Sprintf("%s: %v", label, err))
+	appendError(r, fmt.Sprintf("%s: %v", label, userFacing(err)))
 }
 
 func appendError(result *Result, msg string) {

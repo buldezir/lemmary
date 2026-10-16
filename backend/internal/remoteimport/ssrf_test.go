@@ -2,6 +2,7 @@ package remoteimport
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/i18n"
 )
 
@@ -44,11 +46,34 @@ func TestBlockedImportIP(t *testing.T) {
 }
 
 func TestPrivateImportHostsAllowedByDefault(t *testing.T) {
-	for env, want := range map[string]bool{"": true, "1": true, "0": false, "false": false, "no": false} {
+	for env, want := range map[string]bool{
+		"": true, "1": true, "on": true, "0": false, "false": false, "no": false, "off": false, "flase": false,
+	} {
 		t.Setenv("IMPORT_ALLOW_PRIVATE", env)
 		if got := privateImportHostsAllowed(); got != want {
 			t.Errorf("IMPORT_ALLOW_PRIVATE=%q: allowed=%v, want %v", env, got, want)
 		}
+	}
+}
+
+func TestManagedBlocksPrivateImportHosts(t *testing.T) {
+	t.Setenv("IMPORT_ALLOW_PRIVATE", "1")
+	aiprovider.SetManaged(true)
+	t.Cleanup(func() { aiprovider.SetManaged(false) })
+
+	if privateImportHostsAllowed() {
+		t.Fatal("a managed deployment must not reach private hosts, whatever the environment says")
+	}
+}
+
+func TestPerDocumentRefusalReadsPlainly(t *testing.T) {
+	t.Parallel()
+
+	var r Result
+	r.count("document 7 (x)", fmt.Errorf("download: %w", blockedImportIPWithPrivate(net.ParseIP("10.0.0.1"), false)))
+	want := "document 7 (x): The import address 10.0.0.1 is on a private network, and this server refuses those (IMPORT_ALLOW_PRIVATE=0)."
+	if len(r.Errors) != 1 || r.Errors[0] != want {
+		t.Fatalf("errors = %q, want %q", r.Errors, want)
 	}
 }
 
@@ -61,8 +86,10 @@ func TestPrivateImportHostsStillBlockLinkLocal(t *testing.T) {
 	if blockedImportIPWithPrivate(net.ParseIP("192.168.0.5"), true) != nil {
 		t.Fatal("RFC1918 should be allowed when private hosts are enabled")
 	}
-	if blockedImportIPWithPrivate(net.ParseIP("169.254.169.254"), true) == nil {
-		t.Fatal("link-local metadata should stay blocked")
+	for _, raw := range []string{"169.254.169.254", "100.100.100.200", "fd00:ec2::254"} {
+		if blockedImportIPWithPrivate(net.ParseIP(raw), true) == nil {
+			t.Fatalf("metadata endpoint %s should stay blocked", raw)
+		}
 	}
 	if blockedImportIPWithPrivate(net.ParseIP("100.64.0.1"), true) != nil {
 		t.Fatal("CGNAT should be allowed when private hosts are enabled")
