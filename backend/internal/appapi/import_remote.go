@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
+	"lemmary/backend/internal/i18n"
 	"lemmary/backend/internal/remoteimport"
 )
 
@@ -70,8 +71,8 @@ func handleGetImportRemoteStatus(app core.App) func(*core.RequestEvent) error {
 			"job_id": job.ID,
 			"status": job.Status,
 		}
-		if job.Error != "" {
-			payload["error"] = job.Error
+		if job.Err != nil {
+			payload["error"] = i18n.Of(i18n.FromRequest(e.Request), job.Err)
 		}
 		if job.Result != nil {
 			payload["result"] = job.Result

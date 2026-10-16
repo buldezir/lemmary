@@ -86,8 +86,10 @@ are worth setting explicitly:
   proxy does not forward the original `Host` or `X-Forwarded-Proto`. Every
   enrolled passkey is bound to `PASSKEY_RP_ID`, so changing it later makes all
   of them unusable.
-- `IMPORT_ALLOW_PRIVATE=1` if you import from a Paperless-ngx instance on the
-  same LAN or Docker network. Cloud-metadata addresses stay blocked either way.
+- `IMPORT_ALLOW_PRIVATE=0` if people you do not trust have accounts. Otherwise
+  the Paperless-ngx and Papra imports let any of them make the server fetch from
+  hosts on its LAN or Docker network. Cloud-metadata addresses stay blocked
+  either way.
 
 ### Traefik
 
