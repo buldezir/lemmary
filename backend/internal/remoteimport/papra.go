@@ -96,9 +96,10 @@ func StartPapra(app core.App, ownerUserID, baseURL, apiKey, mode string) (string
 	return registry.Start(ownerUserID, func(func(done, total int)) (Result, error) {
 		client, err := newPapraClient(baseURL, apiKey, nil)
 		if err != nil {
-			return Result{}, err
+			return Result{}, userFacing(err)
 		}
-		return runPapraImport(app, ownerUserID, mode, client)
+		result, err := runPapraImport(app, ownerUserID, mode, client)
+		return result, userFacing(err)
 	})
 }
 

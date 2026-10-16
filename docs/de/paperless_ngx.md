@@ -79,7 +79,7 @@ Jeder angemeldete Benutzer kann eine Paperless-ngx-Bibliothek in sein eigenes Le
 
 Derselbe Ablauf steht als `POST /api/app/import/ngx` mit dem JSON-Body `{ "url": "...", "api_key": "...", "mode": "preserve" | "reprocess" }` zur Verfügung. Die Anfrage gibt `202 Accepted` mit `{ "job_id", "status": "running" }` zurück. Fragen Sie `GET /api/app/import/ngx/status?job_id=...` ab, bis `status` den Wert `completed` (mit `result`) oder `failed` (mit `error`) hat. Der Auftragsstatus wird nur für den laufenden Prozess im Arbeitsspeicher gehalten. Pro Benutzer kann jeweils ein Import laufen. `mode` ist standardmäßig `preserve`. Der API-Schlüssel wird nicht gespeichert.
 
-Der Import ruft nur die vom Aufrufer angegebene URL ab. Private, Loopback- und Link-Local-Ziele sind standardmäßig gesperrt (auch nach Weiterleitungen). Setzen Sie `IMPORT_ALLOW_PRIVATE=1`, wenn sich die entfernte Paperless-ngx-Instanz in einem privaten Netzwerk befindet; Cloud-Metadaten-Adressen bleiben gesperrt.
+Der Import ruft nur die vom Aufrufer angegebene URL ab. Link-Local- und Cloud-Metadaten-Ziele sind immer gesperrt, auch nach Weiterleitungen. Private und Loopback-Ziele sind erlaubt, eine Paperless-ngx-Instanz in Ihrem LAN oder Docker-Netzwerk funktioniert also; setzen Sie `IMPORT_ALLOW_PRIVATE=0`, um auch sie zu sperren, wenn Personen ein Konto haben, denen Sie nicht vertrauen.
 
 ## swift-paperless (iOS) {#swift-paperless-ios}
 

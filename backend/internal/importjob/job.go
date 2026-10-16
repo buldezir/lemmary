@@ -47,6 +47,7 @@ type Job[T any] struct {
 	Progress    Progress  `json:"progress"`
 	Result      *T        `json:"result,omitempty"`
 	Error       string    `json:"error,omitempty"`
+	Err         error     `json:"-"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
@@ -139,6 +140,7 @@ func (r *Registry[T]) Start(ownerUserID string, fn func(report func(done, total 
 		if runErr != nil {
 			job.Status = StatusFailed
 			job.Error = runErr.Error()
+			job.Err = runErr
 			return
 		}
 		job.Status = StatusCompleted

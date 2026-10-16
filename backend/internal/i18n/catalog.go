@@ -685,6 +685,14 @@ var catalog = map[string]map[string]string{
 		"de": "Das Archiv wurde mit einer neueren Version von Lemmary erstellt.",
 		"ru": "Архив создан более новой версией Lemmary.",
 	},
+	"The import address %s is link-local, multicast or a cloud metadata endpoint, which is never allowed.": {
+		"de": "Die Importadresse %s ist eine Link-Local-, Multicast- oder Cloud-Metadaten-Adresse und ist nie erlaubt.",
+		"ru": "Адрес импорта %s — link-local, multicast или адрес облачных метаданных; такие адреса запрещены всегда.",
+	},
+	"The import address %s is on a private network, and this server refuses those (IMPORT_ALLOW_PRIVATE=0).": {
+		"de": "Die Importadresse %s liegt in einem privaten Netz, und dieser Server lehnt solche ab (IMPORT_ALLOW_PRIVATE=0).",
+		"ru": "Адрес импорта %s находится в частной сети, а этот сервер такие адреса отклоняет (IMPORT_ALLOW_PRIVATE=0).",
+	},
 	"The model stopped before the end of the document; it is too long to translate in one reply of this model.": {
 		"de": "Das Modell hat vor dem Ende des Dokuments aufgehört; es ist zu lang, um es in einer Antwort dieses Modells zu übersetzen.",
 		"ru": "Модель остановилась, не дойдя до конца документа; он слишком длинный, чтобы перевести его в одном ответе этой модели.",

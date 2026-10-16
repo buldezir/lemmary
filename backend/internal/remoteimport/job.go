@@ -19,7 +19,8 @@ var registry = importjob.NewRegistry[Result](importjob.DefaultRetention)
 // StartNgx runs a Paperless-ngx import in a background goroutine; one at a time per owner.
 func StartNgx(app core.App, ownerUserID, baseURL, apiKey, mode string) (string, error) {
 	return registry.Start(ownerUserID, func(func(done, total int)) (Result, error) {
-		return runImport(app, ownerUserID, baseURL, apiKey, mode, nil)
+		result, err := runImport(app, ownerUserID, baseURL, apiKey, mode, nil)
+		return result, userFacing(err)
 	})
 }
 

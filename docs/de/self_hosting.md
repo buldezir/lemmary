@@ -94,9 +94,10 @@ TLS-terminierenden Proxy davor, lohnt es sich, zwei Dinge explizit zu setzen:
   Proxy den ursprünglichen `Host` oder `X-Forwarded-Proto` nicht weiterleitet.
   Jeder registrierte Passkey ist an `PASSKEY_RP_ID` gebunden, eine spätere
   Änderung macht daher alle unbrauchbar.
-- `IMPORT_ALLOW_PRIVATE=1`, wenn Sie aus einer Paperless-ngx-Instanz im selben LAN
-  oder Docker-Netzwerk importieren. Cloud-Metadaten-Adressen bleiben in jedem Fall
-  gesperrt.
+- `IMPORT_ALLOW_PRIVATE=0`, wenn Personen ein Konto haben, denen Sie nicht
+  vertrauen. Sonst können sie über die Importe aus Paperless-ngx und Papra den
+  Server Anfragen an Hosts in seinem LAN oder Docker-Netzwerk stellen lassen.
+  Cloud-Metadaten-Adressen bleiben in jedem Fall gesperrt.
 
 ### Traefik {#traefik}
 

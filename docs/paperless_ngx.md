@@ -79,7 +79,7 @@ Any signed-in user can migrate a Paperless-ngx library into their own Lemmary ac
 
 The same flow is available as `POST /api/app/import/ngx` with JSON body `{ "url": "...", "api_key": "...", "mode": "preserve" | "reprocess" }`. The request returns `202 Accepted` with `{ "job_id", "status": "running" }`. Poll `GET /api/app/import/ngx/status?job_id=...` until `status` is `completed` (with `result`) or `failed` (with `error`). Job state is kept in memory for the running process only. One import may run at a time per user. `mode` defaults to `preserve`. The API key is not persisted.
 
-Import fetches only the caller-supplied URL. Private, loopback, and link-local destinations are blocked by default (including after redirects). Set `IMPORT_ALLOW_PRIVATE=1` if the remote Paperless-ngx instance is on a private network; cloud-metadata addresses remain blocked.
+Import fetches only the caller-supplied URL. Link-local and cloud-metadata destinations are always blocked, including after redirects. Private and loopback destinations are allowed, so a Paperless-ngx instance on your LAN or Docker network works; set `IMPORT_ALLOW_PRIVATE=0` to block them too when people you do not trust have accounts.
 
 ## swift-paperless (iOS)
 
