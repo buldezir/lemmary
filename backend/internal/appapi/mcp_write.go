@@ -30,7 +30,7 @@ type mcpUpdateArgs struct {
 	DocumentType  *string   `json:"document_type,omitempty" jsonschema:"Document type name, created if new; empty clears it."`
 	Correspondent *string   `json:"correspondent,omitempty" jsonschema:"Correspondent name, created if new; empty clears it."`
 	Tags          *[]string `json:"tags,omitempty" jsonschema:"The whole tag list as exact names of existing tags. Replaces the current tags; an empty list removes them all."`
-	MarkReviewed  bool      `json:"mark_reviewed,omitempty" jsonschema:"Move a needs_review document to completed."`
+	MarkReviewed  bool      `json:"mark_reviewed,omitempty" jsonschema:"Move a needs_review document to completed. A possible duplicate is kept as a document of its own and processed again."`
 }
 
 type mcpIDsArgs struct {
@@ -169,7 +169,9 @@ func updateMCPDocument(app core.App, userID string, args mcpUpdateArgs) (mcpDocu
 	if err != nil {
 		return mcpDocument{}, err
 	}
-	record.Set("metadata_source", models.MetadataSourceUser)
+	if args.editsMetadata() {
+		record.Set("metadata_source", models.MetadataSourceUser)
+	}
 	err = app.RunInTransaction(func(txApp core.App) error {
 		if err := models.SaveFieldValues(txApp, record, writes); err != nil {
 			return err
@@ -181,6 +183,12 @@ func updateMCPDocument(app core.App, userID string, args mcpUpdateArgs) (mcpDocu
 	}
 	expandMCPDocuments(app, []*core.Record{record})
 	return mcpDocumentOf(record), nil
+}
+
+// Marking reviewed alone writes nothing the model wrote, as on the detail page.
+func (a mcpUpdateArgs) editsMetadata() bool {
+	return a.Title != nil || a.Summary != nil || a.DocumentDate != nil ||
+		a.DocumentType != nil || a.Correspondent != nil || a.Tags != nil
 }
 
 // applyMCPUpdate sets the document's own columns; the option fields are

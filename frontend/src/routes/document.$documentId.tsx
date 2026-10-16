@@ -620,11 +620,7 @@ export function DocumentDetailPage() {
               </Link>
             ),
           })}{' '}
-          {/* The relationship stays true after review, so the banner stays,
-              but stops asking for something already done. */}
-          {document.processing_status === 'needs_review'
-            ? t('documentPage.duplicateReview')
-            : t('documentPage.duplicateReviewed')}
+          {t('documentPage.duplicateReview')}
         </div>
       )}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

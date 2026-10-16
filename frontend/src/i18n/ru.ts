@@ -1161,8 +1161,8 @@ export const ru: Catalog = {
   'documentPage.loading': 'Загрузка документа...',
   'documentPage.notFound': 'Документ не найден.',
   'documentPage.duplicateOf': 'Возможный дубликат документа {link}.',
-  'documentPage.duplicateReview': 'Проверьте оба документа и удалите ненужный.',
-  'documentPage.duplicateReviewed': 'Проверено; оба сохранены.',
+  'documentPage.duplicateReview':
+    'Удалите ненужный или отметьте этот как проверенный, чтобы оставить оба.',
   'documentPage.status': 'Статус: {status}',
   'documentPage.preview': 'Предпросмотр',
   'documentPage.openFile': 'Открыть файл',

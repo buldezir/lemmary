@@ -145,6 +145,30 @@ func TestMCPUpdateDocumentChangesOnlyOwnDocuments(t *testing.T) {
 	}
 }
 
+// Marking reviewed alone is not an edit: the model still wrote the metadata,
+// and an untitled duplicate reviewed this way still gets extracted.
+func TestMCPMarkReviewedAloneKeepsTheMetadataSource(t *testing.T) {
+	app := bootQueueApp(t)
+	owner := makeQueueUser(t, app, "owner@example.com")
+	document := makeQueueDocument(t, app, owner, models.DocStatusNeedsReview, "text")
+	document.Set("metadata_source", "test-model")
+	if err := app.Save(document); err != nil {
+		t.Fatal(err)
+	}
+	session := connectMCPWrites(t, app, owner, config.MCPEdit)
+
+	if res := callMCP(t, session, "update_document", map[string]any{"id": document.Id, "mark_reviewed": true}, nil); res.IsError {
+		t.Fatalf("mark reviewed: %#v", res.Content)
+	}
+	stored, err := app.FindRecordById("documents", document.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.GetString("metadata_source") != "test-model" || stored.GetString("processing_status") != models.DocStatusCompleted {
+		t.Fatalf("metadata_source = %q, status = %q", stored.GetString("metadata_source"), stored.GetString("processing_status"))
+	}
+}
+
 func TestMCPUploadStoresAPendingDocument(t *testing.T) {
 	app := bootQueueApp(t)
 	owner := makeQueueUser(t, app, "owner@example.com")

@@ -190,3 +190,69 @@ func TestScanAllDropsChecksumAfterFailedOwnershipSwap(t *testing.T) {
 		t.Fatalf("later document checksum = %q, want %q", got, checksum)
 	}
 }
+
+func keepScanTestDocumentApart(t *testing.T, app core.App, document, original *core.Record) {
+	t.Helper()
+	document.Set("not_duplicate_of", []string{original.Id})
+	if err := app.Save(document); err != nil {
+		t.Fatalf("keep apart: %v", err)
+	}
+}
+
+// A copy the owner reviewed and kept is never paired with its original again,
+// while a copy nobody reviewed still is.
+func TestScanAllLeavesAKeptApartNearDuplicateAlone(t *testing.T) {
+	app := testpb.Open(t)
+	userID := saveScanTestUser(t, app)
+	original := saveScanTestDocument(t, app, userID, "first-checksum", "2026-01-01 10:00:00.000Z")
+	kept := saveScanTestDocument(t, app, userID, "second-checksum", "2026-01-02 10:00:00.000Z")
+	unreviewed := saveScanTestDocument(t, app, userID, "third-checksum", "2026-01-03 10:00:00.000Z")
+	keepScanTestDocumentApart(t, app, kept, original)
+
+	cfg := config.Config{NearDuplicateDetectionEnabled: true, NearDuplicateThreshold: 0.9}
+	if _, err := ScanAll(app, cfg); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	if got := reloadScanTestDocument(t, app, kept.Id).GetString("duplicate_of"); got != "" {
+		t.Fatalf("kept-apart document marked a duplicate of %q", got)
+	}
+	if got := reloadScanTestDocument(t, app, unreviewed.Id).GetString("duplicate_of"); got != original.Id {
+		t.Fatalf("unreviewed copy duplicate_of = %q, want %q", got, original.Id)
+	}
+}
+
+func TestScanAllLeavesAKeptApartExactCopyAlone(t *testing.T) {
+	app := testpb.Open(t)
+	userID := saveScanTestUser(t, app)
+	original := saveScanTestDocument(t, app, userID, scanTestChecksum(t), "2026-01-01 10:00:00.000Z")
+	kept := saveScanTestDocument(t, app, userID, "", "2026-01-02 10:00:00.000Z")
+	keepScanTestDocumentApart(t, app, kept, original)
+
+	if _, err := ScanAll(app, config.Config{}); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if got := reloadScanTestDocument(t, app, kept.Id).GetString("duplicate_of"); got != "" {
+		t.Fatalf("kept-apart copy marked a duplicate of %q", got)
+	}
+}
+
+func TestFindNearDuplicateSkipsAKeptApartOriginal(t *testing.T) {
+	app := testpb.Open(t)
+	userID := saveScanTestUser(t, app)
+	original := saveScanTestDocument(t, app, userID, "first-checksum", "2026-01-01 10:00:00.000Z")
+	later := saveScanTestDocument(t, app, userID, "second-checksum", "2026-01-02 10:00:00.000Z")
+	ocrText := original.GetString("ocr_text")
+	original.Set("text_fingerprint", FingerprintHex(ocrText))
+	if err := app.Save(original); err != nil {
+		t.Fatal(err)
+	}
+
+	if match, _, err := FindNearDuplicate(app, later, ocrText, 0.9); err != nil || match == nil {
+		t.Fatalf("before keeping apart: match=%v err=%v, want the original", match, err)
+	}
+	keepScanTestDocumentApart(t, app, later, original)
+	if match, _, err := FindNearDuplicate(app, later, ocrText, 0.9); err != nil || match != nil {
+		t.Fatalf("after keeping apart: match=%v err=%v, want none", match, err)
+	}
+}
