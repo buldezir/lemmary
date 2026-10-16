@@ -283,8 +283,9 @@ func TestScanDoesNotReadPastTheBudget(t *testing.T) {
 		t.Fatal("expected the scan to be refused for going over the budget")
 	}
 	// The client stops reading a page past the budget, so the device gets no
-	// further than a socket buffer or two of the 64 MB it wanted to send.
-	if got := served.Load(); got > 4<<20 {
+	// further than a socket buffer or two of the 64 MB it wanted to send. On
+	// Linux loopback those autotune to 6 MB receive plus 4 MB send.
+	if got := served.Load(); got > 16<<20 {
 		t.Fatalf("the scanner got to send %d bytes against an 8 KB budget", got)
 	}
 }
