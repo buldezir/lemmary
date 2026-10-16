@@ -276,10 +276,10 @@ of mail arriving in the mailbox folder, become documents on the next scan.
 
 ![Admin → Ingest](./screenshots/settings-ingest.png)
 
-The Users tab is the admin's list of the accounts on the instance, where one is
+Management is the admin's list of the accounts on the instance, where one is
 added, edited or deleted.
 
-![Admin → Users, the accounts on the instance](./screenshots/management.png)
+![Admin → Management, the accounts on the instance](./screenshots/management.png)
 
 Library-wide maintenance: reprocess failed documents in batches, scan for
 duplicates, delete taxonomy nothing points at any more, rebuild the search

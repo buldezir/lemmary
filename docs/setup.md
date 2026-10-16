@@ -100,7 +100,7 @@ A message whose attachment is refused (empty, over the 47 MB cap, wrong content 
 
 ## Management (admin UI)
 
-**Admin → Users** (admin only) manages the accounts on the instance. It lists every `users` account, adds one (email, optional name, password; created verified, so it can sign in at once), edits a regular account's email, name or password, and deletes one. Deleting an account also deletes its documents, tags, shares and passkeys. Admin accounts (`is_app_admin`) are listed but read-only here; manage them in the PocketBase dashboard. The routes are `GET`/`POST /api/app/admin/users` and `PATCH`/`DELETE /api/app/admin/users/{id}`, admin only, and `403` on an admin account. With the vault on, a new account's password gets its own key wrap, as with any other account.
+**Admin → Management** (admin only) manages the accounts on the instance. It lists every `users` account, adds one (email, optional name, password; created verified, so it can sign in at once), edits a regular account's email, name or password, and deletes one. Deleting an account also deletes its documents, tags, shares and passkeys. Admin accounts (`is_app_admin`) are listed but read-only here; manage them in the PocketBase dashboard. The routes are `GET`/`POST /api/app/admin/users` and `PATCH`/`DELETE /api/app/admin/users/{id}`, admin only, and `403` on an admin account. With the vault on, a new account's password gets its own key wrap, as with any other account.
 
 ## Maintenance (admin UI)
 

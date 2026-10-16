@@ -28,6 +28,7 @@ import { OCRTestPage } from './routes/ocr-test'
 import { SearchPage } from './routes/search'
 import { ResearchPage } from './routes/research'
 import { AdminPage } from './routes/admin'
+import { SettingsPage } from './routes/settings'
 import { SettingsAppearancePage } from './routes/settings.index'
 import { SettingsAIPage } from './routes/settings.ai'
 import { SettingsProcessingPage } from './routes/settings.processing'
@@ -188,7 +189,7 @@ const ocrTestRoute = createRoute({
   component: OCRTestPage,
 })
 
-// Pathless: one shell and one guard for settings, users and maintenance, which
+// Pathless: one shell and one guard for settings, management and maintenance, which
 // keep the URLs they had as separate pages.
 const adminRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -200,6 +201,7 @@ const adminRoute = createRoute({
 const settingsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: 'settings',
+  component: SettingsPage,
 })
 
 // Appearance is the first tab, so it sits on /settings itself.

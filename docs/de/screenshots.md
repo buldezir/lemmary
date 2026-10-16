@@ -302,10 +302,10 @@ Postfachordner eintreffen, werden beim nächsten Scan zu Dokumenten.
 
 ![Admin → Eingang](../screenshots/settings-ingest.png)
 
-Der Tab Benutzer ist die Liste der Konten der Instanz für den Admin, in der eines
+Der Bereich Verwaltung ist die Liste der Konten der Instanz für den Admin, in der eines
 angelegt, bearbeitet oder gelöscht wird.
 
-![Admin → Benutzer, die Konten der Instanz](../screenshots/management.png)
+![Admin → Verwaltung, die Konten der Instanz](../screenshots/management.png)
 
 Bibliotheksweite Wartung: fehlgeschlagene Dokumente stapelweise erneut
 verarbeiten, nach Duplikaten suchen, Taxonomie-Einträge löschen, auf die nichts

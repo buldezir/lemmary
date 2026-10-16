@@ -1,80 +1,39 @@
 import { Link, Outlet } from '@tanstack/react-router'
 
-import { useAppMeta } from '../hooks/useAppMeta'
-import { tabClassName } from '../components/ui'
 import { t } from '../i18n'
 
-/**
- * The Admin shell: a header, the tabs, and whichever tab is on the URL. Each
- * settings tab saves only its own fields -- the settings PATCH treats every
- * field as optional, so a tab naming its own leaves the rest of the record alone.
- */
-export function AdminPage() {
-  // unknown/failed meta counts as managed; see AppMeta.managed
-  const { managed, ingestDir, ingestImap } = useAppMeta()
-  const hostEditable = managed === false
+const sectionLinkClassName =
+  'border-l-2 border-transparent py-1 pl-2 pr-3 text-sm font-medium text-ink-muted transition-colors hover:border-line hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-oxblood data-[status=active]:border-oxblood data-[status=active]:bg-wash data-[status=active]:text-oxblood'
 
+/** The Admin shell: a header, the section rail, and whichever section is on the URL. */
+export function AdminPage() {
   return (
-    <div className="mx-auto max-w-3xl">
-      <div className="mb-5">
+    <div className="flex flex-col gap-5">
+      <div>
         <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">{t('admin.title')}</h1>
-        <p className="mt-1 text-sm text-ink-soft">
-          {t('admin.intro')}
-        </p>
-        {!hostEditable && (
-          <p className="mt-2 text-sm text-ink-soft">
-            {t('settings.aiManaged')}
-          </p>
-        )}
+        <p className="mt-1 text-sm text-ink-soft">{t('admin.intro')}</p>
       </div>
 
-      <nav
-        aria-label={t('admin.sectionsLabel')}
-        className="mb-5 flex flex-wrap items-center gap-5 border-b border-line"
-      >
-        <Link to="/settings" activeOptions={{ exact: true }} className={tabClassName}>
-          {t('settings.tabAppearance')}
-        </Link>
-        {/* Hidden rather than disabled on a managed instance: there is nothing
-            editable behind them. */}
-        {hostEditable && (
-          <Link to="/settings/ai" className={tabClassName}>
-            {t('settings.tabAi')}
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+        <nav
+          aria-label={t('admin.sectionsLabel')}
+          className="flex flex-wrap gap-1 lg:sticky lg:top-6 lg:w-44 lg:shrink-0 lg:flex-col"
+        >
+          <Link to="/settings" className={sectionLinkClassName}>
+            {t('admin.settings')}
           </Link>
-        )}
-        <Link to="/settings/processing" className={tabClassName}>
-          {t('settings.tabProcessing')}
-        </Link>
-        <Link to="/settings/fields" className={tabClassName}>
-          {t('settings.tabFields')}
-        </Link>
-        {hostEditable && (
-          <Link to="/settings/worker" className={tabClassName}>
-            {t('settings.tabWorker')}
+          <Link to="/management" className={sectionLinkClassName}>
+            {t('admin.management')}
           </Link>
-        )}
-        {hostEditable && (
-          <Link to="/settings/duplicates" className={tabClassName}>
-            {t('settings.tabDuplicates')}
+          <Link to="/maintenance" className={sectionLinkClassName}>
+            {t('admin.maintenance')}
           </Link>
-        )}
-        {(ingestDir || ingestImap) && (
-          <Link to="/settings/ingest" className={tabClassName}>
-            {t('settings.tabIngest')}
-          </Link>
-        )}
-        <Link to="/settings/mcp" className={tabClassName}>
-          {t('settings.tabMcp')}
-        </Link>
-        <Link to="/management" className={tabClassName}>
-          {t('admin.tabUsers')}
-        </Link>
-        <Link to="/maintenance" className={tabClassName}>
-          {t('admin.tabMaintenance')}
-        </Link>
-      </nav>
+        </nav>
 
-      <Outlet />
+        <div className="min-w-0 flex-1">
+          <Outlet />
+        </div>
+      </div>
     </div>
   )
 }

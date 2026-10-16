@@ -1234,11 +1234,13 @@ export const ru: Catalog = {
   'admin.intro':
     'Настройки всего сервера, учётные записи и обслуживание библиотеки. Изменения применяются сразу.',
   'admin.sectionsLabel': 'Разделы админ-панели',
-  'admin.tabUsers': 'Пользователи',
-  'admin.tabMaintenance': 'Обслуживание',
+  'admin.settings': 'Настройки',
+  'admin.management': 'Управление',
+  'admin.maintenance': 'Обслуживание',
 
   'settings.aiManaged':
     'ИИ-провайдеры, модели, тайм-ауты и обработчик задаёт ваш хостинг-провайдер, здесь их изменить нельзя.',
+  'settings.sectionsLabel': 'Разделы настроек',
   'settings.tabAppearance': 'Оформление',
   'settings.tabAi': 'ИИ',
   'settings.tabProcessing': 'Обработка',

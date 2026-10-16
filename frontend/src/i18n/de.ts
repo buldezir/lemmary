@@ -1114,11 +1114,13 @@ export const de: Catalog = {
   'admin.intro':
     'Konfiguration der ganzen Instanz, ihre Konten und die Wartung der Bibliothek. Änderungen gelten sofort.',
   'admin.sectionsLabel': 'Bereiche der Administration',
-  'admin.tabUsers': 'Benutzer',
-  'admin.tabMaintenance': 'Wartung',
+  'admin.settings': 'Einstellungen',
+  'admin.management': 'Verwaltung',
+  'admin.maintenance': 'Wartung',
 
   'settings.aiManaged':
     'KI-Anbieter, Modelle, Zeitlimits und der Worker werden von Ihrem Hosting-Anbieter festgelegt und können hier nicht geändert werden.',
+  'settings.sectionsLabel': 'Bereiche der Einstellungen',
   'settings.tabAppearance': 'Darstellung',
   'settings.tabAi': 'KI',
   'settings.tabProcessing': 'Verarbeitung',

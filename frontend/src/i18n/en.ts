@@ -1055,11 +1055,13 @@ export const en = {
   'admin.intro':
     'Configuration for the whole instance, its accounts and library maintenance. Changes apply immediately.',
   'admin.sectionsLabel': 'Admin sections',
-  'admin.tabUsers': 'Users',
-  'admin.tabMaintenance': 'Maintenance',
+  'admin.settings': 'Settings',
+  'admin.management': 'Management',
+  'admin.maintenance': 'Maintenance',
 
   'settings.aiManaged':
     'AI providers, models, timeouts and the worker are set by your hosting provider and are not editable here.',
+  'settings.sectionsLabel': 'Settings sections',
   'settings.tabAppearance': 'Appearance',
   'settings.tabAi': 'AI',
   'settings.tabProcessing': 'Processing',

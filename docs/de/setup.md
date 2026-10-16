@@ -103,7 +103,7 @@ Eine Nachricht, deren Anhang abgelehnt wird (leer, über der Obergrenze von 47 M
 
 ## Verwaltung (Admin-Oberfläche) {#management-admin-ui}
 
-Der Tab **Admin → Benutzer** (nur für Admins) verwaltet die Konten der Instanz. Er listet jedes `users`-Konto auf, legt eines an (E-Mail, optionaler Name, Passwort; als verifiziert angelegt, sodass es sich sofort anmelden kann), bearbeitet E-Mail, Name oder Passwort eines normalen Kontos und löscht eines. Das Löschen eines Kontos löscht auch dessen Dokumente, Tags, Freigaben und Passkeys. Admin-Konten (`is_app_admin`) werden aufgeführt, sind hier aber schreibgeschützt; verwalten Sie sie im PocketBase-Dashboard. Die Routen sind `GET`/`POST /api/app/admin/users` und `PATCH`/`DELETE /api/app/admin/users/{id}`, nur für Admins, mit `403` bei einem Admin-Konto. Bei aktivem Tresor erhält das Passwort eines neuen Kontos wie bei jedem anderen Konto eine eigene Schlüsselhülle.
+Der Bereich **Admin → Verwaltung** (nur für Admins) verwaltet die Konten der Instanz. Er listet jedes `users`-Konto auf, legt eines an (E-Mail, optionaler Name, Passwort; als verifiziert angelegt, sodass es sich sofort anmelden kann), bearbeitet E-Mail, Name oder Passwort eines normalen Kontos und löscht eines. Das Löschen eines Kontos löscht auch dessen Dokumente, Tags, Freigaben und Passkeys. Admin-Konten (`is_app_admin`) werden aufgeführt, sind hier aber schreibgeschützt; verwalten Sie sie im PocketBase-Dashboard. Die Routen sind `GET`/`POST /api/app/admin/users` und `PATCH`/`DELETE /api/app/admin/users/{id}`, nur für Admins, mit `403` bei einem Admin-Konto. Bei aktivem Tresor erhält das Passwort eines neuen Kontos wie bei jedem anderen Konto eine eigene Schlüsselhülle.
 
 ## Wartung (Admin-Oberfläche) {#maintenance-admin-ui}
 
