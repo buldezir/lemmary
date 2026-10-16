@@ -27,7 +27,7 @@ import { DocumentAskPage } from './routes/document.$documentId.ask'
 import { OCRTestPage } from './routes/ocr-test'
 import { SearchPage } from './routes/search'
 import { ResearchPage } from './routes/research'
-import { SettingsPage } from './routes/settings'
+import { AdminPage } from './routes/admin'
 import { SettingsAppearancePage } from './routes/settings.index'
 import { SettingsAIPage } from './routes/settings.ai'
 import { SettingsProcessingPage } from './routes/settings.processing'
@@ -37,7 +37,6 @@ import { SettingsDuplicatesPage } from './routes/settings.duplicates'
 import { SettingsIngestPage } from './routes/settings.ingest'
 import { SettingsMCPPage } from './routes/settings.mcp'
 import { MaintenancePage } from './routes/maintenance'
-import { ManagementPage } from './routes/management'
 import { ManagementUsersPage } from './routes/management.users'
 import { ImportPage } from './routes/import'
 import { ImportNgxPage, ImportPapraPage } from './routes/import.remote'
@@ -189,13 +188,18 @@ const ocrTestRoute = createRoute({
   component: OCRTestPage,
 })
 
-// A shell with one tab per section; the guard sits on the parent, which the
-// tabs inherit.
-const settingsRoute = createRoute({
+// Pathless: one shell and one guard for settings, users and maintenance, which
+// keep the URLs they had as separate pages.
+const adminRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/settings',
+  id: 'admin',
   beforeLoad: requireAdmin,
-  component: SettingsPage,
+  component: AdminPage,
+})
+
+const settingsRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'settings',
 })
 
 // Appearance is the first tab, so it sits on /settings itself.
@@ -248,23 +252,14 @@ const settingsMCPRoute = createRoute({
 })
 
 const managementRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/management',
-  beforeLoad: requireAdmin,
-  component: ManagementPage,
-})
-
-// Users is the first tab, so it sits on /management itself.
-const managementUsersRoute = createRoute({
-  getParentRoute: () => managementRoute,
-  path: '/',
+  getParentRoute: () => adminRoute,
+  path: 'management',
   component: ManagementUsersPage,
 })
 
 const maintenanceRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/maintenance',
-  beforeLoad: requireAdmin,
+  getParentRoute: () => adminRoute,
+  path: 'maintenance',
   component: MaintenancePage,
 })
 
@@ -354,18 +349,20 @@ const routeTree = rootRoute.addChildren([
     researchRoute.addChildren([researchSessionRoute]),
   ]),
   ocrTestRoute,
-  settingsRoute.addChildren([
-    settingsAppearanceRoute,
-    settingsAIRoute,
-    settingsProcessingRoute,
-    settingsFieldsRoute,
-    settingsWorkerRoute,
-    settingsDuplicatesRoute,
-    settingsIngestRoute,
-    settingsMCPRoute,
+  adminRoute.addChildren([
+    settingsRoute.addChildren([
+      settingsAppearanceRoute,
+      settingsAIRoute,
+      settingsProcessingRoute,
+      settingsFieldsRoute,
+      settingsWorkerRoute,
+      settingsDuplicatesRoute,
+      settingsIngestRoute,
+      settingsMCPRoute,
+    ]),
+    managementRoute,
+    maintenanceRoute,
   ]),
-  managementRoute.addChildren([managementUsersRoute]),
-  maintenanceRoute,
   importRoute.addChildren([importArchiveRoute, importNgxRoute, importPapraRoute, importArchiveAliasRoute]),
   exportRoute,
   accountRoute,

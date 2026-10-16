@@ -55,9 +55,9 @@ App-Container erreichbar ist. Wenn Sie ihn weiter freigeben, starten Sie docling
 
 Auf einer Instanz, die bereits gestartet wurde, ist `.env` nicht der richtige Ort: Der
 KI-Block belegt die Datenbank nur beim **ersten** Start vor. Fügen Sie den Anbieter
-stattdessen unter **Einstellungen → Anbieter** hinzu (die Basis-URL ist vorausgefüllt, und
+stattdessen unter **Admin → KI → Anbieter** hinzu (die Basis-URL ist vorausgefüllt, und
 es gibt kein Feld für einen API-Schlüssel) und weisen Sie ihn dann unter
-**Einstellungen → Modelle → OCR** zu.
+**Admin → KI → Modelle → OCR** zu.
 
 ## Was es kostet {#what-it-costs}
 
@@ -94,8 +94,8 @@ WORKER_TIMEOUT_SEC=1800
 ```
 
 Beide werden **nur beim ersten Start vorbelegt**. Auf einer Instanz, die bereits gelaufen
-ist, werden die Variablen ignoriert, und die Werte werden stattdessen in den
-**Einstellungen** geändert. Das ist der häufigste Grund dafür, dass ein funktionierender
+ist, werden die Variablen ignoriert, und die Werte werden stattdessen unter
+**Admin** geändert. Das ist der häufigste Grund dafür, dass ein funktionierender
 Sidecar fehlgeschlagene Dokumente erzeugt.
 
 Der Sidecar hat eine eigene entsprechende Obergrenze: docling-serve bricht eine synchrone
@@ -118,7 +118,7 @@ eine Seite, nacheinander. Planen Sie Zeit ein.
 
 ## Eine Engine wählen {#choosing-an-engine}
 
-Weisen Sie unter **Einstellungen → Modelle** ein **OCR-Modell** zu, um zu ändern, was im
+Weisen Sie unter **Admin → KI → Modelle** ein **OCR-Modell** zu, um zu ändern, was im
 Sidecar läuft. Das ist optional – leer bedeutet den Standard des Containers, und das ist für
 die meisten Installationen die richtige Wahl. Bei diesem SDK nennt das Feld eine OCR-Engine
 statt eines Modells:
@@ -154,8 +154,8 @@ beschrieben.
 
 ## Fehlerbehebung {#troubleshooting}
 
-- **Dokumente schlagen mit einem Timeout fehl.** Erhöhen Sie `OCR_TIMEOUT_SEC` in den
-  **Einstellungen**, nicht in `.env`, es sei denn, es handelt sich um einen ersten Start.
+- **Dokumente schlagen mit einem Timeout fehl.** Erhöhen Sie `OCR_TIMEOUT_SEC` unter
+  **Admin**, nicht in `.env`, es sei denn, es handelt sich um einen ersten Start.
   Siehe [Was es kostet](#what-it-costs).
 - **Das erste Dokument nach einem Neustart schlägt fehl, spätere funktionieren.** Die Modelle
   wurden noch geladen. Prüfen Sie, ob das benannte Volume eingebunden ist –
@@ -165,7 +165,7 @@ beschrieben.
   `--profile docling`.
 - **`HTTP 401: Unauthorized`.** Der Sidecar wurde mit `DOCLING_SERVE_API_KEY` gestartet, aber
   der Anbieter hat keinen Schlüssel. Tragen Sie denselben Wert in `OCR_API_KEY` ein oder in das
-  Feld für den API-Schlüssel des Anbieters in den **Einstellungen**.
+  Feld für den API-Schlüssel des Anbieters unter **Admin**.
 - **TXT, CSV, DOCX und XLSX erreichen den Sidecar nie.** Lemmary parst diese selbst, daher ist
   ein Problem mit einer davon kein OCR-Problem.
 - **Probieren Sie es aus, bevor Sie sich darauf verlassen.** Die Seite **OCR-Test** schickt

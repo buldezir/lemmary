@@ -360,14 +360,7 @@ export function MaintenancePage() {
   const embeddingMissing = embeddingStats?.pending ?? 0
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <div className="mb-6">
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">{t('maintenance.title')}</h1>
-        <p className="mt-1 text-sm text-ink-soft">
-          {t('maintenance.intro')}
-        </p>
-      </div>
-
+    <>
       <div className="flex flex-col gap-5">
         <section className={sectionClassName}>
           <h2 className={sectionTitleClassName}>{t('maintenance.failedTitle')}</h2>
@@ -592,6 +585,6 @@ export function MaintenancePage() {
       </div>
 
       <ResultDialog error={error} success={success} onClose={closeResult} />
-    </div>
+    </>
   )
 }

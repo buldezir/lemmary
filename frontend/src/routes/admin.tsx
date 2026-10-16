@@ -5,11 +5,11 @@ import { tabClassName } from '../components/ui'
 import { t } from '../i18n'
 
 /**
- * The Settings shell: a header, the tabs, and whichever tab is on the URL. Each
- * tab saves only its own fields -- the settings PATCH treats every field as
- * optional, so a tab naming its own leaves the rest of the record alone.
+ * The Admin shell: a header, the tabs, and whichever tab is on the URL. Each
+ * settings tab saves only its own fields -- the settings PATCH treats every
+ * field as optional, so a tab naming its own leaves the rest of the record alone.
  */
-export function SettingsPage() {
+export function AdminPage() {
   // unknown/failed meta counts as managed; see AppMeta.managed
   const { managed, ingestDir, ingestImap } = useAppMeta()
   const hostEditable = managed === false
@@ -17,9 +17,9 @@ export function SettingsPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-5">
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">{t('settings.title')}</h1>
+        <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">{t('admin.title')}</h1>
         <p className="mt-1 text-sm text-ink-soft">
-          {t('settings.intro')}
+          {t('admin.intro')}
         </p>
         {!hostEditable && (
           <p className="mt-2 text-sm text-ink-soft">
@@ -29,7 +29,7 @@ export function SettingsPage() {
       </div>
 
       <nav
-        aria-label={t('settings.sectionsLabel')}
+        aria-label={t('admin.sectionsLabel')}
         className="mb-5 flex flex-wrap items-center gap-5 border-b border-line"
       >
         <Link to="/settings" activeOptions={{ exact: true }} className={tabClassName}>
@@ -65,6 +65,12 @@ export function SettingsPage() {
         )}
         <Link to="/settings/mcp" className={tabClassName}>
           {t('settings.tabMcp')}
+        </Link>
+        <Link to="/management" className={tabClassName}>
+          {t('admin.tabUsers')}
+        </Link>
+        <Link to="/maintenance" className={tabClassName}>
+          {t('admin.tabMaintenance')}
         </Link>
       </nav>
 

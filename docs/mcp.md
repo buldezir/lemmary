@@ -71,7 +71,7 @@ Two kinds: search over the index, and plain access to the rows. The intelligence
 
 ## Write tools
 
-Changing the archive is off by default. An admin switches each kind of change on under **Settings → MCP**, for every user's token at once; a switched-off tool is not offered at all. Every write applies only to documents and tags the token's user owns: a document shared with them stays read-only.
+Changing the archive is off by default. An admin switches each kind of change on under **Admin → MCP**, for every user's token at once; a switched-off tool is not offered at all. Every write applies only to documents and tags the token's user owns: a document shared with them stays read-only.
 
 | Switch | Tools | What it does |
 | --- | --- | --- |

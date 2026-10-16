@@ -6,7 +6,7 @@ Lemmary braucht von einem KI-Anbieter zwei Dinge: **OCR** für PDFs und Bilder u
 Dokumente um bedeutungsbasierte Suche.
 
 Ein einziger Anbieter kann alle drei bedienen. Konfigurieren Sie sie auf der
-Admin-Seite **Einstellungen** oder belegen Sie sie vor dem ersten Start aus `.env` vor,
+Seite **Admin** oder belegen Sie sie vor dem ersten Start aus `.env` vor,
 damit eine frische Instanz sofort einsatzbereit startet.
 
 ## Einen Anbieter wählen {#choosing-a-provider}
@@ -24,7 +24,7 @@ damit eine frische Instanz sofort einsatzbereit startet.
 | **Local Embeddings** — `local` | ❌ | ❌ | ✅ **auf Ihrer eigenen Hardware** | ❌ |
 | **Tavily** — `tavily` | ❌ | ❌ | ❌ | ✅ **das einzige SDK, das das kann** |
 
-Die fett gedruckten Namen sind das, was die Einstellungen anzeigen. Die kürzeren
+Die fett gedruckten Namen sind das, was die Admin-Seite anzeigt. Die kürzeren
 Code-Werte bleiben die Werte, die von `OCR_SDK`, `AI_EMBEDDING_SDK` und `WEB_SEARCH_SDK`
 verwendet werden.
 
@@ -33,7 +33,7 @@ abdeckt, sodass ein Schlüssel und ein Anbieter-Eintrag die ganze Instanz konfig
 OCR, Extraktion, Chat, Deep Research und Embeddings –, ohne dass noch etwas zuzuweisen
 bleibt. Seine OCR ist ein eigens dafür gebauter Dokument-Endpunkt statt eines
 allgemeinen Modells, das einen Scan lesen soll, und sein Katalog gibt die Fähigkeiten
-jedes Modells an, sodass die Modellauswahl in den Einstellungen die richtigen Modelle
+jedes Modells an, sodass die Modellauswahl unter Admin die richtigen Modelle
 statt des ganzen Katalogs anzeigt.
 
 **Oder beginnen Sie mit Opencode Go**, wenn Ihnen ein Abonnement besser passt als
@@ -129,7 +129,7 @@ Research einen Konfigurationsfehler zurück.
 
 Die folgenden Anbieter und Modelle belegen die Datenbank **nur beim ersten Start** vor,
 wenn die Einstellungszeile noch nicht existiert, damit ein frisches Volume einsatzbereit
-statt im Einrichtungsassistenten startet. Danach sind die **Einstellungen** maßgeblich,
+statt im Einrichtungsassistenten startet. Danach ist **Admin** maßgeblich,
 und eine Änderung an `.env` bewirkt nichts. Ein fehlender Schlüssel ist kein Fehler: Der
 Einrichtungsassistent fragt danach.
 
@@ -137,9 +137,9 @@ Einrichtungsassistent fragt danach.
 | --- | --- | --- |
 | `AI_SDK` | `openai` | Das SDK des Sprachmodells: `opencode`, `openai`, `anthropic`, `openrouter` oder `mistral`. `google_vision`, `docling` (Local OCR) und `local` (Local Embeddings) werden abgelehnt – keines davon kann Extraktion übernehmen. `chatgpt` ebenfalls: Es hat keinen Schlüssel, der sich aus der Umgebung vorbelegen ließe. |
 | `AI_API_KEY` | leer | Sein Zugangsschlüssel. **Ein Schlüssel ist meist die gesamte Konfiguration**: Damit und mit nichts anderem legt die App einen Anbieter an und leitet Extraktion, Chat, Deep Research *und* OCR dorthin. |
-| `AI_MODEL` | `gpt-6-luna` | Das Modell für **Allgemeine KI**: Extraktion, KI fragen, KI-gestützte Suche und das massenhafte Lesen von Dokumenten durch Deep Research. Achten Sie darauf, dass es die in den **Einstellungen** festgelegte Ergebnissprache unterstützt. |
+| `AI_MODEL` | `gpt-6-luna` | Das Modell für **Allgemeine KI**: Extraktion, KI fragen, KI-gestützte Suche und das massenhafte Lesen von Dokumenten durch Deep Research. Achten Sie darauf, dass es die unter **Admin** festgelegte Ergebnissprache unterstützt. |
 | `AI_BASE_URL` | der eigene Endpunkt des SDKs | Eine OpenAI-kompatible Basis-URL, für ein Gateway oder einen selbst gehosteten Endpunkt. Lassen Sie sie für `opencode` ungesetzt, dessen eigener Endpunkt `https://opencode.ai/zen/go/v1` ist. |
-| `OCR_SDK` | ungesetzt (OCR läuft über den `AI_SDK`-Anbieter) | Ein separater Anbieter für OCR: `opencode`, `openai`, `anthropic`, `openrouter`, `mistral`, `google_vision` oder `docling` (Local OCR). `local` (Local Embeddings) wird abgelehnt – es bietet nur Embeddings. `chatgpt` liest Dokumente, wird hier aber ebenfalls abgelehnt: Die Anmeldung erfolgt über die Einstellungen statt über einen Schlüssel, daher hat die Umgebung nichts, womit sie es vorbelegen könnte. Wird dasselbe SDK wie bei `AI_SDK` genannt, werden dessen Schlüssel und Endpunkt wiederverwendet, und nur das Modell ändert sich. |
+| `OCR_SDK` | ungesetzt (OCR läuft über den `AI_SDK`-Anbieter) | Ein separater Anbieter für OCR: `opencode`, `openai`, `anthropic`, `openrouter`, `mistral`, `google_vision` oder `docling` (Local OCR). `local` (Local Embeddings) wird abgelehnt – es bietet nur Embeddings. `chatgpt` liest Dokumente, wird hier aber ebenfalls abgelehnt: Die Anmeldung erfolgt über Admin statt über einen Schlüssel, daher hat die Umgebung nichts, womit sie es vorbelegen könnte. Wird dasselbe SDK wie bei `AI_SDK` genannt, werden dessen Schlüssel und Endpunkt wiederverwendet, und nur das Modell ändert sich. |
 | `OCR_API_KEY` | `AI_API_KEY`, wenn die SDKs übereinstimmen | Sein Zugangsschlüssel. Erforderlich für ein OCR-SDK, das sich von `AI_SDK` unterscheidet – außer Local OCR (`docling`), hinter dem kein Konto steht. Dort optional, und nur, wenn Sie den Sidecar mit `DOCLING_SERVE_API_KEY` gestartet haben. |
 | `OCR_BASE_URL` | `AI_BASE_URL`, wenn die SDKs übereinstimmen, sonst der eigene Endpunkt des SDKs | Wo sich dieser Anbieter befindet. Für Local OCR (`docling`) ist der Standard der Name des Compose-Dienstes, `http://docling:5001`, sodass `OCR_SDK=docling` allein unter dem Overlay eine vollständige Konfiguration ist. |
 | `OCR_MODEL` | `AI_MODEL`, wenn die SDKs übereinstimmen | Sein Modell. Nicht erforderlich für `google_vision` oder Local OCR (`docling`), die ein Dokument ohne Modell lesen; bei Local OCR nennt es optional stattdessen die OCR-Engine. Siehe [Eine Engine wählen](/de/local_ocr#choosing-an-engine). |
@@ -150,7 +150,7 @@ Einrichtungsassistent fragt danach.
 
 Eine frühere Version hatte kein `AI_EMBEDDING_SDK` / `_API_KEY` / `_BASE_URL`, mit der
 Begründung, dass Embeddings auf etwas anderes als das Sprachmodell zu richten eine so
-seltene Entscheidung sei, dass sie in die **Einstellungen** gehöre, und dass drei weitere
+seltene Entscheidung sei, dass sie in den Bereich **Admin** gehöre, und dass drei weitere
 Variablen vor allem drei weitere Möglichkeiten wären, die Funktion halb zu konfigurieren.
 
 Das Embedding-Modell selbst zu betreiben, ist der Fall, den diese Begründung nicht
@@ -184,7 +184,7 @@ Abrufen geschieht auf Seiten von Tavily, daher ruft hier nichts eine URL auf, di
 Modell ausgedacht hat.
 
 **Sie bleibt ausgeschaltet, bis zwei verschiedene Personen sie anfordern.** Ein Betreiber
-weist den Anbieter zu, unter **Einstellungen → KI → Websuche** oder über die Umgebung
+weist den Anbieter zu, unter **Admin → KI → Websuche** oder über die Umgebung
 unten; ein Leser schaltet dann *Im Web suchen* für eine Unterhaltung ein. Ohne die
 Zuweisung wird der Schalter gar nicht angezeigt, und er ist bei jedem Laden der Seite
 zunächst aus – jeder Aufruf wird vom Anbieter abgerechnet, daher ist „aus“ die Richtung,
@@ -220,8 +220,8 @@ beim `OCR_*`-Block – es gibt keinen anderen Anbieter, in den sie einfließen k
 
 ### Vorbelegte Einstellungen {#seeded-settings}
 
-Werden beim ersten Start in `app_settings` geschrieben und danach über die
-**Einstellungen** bearbeitet.
+Werden beim ersten Start in `app_settings` geschrieben und danach über
+**Admin** bearbeitet.
 
 | Variable | Standard | Beschreibung |
 | --- | --- | --- |
@@ -230,7 +230,7 @@ Werden beim ersten Start in `app_settings` geschrieben und danach über die
 | `WORKER_TIMEOUT_SEC` | `300` | Verarbeitungs-Timeout pro Auftrag |
 | `WORKER_MAX_RETRIES` | `0` | Maximale Anzahl von Wiederholungsversuchen pro Schritt, bevor ein Auftrag fehlschlägt |
 | `DEEP_SEARCH_LANGUAGES` | leer | Kommagetrennte ISO-639-1-Codes (z. B. `de,en,uk`) für die Stichworterweiterung auf beiden Suchseiten. Steuert sprachspezifische Suchen nur, wenn kein Embedding-Modell gesetzt ist; mit einem solchen überschreitet bereits eine einzige Suche Sprachgrenzen |
-| `EXTRACTION_PROMPT_VERSION` | `v1` | Wird bei jedem Schrittlauf eines Verarbeitungsauftrags gespeichert, mit einem angehängten Digest der Extraktionsregeln aus den Einstellungen, sofern welche gesetzt sind; dient nur der Buchführung, wird in der Einstellungsoberfläche nicht angeboten |
+| `EXTRACTION_PROMPT_VERSION` | `v1` | Wird bei jedem Schrittlauf eines Verarbeitungsauftrags gespeichert, mit einem angehängten Digest der Extraktionsregeln unter Admin, sofern welche gesetzt sind; dient nur der Buchführung, wird in der Admin-Oberfläche nicht angeboten |
 | `NEAR_DUPLICATE_DETECTION_ENABLED` | `false` | Ob die Pipeline eine Erkennung von Beinahe-Duplikaten ausführt |
 | `NEAR_DUPLICATE_THRESHOLD` | `0.92` | Wie ähnlich sich die Texte zweier Dokumente sein müssen, damit sie als Beinahe-Duplikate gelten |
 
@@ -239,18 +239,18 @@ das Ausgabentempo steuert, statt die Instanz zu beschreiben:
 
 | Variable | Standard | Beschreibung |
 | --- | --- | --- |
-| `EMBEDDING_BACKFILL_BATCH` | `20` | Anzahl der Dokumente, die ein Backfill-Durchlauf einbettet, gemäß `WORKER_CRON_EXPR`. `0` deaktiviert den geplanten Backfill, sodass nur neu verarbeitete Dokumente eingebettet werden und ein bestehendes Archiv unangetastet bleibt – **Wartung → Embeddings** bettet es weiterhin auf Anforderung ein. |
+| `EMBEDDING_BACKFILL_BATCH` | `20` | Anzahl der Dokumente, die ein Backfill-Durchlauf einbettet, gemäß `WORKER_CRON_EXPR`. `0` deaktiviert den geplanten Backfill, sodass nur neu verarbeitete Dokumente eingebettet werden und ein bestehendes Archiv unangetastet bleibt – **Admin → Wartung → Embeddings** bettet es weiterhin auf Anforderung ein. |
 
 Die **Ergebnissprache** hat überhaupt keine Variable. Sie bestimmt, in welcher Sprache Titel,
 Zusammenfassung, Typ und Korrespondent eines Dokuments gespeichert werden, und das ist eine
-Vorliebe des Lesers, nicht des Betreibers; daher wird sie in den **Einstellungen** festgelegt.
+Vorliebe des Lesers, nicht des Betreibers; daher wird sie unter **Admin** festgelegt.
 Tags sind ausgenommen: Sie werden aus einer Liste
 zugewiesen, die der Benutzer schreibt, und sind daher bereits in der Sprache, die dieser
 Benutzer gewählt hat.
 
 ## Modelle in den Einstellungen zuweisen {#binding-models-in-settings}
 
-1. Melden Sie sich mit dem Administratorkonto an und öffnen Sie die **Einstellungen**
+1. Melden Sie sich mit dem Administratorkonto an und öffnen Sie **Admin**
    (sichtbar, wenn `/api/app/me` `is_admin` meldet).
 2. Fügen Sie einen Anbieter hinzu – SDK, API-Schlüssel, optionale Basis-URL und den
    **Modellkatalog**, aus dem seine Kontextfenster gelesen werden (siehe unten).
@@ -341,31 +341,31 @@ hinzugefügt werden können.
   während die Rechercheschleife aus wenigen teuren besteht.
 
   **Eine Unterhaltung speichert das Modell, mit dem sie eröffnet wurde, unabhängig davon, ob
-  es jemand ausgewählt hat.** Eine Änderung einer Zuweisung in den Einstellungen gilt daher für
+  es jemand ausgewählt hat.** Eine Änderung einer Zuweisung unter Admin gilt daher für
   neue Chats und lässt bestehende, wo sie sind, statt jedes offene Transkript auf ein Modell zu
   verlagern, das es nicht geschrieben hat. Unterhaltungen aus der Zeit davor haben nichts
-  gespeichert und folgen weiterhin den Einstellungen. Wird der Anbieter, an den eine
+  gespeichert und folgen weiterhin den Zuweisungen unter Admin. Wird der Anbieter, an den eine
   Unterhaltung gebunden ist, später gelöscht, funktioniert der Chat weiter: Der nächste Turn
-  fällt auf die Zuweisung in den Einstellungen zurück, sodass das Austauschen eines Anbieters
+  fällt auf die Zuweisung unter Admin zurück, sodass das Austauschen eines Anbieters
   offene Chats nicht blockiert.
 - **Erneut verarbeiten** – auf der eigenen Seite eines Dokuments, in der Sammelleiste der
-  Dokumentliste und unter **Wartung → Fehlgeschlagene Verarbeitung** – bietet OCR, Extraktion
+  Dokumentliste und unter **Admin → Wartung → Fehlgeschlagene Verarbeitung** – bietet OCR, Extraktion
   und Embedding an. Die Auswahl wird bei jedem eingereihten Auftrag gespeichert, sodass ein
   Stapel, der für einen anderen Extraktor eingereiht wurde, auch mit diesem läuft, wie lange
-  die Warteschlange auch dauert, statt mit dem, was in den Einstellungen steht, wenn der Worker
+  die Warteschlange auch dauert, statt mit dem, was unter Admin steht, wenn der Worker
   so weit ist. Der Schrittverlauf (**Verarbeitungsauftrag → Schrittläufe**) zeichnet den
   Anbieter und das Modell auf, die tatsächlich gelaufen sind.
 - Bleibt eine Auswahl unberührt, sendet sie nichts, und der Auftrag oder Chat läuft genau wie
   zuvor – dieselbe Anfrage, Byte für Byte.
 
-**Die Embedding-Überschreibung muss das Modell nennen, das in den Einstellungen bereits
+**Die Embedding-Überschreibung muss das Modell nennen, das unter Admin bereits
 zugewiesen ist.** Ein Chunk-Datensatz speichert das Modell und die Dimensionszahl, mit denen er
 erzeugt wurde, und der Suchindex liest nur die Datensätze, die zum konfigurierten Modell
 passen; Vektoren aus einem anderen Modell würden also bezahlt, geschrieben und nie gelesen – ein
 Dokument fiele stillschweigend aus der dichten Suche heraus. Der Server lehnt das ab, statt es
 wie einen Erfolg aussehen zu lassen. Das erneute Einbetten mit dem *konfigurierten* Modell ist
 der sinnvolle Fall: eine Korrektur für ein Dokument, dessen Vektoren fehlen oder veraltet sind.
-Um das Modell selbst zu ändern, ändern Sie es in den Einstellungen, wodurch alles neu
+Um das Modell selbst zu ändern, ändern Sie es unter Admin, wodurch alles neu
 eingebettet wird (siehe [Was Embeddings kosten](#what-embeddings-cost)).
 
 ## Was Embeddings kosten {#what-embeddings-cost}
@@ -403,8 +403,8 @@ Arbeitsspeicher – bleiben unverändert und hängen nur von der gewählten Dime
 [Lokale Embeddings](/de/local_embeddings).
 
 Der Backfill arbeitet pro Durchlauf `EMBEDDING_BACKFILL_BATCH` Dokumente ab und protokolliert,
-was er eingebettet hat, was fehlgeschlagen ist und wie viele noch übrig sind; **Einstellungen →
-Modelle** zeigt dieselben Zahlen, und **Wartung → Embeddings** zeigt sie ebenfalls an und
+was er eingebettet hat, was fehlgeschlagen ist und wie viele noch übrig sind; **Admin → KI →
+Modelle** zeigt dieselben Zahlen, und **Admin → Wartung → Embeddings** zeigt sie ebenfalls an und
 arbeitet den gesamten Rückstand auf Anforderung ab, statt minütlich auf einen Durchlauf zu
 warten. Ein Anbieterfehler ist ein weicher Fehler: Das Dokument behält seinen Text, seine
 Metadaten und seinen Platz in der Stichwortsuche und wird später mit einem Backoff erneut
@@ -416,7 +416,7 @@ es an Arbeitsspeicher auf dem Host kostet.
 
 ## OCR, nach Anbieter {#ocr-per-provider}
 
-Weisen Sie unter **Einstellungen → Modelle** einen OCR-fähigen Anbieter zu. Die
+Weisen Sie unter **Admin → KI → Modelle** einen OCR-fähigen Anbieter zu. Die
 Textextraktion für TXT, CSV, DOCX und XLSX verwendet native Parser und ruft überhaupt keine
 OCR-API auf.
 
@@ -483,11 +483,11 @@ Image-Größe, Arbeitsspeicher, GPU-Varianten und die Kosten pro Seite – steht
   Sprachmodell-Anbieter hinzu (ein einziger Mistral-Anbieter ist beides), oder setzen Sie
   `AI_API_KEY` in `.env` vor dem ersten Start. Werden erforderliche Schlüssel später gelöscht,
   erscheinen die Konfigurationsschritte wieder.
-- **OCR schlägt fehl** – prüfen Sie den Anbieter und den Schlüssel in den Einstellungen sowie
+- **OCR schlägt fehl** – prüfen Sie den Anbieter und den Schlüssel unter Admin sowie
   den Fehler des Verarbeitungsauftrags auf der Detailseite des Dokuments. Stellen Sie bei
   Google Vision sicher, dass die Vision API für das Projekt aktiviert ist.
 - **Lokale OCR läuft in ein Timeout** – erhöhen Sie `OCR_TIMEOUT_SEC`. Auf einer Instanz, die
-  bereits gestartet wurde, muss der Wert in den **Einstellungen** erhöht werden, nicht in
+  bereits gestartet wurde, muss der Wert unter **Admin** erhöht werden, nicht in
   `.env`: Es ist eine vorbelegte Einstellung, daher wirkt die Umgebung nur beim ersten Start.
   Siehe [Lokale OCR](/de/local_ocr#what-it-costs).
 - **KI-Extraktion schlägt fehl** – prüfen Sie, ob ein Extraktionsmodell zugewiesen ist und ob

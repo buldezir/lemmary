@@ -78,7 +78,7 @@ docker compose -f docker-compose.yml \
                -f docker-compose.embeddings.yml up
 ```
 
-Either way, **Settings → Models** then shows the one model the sidecar is
+Either way, **Admin → AI → Models** then shows the one model the sidecar is
 serving.
 
 ## Choosing a model
@@ -132,11 +132,11 @@ whole archive — and it takes **two** steps, because the environment seeds the
 database on the first boot only:
 
 1. Change `EMBEDDINGS_MODEL` and recreate the sidecar.
-2. Change the model in **Settings → Models** as well.
+2. Change the model in **Admin → AI → Models** as well.
 
 Doing only the first leaves the binding naming the old model against a sidecar
 serving the new one. That is caught rather than silently wrong — the app records
 the vector length from the provider's first response and refuses a later
 disagreement — but the archive stops embedding until the binding is corrected.
-Changing it in Settings resets the recorded dimensions and rebuilds the chunk
+Changing it in Admin resets the recorded dimensions and rebuilds the chunk
 index, which is what a model switch actually requires.

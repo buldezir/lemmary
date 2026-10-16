@@ -5,7 +5,7 @@ Lemmary needs two things from an AI provider: **OCR** for PDFs and images, and a
 **embedding model** is optional and adds meaning-based retrieval to Deep Research
 and the Documents search box.
 
-One provider can serve all three. Configure them in the admin **Settings** page,
+One provider can serve all three. Configure them in the **Admin** page,
 or seed them from `.env` before the first boot so a fresh instance comes up ready
 to use.
 
@@ -24,14 +24,14 @@ to use.
 | **Local Embeddings** — `local` | ❌ | ❌ | ✅ **on your own hardware** | ❌ |
 | **Tavily** — `tavily` | ❌ | ❌ | ❌ | ✅ **the only SDK that does** |
 
-The names in bold are what Settings shows. The shorter code values remain the
+The names in bold are what Admin shows. The shorter code values remain the
 values used by `OCR_SDK`, `AI_EMBEDDING_SDK` and `WEB_SEARCH_SDK`.
 
 **Start with Mistral.** It is the only SDK that covers every job Lemmary has, so
 one key and one provider row configure the whole instance — OCR, extraction,
 chat, Deep Research and embeddings — with nothing left to bind. Its OCR is a
 purpose-built document endpoint rather than a general model asked to read a
-scan, and its catalogue advertises per-model capabilities, so the Settings model
+scan, and its catalogue advertises per-model capabilities, so the Admin model
 pickers show the right models instead of the whole catalogue.
 
 **Or start with Opencode Go**, if a subscription suits you better than metered
@@ -121,7 +121,7 @@ return a configuration error.
 
 The providers and models below seed the database on the **first boot only**, when
 the settings row does not exist yet, so a fresh volume comes up ready to use
-instead of on the setup wizard. After that **Settings** is the authority and
+instead of on the setup wizard. After that **Admin** is the authority and
 editing `.env` changes nothing. A missing key is not an error: the setup wizard
 asks for it.
 
@@ -129,9 +129,9 @@ asks for it.
 | --- | --- | --- |
 | `AI_SDK` | `openai` | The language model's SDK: `opencode`, `openai`, `anthropic`, `openrouter` or `mistral`. `google_vision`, `docling` (Local OCR) and `local` (Local Embeddings) are refused — none of them can serve extraction. `chatgpt` too: it has no key to seed from the environment. |
 | `AI_API_KEY` | empty | Its credential. **One key is usually the whole configuration**: with this and nothing else the app creates one provider and routes extraction, chat, Deep Research *and* OCR to it. |
-| `AI_MODEL` | `gpt-6-luna` | The **General AI** model: extraction, Ask AI, AI assisted search, and Deep Research's bulk document reads. Be sure it supports the result language set in **Settings**. |
+| `AI_MODEL` | `gpt-6-luna` | The **General AI** model: extraction, Ask AI, AI assisted search, and Deep Research's bulk document reads. Be sure it supports the result language set in **Admin**. |
 | `AI_BASE_URL` | the SDK's own endpoint | An OpenAI-compatible base URL, for a gateway or a self-hosted endpoint. Leave it unset for `opencode`, whose own endpoint is `https://opencode.ai/zen/go/v1`. |
-| `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `opencode`, `openai`, `anthropic`, `openrouter`, `mistral`, `google_vision` or `docling` (Local OCR). `local` (Local Embeddings) is refused — it serves embeddings only. `chatgpt` reads documents but is refused here too: it is signed in to from Settings rather than given a key, so the environment has nothing to seed it with. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
+| `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `opencode`, `openai`, `anthropic`, `openrouter`, `mistral`, `google_vision` or `docling` (Local OCR). `local` (Local Embeddings) is refused — it serves embeddings only. `chatgpt` reads documents but is refused here too: it is signed in to from Admin rather than given a key, so the environment has nothing to seed it with. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
 | `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK` — except Local OCR (`docling`), which has no account behind it. Optional there, and only if you started the sidecar with `DOCLING_SERVE_API_KEY`. |
 | `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. For Local OCR (`docling`) the default is the compose service name, `http://docling:5001`, so `OCR_SDK=docling` alone is a complete configuration under the overlay. |
 | `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Not required for `google_vision` or Local OCR (`docling`), which read a document without one; for Local OCR it optionally names the OCR engine instead. See [Choosing an engine](/local_ocr#choosing-an-engine). |
@@ -142,7 +142,7 @@ asks for it.
 
 An earlier release had no `AI_EMBEDDING_SDK` / `_API_KEY` / `_BASE_URL`, on the
 reasoning that pointing embeddings somewhere other than the language model was a
-rare enough choice to belong in **Settings**, and that three more variables would
+rare enough choice to belong in **Admin**, and that three more variables would
 mostly be three more ways to half-configure the feature.
 
 Running the embedding model yourself is the case that reasoning did not
@@ -176,7 +176,7 @@ results with a snippet each, and fetch returns a page as markdown. The fetching
 happens on Tavily's side, so nothing here dials a URL a model invented.
 
 **It stays off until two separate people ask for it.** An operator binds the
-provider, in **Settings → AI → Web search** or from the environment below; a
+provider, in **Admin → AI → Web search** or from the environment below; a
 reader then turns *Search the web* on for a conversation. Without the binding
 the toggle is not rendered at all, and the toggle starts off on every page load
 — every call is billed by the provider, so off is the direction worth
@@ -209,7 +209,7 @@ the `OCR_*` block is — there is no other provider to fold it into.
 
 ### Seeded settings
 
-Written to `app_settings` on the first boot and edited from **Settings**
+Written to `app_settings` on the first boot and edited from **Admin**
 afterwards.
 
 | Variable | Default | Description |
@@ -219,7 +219,7 @@ afterwards.
 | `WORKER_TIMEOUT_SEC` | `300` | Per-job processing timeout |
 | `WORKER_MAX_RETRIES` | `0` | Max step retry attempts before a job fails |
 | `DEEP_SEARCH_LANGUAGES` | empty | Comma-separated ISO 639-1 codes (e.g. `de,en,uk`) for keyword expansion on both search pages. Only drives per-language searches when no embedding model is set; with one, a single search already crosses languages |
-| `EXTRACTION_PROMPT_VERSION` | `v1` | Stored on each processing job step run, with a digest of the Settings extraction rules appended where any are set; bookkeeping only, not offered in the Settings UI |
+| `EXTRACTION_PROMPT_VERSION` | `v1` | Stored on each processing job step run, with a digest of the Admin extraction rules appended where any are set; bookkeeping only, not offered in the Admin UI |
 | `NEAR_DUPLICATE_DETECTION_ENABLED` | `false` | Whether the pipeline runs near-duplicate detection |
 | `NEAR_DUPLICATE_THRESHOLD` | `0.92` | How similar two documents' text must be to count as near-duplicates |
 
@@ -228,17 +228,17 @@ paces spending rather than describing the instance:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `EMBEDDING_BACKFILL_BATCH` | `20` | Documents one backfill tick embeds, on `WORKER_CRON_EXPR`. `0` disables the scheduled backfill, so only newly processed documents are embedded and an existing archive is left alone — **Maintenance → Embeddings** still embeds it on demand. |
+| `EMBEDDING_BACKFILL_BATCH` | `20` | Documents one backfill tick embeds, on `WORKER_CRON_EXPR`. `0` disables the scheduled backfill, so only newly processed documents are embedded and an existing archive is left alone — **Admin → Maintenance → Embeddings** still embeds it on demand. |
 
 The **result language** has no variable at all. It decides what language a
 document's title, summary, type and correspondent are stored in, which is a
-reader's preference rather than an operator's, so it is set in **Settings**. Tags
+reader's preference rather than an operator's, so it is set in **Admin**. Tags
 are exempt: they are assigned from a list the user writes, so they are already in
 the language that user chose.
 
 ## Binding models in Settings
 
-1. Sign in with the admin account and open **Settings** (shown when
+1. Sign in with the admin account and open **Admin** (shown when
    `/api/app/me` reports `is_admin`).
 2. Add a provider — SDK, API key, optional base URL, and the **model
    catalogue** its context windows are read from (see below).
@@ -323,31 +323,31 @@ credentials but never add a new one.
   expensive ones.
 
   **A conversation records the model it opened on, whether or not anyone picked
-  it.** So changing a binding in Settings applies to new chats
+  it.** So changing a binding in Admin applies to new chats
   and leaves existing ones where they are, rather than moving every open
   transcript onto a model that did not write it. Conversations from before this
-  shipped have nothing recorded and do still follow Settings. If the provider a
+  shipped have nothing recorded and do still follow Admin. If the provider a
   conversation is pinned to is later deleted, the chat keeps working: the next
-  turn falls back to the binding in Settings, so rotating a provider does not
+  turn falls back to the binding in Admin, so rotating a provider does not
   leave open chats stuck.
 - **Reprocess** — on a document's own page, on the document list's bulk bar, and
-  in **Maintenance → Failed processing** — offers OCR, extraction and embedding.
+  in **Admin → Maintenance → Failed processing** — offers OCR, extraction and embedding.
   The choice is stored on each queued job, so a batch queued to try a different
   extractor runs on it however long the queue takes, rather than on whatever
-  Settings holds by the time the worker gets there. The step history
+  Admin holds by the time the worker gets there. The step history
   (**Processing job → step runs**) records the provider and model that actually
   ran.
 - Left untouched, every picker sends nothing and the job or chat runs exactly as
   it did before — the same request, byte for byte.
 
-**The embedding override must name the model already bound in Settings.** A
+**The embedding override must name the model already bound in Admin.** A
 chunk row records the model and dimension count it was produced with, and the
 retrieval index only reads the rows matching the configured one, so vectors from
 any other model would be paid for, written, and never read — a document silently
 dropping out of dense search. The server refuses that rather than letting it
 look like success. Re-embedding on the *configured* model is the case worth
 having: a fix-up for a document whose vectors are missing or stale. To change
-the model itself, change it in Settings, which re-embeds everything (see [What
+the model itself, change it in Admin, which re-embeds everything (see [What
 embeddings cost](#what-embeddings-cost)).
 
 ## What embeddings cost
@@ -384,8 +384,8 @@ is unchanged, and depends only on the dimension count you pick. See [Local
 Embeddings](/local_embeddings).
 
 The backfill drains at `EMBEDDING_BACKFILL_BATCH` documents a tick and logs what
-it embedded, what failed, and how many are left; **Settings → Models** shows the
-same counts, and **Maintenance → Embeddings** both shows them and runs the whole
+it embedded, what failed, and how many are left; **Admin → AI → Models** shows the
+same counts, and **Admin → Maintenance → Embeddings** both shows them and runs the whole
 backlog on demand rather than waiting a tick a minute. A provider failure is
 soft: the document keeps its text, its metadata and its place in keyword search,
 and is retried later with a backoff.
@@ -396,7 +396,7 @@ what it costs in host memory.
 
 ## OCR, per provider
 
-Bind an OCR-capable provider under **Settings → Models**. Text extraction for
+Bind an OCR-capable provider under **Admin → AI → Models**. Text extraction for
 TXT, CSV, DOCX and XLSX uses native parsers and calls no OCR API at all.
 
 ### Mistral Document OCR
@@ -461,11 +461,11 @@ size, memory, GPU variants and the per-page cost — is in
 - **Stuck on the setup wizard** — add an OCR provider and a language-model
   provider (one Mistral provider is both), or set `AI_API_KEY` in `.env` before
   the first boot. Clearing required keys later brings the config steps back.
-- **OCR fails** — check the provider and key in Settings, and the processing job
+- **OCR fails** — check the provider and key in Admin, and the processing job
   error on the document detail page. For Google Vision, make sure the Vision API
   is enabled for the project.
 - **Local OCR times out** — raise `OCR_TIMEOUT_SEC`. On an instance that has
-  already booted it must be raised in **Settings**, not `.env`: it is a seeded
+  already booted it must be raised in **Admin**, not `.env`: it is a seeded
   setting, so the environment applies only on the first boot. See
   [Local OCR](/local_ocr#what-it-costs).
 - **AI extraction fails** — check that an extraction model is bound and that it

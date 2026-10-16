@@ -130,7 +130,7 @@ können, während Sie die zugehörigen Felder korrigieren --, und die Schaltflä
 eine Ergebnissprache gesetzt, schreibt das Modell diese Felder in ihr, sodass sich
 eine deutsche Rechnung auf Englisch lesen lässt, während ihr OCR-Text behält, was
 tatsächlich darin stand. Unter den eingebauten Feldern stehen die unter
-**Einstellungen → Felder** definierten – hier Rechnungsnummer, Betrag, Währung,
+**Admin → Felder** definierten – hier Rechnungsnummer, Betrag, Währung,
 Fälligkeitsdatum und Zahlungsstatus –, ausgefüllt von derselben Extraktion.
 
 ![Dokumentdetails](../screenshots/document-detail.png)
@@ -256,18 +256,18 @@ seinen Metadaten oder indem die Pipeline erneut über die Dateien läuft.
 
 ## Administration {#administration}
 
-Die Einstellungen sind Laufzeitkonfiguration, die in der Datenbank statt in der
+Die Einstellungen unter Admin sind Laufzeitkonfiguration, die in der Datenbank statt in der
 Umgebung gespeichert ist, aufgeteilt in je einen Tab. Unter Darstellung erhält die
 Instanz ihren Namen und die Akzentfarbe, die die gesamte Oberfläche übernimmt.
 
-![Einstellungen, Darstellung](../screenshots/settings-appearance.png)
+![Admin → Darstellung](../screenshots/settings-appearance.png)
 
 Unter KI stehen die Anbieter und welches Modell welche Aufgabe übernimmt: ein
 allgemeines KI-Modell für die alltägliche Arbeit und ein optionales
 fortgeschrittenes für Deep Research. API-Schlüssel sind nur schreibbar: Die Seite meldet, dass ein Schlüssel gesetzt
 ist, aber nie, wie er lautet.
 
-![Einstellungen, der KI-Tab vollständig](../screenshots/settings.png)
+![Admin → KI, der Tab vollständig](../screenshots/settings.png)
 
 Verarbeitung umfasst die Timeouts, die Sprache, in der Ergebnisse zurückkommen,
 ob jedes Dokument auf eine Prüfung wartet, sowie Hausregeln, die an den
@@ -275,44 +275,44 @@ Extraktions-Prompt angehängt werden – der Ort, um festzulegen, dass „Rechnu
 einer „Invoice“ entspricht oder dass diese drei Absender dasselbe Unternehmen
 sind.
 
-![Einstellungen, Verarbeitung](../screenshots/settings-processing.png)
+![Admin → Verarbeitung](../screenshots/settings-processing.png)
 
 Felder sind die zusätzlichen Felder, die jedes Dokument trägt – Text, Zahl, Datum
 oder eine feste Auswahl –, jedes mit einem Hinweis, den der Extraktions-Prompt
 liest. Eine Vorlage fügt mit einem Klick den üblichen Satz für eine Art von
 Unterlagen hinzu.
 
-![Einstellungen, Dokumentfelder und Vorlagen](../screenshots/settings-fields.png)
+![Admin → Felder, Dokumentfelder und Vorlagen](../screenshots/settings-fields.png)
 
 Die eigenen Grenzen des Workers: wie lange ein Job laufen darf und wie oft ein
 fehlgeschlagener Schritt wiederholt wird.
 
-![Einstellungen, Worker](../screenshots/settings-worker.png)
+![Admin → Worker](../screenshots/settings-worker.png)
 
 Exakte Duplikate werden beim Hochladen immer abgelehnt. Die Erkennung von
 Beinahe-Duplikaten vergleicht stattdessen den OCR-Text, was einen Durchlauf über
 die Bibliothek kostet; daher ist sie ausgeschaltet, bis sie angefordert wird.
 
-![Einstellungen, Duplikate](../screenshots/settings-duplicates.png)
+![Admin → Duplikate](../screenshots/settings-duplicates.png)
 
 Eingang erscheint auf einer Instanz, die mit einem überwachten Ordner
 (`INGEST_DIR`) oder einem Postfach (`INGEST_IMAP_ENABLED`) gestartet wurde:
 Dateien, die im Ordner abgelegt werden, und Anhänge von E-Mails, die im
 Postfachordner eintreffen, werden beim nächsten Scan zu Dokumenten.
 
-![Einstellungen, Eingang](../screenshots/settings-ingest.png)
+![Admin → Eingang](../screenshots/settings-ingest.png)
 
-Verwaltung ist die Liste der Konten der Instanz für den Admin, in der eines
+Der Tab Benutzer ist die Liste der Konten der Instanz für den Admin, in der eines
 angelegt, bearbeitet oder gelöscht wird.
 
-![Verwaltung, die Konten der Instanz](../screenshots/management.png)
+![Admin → Benutzer, die Konten der Instanz](../screenshots/management.png)
 
 Bibliotheksweite Wartung: fehlgeschlagene Dokumente stapelweise erneut
 verarbeiten, nach Duplikaten suchen, Taxonomie-Einträge löschen, auf die nichts
 mehr verweist, den Suchindex neu aufbauen und alles einbetten, dem noch ein Vektor
 fehlt.
 
-![Wartungsseite](../screenshots/maintenance.png)
+![Admin → Wartung](../screenshots/maintenance.png)
 
 Eine Testseite, um einen Anbieter und ein Modell an einer einzelnen Datei zu
 prüfen, ohne ein Dokument anzulegen.

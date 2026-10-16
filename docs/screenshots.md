@@ -118,7 +118,7 @@ correcting the fields it belongs to -- and the **Preview** button hides that
 column when the fields need the width. With a result language set, the model
 writes those fields in it, so a German invoice reads in English while its OCR
 text keeps what it actually said. Below the built-in fields sit the ones
-defined under **Settings → Fields** — here an invoice number, amount, currency,
+defined under **Admin → Fields** — here an invoice number, amount, currency,
 due date and payment status — filled by the same extraction.
 
 ![Document detail](./screenshots/document-detail.png)
@@ -234,58 +234,58 @@ its metadata or re-running the pipeline over the files.
 
 ## Administration
 
-Settings are runtime configuration, stored in the database rather than the
+Admin settings are runtime configuration, stored in the database rather than the
 environment, and split into a tab each. Appearance names the instance and picks
 the accent the whole interface takes.
 
-![Settings, appearance](./screenshots/settings-appearance.png)
+![Admin → Appearance](./screenshots/settings-appearance.png)
 
 AI holds the providers and which model does what: a General AI model for the
 everyday work and an optional Advanced one for Deep Research. API keys are
 write-only: the page reports that a key is set, never what it is.
 
-![Settings, the AI tab in full](./screenshots/settings.png)
+![Admin → AI, the tab in full](./screenshots/settings.png)
 
 Processing covers the timeouts, the language results come back in, whether every
 document waits for review, and house rules appended to the extraction prompt —
 the place to say that "Rechnung" is an invoice, or that these three senders are
 the same company.
 
-![Settings, processing](./screenshots/settings-processing.png)
+![Admin → Processing](./screenshots/settings-processing.png)
 
 Fields are the extra ones every document carries — text, number, date or a
 fixed set of choices — each with a hint the extraction prompt reads. A preset
 adds the usual set for one kind of paperwork in a click.
 
-![Settings, document fields and presets](./screenshots/settings-fields.png)
+![Admin → Fields, document fields and presets](./screenshots/settings-fields.png)
 
 The worker's own limits: how long one job may run, and how often a failed step
 is retried.
 
-![Settings, worker](./screenshots/settings-worker.png)
+![Admin → Worker](./screenshots/settings-worker.png)
 
 Exact duplicates are always refused on upload. Near-duplicate matching compares
 OCR text instead, which costs a pass over the library, so it is off until asked
 for.
 
-![Settings, duplicates](./screenshots/settings-duplicates.png)
+![Admin → Duplicates](./screenshots/settings-duplicates.png)
 
 Ingest appears on an instance started with a watched folder (`INGEST_DIR`) or a
 mailbox (`INGEST_IMAP_ENABLED`): files dropped into the folder, and attachments
 of mail arriving in the mailbox folder, become documents on the next scan.
 
-![Settings, ingest](./screenshots/settings-ingest.png)
+![Admin → Ingest](./screenshots/settings-ingest.png)
 
-Management is the admin's list of the accounts on the instance, where one is
+The Users tab is the admin's list of the accounts on the instance, where one is
 added, edited or deleted.
 
-![Management, the accounts on the instance](./screenshots/management.png)
+![Admin → Users, the accounts on the instance](./screenshots/management.png)
 
 Library-wide maintenance: reprocess failed documents in batches, scan for
 duplicates, delete taxonomy nothing points at any more, rebuild the search
 index, and embed whatever is missing a vector.
 
-![Maintenance page](./screenshots/maintenance.png)
+![Admin → Maintenance](./screenshots/maintenance.png)
 
 A scratch page for checking a provider and model against one file, without
 creating a document.

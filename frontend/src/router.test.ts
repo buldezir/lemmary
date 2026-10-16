@@ -2,10 +2,11 @@ import { describe, expect, test } from 'vitest'
 
 // The route tree is hand-written, so a page reaches the app only because
 // somebody added a line to it. This asserts it holds every path nav links to.
+// By path, not id: a pathless layout puts its own id into its children's.
 describe('route tree', () => {
   test('includes every core route', async () => {
     const { router } = await import('./router')
-    const paths = Object.keys(router.routesById)
+    const paths = Object.keys(router.routesByPath)
 
     for (const path of [
       '/',

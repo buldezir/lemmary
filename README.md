@@ -26,7 +26,7 @@ The API has been tested with the [swift-paperless](https://github.com/paulgessin
 - Detail page for reviewing OCR text and correcting metadata
 - Review **Inbox** with a count in the header, holding everything that is waiting on you — a low-confidence extraction, a possible duplicate, or every new document if you turn on **Always require review**; clear one by saving corrections, or mark a whole page reviewed at once. With the setting on, uploads land in the Inbox and **Documents** becomes the archive you have already read
 - Passkey sign-in: register a passkey per device and sign in with a fingerprint, face, or device PIN — no password typed, alongside the existing password and OAuth2 options
-- Admin Settings page for runtime OCR/AI/worker config
+- Admin page for runtime OCR/AI/worker config
 - First-launch setup wizard (admin account + required OCR/AI keys)
 
 ### Screenshots
@@ -59,15 +59,15 @@ with the cuts the model proposes:
 
 ![Split documents](docs/screenshots/upload-split.png)
 
-Admin Settings: providers, models and worker timeouts as runtime configuration:
+Admin page: providers, models and worker timeouts as runtime configuration:
 
-![Settings](docs/screenshots/settings.png)
+![Admin → AI](docs/screenshots/settings.png)
 
 ## Stack
 
 - **Backend:** Go, [PocketBase as a framework](https://pocketbase.io/docs/use-as-framework/)
 - **Frontend:** React, TanStack Router, PocketBase JS SDK
-- **OCR:** Mistral Document OCR (`mistral`), Google Cloud Vision (`google_vision`), a file-capable OpenAI/OpenRouter/Anthropic model, or Docling (`docling`) — a keyless sidecar on your own host running PaddleOCR's PP-OCR models, so scans never leave the machine; see [docs/local_ocr.md](docs/local_ocr.md). Configured in Settings
+- **OCR:** Mistral Document OCR (`mistral`), Google Cloud Vision (`google_vision`), a file-capable OpenAI/OpenRouter/Anthropic model, or Docling (`docling`) — a keyless sidecar on your own host running PaddleOCR's PP-OCR models, so scans never leave the machine; see [docs/local_ocr.md](docs/local_ocr.md). Configured in Admin
 - **AI:** Opencode Go (`opencode`), Mistral, OpenAI, Anthropic (`anthropic`), OpenRouter, or a ChatGPT subscription (`chatgpt`), via the official OpenAI and Anthropic Go SDKs — Claude is reached on its own Messages API, and Opencode serves a third of its catalogue there too — see [docs/ai_providers.md](docs/ai_providers.md)
 - **Search:** [Bleve](https://github.com/blevesearch/bleve) full-text index (token AND for the search box, relaxed to most-terms for the agent, BM25 ranking) over titles, OCR, tags, and metadata
 - **Deep Research:** natural-language archive search via a tool-calling agent over that index (hybrid keyword and embedding retrieval; keyword expansion across configured languages when no embedding model is set), on two pages — **AI assisted search** lists matching documents, **Deep Research** reads them, surveys and counts across the archive on the General AI model, reasons on an optional Advanced model, and writes a cited answer
@@ -98,7 +98,7 @@ Volumes, reverse proxies, backups and upgrades: [docs/self_hosting.md](docs/self
 [docs/ai_providers.md](docs/ai_providers.md) covers the AI-specific options.
 
 - `WORKER_CRON_EXPR`, `VAULT_*` and the frontend's `VITE_*` stay in `.env`
-- OCR/AI keys, models and worker timeouts live in the DB (`app_settings`). `AI_API_KEY` plus `SETUP_ADMIN_EMAIL`/`SETUP_ADMIN_PASSWORD` in `.env` bring a fresh instance up with nothing to answer; otherwise the first-launch wizard collects them. Either way **Settings** is authoritative afterwards
+- OCR/AI keys, models and worker timeouts live in the DB (`app_settings`). `AI_API_KEY` plus `SETUP_ADMIN_EMAIL`/`SETUP_ADMIN_PASSWORD` in `.env` bring a fresh instance up with nothing to answer; otherwise the first-launch wizard collects them. Either way **Admin** is authoritative afterwards
 
 ## Tests
 

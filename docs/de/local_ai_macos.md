@@ -519,14 +519,14 @@ Auf einer Instanz, die bereits gestartet wurde, werden die KI-Einstellungen in
 `.env` ignoriert (sie befüllen nur den ersten Start). Konfigurieren Sie sie
 stattdessen in der Oberfläche.
 
-**Einstellungen → KI → Anbieter**
+**Admin → KI → Anbieter**
 
 - **Lokale Embeddings** (`local`): Basis-URL `http://<MAC_IP>:8080/v1`, kein
   API-Schlüssel.
 - **Lokale OCR** (`docling`): Basis-URL `http://<MAC_IP>:5001`, kein
   API-Schlüssel.
 
-**Einstellungen → KI → Modelle**
+**Admin → KI → Modelle**
 
 - Embeddings: `BAAI/bge-m3`, das die Auswahl bei einem Anbieter vom Typ Lokale
   Embeddings automatisch einträgt. Es entspricht dem `--alias` oben.

@@ -76,11 +76,9 @@ export function secondaryNavItems(pbAdminUrl: string, hostEditable: boolean): re
     ...(hostEditable ? [{ kind: 'route', label: t('nav.ocrTest'), to: '/ocr-test' } as const] : []),
     { kind: 'route', label: t('nav.export'), to: '/export' },
     { kind: 'route', label: t('nav.import'), to: '/import' },
-    { kind: 'route', label: t('nav.settings'), to: '/settings', admin: true },
-    { kind: 'route', label: t('nav.management'), to: '/management', admin: true },
-    { kind: 'route', label: t('nav.maintenance'), to: '/maintenance', admin: true },
+    { kind: 'route', label: t('nav.admin'), to: '/settings', admin: true },
     ...(hostEditable
-      ? [{ kind: 'external', label: t('nav.admin'), href: pbAdminUrl, admin: true, icon: 'pocketbase' } as const]
+      ? [{ kind: 'external', label: t('nav.database'), href: pbAdminUrl, admin: true, icon: 'pocketbase' } as const]
       : []),
   ]
 }

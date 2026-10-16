@@ -71,7 +71,7 @@ Zwei Arten: Suche über den Index und einfacher Zugriff auf die Datensätze. Die
 
 ## Schreibwerkzeuge {#write-tools}
 
-Änderungen am Archiv sind standardmäßig aus. Ein Admin schaltet jede Art von Änderung unter **Einstellungen → MCP** ein, für die Token aller Benutzer zugleich; ein ausgeschaltetes Werkzeug wird gar nicht angeboten. Jede Änderung betrifft nur Dokumente und Tags, die dem Benutzer des Tokens gehören: Ein mit ihm geteiltes Dokument bleibt schreibgeschützt.
+Änderungen am Archiv sind standardmäßig aus. Ein Admin schaltet jede Art von Änderung unter **Admin → MCP** ein, für die Token aller Benutzer zugleich; ein ausgeschaltetes Werkzeug wird gar nicht angeboten. Jede Änderung betrifft nur Dokumente und Tags, die dem Benutzer des Tokens gehören: Ein mit ihm geteiltes Dokument bleibt schreibgeschützt.
 
 | Schalter | Werkzeuge | Was es tut |
 | --- | --- | --- |

@@ -54,7 +54,7 @@ Setzen Sie diese beiden nur, wenn das nicht ausreicht:
 | `PASSKEY_RP_ID` | Die Relying-Party-ID: ein reiner Domainname, ohne Schema und ohne Port. Setzen Sie sie, wenn der Proxy den öffentlichen `Host` nicht weiterleitet, oder um eine übergeordnete Domain festzulegen (`example.com`, während `app.example.com` ausgeliefert wird). |
 | `PASSKEY_ORIGINS` | Kommagetrennte vollständige Origins (Schema, Host und Port), die einen Vorgang abschließen dürfen, z. B. `https://archive.example.com,https://www.archive.example.com`. Setzen Sie sie, wenn die App unter mehr als einem Origin erreichbar ist oder wenn der Proxy TLS terminiert, ohne `X-Forwarded-Proto` zu setzen. |
 
-Beide werden aus der Umgebung gelesen, nicht aus den **Einstellungen**. Siehe
+Beide werden aus der Umgebung gelesen, nicht über **Admin**. Siehe
 [Umgebungsvariablen](/de/setup#environment-variables).
 
 Seite und API müssen keinen gemeinsamen Origin haben. Wenn der Browser einen `Origin`-Header sendet,
@@ -118,12 +118,12 @@ Passkey hinzu.
 
 - Ein Passkey ist hier eine **primäre** Anmeldemethode, kein zweiter Faktor. Es gibt keinen
   Schritt „Passwort plus Passkey“, und Passkeys sind nicht mit der eigenen MFA von PocketBase verbunden.
-- Der Eintrag **Admin** (die eigene Oberfläche von PocketBase unter `/_/`) authentifiziert immer mit dem
+- Der Eintrag **Datenbank** (die eigene Oberfläche von PocketBase unter `/_/`) authentifiziert immer mit dem
   Superuser-Passwort. Passkeys werden für die Collection `users` registriert, sodass sich ein Administrator durch einen
   Fehler mit Passkeys nie vom Server aussperren kann.
 - Passkeys sind **nicht** Teil eines Bibliotheksexports. Der Export ist ein portables Archiv Ihrer
   Dokumente; ein Passkey ist an einen Hostnamen und an Hardware gebunden, daher könnte sich eine wiederhergestellte
-  Kopie nie authentifizieren und würde die Liste nur überladen. Eine vollständige PocketBase-Sicherung (**Admin → Settings →
+  Kopie nie authentifizieren und würde die Liste nur überladen. Eine vollständige PocketBase-Sicherung (**Datenbank → Settings →
   Backups**) enthält sie dagegen, und das ist der richtige Weg – beim Wiederherstellen einer solchen Sicherung läuft die
   Installation wieder unter demselben Hostnamen.
 - Paperless-ngx-Clients melden sich weiterhin mit Benutzername und Passwort an. Ein WebAuthn-Vorgang
@@ -156,7 +156,7 @@ der Passkey Ihr Passwort ersetzt.
 
 **"Too many sign-in attempts are in progress."** Der Server hält so viele halb abgeschlossene
 Vorgänge vor, wie er zulässt. Warten Sie eine Minute und versuchen Sie es erneut. Ein Betreiber, der dies regelmäßig
-sieht, sollte den Rate Limiter von PocketBase aktivieren (**Admin → Settings → Rate limits**).
+sieht, sollte den Rate Limiter von PocketBase aktivieren (**Datenbank → Settings → Rate limits**).
 
 **„Dieser Passkey ist auf diesem Server nicht mehr gültig.“** Das zugehörige Konto existiert nicht mehr, oder der
 Hostname hat sich geändert. Melden Sie sich auf andere Weise an und entfernen Sie den Eintrag.

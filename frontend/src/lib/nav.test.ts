@@ -26,10 +26,8 @@ describe('nav items', () => {
       'OCR test',
       'Export',
       'Import',
-      'Settings',
-      'Management',
-      'Maintenance',
       'Admin',
+      'Database',
     ])
   })
 
@@ -37,14 +35,20 @@ describe('nav items', () => {
     const labels = secondaryNavItems('http://pb.test/_/', false).map((item) => item.label)
 
     expect(labels).not.toContain('OCR test')
-    expect(labels).not.toContain('Admin')
-    expect(labels).toContain('Export')
+    expect(labels).not.toContain('Database')
+    expect(labels).toContain('Admin')
   })
 
-  test('points the admin entry at the PocketBase dashboard', () => {
-    const admin = secondaryNavItems('http://pb.test/_/', true).find((item) => item.label === 'Admin')
+  test('points the database entry at the PocketBase dashboard', () => {
+    const database = secondaryNavItems('http://pb.test/_/', true).find((item) => item.label === 'Database')
 
-    expect(admin).toEqual({ kind: 'external', label: 'Admin', href: 'http://pb.test/_/', admin: true, icon: 'pocketbase' })
+    expect(database).toEqual({ kind: 'external', label: 'Database', href: 'http://pb.test/_/', admin: true, icon: 'pocketbase' })
+  })
+
+  test('points the admin entry at the admin pages', () => {
+    const admin = secondaryNavItems('http://pb.test/_/', false).find((item) => item.label === 'Admin')
+
+    expect(admin).toEqual({ kind: 'route', label: 'Admin', to: '/settings', admin: true })
   })
 
   test('keeps the primary links open to everyone', () => {
