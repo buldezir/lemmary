@@ -1472,6 +1472,15 @@ export const en = {
 
   'account.profile': 'Profile',
   'account.sectionsLabel': 'Account sections',
+  'account.preferences': 'Preferences',
+  'account.cardLayout': 'Document cards',
+  'account.cardLayoutSummary': 'Summary',
+  'account.cardLayoutPreview': 'Preview image (like paperless-ngx)',
+  'account.cardLayoutHint':
+    'What a card in the document list shows under its title. PDFs and images show their first page; other files keep their summary.',
+  'account.preferencesFailed': 'Could not save the preference.',
+  'account.languageHint':
+    'Saved to your account, so it follows you to every device, and used for the messages the server sends too. The sign-in page has the same choice.',
   'importNgx.preserveLabel': 'Keep Paperless-ngx metadata',
   'importNgx.preserveDescription':
     'Import title, tags, correspondent, document type, date, and OCR text. Preview and duplicate detection still run; AI does not overwrite metadata.',

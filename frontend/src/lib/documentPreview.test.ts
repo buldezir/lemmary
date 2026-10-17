@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { previewKind } from './documentPreview'
+import { cardImage, DOCUMENT_THUMB, previewKind } from './documentPreview'
 
 describe('previewKind', () => {
   it('frames a PDF whatever the case of its extension', () => {
@@ -31,5 +31,21 @@ describe('previewKind', () => {
     for (const name of ['', 'invoice', 'invoice.']) {
       expect(previewKind(name)).toBe('none')
     }
+  })
+})
+
+describe('cardImage', () => {
+  it('shows a PDF by its rendered first page', () => {
+    expect(cardImage({ file: 'scan.pdf', preview: 'preview_ab12.png' })).toEqual({ name: 'preview_ab12.png' })
+  })
+
+  it('shows an image itself, scaled to the declared thumb', () => {
+    expect(cardImage({ file: 'receipt.JPG' })).toEqual({ name: 'receipt.JPG', thumb: DOCUMENT_THUMB })
+  })
+
+  // A PDF the pipeline has not rendered yet, and the text formats.
+  it('has nothing for the rest', () => {
+    expect(cardImage({ file: 'scan.pdf' })).toBeNull()
+    expect(cardImage({ file: 'notes.txt', preview: '' })).toBeNull()
   })
 })

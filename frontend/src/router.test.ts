@@ -37,6 +37,7 @@ describe('route tree', () => {
       '/import/papra',
       '/import/archive',
       '/account',
+      '/account/preferences',
       '/account/agents',
       '/account/paperless',
       '/account/password',

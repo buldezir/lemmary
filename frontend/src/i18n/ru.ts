@@ -1673,6 +1673,15 @@ export const ru: Catalog = {
 
   'account.profile': 'Профиль',
   'account.sectionsLabel': 'Разделы учётной записи',
+  'account.preferences': 'Предпочтения',
+  'account.cardLayout': 'Карточки документов',
+  'account.cardLayoutSummary': 'Сводка',
+  'account.cardLayoutPreview': 'Изображение первой страницы (как в paperless-ngx)',
+  'account.cardLayoutHint':
+    'Что карточка в списке документов показывает под заголовком. PDF и изображения показывают первую страницу; остальные файлы показывают сводку.',
+  'account.preferencesFailed': 'Не удалось сохранить настройку.',
+  'account.languageHint':
+    'Сохраняется в учётной записи и действует на всех устройствах, а также для сообщений сервера. На странице входа есть такой же выбор.',
   'importNgx.preserveLabel': 'Сохранить метаданные Paperless-ngx',
   'importNgx.preserveDescription':
     'Импортировать название, теги, корреспондента, тип документа, дату и текст OCR. Превью и поиск дубликатов всё равно выполняются; ИИ не перезаписывает метаданные.',

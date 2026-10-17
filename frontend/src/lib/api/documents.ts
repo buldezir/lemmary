@@ -52,6 +52,8 @@ export type DocumentRecord = {
   created: string
   updated: string
   file: string
+  /** The first page as a small PNG, for a PDF once the pipeline has rendered it. */
+  preview?: string
   user: string
   title: string
   document_date: string

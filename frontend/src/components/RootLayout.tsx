@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { Link, Outlet, useMatchRoute } from '@tanstack/react-router'
 import { pb, pbAdminUrl } from '../lib/pb'
-import { adoptAuthHandoff, ensureAuth, getUserDisplayName, isAdmin, logout } from '../lib/auth'
+import { adoptAuthHandoff, ensureAuth, getUserDisplayName, isAdmin, logout, refreshAuthRecord } from '../lib/auth'
 import { getAppMeta, getSetupStatus, type SetupStatus } from '../lib/api/meta'
+import { applyAccountLanguage } from '../lib/userSettings'
 import { useAppMeta } from '../hooks/useAppMeta'
 import { useInboxCount } from '../hooks/useInboxCount'
 import { useActiveJobCount } from '../hooks/useActiveJobCount'
@@ -484,7 +485,9 @@ async function resolveGate(): Promise<Gate> {
     return { kind: 'blocked', status }
   }
 
-  return { kind: 'app', status, admin: await isAdmin() }
+  const [admin] = await Promise.all([isAdmin(), refreshAuthRecord()])
+  applyAccountLanguage()
+  return { kind: 'app', status, admin }
 }
 
 export function RootLayout() {
@@ -523,7 +526,12 @@ export function RootLayout() {
       return
     }
 
-    return pb.authStore.onChange(() => {
+    // Only a new token changes who is signed in. Saving a preference rewrites the
+    // record under the same token, and the gate itself refreshes the record.
+    let token = pb.authStore.token
+    return pb.authStore.onChange((next) => {
+      if (next === token) return
+      token = next
       void refreshGate()
     })
   }, [gate.kind])
@@ -596,7 +604,7 @@ export function RootLayout() {
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 sm:px-6 sm:py-6">
         <Outlet />
       </main>
-      <AppFooter />
+      <AppFooter showLanguage={false} />
     </div>
   )
 }

@@ -1544,6 +1544,15 @@ export const de: Catalog = {
 
   'account.profile': 'Profil',
   'account.sectionsLabel': 'Bereiche des Kontos',
+  'account.preferences': 'Präferenzen',
+  'account.cardLayout': 'Dokumentkarten',
+  'account.cardLayoutSummary': 'Zusammenfassung',
+  'account.cardLayoutPreview': 'Vorschaubild (wie paperless-ngx)',
+  'account.cardLayoutHint':
+    'Was eine Karte in der Dokumentliste unter ihrem Titel zeigt. PDFs und Bilder zeigen ihre erste Seite; andere Dateien behalten ihre Zusammenfassung.',
+  'account.preferencesFailed': 'Die Präferenz konnte nicht gespeichert werden.',
+  'account.languageHint':
+    'Wird in Ihrem Konto gespeichert, gilt also auf jedem Gerät, und auch für die Meldungen des Servers. Die Anmeldeseite bietet dieselbe Auswahl.',
   'importNgx.preserveLabel': 'Metadaten aus Paperless-ngx behalten',
   'importNgx.preserveDescription':
     'Titel, Tags, Korrespondent, Dokumenttyp, Datum und OCR-Text importieren. Vorschau und Duplikaterkennung laufen trotzdem; die KI überschreibt keine Metadaten.',

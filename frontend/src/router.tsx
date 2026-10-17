@@ -49,6 +49,7 @@ import {
   AccountPaperlessPage,
   AccountPasskeysPage,
   AccountPasswordPage,
+  AccountPreferencesPage,
   AccountProfilePage,
 } from './routes/account'
 import { TagsPage } from './routes/tags'
@@ -321,6 +322,12 @@ const accountProfileRoute = createRoute({
   component: AccountProfilePage,
 })
 
+const accountPreferencesRoute = createRoute({
+  getParentRoute: () => accountRoute,
+  path: 'preferences',
+  component: AccountPreferencesPage,
+})
+
 const accountAgentsRoute = createRoute({
   getParentRoute: () => accountRoute,
   path: 'agents',
@@ -407,6 +414,7 @@ const routeTree = rootRoute.addChildren([
   exportRoute,
   accountRoute.addChildren([
     accountProfileRoute,
+    accountPreferencesRoute,
     accountAgentsRoute,
     accountPaperlessRoute,
     accountPasswordRoute,

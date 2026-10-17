@@ -17,6 +17,7 @@ import { useAsync } from '../hooks/useAsync'
 import { getLimits } from '../lib/api/limits'
 import { LimitsUsage } from '../components/LimitsUsage'
 import { SectionLayout } from '../components/SectionLayout'
+import { savePreferences, useCardLayout, type CardLayout, type Preferences } from '../lib/userSettings'
 import {
   Button,
   DocsLink,
@@ -28,7 +29,7 @@ import {
   sectionTitleClassName,
   selectClassName,
 } from '../components/ui'
-import { docsUrl, t, tNode } from '../i18n'
+import { docsUrl, lang, languageNames, setLanguage, t, tNode, type Language, type MessageKey } from '../i18n'
 
 function SignedInSection() {
   const { data: me } = useAsync(getMe, [])
@@ -536,6 +537,128 @@ function InstanceLimitsSection() {
   )
 }
 
+export function AccountPreferencesPage() {
+  const layout = useCardLayout()
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  /** True once saved; the caller then applies it. */
+  async function save(patch: Preferences) {
+    setSaving(true)
+    setError('')
+    try {
+      await savePreferences(patch)
+      return true
+    } catch {
+      setError(t('account.preferencesFailed'))
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Not switched when the save fails: the account's own language would win
+  // again on the next load, and the switch would not stick.
+  async function onLanguageChange(next: Language) {
+    if (await save({ language: next })) {
+      setLanguage(next)
+    }
+  }
+
+  return (
+    <section className={sectionClassName}>
+      <h2 className={sectionTitleClassName}>{t('account.preferences')}</h2>
+      <label className={`${labelClassName} mb-6`}>
+        <span className={labelTextClassName}>{t('common.language')}</span>
+        <select
+          className={`${selectClassName} max-w-xs`}
+          value={lang}
+          disabled={saving}
+          onChange={(event) => void onLanguageChange(event.target.value as Language)}
+        >
+          {Object.entries(languageNames).map(([code, name]) => (
+            <option key={code} value={code}>
+              {name}
+            </option>
+          ))}
+        </select>
+        <span className={fieldHintClassName}>{t('account.languageHint')}</span>
+      </label>
+      <fieldset disabled={saving}>
+        <legend className={labelTextClassName}>{t('account.cardLayout')}</legend>
+        <div className="mt-2 grid max-w-xl grid-cols-2 gap-4">
+          {CARD_LAYOUT_OPTIONS.map(({ layout: option, label }) => (
+            <label key={option} className="group cursor-pointer">
+              <input
+                type="radio"
+                name="card-layout"
+                value={option}
+                checked={layout === option}
+                onChange={() => void save({ card_layout: option })}
+                className="peer sr-only"
+              />
+              <div className="border-2 border-transparent p-1.5 transition-colors group-hover:border-line peer-checked:border-oxblood! peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-oxblood">
+                <CardLayoutExample layout={option} />
+              </div>
+              <span className="mt-2 block text-sm font-medium text-ink-muted peer-checked:text-oxblood">
+                {t(label)}
+              </span>
+            </label>
+          ))}
+        </div>
+        <p className={`${fieldHintClassName} mt-3`}>{t('account.cardLayoutHint')}</p>
+      </fieldset>
+      {error && <p className="mt-3 text-sm text-madder">{error}</p>}
+    </section>
+  )
+}
+
+const CARD_LAYOUT_OPTIONS = [
+  { layout: 'summary', label: 'account.cardLayoutSummary' },
+  { layout: 'preview', label: 'account.cardLayoutPreview' },
+] as const satisfies readonly { layout: CardLayout; label: MessageKey }[]
+
+/** A document card drawn in outline: the same frame either way, and only what sits under the title differs. */
+function CardLayoutExample({ layout }: { layout: CardLayout }) {
+  const tags = (
+    <div className={`flex gap-1.5 ${layout === 'preview' ? 'absolute inset-x-2 bottom-2 *:bg-surface' : ''}`}>
+      <span className="h-3 w-10 border border-line" />
+      <span className="h-3 w-8 border border-line" />
+    </div>
+  )
+
+  return (
+    <div aria-hidden="true" className="flex flex-col gap-2.5 border border-line bg-surface p-3">
+      <div className="flex items-center justify-between">
+        <span className="h-2.5 w-14 border border-line-strong" />
+        <span className="h-2 w-10 bg-line" />
+      </div>
+      <div className="border-t border-line pt-2.5">
+        <div className="h-3 w-4/5 bg-ink/70" />
+        <div className="mt-1.5 h-2 w-1/2 bg-line-strong" />
+      </div>
+      {layout === 'summary' ? (
+        <div className="flex h-20 flex-col gap-1.5">
+          <div className="h-2 w-full bg-line" />
+          <div className="h-2 w-full bg-line" />
+          <div className="h-2 w-3/5 bg-line" />
+        </div>
+      ) : (
+        <div className="relative flex aspect-[1/1.13] w-full flex-col gap-1.5 overflow-hidden border border-line bg-bright px-3 pt-3">
+          <div className="h-1.5 w-1/3 bg-ink-faint" />
+          <div className="h-1.5 w-1/2 bg-line-strong" />
+          <div className="mt-1.5 h-1 w-full bg-line" />
+          <div className="h-1 w-full bg-line" />
+          <div className="h-1 w-4/5 bg-line" />
+          <div className="h-1 w-full bg-line" />
+          {tags}
+        </div>
+      )}
+      {layout === 'summary' && tags}
+    </div>
+  )
+}
+
 export function AccountProfilePage() {
   return (
     <div className="flex flex-col gap-5">
@@ -553,6 +676,7 @@ export function AccountPage() {
       label={t('account.sectionsLabel')}
       links={[
         { to: '/account', label: t('account.profile'), exact: true },
+        { to: '/account/preferences', label: t('account.preferences') },
         { to: '/account/agents', label: t('account.agents') },
         { to: '/account/paperless', label: t('account.paperlessApps') },
         { to: '/account/password', label: t('account.password') },

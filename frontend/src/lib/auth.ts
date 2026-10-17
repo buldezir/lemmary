@@ -487,6 +487,26 @@ export function logout() {
   pb.authStore.clear()
 }
 
+/**
+ * The auth store keeps the record from sign-in. Re-read so a preference the
+ * account saved on another device applies here too. Never throws: a stale
+ * preference is no reason to hold the app back.
+ */
+export async function refreshAuthRecord() {
+  const record = pb.authStore.record
+  if (!record) {
+    return
+  }
+  try {
+    const fresh = await pb.collection('users').getOne(record.id, { requestKey: null })
+    // Merged, not replaced: a plain read leaves out the email unless the account
+    // made it visible, and the sign-in copy has it.
+    pb.authStore.save(pb.authStore.token, { ...record, ...fresh })
+  } catch {
+    // Keeps the sign-in copy.
+  }
+}
+
 export function getUserDisplayName() {
   const record = pb.authStore.record
   if (!record) {

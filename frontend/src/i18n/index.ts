@@ -25,15 +25,26 @@ export function pickLanguage(stored: string | null, preferred: readonly string[]
   return 'en'
 }
 
-function detect(): Language {
-  if (typeof document === 'undefined') return 'en'
-  let stored: string | null = null
+function storedLanguage(): string | null {
   try {
-    stored = new RegExp(`(?:^|; )${cookieName}=([^;]*)`).exec(document.cookie)?.[1] ?? null
+    return new RegExp(`(?:^|; )${cookieName}=([^;]*)`).exec(document.cookie)?.[1] ?? null
   } catch {
     // Site data blocked: follow the browser.
+    return null
   }
-  return pickLanguage(stored, navigator.languages)
+}
+
+function rememberLanguage(next: Language) {
+  try {
+    document.cookie = `${cookieName}=${next}; path=/; max-age=31536000; SameSite=Lax`
+  } catch {
+    // Site data blocked: nothing to remember it in.
+  }
+}
+
+function detect(): Language {
+  if (typeof document === 'undefined') return 'en'
+  return pickLanguage(storedLanguage(), navigator.languages)
 }
 
 export const lang = detect()
@@ -41,12 +52,19 @@ if (typeof document !== 'undefined') document.documentElement.lang = lang
 
 /** Reloads: every label in the app is read once, at load. */
 export function setLanguage(next: Language) {
-  try {
-    document.cookie = `${cookieName}=${next}; path=/; max-age=31536000; SameSite=Lax`
-  } catch {
-    // Site data blocked: nothing to remember it in.
-  }
+  rememberLanguage(next)
   window.location.reload()
+}
+
+/**
+ * Takes a language this browser is not showing, such as the one the account
+ * saved elsewhere. Reloads only once the cookie holds it: a browser that refuses
+ * cookies would come back to the old language and reload forever.
+ */
+export function adoptLanguage(next: Language) {
+  if (next === lang) return
+  rememberLanguage(next)
+  if (storedLanguage() === next) window.location.reload()
 }
 
 type Vars = Record<string, string | number>
