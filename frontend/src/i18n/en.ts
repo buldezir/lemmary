@@ -1480,7 +1480,7 @@ export const en = {
     'What a card in the document list shows under its title. PDFs and images show their first page; other files keep their summary.',
   'account.preferencesFailed': 'Could not save the preference.',
   'account.languageHint':
-    'Saved to your account, so it follows you to every device, and used for the messages the server sends too. The sign-in page has the same choice.',
+    'Saved to your account, so it follows you to every device, and used for the messages the server sends too. After you sign in, it replaces whatever the sign-in page was showing.',
   'importNgx.preserveLabel': 'Keep Paperless-ngx metadata',
   'importNgx.preserveDescription':
     'Import title, tags, correspondent, document type, date, and OCR text. Preview and duplicate detection still run; AI does not overwrite metadata.',

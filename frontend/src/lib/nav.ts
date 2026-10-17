@@ -35,6 +35,8 @@ export type RouteNavItem = NavItemBase & {
   exact?: boolean
   /** Which count to show beside the label, if any. */
   badgeKey?: NavBadgeKey
+  /** Paths that count as this link though they are not under `to`: siblings in one section. */
+  alsoActiveOn?: LinkProps['to'][]
 }
 
 export type ExternalNavItem = NavItemBase & {
@@ -76,7 +78,13 @@ export function secondaryNavItems(pbAdminUrl: string, hostEditable: boolean): re
     ...(hostEditable ? [{ kind: 'route', label: t('nav.ocrTest'), to: '/ocr-test' } as const] : []),
     { kind: 'route', label: t('nav.export'), to: '/export' },
     { kind: 'route', label: t('nav.import'), to: '/import' },
-    { kind: 'route', label: t('nav.admin'), to: '/settings', admin: true },
+    {
+      kind: 'route',
+      label: t('nav.admin'),
+      to: '/settings',
+      alsoActiveOn: ['/management', '/maintenance'],
+      admin: true,
+    },
     ...(hostEditable
       ? [{ kind: 'external', label: t('nav.database'), href: pbAdminUrl, admin: true, icon: 'pocketbase' } as const]
       : []),

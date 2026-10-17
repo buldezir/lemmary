@@ -1552,7 +1552,7 @@ export const de: Catalog = {
     'Was eine Karte in der Dokumentliste unter ihrem Titel zeigt. PDFs und Bilder zeigen ihre erste Seite; andere Dateien behalten ihre Zusammenfassung.',
   'account.preferencesFailed': 'Die Präferenz konnte nicht gespeichert werden.',
   'account.languageHint':
-    'Wird in Ihrem Konto gespeichert, gilt also auf jedem Gerät, und auch für die Meldungen des Servers. Die Anmeldeseite bietet dieselbe Auswahl.',
+    'Wird in Ihrem Konto gespeichert, gilt also auf jedem Gerät, und auch für die Meldungen des Servers. Nach der Anmeldung ersetzt sie die Sprache der Anmeldeseite.',
   'importNgx.preserveLabel': 'Metadaten aus Paperless-ngx behalten',
   'importNgx.preserveDescription':
     'Titel, Tags, Korrespondent, Dokumenttyp, Datum und OCR-Text importieren. Vorschau und Duplikaterkennung laufen trotzdem; die KI überschreibt keine Metadaten.',

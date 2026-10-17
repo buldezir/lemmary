@@ -204,6 +204,9 @@ function NavItemLink({
   badge?: number | null
 }) {
   const Icon = item.icon && NAV_ICONS[item.icon]
+  const matchRoute = useMatchRoute()
+  const alsoActive =
+    item.kind === 'route' && (item.alsoActiveOn ?? []).some((to) => Boolean(matchRoute({ to, fuzzy: true })))
   // The shield stays decorative: these items only render for admins, so "admin
   // only" in the accessible name would add nothing.
   const label = (
@@ -239,6 +242,8 @@ function NavItemLink({
       className={className}
       activeOptions={item.exact ? { exact: true } : undefined}
       onClick={onNavigate}
+      // Link sets this only when `to` itself matches, and leaves ours otherwise.
+      data-status={alsoActive ? 'active' : undefined}
     >
       {label}
     </Link>
@@ -250,7 +255,9 @@ function MoreNavMenu({ items }: { items: NavItem[] }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const matchRoute = useMatchRoute()
   const menuActive = items.some(
-    (item) => item.kind === 'route' && Boolean(matchRoute({ to: item.to })),
+    (item) =>
+      item.kind === 'route' &&
+      [item.to, ...(item.alsoActiveOn ?? [])].some((to) => Boolean(matchRoute({ to, fuzzy: true }))),
   )
 
   useEffect(() => {

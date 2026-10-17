@@ -8,6 +8,9 @@ import { DocumentBulkBar, type BulkMode } from './DocumentBulkBar'
 import { DocumentCard } from './DocumentCard'
 import { Pagination } from './Pagination'
 
+// Well inside users.FileToken.Duration (15 minutes, migration 1730000057).
+const TOKEN_STALE_MS = 10 * 60_000
+
 function cardImageUrl(document: DocumentRecord, token: string) {
   const image = cardImage(document)
   return image ? pb.files.getURL(document, image.name, { token, thumb: image.thumb }) : undefined
@@ -57,12 +60,19 @@ export function DocumentGrid({
   } = list
   const layout = useCardLayout()
   // One token for the page: the previews are protected files like the originals.
-  // ponytail: minted per page, so a card that first loads its image over 15
-  // minutes later (the token's lifetime) shows a broken one; re-mint on error if that bites.
-  const { data: fileToken } = useAsync(
-    () => (layout === 'preview' ? pb.files.getToken({ requestKey: null }) : Promise.resolve('')),
+  const { data: file, reload: remintToken } = useAsync(
+    async () =>
+      layout === 'preview' ? { token: await pb.files.getToken({ requestKey: null }), minted: Date.now() } : null,
     [layout, page],
   )
+  // A token lives 15 minutes, and a lazy image can ask for its file later than
+  // that. Only an old token is replaced: a file that fails under a fresh one
+  // would fail again, and every new token reloads every image on the page.
+  const onPreviewError = () => {
+    if (file && Date.now() - file.minted > TOKEN_STALE_MS) {
+      void remintToken()
+    }
+  }
 
   return (
     <>
@@ -97,7 +107,8 @@ export function DocumentGrid({
             onFilterTag={filterByTag}
             onAcceptSuggestedTag={(id, name) => void onAcceptSuggestedTag(id, name)}
             acceptingSuggestion={acceptingSuggestion}
-            previewUrl={fileToken ? cardImageUrl(document, fileToken) : undefined}
+            previewUrl={file ? cardImageUrl(document, file.token) : undefined}
+            onPreviewError={onPreviewError}
           />
         ))}
       </div>

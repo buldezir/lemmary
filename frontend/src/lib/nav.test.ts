@@ -48,7 +48,15 @@ describe('nav items', () => {
   test('points the admin entry at the admin pages', () => {
     const admin = secondaryNavItems('http://pb.test/_/', false).find((item) => item.label === 'Admin')
 
-    expect(admin).toEqual({ kind: 'route', label: 'Admin', to: '/settings', admin: true })
+    // Management and Maintenance sit beside /settings under one shell, not under
+    // it, so the entry has to name them to stay lit on them.
+    expect(admin).toEqual({
+      kind: 'route',
+      label: 'Admin',
+      to: '/settings',
+      alsoActiveOn: ['/management', '/maintenance'],
+      admin: true,
+    })
   })
 
   test('keeps the primary links open to everyone', () => {
