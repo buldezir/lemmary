@@ -25,6 +25,8 @@ type Props = {
   className?: string
   /** Background utility for the input, so it can match the surface it sits on. */
   bgClassName?: string
+  /** Replaces the bordered field look, for a combobox set inline in text. */
+  inputClassName?: string
   /**
    * Rendered inside the box, before the text field, which then shares one
    * border with it. For a multi-select whose chosen values sit in the control.
@@ -43,6 +45,10 @@ const CREATE_VALUE = '\u0000create'
 // max-h-56 on the listbox, in pixels. Read to decide which way the list opens,
 // so the two have to move together.
 const listMaxHeightPx = 224
+
+// A list this short is picked from, not searched: a text field would bring the
+// phone keyboard up over it.
+const maxReadOnlyOptions = 6
 
 const comboboxInputClassName =
   'w-full rounded-xs border border-line-strong py-2 pr-8 pl-3 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood disabled:cursor-not-allowed disabled:opacity-50'
@@ -75,6 +81,7 @@ export function Combobox({
   loadingLabel = t('common.loading'),
   className = '',
   bgClassName = 'bg-bright',
+  inputClassName,
   leading,
   onCreate,
   canCreate,
@@ -91,6 +98,10 @@ export function Combobox({
   const [dropUp, setDropUp] = useState(false)
 
   const selectedLabel = options.find((option) => option.value === value)?.label ?? ''
+  const searchable = Boolean(onCreate || onQueryChange) || options.length > maxReadOnlyOptions
+  const fieldClassName = leading
+    ? tokenInputClassName
+    : (inputClassName ?? `${comboboxInputClassName} ${bgClassName}`)
 
   const filteredOptions = useMemo(() => {
     const needle = normalize(query ?? '')
@@ -130,15 +141,15 @@ export function Combobox({
       setDropUp(below < listMaxHeightPx && rect.top > below)
     }
     setOpen(true)
-    // Start on the current selection so Enter is a no-op rather than a surprise.
-    const selectedIndex = options.findIndex((option) => option.value === value)
-    setHighlightedIndex(selectedIndex < 0 ? 0 : selectedIndex)
+    // Start on the current selection, or on nothing when it is not listed (yet),
+    // so Enter is a no-op rather than a surprise.
+    setHighlightedIndex(options.findIndex((option) => option.value === value))
   }
 
   function selectOption(nextValue: string) {
     if (nextValue === CREATE_VALUE) {
       onCreate?.(query!.trim())
-    } else {
+    } else if (nextValue !== value) {
       onChange(nextValue)
     }
     close()
@@ -210,11 +221,14 @@ export function Combobox({
       role="combobox"
       aria-label={ariaLabel}
       aria-expanded={open}
-      aria-autocomplete="list"
-      aria-activedescendant={open ? `${id ?? 'combobox'}-option-${activeIndex}` : undefined}
+      aria-autocomplete={searchable ? 'list' : 'none'}
+      aria-activedescendant={
+        open && activeIndex >= 0 ? `${id ?? 'combobox'}-option-${activeIndex}` : undefined
+      }
       autoComplete="off"
       spellCheck={false}
       disabled={disabled || loading}
+      readOnly={!searchable}
       placeholder={loading ? loadingLabel : selectedLabel || placeholder}
       value={loading ? '' : open && query !== null ? query : selectedLabel}
       onChange={(event) => {
@@ -225,11 +239,13 @@ export function Combobox({
       }}
       onFocus={(event) => {
         openList()
-        event.currentTarget.select()
+        if (searchable) {
+          event.currentTarget.select()
+        }
       }}
       onClick={() => openList()}
       onKeyDown={onKeyDown}
-      className={leading ? tokenInputClassName : `${comboboxInputClassName} ${bgClassName}`}
+      className={searchable ? fieldClassName : `${fieldClassName} cursor-pointer`}
     />
   )
 

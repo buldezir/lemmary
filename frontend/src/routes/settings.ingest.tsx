@@ -1,4 +1,4 @@
-import { type ChangeEvent, type SubmitEvent } from 'react'
+import { type ChangeEvent, type SubmitEvent, useId } from 'react'
 
 import { useAppMeta } from '../hooks/useAppMeta'
 import { useSettingsForm } from '../hooks/useSettingsForm'
@@ -10,6 +10,7 @@ import {
   SaveSettingsButton,
   SettingsLoading,
 } from '../components/settings/SettingsFeedback'
+import { Combobox } from '../components/Combobox'
 import {
   fieldHintClassName,
   inputClassName,
@@ -17,7 +18,6 @@ import {
   labelTextClassName,
   sectionClassName,
   sectionTitleClassName,
-  selectClassName,
 } from '../components/ui'
 import { lang, t, tNode } from '../i18n'
 
@@ -33,6 +33,22 @@ function intervalLabel(minutes: number) {
   if (minutes === 1) return t('settingsIngest.everyMinute')
   return t('settingsIngest.everyMinutes', { count: minutes })
 }
+
+const intervalOptions = SCAN_INTERVALS.map((minutes) => ({
+  value: String(minutes),
+  label: intervalLabel(minutes),
+}))
+
+const securityOptions = [
+  { value: 'tls', label: t('settingsIngest.securityTls') },
+  { value: 'starttls', label: t('settingsIngest.securityStarttls') },
+]
+
+const afterConsumeOptions = [
+  { value: 'keep', label: t('settingsIngest.afterKeep') },
+  { value: 'move', label: t('settingsIngest.afterMove') },
+  { value: 'delete', label: t('settingsIngest.afterDelete') },
+]
 
 const imapFileTypes: [ImapFileType, string][] = [
   ['pdf', 'PDF'],
@@ -61,6 +77,10 @@ export function SettingsIngestPage() {
       imap_since: settings.imap_since,
     }))
   const { data: users } = useAsync(listUsers, [])
+  const ownerId = useId()
+  const intervalId = useId()
+  const securityId = useId()
+  const afterConsumeId = useId()
 
   async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -118,38 +138,35 @@ export function SettingsIngestPage() {
         <h2 className={sectionTitleClassName}>{t('settingsIngest.title')}</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className={labelClassName}>
-            <label className={labelClassName}>
-              <span className={labelTextClassName}>{t('settingsIngest.owner')}</span>
-              <select
-                className={selectClassName}
-                value={form.ingest_dir_owner}
-                onChange={(e) => onOwnerChange(e.target.value)}
-              >
-                <option value="">{t('settingsIngest.ownerDefault')}</option>
-                {(users ?? []).map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name ? `${user.name} (${user.email})` : user.email}
-                  </option>
-                ))}
-              </select>
+            <label htmlFor={ownerId} className={labelTextClassName}>
+              {t('settingsIngest.owner')}
             </label>
+            <Combobox
+              id={ownerId}
+              value={form.ingest_dir_owner}
+              options={[
+                { value: '', label: t('settingsIngest.ownerDefault') },
+                ...(users ?? []).map((user) => ({
+                  value: user.id,
+                  label: user.name ? `${user.name} (${user.email})` : user.email,
+                })),
+              ]}
+              onChange={onOwnerChange}
+              bgClassName="bg-surface"
+            />
             <p className={fieldHintClassName}>{t('settingsIngest.ownerHint')}</p>
           </div>
           <div className={labelClassName}>
-            <label className={labelClassName}>
-              <span className={labelTextClassName}>{t('settingsIngest.scanEvery')}</span>
-              <select
-                className={selectClassName}
-                value={form.ingest_dir_interval_min}
-                onChange={(e) => updateField('ingest_dir_interval_min', e.target.value)}
-              >
-                {SCAN_INTERVALS.map((minutes) => (
-                  <option key={minutes} value={String(minutes)}>
-                    {intervalLabel(minutes)}
-                  </option>
-                ))}
-              </select>
+            <label htmlFor={intervalId} className={labelTextClassName}>
+              {t('settingsIngest.scanEvery')}
             </label>
+            <Combobox
+              id={intervalId}
+              value={form.ingest_dir_interval_min}
+              options={intervalOptions}
+              onChange={(next) => updateField('ingest_dir_interval_min', next)}
+              bgClassName="bg-surface"
+            />
             {ingestDir && (
               <p className={fieldHintClassName}>
                 {t('settingsIngest.scanHint')}
@@ -194,17 +211,18 @@ export function SettingsIngestPage() {
                 <span className={labelTextClassName}>{t('settingsIngest.imapServer')}</span>
                 <input {...text('imap_host')} placeholder="imap.example.com" />
               </label>
-              <label className={labelClassName}>
-                <span className={labelTextClassName}>{t('settingsIngest.security')}</span>
-                <select
-                  className={selectClassName}
+              <div className={labelClassName}>
+                <label htmlFor={securityId} className={labelTextClassName}>
+                  {t('settingsIngest.security')}
+                </label>
+                <Combobox
+                  id={securityId}
                   value={form.imap_security}
-                  onChange={(e) => updateField('imap_security', e.target.value as AppSettings['imap_security'])}
-                >
-                  <option value="tls">{t('settingsIngest.securityTls')}</option>
-                  <option value="starttls">{t('settingsIngest.securityStarttls')}</option>
-                </select>
-              </label>
+                  options={securityOptions}
+                  onChange={(next) => updateField('imap_security', next as AppSettings['imap_security'])}
+                  bgClassName="bg-surface"
+                />
+              </div>
               <label className={labelClassName}>
                 <span className={labelTextClassName}>{t('settingsIngest.username')}</span>
                 <input {...text('imap_username')} />
@@ -221,20 +239,20 @@ export function SettingsIngestPage() {
                 <span className={labelTextClassName}>{t('settingsIngest.folder')}</span>
                 <input {...text('imap_folder')} placeholder="INBOX" />
               </label>
-              <label className={labelClassName}>
-                <span className={labelTextClassName}>{t('settingsIngest.afterImport')}</span>
-                <select
-                  className={selectClassName}
+              <div className={labelClassName}>
+                <label htmlFor={afterConsumeId} className={labelTextClassName}>
+                  {t('settingsIngest.afterImport')}
+                </label>
+                <Combobox
+                  id={afterConsumeId}
                   value={form.imap_after_consume}
-                  onChange={(e) =>
-                    updateField('imap_after_consume', e.target.value as AppSettings['imap_after_consume'])
+                  options={afterConsumeOptions}
+                  onChange={(next) =>
+                    updateField('imap_after_consume', next as AppSettings['imap_after_consume'])
                   }
-                >
-                  <option value="keep">{t('settingsIngest.afterKeep')}</option>
-                  <option value="move">{t('settingsIngest.afterMove')}</option>
-                  <option value="delete">{t('settingsIngest.afterDelete')}</option>
-                </select>
-              </label>
+                  bgClassName="bg-surface"
+                />
+              </div>
               {form.imap_after_consume === 'move' && (
                 <label className={labelClassName}>
                   <span className={labelTextClassName}>{t('settingsIngest.moveFolder')}</span>

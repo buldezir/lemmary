@@ -3,7 +3,7 @@ import { accentContrastText } from '../lib/accent'
 
 export const inputClassName =
   'w-full rounded-xs border border-line-strong bg-bright px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood'
-export const selectClassName =
+export const dateInputClassName =
   'rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm outline-none focus:border-oxblood focus:ring-1 focus:ring-oxblood'
 export const labelClassName = 'flex flex-col gap-1'
 export const labelTextClassName =

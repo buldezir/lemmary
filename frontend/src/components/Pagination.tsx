@@ -1,6 +1,7 @@
+import { useId } from 'react'
 import { t } from '../i18n'
 import { PAGE_SIZES, pageNumbers } from '../lib/pagination'
-import { selectClassName } from './ui'
+import { Combobox } from './Combobox'
 
 type Props = {
   page: number
@@ -10,6 +11,8 @@ type Props = {
   onPageChange: (page: number) => void
   onPageSizeChange: (size: number) => void
 }
+
+const pageSizeOptions = PAGE_SIZES.map((size) => ({ value: String(size), label: String(size) }))
 
 const buttonClassName =
   'rounded-xs border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-ink-muted transition-colors hover:bg-bright disabled:cursor-not-allowed disabled:opacity-40'
@@ -22,6 +25,8 @@ export function Pagination({
   onPageChange,
   onPageSizeChange,
 }: Props) {
+  const pageSizeId = useId()
+
   // Kept while the list fits on one page at a larger size, so it can be shrunk again.
   if (totalItems <= PAGE_SIZES[0]) {
     return null
@@ -37,20 +42,17 @@ export function Pagination({
         <p className="font-mono text-xs tabular-nums text-ink-soft">
           {t('pagination.showing', { start, end, total: totalItems })}
         </p>
-        <label className="flex items-center gap-2 text-xs text-ink-soft">
-          {t('pagination.perPage')}
-          <select
-            value={pageSize}
-            onChange={(event) => onPageSizeChange(Number(event.target.value))}
-            className={selectClassName}
-          >
-            {PAGE_SIZES.map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex items-center gap-2 text-xs text-ink-soft">
+          <label htmlFor={pageSizeId}>{t('pagination.perPage')}</label>
+          <Combobox
+            id={pageSizeId}
+            value={String(pageSize)}
+            options={pageSizeOptions}
+            onChange={(next) => onPageSizeChange(Number(next))}
+            bgClassName="bg-surface"
+            className="w-24"
+          />
+        </div>
       </div>
 
       {totalPages > 1 && (

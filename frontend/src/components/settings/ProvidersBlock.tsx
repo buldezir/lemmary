@@ -1,4 +1,4 @@
-import { type SubmitEvent, useState } from 'react'
+import { type SubmitEvent, useId, useState } from 'react'
 
 import {
   createAIProvider,
@@ -19,6 +19,7 @@ import {
 } from '../../lib/api/providers'
 import { docsUrl, t, tNode } from '../../i18n'
 import { ChatGPTSignIn } from '../ChatGPTSignIn'
+import { Combobox } from '../Combobox'
 import {
   Button,
   DocsLink,
@@ -46,6 +47,11 @@ function emptyDraft(sdk: ProviderSDK = 'openai'): ProviderDraft {
  * The add/edit drawer is a form of its own, saved against the providers API
  * rather than the settings record, so it reports back to the tab's dialog.
  */
+const catalogOptions = [
+  { value: '', label: t('providersBlock.noCatalog') },
+  ...MODEL_CATALOGS.map((id) => ({ value: id, label: id })),
+]
+
 export function ProvidersBlock({
   providers,
   onChanged,
@@ -61,6 +67,8 @@ export function ProvidersBlock({
   const [draft, setDraft] = useState<ProviderDraft>(emptyDraft())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
+  const sdkId = useId()
+  const catalogId = useId()
   const docs = providerDocs(draft.sdk)
   const docsLink = (
     <DocsLink href={docs.href}>{t('providersBlock.readGuide', { label: docs.label })}</DocsLink>
@@ -200,13 +208,16 @@ export function ProvidersBlock({
         </Button>
       ) : (
         <form className="grid gap-3 sm:grid-cols-2" onSubmit={onSaveProvider}>
-          <label className={labelClassName}>
-            <span className={labelTextClassName}>SDK</span>
-            <select
-              className={inputClassName}
+          <div className={labelClassName}>
+            <label htmlFor={sdkId} className={labelTextClassName}>
+              SDK
+            </label>
+            <Combobox
+              id={sdkId}
               value={draft.sdk}
-              onChange={(event) => {
-                const sdk = event.target.value as ProviderSDK
+              options={SDK_OPTIONS}
+              onChange={(next) => {
+                const sdk = next as ProviderSDK
                 setDraft((current) => ({
                   ...current,
                   sdk,
@@ -223,14 +234,8 @@ export function ProvidersBlock({
                   api_key: requiresAPIKey(sdk) ? current.api_key : '',
                 }))
               }}
-            >
-              {SDK_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+            />
+          </div>
           <label className={labelClassName}>
             <span className={labelTextClassName}>{t('providersBlock.alias')}</span>
             <input
@@ -240,23 +245,17 @@ export function ProvidersBlock({
               onChange={(event) => setDraft((current) => ({ ...current, alias: event.target.value }))}
             />
           </label>
-          <label className={labelClassName}>
-            <span className={labelTextClassName}>{t('providersBlock.catalog')}</span>
-            <select
-              className={inputClassName}
+          <div className={labelClassName}>
+            <label htmlFor={catalogId} className={labelTextClassName}>
+              {t('providersBlock.catalog')}
+            </label>
+            <Combobox
+              id={catalogId}
               value={draft.catalog}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, catalog: event.target.value }))
-              }
-            >
-              <option value="">{t('providersBlock.noCatalog')}</option>
-              {MODEL_CATALOGS.map((id) => (
-                <option key={id} value={id}>
-                  {id}
-                </option>
-              ))}
-            </select>
-          </label>
+              options={catalogOptions}
+              onChange={(next) => setDraft((current) => ({ ...current, catalog: next }))}
+            />
+          </div>
           {draft.sdk !== 'google_vision' && (
             <label className={`${labelClassName} sm:col-span-2`}>
               <span className={labelTextClassName}>{t('providersBlock.baseUrl')}</span>

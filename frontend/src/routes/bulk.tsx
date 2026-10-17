@@ -3,7 +3,7 @@ import { hasActiveFilters } from '../lib/documentQuery'
 import { markDocumentsUnreviewed } from '../lib/api/documents'
 import { listShareRecipients, shareDocuments } from '../lib/api/shares'
 import { addTagsToDocuments, findOrCreateTag, removeTagsFromDocuments, type TagRecord } from '../lib/api/tags'
-import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
+import { REPROCESS_MODE_OPTIONS, type ReprocessMode } from '../lib/processing'
 import { tagKey } from '../lib/tagSuggestions'
 import { useAsync } from '../hooks/useAsync'
 import {
@@ -15,7 +15,7 @@ import { Combobox } from '../components/Combobox'
 import { DocumentFilters } from '../components/DocumentFilters'
 import { BulkDocumentCard } from '../components/BulkDocumentCard'
 import { Pagination } from '../components/Pagination'
-import { Button, selectClassName } from '../components/ui'
+import { Button } from '../components/ui'
 import { lang, t } from '../i18n'
 
 export function BulkActionsPage() {
@@ -367,18 +367,14 @@ function BulkActionBar({ list, tags }: { list: DocumentList; tags: TagRecord[] }
 
           {open === 'reprocess' && (
             <>
-              <select
+              <Combobox
                 value={list.reprocessMode}
-                onChange={(event) => list.setReprocessMode(event.target.value as ReprocessMode)}
-                aria-label={t('bulk.reprocessSteps')}
-                className={selectClassName}
-              >
-                {Object.entries(REPROCESS_MODE_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
+                options={REPROCESS_MODE_OPTIONS}
+                onChange={(next) => list.setReprocessMode(next as ReprocessMode)}
+                ariaLabel={t('bulk.reprocessSteps')}
+                bgClassName="bg-surface"
+                className="w-64"
+              />
               <Button size="sm" disabled={busy} onClick={() => void list.onReprocessSelected()}>
                 {t('activity.reprocess')}
               </Button>

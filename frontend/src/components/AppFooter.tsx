@@ -1,4 +1,5 @@
 import { docsUrl, lang, languageNames, setLanguage, t, type Language } from '../i18n'
+import { Combobox } from './Combobox'
 
 const githubRepoUrl = 'https://github.com/buldezir/lemmary'
 
@@ -20,7 +21,7 @@ function GitHubIcon() {
 export function AppFooter({ showLanguage = true }: { showLanguage?: boolean }) {
   return (
     <footer className="mt-auto border-t border-line px-4 py-4 text-center text-[11px] uppercase tracking-[0.14em] text-ink-soft">
-      <p className="inline-flex items-center">
+      <div className="inline-flex items-center">
         <a
           href="https://lemmary.app"
           target="_blank"
@@ -60,21 +61,17 @@ export function AppFooter({ showLanguage = true }: { showLanguage?: boolean }) {
             <span className="mx-2 text-line-strong" aria-hidden="true">
               ·
             </span>
-            <select
-              aria-label={t('common.language')}
+            <Combobox
+              ariaLabel={t('common.language')}
               value={lang}
-              onChange={(e) => setLanguage(e.target.value as Language)}
-              className="cursor-pointer bg-transparent uppercase tracking-[0.14em] outline-none transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-oxblood"
-            >
-              {Object.entries(languageNames).map(([code, name]) => (
-                <option key={code} value={code}>
-                  {name}
-                </option>
-              ))}
-            </select>
+              options={Object.entries(languageNames).map(([value, label]) => ({ value, label }))}
+              onChange={(next) => setLanguage(next as Language)}
+              className="w-28 text-left"
+              inputClassName="w-full cursor-pointer bg-transparent pr-6 uppercase tracking-[0.14em] outline-none transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-oxblood"
+            />
           </>
         )}
-      </p>
+      </div>
     </footer>
   )
 }

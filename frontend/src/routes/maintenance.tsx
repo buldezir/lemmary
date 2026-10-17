@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useAppMeta } from '../hooks/useAppMeta'
 import {
@@ -24,11 +24,12 @@ import {
   type TaxonomyPruneResult,
 } from '../lib/api/maintenance'
 import { ResultDialog } from '../components/settings/SettingsFeedback'
-import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
+import { Combobox } from '../components/Combobox'
+import { REPROCESS_MODE_LABELS, REPROCESS_MODE_OPTIONS, type ReprocessMode } from '../lib/processing'
 import { Button, labelTextClassName, sectionClassName, sectionTitleClassName } from '../components/ui'
 import { lang, t, tNode } from '../i18n'
 
-const selectClassName =
+const dateInputClassName =
   'rounded-xs border border-line-strong bg-bright px-3 py-2 text-sm outline-none focus:border-oxblood focus:ring-1 focus:ring-oxblood'
 
 const activeJobsPollMs = 5_000
@@ -39,8 +40,7 @@ const embeddingPollMs = 3_000
 
 // The worker drains serially, so a bigger batch does not finish sooner, it only
 // commits more AI spend up front.
-const reprocessBatchSizes = [50, 100, 500] as const
-const reprocessModes: ReprocessMode[] = ['auto', 'full', 'extraction']
+const reprocessBatchOptions = ['50', '100', '500'].map((size) => ({ value: size, label: size }))
 
 function activeJobsTotal(counts: ActiveJobCounts | null) {
   return counts ? counts.pending + counts.running : 0
@@ -73,6 +73,8 @@ export function MaintenancePage() {
   const [reprocessing, setReprocessing] = useState(false)
   const [reprocessMode, setReprocessMode] = useState<ReprocessMode>('auto')
   const [reprocessBatch, setReprocessBatch] = useState<number>(100)
+  const stepsId = useId()
+  const batchId = useId()
   const [reprocessOverrides, setReprocessOverrides] = useState<JobOverrides>({})
   const [embedding, setEmbedding] = useState<EmbeddingBackfillState | null>(null)
   const [embeddingLoaded, setEmbeddingLoaded] = useState(false)
@@ -368,34 +370,30 @@ export function MaintenancePage() {
             {t('maintenance.failedHint')}
           </p>
           <div className="mt-4 flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1">
-              <span className={labelTextClassName}>{t('maintenance.steps')}</span>
-              <select
+            <div className="flex flex-col gap-1">
+              <label htmlFor={stepsId} className={labelTextClassName}>
+                {t('maintenance.steps')}
+              </label>
+              <Combobox
+                id={stepsId}
                 value={reprocessMode}
-                onChange={(event) => setReprocessMode(event.target.value as ReprocessMode)}
-                className={selectClassName}
-              >
-                {reprocessModes.map((mode) => (
-                  <option key={mode} value={mode}>
-                    {REPROCESS_MODE_LABELS[mode]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className={labelTextClassName}>{t('maintenance.batch')}</span>
-              <select
-                value={reprocessBatch}
-                onChange={(event) => setReprocessBatch(Number(event.target.value))}
-                className={selectClassName}
-              >
-                {reprocessBatchSizes.map((size) => (
-                  <option key={size} value={size}>
-                    {size}
-                  </option>
-                ))}
-              </select>
-            </label>
+                options={REPROCESS_MODE_OPTIONS}
+                onChange={(next) => setReprocessMode(next as ReprocessMode)}
+                className="w-64"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label htmlFor={batchId} className={labelTextClassName}>
+                {t('maintenance.batch')}
+              </label>
+              <Combobox
+                id={batchId}
+                value={String(reprocessBatch)}
+                options={reprocessBatchOptions}
+                onChange={(next) => setReprocessBatch(Number(next))}
+                className="w-24"
+              />
+            </div>
             <Button
               variant="secondary"
               disabled={reprocessing || !failedCount}
@@ -456,7 +454,7 @@ export function MaintenancePage() {
                 <span className={labelTextClassName}>{t('maintenance.receivedFrom')}</span>
                 <input
                   type="date"
-                  className={selectClassName}
+                  className={dateInputClassName}
                   value={mailFrom}
                   max={mailTo || undefined}
                   onChange={(event) => setMailFrom(event.target.value)}
@@ -466,7 +464,7 @@ export function MaintenancePage() {
                 <span className={labelTextClassName}>{t('maintenance.receivedTo')}</span>
                 <input
                   type="date"
-                  className={selectClassName}
+                  className={dateInputClassName}
                   value={mailTo}
                   min={mailFrom || undefined}
                   onChange={(event) => setMailTo(event.target.value)}
