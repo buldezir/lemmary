@@ -135,7 +135,7 @@ func (c *OpenAIClient) chatWithWeb(
 		}
 
 		if len(nativeCalls) > 0 {
-			apiMessages = append(apiMessages, msg.ToParam())
+			apiMessages = append(apiMessages, assistantTurn(msg))
 			for _, call := range nativeCalls {
 				result, _ := runWebTool(ctx, web, budget, call.ID, call.Function.Name, call.Function.Arguments, nil)
 				apiMessages = append(apiMessages, openai.ToolMessage(result.Content, call.ID))

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/packages/respjson"
 	"github.com/openai/openai-go/v3/shared"
 )
 
@@ -316,5 +317,77 @@ func TestIsReasoningEffortToolConflictError(t *testing.T) {
 				t.Fatalf("isReasoningEffortToolConflictError(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
+	}
+}
+
+// Mistral's reasoning models send content as chunks, thinking first, and the
+// user must read only the text ones. Streamed, the shape changes mid-answer:
+// thinking chunks, then a closing thought beside the first text chunk, then
+// plain strings.
+func TestChunkedContentKeepsOnlyTheText(t *testing.T) {
+	thinking := func(text string, closed bool) map[string]any {
+		return map[string]any{"type": "thinking", "thinking": []map[string]any{{"type": "text", "text": text}}, "closed": closed}
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(raw), `"stream":true`) {
+			writeChatJSON(w, []any{thinking("The user wants", true), map[string]any{"type": "text", "text": "266,46 €"}})
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, content := range []any{
+			[]any{thinking("The user wants", false)},
+			[]any{thinking(" the total", true), map[string]any{"type": "text", "text": "266,46"}},
+			" €",
+		} {
+			encoded, _ := json.Marshal(map[string]any{
+				"id": "c", "object": "chat.completion.chunk", "created": 1, "model": "mistral-large-4-0",
+				"choices": []map[string]any{{"index": 0, "delta": map[string]any{"content": content}}},
+			})
+			_, _ = io.WriteString(w, "data: "+string(encoded)+"\n\n")
+		}
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	t.Cleanup(srv.Close)
+	client := NewOpenAIClient("mistral", "test-key", "mistral-large-4-0", srv.URL, "v1", "", 5*time.Second, slog.Default())
+	params := openai.ChatCompletionNewParams{
+		Model:    "mistral-large-4-0",
+		Messages: []openai.ChatCompletionMessageParamUnion{openai.UserMessage("how much?")},
+	}
+
+	resp, err := client.Complete(context.Background(), params)
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if got := resp.Choices[0].Message.Content; got != "266,46 €" {
+		t.Fatalf("Complete content = %q", got)
+	}
+	replayed, _ := json.Marshal(assistantTurn(resp.Choices[0].Message))
+	if !strings.Contains(string(replayed), `"content":[{"closed":true,"thinking":[{"text":"The user wants"`) {
+		t.Fatalf("the next tool round lost the thinking: %s", replayed)
+	}
+
+	var deltas []string
+	text, _, err := client.completeStreaming(context.Background(), params, func(d string) { deltas = append(deltas, d) })
+	if err != nil {
+		t.Fatalf("completeStreaming: %v", err)
+	}
+	if text != "266,46 €" || strings.Join(deltas, "|") != "266,46| €" {
+		t.Fatalf("streamed text = %q, deltas = %q", text, deltas)
+	}
+}
+
+// Only a list of text and thinking chunks is a reply to flatten. Any other array
+// stays as it came, rather than becoming an empty answer.
+func TestChunkedTextLeavesOtherArraysAlone(t *testing.T) {
+	t.Parallel()
+	for _, raw := range []string{`[{"type":"reference","reference_ids":[1]}]`, `[{"a":1}]`, `[1,2]`} {
+		if got := chunkedText(respjson.NewField(raw), raw); got != raw {
+			t.Errorf("chunkedText(%s) = %q", raw, got)
+		}
+	}
+	thinkingOnly := `[{"type":"thinking","thinking":[{"type":"text","text":"hmm"}]}]`
+	if got := chunkedText(respjson.NewField(thinkingOnly), thinkingOnly); got != "" {
+		t.Errorf("thinking-only chunks = %q, want empty", got)
 	}
 }

@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/packages/respjson"
 	"github.com/openai/openai-go/v3/shared"
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/messages"
@@ -103,7 +105,7 @@ func (c *OpenAIClient) Complete(ctx context.Context, params openai.ChatCompletio
 	// endpoint discovery and the degradation retries below are all time it waited.
 	defer metrics.TimeAICall(ctx, "chat", c.sdk, string(params.Model))(&err)
 	resp, err = c.complete(ctx, params, extra...)
-	return nameToolCallVariants(resp), err
+	return flattenChunkedContent(nameToolCallVariants(resp)), err
 }
 
 func (c *OpenAIClient) complete(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
@@ -144,6 +146,60 @@ func nameToolCallVariants(resp *openai.ChatCompletion) *openai.ChatCompletion {
 		}
 	}
 	return resp
+}
+
+func flattenChunkedContent(resp *openai.ChatCompletion) *openai.ChatCompletion {
+	if resp == nil {
+		return nil
+	}
+	for i := range resp.Choices {
+		msg := &resp.Choices[i].Message
+		msg.Content = chunkedText(msg.JSON.Content, msg.Content)
+	}
+	return resp
+}
+
+// chunkedText reads a content field sent as an array of chunks rather than a
+// string, as Mistral's reasoning models do: its text chunks, without the
+// thinking ones. The SDK types content as a string and fills it with the raw
+// array, so without this the user reads the JSON.
+func chunkedText(field respjson.Field, content string) string {
+	if !strings.HasPrefix(field.Raw(), "[") {
+		return content
+	}
+	var chunks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal([]byte(field.Raw()), &chunks) != nil {
+		return content
+	}
+	var b strings.Builder
+	chunked := false
+	for _, chunk := range chunks {
+		switch chunk.Type {
+		case "text":
+			b.WriteString(chunk.Text)
+			chunked = true
+		case "thinking":
+			chunked = true
+		}
+	}
+	if !chunked {
+		return content
+	}
+	return b.String()
+}
+
+// assistantTurn replays a reply into the next tool round. A reply that came as
+// chunks goes back as those chunks, thinking included: Mistral's docs say
+// stripping the thinking degrades the turns after it.
+func assistantTurn(msg openai.ChatCompletionMessage) openai.ChatCompletionMessageParamUnion {
+	turn := msg.ToParam()
+	if raw := msg.JSON.Content.Raw(); strings.HasPrefix(raw, "[") {
+		turn.OfAssistant.SetExtraFields(map[string]any{"content": json.RawMessage(raw)})
+	}
+	return turn
 }
 
 func (c *OpenAIClient) completeChat(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {
@@ -368,7 +424,7 @@ func (c *OpenAIClient) completeStreaming(
 		if len(chunk.Choices) == 0 {
 			continue
 		}
-		delta := chunk.Choices[0].Delta.Content
+		delta := chunkedText(chunk.Choices[0].Delta.JSON.Content, chunk.Choices[0].Delta.Content)
 		if delta == "" {
 			continue
 		}

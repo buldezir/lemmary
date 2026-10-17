@@ -409,7 +409,7 @@ func (a *openAISearchAgent) runNativeResearchCalls(ctx context.Context, run *res
 	}
 	// Recorded before the tools run, so a run that dies inside one still
 	// shows what it was doing.
-	run.add(asked, msg.ToParam())
+	run.add(asked, assistantTurn(msg))
 
 	progressed := false
 	for _, call := range msg.ToolCalls {
