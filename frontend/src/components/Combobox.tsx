@@ -25,6 +25,8 @@ type Props = {
   className?: string
   /** Background utility for the input, so it can match the surface it sits on. */
   bgClassName?: string
+  /** Replaces the bordered field look, for a combobox set inline in text. */
+  inputClassName?: string
   /**
    * Rendered inside the box, before the text field, which then shares one
    * border with it. For a multi-select whose chosen values sit in the control.
@@ -75,6 +77,7 @@ export function Combobox({
   loadingLabel = t('common.loading'),
   className = '',
   bgClassName = 'bg-bright',
+  inputClassName,
   leading,
   onCreate,
   canCreate,
@@ -229,7 +232,9 @@ export function Combobox({
       }}
       onClick={() => openList()}
       onKeyDown={onKeyDown}
-      className={leading ? tokenInputClassName : `${comboboxInputClassName} ${bgClassName}`}
+      className={
+        leading ? tokenInputClassName : (inputClassName ?? `${comboboxInputClassName} ${bgClassName}`)
+      }
     />
   )
 

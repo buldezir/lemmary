@@ -6,7 +6,7 @@ import type { TagRecord } from '../lib/api/tags'
 import { Combobox } from './Combobox'
 import { FilterCombobox } from './FilterCombobox'
 import { TagFilter } from './TagFilter'
-import { selectClassName } from './ui'
+import { dateInputClassName } from './ui'
 
 /**
  * The status dropdown is opt-in: a list whose status the path already decides
@@ -100,7 +100,7 @@ export function DocumentFilters({
             // year, and none of those belong in history. undated goes with it:
             // a range and "no date" together match nothing.
             onChange={(event) => updateQuery({ from: event.target.value, undated: false }, true)}
-            className={selectClassName}
+            className={dateInputClassName}
           />
         </label>
         <label className="flex flex-col gap-1">
@@ -109,7 +109,7 @@ export function DocumentFilters({
             type="date"
             value={query.to}
             onChange={(event) => updateQuery({ to: event.target.value, undated: false }, true)}
-            className={selectClassName}
+            className={dateInputClassName}
           />
         </label>
         {owner && (

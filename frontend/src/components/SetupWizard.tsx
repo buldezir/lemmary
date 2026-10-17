@@ -1,4 +1,4 @@
-import { type SubmitEvent, useEffect, useState } from 'react'
+import { type SubmitEvent, useEffect, useId, useState } from 'react'
 import { loginWithPassword } from '../lib/auth'
 import { registerPasskey } from '../lib/api/passkeys'
 import { defaultPasskeyName, passkeysSupported } from '../lib/webauthn'
@@ -26,6 +26,7 @@ import { getAppSettings, updateAppSettings } from '../lib/api/settings'
 import { docsUrl, t, tNode } from '../i18n'
 import { AppFooter } from './AppFooter'
 import { ChatGPTSignIn } from './ChatGPTSignIn'
+import { Combobox } from './Combobox'
 import { ProviderModelFields } from './ProviderModelFields'
 import {
   AppLogo,
@@ -46,6 +47,13 @@ type SetupWizardProps = {
 
 type Step = 'admin' | 'passkey' | 'providers' | 'models' | 'done'
 
+// The two the quick form cannot ask for in one submit are left out: mistral is
+// its own field, chatgpt is signed in to rather than given a key. Both are in
+// the manual form.
+const generalSdkOptions = SDK_OPTIONS.filter(
+  (option) => isLLMProvider(option.value) && option.value !== 'mistral' && option.value !== 'chatgpt',
+)
+
 // Deliberately never returns 'passkey': the optional step is reachable only
 // from the in-session transition out of 'admin', which is what stops it
 // resurfacing on a later boot or on a wizard that resumes at 'providers'.
@@ -64,6 +72,8 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
   const [status, setStatus] = useState(initialStatus)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const generalSdkId = useId()
+  const sdkId = useId()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -520,28 +530,17 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
               <p className={fieldHintClassName}>
                 {t('setupWizard.mistralHint')}
               </p>
-              <label className={labelClassName}>
-                <span className={labelTextClassName}>{t('setupWizard.generalProvider')}</span>
-                <select
+              <div className={labelClassName}>
+                <label htmlFor={generalSdkId} className={labelTextClassName}>
+                  {t('setupWizard.generalProvider')}
+                </label>
+                <Combobox
+                  id={generalSdkId}
                   value={generalSdk}
-                  onChange={(e) => setGeneralSdk(e.target.value as ProviderSDK)}
-                  className={inputClassName}
-                >
-                  {/* The two this form cannot ask for in one submit are left out:
-                      mistral is the field above, chatgpt is signed in to rather
-                      than given a key. Both are in the manual form. */}
-                  {SDK_OPTIONS.filter(
-                    (option) =>
-                      isLLMProvider(option.value) &&
-                      option.value !== 'mistral' &&
-                      option.value !== 'chatgpt',
-                  ).map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  options={generalSdkOptions}
+                  onChange={(next) => setGeneralSdk(next as ProviderSDK)}
+                />
+              </div>
               <label className={labelClassName}>
                 <span className={labelTextClassName}>
                   {t('setupWizard.providerKey', { name: sdkAliasDefault(generalSdk) })}
@@ -595,26 +594,23 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                   })}
                 </p>
               )}
-              <label className={labelClassName}>
-                <span className={labelTextClassName}>SDK</span>
-                <select
+              {/* Choosing chatgpt creates the row and holds the step open for
+                  the sign-in. */}
+              <div className={labelClassName}>
+                <label htmlFor={sdkId} className={labelTextClassName}>
+                  SDK
+                </label>
+                <Combobox
+                  id={sdkId}
                   value={sdk}
-                  onChange={(e) => {
-                    const next = e.target.value as ProviderSDK
-                    setSdk(next)
-                    setBaseURL(SDK_DEFAULT_BASE[next])
+                  options={SDK_OPTIONS}
+                  onChange={(next) => {
+                    const chosen = next as ProviderSDK
+                    setSdk(chosen)
+                    setBaseURL(SDK_DEFAULT_BASE[chosen])
                   }}
-                  className={inputClassName}
-                >
-                  {/* Choosing chatgpt creates the row and holds the step open
-                      for the sign-in. */}
-                  {SDK_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                />
+              </div>
               <label className={labelClassName}>
                 <span className={labelTextClassName}>{t('providersBlock.alias')}</span>
                 <input

@@ -946,28 +946,27 @@ export function DocumentDetailPage() {
               />
             </label>
 
-            {customFields?.map((field) => (
-              <label key={field.id} className={labelClass}>
-                {field.name}
-                {field.type === 'choice' ? (
-                  <select
-                    className={`${fieldClass(editing)} disabled:opacity-100`}
-                    disabled={!editing}
+            {customFields?.map((field) =>
+              field.type === 'choice' && editing ? (
+                <div key={field.id} className={labelClass}>
+                  <label htmlFor={`custom-field-${field.id}`}>{field.name}</label>
+                  <Combobox
+                    id={`custom-field-${field.id}`}
                     value={customInputs[field.id] ?? fieldInputValue(document, field)}
-                    onChange={(event) =>
-                      setCustomInputs({ ...customInputs, [field.id]: event.target.value })
-                    }
-                  >
-                    <option value="" />
-                    {field.choices.map((choice) => (
-                      <option key={choice.id} value={choice.name}>
-                        {choice.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
+                    options={[
+                      { value: '', label: '—' },
+                      ...field.choices.map((choice) => ({ value: choice.name, label: choice.name })),
+                    ]}
+                    onChange={(next) => setCustomInputs({ ...customInputs, [field.id]: next })}
+                    bgClassName="bg-surface"
+                    className="font-normal"
+                  />
+                </div>
+              ) : (
+                <label key={field.id} className={labelClass}>
+                  {field.name}
                   <input
-                    type={field.type}
+                    type={field.type === 'choice' ? 'text' : field.type}
                     step={field.type === 'number' ? 'any' : undefined}
                     className={fieldClass(editing)}
                     readOnly={!editing}
@@ -976,9 +975,9 @@ export function DocumentDetailPage() {
                       setCustomInputs({ ...customInputs, [field.id]: event.target.value })
                     }
                   />
-                )}
-              </label>
-            ))}
+                </label>
+              ),
+            )}
 
             <div className={`${labelClass} sm:col-span-2`}>
               <span>{t('documentPage.fieldTags')}</span>

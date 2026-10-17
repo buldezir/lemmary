@@ -1,4 +1,4 @@
-import { type DragEvent, type SubmitEvent, useState } from 'react'
+import { type DragEvent, type SubmitEvent, useId, useState } from 'react'
 import { ensureAuth } from '../lib/auth'
 import {
   listOCRProviders,
@@ -12,6 +12,7 @@ import { useAppMeta } from '../hooks/useAppMeta'
 import { useAsync } from '../hooks/useAsync'
 import { ManagedByHostNotice } from '../components/settings/SettingsFeedback'
 import { ModelSelect } from '../components/ProviderModelFields'
+import { Combobox } from '../components/Combobox'
 import { Button } from '../components/ui'
 import { lang, t } from '../i18n'
 
@@ -61,6 +62,7 @@ function OCRTester() {
   const [error, setError] = useState('')
   const [result, setResult] = useState('')
   const [meta, setMeta] = useState('')
+  const providerId = useId()
 
   const providersState = useAsync(async () => {
     await ensureAuth()
@@ -164,30 +166,24 @@ function OCRTester() {
       </div>
 
       <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-        <label className="flex flex-col gap-1.5 text-sm font-medium text-ink-muted">
-          {t('ocrTest.provider')}
-          <select
+        <div className="flex flex-col gap-1.5 text-sm font-medium text-ink-muted">
+          <label htmlFor={providerId}>{t('ocrTest.provider')}</label>
+          <Combobox
+            id={providerId}
             value={provider}
-            onChange={(event) => {
-              setProvider(event.target.value)
+            options={providers.map((item) => ({ value: item.id, label: item.name }))}
+            onChange={(next) => {
+              setProvider(next)
               setModel('')
             }}
-            disabled={loadingProviders || providers.length === 0 || running}
-            className="w-full rounded-xs border border-line-strong bg-surface px-3 py-2 text-sm font-normal text-ink outline-none focus:border-oxblood focus:ring-1 focus:ring-oxblood disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {loadingProviders ? (
-              <option value="">{t('ocrTest.loadingProviders')}</option>
-            ) : providers.length === 0 ? (
-              <option value="">{t('ocrTest.noProviders')}</option>
-            ) : (
-              providers.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))
-            )}
-          </select>
-        </label>
+            placeholder={t('ocrTest.noProviders')}
+            loading={loadingProviders}
+            loadingLabel={t('ocrTest.loadingProviders')}
+            disabled={providers.length === 0 || running}
+            bgClassName="bg-surface"
+            className="font-normal"
+          />
+        </div>
 
         {!hideModel && provider && (
           <ModelSelect

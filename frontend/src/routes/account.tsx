@@ -1,4 +1,4 @@
-import { type SubmitEvent, useState } from 'react'
+import { type SubmitEvent, useId, useState } from 'react'
 import { changePassword, getMe } from '../lib/auth'
 import {
   deletePasskey,
@@ -17,6 +17,7 @@ import { useAsync } from '../hooks/useAsync'
 import { getLimits } from '../lib/api/limits'
 import { LimitsUsage } from '../components/LimitsUsage'
 import { SectionLayout } from '../components/SectionLayout'
+import { Combobox } from '../components/Combobox'
 import { savePreferences, useCardLayout, type CardLayout, type Preferences } from '../lib/userSettings'
 import {
   Button,
@@ -27,7 +28,6 @@ import {
   labelTextClassName,
   sectionClassName,
   sectionTitleClassName,
-  selectClassName,
 } from '../components/ui'
 import { docsUrl, lang, languageNames, setLanguage, t, tNode, type Language, type MessageKey } from '../i18n'
 
@@ -276,6 +276,7 @@ export function AccountAgentsPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  const agentId = useId()
 
   const snippets = status?.enabled ? mcpSnippets(status.url, token || tokenPlaceholder) : []
   const current = snippets.find((snippet) => snippet.id === agent) ?? snippets[0]
@@ -335,23 +336,22 @@ export function AccountAgentsPage() {
           </div>
           {error && <p className="text-sm text-madder">{error}</p>}
 
-          <label className={labelClassName}>
-            <span className={labelTextClassName}>{t('account.agent')}</span>
-            <select
+          <div className={labelClassName}>
+            <label htmlFor={agentId} className={labelTextClassName}>
+              {t('account.agent')}
+            </label>
+            <Combobox
+              id={agentId}
               value={current.id}
-              onChange={(event) => {
-                setAgent(event.target.value)
+              options={snippets.map((snippet) => ({ value: snippet.id, label: snippet.name }))}
+              onChange={(next) => {
+                setAgent(next)
                 setCopied(false)
               }}
-              className={`${selectClassName} max-w-xs`}
-            >
-              {snippets.map((snippet) => (
-                <option key={snippet.id} value={snippet.id}>
-                  {snippet.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              bgClassName="bg-surface"
+              className="max-w-xs"
+            />
+          </div>
 
           <div>
             <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
@@ -541,6 +541,7 @@ export function AccountPreferencesPage() {
   const layout = useCardLayout()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const languageId = useId()
 
   /** True once saved; the caller then applies it. */
   async function save(patch: Preferences) {
@@ -568,22 +569,21 @@ export function AccountPreferencesPage() {
   return (
     <section className={sectionClassName}>
       <h2 className={sectionTitleClassName}>{t('account.preferences')}</h2>
-      <label className={`${labelClassName} mb-6`}>
-        <span className={labelTextClassName}>{t('common.language')}</span>
-        <select
-          className={`${selectClassName} max-w-xs`}
+      <div className={`${labelClassName} mb-6`}>
+        <label htmlFor={languageId} className={labelTextClassName}>
+          {t('common.language')}
+        </label>
+        <Combobox
+          id={languageId}
           value={lang}
+          options={Object.entries(languageNames).map(([value, label]) => ({ value, label }))}
           disabled={saving}
-          onChange={(event) => void onLanguageChange(event.target.value as Language)}
-        >
-          {Object.entries(languageNames).map(([code, name]) => (
-            <option key={code} value={code}>
-              {name}
-            </option>
-          ))}
-        </select>
+          onChange={(next) => void onLanguageChange(next as Language)}
+          bgClassName="bg-surface"
+          className="max-w-xs"
+        />
         <span className={fieldHintClassName}>{t('account.languageHint')}</span>
-      </label>
+      </div>
       <fieldset disabled={saving}>
         <legend className={labelTextClassName}>{t('account.cardLayout')}</legend>
         <div className="mt-2 grid max-w-xl grid-cols-2 gap-4">

@@ -1,12 +1,11 @@
 import { t } from '../i18n'
 import type { JobOverrides } from '../lib/api/documents'
-import { REPROCESS_MODE_LABELS, type ReprocessMode } from '../lib/processing'
+import { REPROCESS_MODE_OPTIONS, type ReprocessMode } from '../lib/processing'
 import { JobOverrideFields } from './BindingOverride'
-import { Button, selectClassName } from './ui'
+import { Combobox } from './Combobox'
+import { Button } from './ui'
 
 export type BulkMode = 'reprocess' | 'review'
-
-const reprocessModes: ReprocessMode[] = ['auto', 'full', 'extraction']
 
 const hints: Record<BulkMode, string> = {
   reprocess: t('documentBulkBar.hintReprocess'),
@@ -50,18 +49,14 @@ export function DocumentBulkBar({
     <div className="flex flex-wrap items-center gap-3 rounded-none border border-line bg-surface px-4 py-3">
       {mode === 'reprocess' ? (
         <>
-          <select
+          <Combobox
             value={reprocessMode}
-            onChange={(event) => onReprocessModeChange(event.target.value as ReprocessMode)}
-            aria-label={t('documentBulkBar.reprocessSteps')}
-            className={selectClassName}
-          >
-            {reprocessModes.map((value) => (
-              <option key={value} value={value}>
-                {REPROCESS_MODE_LABELS[value]}
-              </option>
-            ))}
-          </select>
+            options={REPROCESS_MODE_OPTIONS}
+            onChange={(next) => onReprocessModeChange(next as ReprocessMode)}
+            ariaLabel={t('documentBulkBar.reprocessSteps')}
+            bgClassName="bg-surface"
+            className="w-64"
+          />
           <Button disabled={busy || selectedCount === 0} onClick={onReprocess}>
             {busy ? t('documentBulkBar.queueing') : t('documentBulkBar.reprocess')}
           </Button>

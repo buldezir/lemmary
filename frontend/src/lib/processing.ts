@@ -110,6 +110,11 @@ export const REPROCESS_MODE_LABELS: Record<ReprocessMode, string> = {
   extraction: t('processing.modeExtraction'),
 }
 
+export const REPROCESS_MODE_OPTIONS = Object.entries(REPROCESS_MODE_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}))
+
 /**
  * The worker writes `2006-01-02 15:04:05.000Z`, a space where ISO 8601 wants a
  * `T`, and Date's handling of that spelling is implementation-defined. Null for
