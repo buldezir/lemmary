@@ -46,6 +46,10 @@ const CREATE_VALUE = '\u0000create'
 // so the two have to move together.
 const listMaxHeightPx = 224
 
+// A list this short is picked from, not searched: a text field would bring the
+// phone keyboard up over it.
+const maxReadOnlyOptions = 6
+
 const comboboxInputClassName =
   'w-full rounded-xs border border-line-strong py-2 pr-8 pl-3 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-oxblood focus:ring-1 focus:ring-oxblood disabled:cursor-not-allowed disabled:opacity-50'
 
@@ -94,6 +98,10 @@ export function Combobox({
   const [dropUp, setDropUp] = useState(false)
 
   const selectedLabel = options.find((option) => option.value === value)?.label ?? ''
+  const searchable = Boolean(onCreate || onQueryChange) || options.length > maxReadOnlyOptions
+  const fieldClassName = leading
+    ? tokenInputClassName
+    : (inputClassName ?? `${comboboxInputClassName} ${bgClassName}`)
 
   const filteredOptions = useMemo(() => {
     const needle = normalize(query ?? '')
@@ -213,13 +221,14 @@ export function Combobox({
       role="combobox"
       aria-label={ariaLabel}
       aria-expanded={open}
-      aria-autocomplete="list"
+      aria-autocomplete={searchable ? 'list' : 'none'}
       aria-activedescendant={
         open && activeIndex >= 0 ? `${id ?? 'combobox'}-option-${activeIndex}` : undefined
       }
       autoComplete="off"
       spellCheck={false}
       disabled={disabled || loading}
+      readOnly={!searchable}
       placeholder={loading ? loadingLabel : selectedLabel || placeholder}
       value={loading ? '' : open && query !== null ? query : selectedLabel}
       onChange={(event) => {
@@ -230,13 +239,13 @@ export function Combobox({
       }}
       onFocus={(event) => {
         openList()
-        event.currentTarget.select()
+        if (searchable) {
+          event.currentTarget.select()
+        }
       }}
       onClick={() => openList()}
       onKeyDown={onKeyDown}
-      className={
-        leading ? tokenInputClassName : (inputClassName ?? `${comboboxInputClassName} ${bgClassName}`)
-      }
+      className={searchable ? fieldClassName : `${fieldClassName} cursor-pointer`}
     />
   )
 
