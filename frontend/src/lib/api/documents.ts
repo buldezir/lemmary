@@ -98,6 +98,21 @@ export async function fileUrlWithToken(record: DocumentFileRef, filename?: strin
   return pb.files.getURL(record, name, { token })
 }
 
+/**
+ * PocketBase serves files under a CSP ending in `sandbox`, which Safari's PDF
+ * viewer refuses to run in; a blob URL carries no CSP. The type is pinned so a
+ * file served as anything else still renders as a PDF, never as a page on the
+ * app's origin. Callers must revoke it when done.
+ */
+export async function fetchPdfBlobUrl(record: DocumentFileRef, signal: AbortSignal): Promise<string> {
+  const response = await fetch(await fileUrlWithToken(record), { signal })
+  if (!response.ok) {
+    throw new Error(t('documentPreview.loadFailed'))
+  }
+  const body = await response.blob()
+  return URL.createObjectURL(body.slice(0, body.size, 'application/pdf'))
+}
+
 // The tab is opened synchronously in the click handler and pointed at the
 // tokened URL later: a window.open after an await is eaten by popup blockers.
 export async function openDocumentFile(record: DocumentFileRef, filename?: string) {
