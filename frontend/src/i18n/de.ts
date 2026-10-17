@@ -29,10 +29,8 @@ export const de: Catalog = {
   'nav.ocrTest': 'OCR-Test',
   'nav.export': 'Export',
   'nav.import': 'Import',
-  'nav.settings': 'Einstellungen',
-  'nav.management': 'Verwaltung',
-  'nav.maintenance': 'Wartung',
   'nav.admin': 'Admin',
+  'nav.database': 'Datenbank',
 
   'documentStatus.pending': 'Ausstehend',
   'documentStatus.processing': 'In Verarbeitung',
@@ -1112,9 +1110,14 @@ export const de: Catalog = {
   'import.sourcesLabel': 'Import-Quellen',
   'import.tabArchive': 'Lemmary-Archiv',
 
-  'settings.title': 'Einstellungen',
-  'settings.intro':
-    'Laufzeitkonfiguration für OCR, KI und den Worker. Änderungen gelten sofort.',
+  'admin.title': 'Admin',
+  'admin.intro':
+    'Konfiguration der ganzen Instanz, ihre Konten und die Wartung der Bibliothek. Änderungen gelten sofort.',
+  'admin.sectionsLabel': 'Bereiche der Administration',
+  'admin.settings': 'Einstellungen',
+  'admin.management': 'Verwaltung',
+  'admin.maintenance': 'Wartung',
+
   'settings.aiManaged':
     'KI-Anbieter, Modelle, Zeitlimits und der Worker werden von Ihrem Hosting-Anbieter festgelegt und können hier nicht geändert werden.',
   'settings.sectionsLabel': 'Bereiche der Einstellungen',
@@ -1126,11 +1129,6 @@ export const de: Catalog = {
   'settings.tabDuplicates': 'Duplikate',
   'settings.tabIngest': 'Eingang',
   'settings.tabMcp': 'MCP',
-
-  'management.title': 'Verwaltung',
-  'management.intro': 'Konten auf dieser Instanz. Nur für Administratoren.',
-  'management.sectionsLabel': 'Bereiche der Verwaltung',
-  'management.tabUsers': 'Benutzer',
 
   'settingsIndex.nameRequired': 'Der Anwendungsname ist erforderlich',
   'settingsIndex.accentInvalid': 'Die Akzentfarbe muss ein Hex-Wert wie #6e2620 sein',
@@ -1544,6 +1542,17 @@ export const de: Catalog = {
   'account.title': 'Konto',
   'account.intro': 'Wie Sie und Ihre Agenten sich bei diesem Archiv anmelden.',
 
+  'account.profile': 'Profil',
+  'account.sectionsLabel': 'Bereiche des Kontos',
+  'account.preferences': 'Präferenzen',
+  'account.cardLayout': 'Dokumentkarten',
+  'account.cardLayoutSummary': 'Zusammenfassung',
+  'account.cardLayoutPreview': 'Vorschaubild (wie paperless-ngx)',
+  'account.cardLayoutHint':
+    'Was eine Karte in der Dokumentliste unter ihrem Titel zeigt. PDFs und Bilder zeigen ihre erste Seite; andere Dateien behalten ihre Zusammenfassung.',
+  'account.preferencesFailed': 'Die Präferenz konnte nicht gespeichert werden.',
+  'account.languageHint':
+    'Wird in Ihrem Konto gespeichert, gilt also auf jedem Gerät, und auch für die Meldungen des Servers. Nach der Anmeldung ersetzt sie die Sprache der Anmeldeseite.',
   'importNgx.preserveLabel': 'Metadaten aus Paperless-ngx behalten',
   'importNgx.preserveDescription':
     'Titel, Tags, Korrespondent, Dokumenttyp, Datum und OCR-Text importieren. Vorschau und Duplikaterkennung laufen trotzdem; die KI überschreibt keine Metadaten.',
@@ -1868,9 +1877,6 @@ export const de: Catalog = {
   'maintenance.inFlight':
     'Verarbeitung läuft ({jobs}). Versuchen Sie es erneut, wenn die Warteschlange leer ist.',
   'maintenance.pruneFailed': 'Bereinigung veralteter Daten fehlgeschlagen',
-  'maintenance.title': 'Wartung',
-  'maintenance.intro':
-    'Wartungsaufgaben, die über die gesamte Bibliothek laufen. Nur für Administratoren.',
   'maintenance.failedTitle': 'Fehlgeschlagene Verarbeitung',
   'maintenance.failedHint':
     'Reiht einen neuen Job für Dokumente ein, deren Verarbeitung fehlgeschlagen ist. Originale werden nie angetastet. Jobs laufen nacheinander, eine Charge leert sich also allmählich – verarbeiten Sie in Chargen statt alles auf einmal, um die Kosten für OCR und KI im Griff zu behalten.',

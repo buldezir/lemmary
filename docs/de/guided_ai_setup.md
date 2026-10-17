@@ -6,8 +6,8 @@ und die gesamte Pipeline funktioniert – Extraktion, Chat, Deep Research und
 bedeutungsbasierte Suche.
 
 Besorgen Sie die beiden Schlüssel (Schritte 1 und 2) und fügen Sie sie dann in den
-**Einrichtungsassistenten** ein, mit dem eine frische Instanz startet, oder in die
-**Einstellungen** einer bereits laufenden Instanz (Schritt 3). Nichts muss in eine
+**Einrichtungsassistenten** ein, mit dem eine frische Instanz startet, oder in den Bereich
+**Admin** einer bereits laufenden Instanz (Schritt 3). Nichts muss in eine
 Konfigurationsdatei; siehe
 [Vorbelegung aus `.env`](#advanced-seeding-it-from-env), wenn eine Instanz lieber
 bereits konfiguriert starten soll. Das Gesamtbild und jede Alternative finden Sie unter
@@ -90,7 +90,7 @@ Installation. Für die OCR-Zuweisung ist Mistral trotzdem die bessere Wahl:
 
 Eine frische Instanz öffnet den **Einrichtungsassistenten**, nachdem Sie das
 Administratorkonto erstellt haben; eine bereits laufende Instanz hat dieselben Felder unter
-**Einstellungen** (für Administratoren sichtbar). So oder so sind es zwei Anbieter und drei
+**Admin** (für Administratoren sichtbar). So oder so sind es zwei Anbieter und drei
 Zuweisungen.
 
 ### Die Anbieter hinzufügen {#add-the-providers}
@@ -106,13 +106,13 @@ abgefragt und beide Einträge mit einem einzigen Absenden angelegt werden:
 Lassen Sie den zweiten Schlüssel leer, um alles über Mistral laufen zu lassen. Alles, was
 dieses Paar nicht abdeckt – eine Anmeldung mit ChatGPT, ein lokaler Sidecar, später ein
 zweiter Schlüssel –, finden Sie hinter **Stattdessen einen Anbieter manuell hinzufügen**;
-dasselbe bietet **Einstellungen → Anbieter** auf einer bereits laufenden Instanz. Aliasse
+dasselbe bietet **Admin → KI → Anbieter** auf einer bereits laufenden Instanz. Aliasse
 und Basis-URLs werden für Sie ausgefüllt.
 
 ### Die Modelle zuweisen {#bind-the-models}
 
 Der Schritt **Modelle wählen** des Assistenten kommt mit allen drei Zuweisungen, die bereits
-anhand der obigen Schlüssel ausgefüllt sind; **Einstellungen → Modelle** hat dieselben Felder.
+anhand der obigen Schlüssel ausgefüllt sind; **Admin → KI → Modelle** hat dieselben Felder.
 
 | Zuweisung | Anbieter | Modell |
 | --- | --- | --- |
@@ -121,7 +121,7 @@ anhand der obigen Schlüssel ausgefüllt sind; **Einstellungen → Modelle** hat
 | Embeddings *(optional)* | Mistral | `mistral-embed` |
 
 Allgemeine KI übernimmt hier alles, was ein Sprachmodell tut, daher sind diese drei Felder
-alles, was eine funktionierende Installation braucht. **Einstellungen → Modelle** ergänzt ein
+alles, was eine funktionierende Installation braucht. **Admin → KI → Modelle** ergänzt ein
 optionales **Erweitertes Modell**, das nur die Denkschleife von Deep Research antreibt. Setzen
 Sie den Embedding-Anbieter auf **Keiner**, damit Deep Research nur mit Stichwörtern arbeitet –
 das ist die eine Zuweisung, von der nichts anderes abhängt. Wenn ein gewünschtes Modell nicht
@@ -129,7 +129,7 @@ in einer Auswahlliste steht, geben Sie es unter **Eigene Modell-ID** ein. Nach
 **Einrichtung abschließen** wird der erste Upload per OCR erfasst, getaggt und durchsuchbar.
 
 Alles hier wird im laufenden Betrieb neu geladen: Die Änderung eines Anbieters oder einer
-Zuweisung in den Einstellungen wirkt ab der nächsten Anfrage, ohne Neustart.
+Zuweisung unter Admin wirkt ab der nächsten Anfrage, ohne Neustart.
 
 Zwei Dinge sollten Sie wissen, bevor Sie Embeddings zugewiesen lassen: Damit verpflichten Sie
 sich, das gesamte Archiv einzubetten, nicht nur den nächsten Upload – siehe
@@ -143,7 +143,7 @@ alles neu ein, weil sich Vektoren aus zwei Modellen nicht vergleichen lassen.
 Nur nützlich, wenn eine *frische* Instanz bereits konfiguriert starten soll – bei einem
 skriptgesteuerten Deployment oder einem Volume, das Sie neu anlegen wollen. Die Variablen
 werden **nur beim ersten Start** gelesen, wenn der Einstellungsdatensatz noch nicht existiert;
-danach sind die **Einstellungen** maßgeblich, und eine Änderung an `.env` bewirkt nichts.
+danach ist **Admin** maßgeblich, und eine Änderung an `.env` bewirkt nichts.
 
 ```dotenv
 # General AI — extraction, Ask AI, search, Deep Research
@@ -172,7 +172,7 @@ Administratorkonto und ist dann fertig. Jede Variable ist unter
   abgedeckt: einen Sprachmodell-Anbieter *und* einen OCR-Anbieter. Der Opencode-Go-Eintrag
   erfüllt die erste, der Mistral-Eintrag die zweite.
 - **`.env` hat nichts geändert** – diese Variablen gelten nur beim ersten Start eines frischen
-  Volumes. Auf einer Instanz, die bereits gestartet wurde, verwenden Sie die **Einstellungen**.
+  Volumes. Auf einer Instanz, die bereits gestartet wurde, verwenden Sie **Admin**.
 - **Jede Anfrage an Opencode schlägt mit 500 oder 404 fehl** – das SDK muss `opencode` sein,
   nicht `openai` mit einer darauf zeigenden Basis-URL. Siehe
   [die Routing-Tabelle](/de/ai_providers#troubleshooting).

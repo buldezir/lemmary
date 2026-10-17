@@ -227,7 +227,7 @@ docker compose -f docker-compose.yml -f docker-compose.local-ocr.yml \
 ```
 
 Danach `OCR_SDK=docling` in `.env` auf einem frischen Volume oder ein
-Docling-Anbieter unter **Einstellungen → Anbieter** auf einer Instanz, die bereits
+Docling-Anbieter unter **Admin → KI → Anbieter** auf einer Instanz, die bereits
 gestartet wurde. Umsonst ist das nicht: ein Image von mehreren Gigabyte, mehrere
 Gigabyte RAM und Sekunden pro Seite statt Millisekunden. Lesen Sie zuerst
 [Lokale OCR](/de/local_ocr), insbesondere den Abschnitt zum Timeout, der erhöht

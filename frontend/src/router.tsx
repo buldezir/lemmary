@@ -27,6 +27,7 @@ import { DocumentAskPage } from './routes/document.$documentId.ask'
 import { OCRTestPage } from './routes/ocr-test'
 import { SearchPage } from './routes/search'
 import { ResearchPage } from './routes/research'
+import { AdminPage } from './routes/admin'
 import { SettingsPage } from './routes/settings'
 import { SettingsAppearancePage } from './routes/settings.index'
 import { SettingsAIPage } from './routes/settings.ai'
@@ -37,13 +38,20 @@ import { SettingsDuplicatesPage } from './routes/settings.duplicates'
 import { SettingsIngestPage } from './routes/settings.ingest'
 import { SettingsMCPPage } from './routes/settings.mcp'
 import { MaintenancePage } from './routes/maintenance'
-import { ManagementPage } from './routes/management'
 import { ManagementUsersPage } from './routes/management.users'
 import { ImportPage } from './routes/import'
 import { ImportNgxPage, ImportPapraPage } from './routes/import.remote'
 import { ImportArchivePage } from './routes/import.archive'
 import { ExportPage } from './routes/export'
-import { AccountPage } from './routes/account'
+import {
+  AccountAgentsPage,
+  AccountPage,
+  AccountPaperlessPage,
+  AccountPasskeysPage,
+  AccountPasswordPage,
+  AccountPreferencesPage,
+  AccountProfilePage,
+} from './routes/account'
 import { TagsPage } from './routes/tags'
 import { BulkActionsPage } from './routes/bulk'
 
@@ -189,12 +197,18 @@ const ocrTestRoute = createRoute({
   component: OCRTestPage,
 })
 
-// A shell with one tab per section; the guard sits on the parent, which the
-// tabs inherit.
-const settingsRoute = createRoute({
+// Pathless: one shell and one guard for settings, management and maintenance, which
+// keep the URLs they had as separate pages.
+const adminRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/settings',
+  id: 'admin',
   beforeLoad: requireAdmin,
+  component: AdminPage,
+})
+
+const settingsRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: 'settings',
   component: SettingsPage,
 })
 
@@ -248,23 +262,14 @@ const settingsMCPRoute = createRoute({
 })
 
 const managementRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/management',
-  beforeLoad: requireAdmin,
-  component: ManagementPage,
-})
-
-// Users is the first tab, so it sits on /management itself.
-const managementUsersRoute = createRoute({
-  getParentRoute: () => managementRoute,
-  path: '/',
+  getParentRoute: () => adminRoute,
+  path: 'management',
   component: ManagementUsersPage,
 })
 
 const maintenanceRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/maintenance',
-  beforeLoad: requireAdmin,
+  getParentRoute: () => adminRoute,
+  path: 'maintenance',
   component: MaintenancePage,
 })
 
@@ -308,6 +313,43 @@ const accountRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/account',
   component: AccountPage,
+})
+
+// Profile is the first section, so it sits on /account itself.
+const accountProfileRoute = createRoute({
+  getParentRoute: () => accountRoute,
+  path: '/',
+  component: AccountProfilePage,
+})
+
+const accountPreferencesRoute = createRoute({
+  getParentRoute: () => accountRoute,
+  path: 'preferences',
+  component: AccountPreferencesPage,
+})
+
+const accountAgentsRoute = createRoute({
+  getParentRoute: () => accountRoute,
+  path: 'agents',
+  component: AccountAgentsPage,
+})
+
+const accountPaperlessRoute = createRoute({
+  getParentRoute: () => accountRoute,
+  path: 'paperless',
+  component: AccountPaperlessPage,
+})
+
+const accountPasswordRoute = createRoute({
+  getParentRoute: () => accountRoute,
+  path: 'password',
+  component: AccountPasswordPage,
+})
+
+const accountPasskeysRoute = createRoute({
+  getParentRoute: () => accountRoute,
+  path: 'passkeys',
+  component: AccountPasskeysPage,
 })
 
 // No guard, same as accountRoute: tags are per-user, not an admin setting.
@@ -354,21 +396,30 @@ const routeTree = rootRoute.addChildren([
     researchRoute.addChildren([researchSessionRoute]),
   ]),
   ocrTestRoute,
-  settingsRoute.addChildren([
-    settingsAppearanceRoute,
-    settingsAIRoute,
-    settingsProcessingRoute,
-    settingsFieldsRoute,
-    settingsWorkerRoute,
-    settingsDuplicatesRoute,
-    settingsIngestRoute,
-    settingsMCPRoute,
+  adminRoute.addChildren([
+    settingsRoute.addChildren([
+      settingsAppearanceRoute,
+      settingsAIRoute,
+      settingsProcessingRoute,
+      settingsFieldsRoute,
+      settingsWorkerRoute,
+      settingsDuplicatesRoute,
+      settingsIngestRoute,
+      settingsMCPRoute,
+    ]),
+    managementRoute,
+    maintenanceRoute,
   ]),
-  managementRoute.addChildren([managementUsersRoute]),
-  maintenanceRoute,
   importRoute.addChildren([importArchiveRoute, importNgxRoute, importPapraRoute, importArchiveAliasRoute]),
   exportRoute,
-  accountRoute,
+  accountRoute.addChildren([
+    accountProfileRoute,
+    accountPreferencesRoute,
+    accountAgentsRoute,
+    accountPaperlessRoute,
+    accountPasswordRoute,
+    accountPasskeysRoute,
+  ]),
   tagsRoute,
   bulkRoute,
   documentRoute,

@@ -1,8 +1,8 @@
 import { isValidElement, type ReactElement } from 'react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { de } from './de'
 import { en } from './en'
-import { lang, pickLanguage, translator, type Catalog, type MessageKey } from '.'
+import { adoptLanguage, lang, pickLanguage, translator, type Catalog, type MessageKey } from '.'
 import { ru } from './ru'
 
 function placeholders(entry: Catalog[MessageKey]): string[] {
@@ -26,6 +26,46 @@ describe('pickLanguage', () => {
 
   it('is English under Node, so unit tests see English labels', () => {
     expect(lang).toBe('en')
+  })
+})
+
+describe('adoptLanguage', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function stubBrowser(cookieSticks: boolean) {
+    let cookie = ''
+    vi.stubGlobal('document', {
+      get cookie() {
+        return cookie
+      },
+      set cookie(next: string) {
+        if (cookieSticks) cookie = next.split(';')[0]
+      },
+    })
+    const reload = vi.fn()
+    vi.stubGlobal('window', { location: { reload } })
+    return reload
+  }
+
+  it('reloads into the language once the cookie holds it', () => {
+    const reload = stubBrowser(true)
+    adoptLanguage('de')
+    expect(reload).toHaveBeenCalledOnce()
+  })
+
+  // The reload would read the old language back and adopt again, forever.
+  it('stays put when the browser refuses the cookie', () => {
+    const reload = stubBrowser(false)
+    adoptLanguage('de')
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('does nothing for the language already showing', () => {
+    const reload = stubBrowser(true)
+    adoptLanguage(lang)
+    expect(reload).not.toHaveBeenCalled()
   })
 })
 

@@ -55,8 +55,8 @@ docling-serve with `DOCLING_SERVE_API_KEY` and put the same value in
 
 On an instance that has already booted, `.env` is not the place: the AI block
 seeds the database on the **first** boot only. Add the provider under
-**Settings → Providers** instead (the base URL is prefilled and there is no API
-key field), then bind it under **Settings → Models → OCR**.
+**Admin → AI → Providers** instead (the base URL is prefilled and there is no API
+key field), then bind it under **Admin → AI → Models → OCR**.
 
 ## What it costs
 
@@ -92,7 +92,7 @@ WORKER_TIMEOUT_SEC=1800
 ```
 
 Both are **seeded on the first boot only**. On an instance that has already run,
-the variables are ignored and the values are changed in **Settings** instead.
+the variables are ignored and the values are changed in **Admin** instead.
 This is the most common reason a working sidecar produces failed documents.
 
 The sidecar has a matching ceiling of its own: docling-serve abandons a
@@ -114,7 +114,7 @@ would only queue, while each page's timeout ran down waiting for a core. So a
 
 ## Choosing an engine
 
-Bind an **OCR model** in **Settings → Models** to change what runs inside the
+Bind an **OCR model** in **Admin → AI → Models** to change what runs inside the
 sidecar. It is optional — blank uses the container's default, which is the right
 answer for most installs. For this SDK the field names an OCR engine rather than
 a model:
@@ -149,7 +149,7 @@ instead, as in [Local OCR and embeddings on a Mac](/local_ai_macos).
 
 ## Troubleshooting
 
-- **Documents fail with a timeout.** Raise `OCR_TIMEOUT_SEC` in **Settings**,
+- **Documents fail with a timeout.** Raise `OCR_TIMEOUT_SEC` in **Admin**,
   not in `.env`, unless this is a first boot. See [What it costs](#what-it-costs).
 - **The first document after a restart fails, later ones work.** The models were
   still loading. Check that the named volume is mounted — `docker compose config`
@@ -159,7 +159,7 @@ instead, as in [Local OCR and embeddings on a Mac](/local_ai_macos).
   needs `--profile docling`.
 - **`HTTP 401: Unauthorized`.** The sidecar was started with
   `DOCLING_SERVE_API_KEY` but the provider has no key. Put the same value in
-  `OCR_API_KEY`, or in the provider's API key field in **Settings**.
+  `OCR_API_KEY`, or in the provider's API key field in **Admin**.
 - **TXT, CSV, DOCX and XLSX never reach the sidecar.** Lemmary parses those
   itself, so a problem with one of them is not an OCR problem.
 - **Try it before trusting it.** The **OCR test** page runs one file through a

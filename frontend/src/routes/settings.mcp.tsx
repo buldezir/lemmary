@@ -51,7 +51,7 @@ export function SettingsMCPPage() {
         <p className="mb-4 text-sm text-ink-soft">
           {tNode('settingsMcp.connect', {
             link: (
-              <Link to="/account" hash="agents" className="underline hover:text-oxblood">
+              <Link to="/account/agents" className="underline hover:text-oxblood">
                 {t('settingsMcp.accountLink')}
               </Link>
             ),

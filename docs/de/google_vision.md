@@ -55,4 +55,4 @@ Sobald die API aktiviert ist, können Sie Ihre eigentlichen Zugangsdaten erzeuge
 2. Klicken Sie oben auf dem Bildschirm auf die Schaltfläche **+ Create Credentials**.
 3. Wählen Sie **API key** aus der Dropdown-Liste.
 4. Ein Pop-up zeigt Ihren neuen API-Schlüssel an (eine lange Zeichenfolge aus Buchstaben und Ziffern).
-5. Kopieren Sie diesen Schlüssel in die Zwischenablage. Fügen Sie ihn unter **Einstellungen → Anbieter** als `google_vision`-Anbieter ein oder vor dem ersten Start in `.env` als `OCR_API_KEY=`, zusammen mit `OCR_SDK=google_vision`.
+5. Kopieren Sie diesen Schlüssel in die Zwischenablage. Fügen Sie ihn unter **Admin → KI → Anbieter** als `google_vision`-Anbieter ein oder vor dem ersten Start in `.env` als `OCR_API_KEY=`, zusammen mit `OCR_SDK=google_vision`.

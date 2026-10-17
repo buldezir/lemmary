@@ -129,7 +129,7 @@ affordable.
   not resolve, rather than matching everything.
 
 The reasoning loop itself runs on the **Advanced model** (`AI_RESEARCH_MODEL`,
-or **Advanced model** in Settings) while the bulk reads above stay on **General
+or **Advanced model** in Admin) while the bulk reads above stay on **General
 AI**, because that work is many cheap calls where the loop is a few expensive
 ones; with no Advanced model bound, the whole of research runs on General AI at
 its price. A General AI model that rejects JSON mode is retried in plain text
@@ -148,6 +148,6 @@ Each page is its own path — `/rag/search` and `/rag/research` — so which one
 
 A chat stays on the page it started on. A transcript is a sequence: its answers were produced by one of the two, and the next turn replays them to the model as its own prior work, so switching underneath would answer a later question in a way the earlier ones do not support. There is no control that moves a chat across; opening `/rag/search/<research-chat>` redirects to the path that matches, and a turn sent to the page a chat does not belong to is a 409. A saved chat reopens on the path it ran on.
 
-Configure **General AI**, the **Advanced model** and **Deep search languages** in [Settings](/ai_providers#binding-models-in-settings).
+Configure **General AI**, the **Advanced model** and **Deep search languages** in [Admin](/ai_providers#binding-models-in-settings).
 
 How a chat is stored, resumed and cancelled is in [Chat sessions](/setup#chat-sessions).

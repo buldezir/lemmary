@@ -10,7 +10,7 @@ password form — no rebuild or environment variable needed.
 
 ## Step 1: Enable a provider in PocketBase
 
-1. Open the PocketBase admin UI (the **Admin** entry in the app's **More** menu, or
+1. Open the PocketBase admin UI (the **Database** entry in the app's **More** menu, or
    `/_/` on the server) and sign in with the admin account created during setup.
 2. Go to **Collections → users → Options → OAuth2**.
 3. Toggle **Enable** and add a provider (Google, GitHub, OIDC, …).

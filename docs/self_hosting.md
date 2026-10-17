@@ -212,7 +212,7 @@ docker compose -f docker-compose.yml -f docker-compose.local-ocr.yml \
 ```
 
 Then `OCR_SDK=docling` in `.env` on a fresh volume, or a Docling provider under
-**Settings → Providers** on an instance that has already booted. It is not free:
+**Admin → AI → Providers** on an instance that has already booted. It is not free:
 a multi-gigabyte image, several gigabytes of RAM, and seconds a page instead of
 milliseconds. Read [Local OCR](/local_ocr) first, in particular the timeout,
 which has to go up.

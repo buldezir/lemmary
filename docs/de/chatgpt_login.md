@@ -26,7 +26,7 @@ Abonnement laufen – eine Instanz, deren einziger KI-Zugang ein ChatGPT-Platz i
 damit eine vollständige Installation, ganz ohne API-Schlüssel.
 
 Embeddings sind die Ausnahme, und zwar grundsätzlich: Der Endpunkt hat überhaupt kein
-`/embeddings`, daher lehnen die Einstellungen diese Zuweisung ab. Deep Research
+`/embeddings`, daher lehnt die Admin-Seite diese Zuweisung ab. Deep Research
 funktioniert auch ohne sie – es weicht auf Stichwortsuche aus –, aber seine dichte Hälfte
 braucht einen Anbieter mit Schlüssel oder den
 [Sidecar für lokale Embeddings](/de/local_embeddings).
@@ -78,7 +78,7 @@ die die Einstellung nennt.
 
 ### 2. Den Anbieter hinzufügen und anmelden {#_2-add-the-provider-and-sign-in}
 
-1. **Einstellungen → Anbieter → Anbieter hinzufügen**, SDK **ChatGPT-Abonnement**. Es gibt
+1. **Admin → KI → Anbieter → Anbieter hinzufügen**, SDK **ChatGPT-Abonnement**. Es gibt
    kein Feld für einen API-Schlüssel. Speichern Sie.
 2. Der gespeicherte Eintrag erhält eine Schaltfläche **Mit ChatGPT anmelden**. Klicken Sie
    darauf, und Lemmary zeigt einen kurzen Code und einen Link an.
@@ -88,7 +88,7 @@ die die Einstellung nennt.
 
 ### 3. Die Modelle zuweisen {#_3-bind-the-models}
 
-Richten Sie unter **Einstellungen → Modelle** die **Allgemeine KI**, das **Erweiterte
+Richten Sie unter **Admin → KI → Modelle** die **Allgemeine KI**, das **Erweiterte
 Modell** oder die **OCR** auf den neuen Anbieter und wählen Sie ein Modell. Die
 Auswahlliste wird lokal bereitgestellt – der Endpunkt veröffentlicht keinen Katalog –, und
 das Feld **Eigene Modell-ID** nimmt alles an, was die Liste nicht nennt. Welche Modelle das
@@ -121,7 +121,7 @@ melden einen nicht konfigurierten Anbieter, bis sich wieder jemand anmeldet.
 ## Wo das Token liegt {#where-the-token-lives}
 
 In der Spalte `oauth` des Anbieter-Eintrags, neben den API-Schlüsseln aller anderen Anbieter.
-Wie ein Schlüssel wird es von der API nie zurückgegeben – die Einstellungen sehen nur, ob ein
+Wie ein Schlüssel wird es von der API nie zurückgegeben – die Admin-Seite sieht nur, ob ein
 Eintrag angemeldet ist, und den Kontonamen, mit dem er angemeldet wurde.
 
 Das Access-Token ist etwa eine Stunde gültig und wird vor Ort erneuert, ungefähr einmal pro
@@ -148,7 +148,7 @@ einem Anbieter mit Schlüssel zu, während Sie herausfinden, was davon zutrifft.
 aber nicht lesen, oder es war ein kleines Modell bei einem schlechten Scan. Versuchen Sie zuerst
 ein größeres Modell. `OCR_SDK=chatgpt` wird übrigens in `.env` abgelehnt: Die Umgebung kann
 einen Schlüssel tragen, aber keine Anmeldung, daher wird OCR diesem Anbieter über die
-Einstellungen zugewiesen.
+Admin-Seite zugewiesen.
 
 **"LLM OCR does not support mime type ..."** – der Anhangsweg akzeptiert nur PDFs und Bilder,
 genau wie bei OpenAI und OpenRouter. Alles andere braucht Mistral, Google Vision oder den

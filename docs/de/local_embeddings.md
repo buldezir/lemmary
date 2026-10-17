@@ -79,7 +79,7 @@ docker compose -f docker-compose.yml \
                -f docker-compose.embeddings.yml up
 ```
 
-In beiden Fällen zeigt **Einstellungen → Modelle** anschließend das eine Modell an, das
+In beiden Fällen zeigt **Admin → KI → Modelle** anschließend das eine Modell an, das
 der Sidecar bereitstellt.
 
 ## Ein Modell wählen {#choosing-a-model}
@@ -136,12 +136,12 @@ das gesamte Archiv neu einzubetten – und das erfordert **zwei** Schritte, weil
 Umgebung die Datenbank nur beim ersten Start vorbelegt:
 
 1. Ändern Sie `EMBEDDINGS_MODEL` und erstellen Sie den Sidecar neu.
-2. Ändern Sie das Modell außerdem unter **Einstellungen → Modelle**.
+2. Ändern Sie das Modell außerdem unter **Admin → KI → Modelle**.
 
 Wenn Sie nur den ersten Schritt ausführen, nennt die Zuweisung weiterhin das alte
 Modell, während der Sidecar das neue bereitstellt. Das wird erkannt und ist nicht
 stillschweigend falsch – die App speichert die Vektorlänge aus der ersten Antwort des
 Anbieters und lehnt eine spätere Abweichung ab –, aber das Archiv erzeugt keine
-Embeddings mehr, bis die Zuweisung korrigiert ist. Eine Änderung in den Einstellungen
+Embeddings mehr, bis die Zuweisung korrigiert ist. Eine Änderung unter Admin
 setzt die gespeicherten Dimensionen zurück und baut den Chunk-Index neu auf, was ein
 Modellwechsel tatsächlich erfordert.

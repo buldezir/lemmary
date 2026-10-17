@@ -16,7 +16,8 @@ function GitHubIcon() {
   )
 }
 
-export function AppFooter() {
+/** `showLanguage` off inside the app, where Account → Preferences has the choice. */
+export function AppFooter({ showLanguage = true }: { showLanguage?: boolean }) {
   return (
     <footer className="mt-auto border-t border-line px-4 py-4 text-center text-[11px] uppercase tracking-[0.14em] text-ink-soft">
       <p className="inline-flex items-center">
@@ -54,21 +55,25 @@ export function AppFooter() {
         >
           <GitHubIcon />
         </a>
-        <span className="mx-2 text-line-strong" aria-hidden="true">
-          ·
-        </span>
-        <select
-          aria-label={t('common.language')}
-          value={lang}
-          onChange={(e) => setLanguage(e.target.value as Language)}
-          className="cursor-pointer bg-transparent uppercase tracking-[0.14em] outline-none transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-oxblood"
-        >
-          {Object.entries(languageNames).map(([code, name]) => (
-            <option key={code} value={code}>
-              {name}
-            </option>
-          ))}
-        </select>
+        {showLanguage && (
+          <>
+            <span className="mx-2 text-line-strong" aria-hidden="true">
+              ·
+            </span>
+            <select
+              aria-label={t('common.language')}
+              value={lang}
+              onChange={(e) => setLanguage(e.target.value as Language)}
+              className="cursor-pointer bg-transparent uppercase tracking-[0.14em] outline-none transition-colors hover:text-oxblood focus-visible:outline-2 focus-visible:outline-oxblood"
+            >
+              {Object.entries(languageNames).map(([code, name]) => (
+                <option key={code} value={code}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
       </p>
     </footer>
   )

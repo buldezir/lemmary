@@ -24,3 +24,23 @@ export function previewKind(filename: string): PreviewKind {
   }
   return 'none'
 }
+
+/**
+ * The thumb size migration 1730000060 declares on the documents file field.
+ * PocketBase scales only to a declared size; any other serves the original.
+ */
+export const DOCUMENT_THUMB = '400x0'
+
+/**
+ * What a document card can show as a picture: a PDF's rendered first page, or
+ * an image itself, scaled. Nothing for the rest.
+ */
+export function cardImage(document: { file: string; preview?: string }): { name: string; thumb?: string } | null {
+  if (document.preview) {
+    return { name: document.preview }
+  }
+  if (previewKind(document.file) === 'image') {
+    return { name: document.file, thumb: DOCUMENT_THUMB }
+  }
+  return null
+}

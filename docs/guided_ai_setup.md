@@ -6,7 +6,7 @@ the whole pipeline works — extraction, chat, Deep Research and meaning-based
 retrieval.
 
 Get the two keys (steps 1 and 2), then paste them into the **setup wizard** a
-fresh instance opens on, or into **Settings** on one that is already
+fresh instance opens on, or into **Admin** on one that is already
 running (step 3). Nothing needs to go in a config file; see
 [Seeding it from `.env`](#advanced-seeding-it-from-env) if you would rather an
 instance came up already configured. The full picture, and every alternative,
@@ -83,7 +83,7 @@ better choice for the OCR binding:
 ## Step 3: Enter them in Lemmary
 
 A fresh instance opens the **setup wizard** after you create the admin account;
-an instance that is already running has the same fields under **Settings**
+an instance that is already running has the same fields under **Admin**
 (visible to admins). Either way it is two providers and three bindings.
 
 ### Add the providers
@@ -98,14 +98,14 @@ two keys and creates both rows in one submit:
 
 Leave the second key blank to run everything on Mistral. Anything the pair does
 not cover — a ChatGPT sign-in, a local sidecar, a second key later — is behind
-**Add a provider manually instead**, which is also what **Settings → Providers**
+**Add a provider manually instead**, which is also what **Admin → AI → Providers**
 offers on an instance that is already running. Aliases and base URLs are filled
 in for you.
 
 ### Bind the models
 
 The wizard's **Choose models** step arrives with all three bindings already
-filled from the keys above; **Settings → Models** has the same fields.
+filled from the keys above; **Admin → AI → Models** has the same fields.
 
 | Binding | Provider | Model |
 | --- | --- | --- |
@@ -114,14 +114,14 @@ filled from the keys above; **Settings → Models** has the same fields.
 | Embeddings *(optional)* | Mistral | `mistral-embed` |
 
 General AI does everything a language model does here, so those three fields
-are the whole of a working install. **Settings → Models** adds an optional
+are the whole of a working install. **Admin → AI → Models** adds an optional
 **Advanced model** that drives only the Deep Research reasoning loop. Set the
 embeddings provider to **None** to leave Deep Research on keywords alone — it is
 the one binding nothing else depends on. If a model you want is not in a picker,
 type it into **Custom model id**. **Finish setup** and the first upload will be
 OCR'd, tagged and searchable.
 
-Everything here hot-reloads: changing a provider or a binding in Settings takes
+Everything here hot-reloads: changing a provider or a binding in Admin takes
 effect on the next request, with no restart.
 
 Two things worth knowing before you leave embeddings bound: it commits to embedding
@@ -136,7 +136,7 @@ everything, because vectors from two models cannot be compared.
 Only useful if you want a *fresh* instance to come up already configured — a
 scripted deploy, or a volume you expect to recreate. The variables are read on
 the **first boot only**, when the settings row does not exist yet; after that
-**Settings** is the authority and editing `.env` changes nothing.
+**Admin** is the authority and editing `.env` changes nothing.
 
 ```dotenv
 # General AI — extraction, Ask AI, search, Deep Research
@@ -165,7 +165,7 @@ admin account and then finishes. Every variable is described in
   language-model provider *and* an OCR provider. The Opencode Go row satisfies
   the first, the Mistral row the second.
 - **`.env` changed nothing** — those variables apply on the first boot of a
-  fresh volume only. On an instance that has already booted, use **Settings**.
+  fresh volume only. On an instance that has already booted, use **Admin**.
 - **Every Opencode request fails with a 500 or 404** — the SDK must be
   `opencode`, not `openai` with a base URL pointed at it. See
   [the routing table](/ai_providers#troubleshooting).

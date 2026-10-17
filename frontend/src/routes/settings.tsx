@@ -5,9 +5,9 @@ import { tabClassName } from '../components/ui'
 import { t } from '../i18n'
 
 /**
- * The Settings shell: a header, the tabs, and whichever tab is on the URL. Each
- * tab saves only its own fields -- the settings PATCH treats every field as
- * optional, so a tab naming its own leaves the rest of the record alone.
+ * The Settings section: the tabs and whichever tab is on the URL. Each tab saves
+ * only its own fields -- the settings PATCH treats every field as optional, so a
+ * tab naming its own leaves the rest of the record alone.
  */
 export function SettingsPage() {
   // unknown/failed meta counts as managed; see AppMeta.managed
@@ -15,18 +15,8 @@ export function SettingsPage() {
   const hostEditable = managed === false
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <div className="mb-5">
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">{t('settings.title')}</h1>
-        <p className="mt-1 text-sm text-ink-soft">
-          {t('settings.intro')}
-        </p>
-        {!hostEditable && (
-          <p className="mt-2 text-sm text-ink-soft">
-            {t('settings.aiManaged')}
-          </p>
-        )}
-      </div>
+    <>
+      {!hostEditable && <p className="mb-5 text-sm text-ink-soft">{t('settings.aiManaged')}</p>}
 
       <nav
         aria-label={t('settings.sectionsLabel')}
@@ -69,6 +59,6 @@ export function SettingsPage() {
       </nav>
 
       <Outlet />
-    </div>
+    </>
   )
 }

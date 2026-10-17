@@ -10,7 +10,7 @@ ohne Neubau und ohne Umgebungsvariable.
 
 ## Schritt 1: Einen Anbieter in PocketBase aktivieren {#step-1-enable-a-provider-in-pocketbase}
 
-1. Öffnen Sie die PocketBase-Admin-Oberfläche (den Eintrag **Admin** im Menü **Mehr** der App oder
+1. Öffnen Sie die PocketBase-Admin-Oberfläche (den Eintrag **Datenbank** im Menü **Mehr** der App oder
    `/_/` auf dem Server) und melden Sie sich mit dem bei der Einrichtung erstellten Administratorkonto an.
 2. Gehen Sie zu **Collections → users → Options → OAuth2**.
 3. Schalten Sie **Enable** ein und fügen Sie einen Anbieter hinzu (Google, GitHub, OIDC, …).

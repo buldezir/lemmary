@@ -34,10 +34,8 @@ export const ru: Catalog = {
   'nav.ocrTest': 'Тест OCR',
   'nav.export': 'Экспорт',
   'nav.import': 'Импорт',
-  'nav.settings': 'Настройки',
-  'nav.management': 'Управление',
-  'nav.maintenance': 'Обслуживание',
   'nav.admin': 'Админ-панель',
+  'nav.database': 'База данных',
 
   'documentStatus.pending': 'Ожидает',
   'documentStatus.processing': 'Обрабатывается',
@@ -1232,8 +1230,14 @@ export const ru: Catalog = {
   'import.sourcesLabel': 'Источники импорта',
   'import.tabArchive': 'Архив Lemmary',
 
-  'settings.title': 'Настройки',
-  'settings.intro': 'Настройки OCR, ИИ и обработчика заданий. Изменения применяются сразу.',
+  'admin.title': 'Админ-панель',
+  'admin.intro':
+    'Настройки всего сервера, учётные записи и обслуживание библиотеки. Изменения применяются сразу.',
+  'admin.sectionsLabel': 'Разделы админ-панели',
+  'admin.settings': 'Настройки',
+  'admin.management': 'Управление',
+  'admin.maintenance': 'Обслуживание',
+
   'settings.aiManaged':
     'ИИ-провайдеры, модели, тайм-ауты и обработчик задаёт ваш хостинг-провайдер, здесь их изменить нельзя.',
   'settings.sectionsLabel': 'Разделы настроек',
@@ -1245,11 +1249,6 @@ export const ru: Catalog = {
   'settings.tabDuplicates': 'Дубликаты',
   'settings.tabIngest': 'Поступление',
   'settings.tabMcp': 'MCP',
-
-  'management.title': 'Управление',
-  'management.intro': 'Учётные записи на этом сервере. Только для администраторов.',
-  'management.sectionsLabel': 'Разделы управления',
-  'management.tabUsers': 'Пользователи',
 
   'settingsIndex.nameRequired': 'Укажите название приложения',
   'settingsIndex.accentInvalid': 'Акцентный цвет должен быть в формате hex, например #6e2620',
@@ -1672,6 +1671,17 @@ export const ru: Catalog = {
   'account.title': 'Учётная запись',
   'account.intro': 'Как вы и ваши агенты входите в этот архив.',
 
+  'account.profile': 'Профиль',
+  'account.sectionsLabel': 'Разделы учётной записи',
+  'account.preferences': 'Предпочтения',
+  'account.cardLayout': 'Карточки документов',
+  'account.cardLayoutSummary': 'Сводка',
+  'account.cardLayoutPreview': 'Изображение первой страницы (как в paperless-ngx)',
+  'account.cardLayoutHint':
+    'Что карточка в списке документов показывает под заголовком. PDF и изображения показывают первую страницу; остальные файлы показывают сводку.',
+  'account.preferencesFailed': 'Не удалось сохранить настройку.',
+  'account.languageHint':
+    'Сохраняется в учётной записи и действует на всех устройствах, а также для сообщений сервера. После входа заменяет язык, выбранный на странице входа.',
   'importNgx.preserveLabel': 'Сохранить метаданные Paperless-ngx',
   'importNgx.preserveDescription':
     'Импортировать название, теги, корреспондента, тип документа, дату и текст OCR. Превью и поиск дубликатов всё равно выполняются; ИИ не перезаписывает метаданные.',
@@ -2073,8 +2083,6 @@ export const ru: Catalog = {
   'maintenance.reindexFailed': 'Переиндексация поиска не удалась',
   'maintenance.inFlight': 'Идёт обработка ({jobs}). Повторите, когда очередь опустеет.',
   'maintenance.pruneFailed': 'Очистка устаревших данных не удалась',
-  'maintenance.title': 'Обслуживание',
-  'maintenance.intro': 'Задачи обслуживания для всей библиотеки. Только для администраторов.',
   'maintenance.failedTitle': 'Ошибки обработки',
   'maintenance.failedHint':
     'Ставит новое задание для документов, обработка которых завершилась ошибкой. Оригиналы не затрагиваются. Задания выполняются по одному, поэтому партия обрабатывается постепенно — обрабатывайте заново партиями, а не всё сразу, чтобы держать расходы на OCR и ИИ под контролем.',

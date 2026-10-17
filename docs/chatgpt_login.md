@@ -25,7 +25,7 @@ run on the subscription — which means an instance whose only AI credential is 
 ChatGPT seat is a complete install, with no API key anywhere.
 
 Embeddings are the exception, and not a matter of degree: the endpoint has no
-`/embeddings` at all, so Settings refuses that binding. Deep Research still works
+`/embeddings` at all, so Admin refuses that binding. Deep Research still works
 without them — it falls back to keyword matching — but its dense half needs a
 keyed provider or the [local embeddings sidecar](/local_embeddings).
 
@@ -72,7 +72,7 @@ If you skip this, Lemmary's sign-in fails with a message naming the setting.
 
 ### 2. Add the provider and sign in
 
-1. **Settings → Providers → Add provider**, SDK **ChatGPT subscription**. There
+1. **Admin → AI → Providers → Add provider**, SDK **ChatGPT subscription**. There
    is no API key field. Save it.
 2. The saved row grows a **Sign in with ChatGPT** button. Press it and Lemmary
    shows a short code and a link.
@@ -82,7 +82,7 @@ If you skip this, Lemmary's sign-in fails with a message naming the setting.
 
 ### 3. Bind the models
 
-Under **Settings → Models**, point **General AI**, the **Advanced model** or
+Under **Admin → AI → Models**, point **General AI**, the **Advanced model** or
 **OCR** at the new provider and pick a model. The
 picker is served locally — the endpoint publishes no catalogue — and the
 **Custom model id** box takes anything the list does not name. Which models the
@@ -115,7 +115,7 @@ report an unconfigured provider until somebody signs in again.
 ## Where the token lives
 
 In the `oauth` column of the provider row, beside the API keys of every other
-provider. Like a key it is never returned by the API — Settings sees only
+provider. Like a key it is never returned by the API — Admin sees only
 whether a row is signed in, and the account name it was signed in with.
 
 The access token lasts about an hour and is refreshed in place, roughly once an
@@ -140,7 +140,7 @@ work out which.
 **OCR returns empty or invented text** — the model was handed the file but
 could not read it, or was a small model on a poor scan. Try a larger model
 first. `OCR_SDK=chatgpt` is refused in `.env`, by the way: the environment can
-carry a key but not a sign-in, so OCR is bound to this provider from Settings.
+carry a key but not a sign-in, so OCR is bound to this provider from Admin.
 
 **"LLM OCR does not support mime type ..."** — the attachment path takes PDFs
 and images only, the same as OpenAI and OpenRouter. Anything else needs Mistral,

@@ -512,13 +512,13 @@ happened. To try it without restarting anything, run it with `WD_DRY_RUN=1`.
 On an instance that has already booted, the AI settings in `.env` are ignored
 (they only seed the first boot). Configure it in the UI instead.
 
-**Settings → AI → Providers**
+**Admin → AI → Providers**
 
 - **Local Embeddings** (`local`): base URL `http://<MAC_IP>:8080/v1`, no
   API key.
 - **Local OCR** (`docling`): base URL `http://<MAC_IP>:5001`, no API key.
 
-**Settings → AI → Models**
+**Admin → AI → Models**
 
 - Embeddings: `BAAI/bge-m3`, which the picker fills in for a Local
   Embeddings provider. It matches the `--alias` above.

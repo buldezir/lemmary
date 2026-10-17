@@ -29,10 +29,8 @@ export const en = {
   'nav.ocrTest': 'OCR test',
   'nav.export': 'Export',
   'nav.import': 'Import',
-  'nav.settings': 'Settings',
-  'nav.management': 'Management',
-  'nav.maintenance': 'Maintenance',
   'nav.admin': 'Admin',
+  'nav.database': 'Database',
 
   'documentStatus.pending': 'Pending',
   'documentStatus.processing': 'Processing',
@@ -1053,8 +1051,14 @@ export const en = {
   'import.sourcesLabel': 'Import sources',
   'import.tabArchive': 'Lemmary archive',
 
-  'settings.title': 'Settings',
-  'settings.intro': 'Runtime configuration for OCR, AI, and the worker. Changes apply immediately.',
+  'admin.title': 'Admin',
+  'admin.intro':
+    'Configuration for the whole instance, its accounts and library maintenance. Changes apply immediately.',
+  'admin.sectionsLabel': 'Admin sections',
+  'admin.settings': 'Settings',
+  'admin.management': 'Management',
+  'admin.maintenance': 'Maintenance',
+
   'settings.aiManaged':
     'AI providers, models, timeouts and the worker are set by your hosting provider and are not editable here.',
   'settings.sectionsLabel': 'Settings sections',
@@ -1066,11 +1070,6 @@ export const en = {
   'settings.tabDuplicates': 'Duplicates',
   'settings.tabIngest': 'Ingest',
   'settings.tabMcp': 'MCP',
-
-  'management.title': 'Management',
-  'management.intro': 'Accounts on this instance. Admin only.',
-  'management.sectionsLabel': 'Management sections',
-  'management.tabUsers': 'Users',
 
   'settingsIndex.nameRequired': 'Application name is required',
   'settingsIndex.accentInvalid': 'Accent color must be a hex value like #6e2620',
@@ -1471,6 +1470,17 @@ export const en = {
   'account.title': 'Account',
   'account.intro': 'How you and your agents sign in to this archive.',
 
+  'account.profile': 'Profile',
+  'account.sectionsLabel': 'Account sections',
+  'account.preferences': 'Preferences',
+  'account.cardLayout': 'Document cards',
+  'account.cardLayoutSummary': 'Summary',
+  'account.cardLayoutPreview': 'Preview image (like paperless-ngx)',
+  'account.cardLayoutHint':
+    'What a card in the document list shows under its title. PDFs and images show their first page; other files keep their summary.',
+  'account.preferencesFailed': 'Could not save the preference.',
+  'account.languageHint':
+    'Saved to your account, so it follows you to every device, and used for the messages the server sends too. After you sign in, it replaces whatever the sign-in page was showing.',
   'importNgx.preserveLabel': 'Keep Paperless-ngx metadata',
   'importNgx.preserveDescription':
     'Import title, tags, correspondent, document type, date, and OCR text. Preview and duplicate detection still run; AI does not overwrite metadata.',
@@ -1767,8 +1777,6 @@ export const en = {
   'maintenance.reindexFailed': 'Search reindex failed',
   'maintenance.inFlight': 'Processing in flight ({jobs}). Try again when the queue is idle.',
   'maintenance.pruneFailed': 'Stale data cleanup failed',
-  'maintenance.title': 'Maintenance',
-  'maintenance.intro': 'Maintenance tasks that run over the whole library. Admin only.',
   'maintenance.failedTitle': 'Failed processing',
   'maintenance.failedHint':
     'Queues a fresh job for documents whose processing failed. Originals are never touched. Jobs run one at a time, so a batch drains gradually — reprocess in batches rather than all at once to keep OCR and AI spend under control.',

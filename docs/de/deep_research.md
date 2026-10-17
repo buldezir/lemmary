@@ -146,7 +146,7 @@ Runde erneut gesendet werden. Drei Dinge halten eine breite Frage bezahlbar.
   passen.
 
 Die Denkschleife selbst läuft auf dem **Erweiterten Modell** (`AI_RESEARCH_MODEL`
-oder **Erweitertes Modell** in den Einstellungen), während die umfangreichen
+oder **Erweitertes Modell** unter Admin), während die umfangreichen
 Lesevorgänge oben bei **Allgemeine KI** bleiben, weil diese Arbeit aus vielen
 günstigen Aufrufen besteht, die Schleife dagegen aus wenigen teuren; ist kein
 Erweitertes Modell zugeordnet, läuft die gesamte Recherche auf Allgemeine KI zu
@@ -168,6 +168,6 @@ Jede Seite hat ihren eigenen Pfad – `/rag/search` und `/rag/research` –, sod
 
 Ein Chat bleibt auf der Seite, auf der er begonnen wurde. Ein Verlauf ist eine Abfolge: Seine Antworten wurden von einer der beiden Seiten erzeugt, und die nächste Runde spielt sie dem Modell als dessen eigene vorherige Arbeit vor, sodass ein Wechsel darunter eine spätere Frage auf eine Weise beantworten würde, die die früheren nicht stützen. Es gibt kein Bedienelement, das einen Chat hinüberverschiebt; das Öffnen von `/rag/search/<research-chat>` leitet auf den passenden Pfad weiter, und eine Runde, die an die Seite gesendet wird, zu der ein Chat nicht gehört, ergibt einen 409. Ein gespeicherter Chat öffnet sich wieder auf dem Pfad, auf dem er lief.
 
-Konfigurieren Sie **Allgemeine KI**, das **Erweiterte Modell** und **Deep-Search-Sprachen** in den [Einstellungen](/de/ai_providers#binding-models-in-settings).
+Konfigurieren Sie **Allgemeine KI**, das **Erweiterte Modell** und **Deep-Search-Sprachen** unter [Admin](/de/ai_providers#binding-models-in-settings).
 
 Wie ein Chat gespeichert, fortgesetzt und abgebrochen wird, steht unter [Chat-Sitzungen](/de/setup#chat-sessions).

@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router'
+import { useState } from 'react'
 import { t, tNode } from '../i18n'
 import { SHARED_TAG_NAME, type DocumentRecord } from '../lib/api/documents'
 import { CORRESPONDENT_FIELD_ID, DOCUMENT_TYPE_FIELD_ID, optionName } from '../lib/api/customFields'
@@ -30,6 +31,10 @@ type Props = {
   onAcceptSuggestedTag?: (id: string, name: string) => void
   /** An accept is in flight; the chips wait for it. */
   acceptingSuggestion?: boolean
+  /** The first page's image, shown in place of the summary. */
+  previewUrl?: string
+  /** The image did not load; the card has gone back to its summary. */
+  onPreviewError?: () => void
 }
 
 /** Reads as a tag but is not one: it says the document belongs to another account. */
@@ -51,6 +56,10 @@ function CardDescription({ document }: { document: DocumentRecord }) {
   }
 
   // With no summary to show, say why the document is waiting instead.
+  return <ReviewReason document={document} />
+}
+
+function ReviewReason({ document }: { document: DocumentRecord }) {
   switch (reviewReason(document)) {
     case 'duplicate': {
       const originalTitle =
@@ -97,7 +106,12 @@ export function DocumentCard({
   job,
   onAcceptSuggestedTag,
   acceptingSuggestion,
+  previewUrl,
+  onPreviewError,
 }: Props) {
+  // Keyed by URL: a fresh token gives the image a new address and another try.
+  const [failedUrl, setFailedUrl] = useState<string>()
+  const imageUrl = previewUrl !== failedUrl ? previewUrl : undefined
   const tags = document.expand?.tags ?? []
   const suggestions =
     onAcceptSuggestedTag && document.processing_status === 'needs_review'
@@ -112,6 +126,44 @@ export function DocumentCard({
   const canMarkReviewed =
     Boolean(onMarkReviewed) && !shared && document.processing_status === 'needs_review'
   const status = DOCUMENT_STATUS_STYLES[document.processing_status]
+  // Over the preview they sit on the page's bottom edge, each on its own backing,
+  // and the rows that do not fit in the lower part of the page are cut off.
+  const tagChips = (shared || tags.length > 0) && (
+    <div
+      className={`flex flex-wrap gap-1.5 ${imageUrl ? 'absolute inset-x-2 bottom-2 max-h-[45%] overflow-hidden *:bg-surface *:shadow-sm *:shadow-ink/10' : ''}`}
+    >
+      {/* Wrapped, so the overlay's backing goes under the chip's own tint rather than over it. */}
+      {shared && (
+        <span className="flex">
+          <SharedChip />
+        </span>
+      )}
+      {tags.map((tag) =>
+        onFilterTag ? (
+          // Above the full-bleed link, like the checkbox, so a click
+          // filters the list instead of opening the document.
+          <button
+            key={tag.id}
+            type="button"
+            aria-label={t('documentCard.filterBy', { name: tag.name })}
+            className="relative z-10 pointer-events-auto border border-line px-1.5 py-0.5 text-[11px] text-ink-muted transition-colors hover:border-ink hover:text-ink"
+            style={{ borderColor: tag.color || undefined }}
+            onClick={() => onFilterTag(tag.id)}
+          >
+            {tag.name}
+          </button>
+        ) : (
+          <span
+            key={tag.id}
+            className="border border-line px-1.5 py-0.5 text-[11px] text-ink-muted"
+            style={{ borderColor: tag.color || undefined }}
+          >
+            {tag.name}
+          </span>
+        ),
+      )}
+    </div>
+  )
 
   return (
     <article
@@ -159,39 +211,33 @@ export function DocumentCard({
           </p>
         </div>
 
-        <CardDescription document={document} />
+        {imageUrl ? (
+          <>
+            <div className="relative overflow-hidden">
+              <img
+                src={imageUrl}
+                alt=""
+                loading="lazy"
+                onError={() => {
+                  setFailedUrl(imageUrl)
+                  onPreviewError?.()
+                }}
+                // ponytail: the box is an A4 page less its bottom fifth; other
+                // shapes are cropped to it too, measure naturalWidth/Height if that bites.
+                className="aspect-[1/1.13] w-full border border-line bg-bright object-cover object-top"
+              />
+              {tagChips}
+            </div>
+            {/* The image stands in for the summary, not for why the document waits. */}
+            {document.processing_status === 'needs_review' && <ReviewReason document={document} />}
+          </>
+        ) : (
+          <CardDescription document={document} />
+        )}
 
         <ProcessingStatus summary={summarizeJob(document.processing_status === 'failed' ? job : null)} />
 
-        {(shared || tags.length > 0) && (
-          <div className="flex flex-wrap gap-1.5">
-            {shared && <SharedChip />}
-            {tags.map((tag) =>
-              onFilterTag ? (
-                // Above the full-bleed link, like the checkbox, so a click
-                // filters the list instead of opening the document.
-                <button
-                  key={tag.id}
-                  type="button"
-                  aria-label={t('documentCard.filterBy', { name: tag.name })}
-                  className="relative z-10 pointer-events-auto border border-line px-1.5 py-0.5 text-[11px] text-ink-muted transition-colors hover:border-ink hover:text-ink"
-                  style={{ borderColor: tag.color || undefined }}
-                  onClick={() => onFilterTag(tag.id)}
-                >
-                  {tag.name}
-                </button>
-              ) : (
-                <span
-                  key={tag.id}
-                  className="border border-line px-1.5 py-0.5 text-[11px] text-ink-muted"
-                  style={{ borderColor: tag.color || undefined }}
-                >
-                  {tag.name}
-                </span>
-              ),
-            )}
-          </div>
-        )}
+        {!imageUrl && tagChips}
 
         {/* Above the full-bleed link, like the tag filter chips. */}
         <SuggestedTags
