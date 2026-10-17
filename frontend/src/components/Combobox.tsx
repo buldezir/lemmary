@@ -133,15 +133,15 @@ export function Combobox({
       setDropUp(below < listMaxHeightPx && rect.top > below)
     }
     setOpen(true)
-    // Start on the current selection so Enter is a no-op rather than a surprise.
-    const selectedIndex = options.findIndex((option) => option.value === value)
-    setHighlightedIndex(selectedIndex < 0 ? 0 : selectedIndex)
+    // Start on the current selection, or on nothing when it is not listed (yet),
+    // so Enter is a no-op rather than a surprise.
+    setHighlightedIndex(options.findIndex((option) => option.value === value))
   }
 
   function selectOption(nextValue: string) {
     if (nextValue === CREATE_VALUE) {
       onCreate?.(query!.trim())
-    } else {
+    } else if (nextValue !== value) {
       onChange(nextValue)
     }
     close()
@@ -214,7 +214,9 @@ export function Combobox({
       aria-label={ariaLabel}
       aria-expanded={open}
       aria-autocomplete="list"
-      aria-activedescendant={open ? `${id ?? 'combobox'}-option-${activeIndex}` : undefined}
+      aria-activedescendant={
+        open && activeIndex >= 0 ? `${id ?? 'combobox'}-option-${activeIndex}` : undefined
+      }
       autoComplete="off"
       spellCheck={false}
       disabled={disabled || loading}
