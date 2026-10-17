@@ -1671,6 +1671,8 @@ export const ru: Catalog = {
   'account.title': 'Учётная запись',
   'account.intro': 'Как вы и ваши агенты входите в этот архив.',
 
+  'account.profile': 'Профиль',
+  'account.sectionsLabel': 'Разделы учётной записи',
   'importNgx.preserveLabel': 'Сохранить метаданные Paperless-ngx',
   'importNgx.preserveDescription':
     'Импортировать название, теги, корреспондента, тип документа, дату и текст OCR. Превью и поиск дубликатов всё равно выполняются; ИИ не перезаписывает метаданные.',

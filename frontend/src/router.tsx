@@ -43,7 +43,14 @@ import { ImportPage } from './routes/import'
 import { ImportNgxPage, ImportPapraPage } from './routes/import.remote'
 import { ImportArchivePage } from './routes/import.archive'
 import { ExportPage } from './routes/export'
-import { AccountPage } from './routes/account'
+import {
+  AccountAgentsPage,
+  AccountPage,
+  AccountPaperlessPage,
+  AccountPasskeysPage,
+  AccountPasswordPage,
+  AccountProfilePage,
+} from './routes/account'
 import { TagsPage } from './routes/tags'
 import { BulkActionsPage } from './routes/bulk'
 
@@ -307,6 +314,37 @@ const accountRoute = createRoute({
   component: AccountPage,
 })
 
+// Profile is the first section, so it sits on /account itself.
+const accountProfileRoute = createRoute({
+  getParentRoute: () => accountRoute,
+  path: '/',
+  component: AccountProfilePage,
+})
+
+const accountAgentsRoute = createRoute({
+  getParentRoute: () => accountRoute,
+  path: 'agents',
+  component: AccountAgentsPage,
+})
+
+const accountPaperlessRoute = createRoute({
+  getParentRoute: () => accountRoute,
+  path: 'paperless',
+  component: AccountPaperlessPage,
+})
+
+const accountPasswordRoute = createRoute({
+  getParentRoute: () => accountRoute,
+  path: 'password',
+  component: AccountPasswordPage,
+})
+
+const accountPasskeysRoute = createRoute({
+  getParentRoute: () => accountRoute,
+  path: 'passkeys',
+  component: AccountPasskeysPage,
+})
+
 // No guard, same as accountRoute: tags are per-user, not an admin setting.
 const tagsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -367,7 +405,13 @@ const routeTree = rootRoute.addChildren([
   ]),
   importRoute.addChildren([importArchiveRoute, importNgxRoute, importPapraRoute, importArchiveAliasRoute]),
   exportRoute,
-  accountRoute,
+  accountRoute.addChildren([
+    accountProfileRoute,
+    accountAgentsRoute,
+    accountPaperlessRoute,
+    accountPasswordRoute,
+    accountPasskeysRoute,
+  ]),
   tagsRoute,
   bulkRoute,
   documentRoute,

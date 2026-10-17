@@ -1470,6 +1470,8 @@ export const en = {
   'account.title': 'Account',
   'account.intro': 'How you and your agents sign in to this archive.',
 
+  'account.profile': 'Profile',
+  'account.sectionsLabel': 'Account sections',
   'importNgx.preserveLabel': 'Keep Paperless-ngx metadata',
   'importNgx.preserveDescription':
     'Import title, tags, correspondent, document type, date, and OCR text. Preview and duplicate detection still run; AI does not overwrite metadata.',

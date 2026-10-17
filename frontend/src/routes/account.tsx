@@ -16,6 +16,7 @@ import { mcpSnippets } from '../lib/mcpSnippets'
 import { useAsync } from '../hooks/useAsync'
 import { getLimits } from '../lib/api/limits'
 import { LimitsUsage } from '../components/LimitsUsage'
+import { SectionLayout } from '../components/SectionLayout'
 import {
   Button,
   DocsLink,
@@ -131,7 +132,7 @@ function PasskeyRow({ passkey, busy, onRename, onDelete }: PasskeyRowProps) {
   )
 }
 
-function PasskeysSection() {
+export function AccountPasskeysPage() {
   const { data: passkeys, error: loadError, reload } = useAsync(listPasskeys, [])
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
@@ -216,7 +217,7 @@ function PasskeysSection() {
       {error && <p className="mb-3 text-sm text-madder">{error}</p>}
       {notice && <p className="mb-3 text-sm text-ink-soft">{notice}</p>}
 
-      {rows.length === 0 ? (
+      {!passkeys ? null : rows.length === 0 ? (
         <p className="mb-4 text-sm text-ink-soft">{t('account.noPasskeys')}</p>
       ) : (
         <ul className="mb-4 flex flex-col gap-2">
@@ -267,7 +268,7 @@ function PasskeysSection() {
 
 const tokenPlaceholder = '<token>'
 
-function AgentsSection() {
+export function AccountAgentsPage() {
   const { data: status, error: loadError } = useAsync(getMCPStatus, [])
   const [token, setToken] = useState('')
   const [agent, setAgent] = useState('claude-code')
@@ -304,7 +305,7 @@ function AgentsSection() {
   }
 
   return (
-    <section id="agents" className={sectionClassName}>
+    <section className={sectionClassName}>
       <h2 className={sectionTitleClassName}>{t('account.agents')}</h2>
       <p className={`${fieldHintClassName} mb-4`}>
         {tNode('account.agentsHint', {
@@ -376,7 +377,7 @@ function AgentsSection() {
   )
 }
 
-function PaperlessAppsSection() {
+export function AccountPaperlessPage() {
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -405,7 +406,7 @@ function PaperlessAppsSection() {
   }
 
   return (
-    <section id="paperless-apps" className={sectionClassName}>
+    <section className={sectionClassName}>
       <h2 className={sectionTitleClassName}>{t('account.paperlessApps')}</h2>
       <p className={`${fieldHintClassName} mb-4`}>
         {tNode('account.paperlessAppsHint', {
@@ -443,7 +444,7 @@ function PaperlessAppsSection() {
   )
 }
 
-function PasswordSection() {
+export function AccountPasswordPage() {
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [repeated, setRepeated] = useState('')
@@ -480,7 +481,7 @@ function PasswordSection() {
   ]
 
   return (
-    <section id="password" className={sectionClassName}>
+    <section className={sectionClassName}>
       <h2 className={sectionTitleClassName}>{t('account.password')}</h2>
       <p className={`${fieldHintClassName} mb-4`}>{t('account.passwordHint')}</p>
       <form className="flex flex-col gap-3" onSubmit={onSubmit}>
@@ -535,19 +536,28 @@ function InstanceLimitsSection() {
   )
 }
 
-export function AccountPage() {
+export function AccountProfilePage() {
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-5">
-      <div>
-        <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">{t('account.title')}</h1>
-        <p className="mt-1 text-sm text-ink-soft">{t('account.intro')}</p>
-      </div>
+    <div className="flex flex-col gap-5">
       <SignedInSection />
-      <AgentsSection />
-      <PaperlessAppsSection />
-      <PasswordSection />
-      <PasskeysSection />
       <InstanceLimitsSection />
     </div>
+  )
+}
+
+export function AccountPage() {
+  return (
+    <SectionLayout
+      title={t('account.title')}
+      intro={t('account.intro')}
+      label={t('account.sectionsLabel')}
+      links={[
+        { to: '/account', label: t('account.profile'), exact: true },
+        { to: '/account/agents', label: t('account.agents') },
+        { to: '/account/paperless', label: t('account.paperlessApps') },
+        { to: '/account/password', label: t('account.password') },
+        { to: '/account/passkeys', label: t('account.passkeys') },
+      ]}
+    />
   )
 }

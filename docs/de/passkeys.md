@@ -10,7 +10,7 @@ ein – der Authenticator weiß, zu welchem Konto der Passkey gehört.
 
 ![Der Anmeldebildschirm mit Anmeldung per Passwort, Passkey und OAuth2](../screenshots/login.png)
 
-Die Registrierung finden Sie unter **Mehr → Konto**, ein Passkey pro Gerät.
+Die Registrierung finden Sie unter **Mehr → Konto → Passkeys**, ein Passkey pro Gerät.
 
 ![Die Kontoseite mit einem registrierten Passkey](../screenshots/account.png)
 
@@ -33,7 +33,7 @@ und nicht zu einem Schlüssel, den jeder benutzen könnte, der Ihr Gerät in der
 ohne gesetzte PIN kann nicht registriert werden – setzen Sie zuerst eine PIN darauf.
 
 Wo ein Passkey nicht verwendet werden kann, erscheint die Schaltfläche einfach nicht, und das Passwortformular ist
-nicht betroffen. Unter **Mehr → Konto** erfahren Sie, welche der Bedingungen nicht erfüllt ist.
+nicht betroffen. Unter **Mehr → Konto → Passkeys** erfahren Sie, welche der Bedingungen nicht erfüllt ist.
 
 Beachten Sie, dass die Standardadresse der App, `http://127.0.0.1:8090`, zwar ein sicherer Kontext, aber
 dennoch eine IP-Adresse ist. Öffnen Sie stattdessen `http://localhost:8090`.
@@ -73,7 +73,7 @@ verschiedene Hostnamen zu erreichen, hat jeweils dieselbe Folge: Die unter dem a
 können unter dem neuen nicht verwendet werden und müssen erneut hinzugefügt werden.
 
 Sie gehen nicht stillschweigend verloren – melden Sie sich mit E-Mail und Passwort an, löschen Sie die veralteten Einträge
-unter **Mehr → Konto** und fügen Sie einen neuen Passkey hinzu.
+unter **Mehr → Konto → Passkeys** und fügen Sie einen neuen Passkey hinzu.
 
 ---
 
@@ -87,7 +87,7 @@ nicht wieder. Auf einer Adresse, unter der kein Passkey erstellt werden kann, wi
 
 ## Schritt 2: Einen Passkey später hinzufügen {#step-2-add-a-passkey-later}
 
-1. Öffnen Sie **Mehr → Konto**.
+1. Öffnen Sie **Mehr → Konto → Passkeys**.
 2. Wählen Sie unter **Passkeys** die Option **Passkey hinzufügen**.
 3. Geben Sie ihm einen Namen, den Sie wiedererkennen – das Feld ist mit einer Vermutung wie
    *Chrome on Windows* vorausgefüllt. Der Name ist eine Bezeichnung von Lemmary selbst; Ihr Gerät zeigt ihn nicht an.
@@ -100,7 +100,7 @@ bereits bestehenden Konto hinzugefügt werden – dieselbe Einschränkung, die a
 
 ## Passkeys verwalten {#managing-passkeys}
 
-**Mehr → Konto** listet jeden Passkey Ihres Kontos mit dem Datum auf, an dem er hinzugefügt wurde, und wann er
+**Mehr → Konto → Passkeys** listet jeden Passkey Ihres Kontos mit dem Datum auf, an dem er hinzugefügt wurde, und wann er
 zuletzt verwendet wurde. Sie können jeden davon umbenennen oder entfernen.
 
 Das Entfernen eines Passkeys hier entfernt nicht den Eintrag, den Ihr Browser oder Betriebssystem in
@@ -135,7 +135,7 @@ Passkey hinzu.
 
 **Die Passkey-Schaltfläche fehlt auf dem Anmeldebildschirm.** Entweder kann die Adresse keinen Passkey tragen
 (siehe [Voraussetzungen](#requirements)), oder es hat noch niemand einen registriert. Melden Sie sich mit Ihrem Passwort an
-und fügen Sie einen unter **Mehr → Konto** hinzu.
+und fügen Sie einen unter **Mehr → Konto → Passkeys** hinzu.
 
 **"Passkeys need a hostname, not an IP address."** Sie greifen per IP auf die App zu. Verwenden Sie ihren
 Hostnamen, oder setzen Sie `PASSKEY_RP_ID` und `PASSKEY_ORIGINS`.
@@ -148,7 +148,7 @@ offen gelassen. Eine geräteübergreifende Anmeldung per QR-Code kann eine Weile
 Schaltfläche wartet weiter.
 
 **„Dieses Gerät hat bereits einen Passkey für dieses Konto.“** Nichts zu tun; verwenden Sie den vorhandenen,
-oder entfernen Sie ihn zuerst unter **Mehr → Konto**.
+oder entfernen Sie ihn zuerst unter **Mehr → Konto → Passkeys**.
 
 **„Dieses Gerät kann noch keinen Passkey erstellen.“** Auf dem Authenticator ist keine Bildschirmsperre, keine
 Biometrie und keine PIN eingerichtet. Richten Sie eine ein und versuchen Sie es erneut – Lemmary verlangt dies, weil

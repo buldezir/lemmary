@@ -10,7 +10,7 @@ address — the authenticator knows which account the passkey belongs to.
 
 ![The login screen, with password, passkey and OAuth2 sign-in](./screenshots/login.png)
 
-Enrolment lives under **More → Account**, one passkey per device.
+Enrolment lives under **More → Account → Passkeys**, one passkey per device.
 
 ![The Account page, with an enrolled passkey](./screenshots/account.png)
 
@@ -33,7 +33,7 @@ rather than a key anybody holding your device could use. A hardware security key
 set cannot be enrolled — set a PIN on it first.
 
 Where a passkey cannot be used, the button simply does not appear and the password form is
-unaffected. Opening **More → Account** will tell you which of the conditions is not met.
+unaffected. Opening **More → Account → Passkeys** will tell you which of the conditions is not met.
 
 Note that the app's own default address, `http://127.0.0.1:8090`, is a secure context but is
 still an IP address. Open `http://localhost:8090` instead.
@@ -73,7 +73,7 @@ different hostnames all have the same consequence: the passkeys enrolled under t
 cannot be used under the new one, and they have to be added again.
 
 They are not lost silently — sign in with your email and password, delete the stale entries
-from **More → Account**, and add a new passkey.
+from **More → Account → Passkeys**, and add a new passkey.
 
 ---
 
@@ -87,7 +87,7 @@ come back. The step is hidden entirely on an address where a passkey cannot be c
 
 ## Step 2: add a passkey later
 
-1. Open **More → Account**.
+1. Open **More → Account → Passkeys**.
 2. Under **Passkeys**, choose **Add a passkey**.
 3. Give it a name you will recognize — the field is pre-filled with a guess like
    *Chrome on Windows*. The name is Lemmary's own label; it is not shown by your device.
@@ -100,7 +100,7 @@ an account that already exists — the same constraint that applies to [OAuth2](
 
 ## Managing passkeys
 
-**More → Account** lists every passkey on your account with the date it was added and when it
+**More → Account → Passkeys** lists every passkey on your account with the date it was added and when it
 was last used. You can rename or remove any of them.
 
 Removing a passkey here does not remove the entry your browser or operating system keeps in
@@ -135,7 +135,7 @@ first.
 
 **The passkey button is not on the login screen.** Either the address cannot carry a passkey
 (see [Requirements](#requirements)) or nobody has enrolled one yet. Sign in with your password
-and add one from **More → Account**.
+and add one from **More → Account → Passkeys**.
 
 **"Passkeys need a hostname, not an IP address."** You are reaching the app by IP. Use its
 hostname, or set `PASSKEY_RP_ID` and `PASSKEY_ORIGINS`.
@@ -148,7 +148,7 @@ open too long. Cross-device sign-in via QR code can take a while — that is nor
 button keeps waiting.
 
 **"This device already has a passkey for this account."** Nothing to do; use the one you have,
-or remove it from **More → Account** first.
+or remove it from **More → Account → Passkeys** first.
 
 **"This device cannot create a passkey yet."** The authenticator has no screen lock, biometric
 or PIN configured. Set one up and try again — Lemmary requires it, because the passkey stands

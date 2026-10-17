@@ -1542,6 +1542,8 @@ export const de: Catalog = {
   'account.title': 'Konto',
   'account.intro': 'Wie Sie und Ihre Agenten sich bei diesem Archiv anmelden.',
 
+  'account.profile': 'Profil',
+  'account.sectionsLabel': 'Bereiche des Kontos',
   'importNgx.preserveLabel': 'Metadaten aus Paperless-ngx behalten',
   'importNgx.preserveDescription':
     'Titel, Tags, Korrespondent, Dokumenttyp, Datum und OCR-Text importieren. Vorschau und Duplikaterkennung laufen trotzdem; die KI überschreibt keine Metadaten.',
