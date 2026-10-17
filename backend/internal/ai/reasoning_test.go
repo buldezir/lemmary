@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/packages/respjson"
 	"github.com/openai/openai-go/v3/shared"
 )
 
@@ -361,6 +362,10 @@ func TestChunkedContentKeepsOnlyTheText(t *testing.T) {
 	if got := resp.Choices[0].Message.Content; got != "266,46 €" {
 		t.Fatalf("Complete content = %q", got)
 	}
+	replayed, _ := json.Marshal(assistantTurn(resp.Choices[0].Message))
+	if !strings.Contains(string(replayed), `"content":[{"closed":true,"thinking":[{"text":"The user wants"`) {
+		t.Fatalf("the next tool round lost the thinking: %s", replayed)
+	}
 
 	var deltas []string
 	text, _, err := client.completeStreaming(context.Background(), params, func(d string) { deltas = append(deltas, d) })
@@ -369,5 +374,20 @@ func TestChunkedContentKeepsOnlyTheText(t *testing.T) {
 	}
 	if text != "266,46 €" || strings.Join(deltas, "|") != "266,46| €" {
 		t.Fatalf("streamed text = %q, deltas = %q", text, deltas)
+	}
+}
+
+// Only a list of text and thinking chunks is a reply to flatten. Any other array
+// stays as it came, rather than becoming an empty answer.
+func TestChunkedTextLeavesOtherArraysAlone(t *testing.T) {
+	t.Parallel()
+	for _, raw := range []string{`[{"type":"reference","reference_ids":[1]}]`, `[{"a":1}]`, `[1,2]`} {
+		if got := chunkedText(respjson.NewField(raw), raw); got != raw {
+			t.Errorf("chunkedText(%s) = %q", raw, got)
+		}
+	}
+	thinkingOnly := `[{"type":"thinking","thinking":[{"type":"text","text":"hmm"}]}]`
+	if got := chunkedText(respjson.NewField(thinkingOnly), thinkingOnly); got != "" {
+		t.Errorf("thinking-only chunks = %q, want empty", got)
 	}
 }

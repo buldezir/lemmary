@@ -175,12 +175,31 @@ func chunkedText(field respjson.Field, content string) string {
 		return content
 	}
 	var b strings.Builder
+	chunked := false
 	for _, chunk := range chunks {
-		if chunk.Type == "text" {
+		switch chunk.Type {
+		case "text":
 			b.WriteString(chunk.Text)
+			chunked = true
+		case "thinking":
+			chunked = true
 		}
 	}
+	if !chunked {
+		return content
+	}
 	return b.String()
+}
+
+// assistantTurn replays a reply into the next tool round. A reply that came as
+// chunks goes back as those chunks, thinking included: Mistral's docs say
+// stripping the thinking degrades the turns after it.
+func assistantTurn(msg openai.ChatCompletionMessage) openai.ChatCompletionMessageParamUnion {
+	turn := msg.ToParam()
+	if raw := msg.JSON.Content.Raw(); strings.HasPrefix(raw, "[") {
+		turn.OfAssistant.SetExtraFields(map[string]any{"content": json.RawMessage(raw)})
+	}
+	return turn
 }
 
 func (c *OpenAIClient) completeChat(ctx context.Context, params openai.ChatCompletionNewParams, extra ...any) (*openai.ChatCompletion, error) {

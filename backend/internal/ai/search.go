@@ -230,7 +230,7 @@ func (a *openAISearchAgent) Search(ctx context.Context, messages []ChatMessage, 
 		}
 
 		if len(msg.ToolCalls) > 0 {
-			apiMessages = append(apiMessages, msg.ToParam())
+			apiMessages = append(apiMessages, assistantTurn(msg))
 			for _, call := range msg.ToolCalls {
 				result := a.executeToolCall(ctx, search, call.ID, call.Function.Name, call.Function.Arguments, &allHits, seenIDs)
 				apiMessages = append(apiMessages, openai.ToolMessage(result.Content, call.ID))
