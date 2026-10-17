@@ -1,15 +1,10 @@
 import { useEffect, useState } from 'react'
 import { ClientResponseError } from 'pocketbase'
 import { t } from '../i18n'
-import { fileUrlWithToken, type DocumentFileRef } from '../lib/api/documents'
+import { fetchPdfBlobUrl, fileUrlWithToken, type DocumentFileRef } from '../lib/api/documents'
 import { previewKind } from '../lib/documentPreview'
 
-/**
- * The document file itself, viewed by the browser. PocketBase stamps every file
- * response with `...; sandbox` in a CSP, which sounds like it would stop a
- * framed PDF viewer; it does not, in either Chrome or Firefox, so the tokened
- * URL goes straight into the frame and the file is never pulled through JS.
- */
+/** The document file itself, viewed by the browser. */
 export function DocumentPreview({ record }: { record: DocumentFileRef }) {
   // Primitives, not the record: the detail page hands down a fresh object every
   // second while the pipeline runs, and depending on it would re-mint a token
@@ -17,37 +12,51 @@ export function DocumentPreview({ record }: { record: DocumentFileRef }) {
   const { id, collectionId, file } = record
   const kind = previewKind(file)
 
-  // Keyed by the file it was minted for, so a token that arrives after the page
-  // moved on is never rendered.
+  // Keyed by the file they belong to, so a URL or a failure that arrives after
+  // the page moved on is never rendered.
   const [resolved, setResolved] = useState<{ key: string; url: string } | null>(null)
-  const [error, setError] = useState('')
+  const [failure, setFailure] = useState<{ key: string; message: string } | null>(null)
   const key = `${collectionId}/${id}/${file}`
 
   useEffect(() => {
-    let active = true
-    void fileUrlWithToken({ id, collectionId, file })
+    const fileKey = `${collectionId}/${id}/${file}`
+    const ref = { id, collectionId, file }
+    const controller = new AbortController()
+    let blobUrl = ''
+    void (kind === 'pdf' ? fetchPdfBlobUrl(ref, controller.signal) : fileUrlWithToken(ref))
       .then((url) => {
-        if (active) {
-          setResolved({ key: `${collectionId}/${id}/${file}`, url })
-          setError('')
+        if (controller.signal.aborted) {
+          if (kind === 'pdf') {
+            URL.revokeObjectURL(url)
+          }
+          return
         }
+        if (kind === 'pdf') {
+          blobUrl = url
+        }
+        setResolved({ key: fileKey, url })
       })
       .catch((err: unknown) => {
         // A realtime-driven remount can race a mint; the survivor has the token.
-        if (err instanceof ClientResponseError && err.isAbort) {
+        if (controller.signal.aborted || (err instanceof ClientResponseError && err.isAbort)) {
           return
         }
-        if (active) {
-          setError(err instanceof Error ? err.message : t('documentPreview.loadFailed'))
-        }
+        setFailure({
+          key: fileKey,
+          message: err instanceof Error ? err.message : t('documentPreview.loadFailed'),
+        })
       })
 
     return () => {
-      active = false
+      controller.abort()
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl)
+      }
     }
-  }, [id, collectionId, file])
+  }, [id, collectionId, file, kind])
 
   const url = resolved?.key === key ? resolved.url : null
+  const error = failure?.key === key ? failure.message : ''
 
   if (error || url === null || kind === 'none') {
     return (
@@ -65,30 +74,18 @@ export function DocumentPreview({ record }: { record: DocumentFileRef }) {
       <img
         src={url}
         alt={t('documentPreview.label')}
-        onError={() => setError(t('documentPreview.imageFailed'))}
+        onError={() => setFailure({ key, message: t('documentPreview.imageFailed') })}
         className="h-full w-full border border-line bg-surface object-contain"
       />
     )
   }
 
-  // #view=FitH is the viewer's own initial-zoom hint. Set once: changing the
-  // fragment re-navigates the frame.
-  //
-  // The file token is user-scoped and rides in the query string, so
-  // referrerPolicy keeps it out of the Referer of anything the framed document
-  // links to.
-  //
-  // No onError: a refused frame gets an error *document*, which loads
-  // successfully as far as the element is concerned.
-  //
-  // ponytail: the token lives three minutes, so a viewer that went back for more
-  // bytes long after the frame loaded would be refused. In practice it has the
-  // whole file by then. Fetch it into a blob URL instead if that ever bites.
+  // No #view=FitH zoom hint: Safari can miss a blob URL that carries a
+  // fragment, which blanks the frame.
   return (
     <iframe
       title={t('documentPreview.label')}
-      src={`${url}#view=FitH`}
-      referrerPolicy="no-referrer"
+      src={url}
       className="h-full w-full border border-line bg-wash"
     />
   )
