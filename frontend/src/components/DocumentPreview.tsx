@@ -12,40 +12,43 @@ export function DocumentPreview({ record }: { record: DocumentFileRef }) {
   const { id, collectionId, file } = record
   const kind = previewKind(file)
 
-  // Keyed by the file it was minted for, so a token that arrives after the page
-  // moved on is never rendered.
+  // Keyed by the file they belong to, so a URL or a failure that arrives after
+  // the page moved on is never rendered.
   const [resolved, setResolved] = useState<{ key: string; url: string } | null>(null)
-  const [error, setError] = useState('')
+  const [failure, setFailure] = useState<{ key: string; message: string } | null>(null)
   const key = `${collectionId}/${id}/${file}`
 
   useEffect(() => {
-    let active = true
-    let blobUrl = ''
+    const fileKey = `${collectionId}/${id}/${file}`
     const ref = { id, collectionId, file }
-    void (kind === 'pdf' ? fetchPdfBlobUrl(ref) : fileUrlWithToken(ref))
+    const controller = new AbortController()
+    let blobUrl = ''
+    void (kind === 'pdf' ? fetchPdfBlobUrl(ref, controller.signal) : fileUrlWithToken(ref))
       .then((url) => {
+        if (controller.signal.aborted) {
+          if (kind === 'pdf') {
+            URL.revokeObjectURL(url)
+          }
+          return
+        }
         if (kind === 'pdf') {
           blobUrl = url
         }
-        if (active) {
-          setResolved({ key: `${collectionId}/${id}/${file}`, url })
-          setError('')
-        } else if (blobUrl) {
-          URL.revokeObjectURL(blobUrl)
-        }
+        setResolved({ key: fileKey, url })
       })
       .catch((err: unknown) => {
         // A realtime-driven remount can race a mint; the survivor has the token.
-        if (err instanceof ClientResponseError && err.isAbort) {
+        if (controller.signal.aborted || (err instanceof ClientResponseError && err.isAbort)) {
           return
         }
-        if (active) {
-          setError(err instanceof Error ? err.message : t('documentPreview.loadFailed'))
-        }
+        setFailure({
+          key: fileKey,
+          message: err instanceof Error ? err.message : t('documentPreview.loadFailed'),
+        })
       })
 
     return () => {
-      active = false
+      controller.abort()
       if (blobUrl) {
         URL.revokeObjectURL(blobUrl)
       }
@@ -53,6 +56,7 @@ export function DocumentPreview({ record }: { record: DocumentFileRef }) {
   }, [id, collectionId, file, kind])
 
   const url = resolved?.key === key ? resolved.url : null
+  const error = failure?.key === key ? failure.message : ''
 
   if (error || url === null || kind === 'none') {
     return (
@@ -70,18 +74,18 @@ export function DocumentPreview({ record }: { record: DocumentFileRef }) {
       <img
         src={url}
         alt={t('documentPreview.label')}
-        onError={() => setError(t('documentPreview.imageFailed'))}
+        onError={() => setFailure({ key, message: t('documentPreview.imageFailed') })}
         className="h-full w-full border border-line bg-surface object-contain"
       />
     )
   }
 
-  // #view=FitH is the viewer's own initial-zoom hint. Set once: changing the
-  // fragment re-navigates the frame.
+  // No #view=FitH zoom hint: Safari can miss a blob URL that carries a
+  // fragment, which blanks the frame.
   return (
     <iframe
       title={t('documentPreview.label')}
-      src={`${url}#view=FitH`}
+      src={url}
       className="h-full w-full border border-line bg-wash"
     />
   )

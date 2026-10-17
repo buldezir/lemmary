@@ -104,12 +104,13 @@ export async function fileUrlWithToken(record: DocumentFileRef, filename?: strin
  * file served as anything else still renders as a PDF, never as a page on the
  * app's origin. Callers must revoke it when done.
  */
-export async function fetchPdfBlobUrl(record: DocumentFileRef): Promise<string> {
-  const response = await fetch(await fileUrlWithToken(record))
+export async function fetchPdfBlobUrl(record: DocumentFileRef, signal: AbortSignal): Promise<string> {
+  const response = await fetch(await fileUrlWithToken(record), { signal })
   if (!response.ok) {
     throw new Error(t('documentPreview.loadFailed'))
   }
-  return URL.createObjectURL(new Blob([await response.blob()], { type: 'application/pdf' }))
+  const body = await response.blob()
+  return URL.createObjectURL(body.slice(0, body.size, 'application/pdf'))
 }
 
 // The tab is opened synchronously in the click handler and pointed at the

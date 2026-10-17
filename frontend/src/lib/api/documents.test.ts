@@ -166,8 +166,26 @@ describe('fetchPdfBlobUrl', () => {
     })
 
     const record = { id: 'abc123def456ghi', collectionId: 'pbc_1', file: 'scan.pdf' }
-    expect(await fetchPdfBlobUrl(record)).toBe('blob:preview')
+    expect(await fetchPdfBlobUrl(record, new AbortController().signal)).toBe('blob:preview')
     expect(blob?.type).toBe('application/pdf')
+  })
+
+  it('refuses a file the server would not serve', async () => {
+    const payload = btoa(JSON.stringify({ exp: 4102444800 }))
+    pb.authStore.save(`h.${payload}.s`, { id: 'me', collectionId: 'users', collectionName: 'users' })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.includes('/api/files/token')
+          ? Response.json({ token: 'file-token' })
+          : new Response('', { status: 404 }),
+      ),
+    )
+
+    const record = { id: 'abc123def456ghi', collectionId: 'pbc_1', file: 'scan.pdf' }
+    await expect(fetchPdfBlobUrl(record, new AbortController().signal)).rejects.toThrow(
+      'Failed to load the file',
+    )
   })
 })
 
