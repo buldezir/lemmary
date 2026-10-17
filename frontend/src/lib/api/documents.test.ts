@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildDocumentFilter,
   countMatchingDocuments,
+  fetchPdfBlobUrl,
   fileUrlWithToken,
   listMatchingDocumentIds,
   parseDuplicateOfId,
@@ -137,6 +138,36 @@ describe('fileUrlWithToken', () => {
     const record = { id: 'abc123def456ghi', collectionId: 'pbc_1', file: '' }
     await expect(fileUrlWithToken(record)).rejects.toThrow('This document has no file.')
     await expect(fileUrlWithToken(record, '')).rejects.toThrow('This document has no file.')
+  })
+})
+
+describe('fetchPdfBlobUrl', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+    pb.authStore.clear()
+  })
+
+  it('serves the file as a PDF whatever type it arrived with', async () => {
+    const payload = btoa(JSON.stringify({ exp: 4102444800 }))
+    pb.authStore.save(`h.${payload}.s`, { id: 'me', collectionId: 'users', collectionName: 'users' })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.includes('/api/files/token')
+          ? Response.json({ token: 'file-token' })
+          : new Response('<script>alert(1)</script>', { headers: { 'Content-Type': 'text/html' } }),
+      ),
+    )
+    let blob: Blob | undefined
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((b) => {
+      blob = b as Blob
+      return 'blob:preview'
+    })
+
+    const record = { id: 'abc123def456ghi', collectionId: 'pbc_1', file: 'scan.pdf' }
+    expect(await fetchPdfBlobUrl(record)).toBe('blob:preview')
+    expect(blob?.type).toBe('application/pdf')
   })
 })
 

@@ -1,15 +1,10 @@
 import { useEffect, useState } from 'react'
 import { ClientResponseError } from 'pocketbase'
 import { t } from '../i18n'
-import { fileUrlWithToken, type DocumentFileRef } from '../lib/api/documents'
+import { fetchPdfBlobUrl, fileUrlWithToken, type DocumentFileRef } from '../lib/api/documents'
 import { previewKind } from '../lib/documentPreview'
 
-/**
- * The document file itself, viewed by the browser. PocketBase stamps every file
- * response with `...; sandbox` in a CSP, which sounds like it would stop a
- * framed PDF viewer; it does not, in either Chrome or Firefox, so the tokened
- * URL goes straight into the frame and the file is never pulled through JS.
- */
+/** The document file itself, viewed by the browser. */
 export function DocumentPreview({ record }: { record: DocumentFileRef }) {
   // Primitives, not the record: the detail page hands down a fresh object every
   // second while the pipeline runs, and depending on it would re-mint a token
@@ -25,11 +20,18 @@ export function DocumentPreview({ record }: { record: DocumentFileRef }) {
 
   useEffect(() => {
     let active = true
-    void fileUrlWithToken({ id, collectionId, file })
+    let blobUrl = ''
+    const ref = { id, collectionId, file }
+    void (kind === 'pdf' ? fetchPdfBlobUrl(ref) : fileUrlWithToken(ref))
       .then((url) => {
+        if (kind === 'pdf') {
+          blobUrl = url
+        }
         if (active) {
           setResolved({ key: `${collectionId}/${id}/${file}`, url })
           setError('')
+        } else if (blobUrl) {
+          URL.revokeObjectURL(blobUrl)
         }
       })
       .catch((err: unknown) => {
@@ -44,8 +46,11 @@ export function DocumentPreview({ record }: { record: DocumentFileRef }) {
 
     return () => {
       active = false
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl)
+      }
     }
-  }, [id, collectionId, file])
+  }, [id, collectionId, file, kind])
 
   const url = resolved?.key === key ? resolved.url : null
 
@@ -73,22 +78,10 @@ export function DocumentPreview({ record }: { record: DocumentFileRef }) {
 
   // #view=FitH is the viewer's own initial-zoom hint. Set once: changing the
   // fragment re-navigates the frame.
-  //
-  // The file token is user-scoped and rides in the query string, so
-  // referrerPolicy keeps it out of the Referer of anything the framed document
-  // links to.
-  //
-  // No onError: a refused frame gets an error *document*, which loads
-  // successfully as far as the element is concerned.
-  //
-  // ponytail: the token lives three minutes, so a viewer that went back for more
-  // bytes long after the frame loaded would be refused. In practice it has the
-  // whole file by then. Fetch it into a blob URL instead if that ever bites.
   return (
     <iframe
       title={t('documentPreview.label')}
       src={`${url}#view=FitH`}
-      referrerPolicy="no-referrer"
       className="h-full w-full border border-line bg-wash"
     />
   )
