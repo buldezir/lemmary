@@ -34,6 +34,9 @@ export type AppMeta = {
   ingestImap?: boolean
   /** When a hosted instance stops taking changes (ms since the epoch); absent for any other. */
   writableUntil?: number
+  /** LEMMARY_VERSION and LEMMARY_REVISION baked into the image; empty for a local build. */
+  version?: string
+  revision?: string
 }
 
 // One request per page load, shared by three components and the auth gate --
@@ -84,6 +87,8 @@ async function fetchAppMeta(): Promise<AppMeta> {
       ingest_imap?: boolean
       result_language?: string
       writable_until?: string
+      version?: string
+      revision?: string
     }>('/api/app/meta', {
       public: true,
       fallbackError: t('meta.loadFailed'),
@@ -102,6 +107,8 @@ async function fetchAppMeta(): Promise<AppMeta> {
       ingestImap: data.ingest_imap === true,
       resultLanguage: typeof data.result_language === 'string' ? data.result_language : '',
       writableUntil: Number.isNaN(writableUntil) ? undefined : writableUntil,
+      version: typeof data.version === 'string' ? data.version : '',
+      revision: typeof data.revision === 'string' ? data.revision : '',
     }
   } catch {
     // A name and accent have safe defaults; who owns AI configuration does not.

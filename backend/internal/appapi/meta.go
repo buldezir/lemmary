@@ -2,12 +2,14 @@ package appapi
 
 import (
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 
 	"lemmary/backend/internal/config"
+	"lemmary/backend/internal/updatecheck"
 )
 
 const (
@@ -81,8 +83,11 @@ func resolvedAccent(app core.App) string {
 }
 
 func handleGetMeta(app core.App, rt *config.Runtime, ingestDirEnabled, ingestIMAPEnabled bool) func(*core.RequestEvent) error {
+	version, revision := os.Getenv(updatecheck.EnvVersion), os.Getenv(updatecheck.EnvRevision)
 	return func(e *core.RequestEvent) error {
 		meta := map[string]any{
+			"version":     version,
+			"revision":    revision,
 			"ingest_dir":  ingestDirEnabled,
 			"ingest_imap": ingestIMAPEnabled,
 			"app_name":    resolvedAppName(app),

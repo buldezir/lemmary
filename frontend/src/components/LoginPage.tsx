@@ -237,7 +237,7 @@ export function LoginPage({ appName, accent, onSuccess }: LoginPageProps) {
           )}
         </section>
       </div>
-      <AppFooter />
+      <AppFooter showLanguage={false} />
     </div>
   )
 }

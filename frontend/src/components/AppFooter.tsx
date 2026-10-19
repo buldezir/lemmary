@@ -1,3 +1,4 @@
+import { useAppMeta } from '../hooks/useAppMeta'
 import { docsUrl, lang, languageNames, setLanguage, t, type Language } from '../i18n'
 import { Combobox } from './Combobox'
 
@@ -17,11 +18,12 @@ function GitHubIcon() {
   )
 }
 
-/** `showLanguage` off inside the app, where Account → Preferences has the choice. */
+/** `showLanguage` off on sign-in and inside the app, where Account → Preferences has the choice. */
 export function AppFooter({ showLanguage = true }: { showLanguage?: boolean }) {
+  const { version, revision } = useAppMeta()
   return (
     <footer className="mt-auto border-t border-line px-4 py-4 text-center text-[11px] uppercase tracking-[0.14em] text-ink-soft">
-      <div className="inline-flex items-center">
+      <div className="inline-flex flex-wrap items-center justify-center gap-y-1">
         <a
           href="https://lemmary.app"
           target="_blank"
@@ -30,6 +32,18 @@ export function AppFooter({ showLanguage = true }: { showLanguage?: boolean }) {
         >
           Lemmary
         </a>
+        {version && (
+          <a
+            href={revision ? `${githubRepoUrl}/commit/${revision}` : undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={revision || undefined}
+            className="ml-1.5 whitespace-nowrap normal-case tracking-normal transition-colors hover:text-oxblood"
+          >
+            {version}
+            {revision && ` (${revision.slice(0, 7)})`}
+          </a>
+        )}
         <span className="mx-2 text-line-strong" aria-hidden="true">
           ·
         </span>
