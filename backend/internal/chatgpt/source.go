@@ -101,9 +101,10 @@ func Forget(providerID string) {
 
 // signOut clears the row of a token the issuer will no longer refresh, so Admin
 // offers the sign-in again instead of every request failing on the same 401.
-// Unregistered before the write, like Forget: the save reloads the runtime,
-// whose SourceFor would otherwise wait on the lock this source holds. A source
-// already retired leaves the row alone, since a fresh sign-in may own it now.
+// Called with mu released: SourceFor holds sourcesMu while it waits on mu, and
+// the save reloads the runtime, which calls SourceFor. Unregistered before the
+// write, like Forget, so that reload builds a fresh source. A source already
+// retired leaves the row alone, since a fresh sign-in may own it now.
 func (s *TokenSource) signOut() {
 	if s.forgotten.Swap(true) {
 		return
@@ -146,7 +147,14 @@ func (s *TokenSource) AccessToken(ctx context.Context) (Token, error) {
 	if s.forgotten.Load() {
 		return Token{}, ErrNotSignedIn
 	}
+	tok, err := s.token(ctx)
+	if errors.Is(err, ErrSignInRevoked) {
+		s.signOut()
+	}
+	return tok, err
+}
 
+func (s *TokenSource) token(ctx context.Context) (Token, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -165,7 +173,6 @@ func (s *TokenSource) AccessToken(ctx context.Context) (Token, error) {
 		s.logger.Warn("the ChatGPT sign-in was refused; signing the provider out",
 			"provider_id", s.providerID, slog.Any("error", err))
 		s.tok = Token{}
-		s.signOut()
 		return Token{}, err
 	}
 	if err != nil {

@@ -397,3 +397,56 @@ func TestRefreshAllRefreshesAnIdleSource(t *testing.T) {
 		t.Fatalf("token = %q, %v; want the refreshed one", tok.Access, err)
 	}
 }
+
+// The sign-out may overlap a runtime reload asking for the same row: SourceFor
+// holds the registry lock while it waits on the source's own.
+func TestARefusedRefreshOverlappingSourceForDoesNotHang(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-release
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"revoked","code":"refresh_token_invalidated"}}`))
+	}))
+	defer srv.Close()
+
+	const id = "p-refused-reload"
+	Forget(id)
+	t.Cleanup(func() { Forget(id) })
+	raw, err := Token{Access: "old", Refresh: "r", ExpiresAt: time.Now().Add(time.Minute)}.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The clearing save reloads the runtime, which asks for the row again.
+	src := SourceFor(id, raw, func(_, oauth string) error {
+		SourceFor(id, oauth, nil, nil)
+		return nil
+	}, nil)
+	src.withEndpoints(Endpoints{OAuthToken: srv.URL})
+
+	done := make(chan struct{}, 2)
+	go func() {
+		_, _ = src.AccessToken(context.Background())
+		done <- struct{}{}
+	}()
+	<-started
+	go func() {
+		SourceFor(id, raw, nil, nil)
+		done <- struct{}{}
+	}()
+	// Wait until that SourceFor holds the registry lock and is queued on mu.
+	for sourcesMu.TryLock() {
+		sourcesMu.Unlock()
+		time.Sleep(time.Millisecond)
+	}
+	close(release)
+
+	for range 2 {
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("deadlock: the sign-out and SourceFor wait on each other")
+		}
+	}
+}
