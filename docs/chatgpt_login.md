@@ -119,8 +119,10 @@ provider. Like a key it is never returned by the API — Admin sees only
 whether a row is signed in, and the account name it was signed in with.
 
 The access token lasts about an hour and is refreshed in place, roughly once an
-hour, for as long as the instance runs. If you use [encryption at
-rest](/encryption), the token is covered by it exactly as an API key is.
+hour, for as long as the instance runs. An idle instance still refreshes it
+once a day, so the sign-in does not lapse while nobody is using it. If you use
+[encryption at rest](/encryption), the token is covered by it exactly as an API
+key is.
 
 ## Troubleshooting
 
@@ -129,6 +131,15 @@ Team, Enterprise or Edu workspace only an admin can grant it.
 
 **The code expired** — it is good for about fifteen minutes. Press **Sign in
 with ChatGPT** again for a new one.
+
+**The row signed itself out, or a request failed with "the sign-in has expired
+or was revoked"** — OpenAI refused to refresh the token, so Lemmary cleared it
+and the row offers **Sign in with ChatGPT** again. Signing in is the only fix.
+The usual cause is one sign-in held by two instances: a copied database, a
+restored backup, a test instance on production data. Every refresh retires the
+previous token, and when the second copy spends one the first already used,
+OpenAI revokes the sign-in for both. Give each instance its own. Changing the
+ChatGPT password or signing out of all devices revokes it too.
 
 **403 on every request after a successful sign-in** — usually the account's plan
 not covering the bound model. Try the default model, or a smaller one.

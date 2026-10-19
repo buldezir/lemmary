@@ -2,7 +2,10 @@ package chatgpt
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"maps"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -96,6 +99,45 @@ func Forget(providerID string) {
 	}
 }
 
+// signOut clears the row of a token the issuer will no longer refresh, so Admin
+// offers the sign-in again instead of every request failing on the same 401.
+// Called with mu released: SourceFor holds sourcesMu while it waits on mu, and
+// the save reloads the runtime, which calls SourceFor. Unregistered before the
+// write, like Forget, so that reload builds a fresh source. A source already
+// retired leaves the row alone, since a fresh sign-in may own it now.
+func (s *TokenSource) signOut() {
+	if s.forgotten.Swap(true) {
+		return
+	}
+	sourcesMu.Lock()
+	if sources[s.providerID] == s {
+		delete(sources, s.providerID)
+	}
+	sourcesMu.Unlock()
+	if s.persist == nil {
+		return
+	}
+	if err := s.persist(s.providerID, ""); err != nil {
+		s.logger.Warn("clearing the refused ChatGPT token failed",
+			"provider_id", s.providerID, slog.Any("error", err))
+	}
+}
+
+// RefreshAll lets every registered source refresh a token that is due. They
+// otherwise refresh only when a request needs one, and an idle instance would
+// let its refresh token lapse. Failures are logged by AccessToken.
+//
+// ponytail: covers providers some binding uses; walk the ai_providers rows if
+// an unbound sign-in ever needs keeping alive too.
+func RefreshAll(ctx context.Context) {
+	sourcesMu.Lock()
+	all := slices.Collect(maps.Values(sources))
+	sourcesMu.Unlock()
+	for _, src := range all {
+		_, _ = src.AccessToken(ctx)
+	}
+}
+
 // withEndpoints repoints the source's auth client. Tests only.
 func (s *TokenSource) withEndpoints(e Endpoints) {
 	s.client = s.client.WithEndpoints(e)
@@ -105,7 +147,14 @@ func (s *TokenSource) AccessToken(ctx context.Context) (Token, error) {
 	if s.forgotten.Load() {
 		return Token{}, ErrNotSignedIn
 	}
+	tok, err := s.token(ctx)
+	if errors.Is(err, ErrSignInRevoked) {
+		s.signOut()
+	}
+	return tok, err
+}
 
+func (s *TokenSource) token(ctx context.Context) (Token, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -116,7 +165,16 @@ func (s *TokenSource) AccessToken(ctx context.Context) (Token, error) {
 		return s.tok, nil
 	}
 
-	refreshed, err := s.client.RefreshToken(ctx, s.tok.Refresh)
+	// Detached from the caller: the issuer rotates the pair as it answers, so a
+	// request cancelled mid-refresh would drop the only copy of the new refresh
+	// token, and spending the old one again gets the whole sign-in revoked.
+	refreshed, err := s.client.RefreshToken(context.WithoutCancel(ctx), s.tok.Refresh)
+	if errors.Is(err, ErrSignInRevoked) {
+		s.logger.Warn("the ChatGPT sign-in was refused; signing the provider out",
+			"provider_id", s.providerID, slog.Any("error", err))
+		s.tok = Token{}
+		return Token{}, err
+	}
 	if err != nil {
 		// Keep the old token rather than clearing it: a network blip must not
 		// look like a sign-out.

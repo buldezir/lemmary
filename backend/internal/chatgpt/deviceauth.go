@@ -75,6 +75,10 @@ var (
 
 	// ErrNotSignedIn is a provider row with no token in it.
 	ErrNotSignedIn = errors.New("chatgpt: provider is not signed in")
+
+	// ErrSignInRevoked is the issuer refusing the refresh token: expired,
+	// revoked from the account, or spent twice. No retry brings it back.
+	ErrSignInRevoked = errors.New("chatgpt: the sign-in has expired or was revoked -- sign in again under Admin -> AI -> Providers")
 )
 
 const (
@@ -233,6 +237,9 @@ func (c *Client) RefreshToken(ctx context.Context, refresh string) (Token, error
 		"client_id":     ClientID,
 		"refresh_token": refresh,
 	}, &out); err != nil {
+		if statusOf(err) == http.StatusUnauthorized {
+			return Token{}, fmt.Errorf("%w: %w", ErrSignInRevoked, err)
+		}
 		return Token{}, err
 	}
 	return newToken(out, refresh)
@@ -378,6 +385,14 @@ func authReason(status int, body []byte) error {
 		Message     string `json:"message"`
 	}
 	_ = json.Unmarshal(body, &parsed)
+	// The token endpoint nests its answer, {"error":{"message":…,"code":…}},
+	// which leaves parsed.Error empty and the raw JSON as the only message.
+	var nested struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	_ = json.Unmarshal(body, &nested)
 
 	text := strings.ToLower(strings.Join([]string{
 		parsed.Error, parsed.Detail, parsed.Description, parsed.Message, string(body),
@@ -386,14 +401,16 @@ func authReason(status int, body []byte) error {
 	switch {
 	case strings.Contains(text, "authorization_pending"), strings.Contains(text, "slow_down"):
 		return ErrAuthPending
-	case strings.Contains(text, "expired_token"), strings.Contains(text, "expired"):
+	// refresh_token_expired is the sign-in lapsing, not the device code.
+	case strings.Contains(text, "expired_token"),
+		strings.Contains(text, "expired") && !strings.Contains(text, "refresh_token"):
 		return ErrAuthExpired
 	case strings.Contains(text, "device") && (strings.Contains(text, "disabled") ||
 		strings.Contains(text, "not allowed") || strings.Contains(text, "not enabled")):
 		return ErrDeviceAuthDisabled
 	}
 
-	msg := strings.TrimSpace(firstNonEmpty(parsed.Description, parsed.Detail, parsed.Message, parsed.Error, string(body)))
+	msg := strings.TrimSpace(firstNonEmpty(parsed.Description, parsed.Detail, parsed.Message, nested.Error.Message, parsed.Error, string(body)))
 	if len(msg) > 300 {
 		msg = msg[:300]
 	}

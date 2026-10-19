@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -307,5 +308,145 @@ func TestSourceForAfterForgetBuildsALiveSource(t *testing.T) {
 	}
 	if tok.Access != "fresh" {
 		t.Errorf("access = %q", tok.Access)
+	}
+}
+
+// A refresh the issuer refuses is final: the row is cleared so Admin offers the
+// sign-in again, and nothing tries the dead token a second time.
+func TestARefusedRefreshSignsTheProviderOut(t *testing.T) {
+	for _, code := range []string{"refresh_token_invalidated", "refresh_token_expired"} {
+		t.Run(code, func(t *testing.T) {
+			var calls atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"error":{"message":"Your refresh token is no good.","type":"invalid_request_error","param":null,"code":"` + code + `"}}`))
+			}))
+			defer srv.Close()
+
+			const id = "p-refused"
+			Forget(id)
+			t.Cleanup(func() { Forget(id) })
+			stored := "unchanged"
+			raw, err := Token{Access: "old", Refresh: "r", ExpiresAt: time.Now().Add(time.Minute)}.Marshal()
+			if err != nil {
+				t.Fatal(err)
+			}
+			src := SourceFor(id, raw, func(_, oauth string) error {
+				stored = oauth
+				return nil
+			}, nil)
+			src.withEndpoints(Endpoints{OAuthToken: srv.URL})
+
+			_, err = src.AccessToken(context.Background())
+			if !errors.Is(err, ErrSignInRevoked) || errors.Is(err, ErrAuthExpired) {
+				t.Fatalf("err = %v, want ErrSignInRevoked alone", err)
+			}
+			if msg := err.Error(); !strings.Contains(msg, "Your refresh token is no good.") || strings.Contains(msg, `{"error"`) {
+				t.Errorf("message = %q, want the issuer's sentence rather than its JSON", msg)
+			}
+			if stored != "" {
+				t.Fatalf("stored = %q, want the row cleared", stored)
+			}
+			if _, err := src.AccessToken(context.Background()); !errors.Is(err, ErrNotSignedIn) {
+				t.Fatalf("second call: err = %v, want ErrNotSignedIn", err)
+			}
+			if calls.Load() != 1 {
+				t.Fatalf("refresh calls = %d, want 1", calls.Load())
+			}
+			if SourceFor(id, "", nil, nil) == src {
+				t.Fatal("the signed-out source is still registered")
+			}
+		})
+	}
+}
+
+// The rotation lands at the issuer whether or not the request that asked for
+// it is still waiting, so it has to land here too.
+func TestACancelledRequestStillStoresTheRotation(t *testing.T) {
+	var stored string
+	src, _ := refreshingSource(t, Token{
+		Access: "old", Refresh: "refresh-1", ExpiresAt: time.Now().Add(time.Minute),
+	}, func(_, oauth string) error {
+		stored = oauth
+		return nil
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := src.AccessToken(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if parsed, _ := ParseToken(stored); parsed.Refresh != "rotated" {
+		t.Fatalf("stored refresh token = %q, want the rotated one", parsed.Refresh)
+	}
+}
+
+func TestRefreshAllRefreshesAnIdleSource(t *testing.T) {
+	src, calls := refreshingSource(t, Token{
+		Access: "old", Refresh: "refresh-1", ExpiresAt: time.Now().Add(-time.Hour),
+	}, nil)
+
+	RefreshAll(context.Background())
+
+	if calls.Load() != 1 {
+		t.Fatalf("refresh calls = %d, want 1", calls.Load())
+	}
+	if tok, err := src.AccessToken(context.Background()); err != nil || tok.Access != "access-refresh-1" {
+		t.Fatalf("token = %q, %v; want the refreshed one", tok.Access, err)
+	}
+}
+
+// The sign-out may overlap a runtime reload asking for the same row: SourceFor
+// holds the registry lock while it waits on the source's own.
+func TestARefusedRefreshOverlappingSourceForDoesNotHang(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-release
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"revoked","code":"refresh_token_invalidated"}}`))
+	}))
+	defer srv.Close()
+
+	const id = "p-refused-reload"
+	Forget(id)
+	t.Cleanup(func() { Forget(id) })
+	raw, err := Token{Access: "old", Refresh: "r", ExpiresAt: time.Now().Add(time.Minute)}.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The clearing save reloads the runtime, which asks for the row again.
+	src := SourceFor(id, raw, func(_, oauth string) error {
+		SourceFor(id, oauth, nil, nil)
+		return nil
+	}, nil)
+	src.withEndpoints(Endpoints{OAuthToken: srv.URL})
+
+	done := make(chan struct{}, 2)
+	go func() {
+		_, _ = src.AccessToken(context.Background())
+		done <- struct{}{}
+	}()
+	<-started
+	go func() {
+		SourceFor(id, raw, nil, nil)
+		done <- struct{}{}
+	}()
+	// Wait until that SourceFor holds the registry lock and is queued on mu.
+	for sourcesMu.TryLock() {
+		sourcesMu.Unlock()
+		time.Sleep(time.Millisecond)
+	}
+	close(release)
+
+	for range 2 {
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("deadlock: the sign-out and SourceFor wait on each other")
+		}
 	}
 }

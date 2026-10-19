@@ -125,7 +125,8 @@ Wie ein Schlüssel wird es von der API nie zurückgegeben – die Admin-Seite si
 Eintrag angemeldet ist, und den Kontonamen, mit dem er angemeldet wurde.
 
 Das Access-Token ist etwa eine Stunde gültig und wird vor Ort erneuert, ungefähr einmal pro
-Stunde, solange die Instanz läuft. Wenn Sie die
+Stunde, solange die Instanz läuft. Eine ungenutzte Instanz erneuert es trotzdem einmal am
+Tag, damit die Anmeldung nicht verfällt, während niemand sie verwendet. Wenn Sie die
 [Verschlüsselung im Ruhezustand](/de/encryption) verwenden, ist das Token genauso davon
 erfasst wie ein API-Schlüssel.
 
@@ -136,6 +137,15 @@ Team-, Enterprise- oder Edu-Workspace kann nur ein Administrator sie erteilen.
 
 **Der Code ist abgelaufen** – er ist etwa fünfzehn Minuten gültig. Klicken Sie erneut auf
 **Mit ChatGPT anmelden**, um einen neuen zu erhalten.
+
+**Der Eintrag hat sich selbst abgemeldet, oder eine Anfrage scheitert mit „the sign-in has
+expired or was revoked“** – OpenAI hat die Erneuerung des Tokens abgelehnt, daher hat Lemmary
+es gelöscht, und der Eintrag bietet wieder **Mit ChatGPT anmelden** an. Nur eine neue Anmeldung
+hilft. Meist steckt dieselbe Anmeldung in zwei Instanzen: eine kopierte Datenbank, ein
+wiederhergestelltes Backup, eine Testinstanz mit Produktivdaten. Jede Erneuerung macht das
+vorherige Token ungültig, und sobald die zweite Kopie eines verwendet, das die erste schon
+verbraucht hat, widerruft OpenAI die Anmeldung für beide. Melden Sie jede Instanz einzeln an.
+Ein geändertes ChatGPT-Passwort oder das Abmelden auf allen Geräten widerruft sie ebenfalls.
 
 **403 bei jeder Anfrage nach erfolgreicher Anmeldung** – meist deckt der Tarif des Kontos das
 zugewiesene Modell nicht ab. Versuchen Sie das Standardmodell oder ein kleineres.

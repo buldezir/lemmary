@@ -1,12 +1,14 @@
 package appwire
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"strings"
 
 	"lemmary/backend/internal/appapi"
 	"lemmary/backend/internal/authguard"
+	"lemmary/backend/internal/chatgpt"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/dirimport"
 	"lemmary/backend/internal/embed"
@@ -106,6 +108,10 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	}
 
 	registerSQLiteShrink(app)
+	// Daily, so an instance nobody uses keeps its ChatGPT sign-in alive.
+	app.Cron().MustAdd("chatgpt_token_refresh", "37 4 * * *", func() {
+		chatgpt.RefreshAll(context.Background())
+	})
 	registerCOOPHeader(app)
 
 	// Prefer the in-app setup wizard over PocketBase's browser installer UI.
