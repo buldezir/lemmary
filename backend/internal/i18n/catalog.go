@@ -1,6 +1,10 @@
 package i18n
 
 var catalog = map[string]map[string]string{
+	"%s must be a time such as 22:00": {
+		"de": "%s muss eine Uhrzeit wie 22:00 sein",
+		"ru": "%s должно быть временем, например 22:00",
+	},
 	"%s must be positive": {
 		"de": "%s muss positiv sein",
 		"ru": "%s должен быть положительным",
@@ -541,6 +545,14 @@ var catalog = map[string]map[string]string{
 		"de": "Die Passwörter stimmen nicht überein.",
 		"ru": "Пароли не совпадают.",
 	},
+	"Processing hours must start and end at different times.": {
+		"de": "Die Verarbeitungszeiten müssen zu unterschiedlichen Uhrzeiten beginnen und enden.",
+		"ru": "Часы обработки должны начинаться и заканчиваться в разное время.",
+	},
+	"Processing hours need a start and an end time.": {
+		"de": "Für die Verarbeitungszeiten sind eine Start- und eine Endzeit erforderlich.",
+		"ru": "Для часов обработки нужно указать время начала и окончания.",
+	},
 	"Provider is assigned to OCR, extraction, chat, search, embeddings, or web search. Unassign it first.": {
 		"de": "Der Anbieter ist OCR, Extraktion, Chat, Suche, Embeddings oder Websuche zugeordnet. Heben Sie die Zuordnung zuerst auf.",
 		"ru": "Провайдер назначен для OCR, извлечения, чата, поиска, эмбеддингов или веб-поиска. Сначала снимите назначение.",
@@ -824,6 +836,10 @@ var catalog = map[string]map[string]string{
 	"Unknown OCR provider.": {
 		"de": "Unbekannter OCR-Anbieter.",
 		"ru": "Неизвестный OCR-провайдер.",
+	},
+	"Unknown timezone %q.": {
+		"de": "Unbekannte Zeitzone %q.",
+		"ru": "Неизвестный часовой пояс %q.",
 	},
 	"Unlock": {
 		"de": "Entsperren",

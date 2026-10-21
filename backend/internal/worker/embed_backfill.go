@@ -136,6 +136,11 @@ func (b *Backfiller) tick() {
 	if snap.Embedder == nil {
 		return
 	}
+	// The window only, not the ping: a failed embedding is retried next tick
+	// anyway, and the ping would otherwise run every minute with nothing to do.
+	if !snap.Cfg.ProcessingWindow.Contains(time.Now()) {
+		return
+	}
 	logger := b.app.Logger().With("component", "embed_backfill")
 	b.sweepOrphans(logger)
 

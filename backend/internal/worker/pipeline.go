@@ -32,6 +32,9 @@ type PipelineRunner struct {
 	AI       ai.Extractor
 	Embedder ai.Embedder
 	registry map[string]Step
+	// Whether the processing gate has closed since the job started. Nil never
+	// holds.
+	held func() bool
 }
 
 func NewPipelineRunner(app core.App, cfg config.Config, ocrProvider ocr.Provider, aiExtractor ai.Extractor, embedder ai.Embedder, linking RelatedLinking) *PipelineRunner {
@@ -259,6 +262,19 @@ func (r *PipelineRunner) handleStepFailure(job, document *core.Record, runs []mo
 	saveStepRuns(job, runs)
 	job.Set("current_step", runs[idx].Name)
 
+	// The window ended or the server went away under the step: back on the
+	// queue for when the gate opens, without spending a retry on it.
+	if r.held != nil && r.held() {
+		runs[idx].Attempts--
+		saveStepRuns(job, runs)
+		r.App.Logger().Info("step failed while processing is held; re-queued",
+			"job", job.Id,
+			"document", document.Id,
+			"step", runs[idx].Name,
+		)
+		return r.requeue(job, document, "")
+	}
+
 	if runs[idx].Attempts < r.Cfg.WorkerMaxRetries {
 		delay := RetryDelay(runs[idx].Attempts)
 		r.App.Logger().Warn("scheduling step retry",
@@ -269,16 +285,20 @@ func (r *PipelineRunner) handleStepFailure(job, document *core.Record, runs []mo
 			"max_retries", r.Cfg.WorkerMaxRetries,
 			"retry_in", delay,
 		)
-		job.Set("status", models.JobStatusPending)
-		job.Set("next_attempt_at", timestampAfter(delay))
-		document.Set("processing_status", models.DocStatusPending)
-		if saveErr := r.App.Save(document); saveErr != nil {
-			return saveErr
-		}
-		return r.App.Save(job)
+		return r.requeue(job, document, timestampAfter(delay))
 	}
 
 	return failJob(r.App, job, document, err)
+}
+
+func (r *PipelineRunner) requeue(job, document *core.Record, nextAttemptAt string) error {
+	job.Set("status", models.JobStatusPending)
+	job.Set("next_attempt_at", nextAttemptAt)
+	document.Set("processing_status", models.DocStatusPending)
+	if err := r.App.Save(document); err != nil {
+		return err
+	}
+	return r.App.Save(job)
 }
 
 // A soft failure does not count: the pipeline walked past it, so whatever is

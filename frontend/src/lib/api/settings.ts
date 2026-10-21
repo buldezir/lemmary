@@ -54,6 +54,17 @@ export type AppSettings = {
   extraction_rules: string
   /** Tenant-owned, so a managed instance keeps it. */
   always_require_review: boolean
+  /**
+   * Processing hours: jobs start only between these HH:MM times in
+   * processing_timezone (IANA; empty is UTC). A start after the end crosses
+   * midnight. Host-owned on a managed instance.
+   */
+  processing_window_enabled: boolean
+  processing_window_start: string
+  processing_window_end: string
+  processing_timezone: string
+  /** Jobs start only while the bound OCR, AI and embedding servers answer. */
+  processing_ping_enabled: boolean
   near_duplicate_detection_enabled: boolean
   near_duplicate_threshold: number
   /** Consume folder (INGEST_DIR). Owner is a users id; empty means the first admin. */

@@ -80,14 +80,15 @@ func Register(app *pocketbase.PocketBase, rt *config.Runtime, publicDir string, 
 	if config.IngestIMAPEnabledFromEnv() {
 		imapScanner = imapimport.New(app, rt)
 	}
-	appapi.Register(app, rt, ft, lim, badLimitKeys, backfill, ingestDir != "", imapScanner)
+	gate := worker.NewGate(app, rt)
+	appapi.Register(app, rt, ft, lim, badLimitKeys, backfill, gate, ingestDir != "", imapScanner)
 	// After config.RegisterHooks, so the settings singleton and env-seeded
 	// providers exist by the time an account is minted.
 	appapi.RegisterAdminBootstrap(app)
 	appapi.RegisterMCP(app, rt, ft)
 	ngxapi.Register(app, ft)
 	linkEnabled, linkThreshold := config.RelatedLinkingFromEnv()
-	worker.Register(app, rt, backfill, config.WorkerConcurrencyFromEnv(),
+	worker.Register(app, rt, backfill, gate, config.WorkerConcurrencyFromEnv(),
 		worker.RelatedLinking{Enabled: linkEnabled, Threshold: linkThreshold, Chunks: ft})
 	// After worker.Register: the documents it creates go through the same
 	// create hooks as an upload, which is what hashes and queues them.

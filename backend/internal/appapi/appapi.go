@@ -16,6 +16,7 @@ import (
 	"lemmary/backend/internal/pdfsplit"
 	"lemmary/backend/internal/remoteimport"
 	"lemmary/backend/internal/updatecheck"
+	"lemmary/backend/internal/worker"
 	"lemmary/backend/internal/zipimport"
 )
 
@@ -28,6 +29,7 @@ func Register(
 	lim limits.Limits,
 	badLimitKeys []string,
 	sweeper EmbeddingSweeper,
+	gate *worker.Gate,
 	ingestDirEnabled bool,
 	// Nil when INGEST_IMAP_ENABLED is off.
 	imapScanner *imapimport.Scanner,
@@ -70,11 +72,7 @@ func Register(
 			g.POST("/documents/export", bindAuth(handleExportDocuments(app)))
 			g.GET("/documents/search", bindAuth(handleDocumentSearch(app, rt, idx)))
 			g.GET("/documents/timeline", bindAuth(handleDocumentsTimeline(app)))
-			g.POST("/documents/reprocess-failed", bindAuth(handlePostReprocessFailed(app, rt)))
-			// The way back out of a mistaken import: stop what is queued, then
-			// throw away what it was queued for.
-			g.POST("/documents/discard-unprocessed", bindAuth(handlePostDiscardUnprocessed(app)))
-			g.POST("/jobs/stop", bindAuth(handlePostStopQueue(app)))
+			registerQueueRoutes(g, app, rt, gate)
 			g.POST("/search", bindAuth(handleDeepSearch(app, rt, idx))).
 				Bind(apis.BodyLimit(chatMaxBodyBytes))
 			g.POST("/search/stream", bindAuth(handleSearchStream(app, rt, idx))).
@@ -144,6 +142,15 @@ func Register(
 			return e.Next()
 		},
 	})
+}
+
+func registerQueueRoutes(g *router.RouterGroup[*core.RequestEvent], app core.App, rt *config.Runtime, gate *worker.Gate) {
+	g.POST("/documents/reprocess-failed", bindAuth(handlePostReprocessFailed(app, rt)))
+	// The way back out of a mistaken import: stop what is queued, then
+	// throw away what it was queued for.
+	g.POST("/documents/discard-unprocessed", bindAuth(handlePostDiscardUnprocessed(app)))
+	g.POST("/jobs/stop", bindAuth(handlePostStopQueue(app)))
+	g.GET("/jobs/hold", bindAuth(handleGetQueueHold(rt, gate)))
 }
 
 func registerImportRoutes(g *router.RouterGroup[*core.RequestEvent], app core.App, lim limits.Limits) {
