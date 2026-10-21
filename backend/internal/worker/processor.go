@@ -26,6 +26,7 @@ type Processor struct {
 	// waiting on someone else's HTTP server.
 	limit   int
 	linking RelatedLinking
+	gate    *Gate
 
 	mu     sync.Mutex
 	active int
@@ -39,7 +40,7 @@ type Processor struct {
 	snapshot func() config.Snapshot
 }
 
-func Register(app core.App, rt *config.Runtime, backfill *Backfiller, concurrency int, linking RelatedLinking) {
+func Register(app core.App, rt *config.Runtime, backfill *Backfiller, gate *Gate, concurrency int, linking RelatedLinking) {
 	if concurrency < 1 {
 		concurrency = 1
 	}
@@ -49,6 +50,7 @@ func Register(app core.App, rt *config.Runtime, backfill *Backfiller, concurrenc
 		limit:    concurrency,
 		inflight: make(map[string]struct{}),
 		linking:  linking,
+		gate:     gate,
 	}
 	p.snapshot = rt.Snapshot
 	p.registerHooks()
@@ -355,6 +357,11 @@ func (p *Processor) attempt(job *core.Record) bool {
 		)
 		return false
 	}
+	// Left pending like an unconfigured provider, for the cron to retry: the
+	// tick is what notices the window opening or the server coming back.
+	if p.gate.Hold(false) != "" {
+		return false
+	}
 
 	if err := p.runJob(job.Id, snap); err != nil {
 		p.app.Logger().Error("job error", "job", job.Id, slog.Any("error", err))
@@ -489,6 +496,7 @@ func (p *Processor) runJob(jobID string, snap config.Snapshot) error {
 	}
 
 	runner := NewPipelineRunner(p.app, snap.Cfg, snap.OCR, snap.AI, snap.Embedder, p.linking)
+	runner.held = func() bool { return p.gate.Hold(true) != "" }
 	return runner.Run(context.Background(), jobID)
 }
 

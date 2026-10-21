@@ -132,6 +132,20 @@ export async function getActiveJobCounts(): Promise<ActiveJobCounts> {
   return { pending, running }
 }
 
+export type QueueHold = {
+  hold: '' | 'schedule' | 'offline'
+  /** For a schedule hold: when the window opens, HH:MM in `timezone` (empty is UTC). */
+  resumes_at?: string
+  timezone?: string
+}
+
+/** Why pending jobs are not moving: the processing hours, or an AI server that does not answer. */
+export function getQueueHold() {
+  return apiFetch<QueueHold>('/api/app/jobs/hold', {
+    fallbackError: t('maintenanceApi.queueHoldFailed'),
+  })
+}
+
 export type StopQueueResult = {
   stopped: number
   /** What was already inside the pipeline and so ran to the end. */

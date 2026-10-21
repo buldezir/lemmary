@@ -40,7 +40,11 @@ type StepRun struct {
 	PromptVersion string `json:"prompt_version,omitempty"`
 	// Soft marks a failed step the pipeline was allowed to walk past: the run
 	// is still recorded as failed, but the job and the document carry on.
-	Soft       bool   `json:"soft,omitempty"`
+	Soft bool `json:"soft,omitempty"`
+	// Held marks a step whose failure was refunded because processing was
+	// held at the time. Only once: a second failure counts, so a document
+	// that takes the server down with it still ends on failed.
+	Held       bool   `json:"held,omitempty"`
 	StartedAt  string `json:"started_at,omitempty"`
 	FinishedAt string `json:"finished_at,omitempty"`
 	Error      string `json:"error,omitempty"`

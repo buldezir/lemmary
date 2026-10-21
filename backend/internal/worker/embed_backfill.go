@@ -62,6 +62,7 @@ func BackfillBatchFromEnv(logger *slog.Logger) int {
 type Backfiller struct {
 	app   core.App
 	rt    *config.Runtime
+	gate  *Gate
 	batch int
 
 	running sync.Mutex
@@ -73,8 +74,8 @@ type Backfiller struct {
 // Constructed in wiring rather than Register: the API routes are bound before
 // the worker is, and both sides need the same instance for the locks to mean
 // anything.
-func NewBackfiller(app core.App, rt *config.Runtime) *Backfiller {
-	return &Backfiller{app: app, rt: rt, batch: BackfillBatchFromEnv(app.Logger())}
+func NewBackfiller(app core.App, rt *config.Runtime, gate *Gate) *Backfiller {
+	return &Backfiller{app: app, rt: rt, gate: gate, batch: BackfillBatchFromEnv(app.Logger())}
 }
 
 func registerEmbeddingBackfill(app core.App, b *Backfiller) {
@@ -134,6 +135,12 @@ func (b *Backfiller) tick() {
 	// Backfiller can reach.
 	snap := b.rt.Snapshot()
 	if snap.Embedder == nil {
+		return
+	}
+	// Status first, so an empty backlog never pings: with nothing known to be
+	// wrong the batch's own call is the probe, and once the server is known to
+	// be down Hold asks again at most once a minute.
+	if b.gate.Status() != "" && b.gate.Hold(false) != "" {
 		return
 	}
 	logger := b.app.Logger().With("component", "embed_backfill")

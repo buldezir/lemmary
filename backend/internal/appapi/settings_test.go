@@ -42,6 +42,11 @@ func settingsRecordForTest(t *testing.T) *core.Record {
 		&core.DateField{Name: "imap_since"},
 		&core.SelectField{Name: "imap_skip_types", Values: []string{"pdf", "office", "image", "text"}, MaxSelect: 4},
 		&core.SelectField{Name: "mcp_capabilities", Values: config.MCPCapabilities, MaxSelect: 5},
+		&core.BoolField{Name: "processing_window_enabled"},
+		&core.TextField{Name: "processing_window_start"},
+		&core.TextField{Name: "processing_window_end"},
+		&core.TextField{Name: "processing_timezone"},
+		&core.BoolField{Name: "processing_ping_enabled"},
 	)
 	record := core.NewRecord(collection)
 	record.Id = config.SingletonID
@@ -638,5 +643,103 @@ func TestBrandingIsNotAManagedSetting(t *testing.T) {
 	t.Parallel()
 	if (settingsPatchRequest{AppName: new("Archive"), Accent: new("#000000")}).touchesManaged() {
 		t.Fatal("app_name and accent are tenant-owned")
+	}
+}
+
+func TestPatchProcessingSchedule(t *testing.T) {
+	t.Parallel()
+	record := settingsRecordForTest(t)
+
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{
+		ProcessingWindowEnabled: new(true),
+		ProcessingWindowStart:   new(" 22:00 "),
+		ProcessingWindowEnd:     new("07:00"),
+		ProcessingTimezone:      new("Europe/Berlin"),
+		ProcessingPingEnabled:   new(true),
+	}); err != nil {
+		t.Fatalf("applySettingsPatch: %v", err)
+	}
+	for field, want := range map[string]any{
+		"processing_window_enabled": true,
+		"processing_window_start":   "22:00",
+		"processing_window_end":     "07:00",
+		"processing_timezone":       "Europe/Berlin",
+		"processing_ping_enabled":   true,
+	} {
+		if got := record.Get(field); got != want {
+			t.Errorf("%s = %v, want %v", field, got, want)
+		}
+	}
+
+	// Switched off, the times stay for the next time it is switched on.
+	if err := applySettingsPatch(nil, record, settingsPatchRequest{ProcessingWindowEnabled: new(false)}); err != nil {
+		t.Fatalf("applySettingsPatch: %v", err)
+	}
+	if record.GetBool("processing_window_enabled") || record.GetString("processing_window_start") != "22:00" {
+		t.Fatalf("switching off: enabled %v, start %q", record.GetBool("processing_window_enabled"), record.GetString("processing_window_start"))
+	}
+}
+
+func TestPatchProcessingScheduleRefusals(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		req  settingsPatchRequest
+		want string
+	}{
+		"not a time": {
+			settingsPatchRequest{ProcessingWindowStart: new("25:00")},
+			"processing_window_start must be a time such as 22:00",
+		},
+		"enabled without an end": {
+			settingsPatchRequest{ProcessingWindowEnabled: new(true), ProcessingWindowStart: new("22:00")},
+			"Processing hours need a start and an end time.",
+		},
+		"empty window": {
+			settingsPatchRequest{ProcessingWindowEnabled: new(true), ProcessingWindowStart: new("07:00"), ProcessingWindowEnd: new("07:00")},
+			"Processing hours must start and end at different times.",
+		},
+		"unknown zone": {
+			settingsPatchRequest{ProcessingTimezone: new("Mars/Olympus")},
+			`Unknown timezone "Mars/Olympus".`,
+		},
+		"the container's zone": {
+			settingsPatchRequest{ProcessingTimezone: new("Local")},
+			`Unknown timezone "Local".`,
+		},
+	} {
+		err := applySettingsPatch(nil, settingsRecordForTest(t), tc.req)
+		if err == nil || err.Error() != tc.want {
+			t.Errorf("%s: error %v, want %q", name, err, tc.want)
+		}
+	}
+}
+
+func TestSettingsResponseCarriesTheProcessingSchedule(t *testing.T) {
+	t.Parallel()
+	res := settingsResponseFromConfig(config.Config{
+		ProcessingWindow: config.ProcessingWindow{Enabled: true, Start: "22:00", End: "07:00", Timezone: "Europe/Berlin"},
+		ProcessingPing:   true,
+	})
+	if !res.ProcessingWindowEnabled || res.ProcessingWindowStart != "22:00" || res.ProcessingWindowEnd != "07:00" ||
+		res.ProcessingTimezone != "Europe/Berlin" || !res.ProcessingPingEnabled {
+		t.Fatalf("response = %+v", res)
+	}
+}
+
+// The schedule is about an AI server, and a managed tenant's is the host's.
+func TestTouchesManagedCoversTheProcessingSchedule(t *testing.T) {
+	t.Parallel()
+
+	for name, req := range map[string]settingsPatchRequest{
+		"processing_window_enabled": {ProcessingWindowEnabled: new(true)},
+		"processing_window_start":   {ProcessingWindowStart: new("22:00")},
+		"processing_window_end":     {ProcessingWindowEnd: new("07:00")},
+		"processing_timezone":       {ProcessingTimezone: new("UTC")},
+		"processing_ping_enabled":   {ProcessingPingEnabled: new(true)},
+	} {
+		if !req.touchesManaged() {
+			t.Errorf("%s must count as managed", name)
+		}
 	}
 }

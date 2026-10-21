@@ -11,7 +11,12 @@ import {
   reprocessFailedBatch,
   reprocessFailedLabel,
 } from '../lib/api/documents'
-import { discardUnprocessedDocuments, stopQueue } from '../lib/api/maintenance'
+import {
+  discardUnprocessedDocuments,
+  getQueueHold,
+  stopQueue,
+  type QueueHold,
+} from '../lib/api/maintenance'
 import {
   formatDuration,
   jobDurationMs,
@@ -32,18 +37,26 @@ const realtimeDebounceMs = 300
 /**
  * The processing queue, across every document. It reads processing_jobs directly
  * -- the collection's list rule already scopes it to the caller's own documents
- * -- so there is no endpoint behind this page.
+ * -- so the only endpoint behind this page says whether the processing
+ * schedule is holding it.
  */
 export function ActivityPage() {
   // The failed count rides along: it, not the rows on screen, is what the
   // reprocess button acts on.
   const { data, loading, error, reload } = useAsync(
-    () => Promise.all([listActiveJobs(), countFailedDocuments()]),
+    () =>
+      Promise.all([
+        listActiveJobs(),
+        countFailedDocuments(),
+        // The queue is worth showing without it.
+        getQueueHold().catch(() => null),
+      ]),
     [],
   )
   const jobs = data?.[0].jobs ?? []
   const total = data?.[0].total ?? 0
   const failedCount = data?.[1] ?? 0
+  const hold = data?.[2]?.hold ? data[2] : null
 
   const reloadRef = useRef(reload)
   useEffect(() => {
@@ -222,6 +235,12 @@ export function ActivityPage() {
       </div>
       <p className="mb-4 text-sm text-ink-soft">{t('activity.intro')}</p>
 
+      {hold ? (
+        <p className="mb-4 rounded-xs border border-line-strong bg-bright p-3 text-sm text-ink">
+          {holdMessage(hold)}
+        </p>
+      ) : null}
+
       {notice ? <p className="mb-3 text-sm text-ink-soft">{notice}</p> : null}
       {actionError ? <p className="mb-3 text-sm text-madder">{actionError}</p> : null}
       {error ? <p className="mb-3 text-sm text-madder">{error}</p> : null}
@@ -244,6 +263,11 @@ export function ActivityPage() {
       )}
     </section>
   )
+}
+
+function holdMessage(hold: QueueHold): string {
+  if (hold.hold === 'offline') return t('activity.heldOffline')
+  return t('activity.heldSchedule', { time: hold.resumes_at ?? '', zone: hold.timezone || 'UTC' })
 }
 
 function JobGroup({

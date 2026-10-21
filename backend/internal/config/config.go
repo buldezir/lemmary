@@ -71,6 +71,10 @@ type Config struct {
 	// AlwaysRequireReview finishes every extracted document on needs_review, so
 	// nothing reaches completed except by a person saying so.
 	AlwaysRequireReview bool
+	// ProcessingWindow limits when jobs start; ProcessingPing holds them while
+	// a bound OCR, extraction or embedding provider stops answering.
+	ProcessingWindow ProcessingWindow
+	ProcessingPing   bool
 	// The consume folder (INGEST_DIR). Owner is a users id; empty means the
 	// first admin's paired account.
 	IngestDirOwner          string
@@ -383,6 +387,13 @@ func configFromRecord(app core.App, record *core.Record) (Config, error) {
 		IMAPSkipTypes:                 record.GetStringSlice("imap_skip_types"),
 		IMAPSince:                     record.GetDateTime("imap_since").Time(),
 		MCPCapabilities:               record.GetStringSlice("mcp_capabilities"),
+		ProcessingPing:                record.GetBool("processing_ping_enabled"),
+		ProcessingWindow: ProcessingWindow{
+			Enabled:  record.GetBool("processing_window_enabled"),
+			Start:    record.GetString("processing_window_start"),
+			End:      record.GetString("processing_window_end"),
+			Timezone: record.GetString("processing_timezone"),
+		},
 	}
 
 	if err := resolveProviders(app, &cfg); err != nil {
