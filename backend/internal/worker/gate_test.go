@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pocketbase/pocketbase/core"
+
 	"lemmary/backend/internal/aiprovider"
 	"lemmary/backend/internal/config"
 	"lemmary/backend/internal/models"
@@ -186,57 +188,82 @@ func (failingOCR) ExtractText(context.Context, string, string) (string, error) {
 	return "", errors.New("connection refused")
 }
 
+// runHeldFailure claims the job the way runJob does and runs it against an OCR
+// that always fails, with the gate held or not.
+func runHeldFailure(t *testing.T, app core.App, jobID string, held bool) *core.Record {
+	t.Helper()
+	job, err := app.FindRecordById("processing_jobs", jobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job.Set("status", models.JobStatusRunning)
+	job.Set("started_at", nowTimestamp())
+	if err := app.Save(job); err != nil {
+		t.Fatal(err)
+	}
+	runner := NewPipelineRunner(app, config.Config{OCRTimeout: 10 * time.Second, WorkerTimeout: 30 * time.Second},
+		failingOCR{}, stubExtractor{}, nil, RelatedLinking{})
+	runner.held = func() bool { return held }
+	_ = runner.Run(context.Background(), jobID)
+
+	reloaded, err := app.FindRecordById("processing_jobs", jobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return reloaded
+}
+
+func TestStepFailureWithoutAHoldFails(t *testing.T) {
+	app := bootAppForEnqueue(t)
+	job := makeOCRJob(t, app, makeImageDocument(t, app, makeUserForDrain(t, app, "unheld@example.test"), "Unheld"))
+
+	if status := runHeldFailure(t, app, job.Id, false).GetString("status"); status != models.JobStatusFailed {
+		t.Fatalf("status %q, want failed", status)
+	}
+}
+
 // The window closing or the server going away under a step is not the
 // document's fault: it waits for the gate instead of failing or spending a
-// retry.
+// retry, and reads as waiting rather than as a retry in progress.
 func TestStepFailureWhileHeldRequeuesWithoutSpendingARetry(t *testing.T) {
 	app := bootAppForEnqueue(t)
-	userID := makeUserForDrain(t, app, "cutoff@example.test")
+	job := makeOCRJob(t, app, makeImageDocument(t, app, makeUserForDrain(t, app, "cutoff@example.test"), "Cut off"))
 
-	for _, tc := range []struct {
-		held       bool
-		wantStatus string
-	}{
-		{held: true, wantStatus: models.JobStatusPending},
-		{held: false, wantStatus: models.JobStatusFailed},
-	} {
-		job := makeOCRJob(t, app, makeImageDocument(t, app, userID, "Cut off"))
-		job.Set("status", models.JobStatusRunning)
-		if err := app.Save(job); err != nil {
-			t.Fatal(err)
-		}
+	reloaded := runHeldFailure(t, app, job.Id, true)
+	if status := reloaded.GetString("status"); status != models.JobStatusPending {
+		t.Fatalf("status %q, want pending", status)
+	}
+	if at := reloaded.GetString("next_attempt_at"); at != "" {
+		t.Fatalf("held job backed off to %s; the gate decides when it runs", at)
+	}
+	if at := reloaded.GetString("started_at"); at != "" {
+		t.Fatalf("held job kept started_at %s, so it reads as running", at)
+	}
+	runs, err := parseStepRuns(reloaded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 || runs[0].Attempts != 0 || runs[0].Status != models.StepStatusPending || runs[0].Error != "" || !runs[0].Held {
+		t.Fatalf("step runs %+v, want one pending OCR run, held, with no attempt spent", runs)
+	}
+	document, err := app.FindRecordById("documents", reloaded.GetString("document"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status := document.GetString("processing_status"); status != models.DocStatusPending {
+		t.Fatalf("document status %q, want pending", status)
+	}
+}
 
-		runner := NewPipelineRunner(app, config.Config{OCRTimeout: 10 * time.Second, WorkerTimeout: 30 * time.Second},
-			failingOCR{}, stubExtractor{}, nil, RelatedLinking{})
-		runner.held = func() bool { return tc.held }
-		_ = runner.Run(context.Background(), job.Id)
+// A document whose step takes the server down with it fails the probe every
+// time. Refunded for ever it would head the queue and starve everything
+// behind it, so only the first held failure is free.
+func TestASecondHeldFailureCounts(t *testing.T) {
+	app := bootAppForEnqueue(t)
+	job := makeOCRJob(t, app, makeImageDocument(t, app, makeUserForDrain(t, app, "crashloop@example.test"), "Crash loop"))
 
-		reloaded, err := app.FindRecordById("processing_jobs", job.Id)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if status := reloaded.GetString("status"); status != tc.wantStatus {
-			t.Fatalf("held=%v: status %q, want %q", tc.held, status, tc.wantStatus)
-		}
-		if !tc.held {
-			continue
-		}
-		if at := reloaded.GetString("next_attempt_at"); at != "" {
-			t.Fatalf("held job backed off to %s; the gate decides when it runs", at)
-		}
-		runs, err := parseStepRuns(reloaded)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(runs) != 1 || runs[0].Attempts != 0 {
-			t.Fatalf("step runs %+v, want one OCR run with no attempt spent", runs)
-		}
-		document, err := app.FindRecordById("documents", reloaded.GetString("document"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if status := document.GetString("processing_status"); status != models.DocStatusPending {
-			t.Fatalf("document status %q, want pending", status)
-		}
+	runHeldFailure(t, app, job.Id, true)
+	if status := runHeldFailure(t, app, job.Id, true).GetString("status"); status != models.JobStatusFailed {
+		t.Fatalf("second held failure left the job %q, want failed", status)
 	}
 }

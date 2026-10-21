@@ -263,14 +263,20 @@ func (r *PipelineRunner) handleStepFailure(job, document *core.Record, runs []mo
 	job.Set("current_step", runs[idx].Name)
 
 	// The window ended or the server went away under the step: back on the
-	// queue for when the gate opens, without spending a retry on it.
-	if r.held != nil && r.held() {
-		runs[idx].Attempts--
+	// queue for when the gate opens, without spending a retry on it. The step
+	// returns to pending and the job loses started_at, so Activity reads it as
+	// waiting rather than as a retry in progress.
+	if r.held != nil && !runs[idx].Held && r.held() {
+		run := &runs[idx]
+		run.Status, run.Attempts, run.Held = models.StepStatusPending, run.Attempts-1, true
+		run.StartedAt, run.FinishedAt, run.Error = "", "", ""
 		saveStepRuns(job, runs)
+		job.Set("started_at", "")
 		r.App.Logger().Info("step failed while processing is held; re-queued",
 			"job", job.Id,
 			"document", document.Id,
-			"step", runs[idx].Name,
+			"step", run.Name,
+			slog.Any("error", err),
 		)
 		return r.requeue(job, document, "")
 	}
