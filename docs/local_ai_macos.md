@@ -47,6 +47,9 @@ Then bind models in **Admin → AI → Models**. Each picker lists only the mode
 for its job: `BAAI/bge-m3` for embeddings, `apple-vision-ocr` for OCR, and the
 text model, while it is on, for General AI.
 
+On a fresh install, choosing **Fully local** in the setup wizard does both: it
+asks for the address alone and arrives at the models step with all three bound.
+
 Its [README](https://github.com/buldezir/lemmary-local-ai#readme) covers the
 settings, the text models compared, and moving from a hand-built llama.cpp and
 docling setup.

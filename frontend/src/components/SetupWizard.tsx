@@ -8,6 +8,7 @@ import {
   createAIProvider,
   isLLMProvider,
   listAIProviders,
+  listProviderModels,
   providerConfigured,
   recommendedModel,
   requiresAPIKey,
@@ -18,6 +19,7 @@ import {
   keylessProviderHint,
   SDK_DEFAULT_BASE,
   SDK_OPTIONS,
+  updateAIProvider,
   type AIProvider,
   type ModelPurpose,
   type ProviderSDK,
@@ -46,6 +48,10 @@ type SetupWizardProps = {
 }
 
 type Step = 'admin' | 'passkey' | 'providers' | 'models' | 'done'
+
+type ProviderForm = 'guided' | 'manual' | 'local'
+
+const LOCAL_AI_RELEASE = 'https://github.com/buldezir/lemmary-local-ai/releases/latest'
 
 // The quick form asks for a key and nothing else, so it leaves out mistral (its
 // own field) and every SDK that takes no key: chatgpt signs in, and Lemmary
@@ -87,10 +93,11 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
   const [providers, setProviders] = useState<AIProvider[]>([])
   // The guided form is the way in; the generic one below is the escape hatch
   // for anything it does not cover.
-  const [guided, setGuided] = useState(!initialStatus.provider_count)
+  const [form, setForm] = useState<ProviderForm>(initialStatus.provider_count ? 'manual' : 'guided')
   const [mistralKey, setMistralKey] = useState('')
   const [generalSdk, setGeneralSdk] = useState<ProviderSDK>('opencode')
   const [generalKey, setGeneralKey] = useState('')
+  const [localURL, setLocalURL] = useState('')
   const [sdk, setSdk] = useState<ProviderSDK>('openai')
   const [alias, setAlias] = useState('')
   const [baseURL, setBaseURL] = useState(SDK_DEFAULT_BASE.openai)
@@ -142,10 +149,10 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           llmProviders.find((item) => item.id !== ocr?.id) ??
           llmProviders[0]
         setExtractProviderId(llm?.id ?? '')
-        setExtractModel(
+        const extract =
           saved(settings.extract_provider_id, settings.extract_model, llm) ||
-            recommendedModel(llm?.sdk, 'llm'),
-        )
+          recommendedModel(llm?.sdk, 'llm')
+        setExtractModel(extract)
         const embed =
           byId(settings.embedding_provider_id) ??
           named('embedding') ??
@@ -155,6 +162,12 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
           saved(settings.embedding_provider_id, settings.embedding_model, embed) ||
             recommendedModel(embed?.sdk, 'embedding'),
         )
+        // A catalogue of one is no choice, which is how Lemmary Local AI's
+        // text model, whose name depends on the Mac, arrives bound.
+        if (!extract && llm) {
+          const { models } = await listProviderModels(llm.id, 'llm')
+          if (active && models.length === 1) setExtractModel((current) => current || models[0].id)
+        }
       } catch {
         // Prefill is best-effort.
       }
@@ -244,6 +257,31 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
       setProviders(await listAIProviders())
       setMistralKey('')
       setGeneralKey('')
+      const next = await refreshStatus()
+      setStep(next.needs_config ? 'models' : 'done')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('setupWizard.saveProvidersFailed'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function onSaveLocal(event: SubmitEvent<HTMLFormElement>) {
+    event.preventDefault()
+    try {
+      setSubmitting(true)
+      setError('')
+      const sdk: ProviderSDK = 'lemmary_local_ai'
+      const baseURL = localURL.trim()
+      // Coming back with a corrected address updates the row, since a second
+      // create would be refused for its alias.
+      const existing = (await listAIProviders()).find((item) => item.sdk === sdk)
+      if (existing) {
+        await updateAIProvider(existing.id, { base_url: baseURL })
+      } else {
+        await createAIProvider({ sdk, alias: sdkAliasDefault(sdk), base_url: baseURL })
+      }
+      setProviders(await listAIProviders())
       const next = await refreshStatus()
       setStep(next.needs_config ? 'models' : 'done')
     } catch (err) {
@@ -374,6 +412,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
 
   const llmProviders = providers.filter((item) => isLLMProvider(item.sdk))
   const keylessDocs = providerDocs(sdk)
+  const localDocs = providerDocs('lemmary_local_ai')
 
   return (
     <div className="flex min-h-screen flex-col bg-paper">
@@ -392,9 +431,9 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
             {step === 'providers' &&
               (signInProvider
                 ? t('setupWizard.headingSignIn')
-                : guided
-                  ? t('setupWizard.headingGuided')
-                  : t('setupWizard.headingProvider'))}
+                : form === 'manual'
+                  ? t('setupWizard.headingProvider')
+                  : t('setupWizard.headingGuided'))}
             {step === 'models' && t('setupWizard.headingModels')}
             {step === 'done' && t('setupWizard.headingDone')}
           </h2>
@@ -494,7 +533,39 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
             </div>
           )}
 
-          {step === 'providers' && !signInProvider && guided && (
+          {step === 'providers' && !signInProvider && form !== 'manual' && (
+            <fieldset className="mb-4 grid grid-cols-2 gap-2">
+              <legend className={`${labelTextClassName} mb-1`}>{t('setupWizard.where')}</legend>
+              {(
+                [
+                  ['guided', t('setupWizard.cloud'), t('setupWizard.cloudHint')],
+                  ['local', t('setupWizard.local'), t('setupWizard.localHint')],
+                ] as const
+              ).map(([value, title, hint]) => (
+                <label
+                  key={value}
+                  className="flex cursor-pointer flex-col gap-0.5 border border-line-strong bg-bright p-3 has-checked:border-oxblood has-checked:ring-1 has-checked:ring-oxblood"
+                >
+                  <span className="flex items-center gap-2 text-sm font-medium text-ink">
+                    <input
+                      type="radio"
+                      name="ai-location"
+                      checked={form === value}
+                      onChange={() => {
+                        setError('')
+                        setForm(value)
+                      }}
+                      className="accent-oxblood"
+                    />
+                    {title}
+                  </span>
+                  <span className="text-xs text-ink-soft">{hint}</span>
+                </label>
+              ))}
+            </fieldset>
+          )}
+
+          {step === 'providers' && !signInProvider && form === 'guided' && (
             <form className="flex flex-col gap-4" onSubmit={onSaveGuided}>
               <p className="text-sm text-ink-muted">
                 {tNode('setupWizard.guidedIntro', {
@@ -564,7 +635,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                   className="text-left text-xs font-medium text-ink-soft hover:text-ink"
                   onClick={() => {
                     setError('')
-                    setGuided(false)
+                    setForm('manual')
                   }}
                 >
                   {t('setupWizard.manual')}
@@ -573,7 +644,63 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
             </form>
           )}
 
-          {step === 'providers' && !signInProvider && !guided && (
+          {step === 'providers' && !signInProvider && form === 'local' && (
+            <form className="flex flex-col gap-4" onSubmit={onSaveLocal}>
+              <p className="text-sm text-ink-muted">{t('setupWizard.localIntro')}</p>
+              <div className="flex flex-col gap-1.5 border-l-2 border-oxblood bg-bright px-3 py-2 text-sm font-medium">
+                {(
+                  [
+                    [LOCAL_AI_RELEASE, '↓', t('setupWizard.localDownload')],
+                    [localDocs.href, '↗', t('setupWizard.localGuide')],
+                  ] as const
+                ).map(([href, arrow, label]) => (
+                  <a
+                    key={href}
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-oxblood underline underline-offset-4 hover:text-ink"
+                  >
+                    <span aria-hidden="true" className="inline-block w-4">
+                      {arrow}
+                    </span>
+                    {label}
+                  </a>
+                ))}
+              </div>
+              <label className={labelClassName}>
+                <span className={labelTextClassName}>{t('providersBlock.baseUrl')}</span>
+                <input
+                  type="url"
+                  required
+                  placeholder="http://<mac>:5001/v1"
+                  value={localURL}
+                  onChange={(e) => setLocalURL(e.target.value)}
+                  className={inputClassName}
+                />
+              </label>
+              <p className={fieldHintClassName}>{keylessProviderHint('lemmary_local_ai')}</p>
+              <p className={fieldHintClassName}>{t('setupWizard.localTextModel')}</p>
+              {error && <p className="text-sm text-madder">{error}</p>}
+              <div className="flex flex-col gap-2">
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? t('settingsFeedback.saving') : t('setupWizard.continue')}
+                </Button>
+                <button
+                  type="button"
+                  className="text-left text-xs font-medium text-ink-soft hover:text-ink"
+                  onClick={() => {
+                    setError('')
+                    setForm('manual')
+                  }}
+                >
+                  {t('setupWizard.manual')}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {step === 'providers' && !signInProvider && form === 'manual' && (
             <form className="flex flex-col gap-4" onSubmit={onSaveProvider}>
               <p className="text-sm text-ink-muted">
                 {t('setupWizard.manualIntro')}
@@ -661,7 +788,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                   className="text-left text-xs font-medium text-ink-soft hover:text-ink"
                   onClick={() => {
                     setError('')
-                    setGuided(true)
+                    setForm('guided')
                   }}
                 >
                   {t('setupWizard.backToGuided')}
@@ -721,7 +848,7 @@ export function SetupWizard({ appName, accent, initialStatus, onComplete }: Setu
                     // Straight to the manual form: the guided pair is what got
                     // us here, so whatever is still missing is one of the
                     // things it does not cover.
-                    setGuided(false)
+                    setForm('manual')
                     setError('')
                     setStep('providers')
                   }}

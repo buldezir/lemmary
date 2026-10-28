@@ -51,6 +51,10 @@ nur die Modelle für ihre Aufgabe: `BAAI/bge-m3` für Embeddings,
 `apple-vision-ocr` für OCR und das Textmodell, solange es läuft, für
 Allgemeine KI.
 
+Auf einer frischen Installation erledigt **Vollständig lokal** im
+Einrichtungsassistenten beides: Es fragt nur nach der Adresse und öffnet den
+Modellschritt mit allen drei Bindungen.
+
 Die [README](https://github.com/buldezir/lemmary-local-ai#readme) beschreibt die
 Einstellungen, vergleicht die Textmodelle und erklärt den Umstieg von einer
 selbst gebauten Einrichtung mit llama.cpp und docling.

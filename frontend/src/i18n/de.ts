@@ -721,6 +721,17 @@ export const de: Catalog = {
   'setupWizard.generalHint': 'Leer lassen, um alles über Mistral laufen zu lassen.',
   'setupWizard.continue': 'Weiter',
   'setupWizard.manual': 'Stattdessen einen Anbieter manuell hinzufügen',
+  'setupWizard.where': 'Wo die KI läuft',
+  'setupWizard.cloud': 'Cloud',
+  'setupWizard.cloudHint': 'Gehostete APIs, ein oder zwei Schlüssel',
+  'setupWizard.local': 'Vollständig lokal',
+  'setupWizard.localHint': 'Lemmary Local AI auf Ihrem Mac',
+  'setupWizard.localIntro':
+    'Lemmary Local AI liest, indiziert und extrahiert auf einem Mac in Ihrem Netzwerk, sodass Ihre Dokumente es nie verlassen. Installieren Sie die App dort und tragen Sie dann die Adresse ein, die sie anzeigt.',
+  'setupWizard.localDownload': 'Neueste Version herunterladen',
+  'setupWizard.localGuide': 'Anleitung zu Lemmary Local AI lesen',
+  'setupWizard.localTextModel':
+    'Extraktion, Chat und Suche laufen über das Textmodell der App, schalten Sie es dort also ein. Es ist klein: Für einen stärkeren Chat fügen Sie im nächsten Schritt oder später in den Einstellungen einen gehosteten Anbieter für die Allgemeine KI hinzu.',
   'setupWizard.manualIntro':
     'Fügen Sie einen Anbieter hinzu. OpenAI, OpenRouter oder Mistral können Extraktion und Chat übernehmen; Google Vision oder Mistral OCR übernehmen OCR, und ein einzelner Mistral-Anbieter deckt beides ab. Local OCR führt Docling auf Ihrem eigenen Host aus, und Local Embeddings liefert die dichte Hälfte von Deep Search — keiner von beiden braucht einen API-Schlüssel, aber für jeden muss zuerst sein Compose-Overlay laufen. Ein ChatGPT-Abo deckt Extraktion, Chat und OCR über den Platz ab, den Sie bereits bezahlen, ganz ohne API-Schlüssel — Sie melden sich stattdessen mit einem Code an.',
   'setupWizard.manualNoAccount':
