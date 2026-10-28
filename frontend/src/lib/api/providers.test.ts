@@ -60,6 +60,18 @@ describe('providerServesPurpose', () => {
     expect(providerServesPurpose('local', 'ocr')).toBe(false)
   })
 
+  it('offers Lemmary Local AI to every model picker, keyless', () => {
+    for (const purpose of ['llm', 'ocr', 'embedding'] as const) {
+      expect(providerServesPurpose('lemmary_local_ai', purpose)).toBe(true)
+    }
+    expect(providerServesPurpose('lemmary_local_ai', 'websearch')).toBe(false)
+    expect(requiresAPIKey('lemmary_local_ai')).toBe(false)
+    expect(keylessProviderHint('lemmary_local_ai')).toContain(':5001/v1')
+    expect(recommendedModel('lemmary_local_ai', 'ocr')).toBe('apple-vision-ocr')
+    expect(recommendedModel('lemmary_local_ai', 'embedding')).toBe('BAAI/bge-m3')
+    expect(recommendedModel('lemmary_local_ai', 'llm')).toBe('')
+  })
+
   it('offers the docling sidecar to OCR only', () => {
     expect(providerServesPurpose('docling', 'ocr')).toBe(true)
     expect(providerServesPurpose('docling', 'llm')).toBe(false)

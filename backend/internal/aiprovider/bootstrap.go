@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"lemmary/backend/internal/strutil"
 )
 
 // DefaultExtractModel is the fallback when nothing names a model. One copy so
@@ -80,7 +82,7 @@ func (b Bootstrap) OCRModel() string {
 	if b.OCR.Requested() {
 		return b.OCR.Model
 	}
-	return b.LLM.Model
+	return strutil.FirstNonEmpty(DefaultOCRModel(b.LLM.SDK), b.LLM.Model)
 }
 
 func (b Bootstrap) OCRSDK() string {

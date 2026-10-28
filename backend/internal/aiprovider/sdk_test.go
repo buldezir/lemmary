@@ -60,6 +60,8 @@ func TestSDKCapabilities(t *testing.T) {
 		{SDKGoogleVision, true, false, false, false, "", "Google Cloud Vision"},
 		{SDKDocling, false, true, false, true, "http://docling:5001", "Docling"},
 		{SDKTavily, true, false, true, false, "https://api.tavily.com", "Tavily"},
+		// No default address: it runs on a Mac on the LAN, not on the compose network.
+		{SDKLemmaryLocalAI, false, true, true, false, "", "Lemmary Local AI"},
 		// An unrecognised or empty SDK must fall on the side that still demands
 		// a key, because every call site reads RequiresAPIKey rather than the key.
 		{"tesseract", true, false, true, false, "", "tesseract"},
@@ -203,13 +205,13 @@ func TestSDKListsMatchTheirPredicates(t *testing.T) {
 		got  []string
 		want []string
 	}{
-		"llm":       {LLMSDKs(), []string{SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKMistral, SDKOpenCode, SDKChatGPT}},
-		"embedding": {EmbeddingSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKLocalEmbeddings}},
-		"ocr":       {OCRSDKs(), []string{SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKChatGPT, SDKDocling}},
+		"llm":       {LLMSDKs(), []string{SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKMistral, SDKOpenCode, SDKChatGPT, SDKLemmaryLocalAI}},
+		"embedding": {EmbeddingSDKs(), []string{SDKOpenAI, SDKOpenRouter, SDKMistral, SDKLocalEmbeddings, SDKLemmaryLocalAI}},
+		"ocr":       {OCRSDKs(), []string{SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKChatGPT, SDKDocling, SDKLemmaryLocalAI}},
 		// The environment lists are the same minus chatgpt, whose credential
 		// is minted by signing in and so cannot be seeded from a file.
-		"env llm":    {EnvLLMSDKs(), []string{SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKMistral, SDKOpenCode}},
-		"env ocr":    {EnvOCRSDKs(), []string{SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKDocling}},
+		"env llm":    {EnvLLMSDKs(), []string{SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKMistral, SDKOpenCode, SDKLemmaryLocalAI}},
+		"env ocr":    {EnvOCRSDKs(), []string{SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKDocling, SDKLemmaryLocalAI}},
 		"web search": {WebSearchSDKs(), []string{SDKTavily}},
 	}
 	for name, tc := range cases {

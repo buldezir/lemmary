@@ -23,6 +23,7 @@ to use.
 | **Local OCR** — `docling` | ❌ | ✅ **on your own host** | ❌ | ❌ |
 | **Local Embeddings** — `local` | ❌ | ❌ | ✅ **on your own hardware** | ❌ |
 | **Tavily** — `tavily` | ❌ | ❌ | ❌ | ✅ **the only SDK that does** |
+| **Lemmary Local AI** — `lemmary_local_ai` | ✅ **on a Mac on your network** | ✅ Apple Vision | ✅ `BAAI/bge-m3` | ❌ |
 
 The names in bold are what Admin shows. The shorter code values remain the
 values used by `OCR_SDK`, `AI_EMBEDDING_SDK` and `WEB_SEARCH_SDK`.
@@ -109,6 +110,14 @@ The alternatives are worth naming:
   base URL is the whole configuration. It is the mirror image of
   `google_vision` — a single job, done off the network. Its SDK value is
   `local`. See [Local Embeddings](/local_embeddings).
+- **Lemmary Local AI** — embeddings, OCR and an optional small text model from
+  [one menu bar app](https://github.com/buldezir/lemmary-local-ai) on an Apple
+  Silicon Mac on your network, with no API key: the base URL is the whole
+  configuration. Its `/v1/models` names each model's job, so every picker lists
+  only the models for it. Its text model is meant for extraction, but General
+  AI is one binding: chosen there, it answers Ask AI and AI assisted search too.
+  Its SDK value is `lemmary_local_ai`. See
+  [Lemmary Local AI](/local_ai_macos).
 
 Together, Local OCR and Local Embeddings are the two halves of an install where
 nothing leaves the host: point `AI_BASE_URL` at Ollama or vLLM, set
@@ -127,14 +136,14 @@ asks for it.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `AI_SDK` | `openai` | The language model's SDK: `opencode`, `openai`, `anthropic`, `openrouter` or `mistral`. `google_vision`, `docling` (Local OCR) and `local` (Local Embeddings) are refused — none of them can serve extraction. `chatgpt` too: it has no key to seed from the environment. |
+| `AI_SDK` | `openai` | The language model's SDK: `opencode`, `openai`, `anthropic`, `openrouter`, `mistral` or `lemmary_local_ai` (Lemmary Local AI, which takes no key). `google_vision`, `docling` (Local OCR) and `local` (Local Embeddings) are refused — none of them can serve extraction. `chatgpt` too: it has no key to seed from the environment. |
 | `AI_API_KEY` | empty | Its credential. **One key is usually the whole configuration**: with this and nothing else the app creates one provider and routes extraction, chat, Deep Research *and* OCR to it. |
 | `AI_MODEL` | `gpt-6-luna` | The **General AI** model: extraction, Ask AI, AI assisted search, and Deep Research's bulk document reads. Be sure it supports the result language set in **Admin**. |
-| `AI_BASE_URL` | the SDK's own endpoint | An OpenAI-compatible base URL, for a gateway or a self-hosted endpoint. Leave it unset for `opencode`, whose own endpoint is `https://opencode.ai/zen/go/v1`. |
-| `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `opencode`, `openai`, `anthropic`, `openrouter`, `mistral`, `google_vision` or `docling` (Local OCR). `local` (Local Embeddings) is refused — it serves embeddings only. `chatgpt` reads documents but is refused here too: it is signed in to from Admin rather than given a key, so the environment has nothing to seed it with. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
+| `AI_BASE_URL` | the SDK's own endpoint | An OpenAI-compatible base URL, for a gateway or a self-hosted endpoint. Leave it unset for `opencode`, whose own endpoint is `https://opencode.ai/zen/go/v1`. Required for `lemmary_local_ai`, which has no default address. |
+| `OCR_SDK` | unset (OCR runs on the `AI_SDK` provider) | A separate provider for OCR: `opencode`, `openai`, `anthropic`, `openrouter`, `mistral`, `google_vision`, `docling` (Local OCR) or `lemmary_local_ai`. `local` (Local Embeddings) is refused — it serves embeddings only. `chatgpt` reads documents but is refused here too: it is signed in to from Admin rather than given a key, so the environment has nothing to seed it with. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. |
 | `OCR_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an OCR SDK that differs from `AI_SDK` — except Local OCR (`docling`), which has no account behind it. Optional there, and only if you started the sidecar with `DOCLING_SERVE_API_KEY`. |
-| `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. For Local OCR (`docling`) the default is the compose service name, `http://docling:5001`, so `OCR_SDK=docling` alone is a complete configuration under the overlay. |
-| `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Not required for `google_vision` or Local OCR (`docling`), which read a document without one; for Local OCR it optionally names the OCR engine instead. See [Choosing an engine](/local_ocr#choosing-an-engine). |
+| `OCR_BASE_URL` | `AI_BASE_URL` when the SDKs match, else the SDK's own endpoint | Where that provider lives. For Local OCR (`docling`) the default is the compose service name, `http://docling:5001`, so `OCR_SDK=docling` alone is a complete configuration under the overlay. Required for `lemmary_local_ai` unless `AI_SDK` is the same SDK. |
+| `OCR_MODEL` | `AI_MODEL` when the SDKs match | Its model. Not required for `google_vision` or Local OCR (`docling`), which read a document without one; for Local OCR it optionally names the OCR engine instead. See [Choosing an engine](/local_ocr#choosing-an-engine). For `lemmary_local_ai` it defaults to `apple-vision-ocr`, even when OCR rides the `AI_SDK` provider: the app runs Apple Vision for that id only. |
 | `AI_EMBEDDING_MODEL` | unset (Deep Research and the search box match keywords only) | An embedding model — on the `AI_SDK` provider, or on the `AI_EMBEDDING_SDK` one when that is set — so Deep Research and the Documents search box can also find documents by meaning. Under `AI_SDK=opencode` or `AI_SDK=anthropic` it requires `AI_EMBEDDING_SDK`: neither serves `/embeddings`, so there is no provider to fall back to, and naming a model without one is refused at boot. See [what embeddings cost](#what-embeddings-cost). |
 | `AI_RESEARCH_MODEL` | unset (Deep Research runs on `AI_MODEL`) | The **Advanced model**, on the `AI_SDK` provider: drives the Deep Research reasoning loop, a few expensive calls per question where everything else is many cheap ones. Bulk document reads stay on `AI_MODEL`. See [How Research covers a topic](/deep_research#how-research-covers-a-topic). |
 
@@ -153,9 +162,9 @@ which has always been how a second provider for one job is described.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `AI_EMBEDDING_SDK` | unset (embeddings run on the `AI_SDK` provider) | A separate provider for embeddings: `openai`, `openrouter`, `mistral` or `local` (Local Embeddings). Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. `google_vision`, `docling` (Local OCR), `anthropic`, `opencode` and `chatgpt` are refused — none of them has an `/embeddings` endpoint. Required rather than optional when `AI_SDK` is one of the last three and `AI_EMBEDDING_MODEL` is set. |
+| `AI_EMBEDDING_SDK` | unset (embeddings run on the `AI_SDK` provider) | A separate provider for embeddings: `openai`, `openrouter`, `mistral`, `local` (Local Embeddings) or `lemmary_local_ai`. Naming the same SDK as `AI_SDK` reuses that key and endpoint and only changes the model. `google_vision`, `docling` (Local OCR), `anthropic`, `opencode` and `chatgpt` are refused — none of them has an `/embeddings` endpoint. Required rather than optional when `AI_SDK` is one of the last three and `AI_EMBEDDING_MODEL` is set. |
 | `AI_EMBEDDING_API_KEY` | `AI_API_KEY` when the SDKs match | Its credential. Required for an SDK that differs from `AI_SDK`, **except Local Embeddings (`local`)**, which takes none. |
-| `AI_EMBEDDING_BASE_URL` | the SDK's own endpoint, or `AI_BASE_URL` when the SDKs match | Where that provider lives. For Local Embeddings (`local`) this defaults to `http://embeddings:80/v1`, the compose overlay's service. |
+| `AI_EMBEDDING_BASE_URL` | the SDK's own endpoint, or `AI_BASE_URL` when the SDKs match | Where that provider lives. For Local Embeddings (`local`) this defaults to `http://embeddings:80/v1`, the compose overlay's service. Required for `lemmary_local_ai` unless `AI_SDK` is the same SDK. |
 
 Unset, all three change nothing: embeddings ride on the `AI_SDK` provider,
 exactly as they did before the block existed. Setting `AI_EMBEDDING_SDK` without

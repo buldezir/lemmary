@@ -156,3 +156,25 @@ func TestValidateRefusesAnotherModelWhenManaged(t *testing.T) {
 		t.Fatalf("Validate = %v, want a managed refusal", err)
 	}
 }
+
+// Every LLM client refuses an empty key before it sends anything, so a keyless
+// LLM SDK needs a stand-in; nothing that requires a key, or does not chat,
+// may be handed one.
+func TestProviderCredentialStandsInForAKeylessLLM(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		p    aiprovider.Provider
+		want string
+	}{
+		{aiprovider.Provider{SDK: aiprovider.SDKLemmaryLocalAI}, keylessPlaceholderKey},
+		{aiprovider.Provider{SDK: aiprovider.SDKLemmaryLocalAI, APIKey: "set"}, "set"},
+		{aiprovider.Provider{SDK: aiprovider.SDKOpenAI}, ""},
+		{aiprovider.Provider{SDK: aiprovider.SDKLocalEmbeddings}, ""},
+		{aiprovider.Provider{SDK: aiprovider.SDKDocling}, ""},
+	}
+	for _, tc := range cases {
+		if got, _ := providerCredential(nil, &tc.p, nil); got != tc.want {
+			t.Errorf("providerCredential(%s, key %q) = %q, want %q", tc.p.SDK, tc.p.APIKey, got, tc.want)
+		}
+	}
+}

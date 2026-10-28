@@ -76,7 +76,7 @@ func newProvider(p aiprovider.Provider, model string, timeout time.Duration, log
 	case aiprovider.SDKMistral:
 		logger.Info("using provider", "provider", p.Alias, "sdk", p.SDK, "model", model)
 		return NewMistralProvider(p.APIKey, model, p.BaseURL, timeout, logger), nil
-	case aiprovider.SDKOpenAI, aiprovider.SDKAnthropic, aiprovider.SDKOpenRouter, aiprovider.SDKOpenCode, aiprovider.SDKChatGPT:
+	case aiprovider.SDKOpenAI, aiprovider.SDKAnthropic, aiprovider.SDKOpenRouter, aiprovider.SDKOpenCode, aiprovider.SDKChatGPT, aiprovider.SDKLemmaryLocalAI:
 		// anthropic, chatgpt and opencode join the metered LLM SDKs here rather
 		// than getting branches of their own: the request is the same multimodal
 		// chat completion, and what differs -- down to the wire protocol, for

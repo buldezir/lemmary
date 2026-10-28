@@ -27,6 +27,8 @@ type Model struct {
 	// outputModalities is OpenRouter's architecture.output_modalities, the one
 	// place a provider says outright that a model returns embeddings.
 	outputModalities []string
+	// purposes is Lemmary Local AI's, in ModelPurpose's own words.
+	purposes []string
 }
 
 type modelCapabilities struct {
@@ -299,6 +301,9 @@ func includeModel(m Model, sdk string, purpose ModelPurpose) bool {
 	if sdk == SDKLocalEmbeddings {
 		return purpose == PurposeEmbedding
 	}
+	if len(m.purposes) > 0 {
+		return slices.Contains(m.purposes, string(purpose))
+	}
 	if purpose == PurposeEmbedding {
 		return isEmbeddingModel(m, sdk)
 	}
@@ -406,6 +411,7 @@ func modelsFromRaw(raw []json.RawMessage) []Model {
 			Architecture *struct {
 				OutputModalities []string `json:"output_modalities"`
 			} `json:"architecture"`
+			Purposes []string `json:"purposes"`
 			// context_length is OpenRouter's; max_context_length is Mistral's;
 			// max_input_tokens is Anthropic's.
 			ContextLength    int `json:"context_length"`
@@ -446,7 +452,7 @@ func modelsFromRaw(raw []json.RawMessage) []Model {
 			contextWindow = smallestContextWindow(contextWindow, row.TopProvider.ContextLength)
 		}
 
-		m := Model{ID: id, Name: name, ContextWindow: contextWindow}
+		m := Model{ID: id, Name: name, ContextWindow: contextWindow, purposes: row.Purposes}
 		if row.Capabilities != nil {
 			m.caps = &modelCapabilities{
 				completionChat: row.Capabilities.CompletionChat,

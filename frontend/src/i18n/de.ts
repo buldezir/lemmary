@@ -193,6 +193,8 @@ export const de: Catalog = {
     'Optional. Benennt die OCR-Engine von Docling – rapidocr (Standard, die PP-OCR-Modelle von PaddleOCR), easyocr, tesserocr oder tesseract. Ein unbekannter Name wird stillschweigend ignoriert, prüfen Sie also die Schreibweise.',
   'providers.keylessHint':
     'Läuft auf Ihrem eigenen Host, daher ist kein API-Schlüssel nötig – die Adresse ist die ganze Konfiguration. Standard ist der Dienstname aus {overlay}.',
+  'providers.lemmaryLocalAiHint':
+    'Läuft auf einem Mac in Ihrem Netzwerk, daher ist kein API-Schlüssel nötig. Tragen Sie die URL ein, die das Menüleisten-Fenster anzeigt, etwa http://<mac>:5001/v1.',
   'providers.docsLocalEmbeddings': 'Lokale Embeddings',
   'providers.docsLocalOcr': 'Lokale OCR',
   'providers.docsGoogleVision': 'Google-Vision-API-Schlüssel',

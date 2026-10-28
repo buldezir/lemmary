@@ -12,6 +12,7 @@ export type ProviderSDK =
   | 'local'
   | 'docling'
   | 'tavily'
+  | 'lemmary_local_ai'
 
 export type AIProvider = {
   id: string
@@ -152,6 +153,7 @@ export const SDK_DEFAULT_BASE: Record<ProviderSDK, string> = {
   local: 'http://embeddings:80/v1',
   docling: 'http://docling:5001',
   tavily: 'https://api.tavily.com',
+  lemmary_local_ai: '',
 }
 
 export const SDK_OPTIONS: { value: ProviderSDK; label: string }[] = [
@@ -165,6 +167,7 @@ export const SDK_OPTIONS: { value: ProviderSDK; label: string }[] = [
   { value: 'local', label: t('providers.sdkLocal') },
   { value: 'docling', label: t('providers.sdkDocling') },
   { value: 'tavily', label: 'Tavily' },
+  { value: 'lemmary_local_ai', label: 'Lemmary Local AI' },
 ]
 
 export function sdkLabel(sdk: ProviderSDK | string) {
@@ -189,7 +192,8 @@ export function isLLMProvider(sdk: string) {
     sdk === 'openrouter' ||
     sdk === 'mistral' ||
     sdk === 'opencode' ||
-    sdk === 'chatgpt'
+    sdk === 'chatgpt' ||
+    sdk === 'lemmary_local_ai'
   )
 }
 
@@ -230,7 +234,7 @@ export function canEmbedProvider(sdk: string) {
  * and chatgpt signs in instead. Default-true, so an unknown SDK still asks.
  */
 export function requiresAPIKey(sdk?: string) {
-  return sdk !== 'local' && sdk !== 'docling' && sdk !== 'chatgpt'
+  return sdk !== 'local' && sdk !== 'docling' && sdk !== 'chatgpt' && sdk !== 'lemmary_local_ai'
 }
 
 /**
@@ -293,6 +297,7 @@ export function keylessProviderHint(sdk?: string) {
   // chatgpt needs no key either, but it is not keyless: the sign-in panel
   // stands where this hint would.
   if (requiresAPIKey(sdk) || requiresSignIn(sdk)) return ''
+  if (sdk === 'lemmary_local_ai') return t('providers.lemmaryLocalAiHint')
   const overlay = sdk === 'local' ? 'docker-compose.embeddings.yml' : 'docker-compose.local-ocr.yml'
   return t('providers.keylessHint', { overlay })
 }
@@ -311,6 +316,8 @@ export function providerDocs(sdk?: string) {
       return { href: docsUrl('local_embeddings.html'), label: t('providers.docsLocalEmbeddings') }
     case 'docling':
       return { href: docsUrl('local_ocr.html'), label: t('providers.docsLocalOcr') }
+    case 'lemmary_local_ai':
+      return { href: docsUrl('local_ai_macos.html'), label: 'Lemmary Local AI' }
     case 'google_vision':
       return { href: docsUrl('google_vision.html'), label: t('providers.docsGoogleVision') }
     case 'chatgpt':
@@ -346,6 +353,10 @@ export function recommendedModel(sdk: string | undefined, purpose: ModelPurpose)
   if (sdk === 'opencode' && purpose === 'llm') return 'gpt-6-luna'
   if (sdk === 'anthropic' && purpose !== 'embedding') return 'claude-opus-5'
   if (sdk === 'local' && purpose === 'embedding') return 'BAAI/bge-m3'
+  if (sdk === 'lemmary_local_ai') {
+    if (purpose === 'ocr') return 'apple-vision-ocr'
+    if (purpose === 'embedding') return 'BAAI/bge-m3'
+  }
   return ''
 }
 

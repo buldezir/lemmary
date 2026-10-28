@@ -885,9 +885,9 @@ var catalog = map[string]map[string]string{
 		"de": "app_name muss 1 bis 255 Zeichen lang sein",
 		"ru": "app_name должно содержать от 1 до 255 символов",
 	},
-	"base_url is required for a local OCR provider.": {
-		"de": "base_url ist für einen lokalen OCR-Anbieter erforderlich.",
-		"ru": "Для локального OCR-провайдера требуется base_url.",
+	"base_url is required for a local provider.": {
+		"de": "base_url ist für einen lokalen Anbieter erforderlich.",
+		"ru": "Для локального провайдера требуется base_url.",
 	},
 	"catalog must be one of the known model catalogues, or empty.": {
 		"de": "catalog muss einer der bekannten Modellkataloge oder leer sein.",

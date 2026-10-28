@@ -20,7 +20,7 @@ description: "Руководства по установке, настройке
 - [Сканирование с сетевого сканера](/ru/scanning) — сканирование по eSCL/AirScan и как поиск в локальной сети находит устройство
 - [Локальное OCR](/ru/local_ocr) — запуск OCR-движка у себя, чтобы сканы никогда не покидали хост
 - [Локальные эмбеддинги](/ru/local_embeddings) — запуск модели эмбеддингов у себя, чтобы Deep Research не расходовал токены
-- [Локальные OCR и эмбеддинги на Mac](/ru/local_ai_macos) — и то и другое на GPU Mac с чипом серии M, нативно, а не в Docker
+- [Lemmary Local AI на Mac](/ru/local_ai_macos) — эмбеддинги, OCR и текстовая модель на Mac с Apple Silicon, нативно, а не в Docker
 - [Ключ Google Vision API](/ru/google_vision) — получение ключа Cloud Vision API для OCR
 - [Вход через ChatGPT](/ru/chatgpt_login) — чат, извлечение данных и Deep Research по подписке ChatGPT вместо ключа с оплатой за использование
 - [Вход через OAuth2 / SSO](/ru/oauth) — включение входа через провайдера на экране входа в приложение

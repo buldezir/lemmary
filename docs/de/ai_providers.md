@@ -23,6 +23,7 @@ damit eine frische Instanz sofort einsatzbereit startet.
 | **Local OCR** — `docling` | ❌ | ✅ **auf Ihrem eigenen Host** | ❌ | ❌ |
 | **Local Embeddings** — `local` | ❌ | ❌ | ✅ **auf Ihrer eigenen Hardware** | ❌ |
 | **Tavily** — `tavily` | ❌ | ❌ | ❌ | ✅ **das einzige SDK, das das kann** |
+| **Lemmary Local AI** — `lemmary_local_ai` | ✅ **auf einem Mac in Ihrem Netzwerk** | ✅ Apple Vision | ✅ `BAAI/bge-m3` | ❌ |
 
 Die fett gedruckten Namen sind das, was die Admin-Seite anzeigt. Die kürzeren
 Code-Werte bleiben die Werte, die von `OCR_SDK`, `AI_EMBEDDING_SDK` und `WEB_SEARCH_SDK`
@@ -117,6 +118,15 @@ Die Alternativen verdienen eine Erwähnung:
   Konfiguration. Es ist das Spiegelbild von `google_vision` – eine einzige Aufgabe,
   erledigt ohne Netzwerk nach außen. Sein SDK-Wert ist `local`. Siehe
   [Lokale Embeddings](/de/local_embeddings).
+- **Lemmary Local AI** – Embeddings, OCR und optional ein kleines Textmodell aus
+  [einer Menüleisten-App](https://github.com/buldezir/lemmary-local-ai) auf einem
+  Mac mit Apple Silicon in Ihrem Netzwerk, ohne API-Schlüssel: Die Basis-URL ist
+  die ganze Konfiguration. Ihr `/v1/models` nennt die Aufgabe jedes Modells,
+  sodass jede Auswahl nur die passenden Modelle zeigt. Ihr Textmodell ist für die
+  Extraktion gedacht, aber Allgemeine KI ist eine einzige Zuordnung: Dort gewählt,
+  beantwortet es auch „KI fragen“ und die KI-gestützte Suche. Der SDK-Wert ist
+  `lemmary_local_ai`. Siehe
+  [Lemmary Local AI](/de/local_ai_macos).
 
 Zusammen sind Local OCR und Local Embeddings die beiden Hälften einer Installation, bei
 der nichts den Host verlässt: Richten Sie `AI_BASE_URL` auf Ollama oder vLLM, setzen Sie
@@ -135,14 +145,14 @@ Einrichtungsassistent fragt danach.
 
 | Variable | Standard | Beschreibung |
 | --- | --- | --- |
-| `AI_SDK` | `openai` | Das SDK des Sprachmodells: `opencode`, `openai`, `anthropic`, `openrouter` oder `mistral`. `google_vision`, `docling` (Local OCR) und `local` (Local Embeddings) werden abgelehnt – keines davon kann Extraktion übernehmen. `chatgpt` ebenfalls: Es hat keinen Schlüssel, der sich aus der Umgebung vorbelegen ließe. |
+| `AI_SDK` | `openai` | Das SDK des Sprachmodells: `opencode`, `openai`, `anthropic`, `openrouter`, `mistral` oder `lemmary_local_ai` (Lemmary Local AI, ohne Schlüssel). `google_vision`, `docling` (Local OCR) und `local` (Local Embeddings) werden abgelehnt – keines davon kann Extraktion übernehmen. `chatgpt` ebenfalls: Es hat keinen Schlüssel, der sich aus der Umgebung vorbelegen ließe. |
 | `AI_API_KEY` | leer | Sein Zugangsschlüssel. **Ein Schlüssel ist meist die gesamte Konfiguration**: Damit und mit nichts anderem legt die App einen Anbieter an und leitet Extraktion, Chat, Deep Research *und* OCR dorthin. |
 | `AI_MODEL` | `gpt-6-luna` | Das Modell für **Allgemeine KI**: Extraktion, KI fragen, KI-gestützte Suche und das massenhafte Lesen von Dokumenten durch Deep Research. Achten Sie darauf, dass es die unter **Admin** festgelegte Ergebnissprache unterstützt. |
-| `AI_BASE_URL` | der eigene Endpunkt des SDKs | Eine OpenAI-kompatible Basis-URL, für ein Gateway oder einen selbst gehosteten Endpunkt. Lassen Sie sie für `opencode` ungesetzt, dessen eigener Endpunkt `https://opencode.ai/zen/go/v1` ist. |
-| `OCR_SDK` | ungesetzt (OCR läuft über den `AI_SDK`-Anbieter) | Ein separater Anbieter für OCR: `opencode`, `openai`, `anthropic`, `openrouter`, `mistral`, `google_vision` oder `docling` (Local OCR). `local` (Local Embeddings) wird abgelehnt – es bietet nur Embeddings. `chatgpt` liest Dokumente, wird hier aber ebenfalls abgelehnt: Die Anmeldung erfolgt über Admin statt über einen Schlüssel, daher hat die Umgebung nichts, womit sie es vorbelegen könnte. Wird dasselbe SDK wie bei `AI_SDK` genannt, werden dessen Schlüssel und Endpunkt wiederverwendet, und nur das Modell ändert sich. |
+| `AI_BASE_URL` | der eigene Endpunkt des SDKs | Eine OpenAI-kompatible Basis-URL, für ein Gateway oder einen selbst gehosteten Endpunkt. Lassen Sie sie für `opencode` ungesetzt, dessen eigener Endpunkt `https://opencode.ai/zen/go/v1` ist. Erforderlich für `lemmary_local_ai`, das keine Standardadresse hat. |
+| `OCR_SDK` | ungesetzt (OCR läuft über den `AI_SDK`-Anbieter) | Ein separater Anbieter für OCR: `opencode`, `openai`, `anthropic`, `openrouter`, `mistral`, `google_vision`, `docling` (Local OCR) oder `lemmary_local_ai`. `local` (Local Embeddings) wird abgelehnt – es bietet nur Embeddings. `chatgpt` liest Dokumente, wird hier aber ebenfalls abgelehnt: Die Anmeldung erfolgt über Admin statt über einen Schlüssel, daher hat die Umgebung nichts, womit sie es vorbelegen könnte. Wird dasselbe SDK wie bei `AI_SDK` genannt, werden dessen Schlüssel und Endpunkt wiederverwendet, und nur das Modell ändert sich. |
 | `OCR_API_KEY` | `AI_API_KEY`, wenn die SDKs übereinstimmen | Sein Zugangsschlüssel. Erforderlich für ein OCR-SDK, das sich von `AI_SDK` unterscheidet – außer Local OCR (`docling`), hinter dem kein Konto steht. Dort optional, und nur, wenn Sie den Sidecar mit `DOCLING_SERVE_API_KEY` gestartet haben. |
-| `OCR_BASE_URL` | `AI_BASE_URL`, wenn die SDKs übereinstimmen, sonst der eigene Endpunkt des SDKs | Wo sich dieser Anbieter befindet. Für Local OCR (`docling`) ist der Standard der Name des Compose-Dienstes, `http://docling:5001`, sodass `OCR_SDK=docling` allein unter dem Overlay eine vollständige Konfiguration ist. |
-| `OCR_MODEL` | `AI_MODEL`, wenn die SDKs übereinstimmen | Sein Modell. Nicht erforderlich für `google_vision` oder Local OCR (`docling`), die ein Dokument ohne Modell lesen; bei Local OCR nennt es optional stattdessen die OCR-Engine. Siehe [Eine Engine wählen](/de/local_ocr#choosing-an-engine). |
+| `OCR_BASE_URL` | `AI_BASE_URL`, wenn die SDKs übereinstimmen, sonst der eigene Endpunkt des SDKs | Wo sich dieser Anbieter befindet. Für Local OCR (`docling`) ist der Standard der Name des Compose-Dienstes, `http://docling:5001`, sodass `OCR_SDK=docling` allein unter dem Overlay eine vollständige Konfiguration ist. Erforderlich für `lemmary_local_ai`, außer `AI_SDK` ist dasselbe SDK. |
+| `OCR_MODEL` | `AI_MODEL`, wenn die SDKs übereinstimmen | Sein Modell. Nicht erforderlich für `google_vision` oder Local OCR (`docling`), die ein Dokument ohne Modell lesen; bei Local OCR nennt es optional stattdessen die OCR-Engine. Siehe [Eine Engine wählen](/de/local_ocr#choosing-an-engine). Für `lemmary_local_ai` ist der Standard `apple-vision-ocr`, auch wenn OCR über den `AI_SDK`-Anbieter läuft: Die App nutzt Apple Vision nur für diese ID. |
 | `AI_EMBEDDING_MODEL` | ungesetzt (Deep Research und das Suchfeld gleichen nur Stichwörter ab) | Ein Embedding-Modell – beim `AI_SDK`-Anbieter oder, wenn gesetzt, beim `AI_EMBEDDING_SDK`-Anbieter –, damit Deep Research und das Suchfeld der Dokumente Dokumente auch nach Bedeutung finden können. Unter `AI_SDK=opencode` oder `AI_SDK=anthropic` erfordert es `AI_EMBEDDING_SDK`: Keines von beiden bietet `/embeddings`, daher gibt es keinen Anbieter, auf den zurückgegriffen werden könnte, und die Angabe eines Modells ohne einen solchen wird beim Start abgelehnt. Siehe [was Embeddings kosten](#what-embeddings-cost). |
 | `AI_RESEARCH_MODEL` | ungesetzt (Deep Research läuft auf `AI_MODEL`) | Das **Erweiterte Modell**, beim `AI_SDK`-Anbieter: treibt die Denkschleife von Deep Research an, wenige teure Aufrufe pro Frage, während alles andere aus vielen günstigen besteht. Das massenhafte Lesen von Dokumenten bleibt auf `AI_MODEL`. Siehe [Wie Research ein Thema abdeckt](/de/deep_research#how-research-covers-a-topic). |
 
@@ -161,9 +171,9 @@ immer beschrieben hat, wie ein zweiter Anbieter für eine Aufgabe angegeben wird
 
 | Variable | Standard | Beschreibung |
 | --- | --- | --- |
-| `AI_EMBEDDING_SDK` | ungesetzt (Embeddings laufen über den `AI_SDK`-Anbieter) | Ein separater Anbieter für Embeddings: `openai`, `openrouter`, `mistral` oder `local` (Local Embeddings). Wird dasselbe SDK wie bei `AI_SDK` genannt, werden dessen Schlüssel und Endpunkt wiederverwendet, und nur das Modell ändert sich. `google_vision`, `docling` (Local OCR), `anthropic`, `opencode` und `chatgpt` werden abgelehnt – keines davon hat einen `/embeddings`-Endpunkt. Erforderlich statt optional, wenn `AI_SDK` eines der letzten drei ist und `AI_EMBEDDING_MODEL` gesetzt ist. |
+| `AI_EMBEDDING_SDK` | ungesetzt (Embeddings laufen über den `AI_SDK`-Anbieter) | Ein separater Anbieter für Embeddings: `openai`, `openrouter`, `mistral`, `local` (Local Embeddings) oder `lemmary_local_ai`. Wird dasselbe SDK wie bei `AI_SDK` genannt, werden dessen Schlüssel und Endpunkt wiederverwendet, und nur das Modell ändert sich. `google_vision`, `docling` (Local OCR), `anthropic`, `opencode` und `chatgpt` werden abgelehnt – keines davon hat einen `/embeddings`-Endpunkt. Erforderlich statt optional, wenn `AI_SDK` eines der letzten drei ist und `AI_EMBEDDING_MODEL` gesetzt ist. |
 | `AI_EMBEDDING_API_KEY` | `AI_API_KEY`, wenn die SDKs übereinstimmen | Sein Zugangsschlüssel. Erforderlich für ein SDK, das sich von `AI_SDK` unterscheidet, **außer Local Embeddings (`local`)**, das keinen benötigt. |
-| `AI_EMBEDDING_BASE_URL` | der eigene Endpunkt des SDKs oder `AI_BASE_URL`, wenn die SDKs übereinstimmen | Wo sich dieser Anbieter befindet. Für Local Embeddings (`local`) ist der Standard `http://embeddings:80/v1`, der Dienst des Compose-Overlays. |
+| `AI_EMBEDDING_BASE_URL` | der eigene Endpunkt des SDKs oder `AI_BASE_URL`, wenn die SDKs übereinstimmen | Wo sich dieser Anbieter befindet. Für Local Embeddings (`local`) ist der Standard `http://embeddings:80/v1`, der Dienst des Compose-Overlays. Erforderlich für `lemmary_local_ai`, außer `AI_SDK` ist dasselbe SDK. |
 
 Ungesetzt ändern alle drei nichts: Embeddings laufen über den `AI_SDK`-Anbieter, genau
 wie vor der Einführung des Blocks. `AI_EMBEDDING_SDK` ohne `AI_EMBEDDING_MODEL` zu setzen,
