@@ -19,9 +19,14 @@ All three answer on one port, `5001`, behind one OpenAI-compatible `/v1`:
 | Extraction (optional) | Gemma 4 E4B, or a larger model on a Mac with 24 or 32 GB | a second llama.cpp |
 
 It downloads and checks the models on first run, starts at login and updates
-itself. Use the text model for extraction (title, date, type, correspondent,
-tags, summary) and keep chat and Deep Research on a hosted model: a model this
-size is weak at tool use and long conversations.
+itself.
+
+The text model is meant for extraction (title, date, type, correspondent, tags,
+summary). Extraction runs on the **General AI** model, which also answers Ask AI
+and AI assisted search, and a model this size is weak at the tool use and long
+conversations those need. So binding it as General AI puts chat on it too, and
+keeping chat on a hosted model keeps extraction there as well. Either way, give
+Deep Research's **Advanced** model a hosted one.
 
 ## Requirements
 
@@ -40,7 +45,7 @@ In **Admin → AI → Providers**, add one provider of type **Lemmary Local AI**
 
 Then bind models in **Admin → AI → Models**. Each picker lists only the models
 for its job: `BAAI/bge-m3` for embeddings, `apple-vision-ocr` for OCR, and the
-text model, while it is on, for extraction.
+text model, while it is on, for General AI.
 
 Its [README](https://github.com/buldezir/lemmary-local-ai#readme) covers the
 settings, the text models compared, and moving from a hand-built llama.cpp and

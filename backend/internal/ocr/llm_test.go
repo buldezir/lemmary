@@ -17,8 +17,21 @@ import (
 
 	"github.com/openai/openai-go/v3"
 	"lemmary/backend/internal/aiprovider"
+	"lemmary/backend/internal/models"
 	"lemmary/backend/internal/pdftool/testpdf"
 )
+
+// A scan between 10 MiB and documents.file's limit must still reach Apple
+// Vision; a hosted model keeps the smaller cap.
+func TestMaxFileBytesFollowsTheSDK(t *testing.T) {
+	t.Parallel()
+	if got := maxFileBytes(aiprovider.SDKLemmaryLocalAI); int64(got) != models.MaxFileBytes {
+		t.Errorf("lemmary_local_ai cap = %d, want %d", got, models.MaxFileBytes)
+	}
+	if got := maxFileBytes(aiprovider.SDKOpenAI); got != llmOCRMaxFileBytes {
+		t.Errorf("openai cap = %d, want %d", got, llmOCRMaxFileBytes)
+	}
+}
 
 func TestLLMUserContentPartsImage(t *testing.T) {
 	t.Parallel()

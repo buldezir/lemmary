@@ -184,6 +184,10 @@ func parseLLM() (aiprovider.ProviderSpec, error) {
 			EnvAISDK, sdk, strings.Join(aiprovider.EnvLLMSDKs(), ", "))
 	}
 
+	if err := missingAddress(EnvAISDK, sdk, EnvAIBaseURL, baseURL); err != nil {
+		return aiprovider.ProviderSpec{}, err
+	}
+
 	spec := aiprovider.ProviderSpec{
 		SDK:            sdk,
 		APIKey:         strings.TrimSpace(os.Getenv(EnvAIAPIKey)),
@@ -253,6 +257,10 @@ func parseOCR(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error) {
 			"%s=%q needs %s; it is a different endpoint from %s=%q and cannot borrow its key",
 			EnvOCRSDK, sdk, EnvOCRAPIKey, EnvAISDK, llm.SDK)
 	}
+	if err := missingAddress(EnvOCRSDK, sdk, EnvOCRBaseURL, baseURL); err != nil {
+		return aiprovider.ProviderSpec{}, err
+	}
+	model = strutil.FirstNonEmpty(model, aiprovider.DefaultOCRModel(sdk))
 	if aiprovider.RequiresOCRModel(sdk) && model == "" {
 		if sdk == llm.SDK {
 			model = llm.Model
@@ -326,6 +334,9 @@ func parseEmbedding(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error
 			"%s=%q needs %s; it is a different endpoint from %s=%q and cannot borrow its key",
 			EnvAIEmbeddingSDK, sdk, EnvAIEmbeddingAPIKey, EnvAISDK, llm.SDK)
 	}
+	if err := missingAddress(EnvAIEmbeddingSDK, sdk, EnvAIEmbeddingBaseURL, baseURL); err != nil {
+		return aiprovider.ProviderSpec{}, err
+	}
 
 	return aiprovider.ProviderSpec{
 		SDK:     sdk,
@@ -333,6 +344,16 @@ func parseEmbedding(llm aiprovider.ProviderSpec) (aiprovider.ProviderSpec, error
 		BaseURL: aiprovider.NormalizeBaseURL(sdk, baseURL),
 		Model:   model,
 	}, nil
+}
+
+// missingAddress refuses an SDK that needs an address and has no default one,
+// in both modes, the way a missing key is refused: the row would otherwise be
+// seeded pointing nowhere.
+func missingAddress(sdkVar, sdk, urlVar, baseURL string) error {
+	if aiprovider.RequiresBaseURL(sdk) && aiprovider.NormalizeBaseURL(sdk, baseURL) == "" {
+		return fmt.Errorf("%s=%q needs %s; it has no default address", sdkVar, sdk, urlVar)
+	}
+	return nil
 }
 
 // parseWebSearch reads the optional web-search provider. Unset means no web
@@ -380,15 +401,6 @@ func (e AIEnv) validateManaged() error {
 	}
 	if e.Providers.LLM.Model == "" {
 		return fmt.Errorf("%s=1 requires %s", EnvManaged, EnvAIModel)
-	}
-	// parseOCR already refuses a named OCR provider with no key; the keyless SDKs
-	// need an address, which NormalizeBaseURL always supplies. So this only fires
-	// if that default is removed, and it fires here because a managed instance has
-	// no Settings page to fix it in.
-	ocr := e.Providers.OCR
-	if ocr.Requested() && aiprovider.RequiresBaseURL(ocr.SDK) && strings.TrimSpace(ocr.BaseURL) == "" {
-		return fmt.Errorf("%s=1 with %s=%q requires %s; a local OCR engine is reached by address alone",
-			EnvManaged, EnvOCRSDK, ocr.SDK, EnvOCRBaseURL)
 	}
 	return nil
 }

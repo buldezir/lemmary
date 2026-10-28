@@ -546,3 +546,56 @@ func TestResearchModelRidesOnTheLLMProvider(t *testing.T) {
 		t.Fatalf("defaults = %q/%q", cfg.ExtractModel, cfg.ResearchModel)
 	}
 }
+
+// Lemmary Local AI runs Apple Vision only for apple-vision-ocr, so OCR riding
+// the language model's row must not inherit AI_MODEL.
+func TestLemmaryLocalAISeedsWithoutAKeyAndReadsWithVision(t *testing.T) {
+	clearAIEnv(t)
+	t.Setenv(EnvAISDK, aiprovider.SDKLemmaryLocalAI)
+	t.Setenv(EnvAIBaseURL, "http://mac.lan:5001/v1")
+	t.Setenv(EnvAIModel, "gemma-4-e4b")
+
+	env, err := AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("AIEnvFromEnv: %v", err)
+	}
+	if !env.Providers.LLM.Configured() {
+		t.Fatal("an address alone should configure it")
+	}
+	if got := env.Providers.OCRModel(); got != "apple-vision-ocr" {
+		t.Fatalf("ocr model = %q, want apple-vision-ocr", got)
+	}
+
+	t.Setenv(EnvOCRSDK, aiprovider.SDKLemmaryLocalAI)
+	env, err = AIEnvFromEnv()
+	if err != nil {
+		t.Fatalf("AIEnvFromEnv with OCR_SDK: %v", err)
+	}
+	if got := env.Providers.OCRModel(); got != "apple-vision-ocr" {
+		t.Fatalf("ocr model with OCR_SDK = %q, want apple-vision-ocr", got)
+	}
+}
+
+// It has no default address, so each block naming it without one is refused
+// rather than seeding a row that points nowhere.
+func TestLemmaryLocalAIWithoutAnAddressIsRefused(t *testing.T) {
+	cases := map[string]map[string]string{
+		EnvAIBaseURL: {EnvAISDK: aiprovider.SDKLemmaryLocalAI, EnvAIModel: "gemma-4-e4b"},
+		EnvOCRBaseURL: {EnvAIAPIKey: "sk-test", EnvAIModel: "some-model",
+			EnvOCRSDK: aiprovider.SDKLemmaryLocalAI},
+		EnvAIEmbeddingBaseURL: {EnvAIAPIKey: "sk-test", EnvAIModel: "some-model",
+			EnvAIEmbeddingSDK: aiprovider.SDKLemmaryLocalAI, EnvAIEmbeddingModel: "BAAI/bge-m3"},
+	}
+	for missing, vars := range cases {
+		t.Run(missing, func(t *testing.T) {
+			clearAIEnv(t)
+			for k, v := range vars {
+				t.Setenv(k, v)
+			}
+			_, err := AIEnvFromEnv()
+			if err == nil || !strings.Contains(err.Error(), missing) {
+				t.Fatalf("err = %v, want one naming %s", err, missing)
+			}
+		})
+	}
+}

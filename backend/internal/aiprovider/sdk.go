@@ -228,6 +228,16 @@ func ModellessOCRSDKs() []string {
 	return out
 }
 
+// DefaultOCRModel is the model an SDK reads documents with when none is named.
+// Empty means the language model reads them. Lemmary Local AI runs Apple Vision
+// only for this id and hands any other to its text model.
+func DefaultOCRModel(sdk string) string {
+	if strings.TrimSpace(sdk) == SDKLemmaryLocalAI {
+		return "apple-vision-ocr"
+	}
+	return ""
+}
+
 func DefaultBaseURL(sdk string) string {
 	switch strings.TrimSpace(sdk) {
 	case SDKOpenAI:
