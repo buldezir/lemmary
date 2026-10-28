@@ -23,6 +23,7 @@ damit eine frische Instanz sofort einsatzbereit startet.
 | **Local OCR** — `docling` | ❌ | ✅ **auf Ihrem eigenen Host** | ❌ | ❌ |
 | **Local Embeddings** — `local` | ❌ | ❌ | ✅ **auf Ihrer eigenen Hardware** | ❌ |
 | **Tavily** — `tavily` | ❌ | ❌ | ❌ | ✅ **das einzige SDK, das das kann** |
+| **Lemmary Local AI** — `lemmary_local_ai` | ✅ **auf einem Mac in Ihrem Netzwerk** | ✅ Apple Vision | ✅ `BAAI/bge-m3` | ❌ |
 
 Die fett gedruckten Namen sind das, was die Admin-Seite anzeigt. Die kürzeren
 Code-Werte bleiben die Werte, die von `OCR_SDK`, `AI_EMBEDDING_SDK` und `WEB_SEARCH_SDK`
@@ -117,6 +118,14 @@ Die Alternativen verdienen eine Erwähnung:
   Konfiguration. Es ist das Spiegelbild von `google_vision` – eine einzige Aufgabe,
   erledigt ohne Netzwerk nach außen. Sein SDK-Wert ist `local`. Siehe
   [Lokale Embeddings](/de/local_embeddings).
+- **Lemmary Local AI** – Embeddings, OCR und optional ein kleines Textmodell aus
+  [einer Menüleisten-App](https://github.com/buldezir/lemmary-local-ai) auf einem
+  Mac mit Apple Silicon in Ihrem Netzwerk, ohne API-Schlüssel: Die Basis-URL ist
+  die ganze Konfiguration. Ihr `/v1/models` nennt die Aufgabe jedes Modells,
+  sodass jede Auswahl nur die passenden Modelle zeigt. Chat und Deep Research
+  bleiben besser bei einem gehosteten Modell; ein Textmodell dieser Größe ist für
+  die Extraktion gedacht. Der SDK-Wert ist `lemmary_local_ai`. Siehe
+  [Lemmary Local AI](/de/local_ai_macos).
 
 Zusammen sind Local OCR und Local Embeddings die beiden Hälften einer Installation, bei
 der nichts den Host verlässt: Richten Sie `AI_BASE_URL` auf Ollama oder vLLM, setzen Sie

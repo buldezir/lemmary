@@ -171,15 +171,15 @@ func handleCreateProvider(app core.App, rt *config.Runtime) func(*core.RequestEv
 }
 
 // missingProviderField is the 400 message for what an SDK cannot run without,
-// or empty. A local OCR engine carries an address where a hosted one carries a
+// or empty. A local provider carries an address where a hosted one carries a
 // credential, with no public endpoint to fall back on. NormalizeBaseURL fills in
-// the compose default, so the address only goes missing if one was blanked.
+// the compose default for the sidecars; Lemmary Local AI has none to fill in.
 func missingProviderField(sdk, apiKey, baseURL string) string {
 	if apiKey == "" && aiprovider.RequiresAPIKey(sdk) {
 		return "api_key is required."
 	}
 	if aiprovider.RequiresBaseURL(sdk) && aiprovider.NormalizeBaseURL(sdk, baseURL) == "" {
-		return "base_url is required for a local OCR provider."
+		return "base_url is required for a local provider."
 	}
 	return ""
 }

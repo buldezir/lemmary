@@ -603,3 +603,40 @@ func TestListModelsSignsAnthropicWithItsOwnHeaders(t *testing.T) {
 		t.Fatalf("models = %+v", models)
 	}
 }
+
+// The /v1/models body is the one the test instance answered with, trimmed. Its
+// OCR model carries no "ocr" and its embedding model no "embed", so only
+// `purposes` can sort them.
+func TestListModelsLemmaryLocalAIFiltersByPurposes(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		if _, ok := r.Header["Authorization"]; ok {
+			t.Errorf("a keyless provider sent an Authorization header")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","data":[
+			{"id":"BAAI/bge-m3","name":"BAAI/bge-m3 embeddings","context_length":8192,"purposes":["embedding"]},
+			{"id":"apple-vision-ocr","name":"Apple Vision OCR","purposes":["ocr"]},
+			{"id":"qwen3.6-35b-a3b","name":"Qwen3.6 35B-A3B","context_length":16384,"purposes":["llm"]}]}`))
+	}))
+	defer srv.Close()
+
+	p := Provider{SDK: SDKLemmaryLocalAI, BaseURL: srv.URL + "/v1"}
+	for purpose, want := range map[ModelPurpose]string{
+		PurposeEmbedding: "BAAI/bge-m3",
+		PurposeOCR:       "apple-vision-ocr",
+		PurposeLLM:       "qwen3.6-35b-a3b",
+	} {
+		models, err := ListModels(t.Context(), p, purpose, srv.Client(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(models) != 1 || models[0].ID != want {
+			t.Fatalf("%s models = %+v, want only %s", purpose, models, want)
+		}
+	}
+}

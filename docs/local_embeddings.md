@@ -20,8 +20,8 @@ and like [docling](/local_ocr) it takes no API key, because a service on a
 private network has nobody to authenticate to. Its address is its whole
 configuration.
 
-On an Apple Silicon Mac, see [Local OCR and embeddings on a Mac](/local_ai_macos):
-llama.cpp on the Mac's GPU instead of a CPU container.
+On an Apple Silicon Mac, use [Lemmary Local AI](/local_ai_macos) instead:
+the same model on the Mac's GPU rather than in a CPU container.
 
 ## Bringing it up
 

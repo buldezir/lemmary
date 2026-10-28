@@ -20,7 +20,7 @@ Anleitungen zur Einrichtung und zum Betrieb von Lemmary.
 - [Scannen mit einem Netzwerkscanner](/de/scanning) — über eSCL/AirScan scannen, und wie die LAN-Suche das Gerät findet
 - [Lokale OCR](/de/local_ocr) — die OCR-Engine selbst betreiben, damit Scans den Host nie verlassen
 - [Lokale Embeddings](/de/local_embeddings) — das Embedding-Modell selbst betreiben, damit Deep Research keine Tokens kostet
-- [Lokale OCR und Embeddings auf einem Mac](/de/local_ai_macos) — beides auf der GPU eines Macs mit M-Chip, nativ statt in Docker
+- [Lemmary Local AI auf einem Mac](/de/local_ai_macos) — Embeddings, OCR und ein Textmodell auf einem Mac mit Apple Silicon, nativ statt in Docker
 - [Google-Vision-API-Schlüssel](/de/google_vision) — einen Cloud-Vision-API-Schlüssel für OCR beschaffen
 - [Anmeldung mit ChatGPT](/de/chatgpt_login) — Chat, Extraktion und Deep Research mit einem ChatGPT-Abonnement statt mit einem nutzungsbasiert abgerechneten Schlüssel betreiben
 - [Anmeldung per OAuth2 / SSO](/de/oauth) — die Anmeldung über einen Anbieter auf dem Anmeldebildschirm der App aktivieren

@@ -144,8 +144,8 @@ Docling публикует образы с CUDA: `docling-serve-cu128` и `docli
 для GPU, и время на страницу сократится на порядок. Приложение
 менять не нужно — это тот же HTTP API.
 
-На Mac с Apple Silicon у Docker нет доступа к GPU; вместо этого запускайте docling
-нативно, как описано в разделе [Локальные OCR и эмбеддинги на Mac](/ru/local_ai_macos).
+На Mac с Apple Silicon у Docker нет доступа к GPU; вместо этого используйте
+[Lemmary Local AI](/ru/local_ai_macos), которое читает документы с помощью Apple Vision.
 
 ## Устранение неполадок {#troubleshooting}
 

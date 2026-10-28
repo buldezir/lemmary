@@ -21,8 +21,8 @@ Sie selbst betreiben. Es erzeugt Embeddings und sonst nichts – als `AI_SDK` un
 API-Schlüssel, weil sich ein Dienst in einem privaten Netzwerk bei niemandem
 authentifizieren muss. Seine Adresse ist seine gesamte Konfiguration.
 
-Auf einem Mac mit Apple Silicon siehe [Lokale OCR und Embeddings auf einem Mac](/de/local_ai_macos):
-llama.cpp auf der GPU des Macs statt eines CPU-Containers.
+Auf einem Mac mit Apple Silicon nutzen Sie stattdessen [Lemmary Local AI](/de/local_ai_macos):
+dasselbe Modell auf der GPU des Macs statt in einem CPU-Container.
 
 ## Inbetriebnahme {#bringing-it-up}
 

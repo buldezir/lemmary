@@ -47,11 +47,11 @@ type SetupWizardProps = {
 
 type Step = 'admin' | 'passkey' | 'providers' | 'models' | 'done'
 
-// The two the quick form cannot ask for in one submit are left out: mistral is
-// its own field, chatgpt is signed in to rather than given a key. Both are in
-// the manual form.
+// The quick form asks for a key and nothing else, so it leaves out mistral (its
+// own field) and every SDK that takes no key: chatgpt signs in, and Lemmary
+// Local AI needs an address. All are in the manual form.
 const generalSdkOptions = SDK_OPTIONS.filter(
-  (option) => isLLMProvider(option.value) && option.value !== 'mistral' && option.value !== 'chatgpt',
+  (option) => isLLMProvider(option.value) && option.value !== 'mistral' && requiresAPIKey(option.value),
 )
 
 // Deliberately never returns 'passkey': the optional step is reachable only

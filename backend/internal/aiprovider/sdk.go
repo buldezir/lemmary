@@ -59,14 +59,21 @@ const (
 	// row bound to OCR would only fail on the first uploaded document.
 	SDKTavily = "tavily"
 
+	// SDKLemmaryLocalAI is the Lemmary Local AI menu bar app
+	// (github.com/buldezir/lemmary-local-ai): embeddings, OCR and an optional
+	// text model behind one OpenAI-compatible /v1 on a Mac on the LAN. Its own
+	// SDK rather than an `openai` row because it needs no key, has no default
+	// address, and its /v1/models names each model's job in `purposes`.
+	SDKLemmaryLocalAI = "lemmary_local_ai"
+
 	CollectionName = "ai_providers"
 )
 
-var ValidSDKs = []string{SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKChatGPT, SDKLocalEmbeddings, SDKDocling, SDKTavily}
+var ValidSDKs = []string{SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKChatGPT, SDKLocalEmbeddings, SDKDocling, SDKTavily, SDKLemmaryLocalAI}
 
 func ValidSDK(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
-	case SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKChatGPT, SDKLocalEmbeddings, SDKDocling, SDKTavily:
+	case SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKGoogleVision, SDKMistral, SDKOpenCode, SDKChatGPT, SDKLocalEmbeddings, SDKDocling, SDKTavily, SDKLemmaryLocalAI:
 		return true
 	default:
 		return false
@@ -75,7 +82,7 @@ func ValidSDK(sdk string) bool {
 
 func IsLLM(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
-	case SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKMistral, SDKOpenCode, SDKChatGPT:
+	case SDKOpenAI, SDKAnthropic, SDKOpenRouter, SDKMistral, SDKOpenCode, SDKChatGPT, SDKLemmaryLocalAI:
 		return true
 	default:
 		return false
@@ -89,7 +96,7 @@ func IsLLM(sdk string) bool {
 // is a working state until there is one.
 func CanEmbed(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
-	case SDKOpenAI, SDKOpenRouter, SDKMistral, SDKLocalEmbeddings:
+	case SDKOpenAI, SDKOpenRouter, SDKMistral, SDKLocalEmbeddings, SDKLemmaryLocalAI:
 		return true
 	default:
 		return false
@@ -134,7 +141,7 @@ func RequiresOAuth(sdk string) bool {
 // to the strict answer: an unknown or empty SDK still demands a key.
 func RequiresAPIKey(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
-	case SDKLocalEmbeddings, SDKDocling, SDKChatGPT:
+	case SDKLocalEmbeddings, SDKDocling, SDKChatGPT, SDKLemmaryLocalAI:
 		return false
 	default:
 		return true
@@ -161,7 +168,7 @@ func IsLocalOCR(sdk string) bool {
 // another's.
 func RequiresBaseURL(sdk string) bool {
 	switch strings.TrimSpace(sdk) {
-	case SDKLocalEmbeddings, SDKDocling:
+	case SDKLocalEmbeddings, SDKDocling, SDKLemmaryLocalAI:
 		return true
 	default:
 		return false
@@ -274,6 +281,8 @@ func DefaultAlias(sdk string) string {
 		return "Docling"
 	case SDKTavily:
 		return "Tavily"
+	case SDKLemmaryLocalAI:
+		return "Lemmary Local AI"
 	default:
 		return sdk
 	}

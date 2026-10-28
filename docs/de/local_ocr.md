@@ -148,9 +148,8 @@ Tauschen Sie die Zeile `image:` im Overlay aus, fügen Sie einen Block
 `deploy.resources.reservations.devices` für die GPU hinzu, und die Zeit pro Seite sinkt um
 eine Größenordnung. Die App braucht keine Änderung – es ist dieselbe HTTP-API.
 
-Auf einem Mac mit Apple Silicon hat Docker keinen Zugriff auf die GPU; führen Sie docling
-stattdessen nativ aus, wie unter [Lokale OCR und Embeddings auf einem Mac](/de/local_ai_macos)
-beschrieben.
+Auf einem Mac mit Apple Silicon hat Docker keinen Zugriff auf die GPU; nutzen Sie
+stattdessen [Lemmary Local AI](/de/local_ai_macos), das Dokumente mit Apple Vision liest.
 
 ## Fehlerbehebung {#troubleshooting}
 

@@ -20,8 +20,8 @@ SDK называется `local`: любой OpenAI-совместимый эн�
 частной сети не перед кем аутентифицироваться. Его адрес — это вся его
 конфигурация.
 
-Для Mac с Apple Silicon см. [Локальные OCR и эмбеддинги на Mac](/ru/local_ai_macos):
-llama.cpp на GPU Mac вместо контейнера на CPU.
+На Mac с Apple Silicon используйте вместо этого [Lemmary Local AI](/ru/local_ai_macos):
+та же модель на GPU Mac вместо контейнера на CPU.
 
 ## Запуск {#bringing-it-up}
 

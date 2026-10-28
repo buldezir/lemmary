@@ -179,6 +179,8 @@ export const en = {
     'Optional. Names Docling’s OCR engine — rapidocr (the default, PaddleOCR’s PP-OCR models), easyocr, tesserocr or tesseract. An unrecognised name is ignored silently, so check the spelling.',
   'providers.keylessHint':
     'Runs on your own host, so no API key is needed — the address is the whole configuration. The default is the service name from {overlay}.',
+  'providers.lemmaryLocalAiHint':
+    'Runs on a Mac on your network, so no API key is needed. Enter the URL its menu bar panel shows, such as http://<mac>:5001/v1.',
   'providers.docsLocalEmbeddings': 'Local embeddings',
   'providers.docsLocalOcr': 'Local OCR',
   'providers.docsGoogleVision': 'Google Vision API key',

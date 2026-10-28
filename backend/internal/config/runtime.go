@@ -132,6 +132,8 @@ func usableLLM(p *aiprovider.Provider) bool {
 	return p != nil && p.Configured() && aiprovider.IsLLM(p.SDK)
 }
 
+const keylessPlaceholderKey = "keyless"
+
 // providerCredential is the key to pass plus any extra SDK options, for both the
 // AI clients and the OCR one. Every SDK but one hands over its API key and asks
 // for nothing else; the chatgpt SDK has no key, its credential being a token
@@ -142,6 +144,11 @@ func providerCredential(app core.App, p *aiprovider.Provider, logger *slog.Logge
 		return "", nil
 	}
 	if !aiprovider.RequiresOAuth(p.SDK) {
+		// openai-go and the `apiKey == ""` guards in internal/ai insist on a key,
+		// and a keyless LLM endpoint checks none, so any non-empty one will do.
+		if p.APIKey == "" && aiprovider.IsLLM(p.SDK) && !aiprovider.RequiresAPIKey(p.SDK) {
+			return keylessPlaceholderKey, nil
+		}
 		return p.APIKey, nil
 	}
 	src := chatgpt.SourceFor(p.ID, p.OAuth, persistOAuth(app), logger)

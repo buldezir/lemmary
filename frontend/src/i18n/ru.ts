@@ -225,6 +225,8 @@ export const ru: Catalog = {
     'Необязательно. Задаёт OCR-движок Docling — rapidocr (по умолчанию, модели PP-OCR от PaddleOCR), easyocr, tesserocr или tesseract. Неизвестное имя молча игнорируется, поэтому проверьте написание.',
   'providers.keylessHint':
     'Работает на вашем собственном хосте, поэтому API-ключ не нужен — адрес и есть вся настройка. По умолчанию — имя сервиса из {overlay}.',
+  'providers.lemmaryLocalAiHint':
+    'Работает на Mac в вашей сети, поэтому API-ключ не нужен. Укажите адрес, который показывает панель в строке меню, например http://<mac>:5001/v1.',
   'providers.docsLocalEmbeddings': 'Локальные эмбеддинги',
   'providers.docsLocalOcr': 'Локальный OCR',
   'providers.docsGoogleVision': 'API-ключ Google Vision',
