@@ -1,0 +1,51 @@
+name: Feature or change
+description: A spec precise enough to hand to a coding agent as its prompt.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Only maintainers open pull requests; a clear spec is the contribution. See [CONTRIBUTING.md](https://github.com/buldezir/lemmary/blob/main/CONTRIBUTING.md).
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What you're trying to do, and why. One or two sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current behaviour
+      description: What happens today. Name screens, settings or API calls exactly.
+    validations:
+      required: true
+  - type: textarea
+    id: wanted
+    attributes:
+      label: Wanted behaviour
+      description: What should happen instead. Labels, defaults, what an admin and a regular user see.
+    validations:
+      required: true
+  - type: textarea
+    id: where
+    attributes:
+      label: Where
+      description: Screens, endpoints, settings or files involved, if you know them.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: Steps a person could follow to check it's done, and what they'd see at the end.
+    validations:
+      required: true
+  - type: textarea
+    id: edge-cases
+    attributes:
+      label: Edge cases
+      description: Empty states, large inputs, other languages, file types, providers, documents created before the change.
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What this should not change.

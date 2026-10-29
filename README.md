@@ -130,6 +130,9 @@ The end-to-end suites, the dev runner and the full verification stack live in a
 separate private repository and are not part of this one. `./scripts/test-all.sh`
 requires that overlay; without it the command fails.
 
+Only maintainers open pull requests; issues written as specs are the way to
+contribute. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## License
 
 Lemmary is **source-available**, not open source. It is licensed under the
